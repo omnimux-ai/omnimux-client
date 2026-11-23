@@ -61,11 +61,14 @@ describe('Agent 输入框与专家市场头像收敛一致性契约', () => {
 
   it('市场垂直专家在输入框与专家市场全部统一收敛至确定性像素艺术头像', () => {
     const marketHiredExperts = [
-      { name: 'Shopee运营专家', id: 'shopee-ops-expert' },
-      { name: 'YouTube创作者专家', id: 'youtube-creator-expert' },
-      { name: '亚马逊运营专家', id: 'amazon-operations-expert' },
-      { name: 'TikTok电商专家', id: 'tiktok-ecommerce-expert' },
-      { name: '媒体创作者', id: 'media-creator' },
+      { name: '市场选品与竞品调研专家', id: 'ecom-market-research' },
+      { name: '产品定位与定价策略专家', id: 'ecom-product-strategy' },
+      { name: '跨境 Listing 与合规文案专家', id: 'ecom-listing-copy' },
+      { name: '电商主图与商详视觉专家', id: 'ecom-visual-studio' },
+      { name: '带货短视频与爆款复刻导演', id: 'ecom-video-director' },
+      { name: '跨境广告诊断与买量优化专家', id: 'ecom-ads-optimizer' },
+      { name: '评论 VOC 与售后话术专家', id: 'ecom-review-voc' },
+      { name: '达人建联与社媒增长专家', id: 'ecom-creator-growth' },
     ]
 
     for (const exp of marketHiredExperts) {

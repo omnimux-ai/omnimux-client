@@ -1,0 +1,623 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>OmniMux · 专家市场真状态修复与跨境电商 SOP 专家库演示</title>
+<style>
+  :root,
+  [data-theme="dark"] {
+    --dsw-alias-bg-base: #141517;
+    --dsw-alias-bg-layer-1: #1a1c1f;
+    --dsw-alias-bg-layer-2: #1e2023;
+    --dsw-alias-bg-layer-3: #282b30;
+    --dsw-alias-interactive-bg-hover: #25282e;
+    --dsw-alias-border-l2: rgba(255, 255, 255, 0.08);
+    --dsw-alias-border-subtle: rgba(255, 255, 255, 0.16);
+    --dsw-alias-label-primary: #f5f6f8;
+    --dsw-alias-label-primary-foreground: #111317;
+    --dsw-alias-label-secondary: #9da1ab;
+    --dsw-alias-label-tertiary: #7c8290;
+    --dsw-alias-label-caption: #676d7a;
+    --dsw-color-success: #10b981;
+    --dsw-color-info: #60a5fa;
+    --dsw-color-danger: #f87171;
+    --dsw-color-danger-bg: rgba(248, 113, 113, 0.12);
+    --dsw-color-danger-border: rgba(248, 113, 113, 0.34);
+    --dsw-alias-shadow-overlay: 0 12px 32px rgba(0, 0, 0, 0.42);
+  }
+
+  [data-theme="light"] {
+    --dsw-alias-bg-base: #f5f6f8;
+    --dsw-alias-bg-layer-1: #ffffff;
+    --dsw-alias-bg-layer-2: #ffffff;
+    --dsw-alias-bg-layer-3: #eceff3;
+    --dsw-alias-interactive-bg-hover: #f2f4f7;
+    --dsw-alias-border-l2: rgba(17, 24, 39, 0.09);
+    --dsw-alias-border-subtle: rgba(17, 24, 39, 0.18);
+    --dsw-alias-label-primary: #111827;
+    --dsw-alias-label-primary-foreground: #ffffff;
+    --dsw-alias-label-secondary: #4b5563;
+    --dsw-alias-label-tertiary: #6b7280;
+    --dsw-alias-label-caption: #9ca3af;
+    --dsw-color-success: #059669;
+    --dsw-color-info: #2563eb;
+    --dsw-color-danger: #dc2626;
+    --dsw-color-danger-bg: rgba(220, 38, 38, 0.08);
+    --dsw-color-danger-border: rgba(220, 38, 38, 0.28);
+    --dsw-alias-shadow-overlay: 0 12px 28px rgba(15, 23, 42, 0.12);
+  }
+
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--dsw-alias-bg-base);
+    color: var(--dsw-alias-label-primary);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Inter", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .demo-bar {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 24px;
+    background: var(--dsw-alias-bg-layer-1);
+    border-bottom: 1px solid var(--dsw-alias-border-l2);
+  }
+  .demo-brand { display: flex; align-items: center; gap: 10px; font-size: 13px; font-weight: 600; }
+  .demo-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .seg {
+    display: inline-flex;
+    padding: 3px;
+    border-radius: 10px;
+    background: var(--dsw-alias-bg-layer-3);
+    border: 1px solid var(--dsw-alias-border-l2);
+    gap: 2px;
+  }
+  .seg button, .ctrl-btn {
+    border: none;
+    background: transparent;
+    color: var(--dsw-alias-label-secondary);
+    font-size: 12px;
+    font-weight: 500;
+    padding: 5px 10px;
+    border-radius: 7px;
+    cursor: pointer;
+    transition: background .15s, color .15s;
+  }
+  .seg button.active {
+    background: var(--dsw-alias-label-primary);
+    color: var(--dsw-alias-label-primary-foreground);
+    font-weight: 600;
+  }
+  .ctrl-btn {
+    border: 1px solid var(--dsw-alias-border-l2);
+    background: var(--dsw-alias-bg-layer-2);
+    color: var(--dsw-alias-label-primary);
+  }
+  .ctrl-btn:hover { background: var(--dsw-alias-interactive-bg-hover); }
+  .ctrl-btn.warn {
+    color: var(--dsw-color-danger);
+    border-color: var(--dsw-color-danger-border);
+    background: var(--dsw-color-danger-bg);
+  }
+
+  .viewport-shell {
+    max-width: 1320px;
+    margin: 0 auto;
+    padding: 28px 24px 64px;
+    transition: max-width .2s ease;
+  }
+  .viewport-shell.narrow {
+    max-width: 540px;
+    border-left: 1px dashed var(--dsw-alias-border-subtle);
+    border-right: 1px dashed var(--dsw-alias-border-subtle);
+    min-height: calc(100vh - 56px);
+  }
+
+  /* Page Intro */
+  .workshop-intro { margin-bottom: 20px; }
+  .workshop-title { font-size: 24px; font-weight: 700; margin: 0 0 6px; letter-spacing: -0.01em; }
+  .workshop-subtitle { font-size: 14px; color: var(--dsw-alias-label-secondary); margin: 0 0 14px; }
+  .btn-create {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 16px;
+    border-radius: 10px;
+    border: none;
+    background: var(--dsw-alias-label-primary);
+    color: var(--dsw-alias-label-primary-foreground);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  /* Nav bar */
+  .nav-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--dsw-alias-border-l2);
+    margin-bottom: 16px;
+  }
+  .nav-tabs { display: flex; gap: 20px; }
+  .nav-tab {
+    font-size: 14px;
+    color: var(--dsw-alias-label-secondary);
+    padding: 6px 0;
+    position: relative;
+    cursor: default;
+  }
+  .nav-tab.active { color: var(--dsw-alias-label-primary); font-weight: 600; }
+  .nav-tab.active::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: -13px;
+    height: 2px;
+    background: var(--dsw-alias-label-primary);
+  }
+  .search-input {
+    width: 240px;
+    max-width: 100%;
+    padding: 8px 12px;
+    border-radius: 10px;
+    border: 1px solid var(--dsw-alias-border-l2);
+    background: var(--dsw-alias-bg-layer-2);
+    color: var(--dsw-alias-label-primary);
+    font-size: 13px;
+    outline: none;
+  }
+  .search-input:focus { border-color: var(--dsw-alias-border-subtle); }
+
+  /* Stage Filter Bar (New in After) */
+  .expert-stage-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 18px;
+  }
+  .cat-btn {
+    border: 1px solid var(--dsw-alias-border-l2);
+    background: var(--dsw-alias-bg-layer-2);
+    color: var(--dsw-alias-label-secondary);
+    border-radius: 9999px;
+    padding: 6px 14px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all .15s;
+  }
+  .cat-btn:hover { color: var(--dsw-alias-label-primary); border-color: var(--dsw-alias-border-subtle); }
+  .cat-btn.active {
+    background: var(--dsw-alias-label-primary);
+    color: var(--dsw-alias-label-primary-foreground);
+    border-color: var(--dsw-alias-label-primary);
+    font-weight: 600;
+  }
+
+  /* Error Banner (only on real failure) */
+  .expert-error-toast {
+    position: fixed;
+    right: 24px;
+    bottom: 24px;
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    max-width: 420px;
+    padding: 12px 16px;
+    border-radius: 12px;
+    background: var(--dsw-alias-bg-layer-1);
+    border: 1px solid var(--dsw-color-danger-border);
+    box-shadow: var(--dsw-alias-shadow-overlay);
+    font-size: 13px;
+    color: var(--dsw-alias-label-primary);
+  }
+  .expert-error-toast .err-dot {
+    width: 8px; height: 8px; border-radius: 50%; background: var(--dsw-color-danger); flex-shrink: 0;
+  }
+  .expert-error-toast button {
+    border: none; background: transparent; color: var(--dsw-alias-label-secondary); cursor: pointer; font-size: 14px;
+  }
+
+  /* Grid & Cards */
+  .expert-market-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 18px;
+  }
+  .viewport-shell.narrow .expert-market-grid {
+    grid-template-columns: 1fr;
+  }
+  @media (max-width: 1180px) { .expert-market-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+  @media (max-width: 860px) { .expert-market-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (max-width: 560px) { .expert-market-grid { grid-template-columns: 1fr; } }
+
+  .expert-card {
+    background: var(--dsw-alias-bg-layer-2);
+    border: 1px solid var(--dsw-alias-border-l2);
+    border-radius: 20px;
+    padding: 22px;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    min-height: 296px;
+    transition: border-color .18s ease, background .18s ease;
+  }
+  .expert-card:hover {
+    background: var(--dsw-alias-interactive-bg-hover);
+    border-color: var(--dsw-alias-border-subtle);
+  }
+  .expert-card-top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 14px;
+  }
+  .expert-card-avatar-wrap {
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    overflow: hidden;
+    background: var(--dsw-alias-bg-layer-3);
+    flex-shrink: 0;
+  }
+  .expert-card-avatar { width: 100%; height: 100%; display: block; }
+  .expert-pill-btn {
+    background: var(--dsw-alias-label-primary);
+    color: var(--dsw-alias-label-primary-foreground);
+    border: none;
+    border-radius: 9999px;
+    padding: 6px 16px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    line-height: 1.2;
+    transition: opacity .15s;
+  }
+  .expert-pill-btn.secondary {
+    background: var(--dsw-alias-bg-layer-3);
+    color: var(--dsw-alias-label-primary);
+    border: 1px solid var(--dsw-alias-border-l2);
+  }
+  .expert-pill-btn:hover { opacity: 0.9; }
+  .expert-card-meta-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+  .expert-card-status { font-size: 12px; font-weight: 600; letter-spacing: 0.4px; }
+  .expert-card-status.enabled { color: var(--dsw-color-success); }
+  .expert-card-status.system { color: var(--dsw-color-info); }
+  .expert-card-status.available, .expert-card-status.disabled { color: var(--dsw-alias-label-tertiary); }
+  .expert-card-stage {
+    font-size: 11px;
+    color: var(--dsw-alias-label-secondary);
+    background: var(--dsw-alias-bg-layer-3);
+    padding: 2px 8px;
+    border-radius: 9999px;
+    white-space: nowrap;
+  }
+  .expert-card-title { font-size: 16px; font-weight: 700; margin: 0 0 8px; line-height: 1.35; }
+  .expert-card-desc { font-size: 13px; line-height: 1.55; color: var(--dsw-alias-label-secondary); margin: 0; flex: 1; }
+
+  /* Live Composer Preset Picker Mirror */
+  .live-sync-panel {
+    margin-top: 28px;
+    padding: 18px 20px;
+    border-radius: 16px;
+    background: var(--dsw-alias-bg-layer-1);
+    border: 1px solid var(--dsw-alias-border-l2);
+  }
+  .live-sync-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+  .live-sync-title { font-size: 13px; font-weight: 600; }
+  .live-sync-sub { font-size: 12px; color: var(--dsw-alias-label-secondary); }
+  .picker-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .picker-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    border-radius: 10px;
+    border: 1px solid var(--dsw-alias-border-l2);
+    background: var(--dsw-alias-bg-layer-2);
+    font-size: 13px;
+    font-weight: 500;
+  }
+  .picker-chip img { width: 20px; height: 20px; border-radius: 50%; }
+  .picker-chip .badge-def {
+    font-size: 11px;
+    color: var(--dsw-alias-label-tertiary);
+  }
+  .before-note {
+    margin-bottom: 16px;
+    padding: 12px 14px;
+    border-radius: 12px;
+    background: var(--dsw-color-danger-bg);
+    border: 1px solid var(--dsw-color-danger-border);
+    font-size: 13px;
+    color: var(--dsw-alias-label-primary);
+  }
+</style>
+</head>
+<body>
+  <div class="demo-bar">
+    <div class="demo-brand">
+      <span>OmniMux · 专家市场交互演示</span>
+      <div class="seg" role="group" aria-label="Before or After">
+        <button id="btnAfter" class="active" type="button">改造后（真状态 + 8 SOP 专家）</button>
+        <button id="btnBefore" type="button">改造前（原缺陷复现）</button>
+      </div>
+    </div>
+    <div class="demo-controls">
+      <div class="seg" role="group" aria-label="Theme">
+        <button id="btnDark" class="active" type="button">暗色</button>
+        <button id="btnLight" type="button">亮色</button>
+      </div>
+      <div class="seg" role="group" aria-label="Locale">
+        <button id="btnZh" class="active" type="button">中文</button>
+        <button id="btnEn" type="button">EN</button>
+      </div>
+      <div class="seg" role="group" aria-label="Viewport">
+        <button id="btnWide" class="active" type="button">宽屏</button>
+        <button id="btnNarrow" type="button">窄屏 540px</button>
+      </div>
+      <button id="btnFail" class="ctrl-btn warn" type="button">模拟挂载失败</button>
+    </div>
+  </div>
+
+  <main id="shell" class="viewport-shell">
+    <section class="workshop-intro">
+      <h1 id="introTitle" class="workshop-title">专家市场</h1>
+      <p id="introSub" class="workshop-subtitle">发现并按需聘用跨境电商 SOP 专家，即装即进会话预设选择器</p>
+      <button id="btnCreate" class="btn-create" type="button">创建专家</button>
+    </section>
+
+    <div class="nav-bar">
+      <div class="nav-tabs">
+        <span class="nav-tab">Skill</span>
+        <span class="nav-tab">我的 Skill</span>
+        <span class="nav-tab active" id="tabExperts">专家市场</span>
+        <span class="nav-tab">插件专栏</span>
+      </div>
+      <input id="searchInput" class="search-input" type="search" placeholder="搜索全部专家..." />
+    </div>
+
+    <div id="beforeWarning" class="before-note" style="display:none;">
+      改造前问题复现：5 位市场专家全显 [ 已入职 ]（实际底座仅注册了 omni-agent 和 cordis），含 Topview 历史残留文案，cordis 裸显英文且系统预置误显禁用按钮。
+    </div>
+
+    <div id="stageBar" class="expert-stage-bar"></div>
+    <div id="grid" class="expert-market-grid"></div>
+
+    <section class="live-sync-panel" aria-live="polite">
+      <div class="live-sync-head">
+        <span class="live-sync-title" id="pickerTitle">底座真实注册表（ctx.agentPresets.list() · 新对话下拉菜单实时同步）</span>
+        <span class="live-sync-sub" id="pickerMeta"></span>
+      </div>
+      <div id="pickerList" class="picker-list"></div>
+    </section>
+  </main>
+
+  <div id="errorToast" class="expert-error-toast" style="display:none;" role="alert">
+    <span class="err-dot"></span>
+    <span id="errorText"></span>
+    <button id="errorClose" type="button" aria-label="关闭">✕</button>
+  </div>
+
+<script>
+  function hashSeed(s) {
+    let h = 0x811c9dc5;
+    for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
+    return h >>> 0;
+  }
+  function pixelAvatar(id) {
+    const h = hashSeed(id);
+    const bg = ['#e0f2fe','#fce7f3','#dcfce7','#fef3c7','#ede9fe','#ffedd5','#cffafe','#f3e8ff'][h % 8];
+    const skin = ['#f6d5b8','#e8b892','#d19a6e','#f2c9a0'][(h >>> 3) % 4];
+    const hair = ['#1f2937','#7c2d12','#312e81','#065f46','#9a3412','#4c1d95'][(h >>> 6) % 6];
+    const shirt = ['#2563eb','#059669','#7c3aed','#ea580c','#db2777','#0891b2','#4f46e5','#ca8a04'][(h >>> 9) % 8];
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" shape-rendering="crispEdges">`
+      + `<rect width="16" height="16" fill="${bg}"/>`
+      + `<rect x="4" y="2" width="8" height="3" fill="${hair}"/>`
+      + `<rect x="4" y="5" width="8" height="6" fill="${skin}"/>`
+      + `<rect x="5" y="7" width="2" height="1" fill="#111827"/><rect x="9" y="7" width="2" height="1" fill="#111827"/>`
+      + `<rect x="6" y="9" width="4" height="1" fill="#7c2d12"/>`
+      + `<rect x="3" y="12" width="10" height="4" fill="${shirt}"/>`
+      + `</svg>`;
+    return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
+  }
+
+  const BEFORE_ITEMS = [
+    { id: 'shopee-ops-expert', name: 'Shopee 运营专家', nameEn: 'Shopee Ops Expert', desc: '负责市场、产品、店铺、品牌和关键词分析的Shopee运营专员。', descEn: 'Shopee operation specialist.', status: 'enabled', group: 'ecommerce' },
+    { id: 'youtube-creator-expert', name: 'YouTube 创作者专家', nameEn: 'YouTube Creator Expert', desc: '帮助商家利用 Topview 自有创作者池数据寻找和评估 YouTube 创作者。', descEn: 'Find YouTube creators using Topview pool.', status: 'enabled', group: 'ecommerce' },
+    { id: 'amazon-operations-expert', name: '亚马逊运营专家', nameEn: 'Amazon Operations Expert', desc: '专注于亚马逊店铺运营、商品详情优化、广告投放和竞争对手分析。', descEn: 'Amazon store ops specialist.', status: 'enabled', group: 'ecommerce' },
+    { id: 'tiktok-ecommerce-expert', name: 'TikTok 电商专家', nameEn: 'TikTok Ecommerce Expert', desc: '擅长TikTok短视频销售、创作者合作和增长策略。', descEn: 'TikTok Shop growth specialist.', status: 'enabled', group: 'ecommerce' },
+    { id: 'media-creator', name: '媒体创作者', nameEn: 'Media Creator', desc: 'AI内容生成：使用 Topview AI 创意工具生成视频、图像、数字替身。', descEn: 'AI media generation using Topview AI.', status: 'enabled', group: 'ecommerce' },
+    { id: 'omni-agent', name: '社媒专家', nameEn: 'Social Media Expert', desc: '全平台社媒营销操盘、跨渠道爆款内容创作与品牌心智建设。', descEn: 'Multi-platform social marketing.', status: 'enabled', group: 'system' },
+    { id: 'cordis', name: 'cordis', nameEn: 'cordis', desc: '', descEn: '', status: 'enabled', group: 'system' },
+  ];
+
+  const AFTER_SYSTEM = [
+    { id: 'omni-agent', name: 'OmniMux', nameEn: 'OmniMux', stage: 'system', stageZh: '系统预置', stageEn: 'System', desc: '内容电商全链路默认 Agent——覆盖选品洞察、脚本分镜、素材生产与全域增长。', descEn: 'All-in-one content e-commerce default Agent from research to production and growth.', status: 'system', group: 'system' },
+    { id: 'cordis', name: '创建Agent', nameEn: 'Create Agent', stage: 'system', stageZh: '系统预置', stageEn: 'System', desc: 'DSH 原生创造模式：插件实验开发、运行时检查与自定义 Agent 搭建。', descEn: 'DSH native Creator Mode for plugin development, runtime inspection, and custom Agents.', status: 'system', group: 'system' },
+  ];
+
+  const AFTER_EXPERTS = [
+    { id: 'ecom-market-research', name: '市场选品与竞品调研专家', nameEn: 'Market Research & Competitor Analyst', stage: 'research', stageZh: '选品与策略', stageEn: 'Research & Strategy', desc: '类目容量/CR10/价格带波谷测算、社媒痛点挖掘与竞品拆解，用脚本计算替代心算，输出可验证选品结论。', descEn: 'Category size, CR10, price-band gaps, social pain-point mining, and competitor teardown with deterministic scripts.', status: 'available' },
+    { id: 'ecom-product-strategy', name: '产品定位与定价策略专家', nameEn: 'Product Strategy & Pricing Expert', stage: 'research', stageZh: '选品与策略', stageEn: 'Research & Strategy', desc: '提炼唯一核心卖点、规划 SKU 角色矩阵、精算含税净利率/盈亏价/券余量，并沉淀进商品库作为全链路真源。', descEn: 'Distills single core USP, SKU role matrix, tax-aware margin/break-even/coupon headroom, synced into Products.', status: 'available' },
+    { id: 'ecom-listing-copy', name: '跨境 Listing 与合规文案专家', nameEn: 'Listing Copy & Compliance Specialist', stage: 'production', stageZh: '货架与内容生产', stageEn: 'Listing & Creative', desc: '读取商品库参数真源，产出关键词分层、多语母语 Listing 标题与七段式商详，并通过字数、禁用词与参数溯源校验。', descEn: 'Turns verified specs into tiered keywords, native multilingual titles and 7-part listings with compliance checks.', status: 'available' },
+    { id: 'ecom-visual-studio', name: '电商主图与商详视觉专家', nameEn: 'E-commerce Main Image & Visual Designer', stage: 'production', stageZh: '货架与内容生产', stageEn: 'Listing & Creative', desc: '锁定商品实拍外观与色值，规划 9 图视觉矩阵与商详排版，驱动创作画布批量出图并执行白底/主体占比像素质检。', descEn: 'Plans 9-image visual stacks locked to real product photos, drives Canvas generation, and runs pixel QA.', status: 'available' },
+    { id: 'ecom-video-director', name: '带货短视频与爆款复刻导演', nameEn: 'Shoppable Video & Viral Replication Director', stage: 'production', stageZh: '货架与内容生产', stageEn: 'Listing & Creative', desc: '串联灵感 5D 拆解、资产与数字人、画布分镜生片与视频剪辑工坊，把控 3 秒 Hook、口播时长与参数溯源校验。', descEn: 'Connects 5D inspiration breakdowns, assets/avatars, Canvas storyboards, and Clip timeline with duration & spec checks.', status: 'available' },
+    { id: 'ecom-ads-optimizer', name: '跨境广告诊断与买量优化专家', nameEn: 'Cross-Border Ads & Growth Diagnostics Expert', stage: 'growth', stageZh: '投放与复盘闭环', stageEn: 'Ads & Feedback Loop', desc: '测算盈亏线 ROAS 与可承受 CPC，按五层转化漏斗定位点击/加购/转化瓶颈，输出分级调优清单并定向回流素材优化。', descEn: 'Computes break-even ROAS & max CPC, diagnoses 5-stage funnels, outputs P0/P1/P2 checklists and creative feedback.', status: 'available' },
+    { id: 'ecom-review-voc', name: '评论 VOC 与售后话术专家', nameEn: 'Review VOC & Customer Care Specialist', stage: 'growth', stageZh: '投放与复盘闭环', stageEn: 'Ads & Feedback Loop', desc: '差评 8 类归因与误解型差评识别、好评卖点提炼，输出商详防误解补丁、包装提示图需求与多语合规售后回复话术。', descEn: 'Classifies negative reviews across 8 root causes to isolate fixable misunderstandings and emit listing patches.', status: 'available' },
+    { id: 'ecom-creator-growth', name: '达人建联与社媒增长专家', nameEn: 'Creator Partnerships & Social Growth Expert', stage: 'growth', stageZh: '投放与复盘闭环', stageEn: 'Ads & Feedback Loop', desc: '基于公开社媒数据评估 TikTok/YouTube/IG 达人与爆款信号，输出建联 Brief、内容排期与增长复盘。', descEn: 'Evaluates TikTok/YouTube/IG creators & viral outliers from public data, drafting outreach briefs and schedules.', status: 'available' },
+  ];
+
+  const STAGES = [
+    { id: 'all', zh: '全部 (10)', en: 'All (10)' },
+    { id: 'research', zh: '选品与策略', en: 'Research & Strategy' },
+    { id: 'production', zh: '货架与内容生产', en: 'Listing & Creative' },
+    { id: 'growth', zh: '投放与复盘闭环', en: 'Ads & Feedback Loop' },
+    { id: 'system', zh: '系统预置', en: 'System' },
+  ];
+
+  let mode = 'after';
+  let lang = 'zh';
+  let stage = 'all';
+  let query = '';
+  let failNextInstall = false;
+  const expertStates = Object.fromEntries(AFTER_EXPERTS.map((e) => [e.id, 'available']));
+
+  function showError(msg) {
+    document.getElementById('errorText').textContent = msg;
+    document.getElementById('errorToast').style.display = 'flex';
+  }
+  function hideError() {
+    document.getElementById('errorToast').style.display = 'none';
+  }
+
+  function render() {
+    const isEn = lang === 'en';
+    document.getElementById('introTitle').textContent = isEn ? 'Experts Market' : '专家市场';
+    document.getElementById('introSub').textContent = isEn
+      ? 'Discover and hire cross-border e-commerce SOP AI experts — registered live into your session preset picker'
+      : '发现并按需聘用跨境电商 SOP 专家，安装后免重启进入会话预设选择器';
+    document.getElementById('btnCreate').textContent = isEn ? 'Create Expert' : '创建专家';
+    document.getElementById('tabExperts').textContent = isEn ? 'Experts Market' : '专家市场';
+    document.getElementById('searchInput').placeholder = isEn ? 'Search all experts...' : '搜索全部专家...';
+    document.getElementById('beforeWarning').style.display = mode === 'before' ? 'block' : 'none';
+    document.getElementById('stageBar').style.display = mode === 'after' ? 'flex' : 'none';
+
+    const stageBar = document.getElementById('stageBar');
+    stageBar.innerHTML = '';
+    for (const s of STAGES) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'cat-btn' + (stage === s.id ? ' active' : '');
+      btn.textContent = isEn ? s.en : s.zh;
+      btn.onclick = () => { stage = s.id; render(); };
+      stageBar.appendChild(btn);
+    }
+
+    const q = query.trim().toLowerCase();
+    const rawList = mode === 'before'
+      ? BEFORE_ITEMS
+      : [...AFTER_SYSTEM, ...AFTER_EXPERTS.map((e) => ({ ...e, status: expertStates[e.id] }))];
+
+    const filtered = rawList.filter((it) => {
+      if (mode === 'after' && stage !== 'all' && it.stage !== stage) return false;
+      if (!q) return true;
+      return `${it.name} ${it.nameEn} ${it.desc} ${it.descEn}`.toLowerCase().includes(q);
+    });
+
+    const grid = document.getElementById('grid');
+    grid.innerHTML = '';
+    for (const it of filtered) {
+      const card = document.createElement('div');
+      card.className = 'expert-card';
+      const statusMap = {
+        enabled: isEn ? '[ Employed ]' : '[ 已入职 ]',
+        available: isEn ? '[ Hireable ]' : '[ 可聘用 ]',
+        disabled: isEn ? '[ Resigned ]' : '[ 已离职 ]',
+        system: isEn ? '[ System ]' : '[ 系统预置 ]',
+      };
+      const showBtn = mode === 'before' ? true : (it.status !== 'system');
+      const isEnabled = it.status === 'enabled';
+      const btnLabel = isEnabled ? (isEn ? 'Disable' : '禁用') : (isEn ? 'Install' : '安装');
+      const stageBadge = mode === 'after' && it.stage !== 'system' && it.stageZh ? `<span class="expert-card-stage">${isEn ? it.stageEn : it.stageZh}</span>` : '';
+
+      card.innerHTML = `
+        <div class="expert-card-top">
+          <div class="expert-card-avatar-wrap"><img class="expert-card-avatar" src="${pixelAvatar(it.id)}" alt="${isEn ? it.nameEn : it.name}"/></div>
+          ${showBtn ? `<button type="button" class="expert-pill-btn ${isEnabled ? 'secondary' : ''}">${btnLabel}</button>` : ''}
+        </div>
+        <div class="expert-card-meta-row">
+          <div class="expert-card-status ${it.status}">${statusMap[it.status]}</div>
+          ${stageBadge}
+        </div>
+        <div class="expert-card-title">${isEn ? it.nameEn : it.name}</div>
+        <p class="expert-card-desc">${isEn ? it.descEn : it.desc}</p>
+      `;
+
+      const btn = card.querySelector('.expert-pill-btn');
+      if (btn && mode === 'after') {
+        btn.onclick = () => {
+          hideError();
+          if (!isEnabled && failNextInstall) {
+            failNextInstall = false;
+            showError(isEn
+              ? `Mount failed for ${it.nameEn}: rolled back cleanly so status stays Hireable.`
+              : `「${it.name}」挂载校验失败（broken），已自动回滚并保持可聘用状态。`);
+            return;
+          }
+          expertStates[it.id] = isEnabled ? 'disabled' : 'enabled';
+          render();
+        };
+      }
+      grid.appendChild(card);
+    }
+
+    // Live Preset Picker mirror
+    const registered = mode === 'before'
+      ? AFTER_SYSTEM // Real host ONLY had omni-agent + cordis despite 5 fake-enabled cards!
+      : [...AFTER_SYSTEM, ...AFTER_EXPERTS.filter((e) => expertStates[e.id] === 'enabled')];
+
+    document.getElementById('pickerMeta').textContent = mode === 'before'
+      ? (isEn ? 'Mismatch: UI claims 7 employed, host actually has 2' : '状态失真：界面显示 7 个已入职，底座实际仅 2 个')
+      : (isEn ? `Synced: ${registered.length} active presets in session dropdown` : `真源同步：会话下拉当前共 ${registered.length} 个可用预设`);
+
+    const pickerList = document.getElementById('pickerList');
+    pickerList.innerHTML = '';
+    for (const p of registered) {
+      const chip = document.createElement('div');
+      chip.className = 'picker-chip';
+      chip.innerHTML = `<img src="${pixelAvatar(p.id)}" alt=""/><span>${isEn ? p.nameEn : p.name}</span>${p.id === 'omni-agent' ? `<span class="badge-def">${isEn ? 'Default' : '默认'}</span>` : ''}`;
+      pickerList.appendChild(chip);
+    }
+  }
+
+  document.getElementById('btnAfter').onclick = (e) => { mode = 'after'; e.target.classList.add('active'); document.getElementById('btnBefore').classList.remove('active'); render(); };
+  document.getElementById('btnBefore').onclick = (e) => { mode = 'before'; e.target.classList.add('active'); document.getElementById('btnAfter').classList.remove('active'); render(); };
+  document.getElementById('btnDark').onclick = (e) => { document.documentElement.setAttribute('data-theme', 'dark'); e.target.classList.add('active'); document.getElementById('btnLight').classList.remove('active'); };
+  document.getElementById('btnLight').onclick = (e) => { document.documentElement.setAttribute('data-theme', 'light'); e.target.classList.add('active'); document.getElementById('btnDark').classList.remove('active'); };
+  document.getElementById('btnZh').onclick = (e) => { lang = 'zh'; e.target.classList.add('active'); document.getElementById('btnEn').classList.remove('active'); render(); };
+  document.getElementById('btnEn').onclick = (e) => { lang = 'en'; e.target.classList.add('active'); document.getElementById('btnZh').classList.remove('active'); render(); };
+  document.getElementById('btnWide').onclick = (e) => { document.getElementById('shell').classList.remove('narrow'); e.target.classList.add('active'); document.getElementById('btnNarrow').classList.remove('active'); };
+  document.getElementById('btnNarrow').onclick = (e) => { document.getElementById('shell').classList.add('narrow'); e.target.classList.add('active'); document.getElementById('btnWide').classList.remove('active'); };
+  document.getElementById('btnFail').onclick = () => { failNextInstall = true; showError(lang === 'en' ? 'Next install click will simulate a mount failure & rollback.' : '下次点击任意专家「安装」将模拟挂载失败并回滚状态。'); };
+  document.getElementById('errorClose').onclick = hideError;
+  document.getElementById('searchInput').oninput = (e) => { query = e.target.value; render(); };
+
+  render();
+</script>
+</body>
+</html>

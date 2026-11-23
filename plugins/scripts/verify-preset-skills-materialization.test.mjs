@@ -138,6 +138,14 @@ test('social research preset skills only reference live registered OmniMux runti
     'omnimux-social-listening',
     'omnimux-product-demand',
     'omnimux-content-repurposing',
+    'omnimux-ecom-platform-rules',
+    'omnimux-ecom-market-research',
+    'omnimux-ecom-pricing-strategy',
+    'omnimux-ecom-listing-copy',
+    'omnimux-ecom-visual-qa',
+    'omnimux-ecom-video-script',
+    'omnimux-ecom-ads-diagnosis',
+    'omnimux-ecom-review-voc',
   ]
   const files = [
     ...skillIds.map((id) => join(marketSkillsDir, id, 'SKILL.md')),

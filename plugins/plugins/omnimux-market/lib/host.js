@@ -12,8 +12,8 @@ import { packageRoot, profileDir } from './expert/paths.js';
 import { configureHttpJsonCache } from './http.js';
 import { installSkill, installedSlugs, listInstalled, uninstallSkill } from './install.js';
 import { aggregateSkillSearch } from './skill-aggregate.js';
-import { getSessionModel, setAgentPresetsNotify, setAgentPresetsProvider, setModelCatalogResolver, handleApi, handleIcon, handleWorkshopApi } from './local-api.js';
-import { materializeEnabledMarketExperts } from './expert-market.js';
+import { getSessionModel, setAgentPresetsNotify, setAgentPresetsProvider, setExpertPresetRuntime, setModelCatalogResolver, handleApi, handleIcon, handleWorkshopApi } from './local-api.js';
+import { ExpertPresetRuntime } from './expert-runtime.js';
 import { InventoryService } from './workshop-inventory.js';
 import { QueryService, createWorkshopSources } from './workshop-sources.js';
 import { RequestGuard, canonicalWorkshopOrigin, WORKSHOP_READ_METHODS } from './workshop-request-guard.js';
@@ -412,36 +412,63 @@ export function apply(ctx, config) {
         settingsService.register('omnimux-market', Config, { base: config });
     }
     registerCatalogSkillProvider(ctx);
-    // 注入官方 AgentPresets 服务，作为专家市场的唯一动态权威数据源
-    ctx.inject(['agentPresets'], (c) => {
-        const service = c.agentPresets;
-        if (service && typeof service.list === 'function') {
-            setAgentPresetsProvider(() => service.list());
-        }
-    });
-    // Agent 预设列表变更广播：官方预设菜单只在页面挂载或收到
-    // settings/document-updated（ns=agent-presets，官方转发白名单内事件）时重读列表；
-    // 市场安装/禁用/启动物化后借此免重启即时刷新。事件参数与官方一致：(ns, revision)，
-    // 客户端只消费 ns；revision 无真实来源时给单调递增占位值。
+    // Agent 预设列表变更广播：官方 `@deepseek-ai/dsh-client-ui-agent-preset` 监听
+    // `settings/document-updated` 且命名空间为 `AGENT_PRESET_SETTINGS_NS = 'agent-preset-registry'`。
+    // 市场安装/禁用/启动恢复后借此免重启即时刷新会话下拉与设置页列表。
+    const AGENT_PRESET_SETTINGS_NS = 'agent-preset-registry';
     let agentPresetsNotifyRevision = 0;
-    setAgentPresetsNotify(() => {
+    const notifyAgentPresetsChanged = () => {
         try {
-            ctx.emit('settings/document-updated', 'agent-presets', ++agentPresetsNotifyRevision);
+            ctx.emit('settings/document-updated', AGENT_PRESET_SETTINGS_NS, ++agentPresetsNotifyRevision);
         }
-        catch { }
+        catch (err) {
+            console.warn(`[omnimux-market] failed to emit settings/document-updated: ${err instanceof Error ? err.message : String(err)}`);
+        }
+    };
+    setAgentPresetsNotify(notifyAgentPresetsChanged);
+    // 注入官方 AgentPresets 服务，作为专家市场的唯一动态运行态真源：
+    // - 绑定 Host root baseUrl 保证动态挂载的 DSH Agent-plane 包可正确解析；
+    // - 启动时仅恢复 installed-experts.json 中用户显式安装过的专家，不自动物化未安装项；
+    // - 插件卸载/重载时通过 effect 自动反注册本插件创建的动态预设，防止重复 ID 冲突。
+    ctx.inject(['agentPresets'], (c) => {
+        const rawCtx = c;
+        const resolveBase = rawCtx.root?.baseUrl || rawCtx.baseUrl;
+        const regCtx = (rawCtx.root?.baseUrl && typeof rawCtx.extend === 'function'
+            ? rawCtx.extend({ baseUrl: rawCtx.root.baseUrl })
+            : rawCtx);
+        const service = regCtx.agentPresets ?? rawCtx.agentPresets;
+        if (!service || typeof service.list !== 'function')
+            return;
+        const pluginPackages = typeof rawCtx.get === 'function'
+            ? rawCtx.get('pluginPackages')
+            : undefined;
+        const isPackageResolvable = pluginPackages && typeof pluginPackages.packageOf === 'function' && resolveBase
+            ? (pkg) => pluginPackages.packageOf(pkg, resolveBase) !== undefined
+            : undefined;
+        const runtime = new ExpertPresetRuntime({
+            home: () => dshHome(),
+            registry: {
+                list: () => service.list(),
+                register: typeof service.register === 'function'
+                    ? (definition) => service.register(definition)
+                    : undefined,
+            },
+            isPackageResolvable,
+            onChanged: notifyAgentPresetsChanged,
+        });
+        setAgentPresetsProvider(() => runtime.listOfficial());
+        setExpertPresetRuntime(runtime);
+        void runtime.restoreInstalled().catch((err) => {
+            console.warn(`[omnimux-market] expert restore failed on boot: ${err instanceof Error ? err.message : String(err)}`);
+        });
+        if (typeof rawCtx.effect === 'function') {
+            rawCtx.effect(() => () => {
+                setExpertPresetRuntime(null);
+                setAgentPresetsProvider(null);
+                return runtime.disposeAll();
+            });
+        }
     });
-    // 启动物化：把「已入职」初值但从未落盘的市场专家补写进 $DSH_HOME/.agent-presets/，
-    // 让卡片状态与 Agent 预设列表真实一致。幂等、尊重用户禁用、失败静默不阻塞激活。
-    try {
-        const materialized = materializeEnabledMarketExperts(dshHome());
-        if (materialized.length > 0) {
-            try {
-                ctx.emit('settings/document-updated', 'agent-presets', ++agentPresetsNotifyRevision);
-            }
-            catch { }
-        }
-    }
-    catch { }
 }
 function registerMarketTools(ctx, specs) {
     for (const tool of specs) {

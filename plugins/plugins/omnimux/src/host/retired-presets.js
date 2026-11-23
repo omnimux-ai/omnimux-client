@@ -20,6 +20,10 @@ export const RETIRED_PRESET_IDS = Object.freeze([
   'viral-video-agent',
   'ad-creative-agent',
   'media-creator',
+  'shopee-ops-expert',
+  'youtube-creator-expert',
+  'amazon-operations-expert',
+  'tiktok-ecommerce-expert',
   'marketing-agent',
   'marketing-growth-team',
   'drama-agent',
@@ -33,7 +37,10 @@ export const RETIRED_PRESET_IDS = Object.freeze([
 const RETIRED_PRESET_SET = new Set(RETIRED_PRESET_IDS)
 
 /**
- * Whether `presetId` belongs to the retired preset set (including legacy `expert-*` subagent presets).
+ * Whether `presetId` belongs to the retired preset set, legacy `expert-*`
+ * subagent presets, or optional market `ecom-*` experts (only invoked after
+ * `agent-preset/not-found`, so installed `ecom-*` experts run untouched while
+ * disabled experts cleanly fall back to `omni-agent` on historical session reopen).
  * @param {unknown} presetId
  * @returns {boolean}
  */
@@ -41,7 +48,7 @@ export function isRetiredPresetId(presetId) {
   if (typeof presetId !== 'string') return false
   const normalized = presetId.trim().toLowerCase()
   if (!normalized || normalized === DEFAULT_PRODUCT_PRESET_ID || normalized === 'cordis') return false
-  return RETIRED_PRESET_SET.has(normalized) || normalized.startsWith('expert-')
+  return RETIRED_PRESET_SET.has(normalized) || normalized.startsWith('expert-') || normalized.startsWith('ecom-')
 }
 
 function isPresetNotFoundError(error) {

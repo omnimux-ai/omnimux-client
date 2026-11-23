@@ -159,13 +159,114 @@ export function suiteCompositionText(item, tr) {
   ].join(' · ');
 }
 
-export const DEFAULT_MARKET_EXPERTS = [
-  { id: 'shopee-ops-expert', name: 'Shopee运营专家', nameEn: 'Shopee Ops Expert', description: '负责市场、产品、店铺、品牌和关键词分析的Shopee运营专员。', descriptionEn: 'Shopee operation specialist for market, product, shop, brand and keyword analysis.', avatar: generatePixelAvatarDataUrl('shopee-ops-expert', { size: 96 }), status: 'enabled', group: 'ecommerce' },
-  { id: 'youtube-creator-expert', name: 'YouTube创作者专家', nameEn: 'YouTube Creator Expert', description: '帮助商家利用Topview自有创作者池数据寻找和评估YouTube创作者。', descriptionEn: 'Help merchants find and evaluate YouTube creators using Topview self-owned creator pool data.', avatar: generatePixelAvatarDataUrl('youtube-creator-expert', { size: 96 }), status: 'enabled', group: 'ecommerce' },
-  { id: 'amazon-operations-expert', name: '亚马逊运营专家', nameEn: 'Amazon Operations Expert', description: '专注于亚马逊店铺运营、商品详情优化、广告投放和竞争对手分析，以提高转化率和销售额。', descriptionEn: 'Focused on Amazon store operations, listing optimization, advertising, and competitor analysis to improve conversion', avatar: generatePixelAvatarDataUrl('amazon-operations-expert', { size: 96 }), status: 'enabled', group: 'ecommerce' },
-  { id: 'tiktok-ecommerce-expert', name: 'TikTok电商专家', nameEn: 'TikTok Ecommerce Expert', description: '擅长TikTok短视频销售、创作者合作和增长策略，帮助品牌在TikTok Shop上推出产品。', descriptionEn: 'Expert in TikTok short-video selling, creator partnerships, and growth strategies to help brands launch on TikTok Shop.', avatar: generatePixelAvatarDataUrl('tiktok-ecommerce-expert', { size: 96 }), status: 'enabled', group: 'ecommerce' },
-  { id: 'media-creator', name: '媒体创作者', nameEn: 'Media Creator', description: 'AI内容生成：使用Topview AI创意工具生成视频、图像、数字替身、背景移除、文本转语音和语音克隆。', descriptionEn: 'AI content generation: videos, images, digital avatars, background removal, TTS, and voice cloning using Topview AI', avatar: generatePixelAvatarDataUrl('media-creator', { size: 96 }), status: 'available', group: 'ecommerce' },
+export const EXPERT_STAGE_OPTIONS = [
+  { id: 'all', labelKey: 'expertMarket.stageAll', defaultZh: '全部', defaultEn: 'All' },
+  { id: 'research', labelKey: 'expertMarket.stageResearch', defaultZh: '选品与策略', defaultEn: 'Research & Strategy' },
+  { id: 'production', labelKey: 'expertMarket.stageProduction', defaultZh: '货架与内容生产', defaultEn: 'Listing & Creative' },
+  { id: 'growth', labelKey: 'expertMarket.stageGrowth', defaultZh: '投放与复盘闭环', defaultEn: 'Ads & Feedback Loop' },
+  { id: 'system', labelKey: 'expertMarket.stageSystem', defaultZh: '系统与自建', defaultEn: 'System & Custom' },
 ];
+
+export const DEFAULT_MARKET_EXPERTS = [
+  {
+    id: 'ecom-market-research',
+    name: '市场选品与竞品调研专家',
+    nameEn: 'Market Research & Competitor Analyst',
+    description: '类目容量/CR10/价格带波谷测算、社媒痛点挖掘与竞品拆解，用脚本计算替代心算，输出可验证选品结论。',
+    descriptionEn: 'Category size, CR10, price-band gaps, social pain-point mining, and competitor teardown powered by deterministic scripts.',
+    avatar: generatePixelAvatarDataUrl('ecom-market-research', { size: 96 }),
+    status: 'available',
+    stage: 'research',
+    group: 'ecommerce',
+  },
+  {
+    id: 'ecom-product-strategy',
+    name: '产品定位与定价策略专家',
+    nameEn: 'Product Strategy & Pricing Expert',
+    description: '提炼唯一核心卖点、规划 SKU 角色矩阵、精算含税净利率/盈亏价/券余量，并沉淀进商品库作为全链路真源。',
+    descriptionEn: 'Distills a single core selling point, SKU role matrix, tax-aware margin/break-even/coupon headroom, and syncs truth to Products.',
+    avatar: generatePixelAvatarDataUrl('ecom-product-strategy', { size: 96 }),
+    status: 'available',
+    stage: 'research',
+    group: 'ecommerce',
+  },
+  {
+    id: 'ecom-listing-copy',
+    name: '跨境 Listing 与合规文案专家',
+    nameEn: 'Listing Copy & Compliance Specialist',
+    description: '读取商品库参数真源，产出关键词分层、多语母语 Listing 标题与七段式商详，并通过字数、禁用词与参数溯源校验。',
+    descriptionEn: 'Turns verified product specs into tiered keywords, native multilingual titles and 7-part listings with length, ban-word & spec checks.',
+    avatar: generatePixelAvatarDataUrl('ecom-listing-copy', { size: 96 }),
+    status: 'available',
+    stage: 'production',
+    group: 'ecommerce',
+  },
+  {
+    id: 'ecom-visual-studio',
+    name: '电商主图与商详视觉专家',
+    nameEn: 'E-commerce Main Image & Visual Designer',
+    description: '锁定商品实拍外观与色值，规划 9 图视觉矩阵与商详排版，驱动创作画布批量出图并执行白底/主体占比像素质检。',
+    descriptionEn: 'Plans 9-image visual stacks and A+ layouts locked to real product photos, drives Canvas generation, and runs pixel compliance checks.',
+    avatar: generatePixelAvatarDataUrl('ecom-visual-studio', { size: 96 }),
+    status: 'available',
+    stage: 'production',
+    group: 'ecommerce',
+  },
+  {
+    id: 'ecom-video-director',
+    name: '带货短视频与爆款复刻导演',
+    nameEn: 'Shoppable Video & Viral Replication Director',
+    description: '串联灵感 5D 拆解、资产与数字人、画布分镜生片与视频剪辑工坊，把控 3 秒 Hook、口播时长与参数溯源校验。',
+    descriptionEn: 'Connects 5D inspiration breakdowns, assets/avatars, Canvas storyboards, and Clip timeline with 3s hook, duration & spec checks.',
+    avatar: generatePixelAvatarDataUrl('ecom-video-director', { size: 96 }),
+    status: 'available',
+    stage: 'production',
+    group: 'ecommerce',
+  },
+  {
+    id: 'ecom-ads-optimizer',
+    name: '跨境广告诊断与买量优化专家',
+    nameEn: 'Cross-Border Ads & Growth Diagnostics Expert',
+    description: '测算盈亏线 ROAS 与可承受 CPC，按五层转化漏斗定位点击/加购/转化瓶颈，输出分级调优清单并定向回流素材优化。',
+    descriptionEn: 'Computes break-even ROAS & max CPC, diagnoses 5-stage ad funnels, outputs P0/P1/P2 action checklists and targeted creative feedback.',
+    avatar: generatePixelAvatarDataUrl('ecom-ads-optimizer', { size: 96 }),
+    status: 'available',
+    stage: 'growth',
+    group: 'ecommerce',
+  },
+  {
+    id: 'ecom-review-voc',
+    name: '评论 VOC 与售后话术专家',
+    nameEn: 'Review VOC & Customer Care Specialist',
+    description: '差评 8 类归因与误解型差评识别、好评卖点提炼，输出商详防误解补丁、包装提示图需求与多语合规售后回复话术。',
+    descriptionEn: 'Classifies negative reviews across 8 root causes to isolate fixable misunderstandings, emitting listing patches and compliant replies.',
+    avatar: generatePixelAvatarDataUrl('ecom-review-voc', { size: 96 }),
+    status: 'available',
+    stage: 'growth',
+    group: 'ecommerce',
+  },
+  {
+    id: 'ecom-creator-growth',
+    name: '达人建联与社媒增长专家',
+    nameEn: 'Creator Partnerships & Social Growth Expert',
+    description: '基于公开社媒数据评估 TikTok/YouTube/IG 达人与爆款信号，输出建联 Brief、内容排期与增长复盘。',
+    descriptionEn: 'Evaluates TikTok/YouTube/IG creators & viral outliers from public data, drafting outreach briefs, schedules, and growth recaps.',
+    avatar: generatePixelAvatarDataUrl('ecom-creator-growth', { size: 96 }),
+    status: 'available',
+    stage: 'growth',
+    group: 'ecommerce',
+  },
+];
+
+export function getExpertStageLabel(stage, tr, isEn) {
+  const opt = EXPERT_STAGE_OPTIONS.find((it) => it.id === stage);
+  if (!opt) return '';
+  if (typeof tr === 'function') {
+    const localized = tr(opt.labelKey);
+    if (localized && localized !== opt.labelKey) return localized;
+  }
+  return isEn ? opt.defaultEn : opt.defaultZh;
+}
 
 export function resolveExpertAvatar(item, size = 96) {
   if (!item) return '';
@@ -343,10 +444,12 @@ export function setSingleExpertStatus(setItems, id, status) {
 }
 
 export async function executeToggleExpert(item, state, apiFn) {
-  if (state.expertMarketToggling) return;
+  if (!item || state.expertMarketToggling) return;
+  if (item.status === 'system' || item.status === 'custom' || item.status === 'coming_soon') return;
   const isEnabled = item.status === 'enabled';
   const action = isEnabled ? 'expertMarketDisable' : 'expertMarketInstall';
   const nextStatus = isEnabled ? 'disabled' : 'enabled';
+  if (typeof state.setExpertMarketError === 'function') state.setExpertMarketError('');
   setSingleExpertStatus(state.setExpertMarketItems, item.id, nextStatus);
   state.setExpertMarketToggling(item.id);
   const runApi = apiFn || (typeof api === 'function' ? api : null);
@@ -356,10 +459,16 @@ export async function executeToggleExpert(item, state, apiFn) {
   }
   try {
     const res = await runApi(action, { id: item.id });
+    if (res && res.ok === false) {
+      throw new Error(res.error || (isEnabled ? '禁用专家失败' : '安装专家失败'));
+    }
     const finalStatus = res ? (res.status || nextStatus) : nextStatus;
     setSingleExpertStatus(state.setExpertMarketItems, item.id, finalStatus);
-  } catch {
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err || (isEnabled ? '禁用专家失败' : '安装专家失败'));
+    console.warn(`[omnimux-market] ${action}(${item.id}) failed: ${message}`);
     setSingleExpertStatus(state.setExpertMarketItems, item.id, item.status);
+    if (typeof state.setExpertMarketError === 'function') state.setExpertMarketError(message);
   } finally {
     state.setExpertMarketToggling('');
   }
