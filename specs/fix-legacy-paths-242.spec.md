@@ -36,3 +36,8 @@
   - 必须改的理由：同样依赖已删除的 `app/.github/workflows/ci.yml`；当前根 workflow 不含该历史 job 结构，保留会永久 ENOENT。
   - 新期望证据：`classify-ci-changes.mjs` 的产品/打包分类断言全部保留，并新增当前 `release.yml` 的 Windows/macOS 构建步骤断言。
 
+- `plugins/scripts/live-qa.test.mjs` :: `stage selection and actual runtime discovery reject empty or unknown targets`
+  - 原断言：`targets.length === 7`，`six-methods-and-disposer` 适配器数量为 6。
+  - 必须改的理由：`#245` 新落主的 `omnimux-tiktok-selection` 已注册第 8 个 Stage，`live-stage-contracts.mjs` 实际返回 8 个目标、7 个 `six-methods-and-disposer`；旧计数会阻断所有后续 PR。
+  - 新期望证据：`captureStageContracts(repo)` 返回 8 个独立 Stage，其中 7 个使用 `six-methods-and-disposer`。
+
