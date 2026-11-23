@@ -7,7 +7,9 @@ import { ClipDomainError, clipErrorStatus, clipErrorValue, isClipRevision, isCli
 import { readCanvasBinding, resolveWorkflowBinding, sameBinding } from '../live/command-broker.js'
 import { MAX_RECEIPT_BYTES } from '../live/snapshot.js'
 import { assertProjectId, ensureClipDirs, exportMp4Path } from '../paths.js'
+import { inspectStagedMedia, persistToClipVault } from '../media/clipVault.js'
 import { reconcileProjectMedia, resolveProjectMediaStream } from '../media/reconcile.js'
+import { isReferenceId } from '../timeline/nativeProjectFields.js'
 import { createProjectStore } from '../store/projectStore.js'
 import { requestRejection } from './request-authorization.js'
 
@@ -16,6 +18,9 @@ export const CLIP_VERSION = '0.1.0'
 export const RAW_EXPORT_CONTENT_TYPE = 'application/octet-stream'
 export const EXPORT_UPLOAD_MAX_BYTES = 2 * 1024 * 1024 * 1024
 export const EXPORT_UPLOAD_PROOF_HEADER = 'x-clip-export-proof'
+export const MEDIA_NAME_HEADER = 'x-clip-media-name'
+export const MEDIA_MIME_HEADER = 'x-clip-media-mime'
+export const MEDIA_BINDING_HEADER = 'x-clip-media-binding'
 
 const DEFAULT_FS = { createWriteStream, renameSync, rmSync, statSync, writeFileSync }
 const SAVE_EXPORT_PATH = /^\/projects\/[^/]+\/save-export$/
@@ -293,6 +298,59 @@ export function createClipDispatcher({ paths, store, fs = DEFAULT_FS, broker, ex
       }
 
       const mediaBytes = path.match(MEDIA_BYTES_PATH)
+      if (mediaBytes && method === 'PUT') {
+        const id = assertProjectId(decodeURIComponent(mediaBytes[1]))
+        const mediaId = decodeURIComponent(mediaBytes[2])
+        if (!isReferenceId(mediaId)) throw ClipDomainError.invalidId('invalid media id')
+        if (!req.tempPath) throw ClipDomainError.invalidJson('Media bytes upload body is required.')
+        let envelope
+        try {
+          envelope = store.load(id)
+        } catch (error) {
+          if (error?.code !== 'not-found') throw error
+          envelope = null
+        }
+        const sessionId = req.window?.getViewport()?.sessionId
+        let binding = envelope?.binding
+        if (!envelope && typeof req.headers?.[MEDIA_BINDING_HEADER] === 'string' && req.headers[MEDIA_BINDING_HEADER]) {
+          let parsed
+          try {
+            parsed = JSON.parse(req.headers[MEDIA_BINDING_HEADER])
+          } catch {
+            throw ClipDomainError.invalidJson('Invalid x-clip-media-binding header.')
+          }
+          binding = parsed && typeof parsed === 'object' ? { ...parsed, projectId: id } : undefined
+        }
+        const workflow = binding ? getWorkflow(binding, sessionId).workflow : undefined
+        const rawNameHeader = req.headers?.[MEDIA_NAME_HEADER]
+        const fileName = typeof rawNameHeader === 'string' && rawNameHeader
+          ? (/%(?![0-9A-Fa-f]{2})/.test(rawNameHeader) ? rawNameHeader : decodeURIComponent(rawNameHeader))
+          : undefined
+        const claimedMimeType = typeof req.headers?.[MEDIA_MIME_HEADER] === 'string' ? req.headers[MEDIA_MIME_HEADER] : undefined
+        const staged = await inspectStagedMedia({ paths, tempPath: req.tempPath, fileName, claimedMimeType, signal: req.signal })
+        if (binding && typeof workflow?.ingestClipMedia === 'function') {
+          const ingested = await workflow.ingestClipMedia(
+            binding,
+            { tempPath: staged.stagedPath, fileName: staged.fileName, mimeType: staged.mimeType, sha256: staged.sha256 },
+            sessionId,
+            req.signal,
+          )
+          if (ingested) {
+            return {
+              status: 200,
+              body: {
+                handle: ingested.handle,
+                sha256: ingested.sha256,
+                size: ingested.size || staged.size,
+                mimeType: ingested.mimeType,
+                url: ingested.url,
+              },
+            }
+          }
+        }
+        const vaulted = await persistToClipVault({ paths, ...staged, signal: req.signal })
+        return { status: 200, body: vaulted }
+      }
       if (mediaBytes && (method === 'GET' || method === 'HEAD')) {
         const id = assertProjectId(decodeURIComponent(mediaBytes[1]))
         const mediaId = decodeURIComponent(mediaBytes[2])
@@ -401,6 +459,7 @@ export function registerClipRoutes(webServer, dispatcher, deps = {}) {
           throw new ClipDomainError('WINDOW_UNAUTHORIZED', 'An authenticated Clip window is required.')
         }
         const versioned = method === 'POST' && path.match(EXPORT_UPLOAD_PATH)
+        const mediaUpload = method === 'PUT' && MEDIA_BYTES_PATH.test(path)
         let exportUpload
         if (versioned) {
           if (!hasRawExportContent(req)) {
@@ -408,7 +467,10 @@ export function registerClipRoutes(webServer, dispatcher, deps = {}) {
           }
           exportUpload = dispatcher.authorizeExportUpload(versioned[1], req.headers?.[EXPORT_UPLOAD_PROOF_HEADER], searchParams.get('projectId'))
         }
-        if (versioned || (method === 'POST' && hasRawExportContent(req) && SAVE_EXPORT_PATH.test(path))) {
+        if (mediaUpload && !hasRawExportContent(req)) {
+          return sendJson(res, 415, { error: 'unsupported-media', message: 'Upload media bytes as application/octet-stream.' })
+        }
+        if (versioned || mediaUpload || (method === 'POST' && hasRawExportContent(req) && SAVE_EXPORT_PATH.test(path))) {
           tempPath = await writeRawUpload(req, paths.tmpDir, fs)
         }
         const wantsBody = !tempPath && (method === 'POST' || method === 'PUT')

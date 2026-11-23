@@ -176,9 +176,83 @@ export function createEditorSession({ storage, native, workbench, document, onEr
     owner.status = 'saving'
     owner.retryOnViewport = false
     show(owner)
+    let outgoing = snapshot
+    if (typeof storage.uploadMediaBytes === 'function') {
+      const pendingItems = (snapshot.project?.mediaLibrary?.items ?? []).filter(item => {
+        if (item.omnimuxSource?.handle || item.omnimuxSource?.url || item.missing || item.isPlaceholder) return false
+        const blob = snapshot.media?.[item.id]
+        return blob instanceof Blob && blob.size > 0
+      })
+      if (pendingItems.length > 0) {
+        const uploadedSources = new Map()
+        try {
+          for (const item of pendingItems) {
+            if (!canWrite()) return { persisted: true, synchronized: false }
+            const blob = snapshot.media[item.id]
+            const uploaded = await storage.uploadMediaBytes(snapshot.project.id, item.id, blob, {
+              name: item.sourceFile?.name || item.name,
+              mimeType: blob.type,
+              binding: snapshot.binding,
+            })
+            if (uploaded?.handle && uploaded.sha256) {
+              const handle = uploaded.handle
+              const stableId = item.omnimuxSource?.id
+                ?? (handle.scope === 'project-asset' ? `project:${handle.workspaceId}:${handle.assetId ?? handle.rel}` : `vault:${uploaded.sha256}`)
+              uploadedSources.set(item.id, {
+                id: stableId,
+                version: `sha256:${uploaded.sha256}`,
+                digest: uploaded.sha256,
+                handle,
+                ...(uploaded.url ? { url: uploaded.url } : {}),
+              })
+            }
+          }
+        } catch (error) {
+          owner.retryOnViewport = awaitingConnection(error.code)
+          owner.status = owner.retryOnViewport ? 'offline' : 'saveFailed'
+          show(owner)
+          return { persisted: true, synchronized: false }
+        }
+        if (uploadedSources.size > 0) {
+          const patchItems = items => items.map(item => {
+            const nextSource = uploadedSources.get(item.id)
+            if (!nextSource || item.omnimuxSource?.handle) return item
+            return {
+              ...item,
+              omnimuxSource: nextSource,
+              sourceRef: { ...item.sourceRef, kind: 'indexeddb', key: item.id, digest: nextSource.digest },
+            }
+          })
+          outgoing = {
+            ...snapshot,
+            project: {
+              ...snapshot.project,
+              mediaLibrary: { ...snapshot.project.mediaLibrary, items: patchItems(snapshot.project.mediaLibrary.items) },
+            },
+          }
+          for (const [mediaId, nextSource] of uploadedSources.entries()) {
+            native.attachMediaHandle?.(snapshot.project.id, mediaId, nextSource)
+          }
+          if (owner.record === snapshot) {
+            const refreshed = native.capture?.()
+            if (refreshed?.project?.id === snapshot.project.id) owner.fingerprint = refreshed.fingerprint
+            owner.record = outgoing
+          } else if (owner.record?.project?.id === snapshot.project.id) {
+            owner.record = {
+              ...owner.record,
+              project: {
+                ...owner.record.project,
+                mediaLibrary: { ...owner.record.project.mediaLibrary, items: patchItems(owner.record.project.mediaLibrary.items) },
+              },
+            }
+          }
+          await storage.writeLocal(outgoing, receipt)
+        }
+      }
+    }
     let result
     try {
-      result = await storage.writeHost(snapshot)
+      result = await storage.writeHost(outgoing)
     } catch (error) {
       if (error.code === 'REVISION_CONFLICT' || error.code === 'revision-conflict') {
         try {

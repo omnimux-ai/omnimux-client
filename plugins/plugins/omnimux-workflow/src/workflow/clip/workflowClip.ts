@@ -3,8 +3,12 @@ import { isCanvasClipBinding, type CanvasClipBinding } from '../../canvas/bridge
 import { VIDEO_COMPOSITION_NODE_WIDTH, clipExportMediaUrl, planClipExportDownstream } from '../../canvas/nodes/definitions/videoCompositionDownstream.ts';
 import type { CanvasWorkspaceSnapshot, SerializedCanvasNode } from '../../shared/canvasTypes.ts';
 import { planCanvasInputMutation } from '../../shared/graph/canvasInputMutationGateway.ts';
-import { looksAbsolutePath } from '../../shared/localMedia.ts';
+import { looksAbsolutePath, materialTypeFromFilename, projectFileMediaUrl } from '../../shared/localMedia.ts';
+import { resolveProjectPaths } from '../../projects/paths.ts';
+import { readMediaContentDigest } from '../../projects/mediaRevision.ts';
+import { copyFileIntoDir } from '../ingest/IngestionPipeline.ts';
 import { retryWorkspaceVersionConflict } from '../graph/GraphMutator.ts';
+import type { ProjectAssetsStore } from '../workspace/ProjectAssetsStore.ts';
 import type { WorkspaceStore } from '../workspace/WorkspaceStore.ts';
 import { WorkflowStoreError } from '../workspace/WorkflowStoreError.ts';
 import type { ResolvedUpstreamNodeSource } from '../media/workflowMediaProviders.ts';
@@ -32,6 +36,8 @@ interface StoredExportReceipt extends ExportRevision {
 
 interface WorkflowClipOptions {
   store: Pick<WorkspaceStore, 'get' | 'save'>;
+  assetsStore?: Pick<ProjectAssetsStore, 'get' | 'registerGenerated'>;
+  resolveProjectRoot?: (workspaceId: string) => { path: string } | null;
   canAccessWorkspace?: (workspaceId: string, sessionId: string) => boolean;
   resolveNodeSources?: (
     workspaceId: string,
@@ -39,6 +45,30 @@ interface WorkflowClipOptions {
     auth: { sessionId?: string },
     signal?: AbortSignal,
   ) => Promise<ResolvedUpstreamNodeSource[]>;
+}
+
+export interface IngestClipMediaInput {
+  tempPath: string;
+  fileName: string;
+  mimeType: string;
+  sha256: string;
+}
+
+export interface IngestClipMediaResult {
+  assetId: string;
+  relativePath: string;
+  sha256: string;
+  size: number;
+  mimeType: string;
+  url: string;
+  handle: {
+    v: 1;
+    scope: 'project-asset';
+    workspaceId: string;
+    assetId: string;
+    rel: string;
+    sha256: string;
+  };
 }
 
 function validRevision(value: unknown): value is number {
@@ -102,7 +132,7 @@ function committed(workspaceVersion: number) {
   return { status: 'committed' as const, canvasCommitted: true as const, workspaceVersion };
 }
 
-export function createWorkflowClipService({ store, canAccessWorkspace, resolveNodeSources }: WorkflowClipOptions) {
+export function createWorkflowClipService({ store, assetsStore, resolveProjectRoot, canAccessWorkspace, resolveNodeSources }: WorkflowClipOptions) {
   return {
     resolveBinding(input: CanvasClipBinding, sessionId?: string) {
       assertBinding(input);
@@ -147,6 +177,90 @@ export function createWorkflowClipService({ store, canAccessWorkspace, resolveNo
         sources.push(...resolved);
       }
       return { workspaceId, nodeId, projectId, sources };
+    },
+
+    async ingestClipMedia(
+      input: CanvasClipBinding,
+      media: IngestClipMediaInput,
+      sessionId?: string,
+      signal?: AbortSignal,
+    ): Promise<IngestClipMediaResult | null> {
+      assertBinding(input);
+      const { workspaceId } = input;
+      if (sessionId !== undefined && (typeof sessionId !== 'string' || !sessionId
+        || !canAccessWorkspace?.(workspaceId, sessionId))) {
+        throw new WorkflowStoreError('outside-project-boundary', 'The canvas does not belong to the requested session workspace.');
+      }
+      boundNode(store.get(workspaceId), input);
+      if (!assetsStore || !resolveProjectRoot) return null;
+      const bound = resolveProjectRoot(workspaceId);
+      if (!bound) return null;
+      const paths = resolveProjectPaths(bound.path);
+      const expectedDigest = typeof media.sha256 === 'string' && /^[a-f0-9]{64}$/u.test(media.sha256)
+        ? media.sha256
+        : await readMediaContentDigest(media.tempPath, signal);
+      // Reuse an existing identical project asset if already stored under the project root.
+      const existing = assetsStore.get(workspaceId).items.find((item) => item.sha256 === expectedDigest && item.relative_path);
+      if (existing) {
+        const url = projectFileMediaUrl(workspaceId, existing.relative_path, expectedDigest);
+        return {
+          assetId: existing.id,
+          relativePath: existing.relative_path,
+          sha256: expectedDigest,
+          size: typeof existing.size === 'number' ? existing.size : 0,
+          mimeType: existing.mimeType || media.mimeType,
+          url,
+          handle: {
+            v: 1,
+            scope: 'project-asset',
+            workspaceId,
+            assetId: existing.id,
+            rel: existing.relative_path,
+            sha256: expectedDigest,
+          },
+        };
+      }
+      const copied = await copyFileIntoDir({
+        projectRoot: paths.projectRoot,
+        destDir: paths.importedDir,
+        sourceAbs: media.tempPath,
+        originalName: media.fileName,
+        checkMedia: false,
+      });
+      const verifiedDigest = await readMediaContentDigest(copied.destAbs, signal);
+      if (verifiedDigest !== expectedDigest) {
+        throw new WorkflowStoreError('media-version-mismatch', 'Uploaded media bytes changed during project ingestion.');
+      }
+      const kind = materialTypeFromFilename(copied.name, media.mimeType);
+      const fileType = kind === 'video' || kind === 'audio' || kind === 'image' ? kind : 'doc';
+      const doc = assetsStore.registerGenerated(workspaceId, {
+        relative_path: copied.relativePath,
+        name: copied.name,
+        type: fileType,
+        size: copied.size,
+        mimeType: media.mimeType,
+        sha256: verifiedDigest,
+        lineage: { kind: 'clip_local_import', sourceCompositionNodeId: input.nodeId, clipProjectId: input.projectId, canvasId: workspaceId },
+      });
+      const registered = doc.items.find((row) => row.relative_path === copied.relativePath);
+      const assetId = registered?.id ?? copied.name;
+      const url = projectFileMediaUrl(workspaceId, copied.relativePath, verifiedDigest);
+      return {
+        assetId,
+        relativePath: copied.relativePath,
+        sha256: verifiedDigest,
+        size: copied.size,
+        mimeType: media.mimeType,
+        url,
+        handle: {
+          v: 1,
+          scope: 'project-asset',
+          workspaceId,
+          assetId,
+          rel: copied.relativePath,
+          sha256: verifiedDigest,
+        },
+      };
     },
 
     saveDraft(input: SaveDraftInput) {

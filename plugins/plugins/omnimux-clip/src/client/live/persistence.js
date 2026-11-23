@@ -170,6 +170,22 @@ export function createClipPersistence(window) {
         body: payload,
       })
     },
+    async uploadMediaBytes(id, mediaId, blob, { name, mimeType, binding } = {}) {
+      if (binding) await window.__omnimuxHubEvents?.pushViewport?.()
+      const headers = {
+        'Content-Type': 'application/octet-stream',
+        ...(name ? { 'x-clip-media-name': encodeURIComponent(name) } : {}),
+        ...(mimeType || blob?.type ? { 'x-clip-media-mime': mimeType || blob.type } : {}),
+        ...(binding ? { 'x-clip-media-binding': JSON.stringify(binding) } : {}),
+      }
+      return requestClip(`${projectPath(id)}/media/${encodeURIComponent(mediaId)}/bytes`, {
+        ...(binding ? { fetcher: withWindow } : {}),
+        method: 'PUT',
+        timeout: 120_000,
+        headers,
+        body: blob,
+      })
+    },
     writeHost: (record, options = {}) => requestClip(projectPath(record.project.id), {
       ...(record.binding ? { fetcher: withWindow } : {}),
       method: 'PUT',

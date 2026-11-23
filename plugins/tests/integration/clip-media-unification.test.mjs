@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
-import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -14,7 +14,9 @@ import { createWorkspaceStore } from '../../plugins/omnimux-workflow/src/workflo
 import { createProjectAssetsStore } from '../../plugins/omnimux-workflow/src/workflow/workspace/ProjectAssetsStore.ts'
 import { createWorkflowMediaSupport } from '../../plugins/omnimux-workflow/src/workflow/media/workflowMediaProviders.ts'
 import { createWorkflowClipService } from '../../plugins/omnimux-workflow/src/workflow/clip/workflowClip.ts'
+import { createEditorSession } from '../../plugins/omnimux-clip/src/client/live/editor-session.js'
 import { createClipDispatcher, registerClipRoutes } from '../../plugins/omnimux-clip/src/http/routes.js'
+import { createClipVaultMediaProvider } from '../../plugins/omnimux-clip/src/media/clipVault.js'
 import { resolveClipPaths } from '../../plugins/omnimux-clip/src/paths.js'
 import { createProjectStore as createClipProjectStore } from '../../plugins/omnimux-clip/src/store/projectStore.js'
 
@@ -249,5 +251,335 @@ describe('4-plugin cross-seam media unification (omnimux + assets + workflow + c
     })
     assert.equal(tamperRes.status, 409)
     assert.equal((await tamperRes.json()).error, 'media-version-mismatch')
+  })
+
+  it('AC-CMU-04: persists canvas-bound local uploads to ProjectRoot/assets/imported and standalone/free-canvas uploads to clip-vault', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'clip-media-cmu04-'))
+    temps.push(home)
+
+    const mediaResolver = createMediaResolver()
+    const clipPaths = resolveClipPaths({ homeDir: home })
+    mediaResolver.registerProvider(createClipVaultMediaProvider({ paths: clipPaths }))
+
+    const libraryRoot = join(home, 'projects-library')
+    mkdirSync(libraryRoot, { recursive: true })
+    const wfProjects = createWorkflowProjectStore({ libraryRoot })
+    const wfProject = wfProjects.create('Bound Project', { canvasWorkspaceIds: ['ws_bound'] })
+    const boundWsId = wfProject.pages[0].canvasWorkspaceId
+    const freeWsId = 'ws_free_unbound'
+    const resolveProjectRoot = (id) => wfProjects.findByCanvasWorkspaceId(id)
+    const wfStore = createWorkspaceStore({ workspacesDir: join(home, 'workspaces'), resolveProjectRoot })
+    const boundCanvas = wfStore.create('Bound Canvas', boundWsId)
+    const freeCanvas = wfStore.create('Free Canvas', freeWsId)
+    const wfAssets = createProjectAssetsStore({ workspacesDir: wfStore.workspacesDir, resolveProjectRoot })
+    const wfMediaDir = join(home, 'wf-media')
+    mkdirSync(wfMediaDir, { recursive: true })
+
+    const boundClipId = 'clip_bound_1'
+    const freeClipId = 'clip_free_1'
+    const studioClipId = 'clip_studio_1'
+    wfStore.save(boundWsId, {
+      expectedVersion: boundCanvas.version,
+      nodes: [{ id: 'n_bound', type: 'video_composition', position: { x: 0, y: 0 }, data: { title: 'Bound', projectId: boundClipId } }],
+      edges: [],
+    })
+    wfStore.save(freeWsId, {
+      expectedVersion: freeCanvas.version,
+      nodes: [{ id: 'n_free', type: 'video_composition', position: { x: 0, y: 0 }, data: { title: 'Free', projectId: freeClipId } }],
+      edges: [],
+    })
+
+    const canAccessWorkspace = (id, sessionId) => (id === boundWsId || id === freeWsId) && sessionId === 'sess-cmu04'
+    const wfMediaSupport = createWorkflowMediaSupport({
+      store: wfStore,
+      assetsStore: wfAssets,
+      resolveAssetsRoot: resolveProjectRoot,
+      mediaDir: wfMediaDir,
+      canAccessWorkspace,
+    })
+    mediaResolver.registerProvider(wfMediaSupport.projectAssetProvider)
+    mediaResolver.registerProvider(wfMediaSupport.canvasNodeProvider)
+    const workflowClip = createWorkflowClipService({
+      store: wfStore,
+      assetsStore: wfAssets,
+      resolveProjectRoot,
+      resolveNodeSources: wfMediaSupport.resolveNodeSources,
+      canAccessWorkspace,
+    })
+
+    const clipStore = createClipProjectStore({ paths: clipPaths })
+    const boundBinding = { workspaceId: boundWsId, nodeId: 'n_bound', projectId: boundClipId }
+    const freeBinding = { workspaceId: freeWsId, nodeId: 'n_free', projectId: freeClipId }
+    clipStore.save(boundClipId, {
+      id: boundClipId,
+      name: 'Bound Clip',
+      settings: { width: 720, height: 1280, frameRate: 30 },
+      timeline: { tracks: [], duration: 0 },
+      mediaLibrary: { items: [] },
+    }, { binding: boundBinding, expectedRevision: 0 })
+    clipStore.save(freeClipId, {
+      id: freeClipId,
+      name: 'Free Clip',
+      settings: { width: 720, height: 1280, frameRate: 30 },
+      timeline: { tracks: [], duration: 0 },
+      mediaLibrary: { items: [] },
+    }, { binding: freeBinding, expectedRevision: 0 })
+
+    const dispatcher = createClipDispatcher({
+      store: clipStore,
+      paths: clipPaths,
+      getWorkflowClip: () => workflowClip,
+      getMediaResolver: () => mediaResolver,
+    })
+
+    let routeHandler
+    const webServer = { register(def) { routeHandler = def.handler; return () => {} } }
+    registerClipRoutes(webServer, dispatcher, {
+      paths: clipPaths,
+      getConnection: () => ({ requestRejection: () => undefined }),
+      getHubEvents: () => ({
+        authorizeWindow: (req) => {
+          const sess = req.headers['x-session']
+          if (!sess) return null
+          return { windowInstanceId: String(sess), isAlive: () => true, getViewport: () => ({ ok: true, sessionId: String(sess) }) }
+        },
+      }),
+    })
+
+    const server = createServer((req, res) => routeHandler(req, res))
+    servers.push(server)
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
+    const base = `http://127.0.0.1:${server.address().port}`
+
+    const localVideoBytes = Buffer.from('\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00mp42isom-local-drag')
+    const localVideoSha = sha256(localVideoBytes)
+    const studioWavBytes = Buffer.from('RIFF\x24\x00\x00\x00WAVEfmt studio-mic-recording')
+    const studioWavSha = sha256(studioWavBytes)
+    const freePngBytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52])
+    const freePngSha = sha256(freePngBytes)
+
+    // 1. Unauthorized session cannot upload into a bound canvas project
+    const deniedRes = await fetch(`${base}/omnimux-clip/api/projects/${boundClipId}/media/m_local/bytes`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/octet-stream', 'x-clip-media-name': 'local.mp4', 'x-session': 'other-sess' },
+      body: localVideoBytes,
+    })
+    assert.equal(deniedRes.status, 403)
+
+    // 2. Authorized canvas-bound upload lands in <ProjectRoot>/assets/imported/ + .omnimux/assets.json
+    const boundUp = await fetch(`${base}/omnimux-clip/api/projects/${boundClipId}/media/m_local/bytes`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/octet-stream', 'x-clip-media-name': encodeURIComponent('拍摄素材.mp4'), 'x-session': 'sess-cmu04' },
+      body: localVideoBytes,
+    })
+    assert.equal(boundUp.status, 200)
+    const boundBody = await boundUp.json()
+    assert.equal(boundBody.sha256, localVideoSha)
+    assert.equal(boundBody.handle.scope, 'project-asset')
+    assert.equal(boundBody.handle.workspaceId, boundWsId)
+    assert.ok(boundBody.handle.rel.startsWith('assets/imported/'))
+    assert.equal(existsSync(join(wfProject.path, boundBody.handle.rel)), true)
+    const manifest = JSON.parse(readFileSync(join(wfProject.path, '.omnimux', 'assets.json'), 'utf8'))
+    assert.ok(manifest.items.some(entry => entry.relative_path === boundBody.handle.rel && entry.sha256 === localVideoSha))
+
+    // Dedup: uploading identical bytes returns the same asset rel without creating a second file
+    const boundDup = await fetch(`${base}/omnimux-clip/api/projects/${boundClipId}/media/m_local2/bytes`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/octet-stream', 'x-clip-media-name': 'copy.mp4', 'x-session': 'sess-cmu04' },
+      body: localVideoBytes,
+    })
+    assert.equal(boundDup.status, 200)
+    assert.equal((await boundDup.json()).handle.rel, boundBody.handle.rel)
+
+    // Save handle on Host project, then verify GET .../bytes streams exact bytes (surviving IDB clear)
+    clipStore.save(boundClipId, {
+      id: boundClipId,
+      name: 'Bound Clip',
+      settings: { width: 720, height: 1280, frameRate: 30 },
+      timeline: { tracks: [], duration: 0 },
+      mediaLibrary: {
+        items: [{
+          id: 'm_local',
+          name: '拍摄素材.mp4',
+          type: 'video',
+          omnimuxSource: { id: 'local:1', version: `sha256:${localVideoSha}`, digest: localVideoSha, handle: boundBody.handle },
+        }],
+      },
+    }, { binding: boundBinding, expectedRevision: 1 })
+    const boundDown = await fetch(`${base}/omnimux-clip/api/projects/${boundClipId}/media/m_local/bytes`, {
+      headers: { 'x-session': 'sess-cmu04' },
+    })
+    assert.equal(boundDown.status, 200)
+    assert.deepEqual(Buffer.from(await boundDown.arrayBuffer()), localVideoBytes)
+
+    // 3. Standalone Studio first-save upload (project not yet on Host) lands in clip-vault
+    const studioUp = await fetch(`${base}/omnimux-clip/api/projects/${studioClipId}/media/m_mic/bytes`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/octet-stream', 'x-clip-media-name': 'mic.wav' },
+      body: studioWavBytes,
+    })
+    assert.equal(studioUp.status, 200)
+    const studioBody = await studioUp.json()
+    assert.equal(studioBody.handle.scope, 'clip-vault')
+    assert.equal(studioBody.handle.sha256, studioWavSha)
+    clipStore.save(studioClipId, {
+      id: studioClipId,
+      name: 'Studio Clip',
+      settings: { width: 720, height: 1280, frameRate: 30 },
+      timeline: { tracks: [], duration: 0 },
+      mediaLibrary: {
+        items: [{
+          id: 'm_mic',
+          name: 'mic.wav',
+          type: 'audio',
+          omnimuxSource: { id: `vault:${studioWavSha}`, version: `sha256:${studioWavSha}`, digest: studioWavSha, handle: studioBody.handle },
+        }],
+      },
+    }, { expectedRevision: 0 })
+    const studioDown = await fetch(`${base}/omnimux-clip/api/projects/${studioClipId}/media/m_mic/bytes`)
+    assert.equal(studioDown.status, 200)
+    assert.deepEqual(Buffer.from(await studioDown.arrayBuffer()), studioWavBytes)
+
+    // 4. Unbound free canvas falls back cleanly to clip-vault and streams back
+    const freeUp = await fetch(`${base}/omnimux-clip/api/projects/${freeClipId}/media/m_png/bytes`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/octet-stream', 'x-clip-media-name': 'overlay.png', 'x-session': 'sess-cmu04' },
+      body: freePngBytes,
+    })
+    assert.equal(freeUp.status, 200)
+    const freeBody = await freeUp.json()
+    assert.equal(freeBody.handle.scope, 'clip-vault')
+    assert.equal(freeBody.handle.sha256, freePngSha)
+    clipStore.save(freeClipId, {
+      id: freeClipId,
+      name: 'Free Clip',
+      settings: { width: 720, height: 1280, frameRate: 30 },
+      timeline: { tracks: [], duration: 0 },
+      mediaLibrary: {
+        items: [{
+          id: 'm_png',
+          name: 'overlay.png',
+          type: 'image',
+          omnimuxSource: { id: `vault:${freePngSha}`, version: `sha256:${freePngSha}`, digest: freePngSha, handle: freeBody.handle },
+        }],
+      },
+    }, { binding: freeBinding, expectedRevision: 1 })
+    const freeDown = await fetch(`${base}/omnimux-clip/api/projects/${freeClipId}/media/m_png/bytes`, {
+      headers: { 'x-session': 'sess-cmu04' },
+    })
+    assert.equal(freeDown.status, 200)
+    assert.deepEqual(Buffer.from(await freeDown.arrayBuffer()), freePngBytes)
+  })
+
+  it('AC-CMU-04: editor-session flush uploads local blobs before writeHost and blocks synchronization on upload failure', async () => {
+    const localBlob = new Blob([Buffer.from('RIFF\x24\x00\x00\x00WAVEfmt live-flush')], { type: 'audio/wav' })
+    const expectedSha = sha256(Buffer.from(await localBlob.arrayBuffer()))
+    const callOrder = []
+    let failUpload = false
+    let currentProject = {
+      id: 'proj_flush_1',
+      name: 'Flush Studio',
+      mediaLibrary: {
+        items: [{ id: 'm_drag', name: 'drag.wav', type: 'audio', missing: false, sourceRef: { kind: 'indexeddb', key: 'm_drag' } }],
+      },
+    }
+    let hostRecord = {
+      projectId: 'proj_flush_1',
+      revision: 1,
+      project: { id: 'proj_flush_1', name: 'Flush Studio', mediaLibrary: { items: [] } },
+    }
+    let listener = null
+    const native = {
+      projectId: () => currentProject.id,
+      capture: () => ({
+        project: structuredClone(currentProject),
+        fingerprint: JSON.stringify(currentProject),
+        media: { m_drag: localBlob },
+      }),
+      attachMediaHandle: (projectId, mediaId, omnimuxSource) => {
+        if (projectId !== currentProject.id) return false
+        currentProject = {
+          ...currentProject,
+          mediaLibrary: {
+            items: currentProject.mediaLibrary.items.map(item => item.id === mediaId ? { ...item, omnimuxSource } : item),
+          },
+        }
+        return true
+      },
+      subscribe: (cb) => { listener = cb; return () => { listener = null } },
+      load: async (record) => { currentProject = structuredClone(record.project) },
+      welcome: async () => {},
+      suspend: () => {},
+      isEditorReady: () => true,
+      projection: (revision) => ({ projectId: currentProject.id, revision }),
+    }
+    const localDrafts = new Map()
+    const storage = {
+      writerId: 'w-test',
+      readLocal: async (id) => localDrafts.get(id) ?? null,
+      writeLocal: async (record) => { localDrafts.set(record.project.id, structuredClone(record)) },
+      readHost: async () => structuredClone(hostRecord),
+      uploadMediaBytes: async (projectId, mediaId, blob) => {
+        callOrder.push(`upload:${projectId}:${mediaId}:${blob.size}`)
+        if (failUpload) throw Object.assign(new Error('disk full'), { code: 'internal-error' })
+        return {
+          sha256: expectedSha,
+          size: blob.size,
+          mimeType: 'audio/wav',
+          handle: { v: 1, scope: 'clip-vault', sha256: expectedSha, mimeType: 'audio/wav', size: blob.size },
+        }
+      },
+      writeHost: async (record) => {
+        callOrder.push(`writeHost:${record.project.mediaLibrary.items[0]?.omnimuxSource?.handle?.scope ?? 'none'}`)
+        hostRecord = { projectId: record.project.id, revision: record.revision, project: structuredClone(record.project) }
+        return { revision: record.revision }
+      },
+    }
+
+    const session = createEditorSession({
+      storage,
+      native,
+      debounceMs: 60_000,
+      workbench: () => ({ getActiveSurface: () => ({ tabId: 'omnimux-clip', instanceId: 'studio-1', sessionId: 'sess-1', panelOpen: true }) }),
+    })
+    session.add({
+      id: 'studio-1',
+      mode: 'standalone',
+      tabId: 'omnimux-clip',
+      isVisible: () => true,
+      getStudioRequest: () => ({ projectId: 'proj_flush_1', key: 'req-1' }),
+      getCanvas: () => null,
+      getCanvasAnchor: () => null,
+      setState: () => {},
+    })
+    session.reconcile()
+    await session.getWaiting()
+
+    // Simulate user importing a local blob in OpenReel -> upload fails first, writeHost must NOT run
+    failUpload = true
+    currentProject = {
+      id: 'proj_flush_1',
+      name: 'Flush Studio',
+      mediaLibrary: {
+        items: [{ id: 'm_drag', name: 'drag.wav', type: 'audio', missing: false, sourceRef: { kind: 'indexeddb', key: 'm_drag' } }],
+      },
+    }
+    listener?.()
+    const failedSave = await session.save()
+    assert.equal(failedSave.synchronized, false)
+    assert.deepEqual(callOrder, [`upload:proj_flush_1:m_drag:${localBlob.size}`])
+
+    // Now upload succeeds -> upload runs strictly before writeHost, and host receives the clip-vault handle
+    failUpload = false
+    const okSave = await session.save()
+    assert.equal(okSave.synchronized, true)
+    assert.deepEqual(callOrder, [
+      `upload:proj_flush_1:m_drag:${localBlob.size}`,
+      `upload:proj_flush_1:m_drag:${localBlob.size}`,
+      'writeHost:clip-vault',
+    ])
+    assert.equal(hostRecord.project.mediaLibrary.items[0].omnimuxSource.handle.sha256, expectedSha)
+    assert.equal(currentProject.mediaLibrary.items[0].omnimuxSource.handle.scope, 'clip-vault')
+    session.dispose()
   })
 })

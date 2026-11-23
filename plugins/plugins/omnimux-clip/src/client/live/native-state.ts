@@ -127,6 +127,25 @@ async function waitForSharedRenderer() {
 export const nativeEditorState = {
   capture,
   suspend,
+  attachMediaHandle(projectId: string, mediaId: string, omnimuxSource: NonNullable<MediaItem['omnimuxSource']>) {
+    const state = useProjectStore.getState()
+    if (!state.hasOpenProject || state.project.id !== projectId) return false
+    const target = state.project.mediaLibrary.items.find(item => item.id === mediaId)
+    if (!target || target.omnimuxSource?.handle) return false
+    const digest = omnimuxSource.digest ?? target.sourceRef?.digest
+    useProjectStore.setState(current => {
+      if (!current.hasOpenProject || current.project.id !== projectId) return current
+      const items = current.project.mediaLibrary.items.map(item => item.id === mediaId && !item.omnimuxSource?.handle
+        ? {
+          ...item,
+          omnimuxSource,
+          sourceRef: { ...item.sourceRef, kind: 'indexeddb' as const, key: item.id, ...(digest ? { digest } : {}) },
+        }
+        : item)
+      return { project: { ...current.project, mediaLibrary: { ...current.project.mediaLibrary, items } } }
+    })
+    return true
+  },
   projectId: () => {
     const state = useProjectStore.getState()
     return state.hasOpenProject ? state.project.id : null

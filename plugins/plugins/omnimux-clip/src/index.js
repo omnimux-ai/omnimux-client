@@ -1,6 +1,7 @@
 import { createExportJobs } from './export-jobs.js'
 import { createClipDispatcher, registerClipRoutes } from './http/routes.js'
 import { createClipCommandBroker } from './live/command-broker.js'
+import { createClipVaultMediaProvider } from './media/clipVault.js'
 import { ensureClipDirs, resolveClipPaths } from './paths.js'
 import { createProjectStore } from './store/projectStore.js'
 import { createClipEditorSeam } from './seam/clipEditor.js'
@@ -82,4 +83,15 @@ export function apply(ctx) {
   }
   if (typeof ctx.inject === 'function') ctx.inject(['webServer', 'connection'], mountHttp)
   else mountHttp(ctx)
+
+  const mountVaultProvider = (mediaCtx) => {
+    const resolver = mediaCtx.mediaResolver ?? mediaCtx.get?.('mediaResolver')
+    if (!resolver || typeof resolver.registerProvider !== 'function') return
+    const provider = createClipVaultMediaProvider({ paths })
+    const mount = () => resolver.registerProvider(provider)
+    if (typeof mediaCtx.effect === 'function') mediaCtx.effect(mount, 'omnimux-clip: clip-vault media provider')
+    else mount()
+  }
+  if (typeof ctx.inject === 'function') ctx.inject(['mediaResolver'], mountVaultProvider)
+  else mountVaultProvider(ctx)
 }

@@ -227,6 +227,8 @@ export function mountWorkflowHost(ctx: HostContext, opts: MountWorkflowHostOptio
     ctx.provide('omnimux-workflow', headlessSeam);
     ctx.provide('workflowClip', createWorkflowClipService({
       store,
+      assetsStore,
+      resolveProjectRoot,
       canAccessWorkspace,
       resolveNodeSources: workflowMedia.resolveNodeSources,
     }));
