@@ -506,32 +506,32 @@ describe('TikTok draft_only mode, SEND_TO_USER_INBOX, and gateway media-limit pa
     })
 
     // 1. Video draft strips tiktok_options completely
-    const vid = media.putBuffer(Buffer.from('mp4-bytes'), { filename: 'clip.mp4', contentType: 'video/mp4' })
-    const videoDraft = store.createDraft({
+    const { media: vid } = media.importBuffer(Buffer.from('mp4-bytes'), { filename: 'clip.mp4', content_type: 'video/mp4' })
+    const videoDraft = store.create({
       type: 'video',
       title: 'Video Draft',
       description: 'desc',
       media_ids: [vid.id],
+      account_ids: ['draft-acc'],
       settings: { publish_mode: 'draft', tiktok_options: { privacy_level: 'PUBLIC_TO_EVERYONE', allow_comment: false } },
     })
-    store.assignAccounts(videoDraft.id, ['draft-acc'])
     await service.run(videoDraft.id)
     const videoCreate = tools.calls.filter((c) => c.name === 'omnimux_publish_create').at(-1)
     assert.equal(Object.hasOwn(videoCreate.arguments, 'tiktok_options'), false)
     assert.equal(Object.hasOwn(videoCreate.arguments, 'photo_cover_index'), false)
 
     // 2. Photo draft omits tiktok_options and forwards title/description/photo_cover_index/is_aigc + content_type
-    const img1 = media.putBuffer(Buffer.from('jpg-1'), { filename: 'p1.jpg', contentType: 'image/jpeg' })
-    const img2 = media.putBuffer(Buffer.from('webp-2'), { filename: 'p2.webp', contentType: 'image/webp' })
-    const photoDraft = store.createDraft({
+    const { media: img1 } = media.importBuffer(Buffer.from('jpg-1'), { filename: 'p1.jpg', content_type: 'image/jpeg' })
+    const { media: img2 } = media.importBuffer(Buffer.from('webp-2'), { filename: 'p2.webp', content_type: 'image/webp' })
+    const photoDraft = store.create({
       type: 'image',
       title: 'Photo Carousel',
       description: 'Photo body',
       topics: ['omnimux'],
       media_ids: [img1.id, img2.id],
+      account_ids: ['draft-acc'],
       settings: { publish_mode: 'draft', photo_cover_index: 1, is_aigc: true, tiktok_options: { privacy_level: 'SELF_ONLY' } },
     })
-    store.assignAccounts(photoDraft.id, ['draft-acc'])
     await service.run(photoDraft.id)
     const photoCreate = tools.calls.filter((c) => c.name === 'omnimux_publish_create').at(-1)
     assert.equal(Object.hasOwn(photoCreate.arguments, 'tiktok_options'), false)
@@ -567,9 +567,8 @@ describe('TikTok draft_only mode, SEND_TO_USER_INBOX, and gateway media-limit pa
         ? { success: true, data: { id: 1, status: 'sent_to_inbox', result: { status: 'SEND_TO_USER_INBOX' } } }
         : { success: true, data: { id: 1, status: 'published', result: { status: 'PUBLISH_COMPLETE' } } }),
     })
-    const vid = media.putBuffer(Buffer.from('mp4-bytes'), { filename: 'clip.mp4', contentType: 'video/mp4' })
-    const draft = store.createDraft({ type: 'video', title: 'Inbox clip', media_ids: [vid.id] })
-    store.assignAccounts(draft.id, ['draft-acc'])
+    const { media: vid } = media.importBuffer(Buffer.from('mp4-bytes'), { filename: 'clip.mp4', content_type: 'video/mp4' })
+    const draft = store.create({ type: 'video', title: 'Inbox clip', media_ids: [vid.id], account_ids: ['draft-acc'] })
     await service.run(draft.id)
 
     const first = await service.refresh(draft.id)
@@ -606,10 +605,9 @@ describe('TikTok draft_only mode, SEND_TO_USER_INBOX, and gateway media-limit pa
       },
     })
     const mediaIds = Array.from({ length: 12 }, (_, idx) => (
-      media.putBuffer(Buffer.from(`img-${idx}`), { filename: `p${idx}.jpg`, contentType: 'image/jpeg' }).id
+      media.importBuffer(Buffer.from(`img-${idx}`), { filename: `p${idx}.jpg`, content_type: 'image/jpeg' }).media.id
     ))
-    const draft = store.createDraft({ type: 'image', title: '12 photos', media_ids: mediaIds })
-    store.assignAccounts(draft.id, ['draft-acc'])
+    const draft = store.create({ type: 'image', title: '12 photos', media_ids: mediaIds, account_ids: ['draft-acc'] })
 
     const view = await service.run(draft.id)
     assert.equal(view.aggregate, 'failed')
