@@ -1019,7 +1019,10 @@ export function computeChromeLayout(doc) {
       : (readShellRailWidthPx(doc) ?? (lastGoodLeftRailW || 0))
     if (leftRailW >= LEFT_RAIL_MIN_PX) lastGoodLeftRailW = leftRailW
   }
+  // Recognize both Next shell (`html[data-platform="darwin"]` set by preload-platform.ts)
+  // and legacy shell (`body[data-dsh-desktop-mode][data-dsh-desktop-platform="darwin"]`).
   const isDarwinDesktop = Boolean(
+    doc?.documentElement?.getAttribute?.('data-platform') === 'darwin' ||
     doc?.body?.matches?.('[data-dsh-desktop-mode][data-dsh-desktop-platform="darwin"]'),
   )
   const isFullscreen = doc?.documentElement?.hasAttribute?.('data-fullscreen') === true
@@ -1922,7 +1925,7 @@ export function installSidebarToggleTopbar(doc = typeof document !== 'undefined'
     desktopObserver = new ObserverClass(() => {
       scheduleSync()
     })
-    const rootFilter = ['data-dsh-desktop-mode', 'data-dsh-desktop-platform', 'data-fullscreen']
+    const rootFilter = ['data-dsh-desktop-mode', 'data-dsh-desktop-platform', 'data-platform', 'data-fullscreen']
     const bodyFilter = ['data-dsh-desktop-mode', 'data-dsh-desktop-platform']
     if (doc.documentElement) {
       desktopObserver.observe(doc.documentElement, {

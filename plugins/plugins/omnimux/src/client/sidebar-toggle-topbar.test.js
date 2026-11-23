@@ -897,6 +897,30 @@ describe('chrome CSS contracts (conversation-box PRODUCT_STAGE_CHROME)', () => {
     cleanup()
   })
 
+  it('recognizes Next shell html[data-platform="darwin"] without legacy body desktop markers', async () => {
+    const doc = setup()
+    // dsh-desktop-next sets html[data-platform="darwin"] via preload-platform.ts and never sets body[data-dsh-desktop-mode].
+    doc.documentElement.setAttribute('data-platform', 'darwin')
+    const cleanup = installSidebarToggleTopbar(doc)
+
+    const windowed = computeChromeLayout(doc)
+    assert.equal(windowed.toggleLeft, TOPBAR_MACOS_INSET_PX)
+    assert.equal(windowed.newSessionLeft, 124)
+    assert.equal(windowed.newSessionLeft + TOPBAR_TOGGLE_SIZE_PX, 156)
+    assert.equal(doc.documentElement.style.getPropertyValue('--omnimux-topbar-toggle-left'), '84px')
+
+    doc.documentElement.setAttribute('data-fullscreen', '')
+    await new Promise(resolve => setTimeout(resolve, 20))
+    assert.equal(computeChromeLayout(doc).toggleLeft, TOPBAR_TOGGLE_LEFT_PX)
+    assert.equal(doc.documentElement.style.getPropertyValue('--omnimux-topbar-toggle-left'), '8px')
+
+    doc.documentElement.removeAttribute('data-fullscreen')
+    await new Promise(resolve => setTimeout(resolve, 20))
+    assert.equal(doc.documentElement.style.getPropertyValue('--omnimux-topbar-toggle-left'), '84px')
+
+    cleanup()
+  })
+
   it('syncNativeRightbarControls preserves native mode and split control order', () => {
     const doc = setup(`<!doctype html><html><body>
       <div data-dockkit-strip-chrome="true">
