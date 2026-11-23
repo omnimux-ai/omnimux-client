@@ -24,7 +24,7 @@
       "version": "0.2.2",
       "path": "plugins/plugins/omnimux-analytics",
       "spec": "link:../../plugins/plugins/omnimux-analytics",
-      "contentHash": "sha256:5e9c53d5f01f800207884017cd85e9d018d0928fb90fda14a5504b988812103d"
+      "contentHash": "sha256:25a8cb1a6077618f017bd71432a4afe7b7d2ddca38669e1995c29a7902aead5a"
     },
     {
       "name": "omnimux-assets",
@@ -38,14 +38,14 @@
       "version": "0.1.0",
       "path": "plugins/plugins/omnimux-browser",
       "spec": "link:../../plugins/plugins/omnimux-browser",
-      "contentHash": "sha256:f4428f1cc04367df2dde52186e873ea009e6bd3cfa8257910aba7e50dcffeccd"
+      "contentHash": "sha256:f9b6a313e3671c4b7063267c8a929567a8c49ba2044bf422e05ab76e2270540f"
     },
     {
       "name": "omnimux-clip",
       "version": "0.1.2",
       "path": "plugins/plugins/omnimux-clip",
       "spec": "link:../../plugins/plugins/omnimux-clip",
-      "contentHash": "sha256:d4287444c21c599e1bd4981f21894374924f830250d367c613bc19362fa38ab5"
+      "contentHash": "sha256:8dbca37f01d66df7384caf9ec92cfe4bcc2e6a1a11c0fb1ebf3b1616e88aacb2"
     },
     {
       "name": "omnimux-forms",
@@ -80,7 +80,7 @@
       "version": "0.1.2",
       "path": "plugins/plugins/omnimux-publish",
       "spec": "link:../../plugins/plugins/omnimux-publish",
-      "contentHash": "sha256:96f6d8fd7bf68e399ed8a895b37b66e19be491411506b62e17501e83b01cb5aa"
+      "contentHash": "sha256:bee0410aaeecb411b88c7e805d22311970e0b5d87575365c08bbc1973f1bf047"
     },
     {
       "name": "omnimux-video",
