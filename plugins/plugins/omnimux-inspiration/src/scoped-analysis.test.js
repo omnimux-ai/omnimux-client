@@ -445,4 +445,103 @@ describe('body translation and retained contracts', () => {
     const analyzeRes = await pending
     assert.equal(analyzeRes.status, 499)
   })
+
+  it('rejects cross-item and cross-plugin job_id cancellation with 403 without cancelling foreign jobs', async () => {
+    const cancelledIds = []
+    const foreignJobs = new Map([
+      ['job-other-item', { jobId: 'job-other-item', ownerPlugin: 'omnimux-inspiration', targetId: 'other-item:post', status: 'running' }],
+      ['job-other-plugin', { jobId: 'job-other-plugin', ownerPlugin: 'omnimux-products', targetId: 'p1:brand', status: 'running' }],
+    ])
+    const w = world()
+    const dispatcher = createLocalInspirationDispatcher({
+      localStore: w.store,
+      headlessSkill: {
+        run: w.headlessSkill.run,
+        listJobs: () => [...foreignJobs.values()],
+        getJob: (id) => foreignJobs.get(id) || null,
+        cancel: (id) => { cancelledIds.push(id); return true },
+      },
+    })
+    for (const badId of ['job-other-item', 'job-other-plugin', 'nonexistent-job']) {
+      const res = await dispatcher.dispatch({
+        method: 'POST',
+        url: `/omnimux/inspiration/local/${w.row.id}/analyze/cancel`,
+        body: { job_id: badId },
+      })
+      assert.equal(res.status, 403, `must reject unauthorized job_id ${badId}`)
+    }
+    assert.deepEqual(cancelledIds, [], 'must never call headlessSkill.cancel for foreign job IDs')
+  })
+
+  it('allows immediate retry after POST /analyze/cancel while prior run unwinds without 409 or clobbering', async () => {
+    let callCount = 0
+    let releaseFirstStart
+    const firstStarted = new Promise((resolve) => { releaseFirstStart = resolve })
+    let releaseFirstUnwind
+    const firstUnwindGate = new Promise((resolve) => { releaseFirstUnwind = resolve })
+
+    const w = world(async (req) => {
+      callCount += 1
+      if (callCount === 1) {
+        releaseFirstStart()
+        await firstUnwindGate
+        throw Object.assign(new Error('late abort unwind'), { name: 'AbortError', code: 'ABORT_ERR' })
+      }
+      return {
+        mode: 'live',
+        jobId: 'job-retry-2',
+        skillName: req.skillName,
+        model: 'test-model',
+        data: { summary: '重试后成功结果', sections: [], shots: [] },
+      }
+    })
+
+    const firstPending = w.send('analyze', { scope: 'body' })
+    await firstStarted
+    const cancelRes = await w.send('analyze/cancel', { scope: 'body' })
+    assert.equal(cancelRes.status, 200)
+
+    // Retry immediately BEFORE the first promise finishes unwinding: must NOT return 409.
+    const retryRes = await w.send('analyze', { scope: 'body' })
+    assert.equal(retryRes.status, 200)
+    assert.equal(retryRes.body.data.analysis_results.body.status, 'done')
+    assert.equal(retryRes.body.data.analysis_results.body.result.summary, '重试后成功结果')
+
+    // Now let the first aborted run unwind; it must NOT overwrite the newer done result.
+    releaseFirstUnwind()
+    const firstRes = await firstPending
+    assert.equal(firstRes.status, 499)
+    const after = w.store.get(w.row.id)
+    assert.equal(after.analysis_results.body.status, 'done')
+    assert.equal(after.analysis_results.body.result.summary, '重试后成功结果')
+  })
+
+  it('enforces inputFingerprint 409 and deleted-item 404 guards on script translation', async () => {
+    const wStale = world(async (req) => {
+      assert.ok(req.inputFingerprint, 'script translation must supply inputFingerprint')
+      assert.equal(typeof req.verifyFingerprint, 'function')
+      wStale.store.update(wStale.row.id, { deconstruction: { segments: [{ id: 'seg_1', text: '被修改的新台词' }] } })
+      return { mode: 'live', jobId: 'j1', skillName: req.skillName, model: 'm', data: { text: 'Old', segments: [{ id: 'seg_1', text: 'Old' }] } }
+    })
+    wStale.store.update(wStale.row.id, { deconstruction: { segments: [{ id: 'seg_1', text: '原始台词' }] } })
+    const staleRes = await wStale.send('translate', { lang: 'en' })
+    assert.equal(staleRes.status, 409)
+    assert.equal(wStale.store.get(wStale.row.id).script_translation, undefined)
+
+    const wDeleted = world(async (req) => {
+      wDeleted.store.delete(wDeleted.row.id)
+      return { mode: 'live', jobId: 'j2', skillName: req.skillName, model: 'm', data: { text: 'Translated', segments: [] } }
+    })
+    const delRes = await wDeleted.send('translate', { lang: 'en' })
+    assert.equal(delRes.status, 404)
+  })
+
+  it('maps headless-skill-transport-exceeded to HTTP 422 with localized message', async () => {
+    const w = world(async () => {
+      throw Object.assign(new Error('raw transport error'), { code: 'headless-skill-transport-exceeded' })
+    })
+    const res = await w.send('analyze', { scope: 'post' })
+    assert.equal(res.status, 422)
+    assert.match(res.body.error, /传输容量/)
+  })
 })

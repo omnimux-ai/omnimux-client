@@ -48,7 +48,12 @@ export async function prepareHeadlessTransport(payload, deps = {}) {
   }
 
   const localSizes = inputRefs.map((ref) => (isLocalExistingFile(ref?.pathOrUrl) ? statSync(ref.pathOrUrl).size : null))
-  if (localSizes.every((size) => size === null)) {
+  const inlineDataSizes = inputRefs.map((ref) => (
+    typeof ref?.pathOrUrl === 'string' && /^data:/i.test(ref.pathOrUrl)
+      ? Buffer.byteLength(ref.pathOrUrl)
+      : null
+  ))
+  if (localSizes.every((size) => size === null) && inlineDataSizes.every((size) => size === null)) {
     return { references: inputRefs, cleanup: noopCleanup }
   }
 
@@ -62,12 +67,17 @@ export async function prepareHeadlessTransport(payload, deps = {}) {
 
   try {
     assertNotAborted(deps.signal)
+    const systemBytes = payload?.system ? Buffer.byteLength(JSON.stringify(String(payload.system))) : 0
     const promptBytes = Buffer.byteLength(JSON.stringify(String(payload?.prompt || '')))
-    let remaining = INLINE_REQUEST_BYTES - ENVELOPE_RESERVE_BYTES - promptBytes
+    let remaining = INLINE_REQUEST_BYTES - ENVELOPE_RESERVE_BYTES - systemBytes - promptBytes
     const references = inputRefs.map((ref) => ({ ...ref }))
     const localVideos = []
 
     for (let i = 0; i < references.length; i += 1) {
+      if (inlineDataSizes[i] !== null) {
+        remaining -= inlineDataSizes[i] + 256
+        continue
+      }
       const size = localSizes[i]
       if (size === null) continue
       if (references[i].type === 'video') {
@@ -98,13 +108,6 @@ export async function prepareHeadlessTransport(payload, deps = {}) {
       pending = pending.filter((i) => !small.includes(i))
     }
 
-    if (pending.length && typeof deps.videoProcess?.execute !== 'function') {
-      throw new OmnimuxError(
-        'headless-skill-transport-unavailable',
-        '视频较大，需要视频处理能力准备完整视频后再分析',
-      )
-    }
-
     const maxRequestBytes = Math.min(
       SINGLE_VIDEO_MAX_BYTES,
       3 * Math.floor((Math.floor(remaining / (pending.length || 1)) - 256) / 4),
@@ -116,6 +119,13 @@ export async function prepareHeadlessTransport(payload, deps = {}) {
       )
     }
 
+    if (pending.length && typeof deps.videoProcess?.execute !== 'function') {
+      throw new OmnimuxError(
+        'headless-skill-transport-unavailable',
+        '视频较大，需要视频处理能力准备完整视频后再分析',
+      )
+    }
+
     if (pending.length) {
       deps.onPreparing?.()
     }
@@ -124,17 +134,31 @@ export async function prepareHeadlessTransport(payload, deps = {}) {
       assertNotAborted(deps.signal)
       directory ||= await mkdtemp(join(tmpdir(), 'omnimux-headless-media-'))
       const dest = join(directory, `video-${i}.mp4`)
-      const output = await deps.videoProcess.execute({
-        capability: 'video_inline_analysis_prepare',
-        input: {
-          videoUrl: references[i].pathOrUrl,
-          maxRequestBytes,
-          preserveTimeline: true,
-          keepAudio: true,
-        },
-        dest,
-        signal: deps.signal,
-      })
+      let output
+      try {
+        output = await deps.videoProcess.execute({
+          capability: 'video_inline_analysis_prepare',
+          input: {
+            videoUrl: references[i].pathOrUrl,
+            maxRequestBytes,
+            preserveTimeline: true,
+            keepAudio: true,
+          },
+          dest,
+          signal: deps.signal,
+        })
+      } catch (err) {
+        assertNotAborted(deps.signal)
+        if (err instanceof OmnimuxError) throw err
+        if (err?.name === 'AbortError' || err?.code === 'ABORT_ERR') {
+          throw new OmnimuxError('headless-skill-cancelled', 'Task cancelled during media preparation')
+        }
+        const isBudgetRejection = err?.code === 'video-invalid-input' || err?.name === 'VideoError'
+        throw new OmnimuxError(
+          'headless-skill-transport-exceeded',
+          isBudgetRejection && err?.message ? err.message : '完整视频准备失败或超出分析容量，未提交不完整分析',
+        )
+      }
       assertNotAborted(deps.signal)
       const file = output?.files?.find((entry) => entry.path === dest && entry.kind === 'video')
       if (
@@ -151,15 +175,16 @@ export async function prepareHeadlessTransport(payload, deps = {}) {
           '完整视频准备未满足分析容量，未提交不完整分析',
         )
       }
-      references[i] = { ...references[i], type: 'video', pathOrUrl: dest }
+      references[i] = { ...references[i], type: 'video', pathOrUrl: dest, mime: 'video/mp4' }
     }
 
     const finalTotal = references.reduce((bytes, ref, idx) => {
+      if (inlineDataSizes[idx] !== null) return bytes + inlineDataSizes[idx] + 256
       const size = pending.includes(idx)
         ? statSync(ref.pathOrUrl).size
         : localSizes[idx]
       return size === null ? bytes : bytes + encodedBytes(size) + 256
-    }, promptBytes + ENVELOPE_RESERVE_BYTES)
+    }, systemBytes + promptBytes + ENVELOPE_RESERVE_BYTES)
 
     if (finalTotal > INLINE_REQUEST_BYTES) {
       throw new OmnimuxError(

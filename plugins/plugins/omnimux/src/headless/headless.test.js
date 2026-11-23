@@ -422,30 +422,114 @@ describe('prepareHeadlessTransport and Hub video preparation', () => {
     )
   })
 
-  it('cleans up temporary files when videoProcess fails or omits required guarantees', async () => {
-    const source = tempAsset(98_376_196)
+  it('cleans up temporary files across all videoProcess failure modes and updates transcoded mime to video/mp4', async () => {
+    const source = tempAsset(98_376_196, 'clip.mov')
     await assert.rejects(
-      () => prepareHeadlessTransport({ prompt: 'body', references: [{ type: 'video', pathOrUrl: source }] }),
+      () => prepareHeadlessTransport({ prompt: 'body', references: [{ type: 'video', pathOrUrl: source, mime: 'video/quicktime' }] }),
       (err) => err instanceof OmnimuxError && err.code === 'headless-skill-transport-unavailable',
     )
 
-    let created = ''
-    await assert.rejects(
-      () => prepareHeadlessTransport(
-        { prompt: 'body', references: [{ type: 'video', pathOrUrl: source }] },
-        {
-          videoProcess: {
-            async execute(req) {
-              created = req.dest
-              writeFileSync(created, 'partial')
-              return { mode: 'live', files: [{ path: created, kind: 'video', meta: { preserveTimeline: false, keepAudio: true } }] }
+    // Verify all 5 failure modes: error (VideoError), overshoot, cancel, fake (non-live), old-engine
+    for (const mode of ['error', 'overshoot', 'cancel', 'fake', 'old-engine']) {
+      let created = ''
+      const controller = new AbortController()
+      await assert.rejects(
+        () => prepareHeadlessTransport(
+          { prompt: 'body', references: [{ type: 'video', pathOrUrl: source, mime: 'video/quicktime' }] },
+          {
+            signal: controller.signal,
+            videoProcess: {
+              async execute(req) {
+                created = req.dest
+                writeFileSync(created, 'partial')
+                if (mode === 'error') {
+                  throw Object.assign(new Error('budget too small'), { name: 'VideoError', code: 'video-invalid-input' })
+                }
+                if (mode === 'cancel') controller.abort()
+                return {
+                  mode: mode === 'fake' ? 'mock' : 'live',
+                  files: [{
+                    path: created,
+                    kind: 'video',
+                    meta: {
+                      overshoot: mode === 'overshoot',
+                      preserveTimeline: mode !== 'old-engine',
+                      keepAudio: mode !== 'old-engine',
+                    },
+                  }],
+                }
+              },
             },
           },
+        ),
+        (err) => err instanceof OmnimuxError && err.code === (mode === 'cancel' ? 'headless-skill-cancelled' : 'headless-skill-transport-exceeded'),
+      )
+      assert.equal(existsSync(created), false, `${mode} must clean up temporary prepared video`)
+      assert.equal(existsSync(source), true, `${mode} must never remove original source`)
+    }
+
+    // Transcoded MP4 must overwrite stale source mime (video/quicktime -> video/mp4)
+    const okPrepared = await prepareHeadlessTransport(
+      { system: 'sys', prompt: 'body', references: [{ type: 'video', pathOrUrl: source, mime: 'video/quicktime' }] },
+      {
+        videoProcess: {
+          async execute(req) {
+            writeFileSync(req.dest, 'mp4-bytes')
+            return { mode: 'live', files: [{ path: req.dest, kind: 'video', meta: { preserveTimeline: true, keepAudio: true } }] }
+          },
         },
-      ),
+      },
+    )
+    assert.equal(okPrepared.references[0].mime, 'video/mp4')
+    await okPrepared.cleanup()
+
+    // Exhausted budget via data: URI + system prompt reports transport-exceeded even without videoProcess
+    const oversizedDataUri = `data:image/jpeg;base64,${'A'.repeat(INLINE_REQUEST_BYTES)}`
+    await assert.rejects(
+      () => prepareHeadlessTransport({
+        system: 'sys',
+        prompt: 'body',
+        references: [{ type: 'image', pathOrUrl: oversizedDataUri }, { type: 'video', pathOrUrl: source }],
+      }),
       (err) => err instanceof OmnimuxError && err.code === 'headless-skill-transport-exceeded',
     )
-    assert.equal(existsSync(created), false)
-    assert.equal(existsSync(source), true)
+  })
+
+  it('cleans up temporary prepared video when textComplete fails or is cancelled', async () => {
+    for (const outcome of ['failed', 'cancel']) {
+      const source = tempAsset(98_376_196)
+      let preparedDest = ''
+      const controller = new AbortController()
+      const env = createMockEnv({
+        skills: { 'video-skill': { name: 'video-skill', content: 'Analyze video' } },
+        onExecute: async (req) => {
+          assert.equal(req.references?.[0]?.pathOrUrl, preparedDest)
+          assert.equal(existsSync(preparedDest), true)
+          if (outcome === 'cancel') {
+            controller.abort()
+            throw Object.assign(new Error('aborted'), { name: 'AbortError' })
+          }
+          throw new Error('upstream provider failed')
+        },
+      })
+      const api = mountHeadlessSkill(env.ctx, {
+        videoProcess: {
+          async execute(req) {
+            preparedDest = req.dest
+            writeFileSync(preparedDest, 'prepared whole video')
+            return { mode: 'live', files: [{ path: preparedDest, kind: 'video', meta: { preserveTimeline: true, keepAudio: true } }] }
+          },
+        },
+      })
+      await assert.rejects(() => api.run({
+        skillName: 'video-skill',
+        input: 'Analyze clip',
+        references: [{ type: 'video', pathOrUrl: source }],
+        outputSchema: BREAKDOWN_SCHEMA,
+        signal: controller.signal,
+      }))
+      assert.equal(existsSync(preparedDest), false, `${outcome} must clean temporary video`)
+      assert.equal(existsSync(source), true, `${outcome} must keep original video`)
+    }
   })
 })

@@ -196,7 +196,8 @@ export async function handleScopedAnalysis(ctx, options = {}) {
   if (runs.has(lock)) return fail(409, '该范围正在分析，请稍候')
 
   const linked = linkAbortSignals(ctx.signal)
-  runs.set(lock, { controller: linked.controller })
+  const runToken = Symbol('analysis-run')
+  runs.set(lock, { controller: linked.controller, token: runToken })
 
   const previous = item.analysis_results?.[key]
   const prior = previous?.input_fingerprint === prepared.input_fingerprint ? previous : null
@@ -328,31 +329,40 @@ export async function handleScopedAnalysis(ctx, options = {}) {
       || error?.name === 'AbortError'
       || error?.code === 'ABORT_ERR'
       || error?.code === 'headless-skill-cancelled'
+    const stillOwner = runs.get(lock)?.token === runToken
     const current = ctx.store.get(ctx.id)
     const errorCode = aborted ? 'analysis-cancelled' : (typeof error?.code === 'string' ? error.code : null)
     const message = aborted
       ? '分析已取消，可重新分析'
       : (ctx.formatErrorMessage?.(error) || error?.message || String(error))
-    const row = current
+    // Only write failure state if this run still owns the lock (or no newer run replaced it).
+    const currentEntry = current?.analysis_results?.[key]
+    const superseded = !stillOwner && Boolean(runs.get(lock) || (currentEntry && currentEntry.started_at !== entry.started_at))
+    const row = current && !superseded
       ? ctx.store.updateAnalysis(ctx.id, key, {
         ...entry,
         status: 'failed',
         error_code: errorCode,
         error: message,
       })
-      : null
+      : current || null
     if (aborted) {
       throw Object.assign(new Error('分析已取消'), { name: 'AbortError', code: 'ABORT_ERR' })
     }
-    return fail(error?.status || 502, row?.analysis_results[key].error || message || '分析失败，请重试', row, key)
+    const status = error?.status
+      || (error?.code === 'headless-skill-transport-exceeded' ? 422 : null)
+      || (error?.code === 'headless-skill-transport-unavailable' ? 503 : null)
+      || 502
+    return fail(status, row?.analysis_results?.[key]?.error || message || '分析失败，请重试', row, key)
   } finally {
     linked.dispose()
-    runs.delete(lock)
+    if (runs.get(lock)?.token === runToken) runs.delete(lock)
   }
 }
 
 /**
  * Cancel in-flight headless analysis jobs for an inspiration item (optionally narrowed to a scope or job_id).
+ * Enforces strict item + plugin ownership before cancelling any explicit `job_id`.
  */
 export async function handleCancelAnalysis(ctx) {
   const item = ctx.store.get(ctx.id)
@@ -368,28 +378,50 @@ export async function handleCancelAnalysis(ctx) {
   const targetPrefix = targetKey ? `${ctx.id}:${targetKey}` : `${ctx.id}:`
   const cancelledTargets = []
   const settledKeys = new Set()
-
   const runs = activeRuns.get(ctx.store)
-  if (runs) {
-    for (const [lock, handle] of runs.entries()) {
-      const matched = targetKey ? lock === targetPrefix : lock.startsWith(targetPrefix)
-      if (!matched) continue
-      handle.controller.abort(Object.assign(new Error('分析已取消'), { name: 'AbortError', code: 'ABORT_ERR' }))
-      cancelledTargets.push(lock)
-      const scopeKey = lock.slice(`${ctx.id}:`.length)
-      if (scopeKey) settledKeys.add(scopeKey)
-    }
-  }
-
   const headlessSkill = resolveHeadlessSkill(ctx)
-  if (headlessSkill && typeof headlessSkill.cancel === 'function') {
-    if (typeof body.job_id === 'string' && body.job_id.trim()) {
-      const ok = headlessSkill.cancel(body.job_id.trim())
-      if (ok) {
-        cancelledTargets.push(body.job_id.trim())
-        if (targetKey) settledKeys.add(targetKey)
+  const requestedJobId = typeof body.job_id === 'string' ? body.job_id.trim() : ''
+
+  if (requestedJobId) {
+    let job = null
+    if (headlessSkill && typeof headlessSkill.getJob === 'function') {
+      job = headlessSkill.getJob(requestedJobId) || null
+    } else if (headlessSkill && typeof headlessSkill.listJobs === 'function') {
+      const jobs = headlessSkill.listJobs({ ownerPlugin: OWNER_PLUGIN }) || []
+      job = jobs.find((entry) => entry?.jobId === requestedJobId) || null
+    }
+    const jobTargetId = String(job?.targetId || '')
+    const ownedByPlugin = job?.ownerPlugin === OWNER_PLUGIN
+    const belongsToTarget = targetKey ? jobTargetId === targetPrefix : jobTargetId.startsWith(targetPrefix)
+    if (!job || !ownedByPlugin || !belongsToTarget) {
+      return fail(403, '无权取消非当前灵感的分析任务')
+    }
+    if (typeof headlessSkill?.cancel === 'function' && headlessSkill.cancel(requestedJobId)) {
+      cancelledTargets.push(requestedJobId)
+    }
+    if (runs?.has(jobTargetId)) {
+      const handle = runs.get(jobTargetId)
+      runs.delete(jobTargetId)
+      handle.controller.abort(Object.assign(new Error('分析已取消'), { name: 'AbortError', code: 'ABORT_ERR' }))
+      cancelledTargets.push(jobTargetId)
+    }
+    const scopeKey = jobTargetId.slice(`${ctx.id}:`.length)
+    if (scopeKey && !scopeKey.startsWith('translate:')) settledKeys.add(scopeKey)
+  } else {
+    if (runs) {
+      for (const [lock, handle] of [...runs.entries()]) {
+        const matched = targetKey ? lock === targetPrefix : lock.startsWith(targetPrefix)
+        if (!matched) continue
+        // Release lock before aborting so an immediate user retry never hits a 409 lock window.
+        runs.delete(lock)
+        handle.controller.abort(Object.assign(new Error('分析已取消'), { name: 'AbortError', code: 'ABORT_ERR' }))
+        cancelledTargets.push(lock)
+        const scopeKey = lock.slice(`${ctx.id}:`.length)
+        if (scopeKey) settledKeys.add(scopeKey)
       }
-    } else if (typeof headlessSkill.listJobs === 'function') {
+    }
+
+    if (headlessSkill && typeof headlessSkill.cancel === 'function' && typeof headlessSkill.listJobs === 'function') {
       const jobs = headlessSkill.listJobs({ ownerPlugin: OWNER_PLUGIN }) || []
       for (const job of jobs) {
         if (!ACTIVE_JOB_STATUSES.has(job?.status)) continue
@@ -563,18 +595,25 @@ export async function handleBodyTranslation(ctx) {
   }
 }
 
+function scriptTranslationInputs(item, lang) {
+  const analysis = item?.deconstruction && typeof item.deconstruction === 'object'
+    ? item.deconstruction
+    : (item?.analysis_results?.post?.result || {})
+  const segments = Array.isArray(analysis.segments) ? analysis.segments : []
+  const source = segments.length
+    ? segments.map((row) => row.text).filter(Boolean).join('\n')
+    : (item?.content || '')
+  const segmentIds = segments.map((row) => row.id)
+  const fingerprint = sourceFingerprint(`${lang}\n${JSON.stringify(segmentIds)}\n${source}`)
+  return { segments, segmentIds, source, fingerprint }
+}
+
 /** Script / segment translation routed through Hub `headlessSkill`. */
 export async function handleScriptTranslation(ctx) {
   const item = ctx.store.get(ctx.id)
   if (!item) return fail(404, 'not found')
   const lang = String(ctx.req.body?.lang || ctx.req.body?.target || 'zh').trim() || 'zh'
-  const analysis = item.deconstruction && typeof item.deconstruction === 'object'
-    ? item.deconstruction
-    : (item.analysis_results?.post?.result || {})
-  const segments = Array.isArray(analysis.segments) ? analysis.segments : []
-  const source = segments.length
-    ? segments.map((row) => row.text).filter(Boolean).join('\n')
-    : (item.content || '')
+  const { segmentIds, source, fingerprint } = scriptTranslationInputs(item, lang)
   if (!source.trim()) return fail(422, '暂无脚本文案可翻译')
   const headlessSkill = resolveHeadlessSkill(ctx)
   if (!headlessSkill || typeof headlessSkill.run !== 'function') {
@@ -587,13 +626,19 @@ export async function handleScriptTranslation(ctx) {
       input: buildTranslationUserInput({
         lang,
         source,
-        segmentIds: segments.map((row) => row.id),
+        segmentIds,
       }),
       outputSchema: INSPIRATION_TRANSLATION_SCHEMA,
       modality: 'text',
       label: `翻译灵感脚本：${item.title || item.id}`,
       ownerPlugin: OWNER_PLUGIN,
       targetId: `${ctx.id}:translate:script`,
+      inputFingerprint: fingerprint,
+      verifyFingerprint: () => {
+        const latest = ctx.store.get(ctx.id)
+        if (!latest) return false
+        return scriptTranslationInputs(latest, lang).fingerprint === fingerprint
+      },
       maxTokens: 2048,
       signal: ctx.signal,
     })
@@ -601,11 +646,17 @@ export async function handleScriptTranslation(ctx) {
     if (runResult?.mode !== 'live' || !runResult.data || typeof runResult.data.text !== 'string' || !runResult.data.text.trim()) {
       throw new Error('脚本翻译未返回真实有效结果')
     }
+    const current = ctx.store.get(ctx.id)
+    if (!current) return fail(404, '灵感已删除')
+    if (scriptTranslationInputs(current, lang).fingerprint !== fingerprint) {
+      return fail(409, '脚本内容已变更，请重新翻译')
+    }
     const updated = ctx.store.update(ctx.id, {
       script_translation: {
         lang,
         text: runResult.data.text.trim(),
         segments: Array.isArray(runResult.data.segments) ? runResult.data.segments : [],
+        source_fingerprint: fingerprint,
         source: 'live',
         model: runResult.model || '',
         translated_at: new Date().toISOString(),
@@ -613,6 +664,9 @@ export async function handleScriptTranslation(ctx) {
     })
     return { status: 200, body: { data: updated } }
   } catch (error) {
+    if (error?.code === 'headless-skill-stale-input') {
+      return fail(409, '脚本内容已变更，请重新翻译')
+    }
     cancelled(ctx.signal)
     if (error?.name === 'AbortError' || error?.code === 'ABORT_ERR' || error?.code === 'headless-skill-cancelled') {
       throw Object.assign(new Error('翻译已取消'), { name: 'AbortError', code: 'ABORT_ERR' })

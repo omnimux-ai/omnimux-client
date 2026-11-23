@@ -40,16 +40,19 @@ export function InspirationDetailSidebar({
   const shareTriggerRef = useRef(null)
   const sharePopoverRef = useRef(null)
   const applyItemRef = useRef(() => {})
+  const currentItemKeyRef = useRef('')
 
   useEffect(() => {
     setItem(row)
   }, [row])
 
   const itemKey = item?.id == null ? '' : String(item.id)
+  currentItemKeyRef.current = itemKey
 
   useEffect(() => {
     setShowSharePopover(false)
     setShareError(null)
+    setSharing(false)
   }, [itemKey])
 
   // Close share popover on Esc / outside click.
@@ -96,7 +99,7 @@ export function InspirationDetailSidebar({
       onSettled: (next) => applyItemRef.current(next),
       onFailed: (next) => applyItemRef.current(next),
     },
-  }), [])
+  }), [itemKey])
 
   useEffect(() => {
     sharePoller.start()
@@ -106,6 +109,7 @@ export function InspirationDetailSidebar({
   useEffect(() => {
     applyItemRef.current = (next) => {
       if (!next || typeof next !== 'object') return
+      if (next.id != null && currentItemKeyRef.current && String(next.id) !== currentItemKeyRef.current) return
       setItem(next)
       onItemUpdated?.(next)
     }
@@ -127,16 +131,19 @@ export function InspirationDetailSidebar({
   const failed = isFailedRow(item)
   const settledNotice = importSettledNotice(item, t)
   const applyItem = (next) => {
+    if (next?.id != null && currentItemKeyRef.current && String(next.id) !== currentItemKeyRef.current) return
     setItem(next)
     onItemUpdated?.(next)
   }
 
   const handleCreateShare = async () => {
     if (sharing || !data.safeItem.id) return
+    const requestItemId = String(data.safeItem.id)
     setSharing(true)
     setShareError(null)
     try {
       const response = await createShareLink(data.safeItem.id, shareRequestPayload(data.safeItem))
+      if (currentItemKeyRef.current !== requestItemId) return
       const next = response.body?.data
       if (!response.ok) {
         setShareError(response.body?.error || t('modal.share.failed') || '创建失败')
@@ -147,9 +154,10 @@ export function InspirationDetailSidebar({
         if (isShareRunning(next)) sharePoller.track(next.id)
       }
     } catch (error) {
+      if (currentItemKeyRef.current !== requestItemId) return
       setShareError(String(error?.message || error))
     } finally {
-      setSharing(false)
+      if (currentItemKeyRef.current === requestItemId) setSharing(false)
     }
   }
 

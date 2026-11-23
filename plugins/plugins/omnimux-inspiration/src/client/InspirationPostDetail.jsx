@@ -177,11 +177,34 @@ export function InspirationPostDetail({ item, t, onItemUpdated, onReplicate, rep
     analysisPoller.current = poller
     if (!hubHealthyRef.current) poller.start()
 
+    const retryTimers = new Set()
+    const RECONCILE_DELAYS_MS = [120, 350, 800]
+    const reconcileItem = (attempt = 0) => {
+      fetchItem().then(response => {
+        if (!current) return
+        const outcome = decideAnalysisPollOutcome(response)
+        if (outcome.item) apply(outcome.item)
+        // Hub emits terminal omnimux:headless-skill slightly before scoped-analysis finishes
+        // writing to disk; retry briefly if the row still reflects running.
+        if ((outcome.action === 'pending' || outcome.action === 'keep') && attempt < RECONCILE_DELAYS_MS.length) {
+          const timer = setTimeout(() => {
+            retryTimers.delete(timer)
+            if (current) reconcileItem(attempt + 1)
+          }, RECONCILE_DELAYS_MS[attempt])
+          retryTimers.add(timer)
+        }
+      }).catch(() => {
+        if (current) setStatusError(copy('statusSyncFailed'))
+      })
+    }
+
     const unsubHub = hubEvents?.subscribe?.('*', (ev) => {
       if (!current || !ev) return
       if (ev.type === 'omnimux:connected' || ev.type === 'omnimux:heartbeat') {
+        const wasUnhealthy = !hubHealthyRef.current
         hubHealthyRef.current = true
         poller.stop()
+        if (wasUnhealthy && runningStateRef.current) reconcileItem(0)
         return
       }
       if (ev.type === 'omnimux:disconnected' || ev.type === 'omnimux:silence') {
@@ -199,13 +222,7 @@ export function InspirationPostDetail({ item, t, onItemUpdated, onReplicate, rep
           delete next[matched.targetKey]
           return next
         })
-        fetchItem().then(response => {
-          if (!current) return
-          const outcome = decideAnalysisPollOutcome(response)
-          if (outcome.item) apply(outcome.item)
-        }).catch(() => {
-          if (current) setStatusError(copy('statusSyncFailed'))
-        })
+        reconcileItem(0)
       } else {
         setLiveStages(prev => ({ ...prev, [matched.targetKey]: matched }))
       }
@@ -225,6 +242,8 @@ export function InspirationPostDetail({ item, t, onItemUpdated, onReplicate, rep
     })
     return () => {
       current = false
+      for (const timer of retryTimers) clearTimeout(timer)
+      retryTimers.clear()
       if (typeof unsubHub === 'function') unsubHub()
       poller.dispose()
       analysisPoller.current = null
@@ -334,7 +353,24 @@ export function InspirationPostDetail({ item, t, onItemUpdated, onReplicate, rep
       if (requestIdentity.current !== identity) return
       analysisReadVersion.current++
       if (response.body?.data) { onItemUpdated?.(response.body.data); setConfigureKey('') }
-      if (!response.ok) setAnalysisErrors(current => ({ ...current, [key]: response.body?.error || copy('analysisFailed') }))
+      const cancelledResponse = response.status === 499
+        || response.body?.code === 'analysis-cancelled'
+        || response.body?.error === 'aborted'
+      if (!response.ok) {
+        if (cancelledResponse) {
+          // Prefer localized persisted cancel status rather than raw HTTP 499 text.
+          setAnalysisErrors(current => ({ ...current, [key]: '' }))
+          if (!response.body?.data && local.savedRow?.id) {
+            getLocalInspiration(local.savedRow.id).then((latest) => {
+              if (requestIdentity.current === identity && latest?.ok && latest.body?.data) {
+                onItemUpdated?.(latest.body.data)
+              }
+            }).catch(() => {})
+          }
+        } else {
+          setAnalysisErrors(current => ({ ...current, [key]: response.body?.error || copy('analysisFailed') }))
+        }
+      }
     } catch (error) { if (requestIdentity.current === identity) setAnalysisErrors(current => ({ ...current, [key]: error.message || copy('analysisFailed') })) }
     finally { submittingAnalysis.current = false; if (requestIdentity.current === identity) setRunningKey('') }
   }
@@ -478,9 +514,11 @@ export function InspirationPostDetail({ item, t, onItemUpdated, onReplicate, rep
     {!body && !media.length && <p className="omnimux-inspiration-modal-empty">{copy('noOriginal')}</p>}
   </>
 
+  const ColumnsContainer = isSidebar ? 'div' : 'main'
+
   return <div ref={root} className={`omnimux-post-detail is-${mode} is-variant-${variant}`} data-layout-mode={mode} data-post-variant={variant}>
     {!isSidebar && <Tabs className="omnimux-post-mobile-tabs" items={[{ id: 'post', label: copy('originalPost') }, { id: 'analysis', label: copy('analysis') }]} activeId={mobilePane} onChange={setMobilePane} aria-label={copy('panes')} />}
-    <main className={`omnimux-inspiration-modal-body omnimux-post-columns ${isSidebar ? 'is-sidebar' : ''}`}>
+    <ColumnsContainer className={`omnimux-inspiration-modal-body omnimux-post-columns ${isSidebar ? 'is-sidebar' : ''}`}>
       <section className={`omnimux-post-source omnimux-inspiration-modal-video-panel ${isSidebar || mobilePane === 'post' ? 'is-active' : ''}`} aria-label={copy('originalPost')}>
         {mediaFirstInSidebar ? <>
           {mediaNode}
@@ -533,7 +571,7 @@ export function InspirationPostDetail({ item, t, onItemUpdated, onReplicate, rep
           {!record && <p className="omnimux-post-analysis-empty">{copy('noAnalysis')}</p>}
         </div>
       </section>
-    </main>
+    </ColumnsContainer>
     <footer className="omnimux-inspiration-modal-footer omnimux-post-reference-bar"><div><strong>{selected.length ? `${copy('selectedReferences')} ${selected.length}` : copy('chooseHint')}</strong><div className="omnimux-post-reference-chips">{selected.map(ref => <span key={refKey(ref)}>{labelFor(ref)}</span>)}</div></div><Button className="omnimux-inspiration-modal-replicate" variant="primary" leadingIcon={<ArrowRight size={15} />} disabled={!selected.length} onClick={() => setDrawer(true)}>{copy('create')}</Button></footer>
     <Drawer open={Boolean(image)} onClose={() => setImage(null)} title={<div className="omnimux-post-drawer-heading"><span>{image?.label || copy('image')}</span><IconButton variant="ghost" aria-label={t('close')} onClick={() => setImage(null)}><X size={16} /></IconButton></div>} closable={false} className="omnimux-post-lightbox" width="100%" container={container} closeOnEsc={false} footer={image && <ReferenceButton disabled={saving} selected={hasReference({ kind: 'media', media_index: image.index })} onClick={() => toggleReference({ kind: 'media', media_index: image.index })} t={t} />}>
       {image && <><div className="omnimux-post-lightbox-tools"><IconButton variant="ghost" aria-label={copy('previousImage')} disabled={imageLightboxPosition <= 0} onClick={() => stepImage(-1)}><ChevronLeft size={16} /></IconButton><span className="omnimux-post-lightbox-counter">{imageLightboxPosition + 1} / {imageMedia.length}</span><IconButton variant="ghost" aria-label={copy('nextImage')} disabled={imageLightboxPosition < 0 || imageLightboxPosition >= imageMedia.length - 1} onClick={() => stepImage(1)}><ChevronRight size={16} /></IconButton><IconButton variant="ghost" aria-label={copy('zoomOut')} onClick={() => setZoom(value => Math.max(1, value - .5))}><Minus size={16} /></IconButton><Button size="sm" variant="ghost" leadingIcon={<RotateCcw size={14} />} onClick={() => setZoom(1)}>{zoom === 1 ? copy('fit') : `${Math.round(zoom * 100)}%`}</Button><IconButton variant="ghost" aria-label={copy('zoomIn')} onClick={() => setZoom(value => Math.min(4, value + .5))}><Plus size={16} /></IconButton><a href={image.url} target="_blank" rel="noopener noreferrer">{copy('openOriginal')}</a></div><div className={`omnimux-post-lightbox-canvas ${zoom > 1 ? 'is-zoomed' : ''}`}><img src={image.url} alt={image.title || image.label} style={zoom > 1 ? { width: `${(dimensions[image.index]?.width || 600) * zoom}px`, maxWidth: 'none', maxHeight: 'none' } : undefined} /></div></>}

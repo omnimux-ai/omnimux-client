@@ -1994,8 +1994,8 @@ dialog.omnimux-inspiration-preview-layer::backdrop { background: transparent; ba
   gap: 2px;
   padding: 2px;
   border-radius: 8px;
-  border: 1px solid var(--dsw-alias-border-l2, #242424);
-  background: var(--dsw-alias-bg-module-platform, var(--dsw-alias-bg-base, #141414));
+  border: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-module-platform, var(--dsw-alias-bg-base));
   flex-shrink: 0;
   -webkit-app-region: no-drag;
 }
@@ -2006,21 +2006,21 @@ dialog.omnimux-inspiration-preview-layer::backdrop { background: transparent; ba
   min-height: 26px;
   padding: 0;
   border-radius: 6px;
-  color: var(--dsw-alias-label-tertiary, #888888);
+  color: var(--dsw-alias-label-tertiary);
   transition: background-color 120ms ease, color 120ms ease;
 }
 .omnimux-inspiration-view-btn:hover {
-  color: var(--dsw-alias-label-primary, #ffffff);
-  background: var(--dsw-alias-interactive-bg-hover, rgba(255, 255, 255, 0.06));
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-interactive-bg-hover);
 }
 .omnimux-inspiration-view-btn.is-active {
-  color: var(--dsw-alias-label-primary, #ffffff);
-  background: var(--dsw-alias-interactive-bg-active, rgba(255, 255, 255, 0.12));
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-interactive-bg-active);
 }
 
 /* Gallery active highlight when item is open in docked sidebar */
 .omnimux-inspiration-card-pure.is-inspected {
-  box-shadow: 0 0 0 1.5px var(--dsw-alias-brand-primary, #4c8dff);
+  box-shadow: 0 0 0 1.5px var(--dsw-alias-brand-primary);
 }
 
 /* Split workspace: left feed + right docked polymorphic inspector (#211) */
@@ -2037,6 +2037,8 @@ dialog.omnimux-inspiration-preview-layer::backdrop { background: transparent; ba
   min-width: 0;
   display: flex;
   flex-direction: column;
+  container-type: inline-size;
+  container-name: inspiration-feed;
 }
 
 /* Docked right polymorphic detail sidebar */
@@ -2051,11 +2053,15 @@ dialog.omnimux-inspiration-preview-layer::backdrop { background: transparent; ba
   display: flex;
   flex-direction: column;
   border-radius: 12px;
-  border: 1px solid var(--dsw-alias-border-l2, #242424);
-  background: var(--dsw-alias-bg-module-platform, var(--dsw-alias-bg-base, #141414));
+  border: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-module-platform, var(--dsw-alias-bg-base));
   color: var(--dsw-alias-label-primary, inherit);
   overflow: hidden;
   isolation: isolate;
+}
+.omnimux-inspiration-detail-sidebar .omnimux-inspiration-share-popover {
+  width: min(280px, calc(100vw - 48px));
+  right: 0;
 }
 .omnimux-inspiration-sidebar-header {
   position: relative;
@@ -2067,8 +2073,8 @@ dialog.omnimux-inspiration-preview-layer::backdrop { background: transparent; ba
   gap: 10px;
   min-height: 48px;
   padding: 10px 12px 10px 16px;
-  border-bottom: 1px solid var(--dsw-alias-border-l2, #242424);
-  background: var(--dsw-alias-bg-module-platform, var(--dsw-alias-bg-base, #141414));
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-module-platform, var(--dsw-alias-bg-base));
   -webkit-app-region: no-drag;
 }
 .omnimux-inspiration-sidebar-heading {
@@ -2101,12 +2107,12 @@ dialog.omnimux-inspiration-preview-layer::backdrop { background: transparent; ba
   min-width: 28px;
   min-height: 28px;
   padding: 0;
-  color: var(--dsw-alias-label-secondary, #a1a1aa);
+  color: var(--dsw-alias-label-secondary);
 }
 .omnimux-inspiration-sidebar-action-btn:hover,
 .omnimux-inspiration-sidebar-action-btn.is-active {
-  color: var(--dsw-alias-label-primary, #ffffff);
-  background: var(--dsw-alias-interactive-bg-active, rgba(255, 255, 255, 0.12));
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-interactive-bg-active);
 }
 
 /* Sidebar single-column polymorphic post detail */
@@ -2243,7 +2249,7 @@ dialog.omnimux-inspiration-preview-layer::backdrop { background: transparent; ba
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: var(--dsw-alias-brand-primary, #4c8dff);
+  background: var(--dsw-alias-brand-primary);
   flex-shrink: 0;
   animation: omnimuxStagePulse 1.2s ease-in-out infinite;
 }
@@ -2258,7 +2264,7 @@ dialog.omnimux-inspiration-preview-layer::backdrop { background: transparent; ba
   flex-direction: column;
   width: 100%;
   min-width: 0;
-  border-top: 1px solid var(--dsw-alias-border-l2, #242424);
+  border-top: 1px solid var(--dsw-alias-border-l2);
 }
 .omnimux-inspiration-list-row {
   display: flex;
@@ -2266,32 +2272,32 @@ dialog.omnimux-inspiration-preview-layer::backdrop { background: transparent; ba
   gap: 12px;
   padding: 10px 12px;
   min-height: 60px;
-  border-bottom: 1px solid var(--dsw-alias-border-l2, #242424);
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
   border-radius: 8px;
   cursor: pointer;
   outline: none;
   transition: background-color 120ms ease;
 }
 .omnimux-inspiration-list-row:hover {
-  background: var(--dsw-alias-interactive-bg-hover, rgba(255, 255, 255, 0.04));
+  background: var(--dsw-alias-interactive-bg-hover);
 }
 .omnimux-inspiration-list-row:focus-visible {
-  box-shadow: inset 0 0 0 1.5px var(--dsw-alias-brand-primary, #4c8dff);
+  box-shadow: inset 0 0 0 1.5px var(--dsw-alias-brand-primary);
 }
 .omnimux-inspiration-list-row.is-active {
-  background: var(--dsw-alias-interactive-bg-active, rgba(255, 255, 255, 0.08));
+  background: var(--dsw-alias-interactive-bg-active);
 }
 .omnimux-inspiration-list-check {
   flex: 0 0 auto;
   width: 22px;
   height: 22px;
   border-radius: 6px;
-  border: 1px solid var(--dsw-alias-border-l3, #383838);
+  border: 1px solid var(--dsw-alias-border-l3);
 }
 .omnimux-inspiration-list-check[data-selected="true"] {
-  background: var(--dsw-alias-brand-primary, #4c8dff);
-  border-color: var(--dsw-alias-brand-primary, #4c8dff);
-  color: var(--dsw-alias-label-primary-foreground, #ffffff);
+  background: var(--dsw-alias-brand-primary);
+  border-color: var(--dsw-alias-brand-primary);
+  color: var(--dsw-alias-label-primary-inverted, var(--dsw-alias-label-primary-foreground));
 }
 .omnimux-inspiration-list-thumb {
   position: relative;
@@ -2303,9 +2309,9 @@ dialog.omnimux-inspiration-preview-layer::backdrop { background: transparent; ba
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--dsw-alias-bg-module-platform, var(--dsw-alias-bg-base, #141414));
-  border: 1px solid var(--dsw-alias-border-l2, #242424);
-  color: var(--dsw-alias-label-tertiary, #888888);
+  background: var(--dsw-alias-bg-module-platform, var(--dsw-alias-bg-base));
+  border: 1px solid var(--dsw-alias-border-l2);
+  color: var(--dsw-alias-label-tertiary);
 }
 .omnimux-inspiration-list-thumb img {
   width: 100%;
@@ -2323,8 +2329,8 @@ dialog.omnimux-inspiration-preview-layer::backdrop { background: transparent; ba
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: var(--dsw-alias-bg-mask-1, rgba(0, 0, 0, 0.6));
-  color: var(--dsw-specific-media-fg, #ffffff);
+  background: var(--dsw-alias-toast-bg, var(--dsw-alias-label-primary));
+  color: var(--dsw-alias-label-primary-inverted, var(--dsw-alias-bg-base));
 }
 .omnimux-inspiration-list-main {
   flex: 1 1 auto;
@@ -2341,7 +2347,7 @@ dialog.omnimux-inspiration-preview-layer::backdrop { background: transparent; ba
 }
 .omnimux-inspiration-list-folder-icon {
   flex: 0 0 auto;
-  color: var(--dsw-alias-label-secondary, #a1a1aa);
+  color: var(--dsw-alias-label-secondary);
 }
 .omnimux-inspiration-list-title {
   font-size: 13px;
@@ -2355,7 +2361,7 @@ dialog.omnimux-inspiration-preview-layer::backdrop { background: transparent; ba
 .omnimux-inspiration-list-excerpt {
   font-size: 12px;
   line-height: 1.4;
-  color: var(--dsw-alias-label-tertiary, #888888);
+  color: var(--dsw-alias-label-tertiary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2367,16 +2373,16 @@ dialog.omnimux-inspiration-preview-layer::backdrop { background: transparent; ba
   flex: 0 0 auto;
   font-size: 12px;
   line-height: 1.4;
-  color: var(--dsw-alias-label-tertiary, #888888);
+  color: var(--dsw-alias-label-tertiary);
   font-variant-numeric: tabular-nums;
 }
 .omnimux-inspiration-list-tag {
   padding: 2px 6px;
   border-radius: 6px;
   font-size: 11px;
-  background: var(--dsw-alias-bg-module-platform, var(--dsw-alias-bg-base, #141414));
-  border: 1px solid var(--dsw-alias-border-l2, #242424);
-  color: var(--dsw-alias-label-secondary, #a1a1aa);
+  background: var(--dsw-alias-bg-module-platform, var(--dsw-alias-bg-base));
+  border: 1px solid var(--dsw-alias-border-l2);
+  color: var(--dsw-alias-label-secondary);
 }
 .omnimux-inspiration-list-platform,
 .omnimux-inspiration-list-views,
@@ -2393,16 +2399,16 @@ dialog.omnimux-inspiration-preview-layer::backdrop { background: transparent; ba
   white-space: nowrap;
 }
 .omnimux-inspiration-list-status.is-done {
-  color: var(--dsw-alias-state-success-primary, #10b981);
-  background: color-mix(in srgb, var(--dsw-alias-state-success-primary, #10b981) 12%, transparent);
+  color: var(--dsw-alias-state-success-primary);
+  background: color-mix(in srgb, var(--dsw-alias-state-success-primary) 12%, transparent);
 }
 .omnimux-inspiration-list-status.is-busy {
-  color: var(--dsw-alias-brand-primary, #4c8dff);
-  background: color-mix(in srgb, var(--dsw-alias-brand-primary, #4c8dff) 12%, transparent);
+  color: var(--dsw-alias-brand-primary);
+  background: color-mix(in srgb, var(--dsw-alias-brand-primary) 12%, transparent);
 }
 .omnimux-inspiration-list-status.is-failed {
-  color: var(--dsw-alias-state-error-primary, #ef4444);
-  background: color-mix(in srgb, var(--dsw-alias-state-error-primary, #ef4444) 12%, transparent);
+  color: var(--dsw-alias-state-error-primary);
+  background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 12%, transparent);
 }
 .omnimux-inspiration-list-actions {
   display: inline-flex;
@@ -2416,6 +2422,25 @@ dialog.omnimux-inspiration-preview-layer::backdrop { background: transparent; ba
 .omnimux-inspiration-list-row:focus-within .omnimux-inspiration-list-actions,
 .omnimux-inspiration-list-row.is-active .omnimux-inspiration-list-actions {
   opacity: 1;
+}
+
+/* Collapse secondary list columns based on actual feed pane width (handles DSH left rail + docked right sidebar). */
+@container inspiration-feed (max-width: 740px) {
+  .omnimux-inspiration-list-views,
+  .omnimux-inspiration-list-tag {
+    display: none;
+  }
+}
+@container inspiration-feed (max-width: 560px) {
+  .omnimux-inspiration-list-time,
+  .omnimux-inspiration-list-platform {
+    display: none;
+  }
+}
+@container inspiration-feed (max-width: 440px) {
+  .omnimux-inspiration-list-actions button:first-child {
+    display: none;
+  }
 }
 
 @media (hover: none) {
@@ -2447,7 +2472,7 @@ dialog.omnimux-inspiration-preview-layer::backdrop { background: transparent; ba
     max-height: none;
     min-height: 0;
     z-index: 120;
-    box-shadow: 0 18px 44px -12px var(--dsw-alias-bg-mask-1, rgba(0, 0, 0, 0.55));
+    box-shadow: 0 18px 44px -12px var(--dsw-alias-bg-mask-1);
   }
   .omnimux-inspiration-list-views,
   .omnimux-inspiration-list-tag {

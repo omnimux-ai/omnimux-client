@@ -152,6 +152,10 @@ export function buildTranslationUserInput({ lang, source, segmentIds = [] }) {
 
 function normalizeShot(raw, index) {
   const timeRange = cleanString(raw?.time_range)
+  const rawTitle = cleanString(raw?.title)
+  const description = cleanString(raw?.description)
+  const script = cleanString(raw?.script)
+  if (!rawTitle && !description && !script && !timeRange) return null
   const rangeParts = timeRange ? timeRange.split(/[-–—~]/).map((p) => p.trim()) : []
   const start = typeof raw?.start_seconds === 'number' && Number.isFinite(raw.start_seconds)
     ? raw.start_seconds
@@ -165,9 +169,9 @@ function normalizeShot(raw, index) {
     ...(start !== null ? { start_seconds: start } : {}),
     ...(end !== null ? { end_seconds: end } : {}),
     stage: cleanString(raw?.stage) || 'Body',
-    title: cleanString(raw?.title) || `分镜 ${index + 1}`,
-    description: cleanString(raw?.description),
-    script: cleanString(raw?.script),
+    title: rawTitle || `分镜 ${index + 1}`,
+    description,
+    script,
     prompt: cleanString(raw?.prompt),
   }
 }
@@ -206,7 +210,7 @@ export function normalizeStructuredAnalysisResult(data, selection = {}) {
 
   const shots = (Array.isArray(data?.shots) ? data.shots : [])
     .map((shot, idx) => normalizeShot(shot, idx))
-    .filter((shot) => shot.title || shot.description || shot.script)
+    .filter(Boolean)
 
   const segments = shots.map((shot, idx) => ({
     id: `seg_${idx + 1}`,

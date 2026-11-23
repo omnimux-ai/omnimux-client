@@ -145,7 +145,7 @@ export async function executeHeadlessSkill(deps, request) {
 
         const videoProcess = typeof deps.videoProcess === 'function' ? deps.videoProcess() : deps.videoProcess
         transport = await prepareHeadlessTransport(
-          { prompt: structuredPrompt, references: Array.isArray(request.references) ? request.references : undefined },
+          { system: systemPrompt, prompt: structuredPrompt, references: Array.isArray(request.references) ? request.references : undefined },
           { videoProcess, signal: timed.signal, onPreparing: () => update({ stage: 'preparing-media' }) },
         )
 

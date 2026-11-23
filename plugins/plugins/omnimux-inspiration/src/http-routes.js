@@ -41,6 +41,8 @@ const CODE_MESSAGES = {
   'headless-skill-timeout': '分析超时，请检查网络或切换模型后重试',
   'headless-skill-cancelled': '分析已取消，可重新分析',
   'headless-skill-stale-input': '分析期间原始内容已变更，请重新分析',
+  'headless-skill-transport-exceeded': '素材超过分析传输容量，未提交不完整分析，请选择具体素材或正文分析',
+  'headless-skill-transport-unavailable': '视频较大，需要视频处理能力准备完整视频后再分析',
 }
 
 const MEDIA_TYPES = {
@@ -307,7 +309,7 @@ async function dispatchRequest(ctx, req) {
     return await runRoute(route.name, args)
   } catch (error) {
     if (error?.name === 'AbortError' || error?.code === 'ABORT_ERR') {
-      return { status: 499, body: { error: 'aborted' } }
+      return { status: 499, body: { error: error?.message || '已取消', code: 'analysis-cancelled' } }
     }
     const status = error.status || 500
     const message = error.message || String(error)

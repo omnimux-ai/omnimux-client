@@ -572,7 +572,7 @@ export function InspirationSection({ t, active }) {
       if (stage) stage.removeEventListener('scroll', scheduleSync)
       observer?.disconnect()
     }
-  }, [tab, selecting, Boolean(selectedItem), viewMode])
+  }, [tab, selecting, Boolean(selectedItem), viewMode, collectionId, Boolean(libraryCollections.selectedSource)])
 
   return (
     <div ref={rootRef} className="omnimux-inspiration-root">
@@ -1029,6 +1029,7 @@ export function InspirationSection({ t, active }) {
 
             {selectedItem && !expandedModal ? (
               <InspirationDetailSidebar
+                key={String(selectedItem.id)}
                 row={selectedItem}
                 t={t}
                 onClose={() => setSelectedItem(null)}

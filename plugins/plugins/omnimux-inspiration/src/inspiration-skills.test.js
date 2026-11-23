@@ -28,31 +28,51 @@ describe('bundled inspiration skills and schema normalization', () => {
     }
   })
 
-  it('registers bundled skills into DSH ctx.skills and disposes cleanly on unload', () => {
-    const registered = new Map()
-    const cleanups = []
-    const skillsRegistry = {
-      register(entry) {
-        registered.set(entry.name, entry)
-        return () => registered.delete(entry.name)
-      },
-    }
-    const ctx = {
+  it('registers bundled skills via registerProvider at BUNDLED_SKILL_RANK (600) and supports register() fallback', async () => {
+    let provider = null
+    const providerCtx = {
       inject(deps, fn) {
         assert.deepEqual(deps, ['skills'])
         fn({
-          skills: skillsRegistry,
-          effect(factory) {
-            cleanups.push(factory())
+          skills: {
+            registerProvider(factory) {
+              provider = factory()
+              return () => { provider = null }
+            },
           },
         })
       },
     }
-    registerInspirationSkills(ctx)
+    registerInspirationSkills(providerCtx)
+    assert.ok(provider, 'must register bundled SkillProvider when registerProvider is available')
+    assert.equal(provider.name, 'omnimux-inspiration')
+    const candidates = await provider.list({})
+    assert.equal(candidates.length, 2)
+    for (const candidate of candidates) {
+      assert.equal(candidate.rank, 600, 'bundled plugin skills must use BUNDLED_SKILL_RANK 600')
+      assert.equal(candidate.source, 'bundled')
+      const loaded = await provider.get(candidate, {})
+      assert.ok(loaded?.content?.length > 50)
+    }
+
+    // Minimal fallback registry with register() only
+    const registered = new Map()
+    const fallbackCtx = {
+      inject(deps, fn) {
+        assert.deepEqual(deps, ['skills'])
+        fn({
+          skills: {
+            register(entry) {
+              registered.set(entry.name, entry)
+              return () => registered.delete(entry.name)
+            },
+          },
+        })
+      },
+    }
+    registerInspirationSkills(fallbackCtx)
     assert.equal(registered.has(INSPIRATION_DECONSTRUCT_SKILL), true)
     assert.equal(registered.has(INSPIRATION_TRANSLATE_SKILL), true)
-    for (const cleanup of cleanups) cleanup()
-    assert.equal(registered.size, 0)
   })
 
   it('normalizes structured JSON Schema output into sections, shots, segments, and markdown without regexes', () => {

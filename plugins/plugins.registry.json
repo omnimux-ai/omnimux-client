@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0.0",
-  "updatedAt": "2026-11-23T11:50:54.168Z",
+  "updatedAt": "2026-11-23T14:23:31.259Z",
   "topology": {
     "tiers": [
       {
@@ -626,7 +626,9 @@
         ],
         "seamsProvided": [],
         "seamsConsumed": [
-          "reader"
+          "reader",
+          "headlessSkill",
+          "hubEvents"
         ],
         "slots": [
           {
@@ -642,6 +644,10 @@
           "$DSH_HOME/omnimux/inspirations/"
         ]
       },
+      "skills": [
+        "skills/inspiration-deconstruct/SKILL.md",
+        "skills/inspiration-translate/SKILL.md"
+      ],
       "dependencies": {
         "requiredPlugins": [
           "omnimux"

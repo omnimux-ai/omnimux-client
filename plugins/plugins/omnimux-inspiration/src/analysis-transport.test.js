@@ -53,7 +53,7 @@ test('delegates 98MB video references to lazy Hub headlessSkill seam and handles
       }),
     })
     if (outcome === 'cancel') await assert.rejects(work, { name: 'AbortError' })
-    else assert.equal((await work).status, outcome === 'done' ? 200 : 502)
+    else assert.equal((await work).status, outcome === 'done' ? 200 : 422)
     assert.equal(calls, 1)
     assert.equal(existsSync(source), true)
     assert.equal(store.get(row.id).analysis_results.post.status, outcome === 'done' ? 'done' : 'failed')
