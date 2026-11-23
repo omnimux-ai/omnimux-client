@@ -468,19 +468,17 @@ export function CanvasRelinkDialog({
     }
   };
 
-  const stateDescription = (item: ReconcileItemReport) => {
-    switch (item.reconcileState) {
-      case "online_exact":
-        return t("Verified source exists on host. Restore into the current browser cache.");
-      case "legacy_unsigned_exact":
-        return t("Uniquely matched to a connected canvas upstream node. Safe to back up and upgrade.");
-      case "source_drifted":
-        return t("The connected canvas upstream content changed (SHA-256 differs). Confirm before updating.");
-      case "legacy_ambiguous":
-        return t("Matched multiple upstream candidates. Select which canvas node to bind.");
-      default:
-        return t("Original file is unavailable. Rebind to an upstream canvas node or replace from Assets.");
+  const stateMetaParts = (item: ReconcileItemReport): string[] => {
+    if (item.reconcileState === "source_drifted") {
+      const expected = shortSha(item.expectedSha256);
+      const current = shortSha(item.currentSha256);
+      if (expected && current) return [`SHA-256 ${expected} → ${current}`];
+      return current ? [`SHA-256 ${current}`] : [];
     }
+    if (item.reconcileState === "online_exact" || item.reconcileState === "legacy_unsigned_exact") {
+      return [item.canonicalHandle?.scope ?? "", shortSha(item.currentSha256)].filter(Boolean);
+    }
+    return [];
   };
 
   const unimportedCount = report?.unimportedUpstreams.length ?? 0;
@@ -507,9 +505,6 @@ export function CanvasRelinkDialog({
         <div className="clip-relink-header">
           <div className="clip-relink-header-text">
             <DialogTitle>{t("Sync & Relink from Canvas")}</DialogTitle>
-            <p className="clip-relink-subtitle">
-              {t("Verify upstream canvas and project assets by SHA-256 while preserving timeline edits.")}
-            </p>
           </div>
           <DialogClose asChild>
             <IconButton aria-label={t("Close")} size="sm">
@@ -619,7 +614,16 @@ export function CanvasRelinkDialog({
                             <div className="clip-relink-row-title" title={item.name}>
                               {item.name}
                             </div>
-                            <div className="clip-relink-row-meta">{stateDescription(item)}</div>
+                            {(() => {
+                              const parts = stateMetaParts(item);
+                              return parts.length > 0 ? (
+                                <div className="clip-relink-row-meta">
+                                  {parts.map((part) => (
+                                    <span key={part}>{part}</span>
+                                  ))}
+                                </div>
+                              ) : null;
+                            })()}
                           </div>
                           <span className="clip-relink-pill" data-tone={badge.tone}>
                             {badge.label}
@@ -703,7 +707,11 @@ export function CanvasRelinkDialog({
                                         <span>{cand.name || cand.sourceNodeId}</span>
                                       </span>
                                       {metaParts.length > 0 && (
-                                        <span className="clip-relink-candidate-meta">{metaParts.join(" · ")}</span>
+                                        <span className="clip-relink-candidate-meta">
+                                          {metaParts.map((part) => (
+                                            <span key={part}>{part}</span>
+                                          ))}
+                                        </span>
                                       )}
                                     </label>
                                   );
@@ -760,18 +768,23 @@ export function CanvasRelinkDialog({
                   {report.unimportedUpstreams.map((upstream) => {
                     const key = `import:${candidateKey(upstream.sourceNodeId, upstream.outputIndex)}`;
                     const metaParts = [
-                      t("Connected on canvas, not yet in this clip project"),
                       formatDurationMs(upstream.durationMs),
                       shortSha(upstream.currentSha256),
                     ].filter(Boolean);
                     return (
-                      <div key={key} className="clip-relink-row">
+                      <div key={key} className="clip-relink-row clip-relink-upstream-row" data-upstream-row="true">
                         <div className="clip-relink-row-head">
                           <div className="clip-relink-row-info">
                             <div className="clip-relink-row-title" title={upstream.name}>
                               {upstream.name}
                             </div>
-                            <div className="clip-relink-row-meta">{metaParts.join(" · ")}</div>
+                            {metaParts.length > 0 && (
+                              <div className="clip-relink-row-meta">
+                                {metaParts.map((part) => (
+                                  <span key={part}>{part}</span>
+                                ))}
+                              </div>
+                            )}
                           </div>
                           <Button
                             size="xs"
@@ -798,23 +811,30 @@ export function CanvasRelinkDialog({
                   <div className="clip-relink-section-title">
                     {t("Online media ({0})", [classified.online.length])}
                   </div>
-                  {classified.online.map((item) => (
-                    <div key={item.mediaId} className="clip-relink-row">
-                      <div className="clip-relink-row-head">
-                        <div className="clip-relink-row-info">
-                          <div className="clip-relink-row-title" title={item.name}>
-                            {item.name}
+                  {classified.online.map((item) => {
+                    const metaParts = [item.canonicalHandle?.scope, shortSha(item.currentSha256)].filter(Boolean);
+                    return (
+                      <div key={item.mediaId} className="clip-relink-row" data-reconcile-state="online_exact">
+                        <div className="clip-relink-row-head">
+                          <div className="clip-relink-row-info">
+                            <div className="clip-relink-row-title" title={item.name}>
+                              {item.name}
+                            </div>
+                            {metaParts.length > 0 && (
+                              <div className="clip-relink-row-meta">
+                                {metaParts.map((part) => (
+                                  <span key={part}>{part}</span>
+                                ))}
+                              </div>
+                            )}
                           </div>
-                          <div className="clip-relink-row-meta">
-                            {[item.canonicalHandle?.scope, shortSha(item.currentSha256)].filter(Boolean).join(" · ")}
-                          </div>
+                          <span className="clip-relink-pill" data-tone="ok">
+                            {t("Online")}
+                          </span>
                         </div>
-                        <span className="clip-relink-pill" data-tone="ok">
-                          {t("Online")}
-                        </span>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </>
               )}
             </>
@@ -822,7 +842,6 @@ export function CanvasRelinkDialog({
         </div>
 
         <div className="clip-relink-footer">
-          <span>{t("Supports canvas upstream, Asset Library, and local folders")}</span>
           <div className="clip-relink-actions">
             {onFallbackLocalFolder && (
               <Button

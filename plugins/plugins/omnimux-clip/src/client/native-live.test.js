@@ -18,6 +18,7 @@ const built = await build({
       export { getMediaEngine } from './openreel/core/media/mediabunny-engine';
       export { EffectsBridge } from './openreel/web/bridges/effects-bridge';
       export { getMediaBridge } from './openreel/web/bridges/media-bridge';
+      export { shouldProbeAudioStreamsWithFfmpeg } from './openreel/core/media/media-import-service';
       export { projectAssetUrlFromHandle } from './live/bridged-media';`,
     resolveDir: directory,
     loader: 'ts',
@@ -57,7 +58,8 @@ globalThis.self = {}
 const module = { exports: {} }
 new Function('require', 'module', 'exports', built.outputFiles[0].text)(require, module, module.exports)
 const { executeNativeEdit, captureNativeFrames, executeNativeView, readNativeSnapshot, useProjectStore,
-  useTimelineStore, useUIStore, useEngineStore, getMediaEngine, EffectsBridge, getMediaBridge, projectAssetUrlFromHandle } = module.exports
+  useTimelineStore, useUIStore, useEngineStore, getMediaEngine, EffectsBridge, getMediaBridge,
+  shouldProbeAudioStreamsWithFfmpeg, projectAssetUrlFromHandle } = module.exports
 mock.method(EffectsBridge.prototype, 'initialize', async () => {})
 const store = () => useProjectStore.getState()
 const timeline = () => useTimelineStore.getState()
@@ -473,4 +475,12 @@ test('relink_media clears stale handle/url across workspace path & cross-scope r
   assert.equal(r2.success, true)
   assert.equal(track('v1').clips[0].outPoint, 0.03)
   assert.ok(track('v1').clips[0].inPoint <= 0.03)
+})
+
+test('shouldProbeAudioStreamsWithFfmpeg avoids cold CDN wasm download when mediabunny already read audioTrackCount', () => {
+  assert.equal(shouldProbeAudioStreamsWithFfmpeg(1, 1024 * 1024, { hasFastProbe: false }), false)
+  assert.equal(shouldProbeAudioStreamsWithFfmpeg(1, 1024 * 1024, { hasFastProbe: true }), true)
+  assert.equal(shouldProbeAudioStreamsWithFfmpeg(2, 1024 * 1024, { hasFastProbe: true }), false)
+  assert.equal(shouldProbeAudioStreamsWithFfmpeg(undefined, 1024 * 1024, { hasFastProbe: false }), true)
+  assert.equal(shouldProbeAudioStreamsWithFfmpeg(1, 100 * 1024 * 1024, { hasFastProbe: true }), false)
 })
