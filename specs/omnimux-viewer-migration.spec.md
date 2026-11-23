@@ -50,6 +50,17 @@
 - `corepack pnpm --dir plugins verify:tools`
 - 演示页与 worktree 浏览器证据（亮/暗、窄屏）
 
+## 旧标准变更
+
+- `plugins/scripts/verify-license-consistency.test.mjs` :: `真实仓库：13 个插件全部登记且通过`
+  - 原断言：插件总数 `13`，counts `{ original: 9, fork: 2, vendor: 2 }`。
+  - 必须改的理由：本次迁入 `omnimux-viewer`（MIT fork），插件总数与 fork 数必然增加；保持旧数字会把新插件误判为未登记。
+  - 新期望证据：`onDisk.length === 14`，counts `{ original: 9, fork: 3, vendor: 2 }`，测试通过。
+- `plugins/scripts/verify-license-consistency.test.mjs` :: `真实仓库：fork 类保持 MIT，原创类不残留 MIT`
+  - 原断言：forks 精确等于 `['omnimux-browser', 'omnimux-market']`。
+  - 必须改的理由：`omnimux-viewer` 是 MIT fork，必须出现在 fork 清单中。
+  - 新期望证据：forks 精确等于 `['omnimux-browser', 'omnimux-market', 'omnimux-viewer']`，测试通过。
+
 ## 文档影响
 
 - 更新 `plugins/README.md`、`plugins/ACKNOWLEDGEMENTS.md` 的 viewer 归属与构建状态说明。
