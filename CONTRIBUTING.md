@@ -52,7 +52,7 @@ corepack yarn dev
 ## Reporting Bugs & Requesting Features
 
 - Open an issue on [GitHub Issues](https://github.com/omnimux-ai/omnimux-client/issues) with your OS, OmniMux version, reproduction steps, and expected vs. actual behavior.
-- For general questions and workflow ideas, join [GitHub Discussions](https://github.com/omnimux-ai/omnimux-client/discussions) or [Discord](https://discord.gg/omnimux).
+- For general questions and workflow ideas, join [GitHub Discussions](https://github.com/omnimux-ai/omnimux-client/discussions) or [Discord](https://discord.gg/uNPBDz3WNC).
 
 ## License & Code of Conduct
 
