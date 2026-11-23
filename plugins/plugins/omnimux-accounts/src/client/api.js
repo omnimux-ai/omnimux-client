@@ -77,17 +77,19 @@ export function whenAuthReady(cb) {
   }
 }
 
+const ACCOUNTS_PROVIDER = 'tiktok_direct'
+
 /**
  * @param {{ platform?: string, group?: string }} [filters]
  */
 export async function listAccounts(filters = {}) {
-  const query = new URLSearchParams({ provider: 'zernio' })
+  const query = new URLSearchParams({ provider: ACCOUNTS_PROVIDER })
   if (filters.platform) query.set('platform', filters.platform)
   if (filters.group) query.set('group', filters.group)
   const suffix = query.toString() ? `?${query}` : ''
   const result = await quotaGuard(() => accountsRequest(`/omnimux/accounts${suffix}`), { capability: 'accounts' })()
   if (result.ok && Array.isArray(result.body?.accounts)) {
-    return { ...result, body: { ...result.body, accounts: result.body.accounts.filter((row) => row?.provider === 'zernio') } }
+    return { ...result, body: { ...result.body, accounts: result.body.accounts.filter((row) => row?.provider === ACCOUNTS_PROVIDER) } }
   }
   if (result.ok) return { ok: false, status: 502, body: { error: 'invalid account list response' } }
   return result
@@ -97,13 +99,13 @@ export async function listAccounts(filters = {}) {
  * @param {string} platform
  */
 export const connectAccount = quotaGuard(authGuard((platform) =>
-  accountsRequest('/omnimux/accounts', { method: 'POST', body: { platform, provider: 'zernio' } })), { capability: 'accounts', userInitiated: true })
+  accountsRequest('/omnimux/accounts', { method: 'POST', body: { platform, provider: ACCOUNTS_PROVIDER } })), { capability: 'accounts', userInitiated: true })
 
 /**
  * @param {string} id
  */
 export const disconnectAccount = quotaGuard(authGuard((id) =>
-  accountsRequest(`/omnimux/accounts/${encodeURIComponent(id)}?provider=zernio`, { method: 'DELETE' })), { capability: 'accounts', userInitiated: true })
+  accountsRequest(`/omnimux/accounts/${encodeURIComponent(id)}?provider=${ACCOUNTS_PROVIDER}`, { method: 'DELETE' })), { capability: 'accounts', userInitiated: true })
 
 /**
  * Updates Host-local account metadata (group / agent_usable).
@@ -111,4 +113,4 @@ export const disconnectAccount = quotaGuard(authGuard((id) =>
  * @param {{ group?: string | null, agent_usable?: boolean }} body
  */
 export const patchAccount = quotaGuard(authGuard((id, body) =>
-  accountsRequest(`/omnimux/accounts/${encodeURIComponent(id)}?provider=zernio`, { method: 'PATCH', body })), { capability: 'accounts', userInitiated: true })
+  accountsRequest(`/omnimux/accounts/${encodeURIComponent(id)}?provider=${ACCOUNTS_PROVIDER}`, { method: 'PATCH', body })), { capability: 'accounts', userInitiated: true })

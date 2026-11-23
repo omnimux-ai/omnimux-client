@@ -7,6 +7,7 @@
  * @property {string} account_id
  * @property {string} platform
  * @property {string} [provider]
+ * @property {'draft' | 'direct'} [publish_mode]
  * @property {string} status
  * @property {string | null} post_id
  * @property {string | null} raw_status

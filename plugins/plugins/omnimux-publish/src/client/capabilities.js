@@ -1,4 +1,5 @@
 import { isPublishingAccount } from '../account-policy.js'
+import { accountMaxMediaItems, accountPublishMode, resolveSelectionPublishMode } from '../shared/tiktok-capabilities.js'
 /**
  * capabilities.js: 矩阵驱动的表单裁剪判定（纯逻辑，浏览器与测试环境共享）。
  *
@@ -83,12 +84,28 @@ export function formCapabilities(input) {
   const selected = Array.isArray(input.selectedAccounts) ? input.selectedAccounts : []
   const platformsOfSelected = selected.map((row) => String(row.platform || '').toLowerCase())
   const cover = coverDecision(platforms, platformsOfSelected)
-  const limit = input.type === 'image' ? imageLimit(platforms, platformsOfSelected) : undefined
+  const platformCap = input.type === 'image' ? imageLimit(platforms, platformsOfSelected) : undefined
+  const serverCaps = input.type === 'image'
+    ? selected.map(accountMaxMediaItems).filter((v) => typeof v === 'number' && v > 0)
+    : []
+  const serverCap = serverCaps.length > 0 ? Math.min(...serverCaps) : undefined
+  const limit = typeof serverCap === 'number'
+    ? (typeof platformCap === 'number' ? Math.min(serverCap, platformCap) : serverCap)
+    : platformCap
+  /** @type {'server' | 'protocol' | 'none'} */
+  const imageLimitSource = typeof serverCap === 'number'
+    ? 'server'
+    : (typeof platformCap === 'number' ? 'protocol' : 'none')
   const imageCount = typeof input.imageCount === 'number' ? input.imageCount : 0
+  const scheduleEnabled = platformsOfSelected.length > 0
+    && [...new Set(platformsOfSelected)].every((p) => platformRow(platforms, p).supports_schedule === true)
   return {
     cover,
     imageLimit: limit,
+    imageLimitSource,
     imageOverLimit: typeof limit === 'number' && imageCount > limit,
+    scheduleEnabled,
+    publishMode: resolveSelectionPublishMode(selected),
     // 类型冲突：所选账号的平台里有不支持当前内容类型的
     typeConflicts: [...new Set(platformsOfSelected)]
       .filter((p) => !supportsType(platforms, p, input.type)),
@@ -96,11 +113,11 @@ export function formCapabilities(input) {
 }
 
 /**
- * 账号可用性（与 Host accounts.js 判定同义：status ∈ {active, expiring} 且
- * agent_usable !== false）。浏览器侧的 ViewRow 已由 hub /omnimux/accounts 计算好
- * status，这里只做展示层判定。
+ * 账号可用性（与 Host accounts.js 判定同义：status ∈ {active, expiring}、
+ * agent_usable !== false 且未缺失 TikTok 发布权限）。浏览器侧的 ViewRow
+ * 已由 hub /omnimux/accounts 计算好 status，这里只做展示层判定。
  * @param {Record<string, unknown>} row
- * @returns {{ ok: boolean, reason: 'expired' | 'error' | 'agentOff' | '' }}
+ * @returns {{ ok: boolean, reason: 'expired' | 'error' | 'agentOff' | 'noPublishScope' | '' }}
  */
 export function accountUsable(row) {
   if (!isPublishingAccount(row)) return { ok: false, reason: 'error' }
@@ -108,6 +125,7 @@ export function accountUsable(row) {
   if (status === 'expired') return { ok: false, reason: 'expired' }
   if (status && status !== 'active' && status !== 'expiring') return { ok: false, reason: 'error' }
   if (row.agent_usable === false) return { ok: false, reason: 'agentOff' }
+  if (accountPublishMode(row) === 'no_publish_scope') return { ok: false, reason: 'noPublishScope' }
   return { ok: true, reason: '' }
 }
 

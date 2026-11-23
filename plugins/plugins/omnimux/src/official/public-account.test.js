@@ -76,6 +76,32 @@ describe('pickAccount', () => {
     assert.equal('expires_at' in missing, false)
     assert.equal('connected_at' in missing, false)
   })
+
+  it('whitelists boolean capabilities and omits absent or malformed capabilities safely', () => {
+    const draftOnly = pickAccount({
+      id: 'tt-1',
+      platform: 'tiktok',
+      provider: 'tiktok_direct',
+      capabilities: { upload_draft: true, publish_direct: false, max_media_items: 10, secret_flag: true },
+    })
+    assert.deepEqual(draftOnly.capabilities, { upload_draft: true, publish_direct: false, max_media_items: 10 })
+
+    const direct = pickAccount({
+      id: 'tt-2',
+      capabilities: { upload_draft: true, publish_direct: true },
+    })
+    assert.deepEqual(direct.capabilities, { upload_draft: true, publish_direct: true })
+
+    const legacy = pickAccount({ id: 'tt-legacy', platform: 'tiktok', provider: 'tiktok_direct' })
+    assert.equal('capabilities' in legacy, false)
+
+    const malformed = pickAccount({
+      id: 'tt-bad',
+      capabilities: { upload_draft: 'yes', publish_direct: 1 },
+    })
+    assert.equal('capabilities' in malformed, false)
+    assert.equal('capabilities' in pickAccount({ id: 'tt-arr', capabilities: ['upload_draft'] }), false)
+  })
 })
 
 describe('computeStatus', () => {

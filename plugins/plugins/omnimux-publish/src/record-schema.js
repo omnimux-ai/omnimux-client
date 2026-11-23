@@ -4,7 +4,7 @@ import { isObject, isStringArray } from './shared/values.js'
 
 export const RECORD_TYPES = Object.freeze(['video', 'image'])
 /** @type {ReadonlyArray<import('./shared/record-status.js').TaskStatus>} */
-export const TASK_STATUSES = Object.freeze(['submitting', 'submitted', 'reviewing', 'published', 'failed'])
+export const TASK_STATUSES = Object.freeze(['submitting', 'submitted', 'reviewing', 'sent_to_inbox', 'published', 'failed'])
 
 /** @param {'rec' | 'tsk'} prefix */
 export function newId(prefix) {
@@ -25,6 +25,7 @@ function isTask(value) {
   if (!isObject(value)) return false
   return ['id', 'record_id', 'account_id', 'platform', 'status'].every((key) => typeof value[key] === 'string')
     && (value.provider === undefined || typeof value.provider === 'string')
+    && (value.publish_mode === undefined || value.publish_mode === 'draft' || value.publish_mode === 'direct')
     && ['post_id', 'raw_status', 'error', 'submitted_at', 'settled_at'].every((key) => nullableString(value[key]))
     && typeof value.attempts === 'number' && Number.isFinite(value.attempts)
 }

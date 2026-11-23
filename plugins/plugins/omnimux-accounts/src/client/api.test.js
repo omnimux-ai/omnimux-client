@@ -2,30 +2,31 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import { authGuard, quotaGuard, whenAuthReady, listAccounts, connectAccount, disconnectAccount, patchAccount } from './api.js'
 
-it('fixes every account operation to Zernio and filters same-name foreign rows', async () => {
+it('fixes every account operation to tiktok_direct and filters same-name foreign rows', async () => {
   const savedFetch = globalThis.fetch
   const calls = []
   globalThis.fetch = async (path, init = {}) => {
     calls.push({ path, ...init })
     return new Response(JSON.stringify({ accounts: [
       { id: 'z', display_name: 'Twin', provider: 'zernio' },
-      { id: 't', display_name: 'Twin', provider: 'tiktok_direct' },
+      { id: 't', display_name: 'Twin', provider: 'tiktok_direct', capabilities: { upload_draft: true, publish_direct: false } },
       { id: 'legacy', display_name: 'Twin' },
     ] }), { status: 200 })
   }
   try {
     await withWindow({}, async () => {
-      const result = await listAccounts({ provider: 'tiktok_direct', platform: 'tiktok' })
-      assert.deepEqual(result.body.accounts.map((row) => row.id), ['z'])
+      const result = await listAccounts({ provider: 'zernio', platform: 'tiktok' })
+      assert.deepEqual(result.body.accounts.map((row) => row.id), ['t'])
+      assert.deepEqual(result.body.accounts[0].capabilities, { upload_draft: true, publish_direct: false })
       await connectAccount('tiktok')
-      await disconnectAccount('z/id')
-      await patchAccount('z/id', { group: 'team' })
+      await disconnectAccount('t/id')
+      await patchAccount('t/id', { group: 'team' })
     })
-    assert.equal(calls[0].path, '/omnimux/accounts?provider=zernio&platform=tiktok')
-    assert.deepEqual(JSON.parse(calls[1].body), { platform: 'tiktok', provider: 'zernio' })
-    assert.equal(calls[2].path, '/omnimux/accounts/z%2Fid?provider=zernio')
+    assert.equal(calls[0].path, '/omnimux/accounts?provider=tiktok_direct&platform=tiktok')
+    assert.deepEqual(JSON.parse(calls[1].body), { platform: 'tiktok', provider: 'tiktok_direct' })
+    assert.equal(calls[2].path, '/omnimux/accounts/t%2Fid?provider=tiktok_direct')
     assert.equal(calls[2].method, 'DELETE')
-    assert.equal(calls[3].path, '/omnimux/accounts/z%2Fid?provider=zernio')
+    assert.equal(calls[3].path, '/omnimux/accounts/t%2Fid?provider=tiktok_direct')
     assert.equal(calls[3].method, 'PATCH')
   } finally {
     globalThis.fetch = savedFetch

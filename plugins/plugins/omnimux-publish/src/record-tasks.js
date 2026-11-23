@@ -1,5 +1,6 @@
 import { PublishError } from './publish-error.js'
 import { newId, TASK_STATUSES } from './record-schema.js'
+import { accountPublishMode } from './shared/tiktok-capabilities.js'
 
 /**
  * @param {{ state: import('./record-types.js').RecordState, now: () => string, persist: () => void, findRecord: (id: string) => import('./record-types.js').PublishRecord }} deps
@@ -21,18 +22,25 @@ export function createTaskLedger({ state, now, persist, findRecord }) {
     return touched
   }
 
-  /** @param {string} id @param {Array<{ id: string, platform: string, provider?: string }>} accountRows */
+  /** @param {string} id @param {Array<Record<string, unknown> & { id: string, platform: string, provider?: string }>} accountRows */
   function materialize(id, accountRows) {
     const record = findRecord(id)
     if (record.status !== 'draft') throw new PublishError('record-not-draft', `record ${id} is already submitted`)
     if (!Array.isArray(accountRows) || accountRows.length === 0) {
       throw new PublishError('invalid-arguments', 'at least one account is required to submit')
     }
-    record.subtasks = accountRows.map((row) => ({
-      id: newId('tsk'), record_id: record.id, account_id: String(row.id),
-      provider: row.provider, platform: String(row.platform || ''), status: 'submitting',
-      post_id: null, raw_status: null, error: null, attempts: 0, submitted_at: null, settled_at: null,
-    }))
+    record.subtasks = accountRows.map((row) => {
+      const mode = accountPublishMode(row)
+      /** @type {'draft' | 'direct' | undefined} */
+      const publishMode = mode === 'draft_only' ? 'draft' : mode === 'direct' ? 'direct' : undefined
+      return {
+        id: newId('tsk'), record_id: record.id, account_id: String(row.id),
+        provider: row.provider, platform: String(row.platform || ''),
+        ...(publishMode ? { publish_mode: publishMode } : {}),
+        status: 'submitting',
+        post_id: null, raw_status: null, error: null, attempts: 0, submitted_at: null, settled_at: null,
+      }
+    })
     record.status = 'submitted'
     record.submitted_at = now()
     record.updated_at = now()

@@ -8,6 +8,8 @@ import { PublishError } from './publish-error.js'
 import { RECORD_TYPES } from './record-schema.js'
 import { isObject, isStringArray } from './shared/values.js'
 import { normalizeTikTokOptions, tiktokOptionProblems } from './shared/tiktok-options.js'
+import { accountMaxMediaItems, accountPublishMode, resolveSelectionPublishMode } from './shared/tiktok-capabilities.js'
+import { unsupportedImageRows } from './shared/image-format.js'
 /** @typedef {{ path?: string, media_id?: string, kind?: string }} MediaRef */
 /** @typedef {{ type?: unknown, title?: unknown, description?: unknown, topics?: string[], media?: MediaRef[], cover?: MediaRef, settings?: Record<string, unknown>, account_ids?: string[] }} DraftPayload */
 import { accountAvailability } from './accounts.js'
@@ -109,7 +111,7 @@ const TIKTOK_OPTION_MESSAGES = {
  *   type: string,
  *   title?: string,
  *   description?: string,
- *   mediaRows?: Array<{ kind: string, id: string }>,
+ *   mediaRows?: Array<{ kind: string, id: string, filename?: string, content_type?: string }>,
  *   coverRow?: { kind: string, id: string } | null,
  *   account_ids: string[],
  *   settings?: Record<string, unknown>,
@@ -119,7 +121,12 @@ const TIKTOK_OPTION_MESSAGES = {
  */
 export function validateForSubmit(draft, ctx) {
   const errors = [...validateContent(draft)]
-  if (draft.settings && isObject(draft.settings.tiktok_options)) {
+  const byId = new Map((ctx.accounts || []).map((row) => [String(row.id), row]))
+  const selectedRows = Array.isArray(draft.account_ids)
+    ? draft.account_ids.map((id) => byId.get(String(id))).filter((row) => row != null)
+    : []
+  const selectionMode = resolveSelectionPublishMode(selectedRows)
+  if (selectionMode !== 'draft_only' && draft.settings && isObject(draft.settings.tiktok_options)) {
     for (const code of tiktokOptionProblems(normalizeTikTokOptions(draft.settings.tiktok_options))) {
       errors.push({ code, field: 'settings.tiktok_options', message: TIKTOK_OPTION_MESSAGES[code] ?? code })
     }
@@ -128,9 +135,10 @@ export function validateForSubmit(draft, ctx) {
     errors.push({ code: 'accounts-required', field: 'account_ids', message: '提交前需要至少选择一个账号（publish_assign_accounts）' })
     return { ok: false, errors }
   }
-  const byId = new Map((ctx.accounts || []).map((row) => [String(row.id), row]))
   const counts = countKinds(draft.mediaRows)
   const flags = { cover: Boolean(draft.coverRow) }
+  const mediaRows = Array.isArray(draft.mediaRows) ? draft.mediaRows : []
+  let checkedTikTokMediaRules = false
   /** @type {Set<string>} */
   const seen = new Set()
   for (const accountId of draft.account_ids) {
@@ -153,8 +161,36 @@ export function validateForSubmit(draft, ctx) {
       errors.push({ code: 'platform-unknown', field: 'account_ids', message: `账号 ${key} 的平台 ${platform || '(空)'} 不在能力矩阵中；可在配置 publish.platforms 中补充该平台定义` })
       continue
     }
-    for (const problem of platformConflicts(draft.type, counts, flags, platformRow, platform)) {
+    const capMaxImages = accountMaxMediaItems(row)
+    const effectivePlatformRow = typeof capMaxImages === 'number'
+      && (typeof platformRow.max_images !== 'number' || capMaxImages < platformRow.max_images)
+      ? { ...platformRow, max_images: capMaxImages }
+      : platformRow
+    for (const problem of platformConflicts(draft.type, counts, flags, effectivePlatformRow, platform)) {
       errors.push({ code: 'capability-conflict', field: 'accounts', message: problem })
+    }
+    const mode = accountPublishMode(row)
+    if (!checkedTikTokMediaRules && (mode === 'draft_only' || mode === 'direct')) {
+      checkedTikTokMediaRules = true
+      if (counts.videos > 0 && counts.images > 0) {
+        errors.push({ code: 'mixed-media-unsupported', field: 'media', message: 'TikTok 不支持视频与图片混合发布，请仅选择视频或仅选择图片' })
+      }
+      if (draft.type === 'video' && counts.videos > 1) {
+        errors.push({ code: 'video-count-exceeded', field: 'media', message: `TikTok 视频发布仅支持 1 个视频（当前 ${counts.videos} 个）` })
+      }
+      if (draft.type === 'image') {
+        const inspectable = mediaRows.filter((item) => item.kind === 'image' && (Boolean(item.content_type) || Boolean(item.filename)))
+        const badImages = unsupportedImageRows(inspectable)
+        if (badImages.length > 0) {
+          errors.push({ code: 'image-format-unsupported', field: 'media', message: 'TikTok 图文仅支持 JPEG / WebP 图片格式（不支持 PNG/GIF 等）' })
+        }
+        const coverIndex = draft.settings && typeof draft.settings.photo_cover_index === 'number'
+          ? draft.settings.photo_cover_index
+          : undefined
+        if (coverIndex !== undefined && (!Number.isInteger(coverIndex) || coverIndex < 0 || coverIndex >= counts.images)) {
+          errors.push({ code: 'invalid-photo-cover-index', field: 'settings.photo_cover_index', message: `图文封面索引 photo_cover_index=${coverIndex} 超出范围 [0, ${counts.images})` })
+        }
+      }
     }
   }
   return { ok: errors.length === 0, errors }

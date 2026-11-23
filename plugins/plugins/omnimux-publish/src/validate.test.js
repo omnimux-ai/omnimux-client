@@ -129,3 +129,161 @@ describe('parseDraftPayload', () => {
     assert.throws(() => parseDraftPayload('x'), (e) => e.code === 'invalid-arguments')
   })
 })
+
+describe('validateForSubmit: TikTok draft mode and server media limits (#185)', () => {
+  const TIKTOK_PLATFORMS = {
+    tiktok: { media_types: ['video', 'image'], supports_cover: false, supports_schedule: false, max_images: 35 },
+  }
+
+  it('skips Direct Post tiktok_options validation for draft_only accounts', () => {
+    const accounts = [{
+      id: 'draft-1',
+      provider: 'tiktok_direct',
+      platform: 'tiktok',
+      status: 'active',
+      capabilities: { upload_draft: true, publish_direct: false },
+    }]
+    const verdict = validateForSubmit({
+      type: 'video',
+      title: 'draft clip',
+      mediaRows: [{ id: 'v1', kind: 'video', filename: 'clip.mp4', content_type: 'video/mp4' }],
+      account_ids: ['draft-1'],
+      settings: { tiktok_options: { privacy_level: 'SELF_ONLY', commercial_content: true, branded_content: true } },
+    }, { accounts, platforms: TIKTOK_PLATFORMS })
+    assert.equal(verdict.ok, true)
+  })
+
+  it('enforces JPEG/WebP format, cover index, single video, and server-supplied max_media_items', () => {
+    const accounts = [{
+      id: 'draft-1',
+      provider: 'tiktok_direct',
+      platform: 'tiktok',
+      status: 'active',
+      capabilities: { upload_draft: true, publish_direct: false, max_media_items: 10 },
+    }]
+    const pngVerdict = validateForSubmit({
+      type: 'image',
+      title: 'carousel',
+      mediaRows: [{ id: 'i1', kind: 'image', filename: 'bad.png', content_type: 'image/png' }],
+      account_ids: ['draft-1'],
+    }, { accounts, platforms: TIKTOK_PLATFORMS })
+    assert.equal(pngVerdict.ok, false)
+    assert.ok(pngVerdict.errors.some((e) => e.code === 'image-format-unsupported'))
+
+    const overServerLimit = validateForSubmit({
+      type: 'image',
+      title: 'too many photos',
+      mediaRows: Array.from({ length: 11 }, (_, idx) => ({ id: `i${idx}`, kind: 'image', filename: `${idx}.jpg`, content_type: 'image/jpeg' })),
+      account_ids: ['draft-1'],
+    }, { accounts, platforms: TIKTOK_PLATFORMS })
+    assert.equal(overServerLimit.ok, false)
+    assert.ok(overServerLimit.errors.some((e) => e.code === 'capability-conflict' && /最多 10 张图/.test(e.message)))
+  })
+
+  it('rejects accounts explicitly lacking both upload_draft and publish_direct', () => {
+    const accounts = [{
+      id: 'no-scope',
+      provider: 'tiktok_direct',
+      platform: 'tiktok',
+      status: 'active',
+      capabilities: { upload_draft: false, publish_direct: false },
+    }]
+    const verdict = validateForSubmit({
+      type: 'video',
+      title: 'v',
+      mediaRows: [{ id: 'v1', kind: 'video' }],
+      account_ids: ['no-scope'],
+    }, { accounts, platforms: TIKTOK_PLATFORMS })
+    assert.equal(verdict.ok, false)
+    assert.ok(verdict.errors.some((e) => e.code === 'account-unavailable'))
+  })
+})
+
+describe('validateForSubmit: TikTok draft_only & no_publish_scope rules (#185)', () => {
+  const TIKTOK_PLATFORMS = {
+    tiktok: { media_types: ['image', 'video'], supports_cover: false, supports_schedule: false, max_images: 35 },
+  }
+  const DRAFT_ACCOUNTS = [
+    { id: 'draft-1', provider: 'tiktok_direct', platform: 'tiktok', status: 'active', capabilities: { upload_draft: true, publish_direct: false } },
+    { id: 'direct-1', provider: 'tiktok_direct', platform: 'tiktok', status: 'active', capabilities: { upload_draft: true, publish_direct: true } },
+    { id: 'noscope-1', provider: 'tiktok_direct', platform: 'tiktok', status: 'active', capabilities: { upload_draft: false, publish_direct: false } },
+  ]
+
+  it('fails closed when selected account lacks both upload_draft and publish_direct', () => {
+    const verdict = validateForSubmit({
+      type: 'video',
+      description: 'demo',
+      mediaRows: [{ id: 'v1', kind: 'video', filename: 'clip.mp4', content_type: 'video/mp4' }],
+      account_ids: ['noscope-1'],
+    }, { accounts: DRAFT_ACCOUNTS, platforms: TIKTOK_PLATFORMS })
+    assert.equal(verdict.ok, false)
+    assert.ok(verdict.errors.some((e) => e.code === 'account-unavailable' && /video\.upload/.test(e.message)))
+  })
+
+  it('rejects mixed media and multiple videos for TikTok draft_only accounts', () => {
+    const mixed = validateForSubmit({
+      type: 'video',
+      description: 'demo',
+      mediaRows: [
+        { id: 'v1', kind: 'video', filename: 'a.mp4', content_type: 'video/mp4' },
+        { id: 'i1', kind: 'image', filename: 'b.jpg', content_type: 'image/jpeg' },
+      ],
+      account_ids: ['draft-1'],
+    }, { accounts: DRAFT_ACCOUNTS, platforms: TIKTOK_PLATFORMS })
+    assert.equal(mixed.ok, false)
+    assert.ok(mixed.errors.some((e) => e.code === 'mixed-media-unsupported'))
+
+    const twoVideos = validateForSubmit({
+      type: 'video',
+      description: 'demo',
+      mediaRows: [
+        { id: 'v1', kind: 'video', filename: 'a.mp4', content_type: 'video/mp4' },
+        { id: 'v2', kind: 'video', filename: 'b.mp4', content_type: 'video/mp4' },
+      ],
+      account_ids: ['draft-1'],
+    }, { accounts: DRAFT_ACCOUNTS, platforms: TIKTOK_PLATFORMS })
+    assert.equal(twoVideos.ok, false)
+    assert.ok(twoVideos.errors.some((e) => e.code === 'video-count-exceeded'))
+  })
+
+  it('enforces JPEG/WebP only and photo_cover_index bounds for TikTok photo carousel', () => {
+    const pngVerdict = validateForSubmit({
+      type: 'image',
+      title: 'Photos',
+      mediaRows: [
+        { id: 'i1', kind: 'image', filename: 'a.jpg', content_type: 'image/jpeg' },
+        { id: 'i2', kind: 'image', filename: 'b.png', content_type: 'image/png' },
+      ],
+      account_ids: ['draft-1'],
+    }, { accounts: DRAFT_ACCOUNTS, platforms: TIKTOK_PLATFORMS })
+    assert.equal(pngVerdict.ok, false)
+    assert.ok(pngVerdict.errors.some((e) => e.code === 'image-format-unsupported'))
+
+    const badCover = validateForSubmit({
+      type: 'image',
+      title: 'Photos',
+      mediaRows: [{ id: 'i1', kind: 'image', filename: 'a.webp', content_type: 'image/webp' }],
+      settings: { photo_cover_index: 2 },
+      account_ids: ['draft-1'],
+    }, { accounts: DRAFT_ACCOUNTS, platforms: TIKTOK_PLATFORMS })
+    assert.equal(badCover.ok, false)
+    assert.ok(badCover.errors.some((e) => e.code === 'invalid-photo-cover-index'))
+
+    const okPhotos = validateForSubmit({
+      type: 'image',
+      title: 'Photos',
+      mediaRows: [
+        { id: 'i1', kind: 'image', filename: 'a.jpg', content_type: 'image/jpeg' },
+        { id: 'i2', kind: 'image', filename: 'b.webp', content_type: 'image/webp' },
+      ],
+      settings: {
+        photo_cover_index: 1,
+        is_aigc: true,
+        // Direct Post options are stripped in draft_only mode and must not block draft upload
+        tiktok_options: { privacy_level: 'SELF_ONLY', commercial_content: true, branded_content: true },
+      },
+      account_ids: ['draft-1'],
+    }, { accounts: DRAFT_ACCOUNTS, platforms: TIKTOK_PLATFORMS })
+    assert.equal(okPhotos.ok, true)
+  })
+})

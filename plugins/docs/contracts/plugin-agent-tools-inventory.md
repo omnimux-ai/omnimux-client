@@ -64,12 +64,12 @@ superseded_by: null
 | 业务功能描述 | 对应 UI 交互 / HTTP 路由 | Agent 工具名称 (`Tool Name`) | 分级 | 状态 | 破坏性 confirm |
 |---|---|---|---|---|---|
 | 查询社媒平台与平台对数据 | 中枢内部 API | `omnimux_social_data` | L1 | `Implemented` | 否 |
-| 获取已授权账号列表 | 账号管理 / 中枢设置 | `omnimux_accounts_list` | L1 | `Implemented` | 否 |
+| 获取已授权账号列表（透传 `capabilities: { upload_draft, publish_direct }`） | 账号管理 / 中枢设置 | `omnimux_accounts_list` | L1 | `Implemented` | 否 |
 | 获取账号授权连接 URL | 连接弹窗 | `omnimux_accounts_connect` | L2 | `Implemented` | 否 |
 | 解除账号授权关联 | 解绑按钮 | `omnimux_accounts_disconnect` | L1 | `Implemented` | 是 (`confirm: true`) |
 | 社媒发布媒体文件预签名 | 发布中心上传 | `omnimux_publish_presign` | L2 | `Implemented` | 否 |
-| 向指定社媒平台创建发布任务 | 发布中心一键发布 | `omnimux_publish_create` | L1 | `Implemented` | 否 |
-| 查询社媒发布任务状态与流水 | 发布中心状态卡片 | `omnimux_publish_get` | L1 | `Implemented` | 否 |
+| 向指定社媒平台创建发布任务（支持 TikTok 草稿上传与直发；透传 `tiktok_options`、`title`、`description`、`photo_cover_index`、`is_aigc`） | 发布中心一键发布 / 上传到草稿箱 | `omnimux_publish_create` | L1 | `Implemented` | 否 |
+| 查询社媒发布任务状态与流水（兼容 `sent_to_inbox` / `SEND_TO_USER_INBOX` 草稿送达态） | 发布中心状态卡片 / 手动同步 | `omnimux_publish_get` | L1 | `Implemented` | 否 |
 | 灵感社区列表多维查询 | 灵感社区一级页瀑布流 | `omnimux_inspiration_list` | L1 | `Implemented` | 否 |
 | 获取单条灵感详情与 5D 拆解 | 灵感详情弹窗 | `omnimux_inspiration_get` | L1 | `Implemented` | 否 |
 | 采集/新建灵感记录 | URL 抓取导入弹窗 | `omnimux_inspiration_create` | L1 | `Implemented` | 否 |
@@ -158,8 +158,8 @@ superseded_by: null
 ---
 
 ### 3.5 `omnimux-publish`（矩阵发布中心）
-- **功能域**：草稿管理、多账号矩阵分发、子任务追踪、失败重试、指标看板。
-- **存储**：`$DSH_HOME/omnimux/publish/store.json`。
+- **功能域**：草稿管理、多账号矩阵分发、子任务追踪、失败重试、指标看板；按 `tiktok_direct` 账号 `capabilities` 自动区分草稿箱上传（`upload_draft: true, publish_direct: false`，单视频剥离 Direct Post 选项，图文仅允许 JPEG/WebP、优先遵循服务端能力上限并兜底 TikTok 协议上限 35 张、透传 `title`/`description`/`photo_cover_index`/`is_aigc` 及网关超限报错）、直发（`publish_direct: true`）与旧服务兼容态，缺失上传/发布权限（`upload_draft: false && publish_direct: false`）前后端同源 fail-closed 拦截。
+- **存储**：`$DSH_HOME/omnimux/publish/records.json`。
 - **状态**：双面就绪 (已实装 9 大工具，100% 对齐 UI)。
 
 | 业务功能描述 | 对应 UI 交互 / HTTP 路由 | Agent 工具名称 (`Tool Name`) | 分级 | 状态 | 破坏性 confirm |
@@ -168,10 +168,10 @@ superseded_by: null
 | 新建图文/视频发布草稿 | 新建草稿表单 | `publish_create_draft` | L1 | `Implemented` | 否 |
 | 修改草稿标题、文案、媒体与话题 | 编辑草稿弹窗 | `publish_update_draft` | L1 | `Implemented` | 否 |
 | 删除指定草稿 | 草稿行删除操作 | `publish_delete_draft` | L1 | `Implemented` | 是 (`confirm: true`) |
-| 查询可用于发布的授权账号 | 账号选择器多选下拉 | `publish_list_accounts` | L1 | `Implemented` | 否 |
-| 为草稿分配分发账号 | 矩阵账号分配勾选 | `publish_assign_accounts` | L2 | `Implemented` | 否 |
-| 正式提交草稿执行多账号分发 | 立即发布 / 排期发布按钮 | `publish_submit` | L1 | `Implemented` | 否 |
-| 获取单条发布记录与全账号子任务 | 发布任务详情抽屉 | `publish_get_record` | L1 | `Implemented` | 否 |
+| 查询可用于发布的授权账号（含 `capabilities`） | 账号选择器多选下拉 | `publish_list_accounts` | L1 | `Implemented` | 否 |
+| 为草稿分配分发账号（拦截无发布权限账号与图文格式/混发冲突） | 矩阵账号分配勾选 | `publish_assign_accounts` | L2 | `Implemented` | 否 |
+| 正式提交草稿执行多账号分发（按账号能力路由草稿上传或直发） | 立即发布 / 上传到 TikTok 草稿箱按钮 | `publish_submit` | L1 | `Implemented` | 否 |
+| 获取单条发布记录与全账号子任务（含 `sent_to_inbox` 已送达草稿箱状态与手动同步） | 发布任务详情抽屉 | `publish_get_record` | L1 | `Implemented` | 否 |
 | 重试指定失败的账号分发子任务 | 单子任务重试按钮 | `publish_retry_task` | L2 | `Implemented` | 否 |
 | 表格列宽拖拽与排序偏好 | 发布记录表头 | — | UI-Only | `UI-Only` | 豁免 (前端交互) |
 
@@ -256,7 +256,7 @@ superseded_by: null
 ---
 
 ### 3.9 `omnimux-accounts`（社交账号管理）
-- **功能域**：多平台社交账号网格/表格、授权绑定、解绑、Agent 调用权限开关。
+- **功能域**：官方 TikTok 直连（`tiktok_direct`）社交账号网格/表格、授权绑定、解绑、Agent 调用权限开关，并透传账号 `capabilities`；其余渠道标示即将上线。
 - **状态**：UI 完备，底层通过中枢 `omnimux_accounts_*` 执行，建议将垂直账号工具标准化。
 
 | 业务功能描述 | 对应 UI 交互 / HTTP 路由 | Agent 工具名称 (`Tool Name`) | 分级 | 状态 | 破坏性 confirm |

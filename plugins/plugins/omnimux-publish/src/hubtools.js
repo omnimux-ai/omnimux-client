@@ -75,7 +75,7 @@ export function createHubChannel(deps = {}) {
       if (/UNKNOWN_TOOL/i.test(text) || /unknown tool/i.test(text)) {
         throw new PublishError('needs-hub', `omnimux hub 插件未装载（工具 ${name} 未知），请安装/启用 omnimux hub 插件`)
       }
-      throw new PublishError('hub-tool-error', text.trim() || `tool ${name} failed`)
+      throw new PublishError('hub-tool-error', text.trim() || String(errorInfo.message || '').trim() || `tool ${name} failed`)
     }
     return result.value
   }
@@ -135,7 +135,16 @@ export function createHubChannel(deps = {}) {
   }
 
   /**
-   * @param {{ account_ids: string[], content: string, media_items: Array<Record<string, unknown>> }} args
+   * @param {{
+   *   account_ids: string[],
+   *   content: string,
+   *   media_items: Array<Record<string, unknown>>,
+   *   tiktok_options?: Record<string, unknown>,
+   *   title?: string,
+   *   description?: string,
+   *   photo_cover_index?: number,
+   *   is_aigc?: boolean,
+   * }} args
    * @param {{ agent?: unknown, signal?: AbortSignal }} [opts]
    */
   async function createPost(args, opts = {}) {

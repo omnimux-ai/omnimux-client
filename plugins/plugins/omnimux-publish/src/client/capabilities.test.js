@@ -10,6 +10,7 @@ import {
   platformRow,
   supportsType,
 } from './capabilities.js'
+import { zh, en } from './locales.js'
 
 const PLATFORMS = {
   xiaohongshu: { media_types: ['image', 'video'], supports_cover: false, max_images: 18 },
@@ -124,5 +125,61 @@ describe('parseTopics', () => {
     assert.deepEqual(parseTopics('#旅行 摄影,ai，vlog'), ['旅行', '摄影', 'ai', 'vlog'])
     assert.deepEqual(parseTopics('  '), [])
     assert.deepEqual(parseTopics('single'), ['single'])
+  })
+})
+
+describe('TikTok draft capabilities & server media limit compatibility (#185)', () => {
+  const TIKTOK_MATRIX = {
+    tiktok: { media_types: ['video', 'image'], supports_cover: false, supports_schedule: false, max_images: 35 },
+  }
+
+  it('distinguishes protocol cap from explicit server-delivered media limit', () => {
+    const protocolOnly = formCapabilities({
+      platforms: TIKTOK_MATRIX,
+      selectedAccounts: [{ id: 'a1', platform: 'tiktok', provider: 'tiktok_direct', capabilities: { upload_draft: true, publish_direct: false } }],
+      type: 'image',
+      imageCount: 12,
+    })
+    assert.equal(protocolOnly.publishMode, 'draft_only')
+    assert.equal(protocolOnly.scheduleEnabled, false)
+    assert.equal(protocolOnly.imageLimit, 35)
+    assert.equal(protocolOnly.imageLimitSource, 'protocol')
+    assert.equal(protocolOnly.imageOverLimit, false)
+
+    const serverCapped = formCapabilities({
+      platforms: TIKTOK_MATRIX,
+      selectedAccounts: [{ id: 'a1', platform: 'tiktok', provider: 'tiktok_direct', capabilities: { upload_draft: true, publish_direct: false, max_media_items: 10 } }],
+      type: 'image',
+      imageCount: 11,
+    })
+    assert.equal(serverCapped.imageLimit, 10)
+    assert.equal(serverCapped.imageLimitSource, 'server')
+    assert.equal(serverCapped.imageOverLimit, true)
+  })
+
+  it('marks accounts without upload_draft or publish_direct as unusable', () => {
+    assert.deepEqual(
+      accountUsable({
+        id: 'a0',
+        platform: 'tiktok',
+        provider: 'tiktok_direct',
+        status: 'active',
+        capabilities: { upload_draft: false, publish_direct: false },
+      }),
+      { ok: false, reason: 'noPublishScope' },
+    )
+  })
+
+  it('states the 1–35 photo carousel range while keeping server-delivered limits dynamic', () => {
+    assert.match(zh['form.draftBanner.imageBody'], /1–35\s*张/)
+    assert.match(zh['form.draftBanner.imageRule'], /1–35\s*张/)
+    assert.match(en['form.draftBanner.imageBody'], /1–35\s+JPEG/)
+    assert.match(en['form.draftBanner.imageRule'], /1–35\s+JPEG/)
+    // 服务端下发更小上限时改走动态文案与动态校验，协议文案不覆盖服务端上限
+    assert.match(zh['form.draftBanner.imageRuleServer'], /\{count\}/)
+    assert.match(en['form.draftBanner.imageRuleServer'], /\{count\}/)
+    assert.match(zh['form.imageLimitProtocol'], /以服务端配置为准/)
+    assert.match(en['form.imageLimitProtocol'], /server config/i)
+    assert.ok(zh['form.imageLimitServer'] && en['form.imageLimitServer'])
   })
 })

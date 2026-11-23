@@ -120,7 +120,9 @@ export function createPublishDispatcher(deps) {
     }
     const mediaRows = record.media_ids.map((mediaId) => {
       const row = media.get(mediaId)
-      return row ? { id: row.id, kind: row.kind } : { id: mediaId, kind: 'other' }
+      return row
+        ? { id: row.id, kind: row.kind, filename: row.filename, content_type: row.content_type }
+        : { id: mediaId, kind: 'other' }
     })
     const cover = record.cover_media_id ? media.get(record.cover_media_id) : null
     const verdict = validateForSubmit({

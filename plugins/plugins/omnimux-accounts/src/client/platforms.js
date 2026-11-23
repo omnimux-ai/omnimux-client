@@ -10,9 +10,9 @@
  *   accent — brand color as the label on a 16% color-mix background
  */
 
-export const SUPPORTED_PLATFORMS = Object.freeze(['tiktok', 'instagram', 'youtube'])
+export const SUPPORTED_PLATFORMS = Object.freeze(['tiktok'])
 
-export const COMING_PLATFORMS = Object.freeze(['x', 'facebook'])
+export const COMING_PLATFORMS = Object.freeze(['instagram', 'youtube', 'x', 'facebook'])
 
 /** @typedef {{ id: string, color: string, tone: 'solid' | 'accent', coming: boolean }} PlatformInfo */
 
@@ -21,8 +21,8 @@ const NEUTRAL_COLOR = 'var(--dsw-alias-label-secondary, rgba(255,255,255,0.72))'
 /** @type {Record<string, PlatformInfo>} */
 const REGISTRY = {
   tiktok: { id: 'tiktok', color: 'var(--dsw-platform-tiktok, #2C2C2A)', tone: 'solid', coming: false },
-  instagram: { id: 'instagram', color: 'var(--dsw-platform-instagram, #E1306C)', tone: 'accent', coming: false },
-  youtube: { id: 'youtube', color: 'var(--dsw-platform-youtube, #FF0000)', tone: 'accent', coming: false },
+  instagram: { id: 'instagram', color: 'var(--dsw-platform-instagram, #E1306C)', tone: 'accent', coming: true },
+  youtube: { id: 'youtube', color: 'var(--dsw-platform-youtube, #FF0000)', tone: 'accent', coming: true },
   x: { id: 'x', color: 'var(--dsw-platform-x, #2C2C2A)', tone: 'solid', coming: true },
   facebook: { id: 'facebook', color: NEUTRAL_COLOR, tone: 'accent', coming: true },
 }

@@ -8,7 +8,7 @@ import { RowActionMenu } from './RowActionMenu.jsx'
 
 /**
  * 现代资产卡片组件 (AssetCard)
- * 严格对齐 spec-ui-client-v2.4.md: 112px 封面高度、六态中文 Pill、平台状态点。
+ * 严格对齐 spec-ui-client-v2.4.md: 112px 封面高度、七态（含 `sent_to_inbox`）中文 Pill、平台状态点。
  * @param {{
  *   t: (key: string, vars?: Record<string, unknown>) => string,
  *   record: Record<string, unknown>,
