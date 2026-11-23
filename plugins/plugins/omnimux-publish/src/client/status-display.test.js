@@ -12,14 +12,16 @@ describe('status-display: 单真源 re-export 与六态中文映射', () => {
     assert.equal(displayStatus, sharedDisplay)
   })
 
-  it('STATUS_LABEL 六态完整且无死角', () => {
+  it('STATUS_LABEL 聚合与展示态完整且无死角', () => {
     assert.equal(STATUS_LABEL.draft, '草稿')
     assert.equal(STATUS_LABEL.publishing, '发布中')
     assert.equal(STATUS_LABEL.reviewing, '审核中')
+    assert.equal(STATUS_LABEL.sent_to_inbox, '已送达草稿箱')
     assert.equal(STATUS_LABEL.published, '已发布')
     assert.equal(STATUS_LABEL.partial_failed, '部分失败')
     assert.equal(STATUS_LABEL.failed, '失败')
     assert.equal(statusText('published'), '已发布')
+    assert.equal(statusText('sent_to_inbox'), '已送达草稿箱')
     assert.equal(statusText('reviewing'), '审核中')
   })
 

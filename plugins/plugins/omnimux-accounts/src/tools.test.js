@@ -27,12 +27,12 @@ test('omnimux-accounts tools lifecycle', async (t) => {
         if (name === 'omnimux_accounts_list') {
           return {
             async execute(args) {
-              assert.deepEqual(args, { provider: 'zernio' })
+              assert.deepEqual(args, { provider: 'tiktok_direct' })
               return {
                 accounts: [
-                  { id: 'acc_1', provider: 'zernio', platform: 'tiktok', account_name: 'same-name', agent_usable: true },
-                  { id: 'acc_2', provider: 'zernio', platform: 'instagram', account_name: 'Insta Official', agent_usable: true },
-                  { id: 'acc_direct', provider: 'tiktok_direct', platform: 'tiktok', account_name: 'same-name' },
+                  { id: 'acc_1', provider: 'tiktok_direct', platform: 'tiktok', account_name: 'same-name', agent_usable: true, capabilities: { upload_draft: true, publish_direct: false } },
+                  { id: 'acc_2', provider: 'tiktok_direct', platform: 'tiktok', account_name: 'TikTok Official', agent_usable: true, capabilities: { upload_draft: true, publish_direct: true, max_media_items: 12, max_images: 35, unpublished_note: 'drop me' } },
+                  { id: 'acc_zernio', provider: 'zernio', platform: 'tiktok', account_name: 'same-name' },
                   { id: 'acc_missing', platform: 'tiktok' },
                   { id: 'acc_unknown', provider: 'unknown', platform: 'tiktok' },
                 ],
@@ -56,12 +56,15 @@ test('omnimux-accounts tools lifecycle', async (t) => {
   const res1 = await listTool.execute({})
   assert.equal(res1.count, 2)
   assert.equal(res1.accounts[0].id, 'acc_1')
+  assert.deepEqual(res1.accounts[0].capabilities, { upload_draft: true, publish_direct: false })
+  // 四键白名单与 hub / omnimux-publish 同源：上限字段透传，未知键剔除
+  assert.deepEqual(res1.accounts[1].capabilities, { upload_draft: true, publish_direct: true, max_media_items: 12, max_images: 35 })
 
   // Owner disables invocation; group changes cannot re-enable it.
   createAccountMetaStore({ home: tmp }).patch('acc_1', { agent_usable: false })
   const updateTool = registered.get('accounts_update_group')
-  for (const id of ['acc_direct', 'acc_missing', 'acc_unknown']) {
-    await assert.rejects(updateTool.execute({ id, group: 'forbidden' }), /account-provider-mismatch/)
+  for (const id of ['acc_zernio', 'acc_missing', 'acc_unknown']) {
+    await assert.rejects(updateTool.execute({ id, group: 'forbidden' }), /account-provider-mismatch: account does not belong to tiktok_direct/)
   }
   await assert.rejects(updateTool.execute({ id: 'acc_1', agent_usable: true }), /account-permission-owner-only/)
   const updateRes = await updateTool.execute({

@@ -38,6 +38,18 @@ describe('pickAccount / listFromPayload / computeStatus / mergeMeta (hub 等价�
     assert.equal(row.avatar_url, 'https://ok/a.png')
     assert.equal('secret' in row, false)
     assert.equal('token' in row, false)
+    assert.equal('capabilities' in row, false)
+  })
+
+  it('passes through boolean capabilities and drops non-boolean or missing capabilities safely', () => {
+    const draft = pickAccount({
+      id: 10,
+      platform: 'tiktok',
+      provider: 'tiktok_direct',
+      capabilities: { upload_draft: true, publish_direct: false, extra: 'ignored' },
+    })
+    assert.deepEqual(draft.capabilities, { upload_draft: true, publish_direct: false })
+    assert.equal('capabilities' in pickAccount({ id: 11, capabilities: { upload_draft: 'yes' } }), false)
   })
 
   it('listFromPayload accepts envelope variations', () => {
@@ -79,6 +91,9 @@ describe('accountAvailability', () => {
     assert.equal(accountAvailability({ ...account, status: 'expired' }).ok, false)
     assert.equal(accountAvailability({ ...account, status: 'error', status_raw: 'x' }).ok, false)
     assert.equal(accountAvailability({ ...account, status: 'active', agent_usable: false }).ok, false)
+    assert.equal(accountAvailability({ ...account, status: 'active', capabilities: { upload_draft: false, publish_direct: false } }).ok, false)
+    assert.equal(accountAvailability({ ...account, status: 'active', capabilities: { upload_draft: true, publish_direct: false } }).ok, true)
+    assert.equal(accountAvailability({ ...account, status: 'active', capabilities: { upload_draft: false, publish_direct: true } }).ok, true)
     for (const provider of [undefined, 'unknown', 'zernio']) assert.equal(accountAvailability({ ...account, provider, status: 'active' }).ok, false)
   })
 })

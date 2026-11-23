@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import { showsPrivateNotice } from './detail-notice.js'
+import { showsInboxDraftNotice, showsPrivateNotice } from './detail-notice.js'
 
 const OFFICIAL = { platform: 'tiktok', provider: 'tiktok_direct' }
 
@@ -44,5 +44,16 @@ describe('privacy-aware private notice', () => {
     const tasks = [{ ...OFFICIAL, status: 'published', post_id: 'v_pub_3' }]
     assert.equal(showsPrivateNotice(tasks, { settings: { tiktok_options: { privacy_level: 'SELF_ONLY' } } }), true)
     assert.equal(showsPrivateNotice(tasks, { settings: {} }), true)
+  })
+
+  it('suppresses private notice for sent_to_inbox and in-flight draft uploads while enabling inbox notice', () => {
+    const inboxTasks = [{ ...OFFICIAL, publish_mode: 'draft', status: 'sent_to_inbox', raw_status: 'SEND_TO_USER_INBOX', post_id: 'v_inbox_1' }]
+    assert.equal(showsPrivateNotice(inboxTasks, { settings: {} }), false)
+    assert.equal(showsInboxDraftNotice(inboxTasks), true)
+
+    const transientDraftTasks = [{ ...OFFICIAL, publish_mode: 'draft', status: 'submitted', post_id: 'v_inbox_2' }]
+    assert.equal(showsPrivateNotice(transientDraftTasks, { settings: {} }), false)
+    assert.equal(showsPrivateNotice([{ ...OFFICIAL, status: 'submitted', post_id: 'v_inbox_3' }], { settings: { publish_mode: 'draft' } }), false)
+    assert.equal(showsInboxDraftNotice(transientDraftTasks), false)
   })
 })

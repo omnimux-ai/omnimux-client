@@ -1,5 +1,5 @@
 /** Platform capabilities and upstream task mappings; malformed config fails explicitly. */
-/** @typedef {'submitted' | 'reviewing' | 'published' | 'failed'} MappedTaskStatus */
+/** @typedef {'submitted' | 'reviewing' | 'sent_to_inbox' | 'published' | 'failed'} MappedTaskStatus */
 /** @typedef {{ media_types?: Array<'video' | 'image'>, max_images?: number } & Partial<Record<`supports_${string}`, boolean>>} PlatformCapabilities */
 /**
  * @typedef {object} PublishConfig
@@ -26,7 +26,7 @@ export const BUILTIN_PLATFORMS = Object.freeze({
   weibo: { media_types: ['image', 'video'], supports_cover: false, supports_schedule: false, max_images: 9, supports_original_declaration: false, supports_ai_declaration: false },
   bilibili: { media_types: ['video'], supports_cover: true, supports_schedule: false, supports_original_declaration: true, supports_ai_declaration: false },
   wechat_channels: { media_types: ['video', 'image'], supports_cover: true, supports_schedule: false, max_images: 9, supports_original_declaration: true, supports_ai_declaration: false },
-  tiktok: { media_types: ['video', 'image'], supports_cover: false, supports_schedule: true, max_images: 35, supports_original_declaration: true, supports_ai_declaration: true },
+  tiktok: { media_types: ['video', 'image'], supports_cover: false, supports_schedule: false, max_images: 35, supports_original_declaration: true, supports_ai_declaration: true },
   instagram: { media_types: ['image', 'video'], supports_cover: false, supports_schedule: false, max_images: 10, supports_original_declaration: false, supports_ai_declaration: true },
   youtube: { media_types: ['video'], supports_cover: true, supports_schedule: true, supports_original_declaration: false, supports_ai_declaration: true },
   x: { media_types: ['image', 'video'], supports_cover: false, supports_schedule: false, max_images: 4, supports_original_declaration: false, supports_ai_declaration: true },
@@ -38,6 +38,7 @@ export const BUILTIN_STATUS_MAP = Object.freeze({
   in_progress: 'submitted', publishing: 'submitted', submitted: 'submitted',
   review: 'reviewing', reviewing: 'reviewing', pending_review: 'reviewing', under_review: 'reviewing',
   in_review: 'reviewing', audit: 'reviewing', auditing: 'reviewing',
+  sent_to_inbox: 'sent_to_inbox', send_to_user_inbox: 'sent_to_inbox',
   published: 'published', success: 'published', done: 'published', completed: 'published',
   failed: 'failed', error: 'failed', rejected: 'failed', reject: 'failed', blocked: 'failed', removed: 'failed', deleted: 'failed',
 })
@@ -114,8 +115,8 @@ function parseStatusMap(rawValue) {
   /** @type {Record<string, MappedTaskStatus>} */
   const out = {}
   for (const [key, value] of Object.entries(raw)) {
-    if (value !== 'submitted' && value !== 'reviewing' && value !== 'published' && value !== 'failed') {
-      fail(`statusMap.${key}`, value, "one of 'submitted' | 'reviewing' | 'published' | 'failed'")
+    if (value !== 'submitted' && value !== 'reviewing' && value !== 'sent_to_inbox' && value !== 'published' && value !== 'failed') {
+      fail(`statusMap.${key}`, value, "one of 'submitted' | 'reviewing' | 'sent_to_inbox' | 'published' | 'failed'")
     }
     out[key] = value
   }

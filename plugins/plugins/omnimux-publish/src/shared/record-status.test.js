@@ -30,9 +30,9 @@ describe('aggregateStatus', () => {
     assert.equal(aggregateStatus({ aggregate: 'reviewing', subtasks: [] }), 'draft')
     assert.equal(aggregateStatus({ subtasks: [{}] }), 'draft')
   })
-  it('always produces one of the five aggregate states without mutating input', () => {
-    const allowed = new Set(['draft', 'publishing', 'partial_failed', 'failed', 'published'])
-    const statuses = ['pending', 'draft', 'submitting', 'submitted', 'uploading', 'processing', 'reviewing', 'published', 'failed', 'unknown']
+  it('always produces one of the six aggregate states without mutating input', () => {
+    const allowed = new Set(['draft', 'publishing', 'partial_failed', 'failed', 'sent_to_inbox', 'published'])
+    const statuses = ['pending', 'draft', 'submitting', 'submitted', 'uploading', 'processing', 'reviewing', 'sent_to_inbox', 'published', 'failed', 'unknown']
     for (const a of statuses) for (const b of statuses) {
       const input = record(a, b)
       const before = structuredClone(input)
@@ -40,6 +40,14 @@ describe('aggregateStatus', () => {
       displayStatus(input)
       assert.deepEqual(input, before)
     }
+  })
+  it('handles sent_to_inbox cleanly across single, mixed, failed and in-flight subtasks', () => {
+    assert.equal(aggregateStatus(record('sent_to_inbox')), 'sent_to_inbox')
+    assert.equal(displayStatus(record('sent_to_inbox')), 'sent_to_inbox')
+    assert.equal(aggregateStatus(record('sent_to_inbox', 'published')), 'sent_to_inbox')
+    assert.equal(aggregateStatus(record('sent_to_inbox', 'failed')), 'partial_failed')
+    assert.equal(aggregateStatus(record('sent_to_inbox', 'submitted')), 'publishing')
+    assert.equal(displayStatus(record('sent_to_inbox', 'reviewing')), 'reviewing')
   })
 })
 
@@ -53,7 +61,7 @@ describe('displayStatus', () => {
   })
   it('does not project reviewing over a terminal aggregate', () => {
     assert.equal(displayStatus({ subtasks: [{ status: 'published', state: 'reviewing' }] }), 'published')
-    for (const states of [[], ['failed'], ['published'], ['failed', 'published'], ['submitting']]) {
+    for (const states of [[], ['failed'], ['published'], ['sent_to_inbox'], ['failed', 'published'], ['submitting']]) {
       assert.equal(displayStatus(record(...states)), aggregateStatus(record(...states)))
     }
   })
@@ -61,10 +69,10 @@ describe('displayStatus', () => {
 
 describe('calculateSubtaskSummary', () => {
   it('counts array and dictionary inputs identically and ignores non-object entries', () => {
-    const tasks = record('submitted', 'submitting', 'reviewing', 'processing', 'uploading', 'published', 'failed', 'unknown').subtasks
-    const expected = { total: 8, published: 1, failed: 1, inFlight: 5, reviewing: 1, submitted: 2 }
+    const tasks = record('submitted', 'submitting', 'reviewing', 'processing', 'uploading', 'sent_to_inbox', 'published', 'failed', 'unknown').subtasks
+    const expected = { total: 9, published: 1, sentToInbox: 1, failed: 1, inFlight: 5, reviewing: 1, submitted: 2 }
     assert.deepEqual(calculateSubtaskSummary([...tasks, null, 42]), expected)
     assert.deepEqual(calculateSubtaskSummary(Object.fromEntries(tasks.map((task, index) => [index, task]))), expected)
-    assert.deepEqual(calculateSubtaskSummary(undefined), { total: 0, published: 0, failed: 0, inFlight: 0, reviewing: 0, submitted: 0 })
+    assert.deepEqual(calculateSubtaskSummary(undefined), { total: 0, published: 0, sentToInbox: 0, failed: 0, inFlight: 0, reviewing: 0, submitted: 0 })
   })
 })

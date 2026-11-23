@@ -578,6 +578,11 @@ export function mountOfficial(ctx, deps) {
       account_ids: { type: 'array', required: true, items: { type: 'string' } },
       content: { type: 'string' },
       media_items: { type: 'array' },
+      tiktok_options: { type: 'object', additionalProperties: true },
+      title: { type: 'string' },
+      description: { type: 'string' },
+      photo_cover_index: { type: 'integer' },
+      is_aigc: { type: 'boolean' },
     },
     (args) => createPost(client, args, deps.accountMetaStore),
   )

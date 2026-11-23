@@ -100,7 +100,16 @@ describe('deepMergePlatforms direct', () => {
 describe('BUILTIN_STATUS_MAP sanity (docs/hub-tool-contracts.md §4)', () => {
   it('maps every value into a task status', () => {
     for (const value of Object.values(BUILTIN_STATUS_MAP)) {
-      assert.ok(['submitted', 'reviewing', 'published', 'failed'].includes(value), value)
+      assert.ok(['submitted', 'reviewing', 'sent_to_inbox', 'published', 'failed'].includes(value), value)
     }
+  })
+
+  it('disables tiktok supports_schedule and maps SEND_TO_USER_INBOX / sent_to_inbox', () => {
+    assert.equal(BUILTIN_PLATFORMS.tiktok.supports_schedule, false)
+    assert.deepEqual(BUILTIN_PLATFORMS.tiktok.media_types, ['video', 'image'])
+    assert.equal(BUILTIN_PLATFORMS.tiktok.max_images, 35)
+    assert.equal(BUILTIN_STATUS_MAP.sent_to_inbox, 'sent_to_inbox')
+    assert.equal(BUILTIN_STATUS_MAP.send_to_user_inbox, 'sent_to_inbox')
+    assert.equal(parsePublishConfig({ statusMap: { custom_inbox: 'sent_to_inbox' } }).statusMap.custom_inbox, 'sent_to_inbox')
   })
 })
