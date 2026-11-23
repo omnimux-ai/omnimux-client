@@ -127,6 +127,8 @@ jobs:
           node --test scripts/guard-anti-cheat.test.mjs
           node --test scripts/verify-publish-source.test.mjs
           node --test scripts/release-check.test.mjs
+          node scripts/verify-license-consistency.mjs
+          node --test scripts/verify-license-consistency.test.mjs
 
       - name: Documentation drift and review gates
         run: |
