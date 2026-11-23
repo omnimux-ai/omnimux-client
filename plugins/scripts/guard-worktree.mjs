@@ -5,7 +5,7 @@
  *
  * 全域版本控制守卫 (Universal Version-Control Guard):
  * 严禁在主 checkout 直接对任何已加入 Git 版本管理（Tracked）的文件/文件夹执行 edit/write 操作。
- * 强制所有改动走独立 Worktree 工作区 (./scripts/git-wt.sh) 进行物理隔离，防止主干污染、冲突覆盖与成果丢弃。
+ * 强制所有改动走独立 Worktree 工作区 (plugins/scripts/git-wt.sh) 进行物理隔离，防止主干污染、冲突覆盖与成果丢弃。
  * 同时拦截对未推送提交具有毁灭性覆盖风险的 `git reset --hard` 操作。
  *
  * 豁免清单 (允许在主仓操作):

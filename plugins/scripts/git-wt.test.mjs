@@ -15,7 +15,7 @@ describe('scripts/git-wt.sh worktree helper', () => {
     const content = readFileSync(scriptPath, 'utf8')
     assert.ok(content.startsWith('#!/usr/bin/env bash'), 'must have bash shebang')
     assert.ok(content.includes('agent/${plugin}-${topic}'), 'follows branch naming contract')
-    assert.ok(content.includes('omnimux-client-wt-'), 'follows sibling directory naming contract')
+    assert.ok(content.includes('worktree_dir') && content.includes('/.worktrees/'), 'creates worktrees under <repo>/.worktrees')
     assert.ok(content.includes('clean_issue'), 'supports Issue ID binding')
     assert.ok(content.includes('cmd_finish'), 'includes finish command implementation')
   })
@@ -98,6 +98,7 @@ describe('scripts/git-wt.sh finish lifecycle in isolated environment', () => {
     execSync(`git -C "${mainRepo}" config user.email "agent@omnimux.test"`, { stdio: 'ignore' })
 
     // 3. 构造必要目录结构 (scripts, plugins/omnimux-workflow)
+    writeFileSync(join(mainRepo, '.gitignore'), '.worktrees/\n')
     mkdirSync(join(mainRepo, 'scripts'), { recursive: true })
     mkdirSync(join(mainRepo, 'plugins', 'omnimux-workflow'), { recursive: true })
 
@@ -160,7 +161,7 @@ describe('scripts/git-wt.sh finish lifecycle in isolated environment', () => {
       })
       assert.ok(startOut.includes('Worktree 已就绪'))
 
-      const wtDir = join(testRoot, 'omnimux-client-wt-demo-node-101')
+      const wtDir = join(mainRepo, '.worktrees', 'demo-node-101')
       assert.ok(existsSync(wtDir), 'Worktree directory must exist')
 
       // 2. 在 worktree 中写入未暂存/未提交文件
@@ -194,7 +195,7 @@ describe('scripts/git-wt.sh finish lifecycle in isolated environment', () => {
         cwd: mainRepo,
         stdio: 'ignore'
       })
-      const wtDir = join(testRoot, 'omnimux-client-wt-failing-gate-102')
+      const wtDir = join(mainRepo, '.worktrees', 'failing-gate-102')
 
       // 2. 在 worktree 中引入一个会令单测失败的改动
       const failPkgJson = {
@@ -239,7 +240,7 @@ describe('scripts/git-wt.sh finish lifecycle in isolated environment', () => {
       })
       assert.ok(startOut.includes('Worktree 已就绪'))
 
-      const wtDir = join(testRoot, 'omnimux-client-wt-table-action-103')
+      const wtDir = join(mainRepo, '.worktrees', 'table-action-103')
       assert.ok(existsSync(wtDir))
 
       writeFileSync(join(wtDir, 'plugins', 'omnimux-workflow', 'table-feature.js'), 'export const action = "done";')
@@ -282,7 +283,7 @@ describe('scripts/git-wt.sh finish lifecycle in isolated environment', () => {
         cwd: mainRepo,
         stdio: 'ignore'
       })
-      const wtDir = join(testRoot, 'omnimux-client-wt-quick-fix-104')
+      const wtDir = join(mainRepo, '.worktrees', 'quick-fix-104')
 
       writeFileSync(join(wtDir, 'quick-fix.txt'), 'fixed')
       execSync(`git -C "${wtDir}" add .`, { stdio: 'ignore' })
@@ -307,7 +308,7 @@ describe('scripts/git-wt.sh finish lifecycle in isolated environment', () => {
     setupSandbox()
     try {
       execSync(`bash "${scriptCopy}" start workflow merged-task 864`, { cwd: mainRepo, stdio: 'ignore' })
-      const wtDir = join(testRoot, 'omnimux-client-wt-merged-task-864')
+      const wtDir = join(mainRepo, '.worktrees', 'merged-task-864')
       writeFileSync(join(wtDir, 'feature.txt'), 'needs Dev acceptance')
       execSync(`git -C "${wtDir}" add . && git -C "${wtDir}" commit -m feature`, { stdio: 'ignore' })
       // The fixture remote has already merged the change; no real remote is used.
@@ -334,7 +335,7 @@ describe('scripts/git-wt.sh finish lifecycle in isolated environment', () => {
         cwd: mainRepo,
         stdio: 'ignore'
       })
-      const wtDir = join(testRoot, 'omnimux-client-wt-cleanforce-108')
+      const wtDir = join(mainRepo, '.worktrees', 'cleanforce-108')
       writeFileSync(join(wtDir, 'clean-force.txt'), 'remove me')
       execSync(`git -C "${wtDir}" add .`, { stdio: 'ignore' })
       execSync(`git -C "${wtDir}" commit -m "feat(common): clean force test"`, { stdio: 'ignore' })

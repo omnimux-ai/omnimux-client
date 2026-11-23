@@ -111,7 +111,8 @@ test('legacy repository markers are updated while the package sentinel stays int
     assert.equal(content.includes(legacyDesktop), false, rel)
     assert.equal(content.includes(legacyPlugin), false, rel)
   }
-  assert.ok(read('plugins/scripts/git-wt.sh').includes('omnimux-client-wt-'))
+  assert.ok(read('plugins/scripts/git-wt.sh').includes('worktree_dir'))
+  assert.ok(read('plugins/scripts/git-wt.sh').includes('/.worktrees/'))
   assert.ok(read('app/scripts/worktree.sh').includes('omnimux-client'))
   assert.equal(JSON.parse(read('plugins/package.json')).name, legacyPlugin)
 })
