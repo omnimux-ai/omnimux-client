@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path';
 import { describe, it } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
-import { isCanvasBlankSurface } from '../utils/canvasDismissLayer.ts';
+import { createCanvasDismissCoordinator, isCanvasBlankSurface } from '../utils/canvasDismissLayer.ts';
 
 async function loadCanvasStore() {
   const compiled = await build({
@@ -135,6 +135,99 @@ describe('Issue #111: P1 / P2 / P3 contract tests', () => {
       assert.equal(after.past.length, pastBefore, 'clearing selection must not push an undo snapshot');
     } finally {
       useCanvasStore.getState().resetStore();
+    }
+  });
+
+  it('P3: dock blank margin click clears selection in 1 click without popover, and dismisses popover first then selection with popover open', async () => {
+    const workflowRequire = createRequire(join(here, '../../../../..', 'package.json'));
+    const { JSDOM } = workflowRequire('jsdom');
+    const useCanvasStore = await loadCanvasStore();
+    const dom = new JSDOM(`<!doctype html><html><body>
+      <div class="wf-canvas-editor">
+        <div class="react-flow"><div class="react-flow__pane" id="pane"></div></div>
+      </div>
+      <div id="model-popover" class="wf-model-cascade-popover"></div>
+      <button id="model-trigger" type="button">Model</button>
+    </body></html>`, { url: 'http://127.0.0.1/' });
+
+    const { window } = dom;
+    const { document } = window;
+    let clock = 1000;
+    const coordinator = createCanvasDismissCoordinator({ host: window, now: () => clock });
+
+    const dispatchPointer = (target, type, init = {}) => {
+      const evt = new window.MouseEvent(type, { bubbles: true, cancelable: true, button: 0, ...init });
+      if (init.pointerId !== undefined) Object.defineProperty(evt, 'pointerId', { value: init.pointerId });
+      target.dispatchEvent(evt);
+    };
+    const fullClick = (target) => {
+      dispatchPointer(target, 'pointerdown', { pointerId: 1 });
+      dispatchPointer(target, 'mousedown');
+      dispatchPointer(target, 'pointerup', { pointerId: 1 });
+      dispatchPointer(target, 'mouseup');
+      dispatchPointer(target, 'click');
+    };
+
+    useCanvasStore.getState().resetStore();
+    try {
+      const editor = document.querySelector('.wf-canvas-editor');
+      const modelPopover = document.getElementById('model-popover');
+      const modelTrigger = document.getElementById('model-trigger');
+      assert.ok(editor && modelPopover && modelTrigger);
+
+      const seedSelection = () => {
+        const store = useCanvasStore.getState();
+        store.hydrateGraph(
+          [{ id: 'n-dock', type: 'material', position: { x: 0, y: 0 }, selected: true, data: { materialType: 'video' } }],
+          [{ id: 'e-dock', source: 'n-src', target: 'n-dock', selected: true }],
+        );
+        store.setSelectedElement('node', 'n-dock');
+      };
+
+      let backdropClears = 0;
+      editor.addEventListener('click', (event) => {
+        if (event.target !== event.currentTarget) return;
+        useCanvasStore.getState().clearSelection();
+        backdropClears += 1;
+      });
+
+      // (1) No open popover: single click on .wf-canvas-editor dock margin clears selection immediately
+      seedSelection();
+      fullClick(editor);
+      assert.equal(backdropClears, 1);
+      assert.equal(useCanvasStore.getState().nodes[0].selected, false);
+      assert.equal(useCanvasStore.getState().edges[0].selected, false);
+      assert.deepEqual(useCanvasStore.getState().selectedElement, { type: 'none', id: null });
+
+      // (2) Open popover: first click dismisses only the popover; second click clears selection
+      seedSelection();
+      let popoverOpen = true;
+      let unregister = null;
+      unregister = coordinator.register(() => ({
+        containsTarget: (target) => modelPopover.contains(target) || modelTrigger.contains(target),
+        onDismiss: () => {
+          popoverOpen = false;
+          unregister?.();
+          unregister = null;
+        },
+      }));
+
+      fullClick(editor);
+      assert.equal(popoverOpen, false);
+      assert.equal(backdropClears, 1);
+      assert.equal(useCanvasStore.getState().nodes[0].selected, true);
+      assert.deepEqual(useCanvasStore.getState().selectedElement, { type: 'node', id: 'n-dock' });
+
+      clock += 120;
+      fullClick(editor);
+      assert.equal(backdropClears, 2);
+      assert.equal(useCanvasStore.getState().nodes[0].selected, false);
+      assert.equal(useCanvasStore.getState().edges[0].selected, false);
+      assert.deepEqual(useCanvasStore.getState().selectedElement, { type: 'none', id: null });
+    } finally {
+      useCanvasStore.getState().resetStore();
+      coordinator.destroy();
+      window.close();
     }
   });
 });
