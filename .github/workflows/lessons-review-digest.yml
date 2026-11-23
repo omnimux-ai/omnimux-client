@@ -1,0 +1,97 @@
+name: Lessons Review Digest
+
+on:
+  schedule:
+    # 每周一、周四 02:00 UTC（10:00 Asia/Shanghai）扫描未复盘主干提交中的返修与账本代谢信号；
+    # 仅在检出真实待核查信号时创建/更新唯一开放复盘 Issue，无信号静默退出。
+    - cron: '0 2 * * 1,4'
+  workflow_dispatch:
+    inputs:
+      open_issue:
+        description: 'Open or update the single lessons-review issue when signals are detected'
+        type: boolean
+        default: true
+      window_hours:
+        description: 'Rework lookback window in hours'
+        type: string
+        default: '72'
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: lessons-review-digest
+  cancel-in-progress: false
+
+jobs:
+  digest:
+    name: Analyze LESSONS.md signals
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.18.1
+
+      - name: Run signal analyzer
+        id: analyze
+        env:
+          WINDOW_HOURS: ${{ inputs.window_hours || '72' }}
+        run: |
+          node plugins/scripts/analyze-lessons-signals.mjs . \
+            --window-hours "$WINDOW_HOURS" \
+            --json \
+            --output "$RUNNER_TEMP/lessons-signals.json" > /dev/null
+          node plugins/scripts/analyze-lessons-signals.mjs . \
+            --window-hours "$WINDOW_HOURS" \
+            --markdown \
+            --output "$RUNNER_TEMP/lessons-signals.md" > /dev/null
+          cat "$RUNNER_TEMP/lessons-signals.md" >> "$GITHUB_STEP_SUMMARY"
+          node --input-type=module - <<'JS'
+          import { appendFileSync, readFileSync } from 'node:fs'
+          const report = JSON.parse(readFileSync(`${process.env.RUNNER_TEMP}/lessons-signals.json`, 'utf8'))
+          const title = `chore(lessons): 增量事故复盘信号（${report.range.sinceShort}..${report.range.headShort}）`
+          appendFileSync(process.env.GITHUB_OUTPUT, `actionable=${report.actionable ? 'true' : 'false'}\n`)
+          appendFileSync(process.env.GITHUB_OUTPUT, `issue_title=${title}\n`)
+          JS
+
+      - name: Upsert single lessons-review issue when actionable
+        if: >-
+          steps.analyze.outputs.actionable == 'true' &&
+          (github.event_name == 'schedule' || inputs.open_issue == true)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          ISSUE_TITLE: ${{ steps.analyze.outputs.issue_title }}
+        run: |
+          gh label create "lessons-review" \
+            --repo "$REPO" \
+            --color D93F0B \
+            --description "Incremental LESSONS.md review digest triggered by rework/ledger signals" \
+            --force || true
+          EXISTING=$(gh issue list \
+            --repo "$REPO" \
+            --label "lessons-review" \
+            --state open \
+            --limit 1 \
+            --json number \
+            --jq '.[0].number // ""')
+          if [ -n "$EXISTING" ]; then
+            gh issue edit "$EXISTING" \
+              --repo "$REPO" \
+              --title "$ISSUE_TITLE" \
+              --body-file "$RUNNER_TEMP/lessons-signals.md"
+          else
+            gh issue create \
+              --repo "$REPO" \
+              --label "lessons-review" \
+              --title "$ISSUE_TITLE" \
+              --body-file "$RUNNER_TEMP/lessons-signals.md"
+          fi

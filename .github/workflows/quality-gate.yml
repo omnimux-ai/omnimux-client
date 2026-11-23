@@ -99,6 +99,7 @@ jobs:
           node --check scripts/report-blocker.mjs
           node --check scripts/lib/silent-catch-delta.mjs
           node --check scripts/verify-fix-regression-test.mjs
+          node --check scripts/analyze-lessons-signals.mjs
           node scripts/verify-plugin-agent-tools.mjs
 
       # 三分栏收起布局契约门禁：列宽胜负取决于 CSS 层叠（重要性→特异性→顺序），
@@ -150,6 +151,7 @@ jobs:
           PR_LABELS: ${{ github.event.pull_request && toJSON(github.event.pull_request.labels.*.name) || '[]' }}
         run: |
           node --test scripts/verify-fix-regression-test.test.mjs
+          node --test scripts/analyze-lessons-signals.test.mjs
           node scripts/verify-fix-regression-test.mjs . "$QA_BASE"
 
       # 侧栏契约门禁：真实装配 8 个 Stage + market 全生命周期（JSDOM + 真实
