@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0.0",
-  "updatedAt": "2026-11-24T01:23:12.721Z",
+  "updatedAt": "2026-11-24T01:23:13.262Z",
   "topology": {
     "tiers": [
       {
@@ -910,7 +910,7 @@
       "tier": "tier-1-app",
       "entrypoint": "src/index.js",
       "status": "active",
-      "description": "OmniMux TikTok 跟爆选品工作台：热销榜与关键词发现、外部快照导入、三闸批量筛（G1 量化初筛 / G2 渠道占比核验 / G3 风险词与 AI 合规入库）、选品库、素材工坊与定时自动选品",
+      "description": "发现和筛选 TikTok 热门商品，审核合规风险并生成带货素材。",
       "tags": [
         "tiktok",
         "tiktok-shop",
