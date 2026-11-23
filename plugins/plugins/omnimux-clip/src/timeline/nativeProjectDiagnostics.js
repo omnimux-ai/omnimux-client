@@ -90,3 +90,88 @@ export function diagnoseNativeProject(envelope) {
   }
   return { projectId, revision, ok: issues.length === 0, issueCount: issues.length, issues }
 }
+
+const RECONCILE_ISSUE_MESSAGES = {
+  legacy_unsigned_exact: 'Media item has no content digest but matches a unique connected canvas source and can be upgraded.',
+  source_drifted: 'Media source content changed since it was imported. Relink with allowVersionUpdate=true to adopt the latest version.',
+  legacy_ambiguous: 'Media item matched multiple or duration-mismatched canvas sources and requires explicit relinking.',
+  missing_unlinked: 'Media file is missing on Host and has no matching connected canvas source.',
+}
+
+function diagnosticMetaForReconcile(entry) {
+  if (!entry) return undefined
+  const state = entry.reconcileState
+  const scope = entry.canonicalHandle?.scope
+  const suggested = isReferenceId(entry.suggestedSourceNodeId) ? entry.suggestedSourceNodeId : undefined
+  if (state === 'online_exact') {
+    return {
+      reason: 'cache_miss_recoverable',
+      recoverable: true,
+      ...(suggested ? { suggestedSourceNodeId: suggested } : {}),
+      ...(scope ? { scope } : {}),
+    }
+  }
+  if (state === 'legacy_unsigned_exact') {
+    return {
+      reason: 'legacy_unsigned_exact',
+      recoverable: true,
+      ...(suggested ? { suggestedSourceNodeId: suggested } : {}),
+      ...(scope ? { scope } : {}),
+    }
+  }
+  if (state === 'source_drifted') {
+    return {
+      reason: 'source_drifted',
+      recoverable: true,
+      ...(suggested ? { suggestedSourceNodeId: suggested } : {}),
+      ...(scope ? { scope } : {}),
+    }
+  }
+  if (state === 'legacy_ambiguous') {
+    return {
+      reason: 'legacy_ambiguous',
+      recoverable: false,
+      ...(suggested ? { suggestedSourceNodeId: suggested } : {}),
+      ...(scope ? { scope } : {}),
+    }
+  }
+  return {
+    reason: 'missing_unlinked',
+    recoverable: false,
+    ...(scope ? { scope } : {}),
+  }
+}
+
+/**
+ * Enrich static `diagnoseNativeProject` output with Host-verified reconcile reasons.
+ * Produces zero host absolute paths; surfaces drifted or missing Host media even
+ * when the saved project JSON predates the disk change.
+ */
+export function enrichDiagnosticsWithReconcile(report, reconcileReport) {
+  if (!reconcileReport || !Array.isArray(reconcileReport.items)) return report
+  const byMediaId = new Map(reconcileReport.items.map((entry) => [entry.mediaId, entry]))
+  const coveredMediaIds = new Set()
+  const issues = report.issues.map((issue) => {
+    if (issue.code !== 'media_missing' || !issue.mediaId) return issue
+    const entry = byMediaId.get(issue.mediaId)
+    if (!entry) return issue
+    coveredMediaIds.add(issue.mediaId)
+    return { ...issue, ...diagnosticMetaForReconcile(entry) }
+  })
+  for (const entry of reconcileReport.items) {
+    if (coveredMediaIds.has(entry.mediaId)) continue
+    if (entry.reconcileState === 'online_exact') continue
+    issues.push({
+      code: 'media_missing',
+      message: RECONCILE_ISSUE_MESSAGES[entry.reconcileState] ?? 'Media source is unavailable.',
+      mediaId: entry.mediaId,
+      ...diagnosticMetaForReconcile(entry),
+    })
+  }
+  return {
+    ...report,
+    ok: issues.length === 0,
+    issueCount: issues.length,
+    issues,
+  }
+}

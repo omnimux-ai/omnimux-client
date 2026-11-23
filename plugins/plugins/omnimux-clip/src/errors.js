@@ -174,6 +174,13 @@ export const CLIP_STATUS_BY_CODE = {
   'openreel-migration-required': 409,
   'invalid-json': 400,
   'invalid-id': 400,
+  'invalid-media-handle': 400,
+  'access-denied': 403,
+  'media-not-found': 404,
+  'media-version-mismatch': 409,
+  'media-changed': 409,
+  'unsupported-media': 415,
+  'media-resolver-unavailable': 503,
 }
 
 /**

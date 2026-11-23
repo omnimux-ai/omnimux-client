@@ -58,6 +58,8 @@ import { writeMediaDrag } from "./project-panel/dnd";
 import { Scissors } from "@/icons/lucide-compat";
 import { clipNow, useClipT } from "../../../../i18n/index.js";
 import { useClipEditorActions } from "../../../../live/EditorSeat.jsx";
+import { CanvasRelinkDialog, type RelinkLibraryTarget } from "../../../../live/CanvasRelinkDialog";
+import { relinkMediaFromBridgeItem } from "../../../../live/bridged-media";
 import { AssetLibraryPicker } from "./AssetLibraryPicker";
 import { AssetBridgeFeedback, AssetBridgeShortcuts, MediaImportActions } from "./AssetBridgeControls";
 import { useBridgedMediaImport } from "./useBridgedMediaImport";
@@ -717,14 +719,18 @@ export const AssetsPanel: React.FC = () => {
     replaceMediaAsset: state.replaceMediaAsset,
   })));
   const editorActions = useClipEditorActions();
-  const { canBridgeMedia, captureMediaEditor, openCanvasForMedia, canvasImport } = editorActions;
+  const { canBridgeMedia, canRelinkMedia, captureMediaEditor, openCanvasForMedia, canvasImport } = editorActions;
   const bridgeImport = useBridgedMediaImport({ ...editorActions, projectId, actionExecutor });
   const importedSourceIds = useMemo(() => new Set(mediaItems.flatMap(item => (
     item.omnimuxSource?.id && !item.isPlaceholder ? [item.omnimuxSource.id] : []
   ))), [mediaItems]);
   const importTrigger = useRef<HTMLButtonElement>(null);
   const pickerTrigger = useRef<HTMLButtonElement | null>(null);
+  const relinkTrigger = useRef<HTMLButtonElement | null>(null);
   const [pickerSeat, setPickerSeat] = useState<{ signal: AbortSignal; isCurrent: () => boolean } | null>(null);
+  const [relinkOpen, setRelinkOpen] = useState(false);
+  const [relinkTarget, setRelinkTarget] = useState<RelinkLibraryTarget | null>(null);
+  const [relinkBusy, setRelinkBusy] = useState(false);
   const [canvasIssue, setCanvasIssue] = useState<"save-failed" | "unavailable" | null>(null);
   const [canvasOpening, setCanvasOpening] = useState(false);
   const canvasRequest = useRef<symbol | null>(null);
@@ -733,14 +739,24 @@ export const AssetsPanel: React.FC = () => {
 
   useEffect(() => {
     setPickerSeat(null);
+    setRelinkOpen(false);
+    setRelinkTarget(null);
+    setRelinkBusy(false);
     setCanvasIssue(null);
     setCanvasOpening(false);
     return () => { canvasRequest.current = null; };
   }, [projectId, actionExecutor]);
 
   useEffect(() => {
+    if (!insideMedia || !canRelinkMedia) setRelinkOpen(false);
+  }, [insideMedia, canRelinkMedia]);
+
+  useEffect(() => {
     if (!pickerSeat) return;
-    const close = () => setPickerSeat(null);
+    const close = () => {
+      setPickerSeat(null);
+      setRelinkTarget(null);
+    };
     if (!insideMedia || !canUseLibrary || pickerSeat.signal.aborted || !pickerSeat.isCurrent()) {
       close();
       return;
@@ -750,15 +766,23 @@ export const AssetsPanel: React.FC = () => {
   }, [pickerSeat, insideMedia, canUseLibrary]);
 
   const bridgeActions = {
-    libraryDisabled: !canUseLibrary || bridgeImport.busy || canvasOpening,
-    canvasDisabled: !canUseLibrary || !openCanvasForMedia || bridgeImport.busy || canvasOpening,
+    libraryDisabled: !canUseLibrary || bridgeImport.busy || relinkBusy || canvasOpening,
+    canvasDisabled: !canUseLibrary || !openCanvasForMedia || bridgeImport.busy || relinkBusy || canvasOpening,
+    relinkDisabled: !canRelinkMedia || bridgeImport.busy || relinkBusy || canvasOpening,
     onLibrary(trigger: HTMLButtonElement | null) {
-      if (!canUseLibrary || bridgeImport.busy || canvasRequest.current) return;
+      if (!canUseLibrary || bridgeImport.busy || relinkBusy || canvasRequest.current) return;
       const seat = captureMediaEditor?.();
       if (!seat || seat.signal.aborted || !seat.isCurrent()) return;
       pickerTrigger.current = trigger;
+      setRelinkTarget(null);
       setPickerSeat(seat);
     },
+    onRelink: canRelinkMedia
+      ? (trigger: HTMLButtonElement | null) => {
+          relinkTrigger.current = trigger;
+          setRelinkOpen(true);
+        }
+      : undefined,
     async onCanvas() {
       if (!canUseLibrary || !openCanvasForMedia || bridgeImport.busy || canvasRequest.current) return;
       const seat = captureMediaEditor?.();
@@ -1261,8 +1285,14 @@ export const AssetsPanel: React.FC = () => {
                     <span className="shrink-0 rounded-full bg-yellow-500 px-1 text-[9.5px] font-bold text-black">{missingAssetsCount}</span>
                   </PanelButton>
                   <PanelButton
-                    label={t("Relink from Folder")}
-                    onClick={desktopIngestAvailable() ? () => void relinkFromFolder("full") : handleRelinkFromFolder}
+                    label={canRelinkMedia ? t("Sync & Relink from Canvas") : t("Relink from Folder")}
+                    onClick={
+                      canRelinkMedia
+                        ? () => setRelinkOpen(true)
+                        : desktopIngestAvailable()
+                          ? () => void relinkFromFolder("full")
+                          : handleRelinkFromFolder
+                    }
                     className="flex h-5 min-w-0 items-center gap-1 rounded-[4px] border border-yellow-500/40 bg-yellow-500/5 px-1.5 text-[10.5px] font-medium normal-case tracking-normal text-yellow-500 transition-all hover:bg-yellow-500/15"
                   >
                     <RefreshCw size={10} className="shrink-0" />
@@ -1496,13 +1526,76 @@ export const AssetsPanel: React.FC = () => {
       </div>
 
       <ProjectPanelDialogs />
+      <CanvasRelinkDialog
+        open={insideMedia && Boolean(canRelinkMedia) && relinkOpen}
+        onClose={() => setRelinkOpen(false)}
+        onRequestAssetLibraryRelink={
+          canUseLibrary
+            ? (target) => {
+                const seat = captureMediaEditor?.();
+                if (!seat || seat.signal.aborted || !seat.isCurrent()) return;
+                setRelinkOpen(false);
+                setRelinkTarget(target);
+                setPickerSeat(seat);
+              }
+            : undefined
+        }
+        onFallbackLocalFolder={
+          desktopIngestAvailable() ? () => void relinkFromFolder("full") : handleRelinkFromFolder
+        }
+        restoreFocus={() => {
+          const usable = (button: HTMLButtonElement | null) => button?.isConnected && !button.disabled
+            && button.getClientRects().length > 0 && !button.closest("[inert]");
+          const button = usable(relinkTrigger.current) ? relinkTrigger.current : importTrigger.current;
+          if (usable(button)) button?.focus({ preventScroll: true });
+          relinkTrigger.current = null;
+        }}
+      />
       <AssetLibraryPicker
         open={insideMedia && canUseLibrary && pickerSeat !== null}
-        busy={bridgeImport.busy}
+        busy={bridgeImport.busy || relinkBusy}
         importedIds={importedSourceIds}
-        onClose={() => setPickerSeat(null)}
+        allowedType={relinkTarget?.type}
+        singleSelect={Boolean(relinkTarget)}
+        title={relinkTarget ? t("Replace {0} from OmniMux Assets", [relinkTarget.name]) : undefined}
+        confirmLabel={relinkTarget ? t("Replace with Asset") : undefined}
+        onClose={() => {
+          const wasRelinking = Boolean(relinkTarget);
+          setPickerSeat(null);
+          setRelinkTarget(null);
+          if (wasRelinking && canRelinkMedia) setRelinkOpen(true);
+        }}
         onImport={items => {
           if (!pickerSeat || pickerSeat.signal.aborted || !pickerSeat.isCurrent()) return;
+          if (relinkTarget) {
+            const chosen = items[0];
+            if (!chosen) return;
+            const seat = pickerSeat;
+            const target = relinkTarget;
+            setRelinkBusy(true);
+            void relinkMediaFromBridgeItem(
+              target.mediaId,
+              { id: chosen.id, url: chosen.url, name: chosen.name, type: chosen.type },
+              seat,
+            )
+              .then((res) => {
+                if (!res.success) {
+                  toast.error(clipNow()("Could not replace media"), res.error);
+                  return;
+                }
+                setPickerSeat(null);
+                setRelinkTarget(null);
+                if (canRelinkMedia) setRelinkOpen(true);
+              })
+              .catch((error: unknown) => {
+                toast.error(
+                  clipNow()("Could not replace media"),
+                  error instanceof Error ? error.message : undefined,
+                );
+              })
+              .finally(() => setRelinkBusy(false));
+            return;
+          }
           if (bridgeImport.start(items.map(({ id, url, name, type }) => ({ id, url, name, type })))) setPickerSeat(null);
         }}
         restoreFocus={() => {

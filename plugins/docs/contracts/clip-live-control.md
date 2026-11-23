@@ -5,7 +5,7 @@ type: "contract"
 status: "living"
 authority: "L1"
 date: "2026-11-21"
-updated: "2026-11-22"
+updated: "2026-11-23"
 ---
 
 # 画布剪辑归属与实时控制
@@ -26,7 +26,7 @@ Clip 编辑器和 Host 使用同一 OpenReel `Project`。Host 保存含 `project
 
 - 裸格式及包装过的原生 UUID 工程保留 ID。旧格式转换轨道、片段、素材引用、源入出点、音量、速度、字幕和可映射的转场。读取可投影已识别的旧档。首次物化或保存时原子写入新格式，并保留转换前的原档。无法映射的旧条目保留在备份中，已识别的缺项可在诊断中查看。[迁移](../../plugins/omnimux-clip/src/store/legacyProject.js)
 - 首次进入 `video_composition` 时，Workflow 先保存节点绑定，再打开 Portal。Clip 以原工程 ID 物化 Host 草稿。已有 Host 工程优先，其次载入节点旧 `schema` 草稿或新建。后续自动保存更新 Workflow 的 `draftRevision`，图里继续保存绑定与成片引用。上游素材按来源和版本复用。首次导入结束并尝试保存后，入口才登记实时租约。切换节点后的迟到导入不得应用到新工程。[画布打开](../../plugins/omnimux-workflow/src/canvas/bridge/canvasClipActions.ts) · [素材导入](../../plugins/omnimux-clip/src/client/hooks/useCanvasIngestion.ts)
-- 浏览器将草稿和媒体字节保存在 IndexedDB。自动恢复先校验共享缓存，再查同工程和绑定已由 Host 确认的持久化记录，最后检查可验证的同源地址。画布重开或采用 Host 版本后，如果缺媒体且仍连接原 `/local-file` 上游，也按选中快照的 SHA-256 重新拉取。旧稿须有原内容摘要或可核对的文件版本。例如带 `rev=sha256:…` 的同工作区定位符，Workflow 文件路由会核对其字节。只有路径或不透明版本号时保留缺失，等待用户明确重连。恢复沿用原 `mediaId`、轨道和片段。工具投影仅返回安全来源标识。[旧稿迁移](../../plugins/omnimux-clip/src/store/legacyProject.js) · [媒体恢复](../../plugins/omnimux-clip/src/client/live/native-state.ts) · [画布上游](../../plugins/omnimux-clip/src/client/hooks/useCanvasIngestion.ts)
+- 媒体字节以 Host 为单一事实源，IndexedDB 仅作可清空的 L1 缓存。执行中心提供无状态 `mediaResolver` Seam，按 `MediaHandle v1` 路由到 `project-asset`、`canvas-node`（`omnimux-workflow`）、`library-file`（`omnimux-assets`）和 `clip-vault`（`omnimux-clip`）四个 Provider，并执行 256 KiB 块级 SHA-256 校验。本地导入和录屏在保存前经 `PUT /omnimux-clip/api/projects/:id/media/:mediaId/bytes` 持久化到 `<ProjectRoot>/assets/imported/`（已绑定项目）或 `clip-vault`（独立工坊/自由画布）。打开工程前经 `POST /omnimux-clip/api/projects/:id/media/reconcile` 核对 Host 可达性与上游连线：对单候选且时长误差 ≤0.15s 的存量无摘要条目先写 `.backups/` 备份再受控升级；对 `source_drifted` 禁止静默替换（`GET .../bytes` 返回 `409 media-version-mismatch`）；画布模式重连优先展示 OmniMux 画布同步与重连面板，保原 `mediaId` 并自动收敛缩短素材的裁剪入出点。工具投影仅返回安全来源标识（含 `scope`），不暴露宿主机绝对路径。[媒体路由 Seam](../../plugins/omnimux/src/host/media-resolver.js) · [Host 对账](../../plugins/omnimux-clip/src/media/reconcile.js) · [Clip Vault](../../plugins/omnimux-clip/src/media/clipVault.js) · [画布重连面板](../../plugins/omnimux-clip/src/client/live/CanvasRelinkDialog.tsx) · [媒体恢复](../../plugins/omnimux-clip/src/client/live/native-state.ts) · [画布上游](../../plugins/omnimux-clip/src/client/hooks/useCanvasIngestion.ts)
 
 ### 可见入口、编辑权和对话上下文
 
@@ -58,13 +58,13 @@ Clip 编辑器和 Host 使用同一 OpenReel `Project`。Host 保存含 `project
 | `clip_create` | 必填 `name`。`resolution?` 为 `landscape`、`portrait`、`square`，默认 `landscape`。`fps?` 默认 30。生成独立原生空工程并保存，返回 `projectId` 与初始 `revision`。 |
 | `clip_open` | 打开尚未物化的画布工程时同时带 `workspaceId`、`nodeId` 和 `projectId`。已有画布工程可从保存记录解析绑定。只在用户要求打开时调用。 |
 | `clip_get` | `view?` 为 `summary`、`tracks`、`clips`、`full`，默认 `summary`。可带 `trackId`、`clipId`、`fromSec`、`toSec`。返回必填整数 `revision` 和 `revisionEpoch`，实时读取另返回可选字符串 `windowInstanceId`。指定 ID 时也可读保存工程。`full` 附轨道、片段、转场、素材与字幕。 |
-| `clip_diagnostics` | 必填 `projectId`，只查 Host 已保存版本。报告 `timeline_gap`（可见视频空档 ≥0.08 秒）、`clip_overlap`、`media_missing` 与 `clip_out_of_bounds` 等。`ok` 表示有无问题，有问题时为 `false`，工具本身失败仍抛领域错误。 |
+| `clip_diagnostics` | 必填 `projectId`，查 Host 已保存版本并复用 `reconcileProjectMedia` 做离线归因。报告 `timeline_gap`（可见视频空档 ≥0.08 秒）、`clip_overlap`、`media_missing`（附 `reason`：`cache_miss_recoverable` / `legacy_unsigned_exact` / `source_drifted` / `legacy_ambiguous` / `missing_unlinked`、`recoverable`、可选 `suggestedSourceNodeId` 与 `scope`）及 `clip_out_of_bounds`。`ok` 表示有无问题，跨工作区越权或存储错误仍抛领域错误。 |
 | `clip_edit` | 必填可读的 `description` 和 1–100 条 `operations`。`validateOnly: true` 预演。删除非空整轨或清空已有时间轴需明确授权并传 `confirmDestructive: true`。 |
 | `clip_view` | 必填 `action`。`seek` 使用 `toSec`，`play` 可用 `fromSec`，`select_clips` 需 `clipIds`，传空数组清除选段。`pause` 直接暂停。返回原生播放头、播放状态、选段 ID 与版本。 |
 | `clip_snapshot` | `times` 为 1–6 个时间点，或用 `fromSec`、`toSec` 和可选 `count` 等距采样。区间默认 6 帧。都省略时截当前播放头。Host 校验并保存真实合成 PNG，可附图片附件。 |
 | `clip_export` | 必填 `confirm: true`，仅在用户要求渲染成片时传入。`confirm: false` 会抛 `CONFIRMATION_REQUIRED`。`resolution?` 支持 `720p`、`1080p`、`4k` 并保持画幅，`fps?` 覆盖项目帧率。返回原任务实际落盘和画布提交状态。 |
 
-`clip_edit` 的 `operations[].type` 支持 `add_track`、`remove_track`、`set_track_state`、`import_media`、`add_clip`、`trim_clip`、`split_clip`、`move_clip`、`remove_clip`、`remove_range`、`cut_silences`、`set_volume`、`set_speed`、`add_text`、`set_text`、`set_subtitle_style`、`add_transition`、`remove_transition` 和静态参数 `set_clip_effect`。`import_media` 需要恰好一个 `path` 或 `sourceUrl`，Host 校验解析后的文件归属当前会话工作目录及媒体白名单，越界返回 `path-denied`。素材已在项目中时，可用 `add_clip` 的 `mediaId` 和 `trackId` 上轨。普通剪辑按用户给出的范围执行，涉及其他工程先核对目标。[原生批次](../../plugins/omnimux-clip/src/client/live/native-edit.ts)
+`clip_edit` 的 `operations[].type` 支持 `add_track`、`remove_track`、`set_track_state`、`import_media`、`relink_media`、`add_clip`、`trim_clip`、`split_clip`、`move_clip`、`remove_clip`、`remove_range`、`cut_silences`、`set_volume`、`set_speed`、`add_text`、`set_text`、`set_subtitle_style`、`add_transition`、`remove_transition` 和静态参数 `set_clip_effect`。`import_media` 接受恰好一种已授权媒体来源：`path`/`sourceUrl`（当前会话工作目录）、`libraryAssetId`（加可选 `fileId`，全局资产库）、`canvasNodeId`（加可选 `outputIndex`，画布上游节点）或 `projectAssetId`（当前绑定项目资产）。句柄类来源由 Host 经 `mediaResolver` 校验后签发会话绑定的短时 `/omnimux-clip/api/media-transfer/:token` 传流，跨工作区或越权统一返回 `path-denied`。`relink_media` 接受 `mediaId`、`source`（同上四种来源）与可选 `allowVersionUpdate`（默认 `false`，摘要漂移时拒绝并报 `media-version-mismatch`；显式 `true` 时更新版本并收敛引用该素材的片段入出点，返回 `adjustedClips` 诊断，整体纳入同一 Undo 步）。素材已在项目中时，可用 `add_clip` 的 `mediaId` 和 `trackId` 上轨。[Host 授权](../../plugins/omnimux-clip/src/media/authorizeToolMedia.js) · [原生批次](../../plugins/omnimux-clip/src/client/live/native-edit.ts)
 
 整批在草稿副本上校验，所有操作通过后才以 `description` 为标签入一条原生撤销记录。校验或任一操作失败时保留原时间轴、历史和版本。`validateOnly` 不生成历史或保存。手动编辑、Agent 编辑、撤销和重做共用原生历史。播放和截图走原生预览，均不入历史。Agent 编辑、截帧和导出遵守 Motion 表达式限制，导入或工具不得替用户批准或写入脚本。[原生播放与截帧](../../plugins/omnimux-clip/src/client/live/native-view.ts) · [Motion 边界](../../plugins/omnimux-clip/src/client/live/native-motion.ts)
 
@@ -82,7 +82,7 @@ Agent 领命时和画布手工导出开始前，从同一 Host 预约递增的 `
 
 关闭或隐藏 Portal 后，已预约的任务仍按原绑定完成上传和提交。若渲染过程中共享编辑器切换到另一工程，渲染会报冲突。显式点击「取消导出」会中止浏览器上传，并用同一任务的上传证明通知 Host。Host 记录取消后拒绝已缓冲或随后到达的写入。导出文件已经提交时，Host 返回该任务的实际结果。[原生导出](../../plugins/omnimux-clip/src/client/live/native-export.ts) · [手工上传与取消](../../plugins/omnimux-clip/src/client/live/export-transport.js) · [Host 导出任务](../../plugins/omnimux-clip/src/export-jobs.js)
 
-Workflow 通过 `workflowClip.commitExport` 重核节点绑定，复用 `planClipExportDownstream`，在一次 `WorkspaceStore.expectedVersion` 提交中写入来源节点、下游素材、`out -> in` 连线和任务回执。首次创建下游节点，重导出更新同一节点和版本化 URL。版本冲突后重读工作区，按最新画布内容和历史重新生成保存请求。「保留当前画布修改」保留同时在 Host 提交的成片指针和任务回执。客户端将已提交的导出字段和连线同步到适用的撤销历史，撤销普通编辑时保留成片。画布重新打开可从持久化工作区读到提交状态。`/save-export` 继续服务旧调用方。[Workflow 回写](../../plugins/omnimux-workflow/src/workflow/clip/workflowClip.ts) · [画布历史合并](../../plugins/omnimux-workflow/src/canvas/bridge/rebaseClipWrite.ts)
+Workflow 通过 `workflowClip.commitExport` 重核节点绑定，复用 `planClipExportDownstream`，在一次 `WorkspaceStore.expectedVersion` 提交中写入来源节点、下游素材、`out -> in` 连线和任务回执。绑定本地项目时，Host 将已算好 `sha256` 的 MP4 优先硬链接（跨分区原子复制）落入 `<ProjectRoot>/artifacts/` 并以 `clip_export` 血缘登记到 `.omnimux/assets.json`，下游节点写入带 `rev=sha256:…` 的工作区文件 URL 与 `project-asset` 句柄（可直接串联至二级合成节点）；画布提交成功后回收 `exports/jobs/<id>/video.mp4` 冗余副本，`canvas-failed` 期间保留副本以保障 `retryCanvas` 幂等。存量 `/api/local-file` 下游节点在重导出时原地升级并保留用户拖动后的坐标。未绑定项目的自由画布回退到带 `rev=sha256:…` 的本地文件 URL。版本冲突后重读工作区，按最新画布内容和历史重新生成保存请求。「保留当前画布修改」保留同时在 Host 提交的成片指针和任务回执。客户端将已提交的导出字段和连线同步到适用的撤销历史，撤销普通编辑时保留成片。`/save-export` 继续服务旧调用方。[Workflow 回写](../../plugins/omnimux-workflow/src/workflow/clip/workflowClip.ts) · [画布历史合并](../../plugins/omnimux-workflow/src/canvas/bridge/rebaseClipWrite.ts)
 
 `fileSaved` 和 `canvasCommitted` 分别表示确认落盘与画布提交。独立工程正常状态为 `file-saved`，画布成功为 `committed`。`canvas-failed` 表示 MP4 已保存且画布写入失败，Host 可用同一任务重试图更新。`superseded` 表示有更新的结果占据当前指针。报告成片和画布状态时，分别核对这两个字段。
 

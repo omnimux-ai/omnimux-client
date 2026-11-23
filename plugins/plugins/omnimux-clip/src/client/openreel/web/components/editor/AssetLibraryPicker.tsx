@@ -16,12 +16,27 @@ interface PickerProps {
   open: boolean;
   busy: boolean;
   importedIds: ReadonlySet<string>;
+  allowedType?: "video" | "image" | "audio";
+  singleSelect?: boolean;
+  title?: string;
+  confirmLabel?: string;
   onClose: () => void;
   onImport: (items: readonly LibraryMedia[]) => void;
   restoreFocus: () => void;
 }
 
-export function AssetLibraryPicker({ open, busy, importedIds, onClose, onImport, restoreFocus }: PickerProps) {
+export function AssetLibraryPicker({
+  open,
+  busy,
+  importedIds,
+  allowedType,
+  singleSelect,
+  title,
+  confirmLabel,
+  onClose,
+  onImport,
+  restoreFocus,
+}: PickerProps) {
   const t = useClipT();
   const input = useRef<HTMLInputElement>(null);
   const portal = useEditorPortalRoot();
@@ -48,12 +63,21 @@ export function AssetLibraryPicker({ open, busy, importedIds, onClose, onImport,
         onCloseAutoFocus={event => { event.preventDefault(); restoreFocus(); }}
       >
         <div className="clip-library-picker-header">
-          <DialogTitle>{t("Import from OmniMux Assets")}</DialogTitle>
+          <DialogTitle>{title ?? t("Import from OmniMux Assets")}</DialogTitle>
           <DialogClose asChild>
             <IconButton aria-label={t("Close")} size="sm"><X size={16} /></IconButton>
           </DialogClose>
         </div>
-        <PickerContents open={open} input={input} busy={busy} importedIds={importedIds} onImport={onImport} />
+        <PickerContents
+          open={open}
+          input={input}
+          busy={busy}
+          importedIds={importedIds}
+          allowedType={allowedType}
+          singleSelect={singleSelect}
+          confirmLabel={confirmLabel}
+          onImport={onImport}
+        />
       </DialogContent>
     </Dialog>
   );
@@ -61,15 +85,29 @@ export function AssetLibraryPicker({ open, busy, importedIds, onClose, onImport,
 
 type LibraryState = { state: "loading" } | { state: "failed" } | { state: "ready"; items: LibraryMedia[] };
 
-function PickerContents({ open, input, busy, importedIds, onImport }: Pick<PickerProps, "open" | "busy" | "importedIds" | "onImport"> & {
+function PickerContents({
+  open,
+  input,
+  busy,
+  importedIds,
+  allowedType,
+  singleSelect,
+  confirmLabel,
+  onImport,
+}: Pick<PickerProps, "open" | "busy" | "importedIds" | "allowedType" | "singleSelect" | "confirmLabel" | "onImport"> & {
   input: RefObject<HTMLInputElement>;
 }) {
   const t = useClipT();
   const [library, setLibrary] = useState<LibraryState>({ state: "loading" });
   const [retry, setRetry] = useState(0);
   const [query, setQuery] = useState("");
-  const [filter, setFilter] = useState<LibraryMediaFilter>("all");
+  const [filter, setFilter] = useState<LibraryMediaFilter>(allowedType ?? "all");
   const [selected, setSelected] = useState(() => new Set<string>());
+
+  useEffect(() => {
+    setFilter(allowedType ?? "all");
+    setSelected(new Set());
+  }, [allowedType, singleSelect, open]);
 
   useEffect(() => {
     if (!open) return;
@@ -85,15 +123,19 @@ function PickerContents({ open, input, busy, importedIds, onImport }: Pick<Picke
   }, [open, retry]);
 
   const items = library.state === "ready" ? library.items : undefined;
-  const shown = useMemo(() => filterLibraryMedia(items ?? [], filter, query), [items, filter, query]);
+  const effectiveFilter: LibraryMediaFilter = allowedType ?? filter;
+  const shown = useMemo(() => filterLibraryMedia(items ?? [], effectiveFilter, query), [items, effectiveFilter, query]);
   const chosen = useMemo(() => {
     const byId = new Map(items?.map(item => [item.id, item]));
     return [...selected].flatMap(id => {
       const item = byId.get(id);
-      return item && !importedIds.has(id) ? [item] : [];
+      return item && (!importedIds.has(id) || singleSelect) ? [item] : [];
     });
-  }, [items, selected, importedIds]);
+  }, [items, selected, importedIds, singleSelect]);
   const toggle = (id: string) => setSelected(previous => {
+    if (singleSelect) {
+      return previous.has(id) ? new Set() : new Set([id]);
+    }
     const next = new Set(previous);
     if (next.has(id)) next.delete(id);
     else next.add(id);
@@ -104,8 +146,8 @@ function PickerContents({ open, input, busy, importedIds, onImport }: Pick<Picke
     <>
       <div className="clip-library-picker-tools">
         <div className="clip-library-picker-filters" role="group" aria-label={t("Asset types")}>
-          {mediaFilters.map(type => (
-            <Button key={type} size="xs" variant="outline" aria-pressed={filter === type} onClick={() => setFilter(type)}>
+          {(allowedType ? [allowedType] : mediaFilters).map(type => (
+            <Button key={type} size="xs" variant="outline" aria-pressed={effectiveFilter === type} onClick={() => setFilter(type)}>
               {t(typeLabels[type])}
             </Button>
           ))}
@@ -126,7 +168,7 @@ function PickerContents({ open, input, busy, importedIds, onImport }: Pick<Picke
         ) : shown.length > 0 ? (
           <div className="clip-library-picker-grid">
             {shown.map(item => (
-              <AssetCard key={item.id} item={item} imported={importedIds.has(item.id)} chosen={selected.has(item.id)} onToggle={() => toggle(item.id)} />
+              <AssetCard key={item.id} item={item} imported={!singleSelect && importedIds.has(item.id)} chosen={selected.has(item.id)} onToggle={() => toggle(item.id)} />
             ))}
           </div>
         ) : (
@@ -138,7 +180,7 @@ function PickerContents({ open, input, busy, importedIds, onImport }: Pick<Picke
         <div className="clip-library-picker-actions">
           <DialogClose asChild><Button variant="ghost" size="sm">{t("Cancel")}</Button></DialogClose>
           <Button variant="primary" size="sm" disabled={!chosen.length || busy} onClick={() => onImport(chosen)}>
-            {chosen.length ? t(chosen.length === 1 ? "Import {0} item" : "Import {0} items", [chosen.length]) : t("Import")}
+            {confirmLabel ?? (chosen.length ? t(chosen.length === 1 ? "Import {0} item" : "Import {0} items", [chosen.length]) : t("Import"))}
           </Button>
         </div>
       </div>

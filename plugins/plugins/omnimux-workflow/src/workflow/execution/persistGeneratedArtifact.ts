@@ -122,6 +122,7 @@ export async function persistGeneratedArtifact(
     size: meta.sizeBytes,
     mimeType: meta.mimeType,
     durationSec: meta.durationSec,
+    sha256: digest,
     lineage,
   });
   const item = document.items.find((row) => row.relative_path === copied.relativePath);

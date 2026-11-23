@@ -539,7 +539,7 @@ export function createClipCommandBroker({
       ...(record.error ? { error: clipErrorValue(record.error) } : {}) }
   }
 
-  function claim(window, body) {
+  async function claim(window, body) {
     const record = ownedRecord(window, body)
     refresh(record)
     if (record.state !== 'notified') return statusValue(record)
@@ -553,7 +553,13 @@ export function createClipCommandBroker({
         record.command.revisionEpoch = current.revisionEpoch
         record.revisionResets = current.revisionResets
       }
-      if (record.prepareArgs) record.command.args = record.prepareArgs(record.command.args)
+      if (record.prepareArgs) {
+        record.state = 'claiming'
+        record.command.args = await record.prepareArgs(record.command.args, record.command, current.sessionId)
+        if (record.expired) throw requestError('REQUEST_EXPIRED', 'The original Clip result expired.', record.id)
+        const err = liveError(current)
+        if (err) throw err
+      }
       const job = record.prepare?.(record.command)
       if (job) record.command.exportJobId = job.exportJobId
       record.state = 'claimed'

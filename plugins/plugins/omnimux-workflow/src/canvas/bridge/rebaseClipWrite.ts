@@ -14,12 +14,12 @@ interface ClipWriteRebase {
 }
 
 const SOURCE_EXPORT_FIELDS = new Set([
-  'clipExportReceipts', 'status', 'renderProgress', 'errorMessage', 'outputVideoUrl', 'outputRevision',
+  'clipExportReceipts', 'status', 'renderProgress', 'errorMessage', 'outputVideoUrl', 'outputMediaHandle', 'outputRevision',
   'outputDurationMs', 'outputWidth', 'outputHeight', 'thumbnailUrl', 'outputThumbnailUrl',
 ]);
 const MATERIAL_EXPORT_FIELDS = new Set([
   'materialType', 'label', 'status', 'selectedTool', 'origin', 'sourceCompositionNodeId', 'mediaUrl',
-  'outputRevision', 'thumbnailUrl', 'duration', 'size',
+  'relativePath', 'assetId', 'mediaHandle', 'outputRevision', 'thumbnailUrl', 'duration', 'size',
 ]);
 const equal = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b);
 

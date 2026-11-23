@@ -161,6 +161,31 @@ export function createClipPersistence(window) {
         fetcher: withWindow, method: 'POST', body: { binding: target.binding, draftSchema: target.draftSchema, title: target.title },
       })
     },
+    async reconcileMedia(id, payload = {}) {
+      if (payload.binding) await window.__omnimuxHubEvents?.pushViewport?.()
+      return requestClip(`${projectPath(id)}/media/reconcile`, {
+        ...(payload.binding ? { fetcher: withWindow } : {}),
+        method: 'POST',
+        timeout: 15_000,
+        body: payload,
+      })
+    },
+    async uploadMediaBytes(id, mediaId, blob, { name, mimeType, binding } = {}) {
+      if (binding) await window.__omnimuxHubEvents?.pushViewport?.()
+      const headers = {
+        'Content-Type': 'application/octet-stream',
+        ...(name ? { 'x-clip-media-name': encodeURIComponent(name) } : {}),
+        ...(mimeType || blob?.type ? { 'x-clip-media-mime': mimeType || blob.type } : {}),
+        ...(binding ? { 'x-clip-media-binding': JSON.stringify(binding) } : {}),
+      }
+      return requestClip(`${projectPath(id)}/media/${encodeURIComponent(mediaId)}/bytes`, {
+        ...(binding ? { fetcher: withWindow } : {}),
+        method: 'PUT',
+        timeout: 120_000,
+        headers,
+        body: blob,
+      })
+    },
     writeHost: (record, options = {}) => requestClip(projectPath(record.project.id), {
       ...(record.binding ? { fetcher: withWindow } : {}),
       method: 'PUT',
