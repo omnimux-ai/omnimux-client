@@ -86,6 +86,14 @@ export const STAGE_PAGES = [
       'plugins/omnimux-analytics/src/client/AnalyticsStage.jsx',
     ],
   },
+  {
+    plugin: 'omnimux-tiktok-selection',
+    label: 'TikTok 跟爆选品',
+    styles: 'plugins/omnimux-tiktok-selection/src/client/styles.js',
+    pages: [
+      'plugins/omnimux-tiktok-selection/src/client/TiktokSelectionStage.jsx',
+    ],
+  },
 ]
 
 /**

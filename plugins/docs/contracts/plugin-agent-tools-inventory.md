@@ -324,6 +324,36 @@ superseded_by: null
 
 ---
 
+### 3.14 `omnimux-tiktok-selection`（TikTok 跟爆选品工作台）
+
+- **功能域**：多源选品发现（热销榜 / 关键词检索 / 外部 CSV·JSON 快照导入）、商品详情与 Top-10 带货参考视频、三闸批量选品漏斗（G1 量化增速初筛 → G2 商品卡占比核验 → G3 本地风险词 + 排除品类 + Hub `headlessSkill` 合规审计）、选品库沉淀与状态流转、爆款脚本/3:4 图片/9:16 视频素材生成与一键同步至 `omnimux-products`、定时自动选品与执行审计、品牌词/敏感词治理及运行配置。
+- **存储**：`$DSH_HOME/omnimux/tiktok-selection/`。
+- **状态**：已实装 18 个工具（双面齐备，与 `/omnimux/tiktok-selection/*` HTTP 路由共享同一 `Dispatcher` 与 `Store`）。
+
+| 业务功能描述 | 对应 UI 交互 / HTTP 路由 | Agent 工具名称 (`Tool Name`) | 分级 | 状态 | 破坏性 confirm |
+|---|---|---|---|---|---|
+| 按站点、粒度与类目查询热销榜候选商品 | 选品发现热销榜 / `POST /omnimux/tiktok-selection/discovery/rank` | `tiktok_selection_query_rank` | L2 | `Implemented` | 否 |
+| 按关键词、销量、佣金率与达人数检索商品 | 选品发现关键词检索 / `POST /omnimux/tiktok-selection/discovery/search` | `tiktok_selection_search_products` | L2 | `Implemented` | 否 |
+| 导入外部 CSV 或 JSON 选品快照 | 导入快照面板 / `POST /omnimux/tiktok-selection/discovery/import` | `tiktok_selection_import_snapshot` | L1 | `Implemented` | 否 |
+| 查询商品完整指标、评价与 Top-10 带货视频 | 商品详情抽屉 / `POST /omnimux/tiktok-selection/discovery/detail` | `tiktok_selection_get_product_detail` | L2 | `Implemented` | 否 |
+| 执行三闸 1 页试拉与成本/截断预估 | 三闸试拉弹窗 / `POST /omnimux/tiktok-selection/gate/dry-run` | `tiktok_selection_gate_dry_run` | L2 | `Implemented` | 否 |
+| 创建并执行三闸批量选品任务（G1→G2→G3） | 新建三闸任务 / `POST /omnimux/tiktok-selection/tasks` | `tiktok_selection_create_task` | L1 | `Implemented` | 否 |
+| 查询三闸选品任务列表与漏斗统计 | 三闸任务列表 / `GET /omnimux/tiktok-selection/tasks` | `tiktok_selection_list_tasks` | L2 | `Implemented` | 否 |
+| 查询单个三闸任务详情、日志与逐条判定证据 | 任务详情与证据抽屉 / `GET /omnimux/tiktok-selection/tasks/:id` | `tiktok_selection_get_task` | L2 | `Implemented` | 否 |
+| 控制三闸任务（停止、重试未完成、复制再跑、单行改判或删除行） | 任务操作栏与行菜单 / `POST /omnimux/tiktok-selection/tasks/:id/control` | `tiktok_selection_control_task` | L1 | `Implemented` | 条件 (`rowAction=delete` 需 `confirm: true`) |
+| 多维条件查询选品库与素材中心列表 | 选品库 / 素材中心 / `GET /omnimux/tiktok-selection/library` | `tiktok_selection_list_library` | L2 | `Implemented` | 否 |
+| 经风险词过滤与去重后批量写入选品库 | 加入选品库按钮 / `POST /omnimux/tiktok-selection/library/ingest` | `tiktok_selection_ingest_products` | L1 | `Implemented` | 否 |
+| 批量更新评估状态/备注或补齐 30 天渠道占比 | 批量改状态/补渠道 / `POST /omnimux/tiktok-selection/library/status` | `tiktok_selection_update_status` | L1 | `Implemented` | 否 |
+| 批量移除选品库中的商品记录 | 批量移除确认框 / `POST /omnimux/tiktok-selection/library/remove` | `tiktok_selection_remove_products` | L1 | `Implemented` | 是 (`confirm: true`) |
+| 生成视频脚本、3:4 带货图、9:16 短视频或同步商品库 | 素材工坊 / `POST /omnimux/tiktok-selection/assets/generate` | `tiktok_selection_generate_assets` | L1 | `Implemented` | 否 |
+| 创建、更新、启停、立即执行或删除定时自动选品任务 | 自动选品定时任务 / `POST /omnimux/tiktok-selection/schedules` | `tiktok_selection_manage_schedule` | L1 | `Implemented` | 条件 (`action=delete` 需 `confirm: true`) |
+| 查询自动选品执行审计记录 | 自动选品执行记录 / `GET /omnimux/tiktok-selection/runs` | `tiktok_selection_list_runs` | L2 | `Implemented` | 否 |
+| 查询、新增、更新、启停或删除品牌词与敏感词 | 风控词表 / `POST /omnimux/tiktok-selection/risk-words` | `tiktok_selection_manage_risk_words` | L1 | `Implemented` | 条件 (`action=delete` 需 `confirm: true`) |
+| 读取、更新或重置并发数、素材上限、排除品类与默认策略 | 系统配置面板 / `POST /omnimux/tiktok-selection/settings` | `tiktok_selection_manage_settings` | L1 | `Implemented` | 否 |
+| 列设置显隐弹出层、抽屉开关与复选框勾选状态 | 表格列设置与勾选栏 | — | UI-Only | `UI-Only` | 豁免 (前端局部交互状态) |
+
+---
+
 ## 4. 长效治理 SOP：新功能注册与全链路开发规范
 
 当开发团队需要为任何插件开发新功能时，必须遵循以下 **SOP 5 步闭环**，实现「方案自制定、代码双面写、工具自动查」：

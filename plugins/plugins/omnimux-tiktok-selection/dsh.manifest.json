@@ -1,0 +1,61 @@
+{
+  "id": "omnimux-tiktok-selection",
+  "name": "omnimux-tiktok-selection",
+  "version": "0.1.0",
+  "tier": "tier-1-app",
+  "entrypoint": "src/index.js",
+  "status": "active",
+  "description": "OmniMux TikTok 跟爆选品工作台：热销榜与关键词发现、外部快照导入、三闸批量筛（G1 量化初筛 / G2 渠道占比核验 / G3 风险词与 AI 合规入库）、选品库、素材工坊与定时自动选品",
+  "tags": ["tiktok", "tiktok-shop", "product-selection", "ecommerce", "three-gate", "compliance", "assets", "automation"],
+  "capabilities": {
+    "tools": [
+      { "name": "tiktok_selection_query_rank", "summary": "按站点、粒度与类目查询 TikTok 热销榜候选商品", "category": "ecommerce", "isWriteOperation": false, "requiresAuth": false },
+      { "name": "tiktok_selection_search_products", "summary": "按关键词、销量、佣金率与达人数多维检索 TikTok 商品", "category": "ecommerce", "isWriteOperation": false, "requiresAuth": false },
+      { "name": "tiktok_selection_import_snapshot", "summary": "导入外部 CSV 或 JSON 选品快照进入发现与三闸数据源", "category": "ecommerce", "isWriteOperation": true, "requiresAuth": false },
+      { "name": "tiktok_selection_get_product_detail", "summary": "查询商品完整属性、评价摘要与 Top-10 带货参考视频", "category": "ecommerce", "isWriteOperation": false, "requiresAuth": false },
+      { "name": "tiktok_selection_gate_dry_run", "summary": "执行三闸试拉并返回匹配规模与各阶段调用预估", "category": "ecommerce", "isWriteOperation": false, "requiresAuth": false },
+      { "name": "tiktok_selection_create_task", "summary": "创建并启动三闸批量选品任务（G1→G2→G3 自动入库）", "category": "ecommerce", "isWriteOperation": true, "requiresAuth": false },
+      { "name": "tiktok_selection_list_tasks", "summary": "查询三闸选品任务列表及各闸口通过统计", "category": "ecommerce", "isWriteOperation": false, "requiresAuth": false },
+      { "name": "tiktok_selection_get_task", "summary": "获取单个三闸选品任务的漏斗统计、执行日志与逐条判定证据", "category": "ecommerce", "isWriteOperation": false, "requiresAuth": false },
+      { "name": "tiktok_selection_control_task", "summary": "控制三闸任务（停止、重试未完成、复制再跑、单行改判或删除行）", "category": "ecommerce", "isWriteOperation": true, "requiresAuth": false },
+      { "name": "tiktok_selection_list_library", "summary": "按多维条件查询选品库与素材中心商品列表", "category": "ecommerce", "isWriteOperation": false, "requiresAuth": false },
+      { "name": "tiktok_selection_ingest_products", "summary": "将候选商品经风险词过滤与去重后批量写入选品库", "category": "ecommerce", "isWriteOperation": true, "requiresAuth": false },
+      { "name": "tiktok_selection_update_status", "summary": "批量更新选品库商品的评估状态、备注或补齐渠道占比", "category": "ecommerce", "isWriteOperation": true, "requiresAuth": false },
+      { "name": "tiktok_selection_remove_products", "summary": "批量移除选品库中的商品记录（破坏性操作需 confirm）", "category": "ecommerce", "isWriteOperation": true, "requiresAuth": false },
+      { "name": "tiktok_selection_generate_assets", "summary": "为选品库商品生成爆款视频脚本、带货图片、竖版短视频或同步至 OmniMux 商品库", "category": "ecommerce", "isWriteOperation": true, "requiresAuth": false },
+      { "name": "tiktok_selection_manage_schedule", "summary": "创建、编辑、启停、立即执行或删除自动选品定时任务", "category": "ecommerce", "isWriteOperation": true, "requiresAuth": false },
+      { "name": "tiktok_selection_list_runs", "summary": "查询自动选品定时/手动执行审计记录", "category": "ecommerce", "isWriteOperation": false, "requiresAuth": false },
+      { "name": "tiktok_selection_manage_risk_words", "summary": "查询、新增、更新、启停或删除品牌词与敏感词表", "category": "ecommerce", "isWriteOperation": true, "requiresAuth": false },
+      { "name": "tiktok_selection_manage_settings", "summary": "读取或更新并发数、每日素材上限、G3 排除品类与默认策略配置", "category": "ecommerce", "isWriteOperation": true, "requiresAuth": false }
+    ],
+    "seamsProvided": [],
+    "seamsConsumed": [
+      "socialData",
+      "tiktok",
+      "headlessSkill",
+      "imageGenerate",
+      "videoGenerate",
+      "modelCatalog",
+      "hubEvents"
+    ],
+    "slots": [
+      {
+        "target": "sidebar.extra",
+        "componentPath": "src/client/sidebar-entry.js"
+      },
+      {
+        "target": "shell.overlay",
+        "componentPath": "src/client/TiktokSelectionStage.jsx"
+      }
+    ],
+    "storageDomains": ["$DSH_HOME/omnimux/tiktok-selection/"]
+  },
+  "skills": [
+    "skills/tiktok-selection-risk-audit/SKILL.md",
+    "skills/tiktok-selection-video-script/SKILL.md"
+  ],
+  "dependencies": {
+    "requiredPlugins": ["omnimux"],
+    "systemBinaries": []
+  }
+}
