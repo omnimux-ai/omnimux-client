@@ -10,7 +10,7 @@
       "version": "0.1.8",
       "path": "plugins/plugins/omnimux",
       "spec": "link:../../plugins/plugins/omnimux",
-      "contentHash": "sha256:f62b3da92b80a6e8f80569fac80f7325541228c9b9a15edf379ebc5b424c3ead"
+      "contentHash": "sha256:6be4222e8d43426ab345555cf319bebbcac9555b383400ecd5eba9e7485f7046"
     },
     {
       "name": "omnimux-accounts",
@@ -59,14 +59,14 @@
       "version": "0.1.2",
       "path": "plugins/plugins/omnimux-inspiration",
       "spec": "link:../../plugins/plugins/omnimux-inspiration",
-      "contentHash": "sha256:774b27b803490ecc68a19b8a0591e433c4167c360db9675dc570d4eab46d2faf"
+      "contentHash": "sha256:b4b4cf0f3e729c7998c70509508123e6a61965032bbd9f7ec46d8ebffb8d51f1"
     },
     {
       "name": "omnimux-market",
       "version": "0.2.13-omni.2",
       "path": "plugins/plugins/omnimux-market",
       "spec": "link:../../plugins/plugins/omnimux-market",
-      "contentHash": "sha256:625b2bc64cc51a2ee760e8b0dff5e308b15217fcf080bfc04401cba11fe4532a"
+      "contentHash": "sha256:afadf472567be30df9aa40eb04d02024249b314c0deb1c6045aac7543a1445cd"
     },
     {
       "name": "omnimux-products",

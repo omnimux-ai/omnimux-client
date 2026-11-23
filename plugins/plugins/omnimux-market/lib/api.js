@@ -164,16 +164,74 @@ export function collectQueries(query, extra) {
         extra.split(/[,，、|]/).forEach(add);
     return out.slice(0, 4);
 }
-export function mergeBySlug(groups) {
+/**
+ * Reciprocal-rank constant from the classic RRF recipe; keeps deep ranks from
+ * vanishing without letting one keyword page dominate the merged group.
+ */
+const MERGE_RRF_K = 60;
+function prefersRepresentative(next, prev, sortBy) {
+    if (sortBy === 'stars')
+        return next.stars > prev.stars || (next.stars === prev.stars && next.downloads > prev.downloads);
+    if (sortBy === 'installs')
+        return next.installs > prev.installs || (next.installs === prev.installs && next.downloads > prev.downloads);
+    if (sortBy === 'updated_at')
+        return false;
+    return next.downloads > prev.downloads || (next.downloads === prev.downloads && next.stars > prev.stars);
+}
+/**
+ * Merge per-keyword SkillHub pages.
+ *
+ * `sortBy: 'score'` keeps the relevance signal every keyword page carries: how
+ * many keyword pages matched the slug and its reciprocal rank in each page.
+ * Downloads/stars only break a genuine relevance tie, so a high-download but
+ * weakly related result cannot push a strongly related result out.
+ * Explicit `downloads` / `stars` / `installs` sort by that metric. The list
+ * payload has no timestamp, so `updated_at` keeps the server-provided order.
+ */
+export function mergeBySlug(groups, sortBy = 'score') {
     const seen = new Map();
+    let index = 0;
     for (const items of groups) {
-        for (const it of items) {
+        for (let rank = 0; rank < items.length; rank += 1) {
+            const it = items[rank];
+            if (!it || typeof it.slug !== 'string' || !it.slug) {
+                index += 1;
+                continue;
+            }
             const prev = seen.get(it.slug);
-            if (!prev || it.downloads > prev.downloads)
-                seen.set(it.slug, it);
+            if (!prev) {
+                seen.set(it.slug, { card: it, hits: 1, rrf: 1 / (MERGE_RRF_K + rank + 1), first: index });
+            }
+            else {
+                prev.hits += 1;
+                prev.rrf += 1 / (MERGE_RRF_K + rank + 1);
+                if (prefersRepresentative(it, prev.card, sortBy))
+                    prev.card = it;
+            }
+            index += 1;
         }
     }
-    return [...seen.values()].sort((a, b) => (b.downloads - a.downloads) || (b.stars - a.stars));
+    const rows = [...seen.values()];
+    if (sortBy === 'score') {
+        return rows
+            .sort((a, b) => (b.hits - a.hits)
+            || (b.rrf - a.rrf)
+            || (b.card.downloads - a.card.downloads)
+            || (b.card.stars - a.card.stars)
+            || (a.first - b.first))
+            .map((row) => row.card);
+    }
+    if (sortBy === 'updated_at') {
+        // No timestamp in the list payload: preserve the per-page server order.
+        return rows.sort((a, b) => a.first - b.first).map((row) => row.card);
+    }
+    const metric = sortBy === 'stars' ? 'stars' : sortBy === 'installs' ? 'installs' : 'downloads';
+    return rows
+        .sort((a, b) => (b.card[metric] - a.card[metric])
+        || (b.card.downloads - a.card.downloads)
+        || (b.card.stars - a.card.stars)
+        || (a.first - b.first))
+        .map((row) => row.card);
 }
 export function pageFromOffset(offset, limit) {
     const pageSize = Math.max(1, Math.min(100, Math.floor(limit) || 12));
@@ -225,7 +283,7 @@ export async function searchSkills(query, options) {
     }
     const pageSize = clamp(Math.max(limit, 12), 1, 40);
     const pages = await Promise.all(keywords.map((keyword) => fetchPage(keyword, { ...pageOpts, page: 1, pageSize })));
-    const merged = mergeBySlug(pages.map((p) => p.items));
+    const merged = mergeBySlug(pages.map((p) => p.items), sortBy);
     const items = merged.slice(0, limit);
     if (items.length) {
         return {

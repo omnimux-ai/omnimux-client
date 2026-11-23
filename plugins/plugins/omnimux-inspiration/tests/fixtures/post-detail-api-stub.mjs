@@ -17,6 +17,7 @@ export async function confirmOfficialAnalysisService() { return { ok: true, body
 export async function getLocalInspiration() { return { ok: false, status: 404, body: {} } }
 export async function ensureLocalInspiration(item) { return item }
 export async function triggerAnalyzeInspiration() { return { ok: true, body: {} } }
+export async function cancelAnalyzeInspiration() { return { ok: true, body: { ok: true, cancelled: [] } } }
 export async function translateInspiration() { return { ok: true, body: {} } }
 export async function saveCreationDraft() { return { ok: true, body: {} } }
 export async function prepareCreationReferences() { return { ok: true, body: {} } }

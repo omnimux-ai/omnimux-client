@@ -112,6 +112,18 @@ export const Config: Schema<Config> = Schema.object({
   workshopOrigin: Schema.string().default('').description('Skills只读入口的受信完整Origin；未配置拒绝请求'),
 })
 
+/** System prompt `tool:skillhub` (order 210); shared with tests so the boundary stays asserted. */
+export const SKILLHUB_PROMPT_LINES = [
+  'Finding / recommending / browsing Agent Skills or SkillHub skills: you MUST call skillhub_search. It aggregates OmniMux custom catalog, WorkBuddy local market, and SkillHub remote. Never web_search, skill-catalog, load_skill, bash, or SKILL.md dump. Never print skillhub install, curl, or sh -c.',
+  'Experts and expert teams live in the plaza: use plaza_search. SKILL REQUEST FIRST: when the user explicitly mentions 技能库 / SkillHub / 找技能 / find skills, call skillhub_search directly and do not call plaza_search first for that skill request. When the same message also asks for a separate professional deliverable (research, report, etc.), finish the skill search first and then continue the remaining task normally; plaza_search may be used for that remainder.',
+  'You decide the keyword. Extract a real topic from the user; do not paste their whole sentence as query. No topic / just 好玩 有趣 推荐 → omit query to browse. 还有吗 → same previous query + offset. One call per user message.',
+  'Do not say 点卡片查看 unless skillhub_search has already returned cards in this turn.',
+  'When this user message ONLY asks to find, recommend, or browse skills, after cards appear reply with AT MOST one short sentence and do NOT list skills or write essays. When the message also contains another task (for example find skills + research and produce a report), show the cards and then continue that task normally — the one-sentence limit does not apply.',
+  'Install only after the user chooses a card: skillhub_install with that slug (and catalogId when present). Then one short sentence.',
+  `Categories: ${CATEGORY_KEYS.map((k) => `${k}=${categoryLabel(k)}`).join(', ')}.`,
+  'For installed skills, call skillhub_list / skillhub_uninstall.',
+]
+
 export function apply(ctx: Context, config: Config): void {
   const cfg = withDefaults(config)
   assignConfig(cfg, readOverlay())
@@ -120,7 +132,7 @@ export function apply(ctx: Context, config: Config): void {
   ctx.tools.register(defineTool({
     name: 'skillhub_search',
     description:
-      'Search skills across OmniMux custom catalog, WorkBuddy local market, and SkillHub remote; show clickable cards. ALWAYS call this instead of web_search, skill-catalog, load_skill, or bash when the user wants to find/recommend/browse skills. Call EXACTLY ONCE per user message. You extract the search topic: pass a real keyword (PDF, 周报, face-warp), not the user\'s whole sentence. Omit query to browse popular skills. For 还有吗, reuse the previous query with offset = cards already shown. After cards appear, reply with AT MOST one short sentence.',
+      'Search skills across OmniMux custom catalog, WorkBuddy local market, and SkillHub remote; show clickable cards. ALWAYS call this instead of web_search, skill-catalog, load_skill, or bash when the user wants to find/recommend/browse skills. Call EXACTLY ONCE per user message. You extract the search topic: pass a real keyword (PDF, 周报, face-warp), not the user\'s whole sentence. Omit query to browse popular skills. For 还有吗, reuse the previous query with offset = cards already shown. After cards appear, reply with AT MOST one short sentence only when the user asked solely to find/browse skills; when the same message also asks for another task, show the cards and then continue that task normally.',
     parameters: {
       query: { type: 'string', description: 'Main keyword, e.g. PDF or 周报. Optional when category is set.' },
       queries: {
@@ -407,16 +419,7 @@ export function apply(ctx: Context, config: Config): void {
     prompt.section({
       name: 'tool:skillhub',
       order: 210,
-      text: [
-        'Finding / recommending / browsing Agent Skills or SkillHub skills: you MUST call skillhub_search. It aggregates OmniMux custom catalog, WorkBuddy local market, and SkillHub remote. Never web_search, skill-catalog, load_skill, bash, or SKILL.md dump. Never print skillhub install, curl, or sh -c.',
-        'Experts and expert teams live in the plaza: use plaza_search. Do not call plaza_search and skillhub_search in the same user message.',
-        'You decide the keyword. Extract a real topic from the user; do not paste their whole sentence as query. No topic / just 好玩 有趣 推荐 → omit query to browse. 还有吗 → same previous query + offset. One call per user message.',
-        'Do not say 点卡片查看 unless skillhub_search has already returned cards in this turn.',
-        'After cards appear, reply with AT MOST one short sentence. Do NOT list skills or write essays.',
-        'Install only after the user chooses a card: skillhub_install with that slug (and catalogId when present). Then one short sentence.',
-        `Categories: ${CATEGORY_KEYS.map((k) => `${k}=${categoryLabel(k)}`).join(', ')}.`,
-        'For installed skills, call skillhub_list / skillhub_uninstall.',
-      ].join(' '),
+      text: SKILLHUB_PROMPT_LINES.join(' '),
     })
     prompt.section({
       name: 'tool:plugins',

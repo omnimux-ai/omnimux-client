@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Badge, Button, CopyButton, Drawer, IconButton, InputField, Tabs } from 'dsh-ui-kit'
 import { ArrowRight, Check, ChevronLeft, ChevronRight, ExternalLink, FileText, Film, Minus, Plus, RotateCcw, Sparkles, X, ZoomIn } from 'lucide-react'
-import { getPostBody, getPostMedia, analysisTargetKey, getTargetAnalysis, getBodyTranslation, analysisDirections, hasRunningAnalysis, decideAnalysisPollOutcome } from './post-detail.js'
+import { getPostBody, getPostMedia, analysisTargetKey, getTargetAnalysis, getBodyTranslation, analysisDirections, hasRunningAnalysis, decideAnalysisPollOutcome, detectPostVariant, headlessStageLocaleKey, matchHeadlessSkillEvent } from './post-detail.js'
 import { getInspirationPreviewData, parseDocAnalysis, renderPlainBreakdownText, scriptCopyText, deconstructionCopyText } from './inspiration-preview-data.js'
-import { triggerAnalyzeInspiration, getAnalysisService, confirmOfficialAnalysisService, translateInspiration, saveCreationDraft, prepareCreationReferences, ensureLocalInspiration, getLocalInspiration, pickCoverSrc, resolveTikTokEmbedUrl } from './api.js'
+import { triggerAnalyzeInspiration, cancelAnalyzeInspiration, getAnalysisService, confirmOfficialAnalysisService, translateInspiration, saveCreationDraft, prepareCreationReferences, ensureLocalInspiration, getLocalInspiration, pickCoverSrc, resolveTikTokEmbedUrl } from './api.js'
 import { createImportPoller } from './import-poller.js'
 import { PostMediaCarousel } from './PostMediaCarousel.jsx'
 import { formatPlatformName } from './feed-helpers.js'
@@ -54,7 +54,7 @@ function ReferenceButton({ selected, onClick, t, disabled }) {
 }
 
 /** A post remains mounted while analysis, reference selection and drawers change. */
-export function InspirationPostDetail({ item, t, onItemUpdated, onReplicate, replicateBusy, onClose, notice }) {
+export function InspirationPostDetail({ item, t, onItemUpdated, onReplicate, replicateBusy, onClose, notice, mode = 'modal' }) {
   const root = useRef(null)
   const videos = useRef(new Map())
   const mediaNodes = useRef(new Map())
@@ -64,6 +64,7 @@ export function InspirationPostDetail({ item, t, onItemUpdated, onReplicate, rep
   const media = useMemo(() => getPostMedia(item), [item])
   const imageMedia = useMemo(() => media.filter(asset => asset.type === 'image'), [media])
   const isImageCarousel = media.length > 1 && imageMedia.length === media.length
+  const variant = useMemo(() => detectPostVariant(item, media, body), [item, media, body])
   const [expanded, setExpanded] = useState(false)
   const [translated, setTranslated] = useState(false)
   const [translating, setTranslating] = useState(false)
@@ -74,9 +75,13 @@ export function InspirationPostDetail({ item, t, onItemUpdated, onReplicate, rep
   })
   const [directions, setDirections] = useState(() => analysisDirections())
   const [runningKey, setRunningKey] = useState('')
+  const [cancellingKey, setCancellingKey] = useState('')
+  const [liveStages, setLiveStages] = useState({})
   const submittingAnalysis = useRef(false)
   const analysisReadVersion = useRef(0)
   const analysisPoller = useRef(null)
+  const hubHealthyRef = useRef(false)
+  const runningStateRef = useRef(false)
   const updateItem = useRef(onItemUpdated)
   updateItem.current = onItemUpdated
   const [statusReady, setStatusReady] = useState(item.is_local !== true)
@@ -128,13 +133,14 @@ export function InspirationPostDetail({ item, t, onItemUpdated, onReplicate, rep
   }
   const refKey = (ref) => ref.kind === 'media' ? `media:${ref.media_index}` : ref.kind === 'analysis' ? `analysis:${analysisTargetKey(ref)}` : 'body'
   const hasReference = (ref) => selected.some((entry) => refKey(entry) === refKey(ref))
-  const labelFor = (ref) => ref.kind === 'body' ? copy('body') : ref.kind === 'analysis' ? `${copy('analysis')} · ${targetLabel(ref)}` : media.find(value => value.index === ref.media_index)?.label || copy('media')
+  const labelFor = (ref) => ref.kind === 'body' ? copy('body') : ref.kind === 'analysis' ? `${copy('analysis')} ${targetLabel(ref)}` : media.find(value => value.index === ref.media_index)?.label || copy('media')
   function targetLabel(value) { return value.scope === 'post' ? copy('wholePost') : value.scope === 'body' ? copy('body') : media.find(entry => entry.index === value.media_index)?.label || copy('media') }
 
   const mediaIdentity = media.map(asset => `${asset.id}:${asset.url}`).join('\n')
   useEffect(() => {
     let current = true
     setAnalysisService(null); setServiceError('')
+    setLiveStages({}); setCancellingKey('')
     getAnalysisService().then(response => {
       if (!current) return
       if (response.ok) setAnalysisService(response.body)
@@ -165,23 +171,91 @@ export function InspirationPostDetail({ item, t, onItemUpdated, onReplicate, rep
       }
       return response
     }
+    const hubEvents = typeof window !== 'undefined' ? window.__omnimuxHubEvents : undefined
+    hubHealthyRef.current = Boolean(hubEvents?.isHealthy?.())
     const poller = createImportPoller({ interpret: decideAnalysisPollOutcome, deps: { fetchItem, onItem: apply } })
     analysisPoller.current = poller
-    poller.start()
-    // Read once on reopen, then keep watching only while the server is busy.
+    if (!hubHealthyRef.current) poller.start()
+
+    const retryTimers = new Set()
+    const RECONCILE_DELAYS_MS = [120, 350, 800]
+    const reconcileItem = (attempt = 0) => {
+      fetchItem().then(response => {
+        if (!current) return
+        const outcome = decideAnalysisPollOutcome(response)
+        if (outcome.item) apply(outcome.item)
+        // Hub emits terminal omnimux:headless-skill slightly before scoped-analysis finishes
+        // writing to disk; retry briefly if the row still reflects running.
+        if ((outcome.action === 'pending' || outcome.action === 'keep') && attempt < RECONCILE_DELAYS_MS.length) {
+          const timer = setTimeout(() => {
+            retryTimers.delete(timer)
+            if (current) reconcileItem(attempt + 1)
+          }, RECONCILE_DELAYS_MS[attempt])
+          retryTimers.add(timer)
+        }
+      }).catch(() => {
+        if (current) setStatusError(copy('statusSyncFailed'))
+      })
+    }
+
+    const unsubHub = hubEvents?.subscribe?.('*', (ev) => {
+      if (!current || !ev) return
+      if (ev.type === 'omnimux:connected' || ev.type === 'omnimux:heartbeat') {
+        const wasUnhealthy = !hubHealthyRef.current
+        hubHealthyRef.current = true
+        poller.stop()
+        if (wasUnhealthy && runningStateRef.current) reconcileItem(0)
+        return
+      }
+      if (ev.type === 'omnimux:disconnected' || ev.type === 'omnimux:silence') {
+        hubHealthyRef.current = false
+        poller.start()
+        if (runningStateRef.current) poller.track(id)
+        return
+      }
+      const matched = matchHeadlessSkillEvent(ev, id)
+      if (!matched) return
+      if (matched.terminal) {
+        setLiveStages(prev => {
+          if (!prev[matched.targetKey]) return prev
+          const next = { ...prev }
+          delete next[matched.targetKey]
+          return next
+        })
+        reconcileItem(0)
+      } else {
+        setLiveStages(prev => ({ ...prev, [matched.targetKey]: matched }))
+      }
+    })
+
+    // Read once on reopen; poll only when hubEvents is unavailable or unhealthy.
     fetchItem().then(response => {
       if (!current) return
       const outcome = decideAnalysisPollOutcome(response)
       if (outcome.item) apply(outcome.item)
-      if (outcome.action === 'pending' || outcome.action === 'keep') poller.track(id)
+      if (!hubHealthyRef.current && (outcome.action === 'pending' || outcome.action === 'keep')) poller.track(id)
     }).catch(() => {
-      if (current) { setStatusError(copy('statusSyncFailed')); poller.track(id) }
+      if (current) {
+        setStatusError(copy('statusSyncFailed'))
+        if (!hubHealthyRef.current) poller.track(id)
+      }
     })
-    return () => { current = false; poller.dispose(); analysisPoller.current = null }
+    return () => {
+      current = false
+      for (const timer of retryTimers) clearTimeout(timer)
+      retryTimers.clear()
+      if (typeof unsubHub === 'function') unsubHub()
+      poller.dispose()
+      analysisPoller.current = null
+    }
   }, [id, item.is_local])
   const serverRunning = hasRunningAnalysis(item)
+  runningStateRef.current = Boolean(runningKey || serverRunning)
   useEffect(() => {
-    if (runningKey || serverRunning) analysisPoller.current?.track(id)
+    if ((runningKey || serverRunning) && !hubHealthyRef.current) {
+      analysisPoller.current?.start?.()
+      analysisPoller.current?.track(id)
+    }
   }, [id, runningKey, serverRunning])
   useEffect(() => {
     setFailedMedia({}); setFailedImages({}); setDimensions({})
@@ -211,7 +285,7 @@ export function InspirationPostDetail({ item, t, onItemUpdated, onReplicate, rep
     window.addEventListener('keydown', cancel, true)
     return () => window.removeEventListener('keydown', cancel, true)
   }, [image, drawer])
-  const container = () => root.current?.closest('dialog') || root.current?.closest('.omnimux-inspiration-modal-container') || root.current
+  const container = () => root.current?.closest('dialog') || root.current?.closest('.omnimux-inspiration-modal-container') || (typeof document !== 'undefined' ? document.body : root.current)
   const changeDraft = (next) => { if (savingRef.current) return; setDraft(current => reconcileCreationDraft(item, current, next)); setSaved(false); setDraftError('') }
   const toggleReference = (reference) => {
     if (savingRef.current) return
@@ -279,9 +353,57 @@ export function InspirationPostDetail({ item, t, onItemUpdated, onReplicate, rep
       if (requestIdentity.current !== identity) return
       analysisReadVersion.current++
       if (response.body?.data) { onItemUpdated?.(response.body.data); setConfigureKey('') }
-      if (!response.ok) setAnalysisErrors(current => ({ ...current, [key]: response.body?.error || copy('analysisFailed') }))
+      const cancelledResponse = response.status === 499
+        || response.body?.code === 'analysis-cancelled'
+        || response.body?.error === 'aborted'
+      if (!response.ok) {
+        if (cancelledResponse) {
+          // Prefer localized persisted cancel status rather than raw HTTP 499 text.
+          setAnalysisErrors(current => ({ ...current, [key]: '' }))
+          if (!response.body?.data && local.savedRow?.id) {
+            const readVersion = analysisReadVersion.current
+            getLocalInspiration(local.savedRow.id).then((latest) => {
+              if (
+                requestIdentity.current === identity
+                && readVersion === analysisReadVersion.current
+                && latest?.ok
+                && latest.body?.data
+              ) {
+                onItemUpdated?.(latest.body.data)
+              }
+            }).catch(() => null)
+          }
+        } else {
+          setAnalysisErrors(current => ({ ...current, [key]: response.body?.error || copy('analysisFailed') }))
+        }
+      }
     } catch (error) { if (requestIdentity.current === identity) setAnalysisErrors(current => ({ ...current, [key]: error.message || copy('analysisFailed') })) }
     finally { submittingAnalysis.current = false; if (requestIdentity.current === identity) setRunningKey('') }
+  }
+  const cancelAnalysis = async () => {
+    if (cancellingKey || !id || item.is_local === false) return
+    const identity = postIdentity
+    setCancellingKey(key)
+    try {
+      const live = liveStages[key]
+      const response = await cancelAnalyzeInspiration(id, {
+        scope: target.scope,
+        ...(target.scope === 'media' ? { media_index: target.media_index } : {}),
+        ...(live?.jobId ? { job_id: live.jobId } : {}),
+      })
+      if (requestIdentity.current !== identity) return
+      if (response.body?.data) onItemUpdated?.(response.body.data)
+      setLiveStages(current => {
+        if (!current[key]) return current
+        const next = { ...current }
+        delete next[key]
+        return next
+      })
+    } catch (error) {
+      if (requestIdentity.current === identity) setAnalysisErrors(current => ({ ...current, [key]: error?.message || copy('analysisFailed') }))
+    } finally {
+      if (requestIdentity.current === identity) setCancellingKey('')
+    }
   }
   const confirmAnalysisService = async () => {
     if (savingServiceRef.current || runningKey || serverRunning || analysisService?.channel !== 'pending') return
@@ -352,51 +474,74 @@ export function InspirationPostDetail({ item, t, onItemUpdated, onReplicate, rep
     finally { savingRef.current = false; if (requestIdentity.current === identity) setSaving(false) }
   }
 
-  return <div ref={root} className="omnimux-post-detail">
-    <Tabs className="omnimux-post-mobile-tabs" items={[{ id: 'post', label: copy('originalPost') }, { id: 'analysis', label: copy('analysis') }]} activeId={mobilePane} onChange={setMobilePane} aria-label={copy('panes')} />
-    <main className="omnimux-inspiration-modal-body omnimux-post-columns">
-      <section className={`omnimux-post-source omnimux-inspiration-modal-video-panel ${mobilePane === 'post' ? 'is-active' : ''}`} aria-label={copy('originalPost')}>
-        <div className="omnimux-post-author"><div className="omnimux-post-avatar" aria-hidden="true">{(preview.creator.name || preview.title).slice(0, 1)}</div><div><strong>{preview.creator.name || copy('unknownAuthor')}</strong><div className="omnimux-post-meta">{preview.creator.handle && <span>@{preview.creator.handle}</span>}<Badge size="xs" variant="neutral">{formatPlatformName(preview.platform, t)}</Badge><span>{preview.publishedAt || preview.createdAt}</span></div></div>{item.source_url && <a className="omnimux-post-source-link" href={item.source_url} target="_blank" rel="noopener noreferrer" aria-label={copy('openSource')}><ExternalLink size={16} /></a>}</div>
-        {body && <article className="omnimux-post-original" data-reference="body">
-          <div className={`omnimux-post-body ${expanded ? 'is-expanded' : ''}`}>{expanded || displayedBody.length <= 420 ? displayedBody : `${displayedBody.slice(0, 420)}…`}</div>
-          <div className="omnimux-post-actions">
-            {displayedBody.length > 420 && <Button variant="ghost" size="sm" onClick={() => setExpanded(value => !value)}>{copy(expanded ? 'collapse' : 'expand')}</Button>}
-            <Button variant="ghost" size="sm" loading={translating} onClick={translate}>{copy(translated ? 'showOriginal' : 'translateBody')}</Button>
-            <CopyButton text={body} label={copy('copyOriginal')} size="sm" variant="ghost" />
-            <ReferenceButton disabled={saving} selected={hasReference({ kind: 'body' })} onClick={() => toggleReference({ kind: 'body' })} t={t} />
-          </div>{translationError && <p role="alert" className="omnimux-inspiration-error-text">{translationError}</p>}
-        </article>}
-        {notice}
-        {localizing && <p role="status" className="omnimux-post-help">{copy('savingPost')}</p>}
-        {isImageCarousel ? <PostMediaCarousel
-          assets={media}
-          dimensions={dimensions}
-          failedImages={failedImages}
-          fallbackUrl={pickCoverSrc(item)}
-          t={t}
-          saving={saving}
-          onOpen={asset => { setImage(asset); setZoom(1) }}
-          onDimension={(asset, size) => setDimensions(value => ({ ...value, [asset.index]: size }))}
-          onImageError={asset => setFailedImages(value => ({ ...value, [asset.id]: true }))}
-          onAnalyze={asset => chooseTarget({ scope: 'media', media_index: asset.index })}
-          onToggleReference={asset => toggleReference({ kind: 'media', media_index: asset.index })}
-          hasReference={asset => hasReference({ kind: 'media', media_index: asset.index })}
-        /> : media.map(asset => <article key={asset.id} ref={node => node ? mediaNodes.current.set(asset.index, node) : mediaNodes.current.delete(asset.index)} className="omnimux-post-media" data-media-id={asset.id}>
-          <div className="omnimux-inspiration-modal-player-box omnimux-post-media-viewer">
-            {asset.type === 'video' ? <video ref={node => node ? videos.current.set(asset.index, node) : videos.current.delete(asset.index)} src={asset.url} poster={asset.poster || pickCoverSrc(item) || undefined} hidden={Boolean(failedMedia[asset.id])} controls playsInline preload="metadata" className="omnimux-inspiration-player-frame" aria-label={asset.label} onError={() => setFailedMedia(value => ({ ...value, [asset.id]: true }))} onLoadedMetadata={event => { const node = event.currentTarget; setDimensions(value => ({ ...value, [asset.index]: { width: node.videoWidth, height: node.videoHeight, duration: node.duration } })) }} />
-              : <Button className="omnimux-post-image-open" variant="ghost" aria-label={`${copy('openImage')} ${asset.label}`} onClick={() => { setImage(asset); setZoom(1) }}><img src={asset.url} alt={asset.title || asset.label} className="omnimux-inspiration-modal-cover-bg" onError={() => setFailedImages(value => ({ ...value, [asset.id]: true }))} onLoad={event => { const node = event.currentTarget; setDimensions(value => ({ ...value, [asset.index]: { width: node.naturalWidth, height: node.naturalHeight } })) }} /><span className="omnimux-post-image-caption"><ZoomIn size={14} />{copy('openImage')}</span></Button>}
-          {failedMedia[asset.id] && pickCoverSrc(item) && <img src={pickCoverSrc(item)} alt={copy('videoCover')} className="omnimux-inspiration-modal-cover-bg" />}
-          </div>
-          {failedImages[asset.id] && <p role="alert" className="omnimux-inspiration-error-text">{copy('imageUnavailable')}</p>}
-          {failedMedia[asset.id] && <p className="omnimux-inspiration-player-notice" role="alert">{t('modal.video.unplayable')}</p>}
-          <div className="omnimux-post-asset-footer"><div><strong>{asset.label}</strong><p>{dimensions[asset.index]?.width > 0 && `${dimensions[asset.index].width} × ${dimensions[asset.index].height}`}{asset.type === 'video' && dimensions[asset.index]?.duration > 0 && ` · ${Math.round(dimensions[asset.index].duration)} ${copy('seconds')}`}</p></div><div className="omnimux-post-actions"><Button variant="ghost" size="sm" leadingIcon={<Sparkles size={14} />} onClick={() => chooseTarget({ scope: 'media', media_index: asset.index })}>{copy(asset.type === 'video' ? 'analyzeVideo' : 'analyzeImage')}</Button><ReferenceButton disabled={saving} selected={hasReference({ kind: 'media', media_index: asset.index })} onClick={() => toggleReference({ kind: 'media', media_index: asset.index })} t={t} /></div></div>
-        </article>)}
-        {!media.length && resolveTikTokEmbedUrl(item.source_url) && <iframe className="omnimux-post-embed" src={resolveTikTokEmbedUrl(item.source_url)} title={preview.title} allowFullScreen />}
-        {!media.length && !body && pickCoverSrc(item) && <img className="omnimux-post-orphan-cover" src={pickCoverSrc(item)} alt={copy('videoCover')} />}
-        {!body && !media.length && <p className="omnimux-inspiration-modal-empty">{copy('noOriginal')}</p>}
+  const isSidebar = mode === 'sidebar'
+  const mediaFirstInSidebar = isSidebar && (variant === 'video' || variant === 'carousel' || variant === 'image')
+  const liveStage = liveStages[key] || null
+  const stageText = t(headlessStageLocaleKey(liveStage?.stage, liveStage?.status))
+
+  const authorNode = <div className="omnimux-post-author"><div className="omnimux-post-avatar" aria-hidden="true">{(preview.creator.name || preview.title).slice(0, 1)}</div><div><strong>{preview.creator.name || copy('unknownAuthor')}</strong><div className="omnimux-post-meta">{preview.creator.handle && <span>@{preview.creator.handle}</span>}<Badge size="xs" variant="neutral">{formatPlatformName(preview.platform, t)}</Badge><span>{preview.publishedAt || preview.createdAt}</span></div></div>{item.source_url && <a className="omnimux-post-source-link" href={item.source_url} target="_blank" rel="noopener noreferrer" aria-label={copy('openSource')}><ExternalLink size={16} /></a>}</div>
+
+  const bodyNode = body ? <article className="omnimux-post-original" data-reference="body">
+    <div className={`omnimux-post-body ${expanded ? 'is-expanded' : ''}`}>{expanded || displayedBody.length <= 420 ? displayedBody : `${displayedBody.slice(0, 420)}…`}</div>
+    <div className="omnimux-post-actions">
+      {displayedBody.length > 420 && <Button variant="ghost" size="sm" onClick={() => setExpanded(value => !value)}>{copy(expanded ? 'collapse' : 'expand')}</Button>}
+      <Button variant="ghost" size="sm" loading={translating} onClick={translate}>{copy(translated ? 'showOriginal' : 'translateBody')}</Button>
+      <CopyButton text={body} label={copy('copyOriginal')} size="sm" variant="ghost" />
+      <ReferenceButton disabled={saving} selected={hasReference({ kind: 'body' })} onClick={() => toggleReference({ kind: 'body' })} t={t} />
+    </div>{translationError && <p role="alert" className="omnimux-inspiration-error-text">{translationError}</p>}
+  </article> : null
+
+  const mediaNode = <>
+    {isImageCarousel ? <PostMediaCarousel
+      assets={media}
+      dimensions={dimensions}
+      failedImages={failedImages}
+      fallbackUrl={pickCoverSrc(item)}
+      t={t}
+      saving={saving}
+      onOpen={asset => { setImage(asset); setZoom(1) }}
+      onDimension={(asset, size) => setDimensions(value => ({ ...value, [asset.index]: size }))}
+      onImageError={asset => setFailedImages(value => ({ ...value, [asset.id]: true }))}
+      onAnalyze={asset => chooseTarget({ scope: 'media', media_index: asset.index })}
+      onToggleReference={asset => toggleReference({ kind: 'media', media_index: asset.index })}
+      hasReference={asset => hasReference({ kind: 'media', media_index: asset.index })}
+    /> : media.map(asset => <article key={asset.id} ref={node => node ? mediaNodes.current.set(asset.index, node) : mediaNodes.current.delete(asset.index)} className="omnimux-post-media" data-media-id={asset.id}>
+      <div className="omnimux-inspiration-modal-player-box omnimux-post-media-viewer">
+        {asset.type === 'video' ? <video ref={node => node ? videos.current.set(asset.index, node) : videos.current.delete(asset.index)} src={asset.url} poster={asset.poster || pickCoverSrc(item) || undefined} hidden={Boolean(failedMedia[asset.id])} controls playsInline preload="metadata" className="omnimux-inspiration-player-frame" aria-label={asset.label} onError={() => setFailedMedia(value => ({ ...value, [asset.id]: true }))} onLoadedMetadata={event => { const node = event.currentTarget; setDimensions(value => ({ ...value, [asset.index]: { width: node.videoWidth, height: node.videoHeight, duration: node.duration } })) }} />
+          : <Button className="omnimux-post-image-open" variant="ghost" aria-label={`${copy('openImage')} ${asset.label}`} onClick={() => { setImage(asset); setZoom(1) }}><img src={asset.url} alt={asset.title || asset.label} className="omnimux-inspiration-modal-cover-bg" onError={() => setFailedImages(value => ({ ...value, [asset.id]: true }))} onLoad={event => { const node = event.currentTarget; setDimensions(value => ({ ...value, [asset.index]: { width: node.naturalWidth, height: node.naturalHeight } })) }} /><span className="omnimux-post-image-caption"><ZoomIn size={14} />{copy('openImage')}</span></Button>}
+      {failedMedia[asset.id] && pickCoverSrc(item) && <img src={pickCoverSrc(item)} alt={copy('videoCover')} className="omnimux-inspiration-modal-cover-bg" />}
+      </div>
+      {failedImages[asset.id] && <p role="alert" className="omnimux-inspiration-error-text">{copy('imageUnavailable')}</p>}
+      {failedMedia[asset.id] && <p className="omnimux-inspiration-player-notice" role="alert">{t('modal.video.unplayable')}</p>}
+      <div className="omnimux-post-asset-footer"><div><strong>{asset.label}</strong><p className="omnimux-post-asset-specs">{dimensions[asset.index]?.width > 0 ? <span>{`${dimensions[asset.index].width} × ${dimensions[asset.index].height}`}</span> : null}{asset.type === 'video' && dimensions[asset.index]?.duration > 0 ? <span>{`${Math.round(dimensions[asset.index].duration)} ${copy('seconds')}`}</span> : null}</p></div><div className="omnimux-post-actions"><Button variant="ghost" size="sm" leadingIcon={<Sparkles size={14} />} onClick={() => chooseTarget({ scope: 'media', media_index: asset.index })}>{copy(asset.type === 'video' ? 'analyzeVideo' : 'analyzeImage')}</Button><ReferenceButton disabled={saving} selected={hasReference({ kind: 'media', media_index: asset.index })} onClick={() => toggleReference({ kind: 'media', media_index: asset.index })} t={t} /></div></div>
+    </article>)}
+    {!media.length && resolveTikTokEmbedUrl(item.source_url) && <iframe className="omnimux-post-embed" src={resolveTikTokEmbedUrl(item.source_url)} title={preview.title} allowFullScreen />}
+    {!media.length && !body && pickCoverSrc(item) && <img className="omnimux-post-orphan-cover" src={pickCoverSrc(item)} alt={copy('videoCover')} />}
+    {!body && !media.length && <p className="omnimux-inspiration-modal-empty">{copy('noOriginal')}</p>}
+  </>
+
+  const ColumnsContainer = isSidebar ? 'div' : 'main'
+
+  return <div ref={root} className={`omnimux-post-detail is-${mode} is-variant-${variant}`} data-layout-mode={mode} data-post-variant={variant}>
+    {!isSidebar && <Tabs className="omnimux-post-mobile-tabs" items={[{ id: 'post', label: copy('originalPost') }, { id: 'analysis', label: copy('analysis') }]} activeId={mobilePane} onChange={setMobilePane} aria-label={copy('panes')} />}
+    <ColumnsContainer className={`omnimux-inspiration-modal-body omnimux-post-columns ${isSidebar ? 'is-sidebar' : ''}`}>
+      <section className={`omnimux-post-source omnimux-inspiration-modal-video-panel ${isSidebar || mobilePane === 'post' ? 'is-active' : ''}`} aria-label={copy('originalPost')}>
+        {mediaFirstInSidebar ? <>
+          {mediaNode}
+          {notice}
+          {localizing && <p role="status" className="omnimux-post-help">{copy('savingPost')}</p>}
+          {authorNode}
+          {bodyNode}
+        </> : <>
+          {authorNode}
+          {bodyNode}
+          {notice}
+          {localizing && <p role="status" className="omnimux-post-help">{copy('savingPost')}</p>}
+          {mediaNode}
+        </>}
       </section>
-      <section className={`omnimux-post-analysis omnimux-inspiration-modal-deconstruction-panel ${mobilePane === 'analysis' ? 'is-active' : ''}`} aria-label={copy('analysis')}>
-        <header className="omnimux-post-analysis-header"><h3><Sparkles size={17} />{copy('analysis')}</h3><span className="omnimux-post-meta">{copy('separate')}</span></header>
+      <section className={`omnimux-post-analysis omnimux-inspiration-modal-deconstruction-panel ${isSidebar || mobilePane === 'analysis' ? 'is-active' : ''}`} aria-label={copy('analysis')}>
+        <div className="omnimux-post-analysis-header"><h3><Sparkles size={17} />{copy('analysis')}</h3></div>
         <div className="omnimux-post-targets" role="group" aria-label={copy('scope')}>
           {[{ scope: 'post' }, ...(body ? [{ scope: 'body' }] : []), ...media.map(asset => ({ scope: 'media', media_index: asset.index }))].map(value => <Button key={analysisTargetKey(value)} size="sm" variant={key === analysisTargetKey(value) ? 'secondary' : 'ghost'} aria-pressed={key === analysisTargetKey(value)} onClick={() => chooseTarget(value)}>{targetLabel(value)}</Button>)}
         </div>
@@ -410,32 +555,37 @@ export function InspirationPostDetail({ item, t, onItemUpdated, onReplicate, rep
           </div>}
           {serviceError && <p className="omnimux-inspiration-error-text" role="alert">{serviceError}</p>}
           {configuring ? <>
-          <p className="omnimux-post-help">{copy('analysisIntro')}</p>
           <div className="omnimux-post-directions">{analysisDirections().map(value => <label className="omnimux-post-direction" key={value}><input type="checkbox" checked={directions.includes(value)} onChange={() => setDirections(current => current.includes(value) ? current.filter(entry => entry !== value) : [...current, value])} /><span><strong>{copy(`direction.${value}`)}</strong><small>{copy(`directionHint.${value}`)}</small></span></label>)}</div>
-          <Button variant="primary" leadingIcon={<Sparkles size={14} />} loading={analyzing} disabled={Boolean(runningKey) || serverRunning || !statusReady || !directions.length || savingService || servicePending || item.import_status === 'importing'} onClick={analyze}>{copy(analyzing ? 'parsing' : record ? 'reanalyze' : 'analyzeTarget')}</Button>
-          </> : <Button variant="ghost" size="sm" leadingIcon={<RotateCcw size={14} />} loading={analyzing} disabled={Boolean(runningKey) || serverRunning || !statusReady} onClick={() => setConfigureKey(key)}>{copy(analyzing ? 'parsing' : 'reanalyze')}</Button>}
+          <div className="omnimux-post-analyze-actions">
+            <Button variant="primary" leadingIcon={<Sparkles size={14} />} loading={analyzing} disabled={Boolean(runningKey) || serverRunning || !statusReady || !directions.length || savingService || servicePending || item.import_status === 'importing'} onClick={analyze}>{copy(analyzing ? 'parsing' : record ? 'reanalyze' : 'analyzeTarget')}</Button>
+            {analyzing && item.is_local !== false ? <Button variant="ghost" size="sm" loading={cancellingKey === key} disabled={cancellingKey === key} onClick={cancelAnalysis}>{copy(cancellingKey === key ? 'cancelling' : 'cancelAnalysis')}</Button> : null}
+          </div>
+          </> : <div className="omnimux-post-analyze-actions">
+            <Button variant="ghost" size="sm" leadingIcon={<RotateCcw size={14} />} loading={analyzing} disabled={Boolean(runningKey) || serverRunning || !statusReady} onClick={() => setConfigureKey(key)}>{copy(analyzing ? 'parsing' : 'reanalyze')}</Button>
+            {analyzing && item.is_local !== false ? <Button variant="ghost" size="sm" loading={cancellingKey === key} disabled={cancellingKey === key} onClick={cancelAnalysis}>{copy(cancellingKey === key ? 'cancelling' : 'cancelAnalysis')}</Button> : null}
+          </div>}
           {statusError && <p className="omnimux-inspiration-error-text" role="alert">{statusError}</p>}
           {(analysisErrors[key] || record?.error) && <p className="omnimux-inspiration-error-text" role="alert">{analysisErrors[key] || record.error}</p>}
           {record?.status === 'stale' && <p role="status" className="omnimux-post-warning">{copy('staleAnalysis')}</p>}
-          {analyzing && <p role="status" className="omnimux-post-help">{copy('running')}</p>}
+          {analyzing && <div role="status" className="omnimux-post-live-stage" data-stage={liveStage?.stage || 'running'}><span className="omnimux-post-live-dot" aria-hidden="true" /><span>{stageText}</span></div>}
           {record?.status === 'partial' && <p className="omnimux-post-warning" role="status">{copy('partial')}</p>}
           {selectedResult && <div className="omnimux-post-result" data-analysis-scope={key}>
-            <div className="omnimux-post-section-heading omnimux-inspiration-deconstruct-heading"><span className="omnimux-post-meta">{historicalResult ? copy('historical') : [copy('modelResult'), record?.model].filter(Boolean).join(' · ')}</span><CopyButton text={deconstructionCopyText(getInspirationPreviewData({ analysis: selectedResult })) || selectedResult.summary || ''} label={t('modal.deconstruction.copy')} size="sm" variant="ghost" /></div>
+            <div className="omnimux-post-section-heading omnimux-inspiration-deconstruct-heading"><span className="omnimux-post-meta"><span>{historicalResult ? copy('historical') : copy('modelResult')}</span>{!historicalResult && record?.model ? <span className="omnimux-post-model-tag">{record.model}</span> : null}</span><CopyButton text={deconstructionCopyText(getInspirationPreviewData({ analysis: selectedResult })) || selectedResult.summary || ''} label={t('modal.deconstruction.copy')} size="sm" variant="ghost" /></div>
             <AnalysisResult result={selectedResult} t={t} onSeek={seconds => seek(seconds)} />
             {record?.status === 'done' && record?.source === 'live' && <ReferenceButton disabled={saving} t={t} selected={hasReference({ kind: 'analysis', ...target })} onClick={() => toggleReference({ kind: 'analysis', ...target, input_fingerprint: record.input_fingerprint, result_snapshot: record.result })} />}
           </div>}
           {!record && <p className="omnimux-post-analysis-empty">{copy('noAnalysis')}</p>}
         </div>
       </section>
-    </main>
+    </ColumnsContainer>
     <footer className="omnimux-inspiration-modal-footer omnimux-post-reference-bar"><div><strong>{selected.length ? `${copy('selectedReferences')} ${selected.length}` : copy('chooseHint')}</strong><div className="omnimux-post-reference-chips">{selected.map(ref => <span key={refKey(ref)}>{labelFor(ref)}</span>)}</div></div><Button className="omnimux-inspiration-modal-replicate" variant="primary" leadingIcon={<ArrowRight size={15} />} disabled={!selected.length} onClick={() => setDrawer(true)}>{copy('create')}</Button></footer>
     <Drawer open={Boolean(image)} onClose={() => setImage(null)} title={<div className="omnimux-post-drawer-heading"><span>{image?.label || copy('image')}</span><IconButton variant="ghost" aria-label={t('close')} onClick={() => setImage(null)}><X size={16} /></IconButton></div>} closable={false} className="omnimux-post-lightbox" width="100%" container={container} closeOnEsc={false} footer={image && <ReferenceButton disabled={saving} selected={hasReference({ kind: 'media', media_index: image.index })} onClick={() => toggleReference({ kind: 'media', media_index: image.index })} t={t} />}>
       {image && <><div className="omnimux-post-lightbox-tools"><IconButton variant="ghost" aria-label={copy('previousImage')} disabled={imageLightboxPosition <= 0} onClick={() => stepImage(-1)}><ChevronLeft size={16} /></IconButton><span className="omnimux-post-lightbox-counter">{imageLightboxPosition + 1} / {imageMedia.length}</span><IconButton variant="ghost" aria-label={copy('nextImage')} disabled={imageLightboxPosition < 0 || imageLightboxPosition >= imageMedia.length - 1} onClick={() => stepImage(1)}><ChevronRight size={16} /></IconButton><IconButton variant="ghost" aria-label={copy('zoomOut')} onClick={() => setZoom(value => Math.max(1, value - .5))}><Minus size={16} /></IconButton><Button size="sm" variant="ghost" leadingIcon={<RotateCcw size={14} />} onClick={() => setZoom(1)}>{zoom === 1 ? copy('fit') : `${Math.round(zoom * 100)}%`}</Button><IconButton variant="ghost" aria-label={copy('zoomIn')} onClick={() => setZoom(value => Math.min(4, value + .5))}><Plus size={16} /></IconButton><a href={image.url} target="_blank" rel="noopener noreferrer">{copy('openOriginal')}</a></div><div className={`omnimux-post-lightbox-canvas ${zoom > 1 ? 'is-zoomed' : ''}`}><img src={image.url} alt={image.title || image.label} style={zoom > 1 ? { width: `${(dimensions[image.index]?.width || 600) * zoom}px`, maxWidth: 'none', maxHeight: 'none' } : undefined} /></div></>}
     </Drawer>
-    <Drawer open={drawer} onClose={() => setDrawer(false)} title={<div className="omnimux-post-drawer-heading"><span>{copy('creationTitle')}</span><IconButton variant="ghost" aria-label={t('close')} onClick={() => setDrawer(false)}><X size={16} /></IconButton></div>} closable={false} description={copy('creationHint')} width={460} container={container} closeOnEsc={false} className="omnimux-post-creation-drawer" footer={<div className="omnimux-post-draft-actions"><Button variant="secondary" loading={saving} disabled={!selected.length} onClick={() => save(false)}>{copy('saveDraft')}</Button><Button variant="primary" loading={saving || replicateBusy} disabled={!selected.length || !onReplicate || manualStale || clipError} onClick={() => save(true)}>{copy('useInChat')}</Button></div>}>
+    <Drawer open={drawer} onClose={() => setDrawer(false)} title={<div className="omnimux-post-drawer-heading"><span>{copy('creationTitle')}</span><IconButton variant="ghost" aria-label={t('close')} onClick={() => setDrawer(false)}><X size={16} /></IconButton></div>} closable={false} width={460} container={container} closeOnEsc={false} className="omnimux-post-creation-drawer" footer={<div className="omnimux-post-draft-actions"><Button variant="secondary" loading={saving} disabled={!selected.length} onClick={() => save(false)}>{copy('saveDraft')}</Button><Button variant="primary" loading={saving || replicateBusy} disabled={!selected.length || !onReplicate || manualStale || clipError} onClick={() => save(true)}>{copy('useInChat')}</Button></div>}>
       <div className="omnimux-post-draft-content">
         <section><h4>{copy('reference')}</h4>{selected.map(ref => <div className="omnimux-post-draft-reference" key={refKey(ref)}><span>{ref.kind === 'media' ? <Film size={15} /> : <FileText size={15} />}{labelFor(ref)}</span><Button size="sm" variant="ghost" disabled={saving} onClick={() => toggleReference(ref)}>{copy('remove')}</Button></div>)}</section>
-        {(draft.clips || []).map(clip => <fieldset className="omnimux-post-clip" key={clip.media_index}><legend>{labelFor({ kind: 'media', media_index: clip.media_index })} · {copy('clip')}</legend><p>{copy('clipHint')}</p><div>{['start_seconds', 'end_seconds'].map(field => <InputField key={field} label={copy(field === 'start_seconds' ? 'start' : 'end')} disabled={saving} type="number" min="0" step="0.1" value={clip[field]} onChange={event => changeDraft({ clips: draft.clips.map(value => value.media_index === clip.media_index ? { ...value, [field]: event.target.value } : value) })} />)}<Button size="sm" variant="ghost" disabled={clipError} onClick={() => previewClip(clip)}>{copy('previewClip')}</Button></div></fieldset>)}
+        {(draft.clips || []).map(clip => <fieldset className="omnimux-post-clip" key={clip.media_index}><legend>{labelFor({ kind: 'media', media_index: clip.media_index })} {copy('clip')}</legend><p>{copy('clipHint')}</p><div>{['start_seconds', 'end_seconds'].map(field => <InputField key={field} label={copy(field === 'start_seconds' ? 'start' : 'end')} disabled={saving} type="number" min="0" step="0.1" value={clip[field]} onChange={event => changeDraft({ clips: draft.clips.map(value => value.media_index === clip.media_index ? { ...value, [field]: event.target.value } : value) })} />)}<Button size="sm" variant="ghost" disabled={clipError} onClick={() => previewClip(clip)}>{copy('previewClip')}</Button></div></fieldset>)}
         <section><h4>{copy('purpose')}</h4><div className="omnimux-post-purpose">{['idea', 'story', 'script', 'motion', 'visual', 'scene'].map(value => <Button key={value} size="sm" variant={draft.purpose === value ? 'secondary' : 'ghost'} aria-pressed={draft.purpose === value} disabled={saving} onClick={() => changeDraft({ purpose: value })}>{copy(`purpose.${value}`)}</Button>)}</div></section>
         <label className="omnimux-post-draft-field">{copy('intent')}<textarea disabled={saving} rows={3} value={draft.intent || ''} placeholder={copy('intentPlaceholder')} onChange={event => changeDraft({ intent: event.target.value })} /></label>
         <label className="omnimux-post-draft-field">{copy('draftText')}<textarea disabled={saving} rows={9} value={draft.text || ''} onChange={event => changeDraft({ text: event.target.value, manual: true, basis })} /></label>

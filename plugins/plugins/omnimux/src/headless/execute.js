@@ -7,6 +7,7 @@ import {
   validateAgainstSchema,
 } from './schema.js'
 import { inferModality } from './queue.js'
+import { prepareHeadlessTransport } from './transport.js'
 
 export const DEFAULT_TIMEOUT_MS = 120_000
 export const MAX_REPAIR_ATTEMPTS = 1
@@ -131,6 +132,7 @@ export async function executeHeadlessSkill(deps, request) {
     },
     async ({ jobId, signal, update }) => {
       const timed = createTimedSignal(signal, timeoutMs)
+      let transport
       try {
         update({ stage: 'resolving-skill' })
         const skill = await deps.skills.get(skillName, { cwd: request.cwd, signal: timed.signal })
@@ -141,11 +143,17 @@ export async function executeHeadlessSkill(deps, request) {
         const systemPrompt = skill.content.trim()
         const structuredPrompt = buildStructuredPrompt({ input, outputSchema: request.outputSchema })
 
+        const videoProcess = typeof deps.videoProcess === 'function' ? deps.videoProcess() : deps.videoProcess
+        transport = await prepareHeadlessTransport(
+          { system: systemPrompt, prompt: structuredPrompt, references: Array.isArray(request.references) ? request.references : undefined },
+          { videoProcess, signal: timed.signal, onPreparing: () => update({ stage: 'preparing-media' }) },
+        )
+
         update({ stage: 'executing' })
         const initial = await runCompletion(deps.textComplete, {
           system: systemPrompt,
           prompt: structuredPrompt,
-          references: Array.isArray(request.references) ? request.references : undefined,
+          references: transport.references,
           model: request.model,
           maxTokens,
           signal: timed.signal,
@@ -211,7 +219,11 @@ export async function executeHeadlessSkill(deps, request) {
         }
         throw error
       } finally {
-        timed.cleanup()
+        try {
+          await transport?.cleanup()
+        } finally {
+          timed.cleanup()
+        }
       }
     },
   )
