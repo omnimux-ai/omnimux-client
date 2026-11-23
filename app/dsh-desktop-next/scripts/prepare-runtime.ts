@@ -1,3 +1,4 @@
+import { OFFICE_SKILLS_IN_PACKAGE, prepareCuaNative } from './upstream-family.ts'
 /** Prepare, execute and check the bundled interpreter payloads for every CPU one Next package carries. */
 import { existsSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs'
 import { createRequire } from 'node:module'
@@ -19,19 +20,22 @@ export interface NextRuntimeTarget {
 
 /**
  * Payloads one Next package carries: both Darwin CPUs by default (or the single CPU when
- * `DSH_MAC_SMOKE_ARCH` or `DSH_MAC_RELEASE_ARCH` selects one), Windows x64, and the build host CPU
- * on Linux.
- * @param platform - Electron platform being packaged.
- * @param hostArch - Build host architecture, used on Linux where packages are single-architecture.
- * @param env - Process environment inspected for single-architecture smoke or release selection.
- * @returns Locked targets and their CPUs.
+ * `DSH_MAC_SMOKE_ARCH` / `DSH_MAC_RELEASE_ARCH` / explicit `macCpus` selects one), Windows x64,
+ * and Linux uses the system interpreter (empty list).
+ * @param platform - Target OS.
+ * @param hostArch - Build host CPU.
+ * @param env - Environment checked for macOS architecture selection.
+ * @param macCpus - Explicit macOS CPUs overriding environment selection.
+ * @returns Targets to prepare.
  */
 export function nextRuntimeTargets(
   platform: NodeJS.Platform,
   hostArch: string = process.arch,
   env: NodeJS.ProcessEnv = process.env,
+  macCpus?: readonly NextRuntimeArch[],
 ): readonly NextRuntimeTarget[] {
   if (platform === 'darwin') {
+    if (macCpus !== undefined) return macCpus.map(arch => ({ target: `mac-${arch}`, arch }))
     const smokeArch = macSmokeArchitecture(env)
     const releaseArch = macReleaseArchitecture(env)
     const arch = smokeArch !== 'universal' ? smokeArch : releaseArch
@@ -114,6 +118,8 @@ export interface PrepareNextRuntimeOptions {
   readonly platform: NodeJS.Platform
   readonly version: string
   readonly hostArch?: string
+  /** Darwin CPUs to prepare instead; see {@link nextRuntimeTargets}. */
+  readonly macCpus?: readonly NextRuntimeArch[]
   readonly log?: (message: string) => void
 }
 
@@ -124,7 +130,7 @@ export interface PrepareNextRuntimeOptions {
  * @returns The runtime root, empty for platforms without a payload.
  */
 export async function prepareNextRuntime(options: PrepareNextRuntimeOptions): Promise<string> {
-  const targets = nextRuntimeTargets(options.platform, options.hostArch)
+  const targets = nextRuntimeTargets(options.platform, options.hostArch, process.env, options.macCpus)
   const arch = options.platform === 'darwin' && targets.length === 1 ? targets[0]?.arch : undefined
   const paths = nextRuntimeBuildPaths(options.desktopRoot, arch)
   const log = options.log ?? console.log
@@ -151,11 +157,13 @@ export async function prepareNextRuntime(options: PrepareNextRuntimeOptions): Pr
  * @param platform - Platform the payloads target.
  * @param log - Progress output.
  * @param hostArch - Build host architecture, used on Linux where packages are single-architecture.
+ * @param macCpus - Darwin CPUs prepared instead; see {@link nextRuntimeTargets}.
  * @returns CPUs whose payload ran.
  */
-export function smokeNextRuntime(runtimeRoot: string, platform: NodeJS.Platform, log: (message: string) => void = console.log, hostArch: string = process.arch): NextRuntimeArch[] {
+export function smokeNextRuntime(runtimeRoot: string, platform: NodeJS.Platform, log: (message: string) => void = console.log, hostArch: string = process.arch,
+  macCpus?: readonly NextRuntimeArch[]): NextRuntimeArch[] {
   const executed: NextRuntimeArch[] = []
-  for (const { arch } of nextRuntimeTargets(platform, hostArch)) {
+  for (const { arch } of nextRuntimeTargets(platform, hostArch, process.env, macCpus)) {
     const root = primaryRuntimeDirectory(runtimeRoot, arch)
     const launcher = platform === 'darwin' && arch === 'x64' && process.arch === 'arm64' && rosettaAvailable() ? ['/usr/bin/arch', '-x86_64'] : undefined
     if (smokePrimaryRuntime(root, { launcher })) {
@@ -185,11 +193,13 @@ function requireFile(path: string, description: string): void {
  * @param platform - Platform the package targets.
  * @param expectedVersion - Product version every manifest must record.
  * @param hostArch - Build host architecture, used on Linux where packages are single-architecture.
+ * @param macCpus - Darwin CPUs prepared instead; see {@link nextRuntimeTargets}.
  * @returns The verified payloads in target order.
  */
-export function verifyNextRuntimeTree(runtimeRoot: string, platform: NodeJS.Platform, expectedVersion: string, hostArch: string = process.arch): VerifiedNextRuntime[] {
+export function verifyNextRuntimeTree(runtimeRoot: string, platform: NodeJS.Platform, expectedVersion: string, hostArch: string = process.arch,
+  macCpus?: readonly NextRuntimeArch[]): VerifiedNextRuntime[] {
   const verified: VerifiedNextRuntime[] = []
-  for (const { arch } of nextRuntimeTargets(platform, hostArch)) {
+  for (const { arch } of nextRuntimeTargets(platform, hostArch, process.env, macCpus)) {
     const directory = primaryRuntimeDirectory(runtimeRoot, arch)
     const manifestFile = join(directory, 'runtime.json')
     requireFile(manifestFile, `${arch} payload manifest`)
@@ -210,10 +220,32 @@ export function verifyNextRuntimeTree(runtimeRoot: string, platform: NodeJS.Plat
       }
     }
     const skills = officeSkillsDirectory(runtimeRoot, arch)
-    for (const skill of ['office', 'office-docx', 'office-pptx', 'office-xlsx', 'office-render', 'office-recalculate', 'office-export-pdf']) {
+    for (const skill of OFFICE_SKILLS_IN_PACKAGE ? [] : ['office', 'office-docx', 'office-pptx', 'office-xlsx', 'office-render', 'office-recalculate', 'office-export-pdf']) {
       requireFile(join(skills, skill, 'SKILL.md'), `${arch} ${skill} skill`)
     }
     verified.push({ arch, directory, manifest })
+  }
+  return verified
+}
+
+/**
+ * Check the payloads a package copies: the runtime root holds a directory for each CPU the package carries and
+ * nothing else, and every payload verifies.
+ * @param runtimeRoot - The packaged `Resources/runtime`, or the tree staged for it.
+ * @param platform - Platform the package targets.
+ * @param expectedVersion - Product version every manifest must record.
+ * @param cpus - CPUs the package carries.
+ * @returns The verified payloads in target order.
+ */
+export function verifyPackagedNextRuntime(runtimeRoot: string, platform: NodeJS.Platform, expectedVersion: string, cpus: readonly string[]): VerifiedNextRuntime[] {
+  const present = existsSync(runtimeRoot) ? readdirSync(runtimeRoot).sort() : []
+  const expected = [...cpus].sort()
+  if (present.join(',') !== expected.join(',')) {
+    throw new Error(`Next runtime: ${runtimeRoot} holds ${present.join(', ') || 'no payload'}; the package carries ${expected.join(' and ')}`)
+  }
+  const verified = verifyNextRuntimeTree(runtimeRoot, platform, expectedVersion, process.arch, platform === 'darwin' ? expected as NextRuntimeArch[] : undefined)
+  if (verified.map(runtime => runtime.arch).sort().join(',') !== expected.join(',')) {
+    throw new Error(`Next runtime: ${platform} packages carry ${verified.map(runtime => runtime.arch).join(' and ')}, not ${expected.join(' and ')}`)
   }
   return verified
 }
@@ -225,6 +257,7 @@ export function verifyNextRuntimeTree(runtimeRoot: string, platform: NodeJS.Plat
  * @param platform - Platform the package targets.
  * @param expectedVersion - Product version every manifest must record.
  * @param hostArch - Build host architecture, used on Linux where packages are single-architecture.
+ * @param macCpus - Darwin CPUs prepared instead; see {@link nextRuntimeTargets}.
  * @returns The verified payloads when the existing tree can be reused, or an empty array.
  */
 export function reusableNextRuntimeTree(
@@ -232,11 +265,12 @@ export function reusableNextRuntimeTree(
   platform: NodeJS.Platform,
   expectedVersion: string,
   hostArch: string = process.arch,
+  macCpus?: readonly NextRuntimeArch[],
 ): VerifiedNextRuntime[] {
-  const targets = nextRuntimeTargets(platform, hostArch)
+  const targets = nextRuntimeTargets(platform, hostArch, process.env, macCpus)
   if (targets.length === 0 || !existsSync(runtimeRoot)) return []
   try {
-    const verified = verifyNextRuntimeTree(runtimeRoot, platform, expectedVersion, hostArch)
+    const verified = verifyNextRuntimeTree(runtimeRoot, platform, expectedVersion, hostArch, macCpus)
     const expectedArchs = new Set<string>(targets.map(item => item.arch))
     if (readdirSync(runtimeRoot).some(entry => !expectedArchs.has(entry))) return []
     const lock = readPrimaryRuntimeLock()
@@ -259,12 +293,17 @@ if (invokedPath !== undefined && resolve(invokedPath) === fileURLToPath(import.m
   const version = expectedNextVersion(desktopRoot)
   const arch = runtimeBuildArch(process.platform)
   const paths = nextRuntimeBuildPaths(desktopRoot, arch)
-  const reusable = reusableNextRuntimeTree(paths.runtime, process.platform, version)
+  // `dev` and `start` run this entry, and the development shell selects the payload of its own CPU (src/main.ts), so a
+  // Mac prepares that one, as upstream's development launcher does. Packaging prepares every CPU through package.ts.
+  const macCpus = arch !== undefined ? [arch] as const
+    : process.platform === 'darwin' ? [process.arch === 'x64' ? 'x64' : 'arm64'] as const : undefined
+  const reusable = reusableNextRuntimeTree(paths.runtime, process.platform, version, process.arch, macCpus)
   if (reusable.length > 0) {
     console.log(`Reusing prepared primary runtime for ${reusable.map(item => item.arch).join(', ')}`)
   } else {
-    const root = await prepareNextRuntime({ desktopRoot, platform: process.platform, version })
-    verifyNextRuntimeTree(root, process.platform, version)
-    smokeNextRuntime(root, process.platform)
+    const root = await prepareNextRuntime({ desktopRoot, platform: process.platform, version, macCpus })
+    verifyNextRuntimeTree(root, process.platform, version, process.arch, macCpus)
+    smokeNextRuntime(root, process.platform, console.log, process.arch, macCpus)
   }
+  if (macCpus !== undefined) prepareCuaNative(desktopRoot, macCpus)
 }

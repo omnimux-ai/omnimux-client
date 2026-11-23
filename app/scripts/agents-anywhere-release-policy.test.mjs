@@ -77,7 +77,7 @@ test('rejects the retired Desktop compatibility patch', t => {
   assert.throws(() => assertPreparedAaRelease(root, commit), /root resolution references a different AA artifact/)
 })
 
-for (const [schemaVersion, cosmokitVersion] of [['3.18.2', '1.8.3'], ['3.18.4', '1.8.5'], ['3.18.5', '1.8.6']]) {
+for (const [schemaVersion, cosmokitVersion] of [['3.18.2', '1.8.3'], ['3.18.4', '1.8.5'], ['3.18.5', '1.8.6'], ['3.19.0', '1.9.0']]) {
   test(`pins the AA staging type graph for schemastery ${schemaVersion} while keeping Desktop runtime peer ranges`, t => {
     const { root } = fixture(t)
     const packagePath = join(root, 'staged')
@@ -132,7 +132,7 @@ test('rejects stale installed code despite updated manifests and provenance', t 
 
 test('requires rebuilding the AA peer patch after a Desktop runtime update', t => {
   const { root, patch } = fixture(t)
-  patch('dsh-plugin-desktop-beta/package.json', data => { data.dependencies[AA_PEERS[0]] = '0.1.6-alpha.3' })
+  patch('dsh-desktop-next/package.json', data => { data.dependencies[AA_PEERS[0]] = '0.1.6-alpha.3' })
   assert.throws(() => assertPreparedAaRelease(root, commit), /runtime peers have changed/)
 })
 

@@ -7,8 +7,8 @@ import { fileURLToPath } from 'node:url'
 import { assertAppImage, assertDebArchive, assertElfExecutable } from '../../dsh-plugin-desktop/scripts/verify-linux-artifacts.ts'
 import { assertPortableExecutable } from '../../dsh-plugin-desktop/scripts/verify-win-installer.ts'
 import { packagingStep } from './packaging-step.ts'
+import { linuxPackageTargets } from './package-targets.ts'
 
-// Pinned Builder's installer.nsh and installSection.nsh emit these at the installation root.
 const uninstallExecutable = 'Uninstall OmniMux.exe'
 const uninstallIcon = 'uninstallerIcon.ico'
 
@@ -23,7 +23,6 @@ function payloadFiles(directory: string): string[] {
     .map(entry => relative(directory, join(entry.parentPath, entry.name))).sort()
 }
 
-/** Cross-check all installed app files and the two NSIS files added at install time. */
 export async function compareInstalledPayload(unpacked: string, installed: string, sourceIcon: string): Promise<{ fileCount: number; sha256: string }> {
   const expected = new Set(payloadFiles(unpacked))
   const actual = new Set(payloadFiles(installed).filter(file => file !== uninstallExecutable && file !== uninstallIcon))
@@ -32,7 +31,6 @@ export async function compareInstalledPayload(unpacked: string, installed: strin
   if (missing.length > 0 || extra.length > 0) {
     throw new Error(`Next NSIS extracted file list differs from win-unpacked. Missing (${missing.length}): ${JSON.stringify(missing.slice(0, 8))}. Unexpected (${extra.length}): ${JSON.stringify(extra.slice(0, 8))}.`)
   }
-
   assertPortableExecutable(join(installed, uninstallExecutable), 'Next NSIS uninstaller')
   if (await fileHash(join(installed, uninstallIcon)) !== await fileHash(sourceIcon)) {
     throw new Error('Next NSIS uninstaller icon does not match the configured icon')
@@ -77,9 +75,11 @@ async function verifyArtifacts(): Promise<void> {
     if (!header.equals(Buffer.from([0x50, 0x4b, 0x03, 0x04]))) throw new Error(`Next portable archive is not a ZIP archive: ${archivePath}`)
     assertPortableExecutable(join(root, 'dist', 'win-unpacked', 'OmniMux.exe'), 'Next application')
   } else if (verifyMode === 'linux') {
-    assertAppImage(join(root, 'dist', `OmniMux-${version}-x86_64.AppImage`), 'Next AppImage')
-    assertDebArchive(join(root, 'dist', `OmniMux-${version}-amd64.deb`), 'Next Debian package')
-    assertElfExecutable(join(root, 'dist', 'linux-unpacked', 'dsh-desktop-next'), 'Next Linux application')
+    const arm64 = process.arch === 'arm64'
+    const targets = linuxPackageTargets(process.env)
+    if (targets.includes('AppImage')) assertAppImage(join(root, 'dist', `OmniMux-${version}-${arm64 ? 'arm64' : 'x86_64'}.AppImage`), 'Next AppImage')
+    if (targets.includes('deb')) assertDebArchive(join(root, 'dist', `OmniMux-${version}-${arm64 ? 'arm64' : 'amd64'}.deb`), 'Next Debian package')
+    assertElfExecutable(join(root, 'dist', arm64 ? 'linux-arm64-unpacked' : 'linux-unpacked', 'dsh-desktop-next'), 'Next Linux application')
   } else {
     const installer = join(root, 'dist', `OmniMux-${version}-x64-Setup.exe`)
     const unpacked = join(root, 'dist', 'win-unpacked')

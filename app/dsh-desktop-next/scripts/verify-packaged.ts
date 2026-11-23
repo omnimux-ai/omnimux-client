@@ -2,8 +2,8 @@
 import { existsSync, readdirSync, statSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { execFileSync } from 'node:child_process'
-import { archivedPayload, auditNextPayload, nextPackagingTarget, payloadDir, verifyArchiveAgainstPrepared, verifyNextPayload, verifyUpdaterManifestShim } from './packaged-payload.ts'
-import { expectedNextVersion, verifyNextRuntimeTree } from './prepare-runtime.ts'
+import { archivedPayload, auditNextPayload, payloadDir, preparedPackagingTarget, verifyArchiveAgainstPrepared, verifyNextPayload, verifyUpdaterManifestShim } from './packaged-payload.ts'
+import { expectedNextVersion, verifyPackagedNextRuntime } from './prepare-runtime.ts'
 import { DESKTOP_RUNTIME_FILE } from '../src/runtime-tree.ts'
 import { packagingStepSync } from './packaging-step.ts'
 import { verifyWindowsCodeUnpacked } from './windows-asar-unpack.ts'
@@ -14,20 +14,27 @@ export const verifiedPackagedResources = new Set<string>()
 
 interface PackContext {
   appOutDir: string
+  /** electron-builder's `Arch`. */
+  arch: number
   electronPlatformName: string
   packager: { projectDir: string; appInfo: { version: string; productFilename?: string } }
 }
+
+/** Names of electron-builder's `Arch` values that macOS packages use. */
+const BUILDER_ARCHS: Readonly<Record<number, string>> = { 1: 'x64', 3: 'arm64', 4: 'universal' }
 
 /**
  * Electron Builder's afterPack hook. The archive and its unpacked files are one copy of the
  * installation; the prepared tree with its sealed descriptor is another. The archive must be
  * complete and resolvable, carry nothing the Desktop file policy omits, keep native and
  * shell-executed files unpacked, embed the prepared descriptor byte for byte, and match its
- * inventory exactly; the interpreter payloads copied as extra resources must declare this
- * platform, every CPU and the product version; macOS must carry the manifest copy that the
- * updaters of earlier releases read beside the archive, and nothing else there. Universal macOS
- * builds run this once per CPU and once more on the merged application; all three archives come
- * from the same prepared tree, and the merge may only have re-serialized nested `Info.plist` files.
+ * inventory exactly; the interpreter payloads copied as extra resources must be those of the
+ * payload's CPUs and no other, declaring this platform, their CPU and the product version; a
+ * payload prepared for one macOS CPU must be packaged as the application for that CPU; macOS must
+ * carry the manifest copy that the updaters of earlier releases read beside the archive, and
+ * nothing else there. Universal macOS builds run this once per CPU and once more on the merged
+ * application; all three archives come from the same prepared tree, and the merge may only have
+ * re-serialized nested `Info.plist` files.
  * @param context - Electron Builder's afterPack context.
  */
 export default async function afterPack(context: PackContext): Promise<void> {
@@ -39,7 +46,11 @@ export default async function afterPack(context: PackContext): Promise<void> {
     return
   }
   const platform = context.electronPlatformName as NodeJS.Platform
-  const target = nextPackagingTarget(platform)
+  const target = preparedPackagingTarget(context.packager.projectDir, platform)
+  if (target.platform !== platform) throw new Error(`Next payload was prepared for ${target.platform}, not for the ${platform} package being built`)
+  if (platform === 'darwin' && target.archs.length === 1 && BUILDER_ARCHS[context.arch] !== target.archs[0]) {
+    throw new Error(`Next payload was prepared for ${target.archs[0]!}, but electron-builder packaged ${BUILDER_ARCHS[context.arch] ?? `architecture ${String(context.arch)}`}`)
+  }
   if (platform === 'darwin') {
     const appPath = join(context.appOutDir, `${context.packager.appInfo.productFilename ?? 'OmniMux'}.app`)
     const info = writeAppBuildInfo(appPath, process.env.DSH_BUILD_CHANNEL ?? 'package-dir', {
@@ -65,7 +76,7 @@ export default async function afterPack(context: PackContext): Promise<void> {
       + `OmniMux ${release.version}, dsh ${release.dshVersion}, Electron ${release.electronVersion}, pnpm ${release.pnpmVersion}`
       + (rewrittenPlists.length === 0 ? '' : `; the universal merge rewrote ${rewrittenPlists.join(', ')}`))
   } finally { source.close() }
-  const runtimes = packagingStepSync('runtime:verify-packaged', () => verifyNextRuntimeTree(join(resources, 'runtime'), platform, expectedNextVersion(context.packager.projectDir)))
+  const runtimes = packagingStepSync('runtime:verify-packaged', () => verifyPackagedNextRuntime(join(resources, 'runtime'), platform, expectedNextVersion(context.packager.projectDir), target.archs))
   for (const runtime of runtimes) console.log(`Verified the ${runtime.arch} primary runtime: Python ${runtime.manifest.python}, Node ${runtime.manifest.node}, pnpm ${runtime.manifest.pnpm}`)
   // Thin any universal (fat) Mach-O binaries to the target architecture.
   // Upstream deps (@trycua, lxml, etc.) ship universal binaries that trigger

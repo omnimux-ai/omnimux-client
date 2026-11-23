@@ -30,7 +30,8 @@ describe('payload exclusions', () => {
     for (const name of [
       '@deepseek-ai/libreoffice-kit',
       '@deepseek-ai/libreoffice-kit-darwin-arm64',
-      '@deepseek-ai/dsh-office-to-pdf',
+      '@deepseek-ai/dsh-office-kit',
+      '@deepseek-ai/dsh-tool-office',
       '@deepseek-ai/dsh-skill-office',
       '@deepseek-ai/dsh-experimental-voice-input-bundle',
       '@deepseek-ai/dsh-experimental-speech-to-text',
@@ -63,7 +64,7 @@ describe('payload exclusions', () => {
 
     // Without these the profile still lists a bundle whose package the payload
     // dropped, and the Host refuses to start.
-    expect(disabled).toContain('office-to-pdf')
+    expect(disabled).toContain('office-kit')
     expect(disabled).toContain('skill-office')
     expect(disabled).toContain('voice-input')
     expect(disabled).toContain('agents-anywhere-bridge')

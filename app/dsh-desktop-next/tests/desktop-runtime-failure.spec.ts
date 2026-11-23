@@ -1,0 +1,250 @@
+import { mkdtemp, rm, symlink } from 'node:fs/promises'
+import { readFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterEach, expect, it, vi } from 'vitest'
+import { NextDesktopRuntime } from '../src/desktop-runtime.ts'
+import { DesktopHostExitError, DesktopHostFatalError, DesktopHostProcess, type DesktopHostObserver } from '../src/host-process.ts'
+import { hostCrash } from '../src/host-crash.ts'
+import { historyFiles } from '../src/log-history.ts'
+
+vi.mock('../src/web-document.ts', async importOriginal => ({
+  ...await importOriginal<typeof import('../src/web-document.ts')>(),
+  authenticateWebHost: vi.fn(async () => 'dsh-session=fixture'),
+}))
+
+const runtimes: NextDesktopRuntime[] = []
+const directories: string[] = []
+afterEach(async () => {
+  await Promise.all(runtimes.splice(0).map(runtime => runtime.close()))
+  await Promise.all(directories.splice(0).map(directory => rm(directory, { recursive: true, force: true })))
+  vi.restoreAllMocks()
+})
+
+async function fixture(options: Partial<ConstructorParameters<typeof NextDesktopRuntime>[0]> = {}, prepare?: (home: string) => Promise<void>) {
+  const home = await mkdtemp(join(tmpdir(), 'next-failure-stage-'))
+  directories.push(home)
+  await prepare?.(home)
+  const onFailure = vi.fn()
+  const runtime = new NextDesktopRuntime({
+    home, root: home, executable: process.execPath, addresses: () => ['127.0.0.1'],
+    certificate: async () => { throw new Error('No LAN certificate in this test') },
+    onFailure, onChange() {}, onRestart() {}, onTerminal() {}, onNotification() {},
+    memoryProbe: { appMetrics: () => [{ type: 'Browser', pid: 1, cpu: { percentCPUUsage: 0 }, memory: { workingSetSize: 1024 } }] },
+    ...options,
+  })
+  runtimes.push(runtime)
+  const history = () => historyFiles(join(home, 'logs')).flatMap(file => readFileSync(file.file, 'utf8').trim().split('\n').filter(Boolean).map(line => JSON.parse(line) as { event: string; fields?: Record<string, unknown> }))
+  return { runtime, onFailure, history }
+}
+
+it('reports a Host that dies after readiness as a running Plugin Host failure, after its memory snapshot is on disk', async () => {
+  let host: DesktopHostProcess | undefined
+  vi.spyOn(DesktopHostProcess.prototype, 'stop').mockResolvedValue()
+  vi.spyOn(DesktopHostProcess.prototype, 'start').mockImplementation(function (this: DesktopHostProcess) {
+    host = this
+    return Promise.resolve({ url: 'http://127.0.0.1:43120/?token=fixture', injections: [] })
+  })
+  const { runtime, onFailure, history } = await fixture()
+  await runtime.start()
+  expect(runtime.backend.state.phase).toBe('ready')
+  let snapshotOnDisk = false
+  onFailure.mockImplementation(() => { snapshotOnDisk = history().some(record => record.event === 'memory.snapshot') })
+  // What the child's close handler does: observe the exit, then report the failure to the backend.
+  const internals = host as unknown as { observer: DesktopHostObserver; onFailure(error: Error): void }
+  internals.observer.exited!({ code: 3221225477, signal: null, expected: false }, 4242)
+  internals.onFailure(new DesktopHostExitError(3221225477, null, 'dsh-desktop-next: outbound proxy = none'))
+  expect(onFailure).toHaveBeenCalledOnce()
+  expect(snapshotOnDisk).toBe(true)
+  const state = runtime.state()
+  expect(state).toMatchObject({ failureStage: 'host-runtime', failureExit: { code: 3221225477, signal: null, output: 'dsh-desktop-next: outbound proxy = none' } })
+  expect(state.failure).toContain('exited with 0xC0000005 (3221225477, STATUS_ACCESS_VIOLATION)')
+  expect(history().find(record => record.event === 'runtime.failed')?.fields).toEqual({ stage: 'host-runtime' })
+  expect(history().find(record => record.event === 'memory.snapshot')?.fields).toMatchObject({ triggers: 'host unexpected 0xC0000005', samples: 1 })
+})
+
+it('reports a Host that ends during startup as Plugin Host startup and clears the failure on the next start', async () => {
+  vi.spyOn(DesktopHostProcess.prototype, 'stop').mockResolvedValue()
+  const start = vi.spyOn(DesktopHostProcess.prototype, 'start').mockRejectedValueOnce(new DesktopHostExitError(3221225477, null, ''))
+  const { runtime, onFailure } = await fixture()
+  await expect(runtime.start()).rejects.toThrow('0xC0000005')
+  await vi.waitFor(() => expect(onFailure).toHaveBeenCalledOnce())
+  expect(runtime.state()).toMatchObject({ failureStage: 'host-boot', failureExit: { code: 3221225477, signal: null, output: '' } })
+  start.mockResolvedValueOnce({ url: 'http://127.0.0.1:43120/?token=fixture', injections: [] })
+  await runtime.start()
+  expect(runtime.state()).not.toHaveProperty('failureStage')
+  expect(runtime.state()).not.toHaveProperty('failureExit')
+  expect(runtime.state()).not.toHaveProperty('failureReport')
+  expect(runtime.state()).not.toHaveProperty('failureContext')
+})
+
+it('names preparation and Desktop action failures without inventing a Host exit', async () => {
+  const { runtime, onFailure } = await fixture({ prepareEnvironment: async () => { throw new Error('login shell timed out') } })
+  await expect(runtime.start()).rejects.toThrow('login shell timed out')
+  await vi.waitFor(() => expect(onFailure).toHaveBeenCalledOnce())
+  expect(runtime.state()).toMatchObject({ failureStage: 'shell-environment', failure: 'login shell timed out' })
+  expect(runtime.state()).not.toHaveProperty('failureExit')
+  const { runtime: actions } = await fixture()
+  actions.report(new Error('Profile is unavailable for Desktop Next'))
+  expect(actions.state()).toMatchObject({ failureStage: 'desktop-runtime', failure: 'Profile is unavailable for Desktop Next' })
+})
+
+it('keeps the failure that opened recovery and reports a later failed action beside it', async () => {
+  const { runtime, onFailure, history } = await fixture({ prepareEnvironment: async () => { throw new Error('login shell timed out', { cause: new Error('initial activation failed; token=abcdef') }) } })
+  await expect(runtime.start()).rejects.toThrow('login shell timed out')
+  await vi.waitFor(() => expect(onFailure).toHaveBeenCalledOnce())
+  const report = await runtime.failureReportFile()
+  expect(report).toMatch(/-shell-environment\.log$/u)
+  const context = runtime.state().failureContext!
+  expect(context).toContain('initial activation failed; token=****')
+  expect(context).not.toContain('abcdef')
+  runtime.diagnostics.append('later recovery action')
+  runtime.report(new Error('Diagnostics export failed: token=abcdef'))
+  expect(runtime.state()).toMatchObject({ failureStage: 'shell-environment', failure: 'login shell timed out', actionFailure: 'Diagnostics export failed: token=****' })
+  runtime.report(new Error('Renderer recovery exhausted'), 'renderer-runtime')
+  expect(runtime.state()).toMatchObject({ failureStage: 'shell-environment', failure: 'login shell timed out' })
+  expect(onFailure).toHaveBeenCalledOnce()
+  expect(await runtime.failureReportFile()).toBe(report)
+  expect(runtime.state().failureContext).toBe(context)
+  expect(context).not.toContain('later recovery action')
+  expect(history().filter(record => record.event === 'runtime.failed').map(record => record.fields)).toEqual([
+    { stage: 'shell-environment' },
+    { stage: 'desktop-runtime', recoveryReason: 'shell-environment' },
+    { stage: 'renderer-runtime', recoveryReason: 'shell-environment' },
+  ])
+})
+
+it('lets a failure of the Desktop itself replace a failed action as the reason', async () => {
+  const { runtime, onFailure } = await fixture()
+  runtime.report(new Error('Could not open the terminal'))
+  runtime.report(new Error('Diagnostics export failed'))
+  expect(runtime.state()).toMatchObject({ failureStage: 'desktop-runtime', failure: 'Could not open the terminal', actionFailure: 'Diagnostics export failed' })
+  runtime.report(new DesktopHostExitError(1, null, ''), 'host-runtime')
+  expect(runtime.state()).toMatchObject({ failureStage: 'host-runtime', failureExit: { code: 1, signal: null, output: '' } })
+  expect(runtime.state()).not.toHaveProperty('actionFailure')
+  expect(onFailure).toHaveBeenCalledTimes(2)
+})
+
+it('passes the fatal line a Host exit carries to recovery, masked like its stderr (#1574)', async () => {
+  const { runtime } = await fixture()
+  runtime.report(new DesktopHostExitError(1, null, 'plugin teardown', 'dsh: fatal load failure: Error: Authorization: Bearer abcdef'), 'host-runtime')
+  expect(runtime.state().failureExit).toEqual({ code: 1, signal: null, output: 'plugin teardown', fatal: 'dsh: fatal load failure: Error: Authorization: Bearer ****' })
+  const { runtime: crashed } = await fixture()
+  crashed.report(new DesktopHostExitError(3221225477, null, ''), 'host-runtime')
+  expect(crashed.state().failureExit).toStrictEqual({ code: 3221225477, signal: null, output: '' })
+})
+
+it('saves a masked report of the failure that opened recovery, with the Host diagnostic', async () => {
+  vi.spyOn(DesktopHostProcess.prototype, 'stop').mockResolvedValue()
+  vi.spyOn(DesktopHostProcess.prototype, 'start').mockRejectedValueOnce(new DesktopHostFatalError('dsh-desktop-next: startup failed',
+    'StartupError: dsh-desktop-next: startup failed\nConfiguration file: /profiles/desktop/cordis.yml\nAuthorization: Bearer abcdef'))
+  const { runtime, onFailure } = await fixture()
+  runtime.diagnostics.begin({ version: '2.0.21-next', platform: 'darwin' })
+  await expect(runtime.start()).rejects.toThrow('startup failed')
+  await vi.waitFor(() => expect(onFailure).toHaveBeenCalledOnce())
+  expect(runtime.state()).not.toHaveProperty('portConflict')
+  const file = await runtime.failureReportFile()
+  expect(file).toMatch(/[\\/]logs[\\/]dsh-desktop-next-failure-[^\\/]+-host-boot\.log$/u)
+  expect(runtime.state().failureReport).toEqual({ status: 'saved', file })
+  const text = readFileSync(file!, 'utf8')
+  expect(text).toContain(`stage: host-boot\nrun: ${runtime.diagnostics.runId}\nversion: 2.0.21-next\nplatform: darwin\narch: ${process.arch}\nprofile: desktop\n`)
+  expect(text).toContain('--- failure (as shown in the recovery assistant) ---\ndsh-desktop-next: startup failed\n')
+  expect(text).toContain('Configuration file: /profiles/desktop/cordis.yml\nAuthorization: Bearer ****\n')
+  expect(text).not.toContain('--- error details ---')
+  expect(text).not.toContain('packages in its stack')
+})
+
+it('names the port another program holds when the Host cannot listen on it', async () => {
+  vi.spyOn(DesktopHostProcess.prototype, 'stop').mockResolvedValue()
+  vi.spyOn(DesktopHostProcess.prototype, 'start').mockRejectedValueOnce(new DesktopHostFatalError('dsh-desktop-next: startup failed',
+    'StartupError: dsh-desktop-next: 1 required entry did not activate\nwebserver (@deepseek-ai/dsh-host-webserver): failed: Error: listen EADDRINUSE: address already in use 127.0.0.1:3000'))
+  const { runtime, onFailure } = await fixture()
+  runtime.writePreferences({ ...runtime.preferences, port: 3000 })
+  await expect(runtime.start()).rejects.toThrow('startup failed')
+  await vi.waitFor(() => expect(onFailure).toHaveBeenCalledOnce())
+  expect(runtime.state().portConflict).toEqual({ address: '127.0.0.1:3000', port: 3000 })
+  runtime.report(new Error('Invalid Next Profile manifest'), 'profile-composition')
+  expect(runtime.state().portConflict).toEqual({ address: '127.0.0.1:3000', port: 3000 })
+  // Switched to an automatic port, the Host cannot conflict on its next start.
+  runtime.writePreferences({ ...runtime.preferences, port: 0 })
+  expect(runtime.state()).not.toHaveProperty('portConflict')
+})
+
+it('reports a fail-loud Host crash with its block, the packages in its stack and the retained stderr', async () => {
+  const { runtime } = await fixture()
+  const stderr = 'dsh-desktop-next: outbound proxy = none\n[flaky] tick\ndsh: fatal uncaught exception: TypeError: tick failed\n'
+    + '    at tick (/profile/node_modules/.pnpm/dsh-flaky@2.1.0/node_modules/dsh-flaky/lib/index.js:4:7)\n[flaky] disposing token=private-value\n'
+  runtime.report(new DesktopHostExitError(1, null, '[flaky] disposing', 'dsh: fatal uncaught exception: TypeError: tick failed', { stderr, crash: hostCrash(stderr) }), 'host-runtime')
+  const text = readFileSync((await runtime.failureReportFile())!, 'utf8')
+  expect(text).toContain('--- Host fatal error (as the Host printed it before exiting) ---\ndsh: fatal uncaught exception: TypeError: tick failed\n    at tick (/profile/')
+  expect(text).toContain('packages in its stack, innermost first: dsh-flaky@2.1.0\nfirst package outside DeepSeek Harness: dsh-flaky@2.1.0\n')
+  expect(text).toContain('--- Host stderr (oldest first) ---\ndsh-desktop-next: outbound proxy = none\n[flaky] tick\n')
+  expect(text).not.toContain('private-value')
+})
+
+it('includes repeat counts not yet due in the failure report it writes', async () => {
+  const { runtime, onFailure } = await fixture()
+  for (let index = 0; index < 5; index++) runtime.diagnostics.hostChunk(`[plugin] reconnect failed attempt=${index}\n`, 'stderr', 9)
+  runtime.report(new Error('Invalid Next Profile manifest'), 'profile-composition')
+  expect(onFailure).toHaveBeenCalledOnce()
+  const text = readFileSync((await runtime.failureReportFile())!, 'utf8')
+  expect(text).toContain('[plugin] reconnect failed attempt=0 [host.stderr] output')
+  expect(text).toMatch(/\[host\.stderr\] output\.repeated \{"repeats":4,/u)
+})
+
+it.skipIf(process.platform === 'win32')('keeps recovery usable when the report cannot be saved', async () => {
+  const outside = await mkdtemp(join(tmpdir(), 'next-failure-outside-'))
+  directories.push(outside)
+  const { runtime, onFailure } = await fixture({}, home => symlink(outside, join(home, 'logs')))
+  runtime.report(new Error('Invalid Next Profile manifest'), 'profile-composition')
+  expect(onFailure).toHaveBeenCalledOnce()
+  expect(await runtime.failureReportFile()).toBeUndefined()
+  expect(runtime.state().failureContext).toContain('Invalid Next Profile manifest')
+  expect(runtime.state()).toMatchObject({ failureStage: 'profile-composition', failure: 'Invalid Next Profile manifest', failureReport: { status: 'failed' } })
+})
+
+it('appends what the renderer was drawing to the failure report it writes', async () => {
+  const executeJavaScript = vi.fn(async () => ({
+    view: { visibility: 'visible', focused: false, reducedMotion: false, width: 1280, height: 840, devicePixelRatio: 2 },
+    dom: { elements: 99 },
+    animations: [{ name: 'dsh-state-dot-spin', target: 'svg', pseudo: '::before', iterations: null, infinite: true, currentTime: 12 }],
+    animationsTotal: 1,
+    layers: [],
+    frameLoop: { frames: 30, elapsedMs: 750, framesPerSecond: 40, sampledBy: 'raf' },
+    longTasks: null,
+  }))
+  const { runtime, history } = await fixture({ renderer: () => ({ isDestroyed: () => false, executeJavaScript }) })
+  runtime.report(new Error('the interface failed'))
+  const file = await runtime.failureReportFile()
+  if (file === undefined) throw new Error('expected a saved failure report')
+  await vi.waitFor(() => { expect(readFileSync(file, 'utf8')).toContain('--- renderer at failure ---') })
+  expect(readFileSync(file, 'utf8')).toContain('dsh-state-dot-spin on svg::before (infinite)')
+  expect(executeJavaScript).toHaveBeenCalledOnce()
+  await vi.waitFor(() => { expect(history().some(record => record.event === 'failure.snapshot' && record.fields?.available === true)).toBe(true) })
+})
+
+it('writes a report without renderer evidence when no window exists to ask', async () => {
+  const { runtime, history } = await fixture()
+  runtime.report(new Error('startup failed'), 'runtime-bootstrap')
+  const file = await runtime.failureReportFile()
+  if (file === undefined) throw new Error('expected a saved failure report')
+  await vi.waitFor(() => { expect(history().some(record => record.event === 'failure.snapshot' && record.fields?.reason === 'no-window')).toBe(true) })
+  expect(readFileSync(file, 'utf8')).not.toContain('--- renderer at failure ---')
+})
+
+it('falls back to the last known renderer sample when the page cannot answer', async () => {
+  const { runtime } = await fixture({ rendererEvidence: () => ({
+    sample: {
+      available: true as const, sampledAt: '2026-11-13T00:00:00.000Z', sampleMs: 500,
+      view: { visibility: 'visible', focused: true, reducedMotion: false, width: 1280, height: 840, devicePixelRatio: 2 },
+      dom: { elements: 12 }, animations: [], animationsTotal: 0, layers: [],
+      frameLoop: { frames: 30, elapsedMs: 500, framesPerSecond: 60, sampledBy: 'raf' as const },
+      longTasks: null,
+    },
+    ageMs: 42_000,
+  }) })
+  runtime.report(new Error('the interface stopped answering'), 'renderer-runtime')
+  const file = await runtime.failureReportFile()
+  if (file === undefined) throw new Error('expected a saved failure report')
+  await vi.waitFor(() => { expect(readFileSync(file, 'utf8')).toContain('last known: 42 s before the failure') })
+})

@@ -150,7 +150,9 @@ it('puts the macOS sidebar brand row in the traffic-light band, left-aligned in 
   expect(rule("html[data-platform='darwin'] [class*='_topStrip']")).toMatch(/pointer-events: none/)
   expect(rule("html[data-platform='darwin'] [class*='_topStrip'] > *")).toMatch(/pointer-events: auto/)
   // Full screen hides the traffic lights, so the brand returns to the left edge.
-  expect(rule(`html[data-platform='darwin'][data-fullscreen] ${expanded}`)).toMatch(/padding-left: 4px/)
+  const fullscreen = rule(`html[data-platform='darwin'][data-fullscreen] ${expanded}`)
+  expect(fullscreen).toMatch(/padding-left: 44px/)
+  expect(fullscreen).toMatch(/margin-right: 0/)
   // The collapsed rail is never lifted.
   expect(css).not.toMatch(/html\[data-platform='darwin'\][^{]*(?<!_root'\]:not\(\[class\*='_collapsed'\]\) > )\[class\*='_topStrip'\] \+ \[class\*='_logoRow'\]/)
 })

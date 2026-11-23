@@ -1,8 +1,10 @@
+import { EventEmitter } from 'node:events'
 import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { installFailLoud } from '@deepseek-ai/dsh-app-boot'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { DesktopHostFatalError, DesktopHostProcess, DesktopHostUncleanExitError } from '../src/host-process.ts'
+import { DesktopHostExitError, DesktopHostFatalError, DesktopHostProcess, DesktopHostUncleanExitError, exitFatalLine } from '../src/host-process.ts'
 
 const roots: string[] = []
 const hosts: DesktopHostProcess[] = []
@@ -153,6 +155,35 @@ describe('desktop host process', () => {
     await expect(host.updateTasks('inspect')).rejects.toThrow('Host is unavailable')
   })
 
+  it('asks a starting Host which Loader entries hold it, and refuses a malformed answer (#1617)', async () => {
+    const runtime = projectWithHost(`
+      let asked = 0
+      process.on('message', message => {
+        if (message.type !== 'startup-entries') return
+        asked++
+        if (asked === 1) process.send({ type: 'startup-entries', requestId: message.requestId, entries: [{ id: 'magpie-mcp-deepwiki', name: '@deepseek-ai/dsh-mcp-client', phase: 'starting', waitedMs: 46700 }] })
+        else if (asked === 2) process.send({ type: 'startup-entries', requestId: message.requestId, error: 'The Host has not started loading plugins' })
+        else process.send({ type: 'startup-entries', requestId: message.requestId, entries: [{ id: 'fixture', name: 'fixture', phase: 'active', waitedMs: 1 }] })
+      })
+      // Readiness never comes; this tells the test the listener above is in place.
+      process.send({ type: 'notification', notification: { outcome: 'turn-failed' } })
+    `)
+    const onFailure = vi.fn()
+    let listening!: () => void
+    const listener = new Promise<void>(resolve => { listening = resolve })
+    const host = new DesktopHostProcess(process.execPath, runtime, runtime, undefined, process.env, onFailure,
+      undefined, undefined, undefined, undefined, () => { listening() })
+    hosts.push(host)
+    await expect(host.startupEntries()).rejects.toThrow('Next Host is unavailable')
+    const starting = host.start()
+    await listener
+    expect(await host.startupEntries()).toEqual([{ id: 'magpie-mcp-deepwiki', name: '@deepseek-ai/dsh-mcp-client', phase: 'starting', waitedMs: 46700 }])
+    await expect(host.startupEntries()).rejects.toThrow('The Host has not started loading plugins')
+    await expect(host.startupEntries()).rejects.toThrow('invalid IPC event')
+    await expect(starting).rejects.toThrow('invalid IPC event')
+    expect(onFailure).toHaveBeenCalledOnce()
+  })
+
   it.each([
     'process.exit(17)',
     'process.exit(0)',
@@ -233,24 +264,81 @@ describe('desktop host process', () => {
     expect(failure).toHaveBeenCalledWith(new Error('plugin unavailable'))
   })
 
-  it('reports a child crash after readiness with its stderr diagnostic', async () => {
+  it('reports a child crash after readiness with its exit, observed first, and its stderr labelled as possibly unrelated', async () => {
     const runtime = projectWithHost()
     const failure = vi.fn()
-    const host = hostProcess(runtime, runtime, failure)
+    const exited = vi.fn()
+    const host = new DesktopHostProcess(process.execPath, runtime, runtime, undefined, process.env, failure,
+      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, { exited })
+    hosts.push(host)
     const { url } = await host.start()
     await fetch(new URL('/crash', url))
     await expect.poll(() => failure.mock.calls.length).toBe(1)
-    expect(failure).toHaveBeenCalledWith(new Error('dsh desktop host exited with 7: plugin crashed'))
+    const [error] = failure.mock.calls[0] as [DesktopHostExitError]
+    expect(error).toBeInstanceOf(DesktopHostExitError)
+    expect(error.message).toBe('dsh desktop host exited with code 7\nLast Host stderr (may be unrelated to the exit):\nplugin crashed')
+    expect([error.exitCode, error.signal, error.output]).toEqual([7, null, 'plugin crashed'])
+    expect(exited).toHaveBeenCalledExactlyOnceWith({ code: 7, signal: null, expected: false }, expect.any(Number))
+    expect(exited.mock.invocationCallOrder[0]).toBeLessThan(failure.mock.invocationCallOrder[0]!)
+  })
+
+  it('delivers validated Host memory pushes to the observer without logging them as IPC traffic', async () => {
+    const runtime = projectWithHost(HTTP_HOST.replace("process.send({ type: 'ready'",
+      "process.send({ type: 'memory', rss: 5, heapTotal: 4, heapUsed: 3, external: 2, arrayBuffers: 1 }); process.send({ type: 'ready'"))
+    const memory = vi.fn()
+    const exited = vi.fn()
+    const diagnostic = vi.fn()
+    const host = new DesktopHostProcess(process.execPath, runtime, runtime, undefined, process.env, undefined,
+      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, diagnostic, { memory, exited })
+    hosts.push(host)
+    await host.start()
+    expect(memory).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ rss: 5, heapTotal: 4, heapUsed: 3, external: 2, arrayBuffers: 1 }), expect.any(Number))
+    expect(diagnostic.mock.calls.map(([record]) => record.fields?.type)).not.toContain('memory')
+    await host.stop()
+    expect(exited).toHaveBeenCalledExactlyOnceWith({ code: 0, signal: null, expected: true }, expect.any(Number))
   })
 
   it('retains only recent diagnostics from a noisy child', async () => {
     const runtime = projectWithHost('process.stderr.write(\'discarded-prefix\' + \'x\'.repeat(70_000) + \'recent-failure\', () => { process.exitCode = 7; process.disconnect() })')
     const failure = await hostProcess(runtime).start().catch((error: unknown) => error)
-    expect(failure).toBeInstanceOf(Error)
+    expect(failure).toBeInstanceOf(DesktopHostExitError)
     const message = (failure as Error).message
     expect(message).not.toContain('discarded-prefix')
     expect(message.endsWith('recent-failure')).toBe(true)
-    expect(message.length).toBeLessThan(66_000)
+    expect((failure as DesktopHostExitError).output.length).toBe(4096)
+  })
+
+  it('carries the fatal line the Host printed before its teardown pushed it out of the stderr tail (#1574)', async () => {
+    const runtime = projectWithHost(`
+const report = "dsh: fatal load failure: MeshCallError: Call deadline exceeded\\n    at localDeadlineError (client.js:781:12)\\n"
+process.stderr.write("plugin started\\n" + report + "plugin teardown\\n".repeat(400), () => { process.exitCode = 1; process.disconnect() })
+`)
+    const failure = await hostProcess(runtime).start().catch((error: unknown) => error)
+    expect(failure).toBeInstanceOf(DesktopHostExitError)
+    const exit = failure as DesktopHostExitError
+    expect(exit.fatal).toBe('dsh: fatal load failure: MeshCallError: Call deadline exceeded')
+    expect(exit.output).not.toContain('fatal load failure')
+    expect(exit.message).toBe(`dsh desktop host exited with code 1\nHost fatal error: ${exit.fatal!}\nLast Host stderr (may be unrelated to the exit):\n${exit.output}`)
+    // The whole block and the retained stderr travel beside the message, for the failure report.
+    expect(exit.crash).toEqual({ label: 'load failure', text: 'dsh: fatal load failure: MeshCallError: Call deadline exceeded\n    at localDeadlineError (client.js:781:12)', packages: [] })
+    expect(exit.stderr?.startsWith('plugin started\n')).toBe(true)
+  })
+
+  it('records a fail-loud crash with the packages in its stack before the exit it causes', async () => {
+    const runtime = projectWithHost(`
+const report = "dsh-desktop-next: fatal uncaught exception: TypeError: tick failed\\n    at tick (/profile/node_modules/.pnpm/dsh-flaky@2.1.0/node_modules/dsh-flaky/lib/index.js:4:7)\\n"
+process.stderr.write(report + "[flaky] disposing\\n", () => { process.exitCode = 1; process.disconnect() })
+`)
+    const diagnostic = vi.fn()
+    const host = new DesktopHostProcess(process.execPath, runtime, runtime, undefined, process.env, undefined,
+      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, diagnostic)
+    hosts.push(host)
+    const failure = await host.start().catch((error: unknown) => error) as DesktopHostExitError
+    expect(failure.crash?.packages).toEqual(['dsh-flaky@2.1.0'])
+    const records = diagnostic.mock.calls.map(([record]) => record).filter(record => record.source === 'host.process')
+    expect(records.map(record => record.event).slice(-2)).toEqual(['fatal', 'exit'])
+    expect(records.at(-2)).toMatchObject({ level: 'error', message: 'dsh-desktop-next: fatal uncaught exception: TypeError: tick failed',
+      fields: { label: 'uncaught exception', packages: 'dsh-flaky@2.1.0', outsidePackage: 'dsh-flaky@2.1.0' } })
   })
 
   it('settles teardown when the executable cannot be spawned', async () => {
@@ -277,6 +365,8 @@ describe('desktop host process', () => {
     ["process.send({ type: 'fatal', message: 'startup failed' }); process.disconnect()", 'startup failed'],
     ["process.send({ type: 'ready', url: 4 })", 'invalid IPC event'],
     ["process.send({ type: 'fatal', message: 'startup failed', diagnostic: 42 })", 'invalid IPC event'],
+    ["process.send({ type: 'memory', rss: -1, heapTotal: 0, heapUsed: 0, external: 0, arrayBuffers: 0 })", 'invalid IPC event'],
+    ["process.send({ type: 'memory', rss: 1.5, heapTotal: 0, heapUsed: 0, external: 0 })", 'invalid IPC event'],
     ['process.exit(0)', 'host stopped'],
   ])('rejects startup when the child fails before readiness: %s', async (source, message) => {
     const host = hostProcess(projectWithHost(source))
@@ -297,25 +387,47 @@ describe('desktop host process', () => {
   })
 
   it('carries Platform credentials over private IPC and clears them on shutdown', async () => {
-    const runtime = projectWithHost(HTTP_HOST.replace("process.send({ type: 'ready'", "process.send({ type: 'platform-session', session: { origin: 'https://platform.deepseek.com', token: 'fixture-secret', embeddedPageDist: 'feat/test' } }); process.send({ type: 'ready'"))
+    const runtime = projectWithHost(HTTP_HOST.replace("process.send({ type: 'ready'", "process.send({ type: 'platform-session', session: { origin: 'https://platform.deepseek.com', userId: 'fixture-user', token: 'fixture-secret', embeddedPageDist: 'feat/test' } }); process.send({ type: 'ready'"))
     const changed = vi.fn()
     const host = new DesktopHostProcess(process.execPath, runtime, runtime, undefined, process.env, undefined,
       undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, changed)
     hosts.push(host)
     await host.start()
-    expect(changed).toHaveBeenCalledWith({ origin: 'https://platform.deepseek.com', token: 'fixture-secret', embeddedPageDist: 'feat/test' })
+    expect(changed).toHaveBeenCalledWith({ origin: 'https://platform.deepseek.com', userId: 'fixture-user', token: 'fixture-secret', embeddedPageDist: 'feat/test' })
     await host.stop()
     expect(changed).toHaveBeenLastCalledWith(null)
   })
 
+  it('lets a stopping Host withdraw its Platform credentials but not install new ones', async () => {
+    const runtime = projectWithHost(HTTP_HOST.replace("if (message.type !== 'shutdown') return", [
+      "if (message.type !== 'shutdown') return",
+      "  process.send({ type: 'platform-session', session: { origin: 'https://platform.deepseek.com', userId: null, token: 'late-secret' } })",
+      "  process.send({ type: 'platform-session', session: null })",
+    ].join('\n')))
+    const changed = vi.fn()
+    const received: string[] = []
+    const host = new DesktopHostProcess(process.execPath, runtime, runtime, undefined, process.env, undefined,
+      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, changed, undefined,
+      (input) => { if (input.event === 'received') received.push(String(input.fields?.type)) })
+    hosts.push(host)
+    await host.start()
+    await host.stop()
+    expect(received.filter(type => type === 'platform-session')).toHaveLength(2)
+    expect(changed).not.toHaveBeenCalledWith(expect.objectContaining({ token: 'late-secret' }))
+    expect(changed).toHaveBeenLastCalledWith(null)
+  })
+
   it.each([
-    ["{ origin: 'https://platform.deepseek.com', token: '' }", 'an empty credential'],
-    ["{ origin: 'http://platform.deepseek.com', token: 'secret' }", 'a plaintext non-loopback origin'],
-    ["{ origin: 'https://user:pass@platform.deepseek.com', token: 'secret' }", 'embedded userinfo'],
-    ["{ origin: 'https://platform.deepseek.com/app', token: 'secret' }", 'a path beyond the origin'],
-    ["{ origin: 'https://platform.deepseek.com', token: 'secret', requestHeaders: { 'X-Deploy': 'a' } }", 'an upper-case header name'],
-    ["{ origin: 'https://platform.deepseek.com', token: 'secret', requestHeaders: { authorization: 'a' } }", 'a forbidden header'],
-    ["{ origin: 'https://platform.deepseek.com', token: 'secret', requestHeaders: { 'x-deploy': 'a\\r\\nx: b' } }", 'a header value carrying CRLF'],
+    ["{ origin: 'https://platform.deepseek.com', userId: null, token: '' }", 'an empty credential'],
+    ["{ origin: 'http://platform.deepseek.com', userId: null, token: 'secret' }", 'a plaintext non-loopback origin'],
+    ["{ origin: 'https://user:pass@platform.deepseek.com', userId: null, token: 'secret' }", 'embedded userinfo'],
+    ["{ origin: 'https://platform.deepseek.com/app', userId: null, token: 'secret' }", 'a path beyond the origin'],
+    ["{ origin: 'https://platform.deepseek.com', userId: null, token: 'secret', requestHeaders: { 'X-Deploy': 'a' } }", 'an upper-case header name'],
+    ["{ origin: 'https://platform.deepseek.com', userId: null, token: 'secret', requestHeaders: { authorization: 'a' } }", 'a forbidden header'],
+    ["{ origin: 'https://platform.deepseek.com', userId: null, token: 'secret', requestHeaders: { 'x-deploy': 'a\\r\\nx: b' } }", 'a header value carrying CRLF'],
+    ["{ origin: 'https://platform.deepseek.com', token: 'secret' }", 'no account ID'],
+    ["{ origin: 'https://platform.deepseek.com', userId: '', token: 'secret' }", 'an empty account ID'],
+    ["{ origin: 'https://platform.deepseek.com', userId: 7, token: 'secret' }", 'a numeric account ID'],
   ])('refuses a Platform session with %s (%s)', async (session) => {
     const host = hostProcess(projectWithHost(`process.send({ type: 'platform-session', session: ${session} })`))
     await expect(host.start()).rejects.toThrow('invalid IPC event')
@@ -343,5 +455,37 @@ describe('desktop host process', () => {
   ])('refuses a Platform sign-in request %s (%s)', async (event) => {
     const host = hostProcess(projectWithHost(`process.send(${event})`))
     await expect(host.start()).rejects.toThrow('invalid IPC event')
+  })
+})
+
+describe('Host fatal line', () => {
+  /** What the DSH runtime's fail-loud handler writes for one fatal process event. */
+  function failLoudReport(event: 'unhandledRejection' | 'uncaughtException', error: Error): string {
+    let written = ''
+    const proc = Object.assign(new EventEmitter(), { stderr: { write(chunk: string) { written += chunk } }, exit: vi.fn() })
+    const uninstall = installFailLoud('dsh', proc)
+    try {
+      proc.emit(event, error)
+    } finally {
+      uninstall()
+    }
+    expect(proc.exit).toHaveBeenCalledWith(1)
+    return written
+  }
+
+  it('finds the line the DSH runtime prints when it fails loud, among other Host output (#1574)', () => {
+    const report = failLoudReport('unhandledRejection', new Error('Call deadline exceeded'))
+    expect(exitFatalLine(`remote-web-ui: relay lease claim failed\n${report}(node:28708) PromiseRejectionHandledWarning: Promise rejection was handled asynchronously (rejection id: 3804)\n`))
+      .toBe('dsh: fatal load failure: Error: Call deadline exceeded')
+    expect(exitFatalLine(failLoudReport('uncaughtException', new TypeError('listener failed'))))
+      .toBe('dsh: fatal uncaught exception: TypeError: listener failed')
+  })
+
+  it('ignores output that only mentions a fatal failure and bounds a long line', () => {
+    expect(exitFatalLine('plugin: fatal error: disk full\n[bridge] dsh: fatal load failure: quoted\n')).toBeUndefined()
+    expect(exitFatalLine('')).toBeUndefined()
+    const long = exitFatalLine(`dsh: fatal load failure: Error: ${'x'.repeat(2000)}\n`)
+    expect(long).toHaveLength(1024)
+    expect(long?.endsWith('…')).toBe(true)
   })
 })

@@ -8,7 +8,7 @@
       "commit": "7032436500d850f6d2c02c047081e0c5184df905",
       "exportedFiles": 1419,
       "submodules": {
-        "app/deepseek-harness": "1f81c047fc48fa190a683e469daa699857e9afe8"
+        "app/deepseek-harness": "9c2670d3bce5275e0d1610272958121af87787bb"
       },
       "sourceNote": "private development fork, archived read-only; the public source tree is this repository"
     },

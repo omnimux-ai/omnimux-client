@@ -11,10 +11,14 @@ import { macReleaseArchitecture } from '../../dsh-plugin-desktop/scripts/release
 import { probeMacRelease, type ProbedMacIdentity } from '../../dsh-plugin-desktop/scripts/mac-signing-probe.ts'
 import { withoutMacReleaseSecrets } from '../../dsh-plugin-desktop/scripts/release-preflight.ts'
 import { packageMacSmoke } from '../../dsh-plugin-desktop/scripts/package-mac.ts'
+import { macSmokeArchitecture } from '../../dsh-plugin-desktop/scripts/mac-universal.ts'
 import { createWindowsPackageOptions, packageWindowsArtifact, packageWindowsInstaller } from '../../dsh-plugin-desktop/scripts/package-win.ts'
-import { prepareNextMacRuntime } from './mac-runtime.ts'
+import { DESKTOP_RUNTIME_FILE } from '../src/runtime-tree.ts'
+import { assertMacPackagesRunnable, macPackageCpus, macReleaseArchs, macReleaseNotarization, prepareNextMacRuntime, stagePackagedRuntime, type MacPackageArch, type MacPackageCpu } from './mac-runtime.ts'
+import { linuxPackageTargets, macSmokeTarget } from './package-targets.ts'
+import { rosettaAvailable } from './primary-runtime.ts'
 import { runNextPackagingCommand } from './packaging-command.ts'
-import { expectedNextVersion, nextRuntimeBuildPaths, prepareNextRuntime, reusableNextRuntimeTree, runtimeBuildArch, smokeNextRuntime, verifyNextRuntimeTree } from './prepare-runtime.ts'
+import { expectedNextVersion, nextRuntimeBuildPaths, prepareNextRuntime, reusableNextRuntimeTree, runtimeBuildArch, smokeNextRuntime, verifyNextRuntimeTree, verifyPackagedNextRuntime } from './prepare-runtime.ts'
 import { macSigningEnvironment } from './sign-packaged.ts'
 import { packagingStep, packagingStepSync } from './packaging-step.ts'
 
@@ -112,34 +116,45 @@ async function prepareInterpreters(): Promise<void> {
     // The signed build exercises the verified final bytes inside the signing hook.
     if (macSigningIdentity === undefined) packagingStepSync('runtime:smoke-primary', () => smokeNextRuntime(root, process.platform))
   }
+
   interpretersVerified = true
 }
 /**
  * Materialize and seal the payload electron-builder archives. A separate process keeps the
  * manifest transformer it borrows from electron-builder out of this entry point.
  * @param platform - Platform being packaged.
+ * @param macArch - The macOS package the payload is for.
  */
-const preparePayload = (platform: NodeJS.Platform): void => packagingStepSync('payload:total', () => {
+const preparePayload = (platform: NodeJS.Platform, macArch?: MacPackageArch): void => packagingStepSync('payload:total', () => {
   const result = spawnSync(process.execPath, [join(desktopRoot, 'scripts', 'prepare-payload.ts'), '--platform', platform,
+    ...(macArch === undefined ? [] : ['--arch', macArch]),
     ...(TEST_BUILD_VERSION === undefined ? [] : ['--version', TEST_BUILD_VERSION])], { cwd: desktopRoot, env: process.env, stdio: 'inherit' })
   if (result.error) throw result.error
   if (result.status !== 0) throw new Error(`Next payload preparation exited with ${String(result.status)}`)
 })
 /**
  * The shared flows call this right before electron-builder: the interpreter payloads were prepared
- * before they started and must still verify, and the archive payload is prepared now.
+ * before they started and must still verify, and the archive payload is prepared now. A macOS
+ * package also gets its own copy of the interpreter payloads of its CPUs, which its extra
+ * resources take as `Resources/runtime`.
  * @param platform - Platform being packaged; the shared flows package the host platform.
+ * @param macArch - The macOS package: a release names each in turn, other builds follow `DSH_MAC_SMOKE_ARCH`.
  */
-const prepareRuntime = (platform: NodeJS.Platform = process.platform): void => {
-  if (platform === 'darwin') prepareNextMacRuntime(desktopRoot)
+const prepareRuntime = (platform: NodeJS.Platform = process.platform, macArch: MacPackageArch = macSmokeArchitecture(process.env)): void => {
+  const cpus = macPackageCpus(macArch)
+  const runtime = nextRuntimeBuildPaths(desktopRoot).runtime
+  if (platform === 'darwin') prepareNextMacRuntime(desktopRoot, cpus)
   if (!interpretersVerified || platform !== process.platform) {
     verifyNextRuntimeTree(nextRuntimeBuildPaths(desktopRoot, runtimeBuildArch(platform)).runtime, platform, buildVersion)
   }
-  if (process.env.DSH_WINDOWS_REUSE_UNPACKED === '1' && existsSync(join(desktopRoot, '.desktop-build', 'payload', '.dsh-desktop-runtime.json'))) {
+  if (platform === 'darwin') {
+    packagingStepSync('runtime:stage-package', () => verifyPackagedNextRuntime(stagePackagedRuntime(desktopRoot, runtime, cpus), platform, buildVersion, cpus))
+  }
+  if (process.env.DSH_WINDOWS_REUSE_UNPACKED === '1' && existsSync(join(desktopRoot, '.desktop-build', 'payload', DESKTOP_RUNTIME_FILE))) {
     console.log('Reusing prepared payload for unpacked Windows application directory.')
     return
   }
-  preparePayload(platform)
+  preparePayload(platform, platform === 'darwin' ? macArch : undefined)
 }
 const outputDir = process.env.DSH_MAC_RELEASE_OUTPUT === undefined
   ? join(desktopRoot, 'dist', mode === 'mac' ? 'mac-release' : 'mac-smoke')
@@ -165,8 +180,9 @@ if (mode === 'dir') {
     ...(mode === 'mac-app' ? { packageTarget: 'dir' as const, notarize: false, verify: false } : {}),
   })
 } else if (mode === 'mac-smoke') {
+  assertMacPackagesRunnable([macSmokeArchitecture(process.env)], process.arch, rosettaAvailable)
   await prepareInterpreters()
-  packageMacSmoke({ ...shared, workspaceRoot, arch: process.arch, nodeVersion: process.versions.node,
+  packageMacSmoke({ ...shared, workspaceRoot, arch: process.arch, nodeVersion: process.versions.node, target: macSmokeTarget(process.env),
     builderCli: require.resolve('electron-builder/cli.js'), verifier: join(desktopRoot, 'scripts/verify-mac-smoke.ts'), nodeExecutable: process.execPath })
 } else if (mode === 'win') {
   await prepareInterpreters()
@@ -180,6 +196,7 @@ if (mode === 'dir') {
 } else if (mode === 'linux') {
   await prepareInterpreters()
   const linuxOptions = createLinuxPackageOptions()
-  packageLinuxArtifacts({ ...linuxOptions, env: { ...linuxOptions.env, DSH_PACKAGE_VERIFY_MODE: 'linux' }, desktopRoot, workspaceRoot, run, prepareRuntime,
+  // The interpreter payload and the archive audit follow the host CPU, so both Linux CPUs package natively.
+  packageLinuxArtifacts({ ...linuxOptions, supportedArchs: ['x64', 'arm64'], targets: linuxPackageTargets(process.env), env: { ...linuxOptions.env, DSH_PACKAGE_VERIFY_MODE: 'linux' }, desktopRoot, workspaceRoot, run, prepareRuntime,
     verifier: join(desktopRoot, 'scripts/verify-win-installer.ts') })
 } else throw new Error('Expected dir, mac, mac-app, mac-smoke, win, win-portable or linux')

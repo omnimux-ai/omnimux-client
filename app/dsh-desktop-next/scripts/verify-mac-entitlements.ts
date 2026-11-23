@@ -17,18 +17,17 @@ const readEntitlements: ReadEntitlements = (path, arch) => {
 }
 
 /**
- * Every packaged CPU slice and every Electron Helper must retain microphone access.
- * A single-architecture release carries one slice, so the caller states which ones exist.
+ * Every slice a package carries, in the main app and every Electron Helper, must retain microphone access.
+ * @param appPath - The mounted application.
+ * @param read - Reads the entitlements of one slice of a signed bundle.
+ * @param slices - Slices the package carries: both for the universal application, one for a single-CPU package.
  */
-export function verifyNextMacEntitlements(
-  appPath: string,
-  read: ReadEntitlements = readEntitlements,
-  arches: readonly string[] = ['arm64', 'x86_64'],
-): void {
+export function verifyNextMacEntitlements(appPath: string, read: ReadEntitlements = readEntitlements,
+  slices: readonly string[] = ['arm64', 'x86_64']): void {
   const targets = [appPath, ...['', ' (Renderer)', ' (GPU)', ' (Plugin)']
     .map(suffix => join(appPath, 'Contents', 'Frameworks', `OmniMux Helper${suffix}.app`))]
   for (const target of targets) {
-    for (const arch of arches) {
+    for (const arch of slices) {
       const entitlements = read(target, arch)
       for (const key of NEXT_MAC_REQUIRED_ENTITLEMENTS) {
         if (entitlements[key] !== true) throw new Error(`Missing macOS entitlement ${key} in ${target} (${arch})`)
