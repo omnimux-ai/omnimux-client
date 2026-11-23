@@ -750,6 +750,7 @@ for (const name of plugins) {
           off: () => {},
           emit: () => {},
           agents: { get: () => null, list: () => [] },
+          agentPresets: { get: () => null, list: () => [], register: () => () => {} },
           connection: { get: () => null, list: () => [] },
           textComplete: { complete: async () => '' },
           workspaceRegistry: { get: () => null, list: () => [] },
