@@ -29,7 +29,8 @@
 
 <p align="center">
   <a href="#quick-start">快速上手</a> ·
-  <a href="#capabilities">核心能力</a> ·
+  <a href="#showcase">带货案例</a> ·
+  <a href="#capabilities">界面与能力</a> ·
   <a href="#ecosystem">技能与生态</a> ·
   <a href="#models">模型路由</a> ·
   <a href="#architecture">架构与开发</a> ·
@@ -39,6 +40,13 @@
 
 <p align="center">
   <a href="../README.md">English</a> · <strong>简体中文</strong>
+</p>
+
+<p align="center">
+  <img src="readme/ui/omnimux-workbench-hero.jpg" width="100%" alt="OmniMux 桌面工作台首页 — Agent 对话、内容电商快捷入口与模板广场">
+</p>
+<p align="center">
+  <sub>OmniMux 桌面工作台：将 Agent 对话、热门带货快捷入口与探索模板集成于本地客户端。</sub>
 </p>
 
 ---
@@ -86,9 +94,111 @@
 
 ---
 
-<a id="capabilities"></a>
+<a id="showcase"></a>
 
-## ✨ 核心能力与人机双面工作台
+## 🎬 带货视频案例展示
+
+围绕商品档案、可复用视觉资产与多模态工作流模板，覆盖内容电商常见竖屏带货成片形态：
+
+### 商品广告大片与视觉钩子
+
+<table width="100%">
+  <tr>
+    <td width="33%" align="center" valign="top">
+      <picture>
+        <source media="(prefers-reduced-motion: reduce)" srcset="readme/showcase/pet-food-commercial.jpg">
+        <img src="readme/showcase/pet-food-commercial.gif" width="220" alt="宠物食品 3D 视效与棚拍商品广告">
+      </picture><br>
+      <strong>3D 视效商品大片</strong><br>
+      <sub>动态倒粮开场自然衔接暖光棚拍包装特写，商品主体与袋身信息保持一致</sub>
+    </td>
+    <td width="33%" align="center" valign="top">
+      <picture>
+        <source media="(prefers-reduced-motion: reduce)" srcset="readme/showcase/apparel-tryon.jpg">
+        <img src="readme/showcase/apparel-tryon.gif" width="220" alt="服饰平铺图转街头走秀试穿视频">
+      </picture><br>
+      <strong>服饰平铺转动态试穿</strong><br>
+      <sub>单张商品平铺图一键延展为多角度模特上身与街头走秀质感画面</sub>
+    </td>
+    <td width="33%" align="center" valign="top">
+      <picture>
+        <source media="(prefers-reduced-motion: reduce)" srcset="readme/showcase/energy-drink-ad.jpg">
+        <img src="readme/showcase/energy-drink-ad.gif" width="220" alt="功能饮品霓虹微距商业广告">
+      </picture><br>
+      <strong>饮品霓虹微距广告</strong><br>
+      <sub>冰霜挂珠微距与高对比霓虹光影节奏，适合快消新品首秀与投流测试</sub>
+    </td>
+  </tr>
+</table>
+
+### UGC 达人口播与种草评测
+
+<table width="100%">
+  <tr>
+    <td width="33%" align="center" valign="top">
+      <picture>
+        <source media="(prefers-reduced-motion: reduce)" srcset="readme/showcase/probiotics-ugc.jpg">
+        <img src="readme/showcase/probiotics-ugc.gif" width="220" alt="益生菌海外达人厨房自拍口播评测">
+      </picture><br>
+      <strong>达人第一视角自拍口播</strong><br>
+      <sub>生活化自然光厨房场景手持商品口播，穿插瓶身卖点近景展示</sub>
+    </td>
+    <td width="33%" align="center" valign="top">
+      <picture>
+        <source media="(prefers-reduced-motion: reduce)" srcset="readme/showcase/beauty-lipgloss-ugc.jpg">
+        <img src="readme/showcase/beauty-lipgloss-ugc.gif" width="220" alt="唇釉上妆实测与质地特写">
+      </picture><br>
+      <strong>美妆上妆与质地特写</strong><br>
+      <sub>真实涂抹过程、刷头展示与镜面成膜近景验证，直击美妆转化痛点</sub>
+    </td>
+    <td width="33%" align="center" valign="top">
+      <picture>
+        <source media="(prefers-reduced-motion: reduce)" srcset="readme/showcase/skincare-serum-ugc.jpg">
+        <img src="readme/showcase/skincare-serum-ugc.gif" width="220" alt="精华液窗边自然光种草口播">
+      </picture><br>
+      <strong>护肤品窗边真实种草</strong><br>
+      <sub>柔和窗边光线口播评测，全程清晰呈现滴管瓶与标签细节</sub>
+    </td>
+  </tr>
+</table>
+
+### 强钩子开场与实机演示
+
+<table width="100%">
+  <tr>
+    <td width="33%" align="center" valign="top">
+      <picture>
+        <source media="(prefers-reduced-motion: reduce)" srcset="readme/showcase/headphones-promo.jpg">
+        <img src="readme/showcase/headphones-promo.gif" width="220" alt="耳机街头防摔实测与大促钩子">
+      </picture><br>
+      <strong>耐用实测与大促强钩子</strong><br>
+      <sub>街头防摔动作开场叠加限时折扣牌提示，快速锁住前三秒完播</sub>
+    </td>
+    <td width="33%" align="center" valign="top">
+      <picture>
+        <source media="(prefers-reduced-motion: reduce)" srcset="readme/showcase/totebag-street-hook.jpg">
+        <img src="readme/showcase/totebag-street-hook.gif" width="220" alt="托特包街头人群追逐创意开场">
+      </picture><br>
+      <strong>街头追逐创意吸睛钩子</strong><br>
+      <sub>强戏剧冲突第一视角街头镜头，突出箱包配饰的视觉焦点</sub>
+    </td>
+    <td width="33%" align="center" valign="top">
+      <picture>
+        <source media="(prefers-reduced-motion: reduce)" srcset="readme/showcase/travel-app-demo.jpg">
+        <img src="readme/showcase/travel-app-demo.gif" width="220" alt="软件与网页应用真机屏幕演示">
+      </picture><br>
+      <strong>软件与数字商品实机演示</strong><br>
+      <sub>主播手持笔记本界面讲解与屏幕内容同步展示，适配 App 与 SaaS 推广</sub>
+    </td>
+  </tr>
+</table>
+
+---
+
+<a id="capabilities"></a>
+<a id="interface"></a>
+
+## ✨ 客户端界面与人机双面工作台
 
 所有核心模块均采用**双面交付**：可视化操作界面与 Agent 工具面共享同一套底层存储、参数校验与撤销/恢复逻辑。
 
@@ -102,6 +212,26 @@
 
 > 从画布打开 `video_composition` 节点即可直连剪辑工坊；导出成片后，新版本 MP4 会自动回写至画布下游节点。
 
+### 多模态工作流无限画布
+
+在可视化 DAG 画布上自由串联创意 Brief、商品参考图、分镜帧、A/B 变体、视频生成与成片导出节点，随时由你与 Agent 协同接力：
+
+<p align="center">
+  <img src="readme/ui/omnimux-workflow-canvas.jpg" width="100%" alt="OmniMux 多模态无限画布 — 串联脚本 Brief、商品参考图、分镜帧、A/B 创意变体、视频生成与成片导出">
+</p>
+
+### 创作资产中心与探索模板广场
+
+在创作资产中心沉淀可复用的**角色、场景、风格包与道具**，并从探索模板广场一键进入精选带货短视频应用：
+
+<p align="center">
+  <img src="readme/ui/omnimux-asset-center.jpg" width="100%" alt="OmniMux 创作资产中心 — 统一管理角色、场景、风格包与道具素材">
+</p>
+
+<p align="center">
+  <img src="readme/ui/omnimux-explore-apps.jpg" width="100%" alt="OmniMux 探索模板广场与王牌短视频应用">
+</p>
+
 ---
 
 <a id="ecosystem"></a>
@@ -114,6 +244,10 @@ OmniMux 基于 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harnes
 - **标准 `SKILL.md` 扩展**：支持把团队常用出片 SOP 封装为标准 `SKILL.md` 技能目录 — 详见 [`plugins/plugins/omnimux-market/README.md`](../plugins/plugins/omnimux-market/README.md) 与 [`plugins/docs/contracts/plugin-agent-tools-inventory.md`](../plugins/docs/contracts/plugin-agent-tools-inventory.md)。
 - **可组合 Cordis 插件体系**：各工作台模块均基于共享 UI 套件（`plugins/packages/dsh-ui-kit`）与执行中枢 Seam 接口解耦开发 — 详见 [插件开发文档](../app/docs/plugin-development.md)。
 - **原生桌面与移动协同**：自动托管本地运行时、首次配置向导与系统托盘控制；内置 **Agents Anywhere** 手机远程连接，可在 iOS / Android 随时查看出片进度并追发指令。
+
+<p align="center">
+  <img src="readme/ui/omnimux-skills-catalog.jpg" width="100%" alt="OmniMux 内置技能目录 — 覆盖 UGC、视频广告、产品展示、故事分镜、配音与静态广告的内容电商技能">
+</p>
 
 ---
 

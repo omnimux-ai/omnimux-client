@@ -29,7 +29,8 @@
 
 <p align="center">
   <a href="#quick-start">Quick Start</a> ·
-  <a href="#capabilities">Capabilities</a> ·
+  <a href="#showcase">Showcase</a> ·
+  <a href="#capabilities">Interface &amp; Capabilities</a> ·
   <a href="#ecosystem">Skills &amp; Ecosystem</a> ·
   <a href="#models">Models</a> ·
   <a href="#architecture">Architecture</a> ·
@@ -39,6 +40,13 @@
 
 <p align="center">
   <strong>English</strong> · <a href="docs/README.zh-CN.md">简体中文</a>
+</p>
+
+<p align="center">
+  <img src="docs/readme/ui/omnimux-workbench-hero.jpg" width="100%" alt="OmniMux Desktop Workbench — Agent chat, quick-start commerce workflows, and template explorer">
+</p>
+<p align="center">
+  <sub>OmniMux Desktop Workbench: Agent chat, quick-start commerce entry points, and Explore templates in one local-first app.</sub>
 </p>
 
 ---
@@ -86,9 +94,111 @@ Using the core selling points from @Product/Your-Product-Name, plan a 15-second 
 
 ---
 
-<a id="capabilities"></a>
+<a id="showcase"></a>
 
-## ✨ Core Capabilities & Dual-Surface Workbench
+## 🎬 Content Commerce Showcase
+
+Real vertical e-commerce video formats built around product briefs, reusable visual assets, and multimodal workflow templates inside OmniMux:
+
+### Product Commercials & Visual Hooks
+
+<table width="100%">
+  <tr>
+    <td width="33%" align="center" valign="top">
+      <picture>
+        <source media="(prefers-reduced-motion: reduce)" srcset="docs/readme/showcase/pet-food-commercial.jpg">
+        <img src="docs/readme/showcase/pet-food-commercial.gif" width="220" alt="3D VFX Pet Food Product Commercial">
+      </picture><br>
+      <strong>3D VFX Product Spot</strong><br>
+      <sub>Dynamic kibble pour transitioning into a warm studio packshot with consistent packaging</sub>
+    </td>
+    <td width="33%" align="center" valign="top">
+      <picture>
+        <source media="(prefers-reduced-motion: reduce)" srcset="docs/readme/showcase/apparel-tryon.jpg">
+        <img src="docs/readme/showcase/apparel-tryon.gif" width="220" alt="Apparel Flat-Lay to Runway Try-On">
+      </picture><br>
+      <strong>Apparel Runway Try-On</strong><br>
+      <sub>Turn a flat-lay garment photo into multi-angle street lookbook motion</sub>
+    </td>
+    <td width="33%" align="center" valign="top">
+      <picture>
+        <source media="(prefers-reduced-motion: reduce)" srcset="docs/readme/showcase/energy-drink-ad.jpg">
+        <img src="docs/readme/showcase/energy-drink-ad.gif" width="220" alt="Neon Beverage Macro Commercial">
+      </picture><br>
+      <strong>Beverage Macro Commercial</strong><br>
+      <sub>High-contrast condensation macro and kinetic neon lighting for CPG launches</sub>
+    </td>
+  </tr>
+</table>
+
+### UGC Talking-Head & Product Reviews
+
+<table width="100%">
+  <tr>
+    <td width="33%" align="center" valign="top">
+      <picture>
+        <source media="(prefers-reduced-motion: reduce)" srcset="docs/readme/showcase/probiotics-ugc.jpg">
+        <img src="docs/readme/showcase/probiotics-ugc.gif" width="220" alt="Creator Kitchen Selfie Product Review">
+      </picture><br>
+      <strong>Creator Selfie Review</strong><br>
+      <sub>First-person kitchen supplement pitch with authentic daylight framing and pack close-up</sub>
+    </td>
+    <td width="33%" align="center" valign="top">
+      <picture>
+        <source media="(prefers-reduced-motion: reduce)" srcset="docs/readme/showcase/beauty-lipgloss-ugc.jpg">
+        <img src="docs/readme/showcase/beauty-lipgloss-ugc.gif" width="220" alt="Beauty Lip Gloss Swatch and Demo">
+      </picture><br>
+      <strong>Beauty Swatch &amp; Demo</strong><br>
+      <sub>On-skin application, wand reveal, and close-up finish proof for cosmetics</sub>
+    </td>
+    <td width="33%" align="center" valign="top">
+      <picture>
+        <source media="(prefers-reduced-motion: reduce)" srcset="docs/readme/showcase/skincare-serum-ugc.jpg">
+        <img src="docs/readme/showcase/skincare-serum-ugc.gif" width="220" alt="Skincare Serum Dropper Talking-Head Review">
+      </picture><br>
+      <strong>Skincare Talking-Head</strong><br>
+      <sub>Window-light serum demonstration keeping bottle branding clear throughout the cut</sub>
+    </td>
+  </tr>
+</table>
+
+### Promo Hooks & Product Walkthroughs
+
+<table width="100%">
+  <tr>
+    <td width="33%" align="center" valign="top">
+      <picture>
+        <source media="(prefers-reduced-motion: reduce)" srcset="docs/readme/showcase/headphones-promo.jpg">
+        <img src="docs/readme/showcase/headphones-promo.gif" width="220" alt="Headphones Street Drop-Test Promo Hook">
+      </picture><br>
+      <strong>Durability &amp; Promo Hook</strong><br>
+      <sub>Scroll-stopping street drop-test opening paired with a seasonal campaign callout</sub>
+    </td>
+    <td width="33%" align="center" valign="top">
+      <picture>
+        <source media="(prefers-reduced-motion: reduce)" srcset="docs/readme/showcase/totebag-street-hook.jpg">
+        <img src="docs/readme/showcase/totebag-street-hook.gif" width="220" alt="Tote Bag Street Crowd Viral Hook">
+      </picture><br>
+      <strong>Viral Street Chase Hook</strong><br>
+      <sub>High-energy urban POV opener spotlighting everyday carry accessories</sub>
+    </td>
+    <td width="33%" align="center" valign="top">
+      <picture>
+        <source media="(prefers-reduced-motion: reduce)" srcset="docs/readme/showcase/travel-app-demo.jpg">
+        <img src="docs/readme/showcase/travel-app-demo.gif" width="220" alt="Interactive App and SaaS Product Walkthrough">
+      </picture><br>
+      <strong>Interactive App Walkthrough</strong><br>
+      <sub>Presenter-led live laptop screen demonstration for apps, software, and digital services</sub>
+    </td>
+  </tr>
+</table>
+
+---
+
+<a id="capabilities"></a>
+<a id="interface"></a>
+
+## ✨ Interface & Dual-Surface Workbench
 
 Every core OmniMux module ships with a **dual surface**: a visual interface for direct control and matching Agent tools backed by the exact same local store, schema validation, and undo/recovery logic.
 
@@ -102,6 +212,26 @@ Every core OmniMux module ships with a **dual surface**: a visual interface for 
 
 > Opening a `video_composition` node on the canvas opens Clip Studio bound to that node; exporting a new MP4 writes the revision straight back to downstream canvas nodes automatically.
 
+### Infinite Multimodal Workflow Canvas
+
+Wire briefs, product references, storyboard frames, A/B hooks, video generation nodes, and final export cuts on one visual DAG co-edited by you and your Agent:
+
+<p align="center">
+  <img src="docs/readme/ui/omnimux-workflow-canvas.jpg" width="100%" alt="OmniMux Infinite Multimodal Workflow Canvas — Creative brief, product assets, storyboard frames, A/B hooks, video generation, and final export connected on a visual DAG">
+</p>
+
+### Creative Asset Center & Featured Video Apps
+
+Organize reusable **Characters, Scenes, Style Packs, and Props** locally in the Asset Center, and launch vertical commerce formats straight from Explore Templates & Featured Video Apps:
+
+<p align="center">
+  <img src="docs/readme/ui/omnimux-asset-center.jpg" width="100%" alt="OmniMux Creative Asset Center — Manage reusable characters, scenes, style packs, and props">
+</p>
+
+<p align="center">
+  <img src="docs/readme/ui/omnimux-explore-apps.jpg" width="100%" alt="OmniMux Explore Templates and Featured Video Apps">
+</p>
+
 ---
 
 <a id="ecosystem"></a>
@@ -114,6 +244,10 @@ OmniMux is built on [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-h
 - **Standard `SKILL.md` Authoring**: Package repeatable creative playbooks or team SOPs as standard `SKILL.md` directories — see [`plugins/plugins/omnimux-market/README.md`](plugins/plugins/omnimux-market/README.md) and [`plugins/docs/contracts/plugin-agent-tools-inventory.md`](plugins/docs/contracts/plugin-agent-tools-inventory.md).
 - **Composable Cordis Plugins**: Every workbench module (`omnimux-workflow`, `omnimux-clip`, `omnimux-products`, etc.) is a modular plugin consuming shared UI primitives (`plugins/packages/dsh-ui-kit`) and Hub seams — see [Plugin Development](app/docs/plugin-development.en.md).
 - **Native Desktop & Mobile Remote**: Managed local runtime, first-run Setup Wizard, system tray controls, and built-in **Agents Anywhere** support to monitor renders and send follow-ups from iOS or Android.
+
+<p align="center">
+  <img src="docs/readme/ui/omnimux-skills-catalog.jpg" width="100%" alt="OmniMux Built-in Skills Catalog — Content commerce and marketing skills across UGC, Video Ads, Showcase, Storytelling, Voice & Audio, and Images">
+</p>
 
 ---
 
