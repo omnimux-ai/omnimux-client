@@ -28,8 +28,8 @@
 
 <p align="center">
   <a href="#quick-start">Download</a> ·
-  <a href="#use-cases">Use Cases</a> ·
-  <a href="#capabilities">Capabilities</a> ·
+  <a href="#showcase">Showcase</a> ·
+  <a href="#capabilities">Interface &amp; Capabilities</a> ·
   <a href="#models">Models</a> ·
   <a href="#architecture">Architecture &amp; Dev</a> ·
   <a href="#status">Status</a> ·
@@ -38,6 +38,13 @@
 
 <p align="center">
   <strong>English</strong> · <a href="docs/README.zh-CN.md">简体中文</a>
+</p>
+
+<p align="center">
+  <img src="docs/readme/ui/omnimux-workbench-hero.jpg" width="100%" alt="OmniMux Desktop Workbench — Agent chat, quick-start commerce workflows, and template explorer">
+</p>
+<p align="center">
+  <sub>OmniMux Desktop Workbench: Agent chat, quick-start commerce entry points, and Explore templates in one local-first app.</sub>
 </p>
 
 ---
@@ -87,29 +94,102 @@ Using the core selling points from @Product/Your-Product-Name, plan a 15-second 
 
 ---
 
+<a id="showcase"></a>
 <a id="use-cases"></a>
 
-## 🎞️ Use Cases
+## 🎬 Content Commerce Showcase
+
+Real vertical e-commerce video formats built around product briefs, reusable visual assets, and multimodal workflow templates inside OmniMux:
+
+### Product Commercials & Visual Hooks
 
 <table width="100%">
   <tr>
-    <td width="50%" valign="top">
-      <strong>🛍️ Product Catalog to Script &amp; Storyboard</strong><br>
-      Parse landing pages into structured product profiles—selling points, audience, pricing, and path-only local media references—so <code>@Product</code> carries accurate facts straight into hooks, scripts, and visual prompts.
+    <td width="33%" align="center" valign="top">
+      <picture>
+        <source media="(prefers-reduced-motion: reduce)" srcset="docs/readme/showcase/pet-food-commercial.jpg">
+        <img src="docs/readme/showcase/pet-food-commercial.gif" width="220" alt="3D VFX Pet Food Product Commercial">
+      </picture><br>
+      <strong>3D VFX Product Spot</strong><br>
+      <sub>Dynamic kibble pour transitioning into a warm studio packshot with consistent packaging</sub>
     </td>
-    <td width="50%" valign="top">
-      <strong>🔎 Social Capture &amp; Structured Teardown</strong><br>
-      Capture images and videos while browsing with the Chrome companion, group items into local collections, analyze hooks and structure per post or clip, and hand off trimmed clips with notes into a new chat.
+    <td width="33%" align="center" valign="top">
+      <picture>
+        <source media="(prefers-reduced-motion: reduce)" srcset="docs/readme/showcase/apparel-tryon.jpg">
+        <img src="docs/readme/showcase/apparel-tryon.gif" width="220" alt="Apparel Flat-Lay to Runway Try-On">
+      </picture><br>
+      <strong>Apparel Runway Try-On</strong><br>
+      <sub>Turn a flat-lay garment photo into multi-angle street lookbook motion</sub>
+    </td>
+    <td width="33%" align="center" valign="top">
+      <picture>
+        <source media="(prefers-reduced-motion: reduce)" srcset="docs/readme/showcase/energy-drink-ad.jpg">
+        <img src="docs/readme/showcase/energy-drink-ad.gif" width="220" alt="Neon Beverage Macro Commercial">
+      </picture><br>
+      <strong>Beverage Macro Commercial</strong><br>
+      <sub>High-contrast condensation macro and kinetic neon lighting for CPG launches</sub>
     </td>
   </tr>
+</table>
+
+### UGC Talking-Head & Product Reviews
+
+<table width="100%">
   <tr>
-    <td width="50%" valign="top">
-      <strong>🕸️ Infinite Multimodal Workflow Canvas</strong><br>
-      Connect prompt, character reference, first/last-frame video, lip-sync, and music nodes on a DAG canvas with type validation, parallel execution throttling, subgraph runs, and crash-safe checkpoint recovery.
+    <td width="33%" align="center" valign="top">
+      <picture>
+        <source media="(prefers-reduced-motion: reduce)" srcset="docs/readme/showcase/probiotics-ugc.jpg">
+        <img src="docs/readme/showcase/probiotics-ugc.gif" width="220" alt="Creator Kitchen Selfie Product Review">
+      </picture><br>
+      <strong>Creator Selfie Review</strong><br>
+      <sub>First-person kitchen supplement pitch with authentic daylight framing and pack close-up</sub>
     </td>
-    <td width="50%" valign="top">
-      <strong>🎬 Multi-Track Editing with Live AI Control</strong><br>
-      Fine-tune cuts, audio tracks, and overlays in a multi-track timeline and render MP4 locally via WebCodecs/WebGPU. Video composition nodes opened from the canvas write exported cuts straight back to downstream workflow nodes.
+    <td width="33%" align="center" valign="top">
+      <picture>
+        <source media="(prefers-reduced-motion: reduce)" srcset="docs/readme/showcase/beauty-lipgloss-ugc.jpg">
+        <img src="docs/readme/showcase/beauty-lipgloss-ugc.gif" width="220" alt="Beauty Lip Gloss Swatch and Demo">
+      </picture><br>
+      <strong>Beauty Swatch &amp; Demo</strong><br>
+      <sub>On-skin application, wand reveal, and close-up finish proof for cosmetics</sub>
+    </td>
+    <td width="33%" align="center" valign="top">
+      <picture>
+        <source media="(prefers-reduced-motion: reduce)" srcset="docs/readme/showcase/skincare-serum-ugc.jpg">
+        <img src="docs/readme/showcase/skincare-serum-ugc.gif" width="220" alt="Skincare Serum Dropper Talking-Head Review">
+      </picture><br>
+      <strong>Skincare Talking-Head</strong><br>
+      <sub>Window-light serum demonstration keeping bottle branding clear throughout the cut</sub>
+    </td>
+  </tr>
+</table>
+
+### Promo Hooks & Product Walkthroughs
+
+<table width="100%">
+  <tr>
+    <td width="33%" align="center" valign="top">
+      <picture>
+        <source media="(prefers-reduced-motion: reduce)" srcset="docs/readme/showcase/headphones-promo.jpg">
+        <img src="docs/readme/showcase/headphones-promo.gif" width="220" alt="Headphones Street Drop-Test Promo Hook">
+      </picture><br>
+      <strong>Durability &amp; Promo Hook</strong><br>
+      <sub>Scroll-stopping street drop-test opening paired with a seasonal campaign callout</sub>
+    </td>
+    <td width="33%" align="center" valign="top">
+      <picture>
+        <source media="(prefers-reduced-motion: reduce)" srcset="docs/readme/showcase/totebag-street-hook.jpg">
+        <img src="docs/readme/showcase/totebag-street-hook.gif" width="220" alt="Tote Bag Street Crowd Viral Hook">
+      </picture><br>
+      <strong>Viral Street Chase Hook</strong><br>
+      <sub>High-energy urban POV opener spotlighting everyday carry accessories</sub>
+    </td>
+    <td width="33%" align="center" valign="top">
+      <picture>
+        <source media="(prefers-reduced-motion: reduce)" srcset="docs/readme/showcase/travel-app-demo.jpg">
+        <img src="docs/readme/showcase/travel-app-demo.gif" width="220" alt="Interactive App and SaaS Product Walkthrough">
+      </picture><br>
+      <strong>Interactive App Walkthrough</strong><br>
+      <sub>Presenter-led live laptop screen demonstration for apps, software, and digital services</sub>
     </td>
   </tr>
 </table>
@@ -117,26 +197,40 @@ Using the core selling points from @Product/Your-Product-Name, plan a 15-second 
 ---
 
 <a id="capabilities"></a>
+<a id="interface"></a>
 
-## ✨ Core Workbench Capabilities
+## ✨ Interface & Core Workbench Capabilities
 
-### 1. Product Library & Creative Asset Library
+### 1. Product Library & Creative Asset Center
 
 Keep business facts and reusable visual materials structured on disk so you never lose consistency between runs:
 
 - **Product Library (`omnimux-products`)**: Built for sellable products with landing-page link parsing, desktop/mobile capture preview, selling-point and audience fields, and read-only path references that never move or delete your original files.
-- **Creative Asset Library (`omnimux-assets`)**: Organize reusable local objects across six categories—**Character, Scene, Style Pack, Prop, Knowledge Pack, and Custom**—with multi-angle asset management alongside a browsable cloud asset catalog.
+- **Creative Asset Center (`omnimux-assets`)**: Organize reusable local objects across six categories—**Character, Scene, Style Pack, Prop, Knowledge Pack, and Custom**—with multi-angle asset management alongside a browsable cloud asset catalog.
 
-### 2. Inspiration Library & Browser Companion
+<p align="center">
+  <img src="docs/readme/ui/omnimux-asset-center.jpg" width="100%" alt="OmniMux Creative Asset Center — Manage reusable characters, scenes, style packs, and props">
+</p>
 
-Turn everyday research into reusable creative context:
+### 2. Explore Templates, Featured Video Apps & Inspiration
 
+Turn proven content formats and everyday research into structured creative context:
+
+- **Featured Video Apps & Templates**: Browse vertical commerce apps by format—**Hook & Intro, UGC & Review, Cinematic VFX, Fashion Try-On, Durability Test, and Apps & Software**—and jump straight into guided creation.
 - **Inspiration Library (`omnimux-inspiration`)**: Preserves original post copy, separate translations, and multi-media items; supports targeted analysis by **whole post, body text, or individual media**, drag-and-drop local collections, and one-click attachment of prepared clips and notes into chat.
 - **Browser Companion (`omnimux-browser`)**: A Chrome Manifest V3 extension paired over a local authenticated WebSocket bridge, offering hover media capture capsules, structured page reading, and a browser side-panel chat synchronized with your desktop model catalog.
+
+<p align="center">
+  <img src="docs/readme/ui/omnimux-explore-apps.jpg" width="100%" alt="OmniMux Explore Templates and Featured Video Apps">
+</p>
 
 ### 3. Infinite Workflow Canvas & Video Clip Studio
 
 Every core workbench capability ships with a **dual surface**: a visual interface for direct manipulation and matching Agent tools backed by the exact same store and validation logic.
+
+<p align="center">
+  <img src="docs/readme/ui/omnimux-workflow-canvas.jpg" width="100%" alt="OmniMux Infinite Multimodal Workflow Canvas — Creative brief, product assets, storyboard frames, A/B hooks, video generation, and final export connected on a visual DAG">
+</p>
 
 | Workbench | What you can do directly | How your Agent collaborates |
 | --- | --- | --- |
@@ -145,10 +239,14 @@ Every core workbench capability ships with a **dual surface**: a visual interfac
 
 > Opening a `video_composition` node on the canvas launches Clip Studio bound to that workspace and node; once exported, the new MP4 revision commits back to the canvas as a downstream node automatically.
 
-### 4. Skill Market & Native Desktop Experience
+### 4. Built-in Skills Catalog, Plugin Market & Native Desktop Experience
 
-- **Plugin & Skill Market (`omnimux-market`)**: Ships with **120+ content commerce and marketing Skills** (UGC & testimonials, video ads, static ad creatives, product showcases, scripts & storytelling) and **100+ Expert presets**, plus searchable plugins and MCP connectors.
+- **Plugin & Skill Market (`omnimux-market`)**: Ships with **110+ ready-to-use content commerce and marketing Skills** (UGC & testimonials, video ads, static ad creatives, product showcases, storytelling, voice & audio) and **100+ Expert presets**, plus searchable plugins and MCP connectors.
 - **Native Desktop & Mobile Remote**: Managed local runtime, first-run Setup Wizard, system tray controls, and built-in **Agents Anywhere** support so you can check production progress and send follow-ups from iOS or Android.
+
+<p align="center">
+  <img src="docs/readme/ui/omnimux-skills-catalog.jpg" width="100%" alt="OmniMux Built-in Skills Catalog — 113+ content commerce and marketing skills across UGC, Video Ads, Showcase, Storytelling, Voice & Audio, and Images">
+</p>
 
 ---
 
