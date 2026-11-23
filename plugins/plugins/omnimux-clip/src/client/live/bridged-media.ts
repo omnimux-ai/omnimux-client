@@ -1,7 +1,8 @@
-import { isReferenceId, mediaContentDigest, mediaHandleFromLocator, workspaceMediaDigest } from '../../timeline/nativeProjectFields.js';
+import { isReferenceId, mediaContentDigest, mediaHandleFromLocator, sha256Digest, workspaceMediaDigest } from '../../timeline/nativeProjectFields.js';
 import { getTimelineItems } from '../openreel/core/timeline/timeline-items';
 import { interpretedDisplaySize, type MediaItem } from '../openreel/core';
 import { useProjectStore } from '../openreel/web/stores/project-store';
+import { fetchHostMediaBlob } from './host-media';
 import { bridgeMediaLocator } from './media-bridge-source.js';
 import { mediaDigest } from './media-source';
 
@@ -120,4 +121,158 @@ export async function importBridgedMedia(items: readonly MediaBridgeItem[], opti
       onItem?.({ id: item.id, status: 'failed' });
     }
   }
+}
+
+/**
+ * Relink an existing media library entry to an approved OmniMux Asset Library or
+ * workspace media item, preserving `mediaId` and all timeline placements.
+ */
+export async function relinkMediaFromBridgeItem(
+  mediaId: string,
+  item: MediaBridgeItem,
+  options: { signal: AbortSignal; isCurrent: () => boolean },
+): Promise<{ success: boolean; error?: string }> {
+  const { signal } = options;
+  const origin = useProjectStore.getState();
+  const isCurrent = () => {
+    const current = useProjectStore.getState();
+    return !signal.aborted && options.isCurrent() && origin.project.id === current.project.id
+      && origin.actionExecutor === current.actionExecutor;
+  };
+  const target = origin.project.mediaLibrary.items.find(row => row.id === mediaId);
+  if (!target) return { success: false, error: 'Media item not found.' };
+  if (target.type !== item.type) return { success: false, error: 'Media type does not match.' };
+  const url = bridgeMediaLocator(item.url);
+  if (!url || !isReferenceId(item.id) || (item.version !== undefined && !isReferenceId(item.version))) {
+    return { success: false, error: 'The source is not an approved media file.' };
+  }
+  const file = await fetchBridgeFile(url, item, signal);
+  const digest = await mediaDigest(file);
+  if (!isCurrent()) return { success: false, error: 'Editor project changed during relink.' };
+  const workspaceId = /^\/omnimux-workflow\/api\/workspaces\/([^/]+)\/file\?/.exec(url)?.[1];
+  const expectedVersion = workspaceMediaDigest(url, workspaceId);
+  if (expectedVersion && digest !== expectedVersion) {
+    return { success: false, error: 'The source media version changed.' };
+  }
+  const handle = mediaHandleFromLocator(url, workspaceId, digest);
+  const omnimuxSource = {
+    id: item.id,
+    version: item.version ?? `sha256:${digest}`,
+    digest,
+    ...(expectedVersion ? { url } : {}),
+    ...(handle ? { handle } : {}),
+  };
+  const result = await useProjectStore.getState().replaceMediaAsset(mediaId, file, undefined, {
+    isCurrent,
+    omnimuxSource,
+  });
+  return result.success ? { success: true } : { success: false, error: result.error?.message || 'Could not relink media.' };
+}
+
+export interface HostReconcileHandle {
+  v: 1;
+  scope: 'project-asset' | 'library-file' | 'canvas-node' | 'clip-vault';
+  workspaceId?: string;
+  assetId?: string;
+  rel?: string;
+  libraryAssetId?: string;
+  fileId?: string;
+  nodeId?: string;
+  outputIndex?: number;
+  sha256?: string;
+  mimeType?: string;
+  size?: number;
+}
+
+export interface HostMediaHydrateInput {
+  projectId: string;
+  mediaId: string;
+  name?: string;
+  type: MediaItem['type'];
+  currentSha256?: string;
+  canonicalHandle?: HostReconcileHandle;
+  restorePlaceholder: boolean;
+  signal: AbortSignal;
+  isCurrent: () => boolean;
+}
+
+function projectAssetUrlFromHandle(handle?: HostReconcileHandle): string | undefined {
+  if (!handle || handle.scope !== 'project-asset' || !handle.workspaceId || !handle.rel) return undefined;
+  const rev = sha256Digest(handle.sha256);
+  const query = new URLSearchParams({ path: handle.rel, ...(rev ? { rev: `sha256:${rev}` } : {}) });
+  return `/omnimux-workflow/api/workspaces/${encodeURIComponent(handle.workspaceId)}/file?${query.toString()}`;
+}
+
+/**
+ * Insert a placeholder media item returned by Host `reconcile(import_upstream)`
+ * into the live OpenReel store while preserving the exact Host `mediaId`.
+ */
+export function ensureHostPlaceholderInStore(hostItem: MediaItem, isCurrent: () => boolean): boolean {
+  if (!isCurrent()) return false;
+  const state = useProjectStore.getState();
+  if (state.project.mediaLibrary.items.some(row => row.id === hostItem.id)) return true;
+  useProjectStore.setState({
+    project: {
+      ...state.project,
+      mediaLibrary: {
+        ...state.project.mediaLibrary,
+        items: [...state.project.mediaLibrary.items, { ...hostItem, blob: null, fileHandle: null, missing: true, isPlaceholder: true }],
+      },
+      modifiedAt: Date.now(),
+    },
+  });
+  return true;
+}
+
+/**
+ * Fetch verified bytes for a Host-reconciled media item and bind them into the
+ * live OpenReel project store, keeping `mediaId` and all timeline placements intact.
+ */
+export async function hydrateProjectMediaFromHost(
+  input: HostMediaHydrateInput,
+): Promise<{ success: boolean; error?: string }> {
+  const { projectId, mediaId, name, type, currentSha256, canonicalHandle, restorePlaceholder, signal } = input;
+  const origin = useProjectStore.getState();
+  const isCurrent = () => {
+    const current = useProjectStore.getState();
+    return !signal.aborted && input.isCurrent() && origin.project.id === current.project.id
+      && origin.actionExecutor === current.actionExecutor;
+  };
+  const target = origin.project.mediaLibrary.items.find(row => row.id === mediaId);
+  if (!target) return { success: false, error: 'Media item not found.' };
+  const expectedDigest = sha256Digest(currentSha256) ?? sha256Digest(canonicalHandle?.sha256);
+  const fetched = await fetchHostMediaBlob(projectId, mediaId, { expectedDigest, signal });
+  if (!isCurrent()) return { success: false, error: 'Editor project changed during sync.' };
+  if (!fetched.ok || !fetched.blob) {
+    return { success: false, error: fetched.code || 'Could not read verified media bytes from host.' };
+  }
+  const blob = fetched.blob;
+  const mime = !blob.type || blob.type === 'application/octet-stream'
+    ? (canonicalHandle?.mimeType || MEDIA_MIME[type])
+    : blob.type;
+  const safeName = (name || target.name || mediaId).split(/[/\\]/u).at(-1)?.trim() || mediaId;
+  const file = new File([blob], safeName, { type: mime });
+  const digest = sha256Digest(fetched.digest) ?? expectedDigest ?? await mediaDigest(file);
+  if (!isCurrent()) return { success: false, error: 'Editor project changed during sync.' };
+  const workspaceUrl = projectAssetUrlFromHandle(canonicalHandle);
+  const sourceId = target.omnimuxSource?.id
+    ?? (canonicalHandle?.scope === 'library-file' && canonicalHandle.libraryAssetId && canonicalHandle.fileId
+      ? `${canonicalHandle.libraryAssetId}:${canonicalHandle.fileId}`
+      : canonicalHandle?.scope === 'canvas-node' && canonicalHandle.workspaceId && canonicalHandle.nodeId
+        ? `${canonicalHandle.workspaceId}:${canonicalHandle.nodeId}:${canonicalHandle.outputIndex ?? 0}`
+        : mediaId);
+  const omnimuxSource = {
+    id: sourceId,
+    version: `sha256:${digest}`,
+    digest,
+    ...(workspaceUrl ? { url: workspaceUrl } : {}),
+    ...(canonicalHandle ? { handle: canonicalHandle } : {}),
+  };
+  const result = await useProjectStore.getState().replaceMediaAsset(mediaId, file, undefined, {
+    restorePlaceholder,
+    isCurrent,
+    expectedDigest: digest,
+    omnimuxSource,
+  });
+  return result.success ? { success: true } : { success: false, error: result.error?.message || 'Could not hydrate media.' };
 }

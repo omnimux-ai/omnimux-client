@@ -11,6 +11,7 @@
  * - In `apply` mode, safely upgrades unambiguous legacy unsigned items after
  *   writing a `.backups/` snapshot, and never silently substitutes drifted media.
  */
+import { randomUUID } from 'node:crypto'
 import { ClipDomainError } from '../errors.js'
 import { readCanvasBinding, resolveWorkflowBinding, sameBinding } from '../live/command-broker.js'
 import { assertProjectId } from '../paths.js'
@@ -413,37 +414,102 @@ export async function reconcileProjectMedia(
     reportItems.push(report)
   }
 
+  const summarizeUpstream = (source) => ({
+    sourceNodeId: source.sourceNodeId,
+    outputIndex: source.outputIndex,
+    materialType: source.materialType,
+    name: source.name,
+    ...(source.durationMs !== undefined ? { durationMs: source.durationMs } : {}),
+    canonicalHandle: source.canonicalHandle,
+    currentSha256: source.currentSha256,
+  })
+  const upstreamSummaries = upstreamSources.map(summarizeUpstream)
   const unimportedUpstreams = upstreamSources
     .filter((source) => !matchedUpstreamKeys.has(upstreamKeyOf(source)))
-    .map((source) => ({
-      sourceNodeId: source.sourceNodeId,
-      outputIndex: source.outputIndex,
-      materialType: source.materialType,
-      name: source.name,
-      ...(source.durationMs !== undefined ? { durationMs: source.durationMs } : {}),
-      canonicalHandle: source.canonicalHandle,
-      currentSha256: source.currentSha256,
-    }))
+    .map(summarizeUpstream)
 
   if (mode === 'inspect') {
     return {
       projectId: id,
       revision: envelope.revision,
       upgradedMediaIds: [],
+      importedMediaIds: [],
       items: reportItems,
       unimportedUpstreams,
+      upstreamSources: upstreamSummaries,
     }
   }
 
-  // `mode === 'apply'`: compute concrete item upgrades.
+  // `mode === 'apply'`: compute concrete item upgrades and optional upstream imports.
   const updates = new Map()
+  const imports = []
   if (actions === undefined) {
     for (const [mediaId, proposal] of upgradeProposals.entries()) {
       updates.set(mediaId, proposal)
     }
   } else {
     for (const action of actions) {
-      if (!action || typeof action !== 'object' || !isReferenceId(action.mediaId)) {
+      if (!action || typeof action !== 'object') {
+        throw ClipDomainError.invalidJson('Each reconcile action must be an object.')
+      }
+      if (action.action === 'import_upstream') {
+        const outputIndex = action.outputIndex === undefined ? 0 : action.outputIndex
+        const source = upstreamSources.find((src) => src.sourceNodeId === action.sourceNodeId && src.outputIndex === outputIndex)
+        if (!source) throw new ClipDomainError('media-not-found', 'Requested upstream canvas source was not found.')
+        const mediaId = `media_${randomUUID().replace(/-/g, '').slice(0, 16)}`
+        const durationSec = typeof source.durationMs === 'number' && Number.isFinite(source.durationMs) ? source.durationMs / 1000 : 0
+        const safeUrl = projectAssetUrlOf(source.canonicalHandle)
+        const stableId = `${source.canonicalHandle.workspaceId}:${source.sourceNodeId}:${source.outputIndex}`
+        imports.push({
+          sourceKey: upstreamKeyOf(source),
+          item: {
+            id: mediaId,
+            name: source.name || mediaId,
+            type: source.materialType,
+            fileHandle: null,
+            blob: null,
+            missing: true,
+            isPlaceholder: true,
+            metadata: {
+              duration: durationSec,
+              width: 0,
+              height: 0,
+              frameRate: 0,
+              codec: '',
+              sampleRate: 0,
+              channels: 0,
+              fileSize: source.canonicalHandle.size ?? 0,
+              hasVideo: source.materialType === 'video',
+              hasAudio: source.materialType === 'audio',
+            },
+            omnimuxSource: {
+              id: stableId,
+              version: `sha256:${source.currentSha256}`,
+              digest: source.currentSha256,
+              handle: source.canonicalHandle,
+              ...(safeUrl ? { url: safeUrl } : {}),
+            },
+            sourceRef: {
+              kind: 'indexeddb',
+              key: mediaId,
+              digest: source.currentSha256,
+            },
+          },
+          report: {
+            mediaId,
+            name: source.name || mediaId,
+            type: source.materialType,
+            reconcileState: 'online_exact',
+            recoverable: true,
+            currentSha256: source.currentSha256,
+            canonicalHandle: source.canonicalHandle,
+            suggestedSourceNodeId: source.sourceNodeId,
+            imported: true,
+          },
+        })
+        continue
+      }
+      if (!isReferenceId(action.mediaId)) {
         throw ClipDomainError.invalidJson('Each reconcile action requires a valid mediaId.')
       }
       const targetItem = envelope.project.mediaLibrary.items.find((row) => row.id === action.mediaId)
@@ -486,20 +552,25 @@ export async function reconcileProjectMedia(
     }
   }
 
-  if (updates.size === 0) {
+  if (updates.size === 0 && imports.length === 0) {
     return {
       projectId: id,
       revision: envelope.revision,
       upgradedMediaIds: [],
+      importedMediaIds: [],
       items: reportItems,
       unimportedUpstreams,
+      upstreamSources: upstreamSummaries,
     }
   }
 
-  const nextItems = envelope.project.mediaLibrary.items.map((item) => {
-    const patch = updates.get(item.id)
-    return patch ? buildUpgradedMediaItem(item, patch) : item
-  })
+  const nextItems = [
+    ...envelope.project.mediaLibrary.items.map((item) => {
+      const patch = updates.get(item.id)
+      return patch ? buildUpgradedMediaItem(item, patch) : item
+    }),
+    ...imports.map((entry) => entry.item),
+  ]
   const nextProject = {
     ...envelope.project,
     mediaLibrary: {
@@ -517,24 +588,32 @@ export async function reconcileProjectMedia(
     workflow.saveDraft({ ...binding, revision: saved.revision })
   }
   const upgradedMediaIds = [...updates.keys()]
-  const updatedReportItems = reportItems.map((entry) => {
-    const patch = updates.get(entry.mediaId)
-    if (!patch) return entry
-    return {
-      ...entry,
-      reconcileState: 'online_exact',
-      recoverable: true,
-      currentSha256: patch.currentSha256,
-      canonicalHandle: patch.canonicalHandle,
-      upgraded: true,
-    }
-  })
+  const importedMediaIds = imports.map((entry) => entry.item.id)
+  const newlyImportedKeys = new Set(imports.map((entry) => entry.sourceKey))
+  const remainingUnimported = unimportedUpstreams.filter((u) => !newlyImportedKeys.has(`${u.sourceNodeId}:${u.outputIndex}`))
+  const updatedReportItems = [
+    ...reportItems.map((entry) => {
+      const patch = updates.get(entry.mediaId)
+      if (!patch) return entry
+      return {
+        ...entry,
+        reconcileState: 'online_exact',
+        recoverable: true,
+        currentSha256: patch.currentSha256,
+        canonicalHandle: patch.canonicalHandle,
+        upgraded: true,
+      }
+    }),
+    ...imports.map((entry) => entry.report),
+  ]
   return {
     projectId: id,
     revision: saved.revision,
     upgradedMediaIds,
+    importedMediaIds,
     items: updatedReportItems,
-    unimportedUpstreams,
+    unimportedUpstreams: remainingUnimported,
+    upstreamSources: upstreamSummaries,
     project: saved.project,
   }
 }

@@ -575,12 +575,45 @@ export function createMediaSlice(set: Set, get: Get): MediaSlice {
         const updatedItems = currentProject.mediaLibrary.items.map((item) =>
           item.id === mediaId ? updatedItem : item,
         );
+        const clampDuration = !options?.restorePlaceholder && updatedItem.type !== "image" && updatedItem.metadata.duration > 0
+          ? updatedItem.metadata.duration
+          : 0;
+        const clampTrackClips = <T extends { clips: Array<{ mediaId: string; inPoint: number; outPoint: number; duration: number; speed?: number }> }>(
+          tracks: T[],
+        ): { tracks: T[]; changed: boolean } => {
+          if (clampDuration <= 0) return { tracks, changed: false };
+          let changed = false;
+          const nextTracks = tracks.map((track) => {
+            let trackChanged = false;
+            const nextClips = track.clips.map((clip) => {
+              if (clip.mediaId !== mediaId || clip.outPoint <= clampDuration + 0.01) return clip;
+              const outPoint = Math.max(0.05, clampDuration);
+              const inPoint = Math.min(Math.max(0, clip.inPoint), Math.max(0, outPoint - 0.05));
+              const rate = Math.abs(clip.speed ?? 1) || 1;
+              const duration = Math.max(0.05, (outPoint - inPoint) / rate);
+              trackChanged = true;
+              changed = true;
+              return { ...clip, inPoint, outPoint, duration };
+            });
+            return trackChanged ? { ...track, clips: nextClips } : track;
+          });
+          return changed ? { tracks: nextTracks, changed: true } : { tracks, changed: false };
+        };
+        const clampedMain = clampTrackClips(currentProject.timeline.tracks);
+        const clampedSequences = currentProject.sequences
+          ? currentProject.sequences.map((seq) => {
+              const clamped = clampTrackClips(seq.timeline.tracks);
+              return clamped.changed ? { ...seq, timeline: { ...seq.timeline, tracks: clamped.tracks } } : seq;
+            })
+          : undefined;
 
         createdThumbnails.clear();
         set({
           project: {
             ...currentProject,
             mediaLibrary: { ...currentProject.mediaLibrary, items: updatedItems },
+            ...(clampedMain.changed ? { timeline: { ...currentProject.timeline, tracks: clampedMain.tracks } } : {}),
+            ...(clampedSequences ? { sequences: clampedSequences } : {}),
             modifiedAt: Date.now(),
           },
         });

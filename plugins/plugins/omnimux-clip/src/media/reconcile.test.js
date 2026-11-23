@@ -425,4 +425,96 @@ describe('Clip Host media reconcile and verified HTTP byte streaming (AC-CMU-01 
     assert.equal(writeCalls.length, 0)
     session.dispose()
   })
+
+  it('reconcile import_upstream appends verified upstream media item with canonical handle, exposes upstreamSources, and streams bytes', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'clip-reconcile-imp-'))
+    temps.push(dir)
+    const videoFile = join(dir, 'new_shot.mp4')
+    const videoBytes = Buffer.from('new-upstream-video-bytes-123456')
+    writeFileSync(videoFile, videoBytes)
+    const videoDigest = sha256(videoBytes)
+    const workspaceId = 'ws_imp'
+    const nodeId = 'node_comp'
+    const projectId = 'clip_import_upstream'
+    const binding = { workspaceId, nodeId, projectId }
+    const videoHandle = {
+      v: 1,
+      scope: 'project-asset',
+      workspaceId,
+      rel: 'artifacts/new_shot.mp4',
+      sha256: videoDigest,
+    }
+
+    const registry = new Map([
+      [JSON.stringify(['project-asset', workspaceId, 'artifacts/new_shot.mp4', '', '', '', 0]), { filePath: videoFile, mimeType: 'video/mp4', name: '新镜头.mp4' }],
+    ])
+    const paths = resolveClipPaths({ homeDir: dir })
+    const store = createProjectStore({ paths })
+    store.materialize(projectId, { binding, title: 'Import Test' })
+
+    const workflowClip = {
+      resolveBinding: (b) => ({ ...b, title: 'Import Test' }),
+      saveDraft: ({ revision }) => ({ revision, workspaceVersion: 2 }),
+      listUpstreamSources: async () => ({
+        workspaceId,
+        nodeId,
+        projectId,
+        sources: [{
+          sourceNodeId: 'node_vid_new',
+          outputIndex: 0,
+          name: '新镜头.mp4',
+          materialType: 'video',
+          durationMs: 6000,
+          currentSha256: videoDigest,
+          canonicalHandle: videoHandle,
+          size: videoBytes.length,
+          mimeType: 'video/mp4',
+          legacySourceIds: [],
+          legacyFingerprints: [],
+        }],
+      }),
+    }
+
+    const dispatcher = createClipDispatcher({
+      paths,
+      store,
+      getMediaResolver: () => createDiskMediaResolver(registry),
+      getWorkflowClip: () => workflowClip,
+    })
+    const baseUrl = await mountTestServer({ dispatcher })
+
+    const inspectRes = await fetch(`${baseUrl}/omnimux-clip/api/projects/${projectId}/media/reconcile`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-test-window': 'win-1' },
+      body: JSON.stringify({ mode: 'inspect', binding }),
+    })
+    assert.equal(inspectRes.status, 200)
+    const inspected = await inspectRes.json()
+    assert.equal(inspected.unimportedUpstreams.length, 1)
+    assert.equal(inspected.upstreamSources.length, 1)
+    assert.equal(inspected.upstreamSources[0].sourceNodeId, 'node_vid_new')
+
+    const applyRes = await fetch(`${baseUrl}/omnimux-clip/api/projects/${projectId}/media/reconcile`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-test-window': 'win-1' },
+      body: JSON.stringify({
+        mode: 'apply',
+        binding,
+        actions: [{ action: 'import_upstream', sourceNodeId: 'node_vid_new', outputIndex: 0 }],
+      }),
+    })
+    assert.equal(applyRes.status, 200)
+    const applied = await applyRes.json()
+    assert.equal(applied.importedMediaIds.length, 1)
+    assert.equal(applied.unimportedUpstreams.length, 0)
+
+    const newMediaId = applied.importedMediaIds[0]
+    const bytesRes = await fetch(`${baseUrl}/omnimux-clip/api/projects/${projectId}/media/${newMediaId}/bytes`, {
+      headers: { 'x-test-window': 'win-1' },
+    })
+    assert.equal(bytesRes.status, 200)
+    assert.equal(bytesRes.headers.get('x-content-sha256'), videoDigest)
+    const streamed = Buffer.from(await bytesRes.arrayBuffer())
+    assert.deepEqual(streamed, videoBytes)
+  })
 })

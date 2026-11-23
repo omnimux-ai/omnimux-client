@@ -643,6 +643,60 @@ export function createEditorSession({ storage, native, workbench, document, onEr
     return leaveEditor(owner, navigate)
   }
 
+  function inspectMediaReconcile() {
+    const owner = current
+    if (!owns(owner) || !owner.record?.project?.id || typeof storage.reconcileMedia !== 'function') {
+      return Promise.reject(new LiveClipError('EDITOR_NOT_VISIBLE', 'The Clip editor is not active.'))
+    }
+    return enqueue(async () => {
+      if (!owns(owner) || !owner.record?.project?.id) {
+        throw new LiveClipError('EDITOR_NOT_VISIBLE', 'The Clip editor is not active.')
+      }
+      if (!owner.conflict && ownedNativeProject(owner) && !owner.resolving) {
+        capture(owner)
+        if (needsSave(owner)) await tryFlush(owner)
+      }
+      return storage.reconcileMedia(owner.record.project.id, {
+        mode: 'inspect',
+        binding: owner.site.binding,
+      })
+    })
+  }
+
+  function applyMediaReconcile(actions) {
+    const owner = current
+    if (!owns(owner) || !owner.record?.project?.id || typeof storage.reconcileMedia !== 'function') {
+      return Promise.reject(new LiveClipError('EDITOR_NOT_VISIBLE', 'The Clip editor is not active.'))
+    }
+    return enqueue(async () => {
+      if (!owns(owner) || owner.conflict || !owner.record?.project?.id) {
+        throw new LiveClipError('EDITOR_NOT_VISIBLE', 'The Clip editor is not active.')
+      }
+      if (ownedNativeProject(owner) && !owner.resolving) capture(owner)
+      if (needsSave(owner)) {
+        const flushed = await tryFlush(owner)
+        if (!flushed.synchronized) {
+          throw new LiveClipError('REVISION_CONFLICT', 'Could not sync pending edits before relinking media.')
+        }
+      }
+      const projectId = owner.record.project.id
+      const result = await storage.reconcileMedia(projectId, {
+        mode: 'apply',
+        binding: owner.site.binding,
+        actions,
+      })
+      if (owns(owner) && owner.record?.project?.id === projectId && isClipRevision(result?.revision)) {
+        owner.record = {
+          ...owner.record,
+          revision: Math.max(owner.record.revision, result.revision),
+          localBaseRevision: Math.max(owner.record.localBaseRevision, result.revision),
+        }
+        await storage.writeLocal(owner.record)
+      }
+      return { projectId, binding: owner.site.binding, result }
+    })
+  }
+
   const unsubscribe = native.subscribe(projectChanged)
   return {
     add(entry) {
@@ -662,6 +716,8 @@ export function createEditorSession({ storage, native, workbench, document, onEr
     getWaiting: () => work,
     reconcile,
     save,
+    inspectMediaReconcile,
+    applyMediaReconcile,
     async finishIngestion() {
       const owner = current
       if (!owns(owner)) return
