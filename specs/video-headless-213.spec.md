@@ -40,12 +40,84 @@
 
 ## 旧标准变更
 
-- `plugins/plugins/omnimux-video/src/config.test.js`：
-  - 原断言：`understand` 默认值与覆盖解析包含 `maxVideoBytes` / `analyzePromptPath` / `reversePromptPath`。
-  - 必须改的理由：这三个字段随 headlessSkill 迁移退役，提示词真源改为 Skill、媒体传输归 Hub。
-  - 新期望证据：`understand` 仅含 `defaultModel` / `maxTokens`，旧字段被忽略且不复活旧路径。
-- `plugins/plugins/omnimux-video/src/understand/understand.test.js`：
-  - 原断言：`textComplete.execute` 被调用并返回 Markdown；`loadPromptFile` 加载 bundled prompt；`<<<PROMPT>>>` 标记块被解析。
-  - 必须改的理由：私有提示词加载器、标记块解析与 `textComplete` 直连全部移除，改由 `headlessSkill` + JSON Schema 承担。
-  - 新期望证据：请求携带 `skillName` / `outputSchema` / `references`，`dest` 仍写旧格式文件，结构化 `data` 与错误码断言生效。
-- 删除 `src/understand/parse-tags.test.js`：被删模块的测试随模块一起移除，替代覆盖见 `headless.test.js` 的 `beats` 结构化断言。
+以下用例在 headlessSkill 与 Skill 真源迁移中被删除、改名或语义替换，逐条声明原断言、必须改的理由与新期望证据。
+
+- `plugins/plugins/omnimux-video/src/config.test.js` :: `parseVideoConfig reads understand overrides`
+  - 原断言：原断言解析 `maxVideoBytes` / `analyzePromptPath` / `reversePromptPath` 三个字段。
+  - 必须改的理由：随 headlessSkill 迁移退役，提示词真源归 Skill，媒体传输归 Hub，旧字段只允许被忽略。
+  - 新期望证据：`parseVideoConfig reads understand overrides and ignores retired prompt/transport fields` 断言 `understand` 仅含 `defaultModel` / `maxTokens`。
+
+- `plugins/plugins/omnimux-video/src/understand/parse-tags.test.js` :: `parseTaggedSections`
+  - 原断言：原断言 `<<<PROMPT>>>` / `<<<APPENDIX>>>` 标记块解析与整段回退。
+  - 必须改的理由：标记块解析器随 Markdown 正则接口一并删除，结构化结果改由 JSON Schema 提供。
+  - 新期望证据：`headless.test.js` 的 `beats` 结构化断言与 `video-reverse-prompt` Schema 覆盖同一语义。
+
+- `plugins/plugins/omnimux-video/src/understand/parse-tags.test.js` :: `extracts prompt and appendix when tags are present`
+  - 原断言：原断言从标记块中拆出 prompt 与 appendix。
+  - 必须改的理由：模型不再输出标记块，prompt/appendix 是 JSON 字段。
+  - 新期望证据：`headless.test.js` 断言 `prompt` / `appendix` 字段由 `headlessSkill` 结果驱动并分别落盘。
+
+- `plugins/plugins/omnimux-video/src/understand/parse-tags.test.js` :: `falls soft to whole body when tags missing`
+  - 原断言：原断言无标记时整段作为正文回退。
+  - 必须改的理由：旧回退依赖自由文本，正是契约禁止的脆弱解析。
+  - 新期望证据：缺失必填 `prompt` 时抛 `video-reverse-failed`，不静默伪造正文。
+
+- `plugins/plugins/omnimux-video/src/understand/parse-tags.test.js` :: `treats empty prompt tag as unparsed fallback`
+  - 原断言：原断言空标记块降级为未解析。
+  - 必须改的理由：空结构属于上游违约，必须显式失败。
+  - 新期望证据：`executeVideoReversePrompt` 对空 `prompt` 抛 `video-reverse-failed`。
+
+- `plugins/plugins/omnimux-video/src/understand/understand.test.js` :: `understand prompts + pack`
+  - 原断言：原 describe 断言 bundled prompt 文件加载与体积上限。
+  - 必须改的理由：prompt 文件与体积上限均移除，Hub transport 统一准备。
+  - 新期望证据：describe 改名为 `understand pack + seams`，覆盖路径校验与 Hub 传输分工。
+
+- `plugins/plugins/omnimux-video/src/understand/understand.test.js` :: `accepts absolute mp4 under byte cap`
+  - 原断言：原断言绝对路径 mp4 在本地字节上限内通过。
+  - 必须改的理由：本地体积上限移除，超大素材交 Hub。
+  - 新期望证据：`accepts an absolute mp4 and leaves transport sizing to Hub` 断言路径通过且不做本地体积拦截。
+
+- `plugins/plugins/omnimux-video/src/understand/understand.test.js` :: `builds user text with silent constraints`
+  - 原断言：原断言反推用户文本包含静默硬约束。
+  - 必须改的理由：用户文本保留，但标记块指令改为 JSON 契约。
+  - 新期望证据：`headless.test.js` 断言请求 `input` 含身份策略与 JSON 输出要求。
+
+- `plugins/plugins/omnimux-video/src/understand/understand.test.js` :: `calls textComplete with system+video and writes dest`
+  - 原断言：原断言直连 `textComplete` 并写 `dest`。
+  - 必须改的理由：后台推理统一改经 `headlessSkill`。
+  - 新期望证据：`routes through headlessSkill and writes the legacy markdown dest` 断言请求契约与 `dest` 投影。
+
+- `plugins/plugins/omnimux-video/src/understand/understand.test.js` :: `declares inject with tools and textComplete, and resolves textComplete via ctx.textComplete`
+  - 原断言：原断言 `inject` 含 `textComplete` 并从 ctx 取该服务。
+  - 必须改的理由：插件不再直接消费 `textComplete`，由 Hub `headlessSkill` 统一调度。
+  - 新期望证据：`declares tools injection (not textComplete) and executes through ctx.get("headlessSkill")` 断言 `inject` 仅含 `tools` 且执行走 headlessSkill。
+
+- `plugins/plugins/omnimux-video/src/understand/understand.test.js` :: `keeps parsed false when tags missing`
+  - 原断言：原断言无标记时 `parsed:false`。
+  - 必须改的理由：结构化契约下不存在「未解析」分支，缺字段即失败。
+  - 新期望证据：`parsed` 恒为 `true`；空 `prompt` 用例断言抛错。
+
+- `plugins/plugins/omnimux-video/src/understand/understand.test.js` :: `loads bundled analyze and reverse prompts`
+  - 原断言：原断言从 `prompts/*.md` 加载系统提示词。
+  - 必须改的理由：提示词真源迁入 `skills/<name>/SKILL.md`。
+  - 新期望证据：`skills.test.js` 断言两个 Skill 从 SKILL.md 加载且经 provider rank 600 注册。
+
+- `plugins/plugins/omnimux-video/src/understand/understand.test.js` :: `maps hub video-unsupported to video-understand-unsupported`
+  - 原断言：原断言该错误映射仍成立。
+  - 必须改的理由：映射逻辑保留，但调用链改为 `headlessSkill` 抛错。
+  - 新期望证据：同名用例在新链路下断言同一错误码。
+
+- `plugins/plugins/omnimux-video/src/understand/understand.test.js` :: `maps missing textComplete to needs-provider`
+  - 原断言：原断言缺少 `textComplete` 时报 `needs-provider`。
+  - 必须改的理由：缺失的是 `headlessSkill` 接缝。
+  - 新期望证据：`maps a missing headlessSkill seam to needs-provider` 断言新接缝缺失时报同一错误码。
+
+- `plugins/plugins/omnimux-video/src/understand/understand.test.js` :: `parses tagged output and writes dest`
+  - 原断言：原断言标记块解析后写 `dest` 与 `appendix_dest`。
+  - 必须改的理由：标记块解析删除，改由结构化字段投影。
+  - 新期望证据：`routes through headlessSkill and writes prompt plus appendix dests` 断言两处落盘。
+
+- `plugins/plugins/omnimux-video/src/understand/understand.test.js` :: `registers process + understand + depth tools and does not mix understand into slug enum`
+  - 原断言：原断言工具注册且 `prompt_path` 参数存在。
+  - 必须改的理由：`prompt_path` 随私有提示词加载器退役。
+  - 新期望证据：`registers process + understand + depth tools and drops retired prompt overrides` 断言 `prompt_path` 已移除。
