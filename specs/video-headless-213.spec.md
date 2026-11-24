@@ -53,6 +53,23 @@
 - 删除 `video_reverse_prompt` 的 `dest` 写盘：`headless.test.js` 红（`ENOENT ... prompt.txt`）。
 - 以上四项还原后单元用例 128 pass 全绿。
 
+## 首轮评审增量修复（Cordis 接缝崩溃 + hook 投影）
+
+- `src/index.js`：`headlessSkill` 不在本插件 `inject` 里，真实 `@deepseek-ai/cordis@4.1.0` 读 `ctx.headlessSkill` 会先抛 `cannot get property "headlessSkill" without inject`，`ctx.headlessSkill ?? ctx.get?.('headlessSkill')` 的右侧不可达，两个工具在生产宿主必崩。改为既有 `readSeat(ctx, 'headlessSkill')`（只走 `ctx.get`）。
+- `src/understand/schemas.js`：`renderAnalyzeMarkdown` 此前丢弃根级必填 `hook`。现投影为 `## ⚡ 黄金 3 秒 HOOK` 与 `**[0-3秒] 黄金钩子 (Hook)**` 段，旧 Markdown 解析器（`omnimux-inspiration/src/analyzer.js`）可读出非空 `hook_highlight`。
+- `src/index.js`：`video_reverse_prompt` 的 `dest` / `appendix_dest` 参数描述去掉已退役的 `<<<PROMPT>>>` / `<<<APPENDIX>>>` 字样。
+
+### 证伪（本机实测）
+
+- 把接缝读取还原成 `ctx.headlessSkill ?? ctx.get?.('headlessSkill')`：新增的 `host seat resolution under Cordis inject guards` 两条用例同时转红，报错即生产错误 `Error: cannot get property "headlessSkill" without inject`；第二个用例的 `needs-provider` 断言实际收到该 Error。
+- 临时丢弃 `renderAnalyzeMarkdown` 的 `data.hook` 投影：`renderAnalyzeMarkdown hook projection` 用例转红（缺 `## ⚡ 黄金 3 秒 HOOK` 与旧解析器匹配）。
+- 两处还原后 `understand.test.js` 15 pass / 0 fail。
+
+### 真实 Cordis 端到端探针（本机，`@deepseek-ai/cordis@4.1.0`）
+
+- 在真实 `Context` 中挂载宿主 `tools` 服务与插件 fiber 后：无 `headlessSkill` 服务时两个工具均返回 `needs-provider`（不再抛 inject 错误）；提供该服务后 `video_analyze` / `video_reverse_prompt` 分别以 `skillName` `video-analyze` / `video-reverse-prompt` 路由成功，`dest` 投影文本含 `## ⚡ 黄金 3 秒 HOOK`。
+- 同探针对还原前的旧写法复跑：两个工具均抛 `cannot get property "headlessSkill" without inject`，提供该服务后同样崩溃。
+
 ## 旧标准变更
 
 以下用例在 headlessSkill 与 Skill 真源迁移中被删除、改名或语义替换，逐条声明原断言、必须改的理由与新期望证据。
