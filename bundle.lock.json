@@ -10,7 +10,7 @@
       "version": "0.1.8",
       "path": "plugins/plugins/omnimux",
       "spec": "link:../../plugins/plugins/omnimux",
-      "contentHash": "sha256:029dc8330e40ed7e053e370731313f66f0427bbc0693bac4abf7165c807ea05d"
+      "contentHash": "sha256:b2625cd775750e48db382efd6bbc371567dcc4def6882850494f8b4fdc658eac"
     },
     {
       "name": "omnimux-accounts",
@@ -38,7 +38,7 @@
       "version": "0.1.0",
       "path": "plugins/plugins/omnimux-browser",
       "spec": "link:../../plugins/plugins/omnimux-browser",
-      "contentHash": "sha256:cba48bd00cb5dec2d217ff1ddb49f3020bebab445a2b1a0affb6db3b23f2e079"
+      "contentHash": "sha256:b2e5c08ea1b48471ea544f732b23f358d0efad03f2d19487bc3796f9127d05f7"
     },
     {
       "name": "omnimux-clip",

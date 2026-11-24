@@ -769,8 +769,8 @@ export function resolveBrandVisual(input = {}) {
   const variant = input?.variant === 'mono' ? 'mono' : 'color'
   const rawBrandId = typeof input?.brandId === 'string' ? input.brandId : ''
   const validGatewayBrandId = isValidBrandId(rawBrandId) ? rawBrandId : ''
-  const aliasedLocalBrand = rawBrandId ? canonicalizeLocalBrandId(rawBrandId) : null
-  const hasExplicitBrand = Boolean(validGatewayBrandId || aliasedLocalBrand)
+  const aliasedLocalBrand = validGatewayBrandId ? canonicalizeLocalBrandId(validGatewayBrandId) : null
+  const hasExplicitBrand = Boolean(validGatewayBrandId)
 
   const brandDictEntry = validGatewayBrandId
     && input?.brands

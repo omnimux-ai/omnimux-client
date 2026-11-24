@@ -342,6 +342,42 @@ describe('Hybrid model-brand contract (Hub catalog + digest decoupling + securit
     assert.equal(seedreamRow?.family, 'seedream', 'bytedance owning sub-family seedream must be preserved')
     assert.equal(seedreamRow?.familyLabel, 'Seedream')
 
+    // Prototype key `contract.family: 'constructor'` must fail closed (groupForFamily returns null, never Object constructor).
+    const protoFamilyPayload = makeGatewayPricingPayload({
+      extraModels: [
+        {
+          model_name: 'proto-fam-model',
+          display_name: 'Proto Family',
+          enable_groups: ['default'],
+          supported_endpoint_types: ['image'],
+          billing_mode: 'per_call',
+          model_price: 0.02,
+          contract: {
+            schemaVersion: '2.0',
+            model_id: 'proto-fam-model',
+            family: 'constructor',
+            status: 'documented',
+            execution_status: 'live',
+            operations: [
+              {
+                id: 'text_to_image',
+                executable: true,
+                output: { type: 'image' },
+                inputs: [{ slot: 'prompt', type: 'text', required: true }],
+              },
+            ],
+          },
+        },
+      ],
+    })
+    const { snapshot: protoFamSnap } = normalizePricingPayload(protoFamilyPayload, { generatedAt: '2026-11-24T00:00:00.000Z' })
+    const protoFamCat = buildModelCatalog({ snapshot: protoFamSnap, snapshotSource: 'remote', gatewayContracts: true })
+    assert.equal(
+      protoFamCat.image.find((m) => m.id === 'proto-fam-model'),
+      undefined,
+      'invalid prototype-key contract.family must not resolve managementGroup to Object constructor',
+    )
+
     const pickerSrc = readFileSync(
       new URL('../client/composer-quick-shortcuts/ModelPicker.jsx', import.meta.url),
       'utf8',

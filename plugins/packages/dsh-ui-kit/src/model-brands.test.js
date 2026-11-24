@@ -191,6 +191,21 @@ describe('dsh-ui-kit/model-brands resolution', () => {
       modelId: 'acme-1',
     })
     assert.equal(whitespaceFailClosed.kind, 'monogram')
+
+    // Non-slug / untrimmed brandId values must fail closed and never hit Tier 1 via .trim().
+    const paddedBrandId = resolveBrandVisual({
+      brandId: ' openai ',
+      modelId: 'opaque-unknown-99',
+    })
+    assert.equal(paddedBrandId.kind, 'monogram')
+    assert.equal(paddedBrandId.brandId, null)
+
+    const uppercaseBrandId = resolveBrandVisual({
+      brandId: 'OpenAI',
+      modelId: 'opaque-unknown-99',
+    })
+    assert.equal(uppercaseBrandId.kind, 'monogram')
+    assert.equal(uppercaseBrandId.brandId, null)
   })
 
   it('exposes complete BRAND_SVGS / BRAND_SVGS_MONO / getBrandInfo / getAllBrands parity', () => {

@@ -138,7 +138,8 @@ function familyFor(id, contract, brandId = '') {
 
 /** @param {unknown} family */
 function groupForFamily(family) {
-  return GROUP_BY_FAMILY[text(family)] ?? null
+  const key = text(family)
+  return Object.hasOwn(GROUP_BY_FAMILY, key) ? GROUP_BY_FAMILY[key] : null
 }
 
 /** @param {string} format */

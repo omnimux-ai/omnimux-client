@@ -171,6 +171,57 @@ describe('Issue #2966 会话栏「自动/手动」模型选择器', () => {
       expect(rows[3]?.name).toBe('m-1')
     })
 
+    it('flattenCatalogGroups 与 flattenModelGroupsFallback 对畸形 brand_id / brand_name / icon_path 执行 fail-closed 过滤', () => {
+      const catRows = flattenCatalogGroups({
+        groups: [
+          {
+            id: 'gateway',
+            models: [
+              {
+                id: 'opaque-unknown-9',
+                name: 'Padded',
+                brand_id: ' openai ',
+                brand_name: '   ',
+                brand_icon_path: ' M12 2L22 20H2Z',
+              },
+              {
+                id: 'acme-1',
+                name: 'Acme 1',
+                brand_id: 'acme-labs',
+                brand_name: ' Acme Labs ',
+                brand_icon_path: 'M12 2L22 20H2Z',
+              },
+            ],
+          },
+        ],
+      })
+      expect(catRows[0]).toEqual({ id: 'opaque-unknown-9', name: 'Padded', provider: 'gateway' })
+      expect(catRows[1]).toEqual({
+        id: 'acme-1',
+        name: 'Acme 1',
+        provider: 'gateway',
+        brandId: 'acme-labs',
+        brandName: 'Acme Labs',
+        brandIconPath: 'M12 2L22 20H2Z',
+      })
+
+      const fbRows = flattenModelGroupsFallback([
+        {
+          group: 'Gateway',
+          models: [
+            {
+              id: 'evil-padded',
+              name: 'Evil Padded',
+              brandId: 'OpenAI',
+              brandName: ' \t ',
+              brandIconPath: '<svg onload=alert(1)>',
+            },
+          ],
+        },
+      ])
+      expect(fbRows[0]).toEqual({ id: 'evil-padded', name: 'Evil Padded' })
+    })
+
     it('resolveModelBrandKey：字典命中 → 前缀回退（gpt*/grok*）→ 未登记不渲染', () => {
       expect(resolveModelBrandKey('gpt-6-astra')).toBe('openai')
       expect(resolveModelBrandKey('grok-4.6')).toBe('grok')
@@ -401,6 +452,12 @@ describe('Issue #2966 会话栏「自动/手动」模型选择器', () => {
                     brandId: 'evil-labs',
                     brandIconPath: '<svg onload=alert(1)>',
                   },
+                  {
+                    id: 'opaque-unknown-9',
+                    name: 'Padded Brand',
+                    brandId: ' openai ',
+                    brandIconPath: ' M12 2L22 20H2Z',
+                  },
                 ],
               },
             ],
@@ -413,13 +470,14 @@ describe('Issue #2966 会话栏「自动/手动」模型选择器', () => {
       click(trigger(h.container))
       await flush()
       const options = h.container.querySelectorAll('[role="option"]')
-      expect(options.length).toBe(2)
+      expect(options.length).toBe(3)
       const acmeIcon = options[0]!.querySelector('.amp-brand-icon')
       expect(acmeIcon).not.toBeNull()
       expect(acmeIcon!.getAttribute('data-brand-id')).toBe('acme-labs')
       expect(acmeIcon!.getAttribute('data-brand-source')).toBe('gateway-path')
       expect(acmeIcon!.querySelector('path')?.getAttribute('d')).toBe('M12 2L22 20H2Z')
       expect(options[1]!.querySelector('.amp-brand-icon')).toBeNull()
+      expect(options[2]!.querySelector('.amp-brand-icon')).toBeNull()
       h.unmount()
     })
   })

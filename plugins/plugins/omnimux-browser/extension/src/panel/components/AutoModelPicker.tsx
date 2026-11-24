@@ -1,7 +1,9 @@
 import { memo, useEffect, useRef, useState } from 'react'
 import {
+  isValidBrandId,
   resolveBrandVisual,
   resolveModelBrand,
+  sanitizeBrandIconPath,
   type BrandVectorElement,
   type BrandVisualResult,
 } from 'dsh-ui-kit/model-brands'
@@ -75,6 +77,29 @@ interface RawGroup {
   models?: unknown
 }
 
+function toPickerModelRow(m: RawModelEntry, provider?: string): PickerModelRow | null {
+  if (!m || typeof m.id !== 'string' || m.id === '') return null
+  const name = typeof m.name === 'string' && m.name !== '' ? m.name : m.id
+  const rawBrandId = m.brandId ?? m.brand_id
+  const brandId = isValidBrandId(rawBrandId) ? (rawBrandId as string) : undefined
+  const rawBrandName = m.brandName ?? m.brand_name
+  const brandName = typeof rawBrandName === 'string' && rawBrandName.trim() ? rawBrandName.trim() : undefined
+  const rawBrandIconPath = m.brandIconPath ?? m.brand_icon_path
+  const brandIconPath = sanitizeBrandIconPath(rawBrandIconPath) ?? undefined
+  const reasoning = typeof m.reasoning === 'object' && m.reasoning !== null
+    ? m.reasoning as PickerModelRow['reasoning']
+    : undefined
+  return {
+    id: m.id,
+    name,
+    ...(provider ? { provider } : {}),
+    ...(brandId ? { brandId } : {}),
+    ...(brandName ? { brandName } : {}),
+    ...(brandIconPath ? { brandIconPath } : {}),
+    ...(reasoning !== undefined ? { reasoning } : {}),
+  }
+}
+
 function flattenRows(raw: unknown, providerOf: (group: RawGroup) => string | undefined): PickerModelRow[] {
   if (!raw || typeof raw !== 'object') return []
   const groups = (raw as { groups?: unknown }).groups
@@ -84,28 +109,9 @@ function flattenRows(raw: unknown, providerOf: (group: RawGroup) => string | und
     if (!g || !Array.isArray(g.models)) continue
     const provider = providerOf(g)
     for (const m of g.models as RawModelEntry[]) {
-      if (!m || typeof m.id !== 'string' || m.id === '') continue
-      const name = typeof m.name === 'string' && m.name !== '' ? m.name : m.id
-      const rowProvider = typeof m.provider === 'string' && m.provider !== '' ? m.provider : provider
-      const rawBrandId = m.brandId ?? m.brand_id
-      const brandId = typeof rawBrandId === 'string' && rawBrandId !== '' ? rawBrandId : undefined
-      const rawBrandName = m.brandName ?? m.brand_name
-      const brandName = typeof rawBrandName === 'string' && rawBrandName !== '' ? rawBrandName : undefined
-      const rawBrandIconPath = m.brandIconPath ?? m.brand_icon_path
-      const brandIconPath = typeof rawBrandIconPath === 'string' && rawBrandIconPath !== '' ? rawBrandIconPath : undefined
-      const reasoning = typeof m.reasoning === 'object' && m.reasoning !== null
-        ? m.reasoning as PickerModelRow['reasoning']
-        : undefined
-      const row: PickerModelRow = {
-        id: m.id,
-        name,
-        ...(rowProvider ? { provider: rowProvider } : {}),
-        ...(brandId ? { brandId } : {}),
-        ...(brandName ? { brandName } : {}),
-        ...(brandIconPath ? { brandIconPath } : {}),
-        ...(reasoning !== undefined ? { reasoning } : {}),
-      }
-      rows.push(row)
+      const rowProvider = typeof m?.provider === 'string' && m.provider !== '' ? m.provider : provider
+      const row = toPickerModelRow(m, rowProvider)
+      if (row) rows.push(row)
     }
   }
   return rows
@@ -145,27 +151,8 @@ export function flattenModelGroupsFallback(payload: unknown): PickerModelRow[] {
         : label === 'Grok (Subscription)' ? 'grok'
           : undefined
     for (const m of g.models as RawModelEntry[]) {
-      if (!m || typeof m.id !== 'string' || m.id === '') continue
-      const name = typeof m.name === 'string' && m.name !== '' ? m.name : m.id
-      const rawBrandId = m.brandId ?? m.brand_id
-      const brandId = typeof rawBrandId === 'string' && rawBrandId !== '' ? rawBrandId : undefined
-      const rawBrandName = m.brandName ?? m.brand_name
-      const brandName = typeof rawBrandName === 'string' && rawBrandName !== '' ? rawBrandName : undefined
-      const rawBrandIconPath = m.brandIconPath ?? m.brand_icon_path
-      const brandIconPath = typeof rawBrandIconPath === 'string' && rawBrandIconPath !== '' ? rawBrandIconPath : undefined
-      const reasoning = typeof m.reasoning === 'object' && m.reasoning !== null
-        ? m.reasoning as PickerModelRow['reasoning']
-        : undefined
-      const row: PickerModelRow = {
-        id: m.id,
-        name,
-        ...(provider ? { provider } : {}),
-        ...(brandId ? { brandId } : {}),
-        ...(brandName ? { brandName } : {}),
-        ...(brandIconPath ? { brandIconPath } : {}),
-        ...(reasoning !== undefined ? { reasoning } : {}),
-      }
-      rows.push(row)
+      const row = toPickerModelRow(m, provider)
+      if (row) rows.push(row)
     }
   }
   return rows
