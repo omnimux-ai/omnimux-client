@@ -26,18 +26,109 @@ PACKAGE_ROOT="$(cd "$SCRIPT_ROOT/.." && pwd)"
 # Git identity always belongs to the whole repository. In the monorepo that is
 # the parent of the plugin workspace, so the clean/main gate must inspect it
 # instead of assuming PACKAGE_ROOT itself is a Git root.
+# Inherited GIT_DIR / GIT_WORK_TREE must never redirect ROOT or --isolated worktree ops.
+for variable in ${!GIT_@}; do unset "$variable"; done
 ROOT="$(git -C "$PACKAGE_ROOT" rev-parse --show-toplevel 2>/dev/null || echo "$PACKAGE_ROOT")"
 PLUGINS_ROOT="${OMNIMUX_PLUGINS_DIR:-$PACKAGE_ROOT/plugins}"
-source "$SCRIPT_ROOT/resolve-omnimux-profile.sh"
-# Managed mode is mutually exclusive and branches before build, kit or preset writes.
 ORIGINAL_ARGS=("$@")
-for arg in "$@"; do
-  case "$arg" in
-    --managed-tarball*|--expect-*|--recover-managed-tarball*)
-      exec bash "$SCRIPT_ROOT/sync-stable.sh" "$@"
-      ;;
-  esac
-done
+
+usage() {
+  sed -n '2,18p' "$0"
+  exit 1
+}
+
+ISOLATED_REQUESTED=0
+ISOLATED_SKIP_BUILD=0
+MANAGED_REQUESTED=0
+ISOLATED_FORWARD_ARGS=()
+if [ "$#" -gt 0 ]; then
+  for arg in "$@"; do
+    case "$arg" in
+      -h|--help) usage ;;
+      --isolated) ISOLATED_REQUESTED=1 ;;
+      --managed-tarball*|--expect-*|--recover-managed-tarball*)
+        MANAGED_REQUESTED=1
+        ISOLATED_FORWARD_ARGS+=("$arg")
+        ;;
+      --skip-build)
+        ISOLATED_SKIP_BUILD=1
+        ISOLATED_FORWARD_ARGS+=("$arg")
+        ;;
+      *) ISOLATED_FORWARD_ARGS+=("$arg") ;;
+    esac
+  done
+fi
+
+if [ "$ISOLATED_REQUESTED" -eq 1 ] && [ "$MANAGED_REQUESTED" -eq 1 ]; then
+  echo '❌ sync: --isolated 不能与 --managed-tarball / --expect-* / --recover-managed-tarball 混用。' >&2
+  exit 1
+fi
+
+if [ "$ISOLATED_REQUESTED" -eq 1 ] && [ "${OMNIMUX_SYNC_ISOLATED_ACTIVE:-0}" = "1" ]; then
+  echo '❌ sync: 禁止嵌套或携带 OMNIMUX_SYNC_ISOLATED_ACTIVE=1 调用 --isolated。' >&2
+  exit 1
+fi
+
+# Managed mode is mutually exclusive and branches before build, kit or preset writes.
+if [ "$MANAGED_REQUESTED" -eq 1 ]; then
+  exec bash "$SCRIPT_ROOT/sync-stable.sh" "$@"
+fi
+
+if [ "$ISOLATED_REQUESTED" -eq 1 ]; then
+  if ! git -C "$ROOT" remote 2>/dev/null | grep -qx 'origin'; then
+    echo '❌ sync --isolated: 无法找到 origin 远端，拒绝隔离物化。' >&2
+    exit 1
+  fi
+  if ! fetch_err="$(git -C "$ROOT" fetch --no-tags origin '+refs/heads/main:refs/remotes/origin/main' 2>&1)"; then
+    echo "❌ sync --isolated: 无法 fetch 最新 origin/main，拒绝隔离物化。${fetch_err:+ ($fetch_err)}" >&2
+    exit 1
+  fi
+  target_commit="$(git -C "$ROOT" rev-parse --verify 'refs/remotes/origin/main^{commit}' 2>/dev/null)" || {
+    echo '❌ sync --isolated: 无法解析 origin/main 提交，拒绝隔离物化。' >&2
+    exit 1
+  }
+  iso_parent="$(mktemp -d "${TMPDIR:-/tmp}/omnimux-sync-isolated.XXXXXX")"
+  iso_dir="$iso_parent/wt"
+  _ISO_CLEANED=0
+  cleanup_isolated_sync() {
+    [ "$_ISO_CLEANED" -eq 1 ] && return 0
+    _ISO_CLEANED=1
+    git -C "$ROOT" worktree remove --force "$iso_dir" >/dev/null 2>&1 || true
+    rm -rf "$iso_parent"
+    git -C "$ROOT" worktree prune >/dev/null 2>&1 || true
+  }
+  trap cleanup_isolated_sync EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+  trap 'exit 129' HUP
+
+  echo "== sync --isolated: 签出最新 origin/main (${target_commit:0:12}) 至临时工作树 =="
+  git -C "$ROOT" worktree add --detach --quiet "$iso_dir" "$target_commit"
+
+  if [ -f "$iso_dir/plugins/scripts/sync-to-app.sh" ]; then
+    iso_script="$iso_dir/plugins/scripts/sync-to-app.sh"
+  elif [ -f "$iso_dir/scripts/sync-to-app.sh" ]; then
+    iso_script="$iso_dir/scripts/sync-to-app.sh"
+  else
+    echo "❌ sync --isolated: 临时工作树中未找到 sync-to-app.sh（$iso_dir）。" >&2
+    exit 1
+  fi
+
+  if [ "$ISOLATED_SKIP_BUILD" -eq 0 ] && [ "${OMNIMUX_SYNC_ISOLATED_SKIP_INSTALL:-0}" != "1" ] && [ -f "$iso_dir/pnpm-lock.yaml" ]; then
+    echo "== sync --isolated: 准备临时工作树依赖（frozen lockfile） =="
+    if ! (cd "$iso_dir" && corepack pnpm install --frozen-lockfile --ignore-scripts --offline >/dev/null 2>&1); then
+      (cd "$iso_dir" && corepack pnpm install --frozen-lockfile --ignore-scripts)
+    fi
+  fi
+
+  # Clear caller checkout overrides (e.g. from omnimux.mjs wrappers) so the isolated
+  # worktree resolves its own plugins/ and dsh-ui-kit sources cleanly.
+  unset OMNIMUX_PLUGINS_DIR OMNIMUX_PRODUCT_DIR OMNIMUX_DSH_UI_KIT_DIR
+  OMNIMUX_SYNC_ISOLATED_ACTIVE=1 bash "$iso_script" ${ISOLATED_FORWARD_ARGS[@]+"${ISOLATED_FORWARD_ARGS[@]}"}
+  exit $?
+fi
+
+source "$SCRIPT_ROOT/resolve-omnimux-profile.sh"
 SKIP_BUILD=0
 PLUGINS=()
 TARGET_SELECTION=()
@@ -61,77 +152,6 @@ is_alpha_plugin() {
   done
   return 1
 }
-
-usage() {
-  sed -n '2,18p' "$0"
-  exit 1
-}
-
-for arg in "${@:-}"; do
-  if [ "$arg" = "-h" ] || [ "$arg" = "--help" ]; then
-    usage
-  fi
-done
-
-ISOLATED_REQUESTED=0
-ISOLATED_SKIP_BUILD=0
-ISOLATED_FORWARD_ARGS=()
-for arg in "${@:-}"; do
-  case "$arg" in
-    --isolated) ISOLATED_REQUESTED=1 ;;
-    --skip-build)
-      ISOLATED_SKIP_BUILD=1
-      ISOLATED_FORWARD_ARGS+=("$arg")
-      ;;
-    *) ISOLATED_FORWARD_ARGS+=("$arg") ;;
-  esac
-done
-
-if [ "$ISOLATED_REQUESTED" -eq 1 ] && [ "${OMNIMUX_SYNC_ISOLATED_ACTIVE:-0}" != "1" ]; then
-  for variable in ${!GIT_@}; do unset "$variable"; done
-  if ! git -C "$ROOT" remote 2>/dev/null | grep -qx 'origin'; then
-    echo '❌ sync --isolated: 无法找到 origin 远端，拒绝隔离物化。' >&2
-    exit 1
-  fi
-  if ! git -C "$ROOT" fetch --no-tags origin '+refs/heads/main:refs/remotes/origin/main' 2>/dev/null; then
-    echo '❌ sync --isolated: 无法 fetch 最新 origin/main，拒绝隔离物化。' >&2
-    exit 1
-  fi
-  target_commit="$(git -C "$ROOT" rev-parse --verify 'refs/remotes/origin/main^{commit}' 2>/dev/null)" || {
-    echo '❌ sync --isolated: 无法解析 origin/main 提交，拒绝隔离物化。' >&2
-    exit 1
-  }
-  iso_parent="$(mktemp -d "${TMPDIR:-/tmp}/omnimux-sync-isolated.XXXXXX")"
-  iso_dir="$iso_parent/wt"
-  cleanup_isolated_sync() {
-    git -C "$ROOT" worktree remove --force "$iso_dir" >/dev/null 2>&1 || true
-    rm -rf "$iso_parent"
-    git -C "$ROOT" worktree prune >/dev/null 2>&1 || true
-  }
-  trap cleanup_isolated_sync EXIT
-
-  echo "== sync --isolated: 签出最新 origin/main (${target_commit:0:12}) 至临时工作树 =="
-  git -C "$ROOT" worktree add --detach --quiet "$iso_dir" "$target_commit"
-
-  if [ -f "$iso_dir/plugins/scripts/sync-to-app.sh" ]; then
-    iso_script="$iso_dir/plugins/scripts/sync-to-app.sh"
-  elif [ -f "$iso_dir/scripts/sync-to-app.sh" ]; then
-    iso_script="$iso_dir/scripts/sync-to-app.sh"
-  else
-    echo "❌ sync --isolated: 临时工作树中未找到 sync-to-app.sh（$iso_dir）。" >&2
-    exit 1
-  fi
-
-  if [ "$ISOLATED_SKIP_BUILD" -eq 0 ] && [ "${OMNIMUX_SYNC_ISOLATED_SKIP_INSTALL:-0}" != "1" ] && [ -f "$iso_dir/pnpm-lock.yaml" ]; then
-    echo "== sync --isolated: 准备临时工作树依赖（frozen lockfile） =="
-    if ! (cd "$iso_dir" && corepack pnpm install --frozen-lockfile --ignore-scripts --offline >/dev/null 2>&1); then
-      (cd "$iso_dir" && corepack pnpm install --frozen-lockfile --ignore-scripts)
-    fi
-  fi
-
-  OMNIMUX_SYNC_ISOLATED_ACTIVE=1 bash "$iso_script" ${ISOLATED_FORWARD_ARGS[@]+"${ISOLATED_FORWARD_ARGS[@]}"}
-  exit $?
-fi
 
 # ---------------------------------------------------------------------------
 # 目标 Profiles 解析与参数处理

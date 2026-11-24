@@ -50,14 +50,17 @@ try {
   await writeFile(join(output, 'result.json'), JSON.stringify({ passed: false, message: error.message, stdout: error.stdout, stderr: error.stderr }, null, 2));
   throw error;
 } finally {
-  if (server) {
-    server.closeAllConnections();
-    await new Promise(resolve => server.close(resolve));
-  }
-  await rm(join(output, 'dist'), { recursive: true, force: true });
-  await writeFile(join(output, 'server-closure.json'), JSON.stringify({ stopped: true }));
-  console.log(`Evidence: ${output}`);
-  if (!writeEvidence) {
-    await rm(output, { recursive: true, force: true });
+  try {
+    if (server) {
+      server.closeAllConnections();
+      await new Promise(resolve => server.close(resolve));
+    }
+    await rm(join(output, 'dist'), { recursive: true, force: true });
+    await writeFile(join(output, 'server-closure.json'), JSON.stringify({ stopped: true }));
+    console.log(`Evidence: ${output}`);
+  } finally {
+    if (!writeEvidence) {
+      await rm(output, { recursive: true, force: true });
+    }
   }
 }

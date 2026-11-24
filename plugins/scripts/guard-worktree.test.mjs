@@ -1507,3 +1507,144 @@ describe('main checkout install must freeze the lockfile (#3821)', () => {
     }
   })
 })
+
+describe('adversarial hardening regressions (materialization / wrapper / frozen-install / bash write)', () => {
+  it('blocks materialization bypasses via vitest/jest comments, subshells, shell/node flags, env spoofing, and managed conflicts', () => {
+    const denyFromWorktree = [
+      'echo vitest && ./scripts/sync-to-app.sh omnimux',
+      './scripts/sync-to-app.sh omnimux # jest',
+      './scripts/sync-to-app.sh omnimux # --isolated',
+      'OMNIMUX_SYNC_ISOLATED_ACTIVE=1 ./scripts/sync-to-app.sh --isolated omnimux',
+      'env OMNIMUX_SYNC_ISOLATED_ACTIVE=1 ./scripts/sync-to-app.sh --isolated omnimux',
+      'export OMNIMUX_SYNC_ISOLATED_ACTIVE=1 && ./scripts/sync-to-app.sh --isolated omnimux',
+      './scripts/sync-to-app.sh --isolated --managed-tarball=/tmp/fake.tgz',
+      '( ./scripts/sync-to-app.sh omnimux )',
+      '{ ./scripts/sync-to-app.sh omnimux; }',
+      'bash -o errexit scripts/sync-to-app.sh omnimux',
+      'bash < scripts/sync-to-app.sh',
+      'cat scripts/sync-to-app.sh | bash',
+      'node scripts/omnimux.mjs sync --test',
+      'node -r ./x.js scripts/omnimux.mjs sync',
+      'bash -c "./scripts/sync-to-app.sh omnimux"',
+    ]
+    for (const command of denyFromWorktree) {
+      const result = decideBashCommand({ command, cwd: worktreeRoot })
+      assert.equal(result.decision, 'deny', `Expected worktree materialization deny: ${command}`)
+      assert.equal(result.reason, 'forbidden-worktree-materialization', `Unexpected reason for: ${command}`)
+    }
+  })
+
+  it('blocks build, wrapper, cross-dir targeting, and manager-specific unfrozen-install bypasses', () => {
+    const denyOnMain = [
+      'env -S "pnpm build:all"',
+      'env --split-string="CI=1 pnpm build:all"',
+      'corepack yarn workspace dsh-plugin-desktop build',
+      'corepack yarn workspaces foreach -A run build',
+      'pnpm --dir plugins exec tsc',
+      'pnpm --dir plugins tsc',
+      'bash -c "pnpm build:all"',
+      'sh -lc "pnpm build:all"',
+      '(pnpm build:all)',
+      'corepack yarn',
+      'yarn --cwd app',
+      'npm install --immutable',
+      'npm install --frozen-lockfile',
+      'pnpm install --immutable',
+      'pnpm install --frozen-lockfile --no-frozen-lockfile',
+      'pnpm install --frozen-lockfile --frozen-lockfile=false',
+      'yarn install --immutable --no-immutable',
+      'pnpm install -- --frozen-lockfile',
+    ]
+    for (const command of denyOnMain) {
+      const result = decideBashCommand({ command, cwd: mainRepoRoot })
+      assert.equal(result.decision, 'deny', `Expected main build/install deny: ${command}`)
+    }
+
+    // Worktree -> primary checkout via --dir / -C / bash -c must still be denied
+    for (const command of [
+      `corepack pnpm --dir "${mainRepoRoot}/plugins" run build:all`,
+      `pnpm --dir "${mainRepoRoot}/plugins" exec tsc`,
+      `env -C "${mainRepoRoot}/plugins" pnpm build:all`,
+      `bash -c 'cd "${mainRepoRoot}" && pnpm build:all'`,
+    ]) {
+      assert.equal(
+        decideBashCommand({ command, cwd: worktreeRoot }).decision,
+        'deny',
+        `Expected worktree->main build deny: ${command}`,
+      )
+    }
+
+    // Legitimate frozen installs & info flags remain allowed
+    for (const command of [
+      'yarn install --cwd app --immutable',
+      'corepack yarn --immutable',
+      'corepack yarn --version',
+      `pnpm --dir "${worktreeRoot}" exec tsc`,
+    ]) {
+      assert.equal(
+        decideBashCommand({ command, cwd: mainRepoRoot }).decision,
+        'allow',
+        `Expected allow: ${command}`,
+      )
+    }
+  })
+
+  it('blocks FD/combined/noclobber redirects, git redirects, rm/mv/abs-bin/wrapper mutations, and tracks cd across worktree/main', () => {
+    const denyOnMain = [
+      'echo x 1> README.md',
+      'echo x 2> README.md',
+      'echo x &> README.md',
+      'echo x &>> README.md',
+      'echo x >| README.md',
+      'echo x 1>| README.md',
+      'echo x <> README.md',
+      'git status > README.md',
+      'rm README.md',
+      'rm -rf .tmp',
+      'mv README.md /tmp/out',
+      '/bin/cp /tmp/a README.md',
+      '/usr/bin/touch evil.txt',
+      'command touch evil.txt',
+      'env touch evil.txt',
+      'env -S "touch evil.txt"',
+      'bash -c "touch evil.txt"',
+      '(echo evil > README.md)',
+      `(cd "${worktreeRoot}" && echo ok > .tmp-wt.txt) && echo evil > README.md`,
+    ]
+    for (const command of denyOnMain) {
+      const result = decideBashCommand({ command, cwd: mainRepoRoot })
+      assert.equal(result.decision, 'deny', `Expected main bash write deny: ${command}`)
+      assert.equal(result.reason, 'forbidden-main-checkout-copy', `Unexpected reason for: ${command}`)
+    }
+
+    // Worktree -> primary checkout via cd must be denied
+    for (const command of [
+      `cd "${mainRepoRoot}" && echo evil > README.md`,
+      `cd "${mainRepoRoot}" && touch evil.txt`,
+      `cd "${mainRepoRoot}" && rm README.md`,
+    ]) {
+      const result = decideBashCommand({ command, cwd: worktreeRoot })
+      assert.equal(result.decision, 'deny', `Expected worktree->main cd write deny: ${command}`)
+      assert.equal(result.reason, 'forbidden-main-checkout-copy', `Unexpected reason for: ${command}`)
+    }
+
+    // Main -> worktree via cd and safe external/allowlisted/lookup commands must be allowed (zero false positives)
+    for (const command of [
+      `cd "${worktreeRoot}" && echo ok > .tmp-test-fp.txt`,
+      `cd "${worktreeRoot}" && touch new-file.txt`,
+      `cd "${worktreeRoot}" && rm -f scratch.txt`,
+      'git diff > /tmp/out.diff',
+      'git status > .workbuddy/status.txt',
+      'echo "a > README.md"',
+      'command -v rm',
+      'rm -f /tmp/scratch-file',
+      'mv .workbuddy/a.txt /tmp/b.txt',
+    ]) {
+      assert.equal(
+        decideBashCommand({ command, cwd: mainRepoRoot }).decision,
+        'allow',
+        `Expected allow without false positive: ${command}`,
+      )
+    }
+  })
+})

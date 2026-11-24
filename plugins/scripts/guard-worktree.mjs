@@ -296,11 +296,418 @@ function commandSegments(command) {
     .filter(Boolean)
 }
 
+function stripUnquotedShellComments(command) {
+  const input = String(command || '')
+  let out = ''
+  let inSingle = false
+  let inDouble = false
+  let escaped = false
+  let inComment = false
+
+  for (let i = 0; i < input.length; i++) {
+    const ch = input[i]
+    if (inComment) {
+      if (ch === '\n') {
+        inComment = false
+        out += ch
+      }
+      continue
+    }
+    if (escaped) {
+      out += ch
+      escaped = false
+      continue
+    }
+    if (ch === '\\' && !inSingle) {
+      out += ch
+      escaped = true
+      continue
+    }
+    if (ch === "'" && !inDouble) {
+      inSingle = !inSingle
+      out += ch
+      continue
+    }
+    if (ch === '"' && !inSingle) {
+      inDouble = !inDouble
+      out += ch
+      continue
+    }
+    if (ch === '#' && !inSingle && !inDouble) {
+      const prev = i === 0 ? '' : input[i - 1]
+      if (i === 0 || /[\s;&|({\n]/.test(prev)) {
+        inComment = true
+        continue
+      }
+    }
+    out += ch
+  }
+  return out
+}
+
 function rawCommandSegments(command) {
-  return String(command || '')
-    .split(/\s*(?:&&|\|\||;|\n)\s*/)
-    .map((s) => s.trim())
-    .filter(Boolean)
+  const input = stripUnquotedShellComments(command)
+  const segments = []
+  let current = ''
+  let inSingle = false
+  let inDouble = false
+  let escaped = false
+
+  const flush = () => {
+    const trimmed = current.trim()
+    if (trimmed) segments.push(trimmed)
+    current = ''
+  }
+
+  for (let i = 0; i < input.length; i++) {
+    const ch = input[i]
+    const next = input[i + 1] || ''
+    const prev = i > 0 ? input[i - 1] : ''
+    if (escaped) {
+      current += ch
+      escaped = false
+      continue
+    }
+    if (ch === '\\' && !inSingle) {
+      current += ch
+      escaped = true
+      continue
+    }
+    if (ch === "'" && !inDouble) {
+      inSingle = !inSingle
+      current += ch
+      continue
+    }
+    if (ch === '"' && !inSingle) {
+      inDouble = !inDouble
+      current += ch
+      continue
+    }
+    if (!inSingle && !inDouble) {
+      if ((ch === '&' && next === '&') || (ch === '|' && next === '|')) {
+        flush()
+        i += 1
+        continue
+      }
+      if (ch === ';' || ch === '\n') {
+        flush()
+        continue
+      }
+      // Single '&' background separator (avoid >&, &>, |&, &&)
+      if (ch === '&' && prev !== '>' && prev !== '|' && next !== '>' && next !== '&') {
+        flush()
+        continue
+      }
+    }
+    current += ch
+  }
+  flush()
+  return segments
+}
+
+function splitRawPipelineSegments(segment) {
+  const input = String(segment || '')
+  const parts = []
+  let current = ''
+  let inSingle = false
+  let inDouble = false
+  let escaped = false
+
+  const flush = () => {
+    const trimmed = current.trim()
+    if (trimmed) parts.push(trimmed)
+    current = ''
+  }
+
+  for (let i = 0; i < input.length; i++) {
+    const ch = input[i]
+    const prev = i > 0 ? input[i - 1] : ''
+    const next = input[i + 1] || ''
+    if (escaped) {
+      current += ch
+      escaped = false
+      continue
+    }
+    if (ch === '\\' && !inSingle) {
+      current += ch
+      escaped = true
+      continue
+    }
+    if (ch === "'" && !inDouble) {
+      inSingle = !inSingle
+      current += ch
+      continue
+    }
+    if (ch === '"' && !inSingle) {
+      inDouble = !inDouble
+      current += ch
+      continue
+    }
+    // Split on pipe '|' or '|&', avoiding '||', and avoiding noclobber '>|'
+    if (!inSingle && !inDouble && ch === '|' && prev !== '|' && prev !== '>' && next !== '|') {
+      flush()
+      if (next === '&') i += 1
+      continue
+    }
+    current += ch
+  }
+  flush()
+  return parts
+}
+
+/**
+ * Peel leading subshell/grouping tokens ('(', '{', '!') and unmatched trailing
+ * closers (')', '}') outside quotes while reporting subshell paren deltas so
+ * callers can track subshell-scoped `cd` without leaking cwd to the outer shell.
+ */
+function peelShellGrouping(rawSegment) {
+  let body = String(rawSegment || '').trim()
+  let openParens = 0
+  let closeParens = 0
+
+  for (;;) {
+    if (body.startsWith('(') && !body.startsWith('((')) {
+      openParens += 1
+      body = body.slice(1).trimStart()
+      continue
+    }
+    if (/^\{\s+/.test(body) || body === '{') {
+      body = body.slice(1).trimStart()
+      continue
+    }
+    if (/^!\s+/.test(body)) {
+      body = body.slice(1).trimStart()
+      continue
+    }
+    break
+  }
+
+  // Find trailing unmatched unquoted ')' or '}' characters without touching quoted payloads.
+  let inSingle = false
+  let inDouble = false
+  let escaped = false
+  let parenDepth = 0
+  let cutIndex = body.length
+  const unmatchedTrailing = []
+
+  for (let i = 0; i < body.length; i++) {
+    const ch = body[i]
+    if (escaped) {
+      escaped = false
+      unmatchedTrailing.length = 0
+      continue
+    }
+    if (ch === '\\' && !inSingle) {
+      escaped = true
+      unmatchedTrailing.length = 0
+      continue
+    }
+    if (ch === "'" && !inDouble) {
+      inSingle = !inSingle
+      unmatchedTrailing.length = 0
+      continue
+    }
+    if (ch === '"' && !inSingle) {
+      inDouble = !inDouble
+      unmatchedTrailing.length = 0
+      continue
+    }
+    if (inSingle || inDouble) continue
+    if (/\s/.test(ch)) continue
+    if (ch === '(') {
+      parenDepth += 1
+      unmatchedTrailing.length = 0
+    } else if (ch === ')') {
+      if (parenDepth > 0) {
+        parenDepth -= 1
+        unmatchedTrailing.length = 0
+      } else {
+        unmatchedTrailing.push({ index: i, ch })
+      }
+    } else if (ch === '}') {
+      unmatchedTrailing.push({ index: i, ch })
+    } else {
+      unmatchedTrailing.length = 0
+    }
+  }
+
+  if (unmatchedTrailing.length > 0) {
+    cutIndex = unmatchedTrailing[0].index
+    for (const item of unmatchedTrailing) {
+      if (item.ch === ')') closeParens += 1
+    }
+    body = body.slice(0, cutIndex).trimEnd()
+  }
+
+  return { openParens, closeParens, body }
+}
+
+function extractOutputRedirectionTargets(segment) {
+  const input = String(segment || '')
+  const targets = []
+  let inSingle = false
+  let inDouble = false
+  let escaped = false
+
+  const readTargetToken = (startIdx) => {
+    let i = startIdx
+    while (i < input.length && /\s/.test(input[i])) i += 1
+    let token = ''
+    let tSingle = false
+    let tDouble = false
+    let tEscaped = false
+    while (i < input.length) {
+      const ch = input[i]
+      if (tEscaped) {
+        token += ch
+        tEscaped = false
+        i += 1
+        continue
+      }
+      if (ch === '\\' && !tSingle) {
+        tEscaped = true
+        i += 1
+        continue
+      }
+      if (ch === "'" && !tDouble) {
+        tSingle = !tSingle
+        i += 1
+        continue
+      }
+      if (ch === '"' && !tSingle) {
+        tDouble = !tDouble
+        i += 1
+        continue
+      }
+      if (!tSingle && !tDouble && /[\s;&|<>()]/.test(ch)) {
+        break
+      }
+      token += ch
+      i += 1
+    }
+    return { token, nextIdx: i }
+  }
+
+  for (let i = 0; i < input.length; i++) {
+    const ch = input[i]
+    if (escaped) {
+      escaped = false
+      continue
+    }
+    if (ch === '\\' && !inSingle) {
+      escaped = true
+      continue
+    }
+    if (ch === "'" && !inDouble) {
+      inSingle = !inSingle
+      continue
+    }
+    if (ch === '"' && !inSingle) {
+      inDouble = !inDouble
+      continue
+    }
+    if (inSingle || inDouble) continue
+
+    let opLen = 0
+    if (ch === '&' && input[i + 1] === '>') {
+      opLen = input[i + 2] === '>' ? 3 : 2
+    } else if (ch === '<' && input[i + 1] === '>') {
+      opLen = 2
+    } else if (ch === '>') {
+      const next = input[i + 1] || ''
+      if (next === '&') {
+        // Descriptor duplication/close: 2>&1, >&2, 2>&-
+        const rest = input.slice(i + 2)
+        if (/^(?:\d+|-)(?=\s|$|[;&|)])/.test(rest)) {
+          i += 1
+          continue
+        }
+        // Bash shorthand >&file redirects both stdout & stderr to file
+        opLen = 2
+      } else if (next === '>' || next === '|') {
+        opLen = 2
+      } else {
+        opLen = 1
+      }
+    }
+
+    if (opLen > 0) {
+      const { token, nextIdx } = readTargetToken(i + opLen)
+      if (token && token !== '/dev/null' && token !== '/dev/stdout' && token !== '/dev/stderr' && token !== '-') {
+        targets.push(token)
+      }
+      i = nextIdx - 1
+    }
+  }
+  return targets
+}
+
+function extractInputRedirectionTargets(segment) {
+  const input = String(segment || '')
+  const targets = []
+  let inSingle = false
+  let inDouble = false
+  let escaped = false
+
+  for (let i = 0; i < input.length; i++) {
+    const ch = input[i]
+    if (escaped) {
+      escaped = false
+      continue
+    }
+    if (ch === '\\' && !inSingle) {
+      escaped = true
+      continue
+    }
+    if (ch === "'" && !inDouble) {
+      inSingle = !inSingle
+      continue
+    }
+    if (ch === '"' && !inSingle) {
+      inDouble = !inDouble
+      continue
+    }
+    if (inSingle || inDouble) continue
+
+    if (ch === '<' && input[i + 1] !== '<' && input[i + 1] !== '>' && input[i + 1] !== '&' && input[i - 1] !== '<') {
+      let j = i + 1
+      while (j < input.length && /\s/.test(input[j])) j += 1
+      let token = ''
+      let tSingle = false
+      let tDouble = false
+      let tEscaped = false
+      while (j < input.length) {
+        const c = input[j]
+        if (tEscaped) {
+          token += c
+          tEscaped = false
+          j += 1
+          continue
+        }
+        if (c === '\\' && !tSingle) {
+          tEscaped = true
+          j += 1
+          continue
+        }
+        if (c === "'" && !tDouble) {
+          tSingle = !tSingle
+          j += 1
+          continue
+        }
+        if (c === '"' && !tSingle) {
+          tDouble = !tDouble
+          j += 1
+          continue
+        }
+        if (!tSingle && !tDouble && /[\s;&|<>()]/.test(c)) break
+        token += c
+        j += 1
+      }
+      if (token) targets.push(token)
+      i = j - 1
+    }
+  }
+  return targets
 }
 
 /**
@@ -309,59 +716,194 @@ function rawCommandSegments(command) {
  * restore, not `pnpm install log`).
  */
 function stripShellRedirection(segment) {
-  return String(segment || '')
-    // descriptor duplication: 2>&1, 1>&2
-    .replace(/(?:^|\s)\d*>&\d+(?=\s|$)/g, ' ')
-    // file redirects: >file, >>file, 2>file, &>file, > "file with spaces"
-    .replace(/(?:^|\s)(?:\d*>>?|&>)\s*(?:"[^"]*"|'[^']*'|[^\s;&|<>]+)/g, ' ')
-    // input redirects: <file, <<<word
-    .replace(/(?:^|\s)(?:<<<|<<|<)\s*(?:"[^"]*"|'[^']*'|[^\s;&|<>]+)/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
+  const input = String(segment || '')
+  let out = ''
+  let inSingle = false
+  let inDouble = false
+  let escaped = false
+
+  const skipToken = (startIdx) => {
+    let i = startIdx
+    while (i < input.length && /\s/.test(input[i])) i += 1
+    let tSingle = false
+    let tDouble = false
+    let tEscaped = false
+    while (i < input.length) {
+      const ch = input[i]
+      if (tEscaped) {
+        tEscaped = false
+        i += 1
+        continue
+      }
+      if (ch === '\\' && !tSingle) {
+        tEscaped = true
+        i += 1
+        continue
+      }
+      if (ch === "'" && !tDouble) {
+        tSingle = !tSingle
+        i += 1
+        continue
+      }
+      if (ch === '"' && !tSingle) {
+        tDouble = !tDouble
+        i += 1
+        continue
+      }
+      if (!tSingle && !tDouble && /[\s;&|<>()]/.test(ch)) break
+      i += 1
+    }
+    return i
+  }
+
+  for (let i = 0; i < input.length; i++) {
+    const ch = input[i]
+    if (escaped) {
+      out += ch
+      escaped = false
+      continue
+    }
+    if (ch === '\\' && !inSingle) {
+      out += ch
+      escaped = true
+      continue
+    }
+    if (ch === "'" && !inDouble) {
+      inSingle = !inSingle
+      out += ch
+      continue
+    }
+    if (ch === '"' && !inSingle) {
+      inDouble = !inDouble
+      out += ch
+      continue
+    }
+    if (!inSingle && !inDouble) {
+      // Optional leading fd digits before > or < when preceded by boundary
+      const fdMatch = /^(\d+)(<<<|<<|<>|>>|>\||>&|>|<)/.exec(input.slice(i))
+      if (fdMatch && (i === 0 || /[\s;&|()]/.test(input[i - 1]))) {
+        const opStart = i + fdMatch[1].length
+        const op = fdMatch[2]
+        out += ' '
+        i = skipToken(opStart + op.length) - 1
+        continue
+      }
+      if (ch === '&' && input[i + 1] === '>') {
+        const opLen = input[i + 2] === '>' ? 3 : 2
+        out += ' '
+        i = skipToken(i + opLen) - 1
+        continue
+      }
+      if (ch === '>' || ch === '<') {
+        const rest = input.slice(i)
+        const opMatch = /^(?:<<<|<<|<>|>>|>\||>&|&>>|&>|>|<)/.exec(rest)
+        if (opMatch) {
+          out += ' '
+          i = skipToken(i + opMatch[0].length) - 1
+          continue
+        }
+      }
+    }
+    out += ch
+  }
+  return out.replace(/\s+/g, ' ').trim()
 }
 
 /** Flags whose next token is a value, not a positional/package argument. */
 const VALUE_TAKING_FLAGS = new Set([
-  '--filter', '-F', '--prefix', '-C', '--dir', '--registry', '--reporter',
-  '--loglevel', '--depth', '--network-concurrency', '--store-dir',
-  '--virtual-store-dir', '--modules-dir', '--config-dir', '--workspace-concurrency',
-  '--use-node-version', '--fetch-retries', '--fetch-timeout',
-  '--fetch-retry-mintimeout', '--fetch-retry-maxtimeout', '--child-concurrency',
+  '--filter', '-F', '--prefix', '-C', '--dir', '--cwd', '--workspace', '-w',
+  '--registry', '--reporter', '--loglevel', '--depth', '--network-concurrency',
+  '--store-dir', '--virtual-store-dir', '--modules-dir', '--config-dir',
+  '--workspace-concurrency', '--use-node-version', '--fetch-retries',
+  '--fetch-timeout', '--fetch-retry-mintimeout', '--fetch-retry-maxtimeout',
+  '--child-concurrency',
 ])
+const PM_DIR_FLAGS = new Set(['--dir', '-C', '--prefix', '--cwd'])
+
+function applyCdCommand(words, currentCwd, prevCwd) {
+  let i = 1
+  while (i < words.length) {
+    const w = words[i]
+    if (w === '--') {
+      i += 1
+      break
+    }
+    if (w === '-L' || w === '-P' || w === '-e' || w === '-@') {
+      i += 1
+      continue
+    }
+    break
+  }
+  const rawArg = words[i]
+  if (!rawArg) {
+    const home = homedirValue()
+    return { nextCwd: home || currentCwd, nextPrevCwd: currentCwd }
+  }
+  if (rawArg === '-') {
+    return { nextCwd: prevCwd || currentCwd, nextPrevCwd: currentCwd }
+  }
+  return { nextCwd: toFullPath(rawArg, currentCwd), nextPrevCwd: currentCwd }
+}
 
 /**
  * install 是否冻结了 lockfile。
  *
- * `--frozen-lockfile` 是 pnpm 与 yarn 的共同 flag，语义是「manifest 与 lockfile
- * 不匹配时失败退出，而不是改写 lockfile」——实测 pnpm 在 manifest 加依赖后
- * 带该 flag 会失败且 lockfile 哈希不变。`npm ci` 天然冻结，由调用方单独放行。
+ * 按具体包管理器语义判定，拒绝 manager-blind 绕过（如 `npm install --immutable` /
+ * `npm install --frozen-lockfile` 会忽略无效 flag 并改写 package-lock.json）以及
+ * 后置否定 flag 绕过（如 `--frozen-lockfile --no-frozen-lockfile` / `=false`）。
+ * `npm ci` 天然冻结，由调用方单独放行。
  *
  * @param {string[]} words 已解包、已去引号的完整命令词
+ * @param {string} [manager] 显式指定包管理器名称；缺省时由 words[0] 推断
  * @returns {boolean}
  */
-export function isFrozenInstall(words) {
-  return words.some((word) => {
-    const value = String(word || '').toLowerCase()
-    // --frozen-lockfile（pnpm / yarn v1）与 --immutable（Yarn 4 / Berry）。
-    // =false / =0 等于关闭冻结，必须判为不冻结。
-    if (value === '--frozen-lockfile' || value === '--immutable') return true
+export function isFrozenInstall(words, manager = '') {
+  const list = Array.isArray(words) ? words : []
+  const inferred = list.length > 0 && !String(list[0] || '').startsWith('-')
+    ? commandBasename(list[0])
+    : ''
+  const pm = String(manager || inferred || '').toLowerCase()
+  if (pm === 'npm') return false
+
+  const allowFrozenLockfile = pm === '' || pm === 'pnpm' || pm === 'yarn' || pm === 'bun'
+  const allowImmutable = pm === '' || pm === 'yarn'
+
+  let frozen = false
+  for (const raw of list) {
+    const value = String(raw || '').toLowerCase()
+    if (value === '--') break
+    if (value === '--no-frozen-lockfile' || value === '--no-immutable') {
+      return false
+    }
+    if (value === '--frozen-lockfile') {
+      if (allowFrozenLockfile) frozen = true
+      continue
+    }
     if (value.startsWith('--frozen-lockfile=')) {
       const flagValue = value.slice('--frozen-lockfile='.length)
-      return flagValue !== 'false' && flagValue !== '0'
+      if (flagValue === 'false' || flagValue === '0') return false
+      if (allowFrozenLockfile) frozen = true
+      continue
+    }
+    if (value === '--immutable') {
+      if (allowImmutable) frozen = true
+      continue
     }
     if (value.startsWith('--immutable=')) {
       const flagValue = value.slice('--immutable='.length)
-      return flagValue !== 'false' && flagValue !== '0'
+      if (flagValue === 'false' || flagValue === '0') return false
+      if (allowImmutable) frozen = true
+      continue
     }
-    // npm 的等价形态：--prefer-offline 不改 lockfile 但仍可能写，故不认；只认 ci 与冻结 flag。
-    return false
-  })
+  }
+  return frozen
 }
 
 function positionalArgs(words) {
   const positional = []
   for (let i = 0; i < words.length; i++) {
     const word = words[i]
+    if (word === '--') break
     if (word.startsWith('-')) {
       if (VALUE_TAKING_FLAGS.has(word)) i += 1
       continue
@@ -373,7 +915,17 @@ function positionalArgs(words) {
 
 /** Wrapper flags that consume the next token before the wrapped command starts. */
 const WRAPPER_FLAGS_WITH_VALUE = new Set(['--package', '-p', '--with', '--node-options', '--registry', '--cache'])
-const ENV_FLAGS_WITH_VALUE = new Set(['-u', '--unset', '-C', '--chdir', '-S', '--split-string'])
+const ENV_FLAGS_WITH_VALUE = new Set(['-u', '--unset', '-C', '--chdir'])
+const SHELL_VALUE_FLAGS = new Set(['-o', '+o', '-O', '+O', '--rcfile', '--init-file'])
+const NODE_VALUE_FLAGS = new Set([
+  '-r', '--require', '--import', '--loader', '--experimental-loader',
+  '-C', '--conditions', '--env-file', '--env-file-if-exists', '--input-type',
+  '--redirect-warnings', '--diagnostic-dir', '--watch-path',
+  '--test-name-pattern', '--test-reporter', '--test-reporter-destination',
+  '--openssl-config', '--icu-data-dir', '--heapsnapshot-signal',
+  '--cpu-prof-dir', '--cpu-prof-name', '--heap-prof-dir', '--heap-prof-name',
+  '--title', '-e', '--eval', '-p', '--print',
+])
 
 function skipLeadingWrapperFlags(words) {
   let i = 0
@@ -381,7 +933,7 @@ function skipLeadingWrapperFlags(words) {
     const word = words[i]
     if (word === '--') {
       i += 1
-      continue
+      break
     }
     if (!word.startsWith('-')) break
     i += WRAPPER_FLAGS_WITH_VALUE.has(word) ? 2 : 1
@@ -389,62 +941,202 @@ function skipLeadingWrapperFlags(words) {
   return words.slice(i)
 }
 
-function skipEnvWrapper(words) {
-  let i = 0
-  while (i < words.length) {
-    const word = words[i]
+function skipEnvWrapperWithMeta(words) {
+  const queue = [...words]
+  const envVars = new Set()
+  let targetDir = ''
+  let idx = 0
+  while (idx < queue.length) {
+    const word = queue[idx]
     if (word === '--') {
-      i += 1
+      idx += 1
       break
     }
-    if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(word)) {
-      i += 1
+    const envMatch = /^([A-Za-z_][A-Za-z0-9_]*)=/.exec(word)
+    if (envMatch) {
+      envVars.add(envMatch[1])
+      idx += 1
+      continue
+    }
+    if (word === '-S' || word === '--split-string') {
+      const payload = queue[idx + 1] || ''
+      const splitTokens = tokenizeCommandLine(payload)
+      queue.splice(idx, 2, ...splitTokens)
+      continue
+    }
+    if (word.startsWith('--split-string=')) {
+      const payload = word.slice('--split-string='.length)
+      const splitTokens = tokenizeCommandLine(payload)
+      queue.splice(idx, 1, ...splitTokens)
+      continue
+    }
+    if (word.length > 2 && word.startsWith('-S')) {
+      const payload = word.slice(2)
+      const splitTokens = tokenizeCommandLine(payload)
+      queue.splice(idx, 1, ...splitTokens)
+      continue
+    }
+    if ((word === '-C' || word === '--chdir') && idx + 1 < queue.length) {
+      targetDir = queue[idx + 1]
+      idx += 2
+      continue
+    }
+    if (word.startsWith('--chdir=')) {
+      targetDir = word.slice('--chdir='.length)
+      idx += 1
       continue
     }
     if (word.startsWith('-')) {
-      i += ENV_FLAGS_WITH_VALUE.has(word) ? 2 : 1
+      idx += ENV_FLAGS_WITH_VALUE.has(word) ? 2 : 1
       continue
     }
     break
   }
-  return words.slice(i)
+  return { words: queue.slice(idx), envVars, targetDir }
+}
+
+function parseShellInvocation(words) {
+  if (!words || words.length === 0) return null
+  const verb = commandBasename(words[0])
+  if (verb === 'source' || verb === '.') {
+    return { verb, syntaxCheckOnly: false, hasC: false, inlineScript: '', scriptFile: words[1] || '' }
+  }
+  if (!['bash', 'sh', 'zsh', 'dash', 'ksh'].includes(verb)) return null
+
+  let i = 1
+  let syntaxCheckOnly = false
+  let hasC = false
+  while (i < words.length) {
+    const flag = words[i]
+    if (flag === '--' || flag === '-') {
+      i += 1
+      break
+    }
+    if (!flag.startsWith('-') && !flag.startsWith('+')) break
+    if (SHELL_VALUE_FLAGS.has(flag)) {
+      i += 2
+      continue
+    }
+    if (flag.startsWith('--')) {
+      if (flag.startsWith('--rcfile=') || flag.startsWith('--init-file=')) {
+        i += 1
+        continue
+      }
+      i += 1
+      continue
+    }
+    if (/^-[a-zA-Z]*n[a-zA-Z]*$/.test(flag)) syntaxCheckOnly = true
+    if (/^-[a-zA-Z]*c[a-zA-Z]*$/.test(flag)) hasC = true
+    if (/^[-+][a-zA-Z]*[oO]$/.test(flag)) {
+      i += 2
+      continue
+    }
+    i += 1
+  }
+  const arg = words[i] || ''
+  return {
+    verb,
+    syntaxCheckOnly,
+    hasC,
+    inlineScript: hasC ? arg : '',
+    scriptFile: hasC ? '' : arg,
+  }
 }
 
 /**
- * Unwrap `KEY=VAL`, `env`, `corepack`, `command`, `npx`, `pnpm exec|dlx`,
- * `npm exec`, `yarn exec|dlx`, `bunx` so the wrapped command is classified
- * with the same rules as a direct invocation. Bounded to 6 layers.
+ * Unwrap `KEY=VAL`, `env` (including `-S`/`-C`), `corepack`, `command`, `npx`,
+ * `pnpm [--dir ...] exec|dlx`, `npm [--prefix ...] exec`,
+ * `yarn [--cwd ...] [workspace <pkg>] exec|dlx`, `bunx`/`bun x` while preserving
+ * extracted env keys and target directory overrides. Bounded to 8 layers.
  */
-function unwrapExecutionWrapper(words) {
-  let current = words
-  for (let depth = 0; depth < 6; depth += 1) {
+function unwrapExecutionWrapperWithMeta(words) {
+  let current = Array.isArray(words) ? words : []
+  const envVars = new Set()
+  let targetDir = ''
+
+  for (let depth = 0; depth < 8; depth += 1) {
     let envIdx = 0
-    while (envIdx < current.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(current[envIdx])) {
+    while (envIdx < current.length) {
+      const m = /^([A-Za-z_][A-Za-z0-9_]*)=/.exec(current[envIdx])
+      if (!m) break
+      envVars.add(m[1])
       envIdx += 1
     }
     if (envIdx > 0) current = current.slice(envIdx)
     if (current.length === 0) break
 
     const head = commandBasename(current[0])
-    const sub = (current[1] || '').toLowerCase()
     let rest = null
     if (head === 'env') {
-      rest = skipEnvWrapper(current.slice(1))
-    } else if (head === 'corepack' || head === 'command') {
+      const envMeta = skipEnvWrapperWithMeta(current.slice(1))
+      for (const k of envMeta.envVars) envVars.add(k)
+      if (envMeta.targetDir) targetDir = envMeta.targetDir
+      rest = envMeta.words
+    } else if (head === 'corepack') {
       rest = skipLeadingWrapperFlags(current.slice(1))
+    } else if (head === 'command') {
+      let i = 1
+      let lookupOnly = false
+      while (i < current.length) {
+        const w = current[i]
+        if (w === '--') {
+          i += 1
+          break
+        }
+        if (!w.startsWith('-')) break
+        if (/^-[a-zA-Z]*[vV][a-zA-Z]*$/.test(w)) lookupOnly = true
+        i += 1
+      }
+      if (lookupOnly) break
+      rest = current.slice(i)
     } else if (['npx', 'bunx'].includes(head)) {
       rest = skipLeadingWrapperFlags(current.slice(1))
-    } else if (head === 'pnpm' && ['exec', 'dlx'].includes(sub)) {
-      rest = skipLeadingWrapperFlags(current.slice(2))
-    } else if (head === 'npm' && sub === 'exec') {
-      rest = skipLeadingWrapperFlags(current.slice(2))
-    } else if (head === 'yarn' && ['exec', 'dlx'].includes(sub)) {
-      rest = skipLeadingWrapperFlags(current.slice(2))
+    } else if (['pnpm', 'npm', 'yarn', 'bun'].includes(head)) {
+      let i = 1
+      let pmDir = ''
+      while (i < current.length) {
+        const w = current[i]
+        if (w === '--') break
+        if (!w.startsWith('-')) break
+        const eq = w.indexOf('=')
+        if (eq !== -1) {
+          const flag = w.slice(0, eq)
+          if (PM_DIR_FLAGS.has(flag)) pmDir = w.slice(eq + 1)
+          i += 1
+          continue
+        }
+        if (PM_DIR_FLAGS.has(w) && i + 1 < current.length) {
+          pmDir = current[i + 1]
+          i += 2
+          continue
+        }
+        i += VALUE_TAKING_FLAGS.has(w) ? 2 : 1
+      }
+      const sub = (current[i] || '').toLowerCase()
+      if (head === 'yarn' && sub === 'workspace' && i + 2 < current.length) {
+        const wsSub = (current[i + 2] || '').toLowerCase()
+        if (wsSub === 'exec' || wsSub === 'dlx') {
+          if (pmDir) targetDir = pmDir
+          rest = skipLeadingWrapperFlags(current.slice(i + 3))
+        }
+      } else if (
+        (head === 'pnpm' && ['exec', 'dlx'].includes(sub)) ||
+        (head === 'npm' && sub === 'exec') ||
+        (head === 'yarn' && ['exec', 'dlx'].includes(sub)) ||
+        (head === 'bun' && ['x', 'exec', 'dlx'].includes(sub))
+      ) {
+        if (pmDir) targetDir = pmDir
+        rest = skipLeadingWrapperFlags(current.slice(i + 1))
+      }
     }
     if (!rest || rest.length === 0) break
     current = rest
   }
-  return current
+  return { words: current, envVars, targetDir }
+}
+
+function unwrapExecutionWrapper(words) {
+  return unwrapExecutionWrapperWithMeta(words).words
 }
 
 function looksLikeGitInvocation(segment) {
@@ -584,130 +1276,212 @@ function tokenizeCommandLine(cmd) {
   return tokens
 }
 
-export function extractCommandWriteTargets(command) {
-  if (!command || typeof command !== 'string') return []
-  const targets = []
-  // 必须保留引号内载荷：node -e / python -c 的写路径全在引号里；
-  // commandSegments() 会 stripQuotedSpans，导致解释器一句话写盘完全不可见。
+function collectNonOptionArgs(args, valueFlags = new Set()) {
+  const out = []
+  let afterEndOfOptions = false
+  for (let i = 0; i < args.length; i++) {
+    const w = args[i]
+    if (!afterEndOfOptions && w === '--') {
+      afterEndOfOptions = true
+      continue
+    }
+    if (!afterEndOfOptions && w.startsWith('-') && w !== '-') {
+      if (valueFlags.has(w)) i += 1
+      continue
+    }
+    out.push(w)
+  }
+  return out
+}
+
+function findTargetDirectoryFlag(args) {
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i]
+    if (arg === '--') break
+    if ((arg === '-t' || arg === '--target-directory') && i + 1 < args.length) {
+      return args[i + 1]
+    }
+    if (arg.startsWith('--target-directory=')) {
+      return arg.slice('--target-directory='.length)
+    }
+  }
+  return null
+}
+
+function hasInPlaceFlag(args, valueFlags = new Set()) {
+  for (let i = 0; i < args.length; i++) {
+    const w = args[i]
+    if (w === '--') break
+    if (!w.startsWith('-') || w === '-') break
+    if (w === '-i' || w === '--in-place' || w.startsWith('--in-place=')) return true
+    if (!w.startsWith('--') && w.includes('i')) return true
+    if (valueFlags.has(w)) i += 1
+  }
+  return false
+}
+
+export function extractCommandWriteTargetsWithCwd(command, cwd = process.cwd(), depth = 0) {
+  if (!command || typeof command !== 'string' || depth > 4) return []
+  const results = []
+  let currentCwd = resolve(cwd || process.cwd())
+  let prevCwd = currentCwd
+  const cwdStack = []
   const segments = rawCommandSegments(command)
 
   for (const seg of segments) {
-    // 拆分管道符 | (避免管道下游命令如 tee 漏检)，避开 || 逻辑或
-    const subSegments = seg.split(/(?<!\|)\|(?!\|)/).map((s) => s.trim()).filter(Boolean)
+    const { openParens, closeParens, body } = peelShellGrouping(seg)
+    for (let p = 0; p < openParens; p += 1) {
+      cwdStack.push({ currentCwd, prevCwd })
+    }
 
-    for (const sub of subSegments) {
-      const cleaned = sub.replace(/^(\s*[a-zA-Z_][a-zA-Z0-9_]*=(?:'[^']*'|"[^"]*"|\S+)\s+)+/, '').trim()
-      if (!cleaned) continue
+    if (body) {
+      const subSegments = splitRawPipelineSegments(body)
+      for (const rawSub of subSegments) {
+        const subGroup = peelShellGrouping(rawSub)
+        const sub = subGroup.body
+        if (!sub) continue
 
-      // 安全 git 子命令整段跳过；变异 git 由 decideGitWorkingTreeMutation 单独判定
-      if (looksLikeGitInvocation(cleaned) && !classifyGitMutation(cleaned)) {
-        continue
+        // 1. 优先提取一切输出重定向（包含 1>/2>/&>/&>>/>|/<> 以及 `git status > README.md`）
+        for (const target of extractOutputRedirectionTargets(sub)) {
+          results.push({ target, cwd: currentCwd })
+        }
+
+        const words = tokenizeCommandLine(stripShellRedirection(sub))
+        if (words.length === 0) continue
+
+        // 2. 追踪非管道段的 cd，避免从 worktree `cd main && echo x > README.md` 穿透或 `cd worktree && echo ok > x` 误杀
+        const rawVerb = commandBasename(words[0])
+        if (subSegments.length === 1 && rawVerb === 'cd') {
+          const updated = applyCdCommand(words, currentCwd, prevCwd)
+          currentCwd = updated.nextCwd
+          prevCwd = updated.nextPrevCwd
+          continue
+        }
+
+        const { words: effectiveWords, targetDir } = unwrapExecutionWrapperWithMeta(words)
+        if (effectiveWords.length === 0) continue
+        const effectiveCwd = targetDir ? resolve(currentCwd, targetDir) : currentCwd
+        const verb = commandBasename(effectiveWords[0])
+
+        // 3. git 自身工作树变更由 decideGitWorkingTreeMutation 判定；其输出重定向已在步骤 1 提取完毕
+        if (verb === 'git') continue
+
+        // 4. 递归检视 bash/sh -c 内联命令
+        if (['bash', 'sh', 'zsh', 'dash', 'ksh'].includes(verb)) {
+          const shellMeta = parseShellInvocation(effectiveWords)
+          if (shellMeta && !shellMeta.syntaxCheckOnly && shellMeta.inlineScript) {
+            results.push(...extractCommandWriteTargetsWithCwd(shellMeta.inlineScript, effectiveCwd, depth + 1))
+          }
+          continue
+        }
+
+        const args = effectiveWords.slice(1)
+        const pushTarget = (t) => {
+          if (t) results.push({ target: t, cwd: effectiveCwd })
+        }
+
+        if (['cp', 'rsync', 'install'].includes(verb)) {
+          const targetDirFlag = findTargetDirectoryFlag(args)
+          if (targetDirFlag) {
+            pushTarget(targetDirFlag)
+          } else {
+            const valueFlags = verb === 'install'
+              ? new Set(['-m', '--mode', '-o', '--owner', '-g', '--group', '-S', '--suffix', '-t', '--target-directory'])
+              : new Set(['-S', '--suffix', '-t', '--target-directory'])
+            const nonOptions = collectNonOptionArgs(args, valueFlags)
+            if (nonOptions.length >= 2) {
+              pushTarget(nonOptions[nonOptions.length - 1])
+            }
+          }
+        } else if (verb === 'mv') {
+          // mv 会同时修改/删除源路径与目标路径：例如 `mv README.md /tmp/out` 会删除主检出源码
+          const valueFlags = new Set(['-S', '--suffix', '-t', '--target-directory'])
+          const targetDirFlag = findTargetDirectoryFlag(args)
+          if (targetDirFlag) pushTarget(targetDirFlag)
+          for (const item of collectNonOptionArgs(args, valueFlags)) {
+            pushTarget(item)
+          }
+        } else if (['rm', 'rmdir', 'unlink'].includes(verb)) {
+          for (const item of collectNonOptionArgs(args)) {
+            pushTarget(item)
+          }
+        } else if (verb === 'truncate') {
+          for (const item of collectNonOptionArgs(args, new Set(['-s', '--size', '-r', '--reference']))) {
+            pushTarget(item)
+          }
+        } else if (verb === 'tee') {
+          for (const item of collectNonOptionArgs(args)) {
+            pushTarget(item)
+          }
+        } else if (['mkdir', 'touch'].includes(verb)) {
+          const optionArgs = verb === 'mkdir'
+            ? new Set(['-m', '--mode'])
+            : new Set(['-r', '--reference', '-t', '-d', '--date'])
+          for (const item of collectNonOptionArgs(args, optionArgs)) {
+            pushTarget(item)
+          }
+        } else if (verb === 'sed' && hasInPlaceFlag(args, new Set(['-e', '--expression', '-f', '--file']))) {
+          const nonOptions = collectNonOptionArgs(args, new Set(['-e', '--expression', '-f', '--file']))
+          if (nonOptions.length >= 1) {
+            pushTarget(nonOptions[nonOptions.length - 1])
+          }
+        } else if (verb === 'dd') {
+          for (const w of args) {
+            if (w.startsWith('of=')) {
+              pushTarget(w.slice(3))
+            }
+          }
+        } else if (verb === 'ln') {
+          const targetDirFlag = findTargetDirectoryFlag(args)
+          if (targetDirFlag) {
+            pushTarget(targetDirFlag)
+          } else {
+            const nonOptions = collectNonOptionArgs(args, new Set(['-S', '--suffix', '-t', '--target-directory']))
+            if (nonOptions.length >= 2) {
+              pushTarget(nonOptions[nonOptions.length - 1])
+            } else if (nonOptions.length === 1) {
+              pushTarget(nonOptions[0])
+            }
+          }
+        } else if (verb === 'node') {
+          const hasEval = args.some((w) => w === '-e' || w === '--eval' || w.startsWith('--eval='))
+          const joined = effectiveWords.join(' ')
+          if (hasEval && /(?:writeFileSync|appendFileSync|createWriteStream|rmSync|unlinkSync|mkdirSync|copyFileSync|renameSync)/.test(joined)) {
+            for (const m of joined.matchAll(/(?:writeFileSync|appendFileSync|createWriteStream|rmSync|unlinkSync|mkdirSync|copyFileSync|renameSync)\(\s*['"]([^'"]+)['"]/g)) {
+              pushTarget(m[1])
+            }
+          }
+        } else if (verb === 'python' || verb === 'python3') {
+          const hasC = args.some((w) => w === '-c')
+          const joined = effectiveWords.join(' ')
+          if (hasC && /open\(/.test(joined)) {
+            for (const m of joined.matchAll(/open\(\s*['"]([^'"]+)['"]\s*,\s*['"][^'"]*[wa+][^'"]*['"]/g)) {
+              pushTarget(m[1])
+            }
+          }
+        } else if (verb === 'perl' && hasInPlaceFlag(args, new Set(['-e', '-E', '-I', '-M', '-m']))) {
+          const nonOptions = collectNonOptionArgs(args, new Set(['-e', '-E', '-I', '-M', '-m']))
+          if (nonOptions.length >= 1) {
+            pushTarget(nonOptions[nonOptions.length - 1])
+          }
+        }
       }
-      if (looksLikeGitInvocation(cleaned)) {
-        continue
-      }
+    }
 
-      // 提取重定向目标 > 或 >> (避开 2>&1 等描述符重定向)
-      const redirectMatches = cleaned.matchAll(/(?:^|[^&>0-9])(?:>>?)\s*(?:"([^"]+)"|'([^']+)'|([^\s;&|<>]+))/g)
-      for (const m of redirectMatches) {
-        const target = m[1] || m[2] || m[3]
-        if (target && target !== '/dev/null') {
-          targets.push(target)
-        }
-      }
-
-      const words = tokenizeCommandLine(cleaned)
-      if (words.length === 0) continue
-
-      const verb = words[0].toLowerCase()
-
-      if (['cp', 'mv', 'rsync', 'install'].includes(verb)) {
-        let target = null
-        for (let i = 1; i < words.length; i++) {
-          const arg = words[i]
-          if (arg === '-t' || arg === '--target-directory') {
-            target = words[i + 1]
-            break
-          }
-          if (arg.startsWith('--target-directory=')) {
-            target = arg.slice('--target-directory='.length)
-            break
-          }
-        }
-        if (!target) {
-          const nonOptions = words.slice(1).filter((w) => !w.startsWith('-'))
-          if (nonOptions.length >= 2) {
-            target = nonOptions[nonOptions.length - 1]
-          }
-        }
-        if (target) {
-          targets.push(target)
-        }
-      } else if (verb === 'tee') {
-        const nonOptions = words.slice(1).filter((w) => !w.startsWith('-'))
-        for (const f of nonOptions) {
-          targets.push(f)
-        }
-      } else if (['mkdir', 'touch'].includes(verb)) {
-        const optionArgs = verb === 'mkdir'
-          ? new Set(['-m', '--mode'])
-          : new Set(['-r', '--reference', '-t', '-d', '--date'])
-        for (let i = 1; i < words.length; i++) {
-          const w = words[i]
-          if (w.startsWith('-')) {
-            if (optionArgs.has(w)) i++
-            continue
-          }
-          targets.push(w)
-        }
-      } else if (verb === 'sed' && words.some((w) => w === '-i' || w.startsWith('-i'))) {
-        const nonOptions = words.slice(1).filter((w) => !w.startsWith('-'))
-        if (nonOptions.length >= 1) {
-          targets.push(nonOptions[nonOptions.length - 1])
-        }
-      } else if (verb === 'dd') {
-        for (const w of words.slice(1)) {
-          if (w.startsWith('of=')) {
-            targets.push(w.slice(3))
-          }
-        }
-      } else if (verb === 'ln') {
-        const nonOptions = words.slice(1).filter((w) => !w.startsWith('-'))
-        if (nonOptions.length >= 2) {
-          targets.push(nonOptions[nonOptions.length - 1])
-        } else if (nonOptions.length === 1) {
-          targets.push(nonOptions[0])
-        }
-      } else if (verb === 'node' || verb.endsWith('/node')) {
-        // node -e / --eval one-liners that embed writeFileSync('path'
-        // tokenizeCommandLine strips outer quotes, so joined looks like:
-        //   node -e require('fs').writeFileSync('path','x')
-        // Do NOT use \b around -e (hyphen is non-word; \b fails between space and '-').
-        const hasEval = words.some((w) => w === '-e' || w === '--eval' || w.startsWith('--eval='))
-        const joined = words.join(' ')
-        if (hasEval && /writeFileSync|appendFileSync|createWriteStream/.test(joined)) {
-          for (const m of joined.matchAll(/(?:writeFileSync|appendFileSync|createWriteStream)\(\s*['"]([^'"]+)['"]/g)) {
-            targets.push(m[1])
-          }
-        }
-      } else if (verb === 'python' || verb === 'python3' || verb.endsWith('/python') || verb.endsWith('/python3')) {
-        const hasC = words.some((w) => w === '-c')
-        const joined = words.join(' ')
-        if (hasC && /open\(/.test(joined)) {
-          for (const m of joined.matchAll(/open\(\s*['"]([^'"]+)['"]\s*,\s*['"][^'"]*[wa+][^'"]*['"]/g)) {
-            targets.push(m[1])
-          }
-        }
-      } else if (verb === 'perl' && words.some((w) => w === '-i' || w.startsWith('-i'))) {
-        const nonOptions = words.slice(1).filter((w) => !w.startsWith('-'))
-        if (nonOptions.length >= 1) {
-          targets.push(nonOptions[nonOptions.length - 1])
-        }
+    for (let p = 0; p < closeParens; p += 1) {
+      const restored = cwdStack.pop()
+      if (restored) {
+        currentCwd = restored.currentCwd
+        prevCwd = restored.prevCwd
       }
     }
   }
 
-  return targets
+  return results
+}
+
+export function extractCommandWriteTargets(command) {
+  return extractCommandWriteTargetsWithCwd(command).map((item) => item.target)
 }
 
 export function isForbiddenMainCheckoutWriteTarget(targetPath, cwd) {
@@ -743,67 +1517,93 @@ const READONLY_INSPECTION_VERBS = new Set([
 
 const MATERIALIZATION_SCRIPT_RE = /(?:^|\/)(?:sync-to-app|sync-stable|materialize-with-rollback|sync-main)\.sh$/
 
-function classifyMaterializationSegment(words) {
-  if (!words || words.length === 0) return null
-  const unwrapped = unwrapExecutionWrapper(words)
+function classifyMaterializationSegment(words, inputRedirects = [], currentCwd = process.cwd(), depth = 0) {
+  if (!words || words.length === 0 || depth > 4) return null
+  const { words: unwrapped, envVars, targetDir } = unwrapExecutionWrapperWithMeta(words)
   if (unwrapped.length === 0) return null
+  const effectiveCwd = targetDir ? resolve(currentCwd, targetDir) : currentCwd
   const verb = commandBasename(unwrapped[0])
 
   // 豁免纯只读/检视命令（如多行脚本里的 grep ... sync-to-app.sh 或 sed -n ... sync-to-app.sh）
   if (READONLY_INSPECTION_VERBS.has(verb)) return null
-  if (verb === 'sed' && !unwrapped.slice(1).some((w) => w === '-i' || /^-[a-zA-Z]*i/.test(w))) return null
+  if (verb === 'sed' && !hasInPlaceFlag(unwrapped.slice(1), new Set(['-e', '--expression', '-f', '--file']))) return null
 
-  const hasIsolated = unwrapped.some((w) => w === '--isolated')
+  // 严禁利用 OMNIMUX_SYNC_ISOLATED_ACTIVE=1 或 --managed-tarball 与 --isolated 混用来伪装成隔离物化
+  const setsIsolatedActive = envVars.has('OMNIMUX_SYNC_ISOLATED_ACTIVE')
+  const hasManagedConflict = unwrapped.some((w) => /^--(?:managed-tarball|expect-|recover-managed-tarball)/.test(w))
+  const hasIsolatedFlag = (args) => {
+    if (setsIsolatedActive || hasManagedConflict) return false
+    const ddIdx = args.indexOf('--')
+    const slice = ddIdx === -1 ? args : args.slice(0, ddIdx)
+    return slice.includes('--isolated')
+  }
 
   // 1. 直接执行物化脚本（./scripts/sync-to-app.sh 等）
   if (MATERIALIZATION_SCRIPT_RE.test(unwrapped[0])) {
-    return { script: commandBasename(unwrapped[0]), isolated: hasIsolated && unwrapped[0].endsWith('sync-to-app.sh') }
+    const isolated = hasIsolatedFlag(unwrapped.slice(1)) && unwrapped[0].endsWith('sync-to-app.sh')
+    return { script: commandBasename(unwrapped[0]), isolated, cwd: effectiveCwd }
   }
 
-  // 2. 通过 shell 显式执行（bash scripts/sync-to-app.sh；豁免 bash -n 语法检查）
+  // 2. 通过 shell 显式执行（bash [-o errexit] scripts/sync-to-app.sh / bash -c ... / bash < scripts/sync-to-app.sh）
   if (['bash', 'sh', 'zsh', 'dash', 'ksh', 'source', '.'].includes(verb)) {
+    const shellMeta = parseShellInvocation(unwrapped)
+    if (!shellMeta || shellMeta.syntaxCheckOnly) return null
+    if (shellMeta.inlineScript) {
+      const inner = classifyMaterializationCommand(shellMeta.inlineScript, effectiveCwd, depth + 1)
+      if (!inner) return null
+      return setsIsolatedActive ? { ...inner, isolated: false } : inner
+    }
+    if (shellMeta.scriptFile && MATERIALIZATION_SCRIPT_RE.test(shellMeta.scriptFile)) {
+      const scriptIdx = unwrapped.indexOf(shellMeta.scriptFile)
+      const scriptArgs = scriptIdx >= 0 ? unwrapped.slice(scriptIdx + 1) : []
+      const isolated = hasIsolatedFlag(scriptArgs) && shellMeta.scriptFile.endsWith('sync-to-app.sh')
+      return { script: commandBasename(shellMeta.scriptFile), isolated, cwd: effectiveCwd }
+    }
+    if (!shellMeta.scriptFile && inputRedirects.length > 0) {
+      const redirectedScript = inputRedirects.find((t) => MATERIALIZATION_SCRIPT_RE.test(t))
+      if (redirectedScript) {
+        return { script: commandBasename(redirectedScript), isolated: false, cwd: effectiveCwd }
+      }
+    }
+    return null
+  }
+
+  // 3. node [-r ./x.js] scripts/omnimux.mjs sync 或 omnimux(.mjs) sync
+  // 仅在脚本路径之前出现的 --test / --check / -c 才属于 Node 自身测试/语法检查选项，
+  // 脚本路径之后的 `--test` 是传给 omnimux.mjs 的参数，绝不能豁免。
+  if (verb === 'node') {
     let i = 1
-    let syntaxCheckOnly = false
-    while (i < unwrapped.length && unwrapped[i].startsWith('-')) {
+    while (i < unwrapped.length) {
       const flag = unwrapped[i]
       if (flag === '--') {
         i += 1
         break
       }
-      if (/^-[a-zA-Z]*n[a-zA-Z]*$/.test(flag)) syntaxCheckOnly = true
-      if (/^-[a-zA-Z]*c[a-zA-Z]*$/.test(flag) && unwrapped[i + 1]) {
-        return classifyMaterializationCommand(unwrapped[i + 1])
+      if (!flag.startsWith('-')) break
+      if (flag === '--test' || flag === '--check' || flag === '-c' || flag === '-e' || flag === '--eval' || flag === '-p' || flag === '--print') {
+        return null
       }
-      i += 1
-    }
-    if (syntaxCheckOnly) return null
-    const scriptArg = unwrapped[i] || ''
-    if (MATERIALIZATION_SCRIPT_RE.test(scriptArg)) {
-      return { script: commandBasename(scriptArg), isolated: hasIsolated && scriptArg.endsWith('sync-to-app.sh') }
-    }
-    return null
-  }
-
-  // 3. node scripts/omnimux.mjs sync 或 omnimux(.mjs) sync（豁免 node --test / *.test.* / vitest / jest）
-  if (verb === 'node') {
-    if (unwrapped.some((w) => w === '--test' || w === '--check' || w === '-c' || /\.test\.(?:mjs|js|ts)$/.test(w))) {
-      return null
-    }
-    let i = 1
-    while (i < unwrapped.length && unwrapped[i].startsWith('-')) {
+      if (NODE_VALUE_FLAGS.has(flag)) {
+        i += 2
+        continue
+      }
       i += 1
     }
     const scriptArg = unwrapped[i] || ''
     const subArg = unwrapped[i + 1] || ''
+    if (!scriptArg || /\.test\.(?:mjs|js|ts|cjs)$/.test(scriptArg)) {
+      return null
+    }
     if (/(?:^|\/)omnimux(?:\.mjs)?$/.test(scriptArg) && subArg === 'sync') {
-      return { script: 'omnimux.mjs sync', isolated: hasIsolated }
+      const isolated = hasIsolatedFlag(unwrapped.slice(i + 2))
+      return { script: 'omnimux.mjs sync', isolated, cwd: effectiveCwd }
     }
     return null
   }
 
   if (verb === 'omnimux' || verb === 'omnimux.mjs') {
     if (unwrapped[1] === 'sync') {
-      return { script: `${verb} sync`, isolated: hasIsolated }
+      return { script: `${verb} sync`, isolated: hasIsolatedFlag(unwrapped.slice(2)), cwd: effectiveCwd }
     }
     return null
   }
@@ -812,29 +1612,85 @@ function classifyMaterializationSegment(words) {
   if (['pnpm', 'npm', 'yarn', 'bun'].includes(verb)) {
     const parsed = parsePackageManagerScript(unwrapped)
     if (parsed && (parsed.script === 'omnimux:sync' || parsed.script === 'sync')) {
-      return { script: `${verb} ${parsed.script}`, isolated: hasIsolated }
+      const pmCwd = parsed.targetDir ? resolve(effectiveCwd, parsed.targetDir) : effectiveCwd
+      return { script: `${verb} ${parsed.script}`, isolated: hasIsolatedFlag(parsed.restAfterSub), cwd: pmCwd }
     }
   }
 
   return null
 }
 
-function classifyMaterializationCommand(command) {
-  if (!command || typeof command !== 'string') return null
+function classifyMaterializationCommand(command, cwd = process.cwd(), depth = 0) {
+  if (!command || typeof command !== 'string' || depth > 4) return null
   const trimmed = command.trim()
   if (!trimmed) return null
-  if (/\b(?:vitest|jest)\b/.test(trimmed)) return null
 
-  const segments = rawCommandSegments(trimmed)
-    .flatMap((seg) => seg.split(/(?<!\|)\|(?!\|)/).map((s) => s.trim()).filter(Boolean))
-
+  let currentCwd = resolve(cwd || process.cwd())
+  let prevCwd = currentCwd
+  const cwdStack = []
+  let isolatedActiveArmed = false
   let matched = null
-  for (const seg of segments) {
-    const words = tokenizeCommandLine(stripShellRedirection(seg)).map((w) => w.replace(/^['"]|['"]$/g, ''))
-    const hit = classifyMaterializationSegment(words)
-    if (!hit) continue
-    if (!hit.isolated) return hit
-    matched = hit
+
+  for (const rawSeg of rawCommandSegments(trimmed)) {
+    const { openParens, closeParens, body } = peelShellGrouping(rawSeg)
+    for (let p = 0; p < openParens; p += 1) {
+      cwdStack.push({ currentCwd, prevCwd })
+    }
+
+    if (body) {
+      const subSegments = splitRawPipelineSegments(body)
+      let upstreamMatScript = ''
+      for (const rawSub of subSegments) {
+        const sub = peelShellGrouping(rawSub).body
+        if (!sub) continue
+        const inputRedirects = extractInputRedirectionTargets(sub)
+        const words = tokenizeCommandLine(stripShellRedirection(sub))
+        if (words.length === 0) continue
+
+        if (subSegments.length === 1 && commandBasename(words[0]) === 'cd') {
+          const updated = applyCdCommand(words, currentCwd, prevCwd)
+          currentCwd = updated.nextCwd
+          prevCwd = updated.nextPrevCwd
+          continue
+        }
+
+        if (subSegments.length === 1 && (words[0] === 'export' || /^[A-Za-z_][A-Za-z0-9_]*=/.test(words[0]))) {
+          if (words.some((w) => /^OMNIMUX_SYNC_ISOLATED_ACTIVE=/.test(w))) {
+            isolatedActiveArmed = true
+          }
+        }
+
+        if (subSegments.length > 1) {
+          const maybeScript = words.find((w) => MATERIALIZATION_SCRIPT_RE.test(w))
+          if (maybeScript && !upstreamMatScript) {
+            upstreamMatScript = maybeScript
+          }
+        }
+
+        let hit = classifyMaterializationSegment(words, inputRedirects, currentCwd, depth)
+        if (!hit && upstreamMatScript) {
+          const unwrapped = unwrapExecutionWrapper(words)
+          const shellMeta = parseShellInvocation(unwrapped)
+          if (shellMeta && !shellMeta.syntaxCheckOnly && !shellMeta.scriptFile && !shellMeta.inlineScript) {
+            hit = { script: commandBasename(upstreamMatScript), isolated: false, cwd: currentCwd }
+          }
+        }
+        if (!hit) continue
+        if (isolatedActiveArmed && hit.isolated) {
+          hit = { ...hit, isolated: false }
+        }
+        if (!hit.isolated) return hit
+        matched = hit
+      }
+    }
+
+    for (let p = 0; p < closeParens; p += 1) {
+      const restored = cwdStack.pop()
+      if (restored) {
+        currentCwd = restored.currentCwd
+        prevCwd = restored.prevCwd
+      }
+    }
   }
   return matched
 }
@@ -1048,15 +1904,35 @@ export function decideMainBranchGitOp(command, cwd, options = {}) {
   return { decision: 'allow' }
 }
 
-const PM_DIR_FLAGS = new Set(['--dir', '-C', '--prefix'])
 const PM_VALUE_FLAGS = new Set([
   ...VALUE_TAKING_FLAGS,
-  '--workspace', '-w', '--cwd',
+  '--include', '--exclude', '--from', '-j', '--jobs',
 ])
 const BUILD_SCRIPT_RE = /^(?:build|compile|bundle|package)(?::.+)?$|^plugins:build$/i
 
+function extractDirFlagFromArgs(args) {
+  let targetDir = ''
+  for (let i = 0; i < args.length; i++) {
+    const w = args[i]
+    if (w === '--') break
+    if (!w.startsWith('-')) continue
+    const eq = w.indexOf('=')
+    if (eq !== -1) {
+      const flag = w.slice(0, eq)
+      if (PM_DIR_FLAGS.has(flag)) targetDir = w.slice(eq + 1)
+      continue
+    }
+    if (PM_DIR_FLAGS.has(w) && i + 1 < args.length) {
+      targetDir = args[i + 1]
+      i += 1
+    }
+  }
+  return targetDir
+}
+
 function parsePackageManagerScript(effectiveWords) {
-  if (!effectiveWords || effectiveWords.length < 2) return null
+  if (!effectiveWords || effectiveWords.length === 0) return null
+  const manager = commandBasename(effectiveWords[0])
   let i = 1
   let targetDir = ''
   while (i < effectiveWords.length) {
@@ -1080,9 +1956,52 @@ function parsePackageManagerScript(effectiveWords) {
     }
     break
   }
-  if (i >= effectiveWords.length) return null
-  const subcommand = effectiveWords[i].toLowerCase()
-  const restAfterSub = effectiveWords.slice(i + 1)
+
+  // Bare `yarn` / `corepack yarn` (without -v/--version/-h/--help) performs implicit `yarn install`.
+  if (i >= effectiveWords.length) {
+    if (manager === 'yarn') {
+      const flags = effectiveWords.slice(1)
+      const isInfoOnly = flags.some((f) => f === '-v' || f === '--version' || f === '-h' || f === '--help')
+      if (!isInfoOnly) {
+        return { subcommand: 'install', script: 'install', restAfterSub: flags, targetDir }
+      }
+    }
+    return null
+  }
+
+  let subcommand = effectiveWords[i].toLowerCase()
+  let restAfterSub = effectiveWords.slice(i + 1)
+
+  // Unwrap `yarn workspace <pkg> [run] <script>` and `yarn workspaces foreach ... [run] <script>`
+  if (manager === 'yarn' && subcommand === 'workspace') {
+    let k = 0
+    while (k < restAfterSub.length && restAfterSub[k].startsWith('-')) {
+      k += PM_VALUE_FLAGS.has(restAfterSub[k]) ? 2 : 1
+    }
+    // Skip workspace package name
+    k += 1
+    while (k < restAfterSub.length && restAfterSub[k].startsWith('-')) {
+      k += PM_VALUE_FLAGS.has(restAfterSub[k]) ? 2 : 1
+    }
+    if (k < restAfterSub.length) {
+      subcommand = restAfterSub[k].toLowerCase()
+      restAfterSub = restAfterSub.slice(k + 1)
+    }
+  } else if (manager === 'yarn' && subcommand === 'workspaces' && (restAfterSub[0] || '').toLowerCase() === 'foreach') {
+    let k = 1
+    while (k < restAfterSub.length && restAfterSub[k].startsWith('-')) {
+      k += PM_VALUE_FLAGS.has(restAfterSub[k]) ? 2 : 1
+    }
+    if (k < restAfterSub.length) {
+      subcommand = restAfterSub[k].toLowerCase()
+      restAfterSub = restAfterSub.slice(k + 1)
+    }
+  }
+
+  if (!targetDir) {
+    targetDir = extractDirFlagFromArgs(restAfterSub)
+  }
+
   let script = subcommand
   if (subcommand === 'run' || subcommand === 'run-script') {
     let j = 0
@@ -1094,10 +2013,12 @@ function parsePackageManagerScript(effectiveWords) {
   return { subcommand, script, restAfterSub, targetDir }
 }
 
-export function decideMainCheckoutBuildCommand(command, cwd) {
-  if (!command || typeof command !== 'string') return { decision: 'allow' }
+export function decideMainCheckoutBuildCommand(command, cwd, depth = 0) {
+  if (!command || typeof command !== 'string' || depth > 4) return { decision: 'allow' }
   const sessionCwd = resolve(cwd || process.cwd())
   let currentCwd = sessionCwd
+  let prevCwd = sessionCwd
+  const cwdStack = []
   // One synchronous decision shares a metadata snapshot only for the exact cwd.
   const worktreeByCwd = new Map()
   const isCwdWorktree = (dir) => {
@@ -1113,123 +2034,157 @@ export function decideMainCheckoutBuildCommand(command, cwd) {
   }
 
   // 拆分管道：`pnpm install … | tail` 的下游命令不参与包管理器/构建判定。
-  const segments = rawCommandSegments(command)
-    .flatMap((seg) => seg.split(/(?<!\|)\|(?!\|)/).map((s) => s.trim()).filter(Boolean))
-  for (const seg of segments) {
-    const words = tokenizeCommandLine(stripShellRedirection(seg))
-    if (words.length === 0) continue
-
-    const verb = words[0].toLowerCase()
-    if (verb === 'git' || verb.endsWith('/git')) continue
-
-    // 0. 跨命令段追踪 cd 目标目录（如 cd .worktrees/task && pnpm build 合法放行）
-    if (verb === 'cd') {
-      const targetDir = words[1] ? words[1].replace(/^['"]|['"]$/g, '') : ''
-      if (targetDir) {
-        currentCwd = resolve(currentCwd, targetDir)
-      }
-      continue
+  for (const rawSeg of rawCommandSegments(command)) {
+    const { openParens, closeParens, body } = peelShellGrouping(rawSeg)
+    for (let p = 0; p < openParens; p += 1) {
+      cwdStack.push({ currentCwd, prevCwd })
     }
 
-    // 若当前实际生效的工作目录处于 linked worktree 内，完全放行构建
-    if (isCwdWorktree(currentCwd)) continue
+    if (body) {
+      const subSegments = splitRawPipelineSegments(body)
+      for (const rawSub of subSegments) {
+        const seg = peelShellGrouping(rawSub).body
+        if (!seg) continue
+        const words = tokenizeCommandLine(stripShellRedirection(seg))
+        if (words.length === 0) continue
 
-    const cleanWords = words.map((w) => w.replace(/^['"]|['"]$/g, ''))
+        const verb = commandBasename(words[0])
+        if (verb === 'git') continue
 
-    // 包装执行器（KEY=VAL / env / corepack / npx / pnpm exec|dlx / npm exec / yarn dlx / bunx）先解包，
-    // 再按被包装命令本身做构建/依赖恢复判定。
-    const effectiveWords = unwrapExecutionWrapper(cleanWords)
-    const effectiveVerb = commandBasename(effectiveWords[0])
+        // 0. 跨命令段追踪 cd 目标目录（如 cd .worktrees/task && pnpm build 合法放行）
+        if (subSegments.length === 1 && verb === 'cd') {
+          const updated = applyCdCommand(words, currentCwd, prevCwd)
+          currentCwd = updated.nextCwd
+          prevCwd = updated.nextPrevCwd
+          continue
+        }
 
-    // 1. tsc（严密校验 --noEmit，杜绝 --noEmit=false 或 --noEmit false 等篡改穿透，包含 pnpm/yarn/npm exec 包装）
-    const isTscInvocation =
-      effectiveVerb === 'tsc' ||
-      (effectiveVerb === 'npx' && effectiveWords[1] === 'tsc') ||
-      (['pnpm', 'yarn', 'bun'].includes(effectiveVerb) && effectiveWords[1] === 'tsc') ||
-      (effectiveVerb === 'npm' && effectiveWords[1] === 'exec' && effectiveWords.includes('tsc'))
+        // 包装执行器（KEY=VAL / env [-S|-C] / corepack / command / npx / pnpm [--dir ...] exec|dlx /
+        // npm [--prefix ...] exec / yarn [--cwd ...] [workspace <pkg>] exec|dlx / bunx）先解包，
+        // 同时保留其目标目录覆盖（--dir / -C / --prefix / --cwd），再判定最终目标目录是否在 worktree。
+        const { words: effectiveWords, targetDir: wrapperDir } = unwrapExecutionWrapperWithMeta(words)
+        if (effectiveWords.length === 0) continue
+        const effectiveVerb = commandBasename(effectiveWords[0])
+        let effectiveCwd = wrapperDir ? resolve(currentCwd, wrapperDir) : currentCwd
 
-    if (isTscInvocation) {
-      let isNoEmit = false
-      for (let i = 0; i < effectiveWords.length; i++) {
-        const w = effectiveWords[i]
-        if (w === '--noEmit') {
-          const next = effectiveWords[i + 1]
-          if (next !== 'false' && next !== '0') {
-            isNoEmit = true
+        // 0.5. 递归判定 bash/sh -c 内联构建命令（如 `bash -c "pnpm build:all"`）
+        if (['bash', 'sh', 'zsh', 'dash', 'ksh'].includes(effectiveVerb)) {
+          const shellMeta = parseShellInvocation(effectiveWords)
+          if (shellMeta && !shellMeta.syntaxCheckOnly && shellMeta.inlineScript) {
+            const nested = decideMainCheckoutBuildCommand(shellMeta.inlineScript, effectiveCwd, depth + 1)
+            if (nested.decision === 'deny') return nested
           }
-        } else if (w.startsWith('--noEmit=')) {
-          const val = w.slice('--noEmit='.length).toLowerCase()
-          if (val !== 'false' && val !== '0') {
-            isNoEmit = true
+          continue
+        }
+
+        let parsedPm = null
+        if (['pnpm', 'npm', 'yarn', 'bun'].includes(effectiveVerb)) {
+          parsedPm = parsePackageManagerScript(effectiveWords)
+          if (parsedPm && parsedPm.targetDir) {
+            effectiveCwd = resolve(effectiveCwd, parsedPm.targetDir)
           }
         }
-      }
-      if (!isNoEmit) {
-        return {
-          decision: 'deny',
-          reason: 'forbidden-main-checkout-build',
-          command: seg,
-        }
-      }
-    }
 
-    // 2. build / build:* / compile / compile:* / bundle / bundle:* / package:* 禁止；
-    //    冻结依赖恢复放行，manifest/lock 变更与未冻结 install 仍禁止。
-    if (['pnpm', 'npm', 'yarn', 'bun'].includes(effectiveVerb)) {
-      const parsed = parsePackageManagerScript(effectiveWords)
-      if (!parsed) continue
-      // 若通过 --dir / -C / --prefix 显式指向真实 linked worktree，放行
-      if (parsed.targetDir && isCwdWorktree(resolve(currentCwd, parsed.targetDir))) {
-        continue
-      }
-      const { subcommand, script, restAfterSub } = parsed
-      if (BUILD_SCRIPT_RE.test(script)) {
-        return {
-          decision: 'deny',
-          reason: 'forbidden-main-checkout-build',
-          command: seg,
+        // 必须基于最终 effectiveCwd（已解析 cd / --dir / -C / --prefix / --cwd）判定是否在 linked worktree 内；
+        // 避免从 worktree 通过 `pnpm --dir <main>/plugins run build:all` 穿透主检出。
+        if (isCwdWorktree(effectiveCwd)) continue
+
+        // 1. tsc（严密校验 --noEmit，杜绝 --noEmit=false 或 --noEmit false 等篡改穿透，包含 pnpm/yarn/npm exec 与 --dir 包装）
+        const isTscInvocation =
+          effectiveVerb === 'tsc' ||
+          (effectiveVerb === 'npx' && effectiveWords[1] === 'tsc') ||
+          (['pnpm', 'yarn', 'bun'].includes(effectiveVerb) && effectiveWords[1] === 'tsc') ||
+          (effectiveVerb === 'npm' && effectiveWords[1] === 'exec' && effectiveWords.includes('tsc')) ||
+          Boolean(parsedPm && parsedPm.script === 'tsc')
+
+        if (isTscInvocation) {
+          let isNoEmit = false
+          for (let i = 0; i < effectiveWords.length; i++) {
+            const w = effectiveWords[i]
+            if (w === '--noEmit') {
+              const next = effectiveWords[i + 1]
+              if (next !== 'false' && next !== '0') {
+                isNoEmit = true
+              }
+            } else if (w.startsWith('--noEmit=')) {
+              const val = w.slice('--noEmit='.length).toLowerCase()
+              if (val !== 'false' && val !== '0') {
+                isNoEmit = true
+              }
+            }
+          }
+          if (!isNoEmit) {
+            return {
+              decision: 'deny',
+              reason: 'forbidden-main-checkout-build',
+              command: seg,
+            }
+          }
         }
-      }
-      // `pnpm add/remove/update…` 与带包名的安装会改 package.json/lock，仍拦截。
-      const manifestMutation = ['add', 'remove', 'uninstall', 'update', 'up', 'upgrade', 'link', 'unlink', 'dedupe', 'prune', 'publish', 'pack']
-      if (manifestMutation.includes(subcommand)) {
-        return {
-          decision: 'deny',
-          reason: 'forbidden-main-checkout-build',
-          command: seg,
+
+        // 2. build / build:* / compile / compile:* / bundle / bundle:* / package:* 禁止；
+        //    冻结依赖恢复放行，manifest/lock 变更与未冻结 install 仍禁止。
+        if (parsedPm) {
+          const { subcommand, script, restAfterSub } = parsedPm
+          if (
+            BUILD_SCRIPT_RE.test(script) ||
+            script === 'esbuild' ||
+            (script === 'vite' && restAfterSub.includes('build'))
+          ) {
+            return {
+              decision: 'deny',
+              reason: 'forbidden-main-checkout-build',
+              command: seg,
+            }
+          }
+          // `pnpm add/remove/update…` 与带包名的安装会改 package.json/lock，仍拦截。
+          const manifestMutation = ['add', 'remove', 'uninstall', 'update', 'up', 'upgrade', 'link', 'unlink', 'dedupe', 'prune', 'publish', 'pack']
+          if (manifestMutation.includes(subcommand)) {
+            return {
+              decision: 'deny',
+              reason: 'forbidden-main-checkout-build',
+              command: seg,
+            }
+          }
+          if (['install', 'i', 'ci'].includes(subcommand)) {
+            // 依赖恢复（primary 维护 / node_modules 修复）：只允许无位置包名的
+            // install/ci；带值 flag 的值不算位置参数，其余非 flag 参数按 add 语义保守拒绝。
+            const positional = positionalArgs(restAfterSub)
+            if (positional.length > 0) {
+              return {
+                decision: 'deny',
+                reason: 'forbidden-main-checkout-build',
+                command: seg,
+              }
+            }
+            // 主检出的 install 必须按对应包管理器冻结 lockfile；`ci` 天然冻结。
+            if (subcommand !== 'ci' && !isFrozenInstall(effectiveWords, effectiveVerb)) {
+              return {
+                decision: 'deny',
+                reason: 'forbidden-main-checkout-unfrozen-install',
+                command: seg,
+                manager: effectiveVerb,
+              }
+            }
+          }
         }
-      }
-      if (['install', 'i', 'ci'].includes(subcommand)) {
-        // 依赖恢复（primary 维护 / node_modules 修复）：只允许无位置包名的
-        // install/ci；带值 flag 的值不算位置参数，其余非 flag 参数按 add 语义保守拒绝。
-        const positional = positionalArgs(restAfterSub)
-        if (positional.length > 0) {
+
+        // 3. direct vite build or esbuild
+        if ((effectiveVerb === 'vite' && effectiveWords.includes('build')) || effectiveVerb === 'esbuild') {
           return {
             decision: 'deny',
             reason: 'forbidden-main-checkout-build',
             command: seg,
           }
         }
-        // 主检出的 install 必须冻结 lockfile：不带冻结 flag 时 pnpm 会按 manifest
-        // 重写 pnpm-lock.yaml，这一步不经过 edit/write，因而绕开 tracked-file 保护
-        // （实测：manifest 加一个依赖后 lockfile 哈希即变）。`ci` 天然冻结，跳过本判定。
-        if (subcommand !== 'ci' && !isFrozenInstall(effectiveWords)) {
-          return {
-            decision: 'deny',
-            reason: 'forbidden-main-checkout-unfrozen-install',
-            command: seg,
-            manager: effectiveVerb,
-          }
-        }
       }
     }
 
-    // 3. direct vite build or esbuild
-    if ((effectiveVerb === 'vite' && effectiveWords.includes('build')) || effectiveVerb === 'esbuild') {
-      return {
-        decision: 'deny',
-        reason: 'forbidden-main-checkout-build',
-        command: seg,
+    for (let p = 0; p < closeParens; p += 1) {
+      const restored = cwdStack.pop()
+      if (restored) {
+        currentCwd = restored.currentCwd
+        prevCwd = restored.prevCwd
       }
     }
   }
@@ -1456,10 +2411,10 @@ export function decideBashCommand({ command, cwd, ownerRoot }) {
     }
   }
 
-  // 3. 检查试图通过命令行拷贝/写入/移动到主 checkout 受保护目录
-  const targets = extractCommandWriteTargets(command)
-  for (const target of targets) {
-    if (isForbiddenMainCheckoutWriteTarget(target, cwd)) {
+  // 3. 检查试图通过命令行拷贝/写入/移动/删除到主 checkout 受保护目录（按段追踪 cd / subshell）
+  const writeOps = extractCommandWriteTargetsWithCwd(command, cwd)
+  for (const { target, cwd: targetCwd } of writeOps) {
+    if (isForbiddenMainCheckoutWriteTarget(target, targetCwd)) {
       return {
         decision: 'deny',
         reason: 'forbidden-main-checkout-copy',
@@ -1493,9 +2448,9 @@ export function decideBashCommand({ command, cwd, ownerRoot }) {
   }
 
   // 6. 检查多 Agent 物化覆盖风险（防冲刷物理硬门禁；--isolated 隔离物化自最新 origin/main 签出临时 worktree，放行）
-  const matHit = classifyMaterializationCommand(command)
+  const matHit = classifyMaterializationCommand(command, cwd)
   if (matHit && !matHit.isolated) {
-    const matDecision = decideMaterializationCommand({ cwd })
+    const matDecision = decideMaterializationCommand({ cwd: matHit.cwd || cwd })
     if (matDecision.decision === 'deny') {
       return matDecision
     }

@@ -82,31 +82,58 @@ describe('check-tracked-artifacts：全仓插件客户端生成物与 workflow �
     assert.equal(isForbiddenArtifact('plugins/.agent-reports/gallery-rail-height-2101/e2e-evidence.json'), true)
     assert.equal(isForbiddenArtifact('docs/evidence/dev-smoke-report.json'), true)
     assert.equal(isForbiddenArtifact('docs/evidence/dev-smoke-761bb9e2/dev-page.png'), true)
+    assert.equal(isForbiddenArtifact('docs/evidence/dev-smoke_1.json'), true)
+    assert.equal(isForbiddenArtifact('docs/evidence/dev-smoke2/a.png'), true)
     assert.equal(isForbiddenArtifact('plugins/docs/evidence/dev-smoke-report.json'), true)
     assert.equal(isForbiddenArtifact('plugins/docs/evidence/dev-smoke-abc/dev-page.png'), true)
+    assert.equal(isForbiddenArtifact('plugins/plugins/omnimux/lib/client.js'), true)
+    assert.equal(isForbiddenArtifact('plugins/plugins/omnimux-workflow/dist/index.js'), true)
+    assert.equal(isForbiddenArtifact('plugins/plugins/omnimux-workflow/lib/canvas.js'), true)
 
     // 普通文档与契约文件不得被误伤
     assert.equal(isForbiddenArtifact('docs/contracts/dev-pipeline.md'), false)
     assert.equal(isForbiddenArtifact('docs/evidence/viewer-single-mode-3571/report.json'), false)
+    assert.equal(isForbiddenArtifact('plugins/plugins/omnimux/src/index.js'), false)
 
-    // 真实临时 Git 仓库端到端验证 checkTrackedArtifacts 检出已跟踪运行期报告
+    // 真实临时单仓 Git 仓库端到端验证：无论传入 <repo> 还是 <repo>/plugins，都检出全仓违规产物
     const tempRepo = mkdtempSync(join(tmpdir(), 'omnimux-tracked-artifacts-'))
     t.after(() => rmSync(tempRepo, { recursive: true, force: true }))
     const gitEnv = { ...process.env, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null' }
     execSync(`git -C "${tempRepo}" init -b main`, { encoding: 'utf8', env: gitEnv })
-    mkdirSync(join(tempRepo, 'plugins/.agent-reports/task-1'), { recursive: true })
-    mkdirSync(join(tempRepo, 'docs/evidence/dev-smoke-run1'), { recursive: true })
-    writeFileSync(join(tempRepo, 'plugins/.agent-reports/task-1/e2e-evidence.json'), '{}\n')
-    writeFileSync(join(tempRepo, 'docs/evidence/dev-smoke-run1/dev-page.png'), 'png')
+    for (const relPath of [
+      '.agent-reports/leak/e2e.json',
+      'plugins/.agent-reports/task-1/e2e-evidence.json',
+      'docs/evidence/dev-smoke-run1/dev-page.png',
+      'docs/evidence/dev-smoke_1.json',
+      'docs/evidence/dev-smoke2/a.png',
+      'plugins/plugins/omnimux/lib/client.js',
+      'plugins/plugins/omnimux-workflow/dist/index.js',
+      'plugins/plugins/omnimux-workflow/lib/canvas.js',
+      'plugins/plugins/omnimux/src/index.js',
+    ]) {
+      const full = join(tempRepo, relPath)
+      mkdirSync(dirname(full), { recursive: true })
+      writeFileSync(full, 'x\n')
+    }
     execSync(`git -C "${tempRepo}" add .`, { encoding: 'utf8', env: gitEnv })
 
-    const result = checkTrackedArtifacts(tempRepo)
-    assert.equal(result.ok, false)
-    assert.deepEqual(result.tracked.sort(), [
+    const expected = [
+      '.agent-reports/leak/e2e.json',
       'docs/evidence/dev-smoke-run1/dev-page.png',
+      'docs/evidence/dev-smoke2/a.png',
+      'docs/evidence/dev-smoke_1.json',
       'plugins/.agent-reports/task-1/e2e-evidence.json',
-    ])
-    assert.match(result.message, /\.agent-reports/)
-    assert.match(result.message, /git rm --cached/)
+      'plugins/plugins/omnimux-workflow/dist/index.js',
+      'plugins/plugins/omnimux-workflow/lib/canvas.js',
+      'plugins/plugins/omnimux/lib/client.js',
+    ]
+
+    for (const rootArg of [tempRepo, join(tempRepo, 'plugins')]) {
+      const result = checkTrackedArtifacts(rootArg)
+      assert.equal(result.ok, false)
+      assert.deepEqual(result.tracked.sort(), expected)
+      assert.match(result.message, /\.agent-reports/)
+      assert.match(result.message, /git rm --cached/)
+    }
   })
 })

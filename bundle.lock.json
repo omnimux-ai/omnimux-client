@@ -45,7 +45,7 @@
       "version": "0.1.2",
       "path": "plugins/plugins/omnimux-clip",
       "spec": "link:../../plugins/plugins/omnimux-clip",
-      "contentHash": "sha256:406bddcee3eb3c48a583ea30b55b7c1c832f8048e44b28396ab58c0d64e5334b"
+      "contentHash": "sha256:0bebaedc72561188dd7ae7b3fd78820cafab3ea5f2289cb9bdf743cb6e7f71cf"
     },
     {
       "name": "omnimux-forms",

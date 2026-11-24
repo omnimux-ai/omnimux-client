@@ -254,3 +254,52 @@ test('sync-to-app.sh --isolated materializes from fresh origin/main detached wor
   const worktreeLines = wtList.stdout.split('\n').filter((line) => line.startsWith('worktree '))
   assert.equal(worktreeLines.length, 1, `Temporary isolated worktree was not cleaned up:\n${wtList.stdout}`)
 })
+
+test('sync-to-app.sh --isolated clears wrapper OMNIMUX_* overrides, ignores inherited GIT_* poisoning, and rejects conflicting flags', t => {
+  const f = fixture(t, 'behind')
+  const evil = fixture(t, 'aligned')
+  const realTargetCommit = spawnSync('git', ['-C', f.repo, 'rev-parse', '--verify', 'refs/remotes/origin/main^{commit}'], {
+    encoding: 'utf8',
+    env: f.gitEnv,
+  }).stdout.trim()
+  const evilCommit = spawnSync('git', ['-C', evil.repo, 'rev-parse', '--verify', 'HEAD^{commit}'], {
+    encoding: 'utf8',
+    env: evil.gitEnv,
+  }).stdout.trim()
+  assert.notEqual(realTargetCommit, evilCommit)
+
+  // B1 + B2 回归：携带 omnimux.mjs 注入的 OMNIMUX_PLUGINS_DIR / OMNIMUX_PRODUCT_DIR / OMNIMUX_DSH_UI_KIT_DIR
+  // 与伪造的 GIT_DIR / GIT_WORK_TREE 时，--isolated 必须使用真实仓库最新 origin/main 并通过 plugins 归属门禁
+  const isolated = spawnSync('bash', [join(f.repo, 'scripts/sync-to-app.sh'), '--isolated', '--skip-build', `--target=${f.target}`, 'missing-plugin'], {
+    encoding: 'utf8',
+    env: {
+      ...f.gitEnv,
+      HOME: f.home,
+      OMNIMUX_SYNC_TARGETS: '',
+      OMNIMUX_PLUGINS_DIR: join(f.repo, 'plugins'),
+      OMNIMUX_PRODUCT_DIR: f.repo,
+      OMNIMUX_DSH_UI_KIT_DIR: join(f.repo, 'dsh-ui-kit'),
+      GIT_DIR: join(evil.repo, '.git'),
+      GIT_WORK_TREE: evil.repo,
+    },
+  })
+  assert.match(isolated.stdout, new RegExp(`sync --isolated: 签出最新 origin/main \\(${realTargetCommit.slice(0, 12)}\\)`), isolated.stdout + isolated.stderr)
+  assert.doesNotMatch(isolated.stderr, /ROOT\/plugins|已跟踪文件的未提交改动|不等于最新 origin\/main/, isolated.stderr)
+  assert.match(isolated.stderr, /源码缺失/, isolated.stderr)
+
+  // 禁止 --isolated 与 --managed-tarball 混用
+  const conflictManaged = spawnSync('bash', [join(f.repo, 'scripts/sync-to-app.sh'), '--isolated', '--managed-tarball=/tmp/fake.tgz'], {
+    encoding: 'utf8',
+    env: { ...f.gitEnv, HOME: f.home },
+  })
+  assert.equal(conflictManaged.status, 1)
+  assert.match(conflictManaged.stderr, /--isolated 不能与 --managed-tarball/)
+
+  // 禁止携带 OMNIMUX_SYNC_ISOLATED_ACTIVE=1 嵌套或绕过 --isolated
+  const conflictActive = spawnSync('bash', [join(f.repo, 'scripts/sync-to-app.sh'), '--isolated', '--skip-build', `--target=${f.target}`, 'missing-plugin'], {
+    encoding: 'utf8',
+    env: { ...f.gitEnv, HOME: f.home, OMNIMUX_SYNC_ISOLATED_ACTIVE: '1' },
+  })
+  assert.equal(conflictActive.status, 1)
+  assert.match(conflictActive.stderr, /OMNIMUX_SYNC_ISOLATED_ACTIVE=1/)
+})

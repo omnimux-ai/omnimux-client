@@ -42,7 +42,7 @@
 - 多行命令中的只读检视（如 `echo ok\ngrep foo plugins/scripts/sync-to-app.sh`、`bash -n plugins/scripts/sync-to-app.sh`）不被 `isMaterializationCommand` 误杀。
 - `corepack pnpm --dir plugins run build:all`、`env CI=1 pnpm build:all`、`corepack pnpm install` 在主检出被拒；`corepack yarn install --immutable`、`corepack pnpm install --frozen-lockfile`、`./scripts/sync-to-app.sh --isolated` 放行。
 - `check-tracked-artifacts.mjs` 拦截已跟踪的 `.agent-reports/**` 与 `docs/evidence/dev-smoke*`，对当前工作树退出码为 0。
-- 运行离线单测（`explore-template-media.test.mjs`、`composer-inline-bootstrap.test.mjs`、`package-preparation.test.mjs`、`image-preview-redesign.e2e.test.js`、`guard-worktree.test.mjs`、`guard-worktree.qa.test.mjs`、`check-tracked-artifacts.test.mjs`、`sync-bypass.test.mjs`、`sync-targets.test.mjs`）全部通过，且 `git status --short --untracked-files=all` 零新增污染。
+- 运行离线单测（`composer-inline-bootstrap.test.mjs`、`package-preparation.test.mjs`、`image-preview-redesign.e2e.test.js`、`guard-worktree.test.mjs`、`guard-worktree.qa.test.mjs`、`check-tracked-artifacts.test.mjs`、`sync-bypass.test.mjs`、`sync-targets.test.mjs`）全部通过，且 `git status --short --untracked-files=all` 零新增污染（注：`explore-template-media.test.mjs` 已同步改为 `os.tmpdir()`，其对已移除文件 `featured-apps-data.js` 的既有导入报错属 `91f73454` 遗留，不在本 PR 范围内）。
 - `sync-to-app.sh --isolated --skip-build` 在主检出既脏又落后于 `origin/main` 时仍能从最新 `origin/main` 通过源码身份门禁并自动拆除临时 worktree。
 
 ## 旧标准变更
