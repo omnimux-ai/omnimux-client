@@ -6,12 +6,14 @@ import { describe, it } from 'node:test'
 import {
   BRAND_SVGS as KIT_BRAND_SVGS,
   CANONICAL_BRAND_NAMES as KIT_CANONICAL_BRAND_NAMES,
+  getCanonicalBrandName as kitGetCanonicalBrandName,
   isValidBrandId as kitIsValidBrandId,
   resolveModelBrand as kitResolveModelBrand,
   sanitizeBrandIconPath,
 } from 'dsh-ui-kit/model-brands'
 import {
   CANONICAL_BRAND_NAMES as CATALOG_CANONICAL_BRAND_NAMES,
+  getCanonicalBrandName as catalogGetCanonicalBrandName,
   isValidBrandId as catalogIsValidBrandId,
   sanitizeBrandIconPath as catalogSanitizeBrandIconPath,
 } from './brand-contract.js'
@@ -171,9 +173,13 @@ describe('Hybrid model-brand contract (Hub catalog + digest decoupling + securit
 
     const row1 = cat1.image.find((m) => m.id === 'gpt-acme-vision')
     const row2 = cat2.image.find((m) => m.id === 'gpt-acme-vision')
+    assert.equal(row1?.family, 'acme-labs', 'explicit gateway brandId must prevent gpt- prefix from hijacking family to openai')
+    assert.equal(row1?.familyLabel, 'Acme Labs', 'familyLabel must resolve from gateway brandName rather than OpenAI')
     assert.equal(row1?.brandId, 'acme-labs')
     assert.equal(row1?.brandName, 'Acme Labs')
     assert.equal(row1?.brandIconPath, 'M12 2L22 20H2Z')
+    assert.equal(row2?.family, 'acme-labs')
+    assert.equal(row2?.familyLabel, 'Acme Studio')
     assert.equal(row2?.brandId, 'acme-labs')
     assert.equal(row2?.brandName, 'Acme Studio')
     assert.equal(row2?.brandIconPath, 'M4 4H20V20H4Z')
@@ -254,12 +260,87 @@ describe('Hybrid model-brand contract (Hub catalog + digest decoupling + securit
     }
     assert.deepEqual(Object.keys(HUB_BRAND_SVGS).sort(), Object.keys(KIT_BRAND_SVGS).sort())
     assert.deepEqual(CATALOG_CANONICAL_BRAND_NAMES, KIT_CANONICAL_BRAND_NAMES)
-    for (const candidate of ['openai', 'acme-labs', 'Bad_ID', ' openai ', '']) {
+    for (const candidate of ['openai', 'acme-labs', 'constructor', 'Bad_ID', ' openai ', '']) {
       assert.equal(catalogIsValidBrandId(candidate), kitIsValidBrandId(candidate), `brandId validator parity: ${candidate}`)
+      assert.equal(
+        catalogGetCanonicalBrandName(candidate),
+        kitGetCanonicalBrandName(candidate),
+        `canonical brand name parity: ${candidate}`,
+      )
     }
+    assert.equal(catalogGetCanonicalBrandName('constructor'), null, 'prototype key must not leak Function')
     for (const path of ['M12 2L22 20H2Z', ' M0 0', '<svg onload=alert(1)>', 'M0\u00A00', '']) {
       assert.equal(catalogSanitizeBrandIconPath(path), sanitizeBrandIconPath(path), `iconPath validator parity: ${path}`)
     }
+
+    // Prototype key `brand_id: 'constructor'` and sub-family ownership in Hub projection.
+    const edgePayload = makeGatewayPricingPayload({
+      extraModels: [
+        {
+          model_name: 'ctor-image-1',
+          display_name: 'Ctor Image',
+          brand_id: 'constructor',
+          enable_groups: ['default'],
+          supported_endpoint_types: ['image'],
+          billing_mode: 'per_call',
+          model_price: 0.02,
+          contract: {
+            schemaVersion: '2.0',
+            model_id: 'ctor-image-1',
+            family: 'image',
+            status: 'documented',
+            execution_status: 'live',
+            brand_id: 'constructor',
+            operations: [
+              {
+                id: 'text_to_image',
+                executable: true,
+                output: { type: 'image' },
+                inputs: [{ slot: 'prompt', type: 'text', required: true }],
+              },
+            ],
+          },
+        },
+        {
+          model_name: 'seedream-9-9',
+          display_name: 'Seedream 9.9',
+          brand_id: 'bytedance',
+          brand_name: 'ByteDance',
+          enable_groups: ['default'],
+          supported_endpoint_types: ['image'],
+          billing_mode: 'per_call',
+          model_price: 0.03,
+          contract: {
+            schemaVersion: '2.0',
+            model_id: 'seedream-9-9',
+            family: 'image',
+            status: 'documented',
+            execution_status: 'live',
+            brand_id: 'bytedance',
+            brand_name: 'ByteDance',
+            operations: [
+              {
+                id: 'text_to_image',
+                executable: true,
+                output: { type: 'image' },
+                inputs: [{ slot: 'prompt', type: 'text', required: true }],
+              },
+            ],
+          },
+        },
+      ],
+    })
+    const { snapshot: edgeSnap } = normalizePricingPayload(edgePayload, { generatedAt: '2026-11-24T00:00:00.000Z' })
+    const edgeCat = buildModelCatalog({ snapshot: edgeSnap, snapshotSource: 'remote', gatewayContracts: true })
+    const ctorRow = edgeCat.image.find((m) => m.id === 'ctor-image-1')
+    assert.equal(ctorRow?.brandId, 'constructor')
+    assert.equal(ctorRow?.brandName, undefined, 'prototype key must not leak Object.prototype.constructor')
+    assert.equal(ctorRow?.family, 'constructor')
+    assert.equal(ctorRow?.familyLabel, 'constructor')
+    const seedreamRow = edgeCat.image.find((m) => m.id === 'seedream-9-9')
+    assert.equal(seedreamRow?.brandId, 'bytedance')
+    assert.equal(seedreamRow?.family, 'seedream', 'bytedance owning sub-family seedream must be preserved')
+    assert.equal(seedreamRow?.familyLabel, 'Seedream')
 
     const pickerSrc = readFileSync(
       new URL('../client/composer-quick-shortcuts/ModelPicker.jsx', import.meta.url),

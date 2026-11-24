@@ -105,6 +105,20 @@ function humanizeId(id) {
 /** Infer a display family when the gateway model has no local contract. */
 function familyFor(id, contract, brandId = '') {
   const prefix = String(id).toLowerCase()
+  if (brandId) {
+    // Preserve product sub-families only under their owning canonical vendor so
+    // an unrelated id prefix (e.g. `gpt-acme-vision` with `brand_id: acme-labs`)
+    // never hijacks a gateway-declared brand into another vendor's family.
+    if (brandId === 'bytedance') {
+      if (prefix.startsWith('seedance')) return 'seedance'
+      if (prefix.startsWith('seedream')) return 'seedream'
+    }
+    if (brandId === 'alibaba') {
+      if (prefix.startsWith('wan')) return 'wan'
+      if (prefix.startsWith('happyhorse')) return 'happyhorse'
+    }
+    return brandId
+  }
   if (prefix.startsWith('gemini') || prefix.startsWith('nano-banana') || prefix.startsWith('imagen')) return 'google'
   if (prefix.startsWith('gpt') || prefix.startsWith('dall-e') || prefix.startsWith('openai')) return 'openai'
   if (prefix.startsWith('claude')) return 'anthropic'
@@ -119,7 +133,6 @@ function familyFor(id, contract, brandId = '') {
   if (prefix.startsWith('minimax') || prefix.startsWith('hailuo')) return 'minimax'
   if (prefix.startsWith('muse')) return 'muse'
   if (prefix.startsWith('indextts') || prefix.startsWith('index-tts')) return 'indextts'
-  if (brandId) return brandId
   return text(contract.family) || 'unknown'
 }
 
@@ -664,14 +677,21 @@ function resolveGatewayBrand(snapshotModel, contract, snapshotBrands) {
   const brandId = isValidBrandId(rawRowId)
     ? rawRowId
     : (isValidBrandId(rawContractId) ? rawContractId : '')
-  const brandMeta = brandId ? object(snapshotBrands[brandId]) : {}
+  const brandMeta = brandId && Object.hasOwn(snapshotBrands, brandId)
+    ? object(snapshotBrands[brandId])
+    : {}
   const contractMatches = !brandId || rawContractId === brandId
   const brandName = text(snapshotModel.brandName ?? snapshotModel.brand_name)
     || (contractMatches ? text(contract.brand_name ?? contract.brandName) : '')
     || text(brandMeta.name)
-  const brandIconPath = sanitizeBrandIconPath(
-    snapshotModel.brandIconPath ?? snapshotModel.brand_icon_path ?? brandMeta.iconPath ?? brandMeta.icon_path,
-  ) || ''
+  const rawIconPath = (typeof snapshotModel.brandIconPath === 'string' && snapshotModel.brandIconPath.length > 0)
+    ? snapshotModel.brandIconPath
+    : ((typeof snapshotModel.brand_icon_path === 'string' && snapshotModel.brand_icon_path.length > 0)
+        ? snapshotModel.brand_icon_path
+        : ((typeof brandMeta.iconPath === 'string' && brandMeta.iconPath.length > 0)
+            ? brandMeta.iconPath
+            : brandMeta.icon_path))
+  const brandIconPath = sanitizeBrandIconPath(rawIconPath) || ''
   return { brandId, brandName, brandIconPath }
 }
 

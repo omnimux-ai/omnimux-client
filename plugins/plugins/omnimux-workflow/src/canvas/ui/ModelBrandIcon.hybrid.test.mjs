@@ -127,6 +127,48 @@ describe('Workflow hybrid model-brand propagation, cache decoupling, and DOM ren
     assert.equal(acmeRow?.brandName, 'Acme Labs');
     assert.equal(acmeRow?.brandIconPath, 'M12 2L22 20H2Z');
 
+    // `body.models[]` must also be sanitized fail-closed at the seam (never leaking raw invalid values into operationUi).
+    const evilModelRow = canvasCatalog.models?.find((row) => row.id === 'evil-model-1');
+    assert.equal(evilModelRow?.brandId, 'evil-labs');
+    assert.equal(evilModelRow?.brandIconPath, undefined, 'malicious iconPath on body.models[] must be stripped at seam');
+
+    const badSeamCatalog = readCanvasCatalog((name) => {
+      if (name === 'imageGenerate') return { execute: () => {} };
+      if (name === 'modelCatalog') {
+        return {
+          list: () => ({
+            ...hub,
+            models: [
+              {
+                ...hub.models[0],
+                id: 'bad-seam-model',
+                brandId: 'Bad_ID',
+                brandIconPath: '<svg onload=alert(1)>',
+              },
+            ],
+            image: [
+              {
+                ...hub.image[0],
+                id: 'bad-seam-model',
+                brandId: 'Bad_ID',
+                brandIconPath: '<svg onload=alert(1)>',
+              },
+            ],
+          }),
+        };
+      }
+      return undefined;
+    });
+    assert.equal(badSeamCatalog.models?.[0]?.brandId, undefined);
+    assert.equal(badSeamCatalog.models?.[0]?.brandIconPath, undefined);
+    const badFiltered = buildFilteredModelOptions({
+      catalog: badSeamCatalog,
+      outputType: 'image',
+      allowUnassignedInputs: true,
+    });
+    assert.equal(badFiltered.options[0]?.brandId, undefined, 'invalid brandId on models[] must not leak into options');
+    assert.equal(badFiltered.options[0]?.brandIconPath, undefined, 'malicious brandIconPath on models[] must not leak into options');
+
     const filtered = buildFilteredModelOptions({
       catalog: canvasCatalog,
       outputType: 'image',
@@ -139,6 +181,44 @@ describe('Workflow hybrid model-brand propagation, cache decoupling, and DOM ren
     assert.equal(acmeGroup.brandId, 'acme-labs');
     assert.equal(acmeGroup.brandIconPath, 'M12 2L22 20H2Z');
     assert.equal(groups.some((g) => g.id === 'openai'), false);
+
+    // Even if a stale row carries a mismatched family (`openai`), explicit foreign brandId must win over family hijack,
+    // while same-vendor product sub-families (`seedream` under `bytedance`) remain grouped properly.
+    const mixedGroups = groupPickerCandidates([
+      {
+        id: 'gpt-acme-vision',
+        label: 'Acme Vision',
+        family: 'openai',
+        familyLabel: 'OpenAI',
+        brandId: 'acme-labs',
+        brandName: 'Acme Labs',
+        brandIconPath: 'M12 2L22 20H2Z',
+      },
+      {
+        id: 'gpt-image-2.5',
+        label: 'GPT Image 2.5',
+        family: 'openai',
+        familyLabel: 'OpenAI',
+        brandId: 'openai',
+        brandName: 'OpenAI',
+      },
+      {
+        id: 'seedream-5-5',
+        label: 'Seedream 5.5',
+        family: 'seedream',
+        familyLabel: 'Seedream',
+        brandId: 'bytedance',
+        brandName: 'ByteDance',
+      },
+    ]);
+    assert.deepEqual(
+      mixedGroups.map((g) => ({ id: g.id, name: g.name, brandId: g.brandId, rowIds: g.rows.map((r) => r.id) })),
+      [
+        { id: 'acme-labs', name: 'Acme Labs', brandId: 'acme-labs', rowIds: ['gpt-acme-vision'] },
+        { id: 'openai', name: 'OpenAI', brandId: 'openai', rowIds: ['gpt-image-2.5'] },
+        { id: 'seedream', name: 'Seedream', brandId: 'bytedance', rowIds: ['seedream-5-5'] },
+      ],
+    );
   });
 
   it('decouples catalog cache refresh from graph reconciliation on display-only brand updates', async () => {
@@ -235,7 +315,14 @@ describe('Workflow hybrid model-brand propagation, cache decoupling, and DOM ren
     const React = localRequire('react');
     const reactDomClient = localRequire('react-dom/client');
     const built = buildSync({
-      entryPoints: [join(here, 'ModelBrandIcon.tsx')],
+      stdin: {
+        contents: `
+          export { ModelBrandIcon } from './ModelBrandIcon.tsx';
+          export { getModelVisuals } from '../editor/components/MaterialNode/ConfigPanel/modelVisuals.tsx';
+        `,
+        resolveDir: here,
+        sourcefile: 'brand-visuals-entry.tsx',
+      },
       bundle: true,
       write: false,
       format: 'cjs',
@@ -245,7 +332,27 @@ describe('Workflow hybrid model-brand propagation, cache decoupling, and DOM ren
     });
     const mod = { exports: {} };
     new Function('require', 'module', 'exports', built.outputFiles[0].text)(localRequire, mod, mod.exports);
-    const { ModelBrandIcon } = mod.exports;
+    const { ModelBrandIcon, getModelVisuals } = mod.exports;
+
+    // Cross-vendor guard: explicit foreign brandId must not inherit OpenAI's badge/subtitle via LEGACY_ID_RULES,
+    // while same-vendor models (e.g. nano-banana under google) retain their badges/subtitles.
+    const foreignVisuals = getModelVisuals('gpt-image-acme', {
+      kind: 'image',
+      family: 'acme-labs',
+      brandId: 'acme-labs',
+      brandName: 'Acme Labs',
+    });
+    assert.equal(foreignVisuals.badge, undefined, 'foreign brandId must not inherit OpenAI badge');
+    assert.equal(foreignVisuals.subtitle, undefined, 'foreign brandId must not inherit OpenAI subtitle');
+
+    const googleVisuals = getModelVisuals('nano-banana-2-1', {
+      kind: 'image',
+      family: 'google',
+      brandId: 'google',
+      brandName: 'Google',
+    });
+    assert.equal(googleVisuals.badge, 'Yearly -20%');
+    assert.equal(googleVisuals.subtitle, 'auto-4K');
 
     const dom = new JSDOM('<!DOCTYPE html><html><body><div id="root"></div></body></html>');
     const prevWindow = global.window;

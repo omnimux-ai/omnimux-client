@@ -1,4 +1,4 @@
-import { getCanonicalBrandName, isValidBrandId } from 'dsh-ui-kit/model-brands';
+import { canonicalizeLocalBrandId, getCanonicalBrandName, isValidBrandId } from 'dsh-ui-kit/model-brands';
 import type { CatalogChannelGroupDto, OperationContractDto } from '../../../../../shared/api.ts';
 
 export interface PickerCandidate {
@@ -37,24 +37,28 @@ export interface PickerCandidateGroup {
 }
 
 // Presentation aliases only: these never contribute model candidates.
-const BRANDS: readonly [string, string, readonly string[]][] = [
-  ['openai', 'OpenAI', ['openai', 'gpt', 'o1', 'o3', 'o4']],
-  ['seedream', 'Seedream', ['seedream']],
-  ['bytedance', 'Seedance', ['bytedance', 'seed']],
-  ['minimax', 'MiniMax', ['minimax', 'hailuo']],
-  ['muse', 'Muse', ['muse']],
-  ['kling', 'Kling', ['kling']],
-  ['alibaba', 'Wan', ['alibaba', 'wan']],
-  ['happyhorse', 'HappyHorse', ['happyhorse', 'horse']],
-  ['anthropic', 'Claude', ['anthropic', 'claude', 'opus', 'sonnet']],
-  ['deepseek', 'DeepSeek', ['deepseek']],
-  ['google', 'Google', ['google', 'gemini', 'nano-banana', 'nanobanana', 'imagen', 'veo']],
-  ['midjourney', 'Midjourney', ['midjourney', 'mj']],
-  ['xai', 'xAI', ['xai', 'grok']],
-  ['indextts', 'Index TTS2', ['gxgenai', 'index-tts', 'indextts', 'indextts-2', 'index']],
+// The 4th tuple entry declares the canonical gateway brand_id owner so product
+// sub-families (e.g. seedream/seedance under bytedance, wan/happyhorse under
+// alibaba) stay intact without allowing a mismatched family to hijack an
+// explicit foreign gateway brandId.
+const BRANDS: readonly [string, string, readonly string[], string][] = [
+  ['openai', 'OpenAI', ['openai', 'gpt', 'o1', 'o3', 'o4'], 'openai'],
+  ['seedream', 'Seedream', ['seedream'], 'bytedance'],
+  ['bytedance', 'Seedance', ['bytedance', 'seed'], 'bytedance'],
+  ['minimax', 'MiniMax', ['minimax', 'hailuo'], 'minimax'],
+  ['muse', 'Muse', ['muse'], 'muse'],
+  ['kling', 'Kling', ['kling'], 'kling'],
+  ['alibaba', 'Wan', ['alibaba', 'wan'], 'alibaba'],
+  ['happyhorse', 'HappyHorse', ['happyhorse', 'horse'], 'alibaba'],
+  ['anthropic', 'Claude', ['anthropic', 'claude', 'opus', 'sonnet'], 'anthropic'],
+  ['deepseek', 'DeepSeek', ['deepseek'], 'deepseek'],
+  ['google', 'Google', ['google', 'gemini', 'nano-banana', 'nanobanana', 'imagen', 'veo'], 'google'],
+  ['midjourney', 'Midjourney', ['midjourney', 'mj'], 'midjourney'],
+  ['xai', 'xAI', ['xai', 'grok'], 'grok'],
+  ['indextts', 'Index TTS2', ['gxgenai', 'index-tts', 'indextts', 'indextts-2', 'index'], 'indextts'],
 ];
 
-function matchKnownGroup(token: string): readonly [string, string, readonly string[]] | undefined {
+function matchKnownGroup(token: string): readonly [string, string, readonly string[], string] | undefined {
   const key = token.trim().toLowerCase();
   if (!key) return undefined;
   return BRANDS.find(([, , aliases]) => aliases.some((alias) => key === alias || key.startsWith(`${alias}-`)));
@@ -69,24 +73,33 @@ export function groupPickerCandidates(options: readonly PickerCandidate[]): Pick
   for (const row of options) {
     if (!row.id) continue;
     const explicitBrandId = isValidBrandId(row.brandId) ? row.brandId : '';
+    const explicitCanonicalBrand = explicitBrandId
+      ? (canonicalizeLocalBrandId(explicitBrandId) ?? explicitBrandId)
+      : '';
     const familyIdentity = row.familyLabel?.trim() || row.family?.trim() || '';
     const knownFromFamily = familyIdentity ? matchKnownGroup(familyIdentity) : undefined;
+    const familyMatchesExplicitBrand = Boolean(
+      knownFromFamily && (
+        !explicitCanonicalBrand
+        || knownFromFamily[3] === explicitCanonicalBrand
+        || knownFromFamily[0] === explicitBrandId
+      ),
+    );
 
     let id: string;
     let name: string;
-    if (knownFromFamily) {
+    if (knownFromFamily && familyMatchesExplicitBrand) {
       id = knownFromFamily[0];
       name = knownFromFamily[1];
     } else if (explicitBrandId) {
       const knownFromBrand = matchKnownGroup(explicitBrandId);
-      if (knownFromBrand) {
+      if (knownFromBrand && (knownFromBrand[3] === explicitCanonicalBrand || knownFromBrand[0] === explicitBrandId)) {
         id = knownFromBrand[0];
         name = knownFromBrand[1];
       } else {
         id = explicitBrandId;
         name = row.brandName?.trim()
           || getCanonicalBrandName(explicitBrandId)
-          || row.familyLabel?.trim()
           || explicitBrandId;
       }
     } else {

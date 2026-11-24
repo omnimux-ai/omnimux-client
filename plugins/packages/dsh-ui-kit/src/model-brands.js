@@ -678,13 +678,11 @@ export function canonicalizeLocalBrandId(candidate) {
  * @returns {string | null}
  */
 export function getCanonicalBrandName(brandId) {
-  if (typeof brandId !== 'string') return null
-  const trimmed = brandId.trim().toLowerCase()
-  if (!trimmed) return null
-  if (Object.prototype.hasOwnProperty.call(CANONICAL_BRAND_NAMES, trimmed)) {
-    return CANONICAL_BRAND_NAMES[trimmed]
+  if (!isValidBrandId(brandId)) return null
+  if (Object.prototype.hasOwnProperty.call(CANONICAL_BRAND_NAMES, brandId)) {
+    return CANONICAL_BRAND_NAMES[brandId]
   }
-  const canonical = canonicalizeLocalBrandId(trimmed)
+  const canonical = canonicalizeLocalBrandId(brandId)
   if (canonical && Object.prototype.hasOwnProperty.call(BRAND_CATALOG, canonical)) {
     return BRAND_CATALOG[canonical].name
   }
@@ -774,7 +772,10 @@ export function resolveBrandVisual(input = {}) {
   const aliasedLocalBrand = rawBrandId ? canonicalizeLocalBrandId(rawBrandId) : null
   const hasExplicitBrand = Boolean(validGatewayBrandId || aliasedLocalBrand)
 
-  const brandDictEntry = validGatewayBrandId && input?.brands && typeof input.brands === 'object'
+  const brandDictEntry = validGatewayBrandId
+    && input?.brands
+    && typeof input.brands === 'object'
+    && Object.prototype.hasOwnProperty.call(input.brands, validGatewayBrandId)
     ? input.brands[validGatewayBrandId]
     : undefined
 
@@ -797,10 +798,15 @@ export function resolveBrandVisual(input = {}) {
   }
 
   // Tier 2: Gateway-provided safe monochrome 24x24 `<path d>` fallback.
-  const candidateIconPath = input?.brandIconPath
-    ?? brandDictEntry?.iconPath
-    ?? brandDictEntry?.icon_path
-    ?? null
+  // An empty string on the row falls through to `brands[brandId]`, while any
+  // non-empty invalid string (including padded whitespace) is rejected fail-closed.
+  const candidateIconPath = (typeof input?.brandIconPath === 'string' && input.brandIconPath.length > 0)
+    ? input.brandIconPath
+    : ((typeof brandDictEntry?.iconPath === 'string' && brandDictEntry.iconPath.length > 0)
+        ? brandDictEntry.iconPath
+        : ((typeof brandDictEntry?.icon_path === 'string' && brandDictEntry.icon_path.length > 0)
+            ? brandDictEntry.icon_path
+            : null))
   const safePath = sanitizeBrandIconPath(candidateIconPath)
 
   if (hasExplicitBrand) {

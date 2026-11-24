@@ -9,6 +9,7 @@ import {
   getAllBrands,
   getBrandInfo,
   getBrandMonogram,
+  getCanonicalBrandName,
   isValidBrandId,
   resolveBrandVisual,
   resolveModelBrand,
@@ -154,6 +155,42 @@ describe('dsh-ui-kit/model-brands resolution', () => {
     assert.equal(unknown.source, 'monogram')
     assert.equal(unknown.brandId, null)
     assert.equal(unknown.letter, 'O')
+
+    // Prototype property keys (e.g. `constructor`) must never hit Object.prototype.
+    assert.equal(getCanonicalBrandName('constructor'), null)
+    assert.equal(getCanonicalBrandName('toString'), null)
+    const protoBrand = resolveBrandVisual({
+      brandId: 'constructor',
+      brands: {},
+      modelId: 'constructor-1',
+    })
+    assert.equal(protoBrand.kind, 'monogram')
+    assert.equal(protoBrand.brandId, 'constructor')
+    assert.equal(protoBrand.brandName, 'constructor')
+    assert.notEqual(protoBrand.brandName, 'Object')
+    assert.equal(protoBrand.letter, 'C')
+
+    // Empty row brandIconPath falls through to brands dictionary, while whitespace-only fails closed.
+    const emptyFallthrough = resolveBrandVisual({
+      brandId: 'acme-labs',
+      brandIconPath: '',
+      brands: {
+        'acme-labs': { id: 'acme-labs', name: 'Acme Labs', iconPath: 'M3 3H21V21H3Z' },
+      },
+      modelId: 'acme-1',
+    })
+    assert.equal(emptyFallthrough.kind, 'path')
+    assert.equal(emptyFallthrough.path, 'M3 3H21V21H3Z')
+
+    const whitespaceFailClosed = resolveBrandVisual({
+      brandId: 'acme-labs',
+      brandIconPath: ' ',
+      brands: {
+        'acme-labs': { id: 'acme-labs', name: 'Acme Labs', iconPath: 'M3 3H21V21H3Z' },
+      },
+      modelId: 'acme-1',
+    })
+    assert.equal(whitespaceFailClosed.kind, 'monogram')
   })
 
   it('exposes complete BRAND_SVGS / BRAND_SVGS_MONO / getBrandInfo / getAllBrands parity', () => {

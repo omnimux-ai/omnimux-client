@@ -112,7 +112,17 @@ export function readCanvasCatalog(getSeam: Getter): CapabilityCatalog {
   const models = Array.isArray(body.models) ? body.models.filter((row): row is CatalogModelDto =>
     typeof row === 'object' && row !== null && typeof row.id === 'string').map((row) => {
       const lines = channelGroups(row.channelGroups);
-      return lines === undefined ? row : { ...row, channelGroups: lines };
+      const { brandId: rawBrandId, brandName: rawBrandName, brandIconPath: rawBrandIconPath, ...rest } = row;
+      const brandId = isValidBrandId(rawBrandId) ? rawBrandId : undefined;
+      const brandName = typeof rawBrandName === 'string' && rawBrandName.trim() ? rawBrandName.trim() : undefined;
+      const brandIconPath = sanitizeBrandIconPath(rawBrandIconPath) ?? undefined;
+      return {
+        ...rest,
+        ...(brandId ? { brandId } : {}),
+        ...(brandName ? { brandName } : {}),
+        ...(brandIconPath ? { brandIconPath } : {}),
+        ...(lines !== undefined ? { channelGroups: lines } : {}),
+      };
     }) : undefined;
   const defaultsByOperation = body.defaultsByOperation && typeof body.defaultsByOperation === 'object'
     ? Object.fromEntries(Object.entries(body.defaultsByOperation).filter(([, value]) => typeof value === 'string' && value))

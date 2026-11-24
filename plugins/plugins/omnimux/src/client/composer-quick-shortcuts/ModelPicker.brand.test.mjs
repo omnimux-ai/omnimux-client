@@ -126,4 +126,102 @@ describe('ModelPicker hybrid brand icon rendering (hub shard gate)', () => {
       global.IS_REACT_ACT_ENVIRONMENT = prevAct;
     }
   });
+
+  it('rejects whitespace-padded brandId and brandIconPath fail-closed during catalog ingest', async () => {
+    const { ModelPicker } = loadModelPicker();
+    const dom = new JSDOM('<!doctype html><html><body><div id="root"></div></body></html>', {
+      url: 'http://127.0.0.1:4199/',
+    });
+    const prevWindow = global.window;
+    const prevDocument = global.document;
+    const prevFetch = global.fetch;
+    const prevAct = global.IS_REACT_ACT_ENVIRONMENT;
+    const prevCustomEvent = global.CustomEvent;
+    global.window = dom.window;
+    global.document = dom.window.document;
+    global.CustomEvent = dom.window.CustomEvent;
+    global.IS_REACT_ACT_ENVIRONMENT = true;
+    global.fetch = async (url) => {
+      if (String(url).includes('/omnimux/model-catalog')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            brands: {
+              'acme-labs': { id: 'acme-labs', name: 'Acme Labs', iconPath: 'M12 2L22 20H2Z' },
+            },
+            image: [
+              {
+                id: 'padded-brand-model',
+                label: 'Padded Brand Model',
+                brandId: ' acme-labs ',
+                brandName: 'Acme Labs',
+                brandIconPath: ' M12 2L22 20H2Z ',
+              },
+              {
+                id: 'valid-brand-padded-path',
+                label: 'Valid Brand Padded Path',
+                brandId: 'padded-only',
+                brandName: 'Padded Only',
+                brandIconPath: ' M12 2L22 20H2Z ',
+              },
+            ],
+            video: [],
+          }),
+        };
+      }
+      return { ok: true, status: 200, json: async () => ({}) };
+    };
+
+    const container = dom.window.document.getElementById('root');
+    const root = reactDomClient.createRoot(container);
+    try {
+      await React.act(async () => {
+        root.render(React.createElement(ModelPicker, { sessionId: 'sess-brand-pad' }));
+      });
+      await React.act(async () => {
+        await new Promise((r) => setTimeout(r, 20));
+      });
+      // Open popover and switch to manual + image tab.
+      const trigger = container.querySelector('.sh-model-picker-trigger');
+      assert.ok(trigger, 'ModelPicker trigger must render');
+      await React.act(async () => {
+        trigger.click();
+      });
+      const autoSwitch = dom.window.document.querySelector('.sh-model-switch');
+      assert.ok(autoSwitch, 'auto switch must render');
+      await React.act(async () => {
+        autoSwitch.click();
+      });
+      const imageTab = Array.from(dom.window.document.querySelectorAll('.sh-model-tab'))
+        .find((el) => el.textContent?.includes('图像') || el.textContent?.includes('Image'));
+      assert.ok(imageTab, 'image tab must render');
+      await React.act(async () => {
+        imageTab.click();
+      });
+
+      const rows = Array.from(dom.window.document.querySelectorAll('.sh-model-row'));
+      assert.equal(rows.length, 2);
+
+      // Row 1: padded brandId `' acme-labs '` must be rejected fail-closed (not trimmed to `'acme-labs'`).
+      const icon1 = rows[0].querySelector('.sh-model-brand-icon');
+      assert.equal(icon1?.getAttribute('data-brand-source'), 'monogram');
+      assert.equal(icon1?.getAttribute('data-brand-id'), '');
+      assert.equal(icon1?.querySelector('svg'), null);
+
+      // Row 2: padded brandIconPath `' M12 2L22 20H2Z '` must be rejected fail-closed (not trimmed into valid path).
+      const icon2 = rows[1].querySelector('.sh-model-brand-icon');
+      assert.equal(icon2?.getAttribute('data-brand-source'), 'monogram');
+      assert.equal(icon2?.getAttribute('data-brand-id'), 'padded-only');
+      assert.equal(icon2?.querySelector('svg'), null);
+    } finally {
+      await React.act(async () => root.unmount());
+      dom.window.close();
+      global.window = prevWindow;
+      global.document = prevDocument;
+      global.fetch = prevFetch;
+      global.CustomEvent = prevCustomEvent;
+      global.IS_REACT_ACT_ENVIRONMENT = prevAct;
+    }
+  });
 });

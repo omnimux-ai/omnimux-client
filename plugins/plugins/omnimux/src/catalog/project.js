@@ -201,7 +201,10 @@ export function resolveProjectedBrand(model, snapshot) {
     ?? snapshotContract?.brand_id
     ?? snapshotContract?.brandId;
   const brandId = isValidBrandId(rawBrandId) ? rawBrandId : undefined;
-  const brandMeta = brandId && snapshotBrands[brandId] && typeof snapshotBrands[brandId] === 'object'
+  const brandMeta = brandId
+    && Object.hasOwn(snapshotBrands, brandId)
+    && snapshotBrands[brandId]
+    && typeof snapshotBrands[brandId] === 'object'
     ? snapshotBrands[brandId]
     : undefined;
   const rawName = (typeof model?.brandName === 'string' && model.brandName.trim())
@@ -211,9 +214,12 @@ export function resolveProjectedBrand(model, snapshot) {
     || (typeof brandMeta?.name === 'string' && brandMeta.name.trim())
     || (brandId ? getCanonicalBrandName(brandId) : null)
     || undefined;
-  const iconPath = sanitizeBrandIconPath(
-    model?.brandIconPath ?? brandMeta?.iconPath ?? brandMeta?.icon_path,
-  ) ?? undefined;
+  const rawIconPath = (typeof model?.brandIconPath === 'string' && model.brandIconPath.length > 0)
+    ? model.brandIconPath
+    : ((typeof brandMeta?.iconPath === 'string' && brandMeta.iconPath.length > 0)
+        ? brandMeta.iconPath
+        : brandMeta?.icon_path);
+  const iconPath = sanitizeBrandIconPath(rawIconPath) ?? undefined;
   return {
     ...(brandId ? { brandId } : {}),
     ...(rawName ? { brandName: rawName } : {}),
@@ -239,14 +245,21 @@ export function collectProjectedBrands(rows, snapshot) {
     if (!row || typeof row !== 'object') continue;
     const brandId = isValidBrandId(row.brandId) ? row.brandId : '';
     if (!brandId || Object.hasOwn(out, brandId)) continue;
-    const meta = snapshotBrands[brandId] && typeof snapshotBrands[brandId] === 'object'
+    const meta = Object.hasOwn(snapshotBrands, brandId)
+      && snapshotBrands[brandId]
+      && typeof snapshotBrands[brandId] === 'object'
       ? snapshotBrands[brandId]
       : {};
     const name = (typeof row.brandName === 'string' && row.brandName.trim())
       || (typeof meta.name === 'string' && meta.name.trim())
       || getCanonicalBrandName(brandId)
       || brandId;
-    const iconPath = sanitizeBrandIconPath(row.brandIconPath ?? meta.iconPath ?? meta.icon_path);
+    const rawIconPath = (typeof row.brandIconPath === 'string' && row.brandIconPath.length > 0)
+      ? row.brandIconPath
+      : ((typeof meta.iconPath === 'string' && meta.iconPath.length > 0)
+          ? meta.iconPath
+          : meta.icon_path);
+    const iconPath = sanitizeBrandIconPath(rawIconPath);
     out[brandId] = {
       id: brandId,
       name,

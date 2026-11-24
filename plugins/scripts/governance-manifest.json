@@ -407,6 +407,7 @@
     "verify-message-source-kinds.test.mjs",
     "verify-modal-unification-browser.mjs",
     "verify-modality-matrix.test.mjs",
+    "verify-model-brand-hybrid.test.mjs",
     "verify-model-console-test-browser.mjs",
     "verify-model-contracts.test.mjs",
     "verify-multimodal-contract-completeness.test.mjs",

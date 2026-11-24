@@ -434,15 +434,16 @@ export const AutoModelPicker = memo(function AutoModelPicker({
   const isManual = mode === 'manual'
   const matches = rows.filter(row => row.id === effectiveModel && (!provider || row.provider === provider))
   const selectedRow = matches.length === 1 ? matches[0] : undefined
+  const triggerRow = selectedRow ?? picked ?? undefined
   const triggerVisual = isManual
     ? resolvePickerBrandVisual({
         modelId: effectiveModel,
-        brandId: selectedRow?.brandId,
-        brandName: selectedRow?.brandName,
-        brandIconPath: selectedRow?.brandIconPath,
+        brandId: triggerRow?.brandId,
+        brandName: triggerRow?.brandName,
+        brandIconPath: triggerRow?.brandIconPath,
       })
     : null
-  const triggerLabel = isManual ? (selectedRow?.name ?? (effectiveModel || '—')) : resolvedCopy.triggerAuto
+  const triggerLabel = isManual ? (selectedRow?.name ?? picked?.name ?? (effectiveModel || '—')) : resolvedCopy.triggerAuto
 
   return (
     <span className="amp-wrap" ref={rootRef}>

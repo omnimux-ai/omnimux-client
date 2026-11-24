@@ -9,6 +9,7 @@
  */
 
 import React from 'react';
+import { canonicalizeLocalBrandId, isValidBrandId } from 'dsh-ui-kit/model-brands';
 import type { CatalogBrandMeta } from '../../../../../shared/api';
 import { ModelBrandIcon } from '../../../../ui/ModelBrandIcon';
 
@@ -80,28 +81,38 @@ const FAMILY_RULES: ReadonlyArray<readonly [string, VisualRule & { kind?: string
 ];
 
 /** Fallback for catalogs without contract rows (ids only). Mirrors the family rules above. */
-const LEGACY_ID_RULES: ReadonlyArray<VisualRule & { match: (id: string) => boolean }> = [
+const LEGACY_ID_RULES: ReadonlyArray<VisualRule & { brandIds: readonly string[]; kind?: string; match: (id: string) => boolean }> = [
   {
+    brandIds: ['google'],
+    kind: 'image',
     match: (id) => id.startsWith('nanobanana') || id.startsWith('nano-banana'),
     badge: 'Yearly -20%',
     getSubtitle: () => 'auto-4K',
   },
   {
+    brandIds: ['bytedance'],
+    kind: 'image',
     match: (id) => id.startsWith('seedream'),
     badge: 'Yearly -20%',
     getSubtitle: (id) => (id.includes('5.0') || id.includes('5-0') ? '1K-2K' : '2K-4K'),
   },
   {
+    brandIds: ['midjourney'],
+    kind: 'image',
     match: (id) => id.startsWith('midjourney') || id.startsWith('mj-'),
     badge: 'Yearly -20%',
     getSubtitle: (id) => (id.includes('8.1') || id.includes('8-1') ? '2K' : '1080P'),
   },
   {
+    brandIds: ['openai'],
+    kind: 'image',
     match: (id) => id.startsWith('gpt-image') || id.startsWith('openai'),
     badge: 'Yearly -20%',
     getSubtitle: () => '1k-4k',
   },
   {
+    brandIds: ['kling'],
+    kind: 'video',
     match: (id) => id.startsWith('kling'),
     getSubtitle: (id) => {
       if (id === 'kling-o3') return '4K · 3-15s';
@@ -110,10 +121,14 @@ const LEGACY_ID_RULES: ReadonlyArray<VisualRule & { match: (id: string) => boole
     },
   },
   {
+    brandIds: ['alibaba'],
+    kind: 'video',
     match: (id) => id.startsWith('wan'),
     getSubtitle: () => '720P-1080P · 5-15s',
   },
   {
+    brandIds: ['google', 'veo'],
+    kind: 'video',
     match: (id) => id.startsWith('veo'),
     getSubtitle: () => '720p-1080p · 8s',
   },
@@ -151,7 +166,13 @@ export function getModelVisuals(id: string, context: ModelVisualsContext = {}): 
       return buildResult(icon, id, rule);
     }
   }
+  const explicitBrandId = isValidBrandId(context.brandId) ? context.brandId : '';
+  const explicitCanonicalBrand = explicitBrandId
+    ? (canonicalizeLocalBrandId(explicitBrandId) ?? explicitBrandId)
+    : '';
   for (const rule of LEGACY_ID_RULES) {
+    if (explicitCanonicalBrand && !rule.brandIds.includes(explicitCanonicalBrand)) continue;
+    if (context.kind && rule.kind && rule.kind !== context.kind) continue;
     if (rule.match(id)) return buildResult(icon, id, rule);
   }
   return { icon };

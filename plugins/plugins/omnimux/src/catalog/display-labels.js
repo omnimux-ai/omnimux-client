@@ -42,7 +42,8 @@ export function familyLabelFor(family, brandName) {
   if (typeof family !== 'string') return undefined;
   const trimmed = family.trim();
   if (!trimmed) return undefined;
-  const known = FAMILY_LABELS[trimmed.toLowerCase()];
+  const lower = trimmed.toLowerCase();
+  const known = Object.hasOwn(FAMILY_LABELS, lower) ? FAMILY_LABELS[lower] : undefined;
   if (known) return known;
   if (typeof brandName === 'string' && brandName.trim()) return brandName.trim();
   return trimmed;

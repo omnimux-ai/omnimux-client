@@ -79,5 +79,7 @@ export function sanitizeBrandIconPath(value) {
  */
 export function getCanonicalBrandName(brandId) {
   if (!isValidBrandId(brandId)) return null
-  return CANONICAL_BRAND_NAMES[/** @type {string} */ (brandId)] ?? null
+  return Object.hasOwn(CANONICAL_BRAND_NAMES, /** @type {string} */ (brandId))
+    ? CANONICAL_BRAND_NAMES[/** @type {keyof typeof CANONICAL_BRAND_NAMES} */ (brandId)]
+    : null
 }

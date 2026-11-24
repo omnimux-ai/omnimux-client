@@ -8,8 +8,10 @@ import React, {
 import { createPortal } from 'react-dom';
 import {
   getBrandMonogram,
+  isValidBrandId,
   resolveBrandVisual,
   resolveModelBrand,
+  sanitizeBrandIconPath,
 } from 'dsh-ui-kit/model-brands';
 
 export { resolveModelBrand };
@@ -523,15 +525,13 @@ export function ModelPicker({ sessionId }) {
             ? row.label.trim()
             : (typeof row.name === 'string' && row.name.trim() ? row.name.trim() : rawId);
           const capsuleName = name;
-          const brandId = typeof row.brandId === 'string' && row.brandId.trim()
-            ? row.brandId.trim()
-            : (typeof row.brand_id === 'string' && row.brand_id.trim() ? row.brand_id.trim() : undefined);
+          const rawBrandId = row.brandId !== undefined ? row.brandId : row.brand_id;
+          const brandId = isValidBrandId(rawBrandId) ? rawBrandId : undefined;
           const brandName = typeof row.brandName === 'string' && row.brandName.trim()
             ? row.brandName.trim()
             : (typeof row.brand_name === 'string' && row.brand_name.trim() ? row.brand_name.trim() : undefined);
-          const brandIconPath = typeof row.brandIconPath === 'string' && row.brandIconPath.trim()
-            ? row.brandIconPath.trim()
-            : (typeof row.brand_icon_path === 'string' && row.brand_icon_path.trim() ? row.brand_icon_path.trim() : undefined);
+          const rawBrandIconPath = row.brandIconPath !== undefined ? row.brandIconPath : row.brand_icon_path;
+          const brandIconPath = sanitizeBrandIconPath(rawBrandIconPath) ?? undefined;
           const family = typeof row.family === 'string' && row.family.trim() ? row.family.trim() : undefined;
           return {
             id: rawId,

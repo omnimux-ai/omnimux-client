@@ -260,7 +260,7 @@ export function normalizePricingPayload(payload, opts = {}) {
     const contractMatchesBrand = !brandId || rawContractBrandId === brandId
     const brandName = text(row.brand_name ?? row.brandName)
       || (contractMatchesBrand ? text(contract.brand_name ?? contract.brandName) : '')
-      || (brandId && brands[brandId] ? brands[brandId].name : '')
+      || (brandId && Object.hasOwn(brands, brandId) ? brands[brandId].name : '')
     models.set(id, {
       id,
       displayName: text(row.model_name) === id ? text(row.display_name) || id : text(row.model_name) || id,
