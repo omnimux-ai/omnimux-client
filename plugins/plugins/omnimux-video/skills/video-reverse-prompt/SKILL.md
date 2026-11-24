@@ -1,5 +1,6 @@
 ---
 name: video-reverse-prompt
+disable-model-invocation: true
 description: 把参考短视频逆向为可直接喂 I2V 图生视频的生成提示词，输出结构化 JSON（prompt/appendix/分镜节拍/镜头计数/不确定项），默认静默无口播。
 ---
 

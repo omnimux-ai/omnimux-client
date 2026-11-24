@@ -1,5 +1,6 @@
 ---
 name: video-analyze
+disable-model-invocation: true
 description: 对本地短视频做五维结构化拆解（核心目标 / 影响力 / 叙事 / 画面 / 复刻策略）并输出分镜数组与钩子证据，严格按 JSON Schema 返回。
 ---
 

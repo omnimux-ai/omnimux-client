@@ -70,6 +70,26 @@
 - 在真实 `Context` 中挂载宿主 `tools` 服务与插件 fiber 后：无 `headlessSkill` 服务时两个工具均返回 `needs-provider`（不再抛 inject 错误）；提供该服务后 `video_analyze` / `video_reverse_prompt` 分别以 `skillName` `video-analyze` / `video-reverse-prompt` 路由成功，`dest` 投影文本含 `## ⚡ 黄金 3 秒 HOOK`。
 - 同探针对还原前的旧写法复跑：两个工具均抛 `cannot get property "headlessSkill" without inject`，提供该服务后同样崩溃。
 
+## Phase 3 全局技能治理对齐（`#236` 落主后）
+
+- 合并 `origin/main@8109e849`（Skills Phase 3）。新增的 `plugins/scripts/verify-global-skills.mjs` 对随包技能强制三项契约；未对齐时本单必红 3 项。
+- 两份 `SKILL.md` frontmatter 增加 `disable-model-invocation: true`（无头 JSON Schema 技能，全局 0-Token，`/<slug>` 仍可用）。
+- `src/understand/skills.js` 对齐 `products-skills.js`：新增 `parseFrontmatterBoolean` / `parseInvocationPolicy`，`loadBundledVideoSkills()` 与 provider `list()` / `get()` 使用解析后的 `entry.invocation`，不再硬编码 `modelInvocable: true`；新增 `resolvePhysicalDir`，Electron 下把 `app.asar` 路径解析到物理 `app.asar.unpacked`。
+- `src/understand/skills.test.js` 新增一条用例，断言两份技能在 loader、`provider.list()`、`provider.get()` 三处均为 `{ modelInvocable: false, userInvocable: true }`。
+
+### 证伪（本机实测）
+
+- 临时删掉 `video-analyze/SKILL.md` 的 `disable-model-invocation: true`：`node plugins/scripts/verify-global-skills.mjs` exit 1，报 `[unapproved-global-model-invocable] omnimux-video/skills/video-analyze/SKILL.md (video-analyze) is globally modelInvocable: true ...`；新增单测同时转红。还原后 exit 0。
+- 临时把 provider 的策略键改回旧驼峰名（源码内不再出现 `disable-model-invocation`）：gate exit 1，报 `[missing-bundled-skill-provider]`。还原后 exit 0。
+- 临时把 `list()` 的 `invocation` 硬编码回 `modelInvocable: true`：新增单测转红（gate 只看源码文本仍会误放行，故保留该单测）。还原后 5 pass。
+
+### 本轮实测
+
+- `node plugins/scripts/verify-global-skills.mjs`：通过，7 个插件 / 30 个随包技能，全局 `modelInvocable=2/4`，全局 0-Token 按需技能 28。
+- `node --test plugins/scripts/verify-global-skills.test.mjs`：5 pass。
+- `omnimux-video` 非 live 用例：151 pass / 1 skip / 0 fail。
+- `bundle.lock.json` 相对 `origin/main` 仅 `omnimux-video` 单槽变动。
+
 ## 旧标准变更
 
 以下用例在 headlessSkill 与 Skill 真源迁移中被删除、改名或语义替换，逐条声明原断言、必须改的理由与新期望证据。

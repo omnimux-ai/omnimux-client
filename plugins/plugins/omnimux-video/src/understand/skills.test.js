@@ -70,6 +70,27 @@ describe('bundled video skills', () => {
     assert.ok(registry.state.provider)
   })
 
+  it('projects disable-model-invocation into a global 0-token invocation policy', async () => {
+    const skills = loadBundledVideoSkills()
+    assert.equal(skills.length, 2)
+    for (const skill of skills) {
+      assert.deepEqual(
+        skill.invocation,
+        { modelInvocable: false, userInvocable: true },
+        `${skill.name} must stay out of the global model context and remain slash-invocable`,
+      )
+    }
+
+    const registry = fakeSkillsRegistry()
+    registerVideoSkills({ get: () => registry })
+    const listed = await registry.state.provider.list()
+    for (const entry of listed) {
+      assert.deepEqual(entry.invocation, { modelInvocable: false, userInvocable: true })
+    }
+    const fetched = await registry.state.provider.get({ name: VIDEO_ANALYZE_SKILL })
+    assert.deepEqual(fetched.invocation, { modelInvocable: false, userInvocable: true })
+  })
+
   it('falls back to skills.register for minimal registries', () => {
     const registry = fakeSkillsRegistry()
     delete registry.registerProvider

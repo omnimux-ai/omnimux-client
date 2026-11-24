@@ -19,6 +19,42 @@ const skillsRoot = join(here, '..', '..', 'skills')
 
 const BUNDLED_SKILL_NAMES = [VIDEO_ANALYZE_SKILL, VIDEO_REVERSE_PROMPT_SKILL]
 
+/**
+ * Electron packages the plugin inside `app.asar`; the bundled `skills/` folder is
+ * unpacked next to it, so read the physical directory when it exists.
+ * @param {string} dir
+ */
+function resolvePhysicalDir(dir) {
+  const unpacked = dir.replace(/(^|[\\/])([^\\/]*\.asar)(?=[\\/]|$)/iu, '$1$2.unpacked')
+  return unpacked !== dir && existsSync(unpacked) ? unpacked : dir
+}
+
+/**
+ * Parse a boolean frontmatter scalar; `undefined` when absent.
+ * @param {string | undefined} raw
+ * @returns {boolean | undefined}
+ */
+function parseFrontmatterBoolean(raw) {
+  if (raw === undefined || raw === null) return undefined
+  const value = String(raw).trim().toLowerCase()
+  if (['true', 'yes', 'on', '1'].includes(value)) return true
+  if (['false', 'no', 'off', '0'].includes(value)) return false
+  return undefined
+}
+
+/**
+ * Resolve the DSH invocation policy from `SKILL.md` frontmatter. Headless
+ * JSON-Schema skills opt out of the global model context with
+ * `disable-model-invocation: true` while staying reachable through `/<slug>`.
+ * @param {Record<string, string>} metadata
+ */
+function parseInvocationPolicy(metadata) {
+  return {
+    modelInvocable: parseFrontmatterBoolean(metadata['disable-model-invocation']) !== true,
+    userInvocable: parseFrontmatterBoolean(metadata['user-invocable']) !== false,
+  }
+}
+
 function parseFrontmatter(raw) {
   const match = raw.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/)
   if (!match) return { metadata: {}, body: raw.trim() }
@@ -41,6 +77,7 @@ function parseFrontmatter(raw) {
  * @returns {Array<{
  *   name: string,
  *   description: string,
+ *   invocation: { modelInvocable: boolean, userInvocable: boolean },
  *   content: string,
  *   path: string,
  *   source: 'bundled',
@@ -50,7 +87,7 @@ function parseFrontmatter(raw) {
 export function loadBundledVideoSkills() {
   const loaded = []
   for (const skillName of BUNDLED_SKILL_NAMES) {
-    const dir = join(skillsRoot, skillName)
+    const dir = resolvePhysicalDir(join(skillsRoot, skillName))
     const file = join(dir, 'SKILL.md')
     if (!existsSync(file)) continue
     const raw = readFileSync(file, 'utf8')
@@ -59,6 +96,7 @@ export function loadBundledVideoSkills() {
     loaded.push({
       name: metadata.name || skillName,
       description: metadata.description || skillName,
+      invocation: parseInvocationPolicy(metadata),
       content: body,
       path: file,
       source: 'bundled',
@@ -90,7 +128,7 @@ export function registerVideoSkills(ctx) {
         name: entry.name,
         description: entry.description,
         path: entry.path,
-        invocation: { modelInvocable: true, userInvocable: true },
+        invocation: entry.invocation,
         source: 'bundled',
         provider: PROVIDER_NAME,
         rank: BUNDLED_SKILL_RANK,
@@ -107,7 +145,7 @@ export function registerVideoSkills(ctx) {
             name: entry.name,
             description: entry.description,
             path: entry.path,
-            invocation: { modelInvocable: true, userInvocable: true },
+            invocation: entry.invocation,
             source: 'bundled',
             provider: PROVIDER_NAME,
             resourceBase: entry.resourceBase,
