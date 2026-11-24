@@ -51,15 +51,22 @@
   必然失败（内置反向对照块）。
 - 测试环境不挂载 `omnimux_page_fetch`，对应「Hub 页面读取不可用」场景。
 
-## 验收
+## 验收（合并 `origin/main@6268ee8a` 后实测）
 
 - `corepack pnpm --dir plugins run presets:verify`：15 pass / 0 fail。
-- `corepack pnpm --dir plugins run verify:tools`：0 阻断错误。
+- `corepack pnpm --dir plugins run verify:tools`：0 阻断错误（4 条既有可优化项）。
 - `corepack pnpm --dir plugins run test:agent-tools`：通过。
 - `corepack pnpm --dir plugins --filter omnimux-market test`：1045 pass / 1 skip / 0 fail。
 - `cd plugins/plugins/omnimux-browser/extension && corepack pnpm test`：1793 pass / 1 expected fail。
 - `corepack pnpm --dir plugins run build:all`：13/13。
-- `node scripts/bundle-lock.mjs --check`、`node scripts/workspace-check.mjs --check`、`corepack pnpm --dir plugins run test:gates`、`git diff --check` 全绿。
+- `node scripts/bundle-lock.mjs --check`（14 plugins）、`node scripts/workspace-check.mjs --check`、`verify-plugin-load` 15/15、`verify-plugin-boundaries` 5222 source files、`verify-fix-regression-test` 识别 3 个有效回归测试、`verify-test-standard-declarations` 通过、`gitleaks` no leaks、`git diff --check` 全绿。
+- `corepack pnpm --dir plugins run test:gates`：736 pass / 1 fail。唯一失败 `live-qa.test.mjs` 的 stage 计数（期望 7、实际 8）在 `origin/main` 上已存在，修复随未合入的 PR #244（与本单不同工作树、同一文件）；本单不触碰该文件，不在此重复修。
+
+## 双向证伪记录（本机实测）
+
+- 生成器 `fetch` 改回 `false` 并重跑生成器：`verify-agent-presets.test.mjs` 新增用例红（`generated preset must enable web_fetch`），`verify-tool-web-fetch-fallback.test.mjs` 红（`fetch: true must register web_fetch`）。
+- `expert-runtime.ts` 单独改回 `false`：`verify-tool-web-fetch-fallback.test.mjs` 红（`dynamic expert preset must enable web_fetch`）。
+- 还原后两处恢复全绿（15 pass）。
 
 ## 旧标准变更
 
