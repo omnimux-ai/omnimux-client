@@ -371,6 +371,12 @@ export interface CatalogModelDto {
   family?: string;
   /** Human-facing family label projected by the hub catalog (e.g. Seedream). */
   familyLabel?: string;
+  /** Canonical gateway vendor brand slug (display-only, excluded from execution fingerprint). */
+  brandId?: string;
+  /** Gateway-supplied human-readable brand name. */
+  brandName?: string;
+  /** Optional validated monochrome 24x24 SVG `<path d>` fallback for unknown gateway brands. */
+  brandIconPath?: string;
   badge?: string;
   subtitle?: string;
   /** Runtime/wire model-id aliases normalized to `id`. */
@@ -409,6 +415,12 @@ export interface CapabilityModelItem {
   family?: string;
   /** Human-facing family label projected by the hub catalog (e.g. Seedream). */
   familyLabel?: string;
+  /** Canonical gateway vendor brand slug (display-only, excluded from execution fingerprint). */
+  brandId?: string;
+  /** Gateway-supplied human-readable brand name. */
+  brandName?: string;
+  /** Optional validated monochrome 24x24 SVG `<path d>` fallback for unknown gateway brands. */
+  brandIconPath?: string;
   aliases?: string[];
   inputCapability?: ModelInputCapability;
   parameters?: ModelParameterSchema;
@@ -421,6 +433,13 @@ export interface CapabilityModelItem {
     status?: string;
     unknowns?: string[];
   };
+}
+
+/** Scoped brand presentation metadata projected by the gateway / hub catalog. */
+export interface CatalogBrandMeta {
+  id: string;
+  name: string;
+  iconPath?: string;
 }
 
 /** GET /api/capabilities response (hub modelCatalog.list shape). */
@@ -440,6 +459,10 @@ export interface CapabilityCatalog {
   schemaVersion?: string;
   /** Hub content hash; used by canvas cache invalidation. */
   fingerprint?: string;
+  /** Display-inclusive catalog hash; refreshes local cache on brand metadata updates without triggering graph reconcile. */
+  presentationFingerprint?: string;
+  /** Scoped gateway brand dictionary for models referenced in this catalog. */
+  brands?: Record<string, CatalogBrandMeta>;
   /** SHA-256 of the voice-preview mapping snapshot from the loaded index. Optional for old hubs and static stubs. */
   preview_fingerprint?: string;
   /** Per-type default model ids (env → settings → config → first sorted). */

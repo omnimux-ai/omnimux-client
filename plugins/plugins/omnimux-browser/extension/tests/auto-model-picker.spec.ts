@@ -176,7 +176,8 @@ describe('Issue #2966 会话栏「自动/手动」模型选择器', () => {
       expect(resolveModelBrandKey('grok-4.6')).toBe('grok')
       expect(resolveModelBrandKey('gpt-99-future')).toBe('openai')
       expect(resolveModelBrandKey('grok-next')).toBe('grok')
-      expect(resolveModelBrandKey('claude-9')).toBe(null)
+      expect(resolveModelBrandKey('claude-9')).toBe('anthropic')
+      expect(resolveModelBrandKey('opaque-unknown-9')).toBe(null)
       expect(resolveModelBrandKey('')).toBe(null)
     })
   })
@@ -375,6 +376,50 @@ describe('Issue #2966 会话栏「自动/手动」模型选择器', () => {
       expect(row!.querySelector('.amp-brand-icon')).toBeNull()
       expect(row!.querySelector('.amp-row-name')?.textContent).toBe('Mystery Nine')
       expect(row!.querySelector('.amp-row-sub')?.textContent).toBe('通用对话模型')
+      h.unmount()
+    })
+
+    it('网关透传未知品牌安全 iconPath 渲染矢量图标，非法 iconPath 静默降级不渲染图标槽位', async () => {
+      localStorage.setItem(`${MODEL_MODE_STORAGE_PREFIX}${PORT}`, 'manual')
+      const rpc = vi.fn(async (method: string) => {
+        if (method === 'session.modelCatalog') {
+          return {
+            groups: [
+              {
+                id: 'gateway',
+                models: [
+                  {
+                    id: 'gpt-acme-1',
+                    name: 'Acme One',
+                    brandId: 'acme-labs',
+                    brandName: 'Acme Labs',
+                    brandIconPath: 'M12 2L22 20H2Z',
+                  },
+                  {
+                    id: 'evil-1',
+                    name: 'Evil One',
+                    brandId: 'evil-labs',
+                    brandIconPath: '<svg onload=alert(1)>',
+                  },
+                ],
+              },
+            ],
+          }
+        }
+        return null
+      })
+      const h = await mountPicker({ rpc: rpc as never })
+      await flush()
+      click(trigger(h.container))
+      await flush()
+      const options = h.container.querySelectorAll('[role="option"]')
+      expect(options.length).toBe(2)
+      const acmeIcon = options[0]!.querySelector('.amp-brand-icon')
+      expect(acmeIcon).not.toBeNull()
+      expect(acmeIcon!.getAttribute('data-brand-id')).toBe('acme-labs')
+      expect(acmeIcon!.getAttribute('data-brand-source')).toBe('gateway-path')
+      expect(acmeIcon!.querySelector('path')?.getAttribute('d')).toBe('M12 2L22 20H2Z')
+      expect(options[1]!.querySelector('.amp-brand-icon')).toBeNull()
       h.unmount()
     })
   })

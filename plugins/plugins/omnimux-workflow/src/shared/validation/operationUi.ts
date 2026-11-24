@@ -95,6 +95,10 @@ export interface FilteredModelOption {
   badge?: string;
   subtitle?: string;
   family?: string;
+  familyLabel?: string;
+  brandId?: string;
+  brandName?: string;
+  brandIconPath?: string;
   aliases?: string[];
   /** R10: the model cannot consume the currently connected media; render grey, no copy. */
   inputIncompatible?: boolean;
@@ -682,6 +686,18 @@ export function buildFilteredModelOptions(args: {
         ? { subtitle: (auth?.subtitle ?? bucket?.subtitle) as string }
         : {}),
       ...(verdict.family ? { family: verdict.family } : {}),
+      ...(auth?.familyLabel || bucket?.familyLabel
+        ? { familyLabel: (auth?.familyLabel ?? bucket?.familyLabel) as string }
+        : {}),
+      ...(auth?.brandId || bucket?.brandId
+        ? { brandId: (auth?.brandId ?? bucket?.brandId) as string }
+        : {}),
+      ...(auth?.brandName || bucket?.brandName
+        ? { brandName: (auth?.brandName ?? bucket?.brandName) as string }
+        : {}),
+      ...(auth?.brandIconPath || bucket?.brandIconPath
+        ? { brandIconPath: (auth?.brandIconPath ?? bucket?.brandIconPath) as string }
+        : {}),
       ...(auth?.aliases ? { aliases: auth.aliases } : {}),
       ...(auth?.channelGroups ?? bucket?.channelGroups
         ? { channelGroups: (auth?.channelGroups ?? bucket?.channelGroups) as CatalogChannelGroupDto[] }

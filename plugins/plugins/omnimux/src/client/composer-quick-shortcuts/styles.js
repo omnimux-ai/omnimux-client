@@ -390,6 +390,21 @@ export const QUICK_SHORTCUTS_CSS = `
   height: 100%;
   display: block;
 }
+.sh-model-brand-monogram {
+  width: 100%;
+  height: 100%;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  line-height: 1;
+  user-select: none;
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-secondary);
+  border: 1px solid var(--dsw-alias-border-l2);
+  box-sizing: border-box;
+}
 .sh-model-row-info {
   display: flex;
   flex-direction: column;

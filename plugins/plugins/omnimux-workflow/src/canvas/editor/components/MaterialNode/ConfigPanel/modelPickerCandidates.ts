@@ -1,3 +1,4 @@
+import { getCanonicalBrandName, isValidBrandId } from 'dsh-ui-kit/model-brands';
 import type { CatalogChannelGroupDto, OperationContractDto } from '../../../../../shared/api.ts';
 
 export interface PickerCandidate {
@@ -7,6 +8,9 @@ export interface PickerCandidate {
   subtitle?: string;
   family?: string;
   familyLabel?: string;
+  brandId?: string;
+  brandName?: string;
+  brandIconPath?: string;
   source?: 'gateway' | 'custom';
   executionStatus?: 'ready' | 'unsupported' | 'unverified';
   executable?: boolean;
@@ -26,6 +30,9 @@ export interface PickerCandidateGroup {
   id: string;
   name: string;
   iconModelId: string;
+  brandId?: string;
+  brandName?: string;
+  brandIconPath?: string;
   rows: PickerCandidate[];
 }
 
@@ -47,6 +54,12 @@ const BRANDS: readonly [string, string, readonly string[]][] = [
   ['indextts', 'Index TTS2', ['gxgenai', 'index-tts', 'indextts', 'indextts-2', 'index']],
 ];
 
+function matchKnownGroup(token: string): readonly [string, string, readonly string[]] | undefined {
+  const key = token.trim().toLowerCase();
+  if (!key) return undefined;
+  return BRANDS.find(([, , aliases]) => aliases.some((alias) => key === alias || key.startsWith(`${alias}-`)));
+}
+
 export function isPickerCandidate(options: readonly PickerCandidate[], modelId: string): boolean {
   return Boolean(modelId) && options.some((row) => row.id === modelId);
 }
@@ -55,14 +68,50 @@ export function groupPickerCandidates(options: readonly PickerCandidate[]): Pick
   const groups = new Map<string, PickerCandidateGroup>();
   for (const row of options) {
     if (!row.id) continue;
-    const identity = row.familyLabel?.trim() || row.family?.trim() || row.id;
-    const key = identity.toLowerCase();
-    const known = BRANDS.find(([, , aliases]) => aliases.some((alias) => key === alias || key.startsWith(`${alias}-`)));
-    const id = known?.[0] ?? identity;
+    const explicitBrandId = isValidBrandId(row.brandId) ? row.brandId : '';
+    const familyIdentity = row.familyLabel?.trim() || row.family?.trim() || '';
+    const knownFromFamily = familyIdentity ? matchKnownGroup(familyIdentity) : undefined;
+
+    let id: string;
+    let name: string;
+    if (knownFromFamily) {
+      id = knownFromFamily[0];
+      name = knownFromFamily[1];
+    } else if (explicitBrandId) {
+      const knownFromBrand = matchKnownGroup(explicitBrandId);
+      if (knownFromBrand) {
+        id = knownFromBrand[0];
+        name = knownFromBrand[1];
+      } else {
+        id = explicitBrandId;
+        name = row.brandName?.trim()
+          || getCanonicalBrandName(explicitBrandId)
+          || row.familyLabel?.trim()
+          || explicitBrandId;
+      }
+    } else {
+      const identity = familyIdentity || row.id;
+      const known = matchKnownGroup(identity);
+      id = known?.[0] ?? identity;
+      name = known?.[1] ?? identity;
+    }
+
     let group = groups.get(id);
     if (!group) {
-      group = { id, name: known?.[1] ?? identity, iconModelId: row.id, rows: [] };
+      group = {
+        id,
+        name,
+        iconModelId: row.id,
+        ...(explicitBrandId ? { brandId: explicitBrandId } : {}),
+        ...(row.brandName?.trim() ? { brandName: row.brandName.trim() } : {}),
+        ...(row.brandIconPath ? { brandIconPath: row.brandIconPath } : {}),
+        rows: [],
+      };
       groups.set(id, group);
+    } else {
+      if (!group.brandId && explicitBrandId) group.brandId = explicitBrandId;
+      if (!group.brandName && row.brandName?.trim()) group.brandName = row.brandName.trim();
+      if (!group.brandIconPath && row.brandIconPath) group.brandIconPath = row.brandIconPath;
     }
     group.rows.push(row);
   }

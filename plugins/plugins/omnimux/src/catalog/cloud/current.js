@@ -17,7 +17,7 @@
 
 import { readBundledSnapshot } from './bundled.js'
 import { createCloudCatalogStore } from './store.js'
-import { snapshotContentDigest } from './snapshot.js'
+import { snapshotContentDigest, snapshotPresentationDigest } from './snapshot.js'
 import { hubHomeDir } from '../../host/paths.js'
 
 /** @type {(() => object) | null} */
@@ -43,6 +43,7 @@ function describe(snapshot, source, extra = {}) {
     snapshot,
     source,
     digest: snapshot ? snapshotContentDigest(snapshot) : null,
+    presentationDigest: snapshot ? snapshotPresentationDigest(snapshot) : null,
     generatedAt: typeof snapshot?.generatedAt === 'string' ? snapshot.generatedAt : null,
     fetchedAt: null,
     ...extra,
@@ -82,6 +83,7 @@ export function resolveReadOnlySnapshot(deps = {}) {
     snapshot: undefined,
     source: 'none',
     digest: null,
+    presentationDigest: null,
     generatedAt: null,
     fetchedAt: null,
     bundledIssue: bundledRead.issue,

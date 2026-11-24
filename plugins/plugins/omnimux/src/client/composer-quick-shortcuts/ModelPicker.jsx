@@ -6,35 +6,21 @@ import React, {
   useState,
 } from 'react';
 import { createPortal } from 'react-dom';
+import {
+  getBrandMonogram,
+  resolveBrandVisual,
+  resolveModelBrand,
+} from 'dsh-ui-kit/model-brands';
 
-/** 品牌 SVG 图标定义（纯矢量、原生尺寸自适应） */
-const BRAND_SVGS = {
-  openai: '<svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="M22.2819 9.8211a5.9847 5.9847 0 0 0-.5157-4.9108 6.0462 6.0462 0 0 0-6.5098-2.9A6.0651 6.0651 0 0 0 4.9807 4.1818a5.9847 5.9847 0 0 0-3.9977 2.9 6.0462 6.0462 0 0 0 .7427 7.0966 5.98 5.98 0 0 0 .511 4.9107 6.051 6.051 0 0 0 6.5146 2.9001A5.9847 5.9847 0 0 0 13.2599 24a6.0557 6.0557 0 0 0 5.7718-4.2058 5.9894 5.9894 0 0 0 3.9977-2.9001 6.0557 6.0557 0 0 0-.7475-7.0729zm-9.022 12.6081a4.4755 4.4755 0 0 1-2.8764-1.0408l.1419-.0804 4.7783-2.7582a.7948.7948 0 0 0 .3927-.6813v-6.7369l2.02 1.1686a.071.071 0 0 1 .038.052v5.5826a4.504 4.504 0 0 1-4.4945 4.4944zm-9.6607-4.1254a4.4708 4.4708 0 0 1-.5346-3.0137l.142.0852 4.783 2.7582a.7712.7712 0 0 0 .7806 0l5.8428-3.3685v2.3324a.0804.0804 0 0 1-.0332.0615L9.74 19.9502a4.4992 4.4992 0 0 1-6.1408-1.6464zM2.3408 7.8956a4.485 4.485 0 0 1 2.3655-1.9728V11.6a.7664.7664 0 0 0 .3879.6765l5.8144 3.3543-2.0201 1.1685a.0757.0757 0 0 1-.071 0l-4.8303-2.7865A4.504 4.504 0 0 1 2.3408 7.8956zm16.0993 3.8558L12.6 8.3829l2.02-1.1638a.0757.0757 0 0 1 .071 0l4.8303 2.7913a4.4944 4.4944 0 0 1-.6765 8.1042v-5.6772a.79.79 0 0 0-.407-.667zm2.0107-3.0231l-.142-.0852-4.7735-2.7818a.7759.7759 0 0 0-.7854 0L9.409 9.2297V6.8974a.0662.0662 0 0 1 .0284-.0615l4.8303-2.7866a4.4992 4.4992 0 0 1 6.1408 1.6465 4.4708 4.4708 0 0 1 .5765 3.0137zM8.3065 12.863l-2.02-1.1638a.0804.0804 0 0 1-.038-.0567V6.0742a4.4992 4.4992 0 0 1 7.3757-3.4537l-.142.0805L8.704 5.459a.7948.7948 0 0 0-.3927.6813zm1.0976-2.3654l2.602-1.4998 2.6069 1.4998v2.9994l-2.5974 1.4997-2.6067-1.4997z"/></svg>',
-  bytedance: '<svg width="24" height="24" viewBox="0 0 24 25" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M22.0004 4.62844L18.542 3.75781V21.2425L22.0004 20.3278V4.62844Z" fill="currentColor"/><path d="M1.99902 20.1939L5.42937 19.3073L5.44542 5.56984L1.99902 4.69922V20.1939Z" fill="currentColor"/><path d="M16.1213 9.26561C15.2507 9.43412 14.2998 9.75509 13.4252 9.97174C13.3048 10.0038 13.0962 9.93563 13.0521 10.068L13.04 17.5947L16.4985 18.4613V9.27765C16.4985 9.17735 16.1895 9.25358 16.1213 9.26561Z" fill="currentColor"/><path d="M7.49609 11.582V20.7336L7.60041 20.7657L10.9264 19.9312L10.9465 12.3925L7.80904 11.6583L7.49609 11.582Z" fill="currentColor"/></svg>',
-  google: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="currentColor"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="currentColor"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="currentColor"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="currentColor"/></svg>',
-  dreamina: '<svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="M 6.8 2 C 7 7 9 10 14 10.6 L 21 10.6 C 17.5 13 15 15.5 14.2 18.2 C 10 20.5 6.5 21.5 3 22 C 4.5 17 6 12 6.8 2 Z"/></svg>',
-  nanobanana: '<svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 17.5a7.5 7.5 0 1 1 7.5-7.5 7.5 7.5 0 0 1-7.5 7.5zm0-11a3.5 3.5 0 1 0 3.5 3.5A3.5 3.5 0 0 0 12 8.5zm0 5a1.5 1.5 0 1 1 1.5-1.5 1.5 1.5 0 0 1-1.5 1.5z"/></svg>',
-  muse: '<svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 17.5a7.5 7.5 0 1 1 7.5-7.5 7.5 7.5 0 0 1-7.5 7.5z"/></svg>',
-  seedream: '<svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><rect x="4.5" y="8" width="3.5" height="10" rx="1.75"/><rect x="10.25" y="4" width="3.5" height="16" rx="1.75"/><rect x="16" y="8" width="3.5" height="10" rx="1.75"/></svg>',
-  alibaba: '<svg width="24" height="24" viewBox="0 0 24 25" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M10.3746 20.1092L5.16567 20.1062C5.04656 20.1039 4.94147 20.0419 4.85439 19.9666L3.4196 17.4835C3.34553 17.3048 3.33903 17.2085 3.41084 17.0267C3.72813 16.3438 4.29864 15.6458 4.59266 14.9689C4.61142 14.9256 4.6427 14.888 4.62468 14.8358L2.04987 10.351C1.95954 10.1332 2.00132 10.0117 2.10016 9.81354C2.50302 9.0051 3.06378 8.21279 3.49091 7.41191C3.588 7.3194 3.70561 7.26697 3.84098 7.26092L6.30019 7.25764L8.95533 2.64194C9.04466 2.57237 9.12649 2.53632 9.24034 2.52598C10.1537 2.4438 11.1886 2.58825 12.1144 2.5285C12.239 2.56455 12.3501 2.63766 12.4245 2.74505L13.6708 4.88929L18.8415 4.89307C18.9691 4.90189 19.0967 4.95786 19.1773 5.05844C19.5929 5.85554 20.1662 6.64381 20.557 7.44595C20.6321 7.59997 20.6796 7.68543 20.6416 7.86718L19.3815 10.1385L21.9971 14.7338L22.0006 14.9778C21.598 15.7376 21.1793 16.5127 20.7322 17.2508C20.5875 17.4896 20.5097 17.7099 20.1914 17.7386C19.4285 17.8074 18.5632 17.6864 17.789 17.7361L17.7157 17.7631L15.0668 22.3473C14.9838 22.4277 14.9062 22.4622 14.7918 22.473C13.8893 22.5585 12.8563 22.406 11.9398 22.4733C11.8124 22.4637 11.6805 22.3863 11.608 22.2787L10.3746 20.109V20.1092ZM9.27862 7.76509L10.6266 5.38514L9.30339 3.03066L6.73458 7.50468L8.22017 10.1032L8.89002 10.1334L18.7864 10.1284L20.1527 7.76509H9.27862ZM6.57894 7.76509H3.87926L9.27862 17.2591H6.55392L5.22898 19.601C5.57454 19.6073 5.9216 19.5937 6.26741 19.6003C6.33297 19.6015 6.39378 19.6265 6.46509 19.6277C7.7565 19.6474 9.05242 19.6252 10.3416 19.6033L10.3806 19.5851L11.8482 17.0161L6.57894 7.76509ZM18.8152 14.8669H21.5024L18.9486 10.3883L15.9524 10.3964L10.6631 19.6013L12.0278 21.9684L17.428 12.4995L18.815 14.8666L18.8152 14.8669Z" fill="currentColor"/></svg>',
-  minimax: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="2.5" y="2.5" width="19" height="19" rx="4.5" stroke="currentColor" stroke-width="1.8"/><path d="M7 16.5V7.5L12 12.5L17 7.5V16.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
-  grok: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path fill="currentColor" d="M4.94 4.96a9.97 9.97 0 0 1 10.835-2.182a8.7 8.7 0 0 1 2.033 1.11l-3.006 1.39C12.003 4.101 8.797 4.9 6.84 6.86c-2.564 2.565-3.146 6.954-.36 9.922l.278.284L.124 23c1.875-1.973 3.771-4.427 2.636-7.19c-1.52-3.698-.635-8.03 2.18-10.85M23.9.1c-2.264 3.174-3.184 5.389-2.197 9.64l-.007-.007c.753 3.201-.052 6.75-2.653 9.355c-3.279 3.285-8.526 4.016-12.847 1.06L9.21 18.75c2.758 1.084 5.775.607 7.943-1.564c2.169-2.17 2.655-5.332 1.566-7.963c-.207-.5-.828-.625-1.263-.304L8.59 15.472l12.7-12.77v.01z"/></svg>',
-};
+export { resolveModelBrand };
 
-export function resolveModelBrand(modelId) {
-  if (!modelId || typeof modelId !== 'string') return 'bytedance';
-  const id = modelId.trim().toLowerCase();
-  if (Object.prototype.hasOwnProperty.call(BRAND_SVGS, id)) return id;
-  if (/(^seedream|seed-dream)/i.test(id)) return 'seedream';
-  if (/(^seedance|^seed|doubao|豆包|即梦|dreamina|bytedance)/i.test(id)) return 'bytedance';
-  if (/(^nanobanana|nano[-_ ]?banana)/i.test(id)) return 'nanobanana';
-  if (/(^gpt|^openai)/i.test(id)) return 'openai';
-  if (/(^google|^gemini)/i.test(id)) return 'google';
-  if (/(^wan|\bwan\b|wanxiang|万相|通义|alibaba)/i.test(id)) return 'alibaba';
-  if (/(^minimax|\bminimax\b|hailuo|海螺)/i.test(id)) return 'minimax';
-  if (/(^grok|\bgrok\b|xai)/i.test(id)) return 'grok';
-  if (/(^muse|\bmuse\b)/i.test(id)) return 'muse';
-  return 'bytedance';
+function renderSvgElement(el, idx) {
+  const { tag, attrs, text } = el;
+  if (tag === 'path') return <path key={idx} {...attrs} />;
+  if (tag === 'rect') return <rect key={idx} {...attrs} />;
+  if (tag === 'circle') return <circle key={idx} {...attrs} />;
+  if (tag === 'text') return <text key={idx} {...attrs}>{text}</text>;
+  return null;
 }
 
 /**
@@ -124,14 +110,82 @@ export function PurpleDiamondIcon({ size = 14 }) {
   );
 }
 
-/** 渲染品牌 SVG 图标 */
-export function BrandIcon({ iconOrId, size = 16 }) {
+/** 渲染品牌 SVG 图标（四级确定性解析，纯 React SVG 节点，无裸 HTML 注入） */
+export function BrandIcon({
+  iconOrId,
+  modelId,
+  brandId,
+  brandName,
+  brandIconPath,
+  family,
+  label,
+  brands,
+  variant = 'mono',
+  size = 16,
+}) {
   const px = Number.isFinite(size) && size > 0 ? size : 16;
-  const brandKey = resolveModelBrand(iconOrId);
-  const svgRaw = BRAND_SVGS[brandKey] || BRAND_SVGS.bytedance;
+  const effectiveModelId = modelId ?? iconOrId ?? '';
+  const visual = resolveBrandVisual({
+    brandId,
+    brandName,
+    brandIconPath,
+    modelId: effectiveModelId,
+    family: family ?? (brandId ? undefined : iconOrId),
+    label,
+    brands,
+    variant,
+  });
+
+  let content;
+  if (visual.kind === 'svg') {
+    content = (
+      <svg
+        width={px}
+        height={px}
+        viewBox={visual.vector.viewBox}
+        fill={visual.vector.fill}
+        xmlns="http://www.w3.org/2000/svg"
+        aria-hidden="true"
+      >
+        {visual.vector.elements.map(renderSvgElement)}
+      </svg>
+    );
+  } else if (visual.kind === 'path') {
+    content = (
+      <svg
+        width={px}
+        height={px}
+        viewBox={visual.viewBox}
+        fill="none"
+        xmlns="http://www.w3.org/2000/svg"
+        aria-hidden="true"
+      >
+        <path d={visual.path} fill="currentColor" />
+      </svg>
+    );
+  } else {
+    const letter = visual.letter || getBrandMonogram({
+      brandName,
+      label,
+      brandId,
+      modelId: effectiveModelId,
+    });
+    content = (
+      <span
+        className="sh-model-brand-monogram"
+        style={{ fontSize: `${Math.max(9, Math.round(px * 0.56))}px` }}
+        aria-hidden="true"
+      >
+        {letter}
+      </span>
+    );
+  }
+
   return (
     <span
       className="sh-model-brand-icon"
+      data-brand-id={visual.brandId || ''}
+      data-brand-source={visual.source}
       style={{
         display: 'inline-flex',
         alignItems: 'center',
@@ -140,8 +194,9 @@ export function BrandIcon({ iconOrId, size = 16 }) {
         height: `${px}px`,
         flexShrink: 0,
       }}
-      dangerouslySetInnerHTML={{ __html: svgRaw }}
-    />
+    >
+      {content}
+    </span>
   );
 }
 
@@ -328,7 +383,17 @@ function ModelPickerPanel({
               >
                 <div className="sh-model-row-left">
                   <div className="sh-model-icon-box">
-                    <BrandIcon iconOrId={model.icon || model.id} size={20} />
+                    <BrandIcon
+                      modelId={model.id}
+                      brandId={model.brandId}
+                      brandName={model.brandName}
+                      brandIconPath={model.brandIconPath}
+                      family={model.family}
+                      label={model.name}
+                      brands={modelsData?.brands}
+                      iconOrId={model.icon}
+                      size={20}
+                    />
                   </div>
                   <div className="sh-model-row-info">
                     <div className="sh-model-row-title-row">
@@ -421,7 +486,7 @@ export function ModelPicker({ sessionId }) {
     return null;
   });
 
-  const [modelsData, setModelsData] = useState({ video: [], image: [] });
+  const [modelsData, setModelsData] = useState({ video: [], image: [], brands: {} });
   const [catalogLoading, setCatalogLoading] = useState(true);
   const [catalogError, setCatalogError] = useState('');
 
@@ -440,11 +505,14 @@ export function ModelPicker({ sessionId }) {
         const payload = await res.json();
         if (!live || !payload) return;
         const root = payload.catalog || payload;
+        const brandsMap = root.brands && typeof root.brands === 'object' && !Array.isArray(root.brands)
+          ? root.brands
+          : {};
         const video = [];
         const image = [];
         const seenIds = new Set();
 
-        const processRow = (row, defaultSubtitle) => {
+        const processRow = (row) => {
           if (!row || typeof row !== 'object') return null;
           if (typeof row.id !== 'string') return null;
           const rawId = row.id.trim();
@@ -455,6 +523,16 @@ export function ModelPicker({ sessionId }) {
             ? row.label.trim()
             : (typeof row.name === 'string' && row.name.trim() ? row.name.trim() : rawId);
           const capsuleName = name;
+          const brandId = typeof row.brandId === 'string' && row.brandId.trim()
+            ? row.brandId.trim()
+            : (typeof row.brand_id === 'string' && row.brand_id.trim() ? row.brand_id.trim() : undefined);
+          const brandName = typeof row.brandName === 'string' && row.brandName.trim()
+            ? row.brandName.trim()
+            : (typeof row.brand_name === 'string' && row.brand_name.trim() ? row.brand_name.trim() : undefined);
+          const brandIconPath = typeof row.brandIconPath === 'string' && row.brandIconPath.trim()
+            ? row.brandIconPath.trim()
+            : (typeof row.brand_icon_path === 'string' && row.brand_icon_path.trim() ? row.brand_icon_path.trim() : undefined);
+          const family = typeof row.family === 'string' && row.family.trim() ? row.family.trim() : undefined;
           return {
             id: rawId,
             name,
@@ -464,20 +542,24 @@ export function ModelPicker({ sessionId }) {
             badge: typeof row.badge === 'string'
               ? { text: row.badge, type: 'purple' }
               : (row.badge && typeof row.badge === 'object' ? row.badge : undefined),
-            icon: (typeof row.icon === 'string' && row.icon.trim()) || resolveModelBrand(rawId),
+            ...(brandId ? { brandId } : {}),
+            ...(brandName ? { brandName } : {}),
+            ...(brandIconPath ? { brandIconPath } : {}),
+            ...(family ? { family } : {}),
+            icon: brandId || (typeof row.icon === 'string' && row.icon.trim()) || resolveModelBrand(rawId) || '',
             priceLabel: typeof row.priceLabel === 'string' ? row.priceLabel : '',
           };
         };
 
         if (Array.isArray(root.video) && root.video.length > 0) {
           for (const row of root.video) {
-            const item = processRow(row, '多模态高质量视频生成');
+            const item = processRow(row);
             if (item) video.push(item);
           }
         }
         if (Array.isArray(root.image) && root.image.length > 0) {
           for (const row of root.image) {
-            const item = processRow(row, '高精细节渲染');
+            const item = processRow(row);
             if (item) image.push(item);
           }
         }
@@ -488,16 +570,17 @@ export function ModelPicker({ sessionId }) {
           setModelsData({
             video: nextVideo,
             image: nextImage,
+            brands: brandsMap,
           });
           setCatalogError('');
           setCatalogLoading(false);
 
-          // 如果已锁定的模型不再位于刷新后的 Catalog 中，自动重置为自动推荐模式
+          // 如果已锁定的模型不再位于刷新后的 Catalog 中，自动重置为自动推荐模式；否则同步最新品牌元数据
           setSelectedModel((currentSelected) => {
             if (!currentSelected || !currentSelected.id) return null;
             const allAvailable = [...nextVideo, ...nextImage];
-            const exists = allAvailable.some((m) => m.id === currentSelected.id);
-            if (!exists) {
+            const fresh = allAvailable.find((m) => m.id === currentSelected.id);
+            if (!fresh) {
               console.warn(`[omnimux:model-picker] 锁定的模型 ${currentSelected.id} 已下架，重置为自动推荐`);
               setAuto(true);
               publishSessionModel({
@@ -507,7 +590,16 @@ export function ModelPicker({ sessionId }) {
               });
               return null;
             }
-            return currentSelected;
+            return {
+              ...currentSelected,
+              name: fresh.name,
+              capsuleName: fresh.capsuleName,
+              brandId: fresh.brandId,
+              brandName: fresh.brandName,
+              brandIconPath: fresh.brandIconPath,
+              family: fresh.family,
+              icon: fresh.icon,
+            };
           });
         } else {
           setCatalogError('当前没有可用模型');
@@ -590,7 +682,17 @@ export function ModelPicker({ sessionId }) {
           data-omnimux-model-capsule=""
           onClick={() => setOpen((v) => !v)}
         >
-          <BrandIcon iconOrId={selectedModel.icon || selectedModel.id} size={14} />
+          <BrandIcon
+            modelId={selectedModel.id}
+            brandId={selectedModel.brandId}
+            brandName={selectedModel.brandName}
+            brandIconPath={selectedModel.brandIconPath}
+            family={selectedModel.family}
+            label={selectedModel.name}
+            brands={modelsData?.brands}
+            iconOrId={selectedModel.icon}
+            size={14}
+          />
           <span className="sh-model-capsule-name">
             {selectedModel.capsuleName || selectedModel.name}
           </span>

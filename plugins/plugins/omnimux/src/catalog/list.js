@@ -6,6 +6,7 @@ import { textModelLabel } from './labels.js'
 import { sortCatalogRows } from './sort.js'
 import {
   assertContractHealthy,
+  collectProjectedBrands,
   getHealthyContractIndex,
   projectCatalog,
   resolveCatalogAvailability,
@@ -312,28 +313,44 @@ export function buildModelCatalog(opts = {}) {
     .filter((operation) => operation.modeKind)
     .map((operation) => [model.id, operation.id, operation.modeKind, operation.label, operation.labelEn]))
 
+  const fingerprint = fingerprintOf(lists, defaults, {
+    schemaVersion: CANONICAL_SCHEMA_VERSION,
+    contractFingerprint: index.contentFingerprint,
+    listedOperations: runtime.index.listedOperations ?? [],
+    defaultsByOperation: dto.defaultsByOperation,
+    defaultsMeta,
+    defaultOperations,
+    channelGroups: dto.models.map((model) => ({ modelId: model.id, groups: model.channelGroups })),
+    videoModeLabels,
+    dispositions: (dispositionsDoc.dispositions ?? []).map((row) => [
+      row?.id,
+      row?.disposition,
+      row?.target ?? null,
+    ]),
+    gateway: { source: gateway.source, digest: gateway.digest, missingContract: gateway.missingContract, adapterUnsupported: gateway.adapterUnsupported },
+  })
+  const brands = collectProjectedBrands(
+    [...lists.text, ...lists.image, ...lists.video, ...lists.audio, ...dto.models.filter((model) => model.visible !== false)],
+    snapshot,
+  )
+  const presentationFingerprint = contentFingerprint({
+    fingerprint,
+    brands,
+    modelBrands: dto.models
+      .filter((model) => model.brandId || model.brandName || model.brandIconPath)
+      .map((model) => [model.id, model.brandId ?? '', model.brandName ?? '', model.brandIconPath ?? ''])
+      .sort((left, right) => left[0].localeCompare(right[0])),
+  })
+
   return {
     schemaVersion: CANONICAL_SCHEMA_VERSION,
     source: 'omnimux',
-    fingerprint: fingerprintOf(lists, defaults, {
-      schemaVersion: CANONICAL_SCHEMA_VERSION,
-      contractFingerprint: index.contentFingerprint,
-      listedOperations: runtime.index.listedOperations ?? [],
-      defaultsByOperation: dto.defaultsByOperation,
-      defaultsMeta,
-      defaultOperations,
-      channelGroups: dto.models.map((model) => ({ modelId: model.id, groups: model.channelGroups })),
-      videoModeLabels,
-      dispositions: (dispositionsDoc.dispositions ?? []).map((row) => [
-        row?.id,
-        row?.disposition,
-        row?.target ?? null,
-      ]),
-      gateway: { source: gateway.source, digest: gateway.digest, missingContract: gateway.missingContract, adapterUnsupported: gateway.adapterUnsupported },
-    }),
+    fingerprint,
+    presentationFingerprint,
     contractFingerprint: index.contentFingerprint,
     /** Raw sha256 of the official voice preview mapping from the same loaded snapshot. */
     preview_fingerprint: index.previewFingerprint,
+    ...(Object.keys(brands).length > 0 ? { brands } : {}),
     models: dto.models,
     defaults,
     defaultsMeta,
@@ -416,6 +433,9 @@ function appendCatalogRowByKinds(lists, model, kindEnabled = () => true) {
         ...(typeof model.visible === 'boolean' ? { visible: model.visible } : {}),
         ...(typeof model.selectable === 'boolean' ? { selectable: model.selectable } : {}),
         ...(model.availabilityReason ? { availabilityReason: model.availabilityReason } : {}),
+        ...(model.brandId ? { brandId: model.brandId } : {}),
+        ...(model.brandName ? { brandName: model.brandName } : {}),
+        ...(model.brandIconPath ? { brandIconPath: model.brandIconPath } : {}),
         operations,
         ...(model.executionProfile ? { executionProfile: structuredClone(model.executionProfile) } : {}),
         ...(model.inputCapability ? { inputCapability: structuredClone(model.inputCapability) } : {}),
@@ -430,6 +450,9 @@ function appendCatalogRowByKinds(lists, model, kindEnabled = () => true) {
       ...(model.badge ? { badge: model.badge } : {}),
       ...(model.subtitle ? { subtitle: model.subtitle } : {}),
       ...(model.family ? { family: model.family } : {}),
+      ...(model.brandId ? { brandId: model.brandId } : {}),
+      ...(model.brandName ? { brandName: model.brandName } : {}),
+      ...(model.brandIconPath ? { brandIconPath: model.brandIconPath } : {}),
       source: model.source,
       executionStatus: model.executionStatus,
       ...(typeof model.visible === 'boolean' ? { visible: model.visible } : {}),

@@ -31,17 +31,21 @@ const FAMILY_LABELS = Object.freeze({
 /**
  * Resolve a stable display label for a model family.
  * Unknown families remain visible rather than being collapsed into a generic
- * group, so a newly published family fails open for display but never invents
- * a brand name.
+ * group, so a newly published family fails open for display (preferring an
+ * explicit gateway `brandName` when present) and never invents a brand name.
  *
  * @param {unknown} family
+ * @param {unknown} [brandName]
  * @returns {string | undefined}
  */
-export function familyLabelFor(family) {
+export function familyLabelFor(family, brandName) {
   if (typeof family !== 'string') return undefined;
   const trimmed = family.trim();
   if (!trimmed) return undefined;
-  return FAMILY_LABELS[trimmed.toLowerCase()] || trimmed;
+  const known = FAMILY_LABELS[trimmed.toLowerCase()];
+  if (known) return known;
+  if (typeof brandName === 'string' && brandName.trim()) return brandName.trim();
+  return trimmed;
 }
 
 export { FAMILY_LABELS };

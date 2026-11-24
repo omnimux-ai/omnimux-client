@@ -9,6 +9,7 @@
  */
 
 import React from 'react';
+import type { CatalogBrandMeta } from '../../../../../shared/api';
 import { ModelBrandIcon } from '../../../../ui/ModelBrandIcon';
 
 export interface ModelVisualsResult {
@@ -17,12 +18,22 @@ export interface ModelVisualsResult {
   subtitle?: string;
 }
 
-/** Catalog context for one model row; both fields are optional (legacy catalogs omit them). */
+/** Catalog context for one model row; all fields are optional (legacy catalogs omit them). */
 export interface ModelVisualsContext {
   /** Contract `family` of the row (e.g. `midjourney`, `nanobanana`, `openai`). */
   family?: string;
   /** Output type the picker renders for; disambiguates families that span modalities. */
   kind?: string;
+  /** Canonical gateway vendor brand slug. */
+  brandId?: string;
+  /** Gateway human-readable brand display name. */
+  brandName?: string;
+  /** Optional validated gateway fallback SVG `<path d>`. */
+  brandIconPath?: string;
+  /** Display label for monogram fallback. */
+  label?: string;
+  /** Scoped gateway brand dictionary from the catalog. */
+  brands?: Readonly<Record<string, CatalogBrandMeta>> | null;
 }
 
 interface VisualRule {
@@ -120,7 +131,18 @@ function buildResult(icon: React.ReactNode, id: string, rule: VisualRule): Model
  * @param context Contract family and output kind of the row, when the catalog exposes them.
  */
 export function getModelVisuals(id: string, context: ModelVisualsContext = {}): ModelVisualsResult {
-  const icon = <ModelBrandIcon modelId={id} size={15} />;
+  const icon = (
+    <ModelBrandIcon
+      modelId={id}
+      brandId={context.brandId}
+      brandName={context.brandName}
+      brandIconPath={context.brandIconPath}
+      family={context.family}
+      label={context.label}
+      brands={context.brands}
+      size={15}
+    />
+  );
   const family = typeof context.family === 'string' ? context.family.trim().toLowerCase() : '';
   if (family) {
     for (const [name, rule] of FAMILY_RULES) {

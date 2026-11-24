@@ -495,12 +495,124 @@ describe('方案 B 会话模型选择器 E2E (Issue #2626)', () => {
   });
 
   it('AC-11: resolveModelBrand 品牌解析准确性：seedream 正确返回 seedream，避免过度匹配', () => {
-    assert.equal(resolveModelBrand('seedream'), 'seedream', 'BRAND_SVGS 中直接存在的品牌必须优先直通返回');
-    assert.equal(resolveModelBrand('seedream-5-0-pro'), 'seedream', 'seedream 系列必须解析为 seedream 品牌');
-    assert.equal(resolveModelBrand('seedance-2-0'), 'bytedance', 'seedance 系列必须解析为 bytedance 品牌');
-    assert.equal(resolveModelBrand('nanobanana-2'), 'nanobanana');
+    assert.equal(resolveModelBrand('seedream'), 'bytedance', 'seedream 归属规范网关品牌 bytedance');
+    assert.equal(resolveModelBrand('seedream-5-0-pro'), 'bytedance', 'seedream 系列归属规范网关品牌 bytedance');
+    assert.equal(resolveModelBrand('seedance-2-0'), 'bytedance', 'seedance 系列归属规范网关品牌 bytedance');
+    assert.equal(resolveModelBrand('nanobanana-2'), 'google', 'nanobanana 归属规范网关品牌 google');
     assert.equal(resolveModelBrand('gpt-4o'), 'openai');
     assert.equal(resolveModelBrand('minimax-h3'), 'minimax');
+    assert.equal(resolveModelBrand('opaque-unknown-99'), null, '未知模型不得回落 bytedance，必须返回 null');
+  });
+
+  it('AC-13: 未知模型不回落 bytedance，网关安全 path 正常渲染、非法 path 静默降级中性占位且无 dangerouslySetInnerHTML', async () => {
+    const safeTriangle = 'M12 2L22 20H2Z';
+    const env = await mount({
+      sessionId: 'session-ac13',
+      fetchHandler: async (url) => {
+        if (url === '/omnimux/model-catalog') {
+          return {
+            ok: true,
+            json: async () => ({
+              brands: {
+                'acme-labs': { id: 'acme-labs', name: 'Acme Labs', iconPath: safeTriangle },
+                'evil-labs': { id: 'evil-labs', name: 'Evil Labs', iconPath: '<svg onload=alert(1)>' },
+              },
+              video: [
+                { id: 'opaque-unknown-99', label: 'Opaque Unknown 99' },
+                { id: 'gpt-custom-acme', label: 'Acme Custom', brandId: 'acme-labs', brandName: 'Acme Labs' },
+                { id: 'evil-model-1', label: 'Evil Model', brandId: 'evil-labs', brandName: 'Evil Labs' },
+              ],
+              image: [],
+            }),
+          };
+        }
+        return { ok: true, json: async () => ({ success: true }) };
+      },
+    });
+
+    try {
+      await env.click('clone');
+      const trigger = document.querySelector('[data-composer-card] [data-omnimux-model-picker]');
+      await act(async () => {
+        trigger.dispatchEvent(new env.dom.window.MouseEvent('click', { bubbles: true }));
+      });
+
+      const rows = Array.from(document.querySelectorAll('.sh-model-row'));
+      assert.equal(rows.length, 3);
+
+      // 1. Unknown model without brandId -> neutral monogram, never bytedance
+      const unknownIcon = rows[0].querySelector('.sh-model-brand-icon');
+      assert.equal(unknownIcon.getAttribute('data-brand-source'), 'monogram');
+      assert.equal(unknownIcon.getAttribute('data-brand-id'), '');
+      assert.notEqual(unknownIcon.getAttribute('data-brand-id'), 'bytedance');
+      assert.equal(unknownIcon.querySelector('.sh-model-brand-monogram')?.textContent, 'O');
+
+      // 2. Explicit unknown gateway brandId with safe iconPath -> Tier 2 gateway-path (NOT hijacked to openai by gpt- prefix!)
+      const acmeIcon = rows[1].querySelector('.sh-model-brand-icon');
+      assert.equal(acmeIcon.getAttribute('data-brand-source'), 'gateway-path');
+      assert.equal(acmeIcon.getAttribute('data-brand-id'), 'acme-labs');
+      assert.equal(acmeIcon.querySelector('svg path')?.getAttribute('d'), safeTriangle);
+
+      // 3. Malicious iconPath -> fail-closed to monogram, never injects HTML/script
+      const evilIcon = rows[2].querySelector('.sh-model-brand-icon');
+      assert.equal(evilIcon.getAttribute('data-brand-source'), 'monogram');
+      assert.equal(evilIcon.getAttribute('data-brand-id'), 'evil-labs');
+      assert.equal(evilIcon.querySelector('svg'), null);
+      assert.equal(evilIcon.querySelector('.sh-model-brand-monogram')?.textContent, 'E');
+    } finally {
+      await act(async () => env.root.unmount());
+    }
+  });
+
+  it('AC-14: 目录刷新更新品牌降级路径时，面板与已锁定胶囊同步刷新图标', async () => {
+    let iconPath = 'M12 2L22 20H2Z';
+    const env = await mount({
+      sessionId: 'session-ac14',
+      fetchHandler: async (url) => {
+        if (url === '/omnimux/model-catalog') {
+          return {
+            ok: true,
+            json: async () => ({
+              brands: {
+                'acme-labs': { id: 'acme-labs', name: 'Acme Labs', iconPath },
+              },
+              video: [
+                { id: 'acme-video-1', label: 'Acme Video 1', brandId: 'acme-labs', brandName: 'Acme Labs', brandIconPath: iconPath },
+              ],
+              image: [],
+            }),
+          };
+        }
+        return { ok: true, json: async () => ({ success: true }) };
+      },
+    });
+
+    try {
+      await env.click('clone');
+      const trigger = document.querySelector('[data-composer-card] [data-omnimux-model-picker]');
+      await act(async () => {
+        trigger.dispatchEvent(new env.dom.window.MouseEvent('click', { bubbles: true }));
+      });
+      const row = document.querySelector('.sh-model-row');
+      await act(async () => {
+        row.dispatchEvent(new env.dom.window.MouseEvent('click', { bubbles: true }));
+      });
+
+      const capsuleBefore = document.querySelector('[data-composer-card] [data-omnimux-model-capsule] svg path');
+      assert.equal(capsuleBefore?.getAttribute('d'), 'M12 2L22 20H2Z');
+
+      // Gateway updates brand icon path and emits catalog-updated
+      iconPath = 'M4 4H20V20H4Z';
+      await act(async () => {
+        env.dom.window.dispatchEvent(new env.dom.window.CustomEvent('omnimux:model-catalog-updated'));
+      });
+      await new Promise((r) => setTimeout(r, 20));
+
+      const capsuleAfter = document.querySelector('[data-composer-card] [data-omnimux-model-capsule] svg path');
+      assert.equal(capsuleAfter?.getAttribute('d'), 'M4 4H20V20H4Z');
+    } finally {
+      await act(async () => env.root.unmount());
+    }
   });
 
   it('AC-12: 已锁定模型如果从 Catalog 中下架，自动回退为自动推荐模式', async () => {
