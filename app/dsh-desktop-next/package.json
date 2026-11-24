@@ -407,6 +407,9 @@
         "NSMicrophoneUsageDescription": "OmniMux uses the microphone when you enable a feature that records audio.",
         "NSAudioCaptureUsageDescription": "OmniMux captures screen audio when you request it.",
         "NSLocalNetworkUsageDescription": "OmniMux connects to devices on your local network when you enable network access.",
+        "NSDesktopFolderUsageDescription": "OmniMux accesses files in your Desktop folder when you open projects, skills, or workspace files located there.",
+        "NSDocumentsFolderUsageDescription": "OmniMux accesses files in your Documents folder when you open projects, skills, or workspace files located there.",
+        "NSDownloadsFolderUsageDescription": "OmniMux accesses files in your Downloads folder when you open projects, skills, or workspace files located there.",
         "NSAppTransportSecurity": {
           "NSAllowsLocalNetworking": true
         }
