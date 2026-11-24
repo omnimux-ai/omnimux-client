@@ -306,6 +306,73 @@ test('https:// in CSS urls and JS strings does not swallow same-line token refer
   assert.deepEqual(extractTokenReferences(template, 'x.js'), [{ token: '--dsw-not-real', hasFallback: false }])
 })
 
+test('unterminated /* in a template literal does not swallow following code', () => {
+  const source = 'const label = `${slot.type}/*`\nconst bad = \'var(--dsw-made-up-after-mime)\'\n'
+  assert.deepEqual(extractTokenReferences(source, 'x.jsx'), [{ token: '--dsw-made-up-after-mime', hasFallback: false }])
+  assert.match(stripComments(source, 'x.jsx'), /var\(--dsw-made-up-after-mime\)/)
+})
+
+test('CSS quotes and apostrophes inside template literals do not break comment handling', () => {
+  const quoteSource = [
+    'const STYLES = `',
+    '.x::before { content: "/*"; }',
+    '.bad { color: var(--dsw-made-up-after-quote); }',
+    '`',
+  ].join('\n')
+  assert.deepEqual(extractTokenReferences(quoteSource, 'x.jsx'), [{ token: '--dsw-made-up-after-quote', hasFallback: false }])
+
+  const apostropheSource = [
+    "const STYLES = `don't",
+    '/* --dsw-fake: 1 */',
+    '.bad { color: var(--dsw-fake); }',
+    '`',
+  ].join('\n')
+  assert.deepEqual([...extractTokenDefinitions(apostropheSource, 'x.jsx')], [])
+  assert.deepEqual(extractTokenReferences(apostropheSource, 'x.jsx'), [{ token: '--dsw-fake', hasFallback: false }])
+})
+
+test('JS regex literals are preserved and following undefined tokens are captured', () => {
+  const cases = [
+    ["const re = /^https?:\\/\\//i; const bad = 'var(--dsw-made-up-after-regex)'", '--dsw-made-up-after-regex'],
+    ["const x = y.replace(/\\//g, '.'); const bad = 'var(--dsw-made-up-after-replace)'", '--dsw-made-up-after-replace'],
+    ['const re = /[^/*]+/; const bad = "var(--dsw-made-up-after-charclass)"', '--dsw-made-up-after-charclass'],
+  ]
+  for (const [source, token] of cases) {
+    assert.deepEqual(extractTokenReferences(source, 'x.js'), [{ token, hasFallback: false }])
+  }
+  assert.match(stripComments(cases[0][0], 'x.js'), /\/\^https\?:\\\/\\\/\/i/)
+})
+
+test('control-flow, division and JSX boundaries are classified correctly', () => {
+  const control = "if (ok) /[^/*]+/.test(s); const bad = 'var(--dsw-made-up)'"
+  assert.deepEqual(extractTokenReferences(control, 'x.js'), [{ token: '--dsw-made-up', hasFallback: false }])
+
+  const returned = "return /* note */ /[^/*]+/; const bad = 'var(--dsw-made-up-after-return)'"
+  assert.deepEqual(extractTokenReferences(returned, 'x.js'), [{ token: '--dsw-made-up-after-return', hasFallback: false }])
+
+  const division = "(a + b) / c // var(--dsw-commented) / end\nconst bad = 'var(--dsw-made-up-after-division)'"
+  assert.deepEqual(extractTokenReferences(division, 'x.js'), [{ token: '--dsw-made-up-after-division', hasFallback: false }])
+  assert.doesNotMatch(stripComments(division, 'x.js'), /--dsw-commented/)
+
+  const jsx = '<span>{a}</span><span>{/* --dsw-fake: 1 */}</span>'
+  assert.deepEqual([...extractTokenDefinitions(jsx, 'x.jsx')], [])
+  assert.deepEqual(extractTokenReferences(jsx, 'x.jsx'), [])
+})
+
+test('the real files hit by the previous regex/template over-strip keep their code', () => {
+  const cases = [
+    ['plugins/plugins/omnimux-viewer/src/media-viewer/MediaSlotGroup.jsx', /accept=\{slot\.allowedMimes\.length > 0.*`\$\{slot\.type\}\/\*`\}/s],
+    ['plugins/plugins/omnimux/src/client/ProfileSection.jsx', /\/\^https\?:\\\/\\\/\//],
+    ['plugins/plugins/omnimux-workflow/src/client/projects/ProjectAssetsTab.jsx', /\.replace\(\/\\\/\/g, '\.'\)/],
+  ]
+  for (const [file, pattern] of cases) {
+    const source = readFileSync(join(REPO_ROOT, file), 'utf8')
+    const stripped = stripComments(source, file)
+    assert.equal(stripped.split('\n').length, source.split('\n').length)
+    assert.match(stripped, pattern)
+  }
+})
+
 test('the real repository state passes the gate', () => {
   const result = verifyDswTokens({ repoRoot: REPO_ROOT, allowlistPath: join(scriptDir, 'dsw-token-allowlist.json'), baselinePath: join(scriptDir, 'dsw-token-baseline.json') })
   assert.deepEqual(result.issues, [])

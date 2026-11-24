@@ -136,11 +136,144 @@ export function stripCssComments(text) {
   return output
 }
 
+const REGEX_PREFIX_CHARS = new Set(['(', '[', '{', ',', ';', ':', '?', '=', '!', '&', '|', '^', '~', '*', '%', '<', '+', '-'])
+const REGEX_PREFIX_KEYWORDS = new Set(['return', 'typeof', 'instanceof', 'case', 'in', 'of', 'delete', 'void', 'new', 'do', 'else', 'yield', 'await', 'throw', 'export', 'default'])
+const CONTROL_KEYWORDS = new Set(['if', 'while', 'for', 'with'])
+
+/** @param {{ kind: string, value?: string } | null} prev */
+function startsRegex(prev) {
+  if (!prev || prev.kind === 'start' || prev.kind === 'control-close') return true
+  if (prev.kind === 'word') return REGEX_PREFIX_KEYWORDS.has(prev.value)
+  if (prev.kind === 'punct') return prev.value === '=>' || REGEX_PREFIX_CHARS.has(prev.value)
+  return false
+}
+
 /**
- * Strip JS/TS line and block comments with a lexical scan that protects string literals and
- * template literals. CSS-in-JS template literals additionally have their embedded CSS block
- * comments stripped, so a commented-out declaration can never act as a local token definition;
- * `//` inside template text (e.g. URLs) is always preserved.
+ * Scan a JavaScript regular-expression literal starting at `start` (the opening slash).
+ * Returns the index just after the closing slash and flags, or -1 when the slash is really
+ * division (no closing slash on the same line).
+ * @param {string} source
+ * @param {number} start
+ */
+function scanRegexLiteral(source, start) {
+  let i = start + 1
+  let inClass = false
+  while (i < source.length) {
+    const c = source[i]
+    if (c === '\n') return -1
+    if (c === '\\') {
+      i += 2
+      continue
+    }
+    if (c === '[') {
+      inClass = true
+      i += 1
+      continue
+    }
+    if (c === ']' && inClass) {
+      inClass = false
+      i += 1
+      continue
+    }
+    if (c === '/' && !inClass) {
+      let end = i + 1
+      while (end < source.length && /[A-Za-z]/.test(source[end])) end += 1
+      return end
+    }
+    i += 1
+  }
+  return -1
+}
+
+/** @param {string} source @param {number} start */
+function templateChunkBoundary(source, start) {
+  let i = start
+  while (i < source.length) {
+    const c = source[i]
+    if (c === '\\') {
+      i += 2
+      continue
+    }
+    if (c === '`') return { end: i, kind: 'backtick' }
+    if (c === '$' && source[i + 1] === '{') return { end: i, kind: 'interp' }
+    i += 1
+  }
+  return { end: source.length, kind: 'eof' }
+}
+
+/** @param {string} text @param {number} start @param {string} quote */
+function sameLineClosingQuote(text, start, quote) {
+  let i = start + 1
+  while (i < text.length) {
+    const c = text[i]
+    if (c === '\\') {
+      i += 2
+      continue
+    }
+    if (c === '\n') return -1
+    if (c === quote) return i
+    i += 1
+  }
+  return -1
+}
+
+/** @param {string} text @param {number} start */
+function blockCommentClose(text, start) {
+  let i = start + 2
+  while (i + 1 < text.length) {
+    if (text[i] === '*' && text[i + 1] === '/') return i
+    i += 1
+  }
+  return -1
+}
+
+/**
+ * Strip CSS block comments from one template-literal static chunk. A block comment is only
+ * blanked when its closing delimiter exists inside this same chunk; an unterminated opener
+ * (for example the literal mime suffix `${slot.type}/*`) is preserved instead of swallowing
+ * the rest of the file. Quote skipping is limited to a matching unescaped quote on the same
+ * line, so an English apostrophe cannot lock later CSS comments out of scope.
+ * @param {string} text
+ */
+function stripTemplateCssComments(text) {
+  const source = String(text)
+  let output = ''
+  let i = 0
+  while (i < source.length) {
+    const ch = source[i]
+    if (ch === '"' || ch === "'") {
+      const close = sameLineClosingQuote(source, i, ch)
+      if (close !== -1) {
+        output += source.slice(i, close + 1)
+        i = close + 1
+        continue
+      }
+      output += ch
+      i += 1
+      continue
+    }
+    if (ch === '/' && source[i + 1] === '*') {
+      const close = blockCommentClose(source, i)
+      if (close !== -1) {
+        output += blankComment(source.slice(i, close + 2))
+        i = close + 2
+        continue
+      }
+      output += ch
+      i += 1
+      continue
+    }
+    output += ch
+    i += 1
+  }
+  return output
+}
+
+/**
+ * Strip JS/TS line and block comments with a lexical scan that protects string literals,
+ * template literals and regular-expression literals. CSS-in-JS template literal static
+ * chunks additionally have their embedded CSS block comments stripped; `//` inside template
+ * text (e.g. URLs) is always preserved.
  * @param {string} text
  */
 export function stripJsComments(text) {
@@ -148,44 +281,58 @@ export function stripJsComments(text) {
   let output = ''
   /** @type {Array<{ kind: 'code' } | { kind: 'template' } | { kind: 'interp', braceDepth: number }>} */
   const stack = [{ kind: 'code' }]
+  /** @type {{ kind: string, value?: string } | null} */
+  let prev = null
+  /** @type {Array<{ control: boolean }>} */
+  const parenStack = []
   let i = 0
   while (i < source.length) {
     const state = stack[stack.length - 1]
     const ch = source[i]
+
     if (state.kind === 'template') {
-      if (ch === '\\') {
-        output += ch
-        i += 1
-        if (i < source.length) {
-          output += source[i]
-          i += 1
-        }
-        continue
-      }
-      if (ch === '`') {
-        output += ch
+      const boundary = templateChunkBoundary(source, i)
+      output += stripTemplateCssComments(source.slice(i, boundary.end))
+      i = boundary.end
+      if (boundary.kind === 'backtick') {
+        output += '`'
         i += 1
         stack.pop()
-        continue
-      }
-      if (ch === '$' && source[i + 1] === '{') {
+        prev = { kind: 'string' }
+      } else if (boundary.kind === 'interp') {
         output += '${'
         i += 2
         stack.push({ kind: 'interp', braceDepth: 0 })
-        continue
+        prev = { kind: 'start' }
+      } else {
+        stack.pop()
       }
-      if (ch === '/' && source[i + 1] === '*') {
-        let end = i + 2
-        while (end < source.length && !(source[end] === '*' && source[end + 1] === '/')) end += 1
-        const commentEnd = Math.min(end + 2, source.length)
-        output += blankComment(source.slice(i, commentEnd))
-        i = commentEnd
-        continue
-      }
+      continue
+    }
+
+    if (/\s/.test(ch)) {
       output += ch
       i += 1
       continue
     }
+
+    if (ch === '/' && source[i + 1] === '/') {
+      let end = i
+      while (end < source.length && source[end] !== '\n') end += 1
+      output += blankComment(source.slice(i, end))
+      i = end
+      continue
+    }
+
+    if (ch === '/' && source[i + 1] === '*') {
+      let end = i + 2
+      while (end < source.length && !(source[end] === '*' && source[end + 1] === '/')) end += 1
+      const commentEnd = Math.min(end + 2, source.length)
+      output += blankComment(source.slice(i, commentEnd))
+      i = commentEnd
+      continue
+    }
+
     if (ch === '"' || ch === "'") {
       const quote = ch
       output += ch
@@ -203,46 +350,100 @@ export function stripJsComments(text) {
         }
         if (current === quote) break
       }
+      prev = { kind: 'string' }
       continue
     }
+
     if (ch === '`') {
       output += ch
       i += 1
       stack.push({ kind: 'template' })
       continue
     }
-    if (ch === '/' && source[i + 1] === '/') {
-      let end = i
-      while (end < source.length && source[end] !== '\n') end += 1
-      output += blankComment(source.slice(i, end))
-      i = end
-      continue
+
+    if (
+      ch === '/' &&
+      source[i + 1] !== '/' &&
+      source[i + 1] !== '*' &&
+      source[i - 1] !== '<' &&
+      startsRegex(prev)
+    ) {
+      const end = scanRegexLiteral(source, i)
+      if (end !== -1) {
+        output += source.slice(i, end)
+        i = end
+        prev = { kind: 'regex' }
+        continue
+      }
     }
-    if (ch === '/' && source[i + 1] === '*') {
-      let end = i + 2
-      while (end < source.length && !(source[end] === '*' && source[end + 1] === '/')) end += 1
-      const commentEnd = Math.min(end + 2, source.length)
-      output += blankComment(source.slice(i, commentEnd))
-      i = commentEnd
-      continue
-    }
+
     if (state.kind === 'interp') {
       if (ch === '{') {
         state.braceDepth += 1
         output += ch
         i += 1
+        prev = { kind: 'punct', value: '{' }
         continue
       }
       if (ch === '}') {
         output += ch
         i += 1
-        if (state.braceDepth === 0) stack.pop()
-        else state.braceDepth -= 1
+        if (state.braceDepth === 0) {
+          stack.pop()
+          prev = { kind: 'string' }
+        } else {
+          state.braceDepth -= 1
+          prev = { kind: 'punct', value: '}' }
+        }
         continue
       }
     }
+
+    if (ch === '(') {
+      parenStack.push({ control: prev?.kind === 'word' && CONTROL_KEYWORDS.has(prev.value) })
+      output += ch
+      i += 1
+      prev = { kind: 'punct', value: '(' }
+      continue
+    }
+    if (ch === ')') {
+      const info = parenStack.pop()
+      output += ch
+      i += 1
+      prev = info?.control ? { kind: 'control-close' } : { kind: 'paren-close' }
+      continue
+    }
+    if (ch === '+' || ch === '-') {
+      if (source[i + 1] === ch) {
+        output += ch + ch
+        i += 2
+        prev = { kind: 'punct', value: ch + ch }
+      } else {
+        output += ch
+        i += 1
+        prev = { kind: 'punct', value: ch }
+      }
+      continue
+    }
+    if (ch === '=' && source[i + 1] === '>') {
+      output += '=>'
+      i += 2
+      prev = { kind: 'punct', value: '=>' }
+      continue
+    }
+    if (/[A-Za-z0-9_$]/.test(ch)) {
+      let end = i + 1
+      while (end < source.length && /[A-Za-z0-9_$]/.test(source[end])) end += 1
+      const word = source.slice(i, end)
+      output += word
+      i = end
+      prev = /^[0-9]/.test(word) ? { kind: 'number' } : { kind: 'word', value: word }
+      continue
+    }
+
     output += ch
     i += 1
+    prev = { kind: 'punct', value: ch }
   }
   return output
 }

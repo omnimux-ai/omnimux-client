@@ -84,11 +84,11 @@
 ## 验证记录（本机实测）
 
 - `node plugins/scripts/verify-dsw-tokens.mjs`：通过，18 个插件/包、上游 Token 450、存量未定义引用 651（13 个包，均在基线内）、`dsh-ui-kit 0`。
-- `node --test plugins/scripts/verify-dsw-tokens.test.mjs`：18 pass / 0 fail。
+- `node --test plugins/scripts/verify-dsw-tokens.test.mjs`：23 pass / 0 fail。
 - `corepack pnpm --filter dsh-ui-kit test`：77 pass / 0 fail（含新增 `src/token-contract.test.js` 与三处组件断言更新）。
 - `node --test plugins/scripts/verify-agents-md.test.mjs`：9 pass；`verify-governance-registry.test.mjs`：4 pass。
 - `node plugins/scripts/analyze-lessons-signals.mjs . --json`：退出 0，活跃条目与已毕业表解析正常。
-- 全仓 18 包剥离前后差异审计：仅 5 处带 `--dsw-*` 的引用被剥除，逐行核对全部位于注释（`Divider.tsx` 1、`GenWaveCard.module.css` 1、`GenWaveCard.tsx` 1、`genWavePalette.ts` 2），0 处有效代码/字符串被误剥，剥离前后行数一致。
+- 全仓 18 包剥离前后差异审计：仅 4 处带 `--dsw-*` 的引用被剥除（`Divider.tsx` 1、`GenWaveCard.module.css` 1、`GenWaveCard.tsx` 1、`genWavePalette.ts` 1；`genWavePalette.ts` L6 的 `--dsw-alias-*` 为纯文本提及，不计入引用），逐行核对全部位于注释；旧实现 136 行误吞（评审所述 123 行正则相关 + 13 行模板相关）全部归零，0 行有效代码/字符串被误剥，剥离前后行数一致。
 - 真实浏览器：工作树外演示目录 `omnimux-demos/issue-264-dsw-ui-kit/index.html`（不提交入仓）加载真实 `design-platform.css`；Playwright 1.63 + 系统 Chrome 无头（1440×1100 @2x）截取 Light/Dark 全页与 5 个组件分区共 12 张截图，`results.json` 记录 52 个探针的 computed color / effective background / WCAG 对比度；已用 `read_image` 复核明暗双主题，无不可读、偏色或透底。
 
 ## 旧标准变更
