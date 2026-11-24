@@ -79,12 +79,13 @@ describe('products-skills · bundled SKILL.md source of truth', () => {
       assert.equal(candidate.rank, 600)
       assert.equal(candidate.provider, PRODUCTS_SKILL_PROVIDER_NAME)
       assert.equal(candidate.source, 'bundled')
-      assert.deepEqual(candidate.invocation, { modelInvocable: true, userInvocable: true })
+      assert.deepEqual(candidate.invocation, { modelInvocable: false, userInvocable: true })
 
       const loaded = await provider.get(candidate)
       assert.ok(loaded, `provider.get must resolve ${candidate.name}`)
       assert.equal(loaded.name, candidate.name)
       assert.equal(loaded.source, 'bundled')
+      assert.deepEqual(loaded.invocation, { modelInvocable: false, userInvocable: true })
       assert.ok(loaded.content.length > 100)
     }
 

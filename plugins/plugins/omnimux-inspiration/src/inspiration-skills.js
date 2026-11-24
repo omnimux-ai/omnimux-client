@@ -13,6 +13,20 @@ const BUNDLED_SKILL_NAMES = [
   INSPIRATION_TRANSLATE_SKILL,
 ]
 
+function resolvePhysicalDir(dir) {
+  const unpacked = dir.replace(/(^|[\\/])([^\\/]*\.asar)(?=[\\/]|$)/iu, '$1$2.unpacked')
+  return unpacked !== dir && existsSync(unpacked) ? unpacked : dir
+}
+
+function parseFrontmatterBoolean(raw) {
+  if (typeof raw === 'boolean') return raw
+  if (raw === undefined || raw === null) return undefined
+  const value = String(raw).trim().toLowerCase()
+  if (['true', 'yes', 'on', '1'].includes(value)) return true
+  if (['false', 'no', 'off', '0'].includes(value)) return false
+  return undefined
+}
+
 function parseFrontmatter(raw) {
   const match = raw.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/)
   if (!match) return { metadata: {}, body: raw.trim() }
@@ -27,11 +41,21 @@ function parseFrontmatter(raw) {
   return { metadata, body: match[2].trim() }
 }
 
+function parseInvocationPolicy(metadata) {
+  const disableModelInvocation = parseFrontmatterBoolean(metadata['disable-model-invocation'])
+  const userInvocable = parseFrontmatterBoolean(metadata['user-invocable'])
+  return {
+    modelInvocable: disableModelInvocation !== true,
+    userInvocable: userInvocable !== false,
+  }
+}
+
 /**
  * Load bundled inspiration skills from `skills/<name>/SKILL.md`.
  * @returns {Array<{
  *   name: string,
  *   description: string,
+ *   invocation: { modelInvocable: boolean, userInvocable: boolean },
  *   content: string,
  *   path: string,
  *   source: 'bundled',
@@ -41,7 +65,7 @@ function parseFrontmatter(raw) {
 export function loadBundledInspirationSkills() {
   const loaded = []
   for (const skillName of BUNDLED_SKILL_NAMES) {
-    const dir = join(skillsRoot, skillName)
+    const dir = resolvePhysicalDir(join(skillsRoot, skillName))
     const file = join(dir, 'SKILL.md')
     if (!existsSync(file)) continue
     const raw = readFileSync(file, 'utf8')
@@ -50,6 +74,8 @@ export function loadBundledInspirationSkills() {
     loaded.push({
       name: metadata.name || skillName,
       description: metadata.description || skillName,
+      ...(metadata.whenToUse ? { whenToUse: metadata.whenToUse } : {}),
+      invocation: parseInvocationPolicy(metadata),
       content: body,
       path: file,
       source: 'bundled',
@@ -84,8 +110,9 @@ export function registerInspirationSkills(ctx) {
       const candidates = skills.map((entry) => ({
         name: entry.name,
         description: entry.description,
+        ...(entry.whenToUse ? { whenToUse: entry.whenToUse } : {}),
         path: entry.path,
-        invocation: { modelInvocable: true, userInvocable: true },
+        invocation: entry.invocation,
         source: 'bundled',
         provider: PROVIDER_NAME,
         rank: BUNDLED_SKILL_RANK,
@@ -101,8 +128,9 @@ export function registerInspirationSkills(ctx) {
           return {
             name: entry.name,
             description: entry.description,
+            ...(entry.whenToUse ? { whenToUse: entry.whenToUse } : {}),
             path: entry.path,
-            invocation: { modelInvocable: true, userInvocable: true },
+            invocation: entry.invocation,
             source: 'bundled',
             provider: PROVIDER_NAME,
             resourceBase: entry.resourceBase,

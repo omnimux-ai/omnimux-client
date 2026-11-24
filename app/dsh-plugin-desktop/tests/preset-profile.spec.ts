@@ -18,6 +18,7 @@ import {
   isReleaseHarnessHome,
   listStagedSkills,
   MANAGED_LEDGER_FILENAME,
+  reclaimLegacyManagedPluginSkills,
 } from '../src/preset-profile.ts'
 import { managedDependencySpec, managedSourcePath } from '../src/managed-profile.ts'
 import { materializeProfile } from '../src/profile-materializer.ts'
@@ -875,6 +876,102 @@ describe('seedOmnimuxProfile managed sources', () => {
       const home = join(root, 'home')
       expect(() => seedOmnimuxProfile({ home, presetDir }))
         .toThrow('desktop preset distribution record lists 2 packages, the preset owns 7')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('reclaims only legacy plugin-origin managed skill directories and preserves user/market/symlinked skills', () => {
+    const root = mkdtempSync(join(tmpdir(), 'omnimux-reclaim-legacy-'))
+    const external = mkdtempSync(join(tmpdir(), 'omnimux-reclaim-ext-'))
+    try {
+      const home = join(root, 'home')
+      const skillsRoot = join(home, 'skills')
+      // Legacy plugin-managed copies -> should be reclaimed
+      writeSkillDir(skillsRoot, 'clip-craft', true)
+      const marketManaged = join(skillsRoot, 'omnimux-ecom-listing-copy')
+      mkdirSync(marketManaged, { recursive: true })
+      writeFileSync(join(marketManaged, 'SKILL.md'), '---\nname: omnimux-ecom-listing-copy\n---\n')
+      writeFileSync(join(marketManaged, 'omnimux-skill.json'), `${JSON.stringify({ id: 'omnimux-ecom-listing-copy', origin: 'plugin:omnimux-market' })}\n`)
+
+      // Protected entries -> must NEVER be deleted
+      writeSkillDir(skillsRoot, 'my-custom-skill', false)
+      const nonPlugin = join(skillsRoot, 'market-installed')
+      mkdirSync(nonPlugin, { recursive: true })
+      writeFileSync(join(nonPlugin, 'SKILL.md'), '---\nname: market-installed\n---\n')
+      writeFileSync(join(nonPlugin, 'omnimux-skill.json'), `${JSON.stringify({ id: 'market-installed', origin: 'market:skillhub' })}\n`)
+
+      const renamedCopy = join(skillsRoot, 'forked-clip')
+      mkdirSync(renamedCopy, { recursive: true })
+      writeFileSync(join(renamedCopy, 'SKILL.md'), '---\nname: forked-clip\n---\n')
+      writeFileSync(join(renamedCopy, 'omnimux-skill.json'), `${JSON.stringify({ id: 'clip-craft', origin: 'plugin:omnimux-clip' })}\n`)
+
+      const brokenMarker = join(skillsRoot, 'corrupt-marker')
+      mkdirSync(brokenMarker, { recursive: true })
+      writeFileSync(join(brokenMarker, 'SKILL.md'), '---\nname: corrupt-marker\n---\n')
+      writeFileSync(join(brokenMarker, 'omnimux-skill.json'), '{not-json')
+
+      const keptCopy = join(skillsRoot, 'kept-staged')
+      writeSkillDir(skillsRoot, 'kept-staged', true)
+
+      const extDir = join(external, 'linked-skill')
+      mkdirSync(extDir, { recursive: true })
+      writeFileSync(join(extDir, 'SKILL.md'), '---\nname: linked-skill\n---\n')
+      writeFileSync(join(extDir, 'omnimux-skill.json'), `${JSON.stringify({ id: 'linked-skill', origin: 'plugin:omnimux-market' })}\n`)
+      const linkedDir = join(skillsRoot, 'linked-skill')
+      symlinkSync(extDir, linkedDir, 'dir')
+
+      const symlinkMarkerDir = join(skillsRoot, 'symlink-marker')
+      writeSkillDir(skillsRoot, 'symlink-marker', false)
+      const extMarker = join(external, 'ext-marker.json')
+      writeFileSync(extMarker, `${JSON.stringify({ id: 'symlink-marker', origin: 'plugin:omnimux-market' })}\n`)
+      symlinkSync(extMarker, join(symlinkMarkerDir, 'omnimux-skill.json'))
+
+      const reclaimed = reclaimLegacyManagedPluginSkills(home, ['kept-staged'])
+      expect(reclaimed).toEqual(['clip-craft', 'omnimux-ecom-listing-copy'])
+      expect(existsSync(join(skillsRoot, 'clip-craft'))).toBe(false)
+      expect(existsSync(marketManaged)).toBe(false)
+      for (const dir of [
+        join(skillsRoot, 'my-custom-skill'),
+        nonPlugin,
+        renamedCopy,
+        brokenMarker,
+        keptCopy,
+        linkedDir,
+        extDir,
+        symlinkMarkerDir,
+      ]) {
+        expect(existsSync(dir), dir).toBe(true)
+      }
+
+      // Idempotent second call
+      expect(reclaimLegacyManagedPluginSkills(home, ['kept-staged'])).toEqual([])
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+      rmSync(external, { recursive: true, force: true })
+    }
+  })
+
+  it('reclaims legacy plugin skill copies on upgrade to a Phase 3 preset without preset/skills while preserving user skills', () => {
+    const root = mkdtempSync(join(tmpdir(), 'omnimux-upgrade-reclaim-'))
+    try {
+      const presetDir = createPreset(root)
+      writeSkillDir(join(presetDir, 'skills'), 'clip-craft', true)
+      writeDistribution(presetDir, 1)
+      const home = join(root, 'home')
+      writeSkillDir(join(home, 'skills'), 'user-personal-skill', false)
+
+      seedOmnimuxProfile({ home, presetDir })
+      expect(existsSync(join(home, 'skills', 'clip-craft', 'omnimux-skill.json'))).toBe(true)
+      expect(existsSync(join(home, 'skills', 'user-personal-skill', 'SKILL.md'))).toBe(true)
+
+      // Upgrade preset to Phase 3 layout: no preset/skills/ directory and no kind:'skill' items
+      rmSync(join(presetDir, 'skills'), { recursive: true, force: true })
+      writeDistribution(presetDir, 2)
+      seedOmnimuxProfile({ home, presetDir })
+
+      expect(existsSync(join(home, 'skills', 'clip-craft'))).toBe(false)
+      expect(existsSync(join(home, 'skills', 'user-personal-skill', 'SKILL.md'))).toBe(true)
     } finally {
       rmSync(root, { recursive: true, force: true })
     }

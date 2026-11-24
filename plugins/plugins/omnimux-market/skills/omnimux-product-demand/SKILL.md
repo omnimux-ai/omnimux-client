@@ -1,5 +1,6 @@
 ---
 name: omnimux-product-demand
+disable-model-invocation: true
 description: "从社媒公开内容验证选品与需求：找痛点、异议、替代方案、购买意向语言，产出需求信号、痛点清单、卖点角度与选品建议。用于 TikTok、Instagram、YouTube、X 与 TikTok Shop（商品/评价）。触发：选品、需求验证、痛点、痛点挖掘、product demand、这个产品有没有需求、卖点提炼、竞品评价。注意：无 Reddit、无评论正文，用搜索+商品评价+转写替代。"
 ---
 

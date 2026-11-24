@@ -5,6 +5,7 @@ import { registerSelectionRoutes } from './http-routes.js'
 import { createSelectionScheduler } from './scheduler.js'
 import { createSelectionStore } from './store.js'
 import { createThreeGateEngine } from './three-gate.js'
+import { registerSelectionSkills } from './selection-skills.js'
 
 export const name = 'omnimux-tiktok-selection'
 export const inject = ['tools', 'systemPrompt']
@@ -88,6 +89,8 @@ export function apply(ctx, config = {}) {
   }
   if (typeof ctx.inject === 'function') ctx.inject(['webServer'], mountHttp)
   else mountHttp(ctx)
+
+  registerSelectionSkills(ctx)
 
   const promptService = ctx.systemPrompt ?? ctx.get?.('systemPrompt')
   if (promptService && typeof promptService.section === 'function') {

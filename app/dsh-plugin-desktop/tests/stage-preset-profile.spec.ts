@@ -586,18 +586,12 @@ describe('stagePresetProfile', () => {
 
       stagePresetProfile({ pluginsRoot, presetDir, releaseChannel: 'development' })
 
-      expect(readdirSync(join(presetDir, 'skills'))).toEqual(['clip-craft'])
-      expect(existsSync(join(presetDir, 'skills', 'clip-craft', 'omnimux-skill.json'))).toBe(true)
+      // Phase 3 (#236): plugin-bundled skills are served natively via ctx.skills.registerProvider
+      // rather than copied into preset/skills/ or distribution.json (which would shadow rank 600 at rank 400).
+      expect(existsSync(join(presetDir, 'skills'))).toBe(false)
       const record = readJson(join(presetDir, 'distribution.json'))
       const skills = (record.items as { kind: string }[]).filter(item => item.kind === 'skill')
-      expect(skills).toEqual([{
-        kind: 'skill',
-        id: 'clip-craft',
-        tier: 'product',
-        version: null,
-        origin: 'plugin:omnimux-video',
-        digest: expect.any(String) as unknown as string,
-      }])
+      expect(skills).toEqual([])
       // The producer's own output must satisfy the verifier it ships with.
       expect(() => verifyPreset(presetDir)).not.toThrow()
     } finally {

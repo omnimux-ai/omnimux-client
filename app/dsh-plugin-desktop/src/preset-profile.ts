@@ -28,6 +28,9 @@ import {
   hashDirectory,
   managedSourcePath,
 } from './managed-profile.ts'
+import { isLegacyPluginSkillMarker, reclaimLegacyManagedPluginSkills } from './legacy-skill-reclaim.ts'
+
+export { isLegacyPluginSkillMarker, reclaimLegacyManagedPluginSkills }
 
 /** Profile name the desktop Host boots. */
 export const OMNIMUX_PROFILE_NAME = 'omnimux'
@@ -393,6 +396,7 @@ export function seedOmnimuxProfile(options: SeedOmnimuxProfileOptions): SeedOmni
       version,
     )
     seedSettingsInHome(home)
+    reclaimLegacyManagedPluginSkills(options.home, listStagedSkills(presetDir))
     // Reconciliation owns the managed sources and the Home's skills from here:
     // it refreshes what this desktop installed and leaves a user's edits alone.
     const reconciled = reconcileManagedProfile({
@@ -426,6 +430,7 @@ export function seedOmnimuxProfile(options: SeedOmnimuxProfileOptions): SeedOmni
     writeFileSync(join(candidateDir, PROFILE_SEED_STAMP), `${String(version)}\n`)
     writeFileSync(join(candidateDir, PROFILE_MATERIALIZATION_PENDING), `${String(version)}\n`)
     seedSettingsInHome(home)
+    reclaimLegacyManagedPluginSkills(options.home, listStagedSkills(presetDir))
     seedPresetSkills(options.home, presetDir)
     publishFreshCandidate(candidateDir, profileDir, owned)
     // Record the baseline this Profile was installed from, so the next upgrade
@@ -846,6 +851,8 @@ export function reconcileManagedProfile(options: {
 }): ReconcileOutcome {
   const { profileDir, presetDir, pluginsDir, owned, home } = options
   const refreshUnrecorded = options.refreshUnrecorded === true
+  const stagedSkills = listStagedSkills(presetDir)
+  reclaimLegacyManagedPluginSkills(home, stagedSkills)
   const record = stagedRecordDigest(presetDir)
   const ledger = readLedger(profileDir)
   if (ledger !== undefined && record !== null && ledger.preset === record) {

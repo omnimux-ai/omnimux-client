@@ -1,5 +1,6 @@
 ---
 name: omnimux-ecom-pricing-strategy
+disable-model-invocation: true
 description: "跨境电商产品定位、SKU 角色矩阵与含税单元经济定价：脚本精算采购/头程/佣金/免运/税费/广告预留下的净利率、盈亏平衡价与优惠券余量，收敛唯一核心卖点并沉淀进 OmniMux 商品库。触发：定价策略、毛利测算、盈亏价、SKU矩阵、产品定位、核心卖点、pricing strategy、coupon headroom。"
 ---
 

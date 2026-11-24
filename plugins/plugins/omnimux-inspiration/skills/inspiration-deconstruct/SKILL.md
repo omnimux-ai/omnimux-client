@@ -1,6 +1,7 @@
 ---
 name: inspiration-deconstruct
 description: 对短视频、图文轮播、单图或纯文案社媒灵感进行结构化拆解，区分客观观察与推断，输出符合契约的摘要、核心维度与分镜时间轴。
+disable-model-invocation: true
 ---
 
 # 灵感素材结构化拆解

@@ -1,6 +1,7 @@
 ---
 name: tiktok-selection-risk-audit
 description: "TikTok Shop 跟爆选品 G3 合规风控审查技能。评估候选商品的品牌/商标/TRO 侵权风险、影视动漫体育大 IP 元素与排除品类命中情况，输出严格 JSON 审查结论。供 omnimux-tiktok-selection 插件经 Hub headlessSkill 无头调用。"
+disable-model-invocation: true
 ---
 
 # TikTok 选品合规风控审查（G3）

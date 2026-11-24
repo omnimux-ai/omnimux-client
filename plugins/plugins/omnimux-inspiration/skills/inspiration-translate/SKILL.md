@@ -1,6 +1,7 @@
 ---
 name: inspiration-translate
 description: 忠实翻译社媒灵感正文与短视频口播脚本，保留分段结构、语气节奏与已有片段 ID。
+disable-model-invocation: true
 ---
 
 # 社媒灵感忠实翻译

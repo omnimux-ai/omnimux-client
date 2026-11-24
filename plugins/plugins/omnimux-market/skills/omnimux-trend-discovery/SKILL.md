@@ -1,5 +1,6 @@
 ---
 name: omnimux-trend-discovery
+disable-model-invocation: true
 description: "在一个细分赛道里找正在起量的选题、格式与钩子（基于关键词搜索与近期高互动作品），产出趋势 brief、证据表和可做角度。用于 TikTok、Instagram、YouTube、X。触发：趋势、在起量、什么在火、赛道热点、trend discovery、最近流行什么、找选题方向。注意：无平台官方热榜/热度接口，结论基于搜索样本推断。"
 ---
 

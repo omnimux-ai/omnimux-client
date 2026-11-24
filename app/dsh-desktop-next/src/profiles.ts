@@ -29,6 +29,7 @@ import { computerUsePatch } from './profile-computer-use.ts'
 import { pluginMarketPatch } from './profile-plugin-market.ts'
 import { RETIRED_SCHEDULE_BUNDLE, retiredSchedulePatch } from './profile-schedule.ts'
 import { removeLinkProjectionsSafely } from '../../dsh-plugin-desktop/src/link-projections.ts'
+import { reclaimLegacyManagedPluginSkills } from '../../dsh-plugin-desktop/src/legacy-skill-reclaim.ts'
 import { insideArchive, unpackedPath } from './asar-archive-policy.ts'
 import PLUGIN_TIERS from '../../config/plugin-tiers.json' with { type: 'json' }
 import { ON_DEMAND_BUNDLES, PROFILE_TEMPLATES, RETIRED_PROFILE_BUNDLES } from './upstream-family.ts'
@@ -420,6 +421,21 @@ function retireLinkProjections(projectDir: string): void {
 }
 
 /**
+ * Reclaim legacy plugin-managed skill directories (`omnimux-skill.json`, `origin: "plugin:*"`)
+ * left in `<home>/skills/` by pre-Phase-3 desktop staging. Because DSH's user filesystem
+ * provider (rank 400) outranks bundled plugin providers (rank 600), stale copies shadow
+ * upgraded plugin-bundled skills and bypass `disable-model-invocation: true`.
+ * A failed removal must not keep the Host from starting; the next launch retries.
+ */
+function retireLegacyManagedPluginSkills(home: string): void {
+  try {
+    reclaimLegacyManagedPluginSkills(home)
+  } catch (cause) {
+    process.stderr.write(`dsh-desktop-next: could not reclaim legacy managed plugin skills from ${home}: ${String(cause)}\n`)
+  }
+}
+
+/**
  * Remove the official on-demand bundles a Profile installed for another DSH release before the Host resolves its
  * packages (see {@link NextProfiles.removeStaleOnDemandBundles}). A failed removal must not keep the Host from
  * starting; the next launch retries.
@@ -474,6 +490,7 @@ export function loadNextProfile(projectDir: string, home: string, installAnchor 
   if (manager.directory(basename(projectDir)) !== resolve(projectDir)) throw new Error('Profile must belong to Next home')
   manager.ensure(basename(projectDir))
   retireLinkProjections(projectDir)
+  retireLegacyManagedPluginSkills(home)
   if (pnpm !== undefined) retireStaleOnDemandBundles(manager, basename(projectDir), pnpm)
   // Upstream bundle discovery walks physical node_modules before installing its
   // runtime resolver. Project only this application's bundle, not its dependency

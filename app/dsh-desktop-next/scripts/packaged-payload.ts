@@ -211,6 +211,9 @@ const REQUIRED_UNPACKED = [
   // The badge skill announces its `assets/` directory to the model as where to take `dsh-badge.png` from; shells and
   // the Host's filesystem service read no archive, and the Host resolves the package to this copy.
   /^node_modules\/@deepseek-ai\/dsh-skill-badge\//u,
+  // Product plugin bundled skills announce their directory as `resourceBase` so `dsh-fs-local` and external
+  // helper scripts (e.g. Python) can read `SKILL.md`, `references/`, and scripts physically beside app.asar.
+  /^node_modules\/omnimux-[^/]+\/skills\//u,
   // The computer-use driver resolves its platform package's manifest and hands the library beside it to the system
   // loader; the Host resolves that package to this copy.
   /^node_modules\/@trycua\/cua-driver-/u,

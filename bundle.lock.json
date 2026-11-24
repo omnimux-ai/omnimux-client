@@ -10,7 +10,7 @@
       "version": "0.1.8",
       "path": "plugins/plugins/omnimux",
       "spec": "link:../../plugins/plugins/omnimux",
-      "contentHash": "sha256:d06137dcb3dc6c2730cb66ba64ecb556a7a92dce84e0632706bdb2c73eced746"
+      "contentHash": "sha256:4dd4e335e5ad2eb0b348a6c1cb9d043e08ad0b1d2838743a8ccf30b39954cd47"
     },
     {
       "name": "omnimux-accounts",
@@ -45,7 +45,7 @@
       "version": "0.1.2",
       "path": "plugins/plugins/omnimux-clip",
       "spec": "link:../../plugins/plugins/omnimux-clip",
-      "contentHash": "sha256:ee651a4c2dc5cd4ddb14cd3ac6c669f535a98b319f89d36fbdcfe17c6f62bc1a"
+      "contentHash": "sha256:a6abedc2994a7252641baf760735ce312ba4b3465822747067ac4e3f17038f23"
     },
     {
       "name": "omnimux-forms",
@@ -59,21 +59,21 @@
       "version": "0.1.2",
       "path": "plugins/plugins/omnimux-inspiration",
       "spec": "link:../../plugins/plugins/omnimux-inspiration",
-      "contentHash": "sha256:940de3f3794660b8c6e5751c0886472c96bf5de033e9a22d3a671a064c135896"
+      "contentHash": "sha256:c58fddedb36f4b7eba1ff788988d738c7fb355ccc44b9b4b90b1d263b965c372"
     },
     {
       "name": "omnimux-market",
       "version": "0.2.13-omni.2",
       "path": "plugins/plugins/omnimux-market",
       "spec": "link:../../plugins/plugins/omnimux-market",
-      "contentHash": "sha256:5e3fd78e7947d6ec78614ee36e649e5682a109efc7cbc690bd1beed2a82f3807"
+      "contentHash": "sha256:d5c7f0302b3afcfb78f734e7e235911ed6e6a797dd82b79cab55f4bae5aea80a"
     },
     {
       "name": "omnimux-products",
       "version": "0.1.2",
       "path": "plugins/plugins/omnimux-products",
       "spec": "link:../../plugins/plugins/omnimux-products",
-      "contentHash": "sha256:5dc83262d9084ec6029d43c2a79e18cc893a82ec770782f5636879236c16389c"
+      "contentHash": "sha256:444d320c402e837b31c4206ded2e4c23711a1a8cf5225374115465ba661731b3"
     },
     {
       "name": "omnimux-publish",
@@ -101,7 +101,7 @@
       "version": "1.0.0-rc.3",
       "path": "plugins/plugins/omnimux-workflow",
       "spec": "link:../../plugins/plugins/omnimux-workflow",
-      "contentHash": "sha256:4447a95f72be4f9c48ef35097d0a4236c1ed5ab6d7f597151623f2bb8de95c0c"
+      "contentHash": "sha256:5d08cd7b7653e7eaba9fcdef0db299e38a99a16e3fb5db8673320b66b2c05c59"
     }
   ]
 }

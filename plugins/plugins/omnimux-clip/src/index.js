@@ -7,6 +7,7 @@ import { ensureClipDirs, resolveClipPaths } from './paths.js'
 import { createProjectStore } from './store/projectStore.js'
 import { createClipEditorSeam } from './seam/clipEditor.js'
 import { CLIP_PROMPT, createClipTools, registerClipTools } from './tools.js'
+import { registerClipSkills } from './clip-skills.js'
 
 export const name = 'omnimux-clip'
 export const inject = ['tools', 'systemPrompt']
@@ -76,6 +77,7 @@ export function apply(ctx) {
   registerPromptOn(ctx)
 
   registerClipTools(ctx, tools)
+  registerClipSkills(ctx)
 
   // Mount routes with the canonical guarded pattern used by omnimux-assets /
   // omnimux-products / omnimux-inspiration: the nested inject callback may hand

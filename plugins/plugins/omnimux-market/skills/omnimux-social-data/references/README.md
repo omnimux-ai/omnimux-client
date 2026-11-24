@@ -1,18 +1,18 @@
 # OmniMux 社媒研究预设技能包（Social Media Research Preset Skills）
 
-借鉴开源 `ScrapeCreators/social-media-research-skills`（MIT）的方法论骨架，将数据层替换为 OmniMux 原生公开社媒采集与语音转写工具，作为内置预设技能随 `omnimux-market` 打包并物化到客户端 `preset/skills/`。
+借鉴开源 `ScrapeCreators/social-media-research-skills`（MIT）的方法论骨架，将数据层替换为 OmniMux 原生公开社媒采集与语音转写工具，作为内置技能随 `omnimux-market` 通过 DSH 原生 `ctx.skills.registerProvider` 注册（无需预拷至 `$DSH_HOME/skills/`）。
 
-- 结构：1 个数据层路由技能 + 8 个研究工作流技能
-- 承载插件：`omnimux-market`（`origin: "plugin:omnimux-market"`）
+- 结构：1 个全局数据层路由技能（`omnimux-social-data`）+ 8 个按需激活研究工作流技能（`disable-model-invocation: true`，0 Token 全局默认，支持 `/`、技能选择器或聘用专家作用域自动激活）
+- 承载插件：`omnimux-market`（`provider: "omnimux-market"`, `rank: 600`）
 - 平台覆盖：TikTok / Instagram / YouTube / X + TikTok Shop
 - 数据边界：**仅使用公开数据**；社媒评论正文、受众人口学、Meta/Google/LinkedIn 广告库及 Pinterest/Reddit/Facebook/LinkedIn/Threads/Bluesky 明确不做，命中时如实说明缺口，不编造数据
 
 ## 目录与打包结构
 
-源码位于 `plugins/plugins/omnimux-market/skills/`，并在 `plugins/plugins/omnimux-market/dsh.manifest.json` 的 `skills` 中声明；桌面打包（`stagePresetProfile`）时自动复制到 `preset/skills/<name>/` 并生成 `omnimux-skill.json`（`{ "id": "<name>", "origin": "plugin:omnimux-market" }`）：
+源码位于 `plugins/plugins/omnimux-market/skills/`，并在 `plugins/plugins/omnimux-market/dsh.manifest.json` 的 `skills` 中声明；运行期由 `omnimux-market` 通过 `ctx.skills.registerProvider` 在 `BUNDLED_SKILL_RANK`（600）原生暴露，`dsh-desktop-next` 与 `dsh-plugin-desktop` 双壳加载一致：
 
 ```text
-preset/skills/
+plugins/plugins/omnimux-market/skills/
   omnimux-social-data/              # ① 数据层：意图→工具→参数（附 references/README.md 与 TRIGGER-MATRIX.md）
   omnimux-outlier-post-finder/      # ② 找爆款（账号自身中位数基线 + lift 分档）
   omnimux-creator-teardown/         # ③ 账号拆解（定位/支柱/钩子/红线）
