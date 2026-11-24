@@ -29,9 +29,34 @@
  * 退出码：0 通过 / 1 硬失败 / 2 用法错误。
  */
 import { existsSync, readFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import { basename, dirname, join, resolve, sep } from 'node:path'
 import { homedir } from 'node:os'
 import { pathToFileURL, fileURLToPath } from 'node:url'
+
+const nodeRequire = createRequire(import.meta.url)
+
+function readPhysicalFile(filePath) {
+  if (process.versions.electron) {
+    try {
+      return nodeRequire('original-fs').readFileSync(filePath)
+    } catch {
+      // fall through
+    }
+  }
+  return readFileSync(filePath)
+}
+
+function physicalExists(filePath) {
+  if (process.versions.electron) {
+    try {
+      return nodeRequire('original-fs').existsSync(filePath)
+    } catch {
+      // fall through
+    }
+  }
+  return existsSync(filePath)
+}
 
 /** 受管快照的 spec 前缀与相对目录。 */
 export const MANAGED_SPEC_PREFIX = 'file:.materialize-snapshots/plugins/'
@@ -190,9 +215,37 @@ export function readOwnedPackages(appPath) {
 }
 
 /**
+ * 读取 Desktop Next 应用 `Contents/Resources/app.asar` 内置的依赖包名集合。
+ * Next 壳不通过 `preset/owned-packages.json` 向 Profile 摊铺依赖，而是将内置插件
+ * 打包在 `app.asar` 中，Profile 仅承载 `omnimux:sync` 外部覆盖。非 Next 应用返回 null。
+ */
+export function readAppBundledPackages(appPath) {
+  if (!appPath) return null
+  const buildInfoPath = join(appPath, 'Contents', 'Resources', 'build-info.json')
+  const asarPath = join(appPath, 'Contents', 'Resources', 'app.asar')
+  if (!existsSync(buildInfoPath) || !physicalExists(asarPath)) return null
+  try {
+    const info = JSON.parse(readFileSync(buildInfoPath, 'utf8'))
+    if (info?.shell !== 'dsh-desktop-next') return null
+    const raw = readPhysicalFile(asarPath)
+    const headerSize = raw.readUInt32LE(4)
+    const jsonSize = raw.readUInt32LE(12)
+    const header = JSON.parse(raw.subarray(16, 16 + jsonSize).toString('utf8'))
+    const pkgNode = header?.files?.['package.json']
+    if (!pkgNode || pkgNode.files) return null
+    const start = 8 + headerSize + Number(pkgNode.offset)
+    const manifest = JSON.parse(raw.subarray(start, start + Number(pkgNode.size)).toString('utf8'))
+    const deps = Object.keys(manifest.dependencies ?? {})
+    return new Set(deps)
+  } catch {
+    return null
+  }
+}
+
+/**
  * 校验一个 profile。
  * @param {string} profileDir profile 目录（形如 <home>/profiles/<name>）。
- * @param {{ ownedPackages?: string[] | null, supportIdentity?: { name: string, version: string } | null }} [options]
+ * @param {{ ownedPackages?: string[] | null, appBundledPackages?: Iterable<string> | null, supportIdentity?: { name: string, version: string } | null }} [options]
  * @returns {{ failures: string[], warnings: string[], dependenciesChecked: number, bundlesChecked: number, ownedChecked: number, ownedStatus: 'checked' | 'skipped', supportChecked: number }}
  */
 export function inspectProfile(profileDir, options = {}) {
@@ -242,12 +295,14 @@ export function inspectProfile(profileDir, options = {}) {
     }
   }
 
+  const appBundled = options.appBundledPackages ? new Set(options.appBundledPackages) : null
   const bundles = manifest.dsh?.profile?.bundles ?? []
   let bundlesChecked = 0
   for (const name of bundles) {
     if (typeof name !== 'string' || name === '') continue
     bundlesChecked += 1
     if (APP_PROVIDED.test(name)) continue
+    if (appBundled?.has(name)) continue
     const declared = typeof dependencies[name] === 'string' && dependencies[name].startsWith(MANAGED_SPEC_PREFIX)
     const installed = existsSync(join(profileDir, 'node_modules', name))
     if (!declared && !installed) {
@@ -350,6 +405,7 @@ function main() {
   let failed = false
   for (const target of args.profiles) {
     let ownedPackages = null
+    let appBundledPackages = null
     let skipReason = null
     if (args.ownedPath) {
       ownedPackages = readOwnedPackagesFile(args.ownedPath)
@@ -358,14 +414,19 @@ function main() {
       const app = resolveTargetApp(target, args.app)
       ownedPackages = readOwnedPackages(app)
       if (ownedPackages === null) {
-        skipReason = app ? `${app} 没有 preset owned-packages.json` : '无法推导目标应用（可用 --app 显式指定）'
+        appBundledPackages = readAppBundledPackages(app)
+        if (appBundledPackages === null) {
+          skipReason = app ? `${app} 没有 preset owned-packages.json` : '无法推导目标应用（可用 --app 显式指定）'
+        }
       }
     }
-    if (skipReason) {
+    if (appBundledPackages !== null) {
+      console.log(`ℹ Desktop Next 模式：目标应用内置 ${appBundledPackages.size} 个依赖包（来自 app.asar），Profile 仅校验外部覆盖快照与支持包防漂移`)
+    } else if (skipReason) {
       console.log(`⚠ 未读取 owned 清单：${skipReason}；只做快照完整性与插件清单可解析性校验，owned 依赖断言未核验`)
     }
 
-    const result = inspectProfile(target, { ownedPackages })
+    const result = inspectProfile(target, { ownedPackages, appBundledPackages })
     for (const line of result.warnings) console.log(`⚠ ${line}`)
     const supportScope = result.supportChecked > 0 ? ` / 支持包版本 ${result.supportChecked} 处` : ''
     const scope = `依赖 ${result.dependenciesChecked} 条 / owned ${result.ownedChecked} 条 / 插件清单 ${result.bundlesChecked} 条${supportScope}`

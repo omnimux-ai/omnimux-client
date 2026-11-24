@@ -40,7 +40,9 @@ export const DESKTOP_RELEASE_IDENTITIES = Object.freeze({
     // Must match the Dev app's real userData directory so cross-edition evidence
     // keeps resolving through the same name.
     productName: 'OmniMux-Dev',
-    appId: 'ai.omnimux.desktop',
+    // Dedicated macOS CFBundleIdentifier isolating Dev LaunchServices / Preferences
+    // from the shipped production app (`ai.omnimux.desktop`).
+    appId: 'ai.omnimux.desktop.dev',
     homeDirectoryName: '.omnimux-dev',
     userDataDirectoryName: 'OmniMux-Dev',
   }),
@@ -55,7 +57,10 @@ export function desktopIdentity(channel: DesktopReleaseChannel = 'stable'): Desk
 
 /** OmniMux stable identity, aligned with electron-builder's `build` block. */
 export const DESKTOP_PRODUCT_IDENTITY = DESKTOP_RELEASE_IDENTITIES.stable
+export const DESKTOP_DEV_IDENTITY = DESKTOP_RELEASE_IDENTITIES.development
 export const DESKTOP_PRODUCT_NAME = DESKTOP_PRODUCT_IDENTITY.productName
 export const DESKTOP_APP_ID = DESKTOP_PRODUCT_IDENTITY.appId
+export const DESKTOP_DEV_APP_ID = DESKTOP_DEV_IDENTITY.appId
+export const DESKTOP_DEV_DISPLAY_NAME = 'OmniMux Dev'
 export const DESKTOP_HOME_DIRECTORY_NAME = DESKTOP_PRODUCT_IDENTITY.homeDirectoryName
 export const DESKTOP_USER_DATA_DIRECTORY_NAME = DESKTOP_PRODUCT_IDENTITY.userDataDirectoryName

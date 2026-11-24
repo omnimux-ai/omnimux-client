@@ -64,7 +64,8 @@ import { manualUpdate, manualUpdateHint, releaseNotesUrl, updateLabel } from './
 import { DESKTOP_SHUTDOWN_TIMEOUT_MS } from '../../dsh-plugin-desktop/src/shutdown.ts'
 import { isDesktopRendererStatus, NextRendererRecovery, type DesktopNavigationCause } from './renderer-recovery.ts'
 import { DesktopLaunchAnalytics } from './desktop-launch-analytics.ts'
-import { DESKTOP_PRODUCT_NAME, DESKTOP_USER_DATA_DIRECTORY_NAME } from './product-identity.ts'
+import { type DesktopProductIdentity } from './product-identity.ts'
+import { resolveDesktopIdentity } from './release-channel.ts'
 import { collectRendererDiagnostics, rendererDiagnosticsFields } from './renderer-diagnostics.ts'
 import { RollingRendererEvidence } from './renderer-evidence.ts'
 import { deElevateAtStartup, lowIntegrityAtStartup, windowsElevation } from './windows-elevation.ts'
@@ -88,14 +89,35 @@ const startupElevationState = startupElevation.relaunched ? {} : startupElevatio
 applyDesktopPackageManagerPolicy(process.env)
 
 const root = dirname(NEXT_PACKAGE)
+// Resolve channel identity from bundle metadata before setting userData or resolving home.
+// Fail closed on missing, corrupt, or conflicting Dev metadata so a Dev bundle can never
+// silently fall back to production `~/.omnimux`.
+let identity: DesktopProductIdentity
+try {
+  identity = resolveDesktopIdentity({
+    packaged: app.isPackaged,
+    platform: process.platform,
+    execPath: process.execPath,
+    resourcesPath: app.isPackaged ? process.resourcesPath : undefined,
+    env: process.env,
+  })
+} catch (error) {
+  const detail = error instanceof Error ? error.message : String(error)
+  process.stderr.write(`dsh-desktop-next: fatal release-channel error: ${detail}\n`)
+  try {
+    dialog.showErrorBox('OmniMux Release Channel Error', detail)
+  } catch { /* Headless or early exit before dialog is available. */ }
+  app.exit(1)
+  process.exit(1)
+}
 // Workspace and data directory choices stay out of the installation (#1564).
 const program = programDirectory(process.platform, process.execPath)
 // Read once: an in-app relaunch inherits this process's environment, not later user variables.
 const environmentHome = process.env[DATA_DIRECTORY_VARIABLE] || undefined
 // The in-app choice keeps its former Next-owned anchor, whatever the variable says.
-const locationRoot = dataDirectoryLocationRoot(app.isPackaged, () => app.getPath('appData'), root)
+const locationRoot = dataDirectoryLocationRoot(app.isPackaged, () => app.getPath('appData'), root, identity.userDataDirectoryName)
 const locationFile = dataDirectoryLocationFile(locationRoot)
-const dataLocation = readDataDirectory(locationRoot, environmentHome)
+const dataLocation = readDataDirectory(locationRoot, environmentHome, undefined, identity.homeDirectoryName)
 const home = dataLocation.home
 let dataSource = dataLocation.source
 // Linux has no tray terminal; `<app> dsh …` is its `dsh` command and never opens the desktop (#1568).
@@ -103,7 +125,7 @@ const dshArguments = dshCommandArguments(process.argv, process.platform, process
 if (dshArguments !== undefined) execDshCommand(dshArguments)
 const normalElectronData = join(home, 'electron-user-data')
 privateDirectory(normalElectronData)
-app.setName(DESKTOP_PRODUCT_NAME)
+app.setName(identity.productName)
 // Keep one application owner across normal and safe launches, before switching
 // Chromium storage to the disposable environment.
 app.setPath('userData', normalElectronData)
@@ -180,7 +202,7 @@ const crashDumps = join(normalElectronData, 'Crashpad')
 if (ownsInstance) {
   try {
     app.setPath('crashDumps', crashDumps)
-    startCrashReporting(crashReporter, { productName: DESKTOP_PRODUCT_NAME, version, dsh: dshVersion })
+    startCrashReporting(crashReporter, { productName: identity.productName, version, dsh: dshVersion })
   } catch (error) { console.error('Local crash reporting is unavailable', error) }
 }
 // Finder and Dock launches carry no login-shell exports. Reading them takes one login shell's startup
@@ -279,7 +301,7 @@ const permissions = createNativePermissions()
 const updateInstaller = new NextUpdateInstaller({ platform: process.platform, executable: process.execPath,
   language: () => windowsLanguage,
   log: error => runtime.diagnostics.append(String(error), 'warn') })
-const updates = new NextUpdates({ version, platform: process.platform, packaged: app.isPackaged, userData: electronData,
+const updates = new NextUpdates({ version, platform: process.platform, packaged: app.isPackaged && identity.releaseChannel === 'stable', userData: electronData,
   portable: isWindowsPortableCopy(process.platform, app.isPackaged, process.execPath),
   downloads: updateDownloadDirectory(process.platform),
   arch: process.platform === 'darwin' ? macUpdateArch(process.arch, app.runningUnderARM64Translation) : undefined,
@@ -332,7 +354,7 @@ function applyInstalledAppIcon(icon: DesktopAppIcon, dark: boolean): void {
     try {
       const result = platform === 'win32'
         ? syncWindowsShortcuts({ icon: packaged ? process.execPath : appWindowIcon(root, platform, icon, dark)!,
-          ours: [appWindowIcon(root, platform, 'default', true)!, appWindowIcon(root, platform, 'classic')!], execPath: process.execPath, name: DESKTOP_PRODUCT_NAME,
+          ours: [appWindowIcon(root, platform, 'default', true)!, appWindowIcon(root, platform, 'classic')!], execPath: process.execPath, name: identity.productName,
           directories: windowsShortcutDirectories({ desktop: app.getPath('desktop'), appData: app.getPath('appData') }, process.env), shell })
         : manifest.desktopName === undefined ? { changed: [], failed: [] }
           : syncLinuxDesktopEntry({ image: packaged ? undefined : appWindowIcon(root, platform, icon, dark), label, execPath: process.execPath,
@@ -1218,7 +1240,7 @@ function rememberLaunchDirectory(directory: string): void {
  */
 async function confirmDataDirectory(): Promise<boolean> {
   if (safeModeRequested || dataLocation.error) return true
-  const change = dataDirectoryChange(locationRoot, home, environmentHome)
+  const change = dataDirectoryChange(locationRoot, home, environmentHome, undefined, identity.homeDirectoryName)
   if (change === undefined) { rememberLaunchDirectory(home); return true }
   const { previous, reachable } = change
   const source = { desktop: t('应用内选择', 'chosen in the app'), environment: DATA_DIRECTORY_VARIABLE, default: t('默认目录', 'default') }[dataSource]
@@ -1769,7 +1791,7 @@ if (ownsInstance) {
   if (!safeModeRequested && !process.argv.includes(RECOVERY_ARGUMENT)) {
     const previousUserData = [normalElectronData]
     if (app.isPackaged && !process.env.DSH_DESKTOP_NEXT_HOME) {
-      previousUserData.push(join(app.getPath('appData'), DESKTOP_USER_DATA_DIRECTORY_NAME))
+      previousUserData.push(join(app.getPath('appData'), identity.userDataDirectoryName))
     }
     launchAnalytics = new DesktopLaunchAnalytics({
       identityDirectory: join(normalElectronData, 'launch-analytics'),

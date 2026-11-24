@@ -36,6 +36,7 @@
     "icons:export": "node ../scripts/export-app-icons.mjs --channel next",
     "prepare:runtime": "node scripts/prepare-runtime.ts",
     "package:dir": "node ../../scripts/prepare-local-plugins.mjs && yarn build && node scripts/package.ts dir",
+    "package:dev": "node scripts/package-dev.mjs",
     "dist:mac": "node scripts/package.ts mac",
     "dist:mac-smoke": "node ../../scripts/prepare-local-plugins.mjs && node scripts/package.ts mac-smoke",
     "dist:win": "node ../../scripts/prepare-local-plugins.mjs && node scripts/package.ts win",

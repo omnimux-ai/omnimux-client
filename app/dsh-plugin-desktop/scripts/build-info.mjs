@@ -39,10 +39,13 @@ export function currentBuildInfo(channel, options = {}) {
   if (status === null) {
     throw new Error('build-info: cannot inspect git status; refusing to record build provenance')
   }
+  const releaseChannel = channel === 'package-dev' ? 'development' : 'stable'
   return {
     product: desktopPackage.build?.productName ?? 'OmniMux',
     version: desktopPackage.version,
     channel,
+    releaseChannel,
+    shell: packageDir,
     builtAt: new Date().toISOString(),
     repo: {
       branch: git(root, 'branch', '--show-current'),

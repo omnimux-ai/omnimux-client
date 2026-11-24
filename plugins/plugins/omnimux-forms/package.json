@@ -11,12 +11,14 @@
   "exports": {
     ".": "./src/index.js",
     "./client": "./lib/client.js",
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json"
   },
   "files": [
     "src",
     "lib/client.js",
     "assets/examples",
+    "locale",
     "cordis.patch.yml",
     "dsh.manifest.json",
     "README.md",
@@ -62,5 +64,6 @@
     "react-dom": {
       "optional": true
     }
-  }
+  },
+  "description": "Use structured forms to organize reference video breakdown and remake tasks."
 }
