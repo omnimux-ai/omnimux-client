@@ -92,6 +92,8 @@ export function gitLsForbiddenArtifacts(root) {
     [
       '-C',
       gitTop,
+      '-c',
+      'core.quotepath=false',
       'ls-files',
       '--',
       ...FORBIDDEN_ARTIFACT_GLOBS,
