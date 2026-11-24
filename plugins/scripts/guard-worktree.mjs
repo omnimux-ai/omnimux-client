@@ -358,6 +358,100 @@ function scanBacktick(input, openIdx) {
 }
 
 /**
+ * If `input[openIdx..]` starts a Bash arithmetic `(( ... ))` span (where the
+ * inner `(` closes immediately before the outer `)`, distinguishing it from
+ * nested subshells like `((pnpm build:all) && true)`), return the index of the
+ * closing outer `)`. Otherwise return -1.
+ */
+function scanArithmeticDoubleParen(input, openIdx) {
+  if (input[openIdx] !== '(' || input[openIdx + 1] !== '(') return -1
+  const outerEnd = scanBalancedParen(input, openIdx)
+  if (outerEnd >= input.length || input[outerEnd] !== ')') return -1
+  const innerEnd = scanBalancedParen(input, openIdx + 1)
+  return innerEnd === outerEnd - 1 && input[innerEnd] === ')' ? outerEnd : -1
+}
+
+/**
+ * If `input[openIdx..]` starts a Bash conditional expression `[[ ... ]]`
+ * bounded by shell word boundaries, return the index of the second `]`.
+ * Otherwise return -1.
+ */
+function scanDoubleBracket(input, openIdx) {
+  if (input[openIdx] !== '[' || input[openIdx + 1] !== '[') return -1
+  if (openIdx > 0 && !/[\s;&|({!]/.test(input[openIdx - 1])) return -1
+  if (openIdx + 2 >= input.length || !/\s/.test(input[openIdx + 2])) return -1
+
+  let inSingle = false
+  let inDouble = false
+  let escaped = false
+  for (let i = openIdx + 2; i < input.length; i += 1) {
+    const ch = input[i]
+    if (escaped) {
+      escaped = false
+      continue
+    }
+    if (ch === '\\' && !inSingle) {
+      escaped = true
+      continue
+    }
+    if (ch === "'" && !inDouble) {
+      inSingle = !inSingle
+      continue
+    }
+    if (ch === '"' && !inSingle) {
+      inDouble = !inDouble
+      continue
+    }
+    if (!inSingle && ch === '$' && input[i + 1] === '(') {
+      i = scanBalancedParen(input, i + 1)
+      continue
+    }
+    if (!inSingle && ch === '`') {
+      i = scanBacktick(input, i)
+      continue
+    }
+    if (!inSingle && !inDouble && ch === ']' && input[i + 1] === ']') {
+      const prevOk = i > openIdx + 2 && /\s/.test(input[i - 1])
+      const nextCh = input[i + 2] || ''
+      const nextOk = nextCh === '' || /[\s;&|<>)]/.test(nextCh)
+      if (prevOk && nextOk) return i + 1
+    }
+  }
+  return -1
+}
+
+function findCasePatternClose(text) {
+  let inSingle = false
+  let inDouble = false
+  let escaped = false
+  let start = 0
+  if (text[0] === '(') start = 1
+  for (let i = start; i < text.length; i += 1) {
+    const ch = text[i]
+    if (escaped) {
+      escaped = false
+      continue
+    }
+    if (ch === '\\' && !inSingle) {
+      escaped = true
+      continue
+    }
+    if (ch === "'" && !inDouble) {
+      inSingle = !inSingle
+      continue
+    }
+    if (ch === '"' && !inSingle) {
+      inDouble = !inDouble
+      continue
+    }
+    if (!inSingle && !inDouble && ch === ')') {
+      return i
+    }
+  }
+  return -1
+}
+
+/**
  * Split a shell command into top-level statements while respecting quotes,
  * unquoted `#` comments, heredoc bodies (`<<EOF` / `<<-'EOF'`), and command /
  * process substitutions (`$(...)`, `` `...` ``, `<(...)`, `>(...)`).
@@ -442,6 +536,19 @@ function splitShellStatements(command) {
     }
 
     if (!inSingle && !inDouble) {
+      // Keep Bash arithmetic `(( ... ))` and `[[ ... ]]` intact so `;` / `&&` / `||` inside them never split statements
+      const arithEnd = scanArithmeticDoubleParen(input, i)
+      if (arithEnd !== -1) {
+        currentStmt.raw += input.slice(i, arithEnd + 1)
+        i = arithEnd
+        continue
+      }
+      const bracketEnd = scanDoubleBracket(input, i)
+      if (bracketEnd !== -1) {
+        currentStmt.raw += input.slice(i, bracketEnd + 1)
+        i = bracketEnd
+        continue
+      }
       if (ch === '#' && (i === 0 || /[\s;&|({\n]/.test(prev))) {
         inComment = true
         continue
@@ -496,6 +603,16 @@ function splitShellStatements(command) {
 
       if ((ch === '&' && next === '&') || (ch === '|' && next === '|')) {
         flush(ch + next)
+        i += 1
+        continue
+      }
+      if (ch === ';' && next === ';' && input[i + 2] === '&') {
+        flush(';;')
+        i += 2
+        continue
+      }
+      if (ch === ';' && (next === ';' || next === '&')) {
+        flush(';;')
         i += 1
         continue
       }
@@ -597,6 +714,20 @@ function splitRawPipelineSegments(segment) {
       i = end
       continue
     }
+    if (!inSingle && !inDouble) {
+      const arithEnd = scanArithmeticDoubleParen(input, i)
+      if (arithEnd !== -1) {
+        current += input.slice(i, arithEnd + 1)
+        i = arithEnd
+        continue
+      }
+      const bracketEnd = scanDoubleBracket(input, i)
+      if (bracketEnd !== -1) {
+        current += input.slice(i, bracketEnd + 1)
+        i = bracketEnd
+        continue
+      }
+    }
     // Split on pipe '|' or '|&', avoiding '||', and avoiding noclobber '>|'
     if (!inSingle && !inDouble && ch === '|' && prev !== '|' && prev !== '>' && next !== '|') {
       flush()
@@ -637,7 +768,10 @@ function extractCommandSubstitutions(segment) {
     if (inSingle) continue
     if (ch === '$' && input[i + 1] === '(') {
       const end = scanBalancedParen(input, i + 1)
-      if (input[i + 2] !== '(') {
+      if (input[i + 2] === '(') {
+        const arithInner = input.slice(i + 3, Math.max(i + 3, end - 1)).trim()
+        if (arithInner) subs.push(...extractCommandSubstitutions(arithInner))
+      } else {
         const inner = input.slice(i + 2, end).trim()
         if (inner) subs.push(inner)
       }
@@ -698,22 +832,30 @@ function hasHeredocOperator(segment) {
  * so callers evaluate them in the restored outer cwd.
  */
 function isArithmeticDoubleParen(body) {
-  if (!body.startsWith('((')) return false
-  const outerEnd = scanBalancedParen(body, 0)
-  if (outerEnd >= body.length || body[outerEnd] !== ')') return false
-  const innerEnd = scanBalancedParen(body, 1)
-  return innerEnd === outerEnd - 1 && body[innerEnd] === ')'
+  return scanArithmeticDoubleParen(body, 0) !== -1
 }
 
-function parseSubshellStage(rawStage, activeSubshellDepth = 0, activeBraceDepth = 0) {
+function parseSubshellStage(rawStage, activeSubshellDepth = 0, activeBraceDepth = 0, { expectCasePattern = false } = {}) {
   let body = String(rawStage || '').trim()
   let leadingOpenParens = 0
   let leadingOpenBraces = 0
   let opensFunctionBlock = false
+  let opensPendingFunction = false
   let opensControlBlock = ''
   let resetsControlBranch = false
   let closesControlBlock = false
   let isControlHeaderOnly = false
+  let consumedCasePattern = false
+
+  // When inside a `case ... in` block expecting a pattern (`pat)` or `(pat)`),
+  // consume the pattern header first so its `)` never closes an enclosing subshell.
+  if (expectCasePattern && body && !/^esac(?:\s|$|[<>|;&)])/.test(body) && !body.startsWith(')')) {
+    const patEnd = findCasePatternClose(body)
+    if (patEnd > 0) {
+      body = body.slice(patEnd + 1).trimStart()
+      consumedCasePattern = true
+    }
+  }
 
   for (;;) {
     if (body.startsWith('(') && !isArithmeticDoubleParen(body)) {
@@ -730,12 +872,24 @@ function parseSubshellStage(rawStage, activeSubshellDepth = 0, activeBraceDepth 
       body = body.slice(1).trimStart()
       continue
     }
-    // Function declaration: `foo() { ...` or `function foo { ...`
-    const funcMatch = /^(?:function\s+)?[A-Za-z_][A-Za-z0-9_]*\s*(?:\(\s*\))?\s*\{(?:\s+|$)/.exec(body)
-    if (funcMatch && (funcMatch[0].startsWith('function') || funcMatch[0].includes('('))) {
+    // Standalone Allman-style function header (`f()` / `my-fn()` / `function my-fn` followed by newline + `{`)
+    if (/^(?:function\s+[^\s;&|<>()'"`{}$]+(?:\s*\(\s*\))?|[^\s;&|<>()'"`{}$]+\s*\(\s*\))$/.test(body)) {
+      opensPendingFunction = true
+      isControlHeaderOnly = true
+      break
+    }
+    // Inline function declaration with `{`: `my-fn() { ...` or `function my-fn { ...`
+    const funcBraceMatch = /^(?:function\s+)?[^\s;&|<>()'"`{}$]+\s*(?:\(\s*\))?\s*\{(?:\s+|$)/.exec(body)
+    if (funcBraceMatch && (/^function\s+/.test(funcBraceMatch[0]) || /\(\s*\)/.test(funcBraceMatch[0]))) {
       opensFunctionBlock = true
       leadingOpenBraces += 1
-      body = body.slice(funcMatch[0].length).trimStart()
+      body = body.slice(funcBraceMatch[0].length).trimStart()
+      continue
+    }
+    // Inline function declaration with subshell body: `my-fn() ( ... )`
+    const funcParenMatch = /^(?:function\s+)?[^\s;&|<>()'"`{}$]+\s*(?:\(\s*\))?\s*\(/.exec(body)
+    if (funcParenMatch && (/^function\s+/.test(funcParenMatch[0]) || /\(\s*\)/.test(funcParenMatch[0]))) {
+      body = body.slice(funcParenMatch[0].length - 1).trimStart()
       continue
     }
     if (/^(?:fi|done|esac)(?:\s|$|[<>|;&)])/.test(body)) {
@@ -763,6 +917,20 @@ function parseSubshellStage(rawStage, activeSubshellDepth = 0, activeBraceDepth 
       body = body.slice(kw.length).trimStart()
       continue
     }
+    if (/^for\s+\(\(/.test(body)) {
+      opensControlBlock = 'loop'
+      const arithStart = body.indexOf('((')
+      const arithEnd = scanArithmeticDoubleParen(body, arithStart)
+      if (arithEnd !== -1) {
+        const afterArith = body.slice(arithEnd + 1).trimStart()
+        if (/^do(?:\s+|$)/.test(afterArith)) {
+          body = afterArith
+          continue
+        }
+      }
+      isControlHeaderOnly = true
+      break
+    }
     if (/^(?:for|select)\s+/.test(body)) {
       opensControlBlock = 'loop'
       isControlHeaderOnly = true
@@ -770,8 +938,21 @@ function parseSubshellStage(rawStage, activeSubshellDepth = 0, activeBraceDepth 
     }
     if (/^case\s+/.test(body)) {
       opensControlBlock = 'case'
-      isControlHeaderOnly = true
-      break
+      const caseMatch = /^case\s+[\s\S]*?\bin(?:\s+([\s\S]*)|$)/.exec(body)
+      const afterIn = caseMatch ? (caseMatch[1] || '').trim() : ''
+      if (!afterIn) {
+        isControlHeaderOnly = true
+        break
+      }
+      body = afterIn
+      if (!/^esac(?:\s|$|[<>|;&)])/.test(body) && !body.startsWith(')')) {
+        const patEnd = findCasePatternClose(body)
+        if (patEnd > 0) {
+          body = body.slice(patEnd + 1).trimStart()
+          consumedCasePattern = true
+        }
+      }
+      continue
     }
     break
   }
@@ -819,6 +1000,17 @@ function parseSubshellStage(rawStage, activeSubshellDepth = 0, activeBraceDepth 
     }
     if (inSingle || inDouble) continue
 
+    const arithEnd = scanArithmeticDoubleParen(body, i)
+    if (arithEnd !== -1) {
+      i = arithEnd
+      continue
+    }
+    const bracketEnd = scanDoubleBracket(body, i)
+    if (bracketEnd !== -1) {
+      i = bracketEnd
+      continue
+    }
+
     if (ch === '(') {
       localParenDepth += 1
     } else if (ch === ')') {
@@ -855,10 +1047,12 @@ function parseSubshellStage(rawStage, activeSubshellDepth = 0, activeBraceDepth 
     leadingOpenParens,
     leadingOpenBraces,
     opensFunctionBlock,
+    opensPendingFunction,
     opensControlBlock,
     resetsControlBranch,
     closesControlBlock,
     isControlHeaderOnly,
+    consumedCasePattern,
     innerBody,
     closers,
   }
@@ -942,6 +1136,17 @@ function extractOutputRedirectionTargets(segment) {
     }
     if (inSingle || inDouble) continue
 
+    const arithEnd = scanArithmeticDoubleParen(input, i)
+    if (arithEnd !== -1) {
+      i = arithEnd
+      continue
+    }
+    const bracketEnd = scanDoubleBracket(input, i)
+    if (bracketEnd !== -1) {
+      i = bracketEnd
+      continue
+    }
+
     let opLen = 0
     if (ch === '&' && input[i + 1] === '>') {
       opLen = input[i + 2] === '>' ? 3 : 2
@@ -950,9 +1155,9 @@ function extractOutputRedirectionTargets(segment) {
     } else if (ch === '>') {
       const next = input[i + 1] || ''
       if (next === '&') {
-        // Descriptor duplication/close: 2>&1, >&2, 2>&-, 2>&1>/dev/null
+        // Descriptor duplication/close: 2>&1, 2>& 1, >&2, 2>&-, 2>&1>/dev/null
         const rest = input.slice(i + 2)
-        const fdDupMatch = /^(?:\d+|-)(?=\s|$|[;&|)<>}])/.exec(rest)
+        const fdDupMatch = /^\s*(?:\d+|-)(?=\s|$|[;&|)<>}])/.exec(rest)
         if (fdDupMatch) {
           i += 1 + fdDupMatch[0].length
           continue
@@ -1016,8 +1221,21 @@ function extractInputRedirectionTargets(segment) {
     }
     if (inSingle || inDouble) continue
 
-    if (ch === '<' && input[i + 1] !== '<' && input[i + 1] !== '>' && input[i + 1] !== '&' && input[i + 1] !== '(' && input[i - 1] !== '<') {
-      let j = i + 1
+    const arithEnd = scanArithmeticDoubleParen(input, i)
+    if (arithEnd !== -1) {
+      i = arithEnd
+      continue
+    }
+    const bracketEnd = scanDoubleBracket(input, i)
+    if (bracketEnd !== -1) {
+      i = bracketEnd
+      continue
+    }
+
+    // Match `<` and read-write `<>` (excluding `<<`, `<<<`, `<&`, `<(`)
+    if (ch === '<' && input[i + 1] !== '<' && input[i + 1] !== '&' && input[i + 1] !== '(' && input[i - 1] !== '<') {
+      const opLen = input[i + 1] === '>' ? 2 : 1
+      let j = i + opLen
       while (j < input.length && /\s/.test(input[j])) j += 1
       let token = ''
       let tSingle = false
@@ -1044,6 +1262,12 @@ function extractInputRedirectionTargets(segment) {
         if (c === '"' && !tSingle) {
           tDouble = !tDouble
           j += 1
+          continue
+        }
+        if (!tSingle && !tDouble && (c === '<' || c === '>') && input[j + 1] === '(') {
+          const end = scanBalancedParen(input, j + 1)
+          token += input.slice(j, end + 1)
+          j = end + 1
           continue
         }
         if (!tSingle && !tDouble && /[\s;&|<>()]/.test(c)) break
@@ -1177,6 +1401,10 @@ function stripShellRedirection(segment) {
         i += 1
         continue
       }
+      if (!tSingle && !tDouble && (ch === '<' || ch === '>') && input[i + 1] === '(') {
+        i = scanBalancedParen(input, i + 1) + 1
+        continue
+      }
       if (!tSingle && !tDouble && /[\s;&|<>()]/.test(ch)) break
       i += 1
     }
@@ -1224,6 +1452,18 @@ function stripShellRedirection(segment) {
       continue
     }
     if (!inSingle && !inDouble) {
+      const arithEnd = scanArithmeticDoubleParen(input, i)
+      if (arithEnd !== -1) {
+        out += input.slice(i, arithEnd + 1)
+        i = arithEnd
+        continue
+      }
+      const bracketEnd = scanDoubleBracket(input, i)
+      if (bracketEnd !== -1) {
+        out += input.slice(i, bracketEnd + 1)
+        i = bracketEnd
+        continue
+      }
       // Optional leading fd digits before > or < when preceded by boundary
       const fdMatch = /^(\d+)(<<<|<<-|<<|<>|>>|>\||>&|>|<)/.exec(input.slice(i))
       if (fdMatch && (i === 0 || /[\s;&|()<>]/.test(input[i - 1]))) {
@@ -1278,6 +1518,50 @@ function isProtectedPrimaryDirectory(dir, cache) {
   return protectedDir
 }
 
+function unwrapDirBuiltinWords(words) {
+  let idx = 0
+  while (idx < words.length) {
+    const w = words[idx]
+    if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(w)) {
+      idx += 1
+      continue
+    }
+    if (w === 'builtin') {
+      idx += 1
+      if (words[idx] === '--') idx += 1
+      continue
+    }
+    if (w === 'command') {
+      let k = idx + 1
+      let lookupOnly = false
+      while (k < words.length) {
+        const f = words[k]
+        if (f === '--') {
+          k += 1
+          break
+        }
+        if (!f.startsWith('-')) break
+        if (/^-[a-zA-Z]*[vV][a-zA-Z]*$/.test(f)) lookupOnly = true
+        k += 1
+      }
+      if (lookupOnly) return []
+      idx = k
+      continue
+    }
+    break
+  }
+  return words.slice(idx)
+}
+
+function hasNoChdirFlag(args) {
+  for (const w of args) {
+    if (w === '--') break
+    if (!w.startsWith('-')) continue
+    if (w === '-n') return true
+  }
+  return false
+}
+
 /**
  * Unified shell command walker that safely tracks `cwd` across statements,
  * pipelines, subshells `( ... ) redir`, brace groups `{ ...; } redir`,
@@ -1297,6 +1581,7 @@ function walkShellCommands(command, initialCwd, visitor, depth = 0, protectedCac
   let conditionalRollback = null
   let lastCdRollback = null
   let justRanCd = false
+  let pendingFunctionBody = false
 
   const applyCwdTransition = (nextCwd, nextPrevCwd, { prevOp, insideLeadingGroup }) => {
     const fromProtected = isProtectedPrimaryDirectory(currentCwd, protectedCache)
@@ -1364,7 +1649,16 @@ function walkShellCommands(command, initialCwd, visitor, depth = 0, protectedCac
 
     for (let subIdx = 0; subIdx < subSegments.length; subIdx += 1) {
       const rawSub = subSegments[subIdx]
-      const parsed = parseSubshellStage(rawSub, cwdStack.length, braceStack.length)
+      const topCaseFrame =
+        blockStack.length > 0 && blockStack[blockStack.length - 1].kind === 'case'
+          ? blockStack[blockStack.length - 1]
+          : null
+      const parsed = parseSubshellStage(rawSub, cwdStack.length, braceStack.length, {
+        expectCasePattern: Boolean(topCaseFrame && topCaseFrame.expectPattern),
+      })
+      if (parsed.consumedCasePattern && topCaseFrame) {
+        topCaseFrame.expectPattern = false
+      }
 
       if (parsed.closesControlBlock && blockStack.length > 0) {
         const frame = blockStack.pop()
@@ -1383,28 +1677,42 @@ function walkShellCommands(command, initialCwd, visitor, depth = 0, protectedCac
         conditionalRollback = null
       }
       if (parsed.opensControlBlock) {
-        blockStack.push({ kind: parsed.opensControlBlock, savedCwd: currentCwd, savedPrevCwd: prevCwd })
+        blockStack.push({
+          kind: parsed.opensControlBlock,
+          savedCwd: currentCwd,
+          savedPrevCwd: prevCwd,
+          expectPattern: parsed.opensControlBlock === 'case' && !parsed.consumedCasePattern,
+        })
+        pendingFunctionBody = false
+      }
+      if (parsed.opensPendingFunction) {
+        pendingFunctionBody = true
       }
 
       for (let p = 0; p < parsed.leadingOpenParens; p += 1) {
         cwdStack.push({ currentCwd, prevCwd, conditionalRollback, lastCdRollback })
         conditionalRollback = null
         lastCdRollback = null
+        pendingFunctionBody = false
       }
       for (let b = 0; b < parsed.leadingOpenBraces; b += 1) {
+        const fromPendingFunc = b === 0 && pendingFunctionBody
+        if (fromPendingFunc) pendingFunctionBody = false
         const conditionalGroup =
           b === 0 &&
           subIdx === 0 &&
           (stmt.prevOp === '&&' || stmt.prevOp === '||' || blockStack.length > 0)
+        const isPipedOrBg = subSegments.length > 1 || stmt.nextOp === '&'
         braceStack.push({
           entryCwd: currentCwd,
           entryPrevCwd: prevCwd,
-          restoreOnClose: (parsed.opensFunctionBlock && b === 0) || conditionalGroup,
+          restoreOnClose: (parsed.opensFunctionBlock && b === 0) || fromPendingFunc || conditionalGroup || isPipedOrBg,
         })
       }
 
       const stageBody = parsed.innerBody
       if (stageBody) {
+        if (!parsed.opensPendingFunction) pendingFunctionBody = false
         // Inspect $(...) / `...` / <(...) / >(...) in an isolated subshell copy of currentCwd
         if (depth < 4) {
           for (const subCmd of extractCommandSubstitutions(stageBody)) {
@@ -1429,7 +1737,7 @@ function walkShellCommands(command, initialCwd, visitor, depth = 0, protectedCac
 
         if (!parsed.isControlHeaderOnly) {
           const stageWords = tokenizeCommandLine(stripShellRedirection(stageBody))
-          const builtinWords = stageWords[0] === 'builtin' ? stageWords.slice(1) : stageWords
+          const builtinWords = unwrapDirBuiltinWords(stageWords)
           const headVerb = builtinWords.length > 0 ? commandBasename(builtinWords[0]) : ''
           const isStandaloneDirOp =
             subSegments.length === 1 &&
@@ -1448,15 +1756,21 @@ function walkShellCommands(command, initialCwd, visitor, depth = 0, protectedCac
                 const updated = applyCdCommand(builtinWords, currentCwd, prevCwd)
                 applyCwdTransition(updated.nextCwd, updated.nextPrevCwd, { prevOp: stmt.prevOp, insideLeadingGroup })
               } else if (headVerb === 'pushd') {
-                const targetArg = builtinWords.slice(1).find((w) => !w.startsWith('-'))
+                const pushdArgs = builtinWords.slice(1)
+                const targetArg = collectNonOptionArgs(pushdArgs)[0]
                 if (targetArg) {
                   dirStack.push(currentCwd)
-                  const nextCwd = toFullPath(targetArg, currentCwd)
-                  applyCwdTransition(nextCwd, currentCwd, { prevOp: stmt.prevOp, insideLeadingGroup })
+                  // `pushd -n <dir>` pushes onto the stack without changing cwd
+                  if (!hasNoChdirFlag(pushdArgs)) {
+                    const nextCwd = toFullPath(targetArg, currentCwd)
+                    applyCwdTransition(nextCwd, currentCwd, { prevOp: stmt.prevOp, insideLeadingGroup })
+                  }
                 }
               } else if (headVerb === 'popd' && dirStack.length > 0) {
                 const popped = dirStack.pop()
-                applyCwdTransition(popped, currentCwd, { prevOp: stmt.prevOp, insideLeadingGroup })
+                if (!hasNoChdirFlag(builtinWords.slice(1))) {
+                  applyCwdTransition(popped, currentCwd, { prevOp: stmt.prevOp, insideLeadingGroup })
+                }
               }
             }
           } else {
@@ -1501,8 +1815,9 @@ function walkShellCommands(command, initialCwd, visitor, depth = 0, protectedCac
           const frame = braceStack.pop()
           if (frame) {
             tailCwd = frame.entryCwd
+            const mustRestore = frame.restoreOnClose || subSegments.length > 1 || stmt.nextOp === '&'
             if (
-              frame.restoreOnClose &&
+              mustRestore &&
               isProtectedPrimaryDirectory(frame.entryCwd, protectedCache) &&
               !isProtectedPrimaryDirectory(currentCwd, protectedCache)
             ) {
@@ -1534,6 +1849,16 @@ function walkShellCommands(command, initialCwd, visitor, depth = 0, protectedCac
       }
     }
 
+    if (stmt.nextOp === ';;' && blockStack.length > 0 && blockStack[blockStack.length - 1].kind === 'case') {
+      const caseFrame = blockStack[blockStack.length - 1]
+      caseFrame.expectPattern = true
+      if (isProtectedPrimaryDirectory(caseFrame.savedCwd, protectedCache) && !isProtectedPrimaryDirectory(currentCwd, protectedCache)) {
+        currentCwd = caseFrame.savedCwd
+        prevCwd = caseFrame.savedPrevCwd
+      }
+      conditionalRollback = null
+    }
+
     if (restoreAfterExitFallback && isTerminatingFallback && stmt.nextOp !== '&&' && stmt.nextOp !== '||') {
       currentCwd = restoreAfterExitFallback.currentCwd
       prevCwd = restoreAfterExitFallback.prevCwd
@@ -1542,9 +1867,9 @@ function walkShellCommands(command, initialCwd, visitor, depth = 0, protectedCac
   return undefined
 }
 
-/** Flags whose next token is a value, not a positional/package argument. */
+/** Flags whose next token is a value, not a positional/package argument. Note: `-w` is boolean (`--workspace-root`) in pnpm and value-taking only in npm/npx. */
 const VALUE_TAKING_FLAGS = new Set([
-  '--filter', '-F', '--prefix', '-C', '--dir', '--cwd', '--workspace', '-w',
+  '--filter', '-F', '--prefix', '-C', '--dir', '--cwd', '--workspace',
   '--registry', '--reporter', '--loglevel', '--depth', '--network-concurrency',
   '--store-dir', '--virtual-store-dir', '--modules-dir', '--config-dir',
   '--workspace-concurrency', '--use-node-version', '--fetch-retries',
@@ -1552,6 +1877,16 @@ const VALUE_TAKING_FLAGS = new Set([
   '--child-concurrency',
 ])
 const PM_DIR_FLAGS = new Set(['--dir', '-C', '--prefix', '--cwd'])
+
+function isPmValueFlag(manager, flag) {
+  if (flag === '-w') return manager === 'npm' || manager === 'npx'
+  return PM_VALUE_FLAGS.has(flag)
+}
+
+function isWrapperValueFlag(manager, flag) {
+  if (flag === '-w') return manager === 'npm' || manager === 'npx'
+  return WRAPPER_FLAGS_WITH_VALUE.has(flag)
+}
 
 function applyCdCommand(words, currentCwd, prevCwd) {
   let i = 1
@@ -1638,13 +1973,13 @@ export function isFrozenInstall(words, manager = '') {
   return frozen
 }
 
-function positionalArgs(words) {
+function positionalArgs(words, manager = '') {
   const positional = []
   for (let i = 0; i < words.length; i++) {
     const word = words[i]
     if (word === '--') break
     if (word.startsWith('-')) {
-      if (VALUE_TAKING_FLAGS.has(word)) i += 1
+      if (VALUE_TAKING_FLAGS.has(word) || (word === '-w' && (manager === 'npm' || manager === 'npx'))) i += 1
       continue
     }
     positional.push(word)
@@ -1655,7 +1990,7 @@ function positionalArgs(words) {
 /** Wrapper flags that consume the next token before the wrapped command starts. */
 const WRAPPER_FLAGS_WITH_VALUE = new Set([
   '--package', '-p', '--with', '--node-options', '--registry', '--cache',
-  '--workspace', '-w', '--prefix', '--userconfig',
+  '--workspace', '--prefix', '--userconfig',
 ])
 const ENV_FLAGS_WITH_VALUE = new Set(['-u', '--unset', '-C', '--chdir'])
 const SHELL_VALUE_FLAGS = new Set(['-o', '+o', '-O', '+O', '--rcfile', '--init-file'])
@@ -1669,9 +2004,9 @@ const NODE_VALUE_FLAGS = new Set([
   '--title', '-e', '--eval', '-p', '--print',
 ])
 
-function skipLeadingWrapperFlags(words, { allowCallFlag = false, allowShellMode = false } = {}) {
+function skipLeadingWrapperFlags(words, { allowCallFlag = false, allowShellMode = false, initialShellMode = false, manager = '' } = {}) {
   let i = 0
-  let shellMode = false
+  let shellMode = Boolean(initialShellMode)
   while (i < words.length) {
     const word = words[i]
     if (word === '--') {
@@ -1695,11 +2030,11 @@ function skipLeadingWrapperFlags(words, { allowCallFlag = false, allowShellMode 
       i += 1
       continue
     }
-    i += WRAPPER_FLAGS_WITH_VALUE.has(word) ? 2 : 1
+    i += isWrapperValueFlag(manager, word) ? 2 : 1
   }
   const rest = words.slice(i)
-  if (shellMode && rest.length === 1 && /\s/.test(rest[0])) {
-    return ['sh', '-c', rest[0]]
+  if (shellMode && rest.length > 0) {
+    return ['sh', '-c', rest.join(' ')]
   }
   return rest
 }
@@ -1707,6 +2042,7 @@ function skipLeadingWrapperFlags(words, { allowCallFlag = false, allowShellMode 
 function skipEnvWrapperWithMeta(words) {
   const queue = [...words]
   const envVars = new Set()
+  const envMap = new Map()
   let targetDir = ''
   let idx = 0
   while (idx < queue.length) {
@@ -1715,9 +2051,20 @@ function skipEnvWrapperWithMeta(words) {
       idx += 1
       break
     }
-    const envMatch = /^([A-Za-z_][A-Za-z0-9_]*)=/.exec(word)
+    const envMatch = /^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/.exec(word)
     if (envMatch) {
       envVars.add(envMatch[1])
+      envMap.set(envMatch[1], envMatch[2])
+      idx += 1
+      continue
+    }
+    if ((word === '-u' || word === '--unset') && idx + 1 < queue.length) {
+      envMap.delete(queue[idx + 1])
+      idx += 2
+      continue
+    }
+    if (word.startsWith('--unset=')) {
+      envMap.delete(word.slice('--unset='.length))
       idx += 1
       continue
     }
@@ -1755,7 +2102,7 @@ function skipEnvWrapperWithMeta(words) {
     }
     break
   }
-  return { words: queue.slice(idx), envVars, targetDir }
+  return { words: queue.slice(idx), envVars, envMap, targetDir }
 }
 
 function parseShellInvocation(words) {
@@ -1764,16 +2111,26 @@ function parseShellInvocation(words) {
   if (verb === 'source' || verb === '.') {
     let i = 1
     if (words[i] === '--') i += 1
+    const arg = words[i] || ''
+    const isProcSub = arg.startsWith('<(') && arg.endsWith(')')
     return {
       verb,
       syntaxCheckOnly: false,
       hasC: false,
       readStdin: false,
       inlineScript: '',
-      scriptFile: words[i] || '',
+      scriptFile: isProcSub ? '' : arg,
+      procSubCmd: isProcSub ? arg.slice(2, -1).trim() : '',
     }
   }
   if (!['bash', 'sh', 'zsh', 'dash', 'ksh'].includes(verb)) return null
+
+  const applyShellOption = (sign, rawOptName) => {
+    const optVal = String(rawOptName || '').toLowerCase().replace(/_/g, '')
+    if (optVal === 'noexec') return sign === '-'
+    if (optVal === 'exec') return sign === '+'
+    return null
+  }
 
   let i = 1
   let syntaxCheckOnly = false
@@ -1787,14 +2144,17 @@ function parseShellInvocation(words) {
     }
     if (!flag.startsWith('-') && !flag.startsWith('+')) break
     if (SHELL_VALUE_FLAGS.has(flag)) {
-      const optVal = (words[i + 1] || '').toLowerCase()
-      if (flag === '-o' && optVal === 'noexec') syntaxCheckOnly = true
-      if (flag === '+o' && optVal === 'noexec') syntaxCheckOnly = false
+      if (flag === '-o' || flag === '+o') {
+        const nextSyntax = applyShellOption(flag[0], words[i + 1])
+        if (nextSyntax !== null) syntaxCheckOnly = nextSyntax
+      }
       i += 2
       continue
     }
     if (flag.startsWith('--')) {
-      if (flag === '--noexec') syntaxCheckOnly = true
+      const normLong = flag.slice(2).toLowerCase().replace(/_/g, '')
+      if (normLong === 'noexec') syntaxCheckOnly = true
+      if (normLong === 'exec') syntaxCheckOnly = false
       i += 1
       continue
     }
@@ -1805,9 +2165,9 @@ function parseShellInvocation(words) {
       if (sign === '-' && letters.includes('c')) hasC = true
       if (sign === '-' && letters.includes('s')) readStdin = true
       if (letters.endsWith('o') || letters.endsWith('O')) {
-        const optVal = (words[i + 1] || '').toLowerCase()
-        if (letters.endsWith('o') && optVal === 'noexec') {
-          syntaxCheckOnly = sign === '-'
+        if (letters.endsWith('o')) {
+          const nextSyntax = applyShellOption(sign, words[i + 1])
+          if (nextSyntax !== null) syntaxCheckOnly = nextSyntax
         }
         i += 2
         continue
@@ -1816,6 +2176,7 @@ function parseShellInvocation(words) {
     i += 1
   }
   const arg = words[i] || ''
+  const isProcSub = !hasC && !readStdin && arg.startsWith('<(') && arg.endsWith(')')
   // When `-s` is passed (without `-c`), shell reads commands from stdin and treats
   // trailing operands as positional parameters ($1..), NOT a script file.
   return {
@@ -1824,7 +2185,8 @@ function parseShellInvocation(words) {
     hasC,
     readStdin,
     inlineScript: hasC ? arg : '',
-    scriptFile: hasC || readStdin ? '' : arg,
+    scriptFile: hasC || readStdin || isProcSub ? '' : arg,
+    procSubCmd: isProcSub ? arg.slice(2, -1).trim() : '',
   }
 }
 
@@ -1839,14 +2201,16 @@ function parseShellInvocation(words) {
 function unwrapExecutionWrapperWithMeta(words) {
   let current = Array.isArray(words) ? words : []
   const envVars = new Set()
+  const envMap = new Map()
   let targetDir = ''
 
   for (let depth = 0; depth < 8; depth += 1) {
     let envIdx = 0
     while (envIdx < current.length) {
-      const m = /^([A-Za-z_][A-Za-z0-9_]*)=/.exec(current[envIdx])
+      const m = /^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/.exec(current[envIdx])
       if (!m) break
       envVars.add(m[1])
+      envMap.set(m[1], m[2])
       envIdx += 1
     }
     if (envIdx > 0) current = current.slice(envIdx)
@@ -1857,6 +2221,7 @@ function unwrapExecutionWrapperWithMeta(words) {
     if (head === 'env') {
       const envMeta = skipEnvWrapperWithMeta(current.slice(1))
       for (const k of envMeta.envVars) envVars.add(k)
+      for (const [k, v] of envMeta.envMap.entries()) envMap.set(k, v)
       if (envMeta.targetDir) targetDir = envMeta.targetDir
       rest = envMeta.words
     } else if (head === 'exec') {
@@ -1897,16 +2262,22 @@ function unwrapExecutionWrapperWithMeta(words) {
       if (lookupOnly) break
       rest = current.slice(i)
     } else if (head === 'npx') {
-      rest = skipLeadingWrapperFlags(current.slice(1), { allowCallFlag: true })
+      rest = skipLeadingWrapperFlags(current.slice(1), { allowCallFlag: true, manager: 'npx' })
     } else if (head === 'bunx') {
-      rest = skipLeadingWrapperFlags(current.slice(1))
+      rest = skipLeadingWrapperFlags(current.slice(1), { manager: 'bunx' })
     } else if (['pnpm', 'npm', 'yarn', 'bun'].includes(head)) {
       let i = 1
       let pmDir = ''
+      let pnpmShellMode = false
       while (i < current.length) {
         const w = current[i]
         if (w === '--') break
         if (!w.startsWith('-')) break
+        if (head === 'pnpm' && (w === '-c' || w === '--shell-mode' || /^-[a-zA-Z]*c[a-zA-Z]*$/.test(w))) {
+          pnpmShellMode = true
+          i += 1
+          continue
+        }
         const eq = w.indexOf('=')
         if (eq !== -1) {
           const flag = w.slice(0, eq)
@@ -1919,7 +2290,7 @@ function unwrapExecutionWrapperWithMeta(words) {
           i += 2
           continue
         }
-        i += PM_VALUE_FLAGS.has(w) ? 2 : 1
+        i += isPmValueFlag(head, w) ? 2 : 1
       }
       let sub = (current[i] || '').toLowerCase()
       let afterSubIdx = i + 1
@@ -1929,6 +2300,11 @@ function unwrapExecutionWrapperWithMeta(words) {
           const w = current[k]
           if (w === '--') break
           if (!w.startsWith('-')) break
+          if (w === '-c' || w === '--shell-mode' || /^-[a-zA-Z]*c[a-zA-Z]*$/.test(w)) {
+            pnpmShellMode = true
+            k += 1
+            continue
+          }
           const eq = w.indexOf('=')
           if (eq !== -1) {
             if (PM_DIR_FLAGS.has(w.slice(0, eq))) pmDir = w.slice(eq + 1)
@@ -1940,7 +2316,7 @@ function unwrapExecutionWrapperWithMeta(words) {
             k += 2
             continue
           }
-          k += PM_VALUE_FLAGS.has(w) ? 2 : 1
+          k += isPmValueFlag(head, w) ? 2 : 1
         }
         sub = (current[k] || '').toLowerCase()
         afterSubIdx = k + 1
@@ -1950,7 +2326,7 @@ function unwrapExecutionWrapperWithMeta(words) {
         const wsSub = (current[i + 2] || '').toLowerCase()
         if (wsSub === 'exec' || wsSub === 'dlx') {
           if (pmDir) targetDir = pmDir
-          rest = skipLeadingWrapperFlags(current.slice(i + 3))
+          rest = skipLeadingWrapperFlags(current.slice(i + 3), { manager: 'yarn' })
         }
       } else if (head === 'yarn' && sub === 'workspaces' && (current[i + 1] || '').toLowerCase() === 'foreach') {
         let k = i + 2
@@ -1969,31 +2345,35 @@ function unwrapExecutionWrapperWithMeta(words) {
             k += 2
             continue
           }
-          k += PM_VALUE_FLAGS.has(w) ? 2 : 1
+          k += isPmValueFlag(head, w) ? 2 : 1
         }
         const feSub = (current[k] || '').toLowerCase()
         if (feSub === 'exec' || feSub === 'dlx') {
           if (pmDir) targetDir = pmDir
-          rest = skipLeadingWrapperFlags(current.slice(k + 1))
+          rest = skipLeadingWrapperFlags(current.slice(k + 1), { manager: 'yarn' })
         }
       } else if (head === 'pnpm' && ['exec', 'dlx'].includes(sub)) {
         if (pmDir) targetDir = pmDir
-        rest = skipLeadingWrapperFlags(current.slice(afterSubIdx), { allowShellMode: sub === 'exec' })
-      } else if (head === 'npm' && sub === 'exec') {
+        rest = skipLeadingWrapperFlags(current.slice(afterSubIdx), {
+          allowShellMode: sub === 'exec',
+          initialShellMode: sub === 'exec' && pnpmShellMode,
+          manager: 'pnpm',
+        })
+      } else if (head === 'npm' && (sub === 'exec' || sub === 'x')) {
         if (pmDir) targetDir = pmDir
-        rest = skipLeadingWrapperFlags(current.slice(afterSubIdx), { allowCallFlag: true })
+        rest = skipLeadingWrapperFlags(current.slice(afterSubIdx), { allowCallFlag: true, manager: 'npm' })
       } else if (
         (head === 'yarn' && ['exec', 'dlx'].includes(sub)) ||
         (head === 'bun' && ['x', 'exec', 'dlx'].includes(sub))
       ) {
         if (pmDir) targetDir = pmDir
-        rest = skipLeadingWrapperFlags(current.slice(afterSubIdx))
+        rest = skipLeadingWrapperFlags(current.slice(afterSubIdx), { manager: head })
       }
     }
     if (!rest || rest.length === 0) break
     current = rest
   }
-  return { words: current, envVars, targetDir }
+  return { words: current, envVars, envMap, targetDir }
 }
 
 function looksLikeGitInvocation(segment) {
@@ -2011,10 +2391,32 @@ const GIT_GLOBAL_VALUE_FLAGS = new Set([
   '-C', '-c', '--git-dir', '--work-tree', '--namespace', '--super-prefix', '--config-env',
 ])
 
-function parseGitInvocation(effectiveWords, baseCwd) {
+function collectGitExportEnv(words, armedGitEnv) {
+  if (!words || words.length === 0) return
+  if (words[0] === 'export' || /^[A-Za-z_][A-Za-z0-9_]*=/.test(words[0])) {
+    const start = words[0] === 'export' ? 1 : 0
+    for (let i = start; i < words.length; i += 1) {
+      const m = /^(GIT_DIR|GIT_WORK_TREE)=(.*)$/.exec(words[i])
+      if (m) armedGitEnv.set(m[1], m[2])
+    }
+  } else if (words[0] === 'unset') {
+    for (let i = 1; i < words.length; i += 1) {
+      if (words[i] === 'GIT_DIR' || words[i] === 'GIT_WORK_TREE') {
+        armedGitEnv.delete(words[i])
+      }
+    }
+  }
+}
+
+function parseGitInvocation(effectiveWords, baseCwd, envMap = new Map()) {
   if (!effectiveWords || effectiveWords.length === 0) return null
   if (commandBasename(effectiveWords[0]) !== 'git') return null
-  let targetDir = baseCwd
+  let cDir = baseCwd
+  let explicitWorkTree = envMap && envMap.has('GIT_WORK_TREE') ? envMap.get('GIT_WORK_TREE') : ''
+  let explicitGitDir = envMap && envMap.has('GIT_DIR') ? envMap.get('GIT_DIR') : ''
+  let workTreeFromCli = false
+  let gitDirFromCli = false
+
   let i = 1
   while (i < effectiveWords.length) {
     const w = effectiveWords[i]
@@ -2024,22 +2426,36 @@ function parseGitInvocation(effectiveWords, baseCwd) {
     }
     if (!w.startsWith('-')) break
     if (w === '-C' && i + 1 < effectiveWords.length) {
-      targetDir = toFullPath(effectiveWords[i + 1], targetDir)
+      cDir = toFullPath(effectiveWords[i + 1], cDir)
       i += 2
       continue
     }
     if (w.startsWith('-C') && w.length > 2) {
-      targetDir = toFullPath(w.slice(2), targetDir)
+      cDir = toFullPath(w.slice(2), cDir)
       i += 1
       continue
     }
     if (w === '--work-tree' && i + 1 < effectiveWords.length) {
-      targetDir = toFullPath(effectiveWords[i + 1], targetDir)
+      explicitWorkTree = effectiveWords[i + 1]
+      workTreeFromCli = true
       i += 2
       continue
     }
     if (w.startsWith('--work-tree=')) {
-      targetDir = toFullPath(w.slice('--work-tree='.length), targetDir)
+      explicitWorkTree = w.slice('--work-tree='.length)
+      workTreeFromCli = true
+      i += 1
+      continue
+    }
+    if (w === '--git-dir' && i + 1 < effectiveWords.length) {
+      explicitGitDir = effectiveWords[i + 1]
+      gitDirFromCli = true
+      i += 2
+      continue
+    }
+    if (w.startsWith('--git-dir=')) {
+      explicitGitDir = w.slice('--git-dir='.length)
+      gitDirFromCli = true
       i += 1
       continue
     }
@@ -2051,7 +2467,36 @@ function parseGitInvocation(effectiveWords, baseCwd) {
   }
   const sub = (effectiveWords[i] || '').toLowerCase()
   if (!sub) return null
-  return { sub, args: effectiveWords.slice(i + 1), targetDir }
+
+  const targetDirSet = new Set()
+  let resolvedGitDir = ''
+  if (explicitWorkTree) {
+    const wtBase = workTreeFromCli ? cDir : baseCwd
+    targetDirSet.add(toFullPath(explicitWorkTree, wtBase))
+    if (wtBase !== baseCwd && !explicitWorkTree.startsWith('/')) {
+      targetDirSet.add(toFullPath(explicitWorkTree, baseCwd))
+    }
+  }
+  if (explicitGitDir) {
+    const gdBase = gitDirFromCli ? cDir : baseCwd
+    resolvedGitDir = toFullPath(explicitGitDir, gdBase)
+    targetDirSet.add(resolvedGitDir)
+    if (basename(resolvedGitDir) === '.git') {
+      targetDirSet.add(dirname(resolvedGitDir))
+    }
+  }
+  if (targetDirSet.size === 0) {
+    targetDirSet.add(cDir)
+  }
+
+  const targetDirs = [...targetDirSet]
+  return {
+    sub,
+    args: effectiveWords.slice(i + 1),
+    targetDir: targetDirs[0],
+    targetDirs,
+    explicitGitDir: resolvedGitDir,
+  }
 }
 
 /** 会改工作树/历史的 git 子命令：主 checkout 上需拦截。 */
@@ -2093,6 +2538,7 @@ export function decideGitWorkingTreeMutation(command, cwd, depth = 0) {
   if (!command || typeof command !== 'string' || depth > 4) return { decision: 'allow' }
   const sessionCwd = resolve(cwd || process.cwd())
   let upstreamStdinText = ''
+  const armedGitEnv = new Map()
   const denied = walkShellCommands(command, sessionCwd, {
     onStatementStart() {
       upstreamStdinText = ''
@@ -2100,23 +2546,33 @@ export function decideGitWorkingTreeMutation(command, cwd, depth = 0) {
     onStage({ rawStage, currentCwd, isPipeline, heredocs }) {
       const words = tokenizeCommandLine(stripShellRedirection(rawStage))
       if (words.length === 0) return undefined
+      if (!isPipeline) collectGitExportEnv(words, armedGitEnv)
       if (isPipeline) {
         const stdinText = extractUpstreamStdinScript(words, heredocs)
         if (stdinText) upstreamStdinText = stdinText
       }
-      const { words: effectiveWords, targetDir: wrapperDir } = unwrapExecutionWrapperWithMeta(words)
+      const { words: effectiveWords, envMap, targetDir: wrapperDir } = unwrapExecutionWrapperWithMeta(words)
       if (effectiveWords.length === 0) return undefined
       const effectiveCwd = wrapperDir ? resolve(currentCwd, wrapperDir) : currentCwd
       const verb = commandBasename(effectiveWords[0])
 
-      if (['bash', 'sh', 'zsh', 'dash', 'ksh'].includes(verb)) {
+      if (['bash', 'sh', 'zsh', 'dash', 'ksh', 'source', '.'].includes(verb)) {
         const shellMeta = parseShellInvocation(effectiveWords)
         if (shellMeta && !shellMeta.syntaxCheckOnly) {
           if (shellMeta.inlineScript) {
             const nested = decideGitWorkingTreeMutation(shellMeta.inlineScript, effectiveCwd, depth + 1)
             if (nested.decision === 'deny') return nested
+          } else if (shellMeta.procSubCmd) {
+            for (const body of extractProducerScriptsFromProcessSub(shellMeta.procSubCmd)) {
+              const nested = decideGitWorkingTreeMutation(body, effectiveCwd, depth + 1)
+              if (nested.decision === 'deny') return nested
+            }
           } else if (!shellMeta.scriptFile) {
             for (const body of heredocs) {
+              const nested = decideGitWorkingTreeMutation(body, effectiveCwd, depth + 1)
+              if (nested.decision === 'deny') return nested
+            }
+            for (const body of extractProcessSubstitutionPayloads(rawStage).scripts) {
               const nested = decideGitWorkingTreeMutation(body, effectiveCwd, depth + 1)
               if (nested.decision === 'deny') return nested
             }
@@ -2129,21 +2585,25 @@ export function decideGitWorkingTreeMutation(command, cwd, depth = 0) {
         return undefined
       }
 
-      const gitInfo = parseGitInvocation(effectiveWords, effectiveCwd)
+      const mergedEnv = new Map(armedGitEnv)
+      for (const [k, v] of envMap.entries()) mergedEnv.set(k, v)
+      const gitInfo = parseGitInvocation(effectiveWords, effectiveCwd, mergedEnv)
       if (!gitInfo) return undefined
       const mutation = classifyGitMutationWords(gitInfo, rawStage)
       if (!mutation) return undefined
-      const target = gitInfo.targetDir
-      if (isWorktreePath(target)) return undefined
-      const root = gitRoot(target)
-      if (root && isWorktreePath(root)) return undefined
-      return {
-        decision: 'deny',
-        reason: 'forbidden-main-checkout-git-mutation',
-        mutation: mutation.kind,
-        target,
-        segment: rawStage,
+      for (const target of gitInfo.targetDirs) {
+        if (isWorktreePath(target)) continue
+        const root = gitRoot(target)
+        if (root && isWorktreePath(root)) continue
+        return {
+          decision: 'deny',
+          reason: 'forbidden-main-checkout-git-mutation',
+          mutation: mutation.kind,
+          target,
+          segment: rawStage,
+        }
       }
+      return undefined
     },
   }, depth)
   return denied || { decision: 'allow' }
@@ -2191,6 +2651,13 @@ function tokenizeCommandLine(cmd, { keepEmpty = false } = {}) {
     if (ch === '"' && !inSingle) {
       inDouble = !inDouble
       hasToken = true
+      continue
+    }
+    if (!inSingle && !inDouble && (ch === '<' || ch === '>') && cmd[i + 1] === '(') {
+      const end = scanBalancedParen(cmd, i + 1)
+      current += cmd.slice(i, end + 1)
+      hasToken = true
+      i = end
       continue
     }
     if (/\s/.test(ch) && !inSingle && !inDouble) {
@@ -2398,6 +2865,33 @@ function extractPerlInPlaceTargets(args) {
   return nonOptions.length >= 2 ? nonOptions.slice(1) : nonOptions
 }
 
+function formatPrintfPayload(formatStr, args) {
+  const fmt = String(formatStr || '')
+    .replace(/\\n/g, '\n')
+    .replace(/\\r/g, '\r')
+    .replace(/\\t/g, '\t')
+  if (!args || args.length === 0) return fmt
+  const hasSpec = /%(?:%|[-+ #0]*\d*(?:\.\d+)?[a-zA-Z])/.test(fmt)
+  if (!hasSpec) return fmt
+  const out = []
+  let argIdx = 0
+  let guard = 0
+  do {
+    let consumed = false
+    const rendered = fmt.replace(/%(%|[-+ #0]*\d*(?:\.\d+)?[a-zA-Z])/g, (_m, spec) => {
+      if (spec === '%') return '%'
+      consumed = true
+      const val = argIdx < args.length ? args[argIdx] : ''
+      argIdx += 1
+      return val
+    })
+    out.push(rendered)
+    if (!consumed) break
+    guard += 1
+  } while (argIdx < args.length && guard < 16)
+  return out.join('')
+}
+
 function extractUpstreamStdinScript(words, heredocs = []) {
   if (!words || words.length === 0) return ''
   const { words: unwrapped } = unwrapExecutionWrapperWithMeta(words)
@@ -2413,8 +2907,8 @@ function extractUpstreamStdinScript(words, heredocs = []) {
     if (unwrapped[i] === '--') i += 1
     if (unwrapped[i] === '-v') return ''
     const parts = unwrapped.slice(i)
-    if (parts.length <= 1) return parts[0] || ''
-    return parts.slice(1).join('\n')
+    if (parts.length === 0) return ''
+    return formatPrintfPayload(parts[0], parts.slice(1))
   }
   if (verb === 'cat' && heredocs.length > 0) {
     const fileArgs = collectNonOptionArgs(unwrapped.slice(1))
@@ -2423,6 +2917,142 @@ function extractUpstreamStdinScript(words, heredocs = []) {
     }
   }
   return ''
+}
+
+function extractProcessSubInfo(procSubCmd) {
+  const scripts = []
+  const materializationScripts = []
+  if (!procSubCmd || typeof procSubCmd !== 'string') {
+    return { scripts, materializationScripts }
+  }
+  for (const stmt of splitShellStatements(procSubCmd)) {
+    for (const rawSub of splitRawPipelineSegments(stmt.raw)) {
+      const inputRedirects = extractInputRedirectionTargets(rawSub)
+      const words = tokenizeCommandLine(stripShellRedirection(rawSub))
+      const hereStrings = extractHereStringPayloads(rawSub)
+      const heredocs = hereStrings.length > 0 ? [...stmt.heredocs, ...hereStrings] : stmt.heredocs
+      const produced = extractUpstreamStdinScript(words, heredocs)
+      if (produced) scripts.push(produced)
+      const matFromWords = words.find((w) => MATERIALIZATION_SCRIPT_RE.test(w))
+      if (matFromWords) materializationScripts.push(matFromWords)
+      const matFromRedir = inputRedirects.find((t) => MATERIALIZATION_SCRIPT_RE.test(t))
+      if (matFromRedir) materializationScripts.push(matFromRedir)
+    }
+  }
+  return { scripts, materializationScripts }
+}
+
+function extractProducerScriptsFromProcessSub(procSubCmd) {
+  return extractProcessSubInfo(procSubCmd).scripts
+}
+
+function extractProcessSubstitutionPayloads(segment) {
+  const input = String(segment || '')
+  const scripts = []
+  const materializationScripts = []
+  let inSingle = false
+  let inDouble = false
+  let escaped = false
+  for (let i = 0; i < input.length; i += 1) {
+    const ch = input[i]
+    if (escaped) {
+      escaped = false
+      continue
+    }
+    if (ch === '\\' && !inSingle) {
+      escaped = true
+      continue
+    }
+    if (ch === "'" && !inDouble) {
+      inSingle = !inSingle
+      continue
+    }
+    if (ch === '"' && !inSingle) {
+      inDouble = !inDouble
+      continue
+    }
+    if (!inSingle && !inDouble && ch === '<' && input[i + 1] === '(') {
+      const end = scanBalancedParen(input, i + 1)
+      const inner = input.slice(i + 2, end).trim()
+      if (inner) {
+        const info = extractProcessSubInfo(inner)
+        scripts.push(...info.scripts)
+        materializationScripts.push(...info.materializationScripts)
+      }
+      i = end
+    }
+  }
+  return { scripts, materializationScripts }
+}
+
+function extractFindSearchRoots(args) {
+  const roots = []
+  let i = 0
+  while (i < args.length) {
+    const w = args[i]
+    if (w === '-f' && i + 1 < args.length) {
+      roots.push(args[i + 1])
+      i += 2
+      continue
+    }
+    if (/^-[HLPExXsd]+$/.test(w)) {
+      i += 1
+      continue
+    }
+    break
+  }
+  while (i < args.length) {
+    const w = args[i]
+    if (w === '--') {
+      i += 1
+      continue
+    }
+    if (w.startsWith('-') || w === '(' || w === '!' || w === ',') break
+    roots.push(w)
+    i += 1
+  }
+  return roots.length > 0 ? roots : ['.']
+}
+
+function hasNodeEvalFlag(args) {
+  let i = 0
+  while (i < args.length) {
+    const w = args[i]
+    if (w === '--') break
+    if (!w.startsWith('-')) break
+    if (
+      w === '-e' || w === '--eval' || w.startsWith('--eval=') ||
+      w === '-p' || w === '--print' || w.startsWith('--print=') ||
+      /^-[a-zA-Z]*[ep][a-zA-Z]*$/.test(w)
+    ) {
+      return true
+    }
+    if (NODE_VALUE_FLAGS.has(w)) {
+      i += 2
+      continue
+    }
+    i += 1
+  }
+  return false
+}
+
+function hasPythonInlineCodeFlag(args) {
+  const pyValueFlags = new Set(['-m', '-W', '-X', '--check-hash-based-pycs'])
+  let i = 0
+  while (i < args.length) {
+    const w = args[i]
+    if (w === '--') break
+    if (!w.startsWith('-')) break
+    if (w === '-c' || /^-[BEdhiIOqsSuvVx]*c/.test(w)) {
+      return true
+    }
+    if (pyValueFlags.has(w)) {
+      i += 2
+      continue
+    }
+    i += 1
+  }
+  return false
 }
 
 export function extractCommandWriteTargetsWithCwd(command, cwd = process.cwd(), depth = 0) {
@@ -2466,14 +3096,21 @@ export function extractCommandWriteTargetsWithCwd(command, cwd = process.cwd(), 
       // 2. git 自身工作树变更由 decideGitWorkingTreeMutation 判定；其输出重定向已在步骤 1 提取完毕
       if (verb === 'git') return undefined
 
-      // 3. 递归检视 bash/sh -c 内联命令、heredoc 及 echo|bash 管道脚本
-      if (['bash', 'sh', 'zsh', 'dash', 'ksh'].includes(verb)) {
+      // 3. 递归检视 bash/sh/zsh/source -c 内联命令、process substitution `<(...)`、heredoc 及 echo|bash 管道脚本
+      if (['bash', 'sh', 'zsh', 'dash', 'ksh', 'source', '.'].includes(verb)) {
         const shellMeta = parseShellInvocation(effectiveWords)
         if (shellMeta && !shellMeta.syntaxCheckOnly) {
           if (shellMeta.inlineScript) {
             results.push(...extractCommandWriteTargetsWithCwd(shellMeta.inlineScript, effectiveCwd, depth + 1))
+          } else if (shellMeta.procSubCmd) {
+            for (const body of extractProducerScriptsFromProcessSub(shellMeta.procSubCmd)) {
+              results.push(...extractCommandWriteTargetsWithCwd(body, effectiveCwd, depth + 1))
+            }
           } else if (!shellMeta.scriptFile) {
             for (const body of heredocs) {
+              results.push(...extractCommandWriteTargetsWithCwd(body, effectiveCwd, depth + 1))
+            }
+            for (const body of extractProcessSubstitutionPayloads(rawStage).scripts) {
               results.push(...extractCommandWriteTargetsWithCwd(body, effectiveCwd, depth + 1))
             }
             if (isPipeline && upstreamStdinText) {
@@ -2567,11 +3204,8 @@ export function extractCommandWriteTargetsWithCwd(command, cwd = process.cwd(), 
           }
         }
       } else if (verb === 'node') {
-        const hasEval = args.some((w) =>
-          w === '-e' || w === '--eval' || w.startsWith('--eval=') ||
-          w === '-p' || w === '--print' || w.startsWith('--print='),
-        )
-        const joined = effectiveWords.join(' ')
+        const hasEval = hasNodeEvalFlag(args)
+        const joined = args.map((w) => w.replace(/^-[a-zA-Z]*[ep]/, ' ')).join(' ')
         if (hasEval) {
           const singleArgWriteRe = /\b(?:writeFileSync|writeFile|appendFileSync|appendFile|createWriteStream|rmSync|rm|unlinkSync|unlink|mkdirSync|mkdir|truncateSync|truncate)\(\s*['"`]([^'"`]+)['"`]/g
           for (const m of joined.matchAll(singleArgWriteRe)) {
@@ -2584,8 +3218,8 @@ export function extractCommandWriteTargetsWithCwd(command, cwd = process.cwd(), 
           }
         }
       } else if (verb === 'python' || verb === 'python3') {
-        const hasC = args.some((w) => w === '-c')
-        const joined = effectiveWords.join(' ')
+        const hasC = hasPythonInlineCodeFlag(args)
+        const joined = args.map((w) => w.replace(/^-[BEdhiIOqsSuvVx]*c/, ' ')).join(' ')
         if (hasC) {
           for (const m of joined.matchAll(/open\(\s*['"]([^'"]+)['"]\s*,\s*['"][^'"]*[wax+][^'"]*['"]/g)) {
             pushTarget(m[1])
@@ -2604,6 +3238,10 @@ export function extractCommandWriteTargetsWithCwd(command, cwd = process.cwd(), 
       } else if (verb === 'perl' && hasInPlaceFlag(args, new Set(['-e', '-E', '-I', '-M', '-m', '-F']))) {
         for (const item of extractPerlInPlaceTargets(args)) {
           pushTarget(item)
+        }
+      } else if (verb === 'find' && args.includes('-delete')) {
+        for (const rootTarget of extractFindSearchRoots(args)) {
+          pushTarget(rootTarget)
         }
       }
       return undefined
@@ -2686,6 +3324,16 @@ function classifyMaterializationSegment(words, inputRedirects = [], currentCwd =
       const inner = classifyMaterializationCommand(shellMeta.inlineScript, effectiveCwd, depth + 1)
       if (!inner) return null
       return setsIsolatedActive ? { ...inner, isolated: false } : inner
+    }
+    if (shellMeta.procSubCmd) {
+      const info = extractProcessSubInfo(shellMeta.procSubCmd)
+      if (info.materializationScripts.length > 0) {
+        return { script: commandBasename(info.materializationScripts[0]), isolated: false, cwd: effectiveCwd }
+      }
+      for (const body of info.scripts) {
+        const inner = classifyMaterializationCommand(body, effectiveCwd, depth + 1)
+        if (inner) return setsIsolatedActive ? { ...inner, isolated: false } : inner
+      }
     }
     if (shellMeta.scriptFile && MATERIALIZATION_SCRIPT_RE.test(shellMeta.scriptFile)) {
       const scriptIdx = unwrapped.indexOf(shellMeta.scriptFile)
@@ -2817,8 +3465,19 @@ function classifyMaterializationCommand(command, cwd = process.cwd(), depth = 0)
 
       let hit = classifyMaterializationSegment(words, inputRedirects, currentCwd, depth)
       if (!hit && shellMeta && !shellMeta.syntaxCheckOnly && !shellMeta.scriptFile && !shellMeta.inlineScript) {
+        const procSubInfo = extractProcessSubstitutionPayloads(rawStage)
         if (upstreamMatScript) {
           hit = { script: commandBasename(upstreamMatScript), isolated: false, cwd: effectiveCwd }
+        } else if (procSubInfo.materializationScripts.length > 0) {
+          hit = { script: commandBasename(procSubInfo.materializationScripts[0]), isolated: false, cwd: effectiveCwd }
+        } else if (procSubInfo.scripts.length > 0) {
+          for (const body of procSubInfo.scripts) {
+            const nested = classifyMaterializationCommand(body, effectiveCwd, depth + 1)
+            if (nested) {
+              hit = envVars.has('OMNIMUX_SYNC_ISOLATED_ACTIVE') ? { ...nested, isolated: false } : nested
+              if (!hit.isolated) break
+            }
+          }
         } else if (heredocs.length > 0) {
           for (const body of heredocs) {
             const nested = classifyMaterializationCommand(body, effectiveCwd, depth + 1)
@@ -3001,6 +3660,7 @@ export function decideMainBranchGitOp(command, cwd, options = {}, depth = 0) {
   ])
 
   let upstreamStdinText = ''
+  const armedGitEnv = new Map()
 
   const denied = walkShellCommands(command, sessionCwd, {
     onStatementStart() {
@@ -3009,23 +3669,33 @@ export function decideMainBranchGitOp(command, cwd, options = {}, depth = 0) {
     onStage({ rawStage, currentCwd, isPipeline, heredocs }) {
       const words = tokenizeCommandLine(stripShellRedirection(rawStage))
       if (words.length === 0) return undefined
+      if (!isPipeline) collectGitExportEnv(words, armedGitEnv)
       if (isPipeline) {
         const stdinText = extractUpstreamStdinScript(words, heredocs)
         if (stdinText) upstreamStdinText = stdinText
       }
-      const { words: effectiveWords, targetDir: wrapperDir } = unwrapExecutionWrapperWithMeta(words)
+      const { words: effectiveWords, envMap, targetDir: wrapperDir } = unwrapExecutionWrapperWithMeta(words)
       if (effectiveWords.length === 0) return undefined
       const effectiveCwd = wrapperDir ? resolve(currentCwd, wrapperDir) : currentCwd
       const verb = commandBasename(effectiveWords[0])
 
-      if (['bash', 'sh', 'zsh', 'dash', 'ksh'].includes(verb)) {
+      if (['bash', 'sh', 'zsh', 'dash', 'ksh', 'source', '.'].includes(verb)) {
         const shellMeta = parseShellInvocation(effectiveWords)
         if (shellMeta && !shellMeta.syntaxCheckOnly) {
           if (shellMeta.inlineScript) {
             const nested = decideMainBranchGitOp(shellMeta.inlineScript, effectiveCwd, { ownerRoot }, depth + 1)
             if (nested.decision === 'deny') return nested
+          } else if (shellMeta.procSubCmd) {
+            for (const body of extractProducerScriptsFromProcessSub(shellMeta.procSubCmd)) {
+              const nested = decideMainBranchGitOp(body, effectiveCwd, { ownerRoot }, depth + 1)
+              if (nested.decision === 'deny') return nested
+            }
           } else if (!shellMeta.scriptFile) {
             for (const body of heredocs) {
+              const nested = decideMainBranchGitOp(body, effectiveCwd, { ownerRoot }, depth + 1)
+              if (nested.decision === 'deny') return nested
+            }
+            for (const body of extractProcessSubstitutionPayloads(rawStage).scripts) {
               const nested = decideMainBranchGitOp(body, effectiveCwd, { ownerRoot }, depth + 1)
               if (nested.decision === 'deny') return nested
             }
@@ -3038,7 +3708,9 @@ export function decideMainBranchGitOp(command, cwd, options = {}, depth = 0) {
         return undefined
       }
 
-      const gitInfo = parseGitInvocation(effectiveWords, effectiveCwd)
+      const mergedEnv = new Map(armedGitEnv)
+      for (const [k, v] of envMap.entries()) mergedEnv.set(k, v)
+      const gitInfo = parseGitInvocation(effectiveWords, effectiveCwd, mergedEnv)
       if (!gitInfo) return undefined
       const isMerge = gitInfo.sub === 'merge'
       const isCommit = gitInfo.sub === 'commit'
@@ -3052,32 +3724,37 @@ export function decideMainBranchGitOp(command, cwd, options = {}, depth = 0) {
         }
       }
 
-      // 逐段解析 `git -C` / `--work-tree` / `cd`，避免前一段 `git -C <wt> status` 污染后续主干提交/合并。
-      const target = gitInfo.targetDir
-      if (isWorktreePath(target)) return undefined
+      // 逐段解析 `git -C` / `--work-tree` / `--git-dir` / `GIT_DIR` / `GIT_WORK_TREE` / `cd`，
+      // 避免前一段 `git -C <wt> status` 或尾随 `-C <wt>` 掩护主干提交/合并。
+      for (const target of gitInfo.targetDirs) {
+        if (isWorktreePath(target)) continue
 
-      // 只保护本脚本所属仓库：目标目录不属于 omnimux-client 时不拦截外部仓的 main 操作。
-      const targetRoot = commandTargetRepoRoot(target)
-      if (!ownerRoot || targetRoot !== ownerRoot) return undefined
+        // 只保护本脚本所属仓库：目标目录不属于 omnimux-client 时不拦截外部仓的 main 操作。
+        const targetRoot = commandTargetRepoRoot(target)
+        if (!ownerRoot || targetRoot !== ownerRoot) continue
 
-      const branchResult = spawnSync('git', ['-C', target, 'symbolic-ref', '--quiet', '--short', 'HEAD'], {
-        encoding: 'utf8',
-        timeout: 3000,
-      })
-      const branch = (branchResult.stdout || '').trim()
-      if (branch === 'main') {
-        if (isMerge) {
-          return {
-            decision: 'deny',
-            reason: 'forbidden-main-branch-merge',
-            cwd: target,
+        const branchArgs = gitInfo.explicitGitDir
+          ? ['--git-dir', gitInfo.explicitGitDir, 'symbolic-ref', '--quiet', '--short', 'HEAD']
+          : ['-C', target, 'symbolic-ref', '--quiet', '--short', 'HEAD']
+        const branchResult = spawnSync('git', branchArgs, {
+          encoding: 'utf8',
+          timeout: 3000,
+        })
+        const branch = (branchResult.stdout || '').trim()
+        if (branch === 'main') {
+          if (isMerge) {
+            return {
+              decision: 'deny',
+              reason: 'forbidden-main-branch-merge',
+              cwd: target,
+            }
           }
-        }
-        if (isCommit) {
-          return {
-            decision: 'deny',
-            reason: 'forbidden-main-branch-commit',
-            cwd: target,
+          if (isCommit) {
+            return {
+              decision: 'deny',
+              reason: 'forbidden-main-branch-commit',
+              cwd: target,
+            }
           }
         }
       }
@@ -3135,7 +3812,7 @@ function parsePackageManagerScript(effectiveWords) {
         i += 2
         continue
       }
-      i += PM_VALUE_FLAGS.has(w) ? 2 : 1
+      i += isPmValueFlag(manager, w) ? 2 : 1
       continue
     }
     break
@@ -3174,7 +3851,7 @@ function parsePackageManagerScript(effectiveWords) {
         k += 2
         continue
       }
-      k += PM_VALUE_FLAGS.has(w) ? 2 : 1
+      k += isPmValueFlag(manager, w) ? 2 : 1
     }
     if (k < restAfterSub.length) {
       subcommand = restAfterSub[k].toLowerCase()
@@ -3184,12 +3861,12 @@ function parsePackageManagerScript(effectiveWords) {
     // Unwrap `yarn workspace <pkg> [run] <script>`
     let k = 0
     while (k < restAfterSub.length && restAfterSub[k].startsWith('-')) {
-      k += PM_VALUE_FLAGS.has(restAfterSub[k]) ? 2 : 1
+      k += isPmValueFlag(manager, restAfterSub[k]) ? 2 : 1
     }
     // Skip workspace package name
     k += 1
     while (k < restAfterSub.length && restAfterSub[k].startsWith('-')) {
-      k += PM_VALUE_FLAGS.has(restAfterSub[k]) ? 2 : 1
+      k += isPmValueFlag(manager, restAfterSub[k]) ? 2 : 1
     }
     if (k < restAfterSub.length) {
       subcommand = restAfterSub[k].toLowerCase()
@@ -3214,7 +3891,7 @@ function parsePackageManagerScript(effectiveWords) {
         k += 2
         continue
       }
-      k += PM_VALUE_FLAGS.has(w) ? 2 : 1
+      k += isPmValueFlag(manager, w) ? 2 : 1
     }
     if (k < restAfterSub.length) {
       subcommand = restAfterSub[k].toLowerCase()
@@ -3231,7 +3908,7 @@ function parsePackageManagerScript(effectiveWords) {
   if (subcommand === 'run' || subcommand === 'run-script') {
     let j = 0
     while (j < restAfterSub.length && restAfterSub[j].startsWith('-')) {
-      j += PM_VALUE_FLAGS.has(restAfterSub[j]) ? 2 : 1
+      j += isPmValueFlag(manager, restAfterSub[j]) ? 2 : 1
     }
     script = (restAfterSub[j] || '').toLowerCase()
     scriptArgs = restAfterSub.slice(j + 1)
@@ -3283,15 +3960,24 @@ export function decideMainCheckoutBuildCommand(command, cwd, depth = 0) {
       const effectiveVerb = commandBasename(effectiveWords[0])
       let effectiveCwd = wrapperDir ? resolve(currentCwd, wrapperDir) : currentCwd
 
-      // 0.5. 递归判定 bash/sh -c 内联构建、heredoc 与 echo|bash 管道脚本
-      if (['bash', 'sh', 'zsh', 'dash', 'ksh'].includes(effectiveVerb)) {
+      // 0.5. 递归判定 bash/sh/zsh/source -c 内联构建、process substitution `<(...)`、heredoc 与 echo|bash 管道脚本
+      if (['bash', 'sh', 'zsh', 'dash', 'ksh', 'source', '.'].includes(effectiveVerb)) {
         const shellMeta = parseShellInvocation(effectiveWords)
         if (shellMeta && !shellMeta.syntaxCheckOnly) {
           if (shellMeta.inlineScript) {
             const nested = decideMainCheckoutBuildCommand(shellMeta.inlineScript, effectiveCwd, depth + 1)
             if (nested.decision === 'deny') return nested
+          } else if (shellMeta.procSubCmd) {
+            for (const body of extractProducerScriptsFromProcessSub(shellMeta.procSubCmd)) {
+              const nested = decideMainCheckoutBuildCommand(body, effectiveCwd, depth + 1)
+              if (nested.decision === 'deny') return nested
+            }
           } else if (!shellMeta.scriptFile) {
             for (const body of heredocs) {
+              const nested = decideMainCheckoutBuildCommand(body, effectiveCwd, depth + 1)
+              if (nested.decision === 'deny') return nested
+            }
+            for (const body of extractProcessSubstitutionPayloads(rawStage).scripts) {
               const nested = decideMainCheckoutBuildCommand(body, effectiveCwd, depth + 1)
               if (nested.decision === 'deny') return nested
             }
@@ -3379,7 +4065,7 @@ export function decideMainCheckoutBuildCommand(command, cwd, depth = 0) {
         if (['install', 'i', 'ci'].includes(subcommand)) {
           // 依赖恢复（primary 维护 / node_modules 修复）：只允许无位置包名的
           // install/ci；带值 flag 的值不算位置参数，其余非 flag 参数按 add 语义保守拒绝。
-          const positional = positionalArgs(restAfterSub)
+          const positional = positionalArgs(restAfterSub, effectiveVerb)
           if (positional.length > 0) {
             return {
               decision: 'deny',
@@ -3607,7 +4293,7 @@ export function decideBashCommand({ command, cwd, ownerRoot }) {
     return {decision:'deny',reason:'scoped-media-build-recovery-identity-mismatch'}
   }
 
-  // 1. 检查破坏性重置未推送提交
+  // 1. 检查破坏性重置未推送提交（上游干净时严禁提前 return allow，必须继续经过步骤 2–6 全部防线）
   if (isDestructiveResetCommand(command)) {
     const unpushed = getUnpushedCommits(cwd)
     if (unpushed.length > 0) {
@@ -3618,7 +4304,6 @@ export function decideBashCommand({ command, cwd, ownerRoot }) {
         unpushedCommits: unpushed,
       }
     }
-    return { decision: 'allow', reason: 'clean-upstream' }
   }
 
   // 2. 检查以家目录/根目录为起点的无界递归扫描（会造成 60s 超时假死）

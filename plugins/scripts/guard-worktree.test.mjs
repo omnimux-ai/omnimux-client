@@ -1850,4 +1850,199 @@ describe('adversarial hardening regressions (materialization / wrapper / frozen-
       )
     }
   })
+
+  it('never short-circuits downstream guards when destructive-reset upstream is clean (F1)', (t) => {
+    const tmp = mkdtempSync(join(tmpdir(), 'guard-f1-clean-'))
+    t.after(() => rmSync(tmp, { recursive: true, force: true }))
+    const bare = join(tmp, 'origin.git')
+    const primary = join(tmp, 'primary')
+    const wt = join(tmp, 'wt')
+    const env = { ...process.env, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null' }
+    const runGit = (...gitArgs) => {
+      const res = spawnSync('git', gitArgs, { env, encoding: 'utf8' })
+      assert.equal(res.status, 0, `git ${gitArgs.join(' ')} failed: ${res.stderr}`)
+    }
+    runGit('init', '--bare', '-b', 'main', bare)
+    runGit('clone', bare, primary)
+    runGit('-C', primary, 'config', 'user.email', 'test@example.com')
+    runGit('-C', primary, 'config', 'user.name', 'Test')
+    writeFileSync(join(primary, 'README.md'), 'hello\n')
+    runGit('-C', primary, 'add', 'README.md')
+    runGit('-C', primary, 'commit', '-m', 'init')
+    runGit('-C', primary, 'push', '-u', 'origin', 'main')
+    runGit('-C', primary, 'worktree', 'add', '-b', 'feat/clean', wt, 'origin/main')
+
+    for (const command of [
+      'git clean -nf && echo pwn > README.md',
+      'git clean -nf && git commit --allow-empty -m "pwn main"',
+      'git clean -nf && pnpm build:all',
+      'git restore --source=origin/main README.md',
+      'echo pwn > README.md; false && git reset --hard',
+    ]) {
+      assert.equal(
+        decideBashCommand({ command, cwd: primary, ownerRoot: primary }).decision,
+        'deny',
+        `Expected F1 deny on clean primary: ${command}`,
+      )
+    }
+
+    assert.equal(
+      decideBashCommand({ command: 'git clean -nf && bash plugins/scripts/sync-to-app.sh', cwd: wt, ownerRoot: primary }).decision,
+      'deny',
+      'Expected F1 materialization deny on clean worktree',
+    )
+    // Pure clean-upstream reset without downstream violation remains allowed
+    assert.equal(
+      decideBashCommand({ command: 'git reset --hard origin/main', cwd: primary, ownerRoot: primary }).decision,
+      'allow',
+    )
+  })
+
+  it('closes brace pipeline/bg, Allman/hyphenated functions, subshell case/for((...)), pushd -n, and prefixed cd leaks (F2)', () => {
+    const denyOnMain = [
+      `echo ok | { true; cd "${worktreeRoot}"; }; echo pwn > README.md`,
+      `{ true; cd "${worktreeRoot}"; } | cat; echo pwn > README.md`,
+      `{ true; cd "${worktreeRoot}"; } & wait; echo pwn > README.md`,
+      `f()\n{\n  cd "${worktreeRoot}"\n}\necho pwn > README.md`,
+      `my-fn() {\n  cd "${worktreeRoot}"\n}\necho pwn > README.md`,
+      `(\n  case x in\n    x) true ;;\n  esac\n  cd "${worktreeRoot}"\n)\necho pwn > README.md`,
+      `(\n  case x in x) true ;; esac\n  cd "${worktreeRoot}"\n)\necho pwn > README.md`,
+      `(\n  for ((i=0; i<1; i++)); do true; done\n  cd "${worktreeRoot}"\n)\necho pwn > README.md`,
+      `pushd -n "${worktreeRoot}" >/dev/null && echo pwn > README.md`,
+      `cd "${worktreeRoot}" && command cd "${mainRepoRoot}" && echo pwn > README.md`,
+      `cd "${worktreeRoot}" && FOO=1 cd "${mainRepoRoot}" && echo pwn > README.md`,
+    ]
+    for (const command of denyOnMain) {
+      assert.equal(
+        decideBashCommand({ command, cwd: mainRepoRoot, ownerRoot: mainRepoRoot }).decision,
+        'deny',
+        `Expected F2 deny on main: ${command}`,
+      )
+    }
+
+    for (const command of [
+      `command cd "${mainRepoRoot}" && echo pwn > README.md`,
+      `FOO=1 cd "${mainRepoRoot}" && echo pwn > README.md`,
+    ]) {
+      assert.equal(
+        decideBashCommand({ command, cwd: worktreeRoot, ownerRoot: mainRepoRoot }).decision,
+        'deny',
+        `Expected F2 worktree->main prefixed cd deny: ${command}`,
+      )
+    }
+  })
+
+  it('fixes pnpm -w boolean flag, pnpm -c/--shell-mode exec, and npm x alias (F3)', () => {
+    for (const command of [
+      'pnpm -w build:all',
+      `pnpm -w exec bash -c 'echo pwn > README.md'`,
+      'pnpm -w install',
+      `pnpm -c exec 'echo pwn > README.md'`,
+      `pnpm --shell-mode exec 'echo>README.md'`,
+      `npm x -c 'echo pwn > README.md'`,
+      'npm x -- tsc',
+    ]) {
+      assert.equal(
+        decideBashCommand({ command, cwd: mainRepoRoot, ownerRoot: mainRepoRoot }).decision,
+        'deny',
+        `Expected F3 deny on main: ${command}`,
+      )
+    }
+
+    assert.equal(
+      decideBashCommand({ command: 'pnpm -w sync', cwd: worktreeRoot, ownerRoot: mainRepoRoot }).decision,
+      'deny',
+      'Expected pnpm -w sync deny from worktree',
+    )
+
+    // Legitimate npm -w <pkg> non-build script and pnpm -w frozen install remain allowed
+    for (const command of [
+      'pnpm -w install --frozen-lockfile',
+      'npm -w pkg-a test',
+      `pnpm -c exec 'echo ok'`,
+    ]) {
+      assert.equal(
+        decideBashCommand({ command, cwd: mainRepoRoot, ownerRoot: mainRepoRoot }).decision,
+        'allow',
+        `Expected F3 allow: ${command}`,
+      )
+    }
+  })
+
+  it('closes bash <>, <(...) process substitution, printf format, zsh -o exec/no_exec, node -pe, python -uc/-c, git GIT_DIR/--work-tree, and find -delete (F4)', () => {
+    for (const command of [
+      `bash <(echo 'echo pwn > README.md')`,
+      `source <(echo 'echo pwn > README.md')`,
+      `bash < <(echo 'echo pwn > README.md')`,
+      `printf 'echo %s > README.md\\n' pwn | bash`,
+      `zsh -n -o exec -c 'echo pwn > README.md'`,
+      `zsh -o noexec +o no_exec -c 'echo pwn > README.md'`,
+      `node -pe "require('fs').writeFileSync('README.md', 'pwn')"`,
+      `python3 -uc "open('README.md','w').write('pwn')"`,
+      `python3 -c"open('README.md','w').write('pwn')"`,
+      `python3 -c"os.remove('README.md')"`,
+      `find . -maxdepth 1 -name README.md -delete`,
+    ]) {
+      assert.equal(
+        decideBashCommand({ command, cwd: mainRepoRoot, ownerRoot: mainRepoRoot }).decision,
+        'deny',
+        `Expected F4 deny on main: ${command}`,
+      )
+    }
+
+    for (const command of [
+      'bash <> plugins/scripts/sync-to-app.sh',
+      `bash <(echo 'bash plugins/scripts/sync-to-app.sh')`,
+      `bash <(cat plugins/scripts/sync-to-app.sh)`,
+      `git --work-tree="${mainRepoRoot}" --git-dir="${mainRepoRoot}/.git" -C "${worktreeRoot}" restore :/README.md`,
+      `GIT_DIR="${mainRepoRoot}/.git" GIT_WORK_TREE="${mainRepoRoot}" git commit --allow-empty -m "pwn main"`,
+    ]) {
+      assert.equal(
+        decideBashCommand({ command, cwd: worktreeRoot, ownerRoot: mainRepoRoot }).decision,
+        'deny',
+        `Expected F4 deny from worktree: ${command}`,
+      )
+    }
+
+    // External find -delete & allowlisted .workbuddy find -delete remain allowed
+    for (const command of [
+      'find /tmp/scratch -maxdepth 1 -name "*.tmp" -delete',
+      'find .workbuddy -maxdepth 2 -name "*.tmp" -delete',
+    ]) {
+      assert.equal(
+        decideBashCommand({ command, cwd: mainRepoRoot, ownerRoot: mainRepoRoot }).decision,
+        'allow',
+        `Expected F4 allow: ${command}`,
+      )
+    }
+  })
+
+  it('avoids false positives on Bash (( ... )), for ((...)), [[ ... ]] comparisons, and spaced 2>& 1 (F5)', () => {
+    for (const command of [
+      '(( 2 > 1 )) && echo ok',
+      'for ((i=3; i>0; i--)); do echo $i; done',
+      '[[ "b" > "a" ]] && echo ok',
+      '[[ "a" < "b" && "c" > "b" ]] && echo ok',
+      'echo hi 2>& 1',
+    ]) {
+      assert.equal(
+        decideBashCommand({ command, cwd: mainRepoRoot, ownerRoot: mainRepoRoot }).decision,
+        'allow',
+        `Expected F5 allow without false positive: ${command}`,
+      )
+    }
+
+    // Redirections AFTER ((...)) / [[...]] or substitutions INSIDE $((...)) must still be denied
+    for (const command of [
+      '(( 2 > 1 )) > README.md',
+      '[[ "b" > "a" ]] > README.md',
+      'echo $(( $(echo pwn > README.md) + 1 ))',
+    ]) {
+      assert.equal(
+        decideBashCommand({ command, cwd: mainRepoRoot, ownerRoot: mainRepoRoot }).decision,
+        'deny',
+        `Expected F5 post-expr redir/subshell deny: ${command}`,
+      )
+    }
+  })
 })
