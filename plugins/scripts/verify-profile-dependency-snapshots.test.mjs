@@ -11,7 +11,7 @@ import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
 
-import { inspectProfile, MANAGED_SNAPSHOT_DIRECTORY, readSupportIdentity, resolveTargetApp } from './verify-profile-dependency-snapshots.mjs'
+import { inspectProfile, MANAGED_SNAPSHOT_DIRECTORY, readAppBundledPackages, readSupportIdentity, resolveTargetApp } from './verify-profile-dependency-snapshots.mjs'
 
 /**
  * 造一个 profile 骨架。
@@ -252,5 +252,44 @@ test('resolveTargetApp 只映射受管的 .omnimux-dev / .omnimux，不再推导
     assert.equal(resolveTargetApp(join(homedir(), '.dsh', 'profiles', 'omnimux')), null)
   } finally {
     if (previousEnv !== undefined) process.env.OMNIMUX_PREFLIGHT_TARGET_APP = previousEnv
+  }
+})
+
+test('Desktop Next 应用通过 app.asar 提供内置 bundle，Profile 外部覆盖单插件时不产生假警告', () => {
+  const appRoot = mkdtempSync(join(tmpdir(), 'omnimux-next-app-'))
+  try {
+    const resources = join(appRoot, 'Contents', 'Resources')
+    mkdirSync(resources, { recursive: true })
+    writeFileSync(join(resources, 'build-info.json'), JSON.stringify({ shell: 'dsh-desktop-next', channel: 'package-dev' }))
+    const pkgBytes = Buffer.from(JSON.stringify({
+      name: 'dsh-desktop-next',
+      dependencies: { omnimux: 'link:...', 'omnimux-clip': 'link:...', 'dsh-better-sidebar': '^0.32.1' },
+    }), 'utf8')
+    const headerJson = Buffer.from(JSON.stringify({ files: { 'package.json': { size: pkgBytes.length, offset: '0' } } }), 'utf8')
+    const aligned = Math.ceil(headerJson.length / 4) * 4
+    const padded = Buffer.concat([headerJson, Buffer.alloc(aligned - headerJson.length)])
+    const pickle = Buffer.alloc(16)
+    pickle.writeUInt32LE(4, 0)
+    pickle.writeUInt32LE(aligned + 8, 4)
+    pickle.writeUInt32LE(aligned + 4, 8)
+    pickle.writeUInt32LE(headerJson.length, 12)
+    writeFileSync(join(resources, 'app.asar'), Buffer.concat([pickle, padded, pkgBytes]))
+
+    const bundled = readAppBundledPackages(appRoot)
+    assert.ok(bundled?.has('omnimux'))
+    assert.ok(bundled?.has('omnimux-clip'))
+    assert.ok(bundled?.has('dsh-better-sidebar'))
+
+    withProfile({
+      dependencies: { 'omnimux-clip': 'file:.materialize-snapshots/plugins/omnimux-clip' },
+      snapshots: ['omnimux-clip'],
+      bundles: ['@deepseek-ai/dsh-base', 'omnimux', 'omnimux-clip', 'dsh-better-sidebar'],
+    }, (profileDir) => {
+      const result = inspectProfile(profileDir, { ownedPackages: null, appBundledPackages: bundled, supportIdentity: SUPPORT_IDENTITY })
+      assert.deepEqual(result.failures, [])
+      assert.deepEqual(result.warnings, [])
+    })
+  } finally {
+    rmSync(appRoot, { recursive: true, force: true })
   }
 })

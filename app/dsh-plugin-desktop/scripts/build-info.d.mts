@@ -4,6 +4,8 @@ export interface BuildInfo {
   readonly product: string
   readonly version: string
   readonly channel: string
+  readonly releaseChannel: 'development' | 'stable'
+  readonly shell: string
   readonly builtAt: string
   readonly repo: {
     readonly branch: string | null
