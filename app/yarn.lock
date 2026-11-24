@@ -9301,6 +9301,38 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@deepseek-ai/dsh-skill-filesystem@patch:@deepseek-ai/dsh-skill-filesystem@file%3Avendor/dsh-runtime/0.2.1-rc.3/deepseek-ai-dsh-skill-filesystem-0.2.1-rc.3.tgz#./patches/dsh-skill-filesystem@0.2.1-rc.3.patch::locator=deepseek-harness-desktop%40workspace%3A.":
+  version: 0.2.1-rc.3
+  resolution: "@deepseek-ai/dsh-skill-filesystem@patch:@deepseek-ai/dsh-skill-filesystem@file%3Avendor/dsh-runtime/0.2.1-rc.3/deepseek-ai-dsh-skill-filesystem-0.2.1-rc.3.tgz%23vendor/dsh-runtime/0.2.1-rc.3/deepseek-ai-dsh-skill-filesystem-0.2.1-rc.3.tgz%3A%3Ahash=0dd64f&locator=deepseek-harness-desktop%2540workspace%253A.#./patches/dsh-skill-filesystem@0.2.1-rc.3.patch::version=0.2.1-rc.3&hash=215a7e&locator=deepseek-harness-desktop%40workspace%3A."
+  dependencies:
+    "@deepseek-ai/schemastery": "npm:~3.18.5"
+    chokidar: "npm:5.0.0"
+    yaml: "npm:^2.4.2"
+  peerDependencies:
+    "@deepseek-ai/cordis": ~4.0.5
+    "@deepseek-ai/dsh-fs": 0.2.1-rc.3
+    "@deepseek-ai/dsh-home-paths": 0.2.1-rc.3
+    "@deepseek-ai/dsh-skill": 0.2.1-rc.3
+  checksum: 10c0/c5a732279cbcbfc76627f15c60ae693125427bee332534ddf1266fe3f233d6d6cf4f90c1c0aa98b507f0672bbf4c203febec5ce46076611e30b94f711f9b12ff
+  languageName: node
+  linkType: hard
+
+"@deepseek-ai/dsh-skill-filesystem@patch:@deepseek-ai/dsh-skill-filesystem@file%3Avendor/dsh-runtime/0.2.2-rc.5/deepseek-ai-dsh-skill-filesystem-0.2.2-rc.5.tgz#./patches/dsh-skill-filesystem@0.2.2-rc.5.patch::locator=deepseek-harness-desktop%40workspace%3A.":
+  version: 0.2.2-rc.5
+  resolution: "@deepseek-ai/dsh-skill-filesystem@patch:@deepseek-ai/dsh-skill-filesystem@file%3Avendor/dsh-runtime/0.2.2-rc.5/deepseek-ai-dsh-skill-filesystem-0.2.2-rc.5.tgz%23vendor/dsh-runtime/0.2.2-rc.5/deepseek-ai-dsh-skill-filesystem-0.2.2-rc.5.tgz%3A%3Ahash=6c8691&locator=deepseek-harness-desktop%2540workspace%253A.#./patches/dsh-skill-filesystem@0.2.2-rc.5.patch::version=0.2.2-rc.5&hash=0e2ccd&locator=deepseek-harness-desktop%40workspace%3A."
+  dependencies:
+    "@deepseek-ai/schemastery": "npm:~3.19.0"
+    chokidar: "npm:5.0.0"
+    yaml: "npm:^2.4.2"
+  peerDependencies:
+    "@deepseek-ai/cordis": ~4.1.0
+    "@deepseek-ai/dsh-fs": 0.2.2-rc.5
+    "@deepseek-ai/dsh-home-paths": 0.2.2-rc.5
+    "@deepseek-ai/dsh-skill": 0.2.2-rc.5
+  checksum: 10c0/995cecd6f0cf1b15fc4e2b8fa7d9db77b664b16fe95dda70e27bb3948eed9c8b4f4beb31609ff44b9876ead33593bac4154466791bf3d695cb2b4e5e8a477ab3
+  languageName: node
+  linkType: hard
+
 "@deepseek-ai/dsh-skill-office@file:vendor/dsh-runtime/0.2.1-rc.3/deepseek-ai-dsh-skill-office-0.2.1-rc.3.tgz::locator=deepseek-harness-desktop%40workspace%3A.":
   version: 0.2.1-rc.3
   resolution: "@deepseek-ai/dsh-skill-office@file:vendor/dsh-runtime/0.2.1-rc.3/deepseek-ai-dsh-skill-office-0.2.1-rc.3.tgz#vendor/dsh-runtime/0.2.1-rc.3/deepseek-ai-dsh-skill-office-0.2.1-rc.3.tgz::hash=72fa5a&locator=deepseek-harness-desktop%40workspace%3A."

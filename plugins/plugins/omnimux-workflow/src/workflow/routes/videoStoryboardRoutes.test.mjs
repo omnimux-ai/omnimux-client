@@ -46,37 +46,51 @@ function harness(t, opts = {}) {
   });
 
   const toolCalls = [];
-  const videoAnalyzeTool = {
-    async execute(args) {
-      toolCalls.push({ tool: 'video_analyze', args });
+  const headlessSkill = {
+    async run(args) {
+      toolCalls.push({ tool: 'headlessSkill', args });
       if (opts.analyzeExecute) return opts.analyzeExecute(args);
+      if (args.outputSchema?.properties?.shots) {
+        return {
+          mode: 'live',
+          jobId: 'job_storyboard_1',
+          skillName: args.skillName,
+          model: args.model || 'catalog-vision-pro',
+          repaired: false,
+          data: {
+            shots: [
+              {
+                time_range: '00:00 - 00:03',
+                shot_type: '特写',
+                visual_description: '开场抓人视觉反差',
+                key_action: '快速镜头推入',
+                dialogue: '痛点前置',
+              },
+              {
+                time_range: '00:03 - 00:08',
+                shot_type: '中景',
+                visual_description: '实操演示过程细节',
+                key_action: '真实手部操作',
+                dialogue: '效果惊艳',
+              },
+            ],
+          },
+        };
+      }
       return {
-        report: `# 《测试视频》逐镜头分解与五维分析报告
-
-## 逐镜头分解表
-| 镜头序号 | 时间段 | 景别 | 画面描述 | 关键动作 | 台词脚本 |
-| --- | --- | --- | --- | --- | --- |
-| 1 | 00:00 - 00:03 | 特写 | 开场抓人视觉反差 | 快速镜头推入 | "痛点前置" |
-| 2 | 00:03 - 00:08 | 中景 | 实操演示过程细节 | 真实手部操作 | "效果惊艳" |
-
-## 一句话视频描述
-以真实拆解结果为核心的高转化短视频。
-
-## I. 核心目标
-* 转化目标: 引导点击左下角购买同款
-
-## II. 影响力分析
-明线展示直观功效，暗线击中受众痛点。
-
-## III. 叙事结构
-0-3s 抛痛点 → 3-10s 实测演示 → 结尾明确 CTA
-
-## IV. 画面分析
-近景特写为主，原生自然光影。
-
-## V. 核心复刻策略
-[痛点开场] + [第一人称实测] + [CTA 引导]
-`,
+        mode: 'live',
+        jobId: 'job_deconstruct_1',
+        skillName: args.skillName,
+        model: args.model || 'catalog-vision-pro',
+        repaired: false,
+        data: {
+          summary: '以真实拆解结果为核心的高转化短视频。',
+          core_goal: '引导点击左下角购买同款',
+          influence: '明线展示直观功效，暗线击中受众痛点。',
+          narrative_structure: '0-3s 抛痛点 → 3-10s 实测演示 → 结尾明确 CTA',
+          visual_analysis: '近景特写为主，原生自然光影。',
+          replication_strategy: '[痛点开场] + [第一人称实测] + [CTA 引导]',
+        },
       };
     },
   };
@@ -140,14 +154,13 @@ function harness(t, opts = {}) {
     gateway: { capabilities: async () => ({}) },
     getTool: (name) => {
       if (opts.disableTools) return undefined;
-      if (name === 'video_analyze') return videoAnalyzeTool;
       if (name === 'video_process') return videoProcessTool;
       return undefined;
     },
     getSeam: (name) => {
       if (opts.disableTools) return undefined;
       if (name === 'modelCatalog') return opts.modelCatalog ?? visionCatalog;
-      if (name === 'videoAnalyze') return videoAnalyzeTool;
+      if (name === 'headlessSkill') return headlessSkill;
       if (name === 'videoProcess') return videoProcessTool;
       return undefined;
     },
@@ -275,7 +288,7 @@ test('videoStoryboard: 分析调用抛错时直接报错，不再降级为保底
 
 test('videoStoryboard: 分析结果中解析不出分镜镜头时直接报错', async (t) => {
   const h = harness(t, {
-    analyzeExecute: async () => ({ report: '# 视频概述\n\n只有一段描述，没有任何分镜表格。' }),
+    analyzeExecute: async () => ({ mode: 'live', data: { shots: [] } }),
   });
   const res = await h.call({ nodeId: 'node_video_1', videoPath: h.dummyVideo });
 
@@ -693,9 +706,18 @@ test('videoStoryboard: 分析模型取自中枢目录而不是写死的 ID', asy
   const res = await h.request({ nodeId: 'node_video_1', videoPath: h.dummyVideo });
 
   assert.equal(res.status, 200);
-  const analyzeCall = h.toolCalls.find((c) => c.tool === 'video_analyze');
-  assert.ok(analyzeCall, 'video_analyze must be invoked');
+  const analyzeCall = h.toolCalls.find((c) => c.tool === 'headlessSkill');
+  assert.ok(analyzeCall, 'headlessSkill must be invoked');
   assert.equal(analyzeCall.args.model, 'catalog-vision-pro');
+  assert.equal(analyzeCall.args.skillName, 'workflow-video-deconstruct');
+  assert.equal(analyzeCall.args.modality, 'video');
+  assert.deepEqual(analyzeCall.args.references, [{ type: 'video', pathOrUrl: h.dummyVideo }]);
+  assert.equal(analyzeCall.args.outputSchema.additionalProperties, false);
+  assert.equal(
+    h.toolCalls.some((c) => c.tool === 'video_process' && c.args.capability === 'video_inline_analysis_prepare'),
+    false,
+    '画布分镜不再调用私有 video_inline_analysis_prepare 预处理',
+  );
 });
 
 test('videoStoryboard: 目录里没有支持视频的模型时报 analyze-model-unavailable', async (t) => {
@@ -712,5 +734,5 @@ test('videoStoryboard: 目录里没有支持视频的模型时报 analyze-model-
   assert.equal(res.status, 502);
   assert.equal(res.body.error, 'analyze-model-unavailable');
   assert.match(res.body.message, /模型目录/);
-  assert.equal(h.toolCalls.some((c) => c.tool === 'video_analyze'), false);
+  assert.equal(h.toolCalls.some((c) => c.tool === 'headlessSkill'), false);
 });

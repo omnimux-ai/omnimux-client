@@ -33,7 +33,7 @@ function fixture(t) {
   mkdirSync(join(project, '.omnimux/canvases'), { recursive: true });
   writeFileSync(join(project, '.omnimux/canvases', `${workspaceId}.json`), '{}');
   const assetsStore = createProjectAssetsStore({ workspacesDir: join(root, 'workspaces'), resolveProjectRoot });
-  const seams = { modelCatalog: { list: () => catalog() }, textComplete: { execute: async () => ({ mode: 'live', text: '{"elements":[{"name":"人物","type":"person","x":0.25,"depth":0.5}]}' }) }, imageGenerate: { execute: async () => ({ mode: 'submitted', taskRef: 'mtask_original' }), findAccepted: () => null }, mediaInspect: { inspect: async ({ path }) => ({ mime: 'image/png', sizeBytes: readFileSync(path).length, width: 4, height: 2 }) } };
+  const seams = { modelCatalog: { list: () => catalog() }, headlessSkill: { run: async () => ({ mode: 'live', jobId: 'job_dir_1', skillName: 'workflow-director-analyze', model: 'visual@visual-group', repaired: false, data: { elements: [{ name: '人物', type: 'person', x: 0.25, depth: 0.5 }] } }) }, imageGenerate: { execute: async () => ({ mode: 'submitted', taskRef: 'mtask_original' }), findAccepted: () => null }, mediaInspect: { inspect: async ({ path }) => ({ mime: 'image/png', sizeBytes: readFileSync(path).length, width: 4, height: 2 }) } };
   const make = (taskScope = () => 'director-model-task:offline-trusted-epoch-1') => createDirectorAssistant({ host, assetsStore, getSeam: name => seams[name], taskScope });
   t.after(() => { assert.ok(root.startsWith(scratch + '/')); rmSync(root, { recursive: true, force: true }); });
   return { host, assetsStore, seams, make, state, project };
@@ -58,13 +58,22 @@ function managedImage(f) {
 }
 test('analyzeImage inspects a managed reference and returns strict bounded suggestions without editing the scene', async t => {
   const f = fixture(t); const imageRef = managedImage(f); const before = f.host.getScene(workspaceId, nodeId);
-  const calls = []; f.seams.textComplete.execute = async req => { calls.push(req); return { mode: 'live', text: '{"elements":[{"name":"人物","type":"person","x":0.25,"depth":0.5}]}' }; };
+  const calls = []; f.seams.headlessSkill.run = async req => { calls.push(req); return { mode: 'live', jobId: 'job_dir_1', skillName: req.skillName, model: req.model, repaired: false, data: { elements: [{ name: '人物', type: 'person', x: 0.25, depth: 0.5 }] } }; };
   const result = await f.make().analyzeImage(workspaceId, nodeId, { imageRef, expectedRevision: 1 });
   assert.deepEqual(result.elements, [{ name: '人物', type: 'person', x: 0.25, depth: 0.5 }]);
   assert.equal(result.mode, 'live'); assert.equal(result.empty, false); assert.equal(result.sceneChanged, false);
-  assert.equal(calls[0].model, 'visual@visual-group'); assert.equal(calls[0].image, join(f.project, imageRef));
-  assert.match(calls[0].prompt, /16/); assert.deepEqual(f.host.getScene(workspaceId, nodeId), before);
-  f.seams.textComplete.execute = async () => ({ mode: 'live', text: '{"elements":[]}' });
+  assert.equal(calls[0].skillName, 'workflow-director-analyze');
+  assert.equal(calls[0].model, 'visual@visual-group');
+  assert.equal(calls[0].modality, 'image');
+  assert.equal(calls[0].ownerPlugin, 'omnimux-workflow');
+  assert.deepEqual(calls[0].references, [{ type: 'image', pathOrUrl: join(f.project, imageRef), mime: 'image/png' }]);
+  assert.equal(calls[0].outputSchema.additionalProperties, false);
+  assert.equal(typeof calls[0].inputFingerprint, 'string');
+  assert.equal(calls[0].inputFingerprint.length, 64);
+  assert.equal(typeof calls[0].verifyFingerprint, 'function');
+  assert.equal(calls[0].verifyFingerprint(), true);
+  assert.deepEqual(f.host.getScene(workspaceId, nodeId), before);
+  f.seams.headlessSkill.run = async () => ({ mode: 'live', data: { elements: [] } });
   assert.equal((await f.make().analyzeImage(workspaceId, nodeId, { imageRef, expectedRevision: 1 })).empty, true);
 });
 test('analyzeImage rejects unregistered paths, unsafe references, malformed or oversized JSON and stale results', async t => {
@@ -73,19 +82,35 @@ test('analyzeImage rejects unregistered paths, unsafe references, malformed or o
   for (const ref of ['../outside.png', '/tmp/no.png', 'https://example.org/p.png', 'assets/no.png']) {
     await assert.rejects(assistant.analyzeImage(workspaceId, nodeId, { ...input, imageRef: ref }));
   }
-  for (const text of ['```json\n{"elements":[]}\n```', '{"elements":[],"extra":true}', '{"elements":[{"name":"a","type":"person","x":1.1,"depth":0}]}', '{"elements":[{"name":"a","type":"object","x":0,"depth":0,"extra":1}]}', JSON.stringify({ elements: Array.from({ length: 17 }, () => ({ name: 'a', type: 'object', x: 0, depth: 1 })) }), ' '.repeat(65537)]) {
-    f.seams.textComplete.execute = async () => ({ mode: 'live', text });
+  for (const data of [
+    null,
+    'not-an-object',
+    { elements: [], extra: true },
+    { elements: [{ name: 'a', type: 'person', x: 1.1, depth: 0 }] },
+    { elements: [{ name: 'a', type: 'object', x: 0, depth: 0, extra: 1 }] },
+    { elements: Array.from({ length: 17 }, () => ({ name: 'a', type: 'object', x: 0, depth: 1 })) },
+    { elements: [{ name: 'a'.repeat(65537), type: 'object', x: 0, depth: 1 }] },
+  ]) {
+    f.seams.headlessSkill.run = async () => ({ mode: 'live', data });
     await assert.rejects(assistant.analyzeImage(workspaceId, nodeId, input), { code: 'director-analysis-invalid' });
   }
-  f.seams.textComplete.execute = async () => { f.host.saveScene(workspaceId, nodeId, { expectedRevision: 1, scene: scene() }); return { mode: 'live', text: '{"elements":[]}' }; };
+  f.seams.headlessSkill.run = async () => { throw Object.assign(new Error('schema mismatch'), { code: 'headless-skill-schema-invalid' }); };
+  await assert.rejects(assistant.analyzeImage(workspaceId, nodeId, input), { code: 'director-analysis-invalid' });
+  f.seams.headlessSkill.run = async req => {
+    f.host.saveScene(workspaceId, nodeId, { expectedRevision: 1, scene: scene() });
+    if (req.verifyFingerprint && !req.verifyFingerprint()) {
+      throw Object.assign(new Error('stale input'), { code: 'headless-skill-stale-input' });
+    }
+    return { mode: 'live', data: { elements: [] } };
+  };
   await assert.rejects(assistant.analyzeImage(workspaceId, nodeId, input), { code: 'version_conflict' });
   assert.equal(f.host.getScene(workspaceId, nodeId).revision, 2);
 });
 test('analyzeImage rejects missing seams and preserves explicit simulated provenance', async t => {
   const f = fixture(t); const imageRef = managedImage(f);
-  f.seams.textComplete.execute = async () => ({ mode: 'simulated', text: '{"elements":[]}' });
+  f.seams.headlessSkill.run = async () => ({ mode: 'simulated', data: { elements: [] } });
   assert.equal((await f.make().analyzeImage(workspaceId, nodeId, { imageRef, expectedRevision: 1 })).simulated, true);
-  delete f.seams.textComplete;
+  delete f.seams.headlessSkill;
   await assert.rejects(f.make().analyzeImage(workspaceId, nodeId, { imageRef, expectedRevision: 1 }), { code: 'director-capability-unavailable' });
 });
 test('panorama submission owns one durable intent across factories and history/query never collect', async t => {
@@ -160,7 +185,7 @@ test('capabilities require accepted-task recovery and never combine incompatible
   assert.equal((await f.make().capabilities(workspaceId, nodeId)).panorama.available, false);
   const body = catalog(); body.models[1].channelGroups[0].constraints = { inputs: { image: { max: 0 } } };
   f.seams.modelCatalog.list = () => body;
-  const ref = managedImage(f); let executed = 0; f.seams.textComplete.execute = async () => { executed++; return { mode: 'live', text: '{"elements":[]}' }; };
+  const ref = managedImage(f); let executed = 0; f.seams.headlessSkill.run = async () => { executed++; return { mode: 'live', data: { elements: [] } }; };
   await assert.rejects(f.make().analyzeImage(workspaceId, nodeId, { imageRef: ref, expectedRevision: 1 }), { code: 'director-capability-unavailable' });
   assert.equal(executed, 0);
 });
@@ -252,7 +277,7 @@ test('submission errors carrying a public task handle retain it even if acceptan
 test('analyzeImage rechecks the source after catalog selection before consuming a model', async t => {
   const f = fixture(t); const imageRef = managedImage(f); let calls = 0;
   f.seams.modelCatalog.list = async () => { f.host.saveScene(workspaceId, nodeId, { expectedRevision: 1, scene: scene() }); return catalog(); };
-  f.seams.textComplete.execute = async () => { calls++; return { mode: 'live', text: '{"elements":[]}' }; };
+  f.seams.headlessSkill.run = async () => { calls++; return { mode: 'live', data: { elements: [] } }; };
   await assert.rejects(f.make().analyzeImage(workspaceId, nodeId, { imageRef, expectedRevision: 1 }), { code: 'version_conflict' }); assert.equal(calls, 0);
 });
 test('image-referenced panorama selects one image-input operation and rejects mismatched collection identity', async t => {
@@ -464,7 +489,7 @@ test('analysis rejects account changes at each async boundary including A to B t
     const inspect = f.seams.mediaInspect.inspect;
     f.seams.mediaInspect.inspect = async req => { const result = await inspect(req); if (phase === 'inspect') mutate(); return result; };
     f.seams.modelCatalog.list = async () => { if (phase === 'catalog') mutate(); return catalog(); };
-    f.seams.textComplete.execute = async () => { consumed++; if (phase === 'execute') mutate(); return { mode: 'live', text: '{"elements":[]}' }; };
+    f.seams.headlessSkill.run = async () => { consumed++; if (phase === 'execute') mutate(); return { mode: 'live', data: { elements: [] } }; };
     const before = f.host.getScene(workspaceId, nodeId);
     await assert.rejects(f.make(() => scope).analyzeImage(workspaceId, nodeId, { imageRef, expectedRevision: 1 }), { code: 'director-task-scope-mismatch' });
     assert.equal(consumed, phase === 'execute' ? 1 : 0); assert.deepEqual(f.host.getScene(workspaceId, nodeId), before);
@@ -619,7 +644,13 @@ test('capabilities select visual/image operations across scenarios, not the chat
   assert.equal(result.analyzeImage.available, true);
   assert.deepEqual(result.analyzeImage.models[0], { model: 'visual', operation: 'vision_chat', profile: 'textComplete', group: 'visual-group' });
   assert.equal(result.panorama.available, true);
-  delete f.seams.imageGenerate; delete f.seams.textComplete;
+  delete f.seams.imageGenerate; delete f.seams.headlessSkill;
   const absent = await f.make().capabilities(workspaceId, nodeId);
   assert.equal(absent.localEditing, true); assert.equal(absent.analyzeImage.available, false); assert.equal(absent.panorama.available, false);
+});
+
+test('analyzeImage exposes upstream provider errors explicitly instead of swallowing them', async t => {
+  const f = fixture(t); const imageRef = managedImage(f);
+  f.seams.headlessSkill.run = async () => { throw Object.assign(new Error('provider missing'), { code: 'needs-provider' }); };
+  await assert.rejects(f.make().analyzeImage(workspaceId, nodeId, { imageRef, expectedRevision: 1 }), { code: 'needs-provider' });
 });

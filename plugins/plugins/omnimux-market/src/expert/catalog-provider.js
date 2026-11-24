@@ -2,7 +2,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { loadCatalog } from './catalog.js'
 import { packageRoot, resolveHome, skillDir } from './paths.js'
-import { installItem } from './install.js'
+import { installItem, resolveLocalBundledSkillDir } from './install.js'
 
 /**
  * @typedef {Object} InvocationPolicy
@@ -94,12 +94,19 @@ export function resolveSkillDefinition(name, roots) {
     return def(name, content, desc)
   }
 
-  // 2. Bundled package skills/experts
+  // 2. Bundled package skills/experts (catalog/skills, plugin skills/, experts/*/skills, sibling omnimux-*/skills)
+  const resolvedLocalDir = resolveLocalBundledSkillDir(name, pkgRoot)
+  if (resolvedLocalDir) {
+    const md = join(resolvedLocalDir, 'SKILL.md')
+    if (existsSync(md)) {
+      const content = readFileSync(md, 'utf8')
+      const desc = extractDescription(content) || name
+      return def(name, content, desc)
+    }
+  }
   const bundledCandidates = [
-    join(pkgRoot, 'catalog', 'skills', name, 'SKILL.md'),
     join(pkgRoot, 'catalog', 'skills', `${name}.md`),
     join(pkgRoot, 'catalog', 'experts', name, 'SKILL.md'),
-    join(pkgRoot, 'catalog', 'experts', name, 'skills', name, 'SKILL.md'),
     join(pkgRoot, 'catalog', 'experts', name, 'agents', `${name}.md`),
   ]
   for (const candidate of bundledCandidates) {
@@ -107,19 +114,6 @@ export function resolveSkillDefinition(name, roots) {
       const content = readFileSync(candidate, 'utf8')
       const desc = extractDescription(content) || name
       return def(name, content, desc)
-    }
-  }
-
-  // Check nested skills under any expert directory in catalog/experts/
-  const expertsDir = join(pkgRoot, 'catalog', 'experts')
-  if (existsSync(expertsDir) && statSync(expertsDir).isDirectory()) {
-    for (const expName of readdirSync(expertsDir)) {
-      const candidate = join(expertsDir, expName, 'skills', name, 'SKILL.md')
-      if (existsSync(candidate)) {
-        const content = readFileSync(candidate, 'utf8')
-        const desc = extractDescription(content) || name
-        return def(name, content, desc)
-      }
     }
   }
 
@@ -188,6 +182,40 @@ export function createCatalogSkillProvider(opts = {}) {
           rank: CATALOG_RANK,
           locator: item.id,
         })
+      }
+
+      // 3. Bundled skills outside catalog/index.json (catalog/bundled-skills.json: quick shortcuts & preset shelf)
+      const bundledManifestPath = join(pkgRoot, 'catalog', 'bundled-skills.json')
+      if (existsSync(bundledManifestPath)) {
+        try {
+          const bundledDoc = JSON.parse(readFileSync(bundledManifestPath, 'utf8'))
+          const entries = Array.isArray(bundledDoc?.skills) ? bundledDoc.skills : []
+          for (const entry of entries) {
+            const slug = String(entry?.slug || '').trim()
+            if (!slug || seen.has(slug) || seen.has(slug.toLowerCase())) continue
+            const md = join(pkgRoot, 'catalog', 'skills', slug, 'SKILL.md')
+            if (!existsSync(md)) continue
+            seen.add(slug)
+            seen.add(slug.toLowerCase())
+            const content = readFileSync(md, 'utf8')
+            const desc = extractDescription(content) || String(entry?.notes || slug)
+            candidates.push({
+              name: slug,
+              description: desc,
+              whenToUse: desc,
+              invocation: {
+                modelInvocable: false,
+                userInvocable: true,
+              },
+              source: 'omnimux-market',
+              provider: PROVIDER_NAME,
+              rank: CATALOG_RANK,
+              locator: `bundled:${slug}`,
+            })
+          }
+        } catch (err) {
+          console.warn(`[omnimux-market] failed to load bundled-skills.json in provider: ${err instanceof Error ? err.message : String(err)}`)
+        }
       }
 
       // 4. Local installed skills under $DSH_HOME/skills (e.g. installed from SkillHub / GitHub)

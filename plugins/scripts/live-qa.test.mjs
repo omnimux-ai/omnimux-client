@@ -45,8 +45,8 @@ test('stage selection and actual runtime discovery reject empty or unknown targe
   assert.throws(() => selectStages(''), /Unknown stage/)
   await assert.rejects(captureStageContracts(repo, []), /Zero stage/)
   const targets = await captureStageContracts(repo)
-  assert.equal(targets.length, 7)
-  assert.equal(targets.filter((target) => target.adapter === 'six-methods-and-disposer').length, 6)
+  assert.equal(targets.length, 8)
+  assert.equal(targets.filter((target) => target.adapter === 'six-methods-and-disposer').length, 7)
   // workbench-split.md Primary-entry intents (#2516): untouched Tabs open fullscreen.
   assert.ok(targets.every((target) => target.defaultFocus === 'gui'))
   assert.ok(targets.every((target) => target.activationModel === 'official-right-tab-with-session-precedence'))

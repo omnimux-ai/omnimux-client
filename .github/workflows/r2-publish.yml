@@ -21,10 +21,9 @@ name: Publish release assets to R2 (dl.omnimux.ai)
 # `mode=partial` only uploads the versioned archive under `releases/v<version>/`;
 # it never touches latest aliases or channel manifests.
 #
-# Unlike the historical `r2-publish.yml` that lived under `app/.github/` (which
-# Actions never read, and which pulled artifacts from a private fork), this
-# workflow runs from the repository root and sources artifacts from this
-# repository's own public GitHub Release.
+# Unlike the historical nested workflow that Actions never read, and which
+# pulled artifacts from a private fork, this workflow runs from the repository
+# root and sources artifacts from this repository's own public GitHub Release.
 on:
   pull_request:
     paths:

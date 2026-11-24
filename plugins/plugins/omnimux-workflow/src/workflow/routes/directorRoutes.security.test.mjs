@@ -80,6 +80,7 @@ async function fixture(t, { identity = account('A'), connection = true } = {}) {
     // trusted public snapshot fixture, never data taken from an HTTP body.
     identity: { getSnapshot: getPublicIdentitySnapshot },
     modelCatalog: { list: () => state.catalog() },
+    headlessSkill: { run: denyExecution },
     textComplete: { execute: denyExecution },
     imageGenerate: { execute: denyExecution, findAccepted: () => { state.taskLookups++; throw new Error('task collection forbidden'); } },
     mediaInspect: { inspect: async () => { state.mediaInspections++; throw new Error('media inspection forbidden'); } },

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# worktree.sh — Git worktree lifecycle management tool for omnimux-desktop-fork.
+# worktree.sh — Git worktree lifecycle management tool for omnimux-client.
 #
 # Implements standardized worktree contracts:
 #   1. Primary checkout stays clean on default branch (omnimux/main/master).

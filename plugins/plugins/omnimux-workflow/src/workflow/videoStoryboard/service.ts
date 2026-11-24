@@ -25,12 +25,18 @@ import type { CanvasInputMutation, CanvasNode } from '../../shared/graph/canvasI
 import type { CanvasWorkspaceSnapshot, SerializedCanvasEdge } from '../../shared/canvasTypes.ts';
 import {
   resolveVideoAbsolutePath,
-  extractMarkdownTables,
   readTargetNodeId,
   findTargetNodeReuseBlock,
   type TargetNodeReuseBlock,
 } from '../videoDeconstruct/service.ts';
-import { prepareVideoForAnalyze } from '../prepareAnalyzeVideo.ts';
+import { WORKFLOW_VIDEO_DECONSTRUCT_SKILL } from '../workflowSkills.ts';
+import {
+  VIDEO_STORYBOARD_SCHEMA,
+  buildVideoStoryboardInput,
+  computeMediaInputFingerprint,
+  normalizeStoryboardShots,
+  type HeadlessSkillSeam,
+} from '../videoAnalysisSchema.ts';
 
 export interface VideoStoryboardServiceDeps {
   store: WorkspaceStore;
@@ -176,9 +182,8 @@ export function createVideoStoryboardService(deps: VideoStoryboardServiceDeps) {
       }
     }
 
-    // 2. 解析视频绝对路径；远程 URL 或超上限本地文件先转码压缩成理解模型可接受的样片
+    // 2. 解析视频绝对路径或远端 URL；媒体内联传输准备与分流统一由 Hub headlessSkill 承接
     const absVideoPath = resolveVideoAbsolutePath(deps, workspaceId, input.videoPath);
-    const analyzeVideoPath = (await prepareVideoForAnalyze(deps, workspaceId, absVideoPath)) ?? absVideoPath;
 
     // 3. 寻找源视频节点并检查是否已有专属分镜表节点（严格匹配 origin === 'video_storyboard' && sourceVideoNodeId === input.nodeId）
     let existingNode: CanvasNode | undefined;
@@ -280,15 +285,13 @@ export function createVideoStoryboardService(deps: VideoStoryboardServiceDeps) {
       }
     }
 
-    // 5. 调用 video_analyze 工具获取逐镜头脚本分析（失败即报错，不做保底降级）
-    const analyzeTool = (deps.getTool?.('video_analyze') ?? deps.getSeam?.('videoAnalyze')) as
-      | { execute?: (args: Record<string, unknown>) => Promise<any> }
-      | undefined;
+    // 5. 通过 Hub headlessSkill 接缝执行结构化逐镜头脚本分析（失败即报错，不做保底降级）
+    const headlessSkill = deps.getSeam?.('headlessSkill') as HeadlessSkillSeam | undefined;
 
-    if (!analyzeTool || typeof analyzeTool.execute !== 'function') {
+    if (!headlessSkill || typeof headlessSkill.run !== 'function') {
       throw new VideoStoryboardError(
         'analyze-unavailable',
-        '视频理解能力不可用，请确认已启用视频理解能力后重试',
+        '视频理解能力不可用，请确认已启用执行中枢无头技能服务后重试',
         502,
       );
     }
@@ -304,26 +307,49 @@ export function createVideoStoryboardService(deps: VideoStoryboardServiceDeps) {
       );
     }
 
-    let analyzeMarkdown = '';
+    const inputFingerprint = computeMediaInputFingerprint({
+      operation: 'video-storyboard',
+      workspaceId,
+      nodeId: input.nodeId,
+      mediaPathOrUrl: absVideoPath,
+      model: analyzeModel.modelId,
+    });
+
+    let structuredData: unknown;
     try {
-      const res = await analyzeTool.execute({ video: analyzeVideoPath, model: analyzeModel.modelId });
-      const text =
-        res?.report ||
-        res?.text ||
-        res?.data?.report ||
-        res?.data?.text ||
-        (typeof res === 'string' ? res : '');
-      if (typeof text === 'string') analyzeMarkdown = text.trim();
+      const res = await headlessSkill.run({
+        skillName: WORKFLOW_VIDEO_DECONSTRUCT_SKILL,
+        input: buildVideoStoryboardInput(title, scenes),
+        references: [{ type: 'video', pathOrUrl: absVideoPath }],
+        outputSchema: VIDEO_STORYBOARD_SCHEMA,
+        modality: 'video',
+        label: `视频分镜：${title}`,
+        ownerPlugin: 'omnimux-workflow',
+        targetId: `${workspaceId}:${input.nodeId}:storyboard`,
+        inputFingerprint,
+        verifyFingerprint: () =>
+          computeMediaInputFingerprint({
+            operation: 'video-storyboard',
+            workspaceId,
+            nodeId: input.nodeId,
+            mediaPathOrUrl: absVideoPath,
+            model: analyzeModel.modelId,
+          }) === inputFingerprint,
+        model: analyzeModel.modelId,
+      });
+      if (res?.mode === 'live' && res.data && typeof res.data === 'object' && !Array.isArray(res.data)) {
+        structuredData = res.data;
+      }
     } catch (err) {
       const failure = describeVideoAnalyzeFailure(err);
-      logger.error('video_analyze invocation failed', {
+      logger.error('headlessSkill video storyboard invocation failed', {
         code: failure.code,
         error: err instanceof Error ? err.message : String(err),
       });
       throw new VideoStoryboardError(failure.code, failure.message, 502, failure.upstream);
     }
 
-    if (!analyzeMarkdown) {
+    if (!structuredData) {
       throw new VideoStoryboardError(
         'analyze-empty',
         '视频理解未返回可用的分析内容，请重试',
@@ -331,36 +357,8 @@ export function createVideoStoryboardService(deps: VideoStoryboardServiceDeps) {
       );
     }
 
-    // 6. 解析 Markdown 中的分镜表格（解析不到真实镜头即报错）
-    const parsedTables = extractMarkdownTables(analyzeMarkdown);
-    let scriptShots: ExtractedShotItem[] = [];
-
-    if (parsedTables.length > 0 && parsedTables[0]!.rows.length > 0) {
-      const t = parsedTables[0]!;
-      // 寻找对应的列索引
-      const findColIdx = (keywords: string[]) =>
-        t.headers.findIndex((h) => keywords.some((k) => h.includes(k)));
-
-      const timeCol = findColIdx(['时间', 'Time', '时间码']);
-      const visualCol = findColIdx(['画面', 'Visual', '描述', 'Shot', '景别']);
-      const actionCol = findColIdx(['动作', 'Action', '关键动作']);
-      const scriptCol = findColIdx(['脚本', 'Script', '台词', '模板']);
-
-      scriptShots = t.rows.map((r, idx) => {
-        const timeRange = timeCol >= 0 && r[timeCol] ? r[timeCol]! : '';
-        const visual = visualCol >= 0 && r[visualCol] ? r[visualCol]! : '';
-        const action = actionCol >= 0 && r[actionCol] ? r[actionCol]! : '';
-        const script = scriptCol >= 0 && r[scriptCol] ? r[scriptCol]! : '';
-
-        return {
-          shotNo: idx + 1,
-          timeRange,
-          shotType: visual.includes('/') ? visual.split('/')[0]!.trim() : '',
-          description: action ? (visual ? `${visual}；${action}` : action) : visual,
-          dialogue: script || '（无对白/环境音）',
-        };
-      });
-    }
+    // 6. 直接消费结构化分镜镜头数组（解析不到真实镜头即报错，不再做 Markdown 表格正则解析）
+    const scriptShots: ExtractedShotItem[] = normalizeStoryboardShots(structuredData);
 
     if (scriptShots.length === 0) {
       throw new VideoStoryboardError(

@@ -253,3 +253,12 @@ test('sync-to-app merged source identity policy passes', () => {
   })
   strictEqual(res.status, 0, `sync-source-identity tests failed: ${res.stderr}\n${res.stdout}`)
 })
+
+test('legacy path cleanup regression suite passes', () => {
+  const res = spawnSync('node', ['--test', resolve(here, 'legacy-paths-242.test.mjs')], {
+    cwd: repoRoot,
+    encoding: 'utf8',
+    env: nestedTestEnv,
+  })
+  strictEqual(res.status, 0, `legacy-path cleanup tests failed: ${res.stderr}\n${res.stdout}`)
+})
