@@ -55,7 +55,7 @@
 }
 
 .trendUp {
-  color: var(--dsw-alias-status-success);
+  color: var(--dsw-alias-state-success-primary);
 }
 
 .trendDown {

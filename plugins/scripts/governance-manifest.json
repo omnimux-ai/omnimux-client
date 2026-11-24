@@ -141,6 +141,8 @@
     "verify-dev-cdp.mjs",
     "verify-dev-smoke.mjs",
     "verify-dsh-lockfile-uniform.mjs",
+    "verify-dsw-tokens.mjs",
+    "verify-dsw-tokens.test.mjs",
     "verify-fix-regression-test.mjs",
     "verify-global-skills.mjs",
     "verify-global-skills.test.mjs",

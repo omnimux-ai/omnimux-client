@@ -93,11 +93,11 @@
 }
 
 .rowSelected {
-  background-color: var(--dsw-alias-interactive-bg-selected);
+  background-color: var(--dsw-alias-interactive-bg-active);
 }
 
 .rowSelected:hover {
-  background-color: var(--dsw-alias-interactive-bg-selected);
+  background-color: var(--dsw-alias-interactive-bg-active);
 }
 
 .cell {

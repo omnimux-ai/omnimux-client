@@ -32,12 +32,6 @@
 
 ### 契约与运行时边界
 
-- **网关、目录与宿主运行时契约单一真源，客户端不得自造默认值、推导命名或伪造就绪状态**（`seen 3` · 最近 `2026-11-24`）
-  - 为什么：把线路顺序、模式命名、模型回退、主题 Token 或宿主能力状态硬编码在客户端，上游契约或会话状态变化时会触发多插件连续返修。
-  - 反例：#72/#74（DSH rc.3 会话读口漂移）、#107→#117（H3 对口型载荷误判）、#136/#176（自造视频模式名与绕过目录默认线路）、#196（漏发 `X-Omnimux-Group`）、#209/#254（市场静态伪造 `installed: true` / 预设状态）、#259（使用宿主不存在的 `--dsw-alias-label-inverse`）、#261（`textComplete` 忽略当前会话模型走三跳静默回退）、#262（未识别品牌静默回落 `bytedance`）。
-  - 正例：#136/#176/#209/#254（消费网关与 `ctx.agentPresets` / `ctx.skills` 真实运行态）、#261 `29d2e4fa`（默认跟随当前会话模型，不支持即显式报错）、#262 `ba51fda4`（品牌目录统一收敛至网关契约与 `dsh-ui-kit/model-brands`，未识别渲染中性占位）。
-  - 状态：已晋升 [AGENTS.md](AGENTS.md#硬约束)，待 #264 静态门禁（`--dsw-*` 真源白名单/棘轮门禁 + `dsh-ui-kit` 清零）合入后正式迁入「已毕业」。
-
 - **异步交接、共享状态作用域与宿主主线程边界：跨会话/跨节点交接须带作用域与代际取消，Host 主线程严禁同步文件 I/O**（`seen 2` · 最近 `2026-11-22`）
   - 为什么：异步回执缺少作用域或代际取消，会导致草稿丢失、导入串节点或共享路由卡在加载态；Host 主线程同步扫盘会卡死桌面交互。
   - 反例：#129（新建会话 remount 丢失技能创建草稿）、#144（重选文件/JSON 未取消旧读取导致落到错误节点）、#162（画布与剪辑绑定串上下文）、#177（托管工坊共享路由停在无工程 `editor` 态导致欢迎页卡死）、#182（工程列表与文件读取阻塞 Host 主线程）。
@@ -65,3 +59,4 @@
 | 真实非空载荷与双向证伪回归测试（`seen 3`） | [AGENTS.md · 一坑一测试](AGENTS.md#一坑一测试)（#18/#49/#53/#90/#107/#132/#142） |
 | UI 真实渲染几何、连续操作与浮层防透底（`seen 3`） | [AGENTS.md · 合并与复核](AGENTS.md#合并与复核) · [guard-no-transparent-popover.mjs](plugins/scripts/guard-no-transparent-popover.mjs)（#45/#54/#112→#116/#155/#171） |
 | 公开文档 DSH 运行时版本声明一致性 | [verify-docs-dsh-version.mjs](scripts/verify-docs-dsh-version.mjs) · [workspace-check.mjs](scripts/workspace-check.mjs)（PR #256） |
+| 网关、目录与宿主运行时契约单一真源（`seen 3`） | [AGENTS.md · 硬约束](AGENTS.md#硬约束) · [verify-dsw-tokens.mjs](plugins/scripts/verify-dsw-tokens.mjs)（#264 / PR #266） |
