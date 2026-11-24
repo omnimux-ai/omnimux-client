@@ -1,13 +1,19 @@
 import { createServer } from 'node:http';
 import { execFile } from 'node:child_process';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildFixture, repo } from './expression-consent/build.mjs';
 
-const root = join(repo, '.agent-reports/clip-expression-consent');
-await mkdir(root, { recursive: true });
-const output = await mkdtemp(join(root, 'run-'));
+const writeEvidence = process.env.OMNIMUX_WRITE_EVIDENCE === '1';
+const output = writeEvidence
+  ? await (async () => {
+      const root = join(repo, '.agent-reports/clip-expression-consent');
+      await mkdir(root, { recursive: true });
+      return mkdtemp(join(root, 'run-'));
+    })()
+  : await mkdtemp(join(tmpdir(), 'omnimux-clip-expression-consent-'));
 let server;
 try {
   await buildFixture(output);
@@ -51,4 +57,7 @@ try {
   await rm(join(output, 'dist'), { recursive: true, force: true });
   await writeFile(join(output, 'server-closure.json'), JSON.stringify({ stopped: true }));
   console.log(`Evidence: ${output}`);
+  if (!writeEvidence) {
+    await rm(output, { recursive: true, force: true });
+  }
 }

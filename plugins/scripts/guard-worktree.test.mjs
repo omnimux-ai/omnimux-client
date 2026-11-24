@@ -133,41 +133,69 @@ describe('guard-worktree decideWrite (全量版本文件拦截)', () => {
     assert.equal(result.reason, 'tracked-file')
   })
 
-  it('allows gitignored plugin paths in main repo', () => {
+  it('denies non-allowlisted ephemeral and gitignored plugin paths in main repo under Default-Deny', () => {
     const result = decideWrite({
       toolName: 'write',
       cwd: mainRepoRoot,
       filePath: 'plugins/omnimux/node_modules/not-a-real-pkg/index.js',
     })
-    assert.equal(result.decision, 'allow')
-    assert.ok(result.reason === 'ephemeral' || result.reason === 'gitignored')
+    assert.equal(result.decision, 'deny')
+    assert.equal(result.reason, 'untracked-protected-scope')
+
+    const wtResult = decideWrite({
+      toolName: 'write',
+      cwd: worktreeRoot,
+      filePath: 'plugins/omnimux/node_modules/not-a-real-pkg/index.js',
+    })
+    assert.equal(wtResult.decision, 'allow')
+    assert.equal(wtResult.reason, 'worktree-isolated')
   })
 
-  it('allows workflow dist / dist-harness (temp build dirs)', () => {
+  it('denies workflow dist / dist-harness writes in main repo while allowing them in worktree', () => {
     const distHarness = decideWrite({
       toolName: 'write',
       cwd: mainRepoRoot,
       filePath: 'plugins/omnimux-workflow/dist-harness/scratch.js',
     })
-    assert.equal(distHarness.decision, 'allow')
+    assert.equal(distHarness.decision, 'deny')
+    assert.equal(distHarness.reason, 'untracked-protected-scope')
 
     const dist = decideWrite({
       toolName: 'write',
       cwd: mainRepoRoot,
       filePath: 'plugins/omnimux-workflow/dist/index.js',
     })
-    assert.equal(dist.decision, 'allow')
-    assert.equal(dist.reason, 'ephemeral')
+    assert.equal(dist.decision, 'deny')
+    assert.equal(dist.reason, 'untracked-protected-scope')
+
+    const wtDist = decideWrite({
+      toolName: 'write',
+      cwd: worktreeRoot,
+      filePath: 'plugins/omnimux-workflow/dist/index.js',
+    })
+    assert.equal(wtDist.decision, 'allow')
+    assert.equal(wtDist.reason, 'worktree-isolated')
   })
 
-  it('allows untracked scratch files in main repo root and .workbuddy', () => {
-    const result = decideWrite({
-      toolName: 'write',
-      cwd: mainRepoRoot,
-      filePath: '__untracked_scratch_987654.txt',
-    })
-    assert.equal(result.decision, 'allow')
-    assert.equal(result.reason, 'untracked-draft')
+  it('denies untracked scratch files in main repo root while allowing .workbuddy runtime allowlist', () => {
+    for (const rel of [
+      '__untracked_scratch_987654.txt',
+      'app/new-file.ts',
+      'specs/new-draft.spec.md',
+      'ui-demo/preview.html',
+      '.tmp/scratch.txt',
+      'plugins/.agent-reports/run/out.json',
+      'future-unlisted-dir/nested/file.js',
+      '.workbuddy-evil/escape.md',
+    ]) {
+      const result = decideWrite({
+        toolName: 'write',
+        cwd: mainRepoRoot,
+        filePath: rel,
+      })
+      assert.equal(result.decision, 'deny', `Expected Default-Deny for ${rel}`)
+      assert.equal(result.reason, 'untracked-protected-scope', `Expected untracked-protected-scope for ${rel}`)
+    }
 
     const workbuddyResult = decideWrite({
       toolName: 'write',
@@ -175,7 +203,7 @@ describe('guard-worktree decideWrite (全量版本文件拦截)', () => {
       filePath: '.workbuddy/scratch_board.md',
     })
     assert.equal(workbuddyResult.decision, 'allow')
-    assert.ok(workbuddyResult.reason === 'gitignored' || workbuddyResult.reason === 'untracked-draft')
+    assert.equal(workbuddyResult.reason, 'primary-runtime-allowlist')
   })
 
   it('denies untracked files in protected scopes (plugins, scripts, docs, .github)', () => {
@@ -325,10 +353,12 @@ describe('registered worktree boundaries', () => {
       assert.equal(JSON.parse(result.stdout).hookSpecificOutput.permissionDecision, expected)
     }
   })
-  it('preserves ignored and ephemeral exemptions', () => {
-    assert.equal(decision(join(mainRepoRoot, 'ignored/file.js')), 'allow')
-    assert.equal(decision(join(mainRepoRoot, 'dist/file.js')), 'allow')
-    assert.equal(decision(join(mainRepoRoot, 'trace.log')), 'allow')
+  it('enforces Default-Deny on ignored/ephemeral primary paths while preserving .workbuddy and worktree exemptions', () => {
+    assert.equal(decision(join(mainRepoRoot, 'ignored/file.js')), 'deny')
+    assert.equal(decision(join(mainRepoRoot, 'dist/file.js')), 'deny')
+    assert.equal(decision(join(mainRepoRoot, 'trace.log')), 'deny')
+    assert.equal(decision(join(mainRepoRoot, '.workbuddy/state.json')), 'allow')
+    assert.equal(decision(join(worktreeRoot, 'dist/file.js')), 'allow')
   })
   it('fails conservatively without Git and with abnormal Git exits', () => {
     const emptyBin = join(fixture, 'empty-bin')
@@ -386,14 +416,14 @@ describe('guard-worktree PreToolUse protocol', () => {
     assert.equal(outRoot.hookSpecificOutput.permissionDecision, 'deny')
   })
 
-  it('emits allow JSON for untracked / ignored / worktree paths', () => {
+  it('emits allow JSON for .workbuddy and worktree paths while denying non-allowlisted primary paths', () => {
     const ignored = runHook({
       hook_event_name: 'PreToolUse',
       tool_name: 'write',
       cwd: mainRepoRoot,
       tool_input: { file_path: join(mainRepoRoot, 'plugins/omnimux-workflow/dist-harness/hook-test.js') },
     })
-    assert.equal(ignored.hookSpecificOutput.permissionDecision, 'allow')
+    assert.equal(ignored.hookSpecificOutput.permissionDecision, 'deny')
 
     const untracked = runHook({
       hook_event_name: 'PreToolUse',
@@ -401,7 +431,23 @@ describe('guard-worktree PreToolUse protocol', () => {
       cwd: mainRepoRoot,
       tool_input: { file_path: join(mainRepoRoot, '__guard_untracked_scratch__.tmp') },
     })
-    assert.equal(untracked.hookSpecificOutput.permissionDecision, 'allow')
+    assert.equal(untracked.hookSpecificOutput.permissionDecision, 'deny')
+
+    const workbuddy = runHook({
+      hook_event_name: 'PreToolUse',
+      tool_name: 'write',
+      cwd: mainRepoRoot,
+      tool_input: { file_path: join(mainRepoRoot, '.workbuddy/hook-test.md') },
+    })
+    assert.equal(workbuddy.hookSpecificOutput.permissionDecision, 'allow')
+
+    const wt = runHook({
+      hook_event_name: 'PreToolUse',
+      tool_name: 'write',
+      cwd: worktreeRoot,
+      tool_input: { file_path: join(worktreeRoot, 'plugins/omnimux-workflow/dist-harness/hook-test.js') },
+    })
+    assert.equal(wt.hookSpecificOutput.permissionDecision, 'allow')
   })
 })
 
@@ -781,25 +827,46 @@ describe('guard-worktree bash command write safety guard (防命令行绕过篡�
     )
   })
 
-  it('allows ephemeral and gitignored targets on the main checkout', () => {
+  it('denies ephemeral and gitignored bash targets on main checkout while allowing .workbuddy and external tmp', () => {
     assert.equal(
       decideBashCommand({
         command: 'cp /tmp/bundle.js dist/app.js',
         cwd: mainRepoRoot,
       }).decision,
-      'allow',
+      'deny',
     )
     assert.equal(
       decideBashCommand({
         command: 'echo "log info" > trace.log',
         cwd: mainRepoRoot,
       }).decision,
-      'allow',
+      'deny',
     )
     assert.equal(
       decideBashCommand({
         command: 'cp /tmp/data.txt ignored/item.txt',
         cwd: mainRepoRoot,
+      }).decision,
+      'deny',
+    )
+    assert.equal(
+      decideBashCommand({
+        command: 'echo "board" > .workbuddy/pr-board.md',
+        cwd: mainRepoRoot,
+      }).decision,
+      'allow',
+    )
+    assert.equal(
+      decideBashCommand({
+        command: 'echo "log" > /tmp/out.log',
+        cwd: mainRepoRoot,
+      }).decision,
+      'allow',
+    )
+    assert.equal(
+      decideBashCommand({
+        command: 'cp /tmp/bundle.js dist/app.js',
+        cwd: worktreeRoot,
       }).decision,
       'allow',
     )
@@ -931,8 +998,16 @@ describe('guard-worktree bash command write safety guard (防命令行绕过篡�
       'allow',
     )
     assert.equal(
-      decideBashCommand({ command: 'touch -r package.json .tmp/out.txt', cwd: mainRepoRoot }).decision,
+      decideBashCommand({ command: 'touch -r package.json .workbuddy/out.txt', cwd: mainRepoRoot }).decision,
       'allow',
+    )
+    assert.equal(
+      decideBashCommand({ command: 'touch -r package.json /tmp/out.txt', cwd: mainRepoRoot }).decision,
+      'allow',
+    )
+    assert.equal(
+      decideBashCommand({ command: 'touch -r package.json .tmp/out.txt', cwd: mainRepoRoot }).decision,
+      'deny',
     )
     assert.equal(
       decideBashCommand({ command: 'node scripts/dev-doctor.sh', cwd: mainRepoRoot }).decision,
@@ -995,10 +1070,56 @@ describe('guard-worktree materialization safety guard (多 Agent 物化防覆盖
     assert.equal(isMaterializationCommand('node scripts/omnimux.mjs sync'), true)
     assert.equal(isMaterializationCommand('omnimux.mjs sync --prod'), true)
 
-    // 豁免自动化测试与构建等非物化执行
+    // 豁免自动化测试、语法检查与多行脚本中的只读检视（修复 grep ... sync-to-app.sh 误杀）
     assert.equal(isMaterializationCommand('node --test scripts/sync-targets.test.mjs'), false)
     assert.equal(isMaterializationCommand('pnpm test'), false)
     assert.equal(isMaterializationCommand('echo sync-to-app.sh'), false)
+    assert.equal(isMaterializationCommand('P=/tmp\necho "=== check ==="\ngrep -n assert_omnimux_sync_main plugins/scripts/sync-to-app.sh'), false)
+    assert.equal(isMaterializationCommand('sed -n "1,20p" plugins/scripts/sync-to-app.sh | head -5'), false)
+    assert.equal(isMaterializationCommand('bash -n plugins/scripts/sync-to-app.sh'), false)
+    assert.equal(isMaterializationCommand('git diff -- plugins/scripts/sync-to-app.sh'), false)
+  })
+
+  it('allows --isolated materialization from worktree or behind main because it checks out clean origin/main', () => {
+    assert.equal(
+      decideBashCommand({ command: './scripts/sync-to-app.sh --isolated omnimux', cwd: worktreeRoot }).decision,
+      'allow',
+    )
+    assert.equal(
+      decideBashCommand({ command: 'corepack yarn omnimux:sync --isolated omnimux-assets', cwd: worktreeRoot }).decision,
+      'allow',
+    )
+  })
+
+  it('unwraps corepack/env/KEY=VAL and catches build:* / unfrozen --dir installs while allowing Yarn --immutable', () => {
+    for (const cmd of [
+      'corepack pnpm --dir plugins run build:all',
+      'env CI=1 pnpm build:all',
+      'NODE_ENV=production pnpm run compile:host',
+      'corepack yarn package:dev',
+      'corepack pnpm --dir plugins install',
+      'corepack yarn install',
+      'corepack yarn install --immutable=false',
+    ]) {
+      assert.equal(
+        decideBashCommand({ command: cmd, cwd: mainRepoRoot }).decision,
+        'deny',
+        `Expected deny on primary checkout: ${cmd}`,
+      )
+    }
+
+    for (const cmd of [
+      'corepack yarn install --immutable',
+      'corepack pnpm --dir plugins install --frozen-lockfile',
+      `corepack pnpm --dir "${worktreeRoot}" run build:all`,
+      'env CI=1 pnpm install --frozen-lockfile',
+    ]) {
+      assert.equal(
+        decideBashCommand({ command: cmd, cwd: mainRepoRoot }).decision,
+        'allow',
+        `Expected allow: ${cmd}`,
+      )
+    }
   })
 
   it('denies materialization commands executed from inside an isolated worktree', () => {

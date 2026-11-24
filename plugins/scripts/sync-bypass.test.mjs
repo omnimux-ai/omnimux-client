@@ -224,3 +224,33 @@ test('drifted or dirty git submodule does not block plugin sync-main while super
   assert.equal(blocked.status, 1)
   assert.match(blocked.stderr, /已跟踪文件的未提交改动/)
 })
+
+test('sync-to-app.sh --isolated materializes from fresh origin/main detached worktree even when primary checkout is dirty and behind, and cleans up temp worktree', t => {
+  const f = fixture(t, 'behind')
+  // 同时让主检出既落后 origin/main，又存在已跟踪文件脏改动
+  writeFileSync(join(f.repo, 'scripts/sync-main.sh'), readFileSync(join(f.repo, 'scripts/sync-main.sh'), 'utf8') + '\n# dirty-primary\n')
+
+  // 普通调用必须仍被主检出洁净度门禁拦截
+  const direct = spawnSync('bash', [join(f.repo, 'scripts/sync-to-app.sh'), '--skip-build', `--target=${f.target}`, 'missing-plugin'], {
+    encoding: 'utf8',
+    env: { ...f.gitEnv, HOME: f.home, OMNIMUX_SYNC_TARGETS: '' },
+  })
+  assert.notEqual(direct.status, 0)
+  assert.match(direct.stderr, /已跟踪文件的未提交改动|不等于最新 origin\/main/)
+
+  // --isolated 自动签出最新 origin/main 的干净临时 detached worktree，顺利通过源码身份门禁并在退出后清理临时工作树
+  const isolated = spawnSync('bash', [join(f.repo, 'scripts/sync-to-app.sh'), '--isolated', '--skip-build', `--target=${f.target}`, 'missing-plugin'], {
+    encoding: 'utf8',
+    env: { ...f.gitEnv, HOME: f.home, OMNIMUX_SYNC_TARGETS: '' },
+  })
+  assert.match(isolated.stdout, /sync --isolated: 签出最新 origin\/main/)
+  assert.doesNotMatch(isolated.stderr, /已跟踪文件的未提交改动|不等于最新 origin\/main|会进入物化产物的未跟踪文件/, isolated.stderr)
+  // 越过源码身份门禁后到达下游插件解析失败（证明临时工作树干净且精确对齐 origin/main）
+  assert.match(isolated.stderr, /源码缺失/, isolated.stderr)
+
+  // 确认临时 worktree 已被 trap 自动拆除，主检出的 worktree 列表仅有主检出本身
+  const wtList = spawnSync('git', ['-C', f.repo, 'worktree', 'list', '--porcelain'], { encoding: 'utf8', env: f.gitEnv })
+  assert.equal(wtList.status, 0, wtList.stderr)
+  const worktreeLines = wtList.stdout.split('\n').filter((line) => line.startsWith('worktree '))
+  assert.equal(worktreeLines.length, 1, `Temporary isolated worktree was not cleaned up:\n${wtList.stdout}`)
+})

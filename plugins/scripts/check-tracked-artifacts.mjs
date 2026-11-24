@@ -17,6 +17,10 @@ export const FORBIDDEN_ARTIFACT_GLOBS = [
   'plugins/*/lib/client.js',
   'plugins/omnimux-workflow/dist',
   'plugins/omnimux-workflow/lib/canvas.js',
+  '.agent-reports',
+  'plugins/.agent-reports',
+  'docs/evidence/dev-smoke*',
+  'plugins/docs/evidence/dev-smoke*',
 ]
 
 export function isForbiddenArtifact(path) {
@@ -29,6 +33,12 @@ export function isForbiddenArtifact(path) {
     return true
   }
   if (/^plugins\/[^/]+\/lib\/client\.js$/.test(rel)) {
+    return true
+  }
+  if (/(?:^|\/)\.agent-reports(?:\/|$)/.test(rel)) {
+    return true
+  }
+  if (/(?:^|\/)docs\/evidence\/dev-smoke(?:[-/.]|$)/.test(rel)) {
     return true
   }
   return false
@@ -48,8 +58,8 @@ export function forbiddenTrackedPaths(lsFilesOutput) {
 
 export function formatFailure(paths) {
   return [
-    '插件客户端及分发生成物不得进 Git（源码为唯一真相）。',
-    '请 git rm --cached 下列文件，走 sync-to-app 或 pnpm --filter <pkg> run build 现场生成：',
+    '插件客户端生成物、运行期报告（.agent-reports）与冒烟产物（dev-smoke*）不得进 Git（源码为唯一真相）。',
+    '请 git rm --cached 下列文件，构建产物走 sync-to-app 或 pnpm --filter <pkg> run build 现场生成，运行期证据改写 os.tmpdir() 或 .workbuddy/evidence/：',
     ...paths.map((p) => `  - ${p}`),
   ].join('\n')
 }
@@ -62,9 +72,7 @@ export function gitLsForbiddenArtifacts(root) {
       root,
       'ls-files',
       '--',
-      'plugins/*/lib/client.js',
-      'plugins/omnimux-workflow/dist',
-      'plugins/omnimux-workflow/lib/canvas.js',
+      ...FORBIDDEN_ARTIFACT_GLOBS,
     ],
     { encoding: 'utf8' },
   )

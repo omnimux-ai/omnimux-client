@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { assertComposerRuntimeReadable, composerRuntimePaths, privateStarterFs, redact, resolveComposerCli, taskRoot } from './composer-inline-bootstrap.mjs';
+import { assertComposerRuntimeReadable, composerRuntimePaths, privateStarterFs, redact, resolveComposerCli } from './composer-inline-bootstrap.mjs';
 
 test('private starter rejects forbidden paths before reading metadata', () => {
   const calls = [];
@@ -22,7 +23,7 @@ test('private starter rejects forbidden paths before reading metadata', () => {
 });
 
 test('private starter fails closed on task-owned ancestor links and missing descendants', () => {
-  const root = fs.mkdtempSync(join(taskRoot, '.agent-reports/composer-inline/path-fixture-'));
+  const root = fs.mkdtempSync(join(fs.realpathSync(tmpdir()), 'omnimux-composer-inline-path-fixture-'));
   try {
     const home = join(root, 'home');
     fs.mkdirSync(join(home, '.omnimux-dev'), { recursive: true });

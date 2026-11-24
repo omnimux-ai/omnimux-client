@@ -3,6 +3,7 @@ import { test } from 'node:test'
 import { createHash } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -20,9 +21,7 @@ for (const name of ['test:gates', 'check:package-files']) {
 }
 
 function fixture(t, withExamples) {
-  const parent = join(root, '.agent-reports/package-preparation-fixtures')
-  mkdirSync(parent, { recursive: true })
-  const dir = mkdtempSync(join(parent, 'run-'))
+  const dir = mkdtempSync(join(tmpdir(), 'omnimux-package-prep-'))
   t.after(() => rmSync(dir, { recursive: true, force: true }))
   const plugin = join(dir, 'plugins/omnimux-forms')
   const sourcePlugin = join(root, 'plugins/omnimux-forms')

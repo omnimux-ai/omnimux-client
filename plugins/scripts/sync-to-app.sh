@@ -8,13 +8,14 @@
 # 用法：
 #   plugins/scripts/sync-to-app.sh                     # 默认：构建并同步全部清单插件到 ~/.omnimux-dev
 #   plugins/scripts/sync-to-app.sh omnimux-assets       # 默认：只同步一个插件到 ~/.omnimux-dev
+#   plugins/scripts/sync-to-app.sh --isolated omnimux   # 从最新 origin/main 临时 detached worktree 隔离物化（不依赖主检出状态）
 #   plugins/scripts/sync-to-app.sh --prod               # 同步到正式版 ~/.omnimux
 #   plugins/scripts/sync-to-app.sh --all                # 广播同步到全部受管 Profile (~/.omnimux-dev, ~/.omnimux)
 #   plugins/scripts/sync-to-app.sh --target=dev,prod    # 自定义多目标同步
 #   plugins/scripts/sync-to-app.sh --skip-build omnimux-assets
 #
 # 主入口（推荐）：在仓根运行
-#   cd plugins && pnpm sync [插件...] [--prod|--all]
+#   cd plugins && pnpm sync [插件...] [--isolated] [--prod|--all]
 set -euo pipefail
 
 SCRIPT_ROOT="$(cd "$(dirname "$0")" && pwd)"
@@ -62,7 +63,7 @@ is_alpha_plugin() {
 }
 
 usage() {
-  sed -n '2,17p' "$0"
+  sed -n '2,18p' "$0"
   exit 1
 }
 
@@ -71,6 +72,66 @@ for arg in "${@:-}"; do
     usage
   fi
 done
+
+ISOLATED_REQUESTED=0
+ISOLATED_SKIP_BUILD=0
+ISOLATED_FORWARD_ARGS=()
+for arg in "${@:-}"; do
+  case "$arg" in
+    --isolated) ISOLATED_REQUESTED=1 ;;
+    --skip-build)
+      ISOLATED_SKIP_BUILD=1
+      ISOLATED_FORWARD_ARGS+=("$arg")
+      ;;
+    *) ISOLATED_FORWARD_ARGS+=("$arg") ;;
+  esac
+done
+
+if [ "$ISOLATED_REQUESTED" -eq 1 ] && [ "${OMNIMUX_SYNC_ISOLATED_ACTIVE:-0}" != "1" ]; then
+  for variable in ${!GIT_@}; do unset "$variable"; done
+  if ! git -C "$ROOT" remote 2>/dev/null | grep -qx 'origin'; then
+    echo '❌ sync --isolated: 无法找到 origin 远端，拒绝隔离物化。' >&2
+    exit 1
+  fi
+  if ! git -C "$ROOT" fetch --no-tags origin '+refs/heads/main:refs/remotes/origin/main' 2>/dev/null; then
+    echo '❌ sync --isolated: 无法 fetch 最新 origin/main，拒绝隔离物化。' >&2
+    exit 1
+  fi
+  target_commit="$(git -C "$ROOT" rev-parse --verify 'refs/remotes/origin/main^{commit}' 2>/dev/null)" || {
+    echo '❌ sync --isolated: 无法解析 origin/main 提交，拒绝隔离物化。' >&2
+    exit 1
+  }
+  iso_parent="$(mktemp -d "${TMPDIR:-/tmp}/omnimux-sync-isolated.XXXXXX")"
+  iso_dir="$iso_parent/wt"
+  cleanup_isolated_sync() {
+    git -C "$ROOT" worktree remove --force "$iso_dir" >/dev/null 2>&1 || true
+    rm -rf "$iso_parent"
+    git -C "$ROOT" worktree prune >/dev/null 2>&1 || true
+  }
+  trap cleanup_isolated_sync EXIT
+
+  echo "== sync --isolated: 签出最新 origin/main (${target_commit:0:12}) 至临时工作树 =="
+  git -C "$ROOT" worktree add --detach --quiet "$iso_dir" "$target_commit"
+
+  if [ -f "$iso_dir/plugins/scripts/sync-to-app.sh" ]; then
+    iso_script="$iso_dir/plugins/scripts/sync-to-app.sh"
+  elif [ -f "$iso_dir/scripts/sync-to-app.sh" ]; then
+    iso_script="$iso_dir/scripts/sync-to-app.sh"
+  else
+    echo "❌ sync --isolated: 临时工作树中未找到 sync-to-app.sh（$iso_dir）。" >&2
+    exit 1
+  fi
+
+  if [ "$ISOLATED_SKIP_BUILD" -eq 0 ] && [ "${OMNIMUX_SYNC_ISOLATED_SKIP_INSTALL:-0}" != "1" ] && [ -f "$iso_dir/pnpm-lock.yaml" ]; then
+    echo "== sync --isolated: 准备临时工作树依赖（frozen lockfile） =="
+    if ! (cd "$iso_dir" && corepack pnpm install --frozen-lockfile --ignore-scripts --offline >/dev/null 2>&1); then
+      (cd "$iso_dir" && corepack pnpm install --frozen-lockfile --ignore-scripts)
+    fi
+  fi
+
+  OMNIMUX_SYNC_ISOLATED_ACTIVE=1 bash "$iso_script" ${ISOLATED_FORWARD_ARGS[@]+"${ISOLATED_FORWARD_ARGS[@]}"}
+  exit $?
+fi
 
 # ---------------------------------------------------------------------------
 # 目标 Profiles 解析与参数处理
@@ -95,6 +156,7 @@ parse_target_value() {
 while [ $# -gt 0 ]; do
   case "$1" in
     -h|--help) usage ;;
+    --isolated) shift ;;
     --skip-build) SKIP_BUILD=1; shift ;;
     --dev|--omnimux-dev)
       TARGET_SELECTION+=("dev")

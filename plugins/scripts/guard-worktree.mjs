@@ -3,16 +3,15 @@
  * scripts/guard-worktree.mjs
  * dsh-hooks-plugin PreToolUse Guard for OmniMux DSH
  *
- * 全域版本控制守卫 (Universal Version-Control Guard):
- * 严禁在主 checkout 直接对任何已加入 Git 版本管理（Tracked）的文件/文件夹执行 edit/write 操作。
- * 强制所有改动走独立 Worktree 工作区 (plugins/scripts/git-wt.sh) 进行物理隔离，防止主干污染、冲突覆盖与成果丢弃。
- * 同时拦截对未推送提交具有毁灭性覆盖风险的 `git reset --hard` 操作。
+ * 全域版本控制守卫 (Default-Deny Primary Checkout Guard):
+ * 主 checkout 默认拒绝整个仓库根目录的直接写入（包含已跟踪文件、任意现有或未来新增目录的未跟踪文件、
+ * 以及 .tmp/ / .agent-reports/ / dist/ 等副产物），强制所有开发改动走独立 linked worktree 物理隔离。
+ * 同时拦截对未推送提交具有毁灭性覆盖风险的 `git reset --hard` 操作与主检出修改性构建。
  *
- * 豁免清单 (允许在主仓操作):
- *   - 独立 Worktree 目录 (目标路径经 Git 元数据与注册表核实的 linked worktree)
- *   - 临时/衍生目录或文件: node_modules, dist, dist-harness, tmp, temp, coverage, *.log, *.tsbuildinfo, .pnpm-store 等
- *   - 符合 .gitignore 的未跟踪/忽略文件 (git check-ignore)
- *   - 尚未被 git 跟踪的本地临时文件/草稿
+ * 唯一放行白名单（主检出场景）：
+ *   - 经 Git 元数据与注册表双向核实的独立 linked worktree 目录
+ *   - 仓库外非 Git 路径（例如 /tmp/...）
+ *   - 显式声明的本地协作运行态目录（当前仅 `.workbuddy/`，且已跟踪文件永不豁免）
  */
 
 import { spawnSync } from 'node:child_process'
@@ -35,28 +34,8 @@ const EPHEMERAL_DIR_NAMES = new Set([
 const EPHEMERAL_BASENAMES = new Set(['.DS_Store'])
 const EPHEMERAL_SUFFIXES = ['.log', '.tsbuildinfo']
 
-const PROTECTED_DIR_PREFIXES = [
-  'plugins/',
-  'scripts/',
-  'docs/',
-  'research/',
-  '.github/',
-  '.agents/',
-]
-
-const PROTECTED_ROOT_FILES = new Set([
-  'package.json',
-  'pnpm-workspace.yaml',
-  'pnpm-lock.yaml',
-  'tsconfig.json',
-  'tsconfig.host.json',
-  'tsconfig.client.json',
-  'AGENTS.md',
-  'CLAUDE.md',
-  'CONTEXT.md',
-  'design.md',
-  '.dsh/hooks.json',
-])
+/** 主检出唯一允许写入未跟踪本地运行态文件的目录白名单（已跟踪文件永不豁免）。 */
+export const PRIMARY_RUNTIME_ALLOWLIST_PREFIXES = Object.freeze(['.workbuddy/'])
 
 /** Resolve symlinks before classifying existing files or a new file's parent. */
 function canonicalTarget(fullPath) {
@@ -149,52 +128,57 @@ export function isEphemeralPath(fullPath) {
   return EPHEMERAL_SUFFIXES.some((suffix) => base.endsWith(suffix))
 }
 
-// Precondition: fullPath is an absolute path (all callers pass toFullPath /
-// canonicalTarget output). Relative inputs return false — resolve first.
-export function isProtectedScope(fullPath, cwd) {
-  const root = gitRoot(cwd) || cwd
-  const normalizedFull = String(fullPath || '').replace(/\\/g, '/')
-  // git rev-parse 输出真实路径（macOS 上 /tmp 会解析为 /private/tmp），
-  // 但 fullPath 可能携带调用方传入的逻辑路径；两边都要归一化后再比较。
-  let normalizedRoot = String(root || '').replace(/\\/g, '/').replace(/\/+$/, '')
-  let normalizedFullReal = normalizedFull
+function repoRelativePath(fullPath, cwd) {
+  let normalizedFullReal = String(fullPath || '').replace(/\\/g, '/')
+  let targetDir = cwd
   try {
-    if (normalizedRoot && normalizedRoot.startsWith('/')) normalizedRoot = realpathSync(normalizedRoot)
-    if (normalizedFull.startsWith('/')) {
-      const resolvedAncestor = canonicalTarget(normalizedFull)
-      if (resolvedAncestor) normalizedFullReal = resolvedAncestor
+    if (normalizedFullReal.startsWith('/')) {
+      normalizedFullReal = canonicalTarget(normalizedFullReal).replace(/\\/g, '/')
+      targetDir = existingDirectory(normalizedFullReal)
     }
   } catch {
-    // canonicalTarget/realpathSync 失败时按原值兜底，交给后面的 marker 兜底分支
+    // fallback to provided cwd
   }
-
-  let relative = normalizedFullReal
-  const insideRepo = normalizedRoot && normalizedFullReal.startsWith(normalizedRoot + '/')
-  if (insideRepo) {
-    relative = normalizedFullReal.slice(normalizedRoot.length + 1)
-  } else if (normalizedFullReal.startsWith('/')) {
+  const root = gitRoot(targetDir) || gitRoot(cwd) || ''
+  let normalizedRoot = String(root || '').replace(/\\/g, '/').replace(/\/+$/, '')
+  try {
+    if (normalizedRoot && normalizedRoot.startsWith('/')) {
+      normalizedRoot = realpathSync(normalizedRoot).replace(/\\/g, '/').replace(/\/+$/, '')
+    }
+  } catch {
+    // keep raw root
+  }
+  if (normalizedRoot && normalizedFullReal.startsWith(normalizedRoot + '/')) {
+    return normalizedFullReal.slice(normalizedRoot.length + 1)
+  }
+  if (normalizedFullReal.startsWith('/')) {
     const marker = '/omnimux-client/'
     const idx = normalizedFullReal.lastIndexOf(marker)
     if (idx !== -1) {
-      relative = normalizedFullReal.slice(idx + marker.length)
+      return normalizedFullReal.slice(idx + marker.length)
     }
   }
+  return null
+}
 
-  // 仓库外路径（如 ~/.agents/skills 绝对展开后）不受仓库保护目录约束；
-  // relative 未被改写 = 两条剥壳分支都没走，前缀兜底只是误伤
-  if (!insideRepo && relative === normalizedFullReal) return false
+export function isAllowedPrimaryRuntimePath(fullPath, cwd) {
+  const rel = repoRelativePath(fullPath, cwd)
+  if (!rel) return false
+  const cleanRel = rel.replace(/\/+$/, '')
+  return PRIMARY_RUNTIME_ALLOWLIST_PREFIXES.some((prefix) => {
+    const clean = prefix.replace(/\/+$/, '')
+    return cleanRel === clean || cleanRel.startsWith(clean + '/')
+  })
+}
 
-  // 1. 核心目录前缀匹配
-  if (PROTECTED_DIR_PREFIXES.some((prefix) => relative.startsWith(prefix) || relative.includes('/' + prefix))) {
-    return true
-  }
-
-  // 2. 根目录受保护关键文件
-  if (PROTECTED_ROOT_FILES.has(relative) || Array.from(PROTECTED_ROOT_FILES).some((f) => relative.endsWith('/' + f))) {
-    return true
-  }
-
-  return false
+// Precondition: fullPath is an absolute path (all callers pass toFullPath /
+// canonicalTarget output). Relative inputs return false — resolve first.
+export function isProtectedScope(fullPath, cwd) {
+  const rel = repoRelativePath(fullPath, cwd)
+  // 仓库外路径（如 ~/.agents/skills 或 /tmp）不受仓库 Default-Deny 约束
+  if (!rel) return false
+  // Default-Deny 整个主检出根目录，仅显式本地运行态白名单放行
+  return !isAllowedPrimaryRuntimePath(fullPath, cwd)
 }
 
 function git(args, cwd, preserveEnvironment = false) {
@@ -358,11 +342,15 @@ const VALUE_TAKING_FLAGS = new Set([
 export function isFrozenInstall(words) {
   return words.some((word) => {
     const value = String(word || '').toLowerCase()
-    // --frozen-lockfile / --frozen-lockfile=true；pnpm 也接受 --frozen-lockfile=false，
-    // 那种写法等于关闭冻结，必须判为不冻结。
-    if (value === '--frozen-lockfile') return true
+    // --frozen-lockfile（pnpm / yarn v1）与 --immutable（Yarn 4 / Berry）。
+    // =false / =0 等于关闭冻结，必须判为不冻结。
+    if (value === '--frozen-lockfile' || value === '--immutable') return true
     if (value.startsWith('--frozen-lockfile=')) {
       const flagValue = value.slice('--frozen-lockfile='.length)
+      return flagValue !== 'false' && flagValue !== '0'
+    }
+    if (value.startsWith('--immutable=')) {
+      const flagValue = value.slice('--immutable='.length)
       return flagValue !== 'false' && flagValue !== '0'
     }
     // npm 的等价形态：--prefer-offline 不改 lockfile 但仍可能写，故不认；只认 ci 与冻结 flag。
@@ -385,6 +373,7 @@ function positionalArgs(words) {
 
 /** Wrapper flags that consume the next token before the wrapped command starts. */
 const WRAPPER_FLAGS_WITH_VALUE = new Set(['--package', '-p', '--with', '--node-options', '--registry', '--cache'])
+const ENV_FLAGS_WITH_VALUE = new Set(['-u', '--unset', '-C', '--chdir', '-S', '--split-string'])
 
 function skipLeadingWrapperFlags(words) {
   let i = 0
@@ -400,18 +389,50 @@ function skipLeadingWrapperFlags(words) {
   return words.slice(i)
 }
 
+function skipEnvWrapper(words) {
+  let i = 0
+  while (i < words.length) {
+    const word = words[i]
+    if (word === '--') {
+      i += 1
+      break
+    }
+    if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(word)) {
+      i += 1
+      continue
+    }
+    if (word.startsWith('-')) {
+      i += ENV_FLAGS_WITH_VALUE.has(word) ? 2 : 1
+      continue
+    }
+    break
+  }
+  return words.slice(i)
+}
+
 /**
- * Unwrap `npx`, `pnpm exec|dlx`, `npm exec`, `yarn exec|dlx`, `bunx` so the
- * wrapped command is classified with the same rules as a direct invocation.
- * Bounded to 3 layers so nested wrappers cannot loop.
+ * Unwrap `KEY=VAL`, `env`, `corepack`, `command`, `npx`, `pnpm exec|dlx`,
+ * `npm exec`, `yarn exec|dlx`, `bunx` so the wrapped command is classified
+ * with the same rules as a direct invocation. Bounded to 6 layers.
  */
 function unwrapExecutionWrapper(words) {
   let current = words
-  for (let depth = 0; depth < 3; depth += 1) {
-    const head = (current[0] || '').toLowerCase()
+  for (let depth = 0; depth < 6; depth += 1) {
+    let envIdx = 0
+    while (envIdx < current.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(current[envIdx])) {
+      envIdx += 1
+    }
+    if (envIdx > 0) current = current.slice(envIdx)
+    if (current.length === 0) break
+
+    const head = commandBasename(current[0])
     const sub = (current[1] || '').toLowerCase()
     let rest = null
-    if (['npx', 'bunx'].includes(head)) {
+    if (head === 'env') {
+      rest = skipEnvWrapper(current.slice(1))
+    } else if (head === 'corepack' || head === 'command') {
+      rest = skipLeadingWrapperFlags(current.slice(1))
+    } else if (['npx', 'bunx'].includes(head)) {
       rest = skipLeadingWrapperFlags(current.slice(1))
     } else if (head === 'pnpm' && ['exec', 'dlx'].includes(sub)) {
       rest = skipLeadingWrapperFlags(current.slice(2))
@@ -692,36 +713,134 @@ export function extractCommandWriteTargets(command) {
 export function isForbiddenMainCheckoutWriteTarget(targetPath, cwd) {
   if (!targetPath || typeof targetPath !== 'string') return false
   const cleanTarget = targetPath.trim().replace(/^['"]|['"]$/g, '').replace(/\/\*+$/, '')
-  if (!cleanTarget) return false
-  const fullPath = toFullPath(cleanTarget, cwd)
-  if (!fullPath) return false
+  if (!cleanTarget || cleanTarget === '-' || cleanTarget === '/dev/null' || cleanTarget === '/dev/stdout' || cleanTarget === '/dev/stderr') {
+    return false
+  }
+  const rawFull = toFullPath(cleanTarget, cwd)
+  if (!rawFull) return false
+  let fullPath = rawFull
+  let targetDir = cwd
+  try {
+    fullPath = canonicalTarget(rawFull)
+    targetDir = existingDirectory(fullPath)
+  } catch {
+    return true // fail closed on unresolvable symlinks/paths
+  }
   if (isWorktreePath(fullPath)) return false
-  if (isEphemeralPath(fullPath)) return false
-  if (isGitIgnored(fullPath, cwd)) return false
-  return isProtectedScope(fullPath, cwd)
+
+  const state = gitFileState(fullPath, targetDir)
+  if (state === 'non-git-target') return false
+  if (state === 'tracked-file' || state === 'git-read-error') return true
+  return !isAllowedPrimaryRuntimePath(fullPath, targetDir)
+}
+
+const READONLY_INSPECTION_VERBS = new Set([
+  'echo', 'printf', 'cat', 'grep', 'egrep', 'fgrep', 'rg', 'head', 'tail',
+  'less', 'more', 'which', 'type', 'stat', 'ls', 'wc', 'file', 'awk',
+  'git', 'diff', 'cmp', 'readlink', 'realpath', 'dirname', 'basename',
+  'test', '[', '[[', 'bat', 'nl',
+])
+
+const MATERIALIZATION_SCRIPT_RE = /(?:^|\/)(?:sync-to-app|sync-stable|materialize-with-rollback|sync-main)\.sh$/
+
+function classifyMaterializationSegment(words) {
+  if (!words || words.length === 0) return null
+  const unwrapped = unwrapExecutionWrapper(words)
+  if (unwrapped.length === 0) return null
+  const verb = commandBasename(unwrapped[0])
+
+  // 豁免纯只读/检视命令（如多行脚本里的 grep ... sync-to-app.sh 或 sed -n ... sync-to-app.sh）
+  if (READONLY_INSPECTION_VERBS.has(verb)) return null
+  if (verb === 'sed' && !unwrapped.slice(1).some((w) => w === '-i' || /^-[a-zA-Z]*i/.test(w))) return null
+
+  const hasIsolated = unwrapped.some((w) => w === '--isolated')
+
+  // 1. 直接执行物化脚本（./scripts/sync-to-app.sh 等）
+  if (MATERIALIZATION_SCRIPT_RE.test(unwrapped[0])) {
+    return { script: commandBasename(unwrapped[0]), isolated: hasIsolated && unwrapped[0].endsWith('sync-to-app.sh') }
+  }
+
+  // 2. 通过 shell 显式执行（bash scripts/sync-to-app.sh；豁免 bash -n 语法检查）
+  if (['bash', 'sh', 'zsh', 'dash', 'ksh', 'source', '.'].includes(verb)) {
+    let i = 1
+    let syntaxCheckOnly = false
+    while (i < unwrapped.length && unwrapped[i].startsWith('-')) {
+      const flag = unwrapped[i]
+      if (flag === '--') {
+        i += 1
+        break
+      }
+      if (/^-[a-zA-Z]*n[a-zA-Z]*$/.test(flag)) syntaxCheckOnly = true
+      if (/^-[a-zA-Z]*c[a-zA-Z]*$/.test(flag) && unwrapped[i + 1]) {
+        return classifyMaterializationCommand(unwrapped[i + 1])
+      }
+      i += 1
+    }
+    if (syntaxCheckOnly) return null
+    const scriptArg = unwrapped[i] || ''
+    if (MATERIALIZATION_SCRIPT_RE.test(scriptArg)) {
+      return { script: commandBasename(scriptArg), isolated: hasIsolated && scriptArg.endsWith('sync-to-app.sh') }
+    }
+    return null
+  }
+
+  // 3. node scripts/omnimux.mjs sync 或 omnimux(.mjs) sync（豁免 node --test / *.test.* / vitest / jest）
+  if (verb === 'node') {
+    if (unwrapped.some((w) => w === '--test' || w === '--check' || w === '-c' || /\.test\.(?:mjs|js|ts)$/.test(w))) {
+      return null
+    }
+    let i = 1
+    while (i < unwrapped.length && unwrapped[i].startsWith('-')) {
+      i += 1
+    }
+    const scriptArg = unwrapped[i] || ''
+    const subArg = unwrapped[i + 1] || ''
+    if (/(?:^|\/)omnimux(?:\.mjs)?$/.test(scriptArg) && subArg === 'sync') {
+      return { script: 'omnimux.mjs sync', isolated: hasIsolated }
+    }
+    return null
+  }
+
+  if (verb === 'omnimux' || verb === 'omnimux.mjs') {
+    if (unwrapped[1] === 'sync') {
+      return { script: `${verb} sync`, isolated: hasIsolated }
+    }
+    return null
+  }
+
+  // 4. 包管理器入口：yarn omnimux:sync / pnpm sync / npm run omnimux:sync
+  if (['pnpm', 'npm', 'yarn', 'bun'].includes(verb)) {
+    const parsed = parsePackageManagerScript(unwrapped)
+    if (parsed && (parsed.script === 'omnimux:sync' || parsed.script === 'sync')) {
+      return { script: `${verb} ${parsed.script}`, isolated: hasIsolated }
+    }
+  }
+
+  return null
+}
+
+function classifyMaterializationCommand(command) {
+  if (!command || typeof command !== 'string') return null
+  const trimmed = command.trim()
+  if (!trimmed) return null
+  if (/\b(?:vitest|jest)\b/.test(trimmed)) return null
+
+  const segments = rawCommandSegments(trimmed)
+    .flatMap((seg) => seg.split(/(?<!\|)\|(?!\|)/).map((s) => s.trim()).filter(Boolean))
+
+  let matched = null
+  for (const seg of segments) {
+    const words = tokenizeCommandLine(stripShellRedirection(seg)).map((w) => w.replace(/^['"]|['"]$/g, ''))
+    const hit = classifyMaterializationSegment(words)
+    if (!hit) continue
+    if (!hit.isolated) return hit
+    matched = hit
+  }
+  return matched
 }
 
 export function isMaterializationCommand(command) {
-  if (!command || typeof command !== 'string') return false
-  const trimmed = command.trim()
-  if (!trimmed) return false
-
-  // 豁免自动化测试脚本运行与帮助提示
-  if (/\.test\.(?:mjs|js|ts)\b/.test(trimmed)) return false
-  if (/\b(?:vitest|jest)\b/.test(trimmed)) return false
-  // 豁免纯打印或只读命令（例如 echo / cat / grep 等）
-  if (/^(?:echo|cat|grep|head|tail|less|more|which)\b/.test(trimmed)) return false
-
-  // 匹配常见的物化与同步指令
-  const scriptPatterns = [
-    /(?:^|[/\s;&|'"])(?:scripts\/)?sync-to-app\.sh(?:[\s;&|'"]|$)/,
-    /(?:^|[/\s;&|'"])(?:scripts\/)?sync-stable\.sh(?:[\s;&|'"]|$)/,
-    /(?:^|[/\s;&|'"])(?:scripts\/)?materialize-with-rollback\.sh(?:[\s;&|'"]|$)/,
-    /(?:^|[/\s;&|'"])(?:scripts\/)?sync-main\.sh(?:[\s;&|'"]|$)/,
-    /(?:^|[/\s;&|'"])(?:node\s+)?(?:scripts\/)?omnimux(?:\.mjs)?\s+sync(?:[\s;&|'"]|$)/,
-  ]
-
-  return scriptPatterns.some((pattern) => pattern.test(trimmed))
+  return Boolean(classifyMaterializationCommand(command))
 }
 
 export function decideMaterializationCommand({ cwd }) {
@@ -929,12 +1048,69 @@ export function decideMainBranchGitOp(command, cwd, options = {}) {
   return { decision: 'allow' }
 }
 
+const PM_DIR_FLAGS = new Set(['--dir', '-C', '--prefix'])
+const PM_VALUE_FLAGS = new Set([
+  ...VALUE_TAKING_FLAGS,
+  '--workspace', '-w', '--cwd',
+])
+const BUILD_SCRIPT_RE = /^(?:build|compile|bundle|package)(?::.+)?$|^plugins:build$/i
+
+function parsePackageManagerScript(effectiveWords) {
+  if (!effectiveWords || effectiveWords.length < 2) return null
+  let i = 1
+  let targetDir = ''
+  while (i < effectiveWords.length) {
+    const w = effectiveWords[i]
+    if (w === '--') break
+    if (w.startsWith('-')) {
+      const eq = w.indexOf('=')
+      if (eq !== -1) {
+        const flag = w.slice(0, eq)
+        if (PM_DIR_FLAGS.has(flag)) targetDir = w.slice(eq + 1)
+        i += 1
+        continue
+      }
+      if (PM_DIR_FLAGS.has(w) && i + 1 < effectiveWords.length) {
+        targetDir = effectiveWords[i + 1]
+        i += 2
+        continue
+      }
+      i += PM_VALUE_FLAGS.has(w) ? 2 : 1
+      continue
+    }
+    break
+  }
+  if (i >= effectiveWords.length) return null
+  const subcommand = effectiveWords[i].toLowerCase()
+  const restAfterSub = effectiveWords.slice(i + 1)
+  let script = subcommand
+  if (subcommand === 'run' || subcommand === 'run-script') {
+    let j = 0
+    while (j < restAfterSub.length && restAfterSub[j].startsWith('-')) {
+      j += PM_VALUE_FLAGS.has(restAfterSub[j]) ? 2 : 1
+    }
+    script = (restAfterSub[j] || '').toLowerCase()
+  }
+  return { subcommand, script, restAfterSub, targetDir }
+}
+
 export function decideMainCheckoutBuildCommand(command, cwd) {
   if (!command || typeof command !== 'string') return { decision: 'allow' }
   const sessionCwd = resolve(cwd || process.cwd())
   let currentCwd = sessionCwd
   // One synchronous decision shares a metadata snapshot only for the exact cwd.
   const worktreeByCwd = new Map()
+  const isCwdWorktree = (dir) => {
+    if (!worktreeByCwd.has(dir)) {
+      let inWorktree = isWorktreePath(dir)
+      if (!inWorktree) {
+        const root = gitRoot(dir)
+        inWorktree = Boolean(root && isWorktreePath(root))
+      }
+      worktreeByCwd.set(dir, inWorktree)
+    }
+    return worktreeByCwd.get(dir)
+  }
 
   // 拆分管道：`pnpm install … | tail` 的下游命令不参与包管理器/构建判定。
   const segments = rawCommandSegments(command)
@@ -956,22 +1132,14 @@ export function decideMainCheckoutBuildCommand(command, cwd) {
     }
 
     // 若当前实际生效的工作目录处于 linked worktree 内，完全放行构建
-    if (!worktreeByCwd.has(currentCwd)) {
-      let inWorktree = isWorktreePath(currentCwd)
-      if (!inWorktree) {
-        const root = gitRoot(currentCwd)
-        inWorktree = Boolean(root && isWorktreePath(root))
-      }
-      worktreeByCwd.set(currentCwd, inWorktree)
-    }
-    if (worktreeByCwd.get(currentCwd)) continue
+    if (isCwdWorktree(currentCwd)) continue
 
     const cleanWords = words.map((w) => w.replace(/^['"]|['"]$/g, ''))
 
-    // 包装执行器（npx / pnpm exec|dlx / npm exec / yarn dlx / bunx）先解包，
+    // 包装执行器（KEY=VAL / env / corepack / npx / pnpm exec|dlx / npm exec / yarn dlx / bunx）先解包，
     // 再按被包装命令本身做构建/依赖恢复判定。
     const effectiveWords = unwrapExecutionWrapper(cleanWords)
-    const effectiveVerb = (effectiveWords[0] || '').toLowerCase()
+    const effectiveVerb = commandBasename(effectiveWords[0])
 
     // 1. tsc（严密校验 --noEmit，杜绝 --noEmit=false 或 --noEmit false 等篡改穿透，包含 pnpm/yarn/npm exec 包装）
     const isTscInvocation =
@@ -1005,17 +1173,23 @@ export function decideMainCheckoutBuildCommand(command, cwd) {
       }
     }
 
-    // 2. build / compile / bundle 仍禁止；依赖恢复放行，manifest/lock 变更仍禁止。
+    // 2. build / build:* / compile / compile:* / bundle / bundle:* / package:* 禁止；
+    //    冻结依赖恢复放行，manifest/lock 变更与未冻结 install 仍禁止。
     if (['pnpm', 'npm', 'yarn', 'bun'].includes(effectiveVerb)) {
-      const isBuild = effectiveWords.some((w) => ['build', 'compile', 'bundle'].includes(w))
-      if (isBuild) {
+      const parsed = parsePackageManagerScript(effectiveWords)
+      if (!parsed) continue
+      // 若通过 --dir / -C / --prefix 显式指向真实 linked worktree，放行
+      if (parsed.targetDir && isCwdWorktree(resolve(currentCwd, parsed.targetDir))) {
+        continue
+      }
+      const { subcommand, script, restAfterSub } = parsed
+      if (BUILD_SCRIPT_RE.test(script)) {
         return {
           decision: 'deny',
           reason: 'forbidden-main-checkout-build',
           command: seg,
         }
       }
-      const subcommand = (effectiveWords[1] || '').toLowerCase()
       // `pnpm add/remove/update…` 与带包名的安装会改 package.json/lock，仍拦截。
       const manifestMutation = ['add', 'remove', 'uninstall', 'update', 'up', 'upgrade', 'link', 'unlink', 'dedupe', 'prune', 'publish', 'pack']
       if (manifestMutation.includes(subcommand)) {
@@ -1028,7 +1202,7 @@ export function decideMainCheckoutBuildCommand(command, cwd) {
       if (['install', 'i', 'ci'].includes(subcommand)) {
         // 依赖恢复（primary 维护 / node_modules 修复）：只允许无位置包名的
         // install/ci；带值 flag 的值不算位置参数，其余非 flag 参数按 add 语义保守拒绝。
-        const positional = positionalArgs(effectiveWords.slice(2))
+        const positional = positionalArgs(restAfterSub)
         if (positional.length > 0) {
           return {
             decision: 'deny',
@@ -1318,8 +1492,9 @@ export function decideBashCommand({ command, cwd, ownerRoot }) {
     return wtAddDecision
   }
 
-  // 6. 检查多 Agent 物化覆盖风险（防冲刷物理硬门禁）
-  if (isMaterializationCommand(command)) {
+  // 6. 检查多 Agent 物化覆盖风险（防冲刷物理硬门禁；--isolated 隔离物化自最新 origin/main 签出临时 worktree，放行）
+  const matHit = classifyMaterializationCommand(command)
+  if (matHit && !matHit.isolated) {
     const matDecision = decideMaterializationCommand({ cwd })
     if (matDecision.decision === 'deny') {
       return matDecision
@@ -1349,16 +1524,7 @@ export function decideWrite({ filePath, cwd, toolName }) {
     return { decision: 'allow', fullPath, reason: 'worktree-isolated' }
   }
 
-  // 2. 临时与衍生文件豁免放行 (node_modules, dist, dist-harness, tmp, temp, coverage, *.log, *.tsbuildinfo)
-  if (isEphemeralPath(fullPath)) {
-    return { decision: 'allow', fullPath, reason: 'ephemeral' }
-  }
-
-  // 3. 符合 .gitignore 的被忽略文件豁免放行
-  if (isGitIgnored(fullPath, cwd)) {
-    return { decision: 'allow', fullPath, reason: 'gitignored' }
-  }
-
+  // 2. 判定 Git 归属与跟踪状态（仓库外非 Git 目标放行；Git 读取异常 fail-closed；已跟踪文件一律拦截）
   // Classification is not cross-workspace authorization; that remains external.
   const state = gitFileState(fullPath, cwd)
   if (state === 'non-git-target') {
@@ -1368,13 +1534,13 @@ export function decideWrite({ filePath, cwd, toolName }) {
     return { decision: 'deny', fullPath, reason: state }
   }
 
-  // 5. 【新增核心防线：新建未跟踪源码拦截】严禁在主仓核心源码或配置目录下新建任何未跟踪文件！
-  if (isProtectedScope(fullPath, cwd)) {
-    return { decision: 'deny', fullPath, reason: 'untracked-protected-scope' }
+  // 3. 主检出 Default-Deny 极小白名单：仅放行显式本地协作运行态目录（当前仅 .workbuddy/）
+  if (isAllowedPrimaryRuntimePath(fullPath, cwd)) {
+    return { decision: 'allow', fullPath, reason: 'primary-runtime-allowlist' }
   }
 
-  // 6. 仅允许在主仓创建合法非受保护临时草稿（如 .workbuddy/ 记录、临时排查脚本等）
-  return { decision: 'allow', fullPath, reason: 'untracked-draft' }
+  // 4. 主检出根目录默认拒绝：拦截任意非白名单路径（含现有目录、未来新增目录与 .tmp/.agent-reports/dist 等）
+  return { decision: 'deny', fullPath, reason: 'untracked-protected-scope' }
 }
 
 function decisionJson(hookEventName, decision, reason, extra = {}) {
@@ -1478,9 +1644,9 @@ function decisionJson(hookEventName, decision, reason, extra = {}) {
       ].join('\n')
     } else if (reason === 'untracked-protected-scope') {
       output.permissionDecisionReason = [
-        '🚫【OmniMux 仓库 Hook】严禁在主仓库核心目录下新建任何源码或配置文件！',
-        '📌 核心防线原则：在主目录直接创建未跟踪源码文件会导致主干工作区被污染，并引发构建衍生与多 Agent 冲突覆盖。',
-        '👉 强制流程：主目录核心路径已被物理写保护。请暂停当前写入，向用户汇报当前阻断并等待用户下达工作区规划指示，严禁私自调用脚本绕行！',
+        '🚫【OmniMux 仓库 Hook】主 checkout 已启用根目录默认拒绝（Default-Deny），严禁直接新建非白名单文件！',
+        `📌 核心防线原则：主目录仅白名单放行真实 linked worktree 与本地运行态目录（${PRIMARY_RUNTIME_ALLOWLIST_PREFIXES.join(', ')}），其余路径（含现有目录、未来新增目录与 .tmp/.agent-reports/dist 等）一律拒绝写入。`,
+        '👉 强制流程：请暂停当前写入，在独立 linked worktree 或 /tmp 完成任务，严禁私自绕行！',
       ].join('\n')
     } else {
       output.permissionDecisionReason = [

@@ -1,6 +1,8 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { execSync } from 'node:child_process'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -73,5 +75,38 @@ describe('check-tracked-artifacts：全仓插件客户端生成物与 workflow �
       encoding: 'utf8',
     })
     assert.match(out, /未跟踪/)
+  })
+
+  it('拦截已跟踪的 .agent-reports 与 docs/evidence/dev-smoke* 运行期产物，同时放行普通文档', (t) => {
+    assert.equal(isForbiddenArtifact('.agent-reports/gallery-rail-height-2101/e2e-evidence.json'), true)
+    assert.equal(isForbiddenArtifact('plugins/.agent-reports/gallery-rail-height-2101/e2e-evidence.json'), true)
+    assert.equal(isForbiddenArtifact('docs/evidence/dev-smoke-report.json'), true)
+    assert.equal(isForbiddenArtifact('docs/evidence/dev-smoke-761bb9e2/dev-page.png'), true)
+    assert.equal(isForbiddenArtifact('plugins/docs/evidence/dev-smoke-report.json'), true)
+    assert.equal(isForbiddenArtifact('plugins/docs/evidence/dev-smoke-abc/dev-page.png'), true)
+
+    // 普通文档与契约文件不得被误伤
+    assert.equal(isForbiddenArtifact('docs/contracts/dev-pipeline.md'), false)
+    assert.equal(isForbiddenArtifact('docs/evidence/viewer-single-mode-3571/report.json'), false)
+
+    // 真实临时 Git 仓库端到端验证 checkTrackedArtifacts 检出已跟踪运行期报告
+    const tempRepo = mkdtempSync(join(tmpdir(), 'omnimux-tracked-artifacts-'))
+    t.after(() => rmSync(tempRepo, { recursive: true, force: true }))
+    const gitEnv = { ...process.env, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null' }
+    execSync(`git -C "${tempRepo}" init -b main`, { encoding: 'utf8', env: gitEnv })
+    mkdirSync(join(tempRepo, 'plugins/.agent-reports/task-1'), { recursive: true })
+    mkdirSync(join(tempRepo, 'docs/evidence/dev-smoke-run1'), { recursive: true })
+    writeFileSync(join(tempRepo, 'plugins/.agent-reports/task-1/e2e-evidence.json'), '{}\n')
+    writeFileSync(join(tempRepo, 'docs/evidence/dev-smoke-run1/dev-page.png'), 'png')
+    execSync(`git -C "${tempRepo}" add .`, { encoding: 'utf8', env: gitEnv })
+
+    const result = checkTrackedArtifacts(tempRepo)
+    assert.equal(result.ok, false)
+    assert.deepEqual(result.tracked.sort(), [
+      'docs/evidence/dev-smoke-run1/dev-page.png',
+      'plugins/.agent-reports/task-1/e2e-evidence.json',
+    ])
+    assert.match(result.message, /\.agent-reports/)
+    assert.match(result.message, /git rm --cached/)
   })
 })

@@ -10,7 +10,7 @@
       "version": "0.1.8",
       "path": "plugins/plugins/omnimux",
       "spec": "link:../../plugins/plugins/omnimux",
-      "contentHash": "sha256:71d56914c68af6df26d5e7a9fa3cef15af4dea20ca1287165280eba582973c6b"
+      "contentHash": "sha256:3fc5dfcbde74375e4f442e23ed907e619a98ae1465195449047933be3517dbc5"
     },
     {
       "name": "omnimux-accounts",
@@ -45,7 +45,7 @@
       "version": "0.1.2",
       "path": "plugins/plugins/omnimux-clip",
       "spec": "link:../../plugins/plugins/omnimux-clip",
-      "contentHash": "sha256:6a797a2bf261f2d7cd063bd5b62204c0633e884574f5171e99d51dc93b48aa64"
+      "contentHash": "sha256:406bddcee3eb3c48a583ea30b55b7c1c832f8048e44b28396ab58c0d64e5334b"
     },
     {
       "name": "omnimux-forms",
@@ -94,14 +94,14 @@
       "version": "0.1.0",
       "path": "plugins/plugins/omnimux-viewer",
       "spec": "link:../../plugins/plugins/omnimux-viewer",
-      "contentHash": "sha256:51bb92e822277e962af530193fdf2a10bfafa9c87f29109af72c35487e6545bc"
+      "contentHash": "sha256:6e309725074abfb67e838d3b992362d7244e97bbe2c8a12a0b1afded83a9187f"
     },
     {
       "name": "omnimux-workflow",
       "version": "1.0.0-rc.3",
       "path": "plugins/plugins/omnimux-workflow",
       "spec": "link:../../plugins/plugins/omnimux-workflow",
-      "contentHash": "sha256:cd217c35c01dacbfd651c449573b0adea3f5ddeb998acf28058865b0c24a9071"
+      "contentHash": "sha256:10be0519b9c3e289c83e304096f63fe78d8b1da5f8dd0b4db9b4152ae86ca3ad"
     }
   ]
 }
