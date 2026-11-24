@@ -120,15 +120,14 @@ function extractLocalScriptTargets(command) {
       .filter(Boolean)
       .map(stripShellQuotes)
 
-    let index = 0
-    while (index < tokens.length && /^[A-Za-z_][A-Za-z0-9_]*=/u.test(tokens[index])) {
-      index += 1
+    while (tokens.length > 0 && /^[A-Za-z_][A-Za-z0-9_]*=/u.test(tokens.at(0) ?? '')) {
+      tokens.shift()
     }
-    const executable = tokens[index]
+    const [executable, ...args] = tokens
     if (!executable) continue
 
     if (executable === 'cd') {
-      const nextDir = tokens[index + 1]
+      const [nextDir] = args
       if (nextDir && isLocalRelativePath(nextDir)) {
         segmentCwd = join(segmentCwd, nextDir)
       }
@@ -138,8 +137,7 @@ function extractLocalScriptTargets(command) {
     if (executable === 'node') {
       let isNodeTest = false
       let skipNext = false
-      for (let i = index + 1; i < tokens.length; i += 1) {
-        const token = tokens[i]
+      for (const token of args) {
         if (skipNext) {
           skipNext = false
           continue
@@ -170,8 +168,7 @@ function extractLocalScriptTargets(command) {
 
     if (executable === 'bash' || executable === 'sh') {
       let skipNext = false
-      for (let i = index + 1; i < tokens.length; i += 1) {
-        const token = tokens[i]
+      for (const token of args) {
         if (skipNext) {
           skipNext = false
           continue
