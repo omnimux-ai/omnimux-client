@@ -371,15 +371,246 @@ function scanArithmeticDoubleParen(input, openIdx) {
   return innerEnd === outerEnd - 1 && input[innerEnd] === ')' ? outerEnd : -1
 }
 
+const CMD_POS_KEYWORDS = new Set([
+  'if', 'elif', 'while', 'until', 'then', 'do', 'else', '!', 'time',
+])
+
+/**
+ * Determine whether `input[targetIdx]` sits at a Bash command position where
+ * reserved words like `[[` or `case` are recognized (preventing argument-position
+ * bypasses such as `: [[ ; echo pwn > README.md ; : ]]` or `FOO=1 [[ || ... ]]`).
+ */
+function isAtCommandPosition(input, targetIdx) {
+  let atCmdPos = true
+  let afterTime = false
+  const caseStates = [] // stack of 'word' | 'pattern' | 'body'
+  let i = 0
+
+  while (i < targetIdx) {
+    const ch = input[i]
+    if (ch === ' ' || ch === '\t' || ch === '\r') {
+      i += 1
+      continue
+    }
+    if (ch === '\n' || ch === ';') {
+      if (ch === ';' && (input[i + 1] === ';' || input[i + 1] === '&')) {
+        if (caseStates.length > 0 && caseStates[caseStates.length - 1] === 'body') {
+          caseStates[caseStates.length - 1] = 'pattern'
+        }
+        i += input[i + 1] === ';' && input[i + 2] === '&' ? 3 : 2
+        atCmdPos = false
+        afterTime = false
+        continue
+      }
+      atCmdPos = true
+      afterTime = false
+      i += 1
+      continue
+    }
+    if (ch === '#') {
+      while (i < targetIdx && input[i] !== '\n') i += 1
+      continue
+    }
+    if (ch === '&' || ch === '|') {
+      if (ch === '&' && input[i + 1] === '>') {
+        i += input[i + 2] === '>' ? 3 : 2
+        atCmdPos = false
+        afterTime = false
+        continue
+      }
+      if (ch === '|' && input[i + 1] === '&') {
+        i += 2
+      } else if (input[i + 1] === ch) {
+        i += 2
+      } else {
+        i += 1
+      }
+      if (ch === '|' && caseStates.length > 0 && caseStates[caseStates.length - 1] === 'pattern') {
+        continue
+      }
+      atCmdPos = true
+      afterTime = false
+      continue
+    }
+    if (ch === '(') {
+      if (caseStates.length > 0 && caseStates[caseStates.length - 1] === 'pattern') {
+        i += 1
+        continue
+      }
+      if (input[i + 1] === '(') {
+        const arithEnd = scanArithmeticDoubleParen(input, i)
+        if (arithEnd !== -1 && arithEnd < targetIdx) {
+          i = arithEnd + 1
+          atCmdPos = false
+          afterTime = false
+          continue
+        }
+      }
+      atCmdPos = true
+      afterTime = false
+      i += 1
+      continue
+    }
+    if (ch === ')') {
+      if (caseStates.length > 0 && caseStates[caseStates.length - 1] === 'pattern') {
+        caseStates[caseStates.length - 1] = 'body'
+        atCmdPos = true
+        afterTime = false
+      } else {
+        atCmdPos = false
+        afterTime = false
+      }
+      i += 1
+      continue
+    }
+    if (ch === '{' && atCmdPos && (i + 1 >= input.length || /\s/.test(input[i + 1]))) {
+      atCmdPos = true
+      afterTime = false
+      i += 1
+      continue
+    }
+    if (ch === '<' || ch === '>') {
+      if (input[i + 1] === '(') {
+        const end = scanBalancedParen(input, i + 1)
+        i = end + 1
+        atCmdPos = false
+        afterTime = false
+        continue
+      }
+      i += 1
+      atCmdPos = false
+      afterTime = false
+      continue
+    }
+
+    let word = ''
+    let hadQuotes = false
+    let inS = false
+    let inD = false
+    let esc = false
+    while (i < targetIdx) {
+      const c = input[i]
+      if (esc) {
+        word += c
+        hadQuotes = true
+        esc = false
+        i += 1
+        continue
+      }
+      if (c === '\\' && !inS) {
+        esc = true
+        hadQuotes = true
+        i += 1
+        continue
+      }
+      if (c === "'" && !inD) {
+        inS = !inS
+        hadQuotes = true
+        i += 1
+        continue
+      }
+      if (c === '"' && !inS) {
+        inD = !inD
+        hadQuotes = true
+        i += 1
+        continue
+      }
+      if (!inS && c === '$' && input[i + 1] === '(') {
+        const end = scanBalancedParen(input, i + 1)
+        hadQuotes = true
+        i = end + 1
+        continue
+      }
+      if (!inS && !inD && (c === '<' || c === '>') && input[i + 1] === '(') {
+        const end = scanBalancedParen(input, i + 1)
+        hadQuotes = true
+        i = end + 1
+        continue
+      }
+      if (!inS && c === '`') {
+        const end = scanBacktick(input, i)
+        hadQuotes = true
+        i = end + 1
+        continue
+      }
+      if (!inS && !inD && c === '=' && input[i + 1] === '(') {
+        const end = scanBalancedParen(input, i + 1)
+        hadQuotes = true
+        i = end + 1
+        continue
+      }
+      if (!inS && !inD && /[\s;&|<>()]/.test(c)) {
+        break
+      }
+      word += c
+      i += 1
+    }
+
+    if (i > targetIdx) return false
+
+    const topCase = caseStates.length > 0 ? caseStates[caseStates.length - 1] : null
+    if (topCase === 'word') {
+      if (!hadQuotes && word === 'in') {
+        caseStates[caseStates.length - 1] = 'pattern'
+      }
+      atCmdPos = false
+      afterTime = false
+      continue
+    }
+    if (topCase === 'pattern') {
+      if (!hadQuotes && word === 'esac') {
+        caseStates.pop()
+      }
+      atCmdPos = false
+      afterTime = false
+      continue
+    }
+    if (atCmdPos && !hadQuotes) {
+      if (word === 'case') {
+        caseStates.push('word')
+        atCmdPos = false
+        afterTime = false
+        continue
+      }
+      if (word === 'esac' && topCase === 'body') {
+        caseStates.pop()
+        atCmdPos = false
+        afterTime = false
+        continue
+      }
+      if (word === 'time') {
+        atCmdPos = true
+        afterTime = true
+        continue
+      }
+      if (afterTime && word === '-p') {
+        atCmdPos = true
+        afterTime = false
+        continue
+      }
+      if (CMD_POS_KEYWORDS.has(word)) {
+        atCmdPos = true
+        afterTime = false
+        continue
+      }
+    }
+    atCmdPos = false
+    afterTime = false
+  }
+  return atCmdPos
+}
+
 /**
  * If `input[openIdx..]` starts a Bash conditional expression `[[ ... ]]`
- * bounded by shell word boundaries, return the index of the second `]`.
+ * strictly at command position, return the index of the second `]`.
+ * Bail out on unquoted `;`, single `&`, or single `|` inside `[[ ... ]]`.
  * Otherwise return -1.
  */
 function scanDoubleBracket(input, openIdx) {
   if (input[openIdx] !== '[' || input[openIdx + 1] !== '[') return -1
-  if (openIdx > 0 && !/[\s;&|({!]/.test(input[openIdx - 1])) return -1
+  if (openIdx > 0 && !/[\s;&|({!)]/.test(input[openIdx - 1])) return -1
   if (openIdx + 2 >= input.length || !/\s/.test(input[openIdx + 2])) return -1
+  if (!isAtCommandPosition(input, openIdx)) return -1
 
   let inSingle = false
   let inDouble = false
@@ -406,15 +637,36 @@ function scanDoubleBracket(input, openIdx) {
       i = scanBalancedParen(input, i + 1)
       continue
     }
+    if (!inSingle && !inDouble && (ch === '<' || ch === '>') && input[i + 1] === '(') {
+      i = scanBalancedParen(input, i + 1)
+      continue
+    }
     if (!inSingle && ch === '`') {
       i = scanBacktick(input, i)
       continue
     }
-    if (!inSingle && !inDouble && ch === ']' && input[i + 1] === ']') {
-      const prevOk = i > openIdx + 2 && /\s/.test(input[i - 1])
-      const nextCh = input[i + 2] || ''
-      const nextOk = nextCh === '' || /[\s;&|<>)]/.test(nextCh)
-      if (prevOk && nextOk) return i + 1
+    if (!inSingle && !inDouble) {
+      if (ch === ';') return -1
+      if (ch === '&') {
+        if (input[i + 1] === '&') {
+          i += 1
+          continue
+        }
+        return -1
+      }
+      if (ch === '|') {
+        if (input[i + 1] === '|') {
+          i += 1
+          continue
+        }
+        return -1
+      }
+      if (ch === ']' && input[i + 1] === ']') {
+        const prevOk = i > openIdx + 2 && /\s/.test(input[i - 1])
+        const nextCh = input[i + 2] || ''
+        const nextOk = nextCh === '' || /[\s;&|<>)]/.test(nextCh)
+        if (prevOk && nextOk) return i + 1
+      }
     }
   }
   return -1
@@ -428,6 +680,7 @@ function findCasePatternClose(text) {
   if (text[0] === '(') start = 1
   for (let i = start; i < text.length; i += 1) {
     const ch = text[i]
+    const next = text[i + 1] || ''
     if (escaped) {
       escaped = false
       continue
@@ -444,9 +697,87 @@ function findCasePatternClose(text) {
       inDouble = !inDouble
       continue
     }
+    if (!inSingle && ch === '$' && next === '(') {
+      i = scanBalancedParen(text, i + 1)
+      continue
+    }
+    if (!inSingle && !inDouble && (ch === '<' || ch === '>') && next === '(') {
+      i = scanBalancedParen(text, i + 1)
+      continue
+    }
+    if (!inSingle && ch === '`') {
+      i = scanBacktick(text, i)
+      continue
+    }
+    if (!inSingle && !inDouble && '?*+@!'.includes(ch) && next === '(') {
+      i = scanBalancedParen(text, i + 1)
+      continue
+    }
     if (!inSingle && !inDouble && ch === ')') {
       return i
     }
+  }
+  return -1
+}
+
+/**
+ * Given `input` where `input.slice(caseIdx)` starts with `case <word> ...`,
+ * return the index immediately after the unquoted `in` keyword, or -1 if absent.
+ */
+function findCaseHeaderEnd(input, caseIdx = 0) {
+  let i = caseIdx + 4
+  if (i >= input.length || !/\s/.test(input[i])) return -1
+  while (i < input.length && /\s/.test(input[i])) i += 1
+  if (i >= input.length) return -1
+
+  // Skip the `<word>` token (respecting quotes and substitutions)
+  let inSingle = false
+  let inDouble = false
+  let escaped = false
+  while (i < input.length) {
+    const ch = input[i]
+    if (escaped) {
+      escaped = false
+      i += 1
+      continue
+    }
+    if (ch === '\\' && !inSingle) {
+      escaped = true
+      i += 1
+      continue
+    }
+    if (ch === "'" && !inDouble) {
+      inSingle = !inSingle
+      i += 1
+      continue
+    }
+    if (ch === '"' && !inSingle) {
+      inDouble = !inDouble
+      i += 1
+      continue
+    }
+    if (!inSingle && ch === '$' && input[i + 1] === '(') {
+      i = scanBalancedParen(input, i + 1) + 1
+      continue
+    }
+    if (!inSingle && !inDouble && (ch === '<' || ch === '>') && input[i + 1] === '(') {
+      i = scanBalancedParen(input, i + 1) + 1
+      continue
+    }
+    if (!inSingle && ch === '`') {
+      i = scanBacktick(input, i) + 1
+      continue
+    }
+    if (!inSingle && !inDouble && /[\s;&|<>()]/.test(ch)) break
+    i += 1
+  }
+
+  while (i < input.length && /\s/.test(input[i])) i += 1
+  if (
+    input.slice(i, i + 2) === 'in' &&
+    (i + 2 === input.length || /[\s;&|<>()]/.test(input[i + 2]))
+  ) {
+    return i + 2
   }
   return -1
 }
@@ -468,6 +799,7 @@ function splitShellStatements(command) {
   let inDouble = false
   let escaped = false
   let inComment = false
+  let endsWithPipe = false
   const pendingHeredocs = []
 
   const flush = (op) => {
@@ -476,8 +808,17 @@ function splitShellStatements(command) {
       currentStmt.raw = trimmed
       currentStmt.nextOp = op
       statements.push(currentStmt)
+      currentStmt = { raw: '', prevOp: op, nextOp: '', heredocs: [] }
+    } else {
+      currentStmt.raw = ''
+      // Preserve significant prevOp ('&&', '||', ';;', ';', '&') across blank lines
+      if (op && op !== '\n') {
+        currentStmt.prevOp = op
+      } else if (!currentStmt.prevOp) {
+        currentStmt.prevOp = op
+      }
     }
-    currentStmt = { raw: '', prevOp: op, nextOp: '', heredocs: [] }
+    endsWithPipe = false
   }
 
   for (let i = 0; i < input.length; i += 1) {
@@ -497,21 +838,25 @@ function splitShellStatements(command) {
     if (escaped) {
       currentStmt.raw += ch
       escaped = false
+      endsWithPipe = false
       continue
     }
     if (ch === '\\' && !inSingle) {
       currentStmt.raw += ch
       escaped = true
+      endsWithPipe = false
       continue
     }
     if (ch === "'" && !inDouble) {
       inSingle = !inSingle
       currentStmt.raw += ch
+      endsWithPipe = false
       continue
     }
     if (ch === '"' && !inSingle) {
       inDouble = !inDouble
       currentStmt.raw += ch
+      endsWithPipe = false
       continue
     }
 
@@ -520,18 +865,21 @@ function splitShellStatements(command) {
       const end = scanBalancedParen(input, i + 1)
       currentStmt.raw += input.slice(i, end + 1)
       i = end
+      endsWithPipe = false
       continue
     }
     if (!inSingle && !inDouble && (ch === '<' || ch === '>') && next === '(') {
       const end = scanBalancedParen(input, i + 1)
       currentStmt.raw += input.slice(i, end + 1)
       i = end
+      endsWithPipe = false
       continue
     }
     if (!inSingle && ch === '`') {
       const end = scanBacktick(input, i)
       currentStmt.raw += input.slice(i, end + 1)
       i = end
+      endsWithPipe = false
       continue
     }
 
@@ -541,12 +889,14 @@ function splitShellStatements(command) {
       if (arithEnd !== -1) {
         currentStmt.raw += input.slice(i, arithEnd + 1)
         i = arithEnd
+        endsWithPipe = false
         continue
       }
       const bracketEnd = scanDoubleBracket(input, i)
       if (bracketEnd !== -1) {
         currentStmt.raw += input.slice(i, bracketEnd + 1)
         i = bracketEnd
+        endsWithPipe = false
         continue
       }
       if (ch === '#' && (i === 0 || /[\s;&|({\n]/.test(prev))) {
@@ -598,12 +948,23 @@ function splitShellStatements(command) {
         }
         currentStmt.raw += input.slice(i, j)
         i = j - 1
+        endsWithPipe = false
         continue
       }
 
       if ((ch === '&' && next === '&') || (ch === '|' && next === '|')) {
         flush(ch + next)
         i += 1
+        continue
+      }
+      if (ch === '|' && prev !== '|' && prev !== '>' && next !== '|') {
+        if (next === '&') {
+          currentStmt.raw += '|&'
+          i += 1
+        } else {
+          currentStmt.raw += '|'
+        }
+        endsWithPipe = true
         continue
       }
       if (ch === ';' && next === ';' && input[i + 2] === '&') {
@@ -621,7 +982,12 @@ function splitShellStatements(command) {
         continue
       }
       if (ch === '\n') {
-        flush('\n')
+        const continuePipe = endsWithPipe
+        if (!continuePipe) {
+          flush('\n')
+        } else {
+          currentStmt.raw += ' '
+        }
         while (pendingHeredocs.length > 0 && i + 1 < input.length) {
           const hd = pendingHeredocs.shift()
           const bodyLines = []
@@ -651,14 +1017,19 @@ function splitShellStatements(command) {
         flush('&')
         continue
       }
+      if (ch === ' ' || ch === '\t' || ch === '\r') {
+        currentStmt.raw += ch
+        continue
+      }
     }
     currentStmt.raw += ch
+    endsWithPipe = false
   }
   flush('')
   return statements
 }
 
-function splitRawPipelineSegments(segment) {
+function splitRawPipelineSegments(segment, { startsWithCasePattern = false } = {}) {
   const input = String(segment || '')
   const parts = []
   let current = ''
@@ -672,7 +1043,20 @@ function splitRawPipelineSegments(segment) {
     current = ''
   }
 
-  for (let i = 0; i < input.length; i += 1) {
+  let startIdx = 0
+  if (startsWithCasePattern) {
+    while (startIdx < input.length && /\s/.test(input[startIdx])) startIdx += 1
+    const rest = input.slice(startIdx)
+    if (rest && !/^esac(?:\s|$|[<>|;&)])/.test(rest) && !rest.startsWith(')')) {
+      const patEnd = findCasePatternClose(rest)
+      if (patEnd > 0) {
+        current += rest.slice(0, patEnd + 1)
+        startIdx += patEnd + 1
+      }
+    }
+  }
+
+  for (let i = startIdx; i < input.length; i += 1) {
     const ch = input[i]
     const prev = i > 0 ? input[i - 1] : ''
     const next = input[i + 1] || ''
@@ -726,6 +1110,33 @@ function splitRawPipelineSegments(segment) {
         current += input.slice(i, bracketEnd + 1)
         i = bracketEnd
         continue
+      }
+      // Keep inline `case <word> in (a|b)` pattern alternation `|` from splitting as a pipeline
+      if (
+        ch === 'c' &&
+        input.slice(i, i + 4) === 'case' &&
+        (i === 0 || /[\s;&|({!]/.test(prev)) &&
+        i + 4 < input.length &&
+        /\s/.test(input[i + 4]) &&
+        isAtCommandPosition(input, i)
+      ) {
+        const inEnd = findCaseHeaderEnd(input, i)
+        if (inEnd !== -1) {
+          let j = inEnd
+          while (j < input.length && /\s/.test(input[j])) j += 1
+          const afterIn = input.slice(j)
+          if (afterIn && !/^esac(?:\s|$|[<>|;&)])/.test(afterIn) && !afterIn.startsWith(')')) {
+            const patEnd = findCasePatternClose(afterIn)
+            if (patEnd > 0) {
+              current += input.slice(i, j + patEnd + 1)
+              i = j + patEnd
+              continue
+            }
+          }
+          current += input.slice(i, inEnd)
+          i = inEnd - 1
+          continue
+        }
       }
     }
     // Split on pipe '|' or '|&', avoiding '||', and avoiding noclobber '>|'
@@ -841,17 +1252,20 @@ function parseSubshellStage(rawStage, activeSubshellDepth = 0, activeBraceDepth 
   let leadingOpenBraces = 0
   let opensFunctionBlock = false
   let opensPendingFunction = false
+  let opensLoopBrace = false
   let opensControlBlock = ''
   let resetsControlBranch = false
   let closesControlBlock = false
   let isControlHeaderOnly = false
   let consumedCasePattern = false
+  const strippedHeaders = []
 
   // When inside a `case ... in` block expecting a pattern (`pat)` or `(pat)`),
   // consume the pattern header first so its `)` never closes an enclosing subshell.
   if (expectCasePattern && body && !/^esac(?:\s|$|[<>|;&)])/.test(body) && !body.startsWith(')')) {
     const patEnd = findCasePatternClose(body)
     if (patEnd > 0) {
+      strippedHeaders.push(body.slice(0, patEnd + 1))
       body = body.slice(patEnd + 1).trimStart()
       consumedCasePattern = true
     }
@@ -918,16 +1332,24 @@ function parseSubshellStage(rawStage, activeSubshellDepth = 0, activeBraceDepth 
       continue
     }
     if (/^for\s+\(\(/.test(body)) {
-      opensControlBlock = 'loop'
       const arithStart = body.indexOf('((')
       const arithEnd = scanArithmeticDoubleParen(body, arithStart)
       if (arithEnd !== -1) {
         const afterArith = body.slice(arithEnd + 1).trimStart()
         if (/^do(?:\s+|$)/.test(afterArith)) {
+          opensControlBlock = 'loop'
+          strippedHeaders.push(body.slice(0, arithEnd + 1))
+          body = afterArith
+          continue
+        }
+        if (/^\{(?:\s+|$)/.test(afterArith)) {
+          opensLoopBrace = true
+          strippedHeaders.push(body.slice(0, arithEnd + 1))
           body = afterArith
           continue
         }
       }
+      opensControlBlock = 'loop'
       isControlHeaderOnly = true
       break
     }
@@ -938,16 +1360,23 @@ function parseSubshellStage(rawStage, activeSubshellDepth = 0, activeBraceDepth 
     }
     if (/^case\s+/.test(body)) {
       opensControlBlock = 'case'
-      const caseMatch = /^case\s+[\s\S]*?\bin(?:\s+([\s\S]*)|$)/.exec(body)
-      const afterIn = caseMatch ? (caseMatch[1] || '').trim() : ''
+      const inEnd = findCaseHeaderEnd(body, 0)
+      if (inEnd === -1) {
+        isControlHeaderOnly = true
+        break
+      }
+      const casePrefix = body.slice(0, inEnd)
+      const afterIn = body.slice(inEnd).trim()
       if (!afterIn) {
         isControlHeaderOnly = true
         break
       }
+      strippedHeaders.push(casePrefix)
       body = afterIn
       if (!/^esac(?:\s|$|[<>|;&)])/.test(body) && !body.startsWith(')')) {
         const patEnd = findCasePatternClose(body)
         if (patEnd > 0) {
+          strippedHeaders.push(body.slice(0, patEnd + 1))
           body = body.slice(patEnd + 1).trimStart()
           consumedCasePattern = true
         }
@@ -1048,11 +1477,13 @@ function parseSubshellStage(rawStage, activeSubshellDepth = 0, activeBraceDepth 
     leadingOpenBraces,
     opensFunctionBlock,
     opensPendingFunction,
+    opensLoopBrace,
     opensControlBlock,
     resetsControlBranch,
     closesControlBlock,
     isControlHeaderOnly,
     consumedCasePattern,
+    strippedHeaders,
     innerBody,
     closers,
   }
@@ -1491,7 +1922,7 @@ function stripShellRedirection(segment) {
     }
     out += ch
   }
-  return out.replace(/\s+/g, ' ').trim()
+  return out.trim()
 }
 
 function isAccessibleDirectory(dir) {
@@ -1625,6 +2056,16 @@ function walkShellCommands(command, initialCwd, visitor, depth = 0, protectedCac
   }
 
   for (const stmt of splitShellStatements(command)) {
+    if (stmt.prevOp === ';;' && blockStack.length > 0 && blockStack[blockStack.length - 1].kind === 'case') {
+      const caseFrame = blockStack[blockStack.length - 1]
+      caseFrame.expectPattern = true
+      if (isProtectedPrimaryDirectory(caseFrame.savedCwd, protectedCache) && !isProtectedPrimaryDirectory(currentCwd, protectedCache)) {
+        currentCwd = caseFrame.savedCwd
+        prevCwd = caseFrame.savedPrevCwd
+      }
+      conditionalRollback = null
+    }
+
     let restoreAfterExitFallback = null
     if (conditionalRollback && stmt.prevOp !== '&&') {
       currentCwd = conditionalRollback.currentCwd
@@ -1640,7 +2081,13 @@ function walkShellCommands(command, initialCwd, visitor, depth = 0, protectedCac
     }
     justRanCd = false
 
-    const subSegments = splitRawPipelineSegments(stmt.raw)
+    const stmtTopCaseFrame =
+      blockStack.length > 0 && blockStack[blockStack.length - 1].kind === 'case'
+        ? blockStack[blockStack.length - 1]
+        : null
+    const subSegments = splitRawPipelineSegments(stmt.raw, {
+      startsWithCasePattern: Boolean(stmtTopCaseFrame && stmtTopCaseFrame.expectPattern),
+    })
     if (visitor.onStatementStart) {
       visitor.onStatementStart({ stmt, subSegments, currentCwd })
     }
@@ -1706,8 +2153,23 @@ function walkShellCommands(command, initialCwd, visitor, depth = 0, protectedCac
         braceStack.push({
           entryCwd: currentCwd,
           entryPrevCwd: prevCwd,
-          restoreOnClose: (parsed.opensFunctionBlock && b === 0) || fromPendingFunc || conditionalGroup || isPipedOrBg,
+          restoreOnClose:
+            (parsed.opensFunctionBlock && b === 0) ||
+            (parsed.opensLoopBrace && b === 0) ||
+            fromPendingFunc ||
+            conditionalGroup ||
+            isPipedOrBg,
         })
+      }
+
+      // Inspect $(...) / `...` / <(...) inside any stripped control/case/for headers
+      if (depth < 4 && parsed.strippedHeaders.length > 0) {
+        for (const header of parsed.strippedHeaders) {
+          for (const subCmd of extractCommandSubstitutions(header)) {
+            const subRes = walkShellCommands(subCmd, currentCwd, visitor, depth + 1, protectedCache)
+            if (subRes !== undefined) return subRes
+          }
+        }
       }
 
       const stageBody = parsed.innerBody
@@ -1757,14 +2219,23 @@ function walkShellCommands(command, initialCwd, visitor, depth = 0, protectedCac
                 applyCwdTransition(updated.nextCwd, updated.nextPrevCwd, { prevOp: stmt.prevOp, insideLeadingGroup })
               } else if (headVerb === 'pushd') {
                 const pushdArgs = builtinWords.slice(1)
-                const targetArg = collectNonOptionArgs(pushdArgs)[0]
+                const noChdir = hasNoChdirFlag(pushdArgs)
+                const targetArg = collectNonOptionArgs(pushdArgs).find((a) => !/^[+-]\d+$/.test(a))
                 if (targetArg) {
-                  dirStack.push(currentCwd)
-                  // `pushd -n <dir>` pushes onto the stack without changing cwd
-                  if (!hasNoChdirFlag(pushdArgs)) {
-                    const nextCwd = toFullPath(targetArg, currentCwd)
-                    applyCwdTransition(nextCwd, currentCwd, { prevOp: stmt.prevOp, insideLeadingGroup })
+                  const targetPath = toFullPath(targetArg, currentCwd)
+                  if (noChdir) {
+                    // `pushd -n <dir>` inserts `<dir>` at stack slot [1] while keeping cwd unchanged;
+                    // a subsequent `popd` or 0-arg `pushd` will move into `<dir>`.
+                    dirStack.push(targetPath)
+                  } else {
+                    dirStack.push(currentCwd)
+                    applyCwdTransition(targetPath, currentCwd, { prevOp: stmt.prevOp, insideLeadingGroup })
                   }
+                } else if (!noChdir && dirStack.length > 0) {
+                  // 0-arg `pushd` swaps current cwd with top of dirStack
+                  const top = dirStack.pop()
+                  dirStack.push(currentCwd)
+                  applyCwdTransition(top, currentCwd, { prevOp: stmt.prevOp, insideLeadingGroup })
                 }
               } else if (headVerb === 'popd' && dirStack.length > 0) {
                 const popped = dirStack.pop()
@@ -2004,6 +2475,19 @@ const NODE_VALUE_FLAGS = new Set([
   '--title', '-e', '--eval', '-p', '--print',
 ])
 
+function parsePnpmShellModeFlag(word) {
+  if (word === '-c' || word === '--shell-mode' || /^-[a-zA-Z]*c[a-zA-Z]*$/.test(word)) {
+    return true
+  }
+  if (word === '--no-shell-mode') return false
+  if (word.startsWith('--shell-mode=')) {
+    const val = word.slice('--shell-mode='.length).trim().toLowerCase()
+    if (val === 'false' || val === '0' || val === 'no' || val === 'off' || val === '') return false
+    return true
+  }
+  return null
+}
+
 function skipLeadingWrapperFlags(words, { allowCallFlag = false, allowShellMode = false, initialShellMode = false, manager = '' } = {}) {
   let i = 0
   let shellMode = Boolean(initialShellMode)
@@ -2025,10 +2509,13 @@ function skipLeadingWrapperFlags(words, { allowCallFlag = false, allowShellMode 
         return ['sh', '-c', words[i + 1]]
       }
     }
-    if (allowShellMode && (word === '-c' || word === '--shell-mode')) {
-      shellMode = true
-      i += 1
-      continue
+    if (allowShellMode) {
+      const sm = parsePnpmShellModeFlag(word)
+      if (sm !== null) {
+        shellMode = sm
+        i += 1
+        continue
+      }
     }
     i += isWrapperValueFlag(manager, word) ? 2 : 1
   }
@@ -2160,17 +2647,33 @@ function parseShellInvocation(words) {
     }
     const sign = flag[0]
     const letters = flag.slice(1)
-    if (/^[a-zA-Z]+$/.test(letters)) {
-      if (letters.includes('n')) syntaxCheckOnly = sign === '-'
-      if (sign === '-' && letters.includes('c')) hasC = true
-      if (sign === '-' && letters.includes('s')) readStdin = true
-      if (letters.endsWith('o') || letters.endsWith('O')) {
-        if (letters.endsWith('o')) {
-          const nextSyntax = applyShellOption(sign, words[i + 1])
-          if (nextSyntax !== null) syntaxCheckOnly = nextSyntax
+    if (letters) {
+      const oIdx = letters.indexOf('o')
+      const OIdx = letters.indexOf('O')
+      const optIdx = oIdx !== -1 && (OIdx === -1 || oIdx < OIdx) ? oIdx : OIdx
+      const preLetters = optIdx !== -1 ? letters.slice(0, optIdx) : letters
+      if (/^[a-zA-Z]*$/.test(preLetters)) {
+        if (preLetters.includes('n')) syntaxCheckOnly = sign === '-'
+        if (sign === '-' && preLetters.includes('c')) hasC = true
+        if (sign === '-' && preLetters.includes('s')) readStdin = true
+        if (optIdx !== -1) {
+          const isLowerO = letters[optIdx] === 'o'
+          const attachedOpt = letters.slice(optIdx + 1)
+          if (attachedOpt) {
+            if (isLowerO) {
+              const nextSyntax = applyShellOption(sign, attachedOpt)
+              if (nextSyntax !== null) syntaxCheckOnly = nextSyntax
+            }
+            i += 1
+            continue
+          }
+          if (isLowerO) {
+            const nextSyntax = applyShellOption(sign, words[i + 1])
+            if (nextSyntax !== null) syntaxCheckOnly = nextSyntax
+          }
+          i += 2
+          continue
         }
-        i += 2
-        continue
       }
     }
     i += 1
@@ -2273,10 +2776,13 @@ function unwrapExecutionWrapperWithMeta(words) {
         const w = current[i]
         if (w === '--') break
         if (!w.startsWith('-')) break
-        if (head === 'pnpm' && (w === '-c' || w === '--shell-mode' || /^-[a-zA-Z]*c[a-zA-Z]*$/.test(w))) {
-          pnpmShellMode = true
-          i += 1
-          continue
+        if (head === 'pnpm') {
+          const sm = parsePnpmShellModeFlag(w)
+          if (sm !== null) {
+            pnpmShellMode = sm
+            i += 1
+            continue
+          }
         }
         const eq = w.indexOf('=')
         if (eq !== -1) {
@@ -2300,8 +2806,9 @@ function unwrapExecutionWrapperWithMeta(words) {
           const w = current[k]
           if (w === '--') break
           if (!w.startsWith('-')) break
-          if (w === '-c' || w === '--shell-mode' || /^-[a-zA-Z]*c[a-zA-Z]*$/.test(w)) {
-            pnpmShellMode = true
+          const sm = parsePnpmShellModeFlag(w)
+          if (sm !== null) {
+            pnpmShellMode = sm
             k += 1
             continue
           }
@@ -2485,7 +2992,9 @@ function parseGitInvocation(effectiveWords, baseCwd, envMap = new Map()) {
       targetDirSet.add(dirname(resolvedGitDir))
     }
   }
-  if (targetDirSet.size === 0) {
+  // Unless BOTH git-dir AND work-tree are explicitly redirected away from cDir,
+  // Git still discovers `.git` or operates on the working tree at cDir.
+  if (!explicitGitDir || !explicitWorkTree) {
     targetDirSet.add(cDir)
   }
 
@@ -2511,6 +3020,12 @@ function classifyGitMutationWords(gitInfo, segment) {
   }
   if (['apply', 'am', 'cherry-pick', 'rebase', 'revert'].includes(sub)) {
     return { kind: sub, segment }
+  }
+  if (sub === 'reset' && args.some((w) => w === '--hard')) {
+    const refs = collectNonOptionArgs(args)
+    if (refs.length > 0 && !refs.every((r) => r === 'origin/main' || r === 'origin/master' || r === 'HEAD')) {
+      return { kind: 'reset-hard', segment }
+    }
   }
   if (sub === 'stash') {
     const action = (args[0] || '').toLowerCase()

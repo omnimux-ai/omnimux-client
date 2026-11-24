@@ -2045,4 +2045,148 @@ describe('adversarial hardening regressions (materialization / wrapper / frozen-
       )
     }
   })
+
+  it('prevents argument-position [[ ... ]] universal bypass while keeping command-position [[ ... ]] zero-FP (B1)', () => {
+    for (const command of [
+      ': [[ ; echo pwn > README.md ; : ]]',
+      ': [[ ; git commit --allow-empty -m x ; : ]]',
+      ': [[ && pnpm build:all && : ]]',
+      ': [[ ; rm README.md ; : ]]',
+      'echo if [[ && echo pwn > README.md && : ]]',
+      'echo "a;b" [[ && echo pwn > README.md && : ]]',
+      'FOO=1 [[ || echo pwn > README.md || : ]]',
+      'a=(1 2) [[ || echo pwn > README.md || : ]]',
+      '[[ a == b ; echo pwn > README.md ; ]]',
+      '[[ $(echo pwn > README.md) > "a" ]]',
+    ]) {
+      assert.equal(
+        decideBashCommand({ command, cwd: mainRepoRoot, ownerRoot: mainRepoRoot }).decision,
+        'deny',
+        `Expected B1 deny on main: ${command}`,
+      )
+    }
+
+    assert.equal(
+      decideBashCommand({
+        command: ': [[ && bash plugins/scripts/sync-to-app.sh && : ]]',
+        cwd: worktreeRoot,
+        ownerRoot: mainRepoRoot,
+      }).decision,
+      'deny',
+      'Expected B1 worktree materialization deny',
+    )
+
+    // Legitimate command-position [[ ... ]] comparisons remain allowed
+    for (const command of [
+      'if [[ "b" > "a" ]]; then echo ok; fi',
+      'if ! [[ "a" > "b" ]]; then echo ok; fi',
+      'time [[ "b" > "a" ]] && echo ok',
+      'case x in (a|b) [[ "b" > "a" && "c" > "b" ]] && echo ok ;; esac',
+    ]) {
+      assert.equal(
+        decideBashCommand({ command, cwd: mainRepoRoot, ownerRoot: mainRepoRoot }).decision,
+        'allow',
+        `Expected B1 command-position [[ allow: ${command}`,
+      )
+    }
+  })
+
+  it('inspects command substitutions in case/for headers and handles (a|b) case alternation without subshell leak (B2 & B4)', () => {
+    for (const command of [
+      'case $(echo pwn > README.md) in *) true ;; esac',
+      'case x in $(echo pwn > README.md)) true ;; esac',
+      'case x in\n  $(echo pwn > README.md))\n    true ;;\nesac',
+      'for ((i=$(echo pwn > README.md && echo 0); i<0; i++)) do true; done',
+      'for ((i=0; i<1; i++)) { echo pwn > README.md; }',
+      `(\n  cd "${worktreeRoot}"\n  case x in\n    (a|b) true ;;\n  esac\n)\necho pwn > README.md`,
+      `( cd "${worktreeRoot}"; case x in (a|b) true ;; esac ); echo pwn > README.md`,
+      `(\n  cd "${worktreeRoot}"\n  case x in\n    a)\n      true\n    ;;\n    (b|c)\n      true\n    ;;\n  esac\n)\necho pwn > README.md`,
+      `(\n  case x in\n    $(echo hi)) true ;;\n  esac\n  cd "${worktreeRoot}"\n)\necho pwn > README.md`,
+    ]) {
+      assert.equal(
+        decideBashCommand({ command, cwd: mainRepoRoot, ownerRoot: mainRepoRoot }).decision,
+        'deny',
+        `Expected B2/B4 deny on main: ${command}`,
+      )
+    }
+
+    // From worktree, `a|b) cd "<primary>"` must not treat `|` as a pipeline hiding cd
+    assert.equal(
+      decideBashCommand({
+        command: `case x in\n  a|b) cd "${mainRepoRoot}" ;;\nesac\necho pwn > README.md`,
+        cwd: worktreeRoot,
+        ownerRoot: mainRepoRoot,
+      }).decision,
+      'deny',
+      'Expected case alternation arm cd <primary> to deny subsequent write',
+    )
+  })
+
+  it('preserves cDir when GIT_WORK_TREE/--work-tree or GIT_DIR/--git-dir is only partially overridden (B3)', () => {
+    for (const command of [
+      `GIT_WORK_TREE="${worktreeRoot}" git -C "${mainRepoRoot}" commit --allow-empty -m x`,
+      `GIT_WORK_TREE="${worktreeRoot}" git -C "${mainRepoRoot}" merge --no-edit feat`,
+      `GIT_WORK_TREE="${worktreeRoot}" git -C "${mainRepoRoot}" rebase feat`,
+    ]) {
+      assert.equal(
+        decideBashCommand({ command, cwd: worktreeRoot, ownerRoot: mainRepoRoot }).decision,
+        'deny',
+        `Expected B3 deny from worktree: ${command}`,
+      )
+    }
+
+    for (const command of [
+      `git --work-tree="${worktreeRoot}" reset --hard feat`,
+      `git --work-tree="${worktreeRoot}" commit --allow-empty -m x`,
+      `git --work-tree="${worktreeRoot}" checkout -- README.md`,
+    ]) {
+      assert.equal(
+        decideBashCommand({ command, cwd: mainRepoRoot, ownerRoot: mainRepoRoot }).decision,
+        'deny',
+        `Expected B3 deny from primary: ${command}`,
+      )
+    }
+  })
+
+  it('closes pushd -n stack target, zsh attached -o/+o, pnpm --shell-mode=true, heredoc in <(...), multiline bash -c, and line-continued pipe brace (B5)', () => {
+    for (const command of [
+      `zsh -n -oexec -c 'echo pwn > README.md'`,
+      `zsh -o noexec +ono_exec -c 'echo pwn > README.md'`,
+      `zsh -noexec -c 'echo pwn > README.md'`,
+      `pnpm --shell-mode=true exec 'echo pwn > README.md'`,
+      `pnpm --shell-mode=1 exec 'echo pwn > README.md'`,
+      `bash <(cat <<'EOF'\necho pwn > README.md\nEOF\n)`,
+      `bash -c '# comment\necho pwn > README.md'`,
+      `echo ok |\n{\n  cd "${worktreeRoot}"\n}\necho pwn > README.md`,
+      `true ||\ncd "${worktreeRoot}" && echo pwn > README.md`,
+    ]) {
+      assert.equal(
+        decideBashCommand({ command, cwd: mainRepoRoot, ownerRoot: mainRepoRoot }).decision,
+        'deny',
+        `Expected B5 deny on main: ${command}`,
+      )
+    }
+
+    for (const command of [
+      `pushd -n "${mainRepoRoot}" && popd && echo pwn > README.md`,
+      `pushd -n "${mainRepoRoot}" && pushd && echo pwn > README.md`,
+      `pnpm -C "${mainRepoRoot}" --shell-mode=true exec 'echo pwn > README.md'`,
+    ]) {
+      assert.equal(
+        decideBashCommand({ command, cwd: worktreeRoot, ownerRoot: mainRepoRoot }).decision,
+        'deny',
+        `Expected B5 deny from worktree: ${command}`,
+      )
+    }
+
+    // pnpm --shell-mode=false exec safe command remains allowed
+    assert.equal(
+      decideBashCommand({
+        command: `pnpm --shell-mode=false exec 'echo ok'`,
+        cwd: mainRepoRoot,
+        ownerRoot: mainRepoRoot,
+      }).decision,
+      'allow',
+    )
+  })
 })
