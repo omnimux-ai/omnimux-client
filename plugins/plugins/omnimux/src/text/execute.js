@@ -1,9 +1,11 @@
+import { isModelEnabled } from '../gate/guard.js'
 import { OmnimuxError } from '../media/errors.js'
 import {
   assertGuardOutput,
   assertGuardSubmit,
 } from '../catalog/contract/submit-guard/index.js'
-import { parseTextConfig, resolveTextRoute, CHAT_MODEL_IDS } from './catalog.js'
+import { resolveModelId } from '../catalog/contract/index.js'
+import { parseTextConfig, resolveTextRoute, enabledTextModels, CHAT_MODEL_IDS } from './catalog.js'
 import { completeTextViaChat } from './chat.js'
 import { probeTextImage, saveProbedTextImage, toImageUrlPart } from './image.js'
 import { loadTextVideo, toVideoImageUrlPart } from './video.js'
@@ -12,6 +14,7 @@ import { loadTextDocument, toDocumentImageUrlPart } from './document.js'
 import { normalizeTextReferences } from './references.js'
 import { resolveScenarioChoice, readScenarioSettings, assertScenarioRequestIntent } from '../settings/runtime-mode.js'
 import { parseModelAndGroup, resolveRequestChannelIntent } from '../catalog/serving/channel-groups.js'
+import { ROUTING_STRATEGIES } from '../catalog/serving/id-universe.js'
 import { runAgentText } from '../agents/local.js'
 import { buildModelCatalog } from '../catalog/list.js'
 import { findDescriptor, PI_AI_NAMESPACE } from '../catalog/composer-sync.js'
@@ -102,32 +105,71 @@ function readSelectionPair(selection) {
   return provider && model ? { provider, model } : null
 }
 
+function isPlainObject(value) {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
+function ownPlainEntry(map, key) {
+  if (!isPlainObject(map) || !Object.hasOwn(map, key)) return null
+  const entry = map[key]
+  return isPlainObject(entry) ? entry : null
+}
+
+function readAgentModel(agent) {
+  if (!agent?.model || typeof agent.model.current !== 'function') return null
+  try {
+    return readSelectionPair(agent.model.current())
+  } catch (cause) {
+    console.debug('omnimux:text agent.model.current failed', cause instanceof Error ? cause.message : String(cause))
+    return null
+  }
+}
+
 /**
  * Resolve the active conversation's model from DSH host services:
- * session-bound `agents.get(sessionId).model.current()` first, then
- * `agentDefaultModel.currentSelection()` (updated whenever the user switches
- * the chat model in the composer).
+ *   1. Session-bound `agents.get(sessionId).model.current()` when `sessionId` is provided
+ *   2. Ambient `agents.currentInitiator().model.current()` inside an active agent turn
+ *   3. `agentDefaultModel.currentSelection()` (updated whenever the user switches
+ *      the chat model in the composer)
  * @param {{ sessionId?: unknown, agents?: any, agentDefaultModel?: any }} input
  * @returns {{ provider: string, model: string } | null}
  */
 function resolveSessionModel(input) {
-  const rawSessionId = input.sessionId
-  if (rawSessionId !== undefined && rawSessionId !== null && String(rawSessionId).trim() !== ''
-    && input.agents && typeof input.agents.get === 'function') {
-    const agent = input.agents.get(rawSessionId)
-    if (agent?.model && typeof agent.model.current === 'function') {
-      const fromAgent = readSelectionPair(agent.model.current())
+  const rawSessionId = typeof input.sessionId === 'string' ? input.sessionId.trim() : input.sessionId
+  const hasSessionId = rawSessionId !== undefined && rawSessionId !== null
+    && (typeof rawSessionId !== 'string' || rawSessionId !== '')
+  if (hasSessionId && input.agents && typeof input.agents.get === 'function') {
+    try {
+      const fromAgent = readAgentModel(input.agents.get(rawSessionId))
       if (fromAgent) return fromAgent
+    } catch (cause) {
+      console.debug('omnimux:text agents.get failed', cause instanceof Error ? cause.message : String(cause))
+    }
+  }
+  if (input.agents && typeof input.agents.currentInitiator === 'function') {
+    try {
+      const fromInitiator = readAgentModel(input.agents.currentInitiator())
+      if (fromInitiator) return fromInitiator
+    } catch (cause) {
+      console.debug('omnimux:text agents.currentInitiator failed', cause instanceof Error ? cause.message : String(cause))
     }
   }
   if (input.agentDefaultModel && typeof input.agentDefaultModel.currentSelection === 'function') {
-    return readSelectionPair(input.agentDefaultModel.currentSelection())
+    try {
+      return readSelectionPair(input.agentDefaultModel.currentSelection())
+    } catch (cause) {
+      console.debug('omnimux:text agentDefaultModel.currentSelection failed', cause instanceof Error ? cause.message : String(cause))
+      return null
+    }
   }
   return null
 }
 
 /**
- * Read one provider's merged `llm-pi-ai` settings profile (base → value → user).
+ * Read one provider's effective `llm-pi-ai` settings profile.
+ * When DSH supplies `descriptor.value.providers`, treat it as authoritative
+ * (already applying `base` + `user` + unset removals) so deleted base providers
+ * or fields are never resurrected.
  * @param {unknown} settingsService
  * @param {string} providerId
  * @returns {Record<string, unknown> | null}
@@ -136,25 +178,71 @@ function resolvePiAiProviderProfile(settingsService, providerId) {
   if (!settingsService || typeof settingsService !== 'object' || !providerId) return null
   const service = /** @type {{ describe?: Function, get?: Function }} */ (settingsService)
   if (typeof service.describe === 'function') {
-    const descriptor = findDescriptor(service.describe(), PI_AI_NAMESPACE)
+    let descriptor = null
+    try {
+      descriptor = findDescriptor(service.describe(), PI_AI_NAMESPACE)
+    } catch (cause) {
+      console.debug('omnimux:text settings.describe failed', cause instanceof Error ? cause.message : String(cause))
+    }
     if (descriptor) {
-      const base = descriptor.base?.providers?.[providerId]
-      const value = descriptor.value?.providers?.[providerId]
-      const user = descriptor.user?.providers?.[providerId]
-      const merged = {
-        ...(base && typeof base === 'object' ? base : {}),
-        ...(value && typeof value === 'object' ? value : {}),
-        ...(user && typeof user === 'object' ? user : {}),
+      if (isPlainObject(descriptor.value) && isPlainObject(descriptor.value.providers)) {
+        return ownPlainEntry(descriptor.value.providers, providerId)
       }
-      if (Object.keys(merged).length > 0) return merged
+      const base = ownPlainEntry(descriptor.base?.providers, providerId)
+      const user = ownPlainEntry(descriptor.user?.providers, providerId)
+      if (base || user) {
+        return { ...(base ?? {}), ...(user ?? {}) }
+      }
     }
   }
   if (typeof service.get === 'function') {
-    const raw = service.get(PI_AI_NAMESPACE)
-    const entry = raw && typeof raw === 'object' ? raw.providers?.[providerId] : null
-    if (entry && typeof entry === 'object') return entry
+    try {
+      const raw = service.get(PI_AI_NAMESPACE)
+      return ownPlainEntry(raw?.providers, providerId)
+    } catch (cause) {
+      console.debug('omnimux:text settings.get failed', cause instanceof Error ? cause.message : String(cause))
+      return null
+    }
   }
   return null
+}
+
+function safeReadScenarioSettings(settingsService) {
+  try {
+    return readScenarioSettings(settingsService)
+  } catch (cause) {
+    console.debug('omnimux:text readScenarioSettings failed', cause instanceof Error ? cause.message : String(cause))
+    return {}
+  }
+}
+
+function readCustomHeaders(profile, modelEntry) {
+  const merged = {
+    ...(isPlainObject(profile?.headers) ? profile.headers : {}),
+    ...(isPlainObject(modelEntry?.headers) ? modelEntry.headers : {}),
+  }
+  return Object.keys(merged).length > 0 ? merged : undefined
+}
+
+function isExplicitlyDisabledOfficialModel(baseModelId, text, gate) {
+  if (!baseModelId) return false
+  if (!isModelEnabled(gate, baseModelId)) return true
+  return (text.models ?? []).some((row) => row.id === baseModelId && row.enabled === false)
+}
+
+function contractAcceptedModalities(runtimeIndex, modelId) {
+  if (!runtimeIndex || !modelId) return null
+  const canonicalId = resolveModelId(runtimeIndex, modelId) ?? modelId
+  const model = typeof runtimeIndex.get === 'function' ? runtimeIndex.get(canonicalId) : undefined
+  if (!model || !Array.isArray(model.operations)) return null
+  const modalities = new Set()
+  for (const op of model.operations) {
+    if (op?.output?.type !== 'text') continue
+    for (const slot of Array.isArray(op.inputs) ? op.inputs : []) {
+      if (typeof slot?.type === 'string' && slot.type) modalities.add(slot.type)
+    }
+  }
+  return modalities.size > 0 ? modalities : null
 }
 
 async function probeMediaReferences(references, input, { requireAttachments = false } = {}) {
@@ -232,21 +320,28 @@ export async function executeOmnimuxText(input) {
   // Model resolution when the caller did not pin an explicit model or channel:
   //   1. Plugin config `omnimux.toolModel` (or per-call `input.toolModel`) when set;
   //   2. Otherwise the active session model (`agents.get(sessionId).model.current()`
-  //      → `agentDefaultModel.currentSelection()`).
+  //      → `agents.currentInitiator().model.current()` → `agentDefaultModel.currentSelection()`).
   // No silent fallback or implicit model switching: unsupported modalities,
   // missing providers, or upstream errors fail loudly so the user can switch
   // models or configure `toolModel`.
   try { assertScenarioRequestIntent(input) }
   catch (cause) { throw new OmnimuxError('omnimux-invalid-request', cause.message) }
   const requestedIntent = resolveRequestChannelIntent(input)
+  const explicitModel = typeof input.model === 'string' ? input.model.trim() : ''
+  const normalizedStrategy = typeof input.strategy === 'string' ? input.strategy.trim() : ''
+  const hasExplicitStrategy = ROUTING_STRATEGIES.includes(normalizedStrategy)
+  const hasExplicitAllowedGroups = Array.isArray(input.allowedGroups)
+    && input.allowedGroups.some((group) => typeof group === 'string' && group.trim() !== '')
   const hasExplicitCallerRoute = Boolean(
-    input.model
+    explicitModel
     || requestedIntent.requestedChannel
     || requestedIntent.effectiveChannel
-    || input.strategy
-    || (Array.isArray(input.allowedGroups) && input.allowedGroups.length > 0),
+    || hasExplicitStrategy
+    || hasExplicitAllowedGroups,
   )
-  const rawToolModel = input.toolModel ?? readScenarioSettings(input.settings).toolModel
+  const rawToolModel = input.toolModel !== undefined
+    ? input.toolModel
+    : safeReadScenarioSettings(input.settings).toolModel
   const parsedToolModel = hasExplicitCallerRoute ? null : parseToolModel(rawToolModel)
   let pinnedTarget = null
   if (parsedToolModel !== null) {
@@ -267,11 +362,16 @@ export async function executeOmnimuxText(input) {
     const pinnedSystem = typeof input.system === 'string' ? input.system.trim() : ''
     const compositeModel = `${pinnedTarget.provider}:${pinnedTarget.model}`
 
-    // Official OmniMux provider: when complex media is present (ctx.llm.stream
-    // only carries text/image) or when the host supplies an account key
-    // resolver, execute strictly on this exact model through direct chat.
-    if (pinnedTarget.provider === text.defaultProvider
-      && (hasComplexMedia || typeof input.resolveOfficialApiKey === 'function')) {
+    // Official OmniMux provider: enforce gate/disable rules symmetrically,
+    // honor Contract v2 whitelist + SubmitGuard + @group candidates for
+    // whitelisted models, and keep unlisted official session models (such as
+    // the fresh desktop default `deepseek-v4-flash`) working on their
+    // supported modalities while failing loudly on unsupported media.
+    if (pinnedTarget.provider === text.defaultProvider) {
+      const { modelId: pinnedBaseModel, group: pinnedInlineGroup } = parseModelAndGroup(pinnedTarget.model)
+      if (isExplicitlyDisabledOfficialModel(pinnedBaseModel, text, gate)) {
+        throw new OmnimuxError('unknown-model', `model '${pinnedBaseModel}' is not on the enabled text whitelist`)
+      }
       const officialEnv = input.env ?? process.env
       const runtime = getRuntimeContractIndex(
         input.catalogIndex ? { localIndex: input.catalogIndex } : {},
@@ -279,49 +379,134 @@ export async function executeOmnimuxText(input) {
       const gatewayTextRows = getGatewayTextRows(
         input.catalogIndex ? { localIndex: input.catalogIndex } : {},
       )
-      const route = resolveTextRoute({
-        model: pinnedTarget.model,
-        references,
-      }, text, officialEnv, gate, gatewayTextRows)
-      const { probed, assets } = await probeMediaReferences(references, input, { requireAttachments: false })
-      const guardPlan = assertGuardSubmit(
-        {
-          prompt,
+      const enabledOfficial = enabledTextModels(text, gate, gatewayTextRows)
+      const isWhitelisted = enabledOfficial.some((row) => row.id === pinnedBaseModel)
+
+      if (isWhitelisted) {
+        const route = resolveTextRoute({
+          model: pinnedTarget.model,
+          references,
+        }, text, officialEnv, gate, gatewayTextRows)
+        const wantsDirectChat = hasComplexMedia
+          || (route.routed && route.candidates.length > 0)
+          || typeof input.resolveOfficialApiKey === 'function'
+        if (wantsDirectChat) {
+          const { probed, assets } = await probeMediaReferences(references, input, { requireAttachments: false })
+          const guardPlan = assertGuardSubmit(
+            {
+              prompt,
+              model: route.modelId,
+              operation: input.operation,
+              assets,
+              system: pinnedSystem,
+              maxTokens: pinnedMaxTokens,
+              seam: 'textComplete',
+              capability: 'text',
+            },
+            {
+              index: runtime.index,
+              specsDir: input.specsDir,
+              seam: 'textComplete',
+              capability: 'text',
+              outputType: 'text',
+              gateAllows: buildGateAllows(gate),
+            },
+          )
+          const mediaParts = packMediaParts(references, probed)
+          const officialResult = await completeTextViaChat({
+            model: route.modelId,
+            candidates: route.candidates,
+            prompt,
+            system: pinnedSystem,
+            maxTokens: pinnedMaxTokens,
+            mediaParts,
+            env: officialEnv,
+            fetcher: input.fetcher,
+            signal: input.signal,
+            apiKey: input.apiKey,
+            baseUrl: input.baseUrl,
+            credentials: input.credentials,
+            settings: input.settings,
+            resolveOfficialApiKey: input.resolveOfficialApiKey,
+          })
+          assertGuardOutput(guardPlan, officialResult, { capability: 'text' })
+          return { ...officialResult, model: compositeModel }
+        }
+        if (!input.llm || typeof input.llm.stream !== 'function') {
+          throw new OmnimuxError('needs-provider', 'textComplete requires ctx.llm')
+        }
+        const { probed, assets } = await probeMediaReferences(references, input, { requireAttachments: true })
+        const guardPlan = assertGuardSubmit(
+          {
+            prompt,
+            model: route.modelId,
+            operation: input.operation,
+            assets,
+            system: pinnedSystem,
+            maxTokens: pinnedMaxTokens,
+            seam: 'textComplete',
+            capability: 'text',
+          },
+          {
+            index: runtime.index,
+            specsDir: input.specsDir,
+            seam: 'textComplete',
+            capability: 'text',
+            outputType: 'text',
+            gateAllows: buildGateAllows(gate),
+          },
+        )
+        const content = [{ type: 'text', text: prompt }]
+        for (const media of probed) {
+          const attachment = await saveProbedTextImage(media, input.attachments)
+          content.push({ type: 'image', attachment })
+        }
+        const streamed = await streamTextReply(input.llm, {
+          provider: pinnedTarget.provider,
           model: route.modelId,
-          operation: input.operation,
-          assets,
+          prompt,
           system: pinnedSystem,
           maxTokens: pinnedMaxTokens,
-          seam: 'textComplete',
-          capability: 'text',
-        },
-        {
-          index: runtime.index,
-          specsDir: input.specsDir,
-          seam: 'textComplete',
-          capability: 'text',
-          outputType: 'text',
-          gateAllows: buildGateAllows(gate),
-        },
-      )
-      const mediaParts = packMediaParts(references, probed)
-      const officialResult = await completeTextViaChat({
-        model: route.modelId,
-        prompt,
-        system: pinnedSystem,
-        maxTokens: pinnedMaxTokens,
-        mediaParts,
-        env: officialEnv,
-        fetcher: input.fetcher,
-        signal: input.signal,
-        apiKey: input.apiKey,
-        baseUrl: input.baseUrl,
-        credentials: input.credentials,
-        settings: input.settings,
-        resolveOfficialApiKey: input.resolveOfficialApiKey,
-      })
-      assertGuardOutput(guardPlan, officialResult, { capability: 'text' })
-      return { ...officialResult, model: compositeModel }
+          content,
+          signal: input.signal,
+          sessionId: input.sessionId,
+        })
+        assertGuardOutput(guardPlan, streamed, { capability: 'text' })
+        return { ...streamed, model: compositeModel }
+      }
+
+      if (references.length > 0) {
+        const accepted = contractAcceptedModalities(runtime.index, pinnedBaseModel)
+        if (accepted) {
+          const unsupported = references.filter((asset) => !accepted.has(asset.type))
+          if (unsupported.length > 0) {
+            throw new OmnimuxError(
+              'omnimux-invalid-request',
+              `当前模型（${compositeModel}）不支持${describeMediaTypes(unsupported)}输入，请切换支持多模态的模型或在插件设置中指定工具模型`,
+            )
+          }
+        }
+      }
+      if (hasComplexMedia || Boolean(pinnedInlineGroup) || typeof input.resolveOfficialApiKey === 'function') {
+        const { probed } = await probeMediaReferences(references, input, { requireAttachments: false })
+        const mediaParts = packMediaParts(references, probed)
+        const officialResult = await completeTextViaChat({
+          model: pinnedTarget.model,
+          prompt,
+          system: pinnedSystem,
+          maxTokens: pinnedMaxTokens,
+          mediaParts,
+          env: officialEnv,
+          fetcher: input.fetcher,
+          signal: input.signal,
+          apiKey: input.apiKey,
+          baseUrl: input.baseUrl,
+          credentials: input.credentials,
+          settings: input.settings,
+          resolveOfficialApiKey: input.resolveOfficialApiKey,
+        })
+        return { ...officialResult, model: compositeModel }
+      }
     }
 
     // Text and image inputs ride DSH native `ctx.llm.stream` on the exact
@@ -367,17 +552,18 @@ export async function executeOmnimuxText(input) {
       || (typeof profile?.baseURL === 'string' && profile.baseURL.trim())
       || (typeof profile?.baseUrl === 'string' && profile.baseUrl.trim())
       || ''
+    const complexReferences = references.filter((asset) => asset.type !== 'image')
     if (api !== 'openai-completions' || !/^https?:\/\//i.test(providerBaseUrl)) {
       throw new OmnimuxError(
         'omnimux-invalid-request',
-        `当前模型（${compositeModel}）不支持${describeMediaTypes(references)}输入，请切换支持多模态的模型或在插件设置中指定工具模型`,
+        `当前模型（${compositeModel}）不支持${describeMediaTypes(complexReferences)}输入，请切换支持多模态的模型或在插件设置中指定工具模型`,
       )
     }
     const keyRef = typeof profile?.apiKeyEnv === 'string' ? profile.apiKeyEnv.trim() : ''
     if (!keyRef) {
       throw new OmnimuxError(
         'omnimux-unconfigured',
-        `当前模型提供方（${pinnedTarget.provider}）未配置凭据引用，无法发送${describeMediaTypes(references)}请求`,
+        `当前模型提供方（${pinnedTarget.provider}）未配置凭据引用，无法发送${describeMediaTypes(complexReferences)}请求`,
       )
     }
     let providerApiKey = ''
@@ -385,15 +571,15 @@ export async function executeOmnimuxText(input) {
       try {
         const hit = await input.credentials.resolve(keyRef)
         providerApiKey = typeof hit?.value === 'string' ? hit.value.trim() : ''
-      } catch (cause) {
+      } catch {
         throw new OmnimuxError(
           'omnimux-unconfigured',
-          `无法读取模型提供方（${pinnedTarget.provider}）凭据 ${keyRef}：${cause instanceof Error ? cause.message : String(cause)}`,
+          `无法读取模型提供方（${pinnedTarget.provider}）凭据 ${keyRef}，请检查凭据服务`,
         )
       }
     }
     const lookupEnv = input.env ?? process.env
-    if (!providerApiKey && typeof lookupEnv[keyRef] === 'string') {
+    if (!providerApiKey && Object.hasOwn(lookupEnv, keyRef) && typeof lookupEnv[keyRef] === 'string') {
       providerApiKey = lookupEnv[keyRef].trim()
     }
     if (!providerApiKey) {
@@ -404,6 +590,7 @@ export async function executeOmnimuxText(input) {
     }
     const { probed } = await probeMediaReferences(references, input, { requireAttachments: false })
     const mediaParts = packMediaParts(references, probed)
+    const customHeaders = readCustomHeaders(profile, modelEntry)
     const directResult = await completeTextViaChat({
       model: pinnedTarget.model,
       prompt,
@@ -415,12 +602,14 @@ export async function executeOmnimuxText(input) {
       signal: input.signal,
       apiKey: providerApiKey,
       baseUrl: providerBaseUrl,
+      preserveBaseUrl: true,
+      ...(customHeaders ? { headers: customHeaders } : {}),
       credentialScope: 'byok',
     })
     return { ...directResult, model: compositeModel }
   }
 
-  const runtimeSettings = readScenarioSettings(input.settings)
+  const runtimeSettings = safeReadScenarioSettings(input.settings)
   const runtime = getRuntimeContractIndex(
     input.catalogIndex ? { localIndex: input.catalogIndex } : {},
   )
@@ -650,9 +839,10 @@ export async function executeOmnimuxText(input) {
 /**
  * Collect one ctx.llm.stream completion into the textComplete result shape.
  *
- * Shared by the catalog route (provider=hub default) and the tool-model bypass
- * (provider=session provider key) so reasoning-channel filtering, finish-error
- * mapping, and the empty-body guard stay identical on both paths.
+ * Shared by the catalog route (provider=hub default) and the pinned session /
+ * tool-model lane (provider=session provider key) so reasoning-channel
+ * filtering, finish-error mapping, and the empty-body guard stay identical on
+ * both paths.
  *
  * @param {{ stream: (options: object) => AsyncIterable<object> }} llm
  * @param {{ provider: string, model: string, prompt: string, system: string, maxTokens: number, content: Array<object>, signal?: AbortSignal, sessionId?: unknown }} input

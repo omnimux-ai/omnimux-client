@@ -12,14 +12,14 @@
 
 ## 假设
 
-- 在 DSH 宿主运行态下，当前会话模型以 `agents.get(sessionId)?.model?.current()` 为首选真源，无显式 `sessionId` 时以 `ctx.get('agentDefaultModel')?.currentSelection()` 为真源（DSH 在会话切模型时已通过 `session-controller` 同步写入 `agentDefaultModel`）。
+- 在 DSH 宿主运行态下，当前会话模型以 `agents.get(sessionId)?.model?.current()` 为首选真源，其次在 Agent 工具调用上下文中读取 `agents.currentInitiator()?.model?.current()`，无会话上下文时以 `ctx.get('agentDefaultModel')?.currentSelection()` 为真源（DSH 在会话切模型时已通过 `session-controller` 同步写入 `agentDefaultModel`）。
 - 当调用方未显式传入 `model` / 渠道意图（如 `@byok-*`、`@agent`、`@standard`）时：
   - 若插件配置 `omnimux.toolModel`（或调用方 `input.toolModel`）为有效 `provider:model`，则全模态严格锁定该指定模型；格式非法、适配器缺失或通道不支持目标模态时直接显式报错，零静默回退。
   - 若 `toolModel` 为 `auto` 或未设置，且宿主提供了会话模型真源，则全模态严格锁定当前会话模型；不支持目标模态或上游报错时直接显式透传错误，零静默回退。
-- 对于纯文本与图片输入，锁定目标走 DSH 原生 `ctx.llm.stream({ provider, model })`（其中 `provider === 'omnimux'` 且宿主注入了 `resolveOfficialApiKey` 时走官方 `completeTextViaChat` 以兼容新用户账号执行密钥）。
+- 对于纯文本与图片输入，锁定目标走 DSH 原生 `ctx.llm.stream({ provider, model })`（其中 `provider === 'omnimux'` 且宿主注入了 `resolveOfficialApiKey` 时走官方 `completeTextViaChat` 以兼容新用户账号执行密钥；不在 Contract v2 白名单但未被禁用的官方会话模型如桌面默认 `deepseek-v4-flash` 在其合约支持的文本/图片模态上正常放行，不支持的视频/音频/文档模态立即显式报错）。
 - 对于视频、音频、文档等超出 `llm-pi-ai` 附件模态（仅 `text` / `image`）的输入，仍严格锁定在同一个 `{ provider, model }` 上，绝不暗中更换模型：
-  - `provider === 'omnimux'`：按该精确 `model` 校验官方目录与模态契约后走 `completeTextViaChat`；不支持该模态或未启用时直接报错。
-  - 其它在 `llm-pi-ai` 中配置了 `api: 'openai-completions'` 且具备合法 `http(s)` `baseURL` 的提供方：严格使用该提供方自身的 `baseURL` 与 `apiKeyEnv` 凭据直连 `completeTextViaChat`（不传入官方凭据或环境变量，防止跨提供方凭据泄露）；若上游模型不支持该模态，由上游自然返回错误。
+  - `provider === 'omnimux'`：白名单模型按精确 `model` 校验官方目录、模态契约、`@group` 候选池与门控后走 `completeTextViaChat`；被门控/配置禁用的模型全路径拒绝；不支持目标模态时直接报错。
+  - 其它在 `llm-pi-ai` 中配置了 `api: 'openai-completions'` 且具备合法 `http(s)` `baseURL` 的提供方：严格使用该提供方自身的有效配置（`descriptor.value.providers` 优先，避免复活已删除的 `base` 条目），原样保留其 `baseURL`（不强制拼接 `/v1`）并透传合法自定义 `headers`，仅使用其自身 `apiKeyEnv` 凭据直连 `completeTextViaChat`（不传入官方凭据或环境变量，凭据读取异常不泄露原始错误细节）；若上游模型不支持该模态，由上游自然返回错误。
   - 其它协议（如 `anthropic-messages`、`openai-responses` 或缺少 `baseURL`）：直接抛出 `omnimux-invalid-request` 提示当前模型不支持该模态，请切换支持多模态的模型或在插件配置中指定工具模型。
 - 仅在既无显式 `toolModel` 也无宿主会话模型服务（例如离线单测或未挂载 `agentDefaultModel` 的独立调用）时，保留既有 `scenarioBindings` / 目录路由兼容，不影响显式传 `model` 或渠道参数的调用（如画布节点、显式 `@byok-*` / `@agent` / 官方指定模型）。
 

@@ -254,4 +254,69 @@ describe('mountTextComplete toolModel bypass', () => {
     const r3 = await textComplete.execute({ prompt: 'after switch' })
     assert.equal(r3.model, 'switched-provider:switched-model')
   })
+
+  it('omnimux_text_complete tool follows session model when model is omitted and delegates explicitly when model is named', async () => {
+    let registeredTool
+    const llmSeen = []
+    const httpSeen = []
+    const ctx = {
+      tools: { register(tool) { if (tool.name === 'omnimux_text_complete') registeredTool = tool } },
+      provide() {},
+      get(name) {
+        if (name === 'llm') {
+          return {
+            async * stream(options) {
+              llmSeen.push(options)
+              yield { type: 'text-delta', text: 'session tool answer' }
+              yield { type: 'finish', reason: { kind: 'stop' } }
+            },
+          }
+        }
+        if (name === 'settings') return { get: (k) => k === 'omnimux' ? { toolModel: 'auto' } : undefined }
+        if (name === 'agentDefaultModel') return { currentSelection: () => ({ provider: 'session-provider', model: 'session-chat' }) }
+        if (name === 'agents') {
+          return {
+            get: (id) => id === 'sess-tool-1'
+              ? { model: { current: () => ({ provider: 'bound-provider', model: 'bound-chat' }) } }
+              : undefined,
+          }
+        }
+        return undefined
+      },
+    }
+    const hub = { text: parseTextConfig(undefined), gate: parseGateConfig(undefined) }
+    mountTextComplete(ctx, hub, {}, (error) => { throw error }, {
+      resolveOfficialApiKey: async () => `sk-${'f'.repeat(48)}`,
+    })
+
+    assert.ok(registeredTool)
+    assert.match(registeredTool.description, /explicit whitelist model id/i)
+
+    // Omitted model follows exec.agent.session.id -> bound-provider:bound-chat
+    const r1 = await registeredTool.execute(
+      { prompt: 'follow current session', reason: 'isolated summary' },
+      { agent: { session: { id: 'sess-tool-1' } } },
+    )
+    assert.equal(r1.model, 'bound-provider:bound-chat')
+    assert.equal(llmSeen.length, 1)
+    assert.equal(llmSeen[0].provider, 'bound-provider')
+
+    // Explicit whitelist model delegates to official gemini-3.8-flash instead of session model
+    const prevFetch = globalThis.fetch
+    globalThis.fetch = async (url, init) => {
+      httpSeen.push({ url, body: JSON.parse(init.body) })
+      return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: 'delegated official answer' } }] }) }
+    }
+    try {
+      const r2 = await registeredTool.execute(
+        { model: 'gemini-3.8-flash', prompt: 'delegate to whitelist', reason: 'session model lacks video' },
+        { agent: { session: { id: 'sess-tool-1' } } },
+      )
+      assert.equal(r2.model, 'gemini-3.8-flash')
+      assert.equal(httpSeen.length, 1)
+      assert.equal(httpSeen[0].body.model, 'gemini-3.8-flash')
+    } finally {
+      globalThis.fetch = prevFetch
+    }
+  })
 })
