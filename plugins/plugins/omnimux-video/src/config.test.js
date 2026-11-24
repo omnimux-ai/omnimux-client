@@ -8,9 +8,6 @@ test('parseVideoConfig defaults', () => {
     understand: {
       defaultModel: '',
       maxTokens: 8000,
-      maxVideoBytes: 20 * 1024 * 1024,
-      analyzePromptPath: '',
-      reversePromptPath: '',
     },
   }
   assert.deepEqual(parseVideoConfig(undefined), expected)
@@ -81,20 +78,22 @@ test('parseVideoConfig ignores unknown top-level fields', () => {
   assert.equal(out.video.maxConcurrent, 5)
 })
 
-test('parseVideoConfig reads understand overrides', () => {
+test('parseVideoConfig reads understand overrides and ignores retired prompt/transport fields', () => {
   const out = parseVideoConfig({
     understand: {
       defaultModel: 'gemini-3.7-flash',
       maxTokens: 4096,
+      // Retired with the headlessSkill migration: prompt text lives in the
+      // bundled Skill, media transport belongs to Hub. Old configs may still
+      // carry them; they must be ignored instead of resurrecting the old path.
       maxVideoBytes: 1024,
       analyzePromptPath: '/tmp/a.md',
       reversePromptPath: '/tmp/r.md',
     },
   })
+  assert.equal(out.understand.defaultModel, 'gemini-3.7-flash')
   assert.equal(out.understand.maxTokens, 4096)
-  assert.equal(out.understand.maxVideoBytes, 1024)
-  assert.equal(out.understand.analyzePromptPath, '/tmp/a.md')
-  assert.equal(out.understand.reversePromptPath, '/tmp/r.md')
+  assert.deepEqual(Object.keys(out.understand).sort(), ['defaultModel', 'maxTokens'])
 })
 
 test('parseVideoConfig rejects bad understand.maxTokens', () => {

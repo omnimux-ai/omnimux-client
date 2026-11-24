@@ -5,13 +5,13 @@ import { VideoError } from '../errors.js'
 const VIDEO_EXT = new Set(['.mp4', '.m4v', '.webm', '.mov'])
 
 /**
- * Validate a local video path for hub `textComplete.video`.
- * Hub owns data URI packing as `image_url(data:video)`; this plugin only
- * checks path / size and never opens OmniMux HTTP itself.
+ * Validate a local video path before handing it to Hub `headlessSkill`.
+ * Hub owns transport: it packs small videos inline and prepares oversized ones
+ * through `video_inline_analysis_prepare`, so this plugin only checks shape
+ * (absolute path / extension / readable file) and never opens OmniMux HTTP.
  * @param {string} source
- * @param {{ maxVideoBytes?: number }} [opts]
  */
-export async function assertLocalVideo(source, opts = {}) {
+export async function assertLocalVideo(source) {
   const raw = String(source || '').trim()
   if (!raw) {
     throw new VideoError('video-invalid-input', 'video is required')
@@ -46,16 +46,6 @@ export async function assertLocalVideo(source, opts = {}) {
   }
   if (!info.isFile()) {
     throw new VideoError('video-invalid-input', `video path is not a file: ${raw}`)
-  }
-  const cap = typeof opts.maxVideoBytes === 'number' && opts.maxVideoBytes > 0
-    ? opts.maxVideoBytes
-    : 20 * 1024 * 1024
-  if (info.size > cap) {
-    throw new VideoError(
-      'video-invalid-input',
-      `video exceeds ${cap} bytes; run video_inline_analysis_prepare first or raise Config.understand.maxVideoBytes`,
-      { hint: 'use video_process capability=video_inline_analysis_prepare' },
-    )
   }
   return { video: raw, name: basename(raw), bytes: info.size, kind: 'path' }
 }

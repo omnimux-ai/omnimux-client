@@ -87,7 +87,7 @@
       "version": "0.1.2",
       "path": "plugins/plugins/omnimux-video",
       "spec": "link:../../plugins/plugins/omnimux-video",
-      "contentHash": "sha256:522fc66c235b2bfeb1481814b8b51cf4d99f19a40a7b195377a4c7c600560782"
+      "contentHash": "sha256:2bbe505ce575438dbfe854229f7920e366fd2ddcd3f0b840ec661aea903d2203"
     },
     {
       "name": "omnimux-viewer",

@@ -1,10 +1,10 @@
-import { mkdir, writeFile } from 'node:fs/promises'
-import { basename, dirname, isAbsolute } from 'node:path'
+import { basename } from 'node:path'
 import { VideoError } from '../errors.js'
 import { mapHubError } from './hub-errors.js'
 import { assertLocalVideo } from './pack-video.js'
-import { parseTaggedSections } from './parse-tags.js'
-import { BUNDLED_REVERSE_PROMPT, loadPromptFile } from './prompts.js'
+import { renderReversePromptParts, VIDEO_REVERSE_PROMPT_SCHEMA } from './schemas.js'
+import { resolveHeadlessSkill, writeDest } from './seam.js'
+import { VIDEO_REVERSE_PROMPT_SKILL } from './skills.js'
 
 export const IDENTITY_MODES = Object.freeze({
   A: 'character_lock_upload_image',
@@ -27,6 +27,10 @@ export function resolveIdentityMode(raw = 'A') {
 }
 
 /**
+ * Build the user turn for the `video-reverse-prompt` Skill.
+ * The methodology, hard constraints and writing rules live in
+ * `skills/video-reverse-prompt/SKILL.md`; this only carries run parameters.
+ *
  * @param {{
  *   videoPath: string,
  *   identityMode: string,
@@ -41,11 +45,8 @@ export function buildReverseUserText(opts) {
     '请根据上传的参考视频，逆向输出 **I2V 友好** 的视频生成 prompt。',
     '视觉输入是整段视频（非抽帧拼图）；请按时间顺序理解动作因果、表演弧与镜头语法。',
     '',
-    '## 写作重心（必须）',
-    '- 参考图/原片已决定人物与场景外观：prompt **不要**复述外貌、妆造、服装细节、场景装修、道具规格。',
-    '- 重点写：人物动作、表情、氛围、情绪弧、视角、景别、运镜、分镜节拍与真实叙事感。',
-    '- 用「如何把图中元素演出来」代替「图里有什么」。',
-    '- **静默硬约束**：人物禁止任何对白/口播/旁白/可辨词语；禁止张嘴说话口型；只演氛围与情绪，不口述。',
+    '## 静默硬约束',
+    '- 人物禁止任何对白/口播/旁白/可辨词语；禁止张嘴说话口型；只演氛围与情绪，不口述。',
     '- 声音默认无人声；【强制约束】须写明「禁止口播对白」。',
     '',
     '## 视频元数据',
@@ -67,12 +68,17 @@ export function buildReverseUserText(opts) {
   }
   lines.push(
     '',
-    '输出必须严格使用 system prompt 规定的 <<<PROMPT>>> / <<<APPENDIX>>> 标记块。',
+    '输出要求：严格按 video-reverse-prompt 技能的 JSON 契约返回（prompt / appendix / beats / counts / assumptions），',
+    'prompt 是可直接喂给 I2V 的完整正文；不要输出 <<<PROMPT>>> 标记块或 Markdown 标题。',
   )
   return lines.join('\n')
 }
 
 /**
+ * `video_reverse_prompt` runs the bundled `video-reverse-prompt` Skill through
+ * Hub `headlessSkill`; the I2V body and appendix come back as validated JSON
+ * fields. `dest` / `appendixDest` keep writing the same plain-text files.
+ *
  * @param {{
  *   video: string,
  *   dest?: string,
@@ -84,29 +90,20 @@ export function buildReverseUserText(opts) {
  *   productOrPropSwap?: string,
  *   model?: string,
  *   maxTokens?: number,
- *   promptPath?: string,
+ *   targetId?: string,
  *   signal?: AbortSignal,
- *   textComplete?: { execute: (req: object) => Promise<{ text?: string, model?: string }> },
- *   understand: {
- *     defaultModel: string,
- *     maxTokens: number,
- *     maxVideoBytes: number,
- *     reversePromptPath: string,
- *   },
+ *   headlessSkill?: { run: (request: object) => Promise<any> } | (() => unknown),
+ *   understand: { defaultModel: string, maxTokens: number },
  * }} input
  */
 export async function executeVideoReversePrompt(input) {
-  const textComplete = input.textComplete
-  if (!textComplete || typeof textComplete.execute !== 'function') {
-    throw new VideoError('needs-provider', 'video_reverse_prompt requires hub textComplete')
+  const headlessSkill = resolveHeadlessSkill(input.headlessSkill)
+  if (!headlessSkill) {
+    throw new VideoError('needs-provider', 'video_reverse_prompt requires hub headlessSkill')
   }
 
-  const packed = await assertLocalVideo(input.video, { maxVideoBytes: input.understand.maxVideoBytes })
+  const packed = await assertLocalVideo(input.video)
   const identityMode = resolveIdentityMode(input.identityMode ?? 'A')
-  const promptPath = typeof input.promptPath === 'string' && input.promptPath.trim()
-    ? input.promptPath.trim()
-    : input.understand.reversePromptPath
-  const loaded = await loadPromptFile(promptPath, BUNDLED_REVERSE_PROMPT)
   const model = typeof input.model === 'string' && input.model.trim()
     ? input.model.trim()
     : input.understand.defaultModel
@@ -131,13 +128,18 @@ export async function executeVideoReversePrompt(input) {
     productOrPropSwap,
   })
 
-  let result
+  let runResult
   try {
-    result = await textComplete.execute({
-      prompt: userText,
-      system: loaded.text,
-      video: packed.video,
-      model,
+    runResult = await headlessSkill.run({
+      skillName: VIDEO_REVERSE_PROMPT_SKILL,
+      input: userText,
+      references: [{ type: 'video', pathOrUrl: packed.video }],
+      outputSchema: VIDEO_REVERSE_PROMPT_SCHEMA,
+      modality: 'video',
+      label: `反推提示词：${packed.name}`,
+      ownerPlugin: 'omnimux-video',
+      ...(typeof input.targetId === 'string' && input.targetId.trim() ? { targetId: input.targetId.trim() } : {}),
+      ...(model ? { model } : {}),
       maxTokens,
       signal: input.signal,
     })
@@ -145,45 +147,35 @@ export async function executeVideoReversePrompt(input) {
     throw mapHubError(error, 'video-reverse-failed')
   }
 
-  const raw = typeof result?.text === 'string' ? result.text.trim() : ''
-  if (!raw) {
-    throw new VideoError('video-reverse-failed', 'textComplete produced empty reverse prompt')
+  const data = runResult?.data
+  if (runResult?.mode !== 'live' || !data || typeof data !== 'object') {
+    throw new VideoError('video-reverse-failed', 'headlessSkill returned no live structured reverse prompt')
   }
-  const sections = parseTaggedSections(raw)
-  if (!sections.prompt.trim()) {
-    throw new VideoError('video-reverse-failed', 'reverse prompt body is empty')
+  const parts = renderReversePromptParts(data)
+  if (!parts.prompt) {
+    throw new VideoError('video-reverse-failed', 'structured reverse prompt body is empty')
   }
 
   const dest = typeof input.dest === 'string' ? input.dest.trim() : ''
   const appendixDest = typeof input.appendixDest === 'string' ? input.appendixDest.trim() : ''
-  if (dest) await writeDest(dest, sections.prompt)
-  if (appendixDest && sections.appendix) await writeDest(appendixDest, sections.appendix)
+  if (dest) await writeDest(dest, parts.prompt)
+  if (appendixDest && parts.appendix) await writeDest(appendixDest, parts.appendix)
 
   return {
     mode: 'live',
     kind: 'reverse_prompt',
-    model: typeof result.model === 'string' ? result.model : model,
-    prompt: sections.prompt,
-    appendix: sections.appendix || undefined,
-    parsed: sections.parsed,
-    rawText: sections.rawText,
+    model: typeof runResult.model === 'string' ? runResult.model : model,
+    prompt: parts.prompt,
+    appendix: parts.appendix || undefined,
+    parsed: true,
+    rawText: JSON.stringify(data),
+    data,
+    jobId: typeof runResult.jobId === 'string' ? runResult.jobId : undefined,
+    repaired: runResult.repaired === true,
     dest: dest || undefined,
     appendixDest: appendixDest || undefined,
     identityMode,
-    promptPath: loaded.path,
     video: packed.name,
     bytes: packed.bytes,
   }
-}
-
-/**
- * @param {string} dest
- * @param {string} body
- */
-async function writeDest(dest, body) {
-  if (!isAbsolute(dest)) {
-    throw new VideoError('video-invalid-input', 'dest path must be absolute')
-  }
-  await mkdir(dirname(dest), { recursive: true })
-  await writeFile(dest, body, 'utf8')
 }

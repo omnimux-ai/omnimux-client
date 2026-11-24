@@ -26,5 +26,10 @@ export function mapHubError(error, fallbackCode = 'video-analyze-failed') {
   if (code === 'unknown-model' || code === 'omnimux-invalid-request') {
     return new VideoError('video-invalid-input', message, { upstreamCode: code })
   }
+  // Headless-skill failures stay machine-readable: the caller must be able to
+  // distinguish a schema repair failure from a transport or cancellation error.
+  if (code.startsWith('headless-skill-')) {
+    return new VideoError(code, message, { upstreamCode: code })
+  }
   return new VideoError(fallbackCode, message, code && code !== fallbackCode ? { upstreamCode: code } : undefined)
 }

@@ -5,9 +5,11 @@ import { executeVideoProcess } from './engine/job.js'
 import { SLUGS } from './engine/video.js'
 import { executeVideoAnalyze } from './understand/analyze.js'
 import { executeVideoReversePrompt, IDENTITY_MODES } from './understand/reverse.js'
+import { registerVideoSkills } from './understand/skills.js'
+import { readSeat } from './host-seat.js'
 
 export const name = 'omnimux-video'
-export const inject = ['tools', 'textComplete']
+export const inject = ['tools']
 export { Config }
 
 /**
@@ -57,14 +59,15 @@ const DEPTH_DESCRIPTION =
   'Not a style-transfer / anime stylize tool.'
 
 const ANALYZE_DESCRIPTION =
-  'Understand a local short video into a Chinese five-dimension breakdown markdown (目标/影响力/叙事/画面/复刻策略). ' +
-  'Uses hub textComplete with native video input (image_url data:video). Does not hold API keys. ' +
-  'Pass absolute video path; optional dest writes the markdown. Not a ffmpeg cut/merge tool.'
+  'Understand a local short video into a structured five-dimension breakdown (goal/hook/impact/narrative/visual/replication plus a shot array). ' +
+  'Runs the bundled `video-analyze` Skill through hub headlessSkill with a strict JSON Schema, so the result carries machine-readable `data`. ' +
+  'Pass an absolute video path; optional dest also writes the legacy markdown report rendered from the validated JSON. Not a ffmpeg cut/merge tool.'
 
 const REVERSE_DESCRIPTION =
-  'Reverse a local reference video into an I2V-friendly structured generation prompt (<<<PROMPT>>> + optional <<<APPENDIX>>>). ' +
+  'Reverse a local reference video into an I2V-friendly generation prompt as structured JSON (prompt, appendix, beats, counts, assumptions). ' +
+  'Runs the bundled `video-reverse-prompt` Skill through hub headlessSkill with a strict JSON Schema. ' +
   'Silent/no-talking hard constraints. identityMode A=lock参考图 / B=匿名 / C=只复刻结构. ' +
-  'Uses hub textComplete with native video; does not call videoGenerate. Not video-reverse-pad (that is ffmpeg ping-pong).'
+  'Optional dest/appendix_dest keep writing the legacy plain-text prompt and appendix. Does not call videoGenerate.'
 
 /**
  * @param {{
@@ -216,13 +219,20 @@ export function apply(ctx, config = {}) {
     },
   })
 
+  // Hub owns the whole headless pipeline (skill source, model routing, media
+  // transport, concurrency, cancel). The seam may be absent in isolated tests.
+  registerVideoSkills(ctx)
+
   /**
-   * @returns {{ execute: Function } | undefined}
+   * @returns {{ run: (request: object) => Promise<any> } | undefined}
    */
-  const getTextComplete = () => {
-    const api = ctx.textComplete ?? ctx.get?.('textComplete')
-    if (api && typeof api === 'object' && typeof /** @type {any} */ (api).execute === 'function') {
-      return /** @type {{ execute: Function }} */ (api)
+  const getHeadlessSkill = () => {
+    // `headlessSkill` is not in this plugin's `inject`, so the real Host throws
+    // on `ctx.headlessSkill` and the `??` fallback would never run. Always read
+    // optional seats through `ctx.get`.
+    const api = readSeat(ctx, 'headlessSkill')
+    if (api && typeof api === 'object' && typeof /** @type {any} */ (api).run === 'function') {
+      return /** @type {{ run: (request: object) => Promise<any> }} */ (api)
     }
     return undefined
   }
@@ -248,10 +258,6 @@ export function apply(ctx, config = {}) {
         type: 'number',
         description: 'Optional output cap. Defaults to Config.understand.maxTokens.',
       },
-      prompt_path: {
-        type: 'string',
-        description: 'Optional absolute override for the five-dimension system prompt.',
-      },
       notes: {
         type: 'string',
         description: 'Optional extra instructions appended to the user text.',
@@ -264,10 +270,9 @@ export function apply(ctx, config = {}) {
         dest: args.dest,
         model: args.model,
         maxTokens: args.max_tokens,
-        promptPath: args.prompt_path,
         notes: args.notes,
         signal: exec?.signal,
-        textComplete: getTextComplete(),
+        headlessSkill: getHeadlessSkill(),
         understand: videoConfig.understand,
       })
     },
@@ -284,11 +289,11 @@ export function apply(ctx, config = {}) {
       },
       dest: {
         type: 'string',
-        description: 'Optional absolute path for the <<<PROMPT>>> body.',
+        description: 'Optional absolute path to write the I2V prompt as plain text.',
       },
       appendix_dest: {
         type: 'string',
-        description: 'Optional absolute path for the <<<APPENDIX>>> body when present.',
+        description: 'Optional absolute path to write the appendix as plain text when present.',
       },
       identity_mode: {
         type: 'string',
@@ -319,10 +324,6 @@ export function apply(ctx, config = {}) {
         type: 'number',
         description: 'Optional output cap. Defaults to Config.understand.maxTokens.',
       },
-      prompt_path: {
-        type: 'string',
-        description: 'Optional absolute override for the reverse system prompt.',
-      },
     }),
     output: jsonOut,
     async execute(args, exec) {
@@ -337,9 +338,8 @@ export function apply(ctx, config = {}) {
         productOrPropSwap: args.product_or_prop_swap,
         model: args.model,
         maxTokens: args.max_tokens,
-        promptPath: args.prompt_path,
         signal: exec?.signal,
-        textComplete: getTextComplete(),
+        headlessSkill: getHeadlessSkill(),
         understand: videoConfig.understand,
       })
     },
