@@ -909,8 +909,8 @@ th[style*="--pub-min-w"] { min-width: var(--pub-min-w); }
   justify-content: center;
   font-size: 15px;
   font-weight: 600;
-  color: var(--dsw-alias-label-inverse, #ffffff);
-  background: var(--dsw-alias-brand-primary, #6366f1);
+  color: var(--dsw-alias-label-primary-foreground);
+  background: var(--dsw-alias-brand-primary);
 }
 .omnimux-publish-preview-id {
   display: flex;
@@ -1361,9 +1361,9 @@ th[style*="--pub-min-w"] { min-width: var(--pub-min-w); }
   align-items: center;
   justify-content: center;
   overflow: hidden;
-  background: var(--dsw-alias-platform-tiktok, #2C2C2A);
-  color: var(--dsw-alias-label-inverse, #ffffff);
-  border: 1px solid var(--dsw-alias-border-l1, #e2e8f0);
+  background: var(--dsw-alias-brand-primary);
+  color: var(--dsw-alias-label-primary-foreground);
+  border: 1px solid var(--dsw-alias-border-l1);
 }
 .omnimux-publish-accounts-avatar-img {
   width: 100%;

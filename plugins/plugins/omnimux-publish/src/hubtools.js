@@ -5,14 +5,48 @@ import { PUBLISH_PROVIDER } from './account-policy.js'
  *
  * - 懒解析：调用时才 get(name)，规避插件加载顺序；不存在 → 确定性
  *   `needs-hub`，不假装成功。
- * - `ctx.tools.execute` 走完整策略管线（与模型直调同一条路），返回
- *   { content, isError, value }；jsonOut 工具的 value 即上游 JSON 原样。
+ * - `ctx.tools.execute` 走完整策略/审批管线（与模型直调同一条路）：
+ *   - 默认按 DSH 0.2.2-rc.5 批次契约传 `ToolBatchInput`（`{ calls: [{ type: 'tool-call', id, name, arguments: JSON.stringify(...) }], signal, agent? }`），
+ *     从 `ToolBatchResult.results` 按 `callId` 解出 `{ content, isError, value, error }`；
+ *   - 仅当检测到冻结旧壳 DSH 0.2.1-rc.3 特征（`typeof tools.executionMode === 'function' && typeof tools.setExecutor !== 'function'`）时回退单调用格式。
+ * - jsonOut 工具的 `value` 即上游 JSON 原样。
  * - 媒体 PUT 走预签名 URL（自授权），不带任何 secret header。
  */
 import { PublishError } from './publish-error.js'
 import { isObject } from './shared/values.js'
-/** @typedef {{ callId: string, name: string, arguments: Record<string, unknown>, signal: AbortSignal, agent?: unknown }} ToolExecution */
-/** @typedef {{ get?: (name: string) => unknown, execute?: (input: ToolExecution) => Promise<unknown> }} ToolRegistry */
+/** @typedef {{ type: 'tool-call', id: string, name: string, arguments: string }} ToolBatchCall */
+/** @typedef {{ calls: ToolBatchCall[], signal: AbortSignal, agent?: unknown }} ToolBatchInput */
+/** @typedef {{ callId: string, name: string, arguments: Record<string, unknown>, signal: AbortSignal, agent?: unknown }} LegacyToolExecution */
+/** @typedef {{ get?: (name: string) => unknown, execute?: (input: ToolBatchInput | LegacyToolExecution) => Promise<unknown>, executionMode?: (...args: unknown[]) => unknown, setExecutor?: (...args: unknown[]) => unknown }} ToolRegistry */
+
+/**
+ * 精准识别冻结旧壳 DSH 0.2.1-rc.3 的单调用 ToolsService：
+ * 0.2.1-rc.3 暴露 `executionMode()` 且无 `setExecutor()`；0.2.2-rc.5 及极简 mock 一律走批次契约。
+ * @param {ToolRegistry} tools
+ */
+function usesLegacySingleExecute(tools) {
+  return typeof tools.executionMode === 'function' && typeof tools.setExecutor !== 'function'
+}
+
+/**
+ * 从 DSH 0.2.2-rc.5 `ToolBatchResult` 按 `callId`（或唯一条目）解出 `ToolExecutionResult`。
+ * 任何畸形/空结果一律显式抛 `PublishError('hub-tool-error', ...)`，绝不静默吞错。
+ * @param {unknown} batch
+ * @param {string} callId
+ * @param {string} toolName
+ * @returns {Record<string, unknown>}
+ */
+function extractBatchResult(batch, callId, toolName) {
+  if (!isObject(batch) || !Array.isArray(batch.results) || batch.results.length === 0) {
+    throw new PublishError('hub-tool-error', `tool ${toolName} returned invalid batch result`)
+  }
+  const matched = batch.results.find((/** @type {unknown} */ item) => isObject(item) && item.callId === callId)
+  const entry = matched ?? (batch.results.length === 1 ? batch.results[0] : undefined)
+  if (!isObject(entry) || !isObject(entry.result)) {
+    throw new PublishError('hub-tool-error', `tool ${toolName} batch result missing entry for call ${callId}`)
+  }
+  return entry.result
+}
 
 /**
  * @param {{ tools?: ToolRegistry, fetcher?: typeof fetch, now?: () => number, idFactory?: () => string }} [deps]
@@ -37,17 +71,39 @@ export function createHubChannel(deps = {}) {
     if (!tool) {
       throw new PublishError('needs-hub', `omnimux hub 插件未装载（工具 ${name} 不存在），请安装/启用 omnimux hub 插件后再使用发布通道`)
     }
-    /** @type {ToolExecution} */
-    const input = { callId: newCallId(), name, arguments: args, signal: opts.signal || new AbortController().signal }
-    if (opts.agent !== undefined) input.agent = opts.agent
-    let result
+    const callId = newCallId()
+    const signal = opts.signal || new AbortController().signal
+    const normalizedArgs = args ?? {}
+    const legacySingle = usesLegacySingleExecute(tools)
+    /** @type {ToolBatchInput | LegacyToolExecution} */
+    const input = legacySingle
+      ? {
+          callId,
+          name,
+          arguments: normalizedArgs,
+          signal,
+          ...(opts.agent !== undefined ? { agent: opts.agent } : {}),
+        }
+      : {
+          calls: [{ type: 'tool-call', id: callId, name, arguments: JSON.stringify(normalizedArgs) ?? '{}' }],
+          signal,
+          ...(opts.agent !== undefined ? { agent: opts.agent } : {}),
+        }
+    let raw
     try {
-      result = await tools.execute(input)
+      raw = await tools.execute(input)
     } catch (error) {
       throw new PublishError('hub-tool-error', `tool ${name} threw: ${error instanceof Error ? error.message : String(error)}`)
     }
-    if (!isObject(result)) {
-      throw new PublishError('hub-tool-error', `tool ${name} returned no result object`)
+    /** @type {Record<string, unknown>} */
+    let result
+    if (legacySingle) {
+      if (!isObject(raw)) {
+        throw new PublishError('hub-tool-error', `tool ${name} returned no result object`)
+      }
+      result = raw
+    } else {
+      result = extractBatchResult(raw, callId, name)
     }
     const text = Array.isArray(result.content)
       ? result.content.map((/** @type {unknown} */ block) => (isObject(block) && typeof block.text === 'string' ? block.text : '')).join('\n')
@@ -72,8 +128,13 @@ export function createHubChannel(deps = {}) {
       if (/quota-exceeded|insufficient_user_quota|预扣费额度失败/i.test(errText)) {
         throw new PublishError('quota-exceeded', '当前操作需要更多额度，充值后即可继续使用 OmniMux。')
       }
-      if (/UNKNOWN_TOOL/i.test(text) || /unknown tool/i.test(text)) {
+      if (/UNKNOWN_TOOL/i.test(errText) || /unknown tool/i.test(errText)) {
         throw new PublishError('needs-hub', `omnimux hub 插件未装载（工具 ${name} 未知），请安装/启用 omnimux hub 插件`)
+      }
+      if (info.name === 'AbortError' || info.code === 'ABORTED' || info.code === 'ABORTED_BEFORE_DISPATCH') {
+        const abortError = new Error(text.trim() || String(errorInfo.message || '').trim() || `tool ${name} aborted`)
+        abortError.name = 'AbortError'
+        throw abortError
       }
       throw new PublishError('hub-tool-error', text.trim() || String(errorInfo.message || '').trim() || `tool ${name} failed`)
     }
