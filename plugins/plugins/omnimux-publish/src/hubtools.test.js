@@ -4,8 +4,8 @@ import { createHubChannel, extractPostId, extractRawStatus } from './hubtools.js
 import { PublishError } from './store.js'
 
 /**
- * Mock ctx.tools: get(name) 返回注册表行；execute 走官方 result 形状
- * { content, isError, value }。行为可编程。
+ * Mock ctx.tools: get(name) 返回注册表行；execute 严格对齐 DSH 0.2.2-rc.5
+ * 批次契约 ToolBatchInput -> ToolBatchResult。行为可编程。
  * @param {Record<string, (args: object, exec: object) => unknown | Promise<unknown>>} handlers
  * @param {{ getNames?: string[] }} [opts]
  */
@@ -15,19 +15,49 @@ function mockTools(handlers, opts = {}) {
   return {
     calls,
     get: (name) => (registered.has(name) ? { name } : undefined),
-    async execute(exec) {
-      calls.push(exec)
-      const handler = handlers[exec.name]
-      if (!handler) {
-        return { content: [{ type: 'text', text: `UNKNOWN_TOOL ${exec.name}` }], isError: true, value: undefined }
+    async execute(batch) {
+      if (!batch || !Array.isArray(batch.calls) || batch.calls.length === 0) {
+        throw new Error('Tool batch execution failed')
       }
-      try {
-        const value = await handler(exec.arguments, exec)
-        return { content: [{ type: 'text', text: JSON.stringify(value) }], isError: false, value }
-      } catch (error) {
-        const text = `${error instanceof Error ? error.name + ': ' + error.message : String(error)}`
-        return { content: [{ type: 'text', text }], isError: true, value: undefined }
+      const results = []
+      for (const block of batch.calls) {
+        if (!block || block.type !== 'tool-call' || typeof block.id !== 'string' || typeof block.name !== 'string' || typeof block.arguments !== 'string') {
+          throw new Error('Tool batch execution failed')
+        }
+        const parsedArgs = JSON.parse(block.arguments)
+        const recorded = {
+          callId: block.id,
+          name: block.name,
+          arguments: parsedArgs,
+          rawArguments: block.arguments,
+          signal: batch.signal,
+          ...(batch.agent !== undefined ? { agent: batch.agent } : {}),
+          batch,
+        }
+        calls.push(recorded)
+        const handler = new Map(Object.entries(handlers)).get(block.name)
+        if (!handler) {
+          results.push({
+            callId: block.id,
+            result: { content: [{ type: 'text', text: `UNKNOWN_TOOL ${block.name}` }], isError: true, value: undefined },
+          })
+          continue
+        }
+        try {
+          const value = await handler(parsedArgs, recorded)
+          results.push({
+            callId: block.id,
+            result: { content: [{ type: 'text', text: JSON.stringify(value) }], isError: false, value },
+          })
+        } catch (error) {
+          const text = `${error instanceof Error ? error.name + ': ' + error.message : String(error)}`
+          results.push({
+            callId: block.id,
+            result: { content: [{ type: 'text', text }], isError: true, value: undefined },
+          })
+        }
       }
+      return { results, additionalContexts: [], concluded: false }
     },
   }
 }
@@ -74,11 +104,18 @@ describe('HubPublishChannel error mapping', () => {
   it('maps structured quota-exceeded tool errors without any UI global', async () => {
     const tools = {
       get: () => ({ name: 'omnimux_publish_get' }),
-      async execute() {
+      async execute(batch) {
         return {
-          content: [{ type: 'text', text: 'quota failure' }],
-          isError: true,
-          error: { message: '当前操作需要更多额度', info: { code: 'quota-exceeded' } },
+          results: [{
+            callId: batch.calls[0].id,
+            result: {
+              content: [{ type: 'text', text: 'quota failure' }],
+              isError: true,
+              error: { message: '当前操作需要更多额度', info: { code: 'quota-exceeded' } },
+            },
+          }],
+          additionalContexts: [],
+          concluded: false,
         }
       },
     }
@@ -347,5 +384,109 @@ describe('creatorInfo (TikTok 发布能力)', () => {
     const info = await channel.creatorInfo('42')
     assert.deepEqual(info, { privacy_level_options: ['SELF_ONLY'], comment_disabled: false })
     assert.deepEqual(tools.calls[0].arguments, { id: '42', provider: 'tiktok_direct' })
+  })
+})
+
+describe('DSH 0.2.2-rc.5 batch contract & 0.2.1-rc.3 fallback (#185)', () => {
+  it('sends canonical ToolBatchInput by default and matches results by callId', async () => {
+    const seen = []
+    const tools = {
+      get: () => ({ name: 'omnimux_publish_get' }),
+      async execute(input) {
+        seen.push(input)
+        return {
+          results: [
+            { callId: 'unrelated-call', result: { isError: false, content: [], value: okEnvelope({ id: 'wrong' }) } },
+            { callId: 'fixed-call-id', result: { isError: false, content: [], value: okEnvelope({ id: 'right', status: 'published' }) } },
+          ],
+          additionalContexts: [],
+          concluded: false,
+        }
+      },
+    }
+    const channel = createHubChannel({ tools, idFactory: () => 'fixed-call-id' })
+    const data = await channel.getPost('99', { agent: 'agent-batch' })
+    assert.deepEqual(data, { id: 'right', status: 'published' })
+    assert.equal(seen.length, 1)
+    assert.equal(seen[0].agent, 'agent-batch')
+    assert.ok(seen[0].signal instanceof AbortSignal)
+    assert.deepEqual(seen[0].calls, [{
+      type: 'tool-call',
+      id: 'fixed-call-id',
+      name: 'omnimux_publish_get',
+      arguments: JSON.stringify({ id: '99', provider: 'tiktok_direct' }),
+    }])
+  })
+
+  it('rejects malformed or empty batch results loudly with hub-tool-error', async () => {
+    const malformedResponses = [
+      null,
+      undefined,
+      'not-an-object',
+      {},
+      { results: 'not-an-array' },
+      { results: [] },
+      { results: [{ callId: 'call-1', result: null }] },
+      { results: [{ callId: 'other-1', result: { isError: false, value: {} } }, { callId: 'other-2', result: { isError: false, value: {} } }] },
+      // Legacy bare single-call result when running on default batch contract must fail loudly
+      { isError: false, content: [], value: okEnvelope({ id: '1' }) },
+    ]
+    for (const payload of malformedResponses) {
+      const tools = {
+        get: () => ({ name: 'omnimux_publish_get' }),
+        async execute() { return payload },
+      }
+      const channel = createHubChannel({ tools, idFactory: () => 'call-1' })
+      await assert.rejects(
+        () => channel.getPost('1'),
+        (e) => e instanceof PublishError && e.code === 'hub-tool-error',
+        `expected hub-tool-error for malformed payload: ${JSON.stringify(payload)}`,
+      )
+    }
+  })
+
+  it('falls back to legacy single-call execute ONLY when executionMode exists without setExecutor (DSH 0.2.1-rc.3)', async () => {
+    const legacySeen = []
+    const legacyTools = {
+      executionMode: () => ({ kind: 'exclusive' }),
+      get: () => ({ name: 'omnimux_accounts_list' }),
+      async execute(exec) {
+        legacySeen.push(exec)
+        return {
+          isError: false,
+          content: [{ type: 'text', text: '{}' }],
+          value: okEnvelope({ accounts: [{ id: 'legacy-1' }] }),
+        }
+      },
+    }
+    const legacyChannel = createHubChannel({ tools: legacyTools, idFactory: () => 'legacy-call' })
+    const legacyData = await legacyChannel.listAccounts({ agent: 'legacy-agent' })
+    assert.deepEqual(legacyData, { accounts: [{ id: 'legacy-1' }] })
+    assert.equal(legacySeen.length, 1)
+    assert.equal(legacySeen[0].callId, 'legacy-call')
+    assert.equal(legacySeen[0].name, 'omnimux_accounts_list')
+    assert.deepEqual(legacySeen[0].arguments, { provider: 'tiktok_direct' })
+    assert.equal(legacySeen[0].agent, 'legacy-agent')
+    assert.equal(Object.hasOwn(legacySeen[0], 'calls'), false)
+
+    // When both executionMode and setExecutor exist, stay on canonical batch contract
+    const hybridSeen = []
+    const hybridTools = {
+      executionMode: () => ({ kind: 'exclusive' }),
+      setExecutor: () => () => {},
+      get: () => ({ name: 'omnimux_accounts_list' }),
+      async execute(input) {
+        hybridSeen.push(input)
+        return {
+          results: [{ callId: input.calls[0].id, result: { isError: false, content: [], value: okEnvelope({ accounts: [] }) } }],
+          additionalContexts: [],
+          concluded: false,
+        }
+      },
+    }
+    const hybridChannel = createHubChannel({ tools: hybridTools, idFactory: () => 'hybrid-call' })
+    await hybridChannel.listAccounts()
+    assert.ok(Array.isArray(hybridSeen[0].calls))
+    assert.equal(hybridSeen[0].calls[0].type, 'tool-call')
   })
 })

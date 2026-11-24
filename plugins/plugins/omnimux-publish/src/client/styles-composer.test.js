@@ -110,6 +110,21 @@ describe('publish composer type-pick styles (layout regression)', () => {
     assert.doesNotMatch(match[1], /state-error-(text|subtle)(?:\s|,|\))/)
   })
 
+  it('pairs preview and accounts avatars with official contrast tokens for light and dark themes (#185)', () => {
+    ensureCss()
+    const css = String(stub.appended[0].textContent)
+    for (const selector of ['.omnimux-publish-preview-avatar', '.omnimux-publish-accounts-avatar']) {
+      const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      const match = css.match(new RegExp(`${escaped}\\s*\\{([^}]*)\\}`))
+      assert.ok(match, `missing ${selector} style block`)
+      assert.match(match[1], /background:\s*var\(--dsw-alias-brand-primary\)/, `${selector} must use --dsw-alias-brand-primary`)
+      assert.match(match[1], /color:\s*var\(--dsw-alias-label-primary-foreground\)/, `${selector} must use --dsw-alias-label-primary-foreground`)
+      assert.doesNotMatch(match[1], /--dsw-alias-label-inverse/, `${selector} must not reference undefined --dsw-alias-label-inverse`)
+      assert.doesNotMatch(match[1], /--dsw-alias-platform-tiktok/, `${selector} must not reference undefined --dsw-alias-platform-tiktok`)
+      assert.doesNotMatch(match[1], /#[0-9a-fA-F]{3,8}/, `${selector} must not hardcode hex fallbacks`)
+    }
+  })
+
   it('TypeCard consumes a kit action Button rather than a selection role', () => {
     assert.match(composerSrc, /function TypeCard\(/)
     assert.match(composerSrc, /className="omnimux-publish-type-card"/)

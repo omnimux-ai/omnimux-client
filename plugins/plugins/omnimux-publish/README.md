@@ -90,5 +90,5 @@ curl -X POST "$B/omnimux/publish/media?filename=a.png" -H "Origin: http://127.0.
 
 ## 版本观察
 
-- harness `141eb6fef8`（dsh-0.1.0-rc.8）；产品树 `e25b9cb`
-- `ctx.tools.execute` 程序化调用通道：`packages/core/tools/src/index.ts:1342`（官方测试 tools.spec.ts:91）
+- DSH `0.2.2-rc.5`（当前主壳 `dsh-desktop-next`）：`ctx.tools.execute(ToolBatchInput): Promise<ToolBatchResult>` 批次调用契约（`calls: [{ type: 'tool-call', id, name, arguments: JSON.stringify(args) }]` + `signal` + 可选 `agent`，从 `results` 按 `callId` 解出 `ToolExecutionResult`）
+- 兼容冻结旧壳 DSH `0.2.1-rc.3`：仅当服务对象具备 `executionMode()` 且无 `setExecutor()` 时回退单调用 `{ callId, name, arguments, signal, agent? }`

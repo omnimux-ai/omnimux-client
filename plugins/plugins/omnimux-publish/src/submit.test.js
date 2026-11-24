@@ -24,22 +24,37 @@ let tools = ''
 let service = ''
 let tick = 0
 
-/** 编程式 mock ctx.tools（官方 execute result 形状）。 */
+/** 编程式 mock ctx.tools（DSH 0.2.2-rc.5 批次契约 ToolBatchInput -> ToolBatchResult）。 */
 function mockTools() {
   const calls = []
   return {
     calls,
     get: (name) => (name in handlers ? { name } : undefined),
-    async execute(exec) {
-      calls.push({ name: exec.name, arguments: exec.arguments, exec })
-      const handler = handlers[exec.name]
-      if (!handler) return { content: [{ type: 'text', text: `UNKNOWN_TOOL ${exec.name}` }], isError: true, value: undefined }
-      try {
-        const value = await handler(exec.arguments, exec)
-        return { content: [{ type: 'text', text: JSON.stringify(value) }], isError: false, value }
-      } catch (error) {
-        return { content: [{ type: 'text', text: `${error.name}: ${error.message}` }], isError: true, value: undefined }
+    async execute(batch) {
+      if (!batch || !Array.isArray(batch.calls) || batch.calls.length === 0) {
+        throw new Error('Tool batch execution failed')
       }
+      const results = []
+      for (const block of batch.calls) {
+        if (!block || block.type !== 'tool-call' || typeof block.id !== 'string' || typeof block.name !== 'string' || typeof block.arguments !== 'string') {
+          throw new Error('Tool batch execution failed')
+        }
+        const parsedArgs = JSON.parse(block.arguments)
+        const exec = { callId: block.id, name: block.name, arguments: parsedArgs, signal: batch.signal, ...(batch.agent !== undefined ? { agent: batch.agent } : {}), batch }
+        calls.push({ name: block.name, arguments: parsedArgs, exec })
+        const handler = new Map(Object.entries(handlers)).get(block.name)
+        if (!handler) {
+          results.push({ callId: block.id, result: { content: [{ type: 'text', text: `UNKNOWN_TOOL ${block.name}` }], isError: true, value: undefined } })
+          continue
+        }
+        try {
+          const value = await handler(parsedArgs, exec)
+          results.push({ callId: block.id, result: { content: [{ type: 'text', text: JSON.stringify(value) }], isError: false, value } })
+        } catch (error) {
+          results.push({ callId: block.id, result: { content: [{ type: 'text', text: `${error.name}: ${error.message}` }], isError: true, value: undefined } })
+        }
+      }
+      return { results, additionalContexts: [], concluded: false }
     },
   }
 }
