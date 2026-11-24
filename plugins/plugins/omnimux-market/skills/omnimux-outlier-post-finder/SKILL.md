@@ -1,5 +1,6 @@
 ---
 name: omnimux-outlier-post-finder
+disable-model-invocation: true
 description: "找某个账号/品牌在社媒上跑赢其自身基线的爆款帖，解释可复制的套路，产出 outlier 表、可抄钩子与选题建议。用于 TikTok、Instagram、YouTube、X 的作品表现分析。触发：找爆款、爆款帖、异常高播放、top posts、swipe file、对标账号爆款、为什么这条火。"
 ---
 

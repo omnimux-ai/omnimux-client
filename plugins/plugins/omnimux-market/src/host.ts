@@ -9,6 +9,7 @@ import { assignConfig, dshHome, readOverlay, sanitizeSortBy, withDefaults } from
 import { removeDshPlugin } from './dsh-cli.js'
 import { decorateCatalog, loadCatalog } from './expert/catalog.js'
 import { registerCatalogSkillProvider } from './expert/catalog-provider.js'
+import { registerBundledMarketSkills } from './bundled-skills.js'
 import { findItem, installItem, removeMcpRow, withConnectorPatchLock } from './expert/install.js'
 import { packageRoot, profileDir } from './expert/paths.js'
 import { configureHttpJsonCache } from './http.js'
@@ -465,6 +466,7 @@ export function apply(ctx: Context, config: Config): void {
     settingsService.register('omnimux-market', Config, { base: config })
   }
 
+  registerBundledMarketSkills(ctx)
   registerCatalogSkillProvider(ctx)
 
   const runtimeSkills = (() => {

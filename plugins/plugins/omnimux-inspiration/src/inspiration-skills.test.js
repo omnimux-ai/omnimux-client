@@ -51,8 +51,10 @@ describe('bundled inspiration skills and schema normalization', () => {
     for (const candidate of candidates) {
       assert.equal(candidate.rank, 600, 'bundled plugin skills must use BUNDLED_SKILL_RANK 600')
       assert.equal(candidate.source, 'bundled')
+      assert.deepEqual(candidate.invocation, { modelInvocable: false, userInvocable: true })
       const loaded = await provider.get(candidate, {})
       assert.ok(loaded?.content?.length > 50)
+      assert.deepEqual(loaded?.invocation, { modelInvocable: false, userInvocable: true })
     }
 
     // Minimal fallback registry with register() only

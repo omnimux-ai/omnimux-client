@@ -1,5 +1,6 @@
 ---
 name: omnimux-ecom-market-research
+disable-model-invocation: true
 description: "跨境电商类目市场分析与竞品选品调研：清洗巴西/美式/中文万单位导出 CSV/JSON，脚本确定性计算月容量、CR3/CR10/HHI 集中度与不平滑价格带波谷，结合 OmniMux 社媒数据与对标工具产出可验证选品结论。触发：市场分析、选品分析、类目分析、价格带、CR10、竞争格局、竞品调研、market research。"
 ---
 

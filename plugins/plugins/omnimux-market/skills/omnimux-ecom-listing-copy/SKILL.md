@@ -1,5 +1,6 @@
 ---
 name: omnimux-ecom-listing-copy
+disable-model-invocation: true
 description: "跨境电商多语 Listing 标题与七段式商详文案：读取商品库 spec_table 参数真源，关键词分层、母语直出（EN/PT-BR/ES等），并运行脚本执行平台标题字数、违禁词与全量数字参数溯源校验。触发：写Listing、优化标题、详情页文案、五点描述、关键词分层、多语种Listing、listing copy。"
 ---
 

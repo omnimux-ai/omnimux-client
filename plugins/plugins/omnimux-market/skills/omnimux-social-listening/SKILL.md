@@ -1,5 +1,6 @@
 ---
 name: omnimux-social-listening
+disable-model-invocation: true
 description: "就某个品牌/话题/品类，检索社媒上『大家在说什么』，多源汇总主题、代表帖与情绪倾向（谨慎），产出聆听 brief 与引用。用于 TikTok、Instagram、YouTube、X。触发：社媒聆听、舆情、大家怎么看、口碑、social listening、这个话题讨论度、品牌被怎么讨论。注意：仅基于公开样本，不代表全平台舆情。"
 ---
 

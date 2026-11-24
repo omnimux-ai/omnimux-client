@@ -1,6 +1,7 @@
 ---
 name: workflow-video-deconstruct
 description: 对画布视频素材进行结构化五维内容拆解或逐镜头分镜脚本提取，严格依据实际画面与音频输出符合 JSON Schema 的结果。
+disable-model-invocation: true
 ---
 
 # 画布视频结构化拆解与分镜提取

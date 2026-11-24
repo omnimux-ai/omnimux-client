@@ -17,7 +17,7 @@ import { tmpdir } from 'node:os'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { hashDirectory } from '../src/managed-profile.ts'
-import { DISTRIBUTION_FILENAME, SKILLS_DIRNAME, SKILL_ORIGIN_FILENAME, listPackageNames, packageDirSegments } from '../src/preset-profile.ts'
+import { DISTRIBUTION_FILENAME, SKILLS_DIRNAME, listPackageNames, packageDirSegments } from '../src/preset-profile.ts'
 import {
   BETTER_SIDEBAR_PNPM_VERSION,
   buildPatchedBetterSidebar,
@@ -216,11 +216,11 @@ export function stagePresetProfile(options: StagePresetProfileOptions = {}): num
     stageSkeleton(inputPresetDir, candidateDir, alphaPlugins, releaseChannel)
     assertSkeletonBundlesAreStaged(candidateDir)
     stageAgentPresets(resolvedPluginsRoot, candidateDir)
-    const skills = stageSkills(resolvedPluginsRoot, candidateDir, productPlugins)
+    validateDeclaredSkills(resolvedPluginsRoot, productPlugins)
     writeFileSync(join(candidateDir, 'owned-packages.json'), `${JSON.stringify(owned, undefined, 2)}\n`)
     writeFileSync(
       join(candidateDir, DISTRIBUTION_FILENAME),
-      `${JSON.stringify(distributionManifest(owned, skills, candidateDir, releaseChannel, alphaPlugins), undefined, 2)}\n`,
+      `${JSON.stringify(distributionManifest(owned, candidateDir, releaseChannel, alphaPlugins), undefined, 2)}\n`,
     )
     const seedVersionPath = join(inputPresetDir, 'seed-version')
     writeFileSync(
@@ -470,12 +470,6 @@ function assertSkeletonBundlesAreStaged(candidateDir: string): void {
   }
 }
 
-/** A skill staged from a product plugin, recorded so the seed can own its copy. */
-interface StagedSkill {
-  readonly id: string
-  readonly origin: string
-}
-
 /** Read one JSON object, rejecting anything that is not a plain object. */
 function readJsonObject(path: string, label: string): Record<string, unknown> {
   let value: unknown
@@ -491,20 +485,18 @@ function readJsonObject(path: string, label: string): Record<string, unknown> {
 }
 
 /**
- * Collect the skills the staged product plugins declare.
+ * Validate the skills that staged product plugins declare in `dsh.manifest.json`.
  *
- * A plugin advertises skills in its `dsh.manifest.json`. Shipping the file
- * inside the plugin package is not enough: nothing registers a plugin package
- * as a skill root, so the skill is present on disk and invisible to the model.
- * Staging them under `preset/skills/` puts them where the seed can install them
- * into the Harness Home, which *is* a discovered root.
- *
- * Each staged skill keeps a marker naming the plugin it came from, so a later
- * seed can refresh its own copy without touching a skill the user owns.
+ * Since Phase 3 (#236), product plugins register their bundled skills natively
+ * through DSH `ctx.skills.registerProvider` (`BUNDLED_SKILL_RANK = 600`) inside
+ * their own package tree — matching `dsh-desktop-next` identically without
+ * copying files into `preset/skills/` or `$DSH_HOME/skills/` (which would shadow
+ * bundled providers at rank 400). Staging still verifies every declared path is
+ * valid, stays inside its plugin, exists on disk, and has no cross-plugin slug
+ * collision.
  */
-function stageSkills(pluginsRoot: string, candidateDir: string, productPlugins: readonly string[]): StagedSkill[] {
-  const destinationRoot = join(candidateDir, SKILLS_DIRNAME)
-  const staged: StagedSkill[] = []
+function validateDeclaredSkills(pluginsRoot: string, productPlugins: readonly string[]): void {
+  const seen = new Set<string>()
   for (const name of productPlugins) {
     const manifestPath = join(pluginsRoot, name, 'dsh.manifest.json')
     if (!existsSync(manifestPath)) continue
@@ -528,20 +520,12 @@ function stageSkills(pluginsRoot: string, candidateDir: string, productPlugins: 
       }
       const skillDir = dirname(manifestFile)
       const id = basename(skillDir)
-      if (staged.some(entry => entry.id === id)) {
+      if (seen.has(id)) {
         throw new Error(`two product plugins declare the same skill ${JSON.stringify(id)}`)
       }
-      const destination = join(destinationRoot, id)
-      mkdirSync(destination, { recursive: true })
-      cpSync(skillDir, destination, { recursive: true, dereference: true })
-      writeFileSync(join(destination, SKILL_ORIGIN_FILENAME), `${JSON.stringify({
-        id,
-        origin: `plugin:${name}`,
-      }, undefined, 2)}\n`)
-      staged.push({ id, origin: `plugin:${name}` })
+      seen.add(id)
     }
   }
-  return staged.sort((left, right) => left.id.localeCompare(right.id))
 }
 
 /**
@@ -787,7 +771,6 @@ interface DistributionManifest {
  */
 function distributionManifest(
   owned: readonly string[],
-  skills: readonly StagedSkill[],
   candidateDir: string,
   releaseChannel: ReleaseChannel,
   alphaPlugins: ReadonlySet<string>,
@@ -805,19 +788,11 @@ function distributionManifest(
       digest: hashDirectory(packageDir),
     }
   })
-  const skillItems: DistributionItem[] = skills.map(skill => ({
-    kind: 'skill',
-    id: skill.id,
-    tier: 'product',
-    version: null,
-    digest: hashDirectory(join(candidateDir, SKILLS_DIRNAME, skill.id)),
-    origin: skill.origin,
-  }))
   return {
     schema: DISTRIBUTION_SCHEMA,
     channel: releaseChannel,
     generatedFrom: { appVersion: desktopPackageVersion(), desktopCommit: desktopCommit() },
-    items: [...pluginItems, ...skillItems],
+    items: pluginItems,
   }
 }
 

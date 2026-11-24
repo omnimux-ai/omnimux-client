@@ -1,5 +1,6 @@
 ---
 name: omnimux-ecom-video-script
+disable-model-invocation: true
 description: "跨境带货短视频策划、爆款结构复刻与口播时长/合规脚本校验：串联 OmniMux 灵感 5D 拆解、资产与数字人、画布分镜出片和剪辑工坊，用脚本精准校验前 3 秒 Hook、多语口播时长、禁用词与参数溯源并一键导出 SRT 字幕。触发：带货视频脚本、短视频分镜、爆款复刻、口播时长校验、导出SRT、TikTok脚本、video script。"
 ---
 
