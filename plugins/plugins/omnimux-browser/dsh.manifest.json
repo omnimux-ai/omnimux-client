@@ -5,7 +5,7 @@
   "tier": "tier-1-app",
   "entrypoint": "lib/index.js",
   "status": "active",
-  "description": "OmniMux 浏览器伴侣插件与 Chrome 扩展：通过本机 WebSocket 桥接，在用户明确接管的标签页里做可感知的页面读取与操作，并提供侧边栏对话",
+  "description": "连接 Chrome 扩展，在授权标签页中读取网页、执行操作并对话。",
   "tags": ["browser", "chrome", "extension", "bridge", "automation", "side-panel"],
   "capabilities": {
     "tools": [

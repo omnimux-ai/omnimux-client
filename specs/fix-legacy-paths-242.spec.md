@@ -40,4 +40,3 @@
   - 原断言：`targets.length === 7`，`six-methods-and-disposer` 适配器数量为 6。
   - 必须改的理由：`#245` 新落主的 `omnimux-tiktok-selection` 已注册第 8 个 Stage，`live-stage-contracts.mjs` 实际返回 8 个目标、7 个 `six-methods-and-disposer`；旧计数会阻断所有后续 PR。
   - 新期望证据：`captureStageContracts(repo)` 返回 8 个独立 Stage，其中 7 个使用 `six-methods-and-disposer`。
-

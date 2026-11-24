@@ -11,12 +11,14 @@
   "exports": {
     ".": "./src/index.js",
     "./client": "./lib/client.js",
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json"
   },
   "files": [
     "src",
     "lib/client.js",
     "scripts/build-client.mjs",
+    "locale",
     "cordis.patch.yml",
     "README.md",
     "LICENSE",
@@ -61,5 +63,5 @@
     "esbuild": "^0.25.0"
   },
   "license": "SEE LICENSE IN LICENSE",
-  "description": "Official OmniMux app: list, filter, connect, and disconnect social accounts through the execution hub."
+  "description": "Connect and manage social accounts across platforms and groups."
 }

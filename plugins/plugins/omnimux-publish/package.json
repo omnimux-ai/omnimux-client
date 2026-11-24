@@ -11,12 +11,14 @@
   "exports": {
     ".": "./src/index.js",
     "./client": "./lib/client.js",
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json"
   },
   "files": [
     "src",
     "lib/client.js",
     "scripts/build-client.mjs",
+    "locale",
     "cordis.patch.yml",
     "README.md",
     "LICENSE",
@@ -68,5 +70,5 @@
     "react-dom": "^18.3.1"
   },
   "license": "SEE LICENSE IN LICENSE",
-  "description": "omnimux-publish: social publishing orchestration layer over OmniMux hub publish tools. Drafts, per-account subtask ledger, publish/retry/refresh, agent tools + local web UI."
+  "description": "Manage drafts, publish to multiple social accounts, and track status."
 }

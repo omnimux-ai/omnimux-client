@@ -1,7 +1,7 @@
 {
   "name": "omnimux-viewer",
   "version": "0.1.0",
-  "description": "Renders images, video, audio, PDF and Office documents inline in the dsh web UI through a display_file tool, streaming bytes over a signed HTTP route with range support.",
+  "description": "Preview images, audio, video, PDF, Office, and HTML files inline in chat.",
   "keywords": [
     "dsh",
     "dsh-plugin",
@@ -41,12 +41,14 @@
       "types": "./lib/types/client/index.d.ts",
       "default": "./lib/client.js"
     },
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json"
   },
   "files": [
     "lib/index.js",
     "lib/client.js",
     "lib/types/**/*.d.ts",
+    "locale",
     "cordis.patch.yml",
     "screenshots.json",
     "assets",

@@ -1,7 +1,7 @@
 {
   "name": "omnimux-market",
   "version": "0.2.13-omni.2",
-  "description": "OmniMux 插件市场：技能 · 插件 · 专家 · 连接器（基于 @cocofhu/skillhub 二次开发，MIT）",
+  "description": "Browse and install skills, expert presets, plugins, and connectors.",
   "homepage": "https://github.com/omnimux-ai/omnimux-client#readme",
   "repository": {
     "type": "git",
@@ -14,11 +14,13 @@
     ".": "./lib/host.js",
     "./client": "./lib/client.js",
     "./cordis.patch.yml": "./cordis.patch.yml",
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json"
   },
   "files": [
     "lib",
     "!lib/tests",
+    "locale",
     "cordis.patch.yml",
     "README.md",
     "LICENSE",

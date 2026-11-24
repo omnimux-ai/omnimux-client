@@ -11,13 +11,15 @@
   "exports": {
     ".": "./src/index.js",
     "./client": "./lib/client.js",
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json"
   },
   "files": [
     "src",
     "lib/client.js",
     "scripts/build-client.mjs",
     "scripts/contract-probe.mjs",
+    "locale",
     "cordis.patch.yml",
     "README.md",
     "package.json",
@@ -63,5 +65,5 @@
     "esbuild": "^0.25.0"
   },
   "license": "SEE LICENSE IN LICENSE",
-  "description": "OmniMux plugin usage analytics (Umami) plus the social analytics first-level dashboard stage."
+  "description": "Track usage metrics and view social publishing performance dashboards."
 }

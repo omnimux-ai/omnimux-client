@@ -111,7 +111,11 @@ function restartApp(target = 'prod') {
     const devProcess = `^${devApp.replaceAll('.', '[.]')}/Contents/MacOS/OmniMux([[:space:]]|$)`
     spawnSync('pkill', ['-f', devProcess], { stdio: 'ignore' })
     spawnSync('sleep', ['1'], { stdio: 'ignore' })
-    const open = spawnSync('open', ['-a', devApp], { stdio: 'inherit' })
+    const cleanEnv = { ...process.env }
+    for (const key of ['DSH_HOME', 'DSH_PROFILE', 'DSH_PROFILE_DIR', 'DSH_SESSION_ID', 'DSH_SHELL', 'DSH_WEB_URL', 'DSH_DESKTOP_NEXT_HOME', 'ELECTRON_RUN_AS_NODE']) {
+      delete cleanEnv[key]
+    }
+    const open = spawnSync('open', ['-a', devApp], { stdio: 'inherit', env: cleanEnv })
     if (open.status !== 0) die(`无法打开 ${devApp}（确认已打包或安装开发版）`)
     process.stdout.write('✓ 已请求重启 OmniMux Dev 开发版\n')
     return

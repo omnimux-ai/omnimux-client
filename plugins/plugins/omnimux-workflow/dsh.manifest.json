@@ -5,7 +5,7 @@
   "tier": "tier-1-app",
   "entrypoint": "dist/index.js",
   "status": "active",
-  "description": "OmniMux 创作画布 DAG 工作流编排系统，支持可视化节点拓扑编辑、持久化与异步执行",
+  "description": "在画布上编排和运行多步骤创作流程，管理本地项目。",
   "tags": ["workflow", "canvas", "dag", "nodes", "graph", "scheduler"],
   "capabilities": {
     "tools": [

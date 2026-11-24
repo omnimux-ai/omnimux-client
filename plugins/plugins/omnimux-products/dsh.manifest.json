@@ -5,7 +5,7 @@
   "tier": "tier-1-app",
   "entrypoint": "src/index.js",
   "status": "active",
-  "description": "OmniMux 电商产品库：结构化标品、卖点提炼、商品详情与媒体资产纳管",
+  "description": "管理实物与数字商品的规格、卖点和素材，供创作调用。",
   "tags": ["products", "ecommerce", "sku", "spu", "selling-points", "library"],
   "capabilities": {
     "tools": [
