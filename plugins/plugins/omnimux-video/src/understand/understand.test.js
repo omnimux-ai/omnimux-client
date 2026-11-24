@@ -9,6 +9,7 @@ import { VideoError } from '../errors.js'
 import { executeVideoAnalyze } from './analyze.js'
 import { assertLocalVideo } from './pack-video.js'
 import { executeVideoReversePrompt, resolveIdentityMode } from './reverse.js'
+import { renderAnalyzeMarkdown } from './schemas.js'
 
 const UNDERSTAND = { ...parseVideoConfig(undefined).understand, defaultModel: 'gemini-3.8-flash' }
 
@@ -21,7 +22,7 @@ function tinyMp4(dir) {
 const ANALYZE_DATA = {
   summary: '红底短片讲产品卖点',
   goal: { primary_goal: '转化', core_style: 'UGC', emotional_tone: '松弛', evidence: '开场手持', virality_factors: ['强钩子'] },
-  hook: { time_range: '0-2s', means: '直接展示结果', evidence: '画面出现成品' },
+  hook: { time_range: '0-2s', means: '直接展示结果', evidence: '画面出现成品', script: '看这个' },
   impact: { explicit_selling_points: ['省时'], implicit_value: { identity: '专业感' } },
   narrative: { vehicle: '演示', persona: '达人', performance_style: '自然', vocal_dna: {}, structure: { hook: '钩子', body: '展示', cta: '引导' } },
   visual: { environment: '室内', cinematography: '中近景', character_sheet: '成年达人' },
@@ -260,5 +261,97 @@ describe('tool registration', () => {
     assert.equal(result.data, ANALYZE_DATA)
     assert.equal(calledWith.model, 'gemini-3.8-flash')
     assert.equal(calledWith.skillName, 'video-analyze')
+  })
+})
+
+/**
+ * A Cordis-like context: reading any service that is neither provided nor listed
+ * in `inject` throws, exactly like `@deepseek-ai/cordis`. This is the shape that
+ * turns `ctx.headlessSkill ?? ctx.get('headlessSkill')` into a hard crash, since
+ * the `??` right-hand side is unreachable once the left side throws.
+ */
+function guardedCordisContext({ seats = {}, tools = {} } = {}) {
+  const known = new Set(['tools', 'provide', 'inject', 'effect', 'on', 'get', 'logger'])
+  const target = {
+    tools,
+    provide() {},
+    inject() {},
+    effect() {},
+    on() {},
+    get(name) {
+      return seats[name]
+    },
+  }
+  return new Proxy(target, {
+    get(object, prop) {
+      if (typeof prop === 'symbol' || known.has(prop)) return Reflect.get(object, prop)
+      throw new Error(`cannot get property "${String(prop)}" without inject`)
+    },
+  })
+}
+
+describe('host seat resolution under Cordis inject guards', () => {
+  const VIDEO = 'data:video/mp4;base64,AAAAHGZ0eXBpc29t'
+
+  it('routes both tools through the headlessSkill seat on a guarded context', async () => {
+    const registered = {}
+    const calls = []
+    const headlessSkill = {
+      async run(request) {
+        calls.push(request)
+        return {
+          mode: 'live',
+          model: request.model,
+          data: request.skillName === 'video-analyze' ? ANALYZE_DATA : REVERSE_DATA,
+        }
+      },
+    }
+    apply(guardedCordisContext({
+      seats: { headlessSkill },
+      tools: { register(tool) { registered[tool.name] = tool } },
+    }))
+
+    const analyzed = await registered.video_analyze.execute({ video: VIDEO })
+    assert.equal(analyzed.kind, 'analyze')
+    assert.equal(analyzed.data, ANALYZE_DATA)
+
+    const reversed = await registered.video_reverse_prompt.execute({ video: VIDEO })
+    assert.equal(reversed.kind, 'reverse_prompt')
+    assert.equal(reversed.data, REVERSE_DATA)
+
+    assert.deepEqual(calls.map((call) => call.skillName), ['video-analyze', 'video-reverse-prompt'])
+  })
+
+  it('reports needs-provider instead of leaking the cordis without-inject error', async () => {
+    const registered = {}
+    apply(guardedCordisContext({ tools: { register(tool) { registered[tool.name] = tool } } }))
+
+    for (const name of ['video_analyze', 'video_reverse_prompt']) {
+      await assert.rejects(
+        () => registered[name].execute({ video: VIDEO }),
+        (error) => error instanceof VideoError && error.code === 'needs-provider',
+        `${name} must map a missing headlessSkill seat to needs-provider`,
+      )
+    }
+  })
+})
+
+describe('renderAnalyzeMarkdown hook projection', () => {
+  it('keeps data.hook readable by the legacy breakdown parser', () => {
+    const markdown = renderAnalyzeMarkdown(ANALYZE_DATA)
+    assert.match(markdown, /## ⚡ 黄金 3 秒 HOOK/)
+    assert.match(markdown, /\[0-3秒\] 黄金钩子 \(Hook\)/)
+    assert.match(markdown, /- \*\*钩子手段\*\*: 直接展示结果/)
+    assert.match(markdown, /- \*\*证据点\*\*: 画面出现成品/)
+    assert.match(markdown, /- \*\*口播脚本\*\*: 看这个/)
+
+    // Same alternatives as the legacy parser in the inspiration plugin; inlined
+    // so this unit never imports another plugin's internals.
+    const match = markdown.match(/\*?\*?\[0-3秒\]\s*黄金钩子[^\n]*\n+([\s\S]*?)(?=\n\s*\*?\*?\[中段\]|\n##|$)/i)
+      || markdown.match(/##\s*III\.\s*叙事分析[\s\S]*?(?:Hook|黄金钩子)[^\n]*\n+([\s\S]*?)(?=\n###|\n##|$)/i)
+      || markdown.match(/⚡\s*黄金\s*3\s*秒\s*HOOK[^\n]*\n+([\s\S]*?)(?=\n##|$)/i)
+    assert.ok(match, 'legacy hook regex must match the projected report')
+    assert.match(match[1], /直接展示结果/)
+    assert.match(match[1], /画面出现成品/)
   })
 })

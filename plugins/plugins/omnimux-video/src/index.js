@@ -6,6 +6,7 @@ import { SLUGS } from './engine/video.js'
 import { executeVideoAnalyze } from './understand/analyze.js'
 import { executeVideoReversePrompt, IDENTITY_MODES } from './understand/reverse.js'
 import { registerVideoSkills } from './understand/skills.js'
+import { readSeat } from './host-seat.js'
 
 export const name = 'omnimux-video'
 export const inject = ['tools']
@@ -226,7 +227,10 @@ export function apply(ctx, config = {}) {
    * @returns {{ run: (request: object) => Promise<any> } | undefined}
    */
   const getHeadlessSkill = () => {
-    const api = ctx.headlessSkill ?? ctx.get?.('headlessSkill')
+    // `headlessSkill` is not in this plugin's `inject`, so the real Host throws
+    // on `ctx.headlessSkill` and the `??` fallback would never run. Always read
+    // optional seats through `ctx.get`.
+    const api = readSeat(ctx, 'headlessSkill')
     if (api && typeof api === 'object' && typeof /** @type {any} */ (api).run === 'function') {
       return /** @type {{ run: (request: object) => Promise<any> }} */ (api)
     }
@@ -285,11 +289,11 @@ export function apply(ctx, config = {}) {
       },
       dest: {
         type: 'string',
-        description: 'Optional absolute path for the <<<PROMPT>>> body.',
+        description: 'Optional absolute path to write the I2V prompt as plain text.',
       },
       appendix_dest: {
         type: 'string',
-        description: 'Optional absolute path for the <<<APPENDIX>>> body when present.',
+        description: 'Optional absolute path to write the appendix as plain text when present.',
       },
       identity_mode: {
         type: 'string',

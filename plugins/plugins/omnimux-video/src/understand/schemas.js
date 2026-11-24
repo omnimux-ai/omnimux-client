@@ -212,6 +212,19 @@ function section(title, body) {
 export function renderAnalyzeMarkdown(data) {
   const blocks = []
   blocks.push(section('一句话视频描述', data?.summary))
+
+  // The hook is a required root field, so it must survive the Markdown
+  // projection. The heading and the `[0-3秒] 黄金钩子 (Hook)` line keep the
+  // legacy breakdown parser (regex over this report) able to read it.
+  const hook = data?.hook || {}
+  const hookLines = [
+    text(hook.time_range) ? `**[0-3秒] 黄金钩子 (Hook)**: ${text(hook.time_range)}` : '',
+    text(hook.means) ? `- **钩子手段**: ${text(hook.means)}` : '',
+    text(hook.evidence) ? `- **证据点**: ${text(hook.evidence)}` : '',
+    text(hook.script) ? `- **口播脚本**: ${text(hook.script)}` : '',
+  ].filter(Boolean)
+  blocks.push(section('⚡ 黄金 3 秒 HOOK', hookLines.join('\n')))
+
   const goal = data?.goal || {}
   const goalLines = [
     text(goal.primary_goal) ? `**视频目标**: ${text(goal.primary_goal)}` : '',
