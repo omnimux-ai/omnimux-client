@@ -15,12 +15,13 @@ import {
  * the list items / body copy the page renders. Either read may fail on its own;
  * the draft is assembled from whatever came back.
  *
- * The model then reads that text through the hub's one-shot `textComplete` seam,
- * with `gemini-3.8-flash` by default: a digital / brand site is decomposed by the
- * brand-strategy v2 playbook into six strategy modules, a physical listing is
- * extracted by the Gxgen import-from-link v9 playbook. Without a hub, or when the
- * model fails, the draft falls back to the local extraction above and says so —
- * the request is never turned into an error by a missing model.
+ * The model then reads that text through the Hub `headlessSkill` seam, using the
+ * Hub's routed default model unless overridden: a digital / brand site runs the
+ * bundled `products-brand-strategy` skill with strict JSON Schema validation into
+ * six strategy modules, while a physical listing runs `products-physical-import`.
+ * Without a hub, or when the model fails, the draft falls back to the local
+ * extraction above and says so — the request is never turned into an error by a
+ * missing model.
  *
  * The output field contract mirrors the Gxgen import playbook already vendored
  * at `prompts/physical/import-from-link.v9.txt` — name, selling_points,
@@ -1702,7 +1703,7 @@ export async function assembleProductImageDraft(images, input) {
  *   kind?: 'physical' | 'digital',
  *   model?: string,
  *   language?: string,
- *   hub?: { textComplete?: Function, pageFetch?: Function } | null,
+ *   hub?: { headlessSkill?: { run: Function }, pageFetch?: Function, socialData?: Function } | null,
  *   fetcher?: typeof fetch,
  *   timeoutMs?: number,
  *   captureScreenshots?: Function,

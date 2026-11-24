@@ -551,70 +551,65 @@ describe('link importer · importProductFromUrl', () => {
   })
 })
 
-const BRAND_REPORT = `\`\`\`yaml
-brand_basic_info:
-  company:
-    name: "MiniMax"
-    website: "https://platform.example.com/product/open-platform"
-    locale: "cn"
-  product:
-    name: "MiniMax 开放平台"
-    category: "AI 平台"
+const BRAND_REPORT_DATA = {
+  brand_basic_info: {
+    company: {
+      name: 'MiniMax',
+      website: 'https://platform.example.com/product/open-platform',
+      locale: 'cn',
+    },
+    product: {
+      name: 'MiniMax 开放平台',
+      category: 'AI 平台',
+    },
+  },
+  content_angles: [
+    {
+      id: 'cost_01',
+      title: '成本焦虑',
+      description: '按量付费，无需自建 GPU',
+      target_audience: 'AI 应用开发者',
+      priority: 1,
+    },
+  ],
+  tone_and_voice: {
+    dos: ['用数据说话'],
+    donts: ['夸大效果'],
+  },
+  identity_and_product: {
+    core_identity: '一站式多模态模型服务',
+    product_offering: ['文本模型 API'],
+    unique_advantage: ['超长上下文'],
+    problems_solved: ['多模型拼接成本高'],
+    solutions: ['一个接口接入多模态'],
+  },
+  mission_and_positioning: {
+    mission: '让智能触手可及',
+    differentiation: ['性价比'],
+    ownable_space: {
+      statement: '多模态入口',
+      category: 'AI 平台',
+      is_not: ['通用云'],
+    },
+  },
+  market_and_competition: {
+    customer_segments: [{ name: 'AI 应用开发者', percentage: 60 }],
+    competitors: [{ name: 'OpenAI', website: 'https://openai.com' }],
+  },
+}
 
-content_angles:
-  - id: "cost_01"
-    title: "成本焦虑"
-    description: "按量付费，无需自建 GPU"
-    target_audience: "AI 应用开发者"
-    priority: 1
-
-tone_and_voice:
-  dos:
-    - "用数据说话"
-  donts:
-    - "夸大效果"
-
-identity_and_product:
-  core_identity: "一站式多模态模型服务"
-  product_offering:
-    - "文本模型 API"
-  unique_advantage:
-    - "超长上下文"
-  problems_solved:
-    - "多模型拼接成本高"
-  solutions:
-    - "一个接口接入多模态"
-
-mission_and_positioning:
-  mission: "让智能触手可及"
-  differentiation:
-    - "性价比"
-  ownable_space:
-    statement: "多模态入口"
-    category: "AI 平台"
-    is_not:
-      - "通用云"
-
-market_and_competition:
-  customer_segments:
-    - name: "AI 应用开发者"
-      percentage: 60
-  competitors:
-    - name: "OpenAI"
-      website: "https://openai.com"
-\`\`\``
-
-const V9_REPORT = JSON.stringify({
+const PHYSICAL_REPORT_DATA = {
   name: 'Aurora Mug 350ml',
   description: '双层陶瓷保温杯，保温 6 小时。',
   features: '容量: 350ml,材质: 双层陶瓷',
-  sellingPoints: '6 小时长效保温,防滑硅胶底座',
+  selling_points: '6 小时长效保温,防滑硅胶底座',
   brand: 'Aurora',
-  targetAudience: '咖啡爱好者',
+  target_audience: '咖啡爱好者',
   price: 24.9,
+  sku: 'AM-350',
   promotion: '限时包邮',
-  category: 'physicalproduct,home,drinkware',
-})
+  categories: ['physicalproduct', 'home', 'drinkware'],
+}
 
 const DIGITAL_PAGE_URL = 'https://platform.example.com/product/open-platform'
 const DIGITAL_HTML = `<!doctype html><html lang="zh-CN"><head>
@@ -627,7 +622,7 @@ const DIGITAL_HTML = `<!doctype html><html lang="zh-CN"><head>
 
 /** A hub double: the two seams, each recording what it was asked for. */
 function stubHub(over = {}) {
-  const calls = { textComplete: [], pageFetch: [] }
+  const calls = { headlessSkill: [], pageFetch: [] }
   return {
     calls,
     hub: {
@@ -636,10 +631,12 @@ function stubHub(over = {}) {
         if (over.pageFetchThrows) throw new Error('reader unavailable')
         return { mode: 'live', url, title: 'MiniMax 开放平台', pageContent: over.pageContent ?? '# MiniMax 开放平台\n\n一站式多模态模型服务' }
       },
-      async textComplete(request) {
-        calls.textComplete.push(request)
-        if (over.textCompleteThrows) throw new Error('no key configured')
-        return { text: over.text ?? BRAND_REPORT, model: request.model || 'hub-default-model' }
+      headlessSkill: {
+        async run(request) {
+          calls.headlessSkill.push(request)
+          if (over.headlessThrows) throw new Error('no key configured')
+          return { data: over.data ?? BRAND_REPORT_DATA, model: request.model || 'hub-default-model' }
+        },
       },
     },
   }
@@ -672,15 +669,16 @@ describe('link importer · hub model analysis', () => {
     assert.equal(draft.sku, '')
     assert.equal(draft.promotion, '')
 
-    // The hub read the page and the model got that Markdown.
+    // The hub read the page and the headlessSkill got that Markdown.
     assert.deepEqual(calls.pageFetch, [DIGITAL_PAGE_URL])
-    assert.equal(calls.textComplete.length, 1)
-    assert.equal(calls.textComplete[0].model, undefined)
-    assert.match(calls.textComplete[0].prompt, /MiniMax 开放平台/)
+    assert.equal(calls.headlessSkill.length, 1)
+    assert.equal(calls.headlessSkill[0].skillName, 'products-brand-strategy')
+    assert.equal(calls.headlessSkill[0].model, undefined)
+    assert.match(calls.headlessSkill[0].input, /MiniMax 开放平台/)
     assert.deepEqual(Object.keys(draft), [...IMPORT_FIELD_KEYS, ...IMPORT_DRAFT_EXTRA_KEYS])
   })
 
-  it('routes a bare software host to the brand playbook on the URL alone', async () => {
+  it('routes a bare software host to the brand skill on the URL alone', async () => {
     // The regression: a SaaS landing page whose copy reads like nothing in
     // particular, with the form left on the physical default. Only the host
     // says what the page is, so the host has to be enough.
@@ -700,14 +698,14 @@ describe('link importer · hub model analysis', () => {
       'mission_and_positioning',
       'market_and_competition',
     ])
-    assert.equal(calls.textComplete.length, 1)
-    // The brand playbook ran, not the physical listing one.
-    assert.doesNotMatch(calls.textComplete[0].prompt, /产品信息调研专家/)
+    assert.equal(calls.headlessSkill.length, 1)
+    // The brand skill ran, not the physical listing one.
+    assert.equal(calls.headlessSkill[0].skillName, 'products-brand-strategy')
   })
 
-  it('extracts a physical listing with the v9 playbook', async () => {
+  it('extracts a physical listing with the products-physical-import skill', async () => {
     const { fetcher } = stubFetcher({ [PAGE_URL]: { html: PRODUCT_HTML } })
-    const { hub, calls } = stubHub({ text: V9_REPORT })
+    const { hub, calls } = stubHub({ data: PHYSICAL_REPORT_DATA })
     const draft = await importProductFromUrl({ url: PAGE_URL, kind: 'physical', fetcher, hub })
 
     assert.equal(draft.kind, 'physical')
@@ -717,25 +715,23 @@ describe('link importer · hub model analysis', () => {
     assert.equal(draft.price, '24.9')
     assert.equal(draft.sku, 'AM-350')
     assert.deepEqual(draft.categories, ['physicalproduct', 'home', 'drinkware'])
-    assert.match(calls.textComplete[0].prompt, /产品信息调研专家/)
+    assert.equal(calls.headlessSkill[0].skillName, 'products-physical-import')
   })
 
-  it('hands the physical playbook the page body, not just the URL', async () => {
+  it('hands the physical skill the page body, not just the URL', async () => {
     const body = 'Aurora Mug 350ml：双层陶瓷内胆，6 小时长效保温，防滑硅胶底座'
     const { fetcher } = stubFetcher({ [PAGE_URL]: { html: PRODUCT_HTML } })
-    const { hub, calls } = stubHub({ text: V9_REPORT, pageContent: body })
+    const { hub, calls } = stubHub({ data: PHYSICAL_REPORT_DATA, pageContent: body })
     const draft = await importProductFromUrl({ url: PAGE_URL, kind: 'physical', fetcher, hub })
 
     assert.equal(draft.kind, 'physical')
-    assert.equal(calls.textComplete.length, 1)
-    // The vendored v9 template carries a {{url}} slot and no body slot, so the
-    // page text only reaches the model if it is appended. Without it the model is
-    // asked to price a listing it was never shown — and invents one from the URL.
+    assert.equal(calls.headlessSkill.length, 1)
+    assert.equal(calls.headlessSkill[0].skillName, 'products-physical-import')
     assert.ok(
-      calls.textComplete[0].prompt.includes(body),
-      'the page body must reach the physical playbook',
+      calls.headlessSkill[0].input.includes(body),
+      'the page body must reach the physical skill',
     )
-    assert.ok(calls.textComplete[0].prompt.includes(PAGE_URL))
+    assert.ok(calls.headlessSkill[0].input.includes(PAGE_URL))
   })
 
   it('falls back to its own page read when the hub reader fails', async () => {
@@ -743,14 +739,14 @@ describe('link importer · hub model analysis', () => {
     const { hub, calls } = stubHub({ pageFetchThrows: true })
     const draft = await importProductFromUrl({ url: DIGITAL_PAGE_URL, fetcher, hub })
     assert.equal(draft.analysis.mode, 'model')
-    // The model still got input: the text extracted from the document itself.
-    assert.equal(calls.textComplete.length, 1)
-    assert.match(calls.textComplete[0].prompt, /一站式多模态模型服务，支持免费试用与预约演示/)
+    // The skill still got input: the text extracted from the document itself.
+    assert.equal(calls.headlessSkill.length, 1)
+    assert.match(calls.headlessSkill[0].input, /一站式多模态模型服务，支持免费试用与预约演示/)
   })
 
   it('still answers a draft when the model is not configured', async () => {
     const { fetcher } = stubFetcher({ [PAGE_URL]: { html: PRODUCT_HTML } })
-    const { hub } = stubHub({ textCompleteThrows: true })
+    const { hub } = stubHub({ headlessThrows: true })
     const draft = await importProductFromUrl({ url: PAGE_URL, kind: 'physical', fetcher, hub })
 
     assert.equal(draft.analysis.mode, 'heuristic')
@@ -767,7 +763,7 @@ describe('link importer · hub model analysis', () => {
     const { fetcher } = stubFetcher({ [PAGE_URL]: { html: PRODUCT_HTML } })
     const draft = await importProductFromUrl({ url: PAGE_URL, fetcher })
     assert.equal(draft.analysis.mode, 'heuristic')
-    assert.match(draft.analysis.reason, /大模型通道/)
+    assert.match(draft.analysis.reason, /无头技能大模型通道/)
     assert.equal(draft.kind, 'physical')
     assert.equal(draft.name, 'Aurora Mug 350ml')
   })
@@ -784,7 +780,7 @@ describe('link importer · hub model analysis', () => {
 
   it('fails as an empty import only when neither the page nor the model gave anything', async () => {
     const { fetcher } = stubFetcher({ [DIGITAL_PAGE_URL]: { html: '<head><title>MiniMax</title></head><body></body>' } })
-    const { hub } = stubHub({ textCompleteThrows: true, pageFetchThrows: true })
+    const { hub } = stubHub({ headlessThrows: true, pageFetchThrows: true })
     await assert.rejects(
       () => importProductFromUrl({ url: DIGITAL_PAGE_URL, fetcher, hub }),
       (error) => error.code === 'link-import-empty',
@@ -1046,9 +1042,11 @@ describe('link importer · website screenshots', () => {
       async pageFetch(url) {
         return { mode: 'live', url, title: 'MiniMax 开放平台', pageContent: '# MiniMax 开放平台\n\n一站式多模态模型服务' }
       },
-      async textComplete(request) {
-        await gate
-        return { text: BRAND_REPORT, model: request.model }
+      headlessSkill: {
+        async run(request) {
+          await gate
+          return { data: BRAND_REPORT_DATA, model: request.model }
+        },
       },
     }
 
@@ -1071,7 +1069,7 @@ describe('link importer · website screenshots', () => {
 
   it('never writes a screenshot when the draft turns out unusable', async () => {
     const { fetcher } = stubFetcher({ [DIGITAL_PAGE_URL]: { html: '<head><title>MiniMax</title></head><body></body>' } })
-    const { hub } = stubHub({ textCompleteThrows: true, pageFetchThrows: true })
+    const { hub } = stubHub({ headlessThrows: true, pageFetchThrows: true })
     const paths = resolveProductsPaths({ homeDir: shotsHome() })
     const { capture } = stubCapture()
 
