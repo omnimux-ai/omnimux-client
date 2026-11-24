@@ -186,199 +186,68 @@ function toolRegistry(ctx) {
 }
 
 /**
- * The hub's own chat-completions path, a sibling of this plugin wherever the
- * two are installed together. Loaded lazily so a host without `omnimux` still
- * boots this plugin.
- */
-const HUB_CHAT_MODULE = '../../omnimux/src/text/chat.js'
-
-/** Cap the chat bridge asks for when the caller names none. */
-const BRIDGE_MAX_TOKENS = 6000
-
-/**
- * The catalog's analysis/chat default for the chat bridge fallback.
- *
- * The bridge is a local path: no seat, no tool. It still must not pin a model
- * id, so read the live catalog default and let a missing/damaged catalog fail
- * the bridge instead of reviving a retired literal.
- */
-function catalogChatModel(ctx) {
-  const catalog = readSeat(ctx, 'modelCatalog')
-  if (!catalog || typeof catalog.list !== 'function') return ''
-  try {
-    const value = catalog.list()
-    const defaults = value && typeof value === 'object' ? value.defaults : undefined
-    if (!defaults || typeof defaults !== 'object') return ''
-    const candidate = typeof defaults.analysis === 'string' && defaults.analysis.trim()
-      ? defaults.analysis
-      : typeof defaults.text === 'string' ? defaults.text : ''
-    return candidate.trim()
-  } catch {
-    return ''
-  }
-}
-
-/**
- * How long a single fallback channel may run before the seam gives up on it. A
- * seat or tool that waits on a provider this host never configured (no `omnimux`
- * provider seat, no session connection) answers neither success nor failure, so
- * the import would otherwise hang for a minute or more before the heuristics get
- * their turn.
- */
-const CHANNEL_TIMEOUT_MS = 8000
-
-/** The timeout guard's own rejection, told apart from a channel's failure. */
-const CHANNEL_TIMEOUT = Symbol('omnimux-products.channel-timeout')
-
-/** @type {Function | null} */
-let hubChatComplete = null
-
-/**
- * @returns {Promise<Function | null>} null when the hub is not installed here
- */
-async function loadHubChatComplete() {
-  if (hubChatComplete) return hubChatComplete
-  try {
-    const mod = await import(new URL(HUB_CHAT_MODULE, import.meta.url).href)
-    if (typeof mod?.completeTextViaChat === 'function') hubChatComplete = mod.completeTextViaChat
-  } catch {
-    return null
-  }
-  return hubChatComplete
-}
-
-/**
  * Wrap the hub capabilities this vertical consumes, resolved lazily at call time
  * (load order between plugins is not this plugin's contract):
  *
- * - `textComplete` — the hub chat bridge first, then the hub's one-shot model
- *   seam (the provided service, else the official `omnimux_text_complete` tool),
- *   with every channel under a hard time cap;
- * - `pageFetch` — the official `omnimux_page_fetch` tool (OmniMux Jina Reader).\n  * - `socialData` — the official `omnimux_social_data` tool (incl. TikTok Shop).
+ * - `headlessSkill` — the Hub shared headless skill runner (`ctx.get('headlessSkill')`);
+ * - `pageFetch` — the official `omnimux_page_fetch` tool (OmniMux Jina Reader);
+ * - `socialData` — the official `omnimux_social_data` tool (incl. TikTok Shop).
  *
  * @param {unknown} ctx
- * @param {{ chatComplete?: Function, channelTimeoutMs?: number }} [deps] test seams: the chat bridge, and the per-channel time cap
- * @returns {{ textComplete: Function, pageFetch: Function, socialData: Function } | null}
+ * @param {{ headlessSkill?: { run: Function, cancel?: Function, getJob?: Function, listJobs?: Function } }} [deps] test seam override
+ * @returns {{ headlessSkill: { run: Function, cancel: Function, getJob: Function, listJobs: Function }, pageFetch: Function, socialData: Function } | null}
  */
 export function createHubSeams(ctx, deps) {
   if (!ctx || typeof ctx !== 'object') return null
   const overrides = deps && typeof deps === 'object' ? deps : {}
-  const injectedChat = typeof overrides.chatComplete === 'function' ? overrides.chatComplete : null
-  const channelTimeoutMs = Number.isFinite(overrides.channelTimeoutMs) && overrides.channelTimeoutMs > 0
-    ? Number(overrides.channelTimeoutMs)
-    : CHANNEL_TIMEOUT_MS
+  const injectedHeadless = overrides.headlessSkill && typeof overrides.headlessSkill.run === 'function'
+    ? overrides.headlessSkill
+    : null
 
-  /**
-   * Cap one channel's wait. The channel's own answer passes through untouched; a
-   * channel that never answers rejects with the sentinel, so a dead seam cannot
-   * hold the import open. An abandoned channel's late rejection is swallowed
-   * here rather than surfacing as an unhandled rejection.
-   *
-   * @template T
-   * @param {Promise<T>} promise
-   * @returns {Promise<T>}
-   */
-  function withChannelTimeout(promise) {
-    /** @type {ReturnType<typeof setTimeout> | undefined} */
-    let timer
-    const capped = /** @type {Promise<T>} */ (promise)
-    capped.catch(() => {})
-    const timeout = new Promise((_resolve, reject) => {
-      timer = setTimeout(() => reject(CHANNEL_TIMEOUT), channelTimeoutMs)
-      if (typeof timer?.unref === 'function') timer.unref()
-    })
-    return Promise.race([capped, timeout]).finally(() => {
-      if (timer) clearTimeout(timer)
-    })
-  }
-
-  /**
-   * Primary channel. The hub chat module resolves the execution-hub provider from
-   * an explicit credential seat (`OMNIMUX_API_KEY` / `OMNIMUX_TOKEN`); it never
-   * discovers machine-local providers (contract: docs/contracts/product-baseline.md).
-   * Unlike the seats behind `textComplete` it needs no `omnimux` provider seat and
-   * no session connection — so this is the channel that answers in a plain Electron
-   * App runtime. Keys stay in the host: this plugin reads a credential seat, never
-   * a key file.
-   *
-   * @param {{ prompt: string, model?: string, system?: string, maxTokens?: number }} request
-   * @returns {Promise<unknown>}
-   */
-  async function textCompleteViaChat(request) {
-    const chat = injectedChat ?? await loadHubChatComplete()
-    if (typeof chat !== 'function') throw new Error('hub chat module is not reachable')
-    const maxTokens = Number.isFinite(request.maxTokens) && request.maxTokens > 0
-      ? request.maxTokens
-      : BRIDGE_MAX_TOKENS
-    const model = request.model || catalogChatModel(ctx)
-    if (!model) throw new Error('no model named and the catalog has no analysis/chat default')
-    return chat({
-      model,
-      prompt: request.prompt,
-      ...(request.system ? { system: request.system } : {}),
-      maxTokens,
-      env: process.env,
-      credentials: readSeat(ctx, 'credentials'),
-      settings: readSeat(ctx, 'settings'),
-    })
+  function resolveHeadlessSkill() {
+    if (injectedHeadless) return injectedHeadless
+    const service = /** @type {{ run?: Function, cancel?: Function, getJob?: Function, listJobs?: Function } | undefined} */ (readSeat(ctx, 'headlessSkill'))
+    return service && typeof service.run === 'function' ? service : null
   }
 
   const seams = {
-    /**
-     * The chat bridge answers first: on a desktop App runtime it is the one
-     * channel that needs no host session, so it returns in seconds where the
-     * seats can hang. The seats stay as fallbacks, each under a hard time cap.
-     *
-     * @param {{ prompt: string, model?: string, system?: string, maxTokens?: number, reason?: string }} request
-     * @returns {Promise<unknown>}
-     */
-    async textComplete(request) {
-      const reasons = []
-
-      try {
-        return await textCompleteViaChat(request)
-      } catch (error) {
-        // A bridge that never answers the race rejects with the sentinel, not
-        // with an error: report the wait as what it is.
-        reasons.push(error === CHANNEL_TIMEOUT
-          ? `chat bridge timed out after ${channelTimeoutMs}ms`
-          : `chat bridge failed: ${messageOf(error)}`)
-      }
-
-      const service = /** @type {{ execute?: Function } | undefined} */ (readSeat(ctx, 'textComplete'))
-      if (service && typeof service.execute === 'function') {
-        try {
-          return await withChannelTimeout(/** @type {Promise<unknown>} */ (service.execute(request)))
-        } catch (error) {
-          reasons.push(error === CHANNEL_TIMEOUT
-            ? `textComplete seat timed out after ${channelTimeoutMs}ms`
-            : `textComplete seat failed: ${messageOf(error)}`)
+    headlessSkill: {
+      /**
+       * @param {Record<string, unknown>} request
+       * @returns {Promise<unknown>}
+       */
+      async run(request) {
+        const service = resolveHeadlessSkill()
+        if (!service) {
+          throw Object.assign(
+            new Error('headlessSkill unavailable: hub is not loaded or headlessSkill seam is disabled'),
+            { code: 'headless-skill-unavailable' },
+          )
         }
-      } else {
-        reasons.push('textComplete seat: not provided')
-      }
-
-      const tools = toolRegistry(ctx)
-      const tool = tools && typeof tools.get === 'function' ? tools.get('omnimux_text_complete') : null
-      if (!tool || typeof tool.execute !== 'function') {
-        reasons.push('omnimux_text_complete unavailable: hub is not loaded or text completion is disabled')
-      } else {
-        try {
-          return await withChannelTimeout(/** @type {Promise<unknown>} */ (tool.execute({
-            prompt: request.prompt,
-            model: request.model,
-            system: request.system,
-            max_tokens: request.maxTokens,
-            reason: request.reason || 'omnimux-products import-from-link',
-          })))
-        } catch (error) {
-          reasons.push(error === CHANNEL_TIMEOUT
-            ? `omnimux_text_complete timed out after ${channelTimeoutMs}ms`
-            : `omnimux_text_complete failed: ${messageOf(error)}`)
-        }
-      }
-
-      throw new Error(`no text channel answered the request (${reasons.join(' | ')})`)
+        return service.run(request)
+      },
+      /**
+       * @param {string} jobId
+       * @param {string} [reason]
+       */
+      cancel(jobId, reason) {
+        const service = resolveHeadlessSkill()
+        return typeof service?.cancel === 'function' ? service.cancel(jobId, reason) : false
+      },
+      /**
+       * @param {string} jobId
+       */
+      getJob(jobId) {
+        const service = resolveHeadlessSkill()
+        return typeof service?.getJob === 'function' ? service.getJob(jobId) : undefined
+      },
+      /**
+       * @param {Record<string, unknown>} [filter]
+       */
+      listJobs(filter) {
+        const service = resolveHeadlessSkill()
+        return typeof service?.listJobs === 'function' ? service.listJobs(filter) : []
+      },
     },
 
     /**
@@ -462,12 +331,11 @@ function isPickerCode(error) {
  * @param {{
  *   library: ReturnType<typeof import('./library.js').createLibraryStore>,
  *   ctx?: unknown,
- *   hub?: { textComplete?: Function, pageFetch?: Function } | null,
+ *   hub?: { headlessSkill?: { run: Function }, pageFetch?: Function, socialData?: Function } | null,
  *   picker?: (kind: 'file' | 'directory', options?: { prompt?: string }) => Promise<{ path: string | null, paths?: string[] }>,
  *   getService?: (name: string) => unknown,
  *   importFromUrl?: (args: { url: unknown, kind?: 'physical' | 'digital', hub?: object | null }) => Promise<object>,
- *   chatComplete?: Function,
- *   channelTimeoutMs?: number,
+ *   headlessSkill?: { run: Function, cancel?: Function, getJob?: Function, listJobs?: Function },
  * }} deps
  */
 export function createProductsDispatcher(deps) {
@@ -481,8 +349,7 @@ export function createProductsDispatcher(deps) {
   // Hub seams are optional: without a hub the importer still answers from its own
   // page read and the heuristics, and reports the degradation in-band.
   const hub = deps.hub ?? createHubSeams(deps.ctx, {
-    chatComplete: deps.chatComplete,
-    channelTimeoutMs: deps.channelTimeoutMs,
+    headlessSkill: deps.headlessSkill,
   })
 
   /**

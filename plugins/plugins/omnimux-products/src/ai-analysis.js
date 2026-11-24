@@ -1,20 +1,30 @@
 /**
  * Landing-page intelligence for the link importer.
  *
- * Two playbooks, one seam. A digital landing page (a product/company site, a
- * SaaS page) is read with the brand-strategy v2 report and answers a full
- * `brand_strategy` object; a physical listing is read with the Gxgen
- * import-from-link v9 playbook and answers the e-commerce field set.
+ * Two bundled Skills, one Hub seam. A digital landing page (a product/company
+ * site, a SaaS page) runs `products-brand-strategy` and answers a strict JSON
+ * `brand_strategy` object; a physical listing runs `products-physical-import`
+ * and answers a strict JSON e-commerce field set.
  *
- * The model call goes through the hub seam (`ctx.get('textComplete')` or the
- * `omnimux_text_complete` tool) — this vertical ships no provider client and
- * reads no credential. Every failure here is reported as a degraded answer, not
- * an exception: the caller keeps whatever it extracted itself and the request
- * never turns into a 500.
+ * The model call goes exclusively through the Hub `headlessSkill` seam
+ * (`ctx.get('headlessSkill')`) — this vertical ships no provider client, no
+ * private prompt renderer, and no ad-hoc YAML/Markdown text parser. Every
+ * failure here is reported as a degraded answer, not an exception: the caller
+ * keeps whatever it extracted itself and the request never turns into a 500.
  */
+import {
+  BRAND_STRATEGY_OUTPUT_SCHEMA,
+  PHYSICAL_IMPORT_OUTPUT_SCHEMA,
+  buildBrandStrategyUserInput,
+  buildLandingAnalysisFingerprint,
+  buildPhysicalImportUserInput,
+  validateAgainstOutputSchema,
+} from './analysis-schema.js'
 import { normalizeBrandStrategy } from './brand-strategy.js'
-import { renderBrandStrategyV2Prompt, renderPhysicalImportV9Prompt } from './create-prompts.js'
-import { fencedBlocks, parseYamlMini } from './yaml-mini.js'
+import {
+  PRODUCTS_BRAND_STRATEGY_SKILL,
+  PRODUCTS_PHYSICAL_IMPORT_SKILL,
+} from './products-skills.js'
 
 export const ANALYSIS_MODES = Object.freeze({
   MODEL: 'model',
@@ -268,7 +278,10 @@ export function normalizeHub(value) {
   const row = /** @type {Record<string, unknown>} */ (value)
   /** @type {Record<string, unknown>} */
   const out = {}
-  if (typeof row.textComplete === 'function') out.textComplete = row.textComplete
+  const headless = row.headlessSkill
+  if (headless && typeof headless === 'object' && typeof /** @type {{ run?: unknown }} */ (headless).run === 'function') {
+    out.headlessSkill = headless
+  }
   if (typeof row.pageFetch === 'function') out.pageFetch = row.pageFetch
   if (typeof row.socialData === 'function') out.socialData = row.socialData
   return Object.keys(out).length ? out : null
@@ -514,80 +527,6 @@ export function composePageContent(input) {
 }
 
 /**
- * The text body of one hub completion answer, whichever shape it arrives in.
- *
- * @param {unknown} result
- * @returns {string}
- */
-export function extractModelText(result) {
-  if (typeof result === 'string') return result.trim()
-  if (!result || typeof result !== 'object') return ''
-  const row = /** @type {Record<string, unknown>} */ (result)
-  for (const key of ['text', 'content', 'output', 'markdown', 'answer', 'message', 'pageContent']) {
-    const value = row[key]
-    if (typeof value === 'string' && value.trim()) return value.trim()
-  }
-  const choices = row.choices
-  if (Array.isArray(choices) && choices.length > 0) {
-    const first = choices[0]
-    if (first && typeof first === 'object') {
-      const message = /** @type {Record<string, unknown>} */ (first).message
-      if (message && typeof message === 'object') {
-        const content = /** @type {Record<string, unknown>} */ (message).content
-        if (typeof content === 'string' && content.trim()) return content.trim()
-      }
-    }
-  }
-  return ''
-}
-
-/**
- * Parse whatever the answer wrapped its report in: a fenced block, bare JSON, or
- * bare YAML.
- *
- * @param {unknown} value
- * @returns {Record<string, unknown> | null}
- */
-export function extractStructuredPayload(value) {
-  const source = String(value ?? '').trim()
-  if (!source) return null
-  const blocks = fencedBlocks(source)
-  const candidates = [
-    ...blocks.filter((block) => block.lang === 'yaml' || block.lang === 'yml').map((block) => block.body),
-    ...blocks.filter((block) => block.lang === 'json').map((block) => block.body),
-    ...blocks.map((block) => block.body),
-    source,
-  ]
-  for (const candidate of candidates) {
-    const parsed = parsePayload(candidate)
-    if (parsed) return parsed
-  }
-  return null
-}
-
-/**
- * @param {string} candidate
- * @returns {Record<string, unknown> | null}
- */
-function parsePayload(candidate) {
-  const body = String(candidate ?? '').trim()
-  if (!body) return null
-  try {
-    const json = JSON.parse(body)
-    if (json && typeof json === 'object' && !Array.isArray(json)) return /** @type {Record<string, unknown>} */ (json)
-  } catch {
-    // Not JSON — the playbook asks for YAML.
-  }
-  try {
-    const yaml = parseYamlMini(body)
-    if (yaml && typeof yaml === 'object' && !Array.isArray(yaml)) return /** @type {Record<string, unknown>} */ (yaml)
-  } catch {
-    return null
-  }
-  return null
-}
-
-/**
  * @param {unknown} value
  * @returns {Record<string, unknown>}
  */
@@ -682,10 +621,49 @@ function degraded(message, kind) {
 }
 
 /**
- * Read one landing page with the model, through the hub seam.
+ * Map a Hub `headlessSkill` error onto a clear Chinese degradation reason while
+ * preserving the upstream error detail (never swallowing errors silently).
  *
- * Never throws: an unavailable seam, a model failure or an unreadable answer all
- * come back as a degraded result carrying the reason.
+ * @param {unknown} error
+ * @param {string} skillName
+ * @returns {string}
+ */
+function formatHeadlessFailureReason(error, skillName) {
+  const code = error && typeof error === 'object'
+    ? String(/** @type {{ code?: unknown }} */ (error).code || '')
+    : ''
+  const detail = messageOf(error)
+  switch (code) {
+    case 'headless-skill-unavailable':
+      return `宿主未提供无头技能大模型通道：${detail}`
+    case 'headless-skill-invalid-request':
+      return `无头技能请求参数无效（${skillName}）：${detail}`
+    case 'headless-skill-not-found':
+      return `缺少内置分析技能（${skillName}）：${detail}`
+    case 'headless-skill-schema-invalid':
+      return `结构化分析输出未通过 JSON Schema 校验：${detail}`
+    case 'headless-skill-empty-response':
+      return `模型未返回可用内容：${detail}`
+    case 'headless-skill-timeout':
+      return `商品智能分析超时：${detail}`
+    case 'headless-skill-cancelled':
+      return `商品智能分析已取消：${detail}`
+    case 'headless-skill-stale-input':
+    case 'headless-skill-stale':
+      return `页面内容已变更，分析结果已作废：${detail}`
+    case 'needs-provider':
+    case 'needs-omnimux':
+      return `大模型服务尚未就绪（${code}）：${detail}`
+    default:
+      return `大模型调用失败：${detail}`
+  }
+}
+
+/**
+ * Read one landing page with the model, through the Hub `headlessSkill` seam.
+ *
+ * Never throws: an unavailable seam, a model failure, or a schema violation all
+ * come back as a degraded result carrying the explicit reason.
  *
  * @param {{
  *   hub?: Record<string, unknown> | null,
@@ -696,7 +674,7 @@ function degraded(message, kind) {
  *   title?: string,
  *   model?: string,
  *   language?: string,
- *   reason?: string,
+ *   signal?: AbortSignal,
  * }} input
  * @returns {Promise<{ mode: string, model: string | null, reason: string | null, kind: 'digital' | 'physical', brand_strategy: object | null, fields: object | null }>}
  */
@@ -704,8 +682,9 @@ export async function analyzeLandingPage(input) {
   const hub = normalizeHub(input?.hub)
   const digital = isDigitalLandingPage({ kind: input?.kind, page: input?.page, url: input?.url })
   const kind = digital ? 'digital' : 'physical'
-  if (!hub || typeof hub.textComplete !== 'function') {
-    return degraded('宿主未提供大模型通道（omnimux 未装载或未配置密钥）', kind)
+  const headless = /** @type {{ run?: Function } | undefined} */ (hub?.headlessSkill)
+  if (!headless || typeof headless.run !== 'function') {
+    return degraded('宿主未提供无头技能大模型通道（omnimux headlessSkill 未装载或未启用）', kind)
   }
   const pageContent = composePageContent({
     title: input?.title,
@@ -715,28 +694,55 @@ export async function analyzeLandingPage(input) {
   if (!pageContent) return degraded('页面正文为空，未提交给模型', kind)
 
   const requestedModel = text(input?.model) || undefined
-  const prompt = digital
-    ? renderBrandStrategyV2Prompt({ language: text(input?.language) || '中文', pageContent })
-    : renderPhysicalImportV9Prompt({ url: text(input?.url), pageContent })
+  const language = text(input?.language) || '中文'
+  const url = text(input?.url)
+  const skillName = digital ? PRODUCTS_BRAND_STRATEGY_SKILL : PRODUCTS_PHYSICAL_IMPORT_SKILL
+  const outputSchema = digital ? BRAND_STRATEGY_OUTPUT_SCHEMA : PHYSICAL_IMPORT_OUTPUT_SCHEMA
+  const userInput = digital
+    ? buildBrandStrategyUserInput({ url, language, pageContent })
+    : buildPhysicalImportUserInput({ url, language, pageContent })
+  const inputFingerprint = buildLandingAnalysisFingerprint({ kind, url, language, pageContent })
 
   try {
-    const answer = await hub.textComplete({
+    const answer = await headless.run({
+      skillName,
+      input: userInput,
+      outputSchema,
+      modality: 'text',
+      label: digital ? '数字商品品牌策略分析' : '实物商品链接信息提取',
+      ownerPlugin: 'omnimux-products',
+      targetId: url || kind,
+      inputFingerprint,
       ...(requestedModel ? { model: requestedModel } : {}),
-      prompt,
       maxTokens: digital ? MAX_TOKENS_DIGITAL : MAX_TOKENS_PHYSICAL,
-      reason: text(input?.reason) || 'omnimux-products import-from-link analysis',
+      ...(input?.signal ? { signal: input.signal } : {}),
     })
-    const answerText = extractModelText(answer)
-    if (!answerText) return degraded('模型未返回可用内容', kind)
-    const payload = extractStructuredPayload(answerText)
-    if (!payload) return degraded('模型回答未包含可解析的结构化报告', kind)
+
+    const payload = answer && typeof answer === 'object' ? /** @type {{ data?: unknown, model?: unknown }} */ (answer).data : null
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+      return degraded('无头技能未返回结构化数据', kind)
+    }
+
+    const schemaErrors = validateAgainstOutputSchema(payload, outputSchema)
+    if (schemaErrors.length > 0) {
+      return degraded(`结构化分析输出未通过 JSON Schema 校验：${schemaErrors.join('; ')}`, kind)
+    }
+
+    const resolvedModel = text(/** @type {{ model?: unknown }} */ (answer).model) || requestedModel || null
 
     if (!digital) {
-      const fields = mapPhysicalPayloadToDraft(payload)
+      const fields = mapPhysicalPayloadToDraft(/** @type {Record<string, unknown>} */ (payload))
       if (!fields.name && !fields.selling_points && !fields.features) {
         return degraded('模型回答未包含商品字段', kind)
       }
-      return { mode: ANALYSIS_MODES.MODEL, model: text(answer?.model) || requestedModel || null, reason: null, kind, brand_strategy: null, fields }
+      return {
+        mode: ANALYSIS_MODES.MODEL,
+        model: resolvedModel,
+        reason: null,
+        kind,
+        brand_strategy: null,
+        fields,
+      }
     }
 
     let strategy = null
@@ -748,14 +754,14 @@ export async function analyzeLandingPage(input) {
     if (!strategy) return degraded('品牌拆解报告为空，未产生可用战略模块', kind)
     return {
       mode: ANALYSIS_MODES.MODEL,
-      model: text(answer?.model) || requestedModel || null,
+      model: resolvedModel,
       reason: null,
       kind,
       brand_strategy: strategy,
       fields: mapBrandStrategyToDraft(strategy),
     }
   } catch (error) {
-    return degraded(`大模型调用失败：${messageOf(error)}`, kind)
+    return degraded(formatHeadlessFailureReason(error, skillName), kind)
   }
 }
 

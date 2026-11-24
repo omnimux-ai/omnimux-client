@@ -17,10 +17,14 @@
       { "name": "products_read_media", "summary": "读取商品关联的多模态素材", "category": "ecommerce", "isWriteOperation": false, "requiresAuth": false }
     ],
     "seamsProvided": [],
-    "seamsConsumed": [],
+    "seamsConsumed": ["headlessSkill"],
     "slots": [],
     "storageDomains": ["$DSH_HOME/omnimux/products/"]
   },
+  "skills": [
+    "skills/products-brand-strategy/SKILL.md",
+    "skills/products-physical-import/SKILL.md"
+  ],
   "dependencies": {
     "requiredPlugins": ["omnimux"],
     "systemBinaries": []
