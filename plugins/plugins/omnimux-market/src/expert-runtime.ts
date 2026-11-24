@@ -203,7 +203,7 @@ export function buildMarketExpertPluginRows(
     {
       id: 'tool-web',
       name: '@deepseek-ai/dsh-tool-web',
-      config: { fetch: false, searchTimeoutMs: 60000 },
+      config: { fetch: true, searchTimeoutMs: 60000 },
     },
   ]
 

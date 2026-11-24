@@ -319,6 +319,17 @@ test('buildMarketExpertPresetDefinition emits persona.prefix (never retired text
   }
 })
 
+test('buildMarketExpertPresetDefinition exposes the built-in web_fetch fallback for every expert', () => {
+  for (const exp of DEFAULT_MARKET_EXPERTS) {
+    const def = buildMarketExpertPresetDefinition(exp)
+    const web = def.plugins.find((r) => r.id === 'tool-web')
+    assert.ok(web, `${exp.id} must mount tool-web`)
+    assert.equal(web!.name, '@deepseek-ai/dsh-tool-web')
+    assert.equal((web!.config as Record<string, unknown>)?.fetch, true, `${exp.id} must enable web_fetch`)
+    assert.equal((web!.config as Record<string, unknown>)?.searchTimeoutMs, 60000)
+  }
+})
+
 test('buildMarketExpertPresetDefinition prunes unresolvable optional rows while keeping persona', () => {
   const exp = DEFAULT_MARKET_EXPERTS[0]
   const def = buildMarketExpertPresetDefinition(exp, {

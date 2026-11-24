@@ -7,7 +7,7 @@ import { spawnSync } from 'node:child_process'
 import { dirname, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 // 本机 `python3` 缺 PyYAML 时改用仓库内解析（见 specs/local-gates-repair.spec.md「旧标准变更」）。
-import { pythonYamlAvailable, personaConfigFromText, rowsFromText } from './lib/preset-yaml.mjs'
+import { parsePresetDocuments, pythonYamlAvailable, personaConfigFromText, rowsFromText } from './lib/preset-yaml.mjs'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -168,6 +168,33 @@ test('omni-agent Agent.md and persona define distilled English content e-commerc
   ok(cordisText.includes('Minimal delegation'), 'persona must enforce minimal subagent delegation')
   ok(cordisText.includes('Creator Mode (`cordis`)'), 'persona must declare Creator Mode boundary')
   ok(!/\/Users\/|\/home\//.test(agentMd), 'Agent.md must not leak host-local absolute paths')
+})
+
+test('omni-agent enables the built-in web_fetch fallback and documents the page_fetch split', () => {
+  const generator = read('scripts/build-agent-presets.mjs')
+  const agentMd = read('presets/omni-agent/Agent.md')
+  const cordisText = read('presets/omni-agent/agent.cordis.yml')
+
+  // The generator is the single source of truth for the shipped preset row.
+  ok(/^- id: tool-web$/m.test(generator), 'generator must ship a tool-web row')
+  ok(/- id: tool-web\n  name: '@deepseek-ai\/dsh-tool-web'\n  config:\n    fetch: true\n/.test(generator), 'generator must enable tool-web fetch')
+
+  const rows = parsePresetDocuments('presets/omni-agent/agent.cordis.yml', cordisText)[0]
+  const toolWeb = rows.find((row) => row.id === 'tool-web')
+  ok(toolWeb, 'agent.cordis.yml must mount tool-web')
+  equal(toolWeb.name, '@deepseek-ai/dsh-tool-web', 'tool-web row must name the official package')
+  equal(toolWeb.config.fetch, true, 'generated preset must enable web_fetch')
+  equal(toolWeb.config.searchTimeoutMs, 60000, 'search timeout stays explicit')
+
+  // The persona must describe the division of labour and the fallback chain.
+  ok(agentMd.includes('`omnimux_page_fetch`'), 'Agent.md must name the preferred page reader')
+  ok(agentMd.includes('`web_fetch`'), 'Agent.md must name the built-in fallback')
+  ok(agentMd.includes('`bash curl`'), 'Agent.md must keep shell curl out of the fallback chain')
+
+  // No shipped preset source may silently disable the fallback again.
+  for (const rel of ['presets/omni-agent/agent.cordis.yml', 'scripts/build-agent-presets.mjs']) {
+    ok(!/fetch:\s*false/.test(read(rel)), `${rel} must not disable tool-web fetch`)
+  }
 })
 
 test('build-agent-presets is idempotent', () => {

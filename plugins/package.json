@@ -93,7 +93,7 @@
     "verify:all": "corepack pnpm verify:gates && corepack pnpm test && corepack pnpm registry:verify && corepack pnpm doctor",
     "sync:presets": "bash scripts/sync-agent-presets.sh",
     "presets:build": "node scripts/build-agent-presets.mjs",
-    "presets:verify": "node --test scripts/verify-agent-presets.test.mjs scripts/verify-anti-slop.test.mjs",
+    "presets:verify": "node --test scripts/verify-agent-presets.test.mjs scripts/verify-anti-slop.test.mjs scripts/verify-tool-web-fetch-fallback.test.mjs",
     "verify:cdp": "node scripts/verify-dev-cdp.mjs",
     "verify:picker": "node scripts/verify-picker-dialog.mjs",
     "check:package-files": "node plugins/omnimux-forms/scripts/build-client.mjs && node scripts/verify-package-files.mjs",
