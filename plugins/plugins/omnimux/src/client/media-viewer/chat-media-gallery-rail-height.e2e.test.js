@@ -5,8 +5,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
-import { mkdir, writeFile } from 'node:fs/promises';
-import { resolve, dirname } from 'node:path';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { resolve, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createMediaTailElement } from '../attachments/assistantMessageMediaEnhancer.ts';
 import { MEDIA_VIEWER_CSS } from './styles.js';
@@ -15,7 +17,13 @@ const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, '../../../../..');
 
 test('E2E: 多图结果缩略图栏锁在主图高度内，点选仍切换主图', async (t) => {
-  const evidenceDir = resolve(root, '.agent-reports/gallery-rail-height-2101');
+  const writeToRepo = process.env.OMNIMUX_WRITE_EVIDENCE === '1';
+  const evidenceDir = writeToRepo
+    ? resolve(root, '.agent-reports/gallery-rail-height-2101')
+    : await mkdtemp(join(tmpdir(), 'omnimux-gallery-rail-height-'));
+  if (!writeToRepo) {
+    t.after(() => rm(evidenceDir, { recursive: true, force: true }));
+  }
   await mkdir(evidenceDir, { recursive: true });
   const checks = [];
   const record = (name, ok, detail) => {
@@ -80,8 +88,9 @@ test('E2E: 多图结果缩略图栏锁在主图高度内，点选仍切换主图
     '方向键仍可切换下一张',
   );
 
+  const evidencePath = resolve(evidenceDir, 'e2e-evidence.json');
   await writeFile(
-    resolve(evidenceDir, 'e2e-evidence.json'),
+    evidencePath,
     JSON.stringify(
       {
         task: 'Issue #2101',
@@ -103,4 +112,14 @@ test('E2E: 多图结果缩略图栏锁在主图高度内，点选仍切换主图
       2,
     ),
   );
+  const parsed = JSON.parse(await readFile(evidencePath, 'utf8'));
+  assert.equal(parsed.status, 'PASS');
+  assert.equal(parsed.totalChecks, checks.length);
+  if (!writeToRepo) {
+    assert.equal(
+      existsSync(resolve(root, '.agent-reports/gallery-rail-height-2101/e2e-evidence.json')),
+      false,
+      '默认测试运行不得在仓库内生成或改写 .agent-reports 证据文件',
+    );
+  }
 });
