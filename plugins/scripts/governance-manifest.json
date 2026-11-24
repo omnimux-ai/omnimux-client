@@ -169,6 +169,7 @@
     "verify-stage-inset-contract.mjs",
     "verify-stage-scroll-contract.mjs",
     "verify-stage-scroll-contract.test.mjs",
+    "verify-tool-web-fetch-fallback.test.mjs",
     "worktree-app-qa.mjs",
     "worktree-delivery.test.mjs",
     "worktree-sag-index.test.mjs",

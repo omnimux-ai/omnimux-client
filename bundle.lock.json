@@ -38,7 +38,7 @@
       "version": "0.1.0",
       "path": "plugins/plugins/omnimux-browser",
       "spec": "link:../../plugins/plugins/omnimux-browser",
-      "contentHash": "sha256:cde00ff299c38bf77d3526d8aa036b67f6376da41ea911b6d7a632c7a65941d4"
+      "contentHash": "sha256:4aa59fb3f35d34600e79ef4f40554980c030a875591d1059ab8ef256fd918b2d"
     },
     {
       "name": "omnimux-clip",
@@ -66,7 +66,7 @@
       "version": "0.2.13-omni.2",
       "path": "plugins/plugins/omnimux-market",
       "spec": "link:../../plugins/plugins/omnimux-market",
-      "contentHash": "sha256:3f2722d307d5f79509c5fc8f8563fc23fcf8e7e3df574e7515f9c5c88d91d011"
+      "contentHash": "sha256:428533ce9804f28508990d33122266ef513a32fae3b62e3aba9969136171faa0"
     },
     {
       "name": "omnimux-products",
