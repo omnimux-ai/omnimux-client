@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark" data-viewport="desktop">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>模型品牌混合架构（方案 C）全端视觉与降级演示</title>
+<style>
+  :root,
+  [data-theme="dark"] {
+    color-scheme: dark;
+    --dsw-alias-bg-base: #111215;
+    --dsw-alias-bg-elevated: #181a1f;
+    --dsw-alias-bg-layer-3: #22252b;
+    --dsw-alias-interactive-bg-hover: rgba(255, 255, 255, 0.07);
+    --dsw-alias-interactive-bg-active: rgba(255, 255, 255, 0.14);
+    --dsw-alias-border-l2: rgba(255, 255, 255, 0.09);
+    --dsw-alias-border-l3: rgba(255, 255, 255, 0.22);
+    --dsw-alias-label-primary: #f3f4f6;
+    --dsw-alias-label-primary-foreground: #111317;
+    --dsw-alias-label-secondary: #a1a1aa;
+    --dsw-alias-label-tertiary: #7b8088;
+    --dsw-alias-brand-primary: #818cf8;
+    --dsw-alias-label-danger: #f87171;
+    --demo-page: #0b0b0d;
+    --demo-card: #141519;
+    --demo-line: #272930;
+    --demo-ok: #34d399;
+    --demo-warn: #fbbf24;
+    --demo-bad: #f87171;
+  }
+
+  [data-theme="light"] {
+    color-scheme: light;
+    --dsw-alias-bg-base: #ffffff;
+    --dsw-alias-bg-elevated: #ffffff;
+    --dsw-alias-bg-layer-3: #f2f4f7;
+    --dsw-alias-interactive-bg-hover: rgba(17, 24, 39, 0.05);
+    --dsw-alias-interactive-bg-active: rgba(17, 24, 39, 0.10);
+    --dsw-alias-border-l2: rgba(17, 24, 39, 0.10);
+    --dsw-alias-border-l3: rgba(17, 24, 39, 0.22);
+    --dsw-alias-label-primary: #17191c;
+    --dsw-alias-label-primary-foreground: #ffffff;
+    --dsw-alias-label-secondary: #4b5563;
+    --dsw-alias-label-tertiary: #6b7280;
+    --dsw-alias-brand-primary: #4f46e5;
+    --dsw-alias-label-danger: #dc2626;
+    --demo-page: #f3f4f6;
+    --demo-card: #ffffff;
+    --demo-line: #e5e7eb;
+    --demo-ok: #059669;
+    --demo-warn: #d97706;
+    --demo-bad: #dc2626;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--demo-page);
+    color: var(--dsw-alias-label-primary);
+    font: 13px/1.45 -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  button { font: inherit; color: inherit; }
+
+  .topbar {
+    position: sticky;
+    top: 0;
+    z-index: 40;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 20px;
+    background: var(--demo-card);
+    border-bottom: 1px solid var(--demo-line);
+  }
+  .topbar-title {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+  .topbar-title strong { font-size: 14px; font-weight: 650; }
+  .topbar-title span { font-size: 12px; color: var(--dsw-alias-label-secondary); }
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; }
+  .seg {
+    display: inline-flex;
+    gap: 2px;
+    padding: 3px;
+    border-radius: 9px;
+    border: 1px solid var(--demo-line);
+    background: var(--dsw-alias-bg-layer-3);
+  }
+  .seg button {
+    border: 0;
+    border-radius: 6px;
+    padding: 5px 10px;
+    background: transparent;
+    color: var(--dsw-alias-label-secondary);
+    cursor: pointer;
+    font-size: 12px;
+  }
+  .seg button[aria-pressed="true"] {
+    background: var(--dsw-alias-label-primary);
+    color: var(--dsw-alias-label-primary-foreground);
+    font-weight: 600;
+  }
+
+  .container {
+    max-width: 1480px;
+    margin: 0 auto;
+    padding: 20px;
+    transition: max-width 180ms ease;
+  }
+  [data-viewport="narrow"] .container {
+    max-width: 380px;
+    padding: 12px;
+  }
+
+  .section-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+    margin-bottom: 18px;
+  }
+  [data-viewport="narrow"] .section-grid {
+    grid-template-columns: 1fr;
+  }
+  @media (max-width: 960px) {
+    .section-grid { grid-template-columns: 1fr; }
+  }
+
+  .panel-card {
+    background: var(--demo-card);
+    border: 1px solid var(--demo-line);
+    border-radius: 14px;
+    padding: 16px;
+    min-width: 0;
+    overflow: hidden;
+  }
+  .card-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+  .card-head h2 {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 650;
+  }
+  .tag {
+    display: inline-flex;
+    align-items: center;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 999px;
+    border: 1px solid var(--dsw-alias-border-l2);
+    background: var(--dsw-alias-bg-layer-3);
+    white-space: nowrap;
+  }
+  .tag.ok { color: var(--demo-ok); }
+  .tag.bad { color: var(--demo-bad); }
+  .tag.warn { color: var(--demo-warn); }
+
+  /* Composer ModelPicker Popover */
+  .composer-mock {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .trigger-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+  }
+  .picker-trigger {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 30px;
+    padding: 0 10px;
+    border-radius: 8px;
+    border: 1px solid var(--dsw-alias-border-l2);
+    background: var(--dsw-alias-bg-elevated);
+    font-size: 12px;
+    font-weight: 500;
+  }
+  .popover {
+    border: 1px solid var(--dsw-alias-border-l2);
+    border-radius: 12px;
+    background: var(--dsw-alias-bg-elevated);
+    padding: 8px;
+    box-shadow: 0 10px 26px rgba(0, 0, 0, 0.22);
+  }
+  .model-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    cursor: pointer;
+  }
+  .model-row:hover {
+    background: var(--dsw-alias-interactive-bg-hover);
+  }
+  .model-row.is-selected {
+    background: var(--dsw-alias-interactive-bg-active);
+  }
+  .icon-box {
+    width: 28px;
+    height: 28px;
+    border-radius: 7px;
+    background: var(--dsw-alias-bg-layer-3);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .monogram {
+    width: 16px;
+    height: 16px;
+    border-radius: 4px;
+    background: var(--dsw-alias-bg-layer-3);
+    color: var(--dsw-alias-label-secondary);
+    border: 1px solid var(--dsw-alias-border-l2);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1;
+  }
+  .row-meta { min-width: 0; flex: 1; }
+  .row-title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    flex-wrap: wrap;
+  }
+  .row-sub {
+    font-size: 11px;
+    color: var(--dsw-alias-label-secondary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .pill {
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: var(--dsw-alias-bg-layer-3);
+    border: 1px solid var(--dsw-alias-border-l2);
+    color: var(--dsw-alias-label-secondary);
+  }
+
+  /* Workflow 3-column cascade menu */
+  .cascade {
+    display: grid;
+    grid-template-columns: 160px minmax(0, 1fr);
+    border: 1px solid var(--dsw-alias-border-l2);
+    border-radius: 12px;
+    background: var(--dsw-alias-bg-elevated);
+    overflow: hidden;
+  }
+  [data-viewport="narrow"] .cascade {
+    grid-template-columns: 120px minmax(0, 1fr);
+  }
+  .cascade-col {
+    padding: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+  .cascade-col + .cascade-col {
+    border-left: 1px solid var(--dsw-alias-border-l2);
+  }
+  .brand-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 8px;
+    border-radius: 7px;
+    font-size: 12px;
+    cursor: pointer;
+    border: 0;
+    background: transparent;
+    text-align: left;
+    width: 100%;
+  }
+  .brand-item.active {
+    background: var(--dsw-alias-interactive-bg-active);
+    font-weight: 600;
+  }
+  .brand-item span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* Extension & Tier Matrix */
+  .matrix-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+  }
+  .matrix-table th, .matrix-table td {
+    text-align: left;
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--demo-line);
+    vertical-align: middle;
+  }
+  .matrix-table th {
+    color: var(--dsw-alias-label-secondary);
+    font-weight: 600;
+  }
+  code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11px;
+    padding: 1px 5px;
+    border-radius: 4px;
+    background: var(--dsw-alias-bg-layer-3);
+  }
+</style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-title">
+      <strong>模型品牌混合架构（方案 C / Issue #203）</strong>
+      <span>对比修改前四端分裂与静默误标，以及修改后统一消费共享真源与网关语义</span>
+    </div>
+    <div class="controls">
+      <div class="seg" role="group" aria-label="对比状态">
+        <button id="btn-after" aria-pressed="true" onclick="setMode('after')">修改后</button>
+        <button id="btn-before" aria-pressed="false" onclick="setMode('before')">修改前</button>
+      </div>
+      <div class="seg" role="group" aria-label="主题切换">
+        <button id="btn-dark" aria-pressed="true" onclick="setTheme('dark')">暗色</button>
+        <button id="btn-light" aria-pressed="false" onclick="setTheme('light')">亮色</button>
+      </div>
+      <div class="seg" role="group" aria-label="视口宽度">
+        <button id="btn-desktop" aria-pressed="true" onclick="setViewport('desktop')">桌面宽屏</button>
+        <button id="btn-narrow" aria-pressed="false" onclick="setViewport('narrow')">窄屏 360px</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    <div class="section-grid">
+      <section class="panel-card">
+        <div class="card-head">
+          <h2>1. 聊天输入框模型选择器（打开态浮层与胶囊）</h2>
+          <span class="tag ok" id="tag-composer">dsh-ui-kit 单一真源</span>
+        </div>
+        <div class="composer-mock" id="composer-mount"></div>
+      </section>
+
+      <section class="panel-card">
+        <div class="card-head">
+          <h2>2. 画布节点级联菜单（品牌分组防劫持）</h2>
+          <span class="tag ok" id="tag-workflow">gateway brand_id 优先</span>
+        </div>
+        <div id="workflow-mount"></div>
+      </section>
+    </div>
+
+    <div class="section-grid">
+      <section class="panel-card">
+        <div class="card-head">
+          <h2>3. 浏览器扩展侧栏模型选择器</h2>
+          <span class="tag ok" id="tag-extension">与桌面共用品牌注册表</span>
+        </div>
+        <div id="extension-mount"></div>
+      </section>
+
+      <section class="panel-card">
+        <div class="card-head">
+          <h2>4. 四级降级与安全校验矩阵</h2>
+          <span class="tag ok">fail-closed + 指纹解耦</span>
+        </div>
+        <div style="overflow-x:auto">
+          <table class="matrix-table">
+            <thead>
+              <tr>
+                <th>输入场景</th>
+                <th>渲染结果</th>
+                <th>来源层级</th>
+              </tr>
+            </thead>
+            <tbody id="matrix-body"></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <script>
+    const SVG_BYTEDANCE = '<svg width="16" height="16" viewBox="0 0 24 25" fill="none"><path d="M2.21216 4.78784L6.4257 6.08535V18.8942L2.21216 20.2121V4.78784Z" fill="currentColor"/><path d="M7.51978 10.6461L11.7333 11.9436V19.6545L7.51978 20.952V10.6461Z" fill="currentColor"/><path d="M12.6653 8.15259L16.8788 6.8551V17.161L12.6653 15.8432V8.15259Z" fill="currentColor"/><path d="M17.7861 4.8689L22.0201 3.57141V18.9957L17.7861 17.6778V4.8689Z" fill="currentColor"/></svg>';
+    const SVG_OPENAI = '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M22.2819 9.8211a5.9847 5.9847 0 0 0-.5157-4.9108 6.0462 6.0462 0 0 0-6.5098-2.9A6.0651 6.0651 0 0 0 4.9807 4.1818a5.9847 5.9847 0 0 0-3.9977 2.9 6.0462 6.0462 0 0 0 .7427 7.0966 5.98 5.98 0 0 0 .511 4.9107 6.051 6.051 0 0 0 6.5146 2.9001A5.9847 5.9847 0 0 0 13.2599 24a6.0557 6.0557 0 0 0 5.7718-4.2058 5.9894 5.9894 0 0 0 3.9977-2.9001 6.0557 6.0557 0 0 0-.7475-7.0729zm-9.022 12.6081a4.4755 4.4755 0 0 1-2.8764-1.0408l.1419-.0804 4.7783-2.7582a.7948.7948 0 0 0 .3927-.6813v-6.7369l2.02 1.1686a.071.071 0 0 1 .038.052v5.5826a4.504 4.504 0 0 1-4.4945 4.4944zm-9.6607-4.1254a4.4708 4.4708 0 0 1-.5346-3.0137l.142.0852 4.783 2.7582a.7712.7712 0 0 0 .7806 0l5.8428-3.3685v2.3324a.0804.0804 0 0 1-.0332.0615L9.74 19.9502a4.4992 4.4992 0 0 1-6.1408-1.6464zM2.3408 7.8956a4.485 4.485 0 0 1 2.3655-1.9728V11.6a.7664.7664 0 0 0 .3879.6765l5.8144 3.3543-2.0201 1.1685a.0757.0757 0 0 1-.071 0l-4.8303-2.7865A4.504 4.504 0 0 1 2.3408 7.8956zm16.0993 3.8558L12.6 8.3829l2.02-1.1638a.0757.0757 0 0 1 .071 0l4.8303 2.7913a4.4944 4.4944 0 0 1-.6765 8.1042v-5.6772a.79.79 0 0 0-.407-.667zm2.0107-3.0231l-.142-.0852-4.7735-2.7818a.7759.7759 0 0 0-.7854 0L9.409 9.2297V6.8974a.0662.062 0 0 1 .0284-.0615l4.8303-2.7866a4.4992 4.4992 0 0 1 6.1408 1.6465 4.4708 4.4708 0 0 1 .5765 3.0137zM8.3065 12.863l-2.02-1.1638a.0804.0804 0 0 1-.038-.0567V6.0742a4.4992 4.4992 0 0 1 7.3757-3.4537l-.142.0805L8.704 5.459a.7948.7948 0 0 0-.3927.6813zm1.0976-2.3654l2.602-1.4998 2.6069 1.4998v2.9994l-2.5974 1.4997-2.6067-1.4997z"/></svg>';
+    const SVG_ANTHROPIC = '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M17.304 3.541h-3.672l6.696 16.918h3.672l-6.696-16.918zm-10.608 0l-6.696 16.918h3.78l1.344-3.528h6.468l1.344 3.528h3.78l-6.696-16.918h-3.324zm-.372 10.362l2.172-5.676 2.172 5.676h-4.344z"/></svg>';
+    const SVG_GOOGLE_COLOR = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>';
+    const SVG_GOOGLE_MONO = '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>';
+    const SVG_ACME_PATH = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M12 2L22 20H2Z" fill="currentColor"/></svg>';
+    const SVG_OLD_SEEDREAM = '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="5" width="4" height="14" rx="1"/><rect x="10" y="3" width="4" height="18" rx="1"/><rect x="16" y="7" width="4" height="10" rx="1"/></svg>';
+    const SVG_INDEXTTS = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none"><rect x="2.5" y="2.5" width="19" height="19" rx="4.5" stroke="currentColor" stroke-width="1.8"/><path d="M8 10V14M12 7V17M16 10V14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';
+
+    let mode = 'after';
+
+    function monogram(letter) {
+      return `<span class="monogram" aria-hidden="true">${letter}</span>`;
+    }
+
+    function render() {
+      const isAfter = mode === 'after';
+      document.getElementById('tag-composer').textContent = isAfter ? 'dsh-ui-kit 单一真源' : '旧版私有映射 误标字节';
+      document.getElementById('tag-composer').className = 'tag ' + (isAfter ? 'ok' : 'bad');
+      document.getElementById('tag-workflow').textContent = isAfter ? 'gateway brand_id 优先' : '前缀劫持为 OpenAI';
+      document.getElementById('tag-workflow').className = 'tag ' + (isAfter ? 'ok' : 'bad');
+      document.getElementById('tag-extension').textContent = isAfter ? '与桌面共用品牌注册表' : '仅识别 openai 与 grok';
+      document.getElementById('tag-extension').className = 'tag ' + (isAfter ? 'ok' : 'bad');
+
+      const composerRows = [
+        {
+          id: 'seedream-5-0-pro',
+          name: 'Seedream 5.0 Pro',
+          brand: 'bytedance',
+          icon: isAfter ? SVG_BYTEDANCE : SVG_OLD_SEEDREAM,
+          note: isAfter ? 'brand_id: bytedance 统一字节图标' : '旧私有三竖杠图标 与画布不一致',
+        },
+        {
+          id: 'gpt-acme-vision',
+          name: 'Acme Vision',
+          brand: isAfter ? 'acme-labs' : 'openai',
+          icon: isAfter ? SVG_ACME_PATH : SVG_OPENAI,
+          note: isAfter ? 'brand_id: acme-labs 走网关安全 path d' : '被 gpt 前缀劫持为 OpenAI',
+        },
+        {
+          id: 'opaque-unknown-99',
+          name: 'Opaque Unknown 99',
+          brand: isAfter ? 'monogram' : 'bytedance',
+          icon: isAfter ? monogram('O') : SVG_BYTEDANCE,
+          note: isAfter ? '无匹配品牌 展示中性首字母占位' : '静默回落字节跳动图标',
+          selected: true,
+        },
+        {
+          id: 'evil-xss-model',
+          name: 'Untrusted XSS Path',
+          brand: isAfter ? 'monogram' : 'bytedance',
+          icon: isAfter ? monogram('U') : SVG_BYTEDANCE,
+          note: isAfter ? '拒绝 svg onload 标签 降级中性占位' : '静默回落字节跳动图标',
+        },
+      ];
+
+      const selectedRow = composerRows.find(r => r.selected);
+      document.getElementById('composer-mount').innerHTML = `
+        <div class="trigger-row">
+          <div class="picker-trigger">
+            ${selectedRow.icon}
+            <span>${selectedRow.name}</span>
+          </div>
+          <span class="pill">已锁定胶囊图标与列表一致</span>
+        </div>
+        <div class="popover">
+          ${composerRows.map(r => `
+            <div class="model-row ${r.selected ? 'is-selected' : ''}">
+              <div class="icon-box">${r.icon}</div>
+              <div class="row-meta">
+                <div class="row-title">
+                  <span>${r.name}</span>
+                  <span class="pill">${r.brand}</span>
+                </div>
+                <div class="row-sub">${r.note}</div>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      `;
+
+      const workflowGroups = isAfter
+        ? [
+            { id: 'acme-labs', name: 'Acme Labs', icon: SVG_ACME_PATH, active: true, models: ['gpt-acme-vision (Acme Vision)'] },
+            { id: 'openai', name: 'OpenAI', icon: SVG_OPENAI, active: false, models: ['gpt-image-2.5'] },
+            { id: 'seedream', name: 'Seedream', icon: SVG_BYTEDANCE, active: false, models: ['seedream-9-9'] },
+            { id: 'indextts', name: 'Index TTS2', icon: SVG_INDEXTTS, active: false, models: ['gxgenai/index-tts'] },
+          ]
+        : [
+            { id: 'openai', name: 'OpenAI', icon: SVG_OPENAI, active: true, models: ['gpt-acme-vision (误并入)', 'gpt-image-2.5'] },
+            { id: 'seedream', name: 'Seedream', icon: SVG_BYTEDANCE, active: false, models: ['seedream-9-9'] },
+            { id: 'indextts', name: 'Index TTS2', icon: SVG_INDEXTTS, active: false, models: ['gxgenai/index-tts'] },
+          ];
+      const activeGroup = workflowGroups.find(g => g.active) || workflowGroups[0];
+      document.getElementById('workflow-mount').innerHTML = `
+        <div class="cascade">
+          <div class="cascade-col">
+            ${workflowGroups.map(g => `
+              <button class="brand-item ${g.active ? 'active' : ''}" type="button">
+                ${g.icon}
+                <span>${g.name}</span>
+              </button>
+            `).join('')}
+          </div>
+          <div class="cascade-col">
+            ${activeGroup.models.map(m => `
+              <div class="model-row">
+                <div class="row-meta">
+                  <div class="row-title"><span>${m}</span></div>
+                  <div class="row-sub">${isAfter ? '只改展示名不改执行指纹 零 stale_fingerprint' : '未知品牌与前缀冲突'}</div>
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      `;
+
+      const extRows = [
+        { id: 'claude-opus-4-6', name: 'Claude Opus 4.6', icon: isAfter ? SVG_ANTHROPIC : monogram('C'), note: isAfter ? 'dsh-ui-kit 识别为 anthropic' : '旧扩展白名单漏识别 无图标' },
+        { id: 'gemini-3-pro', name: 'Gemini 3 Pro', icon: isAfter ? SVG_GOOGLE_MONO : monogram('G'), note: isAfter ? 'dsh-ui-kit 统一单色图标' : '旧扩展白名单漏识别 无图标' },
+        { id: 'gpt-acme-vision', name: 'Acme Vision', icon: isAfter ? SVG_ACME_PATH : SVG_OPENAI, note: isAfter ? '消费 gateway brand_id 与 icon_path' : '误识别为 openai' },
+        { id: 'opaque-unknown-9', name: 'Opaque Unknown 9', icon: monogram('O'), note: '未注册型号 不伪装其他品牌' },
+      ];
+      document.getElementById('extension-mount').innerHTML = `
+        <div class="popover">
+          ${extRows.map(r => `
+            <div class="model-row">
+              <div class="icon-box">${r.icon}</div>
+              <div class="row-meta">
+                <div class="row-title"><span>${r.name}</span></div>
+                <div class="row-sub">${r.note}</div>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      `;
+
+      const matrixRows = [
+        ['brand_id: google (nano-banana-2)', isAfter ? SVG_GOOGLE_COLOR : SVG_OLD_SEEDREAM, isAfter ? 'Tier 1 本地共享库精确命中' : '旧版映射分裂'],
+        ['brand_id: acme-labs + path d', isAfter ? SVG_ACME_PATH : SVG_BYTEDANCE, isAfter ? 'Tier 2 白名单校验 path d 渲染' : '回落错误图标'],
+        ['无 brand_id 且 id: claude-3-7-sonnet', isAfter ? SVG_ANTHROPIC : SVG_BYTEDANCE, isAfter ? 'Tier 3 BYOK 与旧快照前缀兼容' : '各自维护正则'],
+        ['未知型号 opaque-unknown-99', isAfter ? monogram('O') : SVG_BYTEDANCE, isAfter ? 'Tier 4 中性首字母占位' : '误标为 ByteDance'],
+        ['恶意 icon_path &lt;svg onload=...&gt;', isAfter ? monogram('E') : SVG_BYTEDANCE, isAfter ? '入口与前端双层 fail-closed 拦截' : '缺少统一校验'],
+      ];
+      document.getElementById('matrix-body').innerHTML = matrixRows.map(([input, icon, tier]) => `
+        <tr>
+          <td><code>${input}</code></td>
+          <td><span class="icon-box">${icon}</span></td>
+          <td>${tier}</td>
+        </tr>
+      `).join('');
+    }
+
+    function setMode(next) {
+      mode = next;
+      document.getElementById('btn-after').setAttribute('aria-pressed', String(next === 'after'));
+      document.getElementById('btn-before').setAttribute('aria-pressed', String(next === 'before'));
+      render();
+    }
+
+    function setTheme(theme) {
+      document.documentElement.setAttribute('data-theme', theme);
+      document.getElementById('btn-dark').setAttribute('aria-pressed', String(theme === 'dark'));
+      document.getElementById('btn-light').setAttribute('aria-pressed', String(theme === 'light'));
+    }
+
+    function setViewport(vp) {
+      document.documentElement.setAttribute('data-viewport', vp);
+      document.getElementById('btn-desktop').setAttribute('aria-pressed', String(vp === 'desktop'));
+      document.getElementById('btn-narrow').setAttribute('aria-pressed', String(vp === 'narrow'));
+    }
+
+    render();
+  </script>
+</body>
+</html>
