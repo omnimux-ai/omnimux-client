@@ -18,6 +18,7 @@
     "lib/client.js",
     "lib/canvas.js",
     "lib/director.js",
+    "skills",
     "assets/director",
     "THIRD-PARTY-NOTICES-director.md",
     "src/shared",

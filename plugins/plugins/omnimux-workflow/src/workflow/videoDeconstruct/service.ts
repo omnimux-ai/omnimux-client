@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { isAbsolute, join, basename } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { WorkspaceStore } from '../workspace/WorkspaceStore.ts';
@@ -10,9 +10,6 @@ import {
   type HTableColumn,
   type HTableDocument,
   type HTableRow,
-  type HTableAttachment,
-  type HTableCellValue,
-  defaultColumnWidth,
   newColumnId,
   newRowId,
   formatTablePreviewRows,
@@ -24,7 +21,15 @@ import { createWorkflowLogger } from '../execution/logger.ts';
 import type { CanvasInputMutation, CanvasNode } from '../../shared/graph/canvasInputMutationGateway.ts';
 import type { CanvasWorkspaceSnapshot, SerializedCanvasEdge } from '../../shared/canvasTypes.ts';
 import { assertProjectWriteSafe, resolveProjectRelPath } from '../../projects/paths.ts';
-import { prepareVideoForAnalyze } from '../prepareAnalyzeVideo.ts';
+import { WORKFLOW_VIDEO_DECONSTRUCT_SKILL } from '../workflowSkills.ts';
+import {
+  VIDEO_DECONSTRUCT_SCHEMA,
+  buildVideoDeconstructInput,
+  computeMediaInputFingerprint,
+  normalizeDeconstructDimensions,
+  renderDimensionsMarkdown,
+  type HeadlessSkillSeam,
+} from '../videoAnalysisSchema.ts';
 
 export interface VideoDeconstructServiceDeps {
   store: WorkspaceStore;
@@ -32,117 +37,6 @@ export interface VideoDeconstructServiceDeps {
   getSeam?: (name: string) => unknown;
   mediaDir?: string;
   resolveProjectFile?: (workspaceId: string, rel: string) => string;
-}
-
-interface ParsedMarkdownTable {
-  headers: string[];
-  rows: string[][];
-}
-
-/**
- * 从 Markdown 文本中提取标准 Markdown 表格 (| 列1 | 列2 |)
- */
-export function extractMarkdownTables(markdown: string): ParsedMarkdownTable[] {
-  const lines = markdown.split(/\r?\n/);
-  const tables: ParsedMarkdownTable[] = [];
-  let currentHeader: string[] | null = null;
-  let currentRows: string[][] = [];
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i]!.trim();
-    if (line.startsWith('|') && line.endsWith('|')) {
-      const cells = line
-        .slice(1, -1)
-        .split('|')
-        .map((c) => c.trim());
-
-      if (!currentHeader) {
-        // 检查下一行是否是分隔符行，如 |---|---|
-        if (i + 1 < lines.length) {
-          const nextLine = lines[i + 1]!.trim();
-          if (nextLine.startsWith('|') && nextLine.endsWith('|')) {
-            const sepCells = nextLine
-              .slice(1, -1)
-              .split('|')
-              .map((s) => s.trim());
-            const isSeparator = sepCells.length > 0 && sepCells.every((s) => /^:?-+:?$/.test(s));
-            if (isSeparator && cells.length === sepCells.length) {
-              currentHeader = cells;
-              currentRows = [];
-              i++; // 跳过分隔行
-              continue;
-            }
-          }
-        }
-      } else {
-        currentRows.push(cells);
-      }
-    } else {
-      if (currentHeader && currentRows.length > 0) {
-        tables.push({ headers: currentHeader, rows: currentRows });
-      }
-      currentHeader = null;
-      currentRows = [];
-    }
-  }
-
-  if (currentHeader && currentRows.length > 0) {
-    tables.push({ headers: currentHeader, rows: currentRows });
-  }
-
-  return tables;
-}
-
-/**
- * 从 Markdown 中提取五维分析维度；未在文本中出现的维度不产出，绝不填充写死文案
- */
-export function extractFiveDimensions(markdown: string): Array<{ dimension: string; content: string }> {
-  const extractSection = (regexes: RegExp[]): string => {
-    for (const r of regexes) {
-      const match = markdown.match(r);
-      if (match && match[1]?.trim()) {
-        return match[1].trim().replace(/^>\s*/, '');
-      }
-    }
-    return '';
-  };
-
-  const found: Array<{ dimension: string; content: string }> = [];
-  const push = (dimension: string, content: string): void => {
-    if (content) found.push({ dimension, content });
-  };
-
-  push('一句话描述', extractSection([
-    /##\s*(?:一句话(?:视频)?描述|概要)[^\n]*\n+([\s\S]*?)(?=\n##|$)/i,
-    /(?:一句话描述|核心概述)[：:]\s*([^\n]+)/i,
-  ]));
-
-  push('核心目标', extractSection([
-    /##\s*(?:I\.\s*)?(?:核心目标|转化目标)[^\n]*\n+([\s\S]*?)(?=\n##|$)/i,
-    /(?:核心目标|转化目标)[：:]\s*([^\n]+)/i,
-  ]));
-
-  push('影响力', extractSection([
-    /##\s*(?:II\.\s*)?(?:影响力(?:分析)?|传播机制)[^\n]*\n+([\s\S]*?)(?=\n##|$)/i,
-    /(?:影响力|传播价值)[：:]\s*([^\n]+)/i,
-  ]));
-
-  push('叙事结构', extractSection([
-    /##\s*(?:III\.\s*)?(?:叙事分析|叙事结构|脚本结构)[^\n]*\n+([\s\S]*?)(?=\n##|$)/i,
-    /(?:叙事分析|叙事结构)[：:]\s*([^\n]+)/i,
-  ]));
-
-  push('画面分析', extractSection([
-    /##\s*(?:IV\.\s*)?(?:画面分析|视听分析|视觉语言)[^\n]*\n+([\s\S]*?)(?=\n##|$)/i,
-    /(?:画面分析|视觉节奏)[：:]\s*([^\n]+)/i,
-  ]));
-
-  push('复刻策略', extractSection([
-    /##\s*(?:V\.\s*)?(?:核心复刻策略|复刻策略|实操建议)[^\n]*\n+([\s\S]*?)(?=\n##|$)/i,
-    /(?:复刻策略|翻拍公式)[：:]\s*([^\n]+)/i,
-  ]));
-
-  return found;
 }
 
 /**
@@ -329,9 +223,8 @@ export function createVideoDeconstructService(deps: VideoDeconstructServiceDeps)
       }
     }
 
-    // 2. 解析视频绝对路径；远程 URL 或超上限本地文件先转码压缩成理解模型可接受的样片
+    // 2. 解析视频绝对路径或远端 URL；媒体内联传输准备与分流统一由 Hub headlessSkill 承接
     const absVideoPath = resolveVideoAbsolutePath(deps, workspaceId, input.videoPath);
-    const analyzeVideoPath = (await prepareVideoForAnalyze(deps, workspaceId, absVideoPath)) ?? absVideoPath;
 
     // 3. 查找是否有已有下游表格节点，严格复用已有 tableId 与物理文件，避免生成游离碎片文件
     let existingNode: CanvasNode | undefined;
@@ -389,15 +282,13 @@ export function createVideoDeconstructService(deps: VideoDeconstructServiceDeps)
 
     const title = input.title?.trim() || ((existingNode?.data as Record<string, unknown> | undefined)?.title as string) || '视频内容拆解表';
 
-    // 4. 调用 video_analyze 工具或 videoAnalyze 接缝执行五维拆解（失败即报错，不做保底降级）
-    const tool = (deps.getTool?.('video_analyze') ?? deps.getSeam?.('videoAnalyze')) as
-      | { execute?: (args: Record<string, unknown>) => Promise<any> }
-      | undefined;
+    // 4. 通过 Hub headlessSkill 接缝执行结构化五维视频拆解（失败即报错，不做保底降级）
+    const headlessSkill = deps.getSeam?.('headlessSkill') as HeadlessSkillSeam | undefined;
 
-    if (!tool || typeof tool.execute !== 'function') {
+    if (!headlessSkill || typeof headlessSkill.run !== 'function') {
       throw new VideoDeconstructError(
         'analyze-unavailable',
-        '视频理解能力不可用，请确认已启用视频理解能力后重试',
+        '视频理解能力不可用，请确认已启用执行中枢无头技能服务后重试',
         502,
       );
     }
@@ -413,26 +304,49 @@ export function createVideoDeconstructService(deps: VideoDeconstructServiceDeps)
       );
     }
 
-    let markdown = '';
+    const inputFingerprint = computeMediaInputFingerprint({
+      operation: 'video-deconstruct',
+      workspaceId,
+      nodeId: input.nodeId,
+      mediaPathOrUrl: absVideoPath,
+      model: analyzeModel.modelId,
+    });
+
+    let structuredData: unknown;
     try {
-      const res = await tool.execute({ video: analyzeVideoPath, model: analyzeModel.modelId });
-      const text =
-        res?.report ||
-        res?.text ||
-        res?.data?.report ||
-        res?.data?.text ||
-        (typeof res === 'string' ? res : '');
-      if (typeof text === 'string') markdown = text.trim();
+      const res = await headlessSkill.run({
+        skillName: WORKFLOW_VIDEO_DECONSTRUCT_SKILL,
+        input: buildVideoDeconstructInput(title),
+        references: [{ type: 'video', pathOrUrl: absVideoPath }],
+        outputSchema: VIDEO_DECONSTRUCT_SCHEMA,
+        modality: 'video',
+        label: `视频拆解：${title}`,
+        ownerPlugin: 'omnimux-workflow',
+        targetId: `${workspaceId}:${input.nodeId}:deconstruct`,
+        inputFingerprint,
+        verifyFingerprint: () =>
+          computeMediaInputFingerprint({
+            operation: 'video-deconstruct',
+            workspaceId,
+            nodeId: input.nodeId,
+            mediaPathOrUrl: absVideoPath,
+            model: analyzeModel.modelId,
+          }) === inputFingerprint,
+        model: analyzeModel.modelId,
+      });
+      if (res?.mode === 'live' && res.data && typeof res.data === 'object' && !Array.isArray(res.data)) {
+        structuredData = res.data;
+      }
     } catch (err) {
       const failure = describeVideoAnalyzeFailure(err);
-      logger.error('video_analyze invocation failed', {
+      logger.error('headlessSkill video deconstruct invocation failed', {
         code: failure.code,
         error: err instanceof Error ? err.message : String(err),
       });
       throw new VideoDeconstructError(failure.code, failure.message, 502, failure.upstream);
     }
 
-    if (!markdown) {
+    if (!structuredData) {
       throw new VideoDeconstructError(
         'analyze-empty',
         '视频理解未返回可用的分析内容，请重试',
@@ -440,8 +354,8 @@ export function createVideoDeconstructService(deps: VideoDeconstructServiceDeps)
       );
     }
 
-    // 5. 结构化解析：提取五维分析维度构造标准内容拆解表（分析维度 + 分析内容）
-    const dimensions = extractFiveDimensions(markdown);
+    // 5. 直接消费结构化五维输出构造标准内容拆解表（分析维度 + 分析内容），不再做 Markdown 正则解析
+    const dimensions = normalizeDeconstructDimensions(structuredData);
     if (dimensions.length === 0) {
       throw new VideoDeconstructError(
         'analyze-empty',
@@ -449,6 +363,7 @@ export function createVideoDeconstructService(deps: VideoDeconstructServiceDeps)
         502,
       );
     }
+    const markdown = renderDimensionsMarkdown(dimensions);
     const colDim: HTableColumn = {
       id: newColumnId(),
       title: '分析维度',

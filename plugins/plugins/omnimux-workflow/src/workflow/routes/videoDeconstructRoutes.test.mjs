@@ -46,37 +46,24 @@ function harness(t, opts = {}) {
   });
 
   const toolCalls = [];
-  const videoAnalyzeTool = {
-    async execute(args) {
+  const headlessSkill = {
+    async run(args) {
       toolCalls.push(args);
       if (opts.toolExecute) return opts.toolExecute(args);
       return {
-        report: `# 《测试视频》逐镜头分解与五维分析报告
-
-## 逐镜头分解表
-| 镜头序号 | 时间段 | 景别 | 画面描述 | 关键动作 | 台词脚本 |
-| --- | --- | --- | --- | --- | --- |
-| 1 | 00:00 - 00:03 | 特写 | 开场反差视觉 | 快速推入 | "痛点前置" |
-| 2 | 00:03 - 00:10 | 中景 | 实操演示过程 | 涂抹吸收 | "效果真实可见" |
-
-## 一句话视频描述
-以真实拆解结果为核心的高转化短视频。
-
-## I. 核心目标
-* 转化目标: 引导点击左下角购买同款
-
-## II. 影响力分析
-明线展示直观功效，暗线击中受众痛点。
-
-## III. 叙事结构
-0-3s 抛痛点 → 3-10s 实测演示 → 结尾明确 CTA
-
-## IV. 画面分析
-近景特写为主，原生自然光影。
-
-## V. 核心复刻策略
-[痛点开场] + [第一人称实测] + [CTA 引导]
-`,
+        mode: 'live',
+        jobId: 'job_deconstruct_1',
+        skillName: args.skillName,
+        model: args.model || 'catalog-vision-pro',
+        repaired: false,
+        data: {
+          summary: '以真实拆解结果为核心的高转化短视频。',
+          core_goal: '转化目标：引导点击左下角购买同款',
+          influence: '明线展示直观功效，暗线击中受众痛点。',
+          narrative_structure: '0-3s 抛痛点 → 3-10s 实测演示 → 结尾明确 CTA',
+          visual_analysis: '近景特写为主，原生自然光影。',
+          replication_strategy: '[痛点开场] + [第一人称实测] + [CTA 引导]',
+        },
       };
     },
   };
@@ -106,13 +93,14 @@ function harness(t, opts = {}) {
     getTool: (name) => {
       if (opts.disableTool) return undefined;
       if (opts.videoProcessTool && name === 'video_process') return opts.videoProcessTool;
-      return name === 'video_analyze' ? videoAnalyzeTool : undefined;
+      return undefined;
     },
     getSeam: (name) => {
       if (opts.disableTool) return undefined;
       if (opts.videoProcessTool && (name === 'videoProcess' || name === 'video_process')) return opts.videoProcessTool;
       if (name === 'modelCatalog') return opts.modelCatalog ?? visionCatalog;
-      return name === 'videoAnalyze' ? videoAnalyzeTool : undefined;
+      if (name === 'headlessSkill') return headlessSkill;
+      return undefined;
     },
   });
 
@@ -168,7 +156,15 @@ test('videoDeconstruct: 成功拆解视频并持久化五维内容拆解表格�
   assert.equal(savedDoc.columns[1].title, '分析内容');
 
   assert.equal(h.toolCalls.length, 1);
-  assert.equal(h.toolCalls[0].video, h.dummyVideo);
+  assert.equal(h.toolCalls[0].skillName, 'workflow-video-deconstruct');
+  assert.equal(h.toolCalls[0].modality, 'video');
+  assert.equal(h.toolCalls[0].ownerPlugin, 'omnimux-workflow');
+  assert.deepEqual(h.toolCalls[0].references, [{ type: 'video', pathOrUrl: h.dummyVideo }]);
+  assert.equal(h.toolCalls[0].outputSchema.additionalProperties, false);
+  assert.equal(typeof h.toolCalls[0].inputFingerprint, 'string');
+  assert.equal(h.toolCalls[0].inputFingerprint.length, 64);
+  assert.equal(typeof h.toolCalls[0].verifyFingerprint, 'function');
+  assert.equal(h.toolCalls[0].verifyFingerprint(), true);
 
   // 验证返回体携带 workspace 快照，并且服务端已经原子写入 canvas.json
   assert.ok(res.body.workspace);
@@ -235,7 +231,7 @@ test('videoDeconstruct: 上游错误码映射为可读中文原因（渠道不�
 });
 
 test('videoDeconstruct: 分析返回空内容时直接报错', async (t) => {
-  const h = harness(t, { toolExecute: async () => ({ report: '   \n  ' }) });
+  const h = harness(t, { toolExecute: async () => ({ mode: 'live', data: null }) });
   const res = await h.call({ nodeId: 'node_video_1', videoPath: h.dummyVideo });
 
   assert.equal(res.status, 502);
@@ -244,7 +240,17 @@ test('videoDeconstruct: 分析返回空内容时直接报错', async (t) => {
 
 test('videoDeconstruct: 分析结果中解析不出任何维度时直接报错，不填充写死文案', async (t) => {
   const h = harness(t, {
-    toolExecute: async () => ({ report: '# 视频概述\n\n这段文字没有任何五维章节。' }),
+    toolExecute: async () => ({
+      mode: 'live',
+      data: {
+        summary: '   ',
+        core_goal: '',
+        influence: '',
+        narrative_structure: '',
+        visual_analysis: '',
+        replication_strategy: '',
+      },
+    }),
   });
   const res = await h.call({ nodeId: 'node_video_1', videoPath: h.dummyVideo });
 
@@ -256,26 +262,15 @@ test('videoDeconstruct: 分析结果中解析不出任何维度时直接报错�
 test('videoDeconstruct: 无 Markdown 表格时，按五维分析维度构造结构化表格', async (t) => {
   const h = harness(t, {
     toolExecute: async () => ({
-      report: `
-## 一句话视频描述
-以沉浸式妆造前后反差为核心钩子的爆款美妆短视频。
-
-## I. 核心目标
-* 转化目标: 引导点击左下角购买同款粉底液
-* 情绪基调: 惊艳、自信
-
-## II. 影响力分析
-明线展现遮瑕力，暗线击碎早八妆容焦虑。
-
-## III. 叙事结构
-0-3s 纯素颜强反差 → 3-10s 上妆半脸对比 → 结尾展示全妆
-
-## IV. 画面分析
-高保真近景特写，原生自然光影。
-
-## V. 核心复刻策略
-[素颜痛点] + [半脸对比] + [全脸惊艳成效] + [CTA直接带货]
-`,
+      mode: 'live',
+      data: {
+        summary: '以沉浸式妆造前后反差为核心钩子的爆款美妆短视频。',
+        core_goal: '转化目标: 引导点击左下角购买同款粉底液；情绪基调: 惊艳、自信',
+        influence: '明线展现遮瑕力，暗线击碎早八妆容焦虑。',
+        narrative_structure: '0-3s 纯素颜强反差 → 3-10s 上妆半脸对比 → 结尾展示全妆',
+        visual_analysis: '高保真近景特写，原生自然光影。',
+        replication_strategy: '[素颜痛点] + [半脸对比] + [全脸惊艳成效] + [CTA直接带货]',
+      },
     }),
   });
 
@@ -342,7 +337,7 @@ test('videoDeconstruct: 传入工作流媒体相对路径 /omnimux-workflow/medi
   assert.equal(res1.status, 200);
   assert.equal(res1.body.ok, true);
   assert.equal(h.toolCalls.length, 1);
-  assert.equal(h.toolCalls[0].video, targetVideo);
+  assert.deepEqual(h.toolCalls[0].references, [{ type: 'video', pathOrUrl: targetVideo }]);
 
   // 2. /dsh-workflow/media/ 前缀兼容
   const res2 = await h.call({
@@ -354,9 +349,9 @@ test('videoDeconstruct: 传入工作流媒体相对路径 /omnimux-workflow/medi
   assert.equal(res2.status, 200);
   assert.equal(res2.body.ok, true);
   assert.equal(h.toolCalls.length, 2);
-  assert.equal(h.toolCalls[1].video, targetVideo);
+  assert.deepEqual(h.toolCalls[1].references, [{ type: 'video', pathOrUrl: targetVideo }]);
 
-  // 3. 远端 HTTP(S) URL 在本地无文件时保留原 URL 传给拆解工具
+  // 3. 远端 HTTP(S) URL 在本地无文件时保留原 URL 交由 Hub headlessSkill 承接，不走私有预处理
   const res3 = await h.call({
     nodeId: 'node_video_remote',
     videoPath: 'https://cdn.example.com/videos/remote_video.mp4?auth=token',
@@ -366,7 +361,9 @@ test('videoDeconstruct: 传入工作流媒体相对路径 /omnimux-workflow/medi
   assert.equal(res3.status, 200);
   assert.equal(res3.body.ok, true);
   assert.equal(h.toolCalls.length, 3);
-  assert.equal(h.toolCalls[2].video, 'https://cdn.example.com/videos/remote_video.mp4?auth=token');
+  assert.deepEqual(h.toolCalls[2].references, [
+    { type: 'video', pathOrUrl: 'https://cdn.example.com/videos/remote_video.mp4?auth=token' },
+  ]);
 });
 
 test('videoDeconstruct: 服务端原子持久化与单一下游约束（多次拆解就地更新，绝不重复生成第二个节点）', async (t) => {
@@ -742,4 +739,26 @@ test('videoDeconstruct: 模型目录读取失败时报 analyze-model-unavailable
   assert.equal(res.body.error, 'analyze-model-unavailable');
   assert.match(res.body.message, /模型目录/);
   assert.equal(h.toolCalls.length, 0);
+});
+
+test('videoDeconstruct: 不再在插件侧调用重复 video_inline_analysis_prepare，由 Hub headlessSkill 统一承接', async (t) => {
+  const processCalls = [];
+  const h = harness(t, {
+    videoProcessTool: {
+      async execute(args) {
+        processCalls.push(args);
+        return { files: [] };
+      },
+    },
+  });
+  const res = await h.request({
+    nodeId: 'node_video_1',
+    videoPath: 'https://cdn.example.com/videos/large-remote.mp4',
+    title: '远端直传测试',
+  });
+  assert.equal(res.status, 200);
+  assert.equal(processCalls.length, 0, '画布插件不得再调用私有 video_inline_analysis_prepare 预处理');
+  assert.deepEqual(h.toolCalls[0].references, [
+    { type: 'video', pathOrUrl: 'https://cdn.example.com/videos/large-remote.mp4' },
+  ]);
 });

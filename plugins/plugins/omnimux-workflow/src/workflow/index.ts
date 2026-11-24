@@ -51,6 +51,7 @@ import { registerWorkflowAgentSeats } from './agent/agentTools';
 import { createDirectorSessionFactory } from './director/directorSession.ts';
 import { createDirectorHost } from './director/directorHost.ts';
 import { createDirectorOperations } from './director/directorOperations.ts';
+import { registerWorkflowSkills, type WorkflowSkillContextLike } from './workflowSkills.ts';
 import type { AgentSeatContext } from './agent/agentTools';
 // Installs the same pure catalog line resolver as the canvas bundle.
 import '../canvas/editor/components/MaterialNode/ConfigPanel/channelGroups.ts';
@@ -287,6 +288,10 @@ export function mountWorkflowHost(ctx: HostContext, opts: MountWorkflowHostOptio
   } else {
     mountHttp(ctx);
   }
+
+  // Register bundled workflow skills into DSH native `ctx.skills` (rank 600)
+  // so Hub `headlessSkill` and foreground Agent chat share the exact same source of truth.
+  registerWorkflowSkills(ctx as WorkflowSkillContextLike);
 
   // ---- M5 agent seats: three tools + workflow:ops systemPrompt section ----
   // Host-side only (store + executionManager in-process, no HTTP calls).

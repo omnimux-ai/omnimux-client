@@ -22,13 +22,17 @@
       { "name": "workflow_director", "summary": "创建/读取/保存 3D 导演场景，打开导演台并显式导出构图图或白膜视频；场景以项目主机为唯一权威", "category": "canvas", "isWriteOperation": true, "requiresAuth": false }
     ],
     "seamsProvided": [],
-    "seamsConsumed": ["mediaSeam", "videoProcess"],
+    "seamsConsumed": ["mediaSeam", "videoProcess", "headlessSkill"],
     "slots": [
       { "target": "sidebar.extra", "componentPath": "src/client/sidebar-entry.js" },
       { "target": "shell.overlay", "componentPath": "src/client/WorkflowStage.jsx" }
     ],
     "storageDomains": ["$DSH_HOME/omnimux/workflow/"]
   },
+  "skills": [
+    "skills/workflow-video-deconstruct/SKILL.md",
+    "skills/workflow-director-analyze/SKILL.md"
+  ],
   "dependencies": {
     "requiredPlugins": ["omnimux"],
     "systemBinaries": []

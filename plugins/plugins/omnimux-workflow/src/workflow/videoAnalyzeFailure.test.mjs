@@ -120,3 +120,35 @@ test('videoAnalyzeFailure: 无 upstreamCode 时退回自身码', () => {
   );
   assert.equal(failure.upstream?.code, 'video-invalid-input');
 });
+
+test('videoAnalyzeFailure: Hub headlessSkill 标准错误码映射到可读中文失败原因', () => {
+  const notFound = describeVideoAnalyzeFailure(Object.assign(new Error('missing skill'), { code: 'headless-skill-not-found' }));
+  assert.equal(notFound.code, 'analyze-unavailable');
+  assert.match(notFound.message, /技能未就绪/);
+
+  const transportUnavailable = describeVideoAnalyzeFailure(
+    Object.assign(new Error('videoProcess missing'), { code: 'headless-skill-transport-unavailable' }),
+  );
+  assert.equal(transportUnavailable.code, 'analyze-unavailable');
+  assert.match(transportUnavailable.message, /视频处理能力/);
+
+  const transportExceeded = describeVideoAnalyzeFailure(
+    Object.assign(new Error('oversized'), { code: 'headless-skill-transport-exceeded' }),
+  );
+  assert.equal(transportExceeded.code, 'analyze-invalid-input');
+  assert.match(transportExceeded.message, /传输容量/);
+
+  const schemaInvalid = describeVideoAnalyzeFailure(
+    Object.assign(new Error('invalid json'), { code: 'headless-skill-schema-invalid' }),
+  );
+  assert.equal(schemaInvalid.code, 'analyze-failed');
+  assert.match(schemaInvalid.message, /结构化校验/);
+
+  const timeout = describeVideoAnalyzeFailure(Object.assign(new Error('timed out'), { code: 'headless-skill-timeout' }));
+  assert.equal(timeout.code, 'analyze-failed');
+  assert.match(timeout.message, /超时/);
+
+  const stale = describeVideoAnalyzeFailure(Object.assign(new Error('changed'), { code: 'headless-skill-stale-input' }));
+  assert.equal(stale.code, 'analyze-failed');
+  assert.match(stale.message, /已变更/);
+});
