@@ -32,13 +32,13 @@
 - 删除 `dest` 写盘：`headless.test.js` 的落盘兼容断言转红。
 - 把 `headless-skill-schema-invalid` 吞成泛化错误：`understand.test.js` 的错误码断言转红。
 
-## 验收（合并 `origin/main@a5fa61ee` 后实测，Node 24.18.1）
+## 验收（合并 `origin/main@5d0b6924`（含 #250、#254）后实测，Node 24.18.1）
 
 - `corepack pnpm --dir plugins --filter omnimux-video test`：**159 pass / 1 fail**。唯一失败是本机 ffmpeg 9.0.2 移除 `-vsync` 导致既有 live 冒烟用例 `ffmpeg.live.test.js :: smoke: video_scene_detect finds cuts and extracts frames` 报 `video-ffmpeg-failed`；该文件与 `src/engine/*` 本单未触碰，CI 无 ffmpeg 时该 live 套件不执行。
 - 排除 live 套件的单元用例：**128 pass / 0 fail**（含 `skills.test.js`、`headless.test.js`、`config.test.js`、`understand.test.js`）。
 - `corepack pnpm --dir plugins run build:all`：13/13。
-- `verify:skill-hygiene`：catalog 127 目录，插件随包声明 26 个，零上游重名/零软链/零孤儿/零重复。
-- `check:boundaries`：5224 source files 通过。
+- `verify:skill-hygiene`：catalog 130 目录，插件随包声明 28 个（含 #254 新增货架技能），零上游重名/零软链/零孤儿/零空壳；`video-reverse-prompt` 与市场目录 `reverse-video-prompt` 不撞名。
+- `check:boundaries`：5225 source files 通过。
 - `registry:verify`：15 个插件 anti-drift 通过。
 - `check:package-files`：15 个插件 `files` 与多语言元信息合规（`skills/` 已进入发布清单）。
 - `verify:plugin-load`：15/15。
