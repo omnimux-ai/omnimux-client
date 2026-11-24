@@ -296,6 +296,75 @@ function commandSegments(command) {
     .filter(Boolean)
 }
 
+/**
+ * Scan a Bash ANSI-C quoted string `$'...'` starting at `$` (`input[dollarIdx] === '$'`
+ * and `input[dollarIdx + 1] === "'"`). Inside `$'...'`, backslash escapes the next
+ * character (so `\'` does not terminate the string). Returns the closing `'` index.
+ */
+function scanAnsiSingleQuote(input, dollarIdx) {
+  let i = dollarIdx + 2
+  while (i < input.length) {
+    const ch = input[i]
+    if (ch === '\\') {
+      i += 2
+      continue
+    }
+    if (ch === "'") return i
+    i += 1
+  }
+  return input.length - 1
+}
+
+/**
+ * Decode a Bash ANSI-C quoted string `$'...'` starting at `dollarIdx`.
+ * Returns `{ text, endIdx }` where `endIdx` is the index of the closing `'`.
+ */
+function decodeAnsiSingleQuote(input, dollarIdx) {
+  let text = ''
+  let i = dollarIdx + 2
+  while (i < input.length) {
+    const ch = input[i]
+    if (ch === "'") return { text, endIdx: i }
+    if (ch === '\\' && i + 1 < input.length) {
+      const next = input[i + 1]
+      if (next === 'x') {
+        const hex = /^[0-9a-fA-F]{1,2}/.exec(input.slice(i + 2))
+        if (hex) {
+          text += String.fromCharCode(parseInt(hex[0], 16))
+          i += 2 + hex[0].length
+          continue
+        }
+      } else if (next === 'u' || next === 'U') {
+        const maxDigits = next === 'u' ? 4 : 8
+        const hex = new RegExp(`^[0-9a-fA-F]{1,${maxDigits}}`).exec(input.slice(i + 2))
+        if (hex) {
+          const cp = parseInt(hex[0], 16)
+          if (cp <= 0x10ffff) text += String.fromCodePoint(cp)
+          i += 2 + hex[0].length
+          continue
+        }
+      } else if (/[0-7]/.test(next)) {
+        const oct = /^[0-7]{1,3}/.exec(input.slice(i + 1))
+        if (oct) {
+          text += String.fromCharCode(parseInt(oct[0], 8) & 0xff)
+          i += 1 + oct[0].length
+          continue
+        }
+      }
+      const simple = {
+        a: '\x07', b: '\b', e: '\x1b', E: '\x1b', f: '\f',
+        n: '\n', r: '\r', t: '\t', v: '\v', '\\': '\\', "'": "'", '"': '"', '?': '?',
+      }
+      text += Object.prototype.hasOwnProperty.call(simple, next) ? simple[next] : `\\${next}`
+      i += 2
+      continue
+    }
+    text += ch
+    i += 1
+  }
+  return { text, endIdx: input.length - 1 }
+}
+
 function scanBalancedParen(input, openIdx) {
   let depth = 1
   let inSingle = false
@@ -312,6 +381,10 @@ function scanBalancedParen(input, openIdx) {
     if (ch === '\\' && !inSingle) {
       escaped = true
       i += 1
+      continue
+    }
+    if (!inSingle && !inDouble && ch === '$' && input[i + 1] === "'") {
+      i = scanAnsiSingleQuote(input, i) + 1
       continue
     }
     if (ch === "'" && !inDouble) {
@@ -376,24 +449,140 @@ const CMD_POS_KEYWORDS = new Set([
 ])
 
 /**
+ * Parse a heredoc operator (`<<` or `<<-`, excluding `<<<`) starting at `ltIdx`.
+ * Returns `{ delim, stripTabs, nextIdx }` where `nextIdx` is the index immediately
+ * after the delimiter word.
+ */
+function parseHeredocDecl(input, ltIdx) {
+  let j = ltIdx + 2
+  let stripTabs = false
+  if (input[j] === '-') {
+    stripTabs = true
+    j += 1
+  }
+  while (j < input.length) {
+    if (input[j] === ' ' || input[j] === '\t') {
+      j += 1
+      continue
+    }
+    if (input[j] === '\\' && input[j + 1] === '\n') {
+      j += 2
+      continue
+    }
+    break
+  }
+  let delim = ''
+  let dSingle = false
+  let dDouble = false
+  let dEscaped = false
+  while (j < input.length) {
+    const dc = input[j]
+    if (dEscaped) {
+      delim += dc
+      dEscaped = false
+      j += 1
+      continue
+    }
+    if (dc === '\\' && !dSingle) {
+      if (input[j + 1] === '\n') {
+        j += 2
+        continue
+      }
+      dEscaped = true
+      j += 1
+      continue
+    }
+    if (!dSingle && !dDouble && dc === '$' && input[j + 1] === "'") {
+      const decoded = decodeAnsiSingleQuote(input, j)
+      delim += decoded.text
+      j = decoded.endIdx + 1
+      continue
+    }
+    if (dc === "'" && !dDouble) {
+      dSingle = !dSingle
+      j += 1
+      continue
+    }
+    if (dc === '"' && !dSingle) {
+      dDouble = !dDouble
+      j += 1
+      continue
+    }
+    if (!dSingle && !dDouble && /[\s;&|<>()#]/.test(dc)) break
+    delim += dc
+    j += 1
+  }
+  return { delim, stripTabs, nextIdx: j }
+}
+
+/**
+ * Consume a heredoc body starting at `startPos` (right after `\n`) up to and
+ * including its terminator line. Returns `{ body, nextPos }`.
+ */
+function consumeHeredocBody(input, startPos, { delim, stripTabs }) {
+  const bodyLines = []
+  let pos = startPos
+  while (pos <= input.length) {
+    const nl = input.indexOf('\n', pos)
+    const rawLine = (nl === -1 ? input.slice(pos) : input.slice(pos, nl)).replace(/\r$/, '')
+    const candidate = stripTabs ? rawLine.replace(/^\t+/, '') : rawLine
+    if (candidate === delim) {
+      pos = nl === -1 ? input.length : nl + 1
+      break
+    }
+    bodyLines.push(rawLine)
+    if (nl === -1) {
+      pos = input.length
+      break
+    }
+    pos = nl + 1
+  }
+  return { body: bodyLines.join('\n'), nextPos: pos }
+}
+
+/**
  * Determine whether `input[targetIdx]` sits at a Bash command position where
  * reserved words like `[[` or `case` are recognized (preventing argument-position
- * bypasses such as `: [[ ; echo pwn > README.md ; : ]]` or `FOO=1 [[ || ... ]]`).
+ * bypasses such as `: [[ ; echo pwn > README.md ; : ]]`, `: >| ! [[ ... ]]`,
+ * heredoc quote desync, or `FOO=1 [[ || ... ]]`).
  */
 function isAtCommandPosition(input, targetIdx) {
   let atCmdPos = true
   let afterTime = false
   const caseStates = [] // stack of 'word' | 'pattern' | 'body'
+  const pendingHeredocs = []
   let i = 0
 
   while (i < targetIdx) {
     const ch = input[i]
+    // Backslash-newline is a Bash lexer line continuation (erased before tokenization)
+    if (ch === '\\' && input[i + 1] === '\n') {
+      i += 2
+      continue
+    }
     if (ch === ' ' || ch === '\t' || ch === '\r') {
       i += 1
       continue
     }
-    if (ch === '\n' || ch === ';') {
-      if (ch === ';' && (input[i + 1] === ';' || input[i + 1] === '&')) {
+    if (ch === '\n') {
+      atCmdPos = true
+      afterTime = false
+      if (pendingHeredocs.length > 0) {
+        let pos = i + 1
+        while (pendingHeredocs.length > 0 && pos < input.length) {
+          const hd = pendingHeredocs.shift()
+          const consumed = consumeHeredocBody(input, pos, hd)
+          pos = consumed.nextPos
+        }
+        if (pos > targetIdx) return false
+        i = pos
+        continue
+      }
+      i += 1
+      continue
+    }
+    if (ch === ';') {
+      if (input[i + 1] === ';' || input[i + 1] === '&') {
         if (caseStates.length > 0 && caseStates[caseStates.length - 1] === 'body') {
           caseStates[caseStates.length - 1] = 'pattern'
         }
@@ -477,10 +666,47 @@ function isAtCommandPosition(input, targetIdx) {
         afterTime = false
         continue
       }
-      i += 1
+      if (ch === '<' && input[i + 1] === '<' && input[i + 2] === '<') {
+        i += 3
+        atCmdPos = false
+        afterTime = false
+        continue
+      }
+      if (ch === '<' && input[i + 1] === '<') {
+        const decl = parseHeredocDecl(input, i)
+        if (decl.delim) {
+          pendingHeredocs.push({ delim: decl.delim, stripTabs: decl.stripTabs })
+        }
+        i = decl.nextIdx
+        atCmdPos = false
+        afterTime = false
+        continue
+      }
+      // Consume multi-char redirections (`>>`, `>|`, `>&`, `<>`, `<&`) atomically so
+      // trailing `|` or `&` can never flip `atCmdPos = true`.
+      const nextCh = input[i + 1] || ''
+      if (
+        (ch === '>' && (nextCh === '>' || nextCh === '|' || nextCh === '&')) ||
+        (ch === '<' && (nextCh === '>' || nextCh === '&'))
+      ) {
+        i += 2
+      } else {
+        i += 1
+      }
       atCmdPos = false
       afterTime = false
       continue
+    }
+
+    if (atCmdPos && ch === '[' && input[i + 1] === '[' && /\s/.test(input[i + 2] || '')) {
+      const dbEnd = findDoubleBracketClose(input, i)
+      if (dbEnd !== -1) {
+        if (dbEnd >= targetIdx) return false
+        i = dbEnd + 1
+        atCmdPos = false
+        afterTime = false
+        continue
+      }
     }
 
     let word = ''
@@ -498,9 +724,19 @@ function isAtCommandPosition(input, targetIdx) {
         continue
       }
       if (c === '\\' && !inS) {
+        if (!inD && input[i + 1] === '\n') {
+          i += 2
+          continue
+        }
         esc = true
         hadQuotes = true
         i += 1
+        continue
+      }
+      if (!inS && !inD && c === '$' && input[i + 1] === "'") {
+        const end = scanAnsiSingleQuote(input, i)
+        hadQuotes = true
+        i = end + 1
         continue
       }
       if (c === "'" && !inD) {
@@ -601,17 +837,11 @@ function isAtCommandPosition(input, targetIdx) {
 }
 
 /**
- * If `input[openIdx..]` starts a Bash conditional expression `[[ ... ]]`
- * strictly at command position, return the index of the second `]`.
- * Bail out on unquoted `;`, single `&`, or single `|` inside `[[ ... ]]`.
- * Otherwise return -1.
+ * Scan the body of a Bash `[[ ... ]]` expression starting at `openIdx` (where
+ * `input[openIdx..openIdx+1] === '[['`), returning the index of the second `]`,
+ * or -1 if unclosed or containing unquoted `;`, single `&`, or single `|`.
  */
-function scanDoubleBracket(input, openIdx) {
-  if (input[openIdx] !== '[' || input[openIdx + 1] !== '[') return -1
-  if (openIdx > 0 && !/[\s;&|({!)]/.test(input[openIdx - 1])) return -1
-  if (openIdx + 2 >= input.length || !/\s/.test(input[openIdx + 2])) return -1
-  if (!isAtCommandPosition(input, openIdx)) return -1
-
+function findDoubleBracketClose(input, openIdx) {
   let inSingle = false
   let inDouble = false
   let escaped = false
@@ -623,6 +853,10 @@ function scanDoubleBracket(input, openIdx) {
     }
     if (ch === '\\' && !inSingle) {
       escaped = true
+      continue
+    }
+    if (!inSingle && !inDouble && ch === '$' && input[i + 1] === "'") {
+      i = scanAnsiSingleQuote(input, i)
       continue
     }
     if (ch === "'" && !inDouble) {
@@ -672,6 +906,20 @@ function scanDoubleBracket(input, openIdx) {
   return -1
 }
 
+/**
+ * If `input[openIdx..]` starts a Bash conditional expression `[[ ... ]]`
+ * strictly at command position, return the index of the second `]`.
+ * Bail out on unquoted `;`, single `&`, or single `|` inside `[[ ... ]]`.
+ * Otherwise return -1.
+ */
+function scanDoubleBracket(input, openIdx) {
+  if (input[openIdx] !== '[' || input[openIdx + 1] !== '[') return -1
+  if (openIdx > 0 && !/[\s;&|({!)]/.test(input[openIdx - 1])) return -1
+  if (openIdx + 2 >= input.length || !/\s/.test(input[openIdx + 2])) return -1
+  if (!isAtCommandPosition(input, openIdx)) return -1
+  return findDoubleBracketClose(input, openIdx)
+}
+
 function findCasePatternClose(text) {
   let inSingle = false
   let inDouble = false
@@ -687,6 +935,10 @@ function findCasePatternClose(text) {
     }
     if (ch === '\\' && !inSingle) {
       escaped = true
+      continue
+    }
+    if (!inSingle && !inDouble && ch === '$' && next === "'") {
+      i = scanAnsiSingleQuote(text, i)
       continue
     }
     if (ch === "'" && !inDouble) {
@@ -744,6 +996,10 @@ function findCaseHeaderEnd(input, caseIdx = 0) {
     if (ch === '\\' && !inSingle) {
       escaped = true
       i += 1
+      continue
+    }
+    if (!inSingle && !inDouble && ch === '$' && input[i + 1] === "'") {
+      i = scanAnsiSingleQuote(input, i) + 1
       continue
     }
     if (ch === "'" && !inDouble) {
@@ -847,6 +1103,13 @@ function splitShellStatements(command) {
       endsWithPipe = false
       continue
     }
+    if (!inSingle && !inDouble && ch === '$' && next === "'") {
+      const end = scanAnsiSingleQuote(input, i)
+      currentStmt.raw += input.slice(i, end + 1)
+      i = end
+      endsWithPipe = false
+      continue
+    }
     if (ch === "'" && !inDouble) {
       inSingle = !inSingle
       currentStmt.raw += ch
@@ -905,49 +1168,12 @@ function splitShellStatements(command) {
       }
       // Record heredoc declaration (`<<` or `<<-`, excluding here-string `<<<`)
       if (ch === '<' && next === '<' && input[i + 2] !== '<') {
-        let j = i + 2
-        let stripTabs = false
-        if (input[j] === '-') {
-          stripTabs = true
-          j += 1
+        const decl = parseHeredocDecl(input, i)
+        if (decl.delim) {
+          pendingHeredocs.push({ delim: decl.delim, stripTabs: decl.stripTabs, targetStmt: currentStmt })
         }
-        while (j < input.length && (input[j] === ' ' || input[j] === '\t')) j += 1
-        let delim = ''
-        let dSingle = false
-        let dDouble = false
-        let dEscaped = false
-        while (j < input.length) {
-          const dc = input[j]
-          if (dEscaped) {
-            delim += dc
-            dEscaped = false
-            j += 1
-            continue
-          }
-          if (dc === '\\' && !dSingle) {
-            dEscaped = true
-            j += 1
-            continue
-          }
-          if (dc === "'" && !dDouble) {
-            dSingle = !dSingle
-            j += 1
-            continue
-          }
-          if (dc === '"' && !dSingle) {
-            dDouble = !dDouble
-            j += 1
-            continue
-          }
-          if (!dSingle && !dDouble && /[\s;&|<>()#]/.test(dc)) break
-          delim += dc
-          j += 1
-        }
-        if (delim) {
-          pendingHeredocs.push({ delim, stripTabs, targetStmt: currentStmt })
-        }
-        currentStmt.raw += input.slice(i, j)
-        i = j - 1
+        currentStmt.raw += input.slice(i, decl.nextIdx)
+        i = decl.nextIdx - 1
         endsWithPipe = false
         continue
       }
@@ -990,25 +1216,9 @@ function splitShellStatements(command) {
         }
         while (pendingHeredocs.length > 0 && i + 1 < input.length) {
           const hd = pendingHeredocs.shift()
-          const bodyLines = []
-          let pos = i + 1
-          while (pos <= input.length) {
-            const nl = input.indexOf('\n', pos)
-            const rawLine = (nl === -1 ? input.slice(pos) : input.slice(pos, nl)).replace(/\r$/, '')
-            const candidate = hd.stripTabs ? rawLine.replace(/^\t+/, '') : rawLine
-            if (candidate === hd.delim) {
-              pos = nl === -1 ? input.length : nl + 1
-              break
-            }
-            bodyLines.push(rawLine)
-            if (nl === -1) {
-              pos = input.length
-              break
-            }
-            pos = nl + 1
-          }
-          hd.targetStmt.heredocs.push(bodyLines.join('\n'))
-          i = pos - 1
+          const consumed = consumeHeredocBody(input, i + 1, hd)
+          hd.targetStmt.heredocs.push(consumed.body)
+          i = consumed.nextPos - 1
         }
         continue
       }
@@ -1056,6 +1266,8 @@ function splitRawPipelineSegments(segment, { startsWithCasePattern = false } = {
     }
   }
 
+  const scanInput = startIdx > 0 ? input.slice(startIdx) : input
+
   for (let i = startIdx; i < input.length; i += 1) {
     const ch = input[i]
     const prev = i > 0 ? input[i - 1] : ''
@@ -1068,6 +1280,12 @@ function splitRawPipelineSegments(segment, { startsWithCasePattern = false } = {
     if (ch === '\\' && !inSingle) {
       current += ch
       escaped = true
+      continue
+    }
+    if (!inSingle && !inDouble && ch === '$' && next === "'") {
+      const end = scanAnsiSingleQuote(input, i)
+      current += input.slice(i, end + 1)
+      i = end
       continue
     }
     if (ch === "'" && !inDouble) {
@@ -1105,8 +1323,9 @@ function splitRawPipelineSegments(segment, { startsWithCasePattern = false } = {
         i = arithEnd
         continue
       }
-      const bracketEnd = scanDoubleBracket(input, i)
-      if (bracketEnd !== -1) {
+      const relBracketEnd = scanDoubleBracket(scanInput, i - startIdx)
+      if (relBracketEnd !== -1) {
+        const bracketEnd = relBracketEnd + startIdx
         current += input.slice(i, bracketEnd + 1)
         i = bracketEnd
         continue
@@ -1115,10 +1334,10 @@ function splitRawPipelineSegments(segment, { startsWithCasePattern = false } = {
       if (
         ch === 'c' &&
         input.slice(i, i + 4) === 'case' &&
-        (i === 0 || /[\s;&|({!]/.test(prev)) &&
+        (i === startIdx || /[\s;&|({!)]/.test(prev)) &&
         i + 4 < input.length &&
         /\s/.test(input[i + 4]) &&
-        isAtCommandPosition(input, i)
+        isAtCommandPosition(scanInput, i - startIdx)
       ) {
         const inEnd = findCaseHeaderEnd(input, i)
         if (inEnd !== -1) {
@@ -1166,6 +1385,10 @@ function extractCommandSubstitutions(segment) {
     }
     if (ch === '\\' && !inSingle) {
       escaped = true
+      continue
+    }
+    if (!inSingle && !inDouble && ch === '$' && input[i + 1] === "'") {
+      i = scanAnsiSingleQuote(input, i)
       continue
     }
     if (ch === "'" && !inDouble) {
@@ -1221,6 +1444,10 @@ function hasHeredocOperator(segment) {
       escaped = true
       continue
     }
+    if (!inSingle && !inDouble && ch === '$' && input[i + 1] === "'") {
+      i = scanAnsiSingleQuote(input, i)
+      continue
+    }
     if (ch === "'" && !inDouble) {
       inSingle = !inSingle
       continue
@@ -1253,11 +1480,11 @@ function parseSubshellStage(rawStage, activeSubshellDepth = 0, activeBraceDepth 
   let opensFunctionBlock = false
   let opensPendingFunction = false
   let opensLoopBrace = false
-  let opensControlBlock = ''
+  const openedControlBlocks = []
   let resetsControlBranch = false
   let closesControlBlock = false
   let isControlHeaderOnly = false
-  let consumedCasePattern = false
+  let consumedOuterCasePattern = false
   const strippedHeaders = []
 
   // When inside a `case ... in` block expecting a pattern (`pat)` or `(pat)`),
@@ -1267,7 +1494,7 @@ function parseSubshellStage(rawStage, activeSubshellDepth = 0, activeBraceDepth 
     if (patEnd > 0) {
       strippedHeaders.push(body.slice(0, patEnd + 1))
       body = body.slice(patEnd + 1).trimStart()
-      consumedCasePattern = true
+      consumedOuterCasePattern = true
     }
   }
 
@@ -1327,7 +1554,7 @@ function parseSubshellStage(rawStage, activeSubshellDepth = 0, activeBraceDepth 
     }
     if (/^(?:if|while|until)\s+/.test(body)) {
       const kw = /^([a-z]+)/.exec(body)[1]
-      opensControlBlock = kw
+      openedControlBlocks.push({ kind: kw, expectPattern: false })
       body = body.slice(kw.length).trimStart()
       continue
     }
@@ -1337,7 +1564,7 @@ function parseSubshellStage(rawStage, activeSubshellDepth = 0, activeBraceDepth 
       if (arithEnd !== -1) {
         const afterArith = body.slice(arithEnd + 1).trimStart()
         if (/^do(?:\s+|$)/.test(afterArith)) {
-          opensControlBlock = 'loop'
+          openedControlBlocks.push({ kind: 'loop', expectPattern: false })
           strippedHeaders.push(body.slice(0, arithEnd + 1))
           body = afterArith
           continue
@@ -1349,38 +1576,41 @@ function parseSubshellStage(rawStage, activeSubshellDepth = 0, activeBraceDepth 
           continue
         }
       }
-      opensControlBlock = 'loop'
+      openedControlBlocks.push({ kind: 'loop', expectPattern: false })
       isControlHeaderOnly = true
       break
     }
     if (/^(?:for|select)\s+/.test(body)) {
-      opensControlBlock = 'loop'
+      openedControlBlocks.push({ kind: 'loop', expectPattern: false })
       isControlHeaderOnly = true
       break
     }
     if (/^case\s+/.test(body)) {
-      opensControlBlock = 'case'
       const inEnd = findCaseHeaderEnd(body, 0)
       if (inEnd === -1) {
+        openedControlBlocks.push({ kind: 'case', expectPattern: true })
         isControlHeaderOnly = true
         break
       }
       const casePrefix = body.slice(0, inEnd)
       const afterIn = body.slice(inEnd).trim()
       if (!afterIn) {
+        openedControlBlocks.push({ kind: 'case', expectPattern: true })
         isControlHeaderOnly = true
         break
       }
       strippedHeaders.push(casePrefix)
       body = afterIn
+      let consumedPattern = false
       if (!/^esac(?:\s|$|[<>|;&)])/.test(body) && !body.startsWith(')')) {
         const patEnd = findCasePatternClose(body)
         if (patEnd > 0) {
           strippedHeaders.push(body.slice(0, patEnd + 1))
           body = body.slice(patEnd + 1).trimStart()
-          consumedCasePattern = true
+          consumedPattern = true
         }
       }
+      openedControlBlocks.push({ kind: 'case', expectPattern: !consumedPattern })
       continue
     }
     break
@@ -1405,6 +1635,10 @@ function parseSubshellStage(rawStage, activeSubshellDepth = 0, activeBraceDepth 
     }
     if (ch === '\\' && !inSingle) {
       escaped = true
+      continue
+    }
+    if (!inSingle && !inDouble && ch === '$' && next === "'") {
+      i = scanAnsiSingleQuote(body, i)
       continue
     }
     if (ch === "'" && !inDouble) {
@@ -1478,11 +1712,11 @@ function parseSubshellStage(rawStage, activeSubshellDepth = 0, activeBraceDepth 
     opensFunctionBlock,
     opensPendingFunction,
     opensLoopBrace,
-    opensControlBlock,
+    openedControlBlocks,
     resetsControlBranch,
     closesControlBlock,
     isControlHeaderOnly,
-    consumedCasePattern,
+    consumedOuterCasePattern,
     strippedHeaders,
     innerBody,
     closers,
@@ -1516,6 +1750,12 @@ function extractOutputRedirectionTargets(segment) {
         i += 1
         continue
       }
+      if (!tSingle && !tDouble && ch === '$' && input[i + 1] === "'") {
+        const decoded = decodeAnsiSingleQuote(input, i)
+        token += decoded.text
+        i = decoded.endIdx + 1
+        continue
+      }
       if (ch === "'" && !tDouble) {
         tSingle = !tSingle
         i += 1
@@ -1543,6 +1783,10 @@ function extractOutputRedirectionTargets(segment) {
     }
     if (ch === '\\' && !inSingle) {
       escaped = true
+      continue
+    }
+    if (!inSingle && !inDouble && ch === '$' && input[i + 1] === "'") {
+      i = scanAnsiSingleQuote(input, i)
       continue
     }
     if (ch === "'" && !inDouble) {
@@ -1630,6 +1874,10 @@ function extractInputRedirectionTargets(segment) {
       escaped = true
       continue
     }
+    if (!inSingle && !inDouble && ch === '$' && input[i + 1] === "'") {
+      i = scanAnsiSingleQuote(input, i)
+      continue
+    }
     if (ch === "'" && !inDouble) {
       inSingle = !inSingle
       continue
@@ -1685,6 +1933,12 @@ function extractInputRedirectionTargets(segment) {
           j += 1
           continue
         }
+        if (!tSingle && !tDouble && c === '$' && input[j + 1] === "'") {
+          const decoded = decodeAnsiSingleQuote(input, j)
+          token += decoded.text
+          j = decoded.endIdx + 1
+          continue
+        }
         if (c === "'" && !tDouble) {
           tSingle = !tSingle
           j += 1
@@ -1729,6 +1983,10 @@ function extractHereStringPayloads(segment) {
       escaped = true
       continue
     }
+    if (!inSingle && !inDouble && ch === '$' && input[i + 1] === "'") {
+      i = scanAnsiSingleQuote(input, i)
+      continue
+    }
     if (ch === "'" && !inDouble) {
       inSingle = !inSingle
       continue
@@ -1769,6 +2027,12 @@ function extractHereStringPayloads(segment) {
         if (c === '\\' && !tSingle) {
           tEscaped = true
           j += 1
+          continue
+        }
+        if (!tSingle && !tDouble && c === '$' && input[j + 1] === "'") {
+          const decoded = decodeAnsiSingleQuote(input, j)
+          token += decoded.text
+          j = decoded.endIdx + 1
           continue
         }
         if (c === "'" && !tDouble) {
@@ -1822,6 +2086,10 @@ function stripShellRedirection(segment) {
         i += 1
         continue
       }
+      if (!tSingle && !tDouble && ch === '$' && input[i + 1] === "'") {
+        i = scanAnsiSingleQuote(input, i) + 1
+        continue
+      }
       if (ch === "'" && !tDouble) {
         tSingle = !tSingle
         i += 1
@@ -1852,6 +2120,12 @@ function stripShellRedirection(segment) {
     if (ch === '\\' && !inSingle) {
       out += ch
       escaped = true
+      continue
+    }
+    if (!inSingle && !inDouble && ch === '$' && input[i + 1] === "'") {
+      const end = scanAnsiSingleQuote(input, i)
+      out += input.slice(i, end + 1)
+      i = end
       continue
     }
     if (ch === "'" && !inDouble) {
@@ -2103,7 +2377,7 @@ function walkShellCommands(command, initialCwd, visitor, depth = 0, protectedCac
       const parsed = parseSubshellStage(rawSub, cwdStack.length, braceStack.length, {
         expectCasePattern: Boolean(topCaseFrame && topCaseFrame.expectPattern),
       })
-      if (parsed.consumedCasePattern && topCaseFrame) {
+      if (parsed.consumedOuterCasePattern && topCaseFrame) {
         topCaseFrame.expectPattern = false
       }
 
@@ -2123,13 +2397,15 @@ function walkShellCommands(command, initialCwd, visitor, depth = 0, protectedCac
         }
         conditionalRollback = null
       }
-      if (parsed.opensControlBlock) {
-        blockStack.push({
-          kind: parsed.opensControlBlock,
-          savedCwd: currentCwd,
-          savedPrevCwd: prevCwd,
-          expectPattern: parsed.opensControlBlock === 'case' && !parsed.consumedCasePattern,
-        })
+      if (parsed.openedControlBlocks.length > 0) {
+        for (const blk of parsed.openedControlBlocks) {
+          blockStack.push({
+            kind: blk.kind,
+            savedCwd: currentCwd,
+            savedPrevCwd: prevCwd,
+            expectPattern: blk.expectPattern,
+          })
+        }
         pendingFunctionBody = false
       }
       if (parsed.opensPendingFunction) {
@@ -2137,7 +2413,13 @@ function walkShellCommands(command, initialCwd, visitor, depth = 0, protectedCac
       }
 
       for (let p = 0; p < parsed.leadingOpenParens; p += 1) {
-        cwdStack.push({ currentCwd, prevCwd, conditionalRollback, lastCdRollback })
+        cwdStack.push({
+          currentCwd,
+          prevCwd,
+          dirStack: dirStack.slice(),
+          conditionalRollback,
+          lastCdRollback,
+        })
         conditionalRollback = null
         lastCdRollback = null
         pendingFunctionBody = false
@@ -2150,15 +2432,19 @@ function walkShellCommands(command, initialCwd, visitor, depth = 0, protectedCac
           subIdx === 0 &&
           (stmt.prevOp === '&&' || stmt.prevOp === '||' || blockStack.length > 0)
         const isPipedOrBg = subSegments.length > 1 || stmt.nextOp === '&'
+        const isolatesDirStack =
+          (parsed.opensFunctionBlock && b === 0) ||
+          fromPendingFunc ||
+          isPipedOrBg
         braceStack.push({
           entryCwd: currentCwd,
           entryPrevCwd: prevCwd,
+          entryDirStack: dirStack.slice(),
+          isolatesDirStack,
           restoreOnClose:
-            (parsed.opensFunctionBlock && b === 0) ||
+            isolatesDirStack ||
             (parsed.opensLoopBrace && b === 0) ||
-            fromPendingFunc ||
-            conditionalGroup ||
-            isPipedOrBg,
+            conditionalGroup,
         })
       }
 
@@ -2220,27 +2506,108 @@ function walkShellCommands(command, initialCwd, visitor, depth = 0, protectedCac
               } else if (headVerb === 'pushd') {
                 const pushdArgs = builtinWords.slice(1)
                 const noChdir = hasNoChdirFlag(pushdArgs)
-                const targetArg = collectNonOptionArgs(pushdArgs).find((a) => !/^[+-]\d+$/.test(a))
-                if (targetArg) {
+                let afterDash = false
+                let rotArg = ''
+                let targetArg = ''
+                let hasDynamicArg = false
+                for (const w of pushdArgs) {
+                  if (!afterDash && w === '--') {
+                    afterDash = true
+                    continue
+                  }
+                  if (!afterDash && w === '-n') continue
+                  if (!afterDash && /^[+-]\d+$/.test(w)) {
+                    rotArg = w
+                    break
+                  }
+                  if (!afterDash && /^[+-].*[$`]/.test(w)) {
+                    hasDynamicArg = true
+                    break
+                  }
+                  if (!afterDash && w.startsWith('-') && w !== '-') continue
+                  targetArg = w
+                  if (/[$`]/.test(w)) hasDynamicArg = true
+                  break
+                }
+                const protectedInStack = dirStack.find((d) => isProtectedPrimaryDirectory(d, protectedCache))
+                if (hasDynamicArg) {
+                  if (!noChdir && protectedInStack) {
+                    applyCwdTransition(protectedInStack, currentCwd, { prevOp: stmt.prevOp, insideLeadingGroup })
+                  }
+                } else if (targetArg) {
                   const targetPath = toFullPath(targetArg, currentCwd)
                   if (noChdir) {
                     // `pushd -n <dir>` inserts `<dir>` at stack slot [1] while keeping cwd unchanged;
-                    // a subsequent `popd` or 0-arg `pushd` will move into `<dir>`.
+                    // a subsequent `popd` or `pushd` rotation will move into `<dir>`.
                     dirStack.push(targetPath)
                   } else {
                     dirStack.push(currentCwd)
                     applyCwdTransition(targetPath, currentCwd, { prevOp: stmt.prevOp, insideLeadingGroup })
                   }
+                } else if (rotArg) {
+                  // Circular rotation over Bash stack `[currentCwd, ...dirStack.reversed]`
+                  const fullStack = [currentCwd, ...dirStack.slice().reverse()]
+                  const n = Number(rotArg.slice(1))
+                  const targetIdx = rotArg[0] === '+' ? n : fullStack.length - 1 - n
+                  if (targetIdx >= 0 && targetIdx < fullStack.length) {
+                    const rotated = [...fullStack.slice(targetIdx), ...fullStack.slice(0, targetIdx)]
+                    dirStack.length = 0
+                    dirStack.push(...rotated.slice(1).reverse())
+                    if (!noChdir) {
+                      applyCwdTransition(rotated[0], currentCwd, { prevOp: stmt.prevOp, insideLeadingGroup })
+                    }
+                  } else if (!noChdir && protectedInStack) {
+                    applyCwdTransition(protectedInStack, currentCwd, { prevOp: stmt.prevOp, insideLeadingGroup })
+                  }
                 } else if (!noChdir && dirStack.length > 0) {
-                  // 0-arg `pushd` swaps current cwd with top of dirStack
+                  // 0-arg `pushd` swaps current cwd with slot [1] (`pushd -n` with 0 args is a no-op in Bash)
                   const top = dirStack.pop()
                   dirStack.push(currentCwd)
                   applyCwdTransition(top, currentCwd, { prevOp: stmt.prevOp, insideLeadingGroup })
                 }
               } else if (headVerb === 'popd' && dirStack.length > 0) {
-                const popped = dirStack.pop()
-                if (!hasNoChdirFlag(builtinWords.slice(1))) {
-                  applyCwdTransition(popped, currentCwd, { prevOp: stmt.prevOp, insideLeadingGroup })
+                const popdArgs = builtinWords.slice(1)
+                const noChdir = hasNoChdirFlag(popdArgs)
+                let afterDash = false
+                let rotArg = ''
+                let hasDynamicArg = false
+                for (const w of popdArgs) {
+                  if (!afterDash && w === '--') {
+                    afterDash = true
+                    continue
+                  }
+                  if (!afterDash && w === '-n') continue
+                  if (!afterDash && /^[+-]\d+$/.test(w)) {
+                    rotArg = w
+                    break
+                  }
+                  if (/[$`]/.test(w)) {
+                    hasDynamicArg = true
+                    break
+                  }
+                }
+                const protectedInStack = dirStack.find((d) => isProtectedPrimaryDirectory(d, protectedCache))
+                if (hasDynamicArg) {
+                  if (!noChdir && protectedInStack) {
+                    applyCwdTransition(protectedInStack, currentCwd, { prevOp: stmt.prevOp, insideLeadingGroup })
+                  }
+                } else {
+                  const fullStack = [currentCwd, ...dirStack.slice().reverse()]
+                  const removeIdx = rotArg
+                    ? rotArg[0] === '+'
+                      ? Number(rotArg.slice(1))
+                      : fullStack.length - 1 - Number(rotArg.slice(1))
+                    : 0
+                  if (removeIdx >= 0 && removeIdx < fullStack.length) {
+                    fullStack.splice(removeIdx, 1)
+                    dirStack.length = 0
+                    dirStack.push(...fullStack.slice(1).reverse())
+                    if (removeIdx === 0 && !noChdir && fullStack.length > 0) {
+                      applyCwdTransition(fullStack[0], currentCwd, { prevOp: stmt.prevOp, insideLeadingGroup })
+                    }
+                  } else if (!noChdir && protectedInStack) {
+                    applyCwdTransition(protectedInStack, currentCwd, { prevOp: stmt.prevOp, insideLeadingGroup })
+                  }
                 }
               }
             }
@@ -2277,6 +2644,10 @@ function walkShellCommands(command, initialCwd, visitor, depth = 0, protectedCac
           if (restored) {
             currentCwd = restored.currentCwd
             prevCwd = restored.prevCwd
+            if (Array.isArray(restored.dirStack)) {
+              dirStack.length = 0
+              dirStack.push(...restored.dirStack)
+            }
             conditionalRollback = restored.conditionalRollback
             lastCdRollback = restored.lastCdRollback
             justRanCd = false
@@ -2286,7 +2657,12 @@ function walkShellCommands(command, initialCwd, visitor, depth = 0, protectedCac
           const frame = braceStack.pop()
           if (frame) {
             tailCwd = frame.entryCwd
-            const mustRestore = frame.restoreOnClose || subSegments.length > 1 || stmt.nextOp === '&'
+            const isClosingPipedOrBg = subSegments.length > 1 || stmt.nextOp === '&'
+            const mustRestore = frame.restoreOnClose || isClosingPipedOrBg
+            if (frame.isolatesDirStack || isClosingPipedOrBg) {
+              dirStack.length = 0
+              dirStack.push(...frame.entryDirStack)
+            }
             if (
               mustRestore &&
               isProtectedPrimaryDirectory(frame.entryCwd, protectedCache) &&
@@ -2475,15 +2851,29 @@ const NODE_VALUE_FLAGS = new Set([
   '--title', '-e', '--eval', '-p', '--print',
 ])
 
-function parsePnpmShellModeFlag(word) {
-  if (word === '-c' || word === '--shell-mode' || /^-[a-zA-Z]*c[a-zA-Z]*$/.test(word)) {
-    return true
+/**
+ * Parse pnpm shell-mode flags matching real pnpm CLI behavior:
+ * Only exact lowercase `--no-shell-mode`, `--no-config.shell-mode`, `--shell-mode=false`,
+ * `--config.shell-mode=false`, `--shell-mode false`, and `--config.shell-mode false`
+ * disable shell mode. Any other `--shell-mode=<val>` / `--config.shell-mode=<val>`
+ * (including `=0`, `=no`, `=off`, `=`, `=FALSE`), bare `--shell-mode` / `--config.shell-mode`,
+ * `--shell-mode true`, `--config.shell-mode true`, and `-c` enable shell mode.
+ */
+function parsePnpmShellModeFlag(word, nextWord = '') {
+  if (word === '-c' || /^-[a-zA-Z]*c[a-zA-Z]*$/.test(word)) {
+    return { value: true, consumed: 1 }
   }
-  if (word === '--no-shell-mode') return false
-  if (word.startsWith('--shell-mode=')) {
-    const val = word.slice('--shell-mode='.length).trim().toLowerCase()
-    if (val === 'false' || val === '0' || val === 'no' || val === 'off' || val === '') return false
-    return true
+  if (word === '--no-shell-mode' || word === '--no-config.shell-mode') {
+    return { value: false, consumed: 1 }
+  }
+  if (word === '--shell-mode' || word === '--config.shell-mode') {
+    if (nextWord === 'false') return { value: false, consumed: 2 }
+    if (nextWord === 'true') return { value: true, consumed: 2 }
+    return { value: true, consumed: 1 }
+  }
+  if (word.startsWith('--shell-mode=') || word.startsWith('--config.shell-mode=')) {
+    const val = word.slice(word.indexOf('=') + 1)
+    return { value: val !== 'false', consumed: 1 }
   }
   return null
 }
@@ -2510,10 +2900,10 @@ function skipLeadingWrapperFlags(words, { allowCallFlag = false, allowShellMode 
       }
     }
     if (allowShellMode) {
-      const sm = parsePnpmShellModeFlag(word)
+      const sm = parsePnpmShellModeFlag(word, words[i + 1] || '')
       if (sm !== null) {
-        shellMode = sm
-        i += 1
+        shellMode = sm.value
+        i += sm.consumed
         continue
       }
     }
@@ -2774,13 +3164,16 @@ function unwrapExecutionWrapperWithMeta(words) {
       let pnpmShellMode = false
       while (i < current.length) {
         const w = current[i]
-        if (w === '--') break
+        if (w === '--') {
+          i += 1
+          break
+        }
         if (!w.startsWith('-')) break
         if (head === 'pnpm') {
-          const sm = parsePnpmShellModeFlag(w)
+          const sm = parsePnpmShellModeFlag(w, current[i + 1] || '')
           if (sm !== null) {
-            pnpmShellMode = sm
-            i += 1
+            pnpmShellMode = sm.value
+            i += sm.consumed
             continue
           }
         }
@@ -2804,12 +3197,15 @@ function unwrapExecutionWrapperWithMeta(words) {
         let k = i + 1
         while (k < current.length) {
           const w = current[k]
-          if (w === '--') break
-          if (!w.startsWith('-')) break
-          const sm = parsePnpmShellModeFlag(w)
-          if (sm !== null) {
-            pnpmShellMode = sm
+          if (w === '--') {
             k += 1
+            break
+          }
+          if (!w.startsWith('-')) break
+          const sm = parsePnpmShellModeFlag(w, current[k + 1] || '')
+          if (sm !== null) {
+            pnpmShellMode = sm.value
+            k += sm.consumed
             continue
           }
           const eq = w.indexOf('=')
@@ -2921,8 +3317,6 @@ function parseGitInvocation(effectiveWords, baseCwd, envMap = new Map()) {
   let cDir = baseCwd
   let explicitWorkTree = envMap && envMap.has('GIT_WORK_TREE') ? envMap.get('GIT_WORK_TREE') : ''
   let explicitGitDir = envMap && envMap.has('GIT_DIR') ? envMap.get('GIT_DIR') : ''
-  let workTreeFromCli = false
-  let gitDirFromCli = false
 
   let i = 1
   while (i < effectiveWords.length) {
@@ -2944,25 +3338,21 @@ function parseGitInvocation(effectiveWords, baseCwd, envMap = new Map()) {
     }
     if (w === '--work-tree' && i + 1 < effectiveWords.length) {
       explicitWorkTree = effectiveWords[i + 1]
-      workTreeFromCli = true
       i += 2
       continue
     }
     if (w.startsWith('--work-tree=')) {
       explicitWorkTree = w.slice('--work-tree='.length)
-      workTreeFromCli = true
       i += 1
       continue
     }
     if (w === '--git-dir' && i + 1 < effectiveWords.length) {
       explicitGitDir = effectiveWords[i + 1]
-      gitDirFromCli = true
       i += 2
       continue
     }
     if (w.startsWith('--git-dir=')) {
       explicitGitDir = w.slice('--git-dir='.length)
-      gitDirFromCli = true
       i += 1
       continue
     }
@@ -2976,35 +3366,53 @@ function parseGitInvocation(effectiveWords, baseCwd, envMap = new Map()) {
   if (!sub) return null
 
   const targetDirSet = new Set()
-  let resolvedGitDir = ''
+  const explicitGitDirSet = new Set()
+  // Real `git` runs `chdir(cDir)` for `-C` BEFORE resolving relative GIT_DIR/GIT_WORK_TREE
+  // whether supplied via CLI flags or environment variables. Resolve relative paths against
+  // both `cDir` (primary) and `baseCwd` (conservative fallback).
   if (explicitWorkTree) {
-    const wtBase = workTreeFromCli ? cDir : baseCwd
-    targetDirSet.add(toFullPath(explicitWorkTree, wtBase))
-    if (wtBase !== baseCwd && !explicitWorkTree.startsWith('/')) {
-      targetDirSet.add(toFullPath(explicitWorkTree, baseCwd))
+    targetDirSet.add(resolve(toFullPath(explicitWorkTree, cDir)))
+    if (cDir !== baseCwd && !isAbsolute(explicitWorkTree) && !explicitWorkTree.startsWith('~')) {
+      targetDirSet.add(resolve(toFullPath(explicitWorkTree, baseCwd)))
     }
   }
   if (explicitGitDir) {
-    const gdBase = gitDirFromCli ? cDir : baseCwd
-    resolvedGitDir = toFullPath(explicitGitDir, gdBase)
-    targetDirSet.add(resolvedGitDir)
-    if (basename(resolvedGitDir) === '.git') {
-      targetDirSet.add(dirname(resolvedGitDir))
+    const addGitDirCandidate = (rawPath) => {
+      const normalized = resolve(rawPath)
+      explicitGitDirSet.add(normalized)
+      targetDirSet.add(normalized)
+      if (basename(normalized) === '.git') {
+        targetDirSet.add(dirname(normalized))
+      }
+      try {
+        const real = realpathSync(normalized)
+        if (basename(real) === '.git') {
+          targetDirSet.add(dirname(real))
+        }
+      } catch {
+        // Ignore nonexistent git-dir paths
+      }
+    }
+    addGitDirCandidate(toFullPath(explicitGitDir, cDir))
+    if (cDir !== baseCwd && !isAbsolute(explicitGitDir) && !explicitGitDir.startsWith('~')) {
+      addGitDirCandidate(toFullPath(explicitGitDir, baseCwd))
     }
   }
   // Unless BOTH git-dir AND work-tree are explicitly redirected away from cDir,
   // Git still discovers `.git` or operates on the working tree at cDir.
   if (!explicitGitDir || !explicitWorkTree) {
-    targetDirSet.add(cDir)
+    targetDirSet.add(resolve(cDir))
   }
 
   const targetDirs = [...targetDirSet]
+  const explicitGitDirs = [...explicitGitDirSet]
   return {
     sub,
     args: effectiveWords.slice(i + 1),
     targetDir: targetDirs[0],
     targetDirs,
-    explicitGitDir: resolvedGitDir,
+    explicitGitDir: explicitGitDirs[0] || '',
+    explicitGitDirs,
   }
 }
 
@@ -3021,10 +3429,14 @@ function classifyGitMutationWords(gitInfo, segment) {
   if (['apply', 'am', 'cherry-pick', 'rebase', 'revert'].includes(sub)) {
     return { kind: sub, segment }
   }
-  if (sub === 'reset' && args.some((w) => w === '--hard')) {
-    const refs = collectNonOptionArgs(args)
-    if (refs.length > 0 && !refs.every((r) => r === 'origin/main' || r === 'origin/master' || r === 'HEAD')) {
-      return { kind: 'reset-hard', segment }
+  if (sub === 'reset') {
+    const dashDashIdx = args.indexOf('--')
+    const preDashArgs = dashDashIdx === -1 ? args : args.slice(0, dashDashIdx)
+    const refs = collectNonOptionArgs(preDashArgs)
+    const targetRef = refs[0] || ''
+    if (targetRef && targetRef !== 'origin/main' && targetRef !== 'origin/master' && targetRef !== 'HEAD') {
+      const isHard = args.some((w) => w === '--hard')
+      return { kind: isHard ? 'reset-hard' : 'reset', segment }
     }
   }
   if (sub === 'stash') {
@@ -3156,6 +3568,13 @@ function tokenizeCommandLine(cmd, { keepEmpty = false } = {}) {
     if (ch === '\\' && !inSingle) {
       escaped = true
       hasToken = true
+      continue
+    }
+    if (!inSingle && !inDouble && ch === '$' && cmd[i + 1] === "'") {
+      const decoded = decodeAnsiSingleQuote(cmd, i)
+      current += decoded.text
+      hasToken = true
+      i = decoded.endIdx
       continue
     }
     if (ch === "'" && !inDouble) {
@@ -3476,6 +3895,10 @@ function extractProcessSubstitutionPayloads(segment) {
     }
     if (ch === '\\' && !inSingle) {
       escaped = true
+      continue
+    }
+    if (!inSingle && !inDouble && ch === '$' && input[i + 1] === "'") {
+      i = scanAnsiSingleQuote(input, i)
       continue
     }
     if (ch === "'" && !inDouble) {
@@ -4248,14 +4671,23 @@ export function decideMainBranchGitOp(command, cwd, options = {}, depth = 0) {
         const targetRoot = commandTargetRepoRoot(target)
         if (!ownerRoot || targetRoot !== ownerRoot) continue
 
-        const branchArgs = gitInfo.explicitGitDir
-          ? ['--git-dir', gitInfo.explicitGitDir, 'symbolic-ref', '--quiet', '--short', 'HEAD']
-          : ['-C', target, 'symbolic-ref', '--quiet', '--short', 'HEAD']
-        const branchResult = spawnSync('git', branchArgs, {
+        const branchResult = spawnSync('git', ['-C', target, 'symbolic-ref', '--quiet', '--short', 'HEAD'], {
           encoding: 'utf8',
           timeout: 3000,
         })
-        const branch = (branchResult.stdout || '').trim()
+        let branch = (branchResult.stdout || '').trim()
+        if (branch !== 'main' && Array.isArray(gitInfo.explicitGitDirs) && gitInfo.explicitGitDirs.length > 0) {
+          for (const gd of gitInfo.explicitGitDirs) {
+            const gdBranchRes = spawnSync('git', ['--git-dir', gd, 'symbolic-ref', '--quiet', '--short', 'HEAD'], {
+              encoding: 'utf8',
+              timeout: 3000,
+            })
+            if ((gdBranchRes.stdout || '').trim() === 'main') {
+              branch = 'main'
+              break
+            }
+          }
+        }
         if (branch === 'main') {
           if (isMerge) {
             return {
@@ -4313,8 +4745,18 @@ function parsePackageManagerScript(effectiveWords) {
   let targetDir = ''
   while (i < effectiveWords.length) {
     const w = effectiveWords[i]
-    if (w === '--') break
+    if (w === '--') {
+      i += 1
+      break
+    }
     if (w.startsWith('-')) {
+      if (manager === 'pnpm') {
+        const sm = parsePnpmShellModeFlag(w, effectiveWords[i + 1] || '')
+        if (sm !== null) {
+          i += sm.consumed
+          continue
+        }
+      }
       const eq = w.indexOf('=')
       if (eq !== -1) {
         const flag = w.slice(0, eq)
@@ -4353,8 +4795,16 @@ function parsePackageManagerScript(effectiveWords) {
     let k = 0
     while (k < restAfterSub.length) {
       const w = restAfterSub[k]
-      if (w === '--') break
+      if (w === '--') {
+        k += 1
+        break
+      }
       if (!w.startsWith('-')) break
+      const sm = parsePnpmShellModeFlag(w, restAfterSub[k + 1] || '')
+      if (sm !== null) {
+        k += sm.consumed
+        continue
+      }
       const eq = w.indexOf('=')
       if (eq !== -1) {
         if (PM_DIR_FLAGS.has(w.slice(0, eq))) targetDir = w.slice(eq + 1)
@@ -4423,6 +4873,17 @@ function parsePackageManagerScript(effectiveWords) {
   if (subcommand === 'run' || subcommand === 'run-script') {
     let j = 0
     while (j < restAfterSub.length && restAfterSub[j].startsWith('-')) {
+      if (restAfterSub[j] === '--') {
+        j += 1
+        break
+      }
+      if (manager === 'pnpm') {
+        const sm = parsePnpmShellModeFlag(restAfterSub[j], restAfterSub[j + 1] || '')
+        if (sm !== null) {
+          j += sm.consumed
+          continue
+        }
+      }
       j += isPmValueFlag(manager, restAfterSub[j]) ? 2 : 1
     }
     script = (restAfterSub[j] || '').toLowerCase()

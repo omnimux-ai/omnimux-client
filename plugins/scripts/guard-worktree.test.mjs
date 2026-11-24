@@ -2189,4 +2189,219 @@ describe('adversarial hardening regressions (materialization / wrapper / frozen-
       'allow',
     )
   })
+
+  it('closes multi-char redirections, heredoc quote desync, and ANSI-C quotes in isAtCommandPosition/scanners while staying zero-FP (C1)', () => {
+    for (const command of [
+      `: >| ! [[ && bash plugins/scripts/sync-to-app.sh && : ]]`,
+      `: >| ! [[ && git -C "${mainRepoRoot}" commit --allow-empty -m pwn && : ]]`,
+      `: >& time [[ && rm "${mainRepoRoot}/README.md" && : ]]`,
+    ]) {
+      assert.equal(
+        decideBashCommand({ command, cwd: worktreeRoot, ownerRoot: mainRepoRoot }).decision,
+        'deny',
+        `Expected C1a deny from worktree: ${command}`,
+      )
+    }
+
+    for (const command of [
+      `cd /tmp && : >| ! [[ && echo pwn > "${mainRepoRoot}/README.md" && : ]]`,
+      `cat <<EOF\n"\nEOF\n: '" ; # ' \\\n[[ && rm README.md && : ]]`,
+      `cat <<EOF\n"\nEOF\n: '" ; # ' \\\n[[ && git commit --allow-empty -m pwn && : ]]`,
+      `echo $'\\'' ; rm README.md # '`,
+      `rm $'README\\x2emd'`,
+      `echo pwn > $'README\\x2emd'`,
+      `bash -c $'echo pwn > README.md'`,
+    ]) {
+      assert.equal(
+        decideBashCommand({ command, cwd: mainRepoRoot, ownerRoot: mainRepoRoot }).decision,
+        'deny',
+        `Expected C1 deny on primary: ${command}`,
+      )
+    }
+
+    assert.equal(
+      decideBashCommand({
+        command: `cat <<EOF\n"\nEOF\n: '" ; # ' \\\n[[ && bash plugins/scripts/sync-to-app.sh && : ]]`,
+        cwd: worktreeRoot,
+        ownerRoot: mainRepoRoot,
+      }).decision,
+      'deny',
+      'Expected C1b heredoc quote desync sync bypass denied from worktree',
+    )
+
+    // Zero-FP checks: heredoc with apostrophe followed by real [[ ... ]] comparison, and [[ ... ]] with `|| case == x`
+    for (const command of [
+      `cat <<'EOF'\nit's fine\nEOF\n[[ "b" > "a" && "c" > "b" ]] && echo ok`,
+      `[[ "b" > "a" || case == x ]] && [[ "c" > "b" ]] && echo ok`,
+      `echo $'it\\'s ok'`,
+    ]) {
+      assert.equal(
+        decideBashCommand({ command, cwd: mainRepoRoot, ownerRoot: mainRepoRoot }).decision,
+        'allow',
+        `Expected C1 zero-FP allow on primary: ${command}`,
+      )
+    }
+  })
+
+  it('matches exact pnpm shell-mode CLI semantics and handles double-dash before subcommand (C2)', () => {
+    for (const command of [
+      `pnpm --shell-mode=0 exec 'echo pwn > README.md'`,
+      `pnpm --shell-mode=no exec 'echo pwn > README.md'`,
+      `pnpm --shell-mode=off exec 'echo pwn > README.md'`,
+      `pnpm --shell-mode= exec 'echo pwn > README.md'`,
+      `pnpm --shell-mode=FALSE exec 'echo pwn > README.md'`,
+      `pnpm --shell-mode true exec 'echo pwn > README.md'`,
+      `pnpm --config.shell-mode=true exec 'echo pwn > README.md'`,
+      `pnpm --config.shell-mode exec 'echo pwn > README.md'`,
+      `pnpm --config.shell-mode true exec 'echo pwn > README.md'`,
+      `pnpm --config.shell-mode=0 exec 'echo pwn > README.md'`,
+      `pnpm --config.shell-mode=FALSE exec 'echo pwn > README.md'`,
+      `pnpm recursive --shell-mode=0 exec 'echo pwn > README.md'`,
+      `pnpm --shell-mode=false -c exec 'echo pwn > README.md'`,
+      `pnpm --shell-mode -- exec 'echo pwn > README.md'`,
+      `pnpm -- exec rm -f README.md`,
+      `pnpm -- run build:all`,
+      `pnpm --shell-mode true run build:all`,
+    ]) {
+      assert.equal(
+        decideBashCommand({ command, cwd: mainRepoRoot, ownerRoot: mainRepoRoot }).decision,
+        'deny',
+        `Expected C2 deny on primary: ${command}`,
+      )
+    }
+
+    // Exact lowercase false / --no-shell-mode / --no-config.shell-mode disable shell mode
+    for (const command of [
+      `pnpm --shell-mode=false exec 'echo ok'`,
+      `pnpm --shell-mode false exec 'echo ok'`,
+      `pnpm --no-shell-mode exec 'echo ok'`,
+      `pnpm --config.shell-mode=false exec 'echo ok'`,
+      `pnpm --config.shell-mode false exec 'echo ok'`,
+      `pnpm --no-config.shell-mode exec 'echo ok'`,
+      `pnpm -c --shell-mode=false exec 'echo ok'`,
+    ]) {
+      assert.equal(
+        decideBashCommand({ command, cwd: mainRepoRoot, ownerRoot: mainRepoRoot }).decision,
+        'allow',
+        `Expected C2 safe allow on primary: ${command}`,
+      )
+    }
+  })
+
+  it('resolves relative env GIT_DIR/GIT_WORK_TREE against git -C and blocks non-main git reset on primary (C3)', () => {
+    for (const command of [
+      `GIT_DIR=.git GIT_WORK_TREE="${worktreeRoot}" git -C "${mainRepoRoot}" commit --allow-empty -m pwn`,
+      `GIT_DIR=.git GIT_WORK_TREE="${worktreeRoot}" git -C "${mainRepoRoot}" merge --no-edit feat`,
+      `GIT_DIR=.git GIT_WORK_TREE="${worktreeRoot}" git -C "${mainRepoRoot}" reset --hard feat`,
+      `GIT_DIR=.git GIT_WORK_TREE="${worktreeRoot}" git -C "${mainRepoRoot}" reset --merge feat`,
+      `GIT_DIR=.git GIT_WORK_TREE="${worktreeRoot}" git -C "${mainRepoRoot}" reset --soft feat`,
+    ]) {
+      assert.equal(
+        decideBashCommand({ command, cwd: worktreeRoot, ownerRoot: mainRepoRoot }).decision,
+        'deny',
+        `Expected C3 deny from worktree: ${command}`,
+      )
+    }
+
+    for (const command of [
+      `git reset --merge feat`,
+      `git reset --soft feat`,
+      `git reset --keep feat`,
+      `git reset --mixed feat`,
+      `git reset feat`,
+      `git reset HEAD~1`,
+    ]) {
+      assert.equal(
+        decideBashCommand({ command, cwd: mainRepoRoot, ownerRoot: mainRepoRoot }).decision,
+        'deny',
+        `Expected C3 non-main reset deny on primary: ${command}`,
+      )
+    }
+
+    // Safe primary git reset forms (HEAD / path unstage / bare) and worktree-only reset remain allowed
+    for (const command of [
+      `git reset`,
+      `git reset HEAD README.md`,
+      `git reset -- README.md`,
+      `git reset --hard HEAD`,
+    ]) {
+      assert.equal(
+        decideBashCommand({ command, cwd: mainRepoRoot, ownerRoot: mainRepoRoot }).decision,
+        'allow',
+        `Expected C3 safe reset allow on primary: ${command}`,
+      )
+    }
+    assert.equal(
+      decideBashCommand({
+        command: `git reset --soft HEAD~1`,
+        cwd: worktreeRoot,
+        ownerRoot: mainRepoRoot,
+      }).decision,
+      'allow',
+      'Expected git reset --soft inside worktree to remain allowed',
+    )
+  })
+
+  it('tracks nested case alternation without splitting as a pipeline (C4)', () => {
+    for (const command of [
+      `case a in\n  a) case b in b|c) cd "${mainRepoRoot}" ;; esac ;;\nesac\necho pwn > README.md`,
+      `case a in\n  a) case b in (b|c) cd "${mainRepoRoot}" ;; esac ;;\nesac\necho pwn > README.md`,
+      `case a in a) case b in b|c) cd "${mainRepoRoot}" ;; esac ;; esac\necho pwn > README.md`,
+      `case a in a) case b in\n  b|c) cd "${mainRepoRoot}" ;;\nesac ;;\nesac\necho pwn > README.md`,
+    ]) {
+      assert.equal(
+        decideBashCommand({ command, cwd: worktreeRoot, ownerRoot: mainRepoRoot }).decision,
+        'deny',
+        `Expected C4 nested case deny from worktree: ${command}`,
+      )
+    }
+
+    // Zero-FP: nested case with [[ ... ]] comparison inside pattern arm on primary
+    assert.equal(
+      decideBashCommand({
+        command: `case a in\n  a) [[ "b" > "a" ]] && echo ok ;;\nesac`,
+        cwd: mainRepoRoot,
+        ownerRoot: mainRepoRoot,
+      }).decision,
+      'allow',
+    )
+  })
+
+  it('implements circular pushd/popd +/-N stack rotation, subshell dirStack isolation, and dynamic arg fail-closed (C5)', () => {
+    for (const command of [
+      `pushd -n "${mainRepoRoot}" && pushd -n "/tmp" && pushd +2 && echo pwn > README.md`,
+      `pushd -n "${mainRepoRoot}" && pushd -n "/tmp" && pushd -0 && echo pwn > README.md`,
+      `pushd -n "${mainRepoRoot}" && pushd -n && popd && echo pwn > README.md`,
+      `pushd -n "${mainRepoRoot}" && pushd -n "/tmp" && n=2 && pushd "+$n" && echo pwn > README.md`,
+      `pushd -n "${mainRepoRoot}" && pushd -n "/tmp" && popd +1 && popd && echo pwn > README.md`,
+    ]) {
+      assert.equal(
+        decideBashCommand({ command, cwd: worktreeRoot, ownerRoot: mainRepoRoot }).decision,
+        'deny',
+        `Expected C5 pushd/popd deny from worktree: ${command}`,
+      )
+    }
+
+    for (const command of [
+      `pushd "${worktreeRoot}" && pushd -n "/tmp" && pushd -0 && echo pwn > README.md`,
+      `pushd "${worktreeRoot}" && ( pushd -n "/tmp" ) && popd && echo pwn > README.md`,
+      `pushd "${worktreeRoot}" && pushd -n "/tmp" && popd -n && popd && echo pwn > README.md`,
+    ]) {
+      assert.equal(
+        decideBashCommand({ command, cwd: mainRepoRoot, ownerRoot: mainRepoRoot }).decision,
+        'deny',
+        `Expected C5 pushd/popd deny from primary: ${command}`,
+      )
+    }
+
+    // Legitimate pushd into worktree without rotating back to primary stays allowed
+    assert.equal(
+      decideBashCommand({
+        command: `pushd "${worktreeRoot}" && pushd -n "/tmp" && echo ok > "${worktreeRoot}/.tmp-pushd-ok"`,
+        cwd: mainRepoRoot,
+        ownerRoot: mainRepoRoot,
+      }).decision,
+      'allow',
+    )
+  })
 })
