@@ -162,6 +162,8 @@
     "verify-silent-catch.mjs",
     "verify-skill-bilingual.mjs",
     "verify-skill-bilingual.test.mjs",
+    "verify-skill-hygiene.mjs",
+    "verify-skill-hygiene.test.mjs",
     "verify-slot-contracts.mjs",
     "verify-stage-contracts.mjs",
     "verify-stage-inset-contract.mjs",

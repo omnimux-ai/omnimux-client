@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0.0",
-  "updatedAt": "2026-11-23T16:16:17.768Z",
+  "updatedAt": "2026-11-23T16:17:00.000Z",
   "topology": {
     "tiers": [
       {
@@ -111,10 +111,7 @@
           "$DSH_HOME/omnimux/"
         ]
       },
-      "skills": [
-        "skills/cordis-plugin-development/SKILL.md",
-        "skills/editing-cordis-compositions/SKILL.md"
-      ],
+      "skills": [],
       "dependencies": {
         "requiredPlugins": [],
         "systemBinaries": []

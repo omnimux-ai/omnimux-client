@@ -1,5 +1,5 @@
 ---
-name: viral-video-replication
+name: replicate-viral-video
 description: 基于爆款参考视频或创作意图，运用专业导演与制片人心法，执行原片深度解构、黄金Hook提炼、字词级语义对齐、多模态素材集群调度、批量变体生成，并与 OmniMux 创作画布及 Clip 剪辑工作台无缝融合。
 ---
 
