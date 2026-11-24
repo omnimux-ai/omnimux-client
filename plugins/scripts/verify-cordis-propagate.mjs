@@ -2,17 +2,24 @@
 // Cordis-level proof that omnimux provides videoGenerate, imageGenerate,
 // textComplete, and identity seams, and that consumers can safely resolve and call them.
 // Usage:
-//   DSH_SRC=/Users/example/Desktop/Project/Github/deepseek-harness node scripts/verify-cordis-propagate.mjs
+//   DSH_SRC=<repo>/app/deepseek-harness node scripts/verify-cordis-propagate.mjs
 // Resolves @deepseek-ai/cordis from DSH_SRC (vendor/cordis). Does not
 // boot the full dsh profile and does not call external OmniMux services.
 import assert from 'node:assert/strict'
+import { existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import * as omnimux from '../plugins/omnimux/src/index.js'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
-const dshSrc = process.env.DSH_SRC ?? '/Users/example/Desktop/Project/Github/deepseek-harness'
-const cordisHref = pathToFileURL(join(dshSrc, 'vendor/cordis/lib/index.js')).href
+const repoRoot = join(root, '..')
+const dshSrc = process.env.DSH_SRC ?? join(repoRoot, 'app', 'deepseek-harness')
+const cordisEntry = join(dshSrc, 'vendor/cordis/lib/index.js')
+if (!existsSync(cordisEntry)) {
+  console.error(`verify-cordis-propagate: DSH_SRC is missing a DeepSeek Harness checkout at ${dshSrc} (expected vendor/cordis/lib/index.js); initialize app/deepseek-harness or set DSH_SRC`)
+  process.exit(1)
+}
+const cordisHref = pathToFileURL(cordisEntry).href
 const { Context } = await import(cordisHref)
 
 delete process.env.OMNIMUX_API_KEY

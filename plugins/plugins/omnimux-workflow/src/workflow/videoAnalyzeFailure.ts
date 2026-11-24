@@ -94,6 +94,48 @@ export function describeVideoAnalyzeFailure(error: unknown): VideoAnalyzeFailure
         message: '视频文件不满足理解要求（格式、大小或路径），请更换视频后重试',
         upstream,
       };
+    case 'headless-skill-not-found':
+      return {
+        code: 'analyze-unavailable',
+        message: '视频理解技能未就绪，请重启应用后重试',
+        upstream,
+      };
+    case 'headless-skill-transport-unavailable':
+      return {
+        code: 'analyze-unavailable',
+        message: '视频较大，需要视频处理能力准备完整视频后再分析',
+        upstream,
+      };
+    case 'headless-skill-transport-exceeded':
+      return {
+        code: 'analyze-invalid-input',
+        message: '视频文件超出分析传输容量限制，请压缩或裁剪视频后重试',
+        upstream,
+      };
+    case 'headless-skill-schema-invalid':
+      return {
+        code: 'analyze-failed',
+        message: '视频理解结果未通过结构化校验，请重试',
+        upstream,
+      };
+    case 'headless-skill-timeout':
+      return {
+        code: 'analyze-failed',
+        message: '视频理解超时，请稍后重试',
+        upstream,
+      };
+    case 'headless-skill-cancelled':
+      return {
+        code: 'analyze-failed',
+        message: '视频理解已取消',
+        upstream,
+      };
+    case 'headless-skill-stale-input':
+      return {
+        code: 'analyze-failed',
+        message: '视频素材在分析期间已变更，请重新分析',
+        upstream,
+      };
     default:
       return { ...GENERIC, upstream };
   }

@@ -1,8 +1,90 @@
 /** Pure helpers for the Composer Skill picker. Importable by tests; the UI fragment inlines the same rules. */
 import catalog from '../../catalog/index.json' with { type: 'json' }
+import bundledSkillsManifest from '../../catalog/bundled-skills.json' with { type: 'json' }
+import marketManifest from '../../dsh.manifest.json' with { type: 'json' }
 
 import recommendations from '../../catalog/skill-recommendations.json' with { type: 'json' }
 import presetSkillsMap from '../../catalog/preset-skills.json' with { type: 'json' }
+
+function extractManifestSkillSlugs(manifest) {
+  const list = Array.isArray(manifest && manifest.skills) ? manifest.skills : []
+  const slugs = []
+  for (const raw of list) {
+    const normalized = String(raw || '').trim().replace(/\\/g, '/').replace(/\/+$/, '')
+    const match = normalized.match(/(?:^|\/)([^/]+)\/SKILL\.md$/)
+    if (match && match[1]) slugs.push(match[1])
+  }
+  return slugs
+}
+
+function normalizeSlugSet(input) {
+  if (!input) return new Set()
+  if (input instanceof Set) {
+    const out = new Set()
+    for (const value of input) {
+      const clean = String(value || '').trim().replace(/^\/+/, '')
+      if (clean) out.add(clean)
+    }
+    return out
+  }
+  if (Array.isArray(input)) {
+    const out = new Set()
+    for (const value of input) {
+      const slug = typeof value === 'string'
+        ? value
+        : (value && typeof value === 'object' ? (value.slug || value.skill || value.name || '') : '')
+      const clean = String(slug || '').trim().replace(/^\/+/, '')
+      if (clean) out.add(clean)
+    }
+    return out
+  }
+  return new Set()
+}
+
+/**
+ * 本地随包技能真源集合（由 catalog/index.json 随包项、catalog/bundled-skills.json、
+ * dsh.manifest.json 三份真实清单推导；绝不采信 preset-skills.json 里的静态 installed 字段）。
+ */
+export const BUNDLED_SKILL_SLUGS = Object.freeze(new Set([
+  ...(Array.isArray(catalog && catalog.items) ? catalog.items : [])
+    .filter((item) => item && item.kind === 'skill' && (!item.source || item.source.type === 'bundled') && item.skill)
+    .map((item) => String(item.skill).trim()),
+  ...(Array.isArray(bundledSkillsManifest && bundledSkillsManifest.skills) ? bundledSkillsManifest.skills : [])
+    .map((item) => String((item && item.slug) || '').trim())
+    .filter(Boolean),
+  ...extractManifestSkillSlugs(marketManifest),
+]))
+
+/**
+ * 基于真实随包真源与实时磁盘/Provider 列表推导货架技能的可用态与安装态。
+ * 忽略静态 JSON 传入的 `installed` 字段，避免空壳伪造安装态。
+ *
+ * @param {object} item
+ * @param {{ installedSlugs?: Iterable<string | object> | null, providerSlugs?: Iterable<string | object> | null, bundledSlugs?: Iterable<string | object> | null }} [availability]
+ */
+export function hydratePresetSkill(item, availability = {}) {
+  if (!item || typeof item !== 'object') return item
+  const slug = String(item.slug || item.skill || '').trim().replace(/^\/+/, '')
+  const bundledSet = availability && availability.bundledSlugs != null
+    ? normalizeSlugSet(availability.bundledSlugs)
+    : BUNDLED_SKILL_SLUGS
+  const installedSet = normalizeSlugSet(availability && availability.installedSlugs)
+  const providerSet = normalizeSlugSet(availability && availability.providerSlugs)
+  const bundled = Boolean(slug && bundledSet.has(slug))
+  const installed = Boolean(slug && (installedSet.has(slug) || providerSet.has(slug)))
+  const { installed: _ignoredStaticInstalled, ...rest } = item
+  return {
+    ...rest,
+    bundled,
+    installed,
+    available: bundled || installed,
+  }
+}
+
+/** 技能是否已在本地随包或已安装/Provider 可用（无需触发远端下载）。 */
+export function isSkillLocallyAvailable(item) {
+  return Boolean(item && (item.installed === true || item.bundled === true))
+}
 
 /**
  * Agent 预设与 Skill 绑定表（Agent 模式决定 skill 范围）。
@@ -55,7 +137,7 @@ export function normalizePresetId(presetId) {
   return String(presetId || '').trim().toLowerCase().replace(/_/g, '-')
 }
 
-export function getPresetSkillBinding(presetId, mode) {
+export function getPresetSkillBinding(presetId, mode, availability) {
   if (!presetId && !mode) return null
   const norm = normalizePresetId(presetId)
   const isContentTeam =
@@ -130,6 +212,8 @@ export function getPresetSkillBinding(presetId, mode) {
 
   if (!entry) return null
 
+  const hydrateList = (list) => (Array.isArray(list) ? list.map((item) => hydratePresetSkill(item, availability)) : [])
+
   if (entry.useDefaultContentCatalog) {
     const tabs = [
       { id: 'all', kind: 'all', labelKey: 'picker.tab.all', name: '全部' },
@@ -143,7 +227,7 @@ export function getPresetSkillBinding(presetId, mode) {
       useDefaultContentCatalog: true,
       categories: SKILL_SHELF_TAXONOMY.map((r) => ({ id: r.id, name: r.id, labelKey: r.labelKey })),
       tabs,
-      skills: entry.skills || [],
+      skills: hydrateList(entry.skills),
     }
   }
 
@@ -157,7 +241,7 @@ export function getPresetSkillBinding(presetId, mode) {
     name: entry.name || presetId,
     categories,
     tabs,
-    skills: entry.skills || [],
+    skills: hydrateList(entry.skills),
   }
 }
 
@@ -166,18 +250,20 @@ export function hasPresetSkillBinding(presetId) {
 }
 
 /**
- * 按 slug 从**出厂预设技能库**里解析一款已内置技能。
+ * 按 slug 从**出厂预设技能库**里解析一款真实可用的技能。
  *
- * 优先在 Agent 模式的两条主力绑定（`tiktok-agent` 全能社媒操盘手、`omni-agent`
- * 社媒专家）里找，找不到再遍历其余预设；只认 `installed === true` 的条目，
- * 未内置的技能一律当作"解析不到"（调用方据此不渲染入口）。找不到返回 null，
- * 绝不抛错、绝不编造技能身份。
+ * 优先在 Agent 模式的两条主力绑定（`tiktok-agent`、`omni-agent`）里找，找不到再遍历其余预设；
+ * 不采信静态 JSON 的 `installed: true`，必须满足：
+ * 1. 条目未被显式禁用（`item.installed !== false && item.available !== false`）；
+ * 2. 经 `hydratePresetSkill` 校验后属于真实随包（`bundledSlugs`）或实时已装/Provider（`installedSlugs` / `providerSlugs`）。
+ * 解析不到一律返回 null，绝不抛错、绝不编造技能身份。
  *
  * @param {string} slug 技能 slug（可带前导 `/`）
  * @param {Record<string, { skills?: readonly object[] }>} [bindings] 绑定表，测试可注入
- * @returns {object | null} 技能条目（附 `presetId` 标明来源预设）
+ * @param {{ installedSlugs?: Iterable<string | object> | null, providerSlugs?: Iterable<string | object> | null, bundledSlugs?: Iterable<string | object> | null }} [availability]
+ * @returns {object | null} 技能条目（附 `presetId`、`bundled`、`installed`、`available`）
  */
-export function findPresetSkill(slug, bindings = AGENT_PRESET_SKILL_BINDINGS) {
+export function findPresetSkill(slug, bindings = AGENT_PRESET_SKILL_BINDINGS, availability = {}) {
   const target = String(slug || '').trim().replace(/^\/+/, '')
   if (!target || !bindings || typeof bindings !== 'object') return null
   const preferred = ['tiktok-agent', 'omni-agent']
@@ -188,11 +274,16 @@ export function findPresetSkill(slug, bindings = AGENT_PRESET_SKILL_BINDINGS) {
   for (const key of keys) {
     const list = bindings[key] && bindings[key].skills
     if (!Array.isArray(list)) continue
-    const hit = list.find((item) => {
-      if (!item || item.installed !== true) return false
-      return String(item.slug || item.skill || '').trim().replace(/^\/+/, '') === target
-    })
-    if (hit) return { ...hit, presetId: key }
+    for (const item of list) {
+      if (!item || typeof item !== 'object') continue
+      if (item.installed === false || item.available === false) continue
+      const itemSlug = String(item.slug || item.skill || '').trim().replace(/^\/+/, '')
+      if (itemSlug !== target) continue
+      const hydrated = hydratePresetSkill(item, availability)
+      if (hydrated.available === true) {
+        return { ...hydrated, presetId: key }
+      }
+    }
   }
   return null
 }
@@ -345,7 +436,7 @@ export function saveHomeCustomOrder(ids) {
 
 /** Split only displayed recommendations out of discovery; full-library search stays independent. */
 export function plazaDiscoverySections(items = [], { category = '', query = '', uninstalledOnly = false,
-  installedItems = [], config = recommendations, entries = catalog.items, presetBinding = null, customOrder = null } = {}) {
+  installedItems = [], providerSlugs = [], config = recommendations, entries = catalog.items, presetBinding = null, customOrder = null } = {}) {
   const key = item => item.slug || item.skill || item.catalogId || item.id
   const matches = item => {
     if (!category || category === 'featured') return true
@@ -368,6 +459,8 @@ export function plazaDiscoverySections(items = [], { category = '', query = '', 
   const available = item => !uninstalledOnly || !item.installed
   const unique = list => [...new Map(list.map(item => [key(item), item])).values()]
   const installed = new Map(installedItems.map(item => [key(item), item]))
+  const providerSet = normalizeSlugSet(providerSlugs)
+  const availability = { installedSlugs: [...installed.keys()], providerSlugs: providerSet }
   const live = new Map(items.map(item => [item.catalogId || item.id, item]))
   const hasQuery = Boolean(String(query).trim())
   const homeIds = resolveHomeRecommendationIds(config, customOrder)
@@ -382,9 +475,10 @@ export function plazaDiscoverySections(items = [], { category = '', query = '', 
           return cat === category || tags.includes(category)
         })
         .map(item => {
+          const hydrated = hydratePresetSkill(item, availability)
           const current = live.get(item.id)
           const local = installed.get(key(item))
-          return { ...item, ...(current ? { rating: current.rating, installed: current.installed, enabled: current.enabled } : {}),
+          return { ...hydrated, ...(current ? { rating: current.rating, installed: current.installed, enabled: current.enabled } : {}),
             ...(local ? { installed: true, enabled: local.enabled !== false } : {}) }
         }).filter(available)
     : []
@@ -393,9 +487,10 @@ export function plazaDiscoverySections(items = [], { category = '', query = '', 
     .map(item => {
       const current = live.get(item.id)
       const local = installed.get(key(item))
+      const inProvider = providerSet.has(key(item))
       return { ...item, ...(!category && item.homeCover ? { cover: item.homeCover } : {}),
         ...(current ? { rating: current.rating, installed: current.installed, enabled: current.enabled } : {}),
-        ...(local ? { installed: true, enabled: local.enabled !== false } : {}) }
+        ...(local ? { installed: true, enabled: local.enabled !== false } : (inProvider ? { installed: true } : {})) }
     }).filter(matches).filter(available)
   const featured = isPresetCategory && presetFeatured.length > 0 ? presetFeatured : unique([...presetFeatured, ...baseFeatured])
   const featuredKeys = new Set(featured.map(key))
@@ -403,13 +498,14 @@ export function plazaDiscoverySections(items = [], { category = '', query = '', 
   // 本地目录卡片：技能与套件同为货架条目；套件只落「套件」分类（见 matchesDomainTag）。
   const localCards = hasQuery ? [] : entries.filter(item => item.kind === 'skill' || item.kind === 'suite').map(item => ({
     ...item, catalogId: item.id, slug: item.skill, name: item.title, description: item.summary,
-    installBackend: 'catalog', installed: installed.has(item.skill),
+    installBackend: 'catalog', installed: installed.has(item.skill) || providerSet.has(item.skill),
   }))
   const presetCards = presetBinding && Array.isArray(presetBinding.skills)
-    ? filterPresetSkills(presetBinding.skills, category, query)
+    ? filterPresetSkills(presetBinding.skills, category, query).map(item => hydratePresetSkill(item, availability))
     : []
   const regular = unique([...presetCards, ...localCards, ...items]).map(item => installed.has(key(item))
-    ? { ...item, installed: true, enabled: installed.get(key(item)).enabled !== false } : item).filter(matches).filter(available)
+    ? { ...item, installed: true, enabled: installed.get(key(item)).enabled !== false }
+    : (providerSet.has(key(item)) ? { ...item, installed: true } : item)).filter(matches).filter(available)
     .filter(item => !featuredKeys.has(key(item)))
     .filter(item => category !== 'featured' || (hasQuery && catalogFeatured.has(key(item))))
   return { featured, regular }
@@ -742,7 +838,7 @@ export function buildPlazaWorkbenchOpenOptions(title) {
 }
 
 export function installPayload(item) {
-  if (!item || item.installed === true) return null
+  if (!item || isSkillLocallyAvailable(item)) return null
   const slug = String(item.slug || item.skill || '').trim()
   if (!slug) return null
   const catalogId = String(item.catalogId || (String(item.id || '').startsWith('sk-') ? item.id : '') || '').trim()

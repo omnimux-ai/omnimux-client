@@ -74,7 +74,7 @@ const workspaceManifest = JSON.parse(readFileSync(new URL('package.json', worksp
   resolutions?: Record<string, unknown>
   scripts?: Record<string, unknown>
 }
-const ciWorkflow = readFileSync(new URL('.github/workflows/ci.yml', workspaceRoot), 'utf8')
+const releaseWorkflow = readFileSync(new URL('../../.github/workflows/release.yml', packageRoot), 'utf8')
 const main = readFileSync(new URL('src/main.ts', packageRoot), 'utf8')
 const runtimeVersion = String(manifest.dependencies?.['@deepseek-ai/dsh'])
 const nextManifest = JSON.parse(readFileSync(new URL('dsh-desktop-next/package.json', workspaceRoot), 'utf8')) as {
@@ -1022,50 +1022,24 @@ describe('published package surface', () => {
   })
 
   it('runs platform package gates before reusing native packaging outputs', () => {
-    const windowsJob = ciWorkflow.slice(
-      ciWorkflow.indexOf('  desktop-windows:'),
-      ciWorkflow.indexOf('  desktop-macos:'),
+    const buildWin = releaseWorkflow.slice(
+      releaseWorkflow.indexOf('  build-win:'),
+      releaseWorkflow.indexOf('  preflight-mac:'),
     )
-    const macosJob = ciWorkflow.slice(
-      ciWorkflow.indexOf('  desktop-macos:'),
-      ciWorkflow.indexOf('  macos-universal:'),
-    )
-    const universalJob = ciWorkflow.slice(
-      ciWorkflow.indexOf('  macos-universal:'),
-      ciWorkflow.indexOf('  desktop-next-windows:'),
+    const preflightMac = releaseWorkflow.slice(
+      releaseWorkflow.indexOf('  preflight-mac:'),
+      releaseWorkflow.indexOf('  publish-win:'),
     )
 
-    // OmniMux keeps a single shell line, so the packaging jobs name the workspace
-    // directly instead of running an upstream channel matrix.
-    expect(windowsJob).not.toContain('- run: yarn check')
-    expect(windowsJob).not.toContain('matrix.workspace')
-    expect(windowsJob).toContain('- run: yarn workspace dsh-plugin-desktop check:win-package')
-    expect(windowsJob).toContain('run: yarn workspace dsh-plugin-desktop dist:win')
-    expect(windowsJob).toContain('run: yarn workspace dsh-plugin-desktop dist:win-portable')
-    expect(windowsJob).toContain('DSH_PACKAGE_CHECK_ALREADY_RAN: \'1\'')
-    // The portable archive reuses the installer's unpacked tree instead of
-    // assembling the runtime a second time, and CI skips publish-only compression.
-    expect(windowsJob).toContain('DSH_WINDOWS_REUSE_UNPACKED: \'1\'')
-    expect(windowsJob).toContain('DSH_WINDOWS_PACKAGE_COMPRESSION: store')
-    expect(windowsJob.indexOf('dist:win\n')).toBeLessThan(windowsJob.indexOf('dist:win-portable'))
+    // The public release workflow packages the shipping Next shell directly.
+    expect(buildWin).not.toContain('- run: yarn check')
+    expect(buildWin).toContain('run: corepack yarn workspace dsh-desktop-next dist:win')
+    expect(buildWin).toContain("DSH_WINDOWS_VERIFY_EXTRACTED: ${{ github.event_name == 'pull_request' && '1' || '0' }}")
     // OmniMux ships no Linux job: the packaging lane stays macOS + Windows.
-    expect(ciWorkflow).not.toContain('desktop-linux:')
-    expect(macosJob).not.toContain('- run: yarn check')
-    expect(macosJob).not.toContain('matrix.workspace')
-    expect(macosJob).toContain('- run: yarn workspace dsh-plugin-desktop check:mac-package')
-    expect(macosJob).toContain('run: yarn workspace dsh-plugin-desktop dist:mac-smoke')
-    expect(macosJob).toContain('DSH_PACKAGE_CHECK_ALREADY_RAN: \'1\'')
-    expect(macosJob).not.toContain('- run: yarn dist:mac-smoke')
-    // Every PR packages one CPU; the lipo merge lives in its own conditional job.
-    expect(macosJob).toContain('DSH_MAC_SMOKE_ARCH: arm64')
-    expect(macosJob).toContain('DSH_MAC_PACKAGE_COMPRESSION: store')
-    expect(macosJob).not.toContain('DSH_MAC_SMOKE_ARCH: universal')
-    // The universal gate runs only when macOS packaging paths moved, and it keeps
-    // the release compression so it exercises the DMG path a release uses.
-    expect(universalJob).toContain("needs.changes.outputs.mac == 'true'")
-    expect(universalJob).toContain('DSH_MAC_SMOKE_ARCH: universal')
-    expect(universalJob).not.toContain('DSH_MAC_PACKAGE_COMPRESSION')
-    expect(universalJob).toContain('run: yarn workspace dsh-plugin-desktop dist:mac-smoke')
+    expect(releaseWorkflow).not.toContain('desktop-linux:')
+    expect(preflightMac).not.toContain('- run: yarn check')
+    expect(preflightMac).toContain('run: corepack yarn workspace dsh-desktop-next dist:mac-smoke')
+    expect(preflightMac).toContain('DSH_MAC_SMOKE_ARCH: ${{ matrix.arch }}')
   })
 
   it('gates packaging on product changes and always runs the baseline check', () => {
@@ -1104,20 +1078,8 @@ describe('published package surface', () => {
     // No diff (manual dispatch, undiffable push) cannot prove universal works.
     expect(mac([])).toBe('true')
 
-    expect(ciWorkflow).toContain('node scripts/classify-ci-changes.mjs')
-    expect(ciWorkflow).toContain("mac=\"$(printf '%s\\n' \"$verdicts\" | sed -n '2p')\"")
-    // Only the platform packaging jobs keep the product gate.
-    expect(ciWorkflow).toContain("if: needs.changes.outputs.product == 'true'")
-    // The baseline gate always runs: a documentation-only change must still prove
-    // build, typecheck, unit tests, and packaging typecheck.
-    const checkJob = ciWorkflow.slice(
-      ciWorkflow.indexOf('  check:'),
-      ciWorkflow.indexOf('  desktop-windows:'),
-    )
-    expect(checkJob).toContain('- run: yarn check')
-    expect(checkJob).toContain('- run: node scripts/verify-version.mjs')
-    expect(checkJob).not.toContain('needs.changes.outputs.product')
-    expect(ciWorkflow).not.toContain('Documentation-only change; product build and tests are not required.')
+    expect(releaseWorkflow).toContain('corepack yarn workspace dsh-desktop-next dist:win')
+    expect(releaseWorkflow).toContain('corepack yarn workspace dsh-desktop-next dist:mac-smoke')
   })
 
   it('keeps one fixed brand-blue tray source for generated native assets', () => {

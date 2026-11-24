@@ -39,6 +39,12 @@
       "notes": "Referenced by preset-skills, omni-agent, and social-content-team."
     },
     {
+      "slug": "create-selling-video",
+      "role": "preset-shelf",
+      "owner": "omnimux-market",
+      "notes": "Canonical shoppable selling-video workflow skill backing the #3 composer quick shortcut and preset shelf (#235)."
+    },
+    {
       "slug": "dynamic-poster",
       "role": "internal-library",
       "owner": "omnimux-market",
@@ -69,6 +75,12 @@
       "notes": "Canonical viral video replication skill backing the #1 composer quick shortcut and preset shelf."
     },
     {
+      "slug": "reverse-video-prompt",
+      "role": "preset-shelf",
+      "owner": "omnimux-market",
+      "notes": "Canonical I2V / Seedance reverse-prompt skill backing the #4 composer quick shortcut and preset shelf (#235)."
+    },
+    {
       "slug": "social-caption",
       "role": "preset-shelf",
       "owner": "omnimux-market",
@@ -79,6 +91,12 @@
       "role": "internal-library",
       "owner": "omnimux-market",
       "notes": "Complete first-party stickman explainer video director skill; pending marketplace listing."
+    },
+    {
+      "slug": "video-hook-analysis",
+      "role": "preset-shelf",
+      "owner": "omnimux-market",
+      "notes": "Canonical five-dimension video breakdown and 3-second hook analysis skill backing the #2 composer quick shortcut and preset shelf (#235)."
     }
   ]
 }

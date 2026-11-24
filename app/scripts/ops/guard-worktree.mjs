@@ -193,7 +193,7 @@ export function isProtectedScope(fullPath, cwd) {
   if (normalizedRoot && normalizedFull.startsWith(normalizedRoot + '/')) {
     relative = normalizedFull.slice(normalizedRoot.length + 1)
   } else if (normalizedFull.startsWith('/')) {
-    const marker = '/omnimux-desktop-fork/'
+    const marker = '/omnimux-client/'
     const idx = normalizedFull.lastIndexOf(marker)
     if (idx !== -1) {
       relative = normalizedFull.slice(idx + marker.length)

@@ -90,8 +90,8 @@ test('binds the selected renderer to exact hub and selected plugin registrations
 test('matches an isolated registration across concat identifier deconfliction and source-path comments', async () => {
   const root = fixture()
   const hub = declaredClientBundle(root, 'omnimux').source
-  const local = registration('omnimux-assets', 'var CSS = `.test {color:red}`; // ../../../omnimux-dsh-wt-current/node_modules/dsh-ui-kit/lib/index.js\n    return CSS;')
-  const installed = registration('omnimux-assets', 'var CSS = `.test {color:red}`; // ../../../omnimux-dsh-wt-older/node_modules/dsh-ui-kit/lib/index.js\n    return CSS;')
+  const local = registration('omnimux-assets', 'var CSS = `.test {color:red}`; // ../../../omnimux-client-wt-current/node_modules/dsh-ui-kit/lib/index.js\n    return CSS;')
+  const installed = registration('omnimux-assets', 'var CSS = `.test {color:red}`; // ../../../omnimux-client-wt-older/node_modules/dsh-ui-kit/lib/index.js\n    return CSS;')
   const next = 'window.__ModuleLoader__.load({id:"other",factory:require=>{return CSS.escape("x");}});'
   writeBundle(root, 'omnimux-assets', local)
 
