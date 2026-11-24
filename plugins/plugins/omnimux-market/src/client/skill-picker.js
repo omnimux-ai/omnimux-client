@@ -406,7 +406,7 @@
                 ),
                 h("div", { className: "sh-picker-desc" }, desc),
               ),
-              item.installed === true ? null : h("span", {
+              SkillShelf.isSkillLocallyAvailable(item) ? null : h("span", {
                 className: "sh-picker-dl",
                 title: tr("picker.uninstalled"),
               }, h(PickerDownloadIcon)),
@@ -561,6 +561,22 @@
         };
       }, [sessionId]);
 
+      const [liveSkillAvailability, setLiveSkillAvailability] = useState({ installedSlugs: [], providerSlugs: [] });
+
+      useEffect(() => {
+        if (!open || typeof api !== "function") return undefined;
+        let active = true;
+        api("list").then((res) => {
+          if (!active || !res) return;
+          const installedSlugs = Array.isArray(res.items) ? res.items : [];
+          const providerSlugs = Array.isArray(res.providerSlugs) ? res.providerSlugs : [];
+          setLiveSkillAvailability({ installedSlugs, providerSlugs });
+        }).catch((err) => {
+          console.warn(`[omnimux-market] skill picker list failed: ${err instanceof Error ? err.message : String(err)}`);
+        });
+        return () => { active = false; };
+      }, [open]);
+
       // 核心业务规则：
       // 1. 短剧模式 (drama) 自动接入短剧制作人专精货架 (drama-agent)
       // 2. Agent 模式显示原来的技能货架 (优先使用当前绑定的 preset，保底使用 tiktok-agent 全能社媒操盘手)
@@ -572,8 +588,8 @@
       }
 
       const presetBinding =
-        SkillShelf.getPresetSkillBinding(activePresetId, composerMode) ||
-        SkillShelf.getPresetSkillBinding("tiktok-agent");
+        SkillShelf.getPresetSkillBinding(activePresetId, composerMode, liveSkillAvailability) ||
+        SkillShelf.getPresetSkillBinding("tiktok-agent", undefined, liveSkillAvailability);
 
       // 如果当前预设没有绑定 skill 则默认不显示 skill 按钮
       if (!presetBinding) {

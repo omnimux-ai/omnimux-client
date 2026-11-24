@@ -331,6 +331,7 @@ export function usePlazaState(initialSubmitted, hooks) {
   const [expertMarketToggling, setExpertMarketToggling] = stateFn('');
   const [expertStage, setExpertStage] = stateFn('all');
   const [expertMarketError, setExpertMarketError] = stateFn('');
+  const [providerSlugs, setProviderSlugs] = stateFn([]);
   return {
     mainTab, setMainTab, category, setCategory, page, setPage, searchQuery, setSearchQuery,
     submitted, setSubmitted, uninstalledOnly, setUninstalledOnly, autoUpdate, setAutoUpdate,
@@ -343,6 +344,7 @@ export function usePlazaState(initialSubmitted, hooks) {
     expertMarketToggling, setExpertMarketToggling,
     expertStage, setExpertStage,
     expertMarketError, setExpertMarketError,
+    providerSlugs, setProviderSlugs,
   };
 }
 

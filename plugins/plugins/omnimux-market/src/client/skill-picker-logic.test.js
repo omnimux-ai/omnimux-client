@@ -391,51 +391,49 @@ describe('agent preset skill bindings', () => {
   it('tiktok-agent contains the 6 preset categories (ec1590182 社媒纯化)', () => {
     const binding = getPresetSkillBinding('tiktok-agent')
     const catIds = binding.categories.map((c) => c.id)
-    assert.deepEqual(catIds, ['创作视频', '创作图片', '蓝海选品', '爆款短视频', '达人与账号复盘', '创作者中心'])
-    assert.equal(binding.tabs.length, 7)
+    assert.deepEqual(catIds, ['创作视频', '创作图片', '选品与需求', '趋势与达人复盘', '文案与运营'])
+    assert.equal(binding.tabs.length, 6)
     assert.equal(binding.tabs[0].id, 'all')
   })
 
   it('tiktok-agent preset carries complete per-skill metadata (ec1590182 社媒纯化后 22 款)', () => {
     const binding = getPresetSkillBinding('tiktok-agent')
     assert.equal(binding.skills.length, AGENT_PRESET_SKILL_BINDINGS['tiktok-agent'].skills.length)
+    assert.equal(binding.skills.length, 34)
 
     const titles = new Set(binding.skills.map((s) => s.name))
-    // 蓝海选品
-    assert.ok(titles.has('TikTok 蓝海爆品发现'))
-    assert.ok(titles.has('以图找同款商品'))
-    // 爆款短视频
-    assert.ok(titles.has('下载 TikTok 无水印视频'))
-    assert.ok(titles.has('TikTok 爆款带货提示词生成器'))
-    // 创作视频
+    // 创作视频（含 4 条首页快捷方式与跨境视频 SOP）
     assert.ok(titles.has('复刻爆款视频'))
     assert.ok(titles.has('创作带货视频'))
     assert.ok(titles.has('视频拆解'))
-    assert.ok(titles.has('视频脚本创作'))
-    assert.ok(titles.has('视频提示词生成'))
-    assert.ok(titles.has('视频生成'))
     assert.ok(titles.has('反推视频提示词'))
+    assert.ok(titles.has('带货短视频脚本'))
+    assert.ok(titles.has('电影级运镜语言'))
+    assert.ok(titles.has('多语言出海视频广告'))
+    assert.ok(titles.has('剪辑草稿导出'))
     // 创作图片
-    assert.ok(titles.has('视频分镜图'))
-    assert.ok(titles.has('商品套图'))
-    assert.ok(titles.has('A+内容'))
-    assert.ok(titles.has('图片复刻'))
-    assert.ok(titles.has('多角度产品图'))
-    assert.ok(titles.has('AI 换装'))
-    assert.ok(titles.has('图文复刻'))
     assert.ok(titles.has('商品轮播图'))
-    // 达人与账号复盘 + 创作者中心
-    assert.ok(titles.has('TikTok 账号复盘与优化建议'))
-    assert.ok(titles.has('TikTok 头部博主对标蒸馏'))
-    assert.ok(titles.has('TikTok 官方创作者与短剧中心'))
+    assert.ok(titles.has('图文复刻'))
+    assert.ok(titles.has('电商商品套图'))
+    assert.ok(titles.has('9图视觉矩阵与质检'))
+    // 选品与需求 + 趋势与达人复盘 + 文案与运营
+    assert.ok(titles.has('类目市场与选品调研'))
+    assert.ok(titles.has('社媒选品与需求验证'))
+    assert.ok(titles.has('细分赛道趋势挖掘'))
+    assert.ok(titles.has('达人主页深度拆解'))
+    assert.ok(titles.has('跨境多语商详文案'))
+    assert.ok(titles.has('SoPilot 社媒营销路由'))
 
-    // 每条技能都必须有完整元数据
+    // 每条技能都必须有完整元数据且由真实清单派生 bundled/available（未落盘时 installed 为 false）
     const catIds = new Set(binding.categories.map((c) => c.id))
     for (const skill of binding.skills) {
       assert.ok(skill.slug || skill.skill, 'skill must carry a slug')
       assert.ok(skill.name || skill.title, 'skill must carry a title')
       assert.ok(catIds.has(skill.category), `${skill.slug} must belong to a declared category`)
       assert.ok(skill.cover, `${skill.slug} must carry a cover`)
+      assert.equal(skill.bundled, true, `${skill.slug} must derive bundled: true`)
+      assert.equal(skill.available, true, `${skill.slug} must derive available: true`)
+      assert.equal(skill.installed, false, `${skill.slug} must not fake installed: true when no disk/provider list is supplied`)
     }
   })
 
@@ -451,9 +449,9 @@ describe('agent preset skill bindings', () => {
     const allSkills = filterPresetSkills(binding.skills, 'all')
     assert.equal(allSkills.length, binding.skills.length)
 
-    const searchMatch = filterPresetSkills(binding.skills, 'all', '蓝海')
-    assert.ok(searchMatch.length >= 1)
-    assert.ok(searchMatch.some((s) => s.name === 'TikTok 蓝海爆品发现'))
+    const searchMatch = filterPresetSkills(binding.skills, 'all', '选品')
+    assert.ok(searchMatch.length >= 2)
+    assert.ok(searchMatch.some((s) => s.name === '类目市场与选品调研'))
 
     const viral = filterPresetSkills(binding.skills, 'all', '复刻')
     assert.ok(viral.length >= 1)
@@ -462,9 +460,9 @@ describe('agent preset skill bindings', () => {
 
   it('filterPickerItems delegates to filterPresetSkills when presetBinding is passed', () => {
     const binding = getPresetSkillBinding('tiktok-agent')
-    const res = filterPickerItems([], '蓝海选品', binding)
-    assert.equal(res.length, 2)
-    assert.equal(res[0].category, '蓝海选品')
+    const res = filterPickerItems([], '选品与需求', binding)
+    assert.equal(res.length, 3)
+    assert.equal(res[0].category, '选品与需求')
   })
 
   it('resolveActivePreset extracts preset from props or sessions', () => {
@@ -522,20 +520,35 @@ describe('agent preset skill bindings', () => {
       presetBinding: binding,
     })
 
-    // ec1590182 社媒纯化后：创作视频分类的 7 款预设技能全部可见，
-    // 同时混入命中「创作视频」关键词的本地目录卡片（实现内的宽匹配）。
+    // Phase 2 收敛后：创作视频分类的 8 款真实技能全部可见，
+    // 且未传 installedItems 时不会伪造 installed: true。
     const all = [...featured, ...regular]
     const names = new Set(all.map((s) => s.name || s.title))
-    for (const name of ['复刻爆款视频', '创作带货视频', '视频拆解', '视频生成', '视频脚本创作', '视频提示词生成', '反推视频提示词']) {
+    for (const name of ['复刻爆款视频', '创作带货视频', '视频拆解', '反推视频提示词', '带货短视频脚本', '电影级运镜语言', '多语言出海视频广告', '剪辑草稿导出']) {
       assert.ok(names.has(name), `${name} must appear under 创作视频`)
     }
+    const presetItems = all.filter((s) => binding.skills.some((b) => (b.slug || b.skill) === (s.slug || s.skill)))
     const presetCount = filterPresetSkills(binding.skills, '创作视频').length
-    assert.equal(all.filter((s) => binding.skills.some((b) => (b.slug || b.skill) === (s.slug || s.skill))).length, presetCount)
+    assert.equal(presetItems.length, presetCount)
 
-    // 预设技能全部配上封面图
-    for (const item of all.filter((s) => binding.skills.some((b) => (b.slug || b.skill) === (s.slug || s.skill)))) {
+    // 预设技能全部配上封面图，且未落盘时不伪造 installed: true
+    for (const item of presetItems) {
       assert.ok(item.cover, `${item.name} must have cover`)
+      assert.equal(item.bundled, true, `${item.name} must carry derived bundled: true`)
+      assert.equal(item.installed, false, `${item.name} must not fake installed: true when installedItems is empty`)
     }
+
+    // 当 installedItems 或 providerSlugs 包含目标 slug 时，installed 动态翻真
+    const withLive = plazaDiscoverySections([], {
+      category: '创作视频',
+      presetBinding: binding,
+      installedItems: [{ slug: 'replicate-viral-video', enabled: true }],
+      providerSlugs: ['video-hook-analysis'],
+    })
+    const liveBySlug = new Map([...withLive.featured, ...withLive.regular].map((s) => [s.slug || s.skill, s]))
+    assert.equal(liveBySlug.get('replicate-viral-video')?.installed, true)
+    assert.equal(liveBySlug.get('video-hook-analysis')?.installed, true)
+    assert.equal(liveBySlug.get('create-selling-video')?.installed, false)
 
     // featured 与 regular 不重复
     const regularSlugs = new Set(regular.map((s) => s.slug || s.skill || s.id))

@@ -4,190 +4,38 @@
   "description": "Content e-commerce and cross-border creative & operations skills.",
   "categories": [
     {
-      "id": "蓝海选品",
-      "name": "蓝海选品"
-    },
-    {
-      "id": "爆款短视频",
-      "name": "爆款短视频"
-    },
-    {
-      "id": "达人与账号复盘",
-      "name": "达人与账号复盘"
-    },
-    {
-      "id": "创作者中心",
-      "name": "创作者中心"
-    },
-    {
       "id": "创作视频",
       "name": "创作视频"
     },
     {
-      "id": "分镜与提示词",
-      "name": "分镜与提示词"
+      "id": "创作图片",
+      "name": "创作图片"
     },
     {
-      "id": "后期合成导出",
-      "name": "后期合成导出"
+      "id": "选品与需求",
+      "name": "选品与需求"
     },
     {
-      "id": "图文轮播",
-      "name": "图文轮播"
+      "id": "趋势与达人复盘",
+      "name": "趋势与达人复盘"
     },
     {
-      "id": "视觉调性",
-      "name": "视觉调性"
-    },
-    {
-      "id": "品牌美学",
-      "name": "品牌美学"
-    },
-    {
-      "id": "广告格式与Hook",
-      "name": "广告格式与Hook"
-    },
-    {
-      "id": "多语言出海广告",
-      "name": "多语言出海广告"
-    },
-    {
-      "id": "卖点与落地页",
-      "name": "卖点与落地页"
-    },
-    {
-      "id": "电商素材套图",
-      "name": "电商素材套图"
-    },
-    {
-      "id": "矩阵策略",
-      "name": "矩阵策略"
-    },
-    {
-      "id": "文案改写",
-      "name": "文案改写"
-    },
-    {
-      "id": "趋势与大盘",
-      "name": "趋势与大盘"
-    },
-    {
-      "id": "脚本与大纲",
-      "name": "脚本与大纲"
-    },
-    {
-      "id": "封面缩略图",
-      "name": "封面缩略图"
-    },
-    {
-      "id": "长视频切片",
-      "name": "长视频切片"
-    },
-    {
-      "id": "策略与算法导师",
-      "name": "策略与算法导师"
-    },
-    {
-      "id": "推特营销",
-      "name": "推特营销"
-    },
-    {
-      "id": "互动与打分",
-      "name": "互动与打分"
-    },
-    {
-      "id": "内容发布",
-      "name": "内容发布"
+      "id": "文案与运营",
+      "name": "文案与运营"
     }
   ],
   "skills": [
-    {
-      "id": "sk-tk-blue-ocean",
-      "slug": "tiktok-blue-ocean-discovery",
-      "skill": "tiktok-blue-ocean-discovery",
-      "name": "TikTok 蓝海爆品发现",
-      "title": "TikTok 蓝海爆品发现",
-      "category": "蓝海选品",
-      "description": "找出指定地区、指定品类下正在爆卖、但竞争还不饱和的潜力商品，产出可下手的选品清单。",
-      "summary": "找出指定地区、指定品类下正在爆卖、但竞争还不饱和的潜力商品，产出可下手的选品清单。",
-      "installed": true
-    },
-    {
-      "id": "sk-tk-similar-product",
-      "slug": "find-similar-products-by-image",
-      "skill": "find-similar-products-by-image",
-      "name": "以图找同款商品",
-      "title": "以图找同款商品",
-      "category": "蓝海选品",
-      "description": "根据商品图片在跨境货源平台精准检索同款与低价货源，对比利润空间。",
-      "summary": "根据商品图片在跨境货源平台精准检索同款与低价货源，对比利润空间。",
-      "installed": true
-    },
-    {
-      "id": "sk-tk-download-video",
-      "slug": "download-tk-video",
-      "skill": "download-tk-video",
-      "name": "下载 TikTok 无水印视频",
-      "title": "下载 TikTok 无水印视频",
-      "category": "爆款短视频",
-      "description": "一键解析并下载 TikTok 高清无水印视频素材及原声音频，用于对标拆解。",
-      "summary": "一键解析并下载 TikTok 高清无水印视频素材及原声音频，用于对标拆解。",
-      "installed": true
-    },
-    {
-      "id": "sk-tk-viral-selling-prompt",
-      "slug": "viral-selling-prompt-generator",
-      "skill": "viral-selling-prompt-generator",
-      "name": "TikTok 爆款带货提示词生成器",
-      "title": "TikTok 爆款带货提示词生成器",
-      "category": "爆款短视频",
-      "description": "根据目标商品卖点，生成适合 TikTok 前 3 秒黄金吸睛的高转化带货视频分镜提示词。",
-      "summary": "根据目标商品卖点，生成适合 TikTok 前 3 秒黄金吸睛的高转化带货视频分镜提示词。",
-      "installed": true
-    },
-    {
-      "id": "sk-tk-creator-distiller",
-      "slug": "tk-creator-distiller",
-      "skill": "tk-creator-distiller",
-      "name": "TikTok 头部博主对标蒸馏",
-      "title": "TikTok 头部博主对标蒸馏",
-      "category": "达人与账号复盘",
-      "description": "深度解析对标达人的近期高赞视频，提炼其选题模式、完播留存技巧与人设定位。",
-      "summary": "深度解析对标达人的近期高赞视频，提炼其选题模式、完播留存技巧与人设定位。",
-      "installed": true
-    },
-    {
-      "id": "sk-tk-account-review",
-      "slug": "tk-account-review-and-optimization",
-      "skill": "tk-account-review-and-optimization",
-      "name": "TikTok 账号复盘与优化建议",
-      "title": "TikTok 账号复盘与优化建议",
-      "category": "达人与账号复盘",
-      "description": "基于账号近期播放、完播率与互动数据，诊断限流原因并给出针对性提效建议。",
-      "summary": "基于账号近期播放、完播率与互动数据，诊断限流原因并给出针对性提效建议。",
-      "installed": true
-    },
-    {
-      "id": "sk-tk-drama-center",
-      "slug": "tiktok-drama-center",
-      "skill": "tiktok-drama-center",
-      "name": "TikTok 官方创作者与短剧中心",
-      "title": "TikTok 官方创作者与短剧中心",
-      "category": "创作者中心",
-      "description": "TikTok Drama Center 创作者认证、收益结算、原片上传与官方活动指引。",
-      "summary": "TikTok Drama Center 创作者认证、收益结算、原片上传与官方活动指引。",
-      "installed": true
-    },
     {
       "id": "sk-tk-replicate-viral",
       "slug": "replicate-viral-video",
       "skill": "replicate-viral-video",
       "name": "复刻爆款视频",
       "title": "复刻爆款视频",
+      "titleZh": "复刻爆款视频",
+      "titleEn": "Replicate Viral Video",
       "category": "创作视频",
       "description": "参考爆款视频结构，为你的产品一键生成同款带货视频。",
-      "summary": "参考爆款视频结构，为你的产品一键生成同款带货视频。",
-      "installed": true
+      "summary": "参考爆款视频结构，为你的产品一键生成同款带货视频。"
     },
     {
       "id": "sk-tk-create-selling-video",
@@ -195,10 +43,11 @@
       "skill": "create-selling-video",
       "name": "创作带货视频",
       "title": "创作带货视频",
+      "titleZh": "创作带货视频",
+      "titleEn": "Create Selling Video",
       "category": "创作视频",
       "description": "从商品或参考视频出发，自动编排分析、脚本、提示词与生成全流程。",
-      "summary": "从商品或参考视频出发，自动编排分析、脚本、提示词与生成全流程。",
-      "installed": true
+      "summary": "从商品或参考视频出发，自动编排分析、脚本、提示词与生成全流程。"
     },
     {
       "id": "sk-tk-selling-hook-analysis",
@@ -206,10 +55,11 @@
       "skill": "video-hook-analysis",
       "name": "视频拆解",
       "title": "视频拆解",
+      "titleZh": "视频拆解",
+      "titleEn": "Video Breakdown",
       "category": "创作视频",
       "description": "拆解短视频叙事结构、黄金Hook与逐镜头分镜脚本。",
-      "summary": "拆解短视频叙事结构、黄金Hook与逐镜头分镜脚本。",
-      "installed": true
+      "summary": "拆解短视频叙事结构、黄金Hook与逐镜头分镜脚本。"
     },
     {
       "id": "sk-tk-reverse-prompt",
@@ -217,285 +67,371 @@
       "skill": "reverse-video-prompt",
       "name": "反推视频提示词",
       "title": "反推视频提示词",
+      "titleZh": "反推视频提示词",
+      "titleEn": "Reverse Video Prompt",
       "category": "创作视频",
       "description": "上传TK视频链接，自动反推出该视频背后，可用于AI视频生成的高质量提示词。",
-      "summary": "上传TK视频链接，自动反推出该视频背后，可用于AI视频生成的高质量提示词。",
-      "installed": true
+      "summary": "上传TK视频链接，自动反推出该视频背后，可用于AI视频生成的高质量提示词。"
     },
     {
-      "id": "sk-viral-motion-lang",
+      "id": "sk-omx-ecom-video-script",
+      "slug": "omnimux-ecom-video-script",
+      "skill": "omnimux-ecom-video-script",
+      "name": "带货短视频脚本",
+      "title": "带货短视频脚本",
+      "titleZh": "带货短视频脚本",
+      "titleEn": "E-commerce Video Script",
+      "category": "创作视频",
+      "description": "结合商品参数真源与 3 秒钩子模型，产出带口播时长与合规校验的跨境带货脚本。",
+      "summary": "结合商品参数真源与 3 秒钩子模型，产出带口播时长与合规校验的跨境带货脚本。"
+    },
+    {
+      "id": "sk-omx-cinematic-motion",
       "slug": "cinematic-motion-language",
       "skill": "cinematic-motion-language",
-      "name": "电影级运镜与视听运动语言",
-      "title": "电影级运镜与视听运动语言",
-      "category": "分镜与提示词",
-      "description": "提供推拉摇移、升降跟拍、升格慢动作等工业级运镜参数词典，赋能分镜生成。",
-      "summary": "提供推拉摇移、升降跟拍、升格慢动作等工业级运镜参数词典，赋能分镜生成。",
-      "installed": true
+      "name": "电影级运镜语言",
+      "title": "电影级运镜语言",
+      "titleZh": "电影级运镜语言",
+      "titleEn": "Cinematic Motion Language",
+      "category": "创作视频",
+      "description": "将分镜创意转化为精准的推拉摇移、景别与运动物理参数，提升视频生成可控性。",
+      "summary": "将分镜创意转化为精准的推拉摇移、景别与运动物理参数，提升视频生成可控性。"
     },
     {
-      "id": "sk-viral-clip-export",
-      "slug": "clip-export",
-      "skill": "clip-export",
-      "name": "剪辑工坊多轨装配与成片导出",
-      "title": "剪辑工坊多轨装配与成片导出",
-      "category": "后期合成导出",
-      "description": "调度剪辑时间线多轨道、卡点音效、字幕花字，并一键渲染导出 9:16 高清短视频成品。",
-      "summary": "调度剪辑时间线多轨道、卡点音效、字幕花字，并一键渲染导出 9:16 高清短视频成品。",
-      "installed": true
-    },
-    {
-      "id": "sk-ig-carousel-growth",
-      "slug": "carousel-content-growth-expert",
-      "skill": "carousel-content-growth-expert",
-      "name": "高转化 4:5 轮播图设计与生成",
-      "title": "高转化 4:5 轮播图设计与生成",
-      "category": "图文轮播",
-      "description": "按 6 页高留存逻辑生成符合 Instagram 视觉美学的高转化 4:5 轮播图与配图文案。",
-      "summary": "按 6 页高留存逻辑生成符合 Instagram 视觉美学的高转化 4:5 轮播图与配图文案。",
-      "installed": true
-    },
-    {
-      "id": "sk-ig-editorial-carousel",
-      "slug": "editorial-luxury-ig-carousel",
-      "skill": "editorial-luxury-ig-carousel",
-      "name": "奢感高定图文轮播故事板",
-      "title": "奢感高定图文轮播故事板",
-      "category": "图文轮播",
-      "description": "针对时尚、轻奢与生活方式品牌，生成杂志级排版与高端质感的轮播故事板。",
-      "summary": "针对时尚、轻奢与生活方式品牌，生成杂志级排版与高端质感的轮播故事板。",
-      "installed": true
-    },
-    {
-      "id": "sk-ig-luxury-reel",
-      "slug": "luxury-brand-photo-reel",
-      "skill": "luxury-brand-photo-reel",
-      "name": "高端品牌视觉调性与 Reels 脚本",
-      "title": "高端品牌视觉调性与 Reels 脚本",
-      "category": "视觉调性",
-      "description": "构建高级沉浸感视觉氛围，输出契合品牌声线的 Instagram Reels 短片脚本与视听指导。",
-      "summary": "构建高级沉浸感视觉氛围，输出契合品牌声线的 Instagram Reels 短片脚本与视听指导。",
-      "installed": true
-    },
-    {
-      "id": "sk-ig-product-photoshoot",
-      "slug": "product-photoshoot",
-      "skill": "product-photoshoot",
-      "name": "商业美学静物摄影提示词",
-      "title": "商业美学静物摄影提示词",
-      "category": "品牌美学",
-      "description": "生成专业影棚级打光、材质与构图的商业静物摄影生图提示词。",
-      "summary": "生成专业影棚级打光、材质与构图的商业静物摄影生图提示词。",
-      "installed": true
-    },
-    {
-      "id": "sk-ig-brand-brief",
-      "slug": "brand-brief",
-      "skill": "brand-brief",
-      "name": "品牌视觉与声线资产卡",
-      "title": "品牌视觉与声线资产卡",
-      "category": "品牌美学",
-      "description": "沉淀品牌的受众画像、调性偏好与色调规范，确保每组 Instagram 输出高度一致。",
-      "summary": "沉淀品牌的受众画像、调性偏好与色调规范，确保每组 Instagram 输出高度一致。",
-      "installed": true
-    },
-    {
-      "id": "sk-ad-format",
-      "slug": "ad-creative-strategist",
-      "skill": "ad-creative-strategist",
-      "name": "96款广告格式与Hook匹配",
-      "title": "96款广告格式与Hook匹配",
-      "category": "广告格式与Hook",
-      "description": "根据产品与受众特征，精准匹配业界 96 款广告格式与 75 款开场黄金 Hook，输出高转化创意脚本。",
-      "summary": "根据产品与受众特征，精准匹配业界 96 款广告格式与 75 款开场黄金 Hook，输出高转化创意脚本。",
-      "installed": true
-    },
-    {
-      "id": "sk-ad-kling-localizer",
+      "id": "sk-omx-kling-ad-localizer",
       "slug": "kling-global-ad-localizer",
       "skill": "kling-global-ad-localizer",
-      "name": "出海多语言视频广告矩阵",
-      "title": "出海多语言视频广告矩阵",
-      "category": "多语言出海广告",
-      "description": "面向 TikTok、Meta、亚马逊出海电商，制作符合目标市场语境的多语言本土化视频广告矩阵。",
-      "summary": "面向 TikTok、Meta、亚马逊出海电商，制作符合目标市场语境的多语言本土化视频广告矩阵。",
-      "installed": true
+      "name": "多语言出海视频广告",
+      "title": "多语言出海视频广告",
+      "titleZh": "多语言出海视频广告",
+      "titleEn": "Global Ad Localizer",
+      "category": "创作视频",
+      "description": "面向 TikTok 与跨境电商锁定产品外观、本地化适配人设与语境的多语言广告矩阵。",
+      "summary": "面向 TikTok 与跨境电商锁定产品外观、本地化适配人设与语境的多语言广告矩阵。"
     },
     {
-      "id": "sk-ad-selling-points",
-      "slug": "product-selling-points",
-      "skill": "product-selling-points",
-      "name": "商品卖点与痛点反推",
-      "title": "商品卖点与痛点反推",
-      "category": "卖点与落地页",
-      "description": "深度解析商品详情页与素材，提炼 3 大核心卖点、目标受众画像与差异化使用场景。",
-      "summary": "深度解析商品详情页与素材，提炼 3 大核心卖点、目标受众画像与差异化使用场景。",
-      "installed": true
+      "id": "sk-omx-clip-export",
+      "slug": "clip-export",
+      "skill": "clip-export",
+      "name": "剪辑草稿导出",
+      "title": "剪辑草稿导出",
+      "titleZh": "剪辑草稿导出",
+      "titleEn": "Clip Draft Export",
+      "category": "创作视频",
+      "description": "将本地多轨素材、字幕与音频装配导出为可编辑的剪映 / CapCut 草稿工程。",
+      "summary": "将本地多轨素材、字幕与音频装配导出为可编辑的剪映 / CapCut 草稿工程。"
     },
     {
-      "id": "sk-ad-ecommerce-copy",
-      "slug": "ecommerce-copywriter",
-      "skill": "ecommerce-copywriter",
-      "name": "电商高转化文案与落地页",
-      "title": "电商高转化文案与落地页",
-      "category": "卖点与落地页",
-      "description": "基于 AIDA 与 FAB 模型，撰写高点击广告标题、社媒 Caption 与落地页转化文案。",
-      "summary": "基于 AIDA 与 FAB 模型，撰写高点击广告标题、社媒 Caption 与落地页转化文案。",
-      "installed": true
+      "id": "sk-tk-shoppable-carousel",
+      "slug": "shoppable-carousel",
+      "skill": "shoppable-carousel",
+      "name": "商品轮播图",
+      "title": "商品轮播图",
+      "titleZh": "商品轮播图",
+      "titleEn": "Shoppable Carousel",
+      "category": "创作图片",
+      "description": "根据商品图片规划逐页轮播图方案与生图提示词。",
+      "summary": "根据商品图片规划逐页轮播图方案与生图提示词。"
     },
     {
-      "id": "sk-ad-ecommerce-image",
+      "id": "sk-tk-replicate-carousel",
+      "slug": "replicate-carousel",
+      "skill": "replicate-carousel",
+      "name": "图文复刻",
+      "title": "图文复刻",
+      "titleZh": "图文复刻",
+      "titleEn": "Carousel Replication",
+      "category": "创作图片",
+      "description": "拆解参考图文结构，为新商品生成原创轮播方案。",
+      "summary": "拆解参考图文结构，为新商品生成原创轮播方案。"
+    },
+    {
+      "id": "sk-omx-ecommerce-image",
       "slug": "ecommerce-image",
       "skill": "ecommerce-image",
-      "name": "电商规范套图生成",
-      "title": "电商规范套图生成",
-      "category": "电商素材套图",
-      "description": "自动生成符合海外主流电商规范的高质感白底图、场景图、细节特写与卖点展示图。",
-      "summary": "自动生成符合海外主流电商规范的高质感白底图、场景图、细节特写与卖点展示图。",
-      "installed": true
+      "name": "电商商品套图",
+      "title": "电商商品套图",
+      "titleZh": "电商商品套图",
+      "titleEn": "E-commerce Product Images",
+      "category": "创作图片",
+      "description": "基于真实商品图规划、生成并评估主图、卖点图与场景图，严格锁定商品外观。",
+      "summary": "基于真实商品图规划、生成并评估主图、卖点图与场景图，严格锁定商品外观。"
     },
     {
-      "id": "sk-omni-strategy",
+      "id": "sk-omx-ecom-visual-qa",
+      "slug": "omnimux-ecom-visual-qa",
+      "skill": "omnimux-ecom-visual-qa",
+      "name": "9图视觉矩阵与质检",
+      "title": "9图视觉矩阵与质检",
+      "titleZh": "9图视觉矩阵与质检",
+      "titleEn": "9-Image Visual QA",
+      "category": "创作图片",
+      "description": "规划跨境 9 图商详视觉矩阵并执行白底、主体占比与文字合规质检。",
+      "summary": "规划跨境 9 图商详视觉矩阵并执行白底、主体占比与文字合规质检。"
+    },
+    {
+      "id": "sk-omx-product-photoshoot",
+      "slug": "product-photoshoot",
+      "skill": "product-photoshoot",
+      "name": "商业产品静物摄影",
+      "title": "商业产品静物摄影",
+      "titleZh": "商业产品静物摄影",
+      "titleEn": "Product Photoshoot",
+      "category": "创作图片",
+      "description": "生成影棚级布光、材质细节与构图控制的商业静物产品摄影方案。",
+      "summary": "生成影棚级布光、材质细节与构图控制的商业静物产品摄影方案。"
+    },
+    {
+      "id": "sk-omx-editorial-luxury-carousel",
+      "slug": "editorial-luxury-ig-carousel",
+      "skill": "editorial-luxury-ig-carousel",
+      "name": "杂志感品牌轮播图",
+      "title": "杂志感品牌轮播图",
+      "titleZh": "杂志感品牌轮播图",
+      "titleEn": "Editorial Luxury Carousel",
+      "category": "创作图片",
+      "description": "面向时尚与生活方式品牌，构建杂志级排版与统一色调的社媒图文轮播。",
+      "summary": "面向时尚与生活方式品牌，构建杂志级排版与统一色调的社媒图文轮播。"
+    },
+    {
+      "id": "sk-omx-ecom-market-research",
+      "slug": "omnimux-ecom-market-research",
+      "skill": "omnimux-ecom-market-research",
+      "name": "类目市场与选品调研",
+      "title": "类目市场与选品调研",
+      "titleZh": "类目市场与选品调研",
+      "titleEn": "E-commerce Market Research",
+      "category": "选品与需求",
+      "description": "清洗多平台类目导出表，用脚本精算月容量、CR10、集中度与价格带波谷机会。",
+      "summary": "清洗多平台类目导出表，用脚本精算月容量、CR10、集中度与价格带波谷机会。"
+    },
+    {
+      "id": "sk-omx-product-demand",
+      "slug": "omnimux-product-demand",
+      "skill": "omnimux-product-demand",
+      "name": "社媒选品与需求验证",
+      "title": "社媒选品与需求验证",
+      "titleZh": "社媒选品与需求验证",
+      "titleEn": "Social Product Demand",
+      "category": "选品与需求",
+      "description": "从公开社媒讨论挖掘真实痛点、异议与购买意向信号，验证选品需求与切入角度。",
+      "summary": "从公开社媒讨论挖掘真实痛点、异议与购买意向信号，验证选品需求与切入角度。"
+    },
+    {
+      "id": "sk-omx-ecom-pricing-strategy",
+      "slug": "omnimux-ecom-pricing-strategy",
+      "skill": "omnimux-ecom-pricing-strategy",
+      "name": "定价与单元经济核算",
+      "title": "定价与单元经济核算",
+      "titleZh": "定价与单元经济核算",
+      "titleEn": "Pricing & Unit Economics",
+      "category": "选品与需求",
+      "description": "提炼唯一核心卖点与 SKU 角色矩阵，用脚本精算含税净利率、盈亏价与券余量。",
+      "summary": "提炼唯一核心卖点与 SKU 角色矩阵，用脚本精算含税净利率、盈亏价与券余量。"
+    },
+    {
+      "id": "sk-omx-trend-discovery",
+      "slug": "omnimux-trend-discovery",
+      "skill": "omnimux-trend-discovery",
+      "name": "细分赛道趋势挖掘",
+      "title": "细分赛道趋势挖掘",
+      "titleZh": "细分赛道趋势挖掘",
+      "titleEn": "Trend Discovery",
+      "category": "趋势与达人复盘",
+      "description": "基于公开关键词与高互动作品检索起量选题、内容格式与开场钩子，输出趋势 Brief。",
+      "summary": "基于公开关键词与高互动作品检索起量选题、内容格式与开场钩子，输出趋势 Brief。"
+    },
+    {
+      "id": "sk-omx-outlier-post-finder",
+      "slug": "omnimux-outlier-post-finder",
+      "skill": "omnimux-outlier-post-finder",
+      "name": "账号爆款帖挖掘",
+      "title": "账号爆款帖挖掘",
+      "titleZh": "账号爆款帖挖掘",
+      "titleEn": "Outlier Post Finder",
+      "category": "趋势与达人复盘",
+      "description": "定位账号跑赢自身基线的异常高互动内容，提炼可复制钩子与选题模板。",
+      "summary": "定位账号跑赢自身基线的异常高互动内容，提炼可复制钩子与选题模板。"
+    },
+    {
+      "id": "sk-omx-creator-teardown",
+      "slug": "omnimux-creator-teardown",
+      "skill": "omnimux-creator-teardown",
+      "name": "达人主页深度拆解",
+      "title": "达人主页深度拆解",
+      "titleZh": "达人主页深度拆解",
+      "titleEn": "Creator Teardown",
+      "category": "趋势与达人复盘",
+      "description": "拆解博主或品牌主页的定位、内容支柱、代表作结构与可迁移打法。",
+      "summary": "拆解博主或品牌主页的定位、内容支柱、代表作结构与可迁移打法。"
+    },
+    {
+      "id": "sk-omx-competitor-research",
+      "slug": "omnimux-competitor-research",
+      "skill": "omnimux-competitor-research",
+      "name": "竞品账号横向对标",
+      "title": "竞品账号横向对标",
+      "titleZh": "竞品账号横向对标",
+      "titleEn": "Competitor Research",
+      "category": "趋势与达人复盘",
+      "description": "横向对比 2–5 个竞品社媒账号的内容策略、差异化缺口与测试建议。",
+      "summary": "横向对比 2–5 个竞品社媒账号的内容策略、差异化缺口与测试建议。"
+    },
+    {
+      "id": "sk-omx-transcript-intelligence",
+      "slug": "omnimux-transcript-intelligence",
+      "skill": "omnimux-transcript-intelligence",
+      "name": "视频口播结构拆解",
+      "title": "视频口播结构拆解",
+      "titleZh": "视频口播结构拆解",
+      "titleEn": "Transcript Intelligence",
+      "category": "趋势与达人复盘",
+      "description": "将短视频口播转写拆解为钩子、铺垫、论据、转折与 CTA，沉淀可复用话术库。",
+      "summary": "将短视频口播转写拆解为钩子、铺垫、论据、转折与 CTA，沉淀可复用话术库。"
+    },
+    {
+      "id": "sk-omx-social-listening",
+      "slug": "omnimux-social-listening",
+      "skill": "omnimux-social-listening",
+      "name": "品牌与话题社媒聆听",
+      "title": "品牌与话题社媒聆听",
+      "titleZh": "品牌与话题社媒聆听",
+      "titleEn": "Social Listening",
+      "category": "趋势与达人复盘",
+      "description": "围绕指定品牌、品类或话题汇总社媒真实讨论主题、代表帖与情绪倾向。",
+      "summary": "围绕指定品牌、品类或话题汇总社媒真实讨论主题、代表帖与情绪倾向。"
+    },
+    {
+      "id": "sk-omx-social-data",
+      "slug": "omnimux-social-data",
+      "skill": "omnimux-social-data",
+      "name": "社媒公开数据采集",
+      "title": "社媒公开数据采集",
+      "titleZh": "社媒公开数据采集",
+      "titleEn": "Social Data Router",
+      "category": "趋势与达人复盘",
+      "description": "按意图路由 TikTok、YouTube、Instagram、X 与 TikTok Shop 公开数据工具取证。",
+      "summary": "按意图路由 TikTok、YouTube、Instagram、X 与 TikTok Shop 公开数据工具取证。"
+    },
+    {
+      "id": "sk-omx-tiktok-growth",
+      "slug": "tiktok-growth",
+      "skill": "tiktok-growth",
+      "name": "TikTok 算法与带货增长",
+      "title": "TikTok 算法与带货增长",
+      "titleZh": "TikTok 算法与带货增长",
+      "titleEn": "TikTok Growth Playbook",
+      "category": "趋势与达人复盘",
+      "description": "结合 TikTok 9:16 视听节奏、界面安全区与橱窗合规规划短视频与图文轮播增长。",
+      "summary": "结合 TikTok 9:16 视听节奏、界面安全区与橱窗合规规划短视频与图文轮播增长。"
+    },
+    {
+      "id": "sk-omx-ecom-listing-copy",
+      "slug": "omnimux-ecom-listing-copy",
+      "skill": "omnimux-ecom-listing-copy",
+      "name": "跨境多语商详文案",
+      "title": "跨境多语商详文案",
+      "titleZh": "跨境多语商详文案",
+      "titleEn": "Multilingual Listing Copy",
+      "category": "文案与运营",
+      "description": "读取商品库参数真源，产出关键词分层、母语直出标题与七段式商详并执行合规校验。",
+      "summary": "读取商品库参数真源，产出关键词分层、母语直出标题与七段式商详并执行合规校验。"
+    },
+    {
+      "id": "sk-omx-ecom-ads-diagnosis",
+      "slug": "omnimux-ecom-ads-diagnosis",
+      "skill": "omnimux-ecom-ads-diagnosis",
+      "name": "广告投放诊断优化",
+      "title": "广告投放诊断优化",
+      "titleZh": "广告投放诊断优化",
+      "titleEn": "Ads Funnel Diagnosis",
+      "category": "文案与运营",
+      "description": "用脚本测算盈亏线 ROAS 与最大可承受 CPC，按五层漏斗定位投放瓶颈并给分级清单。",
+      "summary": "用脚本测算盈亏线 ROAS 与最大可承受 CPC，按五层漏斗定位投放瓶颈并给分级清单。"
+    },
+    {
+      "id": "sk-omx-ecom-review-voc",
+      "slug": "omnimux-ecom-review-voc",
+      "skill": "omnimux-ecom-review-voc",
+      "name": "评论 VOC 与差评归因",
+      "title": "评论 VOC 与差评归因",
+      "titleZh": "评论 VOC 与差评归因",
+      "titleEn": "Review VOC Analysis",
+      "category": "文案与运营",
+      "description": "执行差评 8 类归因与好评卖点提炼，输出商详防误解补丁与合规多语售后话术。",
+      "summary": "执行差评 8 类归因与好评卖点提炼，输出商详防误解补丁与合规多语售后话术。"
+    },
+    {
+      "id": "sk-omx-ecom-platform-rules",
+      "slug": "omnimux-ecom-platform-rules",
+      "skill": "omnimux-ecom-platform-rules",
+      "name": "多平台合规规则卡",
+      "title": "多平台合规规则卡",
+      "titleZh": "多平台合规规则卡",
+      "titleEn": "Platform Compliance Rules",
+      "category": "文案与运营",
+      "description": "覆盖 Shopee、Amazon、TikTok Shop 等多平台违禁词、图片尺寸与合规审核红线。",
+      "summary": "覆盖 Shopee、Amazon、TikTok Shop 等多平台违禁词、图片尺寸与合规审核红线。"
+    },
+    {
+      "id": "sk-omx-ad-creative",
+      "slug": "ad-creative",
+      "skill": "ad-creative",
+      "name": "信息流广告创意文案",
+      "title": "信息流广告创意文案",
+      "titleZh": "信息流广告创意文案",
+      "titleEn": "Paid Ad Creative",
+      "category": "文案与运营",
+      "description": "针对 Meta、Google、TikTok 等信息流渠道产出高转化广告标题、正文与多变体素材库。",
+      "summary": "针对 Meta、Google、TikTok 等信息流渠道产出高转化广告标题、正文与多变体素材库。"
+    },
+    {
+      "id": "sk-omni-content-strategy",
       "slug": "content-strategy",
       "skill": "content-strategy",
-      "name": "全域社媒内容策略",
-      "title": "全域社媒内容策略",
-      "category": "矩阵策略",
-      "description": "制定跨平台矩阵运营节奏，按受众心智规划内容排期与转化路径。",
-      "summary": "制定跨平台矩阵运营节奏，按受众心智规划内容排期与转化路径。",
-      "installed": true
+      "name": "社媒内容矩阵策略",
+      "title": "社媒内容矩阵策略",
+      "titleZh": "社媒内容矩阵策略",
+      "titleEn": "Content Strategy",
+      "category": "文案与运营",
+      "description": "统筹跨平台内容日历、核心支柱、选题排期与矩阵分发策略。",
+      "summary": "统筹跨平台内容日历、核心支柱、选题排期与矩阵分发策略。"
     },
     {
-      "id": "sk-omni-caption",
+      "id": "sk-omni-social-caption",
       "slug": "social-caption",
       "skill": "social-caption",
-      "name": "社媒多平台文案自适应改写",
-      "title": "社媒多平台文案自适应改写",
-      "category": "文案改写",
-      "description": "将同一核心主题一键改写为符合 TikTok、Instagram、推特等各平台特性的文案与标签。",
-      "summary": "将同一核心主题一键改写为符合 TikTok、Instagram、推特等各平台特性的文案与标签。",
-      "installed": true
+      "name": "多平台原生配图文案",
+      "title": "多平台原生配图文案",
+      "titleZh": "多平台原生配图文案",
+      "titleEn": "Social Caption",
+      "category": "文案与运营",
+      "description": "一键适配 TikTok、Instagram、YouTube 等平台调性的高互动文案与标签。",
+      "summary": "一键适配 TikTok、Instagram、YouTube 等平台调性的高互动文案与标签。"
     },
     {
-      "id": "sk-omni-topics",
-      "slug": "viral-topics-and-tags-mining",
-      "skill": "viral-topics-and-tags-mining",
-      "name": "全网爆款选题与话题挖掘",
-      "title": "全网爆款选题与话题挖掘",
-      "category": "趋势与大盘",
-      "description": "抓取全网最新飙升热点、趋势话题与高流量 Hashtags，提供选题建议。",
-      "summary": "抓取全网最新飙升热点、趋势话题与高流量 Hashtags，提供选题建议。",
-      "installed": true
+      "id": "sk-omx-content-repurposing",
+      "slug": "omnimux-content-repurposing",
+      "skill": "omnimux-content-repurposing",
+      "name": "多平台内容改写复用",
+      "title": "多平台内容改写复用",
+      "titleZh": "多平台内容改写复用",
+      "titleEn": "Content Repurposing",
+      "category": "文案与运营",
+      "description": "把一条视频、转写或长帖改写为短视频脚本、X 推文串与多平台可复用内容资产。",
+      "summary": "把一条视频、转写或长帖改写为短视频脚本、X 推文串与多平台可复用内容资产。"
     },
     {
-      "id": "sk-omni-overview",
-      "slug": "keyword-niche-overview",
-      "skill": "keyword-niche-overview",
-      "name": "全域关键词与赛道速览",
-      "title": "全域关键词与赛道速览",
-      "category": "趋势与大盘",
-      "description": "输入品类或关键词，一键洞悉全网视频声量、热门商品与头部达人格局。",
-      "summary": "输入品类或关键词，一键洞悉全网视频声量、热门商品与头部达人格局。",
-      "installed": true
-    },
-    {
-      "id": "sk-omni-analyze",
-      "slug": "analyze-account",
-      "skill": "analyze-account",
-      "name": "跨平台多账号诊断",
-      "title": "跨平台多账号诊断",
-      "category": "趋势与大盘",
-      "description": "综合评估多平台矩阵账号粉丝质量、内容受众重合度与发布效果漏斗。",
-      "summary": "综合评估多平台矩阵账号粉丝质量、内容受众重合度与发布效果漏斗。",
-      "installed": true
-    },
-    {
-      "id": "sk-yt-creator",
-      "slug": "youtube-creator",
-      "skill": "youtube-creator",
-      "name": "YouTube 全流程创作助手",
-      "title": "YouTube 全流程创作助手",
-      "category": "脚本与大纲",
-      "description": "从高吸引力选题规划、高留存结构化脚本撰写到高转化点击率封面设计。",
-      "summary": "从高吸引力选题规划、高留存结构化脚本撰写到高转化点击率封面设计。",
-      "installed": true
-    },
-    {
-      "id": "sk-yt-cover",
-      "slug": "baoyu-cover-image",
-      "skill": "baoyu-cover-image",
-      "name": "高转化 16:9 封面缩略图生成",
-      "title": "高转化 16:9 封面缩略图生成",
-      "category": "封面缩略图",
-      "description": "融合电影感大画幅、视觉焦点对比与高 CTR 标题文字排版的 YouTube 封面图生成。",
-      "summary": "融合电影感大画幅、视觉焦点对比与高 CTR 标题文字排版的 YouTube 封面图生成。",
-      "installed": true
-    },
-    {
-      "id": "sk-yt-slice",
-      "slug": "course-to-short-video",
-      "skill": "course-to-short-video",
-      "name": "长视频高光分段切片提取",
-      "title": "长视频高光分段切片提取",
-      "category": "长视频切片",
-      "description": "长视频深度拆解，自动提取高能转折点、关键结论与适合二次分发的短切片。",
-      "summary": "长视频深度拆解，自动提取高能转折点、关键结论与适合二次分发的短切片。",
-      "installed": true
-    },
-    {
-      "id": "sk-yt-long-script",
-      "slug": "generate-long-video-script",
-      "skill": "generate-long-video-script",
-      "name": "中长视频多段式留存脚本生成",
-      "title": "中长视频多段式留存脚本生成",
-      "category": "脚本与大纲",
-      "description": "撰写包含引言钩子、核心论点推进、悬念承接与号召互动的 8~15 分钟长视频深度脚本。",
-      "summary": "撰写包含引言钩子、核心论点推进、悬念承接与号召互动的 8~15 分钟长视频深度脚本。",
-      "installed": true
-    },
-    {
-      "id": "sk-x-mastery-mentor",
-      "slug": "x-mentor-skill",
-      "skill": "x-mentor-skill",
-      "name": "X (推特) 运营导师与算法引擎",
-      "title": "X (推特) 运营导师与算法引擎",
-      "category": "策略与算法导师",
-      "description": "基于 X 开源算法权重分析、顶级创作者心智模型与 AI/科技赛道专精策略，提供选题定位、Hook 构造、账号诊断与变现闭环。",
-      "summary": "基于 X 开源算法权重分析、顶级创作者心智模型与 AI/科技赛道专精策略，提供选题定位、Hook 构造、账号诊断与变现闭环。",
-      "installed": true
-    },
-    {
-      "id": "sk-x-sopilot",
+      "id": "sk-omx-sopilot-social-agents",
       "slug": "sopilot-social-agents",
       "skill": "sopilot-social-agents",
-      "name": "推特营销专项提示词路由中心",
-      "title": "推特营销专项提示词路由中心",
-      "category": "推特营销",
-      "description": "按发帖、高赞跟帖、引用转帖、推文串改写、私信触达等场景智能路由并加载专项模型提示词。",
-      "summary": "按发帖、高赞跟帖、引用转帖、推文串改写、私信触达等场景智能路由并加载专项模型提示词。",
-      "installed": true
-    },
-    {
-      "id": "sk-x-post-grader",
-      "slug": "post-grader",
-      "skill": "post-grader",
-      "name": "推特爆款病毒传播力评分器",
-      "title": "推特爆款病毒传播力评分器",
-      "category": "互动与打分",
-      "description": "针对推文的开场 Hook、争议性、情绪张力与转发价值进行综合打分，给出改进建议。",
-      "summary": "针对推文的开场 Hook、争议性、情绪张力与转发价值进行综合打分，给出改进建议。",
-      "installed": true
-    },
-    {
-      "id": "sk-x-publish",
-      "slug": "baoyu-post-to-x",
-      "skill": "baoyu-post-to-x",
-      "name": "推特图文与长文专栏发布",
-      "title": "推特图文与长文专栏发布",
-      "category": "内容发布",
-      "description": "支持富文本排版、多图上传以及 X Articles 深度长文格式的一键排版与草稿生成。",
-      "summary": "支持富文本排版、多图上传以及 X Articles 深度长文格式的一键排版与草稿生成。",
-      "installed": true
+      "name": "SoPilot 社媒营销路由",
+      "title": "SoPilot 社媒营销路由",
+      "titleZh": "SoPilot 社媒营销路由",
+      "titleEn": "SoPilot Social Agents",
+      "category": "文案与运营",
+      "description": "按推特发帖、高赞评论、Threads 改写、引用转推与私信触达场景智能路由专项提示词。",
+      "summary": "按推特发帖、高赞评论、Threads 改写、引用转推与私信触达场景智能路由专项提示词。"
     }
   ]
 }
