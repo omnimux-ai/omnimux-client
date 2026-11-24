@@ -15,7 +15,12 @@ import { createHash } from 'node:crypto'
 import { chmodSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { CLOUD_SNAPSHOT_SCHEMA_VERSION, isSnapshotEmpty, snapshotContentDigest } from './snapshot.js'
+import {
+  CLOUD_SNAPSHOT_SCHEMA_VERSION,
+  isSnapshotEmpty,
+  snapshotContentDigest,
+  snapshotPresentationDigest,
+} from './snapshot.js'
 
 export const CLOUD_CATALOG_DIR = 'catalog'
 export const ANONYMOUS_VIEW = 'anonymous'
@@ -118,8 +123,12 @@ export function createCloudCatalogStore(home, opts = {}) {
         return { accepted: false, reason: 'empty' }
       }
       const digest = snapshotContentDigest(snapshot)
+      const presentationDigest = snapshotPresentationDigest(snapshot)
       const previous = readJson(metaPath)
-      if (previous && previous.digest === digest) return { accepted: false, reason: 'unchanged', digest }
+      const previousPresentation = previous?.presentationDigest ?? previous?.digest
+      if (previous && previous.digest === digest && previousPresentation === presentationDigest) {
+        return { accepted: false, reason: 'unchanged', digest, presentationDigest }
+      }
       if (!dir) return { accepted: false, reason: 'no-home' }
 
       mkdirSync(dir, { recursive: true, mode: 0o700 })
@@ -129,6 +138,7 @@ export function createCloudCatalogStore(home, opts = {}) {
         schemaVersion: CLOUD_SNAPSHOT_SCHEMA_VERSION,
         viewKey,
         digest,
+        presentationDigest,
         source: snapshot.source,
         generatedAt: snapshot.generatedAt ?? null,
         fetchedAt: meta.fetchedAt ?? new Date().toISOString(),
@@ -136,7 +146,7 @@ export function createCloudCatalogStore(home, opts = {}) {
         stale: meta.stale === true,
         modeWarning: modeIssue,
       })
-      return { accepted: true, reason: 'written', digest, modeWarning: modeIssue }
+      return { accepted: true, reason: 'written', digest, presentationDigest, modeWarning: modeIssue }
     },
 
     /**

@@ -47,7 +47,7 @@ import {
   type GroupMediaCapability,
   type RuntimeByokChannelSettings,
 } from './channelGroups';
-import type { OperationContractDto } from '../../../../../shared/api.ts';
+import type { CatalogBrandMeta, OperationContractDto } from '../../../../../shared/api.ts';
 import type { ChannelFallbackState } from './channelContractReconciler';
 import { groupMatchesEffectiveVideoVersion } from '../../../../../shared/validation/lineConstraints.ts';
 
@@ -72,6 +72,7 @@ export interface ModelCascadeMenuProps {
     [key: string]: unknown;
   };
   options: readonly PickerCandidate[];
+  brands?: Readonly<Record<string, CatalogBrandMeta>> | null;
   execBusy?: boolean;
   runtimeSettings?: RuntimeByokChannelSettings | null;
   fallbackState?: ChannelFallbackState | null;
@@ -246,12 +247,13 @@ const ChannelRow: React.FC<{
  */
 const CascadeBrandItem: React.FC<{
   brand: PickerCandidateGroup;
+  brands?: Readonly<Record<string, CatalogBrandMeta>> | null;
   isSelected: boolean;
   isHovered?: boolean;
   interactive?: boolean;
   onHover?: () => void;
   onSelect?: () => void;
-}> = ({ brand, isSelected, isHovered = false, interactive = true, onHover, onSelect }) => (
+}> = ({ brand, brands, isSelected, isHovered = false, interactive = true, onHover, onSelect }) => (
   <button
     type="button"
     role={interactive ? 'menuitem' : undefined}
@@ -262,7 +264,15 @@ const CascadeBrandItem: React.FC<{
     onClick={interactive ? onSelect : undefined}
     className={`wf-cascade-brand-item ${isSelected ? 'is-selected' : ''} ${isHovered ? 'is-hovered' : ''}`}
   >
-    <ModelBrandIcon modelId={brand.iconModelId} size={18} />
+    <ModelBrandIcon
+      modelId={brand.iconModelId}
+      brandId={brand.brandId}
+      brandName={brand.brandName}
+      brandIconPath={brand.brandIconPath}
+      label={brand.name}
+      brands={brands}
+      size={18}
+    />
     <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{brand.name}</span>
     {isSelected ? <Check size={15} color="rgb(0, 230, 118)" strokeWidth={2.5} /> : null}
   </button>
@@ -407,6 +417,7 @@ export const ModelCascadeMenu: React.FC<ModelCascadeMenuProps> = ({
   modelValue,
   routing,
   options,
+  brands,
   execBusy,
   runtimeSettings,
   fallbackState,
@@ -567,7 +578,7 @@ export const ModelCascadeMenu: React.FC<ModelCascadeMenuProps> = ({
       <div className="wf-loomi-col wf-loomi-col--brand" data-cascade-probe-col="">
         <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--wf-cascade-muted)', padding: '6px 8px 8px' }}>品牌</div>
         {brandList.map((brand) => (
-          <CascadeBrandItem key={brand.id} brand={brand} isSelected={false} interactive={false} />
+          <CascadeBrandItem key={brand.id} brand={brand} brands={brands} isSelected={false} interactive={false} />
         ))}
       </div>
       {brandList.map((brand) => (
@@ -595,7 +606,7 @@ export const ModelCascadeMenu: React.FC<ModelCascadeMenuProps> = ({
         );
       })}
     </>
-  ), [brandList, groupsForModel, runtimeSettings, fallbackState]);
+  ), [brandList, brands, groupsForModel, runtimeSettings, fallbackState]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -642,7 +653,8 @@ export const ModelCascadeMenu: React.FC<ModelCascadeMenuProps> = ({
   }, [isOpen]);
 
   const { modelId: triggerModelId } = parseModelAndGroup(activeModelId);
-  const managedModelLabel = isManagedActiveModel ? options.find(item => item.id === activeModelId)?.label : undefined;
+  const activeOption = options.find((item) => item.id === activeModelId);
+  const managedModelLabel = isManagedActiveModel ? activeOption?.label : undefined;
   const managedGroupLabelFull = isManagedActiveModel ? activeGroup?.label : undefined;
   const needsLineSelection = lineSelectionRequired
     || (activeChannelGroups.length > 0 && !activeGroup && !findDefaultChannelGroup(activeChannelGroups));
@@ -667,7 +679,16 @@ export const ModelCascadeMenu: React.FC<ModelCascadeMenuProps> = ({
         title={triggerTitle}
         onClick={() => setIsOpen((prev) => !prev)}
       >
-        <ModelBrandIcon modelId={activeModelId} size={15} />
+        <ModelBrandIcon
+          modelId={activeModelId}
+          brandId={activeOption?.brandId}
+          brandName={activeOption?.brandName}
+          brandIconPath={activeOption?.brandIconPath}
+          family={activeOption?.family}
+          label={activeOption?.label}
+          brands={brands}
+          size={15}
+        />
         <span className="wf-model-cascade-capsule__name">{triggerDisplayText}</span>
 
         <ChevronDown className="wf-model-cascade-capsule__chevron" size={14} strokeWidth={1.75} />
@@ -697,6 +718,7 @@ export const ModelCascadeMenu: React.FC<ModelCascadeMenuProps> = ({
                   <CascadeBrandItem
                     key={brand.id}
                     brand={brand}
+                    brands={brands}
                     isSelected={isSelected}
                     isHovered={isHovered}
                     onHover={() => handleBrandHover(brand.id)}

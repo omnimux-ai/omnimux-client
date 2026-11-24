@@ -417,6 +417,9 @@ importers:
       dompurify:
         specifier: ^3.4.13
         version: 3.4.18
+      dsh-ui-kit:
+        specifier: ^0.1.0
+        version: link:../../../packages/dsh-ui-kit
       marked:
         specifier: ^18.0.9
         version: 18.1.2

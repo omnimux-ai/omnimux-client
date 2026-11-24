@@ -16,7 +16,7 @@
 
 import { createCloudCatalogStore, ANONYMOUS_VIEW } from './store.js'
 import { readBundledSnapshot } from './bundled.js'
-import { snapshotContentDigest } from './snapshot.js'
+import { snapshotContentDigest, snapshotPresentationDigest } from './snapshot.js'
 
 /** Public source labels: `cache` means the disk copy, `remote` the in-process one. */
 const SOURCE_BY_KIND = Object.freeze({ memory: 'remote', disk: 'cache', bundled: 'bundled' })
@@ -51,6 +51,7 @@ export function createLiveCatalog(deps) {
       generatedAt: typeof snapshot?.generatedAt === 'string' ? snapshot.generatedAt : null,
       fetchedAt: typeof meta?.fetchedAt === 'string' ? meta.fetchedAt : null,
       digest: snapshotContentDigest(snapshot),
+      presentationDigest: snapshotPresentationDigest(snapshot),
     }
   }
 
@@ -116,6 +117,7 @@ export function createLiveCatalog(deps) {
       snapshot: winner?.snapshot,
       source: winner ? SOURCE_BY_KIND[winner.kind] ?? 'none' : 'none',
       digest: winner?.digest ?? null,
+      presentationDigest: winner?.presentationDigest ?? null,
       generatedAt: winner?.generatedAt ?? null,
       fetchedAt: winner?.fetchedAt ?? diskMeta?.fetchedAt ?? null,
       stale,
