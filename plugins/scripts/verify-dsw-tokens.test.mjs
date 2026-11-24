@@ -12,6 +12,7 @@ import {
   collectUndefinedUsage,
   extractTokenDefinitions,
   extractTokenReferences,
+  stripComments,
   verifyDswTokens,
   writeAllowlist,
   writeBaseline,
@@ -244,6 +245,65 @@ test('collectUndefinedUsage ignores tests, fixtures, built output and vendor dir
   } finally {
     cleanup(fixture)
   }
+})
+
+test('CSS block comments cannot smuggle local token definitions', () => {
+  const fixture = demoFixture(CLEAN_CSS)
+  try {
+    writeBaselineFor(fixture)
+    writeDemoCss(fixture, '/* --dsw-fake-local: 1 */\n.fake { color: var(--dsw-fake-local); }')
+    const result = verifyFixture(fixture)
+    assert.ok(result.issues.some((issue) => issue.code === 'undefined-token' && /--dsw-fake-local/.test(issue.message)))
+  } finally {
+    cleanup(fixture)
+  }
+})
+
+test('CSS block comments, JS line comments and JSDoc never create references or definitions', () => {
+  const css = '/* var(--dsw-not-real) and var(--dsw-alias-*, #fff) */\n/* --dsw-fake-local: 1 */\n.x { color: var(--dsw-alias-bg-base); }'
+  assert.deepEqual(extractTokenReferences(css, 'x.css'), [{ token: '--dsw-alias-bg-base', hasFallback: false }])
+  assert.deepEqual([...extractTokenDefinitions(css, 'x.css')], [])
+
+  const js = "// var(--dsw-not-real)\n/** JSDoc var(--dsw-not-real) and var(--dsw-alias-*, #fff) */\nconst x = 'var(--dsw-alias-bg-base)'\n"
+  assert.deepEqual(extractTokenReferences(js, 'x.js'), [{ token: '--dsw-alias-bg-base', hasFallback: false }])
+  assert.deepEqual([...extractTokenDefinitions(js, 'x.js')], [])
+  assert.equal(stripComments(js, 'x.js').split('\n').length, js.split('\n').length)
+})
+
+test('CSS-in-JS template literals strip embedded CSS block comments', () => {
+  const template = 'const STYLES = `\n/* --dsw-fake-local: 1 */\n/* var(--dsw-not-real) */\n.x { color: var(--dsw-alias-bg-base); }\n`\n'
+  assert.deepEqual(extractTokenReferences(template, 'x.js'), [{ token: '--dsw-alias-bg-base', hasFallback: false }])
+  assert.deepEqual([...extractTokenDefinitions(template, 'x.js')], [])
+
+  const fixture = demoFixture(CLEAN_CSS)
+  try {
+    writeBaselineFor(fixture)
+    writeFileSync(
+      join(fixture.root, 'plugins/plugins/demo/src/b.js'),
+      'export const STYLES = `\n/* --dsw-fake-local: 1 */\n.fake { color: var(--dsw-fake-local); }\n`\n',
+    )
+    const result = verifyFixture(fixture)
+    assert.ok(result.issues.some((issue) => issue.code === 'undefined-token' && /--dsw-fake-local/.test(issue.message)))
+  } finally {
+    cleanup(fixture)
+  }
+})
+
+test('prose var(--dsw-alias-*, ...) is not prefix-truncated into a token reference', () => {
+  assert.deepEqual(extractTokenReferences('/* var(--dsw-alias-*, #fff) */', 'x.css'), [])
+  assert.deepEqual(extractTokenReferences('.x { color: var(--dsw-alias-*, #fff); }', 'x.css'), [])
+  assert.deepEqual(extractTokenReferences('/* var(--dsw-platform-*, #hex) */', 'x.css'), [])
+})
+
+test('https:// in CSS urls and JS strings does not swallow same-line token references', () => {
+  const css = '.hero { background: url(https://example.com/a.png); color: var(--dsw-not-real); }'
+  assert.deepEqual(extractTokenReferences(css, 'x.css'), [{ token: '--dsw-not-real', hasFallback: false }])
+
+  const js = "const u = 'https://example.com/a.png'; const css = 'color: var(--dsw-not-real)'\n"
+  assert.deepEqual(extractTokenReferences(js, 'x.js'), [{ token: '--dsw-not-real', hasFallback: false }])
+
+  const template = 'const css = `background: url(https://example.com/a.png); color: var(--dsw-not-real);`\n'
+  assert.deepEqual(extractTokenReferences(template, 'x.js'), [{ token: '--dsw-not-real', hasFallback: false }])
 })
 
 test('the real repository state passes the gate', () => {

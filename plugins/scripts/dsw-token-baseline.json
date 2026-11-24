@@ -143,21 +143,19 @@
     },
     "plugins/plugins/omnimux-accounts": {
       "src/client/platforms.js": {
-        "count": 5,
+        "count": 4,
         "tokens": [
-          "--dsw-platform",
           "--dsw-platform-instagram",
           "--dsw-platform-tiktok",
           "--dsw-platform-x",
           "--dsw-platform-youtube"
         ],
         "bare": 0,
-        "fallback": 5
+        "fallback": 4
       },
       "src/client/styles.js": {
-        "count": 50,
+        "count": 49,
         "tokens": [
-          "--dsw-alias",
           "--dsw-alias-bg-elevated",
           "--dsw-alias-bg-primary",
           "--dsw-alias-bg-secondary",
@@ -172,7 +170,7 @@
           "--dsw-text-primary"
         ],
         "bare": 0,
-        "fallback": 50
+        "fallback": 49
       }
     },
     "plugins/plugins/omnimux-analytics": {
@@ -197,9 +195,8 @@
         "fallback": 3
       },
       "src/client/styles.js": {
-        "count": 23,
+        "count": 22,
         "tokens": [
-          "--dsw-alias",
           "--dsw-alias-brand-instagram",
           "--dsw-alias-brand-pink",
           "--dsw-alias-brand-secondary",
@@ -215,7 +212,7 @@
           "--dsw-bg"
         ],
         "bare": 0,
-        "fallback": 23
+        "fallback": 22
       }
     },
     "plugins/plugins/omnimux-assets": {

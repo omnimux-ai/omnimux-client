@@ -17,7 +17,7 @@
 - 产品仓有两个 Electron 壳：`app/dsh-desktop-next`（新壳）与 `app/dsh-plugin-desktop`（Cordis 插件壳）。两者 `package.json` 均依赖 `@deepseek-ai/dsh-client-ui-theme` 与 `@deepseek-ai/dsh-web-app`，加载同一套 Harness Web UI。
 - `app/deepseek-harness/packages/client/ui-theme/src/client/styles.ts` 在运行时把 8 张样式表注入 `document.head`：`base.css`、`corner-shape.css`、`design-platform.css`、`focus.css`、`onboarding.css`、`scrollbar.css`、`gradient-shadow-text.css`、`shiki.css`。
 - 上述 8 张表合并后共 **450 个 `--dsw-*` Token**（含颜色 / 表面 / 边框 / 状态 / 阴影 / 圆角 / 字阶等）。只扫 `design-platform.css` 会漏掉 `base.css` 的 `--dsw-radius-*`/`--dsw-font-*` 与 `gradient-shadow-text.css` 的 `--dsw-elevation-*`，从而误杀合法 Token。
-- 两壳 `node_modules/@deepseek-ai/dsh-client-ui-theme` 实际安装版本一致（`0.2.1-rc.3`，两处 `lib` 逐字节相同）；其中出现的全部 `--dsw-*`（403 个）除一个已无引用的 `--dsw-specific-sidebar-nav-item-hover` 外均为上游子集。
+- 两壳按 `app/upstream.json` 与各自 `package.json` 锁定的 `@deepseek-ai/dsh-client-ui-theme` 版本不同：`app/dsh-desktop-next`（活跃线）锁定 `0.2.2-rc.5`（450 个 Token），冻结的 `app/dsh-plugin-desktop` 锁定 `0.2.1-rc.3`（403 个 Token；双版本交集 402 个 Token，当前插件对 rc.5 新增的 48 个 Token 引用为 0）。rc.3 中出现的全部 `--dsw-*` 除一个已无引用的 `--dsw-specific-sidebar-nav-item-hover` 外均为 rc.5 上游子集，因此白名单以活跃线 rc.5 的 450 Token 为准。
 - 两壳自身 native-ui 样式（`dsh-desktop-next/src/native-ui/theme.css` + `onboarding.css`、`dsh-plugin-desktop/src/native-ui/shared/theme.css` + `compatibility-chrome/style.css`）与 `dsh-desktop-next/src/web-document.ts` 启动态样式共出现 44 个 `--dsw-*` 定义（29 / 9 / 6），经逐项核对 **全部**是上述 8 张表的子集；因此双壳交集真源 = ui-theme 运行时 8 张表。
 - 非运行时测试夹具/快照里的 `--dsw-*` 定义（如 `test-support/`、`*.e2e.test.js` 内联样式）不算真源。
 
@@ -37,7 +37,8 @@
 
 - `plugins/plugins/*/src/**`、`plugins/packages/*/src/**` 的 `.css/.scss/.less/.ts/.tsx/.js/.jsx/.mjs`。
 - 排除 `node_modules`、`lib`、`dist`、`build`、`tests`、`test`、`__tests__`、`fixtures`、`fixture`、`test-support`、`coverage`、`openreel`、`vendor`，以及 `*.test.*` / `*.spec.*`。
-- Token 引用 = `var(--dsw-*)` 的每一次出现（含带 fallback 形态 `var(--dsw-*, …)`，二者同等计入）。
+- 提取前按文件类型安全剥离注释并保留换行：`.css/.scss/.less` 只剥 `/* ... */` 块注释（跳过引号字符串，`//` 不视为注释，避免误吞 `url(https://...)`）；`.js/.jsx/.ts/.tsx/.mjs` 剥 JS 行注释与块注释（保护字符串/模板字符串内的 `//`），并同时剥 CSS-in-JS 模板字符串内的 `/* ... */`，注释中的伪定义与伪引用一律不参与判定。
+- Token 引用 = `var(--dsw-*)` 的每一次出现（含带 fallback 形态 `var(--dsw-*, …)`，二者同等计入）；`REFERENCE_RE` 带右侧 `(?=\s*[,)])` 定界，`var(--dsw-alias-*, …)` 这类散文片段不会被前缀截断误提取。
 - 合法集合 = 上游 450 Token ∪ 同一插件/包 `src/` 内出现的 `--dsw-*: value` 本地定义。
 
 ### 单向不增棘轮
@@ -45,7 +46,7 @@
 - `plugins/scripts/dsw-token-baseline.json` 按「插件/包 → 文件 → `{count, tokens}`」记录存量。
 - 判定：`actual.count <= baseline.count` 且 `actual.tokens ⊆ baseline.tokens`。`actual < baseline` 永远放行并只打印「可收紧」提示，绝不因清理而失败；`--update-baseline` 主动收紧。
 - `plugins/packages/dsh-ui-kit` 锁定为 0：任何未定义 Token 直接 `ui-kit-undefined-token` 失败，且基线文件出现该包条目即 `ui-kit-baseline-entry` 失败。
-- 存量基线（本单修复前实测）：673 处未定义引用 / 130 个唯一 Token / 14 个包；修复后 654 处 / 13 个包（dsh-ui-kit 清零 19 处：9+1+2+2+1+2+2）。
+- 存量基线（本单修复前实测）：673 处未定义引用 / 130 个唯一 Token / 14 个包；修复后 651 处 / 13 个包（dsh-ui-kit 清零 17 处：9+1+1+2+2+2）。
 
 ### CI / 脚本登记
 
@@ -68,7 +69,7 @@
 | Badge `.info` 文本 | `--dsw-alias-state-info-primary` | `--dsw-alias-state-business-primary` | `rgb(65,118,230)` | `rgb(122,170,255)` | 同上（与信息浅底配对） |
 | MediaCard/Table/SelectableTile 选中 | `--dsw-alias-interactive-bg-selected` | `--dsw-alias-interactive-bg-active` | `rgba(38,49,72,.10)` | `rgba(255,255,255,.14)` | 15.76 / 8.53（选中行文本） |
 | StatBar 上升趋势 | `--dsw-alias-status-success` | `--dsw-alias-state-success-primary` | `rgb(34,197,94)` | `rgb(34,197,94)` | 2.28 / 6.12 |
-| Tabs `.pill .tabItem.active` bg | `--dsw-alias-bg-elevated` | `--dsw-alias-bg-layer-3` | `rgb(255,255,255)` | `rgb(52,65,91)` | — |
+| Tabs `.pill .tabItem.active` bg | `--dsw-alias-bg-elevated` | `--dsw-alias-bg-layer-3` | `rgb(255,255,255)` | `rgb(53, 54, 56)` | — |
 
 补充说明：
 
@@ -82,11 +83,12 @@
 
 ## 验证记录（本机实测）
 
-- `node plugins/scripts/verify-dsw-tokens.mjs`：通过，18 个插件/包、上游 Token 450、存量未定义引用 654（13 个包，均在基线内）、`dsh-ui-kit 0`。
-- `node --test plugins/scripts/verify-dsw-tokens.test.mjs`：13 pass / 0 fail。
+- `node plugins/scripts/verify-dsw-tokens.mjs`：通过，18 个插件/包、上游 Token 450、存量未定义引用 651（13 个包，均在基线内）、`dsh-ui-kit 0`。
+- `node --test plugins/scripts/verify-dsw-tokens.test.mjs`：18 pass / 0 fail。
 - `corepack pnpm --filter dsh-ui-kit test`：77 pass / 0 fail（含新增 `src/token-contract.test.js` 与三处组件断言更新）。
 - `node --test plugins/scripts/verify-agents-md.test.mjs`：9 pass；`verify-governance-registry.test.mjs`：4 pass。
 - `node plugins/scripts/analyze-lessons-signals.mjs . --json`：退出 0，活跃条目与已毕业表解析正常。
+- 全仓 18 包剥离前后差异审计：仅 5 处带 `--dsw-*` 的引用被剥除，逐行核对全部位于注释（`Divider.tsx` 1、`GenWaveCard.module.css` 1、`GenWaveCard.tsx` 1、`genWavePalette.ts` 2），0 处有效代码/字符串被误剥，剥离前后行数一致。
 - 真实浏览器：工作树外演示目录 `omnimux-demos/issue-264-dsw-ui-kit/index.html`（不提交入仓）加载真实 `design-platform.css`；Playwright 1.63 + 系统 Chrome 无头（1440×1100 @2x）截取 Light/Dark 全页与 5 个组件分区共 12 张截图，`results.json` 记录 52 个探针的 computed color / effective background / WCAG 对比度；已用 `read_image` 复核明暗双主题，无不可读、偏色或透底。
 
 ## 旧标准变更
@@ -116,3 +118,7 @@
 - 实际计数低于基线 = 通过（并提示可收紧）。
 - 合法上游 Token（`--dsw-radius-*` / `--dsw-font-*` / `--dsw-elevation-*` / `--dsw-alias-*`）与本包本地定义 = 通过。
 - `dsh-ui-kit` 任意未定义 Token = `ui-kit-undefined-token` 失败；基线出现 `dsh-ui-kit` 条目 = `ui-kit-baseline-entry` 失败。
+- CSS 块注释里的 `/* --dsw-fake-local: 1 */` 不能放行 `var(--dsw-fake-local)`（失败）；CSS 块注释、JS 行注释与 JSDoc 中的 `var(--dsw-not-real)` / `var(--dsw-alias-*, #fff)` 不误报。
+- CSS-in-JS 模板字符串内的 `/* --dsw-fake-local: 1 */` 同样不能放行，`/* var(--dsw-not-real) */` 不误报。
+- `var(--dsw-alias-*, #fff)` / `var(--dsw-platform-*, #hex)` 不再被前缀截断提取。
+- CSS `url(https://example.com/a.png)` 与 JS 字符串中的 `https://...` 之后，同行 `var(--dsw-not-real)` 仍被正常捕获（`//` 保护未吞有效代码）。

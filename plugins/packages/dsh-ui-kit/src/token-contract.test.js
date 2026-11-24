@@ -3,14 +3,11 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { dirname, join, relative } from 'node:path'
 import { describe, it } from 'node:test'
 import { fileURLToPath } from 'node:url'
+import { extractTokenDefinitions, extractTokenReferences } from '../../../scripts/verify-dsw-tokens.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const allowlist = JSON.parse(readFileSync(join(here, '../../../scripts/dsw-token-allowlist.json'), 'utf8'))
 const upstreamTokens = new Set(allowlist.source.tokens)
-
-const TOKEN_NAME = '--dsw-[A-Za-z0-9_]+(?:-[A-Za-z0-9_]+)*'
-const DEFINITION_RE = new RegExp(`(?:['"])?(${TOKEN_NAME})(?:['"])?\\s*:`, 'g')
-const REFERENCE_RE = new RegExp(`var\\(\\s*(${TOKEN_NAME})`, 'g')
 
 function cssModules(dir) {
   const files = []
@@ -33,13 +30,12 @@ describe('dsh-ui-kit --dsw-* token contract', () => {
 
     const localDefinitions = new Set()
     for (const file of files) {
-      for (const match of readFileSync(file, 'utf8').matchAll(DEFINITION_RE)) localDefinitions.add(match[1])
+      for (const token of extractTokenDefinitions(readFileSync(file, 'utf8'), file)) localDefinitions.add(token)
     }
 
     const violations = []
     for (const file of files) {
-      for (const match of readFileSync(file, 'utf8').matchAll(REFERENCE_RE)) {
-        const token = match[1]
+      for (const { token } of extractTokenReferences(readFileSync(file, 'utf8'), file)) {
         if (!upstreamTokens.has(token) && !localDefinitions.has(token)) {
           violations.push(`${relative(here, file).split('\\').join('/')}: var(${token})`)
         }

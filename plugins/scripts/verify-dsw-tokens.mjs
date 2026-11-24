@@ -11,9 +11,11 @@
  *    只有这 8 张表里 `--dsw-*: value` 定义的 Token 才算全局运行时真源；不要只扫
  *    `design-platform.css`（会误杀 `--dsw-radius-*` / `--dsw-elevation-*` / `--dsw-font-*`）。
  *
- * 2. 双壳交集：产品仓有 `app/dsh-desktop-next`（新 Electron 壳）与 `app/dsh-plugin-desktop`
- *    （Cordis 插件壳）。两者都依赖 `@deepseek-ai/dsh-client-ui-theme` 与 `@deepseek-ai/dsh-web-app`
- *    并加载同一套 Harness Web UI，因此交集就是上述 8 张运行时样式表。两壳自己的 native-ui
+ * 2. 双壳交集：产品仓有 `app/dsh-desktop-next`（活跃 Electron 壳，锁定 `@deepseek-ai/dsh-client-ui-theme@0.2.2-rc.5`，
+ *    450 个 Token）与 `app/dsh-plugin-desktop`（冻结的 Cordis 插件壳，锁定 `0.2.1-rc.3`，403 个 Token；
+ *    双版本交集 402 个 Token，当前插件对 rc.5 新增 48 个 Token 的引用为 0）。两者都依赖
+ *    `@deepseek-ai/dsh-client-ui-theme` 与 `@deepseek-ai/dsh-web-app` 并加载同一套 Harness Web UI，
+ *    因此交集就是上述 8 张运行时样式表（以活跃线 rc.5 的 450 Token 快照为白名单）。两壳自己的 native-ui
  *    样式（`dsh-desktop-next/src/native-ui/theme.css`、`dsh-plugin-desktop/src/native-ui/**`）
  *    与 `dsh-desktop-next/src/web-document.ts` 的启动态样式里出现的全部 `--dsw-*` 定义，
  *    经核对都是上游 8 张表的子集（新增于本地时只会被计入「插件作用域内本地定义」）。
@@ -66,27 +68,212 @@ export const UI_THEME_STYLE_FILES = Object.freeze([
 ])
 
 const SCAN_EXTENSIONS = Object.freeze(['.css', '.scss', '.less', '.ts', '.tsx', '.js', '.jsx', '.mjs'])
+const JS_EXTENSIONS = new Set(['.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs', '.mts', '.cts'])
 const EXCLUDED_DIRS = new Set([
   'node_modules', 'lib', 'dist', 'build', 'tests', 'test', '__tests__', 'fixtures', 'fixture',
   'test-support', 'coverage', 'openreel', 'vendor', '.git',
 ])
 // `--dsw-` + at least one segment; the inner `(?:-[A-Za-z0-9_]+)*` blocks malformed names
-// such as the literal `--dsw-alias-` that appears in prose comments.
+// such as the literal `--dsw-alias-` that appears in prose comments. The right-hand
+// lookahead on REFERENCE_RE rejects prefix truncation of prose such as `var(--dsw-alias-*, ...)`.
 const TOKEN_NAME = '--dsw-[A-Za-z0-9_]+(?:-[A-Za-z0-9_]+)*'
 const DEFINITION_RE = new RegExp(`(?:['"])?(${TOKEN_NAME})(?:['"])?\\s*:`, 'g')
-const REFERENCE_RE = new RegExp(`var\\(\\s*(${TOKEN_NAME})`, 'g')
+const REFERENCE_RE = new RegExp(`var\\(\\s*(${TOKEN_NAME})(?=\\s*[,)])`, 'g')
 
-/** @param {string} text */
-export function extractTokenDefinitions(text) {
+/** @param {string} value */
+function blankComment(value) {
+  return value.replace(/[^\n]/g, ' ')
+}
+
+/** @param {string} filePath */
+function extensionOf(filePath) {
+  const value = String(filePath || '')
+  const dot = value.lastIndexOf('.')
+  return dot === -1 ? '' : value.slice(dot).toLowerCase()
+}
+
+/**
+ * Strip CSS block comments only, skipping single/double quoted strings. `//` is never a
+ * comment in CSS, so `url(https://...)` stays intact.
+ * @param {string} text
+ */
+export function stripCssComments(text) {
+  const source = String(text)
+  let output = ''
+  let i = 0
+  while (i < source.length) {
+    const ch = source[i]
+    if (ch === '"' || ch === "'") {
+      const quote = ch
+      output += ch
+      i += 1
+      while (i < source.length) {
+        const current = source[i]
+        output += current
+        i += 1
+        if (current === '\\') {
+          if (i < source.length) {
+            output += source[i]
+            i += 1
+          }
+          continue
+        }
+        if (current === quote) break
+      }
+      continue
+    }
+    if (ch === '/' && source[i + 1] === '*') {
+      let end = i + 2
+      while (end < source.length && !(source[end] === '*' && source[end + 1] === '/')) end += 1
+      const commentEnd = Math.min(end + 2, source.length)
+      output += blankComment(source.slice(i, commentEnd))
+      i = commentEnd
+      continue
+    }
+    output += ch
+    i += 1
+  }
+  return output
+}
+
+/**
+ * Strip JS/TS line and block comments with a lexical scan that protects string literals and
+ * template literals. CSS-in-JS template literals additionally have their embedded CSS block
+ * comments stripped, so a commented-out declaration can never act as a local token definition;
+ * `//` inside template text (e.g. URLs) is always preserved.
+ * @param {string} text
+ */
+export function stripJsComments(text) {
+  const source = String(text)
+  let output = ''
+  /** @type {Array<{ kind: 'code' } | { kind: 'template' } | { kind: 'interp', braceDepth: number }>} */
+  const stack = [{ kind: 'code' }]
+  let i = 0
+  while (i < source.length) {
+    const state = stack[stack.length - 1]
+    const ch = source[i]
+    if (state.kind === 'template') {
+      if (ch === '\\') {
+        output += ch
+        i += 1
+        if (i < source.length) {
+          output += source[i]
+          i += 1
+        }
+        continue
+      }
+      if (ch === '`') {
+        output += ch
+        i += 1
+        stack.pop()
+        continue
+      }
+      if (ch === '$' && source[i + 1] === '{') {
+        output += '${'
+        i += 2
+        stack.push({ kind: 'interp', braceDepth: 0 })
+        continue
+      }
+      if (ch === '/' && source[i + 1] === '*') {
+        let end = i + 2
+        while (end < source.length && !(source[end] === '*' && source[end + 1] === '/')) end += 1
+        const commentEnd = Math.min(end + 2, source.length)
+        output += blankComment(source.slice(i, commentEnd))
+        i = commentEnd
+        continue
+      }
+      output += ch
+      i += 1
+      continue
+    }
+    if (ch === '"' || ch === "'") {
+      const quote = ch
+      output += ch
+      i += 1
+      while (i < source.length) {
+        const current = source[i]
+        output += current
+        i += 1
+        if (current === '\\') {
+          if (i < source.length) {
+            output += source[i]
+            i += 1
+          }
+          continue
+        }
+        if (current === quote) break
+      }
+      continue
+    }
+    if (ch === '`') {
+      output += ch
+      i += 1
+      stack.push({ kind: 'template' })
+      continue
+    }
+    if (ch === '/' && source[i + 1] === '/') {
+      let end = i
+      while (end < source.length && source[end] !== '\n') end += 1
+      output += blankComment(source.slice(i, end))
+      i = end
+      continue
+    }
+    if (ch === '/' && source[i + 1] === '*') {
+      let end = i + 2
+      while (end < source.length && !(source[end] === '*' && source[end + 1] === '/')) end += 1
+      const commentEnd = Math.min(end + 2, source.length)
+      output += blankComment(source.slice(i, commentEnd))
+      i = commentEnd
+      continue
+    }
+    if (state.kind === 'interp') {
+      if (ch === '{') {
+        state.braceDepth += 1
+        output += ch
+        i += 1
+        continue
+      }
+      if (ch === '}') {
+        output += ch
+        i += 1
+        if (state.braceDepth === 0) stack.pop()
+        else state.braceDepth -= 1
+        continue
+      }
+    }
+    output += ch
+    i += 1
+  }
+  return output
+}
+
+/**
+ * Strip comments according to the source file type. Unknown extensions fall back to CSS
+ * semantics (block comments only), which is the conservative choice for token extraction.
+ * @param {string} text
+ * @param {string} [filePath]
+ */
+export function stripComments(text, filePath = '') {
+  return JS_EXTENSIONS.has(extensionOf(filePath)) ? stripJsComments(text) : stripCssComments(text)
+}
+
+/**
+ * @param {string} text
+ * @param {string} [filePath] used to select JS vs CSS comment syntax
+ */
+export function extractTokenDefinitions(text, filePath = '') {
   const found = new Set()
-  for (const match of String(text).matchAll(DEFINITION_RE)) found.add(match[1])
+  for (const match of stripComments(text, filePath).matchAll(DEFINITION_RE)) found.add(match[1])
   return found
 }
 
-/** @param {string} text */
-export function extractTokenReferences(text) {
+/**
+ * @param {string} text
+ * @param {string} [filePath] used to select JS vs CSS comment syntax
+ */
+export function extractTokenReferences(text, filePath = '') {
   const found = []
-  const source = String(text)
+  const source = stripComments(text, filePath)
   for (const match of source.matchAll(REFERENCE_RE)) {
     const close = source.indexOf(')', match.index + match[0].length)
     const tail = close === -1 ? '' : source.slice(match.index + match[0].length, close)
@@ -155,7 +342,7 @@ export function generateUpstreamAllowlist(repoRoot = REPO_ROOT) {
   for (const file of UI_THEME_STYLE_FILES) {
     const full = join(stylesDir, file)
     if (!existsSync(full)) throw new Error(`ui-theme runtime stylesheet is missing: ${file}`)
-    for (const token of extractTokenDefinitions(readFileSync(full, 'utf8'))) tokens.add(token)
+    for (const token of extractTokenDefinitions(readFileSync(full, 'utf8'), full)) tokens.add(token)
   }
   return { harnessCommit, styleFiles: [...UI_THEME_STYLE_FILES], tokens: [...tokens].sort() }
 }
@@ -220,12 +407,12 @@ export function collectUndefinedUsage({ repoRoot = REPO_ROOT, allowlistTokens })
     const files = walkSourceFiles(pkg.srcDir)
     const localDefinitions = new Set()
     for (const file of files) {
-      for (const token of extractTokenDefinitions(readFileSync(file, 'utf8'))) localDefinitions.add(token)
+      for (const token of extractTokenDefinitions(readFileSync(file, 'utf8'), file)) localDefinitions.add(token)
     }
     const valid = new Set([...upstream, ...localDefinitions])
     const fileEntries = {}
     for (const file of files) {
-      const references = extractTokenReferences(readFileSync(file, 'utf8'))
+      const references = extractTokenReferences(readFileSync(file, 'utf8'), file)
       const undefinedRefs = references.filter((ref) => !valid.has(ref.token))
       if (!undefinedRefs.length) continue
       const relPath = relative(pkg.dir, file).split(sep).join('/')

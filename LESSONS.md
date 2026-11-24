@@ -59,4 +59,4 @@
 | 真实非空载荷与双向证伪回归测试（`seen 3`） | [AGENTS.md · 一坑一测试](AGENTS.md#一坑一测试)（#18/#49/#53/#90/#107/#132/#142） |
 | UI 真实渲染几何、连续操作与浮层防透底（`seen 3`） | [AGENTS.md · 合并与复核](AGENTS.md#合并与复核) · [guard-no-transparent-popover.mjs](plugins/scripts/guard-no-transparent-popover.mjs)（#45/#54/#112→#116/#155/#171） |
 | 公开文档 DSH 运行时版本声明一致性 | [verify-docs-dsh-version.mjs](scripts/verify-docs-dsh-version.mjs) · [workspace-check.mjs](scripts/workspace-check.mjs)（PR #256） |
-| 网关、目录与宿主运行时契约单一真源（`seen 3`） | [AGENTS.md · 硬约束](AGENTS.md#硬约束) · [verify-dsw-tokens.mjs](plugins/scripts/verify-dsw-tokens.mjs)（#264 / 本 PR） |
+| 网关、目录与宿主运行时契约单一真源（`seen 3`） | [AGENTS.md · 硬约束](AGENTS.md#硬约束) · [verify-dsw-tokens.mjs](plugins/scripts/verify-dsw-tokens.mjs)（#264 / PR #266） |
