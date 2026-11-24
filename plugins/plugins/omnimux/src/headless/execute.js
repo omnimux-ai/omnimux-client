@@ -90,6 +90,8 @@ function createTimedSignal(parentSignal, timeoutMs) {
  *   inputFingerprint?: string,
  *   verifyFingerprint?: () => boolean | Promise<boolean>,
  *   model?: string,
+ *   toolModel?: string,
+ *   sessionId?: unknown,
  *   cwd?: string,
  *   maxTokens?: number,
  *   timeoutMs?: number,
@@ -155,6 +157,8 @@ export async function executeHeadlessSkill(deps, request) {
           prompt: structuredPrompt,
           references: transport.references,
           model: request.model,
+          ...(request.toolModel !== undefined ? { toolModel: request.toolModel } : {}),
+          ...(request.sessionId !== undefined ? { sessionId: request.sessionId } : {}),
           maxTokens,
           signal: timed.signal,
         }, timed)
@@ -178,6 +182,8 @@ export async function executeHeadlessSkill(deps, request) {
             system: systemPrompt,
             prompt: repairPrompt,
             model: request.model,
+            ...(request.toolModel !== undefined ? { toolModel: request.toolModel } : {}),
+            ...(request.sessionId !== undefined ? { sessionId: request.sessionId } : {}),
             maxTokens,
             signal: timed.signal,
           }, timed)

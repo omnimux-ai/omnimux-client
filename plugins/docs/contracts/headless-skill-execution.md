@@ -29,7 +29,7 @@ OmniMux 的执行中心（`plugins/plugins/omnimux/`，简称 Hub）是全工作
    - 禁止把自由 Markdown 文本作为新的跨模块机器接口，禁止在业务插件中新增 Markdown 标题、符号或表格正则解析器（既有历史数据只读兼容除外）。
 4. **模态分流、媒体准备与模型路由全归 Hub**
    - 业务插件不得直接调用 DSH 原生 `ctx.llm` / `llm.stream`（由 `pnpm check:boundaries` 门禁强制拦截），也不得在插件内编写供应商客户端或按聊天模型禁用后台能力。
-   - 所有后台无头执行统一消费 Hub 提供的 `headlessSkill` 接缝（`ctx.get('headlessSkill')`），底层复用 Hub `textComplete` 自动分流文本/图片（DSH 原生 `ctx.llm.stream`）与视频多模态通道。
+   - 所有后台无头执行统一消费 Hub 提供的 `headlessSkill` 接缝（`ctx.get('headlessSkill')`），底层复用 Hub `textComplete`：**默认跟随当前会话模型**（`agents.get(sessionId)?.model?.current()` → `agents.currentInitiator()?.model?.current()` → `agentDefaultModel.currentSelection()`），支持在插件配置（`omnimux.toolModel`）中显式覆盖指定模型；目标模型不支持对应多模态或不可用时直接显式报错，不做静默回退或暗中更换默认模型。
 5. **统一并发治理与事件推送，禁止新增前端定时盲轮询**
    - Hub 在 `headlessSkill` 内部按模态实施分类并发限流（默认 `video: 2`、`image: 4`、`text: 5`），支持 `AbortSignal` 与 `cancel(jobId)` 取消。
    - 阶段变化（`queued`、`running`、`repairing`、`done`、`failed`、`cancelled`）统一通过 Hub 单一事件总线 `hubEvents` 发出 `omnimux:headless-skill` 事件；新功能不得再新增前端定时轮询状态机。

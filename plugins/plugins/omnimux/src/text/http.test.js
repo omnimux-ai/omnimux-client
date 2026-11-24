@@ -85,7 +85,7 @@ describe('registerTextCompleteRoutes HTTP gateway', () => {
     registerTextCompleteRoutes(server, { textComplete })
     const handler = server.routes.get('exact:/omnimux/text/complete')
 
-    const payload = JSON.stringify({ prompt: '推文正文', system: '神评专家' })
+    const payload = JSON.stringify({ prompt: '推文正文', system: '神评专家', sessionId: 'sess-http-1' })
     const req = Object.assign(createStream([payload]), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -100,6 +100,7 @@ describe('registerTextCompleteRoutes HTTP gateway', () => {
     assert.equal(json.text, '神评文案测试成功')
     assert.equal(executedWith.prompt, '推文正文')
     assert.equal(executedWith.system, '神评专家')
+    assert.equal(executedWith.sessionId, 'sess-http-1')
   })
 
   it('rejects empty prompt with 400', async () => {

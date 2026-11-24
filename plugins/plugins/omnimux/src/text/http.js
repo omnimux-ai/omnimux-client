@@ -55,6 +55,7 @@ export function registerTextCompleteRoutes(webServer, deps = {}) {
         const prompt = typeof body.prompt === 'string' ? body.prompt.trim() : (typeof body.userMessage === 'string' ? body.userMessage.trim() : '')
         const system = typeof body.system === 'string' ? body.system.trim() : (typeof body.systemPrompt === 'string' ? body.systemPrompt.trim() : '')
         const model = typeof body.model === 'string' && body.model.trim() ? body.model.trim() : undefined
+        const sessionId = typeof body.sessionId === 'string' && body.sessionId.trim() ? body.sessionId.trim() : undefined
         const maxTokens = typeof body.maxTokens === 'number' && body.maxTokens > 0 ? body.maxTokens : 1000
 
         if (!prompt && !system) {
@@ -65,7 +66,13 @@ export function registerTextCompleteRoutes(webServer, deps = {}) {
         // submit the prompt a second time through a different channel.
         const textComplete = deps.getTextComplete?.() ?? deps.textComplete
         if (textComplete && typeof textComplete.execute === 'function') {
-          const result = await textComplete.execute({ prompt, system, model, maxTokens })
+          const result = await textComplete.execute({
+            prompt,
+            system,
+            model,
+            maxTokens,
+            ...(sessionId ? { sessionId } : {}),
+          })
           const text = typeof result === 'string' ? result : (result?.text || result?.content || '')
           if (!text.trim()) throw new OmnimuxError('omnimux-invalid-response', 'model returned empty text')
           return sendJsonResponse(res, 200, { ok: true, text: text.trim() })

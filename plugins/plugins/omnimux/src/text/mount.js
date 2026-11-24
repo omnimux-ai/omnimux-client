@@ -41,10 +41,8 @@ export function mountTextComplete(ctx, hub, jsonOut, onError, deps = {}) {
         attachments: ctx.get?.('attachments'),
         credentials: ctx.get?.('credentials'),
         settings: ctx.get?.('settings'),
-        modelCatalog: () => {
-          const catalog = ctx.get?.('modelCatalog')
-          return typeof catalog?.list === 'function' ? catalog.list() : undefined
-        },
+        agents: finalReq.agents ?? ctx.get?.('agents'),
+        agentDefaultModel: finalReq.agentDefaultModel ?? ctx.get?.('agentDefaultModel'),
         resolveOfficialApiKey: deps.resolveOfficialApiKey,
         env: finalReq.env ?? process.env,
       })
@@ -65,12 +63,12 @@ export function mountTextComplete(ctx, hub, jsonOut, onError, deps = {}) {
   ctx.tools.register({
     name: 'omnimux_text_complete',
     description:
-      'Run one one-shot completion on an enabled OmniMux whitelist model. The expert receives no parent conversation or tools. Call only when the current model cannot do the work, or the user / contract names that model. Omit model to use the configured default. Pass ordered references for multiple images, video, audio, or PDF documents; the model contract must accept every reference. Legacy image and video fields remain accepted and do not duplicate matching references. Video bypasses the harness image store and packs as image_url(data:video). Do not use this to continue the conversation.',
+      'Run one one-shot completion on an enabled OmniMux whitelist model or the configured tool / active session model. The expert receives no parent conversation or tools. Pass an explicit whitelist model id whenever the current session model cannot handle the work (for example video or audio), or when the user / contract names that model. Omit model to use the configured toolModel or active session model. Pass ordered references for multiple images, video, audio, or PDF documents; the model contract must accept every reference. Legacy image and video fields remain accepted and do not duplicate matching references. Video bypasses the harness image store and packs as image_url(data:video). Do not use this to continue the conversation.',
     parameters: objectParams({
       model: {
         type: 'string',
         ...(modelIds.length > 0 ? { enum: modelIds } : {}),
-        description: 'Whitelist model id. Omit to use the configured default.',
+        description: 'Whitelist model id. Pass explicitly when delegating away from the current session model; omit to use the configured toolModel or active session model.',
       },
       operation: {
         type: 'string',
@@ -151,6 +149,8 @@ export function mountTextComplete(ctx, hub, jsonOut, onError, deps = {}) {
           attachments: ctx.get?.('attachments'),
           credentials: ctx.get?.('credentials'),
           settings: ctx.get?.('settings'),
+          agents: ctx.get?.('agents'),
+          agentDefaultModel: ctx.get?.('agentDefaultModel'),
           resolveOfficialApiKey: deps.resolveOfficialApiKey,
           env: process.env,
           specsDir: exec?.specsDir,

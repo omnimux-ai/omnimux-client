@@ -28,6 +28,8 @@ const DEFAULT_UA =
  *   signal?: AbortSignal,
  *   apiKey?: string,
  *   baseUrl?: string,
+ *   preserveBaseUrl?: boolean,
+ *   headers?: Record<string, string>,
  *   credentials?: { resolve: (ref: string) => Promise<{ value?: string } | undefined> },
  *   settings?: { get: (section: string) => any },
  *   resolveOfficialApiKey?: (env: Record<string, string | undefined>) => Promise<string | undefined>,
@@ -72,7 +74,9 @@ export async function completeTextViaChat(input) {
   if (!apiKey) {
     throw new OmnimuxError('official-credential-required', '请在个人资料中启用 OmniMux 分析服务')
   }
-  baseUrl = normalizeBaseUrl(baseUrl || DEFAULT_CHAT_BASE)
+  baseUrl = input.preserveBaseUrl && baseUrl
+    ? baseUrl.replace(/\/+$/, '')
+    : normalizeBaseUrl(baseUrl || DEFAULT_CHAT_BASE)
   const prompt = typeof input.prompt === 'string' ? input.prompt.trim() : ''
   if (!prompt) {
     throw new OmnimuxError('omnimux-invalid-request', 'prompt is required')
@@ -96,6 +100,7 @@ export async function completeTextViaChat(input) {
     ],
   })
   const fetcher = input.fetcher ?? fetch
+  const requestHeaders = buildRequestHeaders(apiKey, input.headers)
   const candidates = Array.isArray(input.candidates) && input.candidates.length > 0
     ? input.candidates.slice(0, 4)
     : [input.model]
@@ -110,12 +115,7 @@ export async function completeTextViaChat(input) {
     try {
       response = await fetcher(`${baseUrl}/chat/completions`, {
         method: 'POST',
-        headers: {
-          authorization: `Bearer ${apiKey}`,
-          'content-type': 'application/json',
-          accept: 'application/json',
-          'user-agent': DEFAULT_UA,
-        },
+        headers: requestHeaders,
         body: JSON.stringify(body),
         ...(input.signal ? { signal: input.signal } : {}),
       })
@@ -169,6 +169,31 @@ export async function completeTextViaChat(input) {
     }
     return out
   }
+}
+
+function buildRequestHeaders(apiKey, extraHeaders) {
+  /** @type {Record<string, string>} */
+  const headers = {
+    'user-agent': DEFAULT_UA,
+  }
+  if (extraHeaders && typeof extraHeaders === 'object' && !Array.isArray(extraHeaders)) {
+    for (const [rawKey, rawVal] of Object.entries(extraHeaders)) {
+      const key = String(rawKey).trim()
+      if (!key || typeof rawVal !== 'string') continue
+      if (/[\r\n]/.test(key) || /[\r\n]/.test(rawVal)) continue
+      const lower = key.toLowerCase()
+      if (lower === 'authorization' || lower === 'content-type' || lower === 'accept') continue
+      if (lower === 'user-agent') {
+        headers['user-agent'] = rawVal
+      } else {
+        headers[key] = rawVal
+      }
+    }
+  }
+  headers.authorization = `Bearer ${apiKey}`
+  headers['content-type'] = 'application/json'
+  headers.accept = 'application/json'
+  return headers
 }
 
 function safeErrorMessage(value, key) {
