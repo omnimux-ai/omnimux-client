@@ -51,6 +51,11 @@ test('real repository passes verifySkillHygiene with zero violations', () => {
   assert.equal(result.ok, true)
   assert.equal(result.stats.catalogDirCount, result.stats.indexedCount + result.stats.bundledCount)
   assert.ok(result.stats.pluginSkillCount > 0)
+  assert.equal(result.stats.quickShortcutCount, 4)
+  assert.ok(result.stats.presetSkillRefCount >= 400, `expected >= 400 preset/shelf refs, got ${result.stats.presetSkillRefCount}`)
+  assert.ok(result.stats.builtinExpertSkillRefCount >= 18, `expected >= 18 expert refs, got ${result.stats.builtinExpertSkillRefCount}`)
+  assert.ok(result.stats.registeredToolCount >= 100, `expected >= 100 registered tools, got ${result.stats.registeredToolCount}`)
+  assert.ok(result.stats.toolCheckedSkillCount >= 24, `expected >= 24 tool-checked skills, got ${result.stats.toolCheckedSkillCount}`)
 })
 
 test('rejects product plugin duplicating upstream DSH Cordis skill via disk or relative manifest path', (t) => {
@@ -266,4 +271,95 @@ test('rejects missing/empty/directory SKILL.md and missing catalog files or empt
   const resEmpty = verifySkillHygiene(emptyRoot)
   assert.equal(resEmpty.ok, false)
   assert.ok(resEmpty.issues.some((i) => i.code === 'empty-catalog-skills-dir'))
+})
+
+test('rejects hollow quick shortcuts, hollow presets/shelves, static installed flags, and hollow builtin experts (#235)', (t) => {
+  const root = makeFixtureRoot(t)
+  const market = join(root, 'plugins', 'omnimux-market')
+
+  // Quick shortcut referencing one real skill and one hollow skill
+  const shortcutsDir = join(root, 'plugins', 'omnimux', 'src', 'client', 'composer-quick-shortcuts')
+  mkdirSync(shortcutsDir, { recursive: true })
+  writeFileSync(
+    join(shortcutsDir, 'catalog.js'),
+    "export const QUICK_SHORTCUTS = [{ skillSlug: 'alpha-skill' }, { skillSlug: 'ghost-shortcut' }]\n",
+  )
+
+  // presets/omni-agent/skills.json with hollow slug + static installed:true
+  mkdirSync(join(root, 'presets', 'omni-agent'), { recursive: true })
+  writeFileSync(
+    join(root, 'presets', 'omni-agent', 'skills.json'),
+    JSON.stringify({
+      presetId: 'omni-agent',
+      skills: [
+        { slug: 'alpha-skill', installed: true },
+        { slug: 'ghost-preset-skill' },
+      ],
+    }),
+  )
+
+  // catalog/preset-skills.json with hollow slug + static installed:true
+  writeFileSync(
+    join(market, 'catalog', 'preset-skills.json'),
+    JSON.stringify({
+      'tiktok-agent': {
+        presetId: 'tiktok-agent',
+        skills: [
+          { slug: 'beta-skill', installed: true },
+          { slug: 'ghost-shelf-skill' },
+        ],
+      },
+    }),
+  )
+
+  // Built-in expert referencing hollow skill + bundled expert plugin.json referencing missing skill
+  mkdirSync(join(market, 'src'), { recursive: true })
+  writeFileSync(
+    join(market, 'src', 'expert-market.ts'),
+    "export const DEFAULT_MARKET_EXPERTS = [\n  { id: 'exp-a', skills: ['alpha-skill', 'ghost-expert-skill'] },\n]\n",
+  )
+  mkdirSync(join(market, 'catalog', 'experts', 'demo-team', '.codebuddy-plugin'), { recursive: true })
+  writeFileSync(
+    join(market, 'catalog', 'experts', 'demo-team', '.codebuddy-plugin', 'plugin.json'),
+    JSON.stringify({ name: 'demo-team', skills: ['./skills/missing-nested-skill'] }),
+  )
+
+  const res = verifySkillHygiene(root)
+  assert.equal(res.ok, false)
+  assert.ok(res.issues.some((i) => i.code === 'hollow-quick-shortcut-skill' && i.message.includes('ghost-shortcut')))
+  assert.ok(res.issues.some((i) => i.code === 'hollow-preset-skill' && i.message.includes('ghost-preset-skill')))
+  assert.ok(res.issues.some((i) => i.code === 'hollow-preset-shelf-skill' && i.message.includes('ghost-shelf-skill')))
+  assert.ok(res.issues.some((i) => i.code === 'hollow-builtin-expert-skill' && i.message.includes('ghost-expert-skill')))
+  assert.ok(res.issues.some((i) => i.code === 'hollow-bundled-expert-skill' && i.message.includes('missing-nested-skill')))
+  assert.equal(res.issues.filter((i) => i.code === 'static-installed-forbidden').length, 2)
+})
+
+test('rejects unregistered OmniMux runtime tool references in quick-shortcut and plugin SKILL.md (#235)', (t) => {
+  const root = makeFixtureRoot(t)
+  const market = join(root, 'plugins', 'omnimux-market')
+
+  // Register one real tool in fixture workspace
+  mkdirSync(join(root, 'plugins', 'omnimux-video', 'src'), { recursive: true })
+  writeFileSync(
+    join(root, 'plugins', 'omnimux-video', 'src', 'index.js'),
+    "export function apply(ctx) { ctx.tools.register({ name: 'video_analyze', description: 'ok' }) }\n",
+  )
+
+  // Quick shortcut pointing to alpha-skill, which references one valid tool, one wildcard, one non-tool id, and one bogus tool
+  const shortcutsDir = join(root, 'plugins', 'omnimux', 'src', 'client', 'composer-quick-shortcuts')
+  mkdirSync(shortcutsDir, { recursive: true })
+  writeFileSync(
+    join(shortcutsDir, 'catalog.js'),
+    "export const QUICK_SHORTCUTS = [{ skillSlug: 'alpha-skill' }]\n",
+  )
+  writeFileSync(
+    join(market, 'catalog', 'skills', 'alpha-skill', 'SKILL.md'),
+    '---\nname: alpha-skill\ndescription: Alpha\n---\n\nUse `video_analyze`, `workflow_*`, `video_inline_analysis_prepare`, and bogus `video_magic_hallucination`.\n',
+  )
+
+  const res = verifySkillHygiene(root)
+  assert.equal(res.ok, false)
+  const toolIssues = res.issues.filter((i) => i.code === 'unregistered-skill-tool-reference')
+  assert.equal(toolIssues.length, 1)
+  assert.match(toolIssues[0].message, /video_magic_hallucination/)
 })

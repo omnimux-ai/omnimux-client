@@ -87,6 +87,90 @@ function resolveLocalRepo(repo) {
   return ''
 }
 
+const SAFE_LOCAL_SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,127}$/i
+
+/**
+ * Resolve a packaged local skill directory (containing a regular non-empty SKILL.md)
+ * without touching $DSH_HOME/skills or hitting any network service.
+ * Search order:
+ *   1. `<packageRoot>/catalog/skills/<slug>` (indexed & bundled-skills.json skills)
+ *   2. `<packageRoot>/skills/<slug>` (market plugin shipped SOP/research skills)
+ *   3. `<packageRoot>/catalog/experts/<expert>/skills/<slug>` (bundled expert pack skills)
+ *   4. `<dirname(packageRoot)>/omnimux-<plugin>/skills/<slug>` (sibling product plugin skills)
+ *
+ * @param {string} slug
+ * @param {string} pkgRoot
+ * @returns {string}
+ */
+export function resolveLocalBundledSkillDir(slug, pkgRoot) {
+  const clean = String(slug || '').trim().replace(/^\/+/, '')
+  if (!clean || !SAFE_LOCAL_SLUG_RE.test(clean) || !pkgRoot) return ''
+
+  const directCandidates = [
+    join(pkgRoot, 'catalog', 'skills', clean),
+    join(pkgRoot, 'skills', clean),
+  ]
+  for (const dir of directCandidates) {
+    const md = join(dir, 'SKILL.md')
+    if (existsSync(md)) {
+      try {
+        if (statSync(md).isFile()) return dir
+      } catch (err) {
+        console.warn(`[omnimux-market] failed to stat bundled skill ${md}: ${err instanceof Error ? err.message : String(err)}`)
+      }
+    }
+  }
+
+  const expertsDir = join(pkgRoot, 'catalog', 'experts')
+  if (existsSync(expertsDir)) {
+    try {
+      if (statSync(expertsDir).isDirectory()) {
+        for (const expertName of readdirSync(expertsDir).sort()) {
+          if (expertName.startsWith('.')) continue
+          const dir = join(expertsDir, expertName, 'skills', clean)
+          const md = join(dir, 'SKILL.md')
+          if (existsSync(md) && statSync(md).isFile()) return dir
+        }
+      }
+    } catch (err) {
+      console.warn(`[omnimux-market] failed to scan catalog/experts for ${clean}: ${err instanceof Error ? err.message : String(err)}`)
+    }
+  }
+
+  const parentDir = dirname(pkgRoot)
+  if (parentDir && parentDir !== pkgRoot && existsSync(parentDir)) {
+    try {
+      for (const entry of readdirSync(parentDir, { withFileTypes: true })) {
+        if (!entry.isDirectory() || !entry.name.startsWith('omnimux-')) continue
+        const dir = join(parentDir, entry.name, 'skills', clean)
+        const md = join(dir, 'SKILL.md')
+        if (existsSync(md) && statSync(md).isFile()) return dir
+      }
+    } catch (err) {
+      console.warn(`[omnimux-market] failed to scan sibling plugin skills for ${clean}: ${err instanceof Error ? err.message : String(err)}`)
+    }
+  }
+
+  return ''
+}
+
+/**
+ * Read SKILL.md directly from a packaged local skill directory (never touches network).
+ * @param {string} slug
+ * @param {string} pkgRoot
+ * @returns {string}
+ */
+export function readLocalBundledSkillMarkdown(slug, pkgRoot) {
+  const dir = resolveLocalBundledSkillDir(slug, pkgRoot)
+  if (!dir) return ''
+  try {
+    return readFileSync(join(dir, 'SKILL.md'), 'utf8')
+  } catch (err) {
+    console.warn(`[omnimux-market] failed to read bundled SKILL.md for ${slug}: ${err instanceof Error ? err.message : String(err)}`)
+    return ''
+  }
+}
+
 /**
  * Read SKILL.md from a catalog item without copying it into $DSH_HOME/skills.
  * Bundled packs are read from the plugin package; git packs use the existing

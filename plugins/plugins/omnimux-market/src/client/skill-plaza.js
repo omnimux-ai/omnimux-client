@@ -316,10 +316,13 @@
       const { state, tr, onToggleSwitch, onToggleExp } = opts;
       const sessions = typeof plazaSessions !== "undefined" ? plazaSessions : null;
       const activePreset = SkillShelf.resolveActivePreset({ sessions });
-      const presetBinding = SkillShelf.getPresetSkillBinding(activePreset);
+      const presetBinding = SkillShelf.getPresetSkillBinding(activePreset, undefined, {
+        installedSlugs: state.installedItems,
+        providerSlugs: state.providerSlugs,
+      });
       const hasQuery = Boolean(state.submitted.trim());
       const { featured: featuredItems, regular: regularItems } = SkillShelf.plazaDiscoverySections(state.items, {
-        category: state.category, query: state.submitted, uninstalledOnly: state.uninstalledOnly, installedItems: state.installedItems, presetBinding, customOrder: state.customOrder,
+        category: state.category, query: state.submitted, uninstalledOnly: state.uninstalledOnly, installedItems: state.installedItems, providerSlugs: state.providerSlugs, presetBinding, customOrder: state.customOrder,
       });
       // 013fcb898 后 renderFeaturedSection 恒返回 null，单分类页（非「全部」/非「精选」）
       // 唯一卡片区是 renderRegularSection：把本分类的 featured 成员合回展示集合，
@@ -388,11 +391,18 @@
     function usePlazaInstalledLoader(state) {
       const loadInstalled = useCallback(() => {
         const onListSuccess = (d) => {
-          if (!d || !Array.isArray(d.items)) return;
-          state.setInstalledItems(d.items.map(mapInstalledRow));
+          if (!d) return;
+          if (Array.isArray(d.items)) {
+            state.setInstalledItems(d.items.map(mapInstalledRow));
+          }
+          if (typeof state.setProviderSlugs === "function" && Array.isArray(d.providerSlugs)) {
+            state.setProviderSlugs(d.providerSlugs);
+          }
         };
-        api("list").then(onListSuccess).catch(() => {});
-      }, [state.setInstalledItems]);
+        api("list").then(onListSuccess).catch((err) => {
+          console.warn(`[omnimux-market] plaza skill list failed: ${err instanceof Error ? err.message : String(err)}`);
+        });
+      }, [state.setInstalledItems, state.setProviderSlugs]);
 
       useEffect(() => { loadInstalled(); }, [loadInstalled]);
       return loadInstalled;

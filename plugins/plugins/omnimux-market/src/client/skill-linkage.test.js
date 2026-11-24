@@ -1,12 +1,17 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { getPresetSkillBinding, filterPresetSkills } from './skill-picker-logic.js'
+import {
+  getPresetSkillBinding,
+  filterPresetSkills,
+  installPayload,
+  isSkillLocallyAvailable,
+} from './skill-picker-logic.js'
 
 /**
- * 货架分类的产品口径（specs/composer-quick-shortcuts.spec.md「数据分叉的收敛」）：
- * `tiktok-agent` / `omni-agent` 只恢复「创作视频」「创作图片」两个分类，
- * `reverse-video-prompt` 并入创作视频，**不额外立第三个分类**（`搜索爆款视频` 不恢复）。
- * 本文件钉住这条口径在货架绑定上的真实形状。
+ * 货架分类的产品口径（specs/composer-quick-shortcuts.spec.md 与 specs/skills-governance-phase2-235.spec.md）：
+ * `tiktok-agent` / `omni-agent` 保持「创作视频」「创作图片」前二位置，
+ * `reverse-video-prompt` 并入创作视频，**不额外立第三个分类**（`搜索爆款视频` 不恢复）；
+ * 所有货架技能均须对应仓内真实非空 SKILL.md，不再使用静态 `installed: true`。
  */
 const RESTORED_CATEGORIES = Object.freeze(['创作视频', '创作图片'])
 
@@ -27,7 +32,7 @@ test('tiktok-agent preset binding 只恢复两个创作分类，不额外立第�
   const binding = getPresetSkillBinding('tiktok-agent')
   assert.ok(binding)
   const ids = binding.categories.map((c) => c.id)
-  // 恢复的两个分类排在最前，且顺序固定（展示顺序即分类顺序）
+  // 两个创作分类排在最前，且顺序固定（展示顺序即分类顺序）
   assert.deepEqual(ids.slice(0, RESTORED_CATEGORIES.length), RESTORED_CATEGORIES)
   // 「搜索爆款视频」是被本次口径刻意取消的分类，恢复它等于多立一个分类
   assert.ok(!ids.includes('搜索爆款视频'), '搜索爆款视频 分类不得出现在货架绑定里')
@@ -38,11 +43,13 @@ test('filterPresetSkills 按恢复后的分类归档：创作视频 7 款、创�
   const videoSkills = filterPresetSkills(binding.skills, '创作视频')
   const imageSkills = filterPresetSkills(binding.skills, '创作图片')
 
-  assert.equal(videoSkills.length, 7)
-  // 6 款恢复技能 + Issue #2609 预装的商品轮播图 / 图文复刻
-  assert.equal(imageSkills.length, 8)
-  // 反推视频提示词按产品口径并入创作视频（它在预设真源里的原始分类未被恢复）
-  assert.ok(videoSkills.some((s) => s.slug === 'reverse-video-prompt'))
+  // Phase 2 清除 9 个空壳并收敛为真实随包与 SOP 技能：创作视频 8 款、创作图片 6 款
+  assert.equal(videoSkills.length, 8)
+  assert.equal(imageSkills.length, 6)
+  // 4 个首页快捷方式全部位于创作视频，且反推视频提示词并入创作视频
+  for (const slug of ['replicate-viral-video', 'create-selling-video', 'video-hook-analysis', 'reverse-video-prompt']) {
+    assert.ok(videoSkills.some((s) => s.slug === slug), `创作视频必须含 ${slug}`)
+  }
   // 分类已取消，按它过滤必须返回空集，而不是回落到「全部」
   assert.deepEqual(filterPresetSkills(binding.skills, '搜索爆款视频'), [])
 })
@@ -56,8 +63,11 @@ test('Issue #2609：两款电商图文技能预装进创作图片分类，且为
     for (const slug of PREINSTALLED) {
       const hit = imageSkills.find((s) => String(s.slug || s.skill) === slug)
       assert.ok(hit, `${presetId} 的创作图片分类必须含 ${slug}`)
-      // 预装态：菜单不显示「未安装」角标，点选也不触发安装动作
-      assert.equal(hit.installed, true, `${slug} 必须是预装（已内置）态`)
+      // 随包预装态：由真实清单派生 bundled: true / available: true，菜单不显示「未安装」角标，点选不触发下载
+      assert.equal(hit.bundled, true, `${slug} 必须是随包可用态（bundled: true）`)
+      assert.equal(hit.available, true, `${slug} 必须是可用态（available: true）`)
+      assert.equal(isSkillLocallyAvailable(hit), true, `${slug} 必须免下载本地可用`)
+      assert.equal(installPayload(hit), null, `${slug} 点选不得触发远端安装动作`)
       assert.equal(hit.category, '创作图片')
     }
   }

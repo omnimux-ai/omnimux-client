@@ -12,7 +12,7 @@ import { packageRoot, profileDir } from './expert/paths.js';
 import { configureHttpJsonCache } from './http.js';
 import { installSkill, installedSlugs, listInstalled, uninstallSkill } from './install.js';
 import { aggregateSkillSearch } from './skill-aggregate.js';
-import { getSessionModel, setAgentPresetsNotify, setAgentPresetsProvider, setExpertPresetRuntime, setModelCatalogResolver, handleApi, handleIcon, handleWorkshopApi } from './local-api.js';
+import { getSessionModel, setAgentPresetsNotify, setAgentPresetsProvider, setExpertPresetRuntime, setModelCatalogResolver, setSkillsRuntimeProvider, handleApi, handleIcon, handleWorkshopApi } from './local-api.js';
 import { ExpertPresetRuntime } from './expert-runtime.js';
 import { InventoryService } from './workshop-inventory.js';
 import { QueryService, createWorkshopSources } from './workshop-sources.js';
@@ -416,6 +416,32 @@ export function apply(ctx, config) {
         settingsService.register('omnimux-market', Config, { base: config });
     }
     registerCatalogSkillProvider(ctx);
+    const runtimeSkills = (() => {
+        try {
+            const svc = ctx.skills;
+            return svc && (typeof svc.list === 'function' || typeof svc.get === 'function') ? svc : null;
+        }
+        catch (err) {
+            console.warn(`[omnimux-market] ctx.skills unavailable for runtime bridge: ${err instanceof Error ? err.message : String(err)}`);
+            return null;
+        }
+    })();
+    if (runtimeSkills) {
+        const providerBridge = {
+            list: typeof runtimeSkills.list === 'function' ? () => runtimeSkills.list() : undefined,
+            get: typeof runtimeSkills.get === 'function' ? (slug) => runtimeSkills.get(slug) : undefined,
+        };
+        if (typeof ctx.effect === 'function') {
+            ;
+            ctx.effect(() => {
+                setSkillsRuntimeProvider(providerBridge);
+                return () => { setSkillsRuntimeProvider(null); };
+            });
+        }
+        else {
+            setSkillsRuntimeProvider(providerBridge);
+        }
+    }
     // Agent 预设列表变更广播：官方 `@deepseek-ai/dsh-client-ui-agent-preset` 监听
     // `settings/document-updated` 且命名空间为 `AGENT_PRESET_SETTINGS_NS = 'agent-preset-registry'`。
     // 市场安装/禁用/启动恢复后借此免重启即时刷新会话下拉与设置页列表。

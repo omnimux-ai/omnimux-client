@@ -3,7 +3,7 @@ import { dirname, join, relative, resolve, sep } from 'node:path'
 import { fetchOpts, parseSlug } from './api.js'
 import { dshHome } from './config-store.js'
 import { loadCatalog } from './expert/catalog.js'
-import { installItem } from './expert/install.js'
+import { installItem, resolveLocalBundledSkillDir } from './expert/install.js'
 import { packageRoot, profileDir } from './expert/paths.js'
 import { fetchBytes } from './http.js'
 import { catalogSkillSlug, findCatalogSkill } from './skill-aggregate.js'
@@ -51,6 +51,8 @@ export async function installSkill(slug: string, cfg: PluginConfig, deps: Instal
   }
   const catalogItem = findCatalogSkill(lookup, catalogId)
   if (catalogItem) return installFromCatalog(catalogItem, cfg)
+  const localBundledDir = resolveLocalBundledSkillDir(lookup, packageRoot())
+  if (localBundledDir) return installFromLocalDir(lookup, localBundledDir, cfg)
   const id = parseSlug(slug)
   const requested = parseVersion(version)
   const files = await downloadSkillFiles(id, cfg, deps, signal, requested)
@@ -78,6 +80,31 @@ export async function installSkill(slug: string, cfg: PluginConfig, deps: Instal
     version: meta.version || requested,
     path: target,
     files: Object.keys(files).length,
+  }
+}
+
+async function installFromLocalDir(slug: string, sourceDir: string, cfg: PluginConfig): Promise<InstallResult> {
+  const id = parseSlug(slug)
+  const target = skillDir(cfg.skillsDir, id)
+  await mkdir(cfg.skillsDir, { recursive: true })
+  if (resolve(sourceDir) !== resolve(target)) {
+    await rm(target, { recursive: true, force: true })
+    await cp(sourceDir, target, { recursive: true })
+  }
+  let skillMd = ''
+  try {
+    skillMd = await readFile(join(target, 'SKILL.md'), 'utf8')
+  }
+  catch {
+    throw new Error(`技能 ${id} 缺少 SKILL.md`)
+  }
+  const meta = parseFrontmatter(skillMd)
+  return {
+    slug: id,
+    name: meta.name || id,
+    version: meta.version || '',
+    path: target,
+    files: await countFiles(target),
   }
 }
 

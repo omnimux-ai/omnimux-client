@@ -8,7 +8,7 @@ import { assignConfig, dshHome, publicConfig, sanitizePatch, sanitizeSortBy, wri
 import { configureHttpJsonCache } from './http.js';
 import { BOOT_ID, progress, publicInstallStatus } from './dsh-cli.js';
 import { decorateCatalog, loadCatalog } from './expert/catalog.js';
-import { findItem, installItem, readCatalogSkillMarkdown, removeMcpRow, withConnectorPatchLock } from './expert/install.js';
+import { findItem, installItem, readCatalogSkillMarkdown, readLocalBundledSkillMarkdown, removeMcpRow, resolveLocalBundledSkillDir, withConnectorPatchLock, } from './expert/install.js';
 import { packageRoot, profileDir } from './expert/paths.js';
 import { summonItem } from './expert/summon.js';
 import { installSuite, uninstallSuite, } from './suite-install.js';
@@ -132,6 +132,41 @@ let expertPresetRuntime = null;
 export function setExpertPresetRuntime(runtime) {
     expertPresetRuntime = runtime ?? null;
 }
+/**
+ * DSH 原生 `ctx.skills` 运行时只读注入点（host 侧注入），用于：
+ * 1. `handleSkillList` 汇报真实运行态 Provider 可用技能（排除远端目录占位 `omnimux-catalog`）；
+ * 2. `handleTryAttach` 在本地包未命中时向运行态 `ctx.skills.get(slug)` 解析正文。
+ */
+let skillsRuntimeProvider = null;
+export function setSkillsRuntimeProvider(provider) {
+    skillsRuntimeProvider = provider ?? null;
+}
+async function listLiveRuntimeProviderSlugs() {
+    if (!skillsRuntimeProvider || typeof skillsRuntimeProvider.list !== 'function')
+        return [];
+    try {
+        const entries = await skillsRuntimeProvider.list();
+        if (!Array.isArray(entries))
+            return [];
+        const out = [];
+        const seen = new Set();
+        for (const entry of entries) {
+            const slug = String(entry?.name || '').trim();
+            if (!slug || seen.has(slug))
+                continue;
+            // `omnimux-catalog` 暴露全量目录（含未安装远端 git 项），不代表已安装/已注册的运行态技能
+            if (String(entry?.provider || '') === 'omnimux-catalog')
+                continue;
+            seen.add(slug);
+            out.push(slug);
+        }
+        return out;
+    }
+    catch (err) {
+        console.warn(`[omnimux-market] skillsRuntimeProvider.list failed: ${err instanceof Error ? err.message : String(err)}`);
+        return [];
+    }
+}
 // --- 独立领域 Handler 路由实现 ---
 async function handleSearch(ctx) {
     const { body, url, cfg, res } = ctx;
@@ -185,8 +220,11 @@ async function handleSkillInstall(ctx) {
     return sendJson(res, 200, { ok: true, ...result });
 }
 async function handleSkillList(ctx) {
-    const items = await listInstalled(ctx.cfg.skillsDir);
-    return sendJson(ctx.res, 200, { ok: true, skillsDir: ctx.cfg.skillsDir, items });
+    const [items, providerSlugs] = await Promise.all([
+        listInstalled(ctx.cfg.skillsDir),
+        listLiveRuntimeProviderSlugs(),
+    ]);
+    return sendJson(ctx.res, 200, { ok: true, skillsDir: ctx.cfg.skillsDir, items, providerSlugs });
 }
 async function handleSkillUninstall(ctx) {
     const { req, res, body, url, cfg } = ctx;
@@ -224,10 +262,25 @@ async function handleTryAttach(ctx) {
         bodyText = readCatalogSkillMarkdown(catalogItem, roots);
     }
     if (!bodyText) {
+        bodyText = readLocalBundledSkillMarkdown(slug, roots.packageRoot);
+    }
+    if (!bodyText && skillsRuntimeProvider && typeof skillsRuntimeProvider.get === 'function') {
+        try {
+            const def = await skillsRuntimeProvider.get(slug);
+            if (def && typeof def.content === 'string' && def.content.trim()) {
+                bodyText = def.content;
+            }
+        }
+        catch (err) {
+            console.warn(`[omnimux-market] skillsRuntimeProvider.get(${slug}) failed: ${err instanceof Error ? err.message : String(err)}`);
+        }
+    }
+    if (!bodyText) {
         try {
             bodyText = await peekSkillMarkdown(slug, cfg);
         }
-        catch {
+        catch (err) {
+            console.warn(`[omnimux-market] peekSkillMarkdown(${slug}) failed: ${err instanceof Error ? err.message : String(err)}`);
             bodyText = '';
         }
     }
@@ -361,12 +414,14 @@ async function handleSkillDetail(ctx) {
     return sendJson(res, 200, { ok: true, card, tab, content });
 }
 function resolveExploreDirectory(slug, skillsDir) {
+    const pkgRoot = packageRoot();
     const candidates = [
         join(skillsDir, slug),
+        join(dshHome(), 'skills', slug),
         join(process.env.HOME || '', '.dsh/skills', slug),
-        join(packageRoot(), 'catalog/skills', slug),
-        join(packageRoot(), 'catalog/experts', slug),
-    ];
+        resolveLocalBundledSkillDir(slug, pkgRoot),
+        join(pkgRoot, 'catalog/experts', slug),
+    ].filter(Boolean);
     for (const c of candidates) {
         if (existsSync(join(c, 'SKILL.md')))
             return c;

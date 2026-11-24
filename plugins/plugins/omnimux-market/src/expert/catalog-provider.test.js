@@ -80,6 +80,27 @@ test('catalog provider list returns candidates with 0 token modelInvocable: fals
   assert.ok(names.has('carousel'), 'should contain carousel')
 })
 
+test('catalog provider exposes all 4 quick-shortcut bundled skills with 0-token policy and real SKILL.md (#235)', async () => {
+  const roots = env()
+  const provider = createCatalogSkillProvider({
+    catalog: loadCatalog(),
+    home: roots.home,
+  })
+  const { candidates } = await provider.list()
+  const byName = new Map(candidates.map((c) => [c.name, c]))
+  for (const slug of ['replicate-viral-video', 'video-hook-analysis', 'create-selling-video', 'reverse-video-prompt']) {
+    const candidate = byName.get(slug)
+    assert.ok(candidate, `provider must list bundled quick shortcut ${slug}`)
+    validateCandidate(candidate, provider.name)
+    assert.equal(candidate.invocation.modelInvocable, false)
+    assert.equal(candidate.invocation.userInvocable, true)
+    const def = await provider.get(candidate, { cwd: undefined })
+    assert.ok(def, `provider.get must resolve ${slug}`)
+    validateDefinition(def)
+    assert.ok(def.content.trim().length > 100, `${slug} SKILL.md content must be non-empty`)
+  }
+})
+
 test('catalog provider loads a previously listed candidate with the official provider.get shape', async () => {
   const roots = env()
   writeBundledSkill(roots, 'ugc-confessional', '# Ugc Confessional\n\nBundled fixture.')
