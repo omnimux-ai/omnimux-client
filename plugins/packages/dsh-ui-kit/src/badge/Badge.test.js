@@ -33,9 +33,9 @@ describe('Badge component contract', () => {
     assert.match(css, /var\(--dsw-alias-bg-layer-2\)/)
     assert.match(css, /var\(--dsw-alias-brand-primary\)/)
     assert.match(css, /var\(--dsw-alias-state-success-primary\)/)
-    assert.match(css, /var\(--dsw-alias-state-warning-primary\)/)
+    assert.match(css, /var\(--dsw-alias-state-warn-label\)/)
     assert.match(css, /var\(--dsw-alias-state-error-primary\)/)
-    assert.match(css, /var\(--dsw-alias-state-info-primary\)/)
+    assert.match(css, /var\(--dsw-alias-state-business-primary\)/)
 
     assert.doesNotMatch(css, /#[0-9a-fA-F]{3,8}/)
     assert.doesNotMatch(css, /rgba?\(/)

@@ -100,31 +100,31 @@
 }
 
 .brand {
-  background-color: var(--dsw-alias-brand-secondary);
+  background-color: var(--dsw-alias-interactive-bg-active);
   border-color: var(--dsw-alias-brand-primary);
   color: var(--dsw-alias-brand-primary);
 }
 
 .success {
-  background-color: var(--dsw-alias-state-success-subtle);
+  background-color: var(--dsw-alias-state-success-tertiary);
   border-color: var(--dsw-alias-state-success-primary);
   color: var(--dsw-alias-state-success-primary);
 }
 
 .warning {
-  background-color: var(--dsw-alias-state-warning-subtle);
-  border-color: var(--dsw-alias-state-warning-primary);
-  color: var(--dsw-alias-state-warning-primary);
+  background-color: var(--dsw-alias-state-warn-tertiary);
+  border-color: var(--dsw-alias-state-warn-label);
+  color: var(--dsw-alias-state-warn-label);
 }
 
 .error {
-  background-color: var(--dsw-alias-state-error-subtle);
+  background-color: var(--dsw-alias-interactive-bg-hover-danger);
   border-color: var(--dsw-alias-state-error-primary);
   color: var(--dsw-alias-state-error-primary);
 }
 
 .info {
-  background-color: var(--dsw-alias-state-info-subtle);
-  border-color: var(--dsw-alias-state-info-primary);
-  color: var(--dsw-alias-state-info-primary);
+  background-color: var(--dsw-alias-state-business-tertiary);
+  border-color: var(--dsw-alias-state-business-primary);
+  color: var(--dsw-alias-state-business-primary);
 }

@@ -37,7 +37,7 @@ describe('Table family primitives contract', () => {
     assert.match(css, /var\(--dsw-alias-bg-layer-1\)/)
     assert.match(css, /var\(--dsw-alias-bg-layer-2\)/)
     assert.match(css, /var\(--dsw-alias-interactive-bg-hover\)/)
-    assert.match(css, /var\(--dsw-alias-interactive-bg-selected\)/)
+    assert.match(css, /var\(--dsw-alias-interactive-bg-active\)/)
     assert.match(css, /var\(--dsw-alias-brand-primary\)/)
 
     assert.doesNotMatch(css, /#[0-9a-fA-F]{3,8}/)

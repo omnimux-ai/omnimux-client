@@ -35,7 +35,7 @@
 .selected {
   border-color: var(--dsw-alias-brand-primary);
   box-shadow: inset 0 0 0 1px var(--dsw-alias-brand-primary);
-  background-color: var(--dsw-alias-interactive-bg-selected);
+  background-color: var(--dsw-alias-interactive-bg-active);
 }
 
 .disabled {
