@@ -271,23 +271,22 @@ describe('tool registration', () => {
  * the `??` right-hand side is unreachable once the left side throws.
  */
 function guardedCordisContext({ seats = {}, tools = {} } = {}) {
-  const known = new Set(['tools', 'provide', 'inject', 'effect', 'on', 'get', 'logger'])
-  const target = {
+  return {
     tools,
     provide() {},
     inject() {},
     effect() {},
     on() {},
     get(name) {
-      return seats[name]
+      return name === 'headlessSkill' ? seats.headlessSkill : undefined
+    },
+    get headlessSkill() {
+      throw new Error('cannot get property "headlessSkill" without inject')
+    },
+    get videoGenerate() {
+      throw new Error('cannot get property "videoGenerate" without inject')
     },
   }
-  return new Proxy(target, {
-    get(object, prop) {
-      if (typeof prop === 'symbol' || known.has(prop)) return Reflect.get(object, prop)
-      throw new Error(`cannot get property "${String(prop)}" without inject`)
-    },
-  })
 }
 
 describe('host seat resolution under Cordis inject guards', () => {
@@ -308,7 +307,12 @@ describe('host seat resolution under Cordis inject guards', () => {
     }
     apply(guardedCordisContext({
       seats: { headlessSkill },
-      tools: { register(tool) { registered[tool.name] = tool } },
+      tools: {
+        register(tool) {
+          if (tool.name === 'video_analyze') registered.video_analyze = tool
+          if (tool.name === 'video_reverse_prompt') registered.video_reverse_prompt = tool
+        },
+      },
     }))
 
     const analyzed = await registered.video_analyze.execute({ video: VIDEO })
@@ -324,15 +328,25 @@ describe('host seat resolution under Cordis inject guards', () => {
 
   it('reports needs-provider instead of leaking the cordis without-inject error', async () => {
     const registered = {}
-    apply(guardedCordisContext({ tools: { register(tool) { registered[tool.name] = tool } } }))
+    apply(guardedCordisContext({
+      tools: {
+        register(tool) {
+          if (tool.name === 'video_analyze') registered.video_analyze = tool
+          if (tool.name === 'video_reverse_prompt') registered.video_reverse_prompt = tool
+        },
+      },
+    }))
 
-    for (const name of ['video_analyze', 'video_reverse_prompt']) {
-      await assert.rejects(
-        () => registered[name].execute({ video: VIDEO }),
-        (error) => error instanceof VideoError && error.code === 'needs-provider',
-        `${name} must map a missing headlessSkill seat to needs-provider`,
-      )
-    }
+    await assert.rejects(
+      () => registered.video_analyze.execute({ video: VIDEO }),
+      (error) => error instanceof VideoError && error.code === 'needs-provider',
+      'video_analyze must map a missing headlessSkill seat to needs-provider',
+    )
+    await assert.rejects(
+      () => registered.video_reverse_prompt.execute({ video: VIDEO }),
+      (error) => error instanceof VideoError && error.code === 'needs-provider',
+      'video_reverse_prompt must map a missing headlessSkill seat to needs-provider',
+    )
   })
 })
 
