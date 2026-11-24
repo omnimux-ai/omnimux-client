@@ -12,6 +12,7 @@ import { createRecordStore } from './store.js'
 import { createMediaStore } from './media.js'
 import { createHubChannel } from './hubtools.js'
 import { createAccountSource } from './accounts.js'
+import { createCreatorInfoCache } from './creator-info-cache.js'
 import { createSubmitService } from './submit.js'
 
 export const name = 'omnimux-publish'
@@ -21,7 +22,8 @@ const PUBLISH_PROMPT = `This workspace may mount the omnimux-publish content pub
 publish_list_records lists records (status_filter: draft | submitted | reviewing | published | failed | all; the three UI tabs are views of this same ledger).
 publish_create_draft / publish_update_draft manage drafts (type: video | image; media entries take a local path or an imported media_id); publish_delete_draft needs confirm:true.
 publish_list_accounts lists connected social accounts (from the omnimux hub); publish_assign_accounts attaches accounts to a draft (availability + platform capability checks run on both assign and submit).
-publish_submit publishes a draft: media upload via presign, then one create call per account — a single account failing never blocks the others; results land in the per-account subtask ledger.
+publish_submit publishes a draft: validates Direct Post compliance + creator_info (can_post, allowed privacy_level_options, max_video_post_duration_sec), uploads media via presign, then creates one post per account — a single account failing never blocks the others; results land in the per-account subtask ledger.
+TikTok Direct Post compliance (accounts with capabilities.publish_direct=true): settings.tiktok_options MUST explicitly specify privacy_level (no default; must be in creator_info.privacy_level_options) and music_usage_confirmed: true (after creator confirmation). allow_comment / allow_duet / allow_stitch default to false; photo posts omit allow_duet and allow_stitch. If commercial_content: true, at least one of your_brand or branded_content must be true, and branded_content: true cannot use privacy_level "SELF_ONLY". Optional settings.is_aigc: true labels AI-generated content for both video and photo posts.
 publish_get_record returns the record with per-account subtask statuses (refresh:true polls the platform first); publish_retry_task retries one failed account, reusing already uploaded media.
 Unpublished drafts need neither OmniMux sign-in nor the hub; submitting requires the omnimux hub plugin and an OmniMux sign-in.`
 
@@ -72,9 +74,10 @@ export function apply(ctx, config = {}) {
   store.recover() // 中断恢复：遗留 submitting 子任务 → failed('interrupted')
   const media = createMediaStore({ paths, maxBytes: parsed.maxMediaMb * 1024 * 1024 })
   const channel = createHubChannel({ tools: ctx.tools })
+  const creatorInfoCache = createCreatorInfoCache({ channel })
   const accounts = createAccountSource({ channel, overlayPath: paths.accountsOverlayPath })
-  const service = createSubmitService({ store, media, channel, accounts, config: parsed })
-  const dispatcher = createPublishDispatcher({ store, media, accounts, service, channel, config: parsed })
+  const service = createSubmitService({ store, media, channel, accounts, creatorInfoCache, config: parsed })
+  const dispatcher = createPublishDispatcher({ store, media, accounts, service, channel, creatorInfoCache, config: parsed })
 
   // ---- 惰性 HTTP 挂载（webServer 是 Service，就绪后端口才可读）----
   const mountHttp = (httpCtx) => {
@@ -126,13 +129,13 @@ export function apply(ctx, config = {}) {
   ctx.tools.register({
     name: 'publish_create_draft',
     description:
-      'Create a publishing draft. type: video | image. payload: { title?, description?, topics?: string[], media: [{ path | media_id, kind? }], cover?: { path | media_id }, settings? }. Local file paths are imported into the plugin media store (sha256, deduplicated) — never uploaded until submit. Returns the draft plus content_errors from the same validation submit uses.',
+      'Create a publishing draft. type: video | image. payload: { title?, description?, topics?: string[], media: [{ path | media_id, kind? }], cover?: { path | media_id }, settings?: { is_aigc?, photo_cover_index?, tiktok_options?: { privacy_level, allow_comment?, allow_duet?, allow_stitch?, commercial_content?, your_brand?, branded_content?, music_usage_confirmed } } }. Local file paths are imported into the plugin media store (sha256, deduplicated; video duration_sec is probed automatically) — never uploaded until submit. Returns the draft plus content_errors from the same validation submit uses.',
     parameters: objectParams({
       type: { type: 'string', required: true, enum: ['video', 'image'] },
       payload: {
         type: 'object',
         required: true,
-        description: 'Draft content payload (title/description/topics/media/cover/settings)',
+        description: 'Draft content payload (title/description/topics/media/cover/settings including tiktok_options and is_aigc)',
         additionalProperties: true,
       },
     }),
@@ -145,7 +148,7 @@ export function apply(ctx, config = {}) {
   ctx.tools.register({
     name: 'publish_update_draft',
     description:
-      'Update a draft (only drafts are editable). patch uses the same payload shape as publish_create_draft; omitted fields stay unchanged.',
+      'Update a draft (only drafts are editable). patch uses the same payload shape as publish_create_draft (including settings.tiktok_options and settings.is_aigc); omitted fields stay unchanged.',
     parameters: objectParams({
       draft_id: { type: 'string', required: true, description: 'Draft record id (rec_…)' },
       patch: { type: 'object', required: true, description: 'Fields to patch (title/description/topics/media/cover/settings/account_ids)', additionalProperties: true },
@@ -199,7 +202,7 @@ export function apply(ctx, config = {}) {
   ctx.tools.register({
     name: 'publish_submit',
     description:
-      'One-click publish a draft: validates, uploads media via presign, then creates one post per account (isolated failures; per-account subtasks land in the ledger immediately). Inlined — resolves when all accounts settled. Requires the omnimux hub plugin and an OmniMux sign-in.',
+      'One-click publish a draft: validates content, creator_info (can_post, allowed privacy_level_options, max_video_post_duration_sec), and required TikTok Direct Post options (privacy_level + music_usage_confirmed: true; commercial_content sub-options & SELF_ONLY rules), uploads media via presign, then creates one post per account (isolated failures; per-account subtasks land in the ledger immediately). Inlined — resolves when all accounts settled. Requires the omnimux hub plugin and an OmniMux sign-in.',
     parameters: objectParams({
       draft_id: { type: 'string', required: true, description: 'Draft record id (rec_…)' },
     }),

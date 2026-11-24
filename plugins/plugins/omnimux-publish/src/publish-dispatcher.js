@@ -2,6 +2,7 @@
 import { PublishError } from './publish-error.js'
 import { parseDraftPayload, validateContent, validateForSubmit, validationError } from './validate.js'
 import { requirePublishingAccounts } from './accounts.js'
+import { createCreatorInfoCache } from './creator-info-cache.js'
 import { isStringArray } from './shared/values.js'
 /** @typedef {import('./submit-media.js').ExecutionOptions & { record_id: string }} RecordExecution */
 
@@ -11,12 +12,14 @@ import { isStringArray } from './shared/values.js'
  *   media: ReturnType<typeof import('./media.js').createMediaStore>,
  *   accounts: ReturnType<typeof import('./accounts.js').createAccountSource>,
  *   service: ReturnType<typeof import('./submit.js').createSubmitService>,
- *   channel: ReturnType<typeof import('./hubtools.js').createHubChannel>,
+ *   channel?: ReturnType<typeof import('./hubtools.js').createHubChannel>,
+ *   creatorInfoCache?: ReturnType<typeof createCreatorInfoCache>,
  *   config: import('./config.js').PublishConfig,
  * }} deps
  */
 export function createPublishDispatcher(deps) {
   const { store, media, accounts, service, channel, config } = deps
+  const creatorInfoCache = deps.creatorInfoCache ?? createCreatorInfoCache({ channel })
 
   /** @param {{ path?: string, media_id?: string }} ref */
   function resolveMediaRef(ref) {
@@ -52,9 +55,18 @@ export function createPublishDispatcher(deps) {
     const view = store.getView(id)
     if (!view) throw new PublishError('record-not-found', `record ${id} not found`)
     const mediaRows = view.media_ids.map((mediaId) => {
-      const row = media.get(mediaId)
+      let row = media.get(mediaId)
+      if (row && row.kind === 'video' && row.duration_sec === undefined && typeof media.probeDuration === 'function') {
+        row = media.probeDuration(mediaId) ?? row
+      }
       return row
-        ? { id: row.id, kind: row.kind, filename: row.filename, content_type: row.content_type }
+        ? {
+            id: row.id,
+            kind: row.kind,
+            filename: row.filename,
+            content_type: row.content_type,
+            ...(row.duration_sec !== undefined ? { duration_sec: row.duration_sec } : {}),
+          }
         : { id: mediaId, kind: 'other', filename: '', content_type: '' }
     })
     const cover = view.cover_media_id ? media.get(view.cover_media_id) : null
@@ -93,14 +105,11 @@ export function createPublishDispatcher(deps) {
     return store.remove(String(input.draft_id || ''))
   }
 
-  /** @param {{ account_id: string }} input */
+  /** @param {{ account_id: string, force?: boolean }} input */
   async function creatorInfo(input) {
     const accountId = String(input.account_id || '')
     if (accountId === '') throw new PublishError('invalid-arguments', 'account_id is required')
-    if (!channel || typeof channel.creatorInfo !== 'function') {
-      throw new PublishError('hub-tool-unavailable', 'creator info is unavailable')
-    }
-    return channel.creatorInfo(accountId)
+    return creatorInfoCache.get(accountId, { force: input.force === true })
   }
 
   /** @param {{ platform?: string }} [input] */
@@ -128,7 +137,7 @@ export function createPublishDispatcher(deps) {
     const verdict = validateForSubmit({
       type: record.type, title: record.title, description: record.description, mediaRows,
       coverRow: cover ? { id: cover.id, kind: cover.kind } : null, account_ids: input.account_ids,
-    }, { accounts: rows, platforms: config.platforms })
+    }, { accounts: rows, platforms: config.platforms, phase: 'assign' })
     if (!verdict.ok) throw validationError(verdict.errors)
     return { record: store.assignAccounts(String(input.draft_id), input.account_ids) }
   }

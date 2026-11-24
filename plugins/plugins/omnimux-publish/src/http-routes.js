@@ -50,7 +50,9 @@ export function registerPublishRoutes(webServer, dispatcher) {
       }
       if (method === 'GET' && subPath === '/creator-info') {
         try {
-          sendJson(res, 200, await dispatcher.creatorInfo({ account_id: url.searchParams.get('id') || '' }))
+          const forceParam = (url.searchParams.get('force') || '').trim().toLowerCase()
+          const force = forceParam === '1' || forceParam === 'true'
+          sendJson(res, 200, await dispatcher.creatorInfo({ account_id: url.searchParams.get('id') || '', force }))
         } catch (error) {
           if (error instanceof PublishError) sendJson(res, STATUS_BY_CODE[error.code] ?? 400, { error: error.code, message: error.message })
           else sendJson(res, 500, { error: 'internal', message: messageOf(error) })

@@ -5,8 +5,9 @@ import { validateForSubmit, validationError } from './validate.js'
 import { requirePublishingAccounts } from './accounts.js'
 import { ACCOUNT_SOURCE_MESSAGE, PUBLISH_PROVIDER } from './account-policy.js'
 import { createSubmitMedia, composeContent } from './submit-media.js'
-import { buildCreateTikTokOptions } from './shared/tiktok-options.js'
+import { aggregateCreatorInfo, buildCreateTikTokOptions } from './shared/tiktok-options.js'
 import { accountPublishMode } from './shared/tiktok-capabilities.js'
+import { createCreatorInfoCache } from './creator-info-cache.js'
 import { isObject } from './shared/values.js'
 export { composeContent } from './submit-media.js'
 /** @typedef {import('./submit-media.js').ExecutionOptions} ExecutionOptions */
@@ -21,17 +22,21 @@ const TERMINAL_TASK_STATUSES = new Set(['published', 'failed'])
  *   channel: ReturnType<typeof import('./hubtools.js').createHubChannel>,
  *   accounts: ReturnType<typeof import('./accounts.js').createAccountSource>,
  *   config: import('./config.js').PublishConfig,
+ *   creatorInfoCache?: ReturnType<typeof createCreatorInfoCache>,
  *   fetcher?: typeof fetch,
  *   now?: () => string,
  * }} deps
  */
 export function createSubmitService(deps) {
   const { store, media, channel, accounts, config } = deps
+  const creatorInfoCache = deps.creatorInfoCache ?? createCreatorInfoCache({ channel })
   const { mediaRowsOf, ensureUploaded } = createSubmitMedia(deps)
   const now = typeof deps.now === 'function' ? deps.now : () => new Date().toISOString()
   const timeoutMs = Math.max(1, config.submitTimeoutSeconds) * 1000
   /** @type {Map<string, Promise<import('./record-types.js').RecordView | null>>} */
   const inflight = new Map()
+  /** @type {Map<string, import('./shared/tiktok-options.js').NormalizedCreatorInfo>} */
+  const preparedCreators = new Map()
 
   /** @param {ExecutionOptions} [opts] */
   function execOpts(opts = {}) {
@@ -63,15 +68,43 @@ export function createSubmitService(deps) {
       throw new PublishError('needs-omnimux', 'OmniMux 未登录：发布需要登录态。请先在 OmniMux 登录或设置 OMNIMUX_ACCESS_TOKEN。')
     }
     const cover = record.cover_media_id ? media.get(record.cover_media_id) : null
+    const selected = record.account_ids
+      .map((id) => accountRows.find((row) => String(row.id) === String(id)))
+      .filter((row) => row != null)
+    const directAccounts = selected.filter((row) => accountPublishMode(row) === 'direct')
+    /** @type {import('./shared/tiktok-options.js').AggregatedCreatorInfo | null} */
+    let aggregatedCreatorInfo = null
+    if (directAccounts.length > 0) {
+      /** @type {import('./shared/tiktok-options.js').CreatorInfoEntry[]} */
+      const entries = await Promise.all(directAccounts.map(async (row) => {
+        const accountId = String(row.id)
+        const displayName = String(row.display_name || row.username || accountId)
+        try {
+          const data = await creatorInfoCache.get(accountId, execOpts(opts))
+          return {
+            account_id: accountId,
+            display_name: displayName,
+            data: isObject(data) ? data : null,
+          }
+        } catch (error) {
+          return {
+            account_id: accountId,
+            display_name: displayName,
+            error: error instanceof Error ? error.message : String(error),
+          }
+        }
+      }))
+      aggregatedCreatorInfo = aggregateCreatorInfo(entries)
+      for (const creator of aggregatedCreatorInfo.creators) {
+        preparedCreators.set(creator.account_id, creator)
+      }
+    }
     const verdict = validateForSubmit({
       type: record.type, title: record.title, description: record.description,
       mediaRows: mediaRowsOf(record), coverRow: cover ? { id: cover.id, kind: cover.kind } : null,
       account_ids: record.account_ids, settings: record.settings,
-    }, { accounts: accountRows, platforms: config.platforms })
+    }, { accounts: accountRows, platforms: config.platforms, creatorInfo: aggregatedCreatorInfo })
     if (!verdict.ok) throw validationError(verdict.errors)
-    const selected = record.account_ids
-      .map((id) => accountRows.find((row) => String(row.id) === String(id)))
-      .filter((row) => row != null)
     store.materialize(recordId, selected)
     return store.getView(recordId)
   }
@@ -124,13 +157,16 @@ export function createSubmitService(deps) {
       }
       return payload
     }
-    const tiktokOptions = buildCreateTikTokOptions(settings.tiktok_options)
+    const tiktokOptions = buildCreateTikTokOptions(settings.tiktok_options, {
+      type: record.type,
+      creatorInfo: preparedCreators.get(String(accountId)) ?? null,
+    })
     if (tiktokOptions) payload.tiktok_options = tiktokOptions
+    if (typeof settings.is_aigc === 'boolean') payload.is_aigc = settings.is_aigc
     if (record.type === 'image') {
       if (typeof settings.photo_cover_index === 'number' && Number.isInteger(settings.photo_cover_index)) {
         payload.photo_cover_index = settings.photo_cover_index
       }
-      if (typeof settings.is_aigc === 'boolean') payload.is_aigc = settings.is_aigc
     }
     return payload
   }

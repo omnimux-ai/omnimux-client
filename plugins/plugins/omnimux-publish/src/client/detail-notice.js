@@ -48,7 +48,24 @@ export function showsInboxDraftNotice(tasks) {
 export function showsPrivateNotice(tasks, record) {
   const rows = Array.isArray(tasks) ? tasks : []
   const privacy = normalizeTikTokOptions(record?.settings?.tiktok_options).privacy_level
-  if (privacy !== 'SELF_ONLY') return false
+  if (privacy !== '' && privacy !== 'SELF_ONLY') return false
+  return rows.some((task) => isPublishingAccount(task)
+    && !isDraftUploadTask(task, record)
+    && typeof task.post_id === 'string' && task.post_id !== ''
+    && PRIVATE_STATUSES.has(String(task.status || '')))
+}
+
+/**
+ * TikTok Content Sharing Guidelines §5.d:
+ * Show post-submission processing notice for live TikTok Direct Post subtasks
+ * (submitted / reviewing / published) so creators know it may take a few minutes
+ * for content to appear on their TikTok profile. Never shown for inbox drafts,
+ * failed tasks, local drafts, or non-official providers.
+ * @param {Array<Record<string, unknown>>} tasks
+ * @param {{ settings?: Record<string, unknown> } | null} [record]
+ */
+export function showsDirectProcessingNotice(tasks, record) {
+  const rows = Array.isArray(tasks) ? tasks : []
   return rows.some((task) => isPublishingAccount(task)
     && !isDraftUploadTask(task, record)
     && typeof task.post_id === 'string' && task.post_id !== ''

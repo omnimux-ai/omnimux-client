@@ -1,27 +1,26 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   IconCheckOutline16,
-  IconChevronDownOutline14,
   IconChevronLeftOutline14,
-  IconChevronUpOutline14,
   IconPaperclipOutline16,
   IconPlayOutline16,
   IconPlusOutline16,
   IconTrashOutline16,
 } from 'dsh-ui-kit'
-import { Button, DropdownSelect, InputField, Toolbar } from 'dsh-ui-kit'
+import { Button, InputField } from 'dsh-ui-kit'
 import { createDraft, creatorInfo, errorText, getCapabilities, mediaContentUrl, recordDetail, submitRecord, updateDraft, uploadMedia } from '../api.js'
 import { formCapabilities, parseTopics } from '../capabilities.js'
 import { isSupportedImageFormat, unsupportedImageRows } from '../image-format.js'
 import {
   DEFAULT_TIKTOK_OPTIONS,
+  aggregateCreatorInfo,
   normalizeTikTokOptions,
-  privacyChoices,
   storeTikTokOptions,
   tiktokOptionProblems,
 } from '../../shared/tiktok-options.js'
 import { accountPublishMode, resolveSelectionPublishMode } from '../../shared/tiktok-capabilities.js'
 import { AccountPanel } from '../AccountPanel.jsx'
+import { ComplianceDeclaration, DirectPostOptions, formatDurationSec } from './DirectPostOptions.jsx'
 
 /**
  * M2–M4 发布页：类型选择（视频/图文，选定不可中途切换）→ 表单 + 左侧账号面板。
@@ -42,7 +41,7 @@ export function Composer({ t, draftId, onBack, onManageAccounts, onSubmitted, on
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [topicsRaw, setTopicsRaw] = useState('')
-  /** @type {[Array<{ id: string, kind: string, filename: string, content_type?: string }>, Function]} */
+  /** @type {[Array<{ id: string, kind: string, filename: string, content_type?: string, duration_sec?: number | null }>, Function]} */
   const [mediaList, setMediaList] = useState([])
   const [coverMediaId, setCoverMediaId] = useState('')
   const [photoCoverIndex, setPhotoCoverIndex] = useState(0)
@@ -56,9 +55,13 @@ export function Composer({ t, draftId, onBack, onManageAccounts, onSubmitted, on
   const [busy, setBusy] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [tiktokOptions, setTiktokOptions] = useState(() => normalizeTikTokOptions(DEFAULT_TIKTOK_OPTIONS))
-  /** @type {[Record<string, unknown> | null, Function]} */
-  const [accountCreator, setAccountCreator] = useState(null)
-  const [optionsLoading, setOptionsLoading] = useState(false)
+  /** @type {[Record<string, { loading: boolean, data: Record<string, unknown> | null, error: string | null }>, Function]} */
+  const [creatorInfoMap, setCreatorInfoMap] = useState({})
+  const creatorInfoMapRef = useRef(creatorInfoMap)
+  creatorInfoMapRef.current = creatorInfoMap
+  const [creatorFetchEpoch, setCreatorFetchEpoch] = useState(0)
+  const creatorForceRef = useRef(false)
+  const [privacyResetReason, setPrivacyResetReason] = useState('')
   const [settingsOpen, setSettingsOpen] = useState(true)
   const [legacyOptionsOpen, setLegacyOptionsOpen] = useState(false)
   const fileInputRef = useRef(null)
@@ -93,6 +96,7 @@ export function Composer({ t, draftId, onBack, onManageAccounts, onSubmitted, on
         kind: String(row.kind || 'image'),
         filename: String(row.filename || ''),
         content_type: String(row.content_type || ''),
+        duration_sec: typeof row.duration_sec === 'number' && Number.isFinite(row.duration_sec) ? row.duration_sec : null,
       })))
       setCoverMediaId(record.cover_media_id ? String(record.cover_media_id) : '')
       if (typeof record.settings?.photo_cover_index === 'number' && Number.isInteger(record.settings.photo_cover_index) && record.settings.photo_cover_index >= 0) {
@@ -118,56 +122,150 @@ export function Composer({ t, draftId, onBack, onManageAccounts, onSubmitted, on
   const needsCreatorInfo = accountIds.length > 0
     && accountRows.length > 0
     && (publishMode === 'direct' || (publishMode === 'legacy_unknown' && legacyOptionsOpen))
-  // creator-info 只对真正走直发的账号发起：混选 draft_only + direct 时必须命中 direct 账号，
-  // 不能因为 draft_only 排在 accountIds[0] 就对草稿账号发请求；兼容态展开时按需回退首个账号。
-  const creatorInfoAccountId = !needsCreatorInfo
-    ? ''
-    : String((
-      accountRows.find((row) => accountPublishMode(row) === 'direct')
-      ?? (publishMode === 'legacy_unknown' ? accountRows[0] : null)
-    )?.id ?? '')
+  // creator-info 只对真正走直发的账号发起：多直发账号全部拉取以便做交集/最小时长/并集聚合；
+  // 混选 draft_only + direct 时只请求 direct 账号，draft_only 零请求；兼容态展开时按需回退首个账号。
+  const creatorInfoTargets = useMemo(() => {
+    if (!needsCreatorInfo) return []
+    if (publishMode === 'direct') {
+      return accountRows.filter((row) => accountPublishMode(row) === 'direct')
+    }
+    if (publishMode === 'legacy_unknown') {
+      return accountRows.slice(0, 1)
+    }
+    return []
+  }, [needsCreatorInfo, publishMode, accountRows])
+
+  const creatorTargetKey = creatorInfoTargets.map((row) => String(row.id)).join(',')
 
   const images = mediaList.filter((m) => m.kind === 'image')
   const videos = mediaList.filter((m) => m.kind === 'video')
   const unsupportedImages = type === 'image' ? unsupportedImageRows(images) : []
   const imageFormatBlocked = unsupportedImages.length > 0
   const scopeMissingBlocked = publishMode === 'no_publish_scope'
-  // 账号发布能力（隐私级别/禁用的互动项）——仅直发账号或兼容态手动展开时拉取；draft_only 零请求。
-  useEffect(() => {
-    if (!needsCreatorInfo) return
-    const accountId = creatorInfoAccountId
-    if (accountId === '') return
-    if (accountCreator && String(accountCreator.account_id || '') === accountId) return
-    let disposed = false
-    setOptionsLoading(true)
-    creatorInfo(accountId).then((result) => {
-      if (disposed) return
-      const payload = result.ok && result.body ? result.body : null
-      const data = payload && typeof payload === 'object' ? (payload.data ?? payload) : null
-      setAccountCreator(data && typeof data === 'object' ? { ...data, account_id: accountId } : { account_id: accountId, degraded: true })
-      setOptionsLoading(false)
-    }).catch(() => {
-      if (disposed) return
-      setAccountCreator({ account_id: accountId, degraded: true })
-      setOptionsLoading(false)
-    })
-    return () => { disposed = true }
-  }, [accountIds, accountCreator, creatorInfoAccountId, needsCreatorInfo])
 
+  const retryCreatorInfo = useCallback(() => {
+    creatorForceRef.current = true
+    setCreatorFetchEpoch((epoch) => epoch + 1)
+  }, [])
+
+  // 账号发布能力（创作者昵称、隐私级别交集、禁用的互动项、视频最大时长）——仅直发账号或兼容态展开时拉取；draft_only 零请求。
   useEffect(() => {
-    const allowed = privacyChoices(accountCreator)
-    setTiktokOptions((prev) => (allowed.includes(prev.privacy_level) ? prev : { ...prev, privacy_level: allowed[0] }))
-  }, [accountCreator])
+    if (!creatorTargetKey) return
+    const targetIds = creatorTargetKey.split(',').filter(Boolean)
+    const force = creatorForceRef.current
+    creatorForceRef.current = false
+    const currentMap = creatorInfoMapRef.current
+    const toFetch = force ? targetIds : targetIds.filter((id) => !currentMap[id])
+    if (toFetch.length === 0) return
+    let disposed = false
+    setCreatorInfoMap((prev) => {
+      const next = { ...prev }
+      for (const id of toFetch) {
+        next[id] = { loading: true, data: null, error: null }
+      }
+      return next
+    })
+    for (const accountId of toFetch) {
+      creatorInfo(accountId, { force }).then((result) => {
+        if (disposed) return
+        if (result.ok && result.body && typeof result.body === 'object') {
+          setCreatorInfoMap((prev) => ({
+            ...prev,
+            [accountId]: { loading: false, data: result.body, error: null },
+          }))
+        } else {
+          setCreatorInfoMap((prev) => ({
+            ...prev,
+            [accountId]: { loading: false, data: null, error: errorText(result.body, result.status) },
+          }))
+        }
+      }).catch((caught) => {
+        if (disposed) return
+        setCreatorInfoMap((prev) => ({
+          ...prev,
+          [accountId]: { loading: false, data: null, error: caught instanceof Error ? caught.message : String(caught) },
+        }))
+      })
+    }
+    return () => { disposed = true }
+  }, [creatorTargetKey, creatorFetchEpoch])
+
+  const optionsLoading = creatorInfoTargets.length > 0 && creatorInfoTargets.some((row) => {
+    const entry = creatorInfoMap[String(row.id)]
+    return !entry || entry.loading === true
+  })
+
+  const aggregatedCreator = useMemo(() => {
+    if (creatorInfoTargets.length === 0 || optionsLoading) {
+      return aggregateCreatorInfo([])
+    }
+    const entries = creatorInfoTargets.map((row) => {
+      const id = String(row.id)
+      const entry = creatorInfoMap[id]
+      return {
+        account_id: id,
+        display_name: String(row.display_name || row.username || id),
+        data: entry?.data ?? null,
+        error: entry?.error ?? null,
+      }
+    })
+    return aggregateCreatorInfo(entries)
+  }, [creatorInfoTargets, creatorInfoMap, optionsLoading])
+
+  const allowedPrivacyKey = aggregatedCreator.privacy_level_options.join(',')
+
+  // §2.b 严禁自动回填默认隐私级别；仅当已选值因切换账号/交集变化不再合法时清空并提示重选。
+  useEffect(() => {
+    if (!aggregatedCreator.ready) return
+    const allowed = aggregatedCreator.privacy_level_options
+    setTiktokOptions((prev) => {
+      let changed = false
+      const next = { ...prev }
+      if (prev.privacy_level !== '' && !allowed.includes(prev.privacy_level)) {
+        next.privacy_level = ''
+        changed = true
+        setPrivacyResetReason('account-changed')
+      }
+      if (!aggregatedCreator.hasNonPrivatePrivacy && prev.commercial_content && prev.branded_content) {
+        next.branded_content = false
+        changed = true
+      }
+      return changed ? normalizeTikTokOptions(next) : prev
+    })
+  }, [aggregatedCreator.ready, aggregatedCreator.hasNonPrivatePrivacy, allowedPrivacyKey])
 
   useEffect(() => {
     if (images.length > 0 && photoCoverIndex >= images.length) setPhotoCoverIndex(0)
   }, [images.length, photoCoverIndex])
 
-  const optionsProblems = showDirectOptions ? tiktokOptionProblems(tiktokOptions) : []
-  const optionsBlocked = optionsProblems.length > 0
-  const toggleDisabled = (flag) => accountCreator?.[flag] === true
+  const overDurationVideo = useMemo(() => {
+    if (!showDirectOptions || type !== 'video') return null
+    const maxSec = aggregatedCreator.max_video_post_duration_sec
+    if (typeof maxSec !== 'number' || !Number.isFinite(maxSec) || maxSec <= 0) return null
+    return videos.find((v) => typeof v.duration_sec === 'number' && Number.isFinite(v.duration_sec) && v.duration_sec > maxSec) || null
+  }, [showDirectOptions, type, aggregatedCreator.max_video_post_duration_sec, videos])
+
+  const optionsProblems = showDirectOptions
+    ? tiktokOptionProblems(tiktokOptions, {
+        allowedPrivacyLevels: aggregatedCreator.ready ? aggregatedCreator.privacy_level_options : null,
+        type,
+        requireMusicConfirmation: false,
+      })
+    : []
+  const creatorBlocked = showDirectOptions && !optionsLoading && aggregatedCreator.blocked
+  const durationBlocked = Boolean(overDurationVideo)
+  const optionsBlocked = showDirectOptions && (optionsLoading || creatorBlocked || durationBlocked || optionsProblems.length > 0)
   const patchOptions = useCallback((patch) => {
     setTiktokOptions((prev) => normalizeTikTokOptions({ ...prev, ...patch }))
+  }, [])
+  const handleBrandedSelfOnlyConflict = useCallback(() => {
+    setTiktokOptions((prev) => normalizeTikTokOptions({
+      ...prev,
+      commercial_content: true,
+      branded_content: true,
+      privacy_level: '',
+    }))
+    setPrivacyResetReason('branded-conflict')
   }, [])
   const caps = formCapabilities({
     platforms,
@@ -204,6 +302,7 @@ export function Composer({ t, draftId, onBack, onManageAccounts, onSubmitted, on
             kind: String(media.kind),
             filename: String(media.filename),
             content_type: String(media.content_type || file.type || ''),
+            duration_sec: typeof media.duration_sec === 'number' && Number.isFinite(media.duration_sec) ? media.duration_sec : null,
           }])
         } else {
           setError(t('form.uploadFailed', { reason: errorText(result.body, result.status) }))
@@ -217,10 +316,14 @@ export function Composer({ t, draftId, onBack, onManageAccounts, onSubmitted, on
 
   /**
    * 组装提交给 Host 的 payload（与 publish_create_draft 同构）。
+   * @param {{ confirmCompliance?: boolean }} [opts]
    */
-  const buildPayload = useCallback(() => {
+  const buildPayload = useCallback((opts = {}) => {
     /** @type {Record<string, unknown>} */
     const settings = {}
+    const effectiveTikTokOptions = opts.confirmCompliance === true
+      ? { ...tiktokOptions, music_usage_confirmed: true }
+      : tiktokOptions
     if (publishMode === 'draft_only') {
       settings.publish_mode = 'draft'
       if (type === 'image') {
@@ -229,13 +332,14 @@ export function Composer({ t, draftId, onBack, onManageAccounts, onSubmitted, on
       }
     } else if (publishMode === 'direct') {
       settings.publish_mode = 'direct'
-      settings.tiktok_options = storeTikTokOptions(tiktokOptions)
+      settings.tiktok_options = storeTikTokOptions(effectiveTikTokOptions)
+      settings.is_aigc = isAigc
       if (type === 'image') {
         settings.photo_cover_index = photoCoverIndex
-        settings.is_aigc = isAigc
       }
     } else if (legacyOptionsOpen) {
-      settings.tiktok_options = storeTikTokOptions(tiktokOptions)
+      settings.tiktok_options = storeTikTokOptions(effectiveTikTokOptions)
+      settings.is_aigc = isAigc
     }
     /** @type {Record<string, unknown>} */
     const payload = {
@@ -251,7 +355,7 @@ export function Composer({ t, draftId, onBack, onManageAccounts, onSubmitted, on
 
   /**
    * 保存草稿（新建或更新，含账号挂载——Host 走与 assign 工具同一条校验）。
-   * @param {{ withAccounts?: boolean }} [opts]
+   * @param {{ withAccounts?: boolean, confirmCompliance?: boolean }} [opts]
    * @returns {Promise<string | null>} record id
    */
   const persistDraft = useCallback(async (opts = {}) => {
@@ -260,9 +364,10 @@ export function Composer({ t, draftId, onBack, onManageAccounts, onSubmitted, on
     setNotice('')
     try {
       let id = editingId
+      const basePayload = buildPayload({ confirmCompliance: opts.confirmCompliance === true })
       const payload = opts.withAccounts !== false
-        ? { ...buildPayload(), account_ids: accountIds }
-        : buildPayload()
+        ? { ...basePayload, account_ids: accountIds }
+        : basePayload
       if (!id) {
         const result = await createDraft(type, payload)
         if (!result.ok || !result.body || !result.body.record) {
@@ -285,13 +390,28 @@ export function Composer({ t, draftId, onBack, onManageAccounts, onSubmitted, on
     }
   }, [editingId, buildPayload, type, accountIds, t, onSaved])
 
-  /** 一键发布：保存 → POST submit（立即返回）→ 轮询跟进由舞台层接管。 */
+  /** 一键发布：保存（Scheme A 点发布写入 music_usage_confirmed: true）→ POST submit → 轮询跟进由舞台层接管。 */
   const handleSubmit = useCallback(async () => {
     if (scopeMissingBlocked) {
       setError(t('form.scopeMissing.body'))
       return
     }
-    if (optionsBlocked) {
+    if (showDirectOptions && optionsLoading) {
+      setError(t('form.options.loading'))
+      return
+    }
+    if (creatorBlocked) {
+      setError(t(`form.options.problem.${aggregatedCreator.blockedReason || 'creator-info-unavailable'}`))
+      return
+    }
+    if (durationBlocked && overDurationVideo && aggregatedCreator.max_video_post_duration_sec) {
+      setError(t('form.options.videoDurationExceeded', {
+        duration: formatDurationSec(overDurationVideo.duration_sec),
+        max: formatDurationSec(aggregatedCreator.max_video_post_duration_sec),
+      }))
+      return
+    }
+    if (optionsProblems.length > 0) {
       setError(optionsProblems.map((code) => t(`form.options.problem.${code}`)).join(' '))
       return
     }
@@ -303,7 +423,7 @@ export function Composer({ t, draftId, onBack, onManageAccounts, onSubmitted, on
       setError(t('form.submitNoAccounts'))
       return
     }
-    const id = await persistDraft({ withAccounts: true })
+    const id = await persistDraft({ withAccounts: true, confirmCompliance: showDirectOptions })
     if (!id) return
     setBusy(true)
     try {
@@ -315,7 +435,23 @@ export function Composer({ t, draftId, onBack, onManageAccounts, onSubmitted, on
     } finally {
       setBusy(false)
     }
-  }, [accountIds.length, imageFormatBlocked, unsupportedImages.length, optionsBlocked, optionsProblems, scopeMissingBlocked, persistDraft, onSubmitted, t])
+  }, [
+    accountIds.length,
+    aggregatedCreator.blockedReason,
+    aggregatedCreator.max_video_post_duration_sec,
+    creatorBlocked,
+    durationBlocked,
+    imageFormatBlocked,
+    onSubmitted,
+    optionsLoading,
+    optionsProblems,
+    overDurationVideo,
+    persistDraft,
+    scopeMissingBlocked,
+    showDirectOptions,
+    t,
+    unsupportedImages.length,
+  ])
 
   // ---- M2 类型选择（新草稿入口）----
   if (!type) {
@@ -341,11 +477,20 @@ export function Composer({ t, draftId, onBack, onManageAccounts, onSubmitted, on
   const selectedAccount = accountRows.find((row) => String(row.id) === String(accountIds[0])) || null
   const isDraftMode = publishMode === 'draft_only'
   const isLegacyCompat = accountIds.length > 0 && accountRows.length > 0 && publishMode === 'legacy_unknown'
+  const privacyDisplay = tiktokOptions.privacy_level
+    ? t(`form.options.privacy.${tiktokOptions.privacy_level}`)
+    : t('form.options.privacy.unselected')
+  const commercialBadge = showDirectOptions && tiktokOptions.commercial_content
+    ? (tiktokOptions.branded_content
+        ? t('form.options.commercial.badge.paid')
+        : (tiktokOptions.your_brand ? t('form.options.commercial.badge.promotional') : ''))
+    : ''
   const settingsSummary = [
-    t(`form.options.privacy.${tiktokOptions.privacy_level}`),
-    tiktokOptions.allow_comment ? t('form.options.comment.short') : null,
-    tiktokOptions.allow_duet ? t('form.options.duet.short') : null,
-    tiktokOptions.allow_stitch ? t('form.options.stitch.short') : null,
+    privacyDisplay,
+    tiktokOptions.allow_comment && !aggregatedCreator.comment_disabled ? t('form.options.comment.short') : null,
+    type !== 'image' && tiktokOptions.allow_duet && !aggregatedCreator.duet_disabled ? t('form.options.duet.short') : null,
+    type !== 'image' && tiktokOptions.allow_stitch && !aggregatedCreator.stitch_disabled ? t('form.options.stitch.short') : null,
+    commercialBadge || null,
   ].filter(Boolean).join(' · ')
   const actionModeTitle = isDraftMode
     ? t('form.draftUploadMode')
@@ -364,10 +509,27 @@ export function Composer({ t, draftId, onBack, onManageAccounts, onSubmitted, on
     ? t('form.preview.inboxDraft')
     : isLegacyCompat && !legacyOptionsOpen
       ? t('form.preview.legacy')
-      : t(`form.options.privacy.${tiktokOptions.privacy_level}`)
-  const previewCommentLabel = showDirectOptions && tiktokOptions.allow_comment
+      : privacyDisplay
+  const previewCommentLabel = showDirectOptions && tiktokOptions.allow_comment && !aggregatedCreator.comment_disabled
     ? t('form.options.comment.short')
     : ''
+  const submitDisabledReason = scopeMissingBlocked
+    ? t('form.scopeMissing.body')
+    : imageFormatBlocked
+      ? t('form.imageFormatBlocked', { count: unsupportedImages.length })
+      : showDirectOptions && optionsLoading
+        ? t('form.options.loading')
+        : creatorBlocked
+          ? t(`form.options.problem.${aggregatedCreator.blockedReason || 'creator-info-unavailable'}`)
+          : durationBlocked && overDurationVideo && aggregatedCreator.max_video_post_duration_sec
+            ? t('form.options.videoDurationExceeded', {
+                duration: formatDurationSec(overDurationVideo.duration_sec),
+                max: formatDurationSec(aggregatedCreator.max_video_post_duration_sec),
+              })
+            : optionsProblems.length > 0
+              ? optionsProblems.map((code) => t(`form.options.problem.${code}`)).join('；')
+              : ''
+  const submitDisabled = uploading || imageFormatBlocked || optionsBlocked || scopeMissingBlocked
 
   return (
     <div className="omnimux-publish-composer">
@@ -463,113 +625,25 @@ export function Composer({ t, draftId, onBack, onManageAccounts, onSubmitted, on
             ) : null}
 
             {showDirectOptions ? (
-              <div className="omnimux-publish-settings" data-testid="direct-post-options">
-                <div
-                  role="button"
-                  tabIndex={0}
-                  className="omnimux-publish-settings-head"
-                  aria-expanded={settingsOpen}
-                  onClick={() => setSettingsOpen((open) => !open)}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter' || event.key === ' ') {
-                      event.preventDefault()
-                      setSettingsOpen((open) => !open)
-                    }
-                  }}
-                >
-                  <span className="omnimux-publish-settings-title">{t('form.options.title')}</span>
-                  <span className="omnimux-publish-settings-summary">{settingsSummary}</span>
-                  <span className="omnimux-publish-settings-chevron" aria-hidden="true">
-                    {settingsOpen ? <IconChevronUpOutline14 size={14} /> : <IconChevronDownOutline14 size={14} />}
-                  </span>
-                </div>
-                {settingsOpen ? (
-                  <div className="omnimux-publish-settings-body">
-                    {optionsLoading ? <Hint text={t('form.options.loading')} /> : null}
-                    <div className="omnimux-publish-setting-row">
-                      <span className="omnimux-publish-setting-label">{t('form.options.privacy')}</span>
-                      <DropdownSelect
-                        aria-label={t('form.options.privacy')}
-                        value={tiktokOptions.privacy_level}
-                        options={privacyChoices(accountCreator).map((level) => ({ value: level, label: t(`form.options.privacy.${level}`) }))}
-                        onChange={(value) => { patchOptions({ privacy_level: value }) }}
-                      />
-                    </div>
-                    <div className="omnimux-publish-setting-row">
-                      <span className="omnimux-publish-setting-label">{t('form.options.interaction')}</span>
-                      <div className="omnimux-publish-setting-chips">
-                        {[['allow_comment', 'form.options.comment', 'comment_disabled'], ['allow_duet', 'form.options.duet', 'duet_disabled'], ['allow_stitch', 'form.options.stitch', 'stitch_disabled']].map(([key, label, flag]) => (
-                          <Button
-                            key={key}
-                            type="button"
-                            size="xs"
-                            variant={tiktokOptions[key] === true ? 'secondary' : 'ghost'}
-                            leadingIcon={tiktokOptions[key] === true ? <IconCheckOutline16 size={14} /> : undefined}
-                            disabled={toggleDisabled(flag)}
-                            aria-pressed={tiktokOptions[key] === true}
-                            onClick={() => { patchOptions({ [key]: tiktokOptions[key] !== true }) }}
-                          >
-                            {t(label)}
-                          </Button>
-                        ))}
-                      </div>
-                    </div>
-                    <div className="omnimux-publish-setting-row">
-                      <span className="omnimux-publish-setting-label">{t('form.options.commercial.row')}</span>
-                      <div className="omnimux-publish-setting-chips">
-                        <Button
-                          type="button"
-                          size="xs"
-                          variant={tiktokOptions.commercial_content ? 'secondary' : 'ghost'}
-                          leadingIcon={tiktokOptions.commercial_content ? <IconCheckOutline16 size={14} /> : undefined}
-                          aria-pressed={tiktokOptions.commercial_content === true}
-                          onClick={() => { patchOptions({ commercial_content: tiktokOptions.commercial_content !== true }) }}
-                        >
-                          {tiktokOptions.commercial_content ? t('form.options.commercial.on') : t('form.options.commercial.off')}
-                        </Button>
-                      </div>
-                    </div>
-                    {tiktokOptions.commercial_content ? (
-                      <div className="omnimux-publish-setting-sub">
-                        <Button
-                          type="button"
-                          size="xs"
-                          variant={tiktokOptions.your_brand ? 'secondary' : 'ghost'}
-                          aria-pressed={tiktokOptions.your_brand === true}
-                          onClick={() => { patchOptions({ your_brand: true, branded_content: false }) }}
-                        >
-                          {t('form.options.yourBrand')}
-                        </Button>
-                        <Button
-                          type="button"
-                          size="xs"
-                          variant={tiktokOptions.branded_content ? 'secondary' : 'ghost'}
-                          aria-pressed={tiktokOptions.branded_content === true}
-                          onClick={() => { patchOptions({ your_brand: false, branded_content: true }) }}
-                        >
-                          {t('form.options.branded')}
-                        </Button>
-                        <Button
-                          type="button"
-                          size="xs"
-                          variant={tiktokOptions.music_usage_confirmed ? 'secondary' : 'ghost'}
-                          leadingIcon={tiktokOptions.music_usage_confirmed ? <IconCheckOutline16 size={14} /> : undefined}
-                          aria-pressed={tiktokOptions.music_usage_confirmed === true}
-                          onClick={() => { patchOptions({ music_usage_confirmed: tiktokOptions.music_usage_confirmed !== true }) }}
-                        >
-                          {t('form.options.music.chip')}
-                        </Button>
-                      </div>
-                    ) : null}
-                    {optionsProblems.length > 0 ? (
-                      <Hint tone="warn" text={optionsProblems.map((code) => t(`form.options.problem.${code}`)).join('；')} />
-                    ) : null}
-                    {[['comment_disabled', 'form.options.comment.disabled'], ['duet_disabled', 'form.options.duet.disabled'], ['stitch_disabled', 'form.options.stitch.disabled']]
-                      .filter(([flag]) => toggleDisabled(flag))
-                      .map(([, label]) => <Hint key={label} text={t(label)} />)}
-                  </div>
-                ) : null}
-              </div>
+              <DirectPostOptions
+                t={t}
+                type={type}
+                settingsOpen={settingsOpen}
+                onToggleOpen={() => setSettingsOpen((open) => !open)}
+                settingsSummary={settingsSummary}
+                optionsLoading={optionsLoading}
+                aggregatedCreator={aggregatedCreator}
+                onRetryCreatorInfo={retryCreatorInfo}
+                tiktokOptions={tiktokOptions}
+                onPatchOptions={patchOptions}
+                privacyResetReason={privacyResetReason}
+                onClearPrivacyReset={() => { setPrivacyResetReason('') }}
+                onBrandedSelfOnlyConflict={handleBrandedSelfOnlyConflict}
+                isAigc={isAigc}
+                onToggleAigc={() => { setIsAigc((prev) => !prev) }}
+                overDurationVideo={overDurationVideo}
+                optionsProblems={optionsProblems}
+              />
             ) : null}
 
             <InputField
@@ -610,6 +684,20 @@ export function Composer({ t, draftId, onBack, onManageAccounts, onSubmitted, on
                     {type === 'image' && media.kind === 'image' && !isSupportedImageFormat(media.content_type, media.filename) ? (
                       <span className="omnimux-publish-media-badge">{t('form.imageFormatUnsupported')}</span>
                     ) : null}
+                    {media.kind === 'video' && typeof media.duration_sec === 'number' && media.duration_sec > 0 ? (() => {
+                      const exceeded = showDirectOptions
+                        && typeof aggregatedCreator.max_video_post_duration_sec === 'number'
+                        && aggregatedCreator.max_video_post_duration_sec > 0
+                        && media.duration_sec > aggregatedCreator.max_video_post_duration_sec
+                      return (
+                        <span
+                          className={exceeded ? 'omnimux-publish-media-badge error' : 'omnimux-publish-media-badge duration'}
+                          data-testid={exceeded ? 'video-duration-exceeded-badge' : 'video-duration-badge'}
+                        >
+                          {t('form.options.videoDuration', { duration: formatDurationSec(media.duration_sec) })}
+                        </span>
+                      )
+                    })() : null}
                     <div className="omnimux-publish-media-actions">
                       {type === 'image' && media.kind === 'image' ? (() => {
                         const imageIndex = images.findIndex((img) => img.id === media.id)
@@ -734,11 +822,20 @@ export function Composer({ t, draftId, onBack, onManageAccounts, onSubmitted, on
             description={description}
             topics={parseTopics(topicsRaw)}
             images={images}
+            videos={videos}
             account={selectedAccount}
             privacyLabel={previewPillLabel}
             commentLabel={previewCommentLabel}
+            commercialBadge={commercialBadge}
           />
         </div>
+
+        {showDirectOptions ? (
+          <ComplianceDeclaration
+            t={t}
+            branded={tiktokOptions.commercial_content && tiktokOptions.branded_content}
+          />
+        ) : null}
 
         <div className="omnimux-publish-actionbar">
           <div className="omnimux-publish-actionbar-meta">
@@ -749,9 +846,35 @@ export function Composer({ t, draftId, onBack, onManageAccounts, onSubmitted, on
             <Button variant="secondary" size="sm" disabled={uploading} loading={busy} onClick={() => { void persistDraft() }}>
               {t('form.saveDraft')}
             </Button>
-            <Button variant="primary" size="sm" disabled={uploading || imageFormatBlocked || optionsBlocked || scopeMissingBlocked} loading={busy} onClick={() => { void handleSubmit() }}>
-              {submitButtonLabel}
-            </Button>
+            <span
+              className="omnimux-publish-submit-wrap"
+              data-testid="submit-button-wrapper"
+              tabIndex={submitDisabled && submitDisabledReason ? 0 : undefined}
+              title={submitDisabled && submitDisabledReason ? submitDisabledReason : undefined}
+              aria-describedby={submitDisabled && submitDisabledReason ? 'omnimux-publish-submit-tooltip' : undefined}
+              data-disabled-reason={submitDisabled && submitDisabledReason ? submitDisabledReason : undefined}
+            >
+              <Button
+                variant="primary"
+                size="sm"
+                disabled={submitDisabled}
+                loading={busy}
+                data-testid="composer-submit-btn"
+                onClick={() => { void handleSubmit() }}
+              >
+                {submitButtonLabel}
+              </Button>
+              {submitDisabled && submitDisabledReason ? (
+                <span
+                  id="omnimux-publish-submit-tooltip"
+                  role="tooltip"
+                  className="omnimux-publish-submit-tooltip"
+                  data-testid="submit-disabled-tooltip"
+                >
+                  {submitDisabledReason}
+                </span>
+              ) : null}
+            </span>
           </div>
         </div>
       </div>
@@ -768,15 +891,18 @@ export function Composer({ t, draftId, onBack, onManageAccounts, onSubmitted, on
  *   description: string,
  *   topics: string[],
  *   images: Array<{ id: string, filename: string }>,
+ *   videos: Array<{ id: string, filename: string, duration_sec?: number | null }>,
  *   account: Record<string, unknown> | null,
  *   privacyLabel: string,
  *   commentLabel: string,
+ *   commercialBadge: string,
  * }} props
  */
-function ComposerPreview({ t, type, title, description, topics, images, account, privacyLabel, commentLabel }) {
+function ComposerPreview({ t, type, title, description, topics, images, videos, account, privacyLabel, commentLabel, commercialBadge }) {
   const name = String(account?.display_name || account?.username || t('form.preview.noAccount'))
   const handle = String(account?.username || 'tiktok')
   const initial = name.trim().slice(0, 1).toUpperCase() || 'T'
+  const firstVideo = Array.isArray(videos) && videos.length > 0 ? videos[0] : null
   return (
     <aside className="omnimux-publish-preview">
       <div className="omnimux-publish-preview-head">{t('form.preview')}</div>
@@ -794,6 +920,14 @@ function ComposerPreview({ t, type, title, description, topics, images, account,
               <img key={media.id} src={mediaContentUrl(media.id)} alt={media.filename} />
             ))}
           </div>
+        ) : firstVideo ? (
+          <div className="omnimux-publish-preview-video" data-testid="preview-video-stage">
+            <IconPlayOutline16 size={22} />
+            <span className="omnimux-publish-preview-video-name">{firstVideo.filename || t('form.preview.videoReady')}</span>
+            {typeof firstVideo.duration_sec === 'number' && firstVideo.duration_sec > 0 ? (
+              <span className="omnimux-publish-preview-pill">{formatDurationSec(firstVideo.duration_sec)}</span>
+            ) : null}
+          </div>
         ) : (
           <div className="omnimux-publish-preview-empty">{t('form.preview.emptyMedia')}</div>
         )}
@@ -805,6 +939,7 @@ function ComposerPreview({ t, type, title, description, topics, images, account,
         </div>
         <div className="omnimux-publish-preview-foot">
           <span className="omnimux-publish-preview-pill">{privacyLabel}</span>
+          {commercialBadge ? <span className="omnimux-publish-preview-pill">{commercialBadge}</span> : null}
           {commentLabel ? <span>{commentLabel}</span> : null}
           <span className="omnimux-publish-preview-type">{t(`type.${type}`)}</span>
         </div>
