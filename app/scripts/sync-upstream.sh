@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# sync-upstream.sh — 按 docs/contracts/upstream-sync.md 合同执行上游同步。
+# sync-upstream.sh — 按 docs/contracts/upstream-sync-log.md 合同执行上游同步。
 # 分级：🟢A 自动合 / 🟡B 模板解 / 🟠C 停等 / 🔴D 拒绝。
 # 退出码：0=同步完成（待写日志+push）；1=错误；2=🟠C 级停等；3=验证不绿需人工判断。
 
@@ -8,7 +8,7 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_ROOT"
 
-SYNC_FROM="${SYNC_FROM:-origin/master}"
+SYNC_FROM="${SYNC_FROM:-origin/main}"
 GIT_ID=(-c user.name="omnimux" -c user.email="dev@omnimux.local")
 
 NODE_BIN="$(command -v node || true)"
@@ -26,7 +26,7 @@ stop() { printf '\033[31m■ 停等\033[0m %s\n' "$*"; }
 say "── [1/7] fetch 上游 ──"
 git fetch origin
 
-BEHIND="$(git rev-list --count "omnimux..${SYNC_FROM}")"
+BEHIND="$(git rev-list --count "main..${SYNC_FROM}")"
 if [ "$BEHIND" -eq 0 ]; then
   ok "已与上游同步，无需操作"
   exit 0
@@ -35,7 +35,7 @@ say "落后上游 ${BEHIND} 个提交"
 
 # ---------- 阶段 2：预检（C/D 级风险信号） ----------
 say "── [2/7] 预检风险信号 ──"
-RANGE="omnimux..${SYNC_FROM}"
+RANGE="main..${SYNC_FROM}"
 CHANGED_FILES="$(git diff --name-only "$RANGE")"
 
 if echo "$CHANGED_FILES" | grep -qx "LICENSE"; then
@@ -53,7 +53,7 @@ say ""
 
 # ---------- 阶段 3：merge ----------
 say "── [3/7] merge ──"
-if git "${GIT_ID[@]}" merge "${SYNC_FROM}" -m "merge: sync upstream master (${BEHIND} commits) [auto:sync-upstream.sh]" 2>/tmp/sync-merge-err; then
+if git "${GIT_ID[@]}" merge "${SYNC_FROM}" -m "merge: sync upstream main (${BEHIND} commits) [auto:sync-upstream.sh]" 2>/tmp/sync-merge-err; then
   ok "🟢 A 级：零冲突自动合并"
   CONFLICTS=""
 else
@@ -83,7 +83,7 @@ if [ -n "$CONFLICTS" ]; then
       exit 2
     fi
   done
-  git "${GIT_ID[@]}" commit -m "merge: sync upstream master (${BEHIND} commits) [auto:sync-upstream.sh]" >/dev/null
+  git "${GIT_ID[@]}" commit -m "merge: sync upstream main (${BEHIND} commits) [auto:sync-upstream.sh]" >/dev/null
 fi
 
 # ---------- 阶段 5：依赖跟进 ----------
@@ -138,4 +138,4 @@ fi
 ok "同步完成。剩余人工步骤："
 say "  1. 补全决策日志（骨架已写入 docs/contracts/upstream-sync-log.md 顶部）"
 say "  2. git add docs/contracts/upstream-sync-log.md && git commit"
-say "  3. git push fork omnimux 并确认 CI 全绿（无日志的 merge 不算完成）"
+say "  3. git push origin main 并确认 CI 全绿（无日志的 merge 不算完成）"

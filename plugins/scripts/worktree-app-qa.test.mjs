@@ -148,7 +148,7 @@ test('resolveWorktreeRoot 拒绝非工作树路径并给出可操作原因', () 
     realpathSync: path => path,
     readFileSync: () => '',
   };
-  const outside = resolveWorktreeRoot('/Users/example/omnimux-dsh-wt-legacy', io, '/repo');
+  const outside = resolveWorktreeRoot('/Users/example/omnimux-client-wt-legacy', io, '/repo');
   assert.equal(outside.ok, false);
   assert.equal(outside.code, 'TEST_ENV_ROOT_UNSAFE');
   assert.equal(outside.reason, 'outside-worktrees');

@@ -2,6 +2,12 @@
 # Keyless assemble smoke check. Does not call external model APIs.
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd -P)"
+repo_root="$(cd "$root/.." && pwd -P)"
+DSH_SRC="${DSH_SRC:-$repo_root/app/deepseek-harness}"
+if [ ! -f "$DSH_SRC/package.json" ]; then
+  echo "smoke: DSH_SRC is missing a DeepSeek Harness checkout at $DSH_SRC; initialize app/deepseek-harness or set DSH_SRC" >&2
+  exit 1
+fi
 cd "$root"
 
 echo "==> 1. Running core plugin unit tests..."

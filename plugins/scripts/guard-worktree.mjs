@@ -1082,7 +1082,7 @@ export function decideWorktreeAddCommand(command, cwd) {
 
 /**
  * Roots whose unbounded recursive traversal stalls a session: the observed
- * incident `find /Users/x -name "*insp_ad704927*"` ran to the 60s tool timeout
+ * incident `find "$HOME" -name "*insp_ad704927*"` ran to the 60s tool timeout
  * before being killed, and the preceding `glob` on the same root failed outright.
  */
 const UNBOUNDED_SCAN_ROOTS = Object.freeze([
@@ -1129,7 +1129,7 @@ export function normalizeScanTarget(rawPath, homeDir = homedirValue()) {
 /**
  * True when a path names a traversal root broad enough to stall the session:
  * the filesystem root, a top-level system directory, or the user's home.
- * Paths inside a project (`/Users/example/.../plugins`) stay allowed.
+ * Paths inside a project (`$HOME/Project/example/plugins`) stay allowed.
  */
 export function isUnboundedScanRoot(rawPath, homeDir = homedirValue()) {
   const target = normalizeScanTarget(rawPath, homeDir)
@@ -1399,7 +1399,7 @@ function decisionJson(hookEventName, decision, reason, extra = {}) {
       output.permissionDecisionReason = [
         '🚫【OmniMux 仓库 Hook】严禁以用户家目录或系统根目录为起点做无界递归扫描！',
         `🎯 被拦截的目标：${extra.target || '未知路径'}${extra.binary ? `（${extra.binary}）` : ''}`,
-        '📌 事故背景：对 /Users/x 或 / 的全盘遍历会持续数十秒直至触发 60 秒工具超时被杀，界面表现为长时间“深度求索中”假死。',
+        '📌 事故背景：对 $HOME 或 / 的全盘遍历会持续数十秒直至触发 60 秒工具超时被杀，界面表现为长时间“深度求索中”假死。',
         '👉 正确做法：',
         '  1. 灵感 / 资产引用：@inspiration/、@asset/ 是虚拟实体指针，原样传给 video_breakdown_analyze、video_analyze 等工具即可被中枢解析，不需要在本地磁盘查找物理文件；',
         '  2. 查找本地文件：把范围收敛到当前项目工作区内的具体子目录，不要从家目录或根目录起扫；',
