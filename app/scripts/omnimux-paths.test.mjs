@@ -5,7 +5,7 @@
  */
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { test } from 'node:test'
@@ -71,4 +71,156 @@ test('build-plugin-index.mjs prefers the in-repo plugins workspace', () => {
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
+})
+
+const NODE_OPTIONS_WITH_VALUE = new Set([
+  '--import',
+  '-r',
+  '--require',
+  '--loader',
+  '--experimental-loader',
+  '-C',
+  '--conditions',
+  '--env-file',
+  '--test-name-pattern',
+  '--test-reporter',
+  '--test-reporter-destination',
+])
+
+const NODE_INLINE_EVAL_OPTIONS = new Set(['-e', '--eval', '-p', '--print'])
+
+function stripShellQuotes(token) {
+  if (
+    (token.startsWith('"') && token.endsWith('"')) ||
+    (token.startsWith("'") && token.endsWith("'"))
+  ) {
+    return token.slice(1, -1)
+  }
+  return token
+}
+
+function isLocalRelativePath(token) {
+  return (
+    Boolean(token) &&
+    !token.startsWith('-') &&
+    !token.startsWith('/') &&
+    !token.startsWith('$') &&
+    !token.startsWith('~')
+  )
+}
+
+function extractLocalScriptTargets(command) {
+  const targets = []
+  let segmentCwd = '.'
+
+  for (const rawSegment of command.split(/&&|\|\||;/u)) {
+    const tokens = rawSegment
+      .trim()
+      .split(/\s+/u)
+      .filter(Boolean)
+      .map(stripShellQuotes)
+
+    while (tokens.length > 0 && /^[A-Za-z_][A-Za-z0-9_]*=/u.test(tokens.at(0) ?? '')) {
+      tokens.shift()
+    }
+    const [executable, ...args] = tokens
+    if (!executable) continue
+
+    if (executable === 'cd') {
+      const [nextDir] = args
+      if (nextDir && isLocalRelativePath(nextDir)) {
+        segmentCwd = join(segmentCwd, nextDir)
+      }
+      continue
+    }
+
+    if (executable === 'node') {
+      let isNodeTest = false
+      let skipNext = false
+      for (const token of args) {
+        if (skipNext) {
+          skipNext = false
+          continue
+        }
+        if (NODE_INLINE_EVAL_OPTIONS.has(token)) {
+          break
+        }
+        if (token === '--test') {
+          isNodeTest = true
+          continue
+        }
+        if (NODE_OPTIONS_WITH_VALUE.has(token)) {
+          skipNext = true
+          continue
+        }
+        if (token.startsWith('-')) {
+          continue
+        }
+        if (isLocalRelativePath(token)) {
+          targets.push(join(segmentCwd, token))
+        }
+        if (!isNodeTest) {
+          break
+        }
+      }
+      continue
+    }
+
+    if (executable === 'bash' || executable === 'sh') {
+      let skipNext = false
+      for (const token of args) {
+        if (skipNext) {
+          skipNext = false
+          continue
+        }
+        if (token === '-c') {
+          break
+        }
+        if (token === '-o') {
+          skipNext = true
+          continue
+        }
+        if (token.startsWith('-')) {
+          continue
+        }
+        if (isLocalRelativePath(token)) {
+          targets.push(join(segmentCwd, token))
+        }
+        break
+      }
+    }
+  }
+
+  return targets
+}
+
+test('app/package.json scripts exclude rejected desktop-variants entries and point to existing local scripts', () => {
+  const pkg = JSON.parse(readFileSync(join(appDir, 'package.json'), 'utf8'))
+  const scripts = pkg.scripts ?? {}
+
+  assert.equal('check:desktop-variants' in scripts, false,
+    'rejected check:desktop-variants script must not remain in app/package.json')
+  assert.equal('sync:desktop-variants' in scripts, false,
+    'rejected sync:desktop-variants script must not remain in app/package.json')
+
+  const checkedTargets = []
+  const missingTargets = []
+
+  for (const [name, command] of Object.entries(scripts)) {
+    assert.equal(typeof command, 'string', `app/package.json script "${name}" must be a string`)
+    assert.doesNotMatch(command, /verify-desktop-variants\.mjs/u,
+      `app/package.json script "${name}" must not reference rejected verify-desktop-variants.mjs`)
+
+    for (const target of extractLocalScriptTargets(command)) {
+      checkedTargets.push(`${name} -> ${target}`)
+      const fullPath = resolve(appDir, target)
+      if (!existsSync(fullPath) || !statSync(fullPath).isFile()) {
+        missingTargets.push(`${name} -> ${target}`)
+      }
+    }
+  }
+
+  assert.ok(checkedTargets.length > 0, 'expected to validate local script targets in app/package.json')
+  assert.deepEqual(missingTargets, [],
+    `app/package.json scripts reference missing local files:\n${missingTargets.join('\n')}`)
 })
