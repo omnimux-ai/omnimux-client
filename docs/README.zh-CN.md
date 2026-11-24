@@ -74,7 +74,7 @@
 | **macOS（Intel）** | [下载 `OmniMux-x64.dmg`](https://dl.omnimux.ai/releases/latest/OmniMux-x64.dmg) | 打开 DMG，拖入 `Applications` |
 | **Windows（x64）** | [下载 `OmniMux-Setup.exe`](https://dl.omnimux.ai/releases/latest/OmniMux-Setup.exe) | 运行安装程序并按向导完成安装 |
 
-> **自带运行时与数据隔离**：桌面安装包已内置固定版本的 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 运行时（`0.2.1-rc.3`），无需预先安装 DSH 或 Node.js。OmniMux 默认将 Profile、会话、产品库与资产保存在本机 `~/.omnimux`，不会读取或修改你已有的 `~/.dsh` 目录。
+> **自带运行时与数据隔离**：桌面安装包已内置固定版本的 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 运行时（`0.2.2-rc.5`），无需预先安装 DSH 或 Node.js。OmniMux 默认将 Profile、会话、产品库与资产保存在本机 `~/.omnimux`，不会读取或修改你已有的 `~/.dsh` 目录。
 >
 > 历史版本与校验信息同步发布于 [GitHub Releases](https://github.com/omnimux-ai/omnimux-client/releases)，最新动态见 [omnimux.ai](https://omnimux.ai)。
 
@@ -320,7 +320,7 @@ OmniMux 基于 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harnes
 
 OmniMux 将原生桌面壳（`app/`）与产品插件工作区（`plugins/`）放在同一单仓协同开发与发布。所有业务插件不直接持有供应商密钥或发起外部模型请求，统一经由执行中枢完成路由与状态管理。
 
-**上游分层与职责边界**：OmniMux 运行固定且未修改的上游 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 运行时（`0.2.1-rc.3`，由 `app/deepseek-harness` 锁定），复用其 Agent 循环、会话与 [Cordis](https://github.com/cordiverse/cordis) 插件宿主；原生桌面壳基于 [DSH Desktop](https://github.com/anywhere-labs/deepseek-harness-desktop) 构建；OmniMux 自身负责内容电商工作台插件套件、执行中枢、资产体系与独立打包分发（数据目录 `~/.omnimux`）。
+**上游分层与职责边界**：OmniMux 运行固定且未修改的上游 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 运行时（`0.2.2-rc.5`，由 `app/deepseek-harness` 锁定），复用其 Agent 循环、会话与 [Cordis](https://github.com/cordiverse/cordis) 插件宿主；原生桌面壳基于 [DSH Desktop](https://github.com/anywhere-labs/deepseek-harness-desktop) 构建；OmniMux 自身负责内容电商工作台插件套件、执行中枢、资产体系与独立打包分发（数据目录 `~/.omnimux`）。
 
 <p align="center">
   <img src="readme/architecture.zh-CN.svg" width="100%" alt="OmniMux 客户端系统分层架构图：桌面客户端、人机双面工作台、执行中枢、多模态模型通道与本地优先存储">
@@ -476,7 +476,7 @@ OmniMux 自研代码采用 **[AGPL-3.0](../LICENSE)** 许可（附 [NOTICE](../N
 
 OmniMux 的构建离不开全球开源社区的卓越工作。我们在保留原作者署名与原始开源许可证的前提下，基于以下核心开源基座与项目构建 OmniMux：
 
-- **底层运行时与插件基座**：感谢 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（DeepSeek AI 团队，MIT）提供核心 Agent 运行时、会话循环与工具宿主，以及 [Cordis](https://github.com/cordiverse/cordis)（MIT）与 [Koishi.js](https://koishi.chat/) 社区在插件化架构上的长期积累。OmniMux 内置固定版本的上游 DeepSeek Harness 运行时（`0.2.1-rc.3`），不修改其核心源码。
+- **底层运行时与插件基座**：感谢 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（DeepSeek AI 团队，MIT）提供核心 Agent 运行时、会话循环与工具宿主，以及 [Cordis](https://github.com/cordiverse/cordis)（MIT）与 [Koishi.js](https://koishi.chat/) 社区在插件化架构上的长期积累。OmniMux 内置固定版本的上游 DeepSeek Harness 运行时（`0.2.2-rc.5`），不修改其核心源码。
 - **桌面壳与核心工作台模块**：特别感谢 [Anywhere Labs / DSH Desktop](https://github.com/anywhere-labs/deepseek-harness-desktop)（桌面端底座，MIT）、[Augani / OpenReel Video](https://github.com/Augani/openreel-video)（多轨时间轴剪辑内核，MIT）、[@cocofhu / SkillHub](https://github.com/cocofhu/skillhub)（插件与技能市场底座，MIT）、[Yuxiang Lin / dsh-browser](https://github.com/omdsh-dev/dsh-browser)（浏览器伴侣，MIT）、[BeefTV Director](https://github.com/glanderness/BeefTV)（MIT 锁定基线 `5e2ad602`）、[Quaternius](https://quaternius.itch.io/universal-base-characters)（CC0 1.0 3D 角色模型），以及 [Crosery / dsh-viewer](https://github.com/Crosery/dsh-viewer)（媒体渲染器历史归属，MIT）。
 - **核心开源库与社区贡献**：感谢 [React Flow](https://github.com/xyflow/xyflow)、[Dagre](https://github.com/dagrejs/dagre)、[Umami](https://github.com/umami-software/umami) 等开源项目，以及所有参与测试、反馈、贡献技能和代码的社区成员。
 

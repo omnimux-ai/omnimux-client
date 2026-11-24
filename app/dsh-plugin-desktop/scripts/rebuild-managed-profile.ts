@@ -30,6 +30,7 @@ import {
   prepareNextManagedProfileGraph,
   readNextDevBuild,
   writeDesktopNextActiveProfile,
+  writeDesktopNextLastHome,
 } from './next-profile-upgrade.ts'
 
 /** Homes whose managed Profiles this rebuild can establish. */
@@ -253,63 +254,82 @@ function assertMergedBuild(commit: string): void {
   if (result.status !== 0) throw new Error('Fetch origin/main and use a Dev App built from an already merged commit')
 }
 
+export interface DevProfileUpgradeHooks {
+  readonly verifySignature?: (appPath: string) => void
+  readonly inspect?: typeof inspectDevUpgrade
+  readonly confirmStopped?: () => void
+  readonly upgrade?: typeof upgradeDevWithRecovery
+  readonly prepareNextGraph?: typeof prepareNextManagedProfileGraph
+  readonly materializeNext?: (candidateProfileDir: string) => Promise<void>
+  readonly assertElectronRuntime?: (executable: string) => string
+}
+
 export async function runDevProfileUpgrade(
   args: Pick<Extract<Arguments, { command: 'upgrade-dev' }>, 'app' | 'recoveryDir' | 'dryRun'>,
   paths: DevUpgradePaths = sharedDevPaths(),
+  hooks: DevProfileUpgradeHooks = {},
 ): Promise<unknown> {
   const app = realpathSync(args.app)
   if (app === paths.appPath) throw new Error('Use the frozen build outside the shared Dev installation')
   const profileDir = join(paths.homeDir, 'profiles', 'omnimux')
   const recovery = { paths, recoveryDir: args.recoveryDir }
-  const preflight = inspectDevUpgrade(recovery)
+  const preflight = (hooks.inspect ?? inspectDevUpgrade)(recovery)
 
   const nextLayout = nextCandidateLayout(app)
   if (nextLayout !== null) {
-    const build = readNextDevBuild(app)
+    const build = readNextDevBuild(app, hooks.verifySignature ? { verifySignature: hooks.verifySignature } : {})
     if (paths.appPath === SHARED_DEV_APP_PATH) assertMergedBuild(build.commit)
     if (args.dryRun) return { build, shell: nextLayout.shell, preflight }
 
-    const confirmStopped = () => assertDevStopped(paths)
+    const confirmStopped = hooks.confirmStopped ?? (() => assertDevStopped(paths))
     confirmStopped()
-    const electronVersion = process.versions.electron
-    if (electronVersion === undefined) {
-      throw new Error('profile upgrade-dev must run through the frozen candidate App in ELECTRON_RUN_AS_NODE mode')
-    }
-    if (realpathSync(process.execPath) !== realpathSync(nextLayout.executable)) {
-      throw new Error(`profile upgrade-dev is running through ${process.execPath}, not frozen candidate ${nextLayout.executable}`)
+    let electronVersion: string
+    if (hooks.assertElectronRuntime) {
+      electronVersion = hooks.assertElectronRuntime(nextLayout.executable)
+    } else {
+      const detected = process.versions.electron
+      if (detected === undefined) {
+        throw new Error('profile upgrade-dev must run through the frozen candidate App in ELECTRON_RUN_AS_NODE mode')
+      }
+      if (realpathSync(process.execPath) !== realpathSync(nextLayout.executable)) {
+        throw new Error(`profile upgrade-dev is running through ${process.execPath}, not frozen candidate ${nextLayout.executable}`)
+      }
+      electronVersion = detected
     }
     assertPhysicalProfileBoundary(profileDir)
     const runtimeDir = mkdtempSync(join(tmpdir(), 'omnimux-next-profile-rebuild-runtime-'))
     try {
-      const runtime = installDesktopPnpmRuntime({
-        platform: process.platform,
-        appExecutable: nextLayout.executable,
-        pnpmBinPath: nextLayout.pnpmBinPath,
-        electronVersion,
-        stateDir: runtimeDir,
-        environment: process.env,
-      })
+      const runtime = hooks.materializeNext
+        ? undefined
+        : installDesktopPnpmRuntime({
+            platform: process.platform,
+            appExecutable: nextLayout.executable,
+            pnpmBinPath: nextLayout.pnpmBinPath,
+            electronVersion,
+            stateDir: runtimeDir,
+            environment: process.env,
+          })
       try {
-        const graph = await prepareNextManagedProfileGraph({
+        const graph = await (hooks.prepareNextGraph ?? prepareNextManagedProfileGraph)({
           profileDir,
           homeDir: paths.homeDir,
           asarPath: nextLayout.asarPath,
-          materialize: async candidateProfileDir => {
+          materialize: hooks.materializeNext ?? (async candidateProfileDir => {
             await materializeProfile({
               appExecutable: nextLayout.executable,
-              clearEnvironmentPath: runtime.clearEnvironmentPath,
+              clearEnvironmentPath: runtime!.clearEnvironmentPath,
               pnpmBinPath: nextLayout.pnpmBinPath,
-              nodeBinDir: runtime.nodeBinDir,
-              nodeShimPath: runtime.nodeShimPath,
+              nodeBinDir: runtime!.nodeBinDir,
+              nodeShimPath: runtime!.nodeShimPath,
               homeDir: runtimeDir,
               profileDir: candidateProfileDir,
               electronVersion,
               updateLockfile: true,
             })
-          },
+          }),
         })
         try {
-          await upgradeDevWithRecovery({
+          await (hooks.upgrade ?? upgradeDevWithRecovery)({
             ...recovery,
             candidateApp: app,
             profileDir,
@@ -317,12 +337,13 @@ export async function runDevProfileUpgrade(
             confirmStopped,
           })
           const activeConfig = writeDesktopNextActiveProfile(paths.homeDir, 'omnimux')
-          return { status: 'switched', recoveryDir: args.recoveryDir, build, graph: graph.result, activeConfig }
+          const lastHomeConfig = writeDesktopNextLastHome(paths.userDataDir, paths.homeDir)
+          return { status: 'switched', recoveryDir: args.recoveryDir, build, graph: graph.result, activeConfig, lastHomeConfig }
         } finally {
           graph.dispose()
         }
       } finally {
-        runtime.dispose()
+        runtime?.dispose()
       }
     } finally {
       rmSync(runtimeDir, { recursive: true, force: true })

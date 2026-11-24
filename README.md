@@ -74,7 +74,7 @@
 | **macOS (Intel)** | [Download `OmniMux-x64.dmg`](https://dl.omnimux.ai/releases/latest/OmniMux-x64.dmg) | Open DMG and drag **OmniMux** into `Applications` |
 | **Windows (x64)** | [Download `OmniMux-Setup.exe`](https://dl.omnimux.ai/releases/latest/OmniMux-Setup.exe) | Run the installer and follow the setup wizard |
 
-> **Zero-setup runtime & data isolation:** The desktop installers bundle a pinned upstream [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) runtime (`0.2.1-rc.3`) — no prior DSH or Node.js installation is required. OmniMux stores its profiles, sessions, products, and assets locally under `~/.omnimux` and never reads or modifies your existing `~/.dsh` directory.
+> **Zero-setup runtime & data isolation:** The desktop installers bundle a pinned upstream [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) runtime (`0.2.2-rc.5`) — no prior DSH or Node.js installation is required. OmniMux stores its profiles, sessions, products, and assets locally under `~/.omnimux` and never reads or modifies your existing `~/.dsh` directory.
 >
 > All release builds and checksums are also published on [GitHub Releases](https://github.com/omnimux-ai/omnimux-client/releases). Visit [omnimux.ai](https://omnimux.ai) for release highlights.
 
@@ -320,7 +320,7 @@ The **OmniMux Execution Hub (`omnimux`)** centralizes auth, local credential sto
 
 OmniMux develops and ships its Electron desktop shell (`app/`) and product plugin suite (`plugins/`) in one monorepo. Domain plugins never hold provider credentials or call upstream APIs directly — all model execution flows through the Execution Hub.
 
-**Upstream layering & boundaries:** OmniMux runs a pinned, unmodified upstream [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) runtime (`0.2.1-rc.3`, tracked as `app/deepseek-harness`) for core Agent loops, sessions, and the [Cordis](https://github.com/cordiverse/cordis) plugin host; builds its native desktop shell on [DSH Desktop](https://github.com/anywhere-labs/deepseek-harness-desktop); and owns the content commerce workbench plugins, Execution Hub, asset catalog, and standalone packaging (`~/.omnimux` data root).
+**Upstream layering & boundaries:** OmniMux runs a pinned, unmodified upstream [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) runtime (`0.2.2-rc.5`, tracked as `app/deepseek-harness`) for core Agent loops, sessions, and the [Cordis](https://github.com/cordiverse/cordis) plugin host; builds its native desktop shell on [DSH Desktop](https://github.com/anywhere-labs/deepseek-harness-desktop); and owns the content commerce workbench plugins, Execution Hub, asset catalog, and standalone packaging (`~/.omnimux` data root).
 
 <p align="center">
   <img src="docs/readme/architecture.svg" width="100%" alt="OmniMux Client System Architecture: Electron Desktop Shell, Dual-Surface Workbench, Execution Hub, Multimodal Model Channels, and Local-First Workspace Storage">
@@ -476,7 +476,7 @@ Code authored by the OmniMux project is licensed under **[AGPL-3.0](LICENSE)** w
 
 OmniMux is built with the help of the global open-source community. Every third-party component retains its original license and copyright notices:
 
-- **Core Runtime & Plugin Foundation**: [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (MIT, by the DeepSeek AI team) for the Agent runtime, session loop, and tool host, alongside [Cordis](https://github.com/cordiverse/cordis) (MIT) and the [Koishi.js](https://koishi.chat/) community. OmniMux bundles a pinned upstream DeepSeek Harness runtime (`0.2.1-rc.3`) unmodified.
+- **Core Runtime & Plugin Foundation**: [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (MIT, by the DeepSeek AI team) for the Agent runtime, session loop, and tool host, alongside [Cordis](https://github.com/cordiverse/cordis) (MIT) and the [Koishi.js](https://koishi.chat/) community. OmniMux bundles a pinned upstream DeepSeek Harness runtime (`0.2.2-rc.5`) unmodified.
 - **Desktop Shell & Workbench Subsystems**: [Anywhere Labs / DSH Desktop](https://github.com/anywhere-labs/deepseek-harness-desktop) (desktop shell foundation, MIT), [Augani / OpenReel Video](https://github.com/Augani/openreel-video) (multi-track NLE engine, MIT), [@cocofhu / SkillHub](https://github.com/cocofhu/skillhub) (plugin & skill market base, MIT), [Yuxiang Lin / dsh-browser](https://github.com/omdsh-dev/dsh-browser) (browser companion, MIT), [BeefTV Director](https://github.com/glanderness/BeefTV) (pinned MIT revision `5e2ad602`), [Quaternius](https://quaternius.itch.io/universal-base-characters) (CC0 1.0 3D actor models), and [Crosery / dsh-viewer](https://github.com/Crosery/dsh-viewer) (historical media-renderer attribution, MIT).
 - **Key Open-Source Libraries**: [React Flow](https://github.com/xyflow/xyflow), [Dagre](https://github.com/dagrejs/dagre), [Umami](https://github.com/umami-software/umami), and every community contributor who builds skills, reports bugs, or improves OmniMux.
 

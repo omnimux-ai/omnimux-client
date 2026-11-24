@@ -65,7 +65,7 @@ The launcher-private `desktopRuntime`, `desktopPnpmBootstrap`, Electron executab
 
 Release artifacts use Electron Builder and `app.asar`, while dependencies that must be physical (for example pnpm, node-pty, and Windows ACL/native files) live under `app.asar.unpacked`. The packaged-runtime gate checks both archive entries and physical runtime entries; profile fallback links must not target virtual ASAR paths that Node cannot resolve.
 
-The outer workspace uses Yarn. The pinned `deepseek-harness/` submodule keeps its own pnpm workspace. OmniMux ships one stable desktop workspace, `dsh-plugin-desktop`, with DSH `0.2.1-rc.3` pinned in `upstream.json`.
+The outer workspace uses Yarn. The pinned `deepseek-harness/` submodule keeps its own pnpm workspace. The active desktop shell `dsh-desktop-next` pins DSH `0.2.2-rc.5` (tracked in `dsh-version.json` and the `next` channel of `upstream.json`), while the legacy shell `dsh-plugin-desktop` remains frozen on DSH `0.2.1-rc.3` (`stable` channel).
 
 The physical runtime includes `lib`, `node_modules`, package metadata, and the product preset. CLI and Worker processes use this same tree. Unsigned directory builds disable signing and publishing; final artifact checks verify Electron fuses and execute the packaged CLI and diagnostic Worker.
 

@@ -373,6 +373,8 @@
     "verify-cross-plugin-model-alignment.test.mjs",
     "verify-dev-cdp.test.mjs",
     "verify-dev-smoke.test.mjs",
+    "verify-docs-dsh-version.mjs",
+    "verify-docs-dsh-version.test.mjs",
     "verify-dsh-declaration-range.mjs",
     "verify-dsh-declaration-range.test.mjs",
     "verify-dsh-lockfile-uniform.test.mjs",
