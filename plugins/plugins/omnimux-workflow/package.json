@@ -11,7 +11,8 @@
   "exports": {
     ".": "./dist/index.js",
     "./client": "./lib/client.js",
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json"
   },
   "files": [
     "dist/index.js",
@@ -23,6 +24,7 @@
     "THIRD-PARTY-NOTICES-director.md",
     "src/shared",
     "scripts",
+    "locale",
     "cordis.patch.yml",
     "README.md",
     "LICENSE",
@@ -102,5 +104,5 @@
     "zod": "^4.4.3"
   },
   "license": "SEE LICENSE IN LICENSE",
-  "description": "omnimux-workflow: workflow infinite canvas plugin for DeepSeek Harness. Node DAG editing, local persistence, execution via OmniMux seams, agent tools for canvas control."
+  "description": "Build and run multi-step creative workflows on a canvas."
 }

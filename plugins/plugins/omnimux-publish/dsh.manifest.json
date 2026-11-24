@@ -5,7 +5,7 @@
   "tier": "tier-3-personal",
   "entrypoint": "src/index.js",
   "status": "active",
-  "description": "社媒内容发布编排层：草稿管理、多账号分发、发布状态追踪与失败重试",
+  "description": "管理发布草稿，向多个社交账号分发内容并追踪状态。",
   "tags": ["publish", "social", "distribution", "drafts", "accounts"],
   "capabilities": {
     "tools": [

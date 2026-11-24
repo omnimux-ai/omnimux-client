@@ -127,7 +127,9 @@ export class NextDesktopRuntime {
   }
 
   initialize(): void {
-    try { this.selected = this.profiles.active } catch (error) {
+    try {
+      this.selected = this.safeMode ? this.profiles.active : this.profiles.resolveAndPersistActive()
+    } catch (error) {
       if (this.safeMode) this.diagnostics.append(`Original Profile selection is unavailable: ${String(error)}`, 'warn')
       else this.report(error, 'profile-selection')
     }

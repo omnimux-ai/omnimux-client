@@ -1,9 +1,9 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, readFileSync, readdirSync, writeFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { isPathCoveredByFiles, verifyPackageFiles } from './verify-package-files.mjs'
+import { isPathCoveredByFiles, verifyPackageFiles, verifyPluginDisplayMeta } from './verify-package-files.mjs'
 
 describe('isPathCoveredByFiles', () => {
   it('matches exact and ancestor directory patterns', () => {
@@ -104,5 +104,111 @@ describe('verifyPackageFiles', () => {
     const { errors, auditedCount } = verifyPackageFiles(liveRoot)
     assert.ok(auditedCount >= 8, 'should audit multiple plugins')
     assert.deepEqual(errors, [], 'live monorepo must be clean: ' + errors.join('; '))
+  })
+})
+
+describe('verifyPluginDisplayMeta', () => {
+  const writeLocalizedPlugin = (root, name, pkg, locales = {}) => {
+    const dir = join(root, 'plugins', name)
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, 'package.json'), JSON.stringify(pkg, null, 2))
+    if (Object.keys(locales).length > 0) {
+      mkdirSync(join(dir, 'locale'), { recursive: true })
+      for (const [lang, content] of Object.entries(locales)) {
+        writeFileSync(join(dir, 'locale', `${lang}.json`), typeof content === 'string' ? content : JSON.stringify(content, null, 2))
+      }
+    }
+  }
+
+  it('passes when plugin exports locale/{en,zh}.json with valid concise metadata', () => {
+    const root = mkdtempSync(join(tmpdir(), 'pkg-meta-ok-'))
+    try {
+      writeLocalizedPlugin(root, 'omnimux-demo', {
+        name: 'omnimux-demo',
+        description: 'Manage demo items.',
+        exports: { '.': './src/index.js', './package.json': './package.json', './locale/*.json': './locale/*.json' },
+        files: ['src', 'locale'],
+      }, {
+        en: { meta: { title: 'Demo Tools', description: 'Manage demo items.' } },
+        zh: { meta: { title: '演示工具', description: '管理演示项目。' } },
+      })
+      const { errors, auditedCount } = verifyPluginDisplayMeta(root)
+      assert.equal(auditedCount, 1)
+      assert.deepEqual(errors, [])
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('rejects missing zh locale, missing export, raw slug title, middle-dot, and mismatched description', () => {
+    const root = mkdtempSync(join(tmpdir(), 'pkg-meta-bad-'))
+    try {
+      writeLocalizedPlugin(root, 'omnimux-bad', {
+        name: 'omnimux-bad',
+        description: 'Different fallback description.',
+        exports: { '.': './src/index.js', './package.json': './package.json' },
+        files: ['src'],
+      }, {
+        en: { meta: { title: 'omnimux-bad', description: 'A · B description.' } },
+      })
+      const { errors } = verifyPluginDisplayMeta(root)
+      assert.ok(errors.some(e => e.includes('./locale/*.json')), 'must flag missing locale export')
+      assert.ok(errors.some(e => e.includes('locale/zh.json')), 'must flag missing zh.json')
+      assert.ok(errors.some(e => e.includes('files 白名单')), 'must flag locale not covered by files')
+      assert.ok(errors.some(e => e.includes('包名 slug')), 'must flag raw slug title')
+      assert.ok(errors.some(e => e.includes('中点')), 'must flag middle-dot separator')
+      assert.ok(errors.some(e => e.includes('不一致')), 'must flag package.json.description drift')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('rejects empty files array, negated locale entry, and embedded newlines', () => {
+    const root = mkdtempSync(join(tmpdir(), 'pkg-meta-edge-'))
+    try {
+      writeLocalizedPlugin(root, 'custom-plugin', {
+        name: '@scope/custom-plugin',
+        description: 'Line one\nLine two.',
+        exports: { '.': './src/index.js', './package.json': './package.json', './locale/*.json': './locale/*.json' },
+        files: [],
+      }, {
+        en: { meta: { title: '@scope/custom-plugin', description: 'Line one\nLine two.' } },
+        zh: { meta: { title: '自定义插件', description: '单行描述。' } },
+      })
+      const { errors } = verifyPluginDisplayMeta(root)
+      assert.ok(errors.some(e => e.includes('files 白名单')), 'must reject explicit empty files array')
+      assert.ok(errors.some(e => e.includes('换行符')), 'must reject embedded newlines')
+      assert.ok(errors.some(e => e.includes('包名 slug')), 'must reject package name as title')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('passes on all live plugins and verifies Node exports resolve locale/{en,zh}.json', () => {
+    const here = new URL('.', import.meta.url).pathname
+    const liveRoot = join(here, '..')
+    const pluginsDir = join(liveRoot, 'plugins')
+    const dirs = readdirSync(pluginsDir, { withFileTypes: true })
+      .filter(e => e.isDirectory() && !e.name.startsWith('.'))
+      .map(e => e.name)
+      .sort()
+    assert.ok(dirs.length >= 14, `expected at least 14 shipped plugins, got ${dirs.length}`)
+
+    const { errors, auditedCount } = verifyPluginDisplayMeta(liveRoot)
+    assert.equal(auditedCount, dirs.length, 'should audit all shipped plugins')
+    assert.deepEqual(errors, [], 'live plugin display metadata must be clean: ' + errors.join('; '))
+
+    // Verify each plugin has valid en/zh locale files matching package.json description
+    for (const dir of dirs) {
+      const pkgDir = join(pluginsDir, dir)
+      const pkg = JSON.parse(readFileSync(join(pkgDir, 'package.json'), 'utf8'))
+      assert.equal(pkg.exports?.['./locale/*.json'], './locale/*.json', `${dir} exports ./locale/*.json`)
+      assert.equal(pkg.exports?.['./package.json'], './package.json', `${dir} exports ./package.json`)
+      for (const lang of ['en', 'zh']) {
+        const expectedLocalePath = join(pkgDir, 'locale', `${lang}.json`)
+        const localeDoc = JSON.parse(readFileSync(expectedLocalePath, 'utf8'))
+        assert.ok(localeDoc.meta.title && localeDoc.meta.description, `${dir} has valid ${lang} meta`)
+      }
+    }
   })
 })

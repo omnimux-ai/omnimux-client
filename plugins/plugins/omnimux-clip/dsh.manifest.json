@@ -5,7 +5,7 @@
   "tier": "tier-1-app",
   "entrypoint": "src/index.js",
   "status": "active",
-  "description": "OmniMux Clip / 视频剪辑：官方 OpenReel GUI + 管线，挂 better-sidebar Tab。",
+  "description": "提供多轨道时间轴剪辑、字幕编辑与视频导出。",
   "tags": ["clip", "nle", "timeline", "video-editor", "openreel", "sidebar-tab"],
   "skills": ["skills/clip-craft/SKILL.md"],
   "capabilities": {

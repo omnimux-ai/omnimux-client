@@ -38,7 +38,8 @@ describe('development app packaging', () => {
     }
     const root = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8'))
     const desktop = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf8'))
-    expect(root.scripts['package:dev']).toBe('yarn workspace dsh-community-market build && yarn workspace dsh-plugin-desktop package:dev')
+    expect(root.scripts['package:dev:legacy']).toBe('yarn workspace dsh-community-market build && yarn workspace dsh-plugin-desktop package:dev')
+    expect(root.scripts['package:dev']).toContain('yarn workspace dsh-desktop-next package:dev')
     expect(desktop.scripts['package:dev']).toBe('node scripts/package-dev.mjs')
     expect(desktop.scripts['package:dir']).toBe('yarn run build && yarn run prepare:electron-native && yarn run prepare:runtime && yarn run stage:preset && node scripts/package-dir.mjs')
   })

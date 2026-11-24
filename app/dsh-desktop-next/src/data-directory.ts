@@ -24,10 +24,18 @@ export interface DataDirectoryLocation {
   error?: string
 }
 
-export function defaultDataDirectory(userHome = homedir()): string { return join(userHome, DESKTOP_HOME_DIRECTORY_NAME) }
+export function defaultDataDirectory(
+  userHome = homedir(),
+  homeDirectoryName: string = DESKTOP_HOME_DIRECTORY_NAME,
+): string { return join(userHome, homeDirectoryName) }
 
-export function dataDirectoryLocationRoot(packaged: boolean, appData: () => string, packageRoot: string): string {
-  return packaged ? join(appData(), DESKTOP_USER_DATA_DIRECTORY_NAME, 'home') : join(packageRoot, '.desktop-next', 'home')
+export function dataDirectoryLocationRoot(
+  packaged: boolean,
+  appData: () => string,
+  packageRoot: string,
+  userDataDirectoryName: string = DESKTOP_USER_DATA_DIRECTORY_NAME,
+): string {
+  return packaged ? join(appData(), userDataDirectoryName, 'home') : join(packageRoot, '.desktop-next', 'home')
 }
 
 export function dataDirectoryLocationFile(locationRoot: string): string { return join(locationRoot, LOCATION_FILE) }
@@ -39,12 +47,21 @@ function readHome(path: string): string | undefined {
   return resolve(value.home)
 }
 
-function fallbackDirectory(environmentHome: string | undefined, userHome?: string): string {
-  return environmentHome ? resolve(environmentHome) : defaultDataDirectory(userHome)
+function fallbackDirectory(
+  environmentHome: string | undefined,
+  userHome?: string,
+  homeDirectoryName: string = DESKTOP_HOME_DIRECTORY_NAME,
+): string {
+  return environmentHome ? resolve(environmentHome) : defaultDataDirectory(userHome, homeDirectoryName)
 }
 
-export function readDataDirectory(locationRoot: string, environmentHome?: string, userHome?: string): DataDirectoryLocation {
-  const fallback = fallbackDirectory(environmentHome, userHome)
+export function readDataDirectory(
+  locationRoot: string,
+  environmentHome?: string,
+  userHome?: string,
+  homeDirectoryName: string = DESKTOP_HOME_DIRECTORY_NAME,
+): DataDirectoryLocation {
+  const fallback = fallbackDirectory(environmentHome, userHome, homeDirectoryName)
   const source = environmentHome ? 'environment' : 'default'
   try {
     const home = readHome(dataDirectoryLocationFile(locationRoot))
@@ -58,12 +75,17 @@ export function readDataDirectory(locationRoot: string, environmentHome?: string
  * The data directory of the last launch. Until one is recorded, the former rule answers: the
  * variable used to move the choice into its own directory, so an upgrade cannot switch silently.
  */
-function previousDataDirectory(locationRoot: string, environmentHome?: string, userHome?: string): { home: string; recorded: boolean } {
+function previousDataDirectory(
+  locationRoot: string,
+  environmentHome?: string,
+  userHome?: string,
+  homeDirectoryName: string = DESKTOP_HOME_DIRECTORY_NAME,
+): { home: string; recorded: boolean } {
   try {
     const recorded = readHome(join(locationRoot, LAST_HOME_FILE))
     if (recorded !== undefined) return { home: recorded, recorded: true }
   } catch { /* An unreadable record falls back to the former rule. */ }
-  const fallback = fallbackDirectory(environmentHome, userHome)
+  const fallback = fallbackDirectory(environmentHome, userHome, homeDirectoryName)
   let home = fallback
   try { home = readHome(dataDirectoryLocationFile(environmentHome ? fallback : locationRoot)) ?? fallback } catch { /* The fallback stands. */ }
   return { home, recorded: false }
@@ -73,8 +95,14 @@ function previousDataDirectory(locationRoot: string, environmentHome?: string, u
  * The last launch's directory when this launch would leave it for another one: it still holds
  * Next data, or it was recorded and cannot be reached now, such as on a disconnected drive.
  */
-export function dataDirectoryChange(locationRoot: string, home: string, environmentHome?: string, userHome?: string): { previous: string; reachable: boolean } | undefined {
-  const previous = previousDataDirectory(locationRoot, environmentHome, userHome)
+export function dataDirectoryChange(
+  locationRoot: string,
+  home: string,
+  environmentHome?: string,
+  userHome?: string,
+  homeDirectoryName: string = DESKTOP_HOME_DIRECTORY_NAME,
+): { previous: string; reachable: boolean } | undefined {
+  const previous = previousDataDirectory(locationRoot, environmentHome, userHome, homeDirectoryName)
   if (sameDirectory(previous.home, home)) return undefined
   let reachable = false
   try { reachable = lstatSync(previous.home, { throwIfNoEntry: false })?.isDirectory() === true } catch { /* Unreachable. */ }
@@ -95,10 +123,14 @@ export function sameDirectory(left: string, right: string): boolean {
   return process.platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b
 }
 
-/** A directory that a Next launch has already set up. */
+/** A directory that a Next launch (or legacy OmniMux profile) has already set up. */
 function holdsNextData(home: string): boolean {
   const isFile = (path: string): boolean => lstatSync(path, { throwIfNoEntry: false })?.isFile() === true
-  try { return isFile(join(home, 'desktop-next.json')) || isFile(join(home, 'profiles', 'desktop', 'package.json')) } catch { return false }
+  try {
+    return isFile(join(home, 'desktop-next.json'))
+      || isFile(join(home, 'profiles', 'desktop', 'package.json'))
+      || isFile(join(home, 'profiles', 'omnimux', 'package.json'))
+  } catch { return false }
 }
 
 /** The fallback directory may already hold data shared with Stable or the CLI. */

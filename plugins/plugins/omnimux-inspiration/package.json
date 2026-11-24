@@ -11,13 +11,15 @@
   "exports": {
     ".": "./src/index.js",
     "./client": "./lib/client.js",
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json"
   },
   "files": [
     "src",
     "skills",
     "lib/client.js",
     "scripts/build-client.mjs",
+    "locale",
     "cordis.patch.yml",
     "README.md",
     "LICENSE",
@@ -64,5 +66,5 @@
     "jsdom": "^30.0.1"
   },
   "license": "SEE LICENSE IN LICENSE",
-  "description": "Official OmniMux app: browse inspiration items through the execution hub."
+  "description": "Collect, organize, and analyze trending references for content ideas."
 }

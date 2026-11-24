@@ -5,7 +5,7 @@
   "tier": "tier-0-hub",
   "entrypoint": "src/index.js",
   "status": "active",
-  "description": "OmniMux 执行枢纽：负责身份认证注入、模型与多模态路由分发、页面抓取与品牌注入",
+  "description": "提供登录认证、模型路由、媒体生成和网页读取等基础能力。",
   "tags": ["hub", "core", "auth", "routing", "media", "reader", "chrome"],
   "capabilities": {
     "tools": [
