@@ -1,5 +1,6 @@
 ---
 name: sopilot-social-agents
+disable-model-invocation: true
 description: "SoPilot 社媒营销与推特/X智能体提示词路由中心：根据社媒运营场景（推特发帖、高赞评论、引用转帖、推文串Threads改写、私信触达、爆款复刻、回怼等）智能路由并加载对应的专项提示词。"
 ---
 

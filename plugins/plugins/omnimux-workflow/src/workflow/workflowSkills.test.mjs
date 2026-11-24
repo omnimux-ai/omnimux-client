@@ -90,8 +90,10 @@ describe('bundled workflow skills and structured video/director schemas (#214)',
       assert.equal(candidate.rank, BUNDLED_SKILL_RANK);
       assert.equal(candidate.rank, 600);
       assert.equal(candidate.source, 'bundled');
+      assert.deepEqual(candidate.invocation, { modelInvocable: false, userInvocable: true });
       const loaded = await provider.get(candidate);
       assert.ok(loaded?.content && loaded.content.length > 80);
+      assert.deepEqual(loaded?.invocation, { modelInvocable: false, userInvocable: true });
     }
 
     const registered = new Map();

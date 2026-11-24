@@ -1,5 +1,6 @@
 ---
 name: omnimux-competitor-research
+disable-model-invocation: true
 description: "横向对比 2–5 个竞品账号在社媒上的内容策略与有效打法，产出竞品 brief、内容支柱对比、差距机会与建议测试。用于 TikTok、Instagram、YouTube、X。触发：竞品对比、竞品分析、横向对比几个品牌、competitor research、对手都在做什么、找差异化机会。"
 ---
 

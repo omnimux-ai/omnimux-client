@@ -1,5 +1,6 @@
 ---
 name: omnimux-transcript-intelligence
+disable-model-invocation: true
 description: "把社媒视频的转写拆成 hook/setup/claim/evidence/payoff/CTA，抽取钩子、金句、claims 与可复用内容原子，并跨多条转写聚类模式。用于 TikTok、Instagram、YouTube、X 视频的转写分析。触发：转写分析、逐字稿、钩子提取、content atoms、这条视频讲了什么、拆口播。"
 ---
 

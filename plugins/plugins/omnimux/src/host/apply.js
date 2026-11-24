@@ -59,6 +59,7 @@ import { mountDecisions } from '../decisions/mount.js'
 import { createNativeFilePicker } from './native-picker.js'
 import { createMediaResolver } from './media-resolver.js'
 import { mountRetiredPresetRedirect } from './retired-presets.js'
+import { reclaimLegacyManagedPluginSkills } from './legacy-skill-reclaim.js'
 
 /**
  * How often the process checks whether the gateway snapshot is due. The TTL
@@ -496,6 +497,11 @@ export function apply(ctx, config = {}) {
   mountPresetsTools(ctx)
   mountTemplatesTools(ctx)
   mountRetiredPresetRedirect(ctx)
+  void reclaimLegacyManagedPluginSkills(hubHomeDir(), { logger: ctx.logger }).catch((error) => {
+    ctx.logger?.warn?.('omnimux: legacy managed skill reclaim failed', {
+      message: error instanceof Error ? error.message : String(error),
+    })
+  })
   mountCanvasGenerationEvents(ctx, { hubEvents })
   mountSurfaceFollow(ctx, {
     mailbox,

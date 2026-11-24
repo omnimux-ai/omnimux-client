@@ -9,7 +9,7 @@
  */
 
 import { spawnSync } from 'node:child_process'
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import {
   chmodSync,
   existsSync,
@@ -18,10 +18,11 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  renameSync,
   rmSync,
   writeFileSync,
 } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
+import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
 import {
   MANAGED_GRAPH_ENTRIES,
   MANAGED_SOURCE_DIRECTORY,
@@ -30,6 +31,8 @@ import {
 
 export const NEXT_SHELL_NAME = 'dsh-desktop-next'
 export const DEV_BUNDLE_IDENTIFIER = 'ai.omnimux.desktop.dev'
+export const DEV_USER_DATA_DIRECTORY_NAME = 'OmniMux-Dev'
+export const DESKTOP_NEXT_LAST_HOME_FILE = 'desktop-next-last-home.json'
 
 const CORE_BUNDLE_PREFIX = ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'] as const
 const OPTIONAL_BUNDLES_CARRIED_OVER = new Set([
@@ -380,5 +383,70 @@ export function writeDesktopNextActiveProfile(homeDir: string, profileName = 'om
   const filePath = join(resolve(homeDir), 'desktop-next.json')
   writeFileSync(filePath, `${JSON.stringify({ version: 1, active: profileName }, null, 2)}\n`, { mode: 0o600 })
   chmodSync(filePath, 0o600)
+  return filePath
+}
+
+function assertRealDirectoryOrCreate(dirPath: string): void {
+  const parent = dirname(dirPath)
+  if (parent !== dirPath) {
+    const parentInfo = lstatSync(parent, { throwIfNoEntry: false })
+    if (parentInfo && (!parentInfo.isDirectory() || parentInfo.isSymbolicLink())) {
+      throw new Error(`Refusing to write Dev last-home under non-directory or symlink: ${parent}`)
+    }
+    if (!parentInfo) assertRealDirectoryOrCreate(parent)
+  }
+  const info = lstatSync(dirPath, { throwIfNoEntry: false })
+  if (info && (!info.isDirectory() || info.isSymbolicLink())) {
+    throw new Error(`Refusing to write Dev last-home under non-directory or symlink: ${dirPath}`)
+  }
+  if (!info) mkdirSync(dirPath, { mode: 0o700 })
+}
+
+/**
+ * Calibrate Dev's `desktop-next-last-home.json` to the committed Dev `homeDir` after
+ * `upgrade-dev` switches profiles, so stale paths left by isolated test runs cannot
+ * trigger Next's first-boot "data directory differs from the last launch" prompt.
+ *
+ * Fail-closed boundaries:
+ * - Only accepts a Dev `userDataDir` ending in `OmniMux-Dev` (never production `OmniMux`).
+ * - Refuses to record a production `.omnimux` home directory.
+ * - Rejects symlinks and writes atomically with 0600 permissions.
+ */
+export function writeDesktopNextLastHome(userDataDir: string, homeDir: string): string {
+  if (!isAbsolute(userDataDir) || userDataDir.includes('\0')) {
+    throw new Error(`Dev userDataDir must be an absolute path: ${userDataDir}`)
+  }
+  if (!isAbsolute(homeDir) || homeDir.includes('\0')) {
+    throw new Error(`Dev homeDir must be an absolute path: ${homeDir}`)
+  }
+
+  const resolvedUserDataDir = resolve(userDataDir)
+  const resolvedHomeDir = resolve(homeDir)
+  if (basename(resolvedUserDataDir) !== DEV_USER_DATA_DIRECTORY_NAME) {
+    throw new Error(
+      `Refusing to write ${DESKTOP_NEXT_LAST_HOME_FILE} outside ${DEV_USER_DATA_DIRECTORY_NAME}: ${resolvedUserDataDir}`,
+    )
+  }
+  if (basename(resolvedHomeDir) === '.omnimux') {
+    throw new Error(`Refusing to point Dev ${DESKTOP_NEXT_LAST_HOME_FILE} at production home: ${resolvedHomeDir}`)
+  }
+
+  const locationRoot = join(resolvedUserDataDir, 'home')
+  assertRealDirectoryOrCreate(locationRoot)
+
+  const filePath = join(locationRoot, DESKTOP_NEXT_LAST_HOME_FILE)
+  const existing = lstatSync(filePath, { throwIfNoEntry: false })
+  if (existing && (!existing.isFile() || existing.isSymbolicLink())) {
+    throw new Error(`Refusing to replace linked or non-file Dev last-home record: ${filePath}`)
+  }
+
+  const temporary = `${filePath}.${randomUUID()}.tmp`
+  try {
+    writeFileSync(temporary, `${JSON.stringify({ home: resolvedHomeDir }, null, 2)}\n`, { mode: 0o600, flag: 'wx' })
+    chmodSync(temporary, 0o600)
+    renameSync(temporary, filePath)
+  } finally {
+    rmSync(temporary, { force: true })
+  }
   return filePath
 }

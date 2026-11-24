@@ -15,6 +15,20 @@ const BUNDLED_SKILL_NAMES = Object.freeze([
   PRODUCTS_PHYSICAL_IMPORT_SKILL,
 ])
 
+function resolvePhysicalDir(dir) {
+  const unpacked = dir.replace(/(^|[\\/])([^\\/]*\.asar)(?=[\\/]|$)/iu, '$1$2.unpacked')
+  return unpacked !== dir && existsSync(unpacked) ? unpacked : dir
+}
+
+function parseFrontmatterBoolean(raw) {
+  if (typeof raw === 'boolean') return raw
+  if (raw === undefined || raw === null) return undefined
+  const value = String(raw).trim().toLowerCase()
+  if (['true', 'yes', 'on', '1'].includes(value)) return true
+  if (['false', 'no', 'off', '0'].includes(value)) return false
+  return undefined
+}
+
 /**
  * Parse simple YAML frontmatter from a bundled `SKILL.md` file.
  * @param {string} raw
@@ -35,11 +49,21 @@ function parseFrontmatter(raw) {
   return { metadata, body: match[2].trim() }
 }
 
+function parseInvocationPolicy(metadata) {
+  const disableModelInvocation = parseFrontmatterBoolean(metadata['disable-model-invocation'])
+  const userInvocable = parseFrontmatterBoolean(metadata['user-invocable'])
+  return {
+    modelInvocable: disableModelInvocation !== true,
+    userInvocable: userInvocable !== false,
+  }
+}
+
 /**
  * Load bundled product analysis skills from `skills/<name>/SKILL.md`.
  * @returns {Array<{
  *   name: string,
  *   description: string,
+ *   invocation: { modelInvocable: boolean, userInvocable: boolean },
  *   content: string,
  *   path: string,
  *   source: 'bundled',
@@ -49,7 +73,7 @@ function parseFrontmatter(raw) {
 export function loadBundledProductsSkills() {
   const loaded = []
   for (const skillName of BUNDLED_SKILL_NAMES) {
-    const dir = join(skillsRoot, skillName)
+    const dir = resolvePhysicalDir(join(skillsRoot, skillName))
     const file = join(dir, 'SKILL.md')
     if (!existsSync(file)) continue
     const raw = readFileSync(file, 'utf8')
@@ -58,6 +82,7 @@ export function loadBundledProductsSkills() {
     loaded.push({
       name: metadata.name || skillName,
       description: metadata.description || skillName,
+      invocation: parseInvocationPolicy(metadata),
       content: body,
       path: file,
       source: 'bundled',
@@ -89,7 +114,7 @@ export function registerProductsSkills(ctx) {
         name: entry.name,
         description: entry.description,
         path: entry.path,
-        invocation: { modelInvocable: true, userInvocable: true },
+        invocation: entry.invocation,
         source: 'bundled',
         provider: PRODUCTS_SKILL_PROVIDER_NAME,
         rank: PRODUCTS_SKILL_RANK,
@@ -106,7 +131,7 @@ export function registerProductsSkills(ctx) {
             name: entry.name,
             description: entry.description,
             path: entry.path,
-            invocation: { modelInvocable: true, userInvocable: true },
+            invocation: entry.invocation,
             source: 'bundled',
             provider: PRODUCTS_SKILL_PROVIDER_NAME,
             resourceBase: entry.resourceBase,

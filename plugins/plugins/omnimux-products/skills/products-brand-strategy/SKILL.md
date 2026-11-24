@@ -1,5 +1,6 @@
 ---
 name: products-brand-strategy
+disable-model-invocation: true
 description: Analyze a digital product, SaaS, app, or brand landing page and produce a strict structured six-module brand strategy report in JSON.
 ---
 

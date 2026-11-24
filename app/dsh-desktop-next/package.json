@@ -523,6 +523,7 @@
       "**/node_modules/@agents-anywhere/dsh-bridge-next/lib/bundled-connector/**/*",
       "**/node_modules/@deepseek-ai/dsh-agent-preset/**/*",
       "**/node_modules/@deepseek-ai/dsh-skill-badge/**/*",
+      "**/node_modules/omnimux-*/skills/**/*",
       "**/node_modules/pnpm/**/*",
       "${env.DSH_NEXT_PAYLOAD_DIR}/scripts/node-bin/**/*",
       "${env.DSH_NEXT_PAYLOAD_DIR}/assets/**/*",

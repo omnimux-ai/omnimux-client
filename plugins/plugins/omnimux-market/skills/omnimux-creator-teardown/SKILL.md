@@ -1,5 +1,6 @@
 ---
 name: omnimux-creator-teardown
+disable-model-invocation: true
 description: "输入一个博主/品牌主页链接，拆解其定位、内容支柱、爆款帖、可抄的钩子与格式、以及不该抄的红线，产出拆解报告与对我们的测试建议。用于 TikTok、Instagram、YouTube、X。触发：账号拆解、博主拆解、主页拆解、creator teardown、对标账号分析、这个账号怎么做起来的。"
 ---
 

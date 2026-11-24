@@ -162,6 +162,16 @@ export function buildMarketExpertPluginRows(persona, opts = {}) {
             name: '@deepseek-ai/dsh-tool-web',
             config: { fetch: true, searchTimeoutMs: 60000 },
         },
+        ...(Array.isArray(opts.skills) && opts.skills.length > 0
+            ? [{
+                    id: 'expert-skills',
+                    name: 'omnimux-market/expert-skills',
+                    config: {
+                        ...(opts.presetId ? { presetId: opts.presetId } : {}),
+                        skills: [...opts.skills],
+                    },
+                }]
+            : []),
     ];
     return typeof opts.isPackageResolvable === 'function'
         ? pruneUnresolvableRows(rawRows, opts.isPackageResolvable)
@@ -173,7 +183,11 @@ export function buildMarketExpertPresetDefinition(exp, opts = {}) {
         name: exp.name,
         description: exp.description,
         order: exp.order,
-        plugins: buildMarketExpertPluginRows(resolveExpertPersonaText(exp), opts),
+        plugins: buildMarketExpertPluginRows(resolveExpertPersonaText(exp), {
+            ...opts,
+            presetId: opts.presetId ?? exp.id,
+            skills: opts.skills ?? exp.skills,
+        }),
     };
 }
 export class ExpertPresetRuntime {

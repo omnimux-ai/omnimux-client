@@ -1,5 +1,6 @@
 ---
 name: products-physical-import
+disable-model-invocation: true
 description: Extract structured physical e-commerce product fields from provided product page copy into a strict JSON Schema draft.
 ---
 

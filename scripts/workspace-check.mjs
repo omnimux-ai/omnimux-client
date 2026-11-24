@@ -51,4 +51,5 @@ if (!check) {
 }
 run('dsh-version.mjs', ['--check'])
 run('bundle-lock.mjs', ['--check'])
+run('verify-docs-dsh-version.mjs', [])
 console.log('workspace-check: OK — root workspace metadata is consistent')

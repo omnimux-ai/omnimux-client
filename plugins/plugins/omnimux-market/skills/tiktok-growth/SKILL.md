@@ -1,5 +1,6 @@
 ---
 name: tiktok-growth
+disable-model-invocation: true
 description: TikTok 平台垂直算法、爆款视听节奏与矩阵带货增长专业技能。用于制作 TikTok 9:16 短视频分镜、图文轮播（Carousel）排版、前 3 秒黄金 Hook、界面安全区避让与橱窗带货合规。
 ---
 

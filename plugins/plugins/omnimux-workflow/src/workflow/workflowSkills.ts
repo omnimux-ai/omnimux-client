@@ -16,6 +16,8 @@ const BUNDLED_SKILL_NAMES = [
 export interface BundledWorkflowSkill {
   name: string;
   description: string;
+  whenToUse?: string;
+  invocation: { modelInvocable: boolean; userInvocable: boolean };
   content: string;
   path: string;
   source: 'bundled';
@@ -25,6 +27,7 @@ export interface BundledWorkflowSkill {
 interface SkillCandidate {
   name: string;
   description: string;
+  whenToUse?: string;
   path: string;
   invocation: { modelInvocable: boolean; userInvocable: boolean };
   source: 'bundled';
@@ -43,6 +46,7 @@ interface SkillRegistryLike {
         | {
             name: string;
             description: string;
+            whenToUse?: string;
             path: string;
             invocation: { modelInvocable: boolean; userInvocable: boolean };
             source: 'bundled';
@@ -63,6 +67,20 @@ export interface WorkflowSkillContextLike {
   inject?: (deps: string[], callback: (subCtx: { skills?: SkillRegistryLike; get?: (name: string) => unknown }) => void) => void;
 }
 
+function resolvePhysicalDir(dir: string): string {
+  const unpacked = dir.replace(/(^|[\\/])([^\\/]*\.asar)(?=[\\/]|$)/iu, '$1$2.unpacked');
+  return unpacked !== dir && existsSync(unpacked) ? unpacked : dir;
+}
+
+function parseFrontmatterBoolean(raw: unknown): boolean | undefined {
+  if (typeof raw === 'boolean') return raw;
+  if (raw === undefined || raw === null) return undefined;
+  const value = String(raw).trim().toLowerCase();
+  if (['true', 'yes', 'on', '1'].includes(value)) return true;
+  if (['false', 'no', 'off', '0'].includes(value)) return false;
+  return undefined;
+}
+
 function parseFrontmatter(raw: string): { metadata: Record<string, string>; body: string } {
   const match = raw.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/);
   if (!match) return { metadata: {}, body: raw.trim() };
@@ -75,6 +93,15 @@ function parseFrontmatter(raw: string): { metadata: Record<string, string>; body
     if (key) metadata[key] = value;
   }
   return { metadata, body: (match[2] ?? '').trim() };
+}
+
+function parseInvocationPolicy(metadata: Record<string, string>): { modelInvocable: boolean; userInvocable: boolean } {
+  const disableModelInvocation = parseFrontmatterBoolean(metadata['disable-model-invocation']);
+  const userInvocable = parseFrontmatterBoolean(metadata['user-invocable']);
+  return {
+    modelInvocable: disableModelInvocation !== true,
+    userInvocable: userInvocable !== false,
+  };
 }
 
 function resolveDefaultSkillsRoot(): string {
@@ -101,7 +128,7 @@ function resolveDefaultSkillsRoot(): string {
 export function loadBundledWorkflowSkills(skillsRoot: string = resolveDefaultSkillsRoot()): BundledWorkflowSkill[] {
   const loaded: BundledWorkflowSkill[] = [];
   for (const skillName of BUNDLED_SKILL_NAMES) {
-    const dir = join(skillsRoot, skillName);
+    const dir = resolvePhysicalDir(join(skillsRoot, skillName));
     const file = join(dir, 'SKILL.md');
     if (!existsSync(file)) continue;
     const raw = readFileSync(file, 'utf8');
@@ -110,6 +137,8 @@ export function loadBundledWorkflowSkills(skillsRoot: string = resolveDefaultSki
     loaded.push({
       name: metadata.name || skillName,
       description: metadata.description || skillName,
+      ...(metadata.whenToUse ? { whenToUse: metadata.whenToUse } : {}),
+      invocation: parseInvocationPolicy(metadata),
       content: body,
       path: file,
       source: 'bundled',
@@ -139,8 +168,9 @@ export function registerWorkflowSkills(ctx: WorkflowSkillContextLike | undefined
       const candidates: SkillCandidate[] = skills.map((entry) => ({
         name: entry.name,
         description: entry.description,
+        ...(entry.whenToUse ? { whenToUse: entry.whenToUse } : {}),
         path: entry.path,
-        invocation: { modelInvocable: true, userInvocable: true },
+        invocation: entry.invocation,
         source: 'bundled',
         provider: WORKFLOW_SKILL_PROVIDER_NAME,
         rank: BUNDLED_SKILL_RANK,
@@ -156,8 +186,9 @@ export function registerWorkflowSkills(ctx: WorkflowSkillContextLike | undefined
           return {
             name: entry.name,
             description: entry.description,
+            ...(entry.whenToUse ? { whenToUse: entry.whenToUse } : {}),
             path: entry.path,
-            invocation: { modelInvocable: true, userInvocable: true },
+            invocation: entry.invocation,
             source: 'bundled',
             provider: WORKFLOW_SKILL_PROVIDER_NAME,
             resourceBase: entry.resourceBase,

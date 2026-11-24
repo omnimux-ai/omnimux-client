@@ -1,5 +1,6 @@
 ---
 name: omnimux-content-repurposing
+disable-model-invocation: true
 description: "把社媒视频、转写与帖子变成可复用内容资产：LinkedIn 帖、X 长推/thread、短视频脚本、newsletter/博客提纲。用于已采集到转写或帖子文本的场景。触发：内容再利用、一稿多投、把视频变文章、转写改写成帖子、content repurposing、复用素材。注意：不改事实、逐条标注出处。"
 ---
 

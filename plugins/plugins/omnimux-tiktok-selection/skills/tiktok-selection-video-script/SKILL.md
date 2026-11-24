@@ -1,6 +1,7 @@
 ---
 name: tiktok-selection-video-script
 description: "TikTok Shop 爆款带货视频脚本结构重写技能。结合商品卖点与参考带货视频的文案、标签和转化线索，拆解开场钩子、卖点节奏与镜头动作，生成可直接用于 9:16 图生视频的结构化英文画面提示词与中文分镜脚本。"
+disable-model-invocation: true
 ---
 
 # TikTok 爆款带货视频脚本重写

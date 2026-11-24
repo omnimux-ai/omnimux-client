@@ -1,5 +1,6 @@
 ---
 name: omnimux-ecom-review-voc
+disable-model-invocation: true
 description: "跨境电商评论 VOC 挖掘、8 类差评归因与合规售后话术：脚本统计差评 8 类归因并保证总条数守恒、测算可通过改文案/补图修复的误解型差评占比、提取好评卖点排行，输出可直接粘贴的商详防误解补丁与多语合规回复话术。触发：评论分析、差评归因、VOC分析、售后话术、误解型差评、买家评价、review voc。"
 ---
 

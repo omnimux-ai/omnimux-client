@@ -1,5 +1,6 @@
 ---
 name: omnimux-ecom-platform-rules
+disable-model-invocation: true
 description: "跨境电商多平台规则与合规红线共享参考卡：覆盖 Shopee、Amazon、TikTok Shop、Mercado Livre 的标题字数、主图规范、费率结构、禁售禁用词、灰产拦截与四级事实边界。触发：平台规则、跨境合规、禁用词、Shopee规则、Amazon规则、TikTok Shop规则、Mercado Livre规则、合规校验。"
 ---
 

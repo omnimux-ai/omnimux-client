@@ -1,5 +1,6 @@
 ---
 name: omnimux-ecom-ads-diagnosis
+disable-model-invocation: true
 description: "跨境电商广告诊断与定向回流优化：根据广告导出报表与毛利率，脚本核算盈亏线 ROAS、最大可承受 CPC 与五层转化漏斗（曝光→CTR→加购→CVR→ROAS），精准隔离转化瓶颈而非盲目换主图，输出 P0/P1/P2 人工审批动作清单与定向回流指令。触发：广告诊断、ROAS分析、CPC测算、投流优化、ACOS优化、广告复盘、ads diagnosis。"
 ---
 

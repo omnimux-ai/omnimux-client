@@ -54,6 +54,8 @@ const PLAN_MODE_SECTION = [
 export interface BuildPresetOptions {
   platform?: NodeJS.Platform
   isPackageResolvable?: (packageName: string) => boolean
+  presetId?: string
+  skills?: readonly string[]
 }
 
 function pruneUnresolvableRows(
@@ -205,6 +207,16 @@ export function buildMarketExpertPluginRows(
       name: '@deepseek-ai/dsh-tool-web',
       config: { fetch: true, searchTimeoutMs: 60000 },
     },
+    ...(Array.isArray(opts.skills) && opts.skills.length > 0
+      ? [{
+          id: 'expert-skills',
+          name: 'omnimux-market/expert-skills',
+          config: {
+            ...(opts.presetId ? { presetId: opts.presetId } : {}),
+            skills: [...opts.skills],
+          },
+        }]
+      : []),
   ]
 
   return typeof opts.isPackageResolvable === 'function'
@@ -213,7 +225,7 @@ export function buildMarketExpertPluginRows(
 }
 
 export function buildMarketExpertPresetDefinition(
-  exp: Pick<MarketExpertItem, 'id' | 'name' | 'description' | 'order'>,
+  exp: Pick<MarketExpertItem, 'id' | 'name' | 'description' | 'order'> & { skills?: readonly string[] },
   opts: BuildPresetOptions = {},
 ): DynamicPresetDefinition {
   return {
@@ -221,7 +233,11 @@ export function buildMarketExpertPresetDefinition(
     name: exp.name,
     description: exp.description,
     order: exp.order,
-    plugins: buildMarketExpertPluginRows(resolveExpertPersonaText(exp), opts),
+    plugins: buildMarketExpertPluginRows(resolveExpertPersonaText(exp), {
+      ...opts,
+      presetId: opts.presetId ?? exp.id,
+      skills: opts.skills ?? exp.skills,
+    }),
   }
 }
 
