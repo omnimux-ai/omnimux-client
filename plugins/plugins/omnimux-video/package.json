@@ -15,8 +15,8 @@
   },
   "files": [
     "src",
+    "skills",
     "scripts",
-    "prompts",
     "locale",
     "cordis.patch.yml",
     "README.md",

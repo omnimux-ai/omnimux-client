@@ -11,9 +11,6 @@
  *   understand: {
  *     defaultModel: string,
  *     maxTokens: number,
- *     maxVideoBytes: number,
- *     analyzePromptPath: string,
- *     reversePromptPath: string,
  *   },
  * }}
  */
@@ -65,16 +62,8 @@ export function parseVideoConfig(value) {
     understandRaw.maxTokens === undefined ? 8000 : understandRaw.maxTokens,
     'Config.understand.maxTokens',
   )
-  const maxVideoBytes = parsePositiveNumber(
-    understandRaw.maxVideoBytes === undefined ? 20 * 1024 * 1024 : understandRaw.maxVideoBytes,
-    'Config.understand.maxVideoBytes',
-  )
-  const analyzePromptPath = typeof understandRaw.analyzePromptPath === 'string'
-    ? understandRaw.analyzePromptPath.trim()
-    : ''
-  const reversePromptPath = typeof understandRaw.reversePromptPath === 'string'
-    ? understandRaw.reversePromptPath.trim()
-    : ''
+  // Prompt text, video size and transport live in the Skill source and Hub
+  // `headlessSkill`; the plugin config only keeps the model pin and output cap.
 
   // Unknown top-level fields are ignored.
   return {
@@ -82,9 +71,6 @@ export function parseVideoConfig(value) {
     understand: {
       defaultModel,
       maxTokens,
-      maxVideoBytes,
-      analyzePromptPath,
-      reversePromptPath,
     },
   }
 }
