@@ -30,8 +30,7 @@ function makeDispatcher(opts = {}) {
   if (opts.getService) deps.getService = opts.getService
   if (opts.importFromUrl) deps.importFromUrl = opts.importFromUrl
   if (opts.ctx) deps.ctx = opts.ctx
-  if (opts.chatComplete) deps.chatComplete = opts.chatComplete
-  if (opts.channelTimeoutMs) deps.channelTimeoutMs = opts.channelTimeoutMs
+  if (opts.headlessSkill) deps.headlessSkill = opts.headlessSkill
   if (Object.prototype.hasOwnProperty.call(opts, 'hub')) deps.hub = opts.hub
   if (opts.paths) deps.paths = opts.paths
   if (opts.draftMedia) deps.draftMedia = opts.draftMedia
@@ -303,14 +302,14 @@ describe('ProductsDispatcher import-from-link', () => {
 
   it('hands the host seats to the importer as hub seams', async () => {
     const seen = []
-    const textComplete = { execute: async () => ({ text: 'ok' }) }
+    const headlessSkill = { run: async () => ({ data: { ok: true }, model: 'hub-default' }) }
     const pageFetch = { execute: async () => ({ pageContent: '# page' }) }
-    const ctx = { tools: { get: (name) => (name === 'omnimux_page_fetch' ? pageFetch : undefined) }, get: () => textComplete }
+    const ctx = {
+      tools: { get: (name) => (name === 'omnimux_page_fetch' ? pageFetch : undefined) },
+      get: (name) => (name === 'headlessSkill' ? headlessSkill : undefined),
+    }
     const { dispatcher } = makeDispatcher({
       ctx,
-      // The chat bridge is stubbed shut: it answers first now, and the default
-      // one resolves a provider on this machine, so a unit test must not reach it.
-      chatComplete: async () => { throw new Error('chat bridge offline') },
       importFromUrl: async (args) => {
         seen.push(args)
         return { name: '货' }
@@ -319,9 +318,9 @@ describe('ProductsDispatcher import-from-link', () => {
     const ok = await dispatcher.dispatch(post('/omnimux/products/import-from-link', { url: 'https://shop.example.com/p/1' }))
     assert.equal(ok.status, 200)
     assert.equal(typeof seen[0].hub.pageFetch, 'function')
-    assert.equal(typeof seen[0].hub.textComplete, 'function')
-    const answer = await seen[0].hub.textComplete({ prompt: 'hi', model: 'gemini-3.8-flash', maxTokens: 12 })
-    assert.deepEqual(answer, { text: 'ok' })
+    assert.equal(typeof seen[0].hub.headlessSkill?.run, 'function')
+    const answer = await seen[0].hub.headlessSkill.run({ skillName: 'products-physical-import', input: 'hi' })
+    assert.deepEqual(answer, { data: { ok: true }, model: 'hub-default' })
     assert.deepEqual(await seen[0].hub.pageFetch('https://shop.example.com/p/1'), { pageContent: '# page' })
   })
 
@@ -422,45 +421,57 @@ describe('ProductsDispatcher import-from-link', () => {
     assert.equal(local.status, 200)
   })
 
-  it('returns the model report in seconds while the host seat hangs', async () => {
-    // The Electron App runtime shape: the host exposes a textComplete seat whose
-    // provider lookup never settles, `omnimux_text_complete` is not loaded, and
-    // the chat bridge is the one channel that answers.
-    const page = '<html><head><title>落地页</title></head><body><h1>智能记账 App</h1>'
-      + '<ul><li>自动记账</li><li>多端同步</li><li>数据看板</li><li>团队协作</li></ul></body></html>'
+  it('imports a physical page end-to-end through the Hub headlessSkill seam', async () => {
+    const page = '<html><head><title>落地页</title></head><body><h1>智能记账杯</h1>'
+      + '<ul><li>双层陶瓷保温</li><li>防滑底座</li></ul></body></html>'
+    const calls = []
     const ctx = {
       get: (name) => {
-        if (name === 'textComplete') return { execute: () => new Promise(() => {}) }
-        if (name === 'modelCatalog') return { list: () => ({ defaults: { analysis: 'catalog-analysis' } }) }
+        if (name === 'headlessSkill') {
+          return {
+            run: async (request) => {
+              calls.push(request)
+              return {
+                model: 'gemini-3.8-flash',
+                data: {
+                  name: '智能记账杯',
+                  description: '双层陶瓷保温杯',
+                  features: '双层陶瓷保温，防滑底座',
+                  selling_points: '6 小时保温，防滑硅胶底',
+                  brand: 'Aurora',
+                  target_audience: '咖啡爱好者',
+                  price: 29.9,
+                  sku: null,
+                  promotion: null,
+                  categories: ['home', 'drinkware'],
+                },
+              }
+            },
+          }
+        }
         return undefined
       },
-      tools: { get: (name) => (name === 'omnimux_page_fetch' ? { execute: async () => ({ pageContent: '# 智能记账 App\n\n自动记账，多端同步' }) } : undefined) },
+      tools: {
+        get: (name) => (name === 'omnimux_page_fetch'
+          ? { execute: async () => ({ pageContent: '# 智能记账杯\n\n双层陶瓷保温，防滑底座' }) }
+          : undefined),
+      },
     }
-    const modelReport = [
-      '```yaml',
-      'name: 智能记账 App',
-      'selling_points: 自动记账，多端同步',
-      'features: 自动记账，多端同步，数据看板',
-      'brand: Aurora',
-      '```',
-    ].join('\n')
     const { dispatcher } = makeDispatcher({
       ctx,
-      channelTimeoutMs: 30,
       importFromUrl: (args) => importProductFromUrl({ ...args, fetcher: globalThis.fetch }),
-      chatComplete: async () => ({ mode: 'live', model: 'gemini-3.8-flash', text: modelReport }),
     })
-    // The vertical's own page read is stubbed; the point here is the model chain.
     const originalFetch = globalThis.fetch
     globalThis.fetch = async () => new Response(page, { status: 200, headers: { 'content-type': 'text/html' } })
-    const startedAt = Date.now()
     try {
       const ok = await dispatcher.dispatch(post('/omnimux/products/import-from-link', { url: 'https://shop.example.com/p/1' }))
       assert.equal(ok.status, 200)
       assert.equal(ok.body.success, true)
       assert.equal(ok.body.data.analysis.mode, 'model')
-      assert.equal(ok.body.data.name, '智能记账 App')
-      assert.ok(Date.now() - startedAt < 3000, 'a dead seat must not push the import past seconds')
+      assert.equal(ok.body.data.name, '智能记账杯')
+      assert.equal(calls.length, 1)
+      assert.equal(calls[0].skillName, 'products-physical-import')
+      assert.equal(calls[0].ownerPlugin, 'omnimux-products')
     } finally {
       globalThis.fetch = originalFetch
     }
@@ -472,206 +483,73 @@ describe('products hub seams', () => {
     assert.equal(createHubSeams(undefined), null)
     assert.equal(createHubSeams(null), null)
     const seams = createHubSeams({})
-    assert.equal(typeof seams.textComplete, 'function')
+    assert.equal(typeof seams.headlessSkill.run, 'function')
+    assert.equal(typeof seams.headlessSkill.cancel, 'function')
+    assert.equal(typeof seams.headlessSkill.getJob, 'function')
+    assert.equal(typeof seams.headlessSkill.listJobs, 'function')
     assert.equal(typeof seams.pageFetch, 'function')
+    assert.equal(typeof seams.socialData, 'function')
   })
 
-  it('prefers the provided textComplete service after the chat bridge declines', async () => {
+  it('delegates headlessSkill.run / cancel / getJob / listJobs lazily to ctx.get("headlessSkill")', async () => {
     const calls = []
     const ctx = {
-      get: (name) => (name === 'textComplete' ? { execute: async (req) => { calls.push(req); return { text: 'x' } } } : undefined),
+      get: (name) => (name === 'headlessSkill'
+        ? {
+            run: async (req) => { calls.push(['run', req]); return { data: { ok: true } } },
+            cancel: (jobId, reason) => { calls.push(['cancel', jobId, reason]); return true },
+            getJob: (jobId) => ({ id: jobId, status: 'running' }),
+            listJobs: (filter) => [{ id: 'j1', ...filter }],
+          }
+        : undefined),
     }
-    const seams = createHubSeams(ctx, { chatComplete: async () => { throw new Error('no local provider') } })
-    const answer = await seams.textComplete({ prompt: 'p', model: 'gemini-3.8-flash', maxTokens: 32 })
-    assert.deepEqual(answer, { text: 'x' })
-    assert.deepEqual(calls, [{ prompt: 'p', model: 'gemini-3.8-flash', maxTokens: 32 }])
+    const seams = createHubSeams(ctx)
+    const answer = await seams.headlessSkill.run({ skillName: 'products-brand-strategy', input: 'p' })
+    assert.deepEqual(answer, { data: { ok: true } })
+    assert.equal(seams.headlessSkill.cancel('j1', 'user-cancel'), true)
+    assert.deepEqual(seams.headlessSkill.getJob('j1'), { id: 'j1', status: 'running' })
+    assert.deepEqual(seams.headlessSkill.listJobs({ ownerPlugin: 'omnimux-products' }), [{ id: 'j1', ownerPlugin: 'omnimux-products' }])
+    assert.deepEqual(calls, [
+      ['run', { skillName: 'products-brand-strategy', input: 'p' }],
+      ['cancel', 'j1', 'user-cancel'],
+    ])
   })
 
-  it('lets the chat bridge win over the seats, and never touches them', async () => {
-    let seatCalls = 0
-    let toolCalls = 0
-    const ctx = {
-      get: (name) => {
-        if (name === 'textComplete') return { execute: async () => { seatCalls += 1; return { text: 'seat' } } }
-        if (name === 'modelCatalog') return { list: () => ({ defaults: { analysis: 'catalog-analysis' } }) }
-        return undefined
-      },
-      tools: { get: () => ({ execute: async () => { toolCalls += 1; return { text: 'tool' } } }) },
-    }
-    const seams = createHubSeams(ctx, { chatComplete: async () => ({ mode: 'live', text: 'bridged' }) })
-    assert.deepEqual(await seams.textComplete({ prompt: 'p' }), { mode: 'live', text: 'bridged' })
-    assert.equal(seatCalls, 0, 'a chat answer is the whole answer')
-    assert.equal(toolCalls, 0)
+  it('prefers an injected headlessSkill override in tests', async () => {
+    let ctxReads = 0
+    const ctx = { get: () => { ctxReads += 1; return undefined } }
+    const seams = createHubSeams(ctx, {
+      headlessSkill: { run: async () => ({ data: { from: 'override' } }) },
+    })
+    assert.deepEqual(await seams.headlessSkill.run({ skillName: 'x', input: 'p' }), { data: { from: 'override' } })
+    assert.equal(ctxReads, 0)
   })
 
-  it('falls back to the omnimux_text_complete tool with the wire field names it needs', async () => {
-    const calls = []
-    const ctx = {
-      get: () => undefined,
-      tools: { get: (name) => (name === 'omnimux_text_complete' ? { execute: async (args) => { calls.push(args); return { text: 'y' } } } : undefined) },
-    }
-    const seams = createHubSeams(ctx, { chatComplete: async () => { throw new Error('no local provider') } })
-    const answer = await seams.textComplete({ prompt: 'p', model: 'gemini-3.8-flash', maxTokens: 32 })
-    assert.deepEqual(answer, { text: 'y' })
-    // The official tool requires a reason and spells the cap max_tokens.
-    assert.equal(calls[0].max_tokens, 32)
-    assert.equal(calls[0].model, 'gemini-3.8-flash')
-    assert.match(calls[0].reason, /omnimux-products/)
-  })
-
-  it('reads the page through omnimux_page_fetch, and fails loudly when the hub is missing', async () => {
+  it('reads the page through omnimux_page_fetch, and fails with headless-skill-unavailable when headlessSkill is missing', async () => {
     const ctx = { tools: { get: (name) => (name === 'omnimux_page_fetch' ? { execute: async (args) => ({ pageContent: `# ${args.url}` }) } : undefined) } }
     const seams = createHubSeams(ctx)
     assert.deepEqual(await seams.pageFetch('https://a.example'), { pageContent: '# https://a.example' })
 
-    // The chat bridge is stubbed shut: the default one resolves a provider on
-    // this machine, and a unit test must not reach the network.
-    const bare = createHubSeams({}, { chatComplete: async () => { throw new Error('chat bridge offline') } })
+    const bare = createHubSeams({})
     await assert.rejects(() => bare.pageFetch('https://a.example'), /omnimux_page_fetch unavailable/)
-    await assert.rejects(() => bare.textComplete({ prompt: 'p' }), /omnimux_text_complete unavailable/)
-  })
-
-  it('bridges to the hub chat path when neither the seat nor the tool answers', async () => {
-    const credentials = { resolve: async () => undefined }
-    const settings = { get: () => undefined }
-    const ctx = {
-      get: (name) => {
-        if (name === 'credentials') return credentials
-        if (name === 'settings') return settings
-        return undefined
-      },
-      tools: { get: () => undefined },
-    }
-    const calls = []
-    const seams = createHubSeams(ctx, {
-      chatComplete: async (input) => { calls.push(input); return { mode: 'live', text: 'report' } },
-    })
-    const answer = await seams.textComplete({
-      prompt: 'p', model: 'gemini-3.8-flash', system: 'be brief', maxTokens: 6000,
-    })
-    assert.deepEqual(answer, { mode: 'live', text: 'report' })
-    assert.equal(calls.length, 1)
-    assert.equal(calls[0].model, 'gemini-3.8-flash')
-    assert.equal(calls[0].prompt, 'p')
-    assert.equal(calls[0].system, 'be brief')
-    assert.equal(calls[0].maxTokens, 6000)
-    assert.equal(calls[0].env, process.env)
-    // The host resolves its own provider: the seats are forwarded, no key is read here.
-    assert.equal(calls[0].credentials, credentials)
-    assert.equal(calls[0].settings, settings)
-  })
-
-  it('bridges after a seat that throws, with the default model and cap', async () => {
-    const ctx = {
-      get: (name) => {
-        if (name === 'textComplete') return { execute: async () => { throw new Error('needs-provider: textComplete requires ctx.llm') } }
-        if (name === 'modelCatalog') return { list: () => ({ defaults: { analysis: 'catalog-analysis' } }) }
-        return undefined
-      },
-    }
-    const calls = []
-    const seams = createHubSeams(ctx, {
-      chatComplete: async (input) => { calls.push(input); return { text: 'bridged' } },
-    })
-    assert.deepEqual(await seams.textComplete({ prompt: 'p' }), { text: 'bridged' })
-    assert.equal(calls[0].model, 'catalog-analysis')
-    assert.ok(calls[0].maxTokens > 0)
-    assert.equal(calls[0].system, undefined)
-  })
-
-  it('reports every channel it tried when none of them answer', async () => {
-    const ctx = {
-      get: (name) => {
-        if (name === 'textComplete') return { execute: async () => { throw new Error('seat exploded') } }
-        if (name === 'modelCatalog') return { list: () => ({ defaults: { analysis: 'catalog-analysis' } }) }
-        return undefined
-      },
-    }
-    const seams = createHubSeams(ctx, { chatComplete: async () => { throw new Error('no local provider') } })
     await assert.rejects(
-      () => seams.textComplete({ prompt: 'p' }),
-      (error) => {
-        assert.match(error.message, /seat exploded/)
-        assert.match(error.message, /omnimux_text_complete unavailable/)
-        assert.match(error.message, /no local provider/)
-        return true
-      },
+      () => bare.headlessSkill.run({ skillName: 'products-brand-strategy', input: 'p' }),
+      (error) => error.code === 'headless-skill-unavailable' && /headlessSkill unavailable/.test(error.message),
     )
+    assert.equal(bare.headlessSkill.cancel('j1'), false)
+    assert.equal(bare.headlessSkill.getJob('j1'), undefined)
+    assert.deepEqual(bare.headlessSkill.listJobs(), [])
   })
 
-  it('points the default bridge at the hub chat module this repository ships', async () => {
-    // Same relative target as HUB_CHAT_MODULE in http-routes.js: the bridge is
-    // only a safety net while that path resolves to the real hub module.
-    const mod = await import(new URL('../../omnimux/src/text/chat.js', new URL('./http-routes.js', import.meta.url)).href)
-    assert.equal(typeof mod.completeTextViaChat, 'function')
-  })
-
-  it('survives a ctx whose get() throws', async () => {
+  it('survives a ctx whose get() throws and reports headless-skill-unavailable', async () => {
     const ctx = {
       get: () => { throw new Error('no such seat') },
-      tools: { get: (name) => (name === 'omnimux_text_complete' ? { execute: async () => ({ text: 'z' }) } : undefined) },
     }
-    const seams = createHubSeams(ctx, { chatComplete: async () => { throw new Error('bridge offline') } })
-    assert.deepEqual(await seams.textComplete({ prompt: 'p' }), { text: 'z' })
-  })
-
-  it('cuts a seat that never answers at the channel cap instead of hanging', async () => {
-    // A seat waiting on an `omnimux` provider seat this host does not have
-    // answers neither success nor failure. Without the cap it would hold the
-    // import for a minute or more.
-    const ctx = {
-      get: (name) => {
-        if (name === 'textComplete') return { execute: () => new Promise(() => {}) }
-        if (name === 'modelCatalog') return { list: () => ({ defaults: { analysis: 'catalog-analysis' } }) }
-        return undefined
-      },
-    }
-    const seams = createHubSeams(ctx, {
-      chatComplete: async () => { throw new Error('bridge offline') },
-      channelTimeoutMs: 30,
-      importFromUrl: (args) => importProductFromUrl({ ...args, fetcher: globalThis.fetch }),
-    })
-    const startedAt = Date.now()
+    const seams = createHubSeams(ctx)
     await assert.rejects(
-      () => seams.textComplete({ prompt: 'p' }),
-      (error) => {
-        assert.match(error.message, /textComplete seat timed out after 30ms/)
-        assert.match(error.message, /bridge offline/)
-        return true
-      },
+      () => seams.headlessSkill.run({ skillName: 'products-brand-strategy', input: 'p' }),
+      (error) => error.code === 'headless-skill-unavailable',
     )
-    assert.ok(Date.now() - startedAt < 2000, 'the cap, not the host, decides')
-  })
-
-  it('cuts the omnimux_text_complete tool that never answers at the channel cap', async () => {
-    const ctx = { tools: { get: (name) => (name === 'omnimux_text_complete' ? { execute: () => new Promise(() => {}) } : undefined) } }
-    const seams = createHubSeams(ctx, {
-      chatComplete: async () => { throw new Error('bridge offline') },
-      channelTimeoutMs: 30,
-      importFromUrl: (args) => importProductFromUrl({ ...args, fetcher: globalThis.fetch }),
-    })
-    await assert.rejects(
-      () => seams.textComplete({ prompt: 'p' }),
-      /omnimux_text_complete timed out after 30ms/,
-    )
-  })
-
-  it('answers from the chat bridge before any seat can hang', async () => {
-    const ctx = {
-      get: (name) => {
-        if (name === 'textComplete') return { execute: () => new Promise(() => {}) }
-        if (name === 'modelCatalog') return { list: () => ({ defaults: { text: 'catalog-chat' } }) }
-        return undefined
-      },
-    }
-    const seams = createHubSeams(ctx, {
-      chatComplete: async () => ({ mode: 'live', text: 'fast' }),
-      channelTimeoutMs: 30,
-      importFromUrl: (args) => importProductFromUrl({ ...args, fetcher: globalThis.fetch }),
-    })
-    const startedAt = Date.now()
-    assert.deepEqual(await seams.textComplete({ prompt: 'p' }), { mode: 'live', text: 'fast' })
-    assert.ok(Date.now() - startedAt < 30, 'the dead seat is never waited on')
   })
 })
 

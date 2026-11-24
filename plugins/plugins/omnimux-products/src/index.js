@@ -3,6 +3,7 @@ import { importProductFromUrl } from './link-importer.js'
 import { createLibraryStore, listViewOf, ProductsError } from './library.js'
 import { resolveProductsPaths } from './paths.js'
 import { persistProductImages } from './product-images.js'
+import { registerProductsSkills } from './products-skills.js'
 import { captureSiteScreenshots } from './site-shots.js'
 
 export const name = 'omnimux-products'
@@ -95,10 +96,11 @@ const COPY_FIELDS = {
  * }} ctx
  */
 export function apply(ctx) {
+  registerProductsSkills(ctx)
   const paths = resolveProductsPaths()
   const library = createLibraryStore({ paths })
   // The host context rides along so the link importer can reach the hub seams
-  // (`textComplete`, `omnimux_page_fetch`) lazily, at request time.
+  // (`headlessSkill`, `omnimux_page_fetch`, `omnimux_social_data`) lazily, at request time.
   //
   // 两条媒体链路都只在这里接线：数字产品捕获双端首屏，实物产品下载商品图。
   // 导入器把两个 seam 都留成可选，因此没有宿主挂载时不会跑任何浏览器代码，

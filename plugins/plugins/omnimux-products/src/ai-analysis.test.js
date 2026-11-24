@@ -4,92 +4,85 @@ import {
   ANALYSIS_MODES,
   analyzeLandingPage,
   composePageContent,
-  extractModelText,
-  extractStructuredPayload,
   isDigitalLandingPage,
   mapBrandStrategyToDraft,
   mapPhysicalPayloadToDraft,
   normalizeHub,
 } from './ai-analysis.js'
+import {
+  BRAND_STRATEGY_OUTPUT_SCHEMA,
+  PHYSICAL_IMPORT_OUTPUT_SCHEMA,
+} from './analysis-schema.js'
 import { normalizeBrandStrategy } from './brand-strategy.js'
 import { parseHtmlDocument } from './link-importer.js'
+import {
+  PRODUCTS_BRAND_STRATEGY_SKILL,
+  PRODUCTS_PHYSICAL_IMPORT_SKILL,
+} from './products-skills.js'
 
 const DIGITAL_URL = 'https://platform.example.com'
 const PHYSICAL_URL = 'https://shop.example.com/p/aurora-mug'
 
-/** A brand-strategy v2 answer, exactly as the playbook asks for it. */
-const BRAND_YAML = `\`\`\`yaml
-brand_basic_info:
-  company:
-    name: "MiniMax"
-    website: "https://platform.example.com"
-    locale: "cn"
-  product:
-    name: "MiniMax 开放平台"
-    category: "AI 平台"
+/** A brand-strategy structured payload matching BRAND_STRATEGY_OUTPUT_SCHEMA. */
+const BRAND_PAYLOAD = {
+  brand_basic_info: {
+    company: {
+      name: 'MiniMax',
+      website: 'https://platform.example.com',
+      locale: 'cn',
+    },
+    product: {
+      name: 'MiniMax 开放平台',
+      category: 'AI 平台',
+    },
+  },
+  content_angles: [
+    {
+      id: 'cost_01',
+      title: '成本焦虑',
+      description: '按量付费，无需自建 GPU',
+      target_audience: 'AI 应用开发者',
+      priority: 1,
+    },
+  ],
+  tone_and_voice: {
+    dos: ['用数据说话'],
+    donts: ['夸大效果'],
+  },
+  identity_and_product: {
+    core_identity: '一站式多模态模型服务',
+    product_offering: ['文本模型 API', '语音模型 API'],
+    unique_advantage: ['超长上下文'],
+    problems_solved: ['多模型拼接成本高'],
+    solutions: ['一个接口接入多模态'],
+  },
+  mission_and_positioning: {
+    mission: '让智能触手可及',
+    differentiation: ['性价比'],
+    ownable_space: {
+      statement: '多模态入口',
+      category: 'AI 平台',
+      is_not: ['通用云'],
+    },
+  },
+  market_and_competition: {
+    customer_segments: [{ name: 'AI 应用开发者', percentage: 60 }],
+    competitors: [{ name: 'OpenAI', website: 'https://openai.com' }],
+  },
+}
 
-content_angles:
-  - id: "cost_01"
-    title: "成本焦虑"
-    description: "按量付费，无需自建 GPU"
-    target_audience: "AI 应用开发者"
-    priority: 1
-
-tone_and_voice:
-  dos:
-    - "用数据说话"
-  donts:
-    - "夸大效果"
-
-identity_and_product:
-  core_identity: "一站式多模态模型服务"
-  product_offering:
-    - "文本模型 API"
-    - "语音模型 API"
-  unique_advantage:
-    - "超长上下文"
-  problems_solved:
-    - "多模型拼接成本高"
-  solutions:
-    - "一个接口接入多模态"
-
-mission_and_positioning:
-  mission: "让智能触手可及"
-  differentiation:
-    - "性价比"
-  ownable_space:
-    statement: "多模态入口"
-    category: "AI 平台"
-    is_not:
-      - "通用云"
-
-market_and_competition:
-  customer_segments:
-    - name: "AI 应用开发者"
-      percentage: 60
-  competitors:
-    - name: "OpenAI"
-      website: "https://openai.com"
-\`\`\``
-
-/** `BRAND_YAML` under the namespace a model sometimes wraps the whole report in. */
-const WRAPPED_BRAND_YAML = (() => {
-  const [fence, ...rest] = BRAND_YAML.split('\n')
-  const body = rest.slice(0, -1).map((line) => (line.trim() ? `  ${line}` : line))
-  return [fence, 'brand_strategy:', ...body, '```'].join('\n')
-})()
-
-const PHYSICAL_JSON = JSON.stringify({
+const PHYSICAL_PAYLOAD = {
   name: 'Aurora Mug 350ml',
   description: '双层陶瓷保温杯，保温 6 小时。',
   features: '容量: 350ml,材质: 双层陶瓷',
-  sellingPoints: '6 小时长效保温,防滑硅胶底座',
+  selling_points: '6 小时长效保温,防滑硅胶底座',
   brand: 'Aurora',
-  targetAudience: '咖啡爱好者',
+  target_audience: '咖啡爱好者',
   price: 24.9,
+  sku: 'AM-350',
   promotion: '限时包邮',
-  category: 'physicalproduct,home,drinkware',
-})
+  categories: ['physicalproduct', 'home', 'drinkware'],
+}
 
 /** @param {{ nodes?: object[], text?: string, title?: string, meta?: object }} over */
 function page(over = {}) {
@@ -109,8 +102,10 @@ describe('ai-analysis · hub shape', () => {
   it('keeps only the callable seams', () => {
     assert.equal(normalizeHub(undefined), null)
     assert.equal(normalizeHub({}), null)
-    const textComplete = async () => ({ text: 'x' })
-    assert.deepEqual(Object.keys(normalizeHub({ textComplete, pageFetch: 'nope' })), ['textComplete'])
+    assert.equal(normalizeHub({ textComplete: async () => ({ text: 'x' }) }), null)
+    const headlessSkill = { run: async () => ({ data: {} }) }
+    assert.deepEqual(Object.keys(normalizeHub({ headlessSkill, pageFetch: 'nope' })), ['headlessSkill'])
+    assert.equal(normalizeHub({ headlessSkill: {} }), null)
   })
 })
 
@@ -640,61 +635,11 @@ describe('ai-analysis · model input and answer shapes', () => {
     const text = composePageContent({ markdown: 'x'.repeat(40000) })
     assert.equal(text.length, 24000)
   })
-
-  it('unwraps every answer shape the hub may return', () => {
-    assert.equal(extractModelText('  hi  '), 'hi')
-    assert.equal(extractModelText({ text: ' a ' }), 'a')
-    assert.equal(extractModelText({ content: 'b' }), 'b')
-    assert.equal(extractModelText({ choices: [{ message: { content: 'c' } }] }), 'c')
-    assert.equal(extractModelText({}), '')
-    assert.equal(extractModelText(null), '')
-  })
-
-  it('parses a fenced report, bare JSON, and refuses prose', () => {
-    assert.equal(extractStructuredPayload(BRAND_YAML).brand_basic_info.company.name, 'MiniMax')
-    assert.deepEqual(extractStructuredPayload('```json\n{"a":1}\n```'), { a: 1 })
-    assert.deepEqual(extractStructuredPayload('{"a":1}'), { a: 1 })
-    assert.deepEqual(extractStructuredPayload('好的，以下是报告：\n没有结构'), null)
-    assert.equal(extractStructuredPayload(''), null)
-  })
-
-  it('reads the prose-shaped report a chatty model answers with', () => {
-    const answer = [
-      '```yaml',
-      'brand_basic_info:',
-      '  company:',
-      '    name: MiniMax',
-      '  product:',
-      '    name: "MiniMax 开放平台"',
-      '',
-      'content_angles:',
-      '  - {id: cost_01, title: "成本: 焦虑", description: "按量付费，无需自建 GPU", priority: 1}',
-      '',
-      'identity_and_product:',
-      '  core_identity: >',
-      '    一站式多模态模型服务，',
-      '    支持免费试用',
-      '  unique_advantage:',
-      '    - 超长上下文',
-      '```',
-    ].join('\n')
-    // A block scalar and an inline collection must not cost the whole report.
-    const payload = extractStructuredPayload(answer)
-    assert.ok(payload, 'the report must survive its own formatting')
-    const strategy = normalizeBrandStrategy(payload)
-    assert.equal(strategy.identity_and_product.core_identity, '一站式多模态模型服务， 支持免费试用\n')
-    assert.deepEqual(strategy.identity_and_product.unique_advantage, ['超长上下文'])
-    assert.equal(strategy.content_angles[0].title, '成本: 焦虑')
-
-    const draft = mapBrandStrategyToDraft(strategy)
-    assert.equal(draft.name, 'MiniMax 开放平台')
-    assert.equal(draft.selling_points, '一站式多模态模型服务， 支持免费试用，超长上下文')
-  })
 })
 
 describe('ai-analysis · field mapping', () => {
   it('turns the six modules into the flat draft fields', () => {
-    const strategy = normalizeBrandStrategy(extractStructuredPayload(BRAND_YAML))
+    const strategy = normalizeBrandStrategy(BRAND_PAYLOAD)
     const draft = mapBrandStrategyToDraft(strategy)
     assert.equal(draft.name, 'MiniMax 开放平台')
     assert.equal(draft.brand, 'MiniMax')
@@ -704,8 +649,18 @@ describe('ai-analysis · field mapping', () => {
     assert.deepEqual(draft.categories, ['AI 平台'])
   })
 
-  it('reads both spellings of the v9 answer and normalizes the price', () => {
-    const draft = mapPhysicalPayloadToDraft(JSON.parse(PHYSICAL_JSON))
+  it('reads both spellings of the physical payload and normalizes the price', () => {
+    const draft = mapPhysicalPayloadToDraft({
+      name: 'Aurora Mug 350ml',
+      description: '双层陶瓷保温杯，保温 6 小时。',
+      features: '容量: 350ml,材质: 双层陶瓷',
+      sellingPoints: '6 小时长效保温,防滑硅胶底座',
+      brand: 'Aurora',
+      targetAudience: '咖啡爱好者',
+      price: 24.9,
+      promotion: '限时包邮',
+      category: 'physicalproduct,home,drinkware',
+    })
     assert.equal(draft.name, 'Aurora Mug 350ml')
     assert.equal(draft.selling_points, '6 小时长效保温,防滑硅胶底座')
     assert.equal(draft.features, '容量: 350ml,材质: 双层陶瓷')
@@ -735,19 +690,19 @@ describe('ai-analysis · field mapping', () => {
   })
 })
 
-describe('ai-analysis · one import through the model', () => {
-  it('degrades with a reason when the host offers no model channel', async () => {
+describe('ai-analysis · one import through Hub headlessSkill', () => {
+  it('degrades with a reason when the host offers no headlessSkill channel', async () => {
     const result = await analyzeLandingPage({ hub: null, kind: 'physical', page: page({ text: 'x' }) })
     assert.equal(result.mode, ANALYSIS_MODES.HEURISTIC)
     assert.equal(result.model, null)
-    assert.match(result.reason, /大模型通道/)
+    assert.match(result.reason, /无头技能大模型通道/)
     assert.equal(result.fields, null)
     assert.equal(result.brand_strategy, null)
   })
 
   it('degrades when there is no page text to send', async () => {
     const result = await analyzeLandingPage({
-      hub: { textComplete: async () => ({ text: BRAND_YAML }) },
+      hub: { headlessSkill: { run: async () => ({ data: BRAND_PAYLOAD }) } },
       kind: 'digital',
       page: page({ title: '', text: '' }),
     })
@@ -755,13 +710,15 @@ describe('ai-analysis · one import through the model', () => {
     assert.match(result.reason, /正文为空/)
   })
 
-  it('reads a digital page with the v2 playbook and the default model', async () => {
+  it('reads a digital page through products-brand-strategy with strict JSON Schema', async () => {
     const calls = []
     const result = await analyzeLandingPage({
       hub: {
-        textComplete: async (request) => {
-          calls.push(request)
-          return { text: BRAND_YAML, model: request.model || 'hub-default-model' }
+        headlessSkill: {
+          run: async (request) => {
+            calls.push(request)
+            return { data: BRAND_PAYLOAD, model: request.model || 'hub-default-model' }
+          },
         },
       },
       kind: 'digital',
@@ -773,13 +730,16 @@ describe('ai-analysis · one import through the model', () => {
     assert.equal(result.model, 'hub-default-model')
     assert.equal(result.kind, 'digital')
     assert.equal(calls.length, 1)
+    assert.equal(calls[0].skillName, PRODUCTS_BRAND_STRATEGY_SKILL)
+    assert.equal(calls[0].modality, 'text')
+    assert.equal(calls[0].ownerPlugin, 'omnimux-products')
+    assert.equal(calls[0].targetId, DIGITAL_URL)
     assert.equal(calls[0].model, undefined)
-    // The v2 playbook is the prompt, with its slots really filled.
-    assert.match(calls[0].prompt, /品牌战略专家/)
-    assert.match(calls[0].prompt, /一站式多模态模型服务/)
-    assert.match(calls[0].prompt, /字段值用 中文 填写/)
-    assert.doesNotMatch(calls[0].prompt, /\{\{pageContent\}\}/)
-    assert.match(calls[0].reason, /omnimux-products/)
+    assert.deepEqual(calls[0].outputSchema, BRAND_STRATEGY_OUTPUT_SCHEMA)
+    assert.match(calls[0].inputFingerprint, /^sha256:[0-9a-f]{64}$/)
+    assert.match(calls[0].input, /一站式多模态模型服务/)
+    assert.match(calls[0].input, /目标语言：中文/)
+    assert.doesNotMatch(calls[0].input, /\{\{pageContent\}\}/)
 
     // Six modules, normalized, plus the flat fields mapped off them.
     assert.deepEqual(Object.keys(result.brand_strategy), [
@@ -794,13 +754,15 @@ describe('ai-analysis · one import through the model', () => {
     assert.equal(result.fields.selling_points, '一站式多模态模型服务，超长上下文')
   })
 
-  it('honours a pinned model and reads a physical listing with the v9 playbook', async () => {
+  it('honours a pinned model and reads a physical listing through products-physical-import', async () => {
     const calls = []
     const result = await analyzeLandingPage({
       hub: {
-        textComplete: async (request) => {
-          calls.push(request)
-          return { text: PHYSICAL_JSON }
+        headlessSkill: {
+          run: async (request) => {
+            calls.push(request)
+            return { data: PHYSICAL_PAYLOAD }
+          },
         },
       },
       kind: 'physical',
@@ -813,21 +775,55 @@ describe('ai-analysis · one import through the model', () => {
     assert.equal(result.model, 'gpt-5.6-sol')
     assert.equal(result.kind, 'physical')
     assert.equal(result.brand_strategy, null)
-    assert.match(calls[0].prompt, /产品信息调研专家/)
-    assert.match(calls[0].prompt, new RegExp(PHYSICAL_URL))
+    assert.equal(calls[0].skillName, PRODUCTS_PHYSICAL_IMPORT_SKILL)
+    assert.equal(calls[0].modality, 'text')
+    assert.equal(calls[0].ownerPlugin, 'omnimux-products')
+    assert.deepEqual(calls[0].outputSchema, PHYSICAL_IMPORT_OUTPUT_SCHEMA)
+    assert.match(calls[0].input, new RegExp(PHYSICAL_URL))
+    assert.match(calls[0].input, /Double-wall ceramic mug/)
     assert.equal(result.fields.name, 'Aurora Mug 350ml')
     assert.equal(result.fields.price, '24.9')
+    assert.deepEqual(result.fields.categories, ['physicalproduct', 'home', 'drinkware'])
   })
 
-  it('never throws: a failing seam, an empty answer and a broken report all degrade', async () => {
+  it('never throws: seam errors, empty data, and schema violations all degrade with explicit reasons', async () => {
     const cases = [
-      { textComplete: async () => { throw new Error('no key configured') }, reason: /大模型调用失败/ },
-      { textComplete: async () => ({ text: '' }), reason: /未返回可用内容/ },
-      { textComplete: async () => ({ text: '抱歉，我无法完成' }), reason: /未包含可解析/ },
+      {
+        run: async () => { throw new Error('no key configured') },
+        reason: /大模型调用失败.*no key configured/,
+      },
+      {
+        run: async () => { throw Object.assign(new Error('not registered'), { code: 'headless-skill-not-found' }) },
+        reason: /缺少内置分析技能.*products-brand-strategy/,
+      },
+      {
+        run: async () => { throw Object.assign(new Error('bad json'), { code: 'headless-skill-schema-invalid' }) },
+        reason: /JSON Schema 校验.*bad json/,
+      },
+      {
+        run: async () => { throw Object.assign(new Error('timed out'), { code: 'headless-skill-timeout' }) },
+        reason: /商品智能分析超时/,
+      },
+      {
+        run: async () => { throw Object.assign(new Error('input changed'), { code: 'headless-skill-stale-input' }) },
+        reason: /页面内容已变更.*input changed/,
+      },
+      {
+        run: async () => { throw Object.assign(new Error('provider missing'), { code: 'needs-provider' }) },
+        reason: /大模型服务尚未就绪（needs-provider）.*provider missing/,
+      },
+      {
+        run: async () => ({ data: null }),
+        reason: /未返回结构化数据/,
+      },
+      {
+        run: async () => ({ data: { brand_strategy: BRAND_PAYLOAD } }),
+        reason: /JSON Schema 校验/,
+      },
     ]
     for (const row of cases) {
       const result = await analyzeLandingPage({
-        hub: { textComplete: row.textComplete },
+        hub: { headlessSkill: { run: row.run } },
         kind: 'digital',
         page: page({ text: '有正文' }),
       })
@@ -838,8 +834,28 @@ describe('ai-analysis · one import through the model', () => {
   })
 
   it('reports an empty brand report as a degraded read, not a crash', async () => {
+    const emptyStructured = {
+      brand_basic_info: {
+        company: { name: '', website: '', locale: '' },
+        product: { name: '', category: '' },
+      },
+      content_angles: [],
+      tone_and_voice: { dos: [], donts: [] },
+      identity_and_product: {
+        core_identity: '',
+        product_offering: [],
+        unique_advantage: [],
+        solutions: [],
+      },
+      mission_and_positioning: {
+        mission: '',
+        differentiation: [],
+        ownable_space: { statement: '' },
+      },
+      market_and_competition: { customer_segments: [], competitors: [] },
+    }
     const result = await analyzeLandingPage({
-      hub: { textComplete: async () => ({ text: '```yaml\nbrand_basic_info:\n  company:\n    name: ""\n```' }) },
+      hub: { headlessSkill: { run: async () => ({ data: emptyStructured }) } },
       kind: 'digital',
       page: page({ text: '有正文' }),
     })
@@ -847,16 +863,21 @@ describe('ai-analysis · one import through the model', () => {
     assert.match(result.reason, /战略模块/)
   })
 
-  it('reads a report the model wrapped in a namespace, not an empty one', async () => {
+  it('rejects a physical payload violating JSON Schema (e.g. extra keys or >5 categories) and degrades', async () => {
     const result = await analyzeLandingPage({
-      hub: { textComplete: async () => ({ text: WRAPPED_BRAND_YAML }) },
-      kind: 'digital',
-      page: page({ text: '有正文' }),
+      hub: {
+        headlessSkill: {
+          run: async () => ({
+            data: { ...PHYSICAL_PAYLOAD, categories: ['a', 'b', 'c', 'd', 'e', 'f'] },
+          }),
+        },
+      },
+      kind: 'physical',
+      url: PHYSICAL_URL,
+      page: page({ title: 'Aurora Mug', text: 'Double-wall ceramic mug' }),
     })
-    assert.equal(result.mode, ANALYSIS_MODES.MODEL)
-    assert.equal(result.reason, null)
-    assert.equal(result.brand_strategy.brand_basic_info.product.name, 'MiniMax 开放平台')
-    assert.equal(result.fields.name, 'MiniMax 开放平台')
-    assert.equal(result.fields.brand, 'MiniMax')
+    assert.equal(result.mode, ANALYSIS_MODES.HEURISTIC)
+    assert.match(result.reason, /JSON Schema 校验/)
+    assert.equal(result.fields, null)
   })
 })

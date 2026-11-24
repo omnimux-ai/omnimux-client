@@ -1,0 +1,250 @@
+# Spec: 迁移 omnimux-products 商品链接智能分析至 Hub headlessSkill（#212）
+
+## 1. 目标与范围
+
+- **Issue**：`#212` `refactor(products): 迁移商品链接智能分析至 Hub headlessSkill 并以 JSON Schema 替代迷你 YAML 解析`
+- **契约依据**：`plugins/docs/contracts/headless-skill-execution.md`
+- **写入边界**：仅限 `plugins/plugins/omnimux-products/**`、`specs/products-headless-212.spec.md` 与 `bundle.lock.json`（仅 `omnimux-products` 单槽）。
+
+## 2. 改造方案
+
+### 2.1 内置 Skill 真源与 `ctx.skills` rank 600 注册
+- 将原 `src/create-prompts.js` 中用于后台链接分析的硬编码渲染函数 `renderBrandStrategyV2Prompt` 与 `renderPhysicalImportV9Prompt` 抽离为插件自带标准 Skill：
+  - `plugins/plugins/omnimux-products/skills/products-brand-strategy/SKILL.md`（数字商品六大品牌战略模块结构化拆解）
+  - `plugins/plugins/omnimux-products/skills/products-physical-import/SKILL.md`（实物商品页面字段结构化提取）
+- 新增 `src/products-skills.js`，通过 `ctx.inject(['skills'], ...)` 调用 `skills.registerProvider`（`provider: 'omnimux-products'`，`rank: 600`，`source: 'bundled'`）自动注册进 DSH 原生 `ctx.skills`（在极简测试 registry 回退 `skills.register`），保证用户目录自定义 Skill 优先级高于内置 Skill，且前后台复用同一套方法论真源。
+- `src/index.js` 在 `apply(ctx)` 启动时调用 `registerProductsSkills(ctx)`。
+- `package.json` `files` 纳入 `"skills"`；`dsh.manifest.json` 声明 `"skills"` 与 `capabilities.seamsConsumed: ["headlessSkill"]`。
+
+### 2.2 Hub `headlessSkill` 消费与严格 JSON Schema 校验
+- 新增 `src/analysis-schema.js`：
+  - 定义 `BRAND_STRATEGY_OUTPUT_SCHEMA`（六大模块严格对象结构、`additionalProperties: false`、`priority` 1–3 整数、`percentage` 0–100 数值）。
+  - 定义 `PHYSICAL_IMPORT_OUTPUT_SCHEMA`（10 个标准商品字段、`additionalProperties: false`、`categories` 最多 5 项数组）。
+  - 提供确定性指纹 `buildLandingAnalysisFingerprint({ kind, url, language, pageContent })`（`sha256:<hex>`），覆盖商品类型、URL、语言与正文。
+  - 提供简洁结构化用户输入构造器 `buildBrandStrategyUserInput` / `buildPhysicalImportUserInput`（方法论留在 Skill，不再把模板正文拼入业务代码）。
+  - 提供插件侧防御性校验 `validateAgainstOutputSchema(value, schema)`。
+- 改造 `src/ai-analysis.js`：
+  - `normalizeHub` 改为接受 `headlessSkill`（含 `run` 方法）、`pageFetch`、`socialData`，不再接收低层 `textComplete`。
+  - `analyzeLandingPage` 通过 `hub.headlessSkill.run(...)` 调度 `products-brand-strategy` 或 `products-physical-import`，传入 `outputSchema`、`modality: 'text'`、`ownerPlugin: 'omnimux-products'`、`targetId`、`inputFingerprint`、`maxTokens` 与可选 `model` / `signal`。
+  - 移除 `extractModelText` 与 `extractStructuredPayload`（不再做自由文本围栏提取或 YAML 文本解析）。
+  - 保留原有失败降级语义：任何异常、缺失接缝、空正文、Schema 校验失败、超时、取消、陈旧指纹或空业务字段均返回 `mode: 'heuristic'` 并在 `reason` 中显式暴露对应错误，绝不抛异常阻断基础字段导入、绝不静默吞错。
+- 改造 `src/http-routes.js`：
+  - `createHubSeams(ctx, deps)` 暴露懒解析的 `headlessSkill`（消费 `ctx.get('headlessSkill')`，支持测试注入 `deps.headlessSkill`）、`pageFetch`、`socialData`。
+  - 移除跨插件私有导入 `../../omnimux/src/text/chat.js` 及私有三通道 `textComplete` 兜底管线，收敛至 Hub 单一执行通道。
+
+### 2.3 `yaml-mini.js` 退役核查
+- 全仓核查结果：`src/yaml-mini.js` 仅被 `src/ai-analysis.js`（`fencedBlocks`、`parseYamlMini`）与自身单测 `src/yaml-mini.test.js` 消费；产品库落盘（`library.json`）与品牌战略规范化（`brand-strategy.js`）均消费纯 JSON/JS 对象，不存在历史 YAML 持久化读取路径。
+- 结论：无任何残余消费方，直接清理退役 `src/yaml-mini.js` 与 `src/yaml-mini.test.js`。
+
+## 3. 验证与双向证伪计划
+
+- 定向新增测试：`src/products-skills.test.js`、`src/analysis-schema.test.js`，覆盖 Skill 加载、`rank: 600` provider 注册、JSON Schema 严格校验、确定性 `inputFingerprint`、`headlessSkill` 路由、各类错误码显式降级。
+- 双向证伪（开发期实测）：
+  1. 临时破坏 `PRODUCTS_SKILL_RANK`（`600 -> 999`）→ `products-skills.test.js` 真实转红；还原后转绿。
+  2. 临时破坏 `validateAgainstOutputSchema`（短路返回 `[]`）→ `analysis-schema.test.js` 与 `ai-analysis.test.js` 真实转红；还原后转绿。
+  3. 临时破坏 `analyzeLandingPage` 的 `headlessSkill.run` 路由（互换 `skillName` 映射）→ `ai-analysis.test.js` 与 `link-importer.test.js` 真实转红；还原后转绿。
+
+## 旧标准变更
+
+以下既有测试用例因本次架构重构（从直调 `textComplete` + 私有 `chat.js` 桥接 + 硬编码提示词渲染 + `yaml-mini.js` 自由文本解析，迁移至 Hub `headlessSkill` + 插件自带 Skill 真源 + 严格 JSON Schema 校验）而变更或退役，已用对应的 `headlessSkill` / Skill / JSON Schema 回归测试完整替代：
+
+- `plugins/plugins/omnimux-products/src/ai-analysis.test.js` :: `ai-analysis · one import through the model`
+  - 原断言：测试分组标题覆盖旧直调 `textComplete` 链路。
+  - 变更理由：执行通道已迁移至 Hub `headlessSkill.run` + JSON Schema，测试分组重构为 `ai-analysis · headlessSkill execution & schema validation`。
+  - 新期望证据：`ai-analysis.test.js` 完整覆盖数字/实物路由、模型透传、指纹、Schema 校验与全错误码显式降级。
+- `plugins/plugins/omnimux-products/src/ai-analysis.test.js` :: `degrades with a reason when the host offers no model channel`
+  - 原断言：未提供 `textComplete` 时降级并报缺通道。
+  - 变更理由：低层 `textComplete` 接缝已替换为 `headlessSkill`。
+  - 新期望证据：`degrades cleanly with a reason when headlessSkill is absent` 断言缺失 `headlessSkill` 时降级为 `heuristic` 且 `reason` 显式暴露 `headlessSkill`。
+- `plugins/plugins/omnimux-products/src/ai-analysis.test.js` :: `honours a pinned model and reads a physical listing with the v9 playbook`
+  - 原断言：调用 `textComplete` 发送硬编码 v9 提示词并返回 YAML 文本。
+  - 变更理由：实物提取方法论已抽离为内置 Skill `products-physical-import` 并改走 `headlessSkill.run` + `PHYSICAL_IMPORT_OUTPUT_SCHEMA`。
+  - 新期望证据：`honours a pinned model and calls products-physical-import for physical listings` 断言透传 `model`、`skillName: 'products-physical-import'`、`outputSchema: PHYSICAL_IMPORT_OUTPUT_SCHEMA` 并映射结构化字段。
+- `plugins/plugins/omnimux-products/src/ai-analysis.test.js` :: `keeps only the callable seams`
+  - 原断言：`normalizeHub` 校验并保留 `textComplete`、`pageFetch`、`socialData`。
+  - 变更理由：`normalizeHub` 不再接受低层 `textComplete`，改为仅保留 `headlessSkill`（含 `run`）、`pageFetch`、`socialData`。
+  - 新期望证据：`keeps only the callable headlessSkill / pageFetch / socialData seams` 断言拒绝低层 `textComplete` 并保留有效 `headlessSkill`。
+- `plugins/plugins/omnimux-products/src/ai-analysis.test.js` :: `never throws: a failing seam, an empty answer and a broken report all degrade`
+  - 原断言：模拟 `textComplete` 抛错、空文本与损坏 YAML 降级。
+  - 变更理由：不再存在文本解包与 YAML 解析路径，错误形态变为 `headlessSkill` 上游异常、空 `data`、Schema 违例、超时、取消、陈旧指纹。
+  - 新期望证据：`never throws: failing seam, schema invalid, timeout, aborted, and stale fingerprint all degrade explicitly` 逐项断言显式降级与错误原因暴露。
+- `plugins/plugins/omnimux-products/src/ai-analysis.test.js` :: `parses a fenced report, bare JSON, and refuses prose`
+  - 原断言：验证 `extractStructuredPayload` 从 Markdown 围栏/裸 JSON 解析 YAML/JSON。
+  - 变更理由：`extractStructuredPayload` 与自由文本围栏解析随 `yaml-mini.js` 一并退役，改为 Hub `headlessSkill` 结构化输出 + `validateAgainstOutputSchema`。
+  - 新期望证据：`analysis-schema.test.js` 严格校验结构化 JSON Schema，拒绝非法/缺失/多余字段。
+- `plugins/plugins/omnimux-products/src/ai-analysis.test.js` :: `reads a digital page with the v2 playbook and the default model`
+  - 原断言：调用 `textComplete` 发送硬编码 v2 提示词并解析 YAML 响应。
+  - 变更理由：数字商品品牌战略分析已抽离为 `products-brand-strategy` Skill 并走 `headlessSkill.run` + `BRAND_STRATEGY_OUTPUT_SCHEMA`。
+  - 新期望证据：`analyzes a digital page via products-brand-strategy skill with strict schema and fingerprint` 断言 `skillName`、`outputSchema`、确定性 `inputFingerprint` 与结果映射。
+- `plugins/plugins/omnimux-products/src/ai-analysis.test.js` :: `reads a report the model wrapped in a namespace, not an empty one`
+  - 原断言：通过 `extractStructuredPayload` 宽容解包顶层 `brand_strategy:` 命名空间包装。
+  - 变更理由：`BRAND_STRATEGY_OUTPUT_SCHEMA` 设 `additionalProperties: false` 严格拒绝顶层包装；历史兼容解包能力保留在 `brand-strategy.test.js` 中独立覆盖。
+  - 新期望证据：`rejects wrapped namespace or schema-violating payloads from headlessSkill and degrades explicitly` 断言模型返回包装命名空间时触发 Schema 失败并显式降级；`brand-strategy.test.js` 继续覆盖持久化对象兼容解包。
+- `plugins/plugins/omnimux-products/src/ai-analysis.test.js` :: `reads both spellings of the v9 answer and normalizes the price`
+  - 原断言：宽容解析旧 YAML 中 `name`/`product_name` 双拼写与字符串价格。
+  - 变更理由：由 `PHYSICAL_IMPORT_OUTPUT_SCHEMA` 严格约束字段名 `name` 与类型。
+  - 新期望证据：`analysis-schema.test.js` 与 `ai-analysis.test.js` 验证严格 Schema 字段映射与价格规范化。
+- `plugins/plugins/omnimux-products/src/ai-analysis.test.js` :: `reads the prose-shaped report a chatty model answers with`
+  - 原断言：依赖 `yaml-mini` 从带闲聊的块标量文本中恢复报告。
+  - 变更理由：自由文本 YAML 解析已退役，由 Hub `headlessSkill` JSON Schema 治理替代。
+  - 新期望证据：`analysis-schema.test.js` 与 `ai-analysis.test.js` 验证非法非对象载荷被 Schema 拒绝并显式降级。
+- `plugins/plugins/omnimux-products/src/ai-analysis.test.js` :: `unwraps every answer shape the hub may return`
+  - 原断言：测试 `extractModelText` 兼容多种低层 `textComplete` 自由文本外壳。
+  - 变更理由：`extractModelText` 已随低层 `textComplete` 移除，Hub `headlessSkill.run` 统一返回 `{ data, model, usage, mode }` 契约。
+  - 新期望证据：`ai-analysis.test.js` 直接验证 `headlessSkill.run` 结构化返回与缺失 `data` 的降级处理。
+- `plugins/plugins/omnimux-products/src/create-prompts.test.js` :: `appends the page body to the playbook it was given`
+  - 原断言：测试 `renderPhysicalImportV9Prompt` 将正文拼到硬编码 playbook 后。
+  - 变更理由：`renderPhysicalImportV9Prompt` 已抽离为内置 Skill `products-physical-import` 与 `buildPhysicalImportUserInput`。
+  - 新期望证据：`analysis-schema.test.js` 验证 `buildPhysicalImportUserInput` 输入构造与截断边界，`products-skills.test.js` 验证 Skill 内容真源。
+- `plugins/plugins/omnimux-products/src/create-prompts.test.js` :: `renderPhysicalImportV9Prompt`
+  - 原断言：分组测试已退役的 `renderPhysicalImportV9Prompt`。
+  - 变更理由：该函数已随链接分析迁入 Skill 真源从 `create-prompts.js` 移除。
+  - 新期望证据：`create-prompts.test.js` 保留前端文案创建面板所需提示词测试，分析输入与 Skill 真源分别由 `analysis-schema.test.js` 与 `products-skills.test.js` 覆盖。
+- `plugins/plugins/omnimux-products/src/create-prompts.test.js` :: `renders the playbook alone when there is no body to carry`
+  - 原断言：无正文时 `renderPhysicalImportV9Prompt` 仅渲染 playbook。
+  - 变更理由：方法论不再由业务代码拼接渲染，空正文直接在 `analyzeLandingPage` 降级且由 `buildPhysicalImportUserInput` 构造干净输入。
+  - 新期望证据：`analysis-schema.test.js` 验证空正文输入边界，`ai-analysis.test.js` 验证空正文显式降级。
+- `plugins/plugins/omnimux-products/src/http-routes.test.js` :: `answers from the chat bridge before any seat can hang`
+  - 原断言：私有 `chat.js` 桥接优先于卡死的 `textComplete` 接缝返回。
+  - 变更理由：跨插件私有导入 `../../omnimux/src/text/chat.js` 与三通道 `textComplete` 兜底链已退役，统一改由 Hub `headlessSkill` 治理。
+  - 新期望证据：`http-routes.test.js` 验证 `createHubSeams` 仅消费 `ctx.get('headlessSkill')` 并正确透传超时/失败。
+- `plugins/plugins/omnimux-products/src/http-routes.test.js` :: `answers null without a host context, and resolves nothing eagerly`
+  - 原断言：`createHubSeams(null)` 返回 `null` 且懒解析 `textComplete`/`pageFetch`/`socialData`。
+  - 变更理由：接缝集合变更，`textComplete` 替换为 `headlessSkill`。
+  - 新期望证据：`http-routes.test.js` 中 `returns null without a host context, and resolves headlessSkill lazily` 断言懒解析 `headlessSkill`/`pageFetch`/`socialData`。
+- `plugins/plugins/omnimux-products/src/http-routes.test.js` :: `bridges after a seat that throws, with the default model and cap`
+  - 原断言：`textComplete` 抛错后降级到私有 `chat.js` 桥接。
+  - 变更理由：私有 `chat.js` 桥接已移除，模型与超时治理全权归 Hub `headlessSkill`。
+  - 新期望证据：`http-routes.test.js` 断言 `headlessSkill.run` 异常或缺失时显式暴露错误而非绕道私有桥接。
+- `plugins/plugins/omnimux-products/src/http-routes.test.js` :: `bridges to the hub chat path when neither the seat nor the tool answers`
+  - 原断言：接缝和工具都缺失时回退到私有 `chat.js` 桥接。
+  - 变更理由：跨插件私有模块导入已移除，遵循 `headless-skill-execution.md` 单一接缝契约。
+  - 新期望证据：`http-routes.test.js` 断言缺少 `headlessSkill` 时显式抛出 `headless-skill-unavailable`。
+- `plugins/plugins/omnimux-products/src/http-routes.test.js` :: `cuts a seat that never answers at the channel cap instead of hanging`
+  - 原断言：插件侧为卡死的 `textComplete` 接缝手动加竞态超时上限。
+  - 变更理由：超时治理已下沉至 Hub `headlessSkill`（`timeoutMs` / `AbortSignal`）。
+  - 新期望证据：`http-routes.test.js` 与 `ai-analysis.test.js` 断言 `headless-skill-timeout` 被透传并显式降级。
+- `plugins/plugins/omnimux-products/src/http-routes.test.js` :: `cuts the omnimux_text_complete tool that never answers at the channel cap`
+  - 原断言：为卡死的 `omnimux_text_complete` 工具回退通道加超时上限。
+  - 变更理由：低层 `omnimux_text_complete` 回退通道已移除。
+  - 新期望证据：`http-routes.test.js` 断言仅通过 `headlessSkill` 执行且缺失时报错。
+- `plugins/plugins/omnimux-products/src/http-routes.test.js` :: `falls back to the omnimux_text_complete tool with the wire field names it needs`
+  - 原断言：接缝缺失时降级调用 `omnimux_text_complete` 工具。
+  - 变更理由：低层 `omnimux_text_complete` 工具回退通道已移除，避免绕过 Hub Skill 治理。
+  - 新期望证据：`http-routes.test.js` 断言仅消费 `ctx.get('headlessSkill')`，不调用 `omnimux_text_complete`。
+- `plugins/plugins/omnimux-products/src/http-routes.test.js` :: `hands the host seats to the importer as hub seams`
+  - 原断言：将 `textComplete` 接缝透传给导入器。
+  - 变更理由：接缝替换为 `headlessSkill`。
+  - 新期望证据：`http-routes.test.js` 中 `hands headlessSkill and pageFetch host seats to the importer` 断言 `headlessSkill` 与 `pageFetch` 端到端贯通 HTTP 路由。
+- `plugins/plugins/omnimux-products/src/http-routes.test.js` :: `lets the chat bridge win over the seats, and never touches them`
+  - 原断言：私有 `chat.js` 桥接优先于宿主机接缝执行。
+  - 变更理由：私有 `chat.js` 桥接已彻底移除。
+  - 新期望证据：`http-routes.test.js` 验证 `createHubSeams` 直接委派至 `ctx.get('headlessSkill')`。
+- `plugins/plugins/omnimux-products/src/http-routes.test.js` :: `points the default bridge at the hub chat module this repository ships`
+  - 原断言：校验私有 `chat.js` 模块路径存在。
+  - 变更理由：跨插件私有源码导入违反边界规范，已移除。
+  - 新期望证据：`check:boundaries` 与 `http-routes.test.js` 验证零跨插件私有导入且通过官方 `headlessSkill` 接缝通信。
+- `plugins/plugins/omnimux-products/src/http-routes.test.js` :: `prefers the provided textComplete service after the chat bridge declines`
+  - 原断言：私有桥接拒绝后回退至 `textComplete` 服务。
+  - 变更理由：私有桥接与低层 `textComplete` 双双退役，收敛至单一 `headlessSkill` 接缝。
+  - 新期望证据：`http-routes.test.js` 验证直接路由到 `headlessSkill.run` 并支持测试注入覆盖。
+- `plugins/plugins/omnimux-products/src/http-routes.test.js` :: `reads the page through omnimux_page_fetch, and fails loudly when the hub is missing`
+  - 原断言：同时检查 `pageFetch` 与旧 `textComplete` 缺失报错。
+  - 变更理由：分析通道变更为 `headlessSkill`，拆分为清晰断言。
+  - 新期望证据：`http-routes.test.js` 保留 `pageFetch` 通过 `omnimux_page_fetch` 读取及缺失显式报错断言，并新增 `headlessSkill` 缺失显式报错断言。
+- `plugins/plugins/omnimux-products/src/http-routes.test.js` :: `reports every channel it tried when none of them answer`
+  - 原断言：三通道全部失败时拼接每个通道名称报错。
+  - 变更理由：多通道私有降级链已移除，收敛为单一 Hub `headlessSkill` 通道。
+  - 新期望证据：`http-routes.test.js` 断言缺失 `headlessSkill` 时显式抛出带 `code: 'headless-skill-unavailable'` 的错误。
+- `plugins/plugins/omnimux-products/src/http-routes.test.js` :: `returns the model report in seconds while the host seat hangs`
+  - 原断言：在宿主机 `textComplete` 卡死时经由私有 `chat.js` 桥接秒级返回。
+  - 变更理由：私有 `chat.js` 桥接已移除，卡死超时由 Hub `headlessSkill` 统一治理。
+  - 新期望证据：`http-routes.test.js` 验证 `headlessSkill` 超时错误被 HTTP 导入路由优雅降级并显式返回告警。
+- `plugins/plugins/omnimux-products/src/http-routes.test.js` :: `survives a ctx whose get() throws`
+  - 原断言：`ctx.get()` 抛错时安全回退工具/桥接不崩溃。
+  - 变更理由：回退桥接已移除，`ctx.get()` 抛错时应安全视作 `headlessSkill` 不可用。
+  - 新期望证据：`http-routes.test.js` 中 `survives a ctx whose get() throws and reports headless-skill-unavailable` 断言不崩溃且显式报 `headless-skill-unavailable`。
+- `plugins/plugins/omnimux-products/src/link-importer.test.js` :: `extracts a physical listing with the v9 playbook`
+  - 原断言：校验 `textComplete` 收到 v9 提示词并返回 YAML 文本。
+  - 变更理由：实物链接分析已迁移至 `headlessSkill.run`（`products-physical-import`）+ `PHYSICAL_IMPORT_OUTPUT_SCHEMA`。
+  - 新期望证据：`extracts a physical listing via products-physical-import headlessSkill` 断言调用 `products-physical-import` 与 `PHYSICAL_IMPORT_OUTPUT_SCHEMA` 并正确产出商品草稿。
+- `plugins/plugins/omnimux-products/src/link-importer.test.js` :: `falls back to its own page read when the hub reader fails`
+  - 原断言：Hub 抓取失败后将本地正文发给 `textComplete`。
+  - 变更理由：分析通道变更为 `headlessSkill.run`。
+  - 新期望证据：`falls back to its own page read when the hub reader fails and forwards body to headlessSkill` 断言本地抓取正文透传给 `headlessSkill.run`。
+- `plugins/plugins/omnimux-products/src/link-importer.test.js` :: `hands the physical playbook the page body, not just the URL`
+  - 原断言：断言 `textComplete` 提示词包含页面正文与 URL。
+  - 变更理由：方法论已迁入 `SKILL.md`，业务代码仅构造结构化 `input` 传给 `headlessSkill.run`。
+  - 新期望证据：`hands products-physical-import the page body, not just the URL` 断言 `headlessSkill.run` 的 `input` 同时包含页面正文与参考 URL。
+- `plugins/plugins/omnimux-products/src/link-importer.test.js` :: `reads a brand site into a full six-module strategy, end to end`
+  - 原断言：经 `textComplete` 解析 YAML 得到六大品牌战略模块。
+  - 变更理由：数字品牌分析已迁至 `headlessSkill.run`（`products-brand-strategy`）+ `BRAND_STRATEGY_OUTPUT_SCHEMA`。
+  - 新期望证据：`reads a brand site into a full six-module strategy via products-brand-strategy headlessSkill` 断言完整端到端六大模块输出与 Schema/指纹参数。
+- `plugins/plugins/omnimux-products/src/link-importer.test.js` :: `routes a bare software host to the brand playbook on the URL alone`
+  - 原断言：断言 `textComplete` 提示词命中品牌 playbook。
+  - 变更理由：路由依据变更为 `headlessSkill.run` 的 `skillName`。
+  - 新期望证据：`routes a bare software host to products-brand-strategy on the URL alone` 断言命中 `products-brand-strategy` 而非 `products-physical-import`。
+- `plugins/plugins/omnimux-products/src/link-importer.test.js` :: `says so when no hub is loaded at all, and never throws for it`
+  - 原断言：未注入 hub 时返回基础草稿并带旧降级原因。
+  - 变更理由：降级原因文案更新为显式提及 `headlessSkill`。
+  - 新期望证据：`says so when no hub is loaded at all, and never throws for it`（保留同语义断言，更新 `headlessSkill` 原因校验，保障基础字段导入不中断）。
+- `plugins/plugins/omnimux-products/src/yaml-mini.test.js` :: `answers null for nothing to read`
+  - 原断言：`parseYamlMini` 对空输入返回 `null`。
+  - 变更理由：`yaml-mini.js` 全插件零残余消费方，随重构彻底退役删除，由 Hub `headlessSkill` + 严格 JSON Schema 替代。
+  - 新期望证据：`analysis-schema.test.js` 覆盖空值与非法输入校验。
+- `plugins/plugins/omnimux-products/src/yaml-mini.test.js` :: ``folds `>` and honours the chomping and indent flags``
+  - 原断言：`parseYamlMini` 解析 YAML 折叠块标量 `>`。
+  - 变更理由：`yaml-mini.js` 已退役删除。
+  - 新期望证据：Hub `headlessSkill` 结构化 JSON 输出与 `analysis-schema.test.js` 替代自由文本 YAML 解析。
+- `plugins/plugins/omnimux-products/src/yaml-mini.test.js` :: `handles quoted colons, inline collections, comments and document markers`
+  - 原断言：`parseYamlMini` 处理引号冒号、行内集合与注释。
+  - 变更理由：`yaml-mini.js` 已退役删除。
+  - 新期望证据：标准 JSON Schema 校验由 `analysis-schema.test.js` 覆盖。
+- `plugins/plugins/omnimux-products/src/yaml-mini.test.js` :: `keeps a bare hash inside a word`
+  - 原断言：`parseYamlMini` 保留词内 `#` 号。
+  - 变更理由：`yaml-mini.js` 已退役删除。
+  - 新期望证据：JSON 文本不再需要手写 YAML 词法规则，由 `analysis-schema.test.js` 覆盖结构校验。
+- `plugins/plugins/omnimux-products/src/yaml-mini.test.js` :: `keeps a blank line inside a block scalar out of the keys around it`
+  - 原断言：`parseYamlMini` 保留块标量中的空行。
+  - 变更理由：`yaml-mini.js` 已退役删除。
+  - 新期望证据：结构化 JSON Schema 替代块标量解析，由 `analysis-schema.test.js` 覆盖。
+- `plugins/plugins/omnimux-products/src/yaml-mini.test.js` :: `lists every fenced block with its language, skipping empty ones`
+  - 原断言：`fencedBlocks` 提取 Markdown 代码围栏。
+  - 变更理由：`yaml-mini.js` 与自由文本围栏提取已退役删除。
+  - 新期望证据：`headlessSkill` 直接返回已校验结构化 `data`，由 `ai-analysis.test.js` 覆盖。
+- `plugins/plugins/omnimux-products/src/yaml-mini.test.js` :: `reads a block scalar as one value and keeps reading the report after it`
+  - 原断言：`parseYamlMini` 读取多行块标量并继续解析后续键。
+  - 变更理由：`yaml-mini.js` 已退役删除。
+  - 新期望证据：`analysis-schema.test.js` 覆盖多字段结构化对象校验。
+- `plugins/plugins/omnimux-products/src/yaml-mini.test.js` :: `reads a sequence written at the same indent as its key`
+  - 原断言：`parseYamlMini` 解析同缩进 YAML 序列。
+  - 变更理由：`yaml-mini.js` 已退役删除。
+  - 新期望证据：`analysis-schema.test.js` 覆盖严格 JSON 数组校验。
+- `plugins/plugins/omnimux-products/src/yaml-mini.test.js` :: `reads a top-level list, including a nested block under a bare dash`
+  - 原断言：`parseYamlMini` 解析顶层 YAML 列表。
+  - 变更理由：`yaml-mini.js` 已退役删除。
+  - 新期望证据：`analysis-schema.test.js` 覆盖严格顶层对象 Schema 校验（拒绝顶层数组）。
+- `plugins/plugins/omnimux-products/src/yaml-mini.test.js` :: `reads an inline collection whole when its values carry quotes and colons`
+  - 原断言：`parseYamlMini` 解析带引号冒号的行内集合。
+  - 变更理由：`yaml-mini.js` 已退役删除。
+  - 新期望证据：`analysis-schema.test.js` 覆盖 JSON 数组与对象字段校验。
+- `plugins/plugins/omnimux-products/src/yaml-mini.test.js` :: `reads nested maps, scalar lists and lists of maps`
+  - 原断言：`parseYamlMini` 解析嵌套映射与对象列表。
+  - 变更理由：`yaml-mini.js` 已退役删除。
+  - 新期望证据：`analysis-schema.test.js` 覆盖六大嵌套模块 Schema 校验。
+- `plugins/plugins/omnimux-products/src/yaml-mini.test.js` :: `refuses an input outside the supported subset instead of guessing`
+  - 原断言：`parseYamlMini` 拒绝超出子集的 YAML 语法。
+  - 变更理由：`yaml-mini.js` 已退役删除。
+  - 新期望证据：`analysis-schema.test.js` 与 `ai-analysis.test.js` 覆盖非法 Schema 结构拒绝与显式降级。
+- `plugins/plugins/omnimux-products/src/yaml-mini.test.js` :: `strips the preferred fence, falls back to the whole text`
+  - 原断言：`stripCodeFence` 去除首选围栏或回退全文。
+  - 变更理由：`yaml-mini.js` 已退役删除。
+  - 新期望证据：Hub `headlessSkill` 返回结构化对象，无需剥离 Markdown 围栏。
+- `plugins/plugins/omnimux-products/src/yaml-mini.test.js` :: `yaml-mini · fenced blocks`
+  - 原断言：分组测试已退役的 `fencedBlocks`。
+  - 变更理由：`yaml-mini.js` 已随重构彻底退役删除。
+  - 新期望证据：`analysis-schema.test.js` 替代结构化解析与校验分组。
+- `plugins/plugins/omnimux-products/src/yaml-mini.test.js` :: `yaml-mini · report parsing`
+  - 原断言：分组测试已退役的 `parseYamlMini`。
+  - 变更理由：`yaml-mini.js` 已随重构彻底退役删除。
+  - 新期望证据：`analysis-schema.test.js` 与 `ai-analysis.test.js` 替代报告结构化校验与降级分组。

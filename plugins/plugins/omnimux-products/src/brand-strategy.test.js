@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import { extractStructuredPayload } from './ai-analysis.js'
 import {
   emptyBrandStrategy,
   isDigitalProduct,
@@ -50,28 +49,32 @@ function report() {
 
 const BARE = normalizeBrandStrategy(report())
 
-/** The report wrapped in the namespace a model put it under. */
-const WRAPPED_YAML = `\`\`\`yaml
-brand_strategy:
-  brand_basic_info:
-    company:
-      name: "MiniMax"
-      website: "https://platform.example.com"
-      locale: "cn"
-    product:
-      name: "MiniMax 开放平台"
-      category: "AI 平台"
-  identity_and_product:
-    core_identity: "一站式多模态模型服务"
-    unique_advantage:
-      - "超长上下文"
-  mission_and_positioning:
-    mission: "让智能触手可及"
-  market_and_competition:
-    customer_segments:
-      - name: "AI 应用开发者"
-        percentage: 60
-\`\`\``
+/** The report wrapped in the namespace a caller or stored draft put it under. */
+const WRAPPED_JSON = JSON.stringify({
+  brand_strategy: {
+    brand_basic_info: {
+      company: {
+        name: 'MiniMax',
+        website: 'https://platform.example.com',
+        locale: 'cn',
+      },
+      product: {
+        name: 'MiniMax 开放平台',
+        category: 'AI 平台',
+      },
+    },
+    identity_and_product: {
+      core_identity: '一站式多模态模型服务',
+      unique_advantage: ['超长上下文'],
+    },
+    mission_and_positioning: {
+      mission: '让智能触手可及',
+    },
+    market_and_competition: {
+      customer_segments: [{ name: 'AI 应用开发者', percentage: 60 }],
+    },
+  },
+})
 
 describe('brand-strategy · shape guards', () => {
   it('reads an empty or absent strategy as null', () => {
@@ -164,7 +167,7 @@ describe('brand-strategy · a report the model namespaced', () => {
   })
 
   it('reads a wrapped report out of a real model answer, end to end', () => {
-    const payload = extractStructuredPayload(WRAPPED_YAML)
+    const payload = JSON.parse(WRAPPED_JSON)
     // The bug needed the wrapper to be the only thing at the top level.
     assert.deepEqual(Object.keys(payload), ['brand_strategy'])
 
