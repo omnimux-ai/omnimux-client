@@ -1562,8 +1562,6 @@
     "dist:win-portable:next": "yarn aa:prepare-release && yarn workspace dsh-community-market build && yarn workspace dsh-desktop-next dist:win-portable",
     "check:next": "yarn workspace dsh-desktop-next check",
     "market:prepare": "node scripts/prepare-dsh-market.mjs",
-    "check:desktop-variants": "node scripts/verify-desktop-variants.mjs",
-    "sync:desktop-variants": "node scripts/verify-desktop-variants.mjs --from=beta",
     "dist:linux": "yarn market:prepare && yarn aa:prepare-release && yarn workspace dsh-community-market build && yarn workspace dsh-plugin-desktop dist:linux",
     "test:stable-shared": "node scripts/test-stable-shared.mjs",
     "dev:next": "yarn market:prepare && yarn aa:prepare-release && yarn workspace dsh-community-market build && yarn workspace dsh-desktop-next dev",
