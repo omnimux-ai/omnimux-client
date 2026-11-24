@@ -966,19 +966,16 @@ describe('textComplete toolModel bypass', () => {
     )
   })
 
-  it('a video reference skips the tool model lane instead of throwing invalid-request', async () => {
+  it('video respects configured toolModel via its llm-pi-ai openai-completions profile and fails loudly when unsupported', async () => {
     const videoDir = mkdtempSync(join(tmpdir(), 'omnimux-video-'))
     const videoPath = join(videoDir, 'clip.mp4')
     const seen = []
     const requests = []
     const credentialRefs = []
-    const byokSettings = {
+    const omnimuxSettings = {
       runtimeMode: 'key',
-      runtimeKeyEndpoint: 'https://my-provider.test/v1',
-      runtimeKeyModel: 'my-model',
-      runtimeKeyVerified: true,
       scenarioBindings: { analysis: { channel: 'byok', provider: 'custom' } },
-      byokProviders: [{ provider: 'custom', endpoint: 'https://my-provider.test/v1', models: { analysis: 'my-model' }, capabilities: ['analysis'] }],
+      byokProviders: [{ provider: 'custom', endpoint: 'https://other-byok.test/v1', models: { analysis: 'wrong-fallback-model' }, capabilities: ['analysis'] }],
       toolModel: 'cpa:gpt-6.1-sol',
     }
     try {
@@ -986,15 +983,32 @@ describe('textComplete toolModel bypass', () => {
         Buffer.from([0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70, 0x6d, 0x70, 0x34, 0x32]),
         Buffer.alloc(32, 0),
       ]))
+      // 1. When cpa is configured in llm-pi-ai with openai-completions, video uses cpa:gpt-6.1-sol strictly
       const result = await executeOmnimuxText({
         prompt: 'analyze this video',
         video: videoPath,
         env: {},
-        settings: { get(key) { return key === 'omnimux' ? byokSettings : undefined } },
+        settings: {
+          get(key) { return key === 'omnimux' ? omnimuxSettings : undefined },
+          describe() {
+            return [
+              { ns: 'omnimux', value: omnimuxSettings, user: omnimuxSettings },
+              {
+                ns: 'llm-pi-ai',
+                base: {
+                  providers: {
+                    cpa: { api: 'openai-completions', baseURL: 'https://my-provider.test/v1', apiKeyEnv: 'CPA_KEY' },
+                  },
+                },
+                user: {},
+              },
+            ]
+          },
+        },
         credentials: {
           async resolve(ref) {
             credentialRefs.push(ref)
-            if (ref === 'OMNIMUX_MEDIA_KEY_CUSTOM') return { value: 'sk-byok-secret' }
+            if (ref === 'CPA_KEY') return { value: 'sk-cpa-secret' }
             return undefined
           },
         },
@@ -1010,10 +1024,23 @@ describe('textComplete toolModel bypass', () => {
       assert.ok(videoPart?.image_url?.url?.startsWith('data:video/mp4;base64,'))
       assert.equal(result.text, 'video read')
       assert.equal(requests[0].url, 'https://my-provider.test/v1/chat/completions')
-      assert.equal(requests[0].auth, 'Bearer sk-byok-secret')
-      assert.equal(requests[0].body.model, 'my-model')
-      assert.equal(result.model, 'my-model')
-      assert.deepEqual(credentialRefs, ['OMNIMUX_MEDIA_KEY_CUSTOM'])
+      assert.equal(requests[0].auth, 'Bearer sk-cpa-secret')
+      assert.equal(requests[0].body.model, 'gpt-6.1-sol')
+      assert.equal(result.model, 'cpa:gpt-6.1-sol')
+      assert.deepEqual(credentialRefs, ['CPA_KEY'])
+
+      // 2. When cpa has no llm-pi-ai profile, fail loudly instead of silently falling back to scenarioBindings
+      await assert.rejects(
+        () => executeOmnimuxText({
+          prompt: 'analyze this video',
+          video: videoPath,
+          env: {},
+          settings: { get(key) { return key === 'omnimux' ? omnimuxSettings : undefined } },
+          fetcher: async () => { throw new Error('must not silently fall back') },
+          llm: collectStream(seen),
+        }),
+        (error) => error instanceof OmnimuxError && error.code === 'omnimux-invalid-request' && /cpa:gpt-6\.1-sol/.test(error.message),
+      )
     } finally {
       rmSync(videoDir, { recursive: true, force: true })
     }

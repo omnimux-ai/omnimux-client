@@ -41,10 +41,8 @@ export function mountTextComplete(ctx, hub, jsonOut, onError, deps = {}) {
         attachments: ctx.get?.('attachments'),
         credentials: ctx.get?.('credentials'),
         settings: ctx.get?.('settings'),
-        modelCatalog: () => {
-          const catalog = ctx.get?.('modelCatalog')
-          return typeof catalog?.list === 'function' ? catalog.list() : undefined
-        },
+        agents: finalReq.agents ?? ctx.get?.('agents'),
+        agentDefaultModel: finalReq.agentDefaultModel ?? ctx.get?.('agentDefaultModel'),
         resolveOfficialApiKey: deps.resolveOfficialApiKey,
         env: finalReq.env ?? process.env,
       })
@@ -151,6 +149,8 @@ export function mountTextComplete(ctx, hub, jsonOut, onError, deps = {}) {
           attachments: ctx.get?.('attachments'),
           credentials: ctx.get?.('credentials'),
           settings: ctx.get?.('settings'),
+          agents: ctx.get?.('agents'),
+          agentDefaultModel: ctx.get?.('agentDefaultModel'),
           resolveOfficialApiKey: deps.resolveOfficialApiKey,
           env: process.env,
           specsDir: exec?.specsDir,

@@ -207,4 +207,51 @@ describe('mountTextComplete toolModel bypass', () => {
     mountTextComplete(ctx, hub, {}, () => {})
     assert.equal(provided.textComplete, undefined)
   })
+
+  it('execute() follows agentDefaultModel and agents.get(sessionId) when toolModel is auto/unset', async () => {
+    let textComplete
+    const seen = []
+    let defaultSelection = { provider: 'session-provider', model: 'session-default-model' }
+    const ctx = {
+      tools: { register() {} },
+      provide(name, api) { if (name === 'textComplete') textComplete = api },
+      get(name) {
+        if (name === 'llm') {
+          return {
+            async * stream(options) {
+              seen.push(options)
+              yield { type: 'text-delta', text: 'followed session answer' }
+              yield { type: 'finish', reason: { kind: 'stop' } }
+            },
+          }
+        }
+        if (name === 'settings') return { get: (k) => k === 'omnimux' ? { toolModel: 'auto' } : undefined }
+        if (name === 'agentDefaultModel') return { currentSelection: () => defaultSelection }
+        if (name === 'agents') {
+          return {
+            get: (id) => id === 'sess-active'
+              ? { model: { current: () => ({ provider: 'active-provider', model: 'active-model' }) } }
+              : undefined,
+          }
+        }
+        return undefined
+      },
+    }
+    const hub = { text: parseTextConfig(undefined), gate: parseGateConfig(undefined) }
+    mountTextComplete(ctx, hub, {}, (error) => { throw error })
+
+    const r1 = await textComplete.execute({ prompt: 'background task' })
+    assert.equal(r1.model, 'session-provider:session-default-model')
+    assert.equal(seen[0].provider, 'session-provider')
+    assert.equal(seen[0].model, 'session-default-model')
+
+    const r2 = await textComplete.execute({ prompt: 'session task', sessionId: 'sess-active' })
+    assert.equal(r2.model, 'active-provider:active-model')
+    assert.equal(seen[1].provider, 'active-provider')
+    assert.equal(seen[1].model, 'active-model')
+
+    defaultSelection = { provider: 'switched-provider', model: 'switched-model' }
+    const r3 = await textComplete.execute({ prompt: 'after switch' })
+    assert.equal(r3.model, 'switched-provider:switched-model')
+  })
 })

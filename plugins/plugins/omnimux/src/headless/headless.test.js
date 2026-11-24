@@ -586,4 +586,35 @@ describe('prepareHeadlessTransport and Hub video preparation', () => {
       (err) => err instanceof OmnimuxError && err.code === 'headless-skill-cancelled',
     )
   })
+
+  it('forwards sessionId and toolModel through headlessSkill to textComplete on initial and repair calls', async () => {
+    const calls = []
+    const env = createMockEnv({
+      skills: { 'session-skill': { name: 'session-skill', content: 'Return JSON' } },
+      onExecute: async (req) => {
+        calls.push({ sessionId: req.sessionId, toolModel: req.toolModel })
+        if (calls.length === 1) {
+          return { mode: 'live', model: 'session-prov:session-m', text: 'not json' }
+        }
+        return {
+          mode: 'live',
+          model: 'session-prov:session-m',
+          text: JSON.stringify({ hook: 'ok', structure: 'ok', shots: [] }),
+        }
+      },
+    })
+    const api = mountHeadlessSkill(env.ctx)
+    const result = await api.run({
+      skillName: 'session-skill',
+      input: 'hello',
+      outputSchema: BREAKDOWN_SCHEMA,
+      sessionId: 'sess-42',
+      toolModel: 'override-prov:override-m',
+    })
+    assert.equal(result.repaired, true)
+    assert.deepEqual(calls, [
+      { sessionId: 'sess-42', toolModel: 'override-prov:override-m' },
+      { sessionId: 'sess-42', toolModel: 'override-prov:override-m' },
+    ])
+  })
 })
