@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0.0",
-  "updatedAt": "2026-11-23T16:17:00.000Z",
+  "updatedAt": "2026-11-24T01:23:13.262Z",
   "topology": {
     "tiers": [
       {
@@ -36,7 +36,7 @@
       "tier": "tier-0-hub",
       "entrypoint": "src/index.js",
       "status": "active",
-      "description": "OmniMux 执行枢纽：负责身份认证注入、模型与多模态路由分发、页面抓取与品牌注入",
+      "description": "提供登录认证、模型路由、媒体生成和网页读取等基础能力。",
       "tags": [
         "hub",
         "core",
@@ -125,7 +125,7 @@
       "tier": "tier-0-hub",
       "entrypoint": "src/index.js",
       "status": "active",
-      "description": "OmniMux 全局工具调用埋点（Umami）与社媒数据分析看板（一级页 Stage）",
+      "description": "统计使用数据，提供社媒发布效果与互动趋势看板。",
       "tags": [
         "analytics",
         "telemetry",
@@ -168,7 +168,7 @@
       "tier": "tier-1-app",
       "entrypoint": "src/index.js",
       "status": "active",
-      "description": "OmniMux 官方应用：社媒平台绑定、账号矩阵列表、状态刷新与连接断开",
+      "description": "连接和管理多平台社交账号，查看授权状态与分组。",
       "tags": [
         "accounts",
         "social-media",
@@ -211,7 +211,7 @@
       "tier": "tier-1-app",
       "entrypoint": "src/index.js",
       "status": "active",
-      "description": "OmniMux 创作资产库：角色、场景、风格包、道具、知识包与 Prompt 资产纳管",
+      "description": "管理角色、场景、风格等可复用素材与生成结果。",
       "tags": [
         "assets",
         "library",
@@ -292,7 +292,7 @@
       "tier": "tier-1-app",
       "entrypoint": "lib/index.js",
       "status": "active",
-      "description": "OmniMux 浏览器伴侣插件与 Chrome 扩展：通过本机 WebSocket 桥接，在用户明确接管的标签页里做可感知的页面读取与操作，并提供侧边栏对话",
+      "description": "连接 Chrome 扩展，在授权标签页中读取网页、执行操作并对话。",
       "tags": [
         "browser",
         "chrome",
@@ -434,7 +434,7 @@
       "tier": "tier-1-app",
       "entrypoint": "src/index.js",
       "status": "active",
-      "description": "OmniMux Clip / 视频剪辑：官方 OpenReel GUI + 管线，挂 better-sidebar Tab。",
+      "description": "提供多轨道时间轴剪辑、字幕编辑与视频导出。",
       "tags": [
         "clip",
         "nle",
@@ -547,7 +547,7 @@
       "tier": "tier-1-app",
       "entrypoint": "src/index.js",
       "status": "active",
-      "description": "参考视频拆解与复刻任务表单",
+      "description": "提供结构化表单模板，整理参考视频拆解与复刻需求。",
       "capabilities": {
         "tools": [],
         "seamsProvided": [],
@@ -574,7 +574,7 @@
       "tier": "tier-1-app",
       "entrypoint": "src/index.js",
       "status": "active",
-      "description": "OmniMux 官方应用：爆款灵感素材库、热点视频切片与创意提取",
+      "description": "收集、整理并分析热门内容与参考素材，辅助选题创作。",
       "tags": [
         "inspiration",
         "trends",
@@ -660,7 +660,7 @@
       "tier": "tier-1-app",
       "entrypoint": "lib/host.js",
       "status": "active",
-      "description": "OmniMux 插件/专家/技能/连接器综合市场 (基于 SkillHub 二次开发)",
+      "description": "浏览和安装技能、专家预设、插件与外部连接器。",
       "tags": [
         "market",
         "plaza",
@@ -834,7 +834,7 @@
       "tier": "tier-1-app",
       "entrypoint": "src/index.js",
       "status": "active",
-      "description": "OmniMux 电商产品库：结构化标品、卖点提炼、商品详情与媒体资产纳管",
+      "description": "管理实物与数字商品的规格、卖点和素材，供创作调用。",
       "tags": [
         "products",
         "ecommerce",
@@ -910,7 +910,7 @@
       "tier": "tier-1-app",
       "entrypoint": "src/index.js",
       "status": "active",
-      "description": "OmniMux TikTok 跟爆选品工作台：热销榜与关键词发现、外部快照导入、三闸批量筛（G1 量化初筛 / G2 渠道占比核验 / G3 风险词与 AI 合规入库）、选品库、素材工坊与定时自动选品",
+      "description": "发现和筛选 TikTok 热门商品，审核合规风险并生成带货素材。",
       "tags": [
         "tiktok",
         "tiktok-shop",
@@ -1092,7 +1092,7 @@
       "tier": "tier-1-app",
       "entrypoint": "lib/index.js",
       "status": "active",
-      "description": "OmniMux 内联文件预览：把图片、视频、音频、PDF、Office 与 HTML 渲染进对话流（上游 @crosery/dsh-viewer 的 OmniMux fork，见 VENDOR.md）。",
+      "description": "在对话中直接预览图片、音视频、PDF、Office 和 HTML 文件。",
       "tags": [
         "viewer",
         "preview",
@@ -1130,7 +1130,7 @@
       "tier": "tier-1-app",
       "entrypoint": "dist/index.js",
       "status": "active",
-      "description": "OmniMux 创作画布 DAG 工作流编排系统，支持可视化节点拓扑编辑、持久化与异步执行",
+      "description": "在画布上编排和运行多步骤创作流程，管理本地项目。",
       "tags": [
         "workflow",
         "canvas",
@@ -1253,7 +1253,7 @@
       "tier": "tier-2-vertical",
       "entrypoint": "src/index.js",
       "status": "active",
-      "description": "FFmpeg 本地高性能视频处理与理解插件，提供 11 项本地剪辑/合并/提取能力与反向 Prompt 视频理解",
+      "description": "使用本机 FFmpeg 处理视频、提取深度图并理解视频内容。",
       "tags": [
         "video",
         "ffmpeg",
@@ -1313,7 +1313,7 @@
       "tier": "tier-3-personal",
       "entrypoint": "src/index.js",
       "status": "active",
-      "description": "社媒内容发布编排层：草稿管理、多账号分发、发布状态追踪与失败重试",
+      "description": "管理发布草稿，向多个社交账号分发内容并追踪状态。",
       "tags": [
         "publish",
         "social",

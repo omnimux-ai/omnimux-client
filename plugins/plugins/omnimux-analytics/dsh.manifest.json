@@ -5,7 +5,7 @@
   "tier": "tier-0-hub",
   "entrypoint": "src/index.js",
   "status": "active",
-  "description": "OmniMux 全局工具调用埋点（Umami）与社媒数据分析看板（一级页 Stage）",
+  "description": "统计使用数据，提供社媒发布效果与互动趋势看板。",
   "tags": ["analytics", "telemetry", "umami", "dashboard", "social", "tracking", "metrics"],
   "capabilities": {
     "tools": [],

@@ -11,7 +11,8 @@
   "exports": {
     ".": "./src/index.js",
     "./client": "./lib/client.js",
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json"
   },
   "files": [
     "src",
@@ -19,6 +20,7 @@
     "cloud-catalog",
     "scripts/build-client.mjs",
     "scripts/build-cloud-assets-catalog.mjs",
+    "locale",
     "cordis.patch.yml",
     "README.md",
     "LICENSE",
@@ -65,5 +67,5 @@
     "esbuild": "^0.25.0"
   },
   "license": "SEE LICENSE IN LICENSE",
-  "description": "OmniMux creative asset library: named reusable objects (character/scene/style/prop/knowledge/custom) with path-only file refs, plus an artifact store."
+  "description": "Manage reusable characters, scenes, styles, and generated media."
 }

@@ -60,109 +60,109 @@ export const DESCRIBED_PLUGINS = [
   {
     dir: 'omnimux',
     category: 'core',
-    title: { en: 'OmniMux', zh: 'OmniMux' },
+    title: { en: 'OmniMux Core', zh: 'OmniMux 核心' },
     description: {
-      en: 'The OmniMux hub: apps, taskboard, expert gallery and the shell entries every other OmniMux plugin attaches to.',
-      zh: 'OmniMux 中枢：应用、任务看板、专家馆，以及其他 OmniMux 插件依附的壳入口。',
+      en: 'Provide sign-in, model routing, media generation, and web reading.',
+      zh: '提供登录认证、模型路由、媒体生成和网页读取等基础能力。',
     },
   },
   {
     dir: 'omnimux-market',
     category: 'market',
-    title: { en: 'OmniMux Market', zh: 'OmniMux Market' },
+    title: { en: 'Marketplace', zh: '扩展市场' },
     description: {
-      en: 'Browse and install OmniMux plugins from the market index.',
-      zh: '从市场索引浏览并安装 OmniMux 插件。',
+      en: 'Browse and install skills, expert presets, plugins, and connectors.',
+      zh: '浏览和安装技能、专家预设、插件与外部连接器。',
     },
   },
   {
     dir: 'omnimux-accounts',
     category: 'core',
-    title: { en: 'OmniMux Accounts', zh: 'OmniMux Accounts' },
+    title: { en: 'Social Accounts', zh: '社交账号' },
     description: {
-      en: 'Account and session management for OmniMux.',
-      zh: 'OmniMux 账号与会话管理。',
+      en: 'Connect and manage social accounts across platforms and groups.',
+      zh: '连接和管理多平台社交账号，查看授权状态与分组。',
     },
   },
   {
     dir: 'omnimux-analytics',
     category: 'feature',
-    title: { en: 'OmniMux Analytics', zh: 'OmniMux Analytics' },
+    title: { en: 'Analytics', zh: '数据分析' },
     description: {
-      en: 'Usage analytics for OmniMux workspaces.',
-      zh: 'OmniMux 工作区使用分析。',
+      en: 'Track usage metrics and view social publishing performance dashboards.',
+      zh: '统计使用数据，提供社媒发布效果与互动趋势看板。',
     },
   },
   {
     dir: 'omnimux-assets',
     category: 'feature',
-    title: { en: 'OmniMux Assets', zh: 'OmniMux Assets' },
+    title: { en: 'Asset Library', zh: '素材资产库' },
     description: {
-      en: 'Asset library and cloud catalog for OmniMux.',
-      zh: 'OmniMux 资产库与云端目录。',
+      en: 'Manage reusable characters, scenes, styles, and generated media.',
+      zh: '管理角色、场景、风格等可复用素材与生成结果。',
     },
   },
   {
     dir: 'omnimux-clip',
     category: 'feature',
-    title: { en: 'OmniMux Clip', zh: 'OmniMux Clip' },
+    title: { en: 'Video Editor', zh: '视频剪辑' },
     description: {
-      en: 'Clip and short-video production tools.',
-      zh: '片段与短视频制作工具。',
+      en: 'Edit multi-track timelines, subtitles, and export videos.',
+      zh: '提供多轨道时间轴剪辑、字幕编辑与视频导出。',
     },
   },
   {
     dir: 'omnimux-forms',
     category: 'feature',
-    title: { en: 'OmniMux Forms', zh: 'OmniMux Forms' },
+    title: { en: 'Task Forms', zh: '任务表单' },
     description: {
-      en: 'Form building and collection.',
-      zh: '表单构建与收集。',
+      en: 'Use structured forms to organize reference video breakdown and remake tasks.',
+      zh: '提供结构化表单模板，整理参考视频拆解与复刻需求。',
     },
   },
   {
     dir: 'omnimux-inspiration',
     category: 'feature',
-    title: { en: 'OmniMux Inspiration', zh: 'OmniMux Inspiration' },
+    title: { en: 'Inspiration Library', zh: '灵感库' },
     description: {
-      en: 'Inspiration gallery and reference collection.',
-      zh: '灵感馆与参考素材收集。',
+      en: 'Collect, organize, and analyze trending references for content ideas.',
+      zh: '收集、整理并分析热门内容与参考素材，辅助选题创作。',
     },
   },
   {
     dir: 'omnimux-products',
     category: 'feature',
-    title: { en: 'OmniMux Products', zh: 'OmniMux Products' },
+    title: { en: 'Product Library', zh: '商品库' },
     description: {
-      en: 'Product catalog and listing tools.',
-      zh: '商品目录与上架工具。',
+      en: 'Manage physical and digital product specs, selling points, and media.',
+      zh: '管理实物与数字商品的规格、卖点和素材，供创作调用。',
     },
   },
   {
     dir: 'omnimux-publish',
     category: 'feature',
-    title: { en: 'OmniMux Publish', zh: 'OmniMux Publish' },
+    title: { en: 'Publishing', zh: '内容发布' },
     description: {
-      en: 'Multi-channel publishing for OmniMux content.',
-      zh: 'OmniMux 内容多渠道发布。',
+      en: 'Manage drafts, publish to multiple social accounts, and track status.',
+      zh: '管理发布草稿，向多个社交账号分发内容并追踪状态。',
     },
   },
   {
     dir: 'omnimux-video',
     category: 'feature',
-    title: { en: 'OmniMux Video', zh: 'OmniMux Video' },
+    title: { en: 'Local Video Processing', zh: '本地视频处理' },
     description: {
-      en: 'Video generation and editing.',
-      zh: '视频生成与编辑。',
+      en: 'Process videos, extract depth maps, and analyze content locally with FFmpeg.',
+      zh: '使用本机 FFmpeg 处理视频、提取深度图并理解视频内容。',
     },
   },
   {
     dir: 'omnimux-workflow',
     category: 'feature',
-    title: { en: 'OmniMux Workflow', zh: 'OmniMux Workflow' },
+    title: { en: 'Creative Canvas', zh: '创作画布' },
     description: {
-      en: 'Workflow orchestration for OmniMux.',
-      zh: 'OmniMux 工作流编排。',
+      en: 'Build and run multi-step creative workflows on a canvas.',
+      zh: '在画布上编排和运行多步骤创作流程，管理本地项目。',
     },
   },
 ]
@@ -202,13 +202,31 @@ async function assertPublished(name, version) {
   }
 }
 
+function readLocaleMeta(pluginsRoot, dir) {
+  const title = {}
+  const description = {}
+  for (const lang of ['en', 'zh']) {
+    const file = join(pluginsRoot, dir, 'locale', `${lang}.json`)
+    if (!existsSync(file)) continue
+    const parsed = JSON.parse(readFileSync(file, 'utf8'))
+    if (typeof parsed?.meta?.title === 'string' && parsed.meta.title.trim() !== '') {
+      title[lang] = parsed.meta.title
+    }
+    if (typeof parsed?.meta?.description === 'string' && parsed.meta.description.trim() !== '') {
+      description[lang] = parsed.meta.description
+    }
+  }
+  return { title, description }
+}
+
 function entryFor(pluginsRoot, spec) {
   const manifest = readManifest(pluginsRoot, spec.dir)
+  const localeMeta = readLocaleMeta(pluginsRoot, spec.dir)
   const repositoryUrl = repositoryHref(manifest.repository)
   const entry = {
     name: manifest.name,
-    title: spec.title,
-    description: spec.description,
+    title: { ...spec.title, ...localeMeta.title },
+    description: { ...spec.description, ...localeMeta.description },
     author: 'OmniMux',
     metadata: {
       category: spec.category,

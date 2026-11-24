@@ -5,7 +5,7 @@
   "tier": "tier-1-app",
   "entrypoint": "lib/host.js",
   "status": "active",
-  "description": "OmniMux 插件/专家/技能/连接器综合市场 (基于 SkillHub 二次开发)",
+  "description": "浏览和安装技能、专家预设、插件与外部连接器。",
   "tags": ["market", "plaza", "skillhub", "skills", "experts", "connectors"],
   "capabilities": {
     "tools": [

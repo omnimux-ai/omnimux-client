@@ -5,7 +5,7 @@
   "tier": "tier-2-vertical",
   "entrypoint": "src/index.js",
   "status": "active",
-  "description": "FFmpeg 本地高性能视频处理与理解插件，提供 11 项本地剪辑/合并/提取能力与反向 Prompt 视频理解",
+  "description": "使用本机 FFmpeg 处理视频、提取深度图并理解视频内容。",
   "tags": ["video", "ffmpeg", "transcode", "video-process", "editing", "understanding"],
   "capabilities": {
     "tools": [
