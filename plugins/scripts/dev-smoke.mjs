@@ -23,11 +23,21 @@ import http from 'node:http';
 import { spawnSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { homedir } from 'node:os';
 
 const sourceRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+
+export function resolveDefaultEvidenceRoot(pkgRoot = sourceRoot) {
+  const parent = dirname(pkgRoot);
+  if (basename(pkgRoot) === 'plugins' && existsSync(join(parent, '.git'))) {
+    return parent;
+  }
+  return pkgRoot;
+}
+
+const defaultEvidenceRoot = resolveDefaultEvidenceRoot(sourceRoot);
 const CDP_PORT = Number(process.env.OMNIMUX_CDP_PORT || process.env.OMNIMUX_DEV_CDP_PORT || 9229);
 const DEV_PAGE_PORT = 45120;
 const DEV_MAIN_BUNDLE = '/Applications/OmniMux Dev.app/Contents/MacOS/OmniMux';
@@ -243,10 +253,11 @@ export function createDevSmoke(deps = {}) {
   const healthTimeoutMs = deps.healthTimeoutMs ?? HEALTH_TIMEOUT_MS;
   const healthPollMs = deps.healthPollMs ?? HEALTH_POLL_MS;
 
-  return async function runDevSmoke({ plugins = [], evidenceRoot = sourceRoot } = {}) {
+  return async function runDevSmoke({ plugins = [], evidenceRoot = defaultEvidenceRoot } = {}) {
     const runId = uuid();
-    const evidenceDir = join(evidenceRoot, 'docs', 'evidence', `dev-smoke-${runId}`);
-    const reportPath = join(evidenceRoot, 'docs', 'evidence', 'dev-smoke-report.json');
+    const smokeRoot = join(evidenceRoot, '.workbuddy', 'evidence', 'dev-smoke');
+    const evidenceDir = join(smokeRoot, `dev-smoke-${runId}`);
+    const reportPath = join(smokeRoot, 'dev-smoke-report.json');
     const report = {
       runId, startedAt: now().toISOString(), completedAt: null,
       cdpPort: CDP_PORT, pageUrl: null, plugins,
@@ -337,7 +348,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   const tag = { pass: '✅', 'needs-restart': '⏳', blocked: '🚫', fail: '❌' }[report.status] ?? '❌';
   console.log(`${tag} dev-smoke status=${report.status}（${report.assertions.filter((a) => a.pass).length}/${report.assertions.length} 断言通过）`);
   if (report.screenshot) console.log(`   截图: ${report.screenshot.path} (${report.screenshot.bytes}B)`);
-  console.log(`   报告: ${join(sourceRoot, 'docs', 'evidence', 'dev-smoke-report.json')}`);
+  console.log(`   报告: ${join(defaultEvidenceRoot, '.workbuddy', 'evidence', 'dev-smoke', 'dev-smoke-report.json')}`);
   if (report.restartHint) console.warn(`   ${report.restartHint}`);
   if (report.blockedReason) console.warn(`   ${report.blockedReason}`);
   process.exitCode = { pass: 0, 'needs-restart': 0, blocked: 2, fail: 1 }[report.status] ?? 1;

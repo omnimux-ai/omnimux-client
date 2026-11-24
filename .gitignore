@@ -14,5 +14,6 @@ coverage/
 .worktrees/
 
 # Local delivery evidence and resumable pipeline state
+/.tmp/
 /.workbuddy/evidence/
 /plugins/.workbuddy/pipeline/
