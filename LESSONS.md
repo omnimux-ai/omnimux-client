@@ -30,6 +30,12 @@
   - 反例：#247 之前 `chat-media-gallery-rail-height.e2e.test.js` 原地覆写已跟踪的 `plugins/.agent-reports/gallery-rail-height-2101/e2e-evidence.json`，且 `dev-smoke.mjs` 落盘到未忽略目录。
   - 正例：#247 `39a96534`（单测证据默认写入 `os.tmpdir()` 并于用例结束清理，冒烟产物统一落 `.gitignore` 已忽略的 `.workbuddy/evidence/dev-smoke/`）。
 
+- **主干动过锁文件或插件包后，合并/变基禁止沿用自动合并的 `bundle.lock.json`，须取主干版本并在构建后重算**（`seen 2` · 最近 `2026-11-25`）
+  - 为什么：`bundle.lock.json` 按包记录 `contentHash`，自动三方合并只按文本行拼装；主干与本分支各改不同槽位时文本不冲突，但「合并结果里每个哈希是否对应真实内容」只能靠按当前树重算来证明，沿用合并结果会让 `workspace-check` 与后续安装拿到的清单同实际产物脱节。
+  - 反例：#186 的 PR #273（分支 rebase 到含 Token 门禁的主干时，`bundle.lock.json` 与 `dsh-ui-kit` 被两个来源同时改动）、#275 的 PR #277（本分支改 `omnimux-inspiration` 槽，主干 #276 改 `omnimux` 槽，文本可自动合并）。
+  - 正例：PR #277 `abfc670a`、PR #281 `d3144835`（先 `git checkout origin/main -- bundle.lock.json`，`build:all` 后 `pnpm run bundle:lock` 重算，`git diff origin/main -- bundle.lock.json` 只剩本任务单槽，再 `bundle:lock:check`）。
+  - 入口：[AGENTS.md · 工作区元数据](AGENTS.md#验证按改动边界选最小集)。
+
 ### 契约与运行时边界
 
 - **异步交接、共享状态作用域与宿主主线程边界：跨会话/跨节点交接须带作用域与代际取消，Host 主线程严禁同步文件 I/O**（`seen 2` · 最近 `2026-11-22`）
