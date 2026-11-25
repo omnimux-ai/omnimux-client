@@ -16,6 +16,7 @@ export type DesktopNotification =
   | { outcome: 'schedule-completed' | 'schedule-failed' }
 export type NotificationOutcome = DesktopNotification['outcome']
 export type DesktopSettingsPage = 'general' | 'permissions'
+export type DesktopUpdateChannel = 'stable' | 'beta'
 
 export interface DesktopPreferences {
   closeToTray: boolean
@@ -44,13 +45,15 @@ export interface DesktopPreferences {
   hostStartupTimeout: HostStartupTimeout
   /** Single-brand OmniMux app icon (`default`); legacy `'classic'` files normalize on read. */
   appIcon: DesktopAppIcon
+  /** Desktop update release channel (`stable` by default); stored apart, see desktop-preferences.ts. */
+  updateChannel: DesktopUpdateChannel
 }
 
 export const DEFAULT_PREFERENCES: Readonly<DesktopPreferences> = Object.freeze({
   closeToTray: true, macosMaterial: 'transparent', windowsMaterial: 'off', linuxMaterial: 'off',
   browserAccess: false, networkExposure: 'loopback', port: defaultDesktopWebPort(), lanPort: 0, logLevel: 'info', developerLogging: false,
   sidebarFooterCompat: true, sidebarFooterBalanced: true, notifications: true, turnCompleted: true, turnFailed: true, jobCompleted: false, jobFailed: false,
-  scheduleCompleted: true, scheduleFailed: true, hostStartupTimeout: DEFAULT_HOST_STARTUP_TIMEOUT, appIcon: 'default',
+  scheduleCompleted: true, scheduleFailed: true, hostStartupTimeout: DEFAULT_HOST_STARTUP_TIMEOUT, appIcon: 'default', updateChannel: 'stable',
 })
 
 /** Fixed startup defaults matching Beta's disposable Safe Mode settings. */
@@ -126,7 +129,8 @@ export interface DesktopBrowserLinks {
 }
 
 export type DesktopCommand =
-  | { type: 'check-updates' | 'download-update' | 'install-update' }
+  | { type: 'check-updates' | 'download-update' | 'cancel-update-download' | 'install-update' | 'dismiss-post-update-notice' }
+  | { type: 'set-update-channel'; channel: DesktopUpdateChannel }
   | { type: 'recovery-action'; action: string; id?: string }
   | ({ type: 'onboarding-complete'; profile: string; browserAccess?: boolean; networkExposure?: 'loopback' | 'lan' } & OnboardingChoices)
   | { type: 'onboarding-skip'; profile: string }

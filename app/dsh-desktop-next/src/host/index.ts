@@ -28,6 +28,7 @@ import { formatFatalDiagnostic } from './fatal-diagnostic.ts'
 import { resolveWorkspaceDependenciesConfig } from './workspace-dependencies.ts'
 import { PluginSummary, recordSkippedBundles } from './plugin-summary.ts'
 import { readStartupEntries } from './startup-entries.ts'
+import { installDesktopUpdateTaskControl } from './update-tasks.ts'
 
 export async function main(): Promise<void> {
   // The Host lists and reads user workspaces; see asar-archive-policy.ts.
@@ -94,6 +95,8 @@ export async function main(): Promise<void> {
   // Native file drags borrow only the workspace files this Host authorizes, where the followed DSH release drags
   // files natively; the requests may arrive while the profile still starts.
   const dragResources = installHostFileDragResources?.(application, send)
+  const updateTasks = application.then(({ ctx }) => installDesktopUpdateTaskControl(ctx))
+  updateTasks.catch(() => {})
   // Memory evidence for the Desktop's incident snapshots. Pushed rather than requested, so a Host too
   // busy or too short of memory to answer still leaves its last reading behind (#1511).
   const memory = setInterval(() => {
@@ -123,6 +126,19 @@ export async function main(): Promise<void> {
       if (!Number.isSafeInteger(request.requestId) || typeof request.developerLogging !== 'boolean' || !['debug', 'info', 'warn', 'error'].includes(String(request.logLevel))) return
       configureHostLogging({ developerLogging: request.developerLogging, logLevel: request.logLevel as typeof preferences.logLevel })
       void send({ type: 'logging-config', requestId: request.requestId }).catch(fatal)
+      return
+    }
+    if (typeof value === 'object' && value !== null && 'type' in value && value.type === 'update-tasks') {
+      const request = value as { requestId?: unknown; action?: unknown }
+      if (!Number.isSafeInteger(request.requestId) || (request.action !== 'inspect' && request.action !== 'lock' && request.action !== 'unlock')) return
+      const action = request.action
+      void updateTasks.then(async (control) => {
+        if (stopping) throw new Error('desktop update: Host is stopping')
+        const active = await control(action)
+        await send({ type: 'update-tasks', requestId: request.requestId, active })
+      }).catch(async (error: unknown) => {
+        await send({ type: 'update-tasks', requestId: request.requestId, error: error instanceof Error ? error.message : String(error) })
+      }).catch(fatal)
       return
     }
     if (typeof value === 'object' && value !== null && 'type' in value && value.type === 'shutdown') void stop().catch(fatal)

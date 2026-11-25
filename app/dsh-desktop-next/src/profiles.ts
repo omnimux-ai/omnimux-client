@@ -31,6 +31,7 @@ import { RETIRED_SCHEDULE_BUNDLE, retiredSchedulePatch } from './profile-schedul
 import { removeLinkProjectionsSafely } from '../../dsh-plugin-desktop/src/link-projections.ts'
 import { reclaimLegacyManagedPluginSkills } from '../../dsh-plugin-desktop/src/legacy-skill-reclaim.ts'
 import { insideArchive, unpackedPath } from './asar-archive-policy.ts'
+import { compareSemVer } from './omnimux-updater/semver.ts'
 import PLUGIN_TIERS from '../../config/plugin-tiers.json' with { type: 'json' }
 import { ON_DEMAND_BUNDLES, PROFILE_TEMPLATES, RETIRED_PROFILE_BUNDLES } from './upstream-family.ts'
 
@@ -465,19 +466,52 @@ function retireStaleOnDemandBundles(manager: NextProfiles, name: string, pnpm: P
   }
 }
 
+function readPackageVersion(packageDir: string): string | undefined {
+  try {
+    const parsed = JSON.parse(readFileSync(join(packageDir, 'package.json'), 'utf8')) as { version?: unknown }
+    return typeof parsed.version === 'string' && parsed.version.trim().length > 0 ? parsed.version.trim() : undefined
+  } catch {
+    return undefined
+  }
+}
+
 /**
  * Prefer Profile-local copies (`<profile>/node_modules/<pkg>`) for non-core bundles
- * over the `app.asar` installation copies when `omnimux:sync` has materialized an
- * external override. Official `@deepseek-ai/*` runtime packages and `dsh-desktop-next`
- * itself stay pinned to the installation so core services never split across versions.
+ * over the `app.asar` installation copies when `omnimux:sync` or a newer market install
+ * has materialized an external override. Official `@deepseek-ai/*` runtime packages and
+ * `dsh-desktop-next` itself stay pinned to the installation so core services never split
+ * across versions.
+ *
+ * In packaged production builds (`insideArchive(installAnchor)`), bundled OmniMux product
+ * plugins are never shadowed by an equal-or-older Profile-local copy (preventing stale
+ * Profile copies from masking an upgraded desktop release) unless the caller explicitly
+ * opts in via `OMNIMUX_ALLOW_LOCAL_PLUGIN_OVERRIDE=1`.
  */
-export function applyProfileLocalBundleOverrides(profile: Profile, projectDir: string): void {
+export function applyProfileLocalBundleOverrides(
+  profile: Profile,
+  projectDir: string,
+  installAnchor = NEXT_PACKAGE,
+): void {
   const exemptions = profile.layers.length === 0 ? {} : readProfileVersionExemptions(projectDir)
+  const protectPackagedProductBundles = insideArchive(installAnchor) && process.env.OMNIMUX_ALLOW_LOCAL_PLUGIN_OVERRIDE !== '1'
   for (let index = 0; index < profile.layers.length; index += 1) {
     const layer = profile.layers[index]!
     if (layer.packageName.startsWith('@deepseek-ai/') || layer.packageName === 'dsh-desktop-next') continue
     const localPackageDir = join(projectDir, 'node_modules', ...layer.packageName.split('/'))
     if (!existsSync(join(localPackageDir, 'package.json'))) continue
+    if (protectPackagedProductBundles && OMNIMUX_PRODUCT_BUNDLES.includes(layer.packageName)) {
+      const bundledVersion = readPackageVersion(layer.packageDir)
+      const localVersion = readPackageVersion(localPackageDir)
+      if (bundledVersion !== undefined && localVersion !== undefined) {
+        const cmp = compareSemVer(localVersion, bundledVersion)
+        if (cmp !== null && cmp <= 0) {
+          process.stderr.write(
+            `dsh-desktop-next: skipping stale Profile-local override for ${layer.packageName} (${localVersion} <= bundled ${bundledVersion}); using bundled copy\n`,
+          )
+          continue
+        }
+      }
+    }
     const bundleManifest = readProfileManifest('dsh-desktop-next', localPackageDir)
     const bundle = bundleManifest.dsh?.bundle
     if (bundle === undefined) continue
@@ -523,7 +557,7 @@ export function loadNextProfile(projectDir: string, home: string, installAnchor 
   if (existingLink && (linkTarget === undefined || resolve(modules, readlinkSync(link)) !== linkTarget)) unlinkSync(link)
   if (linkTarget !== undefined && !lstatSync(link, { throwIfNoEntry: false })) symlinkSync(linkTarget, link, 'junction')
   const profile = loadProfileDirectory('dsh-desktop-next', projectDir, installAnchor)
-  applyProfileLocalBundleOverrides(profile, projectDir)
+  applyProfileLocalBundleOverrides(profile, projectDir, installAnchor)
   profile.layers.push({ packageName: 'dsh-desktop-next', packageDir: target,
     patchPaths: [NEXT_BUNDLE_PATCH], patches: loadOverlayPatches('dsh-desktop-next', NEXT_BUNDLE_PATCH) })
   const overlay = [

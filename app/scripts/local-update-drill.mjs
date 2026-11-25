@@ -22,7 +22,7 @@
  * Electron's `net.fetch` like the app does.
  */
 import { spawn, spawnSync } from 'node:child_process'
-import { createHash, X509Certificate } from 'node:crypto'
+import { createHash, generateKeyPairSync, sign, X509Certificate } from 'node:crypto'
 import { lookup } from 'node:dns/promises'
 import { createReadStream, existsSync } from 'node:fs'
 import { chmod, mkdir, mkdtemp, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
@@ -35,21 +35,30 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { parseArgs } from 'node:util'
 
 const ROOT = resolve(import.meta.dirname, '..')
-export const DOMAIN = 'www.dshdesktop.cn'
+export const DOMAIN = 'dl.omnimux.ai'
 const STATE = join(ROOT, '.build', 'update-drill')
 const CONFIG = join(STATE, 'drill.json')
 const CERTIFICATE = join(STATE, 'server.pem')
 const KEY = join(STATE, 'server-key.pem')
 const PROBE = join(ROOT, 'scripts', 'local-update-drill-probe.cjs')
-const PROBE_HEADER = 'X-DSH-Drill-Probe'
+const PROBE_HEADER = 'X-OmniMux-Drill-Probe'
 const HOSTS = '/etc/hosts'
 const SYSTEM_KEYCHAIN = '/Library/Keychains/System.keychain'
 const BEGIN = '# BEGIN DSH LOCAL UPDATE DRILL'
 const END = '# END DSH LOCAL UPDATE DRILL'
-const CHANNELS = { next: /^\d+\.\d+\.\d+-next(?:\.\d+)?$/u, beta: /^\d+\.\d+\.\d+-beta\.\d+$/u }
-const PACKAGES = { next: 'dsh-desktop-next', beta: 'dsh-plugin-desktop-beta' }
-const APPLICATIONS = { next: '/Applications/DSH NEXT.app', beta: '/Applications/DSH Desktop Beta.app' }
+const CHANNELS = {
+  stable: /^\d+\.\d+\.\d+$/u,
+  beta: /^\d+\.\d+\.\d+-beta(?:\.\d+)?$/u,
+  next: /^\d+\.\d+\.\d+-next(?:\.\d+)?$/u,
+}
+const PACKAGES = { stable: 'dsh-desktop-next', beta: 'dsh-desktop-next', next: 'dsh-desktop-next' }
+const APPLICATIONS = {
+  stable: '/Applications/OmniMux.app',
+  beta: '/Applications/OmniMux.app',
+  next: '/Applications/OmniMux.app',
+}
 const ARCHS = ['arm64', 'x64', 'universal']
+const ED25519_SPKI_PREFIX = Buffer.from('302a300506032b6570032100', 'hex')
 
 /**
  * Pick the release a request gets, as the service will.
@@ -157,8 +166,8 @@ async function ensureCertificate() {
 }
 
 async function prepare(values) {
-  const channel = values.channel
-  if (!(channel in CHANNELS)) throw new Error('--channel 只能是 next 或 beta')
+  const channel = values.channel ?? 'stable'
+  if (!(channel in CHANNELS)) throw new Error('--channel 只能是 stable、beta 或 next')
   if (!CHANNELS[channel].test(values.version ?? '')) throw new Error(`--version ${values.version} 不是 ${channel} 通道的版本`)
   if ((values.bridge === undefined) !== (values['bridge-version'] === undefined)) throw new Error('--bridge 与 --bridge-version 要一起给')
   const describe = async (path, arch, version) => {
@@ -195,17 +204,73 @@ function logRequest(request, url, log) {
 }
 
 /**
- * The drill service: version check, pinned download and artifact paths.
+ * Build an ephemeral Ed25519 key pair for signing Manifest v2 during a local drill.
+ */
+export function createDrillSigningKeys() {
+  const { publicKey, privateKey } = generateKeyPairSync('ed25519')
+  const spki = publicKey.export({ type: 'spki', format: 'der' })
+  return {
+    keyId: 'drill-k1',
+    publicKeyBase64: spki.subarray(ED25519_SPKI_PREFIX.length).toString('base64'),
+    privateKey,
+  }
+}
+
+/**
+ * The drill service: serves Manifest v2 (+ Ed25519 .sig), immutable versioned
+ * artifact URLs with HTTP Range support, legacy v1 fallback, and optional fault injection.
  * @param config - Drill configuration.
  * @param log - Request log.
- * @returns A request listener for an HTTPS server answering as the update name.
+ * @param options - Optional signing keys and fault injection (`tamperSig`, `tamperHash`, `mandatory`).
+ * @returns A request listener for an HTTPS server answering as `dl.omnimux.ai`.
  */
-export function drillHandler(config, log = console.log) {
+export function drillHandler(config, log = console.log, options = {}) {
+  const keys = options.signingKeys ?? createDrillSigningKeys()
   const artifacts = new Map()
   for (const release of Object.values(config.channels ?? {})) {
     for (const dmg of [...Object.values(release.mac), ...(release.bridge === undefined ? [] : [release.bridge.dmg])]) {
       artifacts.set(`/drill/${dmg.sha256.slice(0, 16)}/${encodeURIComponent(dmg.filename)}`, dmg)
+      artifacts.set(`/releases/v${release.version}/${encodeURIComponent(dmg.filename)}`, dmg)
     }
+  }
+  const buildV2Payload = (channel) => {
+    const release = config.channels?.[channel]
+    if (release === undefined) return null
+    const v2Artifacts = {}
+    for (const [arch, target] of [['arm64', 'darwin-arm64'], ['x64', 'darwin-x64']]) {
+      const dmg = release.mac[arch] ?? release.mac.universal
+      if (dmg === undefined) continue
+      const digest = options.tamperHash ? `${dmg.sha256.slice(0, 62)}00` : dmg.sha256
+      v2Artifacts[target] = {
+        url: `https://${DOMAIN}/releases/v${release.version}/${encodeURIComponent(dmg.filename)}`,
+        sha256: digest,
+        size: dmg.size,
+        minOsVersion: '13.0',
+      }
+    }
+    const manifest = {
+      schemaVersion: 2,
+      product: 'omnimux',
+      channel,
+      version: release.version,
+      publishedAt: new Date().toISOString(),
+      ...(options.mandatory ? { minSupportedVersion: release.version } : {}),
+      urgency: options.mandatory ? 'critical' : 'normal',
+      rollout: { percentage: 100, salt: `${release.version}-${channel}` },
+      releaseNotesUrl: `https://github.com/omnimux-ai/omnimux-client/releases/tag/v${encodeURIComponent(release.version)}`,
+      notes: { zh: [`本地演练更新至 ${release.version}`], en: [`Local drill update to ${release.version}`] },
+      artifacts: v2Artifacts,
+    }
+    const raw = Buffer.from(`${JSON.stringify(manifest, null, 2)}\n`, 'utf8')
+    const sigBytes = sign(null, options.tamperSig ? Buffer.from('tampered') : raw, keys.privateKey)
+    const sig = JSON.stringify({
+      schemaVersion: 1,
+      algorithm: 'ed25519',
+      keyId: keys.keyId,
+      signature: sigBytes.toString('base64'),
+      signedAt: new Date().toISOString(),
+    }, null, 2)
+    return { manifest, raw, sig }
   }
   return (request, response) => {
     const url = new URL(request.url ?? '/', `https://${DOMAIN}`)
@@ -218,7 +283,37 @@ export function drillHandler(config, log = console.log) {
     const artifact = artifacts.get(url.pathname)
     if (artifact !== undefined) {
       if (request.method !== 'GET' && request.method !== 'HEAD') return json(405, { error: 'method not allowed' })
-      response.writeHead(200, { 'Content-Type': 'application/x-apple-diskimage', 'Content-Length': artifact.size, 'Cache-Control': 'no-store' })
+      const rangeHeader = request.headers.range
+      if (typeof rangeHeader === 'string') {
+        const match = /^bytes=(\d+)-(\d*)$/u.exec(rangeHeader)
+        if (match !== null) {
+          const start = Number(match[1])
+          const end = match[2] ? Math.min(artifact.size - 1, Number(match[2])) : artifact.size - 1
+          if (start >= 0 && start <= end && end < artifact.size) {
+            const length = end - start + 1
+            response.writeHead(206, {
+              'Content-Type': 'application/x-apple-diskimage',
+              'Content-Length': length,
+              'Content-Range': `bytes ${start}-${end}/${artifact.size}`,
+              'Accept-Ranges': 'bytes',
+              ETag: `"${artifact.sha256.slice(0, 16)}"`,
+              'Cache-Control': 'no-store',
+            })
+            if (request.method === 'HEAD') return response.end()
+            const stream = createReadStream(artifact.path, { start, end })
+            stream.on('error', error => response.destroy(error))
+            response.on('close', () => stream.destroy())
+            return stream.pipe(response)
+          }
+        }
+      }
+      response.writeHead(200, {
+        'Content-Type': 'application/x-apple-diskimage',
+        'Content-Length': artifact.size,
+        'Accept-Ranges': 'bytes',
+        ETag: `"${artifact.sha256.slice(0, 16)}"`,
+        'Cache-Control': 'no-store',
+      })
       if (request.method === 'HEAD') return response.end()
       log(`  → 发送 ${artifact.filename}（${(artifact.size / 1e6).toFixed(1)} MB，${artifact.cpus.join('/')}）`)
       const stream = createReadStream(artifact.path)
@@ -227,7 +322,23 @@ export function drillHandler(config, log = console.log) {
       return stream.pipe(response)
     }
     if (request.method !== 'GET') return json(405, { error: 'method not allowed' })
-    const channel = request.headers['x-dsh-desktop-channel'] ?? 'stable'
+    const v2Match = /^\/api\/desktop\/v2\/(stable|beta|next)\.json(\.sig)?$/u.exec(url.pathname)
+    if (v2Match !== null) {
+      const built = buildV2Payload(v2Match[1])
+      if (built === null) return json(404, { error: `no drill release for channel ${v2Match[1]}` })
+      response.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' })
+      return response.end(v2Match[2] === '.sig' ? built.sig : built.raw)
+    }
+    const v1Match = /^\/api\/desktop\/version-(stable|beta|next)\.json$/u.exec(url.pathname)
+    if (v1Match !== null) {
+      const release = config.channels?.[v1Match[1]]
+      if (release === undefined) return json(404, { error: `no drill release for channel ${v1Match[1]}` })
+      const sha256 = {}
+      if (release.mac.arm64) sha256.macArm64 = release.mac.arm64.sha256
+      if (release.mac.x64) sha256.macX64 = release.mac.x64.sha256
+      return json(200, { version: release.version, channel: v1Match[1], sha256 })
+    }
+    const channel = request.headers['x-omnimux-channel'] ?? request.headers['x-dsh-desktop-channel'] ?? 'stable'
     const archHeader = request.headers['x-dsh-desktop-arch']
     if (url.pathname === '/api/desktop/version') {
       const routed = routeRelease(config, channel, archHeader)
@@ -496,8 +607,8 @@ function drillArtifactRequest(fetcher) {
 }
 
 async function check(values) {
-  const channel = values.channel ?? 'next'
-  if (!(channel in CHANNELS)) throw new Error('--channel 只能是 next 或 beta')
+  const channel = values.channel ?? 'stable'
+  if (!(channel in CHANNELS)) throw new Error('--channel 只能是 stable、beta 或 next')
   const config = await readConfig()
   if (config.channels[channel] === undefined) throw new Error(`还没有登记 ${channel} 通道，请先 prepare`)
   await ensureCertificate()
@@ -510,14 +621,21 @@ async function check(values) {
   const { NextUpdateInstaller } = await import(pathToFileURL(join(packageRoot, 'src', 'update-installer.ts')).href)
   const { macUpdateArch } = await import(pathToFileURL(join(packageRoot, 'src', 'update-arch.ts')).href)
   const arch = macUpdateArch(process.arch, false)
+  const signingKeys = createDrillSigningKeys()
   const lines = []
-  const server = createServer({ key: await readFile(KEY), cert: await readFile(CERTIFICATE) }, drillHandler(config, line => lines.push(line)))
+  const server = createServer(
+    { key: await readFile(KEY), cert: await readFile(CERTIFICATE) },
+    drillHandler(config, line => lines.push(line), {
+      signingKeys,
+      tamperSig: Boolean(values['tamper-sig']),
+      tamperHash: Boolean(values['tamper-hash']),
+      mandatory: Boolean(values.mandatory),
+    }),
+  )
   await new Promise(done => server.listen(0, '127.0.0.1', done))
   const work = await mkdtemp(join(tmpdir(), 'dsh-update-drill-'))
   const report = []
   try {
-    // A clone of the installed application stands in for it, so the updater's signature and team checks read real
-    // bytes and nothing under /Applications is replaced.
     const installed = join(work, basename(app))
     run('/bin/cp', ['-Rc', app, installed])
     const seen = []
@@ -527,20 +645,30 @@ async function check(values) {
     const userData = join(work, 'userData')
     await mkdir(userData, { recursive: true })
     let prepared = false
-    const updates = new NextUpdates({ version: installedVersion, platform: 'darwin', packaged: true, userData, arch,
-      request: fetcher, artifactRequest: drillArtifactRequest(fetcher), changed: () => {}, log: error => errors.push(error),
+    const updates = new NextUpdates({
+      version: installedVersion,
+      platform: 'darwin',
+      packaged: true,
+      channel: channel === 'beta' ? 'beta' : 'stable',
+      executablePath: join(installed, 'Contents', 'MacOS', executableName),
+      userData,
+      arch,
+      publicKeys: { [signingKeys.keyId]: signingKeys.publicKeyBase64 },
+      requireSignature: true,
+      request: fetcher,
+      artifactRequest: drillArtifactRequest(fetcher),
+      changed: () => {},
+      log: error => errors.push(error),
       prepare: async (path, version, directory, signal) => { await installer.prepare(path, version, directory, signal); prepared = true },
-      install: async () => {} })
+      install: async () => {},
+    })
     await updates.check()
     const checked = updates.snapshot()
-    report.push(`检查更新：已装 ${installedVersion}，本机 CPU ${arch} → ${checked.phase === 'available' ? `发现 ${checked.version}` : `${checked.phase}${checked.error ? `（${checked.error}）` : ''}`}`)
+    report.push(`检查更新：已装 ${installedVersion}，本机 CPU ${arch} → ${checked.phase === 'available' ? `发现 ${checked.version}${checked.mandatory ? '（强制更新）' : ''}` : `${checked.phase}${checked.errorCode ? `（${checked.errorCode}）` : ''}`}`)
     if (checked.phase === 'available') {
       await updates.download()
       const downloaded = updates.snapshot()
-      const archSent = seen.filter(item => item.url.includes('/api/')).every(item => item.headers['x-dsh-desktop-arch'] === arch)
-      report.push(`请求头：${seen.filter(item => item.url.includes('/api/')).length} 个接口请求${archSent ? `都带 X-DSH-Desktop-Arch: ${arch}` : '没有都带 CPU'}；`
-        + `${seen.filter(item => item.url.includes('/drill/') && item.headers['x-dsh-desktop-arch'] !== undefined).length === 0 ? '跳转后的下载不带发布请求头' : '跳转后仍带发布请求头'}`)
-      report.push(`下载与准备：${prepared ? `通过，已在临时目录准备好 ${downloaded.version}（未替换应用）` : `${downloaded.phase}（${downloaded.error ?? '-'}）`}`)
+      report.push(`下载与准备：${prepared ? `通过，已在临时目录准备好 ${downloaded.version}（未替换应用）` : `${downloaded.phase}（${downloaded.errorCode ?? downloaded.error ?? '-'}）`}`)
       for (const error of errors) report.push(`  更新器日志：${String(error?.stderr || error?.message || error).trim().split('\n').slice(-3).join(' | ')}`)
     }
   } finally {
@@ -558,6 +686,7 @@ async function main() {
   const { positionals, values } = parseArgs({ allowPositionals: true, options: {
     channel: { type: 'string' }, version: { type: 'string' }, arm64: { type: 'string' }, x64: { type: 'string' },
     universal: { type: 'string' }, bridge: { type: 'string' }, 'bridge-version': { type: 'string' }, app: { type: 'string' },
+    'tamper-sig': { type: 'boolean' }, 'tamper-hash': { type: 'boolean' }, mandatory: { type: 'boolean' },
   } })
   const command = positionals[0]
   // The updater modules use TypeScript constructor parameter properties, which type stripping alone cannot run.

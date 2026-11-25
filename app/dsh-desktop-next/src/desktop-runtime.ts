@@ -9,7 +9,7 @@ import { DesktopHostExitError, DesktopHostFatalError, DesktopHostProcess, type D
 import { isDesktopAppIcon } from './app-icon.ts'
 import { DesktopPreferenceStore, parsePreferences } from './desktop-preferences.ts'
 import { DEFAULT_FEATURES, NextProfiles } from './profiles.ts'
-import { DEFAULT_PREFERENCES, DEFAULT_PROFILE, SAFE_MODE_PREFERENCES, type DesktopBrowserLinks, type DesktopFailureReport, type DesktopPreferences, type DesktopState, type DesktopNotification } from './desktop-contract.ts'
+import { DEFAULT_PREFERENCES, DEFAULT_PROFILE, SAFE_MODE_PREFERENCES, type DesktopBrowserLinks, type DesktopFailureReport, type DesktopPreferences, type DesktopState, type DesktopNotification, type DesktopUpdateChannel } from './desktop-contract.ts'
 import { DesktopDiagnostics } from './diagnostics.ts'
 import type { DesktopHostExit } from './exit-code.ts'
 import { appendFailureReport, renderFailureReport, rendererFailureSection, writeFailureReport, type FailureReportInput } from './failure-report.ts'
@@ -88,6 +88,8 @@ export class NextDesktopRuntime {
   lan: DesktopLanHttpsRuntime | undefined
   private safeHome: string | undefined
   private hostProcess: DesktopHostProcess | undefined
+  /** Set when update handoff locks Host admission so `stop()` enforces graceful teardown. */
+  private gracefulUpdateShutdown = false
   /** The Host startup limit saved for the original environment, which recovery shows and changes even in Safe Mode. */
   private savedStartupTimeout: HostStartupTimeout = DEFAULT_HOST_STARTUP_TIMEOUT
   private readonly preferenceWarning = (message: string): void => { this.diagnostics.append(message, 'warn') }
@@ -139,8 +141,11 @@ export class NextDesktopRuntime {
     // Safe Mode and an unreadable preference file still show recovery the limit saved apart from it.
     this.savedStartupTimeout = read ? this.preferences.hostStartupTimeout
       : new DesktopPreferenceStore(this.options.home, this.preferenceWarning).readExtra().hostStartupTimeout
-    // The icon is saved apart too: an unreadable preference file must not turn the shortcuts that show it back.
-    if (!this.safeMode && !read) this.preferences = { ...this.preferences, appIcon: this.settings.readExtra().appIcon }
+    // The icon and update channel are saved apart too: an unreadable preference file must not reset them.
+    if (!this.safeMode && !read) {
+      const extra = this.settings.readExtra()
+      this.preferences = { ...this.preferences, appIcon: extra.appIcon, updateChannel: extra.updateChannel }
+    }
     this.diagnostics.level = this.preferences.logLevel
     this.diagnostics.developer = this.preferences.developerLogging
   }
@@ -275,6 +280,48 @@ export class NextDesktopRuntime {
     this.settings.writeExtra({ appIcon: value })
     this.preferences = { ...this.preferences, appIcon: value }
     this.options.onChange()
+  }
+
+  /**
+   * Save the update release channel in `desktop-preferences-extra.json` so older releases
+   * stay downgrade-safe.
+   */
+  saveUpdateChannel(value: unknown): DesktopUpdateChannel {
+    if (value !== 'stable' && value !== 'beta') throw new Error('Invalid update channel')
+    if (this.safeMode) throw new Error('Desktop preferences are fixed in Safe Mode')
+    this.settings.writeExtra({ updateChannel: value })
+    this.preferences = { ...this.preferences, updateChannel: value }
+    this.options.onChange()
+    return value
+  }
+
+  /** Whether a ready Host child process is currently available for IPC control queries. */
+  get hasReadyHost(): boolean {
+    return this.hostProcess !== undefined && this.backend.state.phase === 'ready'
+  }
+
+  /** Inspect whether the running Host has active agent turns or background jobs. */
+  async inspectUpdateTasks(): Promise<boolean> {
+    const host = this.hostProcess
+    if (host === undefined || this.backend.state.phase !== 'ready') return false
+    return host.updateTasks('inspect')
+  }
+
+  /** Lock Host request admission and drain in-flight HTTP/WS work before an update restart. */
+  async lockUpdateTasks(): Promise<boolean> {
+    const host = this.hostProcess
+    if (host === undefined || this.backend.state.phase !== 'ready') return false
+    const active = await host.updateTasks('lock')
+    this.gracefulUpdateShutdown = true
+    return active
+  }
+
+  /** Re-open Host request admission if staging or handoff fails before quitting. */
+  async unlockUpdateTasks(): Promise<void> {
+    this.gracefulUpdateShutdown = false
+    const host = this.hostProcess
+    if (host === undefined || this.backend.state.phase !== 'ready') return
+    await host.updateTasks('unlock')
   }
 
   /**
@@ -600,7 +647,9 @@ export class NextDesktopRuntime {
         const edgeStopped = this.diagnostics.operation('desktop', 'lan.stop')
         try { await lan.stop(); edgeStopped() } catch (error) { edgeStopped(error); throw error }
         const hostStopped = this.diagnostics.operation('desktop', 'host.stop')
-        try { await host.stop(); hostStopped() } catch (error) { hostStopped(error); throw error }
+        const requireGraceful = this.gracefulUpdateShutdown
+        this.gracefulUpdateShutdown = false
+        try { await host.stop(requireGraceful); hostStopped() } catch (error) { hostStopped(error); throw error }
         if (this.hostProcess === host) this.hostProcess = undefined
         if (this.lan === lan) this.lan = undefined
       },

@@ -5,6 +5,8 @@ import { DEFAULT_PREFERENCES, type DesktopPreferences } from './desktop-contract
 import { isHostStartupTimeout } from './host-startup-limit.ts'
 import { atomicJson, readPrivateFile } from './private-files.ts'
 
+const isUpdateChannel = (value: unknown): value is DesktopPreferences['updateChannel'] => value === 'stable' || value === 'beta'
+
 /**
  * Preferences added after 2.0.22, with their validators. Released builds reject any key they do not know
  * in desktop-preferences.json and open recovery, so these live in desktop-preferences-extra.json, which
@@ -14,6 +16,7 @@ import { atomicJson, readPrivateFile } from './private-files.ts'
 const EXTRA_PREFERENCES = {
   hostStartupTimeout: isHostStartupTimeout,
   appIcon: isDesktopAppIcon,
+  updateChannel: isUpdateChannel,
 } as const satisfies { readonly [K in keyof DesktopPreferences]?: (value: unknown) => value is DesktopPreferences[K] }
 
 type ExtraPreferenceKey = keyof typeof EXTRA_PREFERENCES

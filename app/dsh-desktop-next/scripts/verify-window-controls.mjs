@@ -855,7 +855,7 @@ try {
   await page.screenshot({ path: join(screenshots, 'desktop-window-appearance.png'), animations: 'disabled' })
   const updateSection = settings.locator('[data-next-updates]')
   const releaseNotes = updateSection.getByRole('link', { name: /^(更新公告|Release notes)$/ })
-  assert.equal(await releaseNotes.getAttribute('href'), `https://github.com/anywhere-labs/dsh-desktop/releases/tag/v${controlState.version}`)
+  assert.equal(await releaseNotes.getAttribute('href'), `https://github.com/omnimux-ai/omnimux-client/releases/tag/v${controlState.version}`)
   assert.equal(await releaseNotes.getAttribute('target'), '_blank')
   assert.equal(await releaseNotes.getAttribute('rel'), 'noopener noreferrer')
   await updateSection.getByRole('button', { name: /检查更新|Check for updates/ }).click()
@@ -863,7 +863,7 @@ try {
   controlState.updates = { phase: 'downloading', version: '2.0.20-next.1', installable: true, received: 50, total: 100 }
   await updateSection.getByText(/正在下载更新 50%|Downloading update 50%/).waitFor()
   assert.equal(await updateSection.locator('progress').getAttribute('value'), '50')
-  assert.equal(await releaseNotes.getAttribute('href'), `https://github.com/anywhere-labs/dsh-desktop/releases/tag/v${controlState.updates.version}`)
+  assert.equal(await releaseNotes.getAttribute('href'), `https://github.com/omnimux-ai/omnimux-client/releases/tag/v${controlState.updates.version}`)
   await updateSection.scrollIntoViewIfNeeded()
   await page.screenshot({ path: join(screenshots, 'desktop-update-progress.png'), animations: 'disabled' })
   controlState.updates = { phase: 'ready', version: '2.0.20-next.1', installable: true }

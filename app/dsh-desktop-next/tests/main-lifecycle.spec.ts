@@ -983,7 +983,7 @@ it('sends an available Linux update to its release page from the tray and Settin
     expect(dialog.showMessageBox).toHaveBeenCalledOnce()
     expect(vi.mocked(dialog.showMessageBox).mock.calls[0]!.at(-1)).toMatchObject({ message: '发现新版本 2.0.22-next',
       buttons: ['前往下载', '稍后'], detail: expect.stringContaining('deb、AppImage 或 tar.gz') })
-    expect(shell.openExternal).toHaveBeenLastCalledWith(`https://github.com/anywhere-labs/dsh-desktop/releases/tag/v${snapshot.version}`)
+    expect(shell.openExternal).toHaveBeenLastCalledWith(`https://github.com/omnimux-ai/omnimux-client/releases/tag/v${snapshot.version}`)
     // The Settings and tray download action opens the same page without asking again.
     await fixture.handlers.get('dsh-next:command')!(sender, { type: 'download-update' })
     expect(shell.openExternal).toHaveBeenCalledTimes(2)
@@ -1030,7 +1030,7 @@ it('sends an available update of a portable Windows copy to its release page ins
     expect(dialog.showMessageBox).toHaveBeenCalledOnce()
     expect(vi.mocked(dialog.showMessageBox).mock.calls[0]!.at(-1)).toMatchObject({ message: '发现新版本 2.0.22-next',
       buttons: ['前往下载', '稍后'], detail: expect.stringContaining('便携版 ZIP') })
-    expect(shell.openExternal).toHaveBeenLastCalledWith(`https://github.com/anywhere-labs/dsh-desktop/releases/tag/v${snapshot.version}`)
+    expect(shell.openExternal).toHaveBeenLastCalledWith(`https://github.com/omnimux-ai/omnimux-client/releases/tag/v${snapshot.version}`)
     await fixture.handlers.get('dsh-next:command')!(sender, { type: 'download-update' })
     expect(shell.openExternal).toHaveBeenCalledTimes(2)
     expect(download).not.toHaveBeenCalled()
