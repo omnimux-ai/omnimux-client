@@ -16,7 +16,7 @@ import { join } from 'node:path'
 import { createRivalAccountsStore } from './rival-accounts-store.js'
 import { resolveRivalPaths } from './rival-paths.js'
 import { createRivalRefreshScheduler } from './rival-refresh.js'
-import { createRivalRemote, SOCIAL_DATA_TOOL, TOOL_MISSING_MESSAGE } from './rival-remote.js'
+import { createRivalRemote, TOOL_MISSING_MESSAGE } from './rival-remote.js'
 import { createRivalAccountsService } from './rival-accounts-service.js'
 import {
   LOGIN_REQUIRED_MESSAGE,
@@ -45,15 +45,14 @@ function makeCloud(behaviour = {}) {
   const cloud = {
     calls: [],
     // `behaviour` stays live: a test can install a failure between two refreshes
-    // and the remote, which captured `getTool` once, will see it.
+    // and the remote, which captured `resolveSocialData` once, will see it.
     behaviour,
-    getTool(name) {
-      if (name !== SOCIAL_DATA_TOOL) return undefined
+    resolveSocialData() {
       // `forceMissing` is the "seam went away" case; it wins over the stub below.
       if (behaviour.forceMissing) return undefined
       if (behaviour.tool !== undefined) return behaviour.tool
       return {
-        async execute(args) {
+        async fetch(args) {
           // Recorded so a test can assert the cost contract from the outside.
           cloud.calls.push({ platform: args.platform, capability: args.capability, id: args.id })
           if (args.capability === 'user') {
@@ -85,7 +84,7 @@ function makeTools(options = {}) {
   const now = () => FIXED_NOW
   const store = createRivalAccountsStore({ paths, now, ...(options.limits ? { limits: options.limits } : {}) })
   const cloud = options.cloud ?? makeCloud()
-  const remote = createRivalRemote({ getTool: cloud.getTool, now })
+  const remote = createRivalRemote({ resolveSocialData: cloud.resolveSocialData, now })
   let service = null
   const scheduler = createRivalRefreshScheduler({ store, remote, now, runCycle: (input) => service.runCycle(input) })
   service = createRivalAccountsService({

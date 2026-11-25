@@ -6,7 +6,6 @@ import { test } from 'node:test'
 import { apply } from './index.js'
 import { createRivalAccountsStore } from './rival/rival-accounts-store.js'
 import { resolveRivalPaths } from './rival/rival-paths.js'
-import { SOCIAL_DATA_TOOL } from './rival/rival-remote.js'
 
 test('plugin lifecycle starts due-account collection and disposes its only refresh timer', async (t) => {
   const home = mkdtempSync(join(tmpdir(), 'rival-lifecycle-'))
@@ -33,8 +32,8 @@ test('plugin lifecycle starts due-account collection and disposes its only refre
     refresh_interval_hours: 24, next_auto_refresh_at: new Date(0).toISOString(),
   })
   const calls = []
-  const tool = {
-    async execute(args) {
+  const seam = {
+    async fetch(args) {
       calls.push(args.capability)
       return { data: args.capability === 'user'
         ? { nickname: 'Sample', follower_count: 0 }
@@ -42,7 +41,10 @@ test('plugin lifecycle starts due-account collection and disposes its only refre
     },
   }
   apply({
-    tools: { register() {}, get: (name) => name === SOCIAL_DATA_TOOL ? tool : undefined },
+    tools: { register() {} },
+    get(capability) {
+      return capability === 'socialData' ? seam : undefined
+    },
     inject() {},
     effect(factory) {
       const dispose = factory()

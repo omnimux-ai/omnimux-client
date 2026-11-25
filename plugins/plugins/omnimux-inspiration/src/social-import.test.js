@@ -296,8 +296,8 @@ describe('createSocialFetcher — cloud contract and differentiated failures', (
   it('accepts a structured envelope without flat video fields (regression)', async () => {
     let calls = 0
     const socialFetcher = createSocialFetcher({
-      getTool: () => ({
-        async execute(args) {
+      resolveSocialData: () => ({
+        async fetch(args) {
           calls += 1
           assert.equal(args.capability, 'tweet')
           return X_VIDEO_ENVELOPE
@@ -315,7 +315,7 @@ describe('createSocialFetcher — cloud contract and differentiated failures', (
   it('skips the cloud call for Facebook and reports an actionable reason', async () => {
     let calls = 0
     const socialFetcher = createSocialFetcher({
-      getTool: () => ({ async execute() { calls += 1; return { data: {} } } }),
+      resolveSocialData: () => ({ async fetch() { calls += 1; return { data: {} } } }),
       fallback: async () => null,
     })
 
@@ -335,7 +335,7 @@ describe('createSocialFetcher — cloud contract and differentiated failures', (
   it('skips the cloud call for Threads as well', async () => {
     let calls = 0
     const socialFetcher = createSocialFetcher({
-      getTool: () => ({ async execute() { calls += 1; return { data: {} } } }),
+      resolveSocialData: () => ({ async fetch() { calls += 1; return { data: {} } } }),
       fallback: async () => null,
     })
 
@@ -380,7 +380,7 @@ describe('createSocialFetcher — cloud contract and differentiated failures', (
   it('reports a self-registered platform through the whitelist, not an internal cloud error', async () => {
     let calls = 0
     const socialFetcher = createSocialFetcher({
-      getTool: () => ({ async execute() { calls += 1; return { data: { title: 'should not run' } } } }),
+      resolveSocialData: () => ({ async fetch() { calls += 1; return { data: { title: 'should not run' } } } }),
       fallback: async () => null,
     })
 
@@ -398,8 +398,8 @@ describe('createSocialFetcher — cloud contract and differentiated failures', (
 
   it('surfaces the cloud error detail unchanged', async () => {
     const socialFetcher = createSocialFetcher({
-      getTool: () => ({
-        async execute() {
+      resolveSocialData: () => ({
+        async fetch() {
           const failure = new Error('unsupported social data pair: facebook/video')
           failure.code = 'unsupported-social-data-pair'
           throw failure
@@ -416,7 +416,7 @@ describe('createSocialFetcher — cloud contract and differentiated failures', (
 
   it('reports an empty cloud payload as no content', async () => {
     const socialFetcher = createSocialFetcher({
-      getTool: () => ({ async execute() { return { platform: 'x', capability: 'tweet', data: {} } } }),
+      resolveSocialData: () => ({ async fetch() { return { platform: 'x', capability: 'tweet', data: {} } } }),
       fallback: async () => null,
     })
 
@@ -428,7 +428,7 @@ describe('createSocialFetcher — cloud contract and differentiated failures', (
 
   it('uses the fallback resolver when the cloud payload is empty', async () => {
     const socialFetcher = createSocialFetcher({
-      getTool: () => ({ async execute() { return { data: {} } } }),
+      resolveSocialData: () => ({ async fetch() { return { data: {} } } }),
       fallback: async () => ({ platform: 'youtube', capability: 'video', data: { title: 'oEmbed title' } }),
     })
 
@@ -438,17 +438,40 @@ describe('createSocialFetcher — cloud contract and differentiated failures', (
   })
 
   it('reports an unrecognized platform and a missing tool distinctly', async () => {
-    const unknown = createSocialFetcher({ getTool: () => undefined, fallback: async () => null })
+    const unknown = createSocialFetcher({ resolveSocialData: () => undefined, fallback: async () => null })
     await assert.rejects(
       () => unknown({ platform: 'unknown', capability: 'video', url: 'https://example.com/post/1' }),
       /未能识别该链接所属平台/,
     )
 
-    const missingTool = createSocialFetcher({ getTool: () => undefined, fallback: async () => null })
+    const missingTool = createSocialFetcher({ resolveSocialData: () => undefined, fallback: async () => null })
     await assert.rejects(
       () => missingTool({ platform: 'tiktok', capability: 'video', url: 'https://www.tiktok.com/@a/video/1' }),
       /未就绪/,
     )
+  })
+
+  it('tries the public fallback after an absent socialData seam, then reports the seam explicitly', async () => {
+    const order = []
+    const socialFetcher = createSocialFetcher({
+      resolveSocialData: () => {
+        order.push('seam')
+        return undefined
+      },
+      fallback: async () => {
+        order.push('fallback')
+        return null
+      },
+    })
+    await assert.rejects(
+      () => socialFetcher({ platform: 'x', capability: 'tweet', url: 'https://x.com/a/status/1' }),
+      (err) => {
+        assert.match(err.message, /OmniMux 社媒解析工具 \(omnimux_social_data\) 未就绪/)
+        assert.doesNotMatch(err.message, /check the link or network/)
+        return true
+      },
+    )
+    assert.deepEqual(order, ['seam', 'fallback'])
   })
 })
 
@@ -476,7 +499,7 @@ describe('social import — Facebook / Threads without a cloud capability', () =
   it('returns an actionable 502 for a Facebook link without touching the cloud', async () => {
     let calls = 0
     const socialFetcher = createSocialFetcher({
-      getTool: () => ({ async execute() { calls += 1; return { data: {} } } }),
+      resolveSocialData: () => ({ async fetch() { calls += 1; return { data: {} } } }),
       fallback: async () => null,
     })
 
@@ -493,7 +516,7 @@ describe('social import — Facebook / Threads without a cloud capability', () =
   })
 
   it('returns an actionable 502 for a Threads link without crashing', async () => {
-    const socialFetcher = createSocialFetcher({ getTool: () => undefined, fallback: async () => null })
+    const socialFetcher = createSocialFetcher({ resolveSocialData: () => undefined, fallback: async () => null })
 
     const { res } = await importUrl({
       socialFetcher,
@@ -554,7 +577,7 @@ describe('createSocialFetcher — hub empty sentinel (P0-1 regression)', () => {
   it('treats `{ text: null }` as no content and still runs the local fallback', async () => {
     let fallbackCalls = 0
     const socialFetcher = createSocialFetcher({
-      getTool: () => ({ async execute() { return { platform: 'x', capability: 'tweet', data: { text: null } } } }),
+      resolveSocialData: () => ({ async fetch() { return { platform: 'x', capability: 'tweet', data: { text: null } } } }),
       fallback: async () => {
         fallbackCalls += 1
         return { platform: 'x', capability: 'tweet', data: { text: 'oEmbed 文案', author: { name: 'X 作者' } } }
@@ -583,7 +606,7 @@ describe('createSocialFetcher — hub empty sentinel (P0-1 regression)', () => {
     const sentinelTmp = mkdtempSync(join(tmpdir(), 'omnimux-sentinel-'))
     try {
       const socialFetcher = createSocialFetcher({
-        getTool: () => ({ async execute() { return { platform: 'x', capability: 'tweet', data: { text: null } } } }),
+        resolveSocialData: () => ({ async fetch() { return { platform: 'x', capability: 'tweet', data: { text: null } } } }),
         fallback: async () => ({ platform: 'x', capability: 'tweet', data: { title: 'oEmbed 标题', text: 'oEmbed 文案' } }),
       })
       const { res } = await importUrl({
@@ -602,7 +625,7 @@ describe('createSocialFetcher — hub empty sentinel (P0-1 regression)', () => {
 
   it('reports no content when neither the cloud nor the fallback has any', async () => {
     const socialFetcher = createSocialFetcher({
-      getTool: () => ({ async execute() { return { data: { text: null } } } }),
+      resolveSocialData: () => ({ async fetch() { return { data: { text: null } } } }),
       fallback: async () => null,
     })
 
@@ -638,7 +661,7 @@ describe('createSocialFetcher — attached metadata alone must not skip the fall
     for (const payload of attachedOnly) {
       let fallbackCalls = 0
       const socialFetcher = createSocialFetcher({
-        getTool: () => ({ async execute() { return { platform: 'x', capability: 'tweet', data: payload } } }),
+        resolveSocialData: () => ({ async fetch() { return { platform: 'x', capability: 'tweet', data: payload } } }),
         fallback: async () => {
           fallbackCalls += 1
           return { platform: 'x', capability: 'tweet', data: { text: 'oEmbed 兜底文案' } }
@@ -655,7 +678,7 @@ describe('createSocialFetcher — attached metadata alone must not skip the fall
   it('does not call the fallback when the cloud envelope carries real content', async () => {
     let fallbackCalls = 0
     const socialFetcher = createSocialFetcher({
-      getTool: () => ({ async execute() { return { platform: 'x', capability: 'tweet', data: { text: '云端正文' } } } }),
+      resolveSocialData: () => ({ async fetch() { return { platform: 'x', capability: 'tweet', data: { text: '云端正文' } } } }),
       fallback: async () => {
         fallbackCalls += 1
         return { platform: 'x', capability: 'tweet', data: { text: '不该被用到' } }
@@ -882,22 +905,28 @@ describe('social import — a cover no browser can render is not published', () 
 
 
 describe('social import — upstream abort is not caller cancellation (#3369)', () => {
-  for (const signal of [undefined, new AbortController().signal]) {
-    it(`recovers through fallback after upstream abort (signal=${Boolean(signal)})`, async () => {
-      let calls = 0
-      const fetcher = createSocialFetcher({
-        getTool: () => ({ execute: async () => { throw Object.assign(new Error('aborted'), { name: 'AbortError', code: 'ABORT_ERR' }) } }),
-        fallback: async () => { calls += 1; return X_VIDEO_ENVELOPE },
-      })
-      const result = await fetcher({ platform: 'x', url: 'https://x.com/brainextends/status/2111569272732553535?s=', signal })
-      assert.equal(result, X_VIDEO_ENVELOPE)
-      assert.equal(calls, 1)
+  async function assertFallbackAfterUpstreamAbort(signal) {
+    let calls = 0
+    const fetcher = createSocialFetcher({
+      resolveSocialData: () => ({ fetch: async () => { throw Object.assign(new Error('aborted'), { name: 'AbortError', code: 'ABORT_ERR' }) } }),
+      fallback: async () => { calls += 1; return X_VIDEO_ENVELOPE },
     })
+    const result = await fetcher({ platform: 'x', url: 'https://x.com/brainextends/status/2111569272732553535?s=', signal })
+    assert.equal(result, X_VIDEO_ENVELOPE)
+    assert.equal(calls, 1)
   }
+
+  it('recovers through fallback after an upstream abort without a caller signal', async () => {
+    await assertFallbackAfterUpstreamAbort(undefined)
+  })
+
+  it('recovers through fallback after an upstream abort with a non-aborted caller signal', async () => {
+    await assertFallbackAfterUpstreamAbort(new AbortController().signal)
+  })
 
   it('reports resolver failure rather than cancellation when both sources fail', async () => {
     const fetcher = createSocialFetcher({
-      getTool: () => ({ execute: async () => { throw Object.assign(new Error('upstream timed out'), { name: 'AbortError' }) } }),
+      resolveSocialData: () => ({ fetch: async () => { throw Object.assign(new Error('upstream timed out'), { name: 'AbortError' }) } }),
       fallback: async () => { throw Object.assign(new Error('fallback timed out'), { name: 'AbortError' }) },
     })
     await assert.rejects(fetcher({ platform: 'x', url: 'https://x.com/a/status/12345' }), (error) => {
@@ -911,7 +940,7 @@ describe('social import — upstream abort is not caller cancellation (#3369)', 
     const controller = new AbortController()
     let fallbackCalls = 0
     const fetcher = createSocialFetcher({
-      getTool: () => ({ execute: async () => { controller.abort(); throw new Error('connection closed') } }),
+      resolveSocialData: () => ({ fetch: async () => { controller.abort(); throw new Error('connection closed') } }),
       fallback: async () => { fallbackCalls += 1; return X_VIDEO_ENVELOPE },
     })
     await assert.rejects(fetcher({ platform: 'x', url: 'https://x.com/a/status/12345', signal: controller.signal }), { name: 'AbortError' })

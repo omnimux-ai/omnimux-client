@@ -26,8 +26,8 @@ function makeWorld({ user = PROFILE, posts = { items: [] }, platform = 'youtube'
   const store = createRivalAccountsStore({ paths, now })
   const calls = []
   const remote = createRivalRemote({
-    getTool: () => ({
-      execute: async (args) => {
+    resolveSocialData: () => ({
+      fetch: async (args) => {
         calls.push(args.capability)
         return { platform: args.platform, capability: args.capability, model: `${args.platform}-${args.capability}`, data: args.capability === 'user' ? user : posts }
       },

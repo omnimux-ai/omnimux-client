@@ -85,15 +85,12 @@ describe('#2779 Inspiration collaborative cancellation', () => {
         register(tool) {
           registeredTools[tool.name] = tool
         },
-        get(name) {
-          if (name === 'omnimux_social_data') return opts.socialDataTool
-          return undefined
-        },
       },
       // `ctx.get` is the hub seam `apply` reads for `fetcher`/`resolver` since
       // the direct `ctx.fetcher` properties were retired; without it the
       // dispatcher falls back to the real `fetch` and tests hit the network.
       get(capability) {
+        if (capability === 'socialData') return opts.socialData
         if (capability === 'fetcher') return opts.fetcher
         if (capability === 'resolver') return offlineResolver
         return undefined
@@ -158,8 +155,8 @@ describe('#2779 Inspiration collaborative cancellation', () => {
     it('Seam A: pre-aborted signal aborts immediately, zero network, zero store records, zero tmp files', async () => {
       let socialFetcherCalled = false
       const tools = setupPlugin({
-        socialDataTool: {
-          async execute() {
+        socialData: {
+          async fetch() {
             socialFetcherCalled = true
             return { data: { text: 'test' } }
           },
@@ -227,8 +224,8 @@ describe('#2779 Inspiration collaborative cancellation', () => {
 
       const tools = setupPlugin({
         fetcher,
-        socialDataTool: {
-          async execute() {
+        socialData: {
+          async fetch() {
             return {
               data: {
                 text: 'Amazing hook in 3s',
@@ -377,8 +374,8 @@ describe('#2779 Inspiration collaborative cancellation', () => {
 
     it('Regular network errors are NOT masked as AbortError (error discrimination)', async () => {
       const tools = setupPlugin({
-        socialDataTool: {
-          async execute() {
+        socialData: {
+          async fetch() {
             throw new Error('Upstream network timeout 504')
           },
         },
@@ -522,8 +519,8 @@ describe('#2779 Inspiration collaborative cancellation', () => {
     it('Upstream tool error while signal is aborted produces standard AbortError instead of 500/502', async () => {
       const controller = new AbortController()
       const tools = setupPlugin({
-        socialDataTool: {
-          async execute() {
+        socialData: {
+          async fetch() {
             controller.abort()
             throw new TypeError('Upstream internal TypeError')
           },

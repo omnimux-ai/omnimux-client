@@ -139,8 +139,6 @@ Hub 通过 `hubEvents.emit({ type: 'omnimux:headless-skill', payload })` 推送�
 
 新增业务后台 AI 能力必须走 `headlessSkill` 接缝。
 
-已知局限：本地函数包装（如 `const getTool = () => tools.get(name)`）会把注册表读取藏在另一层调用后面，静态规则无法判定；`omnimux-inspiration/src/index.js` 与 `omnimux-inspiration/src/rival/rival-remote.js` 的该形态按 [#275](https://github.com/omnimux-ai/omnimux-client/issues/275) 迁移，迁移前不得继续扩散。
-
 ## 存量不合规模块迁移清单
 
 在全仓审计中发现以下既有实现不符合本契约，已建立独立 Issue 分阶段迁入 `headlessSkill`，期间禁止在旧路径上继续复制同款模式：

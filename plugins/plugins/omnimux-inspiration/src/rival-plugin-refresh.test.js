@@ -25,7 +25,7 @@ import { join } from 'node:path'
 import { createRivalAccountsStore } from './rival/rival-accounts-store.js'
 import { resolveRivalPaths } from './rival/rival-paths.js'
 import { createRivalRefreshScheduler } from './rival/rival-refresh.js'
-import { SOCIAL_DATA_TOOL, createRivalRemote } from './rival/rival-remote.js'
+import { createRivalRemote } from './rival/rival-remote.js'
 import { createRivalAccountsService } from './rival/rival-accounts-service.js'
 import { createRivalDispatcher, matchRivalRoute, RIVAL_PREFIX } from './rival/rival-routes.js'
 import {
@@ -69,14 +69,13 @@ after(() => {
 
 /**
  * Remote spy: every call is a failure the test wants to see.
- * The plugin-refresh path must never reach `getTool`, let alone `execute`.
+ * The plugin-refresh path must never reach `resolveSocialData`, let alone `fetch`.
  */
 function makeCloud() {
   const cloud = { calls: 0 }
-  cloud.getTool = (name) => {
-    if (name !== SOCIAL_DATA_TOOL) return undefined
+  cloud.resolveSocialData = () => {
     return {
-      async execute() {
+      async fetch() {
         cloud.calls += 1
         throw new Error('plugin refresh must not call the cloud')
       },
@@ -98,7 +97,7 @@ function makeWorld() {
   }
   const store = createRivalAccountsStore({ paths, now: clock })
   const cloud = makeCloud()
-  const remote = createRivalRemote({ getTool: cloud.getTool, now: clock })
+  const remote = createRivalRemote({ resolveSocialData: cloud.resolveSocialData, now: clock })
   let service = null
   const scheduler = createRivalRefreshScheduler({
     store,
