@@ -3,7 +3,7 @@ import { chmodSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, writeFil
 import { homedir, tmpdir } from 'node:os'
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { dirname, join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
   decideBashCommand,
@@ -2686,6 +2686,22 @@ describe('adversarial hardening regressions (materialization / wrapper / frozen-
         'allow',
         `Expected E3 zero-FP allow: ${command} (reason=${result.reason || ''})`,
       )
+    }
+  })
+
+  it('expired one-time recover-media-build-3288 privilege bypass is removed from guard-worktree', () => {
+    const scriptsDir = dirname(fileURLToPath(import.meta.url))
+    for (const command of [
+      'node scripts/recover-media-build-3288.mjs --apply',
+      'echo recover-media-build-3288.mjs',
+    ]) {
+      const result = decideBashCommand({
+        command,
+        cwd: resolve(scriptsDir, '..'),
+      })
+      assert.notEqual(result.reason, 'scoped-media-build-recovery')
+      assert.notEqual(result.reason, 'scoped-media-build-recovery-identity-mismatch')
+      assert.notEqual(result.reason, 'scoped-media-build-recovery-invalid-command')
     }
   })
 })

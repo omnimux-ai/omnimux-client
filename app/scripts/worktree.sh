@@ -13,8 +13,6 @@
 #   worktree.sh new <task> [base] [--type feat|fix|chore|agent]
 #                                           create .worktrees/<task> on <type>/<task>
 #   worktree.sh list                        list all worktrees and dirty status
-#   worktree.sh ship <task>                 finish: verify -> push branch -> sync primary ->
-#                                           merge -> push primary -> remove worktree + branch
 #   worktree.sh remove <task> [--discard]   remove worktree; --discard drops uncommitted changes,
 #                        [--abandon]        --abandon drops an unmerged branch
 #   worktree.sh prune                       drop stale registrations; report merged branches
@@ -279,7 +277,7 @@ cmd_new() {
   echo "    branch: ${branch}"
   echo "    base:   ${base}"
   echo "    next:   cd ${wt#${ROOT}/}   # implement and commit"
-  echo "            worktree.sh ship ${task}"
+  echo "            git push -u ${REMOTE} ${branch}   # open PR; after merge run: worktree.sh remove ${task}"
 }
 
 cmd_list() {
@@ -305,55 +303,7 @@ cmd_list() {
 }
 
 cmd_ship() {
-  local task="$1"
-  validate_task "${task}"
-
-  local wt="${WT_DIR}/${task}"
-  [ -d "${wt}" ] || die "no worktree found for task: ${task} (expected ${wt#${ROOT}/})"
-
-  local branch
-  branch="$(git -C "${wt}" symbolic-ref --short HEAD 2>/dev/null || true)"
-  [ -n "${branch}" ] || die "worktree is in detached HEAD state; cannot ship automatically"
-
-  if [ -n "$(git -C "${wt}" status --porcelain 2>/dev/null)" ]; then
-    die "worktree ${wt#${ROOT}/} has uncommitted changes; commit or stash them first"
-  fi
-
-  # Primary checkout must be clean and on default branch
-  local primary_branch
-  primary_branch="$(git -C "${ROOT}" symbolic-ref --short HEAD 2>/dev/null || true)"
-  if [ "${primary_branch}" != "${DEFAULT_BRANCH}" ]; then
-    die "primary checkout is not on default branch (${DEFAULT_BRANCH}); got: ${primary_branch}"
-  fi
-  if [ -n "$(git -C "${ROOT}" diff --name-only)" ] || [ -n "$(git -C "${ROOT}" diff --cached --name-only)" ]; then
-    die "primary checkout has tracked uncommitted changes; stash them before shipping"
-  fi
-
-  say "fetch ${REMOTE}"
-  git fetch "${REMOTE}" --prune 2>/dev/null || true
-
-  say "push ${branch} to ${REMOTE}"
-  git -C "${wt}" push "${REMOTE}" "${branch}" 2>/dev/null || say "note: push branch upstream skipped or failed (offline / no remote write)"
-
-  say "sync primary ${DEFAULT_BRANCH} with ${REMOTE}"
-  git -C "${ROOT}" pull --ff-only "${REMOTE}" "${DEFAULT_BRANCH}" 2>/dev/null || true
-
-  say "merge ${branch} into ${DEFAULT_BRANCH}"
-  if ! git -C "${ROOT}" merge --ff-only "${branch}" 2>/dev/null; then
-    git -C "${ROOT}" merge -m "merge: ${branch}" --no-ff "${branch}" || die "merge failed; resolve in primary checkout"
-  fi
-
-  say "push ${REMOTE} ${DEFAULT_BRANCH}"
-  git -C "${ROOT}" push "${REMOTE}" "${DEFAULT_BRANCH}" 2>/dev/null || say "note: push ${DEFAULT_BRANCH} skipped or failed (offline / no remote write / protected branch)"
-
-  say "remove worktree + branch"
-  git worktree remove "${wt}" || die "git worktree remove failed; run 'worktree.sh prune'"
-  if ! git branch -d "${branch}" 2>/dev/null; then
-    echo "    note: branch ${branch} retained (force delete with: git branch -D ${branch})" >&2
-  fi
-  git worktree prune
-
-  say "done: ${branch} merged and worktree cleaned up"
+  die "'worktree.sh ship' is disabled in omnimux-client (per AGENTS.md / app/AGENTS.md: never merge locally or push directly to ${DEFAULT_BRANCH}). Push your branch and open a PR, then clean up with 'worktree.sh remove <task>' after merge."
 }
 
 cmd_remove() {
@@ -537,12 +487,14 @@ Usage:
   worktree.sh new <task> [base] [--type feat|fix|chore|agent]
                                           create .worktrees/<task>
   worktree.sh list                        show all worktrees and dirty file counts
-  worktree.sh ship <task>                 finish: push -> merge ${DEFAULT_BRANCH} -> remove worktree + branch
   worktree.sh remove <task> [--discard]   remove worktree; --discard drops dirty changes,
                        [--abandon]        --abandon drops unmerged branch
   worktree.sh prune                       drop stale registrations and show merged branches
   worktree.sh clean                       batch clean worktrees merged into ${DEFAULT_BRANCH}
   worktree.sh help
+
+Delivery:
+  Push your task branch and open a PR (direct push/merge via 'ship' is disabled).
 
 Environment variables:
   WORKTREE_REMOTE          explicit remote (default: auto-detected 'fork' or 'origin')
@@ -556,7 +508,7 @@ case "${cmd}" in
   init)   cmd_init ;;
   new)    [ "$#" -ge 1 ] || die "usage: worktree.sh new <task> [base] [--type feat|fix|chore|agent]"; cmd_new "$@" ;;
   list)   cmd_list ;;
-  ship)   [ "$#" -ge 1 ] || die "usage: worktree.sh ship <task>"; cmd_ship "$1" ;;
+  ship)   cmd_ship ;;
   remove) [ "$#" -ge 1 ] || die "usage: worktree.sh remove <task> [--discard] [--abandon]"; cmd_remove "$@" ;;
   prune)  cmd_prune ;;
   clean)  cmd_clean ;;

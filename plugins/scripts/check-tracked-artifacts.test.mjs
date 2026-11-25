@@ -89,6 +89,11 @@ describe('check-tracked-artifacts：全仓插件客户端生成物与 workflow �
     assert.equal(isForbiddenArtifact('plugins/plugins/omnimux/lib/client.js'), true)
     assert.equal(isForbiddenArtifact('plugins/plugins/omnimux-workflow/dist/index.js'), true)
     assert.equal(isForbiddenArtifact('plugins/plugins/omnimux-workflow/lib/canvas.js'), true)
+    assert.equal(isForbiddenArtifact('node-compile-cache/v25.8.0-arm64/entry'), true)
+    assert.equal(
+      isForbiddenArtifact('plugins/scripts/comment-native-e2e-saEWBj/tmp/node-compile-cache/v25.8.0-arm64-392347a2-501/734da683'),
+      true,
+    )
 
     // 普通文档与契约文件不得被误伤
     assert.equal(isForbiddenArtifact('docs/contracts/dev-pipeline.md'), false)
@@ -109,6 +114,8 @@ describe('check-tracked-artifacts：全仓插件客户端生成物与 workflow �
       'docs/evidence/dev-smoke-run1/dev-page.png',
       'docs/evidence/dev-smoke_1.json',
       'docs/evidence/dev-smoke2/a.png',
+      'node-compile-cache/v25.8.0/entry',
+      'plugins/scripts/comment-native-e2e-saEWBj/tmp/node-compile-cache/v25.8.0-arm64-392347a2-501/734da683',
       'plugins/plugins/omnimux/lib/client.js',
       'plugins/plugins/omnimux-workflow/dist/index.js',
       'plugins/plugins/omnimux-workflow/lib/canvas.js',
@@ -126,10 +133,12 @@ describe('check-tracked-artifacts：全仓插件客户端生成物与 workflow �
       'docs/evidence/dev-smoke-run1/dev-page.png',
       'docs/evidence/dev-smoke2/a.png',
       'docs/evidence/dev-smoke_1.json',
+      'node-compile-cache/v25.8.0/entry',
       'plugins/.agent-reports/task-1/e2e-evidence.json',
       'plugins/plugins/omnimux-workflow/dist/index.js',
       'plugins/plugins/omnimux-workflow/lib/canvas.js',
       'plugins/plugins/omnimux/lib/client.js',
+      'plugins/scripts/comment-native-e2e-saEWBj/tmp/node-compile-cache/v25.8.0-arm64-392347a2-501/734da683',
     ].sort()
 
     for (const rootArg of [tempRepo, join(tempRepo, 'plugins')]) {
