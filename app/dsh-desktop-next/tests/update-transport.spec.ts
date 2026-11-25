@@ -140,7 +140,7 @@ it('aborts the active request when the caller cancels', async () => {
 
 it('carries installer traffic on a non-persistent partition instead of application cookies', async () => {
   const pending = createArtifactRequest()(endpoint, {})
-  expect(harness.partitions).toEqual(['dsh-next-update'])
+  expect(harness.partitions).toEqual(['omnimux-update'])
   expect(harness.partitions[0]).not.toMatch(/^persist:/)
   harness.requests[0]!.emit('response', incoming(200, 'koly'))
   await pending

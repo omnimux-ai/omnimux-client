@@ -64,3 +64,19 @@ export const DESKTOP_DEV_APP_ID = DESKTOP_DEV_IDENTITY.appId
 export const DESKTOP_DEV_DISPLAY_NAME = 'OmniMux Dev'
 export const DESKTOP_HOME_DIRECTORY_NAME = DESKTOP_PRODUCT_IDENTITY.homeDirectoryName
 export const DESKTOP_USER_DATA_DIRECTORY_NAME = DESKTOP_PRODUCT_IDENTITY.userDataDirectoryName
+
+/** Canonical public OmniMux product endpoints and update verification anchors. */
+export const OMNIMUX_RELEASES_URL = 'https://github.com/omnimux-ai/omnimux-client/releases'
+export const OMNIMUX_ISSUES_URL = 'https://github.com/omnimux-ai/omnimux-client/issues'
+export const OMNIMUX_DOWNLOAD_URL = 'https://dl.omnimux.ai/'
+export const OMNIMUX_UPDATE_MANIFEST_BASE = 'https://dl.omnimux.ai/api/desktop/v2'
+export const OMNIMUX_ALLOWED_UPDATE_HOSTS = Object.freeze(['dl.omnimux.ai'] as const)
+
+/**
+ * Raw 32-byte Ed25519 verification keys (Base64), indexed by `keyId` to support
+ * zero-downtime key rotation (`k1`, `k2`). Populated when production signing keys
+ * are provisioned; while empty, Manifest v2 gracefully falls back to v1 on 404.
+ * Once non-empty, packaged builds strictly enforce Ed25519 verification and refuse
+ * unsigned downgrade fallbacks.
+ */
+export const OMNIMUX_UPDATE_VERIFICATION_KEYS: Readonly<Record<string, string>> = Object.freeze({})

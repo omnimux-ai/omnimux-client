@@ -11,5 +11,5 @@ import { join } from 'node:path'
  * @returns The download directory, or undefined to download beside the update state.
  */
 export function updateDownloadDirectory(platform: string): string | undefined {
-  return platform === 'win32' ? join(tmpdir(), 'dsh-desktop-next-updates') : undefined
+  return platform === 'win32' ? join(tmpdir(), 'omnimux-updates') : undefined
 }

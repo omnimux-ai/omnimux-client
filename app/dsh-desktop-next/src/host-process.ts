@@ -70,7 +70,7 @@ interface StartupEntriesEvent {
 type DesktopHostEvent = ReadyEvent | FatalEvent | PlatformSessionEvent | PlatformLoginEvent | InjectionsEvent | StartupEntriesEvent | ({ readonly type: 'memory' } & HostMemoryUsage) | { type: 'permission'; requestId: number; action: DesktopPermissionAction; permission: DesktopPermission } | { type: 'logging-config'; requestId: number; error?: string } | { type: 'browser-access'; requestId: number; error?: string } | { type: 'notification'; notification: DesktopNotification } | { readonly type: 'shutdown-complete' } | { readonly type: 'desktop-action'; readonly action: 'restart' | 'terminal' } | {
   readonly type: 'update-tasks'
   readonly requestId: number
-  readonly active: boolean
+  readonly active?: boolean
   readonly error?: string
 }
 
@@ -123,8 +123,10 @@ function isDesktopHostEvent(message: unknown): message is DesktopHostEvent {
     case 'desktop-action':
       return candidate.action === 'restart' || candidate.action === 'terminal'
     case 'update-tasks':
-      return Number.isSafeInteger(candidate.requestId) && typeof candidate.active === 'boolean'
+      return Number.isSafeInteger(candidate.requestId)
+        && (candidate.active === undefined || typeof candidate.active === 'boolean')
         && (candidate.error === undefined || typeof candidate.error === 'string')
+        && (typeof candidate.active === 'boolean' || typeof candidate.error === 'string')
     case 'logging-config':
     case 'browser-access':
       return Number.isSafeInteger(candidate.requestId) && (candidate.error === undefined || typeof candidate.error === 'string')
@@ -425,8 +427,9 @@ export class DesktopHostProcess {
       }
       else {
         const query = this.taskQueries.get(message.requestId)
-        if (message.error === undefined) query?.resolve(message.active)
-        else query?.reject(new Error(message.error))
+        if (message.error !== undefined) query?.reject(new Error(message.error))
+        else if (message.active !== undefined) query?.resolve(message.active)
+        else query?.reject(new Error('desktop update: Host omitted active task state'))
       }
     })
     child.once('error', (error) => { this.fail(error) })

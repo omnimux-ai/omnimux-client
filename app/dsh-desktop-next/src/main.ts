@@ -56,12 +56,13 @@ import { PlatformLoginWindow } from './platform-login-window.ts'
 import { DesktopPlatformView, platformBounds } from './platform-view.ts'
 import { PLATFORM_IPC } from './platform-ipc.ts'
 import { NextUpdates } from './updates.ts'
+import { OmniMuxUpdateError } from './omnimux-updater/index.ts'
 import { updateDownloadDirectory } from './update-downloads.ts'
 import { isWindowsPortableCopy } from './update-portable.ts'
 import { createArtifactRequest } from './update-transport.ts'
 import { NextUpdateInstaller } from './update-installer.ts'
 import { macUpdateArch } from './update-arch.ts'
-import { manualUpdate, manualUpdateHint, releaseNotesUrl, updateLabel } from './update-state.ts'
+import { manualUpdate, manualUpdateHint, releaseNotesUrl, updateLabel, type OmniMuxUpdateEnvironment } from './update-state.ts'
 import { DESKTOP_SHUTDOWN_TIMEOUT_MS } from '../../dsh-plugin-desktop/src/shutdown.ts'
 import { isDesktopRendererStatus, NextRendererRecovery, type DesktopNavigationCause } from './renderer-recovery.ts'
 import { DesktopLaunchAnalytics } from './desktop-launch-analytics.ts'
@@ -222,7 +223,7 @@ const primaryRuntime = join(app.isPackaged ? join(process.resourcesPath, 'runtim
  */
 const rendererEvidence = new RollingRendererEvidence(() => mainWindow?.webContents)
 const runtime = new NextDesktopRuntime({
-  home, root, primaryRuntime, executable: process.execPath, addresses: () => [...desktopLanAddresses()], systemProxy: () => systemProxy,
+  home, root, primaryRuntime, releaseChannel: identity.releaseChannel, executable: process.execPath, addresses: () => [...desktopLanAddresses()], systemProxy: () => systemProxy,
   prepareEnvironment: () => prepareHostEnvironment(),
   memoryProbe: {
     appMetrics: () => app.getAppMetrics(),
@@ -302,8 +303,26 @@ const permissions = createNativePermissions()
 const updateInstaller = new NextUpdateInstaller({ platform: process.platform, executable: process.execPath,
   language: () => windowsLanguage,
   log: error => runtime.diagnostics.append(String(error), 'warn') })
-const updates = new NextUpdates({ version, platform: process.platform, packaged: app.isPackaged && identity.releaseChannel === 'stable', userData: electronData,
-  portable: isWindowsPortableCopy(process.platform, app.isPackaged, process.execPath),
+const updatePortable = isWindowsPortableCopy(process.platform, app.isPackaged, process.execPath)
+const updateEnvironment: OmniMuxUpdateEnvironment = !app.isPackaged
+  ? 'source'
+  : identity.releaseChannel === 'development'
+    ? 'dev'
+    : process.platform === 'linux'
+      ? 'linux'
+      : updatePortable
+        ? 'portable'
+        : 'production'
+const updates = new NextUpdates({
+  version,
+  platform: process.platform,
+  packaged: app.isPackaged && identity.releaseChannel === 'stable',
+  portable: updatePortable,
+  environment: updateEnvironment,
+  channel: 'stable',
+  executablePath: process.execPath,
+  osVersion: typeof process.getSystemVersion === 'function' ? process.getSystemVersion() : undefined,
+  userData: electronData,
   downloads: updateDownloadDirectory(process.platform),
   arch: process.platform === 'darwin' ? macUpdateArch(process.arch, app.runningUnderARM64Translation) : undefined,
   request: (url, init) => net.fetch(url, { ...init, credentials: 'omit' }),
@@ -320,9 +339,73 @@ const updates = new NextUpdates({ version, platform: process.platform, packaged:
   prepare: (path, nextVersion, directory, signal) => updateInstaller.prepare(path, nextVersion, directory, signal),
   install: async () => {
     runtime.busy = true; native.refresh()
+    let tasksLocked = false
+    const confirmActiveTasks = () => confirmed(
+      t('仍有任务正在运行，确定安装更新并重启？', 'Tasks are still running. Install the update and restart anyway?'),
+      t('继续安装会中断当前正在运行的对话或后台任务，Profile 和已保存会话会保留。', 'Continuing will interrupt running turns or background jobs. Profiles and saved sessions are preserved.'),
+    )
+    const releaseLock = async () => {
+      if (!tasksLocked) return
+      tasksLocked = false
+      await runtime.unlockUpdateTasks().catch(unlockErr => runtime.diagnostics.append(`Update admission unlock failed: ${String(unlockErr)}`, 'warn'))
+    }
     try {
+      let userConfirmedActiveTasks = false
+      if (runtime.hasReadyHost) {
+        let hasActiveTasks = false
+        try { hasActiveTasks = await runtime.inspectUpdateTasks() } catch (error) {
+          runtime.diagnostics.append(`Update task inspection failed: ${String(error)}`, 'warn')
+          throw new OmniMuxUpdateError('ACTIVE_TASKS_BLOCKED', 'Unable to inspect active tasks before update installation', { cause: error })
+        }
+        if (hasActiveTasks) {
+          const proceed = await confirmActiveTasks()
+          if (!proceed) return false
+          userConfirmedActiveTasks = true
+        }
+      }
+      if (process.platform === 'darwin' && mainWindow && !mainWindow.isDestroyed() && typeof mainWindow.isFullScreen === 'function' && mainWindow.isFullScreen()) {
+        const owner = mainWindow
+        await new Promise<void>(resolveLeave => {
+          const timer = setTimeout(resolveLeave, 5_000)
+          timer.unref()
+          owner.once('leave-full-screen', () => { clearTimeout(timer); resolveLeave() })
+          owner.setFullScreen(false)
+        })
+      }
+      if (runtime.hasReadyHost) {
+        tasksLocked = true
+        let activeAfterLock: boolean
+        try {
+          activeAfterLock = await runtime.lockUpdateTasks()
+        } catch (error) {
+          runtime.diagnostics.append(`Update admission lock failed: ${String(error)}`, 'warn')
+          await releaseLock()
+          throw new OmniMuxUpdateError('ACTIVE_TASKS_BLOCKED', 'Unable to lock Host admission before update installation', { cause: error })
+        }
+        if (activeAfterLock && !userConfirmedActiveTasks) {
+          // A task began between initial inspection (or fullscreen exit) and lock.
+          // Unlock before showing the prompt so the UI/Host stays responsive while the user decides.
+          await releaseLock()
+          const proceed = await confirmActiveTasks()
+          if (!proceed) return false
+          if (runtime.hasReadyHost) {
+            tasksLocked = true
+            try {
+              await runtime.lockUpdateTasks()
+            } catch (error) {
+              runtime.diagnostics.append(`Update admission re-lock failed: ${String(error)}`, 'warn')
+              await releaseLock()
+              throw new OmniMuxUpdateError('ACTIVE_TASKS_BLOCKED', 'Unable to lock Host admission before update installation', { cause: error })
+            }
+          }
+        }
+      }
       await updateInstaller.stage()
       if (!quitting) { installingUpdate = true; app.quit() }
+      return true
+    } catch (error) {
+      await releaseLock()
+      throw error
     } finally { runtime.busy = false; if (!quitting) native.refresh() }
   },
 })
@@ -783,8 +866,8 @@ function confirmLanAccess(): Promise<boolean> {
   )
 }
 /** Linux packages and portable Windows copies are not installed in the app: open the release page, which carries every package format. */
-function openUpdateDownload(version: string | undefined): void {
-  void shell.openExternal(releaseNotesUrl(version)).catch(error => runtime.diagnostics.append(String(error), 'warn'))
+function openUpdateDownload(version: string | undefined, overrideUrl?: string): void {
+  void shell.openExternal(releaseNotesUrl(version, overrideUrl)).catch(error => runtime.diagnostics.append(String(error), 'warn'))
 }
 async function promptAvailableUpdate(): Promise<void> {
   if (quitting || runtime.busy) return
@@ -803,7 +886,7 @@ async function promptAvailableUpdate(): Promise<void> {
   }
   const choice = await (owner === undefined ? dialog.showMessageBox(options) : dialog.showMessageBox(owner, options))
   if (choice.response !== 0 || quitting) return
-  if (manual) openUpdateDownload(snapshot.version)
+  if (manual) openUpdateDownload(snapshot.version, snapshot.releaseNotesUrl)
   else if (!runtime.busy) void updates.download()
 }
 async function openPath(path: string): Promise<void> { const error = await shell.openPath(path); if (error) throw new Error(error) }
@@ -843,8 +926,24 @@ async function performCommand(input: Record<string, unknown>, type: string, sour
   }
   if (type === 'close-controls') { shellWindow?.close(); return }
   if (type === 'quit') { app.quit(); return }
-  if (['check-updates', 'download-update', 'install-update'].includes(type)) {
-    if (!['darwin', 'win32', 'linux'].includes(process.platform) || quitting || runtime.busy) return
+  if (['check-updates', 'download-update', 'cancel-update-download', 'install-update', 'set-update-channel', 'dismiss-post-update-notice'].includes(type)) {
+    if (!['darwin', 'win32', 'linux'].includes(process.platform) || quitting) return
+    if (type === 'dismiss-post-update-notice') {
+      updates.dismissPostUpdateNotice?.()
+      return
+    }
+    if (type === 'cancel-update-download') {
+      void updates.cancelDownload?.()
+      return
+    }
+    if (runtime.busy) return
+    if (type === 'set-update-channel') {
+      const channel = input.channel
+      if (channel !== 'stable' && channel !== 'beta') throw new Error('Invalid update channel')
+      if (runtime.safeMode) throw new Error(t('安全模式无法切换更新通道。', 'Update channel cannot be changed in Safe Mode.'))
+      await updates.switchChannel?.(channel, nextChannel => { runtime.saveUpdateChannel(nextChannel) })
+      return
+    }
     if (type === 'check-updates') {
       void updates.check().then(async () => {
         if (source !== 'native' || quitting) return
@@ -858,7 +957,7 @@ async function performCommand(input: Record<string, unknown>, type: string, sour
       }).catch(error => runtime.diagnostics.append(String(error), 'warn'))
     } else if (type === 'download-update') {
       const snapshot = updates.snapshot()
-      if (manualUpdate(snapshot, process.platform)) openUpdateDownload(snapshot.version)
+      if (manualUpdate(snapshot, process.platform)) openUpdateDownload(snapshot.version, snapshot.releaseNotesUrl)
       else void updates.download()
     } else {
       if (updates.snapshot().phase !== 'ready') return
@@ -1634,6 +1733,10 @@ async function main(): Promise<void> {
     }
   }
   native.createTray()
+  updates.setInitialChannel?.(runtime.preferences.updateChannel)
+  if (!runtime.safeMode) {
+    void updates.observeLaunchArguments?.(process.argv).catch(error => runtime.diagnostics.append(String(error), 'warn'))
+  }
   updates.start()
   Menu.setApplicationMenu(process.platform === 'win32' ? null : Menu.buildFromTemplate(
     roleApplicationMenuTemplate(native.items(), windowsLanguage),
@@ -1687,13 +1790,17 @@ app.on('before-quit', event => {
   runtime.diagnostics.record({ source: 'electron', event: 'shutdown.start' })
   runtime.diagnostics.flush()
   // Bound the whole shutdown, including cleanup before Host termination starts.
+  // When an update handoff has locked a running Host, give Host graceful teardown (10s + 5s SIGTERM + 5s SIGKILL)
+  // a 22s budget and refuse to launch the installer if the Host did not exit cleanly.
+  const gracefulUpdateGuard = installingUpdate && runtime.requiresGracefulUpdateShutdown === true
+  const shutdownTimeoutMs = gracefulUpdateGuard ? 22_000 : DESKTOP_SHUTDOWN_TIMEOUT_MS
   let finished = false
   const timeout = setTimeout(() => {
     if (finish()) {
-      runtime.diagnostics.record({ source: 'electron', event: 'shutdown.timeout', level: 'error', message: 'Shutdown exceeded five seconds', fields: { pending: JSON.stringify(runtime.diagnostics.pendingOperations()) } })
+      runtime.diagnostics.record({ source: 'electron', event: 'shutdown.timeout', level: 'error', message: `Shutdown exceeded ${String(shutdownTimeoutMs)}ms`, fields: { pending: JSON.stringify(runtime.diagnostics.pendingOperations()) } })
       void completeShutdown(false)
     }
-  }, DESKTOP_SHUTDOWN_TIMEOUT_MS)
+  }, shutdownTimeoutMs)
   timeout.unref()
   function finish(): boolean {
     if (finished) return false
@@ -1703,6 +1810,19 @@ app.on('before-quit', event => {
   }
   async function completeShutdown(clean: boolean): Promise<void> {
     if (installingUpdate) {
+      if (!clean && gracefulUpdateGuard) {
+        runtime.diagnostics.record({
+          source: 'electron',
+          event: 'installer.aborted-unclean-shutdown',
+          level: 'error',
+          message: 'Refusing to launch update installer because Host did not complete graceful teardown',
+        })
+        runtime.diagnostics.end(false)
+        dialog.showErrorBox(t('更新未能安装', 'Update could not be installed'), t('后台服务未能安全退出，应用将重新打开，请在设置中重试更新。', 'The background service did not exit cleanly. The application will reopen; retry the update in Settings.'))
+        relaunchApp(app, relaunchArguments(process.argv.slice(1), false, false))
+        app.exit(1)
+        return
+      }
       const installerDone = runtime.diagnostics.operation('electron', 'installer.launch')
       try { await updateInstaller.launch(); installerDone() }
       catch (error) {

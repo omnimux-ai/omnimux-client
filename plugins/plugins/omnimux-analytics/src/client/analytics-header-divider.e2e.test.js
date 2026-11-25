@@ -8,9 +8,19 @@ import { fileURLToPath } from 'node:url'
 import * as esbuild from 'esbuild'
 import { skipProbeUnavailable } from '../../tests/fixtures/probe-skip.mjs'
 
-const CHROME_PATH = process.env.OMNIMUX_QA_CHROME
-  || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
-const HAS_CHROME = existsSync(CHROME_PATH)
+const CHROME_CANDIDATES = [
+  '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+  '/opt/homebrew/bin/chromium',
+  // GitHub ubuntu-latest preinstalls Google Chrome under one of these names.
+  '/usr/bin/google-chrome',
+  '/usr/bin/google-chrome-stable',
+  '/usr/bin/chromium-browser',
+  '/usr/bin/chromium',
+  '/snap/bin/chromium',
+]
+const CHROME_PATH = process.env.OMNIMUX_QA_CHROME || process.env.CHROME_PATH
+  || CHROME_CANDIDATES.find((candidate) => existsSync(candidate))
+const HAS_CHROME = CHROME_PATH !== undefined && existsSync(CHROME_PATH)
 const here = dirname(fileURLToPath(import.meta.url))
 const repoRoot = join(here, '../../../..')
 
@@ -90,7 +100,7 @@ function probePageHtml() {
 }
 
 async function runStageProbe() {
-  if (!HAS_CHROME) return { skipped: true, reason: `chrome not found at ${CHROME_PATH}` }
+  if (!HAS_CHROME) return { skipped: true, reason: `chrome not found (searched ${CHROME_CANDIDATES.join(', ')})` }
   const dir = mkdtempSync(join(tmpdir(), 'e2e-analytics-divider-'))
   try {
     const entry = join(dir, 'entry.jsx')

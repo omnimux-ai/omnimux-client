@@ -155,6 +155,24 @@ describe('desktop host process', () => {
     await expect(host.updateTasks('inspect')).rejects.toThrow('Host is unavailable')
   })
 
+  it('rejects update-tasks error IPC replies without terminating the Host', async () => {
+    const onFailure = vi.fn()
+    const runtime = projectWithHost(HTTP_HOST.replace(
+      "process.send({ type: 'update-tasks', requestId: message.requestId, active: message.action === 'lock' })",
+      `if (message.action === 'inspect') process.send({ type: 'update-tasks', requestId: message.requestId, error: 'omitted-active error' })
+       else if (message.action === 'lock') process.send({ type: 'update-tasks', requestId: message.requestId, active: false, error: 'explicit-active error' })
+       else process.send({ type: 'update-tasks', requestId: message.requestId, active: false })`,
+    ))
+    const host = hostProcess(runtime, runtime, onFailure)
+    await host.start()
+    await expect(host.updateTasks('inspect')).rejects.toThrow('omitted-active error')
+    await expect(host.updateTasks('lock')).rejects.toThrow('explicit-active error')
+    // Host must remain alive and responsive after structured update-tasks error replies.
+    await expect(host.updateTasks('unlock')).resolves.toBe(false)
+    expect(onFailure).not.toHaveBeenCalled()
+    await host.stop(true)
+  })
+
   it('asks a starting Host which Loader entries hold it, and refuses a malformed answer (#1617)', async () => {
     const runtime = projectWithHost(`
       let asked = 0

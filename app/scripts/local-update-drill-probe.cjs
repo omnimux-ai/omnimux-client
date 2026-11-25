@@ -10,7 +10,7 @@ const { join } = require('node:path')
 app.dock?.hide()
 const data = mkdtempSync(join(tmpdir(), 'dsh-drill-probe-'))
 app.setPath('userData', data)
-const [channel = 'next', installed = 'unknown', arch = 'arm64'] = process.argv.slice(2)
+const [channel = 'stable', installed = 'unknown', arch = 'arm64'] = process.argv.slice(2)
 
 let reported = false
 const report = result => {
@@ -23,10 +23,10 @@ setTimeout(() => report({ error: 'timed out after 20 s' }), 20_000).unref()
 
 app.whenReady().then(async () => {
   try {
-    const response = await net.fetch('https://www.dshdesktop.cn/api/desktop/version', {
+    const response = await net.fetch(`https://dl.omnimux.ai/api/desktop/v2/${channel}.json`, {
       method: 'GET', credentials: 'omit', cache: 'no-store', redirect: 'error',
-      headers: { Accept: 'application/json', 'X-DSH-Desktop-Channel': channel, 'X-DSH-Desktop-Version': installed,
-        'X-DSH-Desktop-Arch': arch, 'X-DSH-Drill-Probe': '1' },
+      headers: { Accept: 'application/json', 'X-OmniMux-Channel': channel, 'X-OmniMux-Version': installed,
+        'X-OmniMux-Arch': arch, 'X-OmniMux-Drill-Probe': '1' },
     })
     report({ status: response.status, body: (await response.text()).slice(0, 300) })
   } catch (error) {
