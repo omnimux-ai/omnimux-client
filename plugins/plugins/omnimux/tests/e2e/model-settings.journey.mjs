@@ -52,18 +52,26 @@ export default async function modelSettingsJourney({ send, sleep, evidenceDir, i
     check('catalog-sync-button-visible', observed?.hasSyncButton === true, observed?.syncText)
     check('model-default-rows-rendered', Number(observed?.modelRowCount) >= 5, String(observed?.modelRowCount))
 
-    // Hub bundle detail: `plugins.bundle.config` owns the card. The detail
-    // section must not mount a second identical copy below the component list.
+    // Core base bundles stay hidden from "Installed plugins"; shipped business
+    // bundles remain visible without an Uninstall button and mount one shared
+    // model settings section under `plugins.detail.section`.
     await evaluate(`document.querySelector('[data-plugin-page-header] button')?.click()`)
-    check('plugin-list-visible', await waitFor(`!!document.querySelector('[data-plugin-package="omnimux"]')`))
+    check('workflow-card-visible', await waitFor(`!!document.querySelector('[data-plugin-package="omnimux-workflow"]')`))
+    const baseVisibility = await evaluate(`({
+      omnimux: document.querySelectorAll('[data-plugin-package="omnimux"]').length,
+      sidebar: document.querySelectorAll('[data-plugin-package="dsh-better-sidebar"]').length,
+    })`)
+    assert.equal(baseVisibility?.omnimux, 0, 'omnimux core base bundle must stay hidden from Installed plugins')
+    assert.equal(baseVisibility?.sidebar, 0, 'dsh-better-sidebar infrastructure bundle must stay hidden from Installed plugins')
+    check('core-base-bundles-hidden', baseVisibility?.omnimux === 0 && baseVisibility?.sidebar === 0, JSON.stringify(baseVisibility))
     await evaluate(`(() => {
-      const card = document.querySelector('[data-plugin-package="omnimux"]')
-      const open = card ? [...card.querySelectorAll('button')].find((button) => button.textContent.trim() === 'omnimux') : null
+      const card = document.querySelector('[data-plugin-package="omnimux-workflow"]')
+      const open = card ? [...card.querySelectorAll('button')].find((button) => button.getAttribute('role') !== 'switch') : null
       open?.click()
     })()`)
-    check('omnimux-bundle-detail-visible', await waitFor(`!!document.querySelector('[data-plugin-detail="omnimux"]')`))
+    check('workflow-bundle-detail-visible', await waitFor(`!!document.querySelector('[data-plugin-detail="omnimux-workflow"]')`))
     const bundle = await evaluate(`(() => {
-      const detail = document.querySelector('[data-plugin-detail="omnimux"]')
+      const detail = document.querySelector('[data-plugin-detail="omnimux-workflow"]')
       return detail ? {
         settingsSections: detail.querySelectorAll('.omnimux-settings-sections').length,
         catalogSync: detail.querySelectorAll('[data-section="catalog-sync"]').length,
@@ -71,16 +79,19 @@ export default async function modelSettingsJourney({ send, sleep, evidenceDir, i
         detailSection: detail.querySelectorAll('[data-slot="plugins.detail.section"] .omnimux-settings-sections').length,
         runtime: detail.querySelectorAll('[data-section="runtime"]').length,
         canvasModels: detail.querySelectorAll('[data-section="canvas-models"]').length,
+        uninstallButtons: [...detail.querySelectorAll('[data-plugin-page-header="detail"] button')]
+          .filter((button) => button.textContent.trim() === '卸载' || button.textContent.trim() === 'Uninstall').length,
       } : null
     })()`)
-    assert.equal(bundle?.settingsSections, 1, 'hub bundle must render one model settings section')
-    assert.equal(bundle?.catalogSync, 1, 'hub bundle must render one catalog sync card')
-    assert.equal(bundle?.bundleConfig, 1, 'plugins.bundle.config must own the hub bundle card')
-    assert.equal(bundle?.detailSection, 0, 'plugins.detail.section must not repeat the hub bundle card')
-    assert.equal(bundle?.runtime, 1, 'hub bundle must render one model service card')
-    assert.equal(bundle?.canvasModels, 1, 'hub bundle must render one creative canvas models card')
+    assert.equal(bundle?.settingsSections, 1, 'business bundle must render one shared model settings section')
+    assert.equal(bundle?.catalogSync, 1, 'business bundle must render one catalog sync card')
+    assert.equal(bundle?.bundleConfig, 0, 'business bundle must not double-mount through plugins.bundle.config')
+    assert.equal(bundle?.detailSection, 1, 'plugins.detail.section must render the shared model settings card on sibling omnimux-* bundles')
+    assert.equal(bundle?.runtime, 1, 'business bundle must render one model service card')
+    assert.equal(bundle?.canvasModels, 1, 'business bundle must render one creative canvas models card')
+    assert.equal(bundle?.uninstallButtons, 0, 'shipped business bundle detail must not expose an Uninstall button')
     check('bundle-model-settings-single', bundle?.settingsSections === 1 && bundle?.catalogSync === 1, JSON.stringify(bundle))
-    check('bundle-config-owns-model-settings', bundle?.bundleConfig === 1 && bundle?.detailSection === 0, JSON.stringify(bundle))
+    check('business-bundle-detail-no-uninstall', bundle?.detailSection === 1 && bundle?.uninstallButtons === 0, JSON.stringify(bundle))
 
     const screenshot = await send('Page.captureScreenshot', { format: 'png' })
     if (screenshot?.data && evidenceDir && io?.writeFileSync) {

@@ -293,7 +293,7 @@ export function auditNextPayload(source: PayloadSource, target: NextPackagingTar
     const rootManifest = JSON.parse(rootManifestEntry.read().toString('utf8')) as {
       dependencies?: Record<string, string>
       optionalDependencies?: Record<string, string>
-      dsh?: { optionalBundles?: unknown }
+      dsh?: { optionalBundles?: unknown; protectedBundles?: unknown }
     }
     for (const field of ['dependencies', 'optionalDependencies'] as const) {
       for (const name of Object.keys(rootManifest[field] ?? {})) {
@@ -306,6 +306,16 @@ export function auditNextPayload(source: PayloadSource, target: NextPackagingTar
         if (typeof name !== 'string') continue
         const reason = nextRuntimeUnusedFeatureExclusion(name)
         if (reason !== undefined) problems.push(`package.json: dsh.optionalBundles.${name}: ${reason} must not remain in packaged manifest`)
+      }
+    }
+    if (Array.isArray(rootManifest.dsh?.protectedBundles)) {
+      for (const name of rootManifest.dsh.protectedBundles) {
+        if (typeof name !== 'string') continue
+        const reason = nextRuntimeUnusedFeatureExclusion(name)
+        if (reason !== undefined) problems.push(`package.json: dsh.protectedBundles.${name}: ${reason} must not remain in packaged manifest`)
+        else if (!Object.hasOwn(rootManifest.dependencies ?? {}, name)) {
+          problems.push(`package.json: dsh.protectedBundles.${name}: must be declared in dependencies`)
+        }
       }
     }
   }

@@ -1572,7 +1572,7 @@
     "test:market-release": "node --test scripts/prepare-dsh-market.test.mjs",
     "test:inspector-compat": "node --test scripts/inspector-compat.test.mjs scripts/next-inspector-compat.test.mjs",
     "test:conversation-draft-compat": "node --test scripts/conversation-draft-compat.test.mjs scripts/next-conversation-draft-compat.test.mjs",
-    "test:next-compat": "node --test scripts/next-conversation-draft-compat.test.mjs scripts/next-inspector-compat.test.mjs",
+    "test:next-compat": "node --test scripts/next-conversation-draft-compat.test.mjs scripts/next-inspector-compat.test.mjs scripts/protected-bundles-compat.test.mjs",
     "test:storage-json-compat": "node --test scripts/storage-json-compat.test.mjs",
     "test:session-reference-compat": "node --test scripts/session-reference-compat.test.mjs",
     "test:listed-bundles-compat": "node --test scripts/listed-bundles-compat.test.mjs"

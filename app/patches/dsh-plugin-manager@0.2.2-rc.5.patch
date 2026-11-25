@@ -1,5 +1,5 @@
 diff --git a/lib/index.js b/lib/index.js
-index 6d42b70..f2eb6a1 100644
+index 6d42b70..2c5f06e 100644
 --- a/lib/index.js
 +++ b/lib/index.js
 @@ -2221,7 +2221,7 @@ let PluginManager = (() => {
@@ -24,3 +24,22 @@ index 6d42b70..f2eb6a1 100644
  			if (JSON.stringify(previous) === JSON.stringify(bundles)) return;
  			manifest.dsh = {
  				...manifest.dsh,
+@@ -3267,6 +3271,18 @@ let PluginManager = (() => {
+ 		}
+ 		protectsManager(name) {
+ 			if (this.managementBundles.has(name)) return true;
++			if (this._installationProtectedBundles === void 0) {
++				try {
++					const installation = JSON.parse(readFileSync(this.profile.installAnchor, "utf8"));
++					this._installationProtectedBundles = new Set(Array.isArray(installation.dsh?.protectedBundles) ? installation.dsh.protectedBundles.filter((item) => typeof item === "string" && Object.hasOwn(installation.dependencies ?? {}, item)) : []);
++				} catch {
++					this._installationProtectedBundles = new Set();
++				}
++			}
++			if (this._installationProtectedBundles.has(name)) {
++				this.managementBundles.add(name);
++				return true;
++			}
+ 			let rows;
+ 			try {
+ 				rows = this.bundleRows(name);

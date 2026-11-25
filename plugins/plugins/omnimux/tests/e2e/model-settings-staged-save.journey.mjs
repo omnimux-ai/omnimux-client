@@ -20,13 +20,9 @@ export default async function stagedSaveJourney({ send, sleep, evidenceDir, io }
     await evaluate(`[...document.querySelectorAll('button')].find((b) => b.textContent.trim() === '更多')?.click()`)
     check('plugins-menu-item-visible', await waitFor(`[...document.querySelectorAll('button, [role="menuitem"]')].some((b) => b.textContent.trim() === '插件')`))
     await evaluate(`[...document.querySelectorAll('button, [role="menuitem"]')].find((b) => b.textContent.trim() === '插件')?.click()`)
-    check('omnimux-card-visible', await waitFor(`!!document.querySelector('[data-plugin-package="omnimux"]')`))
-    await evaluate(`(() => {
-      const card = document.querySelector('[data-plugin-package="omnimux"]')
-      const open = card ? [...card.querySelectorAll('button')].find((b) => b.textContent.trim() === 'omnimux') : null
-      open?.click()
-    })()`)
-    check('omnimux-detail-visible', await waitFor(`!!document.querySelector('[data-plugin-detail="omnimux"]')`))
+    check('model-settings-item-visible', await waitFor(`!!document.querySelector('[data-plugin-item="omnimux-model-settings"]')`))
+    await evaluate(`document.querySelector('[data-plugin-item="omnimux-model-settings"] button')?.click()`)
+    check('model-settings-detail-visible', await waitFor(`!!document.querySelector('[data-plugin-item-detail="omnimux-model-settings"]')`))
     check('reasoning-select-visible', await waitFor(`!!document.querySelector('#omnimux-defaultTextReasoning')`))
     const before = await evaluate(`(() => ({
       value: document.querySelector('#omnimux-defaultTextReasoning')?.textContent?.trim() || '',
@@ -48,7 +44,7 @@ export default async function stagedSaveJourney({ send, sleep, evidenceDir, io }
     check('savebar-visible-after-edit', await waitFor(`!!document.querySelector('.omnimux-settings-savebar')`))
     const afterEdit = await evaluate(`(() => ({
       label: document.querySelector('.omnimux-settings-savebar__label')?.textContent || '',
-      stillDetail: !!document.querySelector('[data-plugin-detail="omnimux"]'),
+      stillDetail: !!document.querySelector('[data-plugin-item-detail="omnimux-model-settings"]'),
       value: document.querySelector('#omnimux-defaultTextReasoning')?.textContent?.trim() || '',
     }))()`)
     if (evidenceDir && io?.writeFileSync) io.writeFileSync(`${evidenceDir}/debug-after-edit.json`, JSON.stringify({ before, picked, afterEdit }, null, 2))
@@ -66,11 +62,11 @@ export default async function stagedSaveJourney({ send, sleep, evidenceDir, io }
       url: location.href,
       bar: !!document.querySelector('.omnimux-settings-savebar'),
       label: document.querySelector('.omnimux-settings-savebar__label')?.textContent || '',
-      detail: !!document.querySelector('[data-plugin-detail="omnimux"]'),
+      detail: !!document.querySelector('[data-plugin-item-detail="omnimux-model-settings"]'),
       text: document.body.innerText.slice(0, 120),
     }))()`)
     result.push({ name: 'savebar-cleared-after-save', pass: Boolean(cleared), detail: JSON.stringify(afterSave) })
-    const detailMounted = await waitFor(`!!document.querySelector('[data-plugin-detail="omnimux"]')`, 30000)
+    const detailMounted = await waitFor(`!!document.querySelector('[data-plugin-item-detail="omnimux-model-settings"]')`, 30000)
     result.push({ name: 'detail-still-mounted-after-save', pass: Boolean(detailMounted), detail: JSON.stringify(afterSave) })
   } catch (error) {
     result.push({ name: 'journey-error', pass: false, detail: error instanceof Error ? error.message : String(error) })

@@ -94,11 +94,11 @@ function fixture() {
   const remote = { name: '@agents-anywhere/dsh-bridge-next', enabled: true, installed: false, optional: true, official: true,
     version: '0.1.0', description: 'Remote connection', rows: [{ entryId: undefined as string | undefined, rowId: 'bridge', moduleName: 'bridge', enabled: true, phase: 'active' }] }
   const official = { ...remote, name: 'official-team', rows: [] }
-  const state = { status: 'ready', packages: [official, remote], busy: [] as string[], notice: null, highlight: null, confirm: null,
+  const state = { status: 'ready', packages: [official, remote] as Array<Record<string, unknown>>, busy: [] as string[], notice: null, highlight: null, confirm: null,
     install: { open: false }, versions: {}, update: null }
   const item = { id: 'desktop-next-computer-use', label: 'Computer Use (Next)' }
   const ledger = { items: [item], bundles: new Set([remote.name]), rows: new Set(),
-    hiddenBundles: new Set([remote.name]), hiddenItems: new Set([item.id]) }
+    hiddenBundles: new Set([remote.name]), listedBundles: new Set<string>(), hiddenItems: new Set([item.id]) }
   let overview: { onOpenBundle(name: string): void; onOpenItem(id: string): void }
   const setEnabled = vi.fn()
   const setRowEnabled = vi.fn()
@@ -437,4 +437,108 @@ it('renders the on-demand /computer-use command sub-switch on the Computer Use d
     node => node.type === 'input' && node.props.label === '按需命令加载（/computer-use）',
   )
   expect(hiddenSwitch).toBeUndefined()
+})
+
+it('hides core OmniMux base bundles, lists shipped business bundles without uninstall, and gates beta bundles by listedByDefault', () => {
+  const app = fixture()
+  const ctx = {
+    inject: (_services: unknown, callback: (context: unknown) => void) => { callback(ctx) },
+    slots: {
+      inject: (_name: string, callback: () => unknown) => { callback() },
+      register: (options: { name: string; key?: string }) => {
+        if (options.name === 'plugins.bundle.hidden') app.ledger.hiddenBundles.add(options.key!)
+        if (options.name === 'plugins.bundle.listed') app.ledger.listedBundles.add(options.key!)
+        return () => {}
+      },
+    },
+  }
+  registerPluginControls(ctx as unknown as Context)
+
+  const shippedBundle = (name: string, overrides: Record<string, unknown> = {}) => ({
+    name,
+    official: false,
+    optional: false,
+    availability: 'installation',
+    installed: false,
+    removable: false,
+    enabled: true,
+    version: '0.1.0',
+    description: '',
+    rows: [],
+    overrides: [],
+    ...overrides,
+  })
+
+  // 1. Fresh production install: core hidden, preview business visible & toggleable without uninstall, beta hidden while disabled.
+  app.state.packages = [
+    shippedBundle('omnimux', { readOnlyReason: 'management-required' }),
+    shippedBundle('dsh-better-sidebar', { readOnlyReason: 'management-required' }),
+    shippedBundle('omnimux-workflow', { meta: { title: '创作画布', description: '在画布上编排和运行多步骤创作流程，管理本地项目。' } }),
+    shippedBundle('omnimux-clip', { enabled: false, meta: { title: '视频剪辑', description: '提供多轨道时间轴剪辑、字幕编辑与视频导出。' } }),
+    shippedBundle('omnimux-accounts', { enabled: false, listedByDefault: false, meta: { title: '社交账号', description: '连接和管理多平台社交账号。' } }),
+    {
+      name: 'community-demo-plugin',
+      official: false,
+      optional: false,
+      availability: 'profile',
+      installed: true,
+      removable: true,
+      enabled: true,
+      version: '1.0.0',
+      rows: [],
+      overrides: [],
+    },
+  ]
+
+  const packageNames = (tree: Node) => nodes(tree)
+    .filter(node => typeof node.type === 'function' && node.type.name === 'PackageCard')
+    .map(node => node.props.pkg.name)
+
+  const prodList = app.page()
+  expect(groups(prodList)).toEqual(['bundles'])
+  expect(packageNames(prodList)).toEqual(['omnimux-workflow', 'omnimux-clip', 'community-demo-plugin'])
+
+  // Business plugin card supports toggling even when shipped-only (installed=false), and stays listed when turned off.
+  const workflowCard = nodes(prodList).find(
+    node => typeof node.type === 'function' && node.type.name === 'PackageCard' && node.props.pkg.name === 'omnimux-workflow',
+  )!
+  const workflowHead = component(render(workflowCard), 'CardHead')!
+  const workflowSwitch = switchOf(component(workflowHead.props.end, 'EnableSwitch')!)
+  expect(workflowSwitch.props.checked).toBe(true)
+  workflowSwitch.props.onChange(false)
+  expect(app.setEnabled).toHaveBeenCalledWith('omnimux-workflow', false)
+
+  // Detail page for shipped business bundle renders switch but NO uninstall button (both fresh install and Dev sync installed=true).
+  const hasUninstallButton = (detailNode: Node) => {
+    const detailBody = render(detailNode)
+    const top = component(detailBody, 'DetailTop')!
+    return nodes(top.props.actions).some(node => node.props?.children === 'uninstall')
+  }
+
+  workflowCard.props.onOpen()
+  const freshDetail = component(app.page(), 'PackageDetail')!
+  expect(freshDetail.props.pkg.name).toBe('omnimux-workflow')
+  expect(hasUninstallButton(freshDetail)).toBe(false)
+
+  // Simulate Dev omnimux:sync override (installed=true, availability='installation', removable=false):
+  // omnimux core MUST remain hidden and omnimux-workflow detail MUST still omit uninstall.
+  app.state.packages[0] = shippedBundle('omnimux', { installed: true, readOnlyReason: 'management-required' })
+  app.state.packages[2] = shippedBundle('omnimux-workflow', { installed: true, meta: { title: '创作画布', description: '在画布上编排和运行多步骤创作流程，管理本地项目。' } })
+  app.state.packages[4] = shippedBundle('omnimux-accounts', { enabled: true, listedByDefault: false, meta: { title: '社交账号', description: '连接和管理多平台社交账号。' } })
+
+  const devDetail = component(app.page(), 'PackageDetail')!
+  expect(hasUninstallButton(devDetail)).toBe(false)
+
+  // Return to list: omnimux core stays hidden despite installed=true; enabled beta plugin now shows.
+  component(render(devDetail), 'DetailTop')!.props.onBack()
+  const devList = app.page()
+  expect(packageNames(devList)).toEqual(['omnimux-workflow', 'omnimux-clip', 'omnimux-accounts', 'community-demo-plugin'])
+
+  // Third-party profile-installed plugin retains its uninstall button.
+  const communityCard = nodes(devList).find(
+    node => typeof node.type === 'function' && node.type.name === 'PackageCard' && node.props.pkg.name === 'community-demo-plugin',
+  )!
+  communityCard.props.onOpen()
+  const communityDetail = component(app.page(), 'PackageDetail')!
+  expect(hasUninstallButton(communityDetail)).toBe(true)
 })
