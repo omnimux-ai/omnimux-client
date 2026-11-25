@@ -365,6 +365,27 @@ superseded_by: null
 
 ---
 
+### 3.16 `omnimux-pibrowse`（指纹浏览器工作台）
+
+- **功能域**：基于开源 `aronhy/pibrowse`（`v0.5.5`）的去壳 Sidecar（本地 `FURY_SOCKET` IPC，不开放本地 TCP HTTP）、按需 DMG/Core 下载与 SHA-256 校验、宿主原生 `ctx.mcpManager` 托管上游 `fury-agent mcp`（19 个 `mcp__pibrowse__fury_*` 页面/配置/预热/养号工具）、侧边栏四视图工作台（配置 / 代理与规则 / 扩展与团队 / 环境与运行态）、离线 MaxMind `.mmdb` 绑定、域名黑白名单（含 `@allow-only`）、多窗口镜像同步与 Team Server 端到端加密同步（Argon2id + X25519 + XChaCha20-Poly1305 + 分布式锁 + 密钥交接与轮换）。
+- **存储**：`$DSH_HOME/omnimux/pibrowse/`。
+- **动态 MCP 工具面**：运行态通过 `ctx.mcpManager.register('pibrowse', { transport: 'stdio', command: fury-agent, args: ['mcp'] })` 动态挂载上游 `v0.5.5` 暴露的 19 个 `mcp__pibrowse__fury_*` 页面/配置/预热/养号工具（不走静态 `ctx.tools.register`）。
+- **状态**：已实装 8 个不重叠宿主管理面工具（与 `/omnimux/pibrowse/*` 共享同一 `PibrowseDispatcher`）+ 动态托管 19 个 `mcp__pibrowse__fury_*` MCP 工具。
+
+| 业务功能描述 | 对应 UI 交互 / HTTP 路由 | Agent 工具名称 (`Tool Name`) | 分级 | 状态 | 破坏性 confirm |
+|---|---|---|---|---|---|
+| 查询平台兼容、Sidecar、Core、Widevine、MCP 与 Team 全景状态 | 环境与运行态 / `GET /omnimux/pibrowse/overview` | `pibrowse_runtime_status` | L2 | `Implemented` | 否 |
+| 启停重启 Sidecar、配置路径、触发 Core 下载、探测/重连 MCP 或清理内核缓存 | 环境与运行态操作按钮 / `POST /omnimux/pibrowse/runtime` | `pibrowse_manage_runtime` | L1 | `Implemented` | 条件 (`action=clear_cache` 需 `confirm: true`) |
+| 克隆配置、重随机/重置指纹、回收站列表/恢复/彻底清除或启动指纹检测页 | 配置列表操作与回收站 / `POST /omnimux/pibrowse/profiles/manage` | `pibrowse_manage_profiles` | L1 | `Implemented` | 条件 (`action=purge` 需 `confirm: true`) |
+| 经代理检测出口 IP/国家/时区、执行分段连通性诊断或触发移动代理轮换 | 代理池检测/诊断/换 IP / `POST /omnimux/pibrowse/proxies/check` | `pibrowse_check_proxy` | L2 | `Implemented` | 否 |
+| 校验活跃配置引用后删除指定代理条目 | 代理池删除确认框 / `POST /omnimux/pibrowse/proxies/delete` | `pibrowse_delete_proxy` | L1 | `Implemented` | 是 (`confirm: true`) |
+| 列出、读取、保存域名黑白名单（含 `@allow-only`）、绑定配置或删除规则集 | 域名黑白名单编辑器 / `POST /omnimux/pibrowse/blocklists` | `pibrowse_manage_blocklists` | L1 | `Implemented` | 条件 (`action=delete` 需 `confirm: true`) |
+| 列出、安装（`.crx`/目录/商店 ID）或移除扩展，以及启停多窗口镜像同步 | 扩展管理与多窗同步 / `POST /omnimux/pibrowse/extensions` | `pibrowse_manage_extensions_and_mirror` | L1 | `Implemented` | 条件 (`action=remove_extension` 需 `confirm: true`) |
+| 查询 Team 状态/项目/配置/成员/审计日志、加锁启停同步配置、上传本地配置或断开 | 扩展与团队面板 / `POST /omnimux/pibrowse/team/sync` | `pibrowse_team_sync` | L1 | `Implemented` | 条件 (`action=disconnect` 需 `confirm: true`) |
+| 四视图 Tab 切换、筛选下拉与弹窗展开状态 | 顶部 Tab 与筛选栏 | — | UI-Only | `UI-Only` | 豁免 (前端局部交互状态) |
+
+---
+
 ## 4. 长效治理 SOP：新功能注册与全链路开发规范
 
 当开发团队需要为任何插件开发新功能时，必须遵循以下 **SOP 5 步闭环**，实现「方案自制定、代码双面写、工具自动查」：

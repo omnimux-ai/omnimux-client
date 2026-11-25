@@ -90,6 +90,11 @@
         }
       ]
     },
+    "omnimux-pibrowse": {
+      "class": "original",
+      "license": "SEE LICENSE IN LICENSE",
+      "upstream": []
+    },
     "omnimux-products": {
       "class": "original",
       "license": "SEE LICENSE IN LICENSE",

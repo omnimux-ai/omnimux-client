@@ -116,7 +116,7 @@ const CONVERGED_ROWS = new Map()
 const seen = new Set()
 
 /** 核心常驻侧栏项白名单（除 inline 新建项目外） */
-const PINNED_ENTRY_PREFIXES = ['omnimux-workflow', 'omnimux-market', 'omnimux-assets', 'omnimux-inspiration', 'omnimux-avatar']
+const PINNED_ENTRY_PREFIXES = ['omnimux-workflow', 'omnimux-market', 'omnimux-assets', 'omnimux-inspiration', 'omnimux-avatar', 'omnimux-pibrowse']
 
 export function isPinnedSidebarEntry(id) {
   const pluginId = id.endsWith('-entry') ? id.slice(0, -6) : id

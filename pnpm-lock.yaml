@@ -42,7 +42,7 @@ importers:
         version: 0.28.2
       jsdom:
         specifier: 30.0.1
-        version: 30.0.1
+        version: 30.0.1(@noble/hashes@1.8.0)
       katex:
         specifier: ^0.16.47
         version: 0.16.47
@@ -202,7 +202,7 @@ importers:
         version: 0.25.12
       jsdom:
         specifier: ^30.0.1
-        version: 30.0.1
+        version: 30.0.1(@noble/hashes@1.8.0)
       mdast-util-from-markdown:
         specifier: 2.0.3
         version: 2.0.3
@@ -410,7 +410,7 @@ importers:
         version: 6.0.3
       vitest:
         specifier: ^4.1.11
-        version: 4.1.12(@types/node@22.20.5)(jsdom@30.0.1)(vite@6.4.6(@types/node@22.20.5)(jiti@1.21.7)(yaml@2.9.1))
+        version: 4.1.12(@types/node@22.20.5)(jsdom@30.0.1(@noble/hashes@1.8.0))(vite@6.4.6(@types/node@22.20.5)(jiti@1.21.7)(yaml@2.9.1))
 
   plugins/plugins/omnimux-browser/extension:
     dependencies:
@@ -655,7 +655,7 @@ importers:
         version: 0.25.12
       jsdom:
         specifier: ^30.0.1
-        version: 30.0.1
+        version: 30.0.1(@noble/hashes@1.8.0)
       react:
         specifier: ^18.2.0
         version: 18.3.1
@@ -686,7 +686,7 @@ importers:
         version: 0.25.12
       jsdom:
         specifier: ^30.0.1
-        version: 30.0.1
+        version: 30.0.1(@noble/hashes@1.8.0)
 
   plugins/plugins/omnimux-market:
     dependencies:
@@ -737,6 +737,28 @@ importers:
         specifier: ^5.9.2
         version: 5.9.3
 
+  plugins/plugins/omnimux-pibrowse:
+    dependencies:
+      '@deepseek-ai/dsh-client-ui-primitives':
+        specifier: '>=0.1.0-rc.6 || >=0.2.1-rc.3 <0.3.0-0 || >=0.2.2-rc.5 <0.3.0-0'
+        version: 0.2.2-rc.5(@deepseek-ai/cordis@4.1.0)
+      '@noble/hashes':
+        specifier: ^1.8.0
+        version: 1.8.0
+      dsh-ui-kit:
+        specifier: ^0.1.0
+        version: link:../../packages/dsh-ui-kit
+      react:
+        specifier: '>=18.2.0'
+        version: 18.3.1
+      react-dom:
+        specifier: '>=18.2.0'
+        version: 18.3.1(react@18.3.1)
+    devDependencies:
+      esbuild:
+        specifier: ^0.25.0
+        version: 0.25.12
+
   plugins/plugins/omnimux-products:
     dependencies:
       '@deepseek-ai/dsh-client-ui-primitives':
@@ -779,7 +801,7 @@ importers:
         version: 0.25.12
       jsdom:
         specifier: ^30.0.1
-        version: 30.0.1
+        version: 30.0.1(@noble/hashes@1.8.0)
       react:
         specifier: ^18.3.1
         version: 18.3.1
@@ -2817,6 +2839,10 @@ packages:
     peerDependencies:
       '@emnapi/core': ^1.7.1
       '@emnapi/runtime': ^1.7.1
+
+  '@noble/hashes@1.8.0':
+    resolution: {integrity: sha512-jCs9ldd7NwzpgXDIf6P3+NrHh9/sD6CQdxHyjQI+h/6rDNo88ypBxxz45UDuZHz9r3tNz7N/VInSVoVdtXEI4A==}
+    engines: {node: ^14.21.3 || >=16}
 
   '@nodelib/fs.scandir@2.1.5':
     resolution: {integrity: sha512-vq24Bq3ym5HEQm2NKCr3yXDwjc7vTsEThRDnkp2DK9p1uqLR+DHurm/NOTo0KG7HYHU7eppKZj3MyqYuMBf62g==}
@@ -7970,7 +7996,9 @@ snapshots:
 
   '@eslint-community/regexpp@4.12.3': {}
 
-  '@exodus/bytes@1.16.0': {}
+  '@exodus/bytes@1.16.0(@noble/hashes@1.8.0)':
+    optionalDependencies:
+      '@noble/hashes': 1.8.0
 
   '@ffmpeg/ffmpeg@0.12.15':
     dependencies:
@@ -8349,6 +8377,8 @@ snapshots:
       '@emnapi/runtime': 1.11.1
       '@tybys/wasm-util': 0.10.5
     optional: true
+
+  '@noble/hashes@1.8.0': {}
 
   '@nodelib/fs.scandir@2.1.5':
     dependencies:
@@ -10411,10 +10441,10 @@ snapshots:
       whatwg-mimetype: 4.0.0
       whatwg-url: 14.2.0
 
-  data-urls@7.0.0:
+  data-urls@7.0.0(@noble/hashes@1.8.0):
     dependencies:
       whatwg-mimetype: 5.0.0
-      whatwg-url: 16.0.1
+      whatwg-url: 16.0.1(@noble/hashes@1.8.0)
     transitivePeerDependencies:
       - '@noble/hashes'
 
@@ -10719,9 +10749,9 @@ snapshots:
     dependencies:
       whatwg-encoding: 3.1.1
 
-  html-encoding-sniffer@6.0.0:
+  html-encoding-sniffer@6.0.0(@noble/hashes@1.8.0):
     dependencies:
-      '@exodus/bytes': 1.16.0
+      '@exodus/bytes': 1.16.0(@noble/hashes@1.8.0)
     transitivePeerDependencies:
       - '@noble/hashes'
 
@@ -10845,17 +10875,17 @@ snapshots:
       - supports-color
       - utf-8-validate
 
-  jsdom@30.0.1:
+  jsdom@30.0.1(@noble/hashes@1.8.0):
     dependencies:
       '@asamuzakjp/css-color': 6.0.7
       '@asamuzakjp/dom-selector': 8.3.2
       '@bramus/specificity': 2.4.3
       '@csstools/css-syntax-patches-for-csstree': 1.1.16(css-tree@3.2.1)
-      '@exodus/bytes': 1.16.0
+      '@exodus/bytes': 1.16.0(@noble/hashes@1.8.0)
       css-tree: 3.2.1
-      data-urls: 7.0.0
+      data-urls: 7.0.0(@noble/hashes@1.8.0)
       decimal.js: 10.6.0
-      html-encoding-sniffer: 6.0.0
+      html-encoding-sniffer: 6.0.0(@noble/hashes@1.8.0)
       is-potential-custom-element-name: 1.0.1
       lru-cache: 11.5.3
       parse5: 8.0.1
@@ -10866,7 +10896,7 @@ snapshots:
       w3c-xmlserializer: 5.0.0
       webidl-conversions: 8.0.1
       whatwg-mimetype: 5.0.0
-      whatwg-url: 17.3.0
+      whatwg-url: 17.3.0(@noble/hashes@1.8.0)
       xml-name-validator: 5.0.0
     transitivePeerDependencies:
       - '@noble/hashes'
@@ -12369,7 +12399,7 @@ snapshots:
       jiti: 1.21.7
       yaml: 2.9.1
 
-  vitest@4.1.12(@types/node@22.20.5)(jsdom@30.0.1)(vite@6.4.6(@types/node@22.20.5)(jiti@1.21.7)(yaml@2.9.1)):
+  vitest@4.1.12(@types/node@22.20.5)(jsdom@30.0.1(@noble/hashes@1.8.0))(vite@6.4.6(@types/node@22.20.5)(jiti@1.21.7)(yaml@2.9.1)):
     dependencies:
       '@vitest/expect': 4.1.12
       '@vitest/mocker': 4.1.12(vite@6.4.6(@types/node@22.20.5)(jiti@1.21.7)(yaml@2.9.1))
@@ -12393,7 +12423,7 @@ snapshots:
       why-is-node-running: 2.3.0
     optionalDependencies:
       '@types/node': 22.20.5
-      jsdom: 30.0.1
+      jsdom: 30.0.1(@noble/hashes@1.8.0)
     transitivePeerDependencies:
       - msw
 
@@ -12454,17 +12484,17 @@ snapshots:
       tr46: 5.1.1
       webidl-conversions: 7.0.0
 
-  whatwg-url@16.0.1:
+  whatwg-url@16.0.1(@noble/hashes@1.8.0):
     dependencies:
-      '@exodus/bytes': 1.16.0
+      '@exodus/bytes': 1.16.0(@noble/hashes@1.8.0)
       tr46: 6.0.0
       webidl-conversions: 8.0.1
     transitivePeerDependencies:
       - '@noble/hashes'
 
-  whatwg-url@17.3.0:
+  whatwg-url@17.3.0(@noble/hashes@1.8.0):
     dependencies:
-      '@exodus/bytes': 1.16.0
+      '@exodus/bytes': 1.16.0(@noble/hashes@1.8.0)
       tr46: 7.0.0
       webidl-conversions: 8.0.1
     transitivePeerDependencies:
