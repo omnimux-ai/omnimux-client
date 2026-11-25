@@ -4,8 +4,6 @@ import { activateRowKeydown } from './a11y.js'
 import { EditIcon, FileIcon, FolderIcon, RevealLocationIcon } from './icons.jsx'
 import { listAssetFiles, previewUrl, revealAssetEntry } from './api.js'
 import { isDirectoryRef, detectMediaKind, resolveAssetMediaPreview } from './asset-routing.js'
-import { useGridColumns } from './use-grid-columns.js'
-import { MasonryGrid } from './masonry-grid.jsx'
 
 export { isDirectoryRef }
 
@@ -38,8 +36,6 @@ export function AssetBrowse({ t, asset, onBack, onPreview, onEdit }) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
-  // 文件浏览的卡片墙与货架网格共用同一列数规则（封顶 5 列）。
-  const [gridRef, gridColumns] = useGridColumns()
 
   useEffect(() => {
     setStack(initialStack(asset))
@@ -156,11 +152,8 @@ export function AssetBrowse({ t, asset, onBack, onPreview, onEdit }) {
           {error ? <p className="omnimux-assets-error">{error}</p> : null}
           {!loading && !error && entries.length === 0 ? <p className="omnimux-assets-muted">{t('detail.emptyFolder')}</p> : null}
           {!loading && entries.length > 0 ? (
-            <MasonryGrid
-              gridRef={gridRef}
-              columns={gridColumns}
-              items={entries}
-              renderItem={(entry) => {
+            <div className="omnimux-assets-local-grid">
+              {entries.map((entry) => {
                 const folder = Boolean(entry.is_dir) || isDirectoryRef(entry)
                 const kind = detectMediaKind(entry)
                 const entryPath = entry.relative_path || [stack.path, entry.name].filter(Boolean).join('/')
@@ -184,19 +177,16 @@ export function AssetBrowse({ t, asset, onBack, onPreview, onEdit }) {
                         }}
                   />
                 )
-              }}
-            />
+              })}
+            </div>
           ) : null}
         </>
       ) : (
         files.length === 0
           ? <p className="omnimux-assets-muted">{t('browse.empty')}</p>
           : (
-            <MasonryGrid
-              gridRef={gridRef}
-              columns={gridColumns}
-              items={files}
-              renderItem={(file) => {
+            <div className="omnimux-assets-local-grid">
+              {files.map((file) => {
                 const folder = isDirectoryRef(file)
                 const kind = detectMediaKind(file)
                 const src = folder ? '' : previewUrl(asset.id, file.id)
@@ -217,8 +207,8 @@ export function AssetBrowse({ t, asset, onBack, onPreview, onEdit }) {
                         }}
                   />
                 )
-              }}
-            />
+              })}
+            </div>
           )
       )}
     </div>
@@ -257,28 +247,19 @@ function MediaCard({ t, title, kind, src, onOpen, onReveal }) {
 
   return (
     <article
-      className="omnimux-assets-focusable omnimux-assets-card"
+      className="omnimux-assets-focusable omnimux-assets-card omnimux-assets-card--tray"
       tabIndex={clickable ? 0 : undefined}
       role={clickable ? 'button' : undefined}
       aria-label={title}
       onClick={activate}
       onKeyDown={clickable ? activateRowKeydown(activate) : undefined}
     >
-      <div className="omnimux-assets-card-thumb omnimux-assets-card-thumb--tall">
+      <div className="omnimux-assets-card-thumb">
         {showImage ? (
           <img
             src={src}
             alt=""
             className="omnimux-assets-card-media"
-            width={9}
-            height={16}
-            onLoad={(event) => {
-              const image = event.currentTarget
-              if (image.naturalWidth > 0 && image.naturalHeight > 0) {
-                image.setAttribute('width', String(image.naturalWidth))
-                image.setAttribute('height', String(image.naturalHeight))
-              }
-            }}
             onError={() => { setBroken(true) }}
           />
         ) : null}
@@ -295,7 +276,11 @@ function MediaCard({ t, title, kind, src, onOpen, onReveal }) {
             onError={() => { setBroken(true) }}
           />
         ) : null}
-        {!showImage && !showVideo ? (kind === 'folder' ? <FolderIcon size={28} /> : <FileIcon size={28} />) : null}
+        {!showImage && !showVideo ? (
+          <div className="omnimux-assets-card-placeholder" aria-hidden="true">
+            {kind === 'folder' ? <FolderIcon size={22} /> : <FileIcon size={22} />}
+          </div>
+        ) : null}
         {badge || revealable ? (
           <div className="omnimux-assets-card-corner">
             {badge ? (

@@ -8,119 +8,102 @@ import { ASSETS_CSS } from './styles.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const gridSource = readFileSync(join(here, 'AssetGrid.jsx'), 'utf8')
+const BADGE_KIT_CSS = readFileSync(
+  join(here, '../../../../packages/dsh-ui-kit/src/badge/Badge.module.css'),
+  'utf8',
+).replace(/\.([a-zA-Z_][a-zA-Z0-9_-]*)/g, '.dshUk-Badge-$1')
 
-const LABEL = '.omnimux-assets-overlay-label'
-
-const BASE_CSS = `.dshUk-Button-label { min-width: 0; }`
-
-const html = (view, add) => `
-<div style="width:1600px;padding:20px">
-  <div class="probe-card omnimux-assets-card" style="width:320px">
-    <div class="omnimux-assets-card-thumb">
-      <div class="omnimux-assets-card-overlay">
-        <div class="omnimux-assets-card-overlay-actions">
-          <button class="omnimux-assets-overlay-btn omnimux-assets-overlay-btn--secondary">
-            <span class="dshUk-Button-slot" aria-hidden="true"><svg width="14" height="14"></svg></span>
-            <span class="dshUk-Button-label"><span class="${LABEL.slice(1)}">${view}</span></span>
-          </button>
-          <button class="omnimux-assets-overlay-btn omnimux-assets-overlay-btn--primary">
-            <span class="dshUk-Button-slot" aria-hidden="true"><svg width="14" height="14"></svg></span>
-            <span class="dshUk-Button-label"><span class="${LABEL.slice(1)}">${add}</span></span>
-          </button>
+const html = (badgeText, longTitle, widths) => `
+<div class="omnimux-assets-stage" style="width:1600px;padding:20px">
+  <div class="probe-card omnimux-assets-focusable omnimux-assets-card omnimux-assets-card--tray" data-widths='${JSON.stringify(widths)}' style="width:260px">
+    <div class="dshUk-MediaCard-coverWrapper">
+      <div class="omnimux-assets-card-thumb">
+        <button class="omnimux-assets-check" data-selected="true" aria-label="选择"><svg width="12" height="12"></svg></button>
+        <div class="omnimux-assets-card-corner">
+          <button class="omnimux-assets-quick-add" data-added="true" aria-label="添加到会话"><svg width="13" height="13"></svg></button>
+          <span class="dshUk-Badge-badge dshUk-Badge-sm dshUk-Badge-capsule omnimux-assets-badge">${badgeText}</span>
         </div>
       </div>
+    </div>
+    <div class="dshUk-MediaCard-body omnimux-assets-card-body">
+      <div class="omnimux-assets-card-head">
+        <span class="omnimux-assets-card-title">${longTitle}</span>
+        <div class="omnimux-assets-card-more">
+          <button class="omnimux-assets-card-more-btn" aria-label="操作">...</button>
+        </div>
+      </div>
+      <div class="dshUk-MediaCard-subtitle omnimux-assets-card-desc">12分钟前</div>
     </div>
   </div>
 </div>`
 
-/** 选择器必须内联：测量函数会被序列化进页面，闭包在此处不可用。 */
-function probeWidths(view, add, widths) {
-  const source = `function measure() {
-    const labelClass = ${JSON.stringify(LABEL)}
-    const widths = ${JSON.stringify(widths)}
-    const card = document.querySelector('.probe-card')
-    const rows = []
-    for (const w of widths) {
-      card.style.width = w + 'px'
-      const btns = Array.prototype.slice.call(card.querySelectorAll('button'))
-      rows.push({
-        cardWidth: w,
-        buttons: btns.map(function (b) {
-          const label = b.querySelector(labelClass)
-          const br = b.getBoundingClientRect()
-          const lr = label ? label.getBoundingClientRect() : null
-          const cs = label ? getComputedStyle(label) : null
-          return {
-            width: Math.round(br.width * 10) / 10,
-            height: Math.round(br.height * 10) / 10,
-            display: cs ? cs.display : '?',
-            clipped: cs && cs.display !== 'none' && label ? label.scrollWidth > Math.ceil(lr.width) : false,
-          }
-        }),
-      })
-    }
-    return rows
-  }`
-  // eslint-disable-next-line no-eval
+function probeCardWidths(badgeText, longTitle, widths) {
   return runStyleDomProbe({
-    name: 'assets-compact-cta',
-    styles: `${ASSETS_CSS}\n${BASE_CSS}`,
-    html: html(view, add),
-    measure: eval(`(${source})`),
+    name: 'assets-tray-controls',
+    styles: `${BADGE_KIT_CSS}\n${ASSETS_CSS}`,
+    html: html(badgeText, longTitle, widths),
+    measure: () => {
+      const card = document.querySelector('.probe-card')
+      const probeList = JSON.parse(card.getAttribute('data-widths') || '[]')
+      const thumb = card.querySelector('.omnimux-assets-card-thumb')
+      const check = card.querySelector('.omnimux-assets-check')
+      const quickAdd = card.querySelector('.omnimux-assets-quick-add')
+      const badge = card.querySelector('.omnimux-assets-badge')
+      const head = card.querySelector('.omnimux-assets-card-head')
+      const title = card.querySelector('.omnimux-assets-card-title')
+      const moreBtn = card.querySelector('.omnimux-assets-card-more-btn')
+      const rows = []
+      for (const w of probeList) {
+        card.style.width = `${w}px`
+        const tr = thumb.getBoundingClientRect()
+        const cr = check.getBoundingClientRect()
+        const qr = quickAdd.getBoundingClientRect()
+        const br = badge.getBoundingClientRect()
+        const hr = head.getBoundingClientRect()
+        const mr = moreBtn.getBoundingClientRect()
+        const titleCs = getComputedStyle(title)
+        rows.push({
+          cardWidth: w,
+          quickAddSize: [Math.round(qr.width), Math.round(qr.height)],
+          badgeHeight: Math.round(br.height),
+          moreBtnSize: [Math.round(mr.width), Math.round(mr.height)],
+          controlsInsideTray: cr.left >= tr.left && qr.left >= cr.right + 4 && br.right <= tr.right + 0.5,
+          moreBtnInsideHead: mr.right <= hr.right + 0.5 && mr.left >= hr.left,
+          titleEllipsis: titleCs.textOverflow === 'ellipsis' && titleCs.whiteSpace === 'nowrap',
+          headOverflowX: head.scrollWidth > Math.ceil(hr.width) + 1,
+        })
+      }
+      return rows
+    },
   })
 }
 
-test('资产库卡片：卡片自身宽度驱动 CTA 退化，紧凑只留图标、充足显示文字且永不裁切', () => {
-  for (const [locale, view, add] of [
-    ['zh', '查看详情', '添加到会话'],
-    ['en', 'View Details', 'Add to Chat'],
+test('资产库托盘卡片：角标、右上角快捷动作与标题行 ... 在窄宽与常规宽度下均不挤压溢出', () => {
+  for (const [locale, badgeText, longTitle] of [
+    ['zh', '知识包', '2026 春季新品发布会赛博女郎高清四视图与话术合规知识包终版'],
+    ['en', 'Knowledge', '2026 Spring Campaign High-Resolution Character Turnaround & Copy Pack Final'],
   ]) {
-    const rows = probeWidths(view, add, [140, 180, 215, 230, 260, 302, 340, 420])
-    const compact = rows.filter((r) => r.cardWidth <= 215)
-    const roomy = rows.filter((r) => r.cardWidth >= 230)
-
-    assert.equal(compact.length > 0 && roomy.length > 0, true, `${locale}: 宽度分组必须同时覆盖紧凑与充足区间`)
-
-    for (const row of compact) {
-      for (const btn of row.buttons) {
-        assert.equal(btn.display, 'none', `${locale} ${row.cardWidth}px: 紧凑区间文字标签必须退出布局`)
-        assert.equal(btn.width, 32, `${locale} ${row.cardWidth}px: 紧凑区间按钮收缩为 32px 图标按钮`)
-        assert.equal(btn.height, 32, `${locale} ${row.cardWidth}px: 紧凑区间按钮高度不变`)
-      }
-    }
-
-    for (const row of roomy) {
-      for (const btn of row.buttons) {
-        assert.notEqual(btn.display, 'none', `${locale} ${row.cardWidth}px: 充足区间必须显示文字标签`)
-        assert.equal(btn.clipped, false, `${locale} ${row.cardWidth}px: 充足区间文字不得被裁切`)
-      }
+    const rows = probeCardWidths(badgeText, longTitle, [200, 220, 250, 280, 340])
+    assert.equal(rows.length, 5)
+    for (const row of rows) {
+      assert.deepEqual(row.quickAddSize, [24, 24], `${locale} ${row.cardWidth}px: 快捷加入按钮尺寸固定 24x24`)
+      assert.equal(row.badgeHeight, 22, `${locale} ${row.cardWidth}px: 类型角标高度应覆盖 Badge.sm 16px 为 22px 防止文字裁切`)
+      assert.deepEqual(row.moreBtnSize, [24, 24], `${locale} ${row.cardWidth}px: 更多按钮尺寸固定 24x24`)
+      assert.equal(row.controlsInsideTray, true, `${locale} ${row.cardWidth}px: 顶部左右角标不得重叠或越出托盘`)
+      assert.equal(row.moreBtnInsideHead, true, `${locale} ${row.cardWidth}px: ... 按钮不得被长标题挤出标题行`)
+      assert.equal(row.titleEllipsis, true, `${locale} ${row.cardWidth}px: 标题行必须单行省略`)
+      assert.equal(row.headOverflowX, false, `${locale} ${row.cardWidth}px: 标题行不得横向溢出`)
     }
   }
 })
 
-test('资产库卡片：退化由具名容器查询判定，且容器只落在带 CTA 浮层的卡片上', () => {
-  assert.match(
-    ASSETS_CSS,
-    /\.omnimux-assets-card:has\(\.omnimux-assets-card-overlay\)\s*\{[^}]*container-type:\s*inline-size/,
-    '容器必须限定在真正带 CTA 浮层的卡片，公共素材卡与生成物卡共用同一类名',
-  )
-  assert.match(ASSETS_CSS, /container-name:\s*asset-card/, '容器必须有唯一名字，避免误命中祖先容器')
-  assert.match(ASSETS_CSS, /@container asset-card \(max-width:\s*220px\)/, '退化规则必须由具名容器查询判定')
-  assert.match(
-    ASSETS_CSS,
-    /\.omnimux-assets-overlay-btn > \.dshUk-Button-label\s*\{\s*min-width:\s*0/,
-    '文字槽的收缩能力必须由本插件钉住，不依赖 UI 库内部默认值',
-  )
-})
-
-test('资产库卡片：文字标签由源码渲染，无障碍名称与交互保持原样', () => {
-  assert.match(gridSource, /className="omnimux-assets-overlay-label"/, '按钮文字必须包进可隐藏的标签元素')
-  assert.match(gridSource, /aria-label=\{t\('card\.view'\)\}/, '退化后无障碍名称仍由 aria-label 提供')
-  assert.match(
-    gridSource,
-    /aria-label=\{added \? t\('card\.addedToConversation'\) : t\('card\.addToConversation'\)\}/,
-    '主行动按钮的无障碍名称不得丢失',
-  )
-  assert.match(gridSource, /onClick=\{handleView\}/)
-  assert.match(gridSource, /onClick=\{handleAdd\}/)
+test('资产库托盘卡片：移除旧版全屏毛玻璃遮罩，保留完整无障碍与交互入口', () => {
+  assert.equal(/\.omnimux-assets-card-overlay\b/.test(ASSETS_CSS), false, '不得残留遮挡画面的全屏毛玻璃遮罩样式')
+  assert.equal(/@container asset-card/.test(ASSETS_CSS), false, '不得残留旧遮罩容器查询')
+  assert.match(gridSource, /className="omnimux-assets-quick-add"/)
+  assert.match(gridSource, /aria-label=\{addLabel\}/)
+  assert.match(gridSource, /className="omnimux-assets-card-more-btn"/)
+  assert.match(gridSource, /aria-label=\{t\('card\.actions'\)\}/)
+  assert.match(gridSource, /aria-haspopup="menu"/)
+  assert.match(gridSource, /aria-label=\{t\('select\.toggle'\)\}/)
 })

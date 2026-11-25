@@ -8,11 +8,12 @@ import {
   gridColumnsFor,
 } from './grid-columns.js'
 
-test('gridColumnsFor: 目标断点逐个成立 (Issue #2149 AC-1)', () => {
+test('gridColumnsFor: 16:10 托盘密度断点逐个成立（常规桌面 4–5 列）', () => {
   assert.equal(gridColumnsFor(1560), 5)
-  assert.equal(gridColumnsFor(1280), 4)
-  assert.equal(gridColumnsFor(1024), 3)
-  assert.equal(gridColumnsFor(768), 2)
+  assert.equal(gridColumnsFor(1280), 5)
+  assert.equal(gridColumnsFor(1024), 4)
+  assert.equal(gridColumnsFor(768), 3)
+  assert.equal(gridColumnsFor(520), 2)
 })
 
 test('gridColumnsFor: 任意宽度都落在 [2, 5] 内 (AC-2)', () => {
@@ -45,8 +46,7 @@ test('gridColumnsFor: 超过断点后继续变宽只增加列数直到封顶', (
 })
 
 test('gridColumnsFor: 列宽与间距的常量契约', () => {
-  // 这两个值参与断点反解，改动必须同时更新规格里的推导表。
-  assert.equal(GRID_MIN_COLUMN_WIDTH, 260)
-  assert.equal(GRID_GAP, 12)
+  assert.equal(GRID_MIN_COLUMN_WIDTH, 220)
+  assert.equal(GRID_GAP, 16)
   assert.equal(GRID_MAX_COLUMNS, 5)
 })
