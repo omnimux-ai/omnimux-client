@@ -66,7 +66,7 @@
       "version": "0.2.13-omni.2",
       "path": "plugins/plugins/omnimux-market",
       "spec": "link:../../plugins/plugins/omnimux-market",
-      "contentHash": "sha256:3a60e5f95b87a491d874240211c083a31bc298ef07757e771697ab5a8a0e2a03"
+      "contentHash": "sha256:0f41b57bb0b52245fa0260f8287258e57e17a5fd32485ff7c25258e642e4a563"
     },
     {
       "name": "omnimux-products",
@@ -101,7 +101,7 @@
       "version": "1.0.0-rc.3",
       "path": "plugins/plugins/omnimux-workflow",
       "spec": "link:../../plugins/plugins/omnimux-workflow",
-      "contentHash": "sha256:538aaa3455f9c1f7aa0ef27181d72006c11a693e81e35f9f1709816c47f2583b"
+      "contentHash": "sha256:5b383e6c99c5f7d0d908779c091e45bdef7f46690853fb8172ead559a8182975"
     }
   ]
 }

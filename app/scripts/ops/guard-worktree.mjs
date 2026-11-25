@@ -756,7 +756,7 @@ function decisionJson(hookEventName, decision, reason, extra = {}) {
         `🚫【OmniMux 桌面壳 Hook】拦截破坏性重置：检测到当前本地分支存在尚未推送到远端 origin/main 的提交（共 ${extra.unpushedCount || 0} 个）！`,
         '📌 事故防范守则：执行 git reset --hard 会导致这些未同步的本地工作成果被永久抹去。',
         '👉 正确流程：',
-        '  1. 若成果有效：切到工作分支推送远端（./scripts/worktree.sh ship <task> 或 git push 后提 PR）；',
+        '  1. 若成果有效：切到工作分支推送远端（git push -u origin <branch> 后提 PR，严禁直推 main）；',
         '  2. 若确需重置：先打备份标签（git tag backup/safety-$(date +%s)）后再安全处理。',
       ].join('\n')
     } else if (reason === 'primary-checkout-branch-pinned') {

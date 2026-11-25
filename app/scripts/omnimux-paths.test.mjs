@@ -224,3 +224,27 @@ test('app/package.json scripts exclude rejected desktop-variants entries and poi
   assert.deepEqual(missingTargets, [],
     `app/package.json scripts reference missing local files:\n${missingTargets.join('\n')}`)
 })
+
+test('app/scripts/worktree.sh disables direct-push ship and guard-worktree no longer recommends it', () => {
+  const worktreeScriptPath = join(appDir, 'scripts', 'worktree.sh')
+  const guardScriptPath = join(appDir, 'scripts', 'ops', 'guard-worktree.mjs')
+
+  const syntax = spawnSync('bash', ['-n', worktreeScriptPath], { encoding: 'utf8' })
+  assert.equal(syntax.status, 0, syntax.stderr)
+
+  const shipResult = spawnSync('bash', [worktreeScriptPath, 'ship', 'demo-task'], {
+    cwd: appDir,
+    encoding: 'utf8',
+  })
+  assert.notEqual(shipResult.status, 0, 'worktree.sh ship must fail closed instead of merging/pushing main')
+  assert.match(shipResult.stderr, /ship.*disabled/iu)
+  assert.match(shipResult.stderr, /PR/u)
+
+  assert.doesNotMatch(readFileSync(worktreeScriptPath, 'utf8'), /worktree\.sh ship </u)
+  assert.doesNotMatch(readFileSync(guardScriptPath, 'utf8'), /worktree\.sh ship </u)
+})
+
+test('app/scripts/worktree.sh cmd_remove no longer suggests ship', () => {
+  const worktreeScriptPath = join(appDir, 'scripts', 'worktree.sh')
+  assert.doesNotMatch(readFileSync(worktreeScriptPath, 'utf8'), /'ship'\s+it/u)
+})
