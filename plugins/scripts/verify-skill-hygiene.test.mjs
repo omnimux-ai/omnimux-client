@@ -31,6 +31,10 @@ function makeFixtureRoot(t) {
           tab: 'skills',
           kind: 'skill',
           skill: 'alpha-skill',
+          origin: 'first-party',
+          license: 'MIT',
+          owner: 'omnimux-market',
+          author: 'OmniMux',
           source: { type: 'bundled', path: 'catalog/skills/alpha-skill' },
         },
       ],
@@ -39,7 +43,7 @@ function makeFixtureRoot(t) {
   writeFileSync(
     join(market, 'catalog', 'bundled-skills.json'),
     JSON.stringify({
-      skills: [{ slug: 'beta-skill', role: 'preset-shelf', owner: 'omnimux-market' }],
+      skills: [{ slug: 'beta-skill', role: 'preset-shelf', origin: 'first-party', license: 'MIT', owner: 'omnimux-market' }],
     }),
   )
   return root
@@ -50,9 +54,12 @@ test('real repository passes verifySkillHygiene with zero violations', () => {
   assert.deepEqual(result.issues, [], `unexpected hygiene issues: ${JSON.stringify(result.issues, null, 2)}`)
   assert.equal(result.ok, true)
   assert.equal(result.stats.catalogDirCount, result.stats.indexedCount + result.stats.bundledCount)
+  assert.ok(result.stats.catalogItemCount >= 140)
   assert.ok(result.stats.pluginSkillCount > 0)
+  assert.equal(result.stats.manifestMetadataCount, result.stats.pluginSkillCount)
+  assert.equal(result.stats.bundledThirdPartyCount, 1)
   assert.equal(result.stats.quickShortcutCount, 4)
-  assert.ok(result.stats.presetSkillRefCount >= 400, `expected >= 400 preset/shelf refs, got ${result.stats.presetSkillRefCount}`)
+  assert.ok(result.stats.presetSkillRefCount >= 120, `expected >= 120 preset/shelf refs, got ${result.stats.presetSkillRefCount}`)
   assert.ok(result.stats.builtinExpertSkillRefCount >= 18, `expected >= 18 expert refs, got ${result.stats.builtinExpertSkillRefCount}`)
   assert.ok(result.stats.registeredToolCount >= 100, `expected >= 100 registered tools, got ${result.stats.registeredToolCount}`)
   assert.ok(result.stats.toolCheckedSkillCount >= 24, `expected >= 24 tool-checked skills, got ${result.stats.toolCheckedSkillCount}`)
@@ -362,4 +369,98 @@ test('rejects unregistered OmniMux runtime tool references in quick-shortcut and
   const toolIssues = res.issues.filter((i) => i.code === 'unregistered-skill-tool-reference')
   assert.equal(toolIssues.length, 1)
   assert.match(toolIssues[0].message, /video_magic_hallucination/)
+})
+
+test('rejects missing provenance, Official author, manifest skillMetadata drift, third-party notice drift, and external hotlinks (#237)', (t) => {
+  const root = makeFixtureRoot(t)
+  const market = join(root, 'plugins', 'omnimux-market')
+
+  // 1. Catalog item with forbidden Official author + missing origin/license/owner + bundled non-concrete license
+  writeFileSync(
+    join(market, 'catalog', 'index.json'),
+    JSON.stringify({
+      items: [
+        {
+          id: 'sk-alpha',
+          tab: 'skills',
+          kind: 'skill',
+          skill: 'alpha-skill',
+          author: 'Official',
+          origin: 'bogus-origin',
+          license: 'SEE UPSTREAM',
+          owner: '',
+          source: { type: 'bundled', path: 'catalog/skills/alpha-skill' },
+        },
+      ],
+    }),
+  )
+
+  // 2. Bundled third-party skill missing LICENSE, upstream, noticeRef, and notice entry + stale notice
+  writeFileSync(
+    join(market, 'catalog', 'bundled-skills.json'),
+    JSON.stringify({
+      skills: [
+        {
+          slug: 'beta-skill',
+          role: 'session-guide',
+          origin: 'third-party',
+          license: 'MIT',
+          owner: 'omnimux-market',
+        },
+      ],
+    }),
+  )
+  writeFileSync(
+    join(market, 'THIRD_PARTY_NOTICES.md'),
+    '# Notices\n\nStale reference to `catalog/skills/removed-third-party/`.\n',
+  )
+
+  // 3. External hotlink + legacy source: official + vendor leftover in meta.yaml/SKILL.md
+  writeFileSync(
+    join(market, 'catalog', 'skills', 'alpha-skill', 'meta.yaml'),
+    'cover: "https://cdn.hailuoai.com/demo/video.mp4"\nsource: official\n',
+  )
+  writeFileSync(
+    join(market, 'catalog', 'skills', 'alpha-skill', 'SKILL.md'),
+    '---\nname: alpha-skill\ndescription: Alpha\n---\n\nFollow kling-generation-runtime for WorkBuddy.\n',
+  )
+
+  // 4. Plugin dsh.manifest.json with license mismatch & stale skillMetadata key
+  const clipDir = join(root, 'plugins', 'omnimux-clip')
+  mkdirSync(join(clipDir, 'skills', 'clip-craft'), { recursive: true })
+  writeFileSync(join(clipDir, 'skills', 'clip-craft', 'SKILL.md'), '---\nname: clip-craft\ndescription: ok\n---\n# ok\n')
+  writeFileSync(join(clipDir, 'package.json'), JSON.stringify({ name: 'omnimux-clip', license: 'SEE LICENSE IN LICENSE' }))
+  writeFileSync(
+    join(clipDir, 'dsh.manifest.json'),
+    JSON.stringify({
+      id: 'omnimux-clip',
+      skills: ['skills/clip-craft/SKILL.md'],
+      skillMetadata: {
+        'clip-craft': { origin: 'first-party', license: 'MIT', owner: 'omnimux-clip' },
+        'stale-ghost': { origin: 'first-party', license: 'SEE LICENSE IN LICENSE', owner: 'omnimux-clip' },
+      },
+    }),
+  )
+
+  const res = verifySkillHygiene(root)
+  assert.equal(res.ok, false)
+  const codes = new Set(res.issues.map((i) => i.code))
+  for (const expectedCode of [
+    'official-author-forbidden',
+    'invalid-catalog-origin',
+    'missing-catalog-owner',
+    'non-concrete-bundled-license',
+    'missing-third-party-upstream',
+    'missing-third-party-notice-ref',
+    'missing-third-party-license-file',
+    'undocumented-third-party-skill',
+    'stale-third-party-notice',
+    'external-hotlink-forbidden',
+    'legacy-official-source-forbidden',
+    'third-party-vendor-leftover',
+    'manifest-skill-license-mismatch',
+    'stale-manifest-skill-metadata',
+  ]) {
+    assert.equal(codes.has(expectedCode), true, `expected issue code ${expectedCode}, got [${[...codes].join(', ')}]`)
+  }
 })

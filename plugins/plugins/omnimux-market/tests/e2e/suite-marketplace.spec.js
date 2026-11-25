@@ -398,7 +398,7 @@ test('E2E 旅程四：partial 不显示成功且按钮不转「已安装」，�
 
 test('E2E 旅程三：TikTok 预装套件出厂默认展示「卸载」，点击弹出卸载确认框并调用卸载', async () => {
   assert.ok(TIKTOK, 'TikTok 套件必须在货架上')
-  assert.equal(TIKTOK.suite.skills.length, 45)
+  assert.equal(TIKTOK.suite.skills.length, 44)
   assert.equal(TIKTOK.preinstalled, true)
 
   const calls = []

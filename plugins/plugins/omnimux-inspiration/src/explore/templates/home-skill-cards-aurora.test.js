@@ -26,13 +26,13 @@ const { ExploreTemplatesSection } = compiledModule.exports;
 
 test('极光流光算法：确定性散列与 14 套炫彩流光完整性', () => {
   assert.equal(AURORA_PRESETS.length, 14, '必须具备 14 套精选极光色彩流光预设');
-  const style1 = resolveSkillAuroraStyle({ id: 'sk-omx-ugc-confessional', title: 'UGC 告白' });
+  const style1 = resolveSkillAuroraStyle({ id: 'sk-omx-replicate-viral-video', title: '复刻爆款视频' });
   const style2 = resolveSkillAuroraStyle({ id: 'sk-omx-cinematic', title: '电影级' });
-  const style3 = resolveSkillAuroraStyle({ id: 'sk-omx-ugc-showcase', title: 'UGC展示' });
+  const style3 = resolveSkillAuroraStyle({ id: 'sk-omx-create-selling-video', title: '创作带货视频' });
 
-  assert.ok(style1?.bg?.includes('radial-gradient'), 'UGC 告白必须计算出高饱和度流光');
+  assert.ok(style1?.bg?.includes('radial-gradient'), '复刻爆款视频必须计算出高饱和度流光');
   assert.ok(style2?.bg?.includes('radial-gradient'), '电影级必须计算出高饱和度流光');
-  assert.ok(style3?.bg?.includes('radial-gradient'), 'UGC展示必须计算出高饱和度流光');
+  assert.ok(style3?.bg?.includes('radial-gradient'), '创作带货视频必须计算出高饱和度流光');
 });
 
 test('首页 Skills 技能库货架卡片：100% 对齐图 2 技能插件高颜值极光样式', () => {
@@ -61,7 +61,7 @@ test('首页 Skills 技能库货架卡片：100% 对齐图 2 技能插件高颜�
 
   // 4. 验证居中大标题（SkillCard 标准实现）
   assert.ok(html.includes('omnimux-creatify-center-title'), '必须包含居中加粗大标题');
-  assert.ok(html.includes('UGC 告白'), '必须正确渲染前置核心技能 UGC 告白');
+  assert.ok(html.includes('复刻爆款视频'), '必须正确渲染前置核心技能 复刻爆款视频');
   assert.ok(html.includes('电影级'), '必须正确渲染核心技能 电影级');
 
   // 5. 验证悬停抽屉内 SkillCard 的「使用 Skill」CTA

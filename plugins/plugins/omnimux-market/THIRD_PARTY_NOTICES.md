@@ -90,6 +90,24 @@ package's `LICENSE`; the upstream scraper MIT notice is retained in
 `PROVENANCE.md` records the pinned source and the SKILL.md runtime/path adaptation.
 The MIT grants cover software, not rights to collected customer reviews.
 
+## Bundled Skills & Remote Catalog Provenance Audit
+
+As of the Phase 4 skills governance audit (#237), all bundled skills and marketplace
+catalog entries carry structured `origin` (`first-party` / `third-party` / `upstream`),
+`license`, and `owner` metadata enforced by `scripts/verify-skill-hygiene.mjs`:
+
+- **Redistributed third-party bundled skills**: `catalog/skills/bggg-data-amazon/` (MIT,
+  documented above) is the **only** third-party skill bundled in this repository.
+- **First-party bundled skills**: all 16 marketplace catalog skills in `catalog/index.json`,
+  the `hypit-setup` official-channel onboarding guide in `catalog/bundled-skills.json`
+  (which does not redistribute Hypit code or binaries), and all 18 plugin-bundled skills
+  declared in `dsh.manifest.json` are OmniMux first-party (`origin: "first-party"`,
+  `license: "MIT"`).
+- **Remote-only catalog pointers (`source.type: "git"` / `"mcp"`)**: third-party experts,
+  suites (e.g. `infometa/workbuddyskills`, `nexscope-ai/Amazon-Skills`), and MCP server
+  entries in `catalog/index.json` are external references (`origin: "third-party"`,
+  `license: "SEE UPSTREAM"`) and are not redistributed inside this repository.
+
 ## 上游同步策略
 
 上游迭代活跃，本 fork 的改动保持「追加式」以降低同步成本。同步上游修复时：

@@ -429,16 +429,26 @@ export function saveHomeCustomOrder(ids) {
 /** Split only displayed recommendations out of discovery; full-library search stays independent. */
 export function plazaDiscoverySections(items = [], { category = '', query = '', uninstalledOnly = false, installedItems = [], providerSlugs = [], config = recommendations, entries = catalog.items, presetBinding = null, customOrder = null } = {}) {
     const key = item => item.slug || item.skill || item.catalogId || item.id;
+    // 预设分类是预设私有货架：目录同 slug 条目只提供展示元数据，归属一律以预设清单为准，
+    // 目录独有的技能也不得借领域标签混入，否则分类计数与预设清单错位。
+    const presetCategoryOf = new Map((presetBinding && Array.isArray(presetBinding.skills) ? presetBinding.skills : [])
+        .map(item => [String(item.slug || item.skill || '').trim(), String(item.category || item.categoryLabel || '').trim()])
+        .filter(([slug]) => slug));
+    const presetCategoryIds = new Set((presetBinding && Array.isArray(presetBinding.categories) ? presetBinding.categories : []).map(c => c.id));
     const matches = item => {
         if (!category || category === 'featured')
             return true;
         if (isScenarioTag(category))
             return matchesScenarioTag(item, category);
         if (presetBinding && Array.isArray(presetBinding.skills)) {
+            if (presetCategoryIds.has(category))
+                return presetCategoryOf.get(key(item)) === category;
             const cat = String(item.category || item.categoryLabel || '').trim();
             const tags = Array.isArray(item.tags) ? item.tags.map(String) : [];
             if (cat === category || tags.includes(category))
                 return true;
+            if (presetCategoryIds.has(cat))
+                return false;
             if (category === '创作视频') {
                 const videoDomains = ['短剧漫剧', '专业影视', '动画'];
                 if (tags.some(t => videoDomains.includes(t)) || videoDomains.includes(cat))
@@ -479,7 +489,8 @@ export function plazaDiscoverySections(items = [], { category = '', query = '', 
                 ...(local ? { installed: true, enabled: local.enabled !== false } : {}) };
         }).filter(available)
         : [];
-    const baseFeatured = hasQuery ? [] : resolveSkillRecommendations(ids || [], entries)
+    // 预设分类是预设私有货架：目录推荐位不参与分区，避免同一技能同时进入 featured 与 regular。
+    const baseFeatured = hasQuery || presetCategoryIds.has(category) ? [] : resolveSkillRecommendations(ids || [], entries)
         .filter(item => category || config.featuredSkills?.includes(item.id))
         .map(item => {
         const current = live.get(item.id);
@@ -500,7 +511,13 @@ export function plazaDiscoverySections(items = [], { category = '', query = '', 
     const presetCards = presetBinding && Array.isArray(presetBinding.skills)
         ? filterPresetSkills(presetBinding.skills, category, query).map(item => hydratePresetSkill(item, availability))
         : [];
-    const regular = unique([...presetCards, ...localCards, ...items]).map(item => installed.has(key(item))
+    // 预设分类内，目录同 slug 条目只贡献展示元数据；可用态与归属一律按真实随包/已装真源重推。
+    const presetScoped = presetCategoryIds.size > 0 && presetCategoryIds.has(category);
+    const regular = unique([...presetCards, ...localCards, ...items])
+        .map(item => presetScoped && presetCategoryOf.has(key(item))
+        ? hydratePresetSkill({ ...item, category: presetCategoryOf.get(key(item)) }, availability)
+        : item)
+        .map(item => installed.has(key(item))
         ? { ...item, installed: true, enabled: installed.get(key(item)).enabled !== false }
         : (providerSet.has(key(item)) ? { ...item, installed: true } : item)).filter(matches).filter(available)
         .filter(item => !featuredKeys.has(key(item)))

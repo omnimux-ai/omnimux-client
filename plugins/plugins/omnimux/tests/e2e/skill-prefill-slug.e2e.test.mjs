@@ -72,9 +72,9 @@ describe('E2E: 首页 Skill 点击使用只在技能按钮点亮名称，输入�
 
     // 4. 输入框只剩说明请求；技能名称交给技能按钮旁的标签
     assert.equal(capturedDraft, '为我解释下这个技能的最佳使用方式。')
-    assert.equal(capturedDraft.includes('/ugc-confessional'), false, '输入框不得出现斜杠指令')
-    assert.equal(window.__omnimuxActiveSkill?.slug, 'ugc-confessional', '技能按钮必须点亮这款技能')
-    assert.equal(window.__omnimuxActiveSkill?.name, 'UGC 告白')
+    assert.equal(capturedDraft.includes('/replicate-viral-video'), false, '输入框不得出现斜杠指令')
+    assert.equal(window.__omnimuxActiveSkill?.slug, 'replicate-viral-video', '技能按钮必须点亮这款技能')
+    assert.equal(window.__omnimuxActiveSkill?.name, '复刻爆款视频')
 
     // 5. 断言绝不弹出「已激活技能」Toast 浮层
     const toastPill = document.querySelector('.omnimux-toast-pill')

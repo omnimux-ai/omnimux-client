@@ -20,11 +20,11 @@ test('loadCatalog memos by path+mtime; install invalidates installed flag', () =
   mkdirSync(join(home, 'profiles', 'omnimux'), { recursive: true })
   const roots = { home, profileDir: join(home, 'profiles', 'omnimux'), packageRoot: PACKAGE_ROOT }
   const before = decorateCatalog(loadCatalog(), roots)
-  const demo = before.items.find((row) => row.id === 'sk-omx-ugc-confessional')
+  const demo = before.items.find((row) => row.id === 'sk-omx-replicate-viral-video')
   assert.equal(demo?.installed, false)
-  installItem({ catalog: loadCatalog(), id: 'sk-omx-ugc-confessional', ...roots })
+  installItem({ catalog: loadCatalog(), id: 'sk-omx-replicate-viral-video', ...roots })
   const after = decorateCatalog(loadCatalog(), roots)
-  assert.equal(after.items.find((row) => row.id === 'sk-omx-ugc-confessional')?.installed, true)
+  assert.equal(after.items.find((row) => row.id === 'sk-omx-replicate-viral-video')?.installed, true)
 })
 
 test('loads bundled catalog', () => {
@@ -34,10 +34,12 @@ test('loads bundled catalog', () => {
   const experts = doc.items.filter((item) => item.tab === 'experts')
   const skills = doc.items.filter((item) => item.tab === 'skills')
   const connectors = doc.items.filter((item) => item.tab === 'connectors')
-  // 社媒运营四层漏斗（L0 源分类预筛 → L2 黑名单 → L3 人工 → L1 任务重映射）后的数量
+  // Phase 4 收敛：下架无许可外部技能后保留自研精选技能与合规套件
   assert.ok(experts.length >= 60)
-  assert.ok(skills.length >= 50)
+  assert.ok(skills.length >= 16)
   assert.ok(connectors.length >= 10)
+  assert.equal(doc.items.every((item) => ['first-party', 'third-party', 'upstream'].includes(item.origin) && Boolean(item.license) && Boolean(item.owner)), true)
+  assert.equal(doc.items.some((item) => item.author === 'Official'), false)
   assert.ok(experts.filter((item) => item.id !== 'exp-social-engagement-team' && item.id !== 'exp-social-content-team').every((item) => item.source.type === 'git'))
   const team = experts.find((item) => item.id === 'exp-social-engagement-team')
   assert.equal(team?.kind, 'team')
@@ -102,14 +104,14 @@ test('decorate marks missing items uninstalled', () => {
 
 test('decorate sees a copied skill as installed', () => {
   const home = mkdtempSync(join(tmpdir(), 'omx-cat-'))
-  mkdirSync(join(home, 'skills', 'ugc-confessional'), { recursive: true })
-  writeFileSync(join(home, 'skills', 'ugc-confessional', 'SKILL.md'), '# x\n')
+  mkdirSync(join(home, 'skills', 'replicate-viral-video'), { recursive: true })
+  writeFileSync(join(home, 'skills', 'replicate-viral-video', 'SKILL.md'), '# x\n')
   const doc = decorateCatalog(loadCatalog(), {
     home,
     profileDir: join(home, 'profiles', 'omnimux'),
     packageRoot: PACKAGE_ROOT,
   })
-  const item = doc.items.find((row) => row.id === 'sk-omx-ugc-confessional')
+  const item = doc.items.find((row) => row.id === 'sk-omx-replicate-viral-video')
   assert.equal(item.installed, true)
 })
 

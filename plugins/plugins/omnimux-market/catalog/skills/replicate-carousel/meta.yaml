@@ -15,4 +15,6 @@ desc-cn: "适用于拿到参考图文、图片组或商品案例，需要为新�
 cover: ""
 author-en: "OmniMux Team"
 author-cn: "OmniMux 团队"
-source: official
+origin: first-party
+license: MIT
+owner: omnimux-market
