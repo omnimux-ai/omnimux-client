@@ -2251,10 +2251,8 @@ function evaluateProducerText(inner) {
   if (hereStringBare) return hereStringBare[1]
   const echo = /^echo\s+([\s\S]*)$/.exec(text)
   if (echo) {
-    let body = echo[1]
-    // strip echo options (`-n`, `-e`, `-E`, `-neE` combinations)
-    body = body.replace(/^(?:-[neE]+\s+)+/, '')
-    return body.replace(/^['"]|['"]$/g, '')
+    const parts = tokenizeCommandLine(echo[1]).filter((part) => !/^-[neE]+$/.test(part))
+    return parts.join(' ')
   }
   const printf = /^printf\s+([\s\S]*)$/.exec(text)
   if (printf) {
@@ -2364,7 +2362,7 @@ function hasNoChdirFlag(args) {
  * `$(...)` / backtick / `<(...)` substitutions.
  */
 function walkShellCommands(command, initialCwd, visitor, depth = 0, protectedCache = new Map(), inheritedFunctions = null) {
-  if (!command || typeof command !== 'string' || depth > 12) return undefined
+  if (!command || typeof command !== 'string' || depth > 40) return undefined
   let currentCwd = resolve(initialCwd || process.cwd())
   let prevCwd = currentCwd
   const cwdStack = []
@@ -2386,7 +2384,7 @@ function walkShellCommands(command, initialCwd, visitor, depth = 0, protectedCac
     const producer = /^\$\((.*)\)$/.exec(value)
     if (producer) {
       const produced = evaluateProducerText(producer[1])
-      if (produced !== null) return produced.trim()
+      if (produced !== null) value = produced.trim()
     }
     value = value.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)/g, (m, a, b) => {
       const key = a || b
@@ -2396,9 +2394,17 @@ function walkShellCommands(command, initialCwd, visitor, depth = 0, protectedCac
   }
 
   /** Predict the cwd after running `script` in the current shell (call site only). */
-  const predictCwdAfter = (script) => {
+  const predictCwdAfter = (script, callArgs = []) => {
+    let expanded = String(script || '')
+    if (callArgs.length > 0) {
+      expanded = expanded.replace(/\$([1-9])/g, (m, idx) => callArgs[Number(idx) - 1] ?? m)
+    }
+    expanded = expanded.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)/g, (m, a, b) => {
+      const key = a || b
+      return shellVars.has(key) ? shellVars.get(key) : m
+    })
     let predicted = currentCwd
-    walkShellCommands(script, currentCwd, {
+    walkShellCommands(expanded, currentCwd, {
       onStage() {
         return undefined
       },
@@ -2614,7 +2620,8 @@ function walkShellCommands(command, initialCwd, visitor, depth = 0, protectedCac
           const stageWords = tokenizeCommandLine(stripShellRedirection(stageBody))
           for (const w of stageWords) {
             const assign = /^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/.exec(w)
-            if (assign) shellVars.set(assign[1], assign[2].replace(/^['"]|['"]$/g, ''))
+            if (!assign) break
+            shellVars.set(assign[1], assign[2].replace(/^['"]|['"]$/g, ''))
           }
           const builtinWords = unwrapDirBuiltinWords(stageWords)
           const headVerb = builtinWords.length > 0 ? commandBasename(builtinWords[0]) : ''
@@ -2645,7 +2652,7 @@ function walkShellCommands(command, initialCwd, visitor, depth = 0, protectedCac
           // A function call runs its body in the caller's shell, so `f() { cd <primary>; }`
           // followed by `cd /tmp && f` still ends up in the primary checkout.
           if (!isStandaloneDirOp && isFunctionCall) {
-            const predictedCwd = predictCwdAfter(shellFunctions.get(rawHeadWord))
+            const predictedCwd = predictCwdAfter(shellFunctions.get(rawHeadWord), builtinWords.slice(1))
             if (predictedCwd !== currentCwd) {
               applyCwdTransition(predictedCwd, currentCwd, {
                 prevOp: stmt.prevOp,
@@ -3120,6 +3127,11 @@ const COMMAND_PREFIX_WRAPPERS = new Map([
     leadingPositionals: 0,
   }],
 ])
+
+/** True when any clustered short-option token contains all the given letters. */
+function hasShortFlag(args, letters) {
+  return args.some((w) => /^-[A-Za-z]+$/.test(w) && [...letters].every((letter) => w.includes(letter)))
+}
 
 /** Strip wrapper flags from a command-prefix wrapper, returning the wrapped command words. */
 function skipCommandPrefixWrapper(words, spec) {
@@ -3785,7 +3797,8 @@ function classifyGitMutationWords(gitInfo, segment) {
   // `git pull <other-ref>` merges a local/remote branch into the primary checkout.
   if (sub === 'pull') {
     const refs = collectNonOptionArgs(args, new Set(['-s', '--strategy', '-X', '--strategy-option', '-j', '--jobs', '--depth', '--upload-pack', '--reference', '--recurse-submodules']))
-    const allowedRefs = refs.every((ref) => ref === 'origin' || ref === 'upstream' || ref === 'main' || ref === 'master')
+    const normalizeRef = (ref) => String(ref || '').replace(/^refs\/heads\//, '').replace(/:.*$/, '')
+    const allowedRefs = refs.every((ref) => ['origin', 'upstream', 'main', 'master'].includes(normalizeRef(ref)))
     if (refs.length > 0 && !allowedRefs) {
       return { kind: 'pull-other-ref', segment }
     }
@@ -3818,7 +3831,18 @@ function classifyGitMutationWords(gitInfo, segment) {
           timeout: 3000,
         })
         if (status.error || status.status !== 0) return true
-        return Boolean((status.stdout || '').trim())
+        if ((status.stdout || '').trim()) return true
+        // `--assume-unchanged` hides edits from status; detect lowercase index flags.
+        const flags = spawnSync('git', ['-C', target, 'ls-files', '-v'], { encoding: 'utf8', timeout: 3000 })
+        if (flags.error || flags.status !== 0) return true
+        if ((flags.stdout || '').split('\n').some((line) => /^[a-z]/.test(line.trim()))) return true
+        // Local commits that are not on origin/main would be discarded by reset --hard <ref>.
+        const ahead = spawnSync('git', ['-C', target, 'rev-list', '--count', 'origin/main..HEAD'], {
+          encoding: 'utf8',
+          timeout: 3000,
+        })
+        if (ahead.error || ahead.status !== 0) return true
+        return Number((ahead.stdout || '0').trim()) > 0
       })
       const sanctionedRef = !targetRef || targetRef === 'origin/main' || targetRef === 'origin/master' || targetRef === 'HEAD'
       if (hasDirtyTracked || !sanctionedRef) {
@@ -3830,7 +3854,7 @@ function classifyGitMutationWords(gitInfo, segment) {
   }
   // Tracked files removed or renamed in the primary checkout.
   if (sub === 'rm' || sub === 'mv') {
-    const dryRun = args.some((w) => w === '-n' || w === '--dry-run')
+    const dryRun = hasShortFlag(args, 'n') || args.some((w) => w === '--dry-run')
     if (!dryRun) return { kind: `git-${sub}`, segment }
   }
 
@@ -3844,14 +3868,26 @@ function classifyGitMutationWords(gitInfo, segment) {
   if (sub === 'switch' && args.some((w) => w === '-f' || w === '--force' || w === '--discard-changes')) {
     return { kind: 'switch-force', segment }
   }
-  if (sub === 'read-tree' && args.some((w) => w === '-u' || w === '--reset' || w === '-m')) {
+  if (sub === 'read-tree' && (hasShortFlag(args, 'u') || hasShortFlag(args, 'm') || args.some((w) => w === '--reset'))) {
     return { kind: 'read-tree', segment }
   }
-  if (sub === 'checkout-index' && args.some((w) => w === '-a' || w === '--all' || w === '-f' || w === '--force')) {
-    return { kind: 'checkout-index', segment }
+  if (sub === 'checkout-index') {
+    const prefixInline = args.find((w) => w.startsWith('--prefix='))
+    let prefix = prefixInline ? prefixInline.slice('--prefix='.length) : ''
+    const prefixIdx = args.indexOf('--prefix')
+    if (!prefix && prefixIdx !== -1) prefix = args[prefixIdx + 1] || ''
+    let prefixOutsidePrimary = false
+    if (prefix) {
+      const base = Array.isArray(gitInfo.targetDirs) && gitInfo.targetDirs.length > 0 ? gitInfo.targetDirs[0] : ''
+      prefixOutsidePrimary = Boolean(base) && !resolve(base, prefix).startsWith(resolve(base) + sep) && resolve(base, prefix) !== resolve(base)
+    }
+    if (!prefixOutsidePrimary && (hasShortFlag(args, 'a') || hasShortFlag(args, 'f') || args.some((w) => w === '--all' || w === '--force'))) {
+      return { kind: 'checkout-index', segment }
+    }
   }
   if (sub === 'stash') {
     const action = (args[0] || '').toLowerCase()
+    if (action === '-h' || action === '--help') return null
     if (action === '' || action === 'push' || action === 'save' || action.startsWith('-')) {
       return { kind: 'stash-save', segment }
     }
