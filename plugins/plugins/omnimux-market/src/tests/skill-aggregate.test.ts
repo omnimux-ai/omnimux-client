@@ -282,15 +282,15 @@ test('findCatalogSkill matches slug, catalog id, and sk-omx- prefix', () => {
 
 test('live catalog still exposes ugc-confessional as custom', async () => {
   const doc = loadCatalog()
-  const hit = findCatalogSkill('ugc-confessional', undefined, doc)
-  assert.equal(hit?.id, 'sk-omx-ugc-confessional')
+  const hit = findCatalogSkill('replicate-viral-video', undefined, doc)
+  assert.equal(hit?.id, 'sk-omx-replicate-viral-video')
   assert.equal(catalogSkillChannel(hit!), 'custom')
-  const result = await aggregateSkillSearch('UGC 告白', {
+  const result = await aggregateSkillSearch('复刻爆款视频', {
     cfg: cfg(),
     loadCatalog: () => doc,
     channels: ['custom', 'workbuddy'],
   })
-  assert.equal(result.items.some((it) => it.slug === 'ugc-confessional' && it.channel === 'custom'), true)
+  assert.equal(result.items.some((it) => it.slug === 'replicate-viral-video' && it.channel === 'custom'), true)
 })
 
 // ---------------------------------------------------------------------------
@@ -342,8 +342,8 @@ test('T03-04：真实目录官方货架技能投影出的卡片全部携带双�
     .filter((card) => !card.titleZh || !card.titleEn || !card.summaryZh || !card.summaryEn)
     .map((card) => card.slug)
   assert.deepEqual(missing, [])
-  const sample = cards.find((card) => card.slug === 'ugc-confessional')
+  const sample = cards.find((card) => card.slug === 'replicate-viral-video')
   assert.ok(sample)
-  assert.equal(sample!.titleZh, 'UGC 告白')
+  assert.equal(sample!.titleZh, '复刻爆款视频')
   assert.ok(sample!.titleEn && sample!.titleEn !== sample!.titleZh)
 })

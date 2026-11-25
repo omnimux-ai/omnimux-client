@@ -6,27 +6,88 @@
   "entrypoint": "src/index.js",
   "status": "active",
   "description": "管理实物与数字商品的规格、卖点和素材，供创作调用。",
-  "tags": ["products", "ecommerce", "sku", "spu", "selling-points", "library"],
+  "tags": [
+    "products",
+    "ecommerce",
+    "sku",
+    "spu",
+    "selling-points",
+    "library"
+  ],
   "capabilities": {
     "tools": [
-      { "name": "products_create", "summary": "创建新的商品标品对象", "category": "ecommerce", "isWriteOperation": true, "requiresAuth": false },
-      { "name": "products_list", "summary": "列出产品库中所有商品清单", "category": "ecommerce", "isWriteOperation": false, "requiresAuth": false },
-      { "name": "products_get", "summary": "获取指定商品的完整属性与卖点", "category": "ecommerce", "isWriteOperation": false, "requiresAuth": false },
-      { "name": "products_search", "summary": "按名称或品类检索商品", "category": "ecommerce", "isWriteOperation": false, "requiresAuth": false },
-      { "name": "products_update", "summary": "更新商品卖点、描述或主图引用", "category": "ecommerce", "isWriteOperation": true, "requiresAuth": false },
-      { "name": "products_read_media", "summary": "读取商品关联的多模态素材", "category": "ecommerce", "isWriteOperation": false, "requiresAuth": false }
+      {
+        "name": "products_create",
+        "summary": "创建新的商品标品对象",
+        "category": "ecommerce",
+        "isWriteOperation": true,
+        "requiresAuth": false
+      },
+      {
+        "name": "products_list",
+        "summary": "列出产品库中所有商品清单",
+        "category": "ecommerce",
+        "isWriteOperation": false,
+        "requiresAuth": false
+      },
+      {
+        "name": "products_get",
+        "summary": "获取指定商品的完整属性与卖点",
+        "category": "ecommerce",
+        "isWriteOperation": false,
+        "requiresAuth": false
+      },
+      {
+        "name": "products_search",
+        "summary": "按名称或品类检索商品",
+        "category": "ecommerce",
+        "isWriteOperation": false,
+        "requiresAuth": false
+      },
+      {
+        "name": "products_update",
+        "summary": "更新商品卖点、描述或主图引用",
+        "category": "ecommerce",
+        "isWriteOperation": true,
+        "requiresAuth": false
+      },
+      {
+        "name": "products_read_media",
+        "summary": "读取商品关联的多模态素材",
+        "category": "ecommerce",
+        "isWriteOperation": false,
+        "requiresAuth": false
+      }
     ],
     "seamsProvided": [],
-    "seamsConsumed": ["headlessSkill"],
+    "seamsConsumed": [
+      "headlessSkill"
+    ],
     "slots": [],
-    "storageDomains": ["$DSH_HOME/omnimux/products/"]
+    "storageDomains": [
+      "$DSH_HOME/omnimux/products/"
+    ]
   },
   "skills": [
     "skills/products-brand-strategy/SKILL.md",
     "skills/products-physical-import/SKILL.md"
   ],
   "dependencies": {
-    "requiredPlugins": ["omnimux"],
+    "requiredPlugins": [
+      "omnimux"
+    ],
     "systemBinaries": []
+  },
+  "skillMetadata": {
+    "products-brand-strategy": {
+      "origin": "first-party",
+      "license": "SEE LICENSE IN LICENSE",
+      "owner": "omnimux-products"
+    },
+    "products-physical-import": {
+      "origin": "first-party",
+      "license": "SEE LICENSE IN LICENSE",
+      "owner": "omnimux-products"
+    }
   }
 }

@@ -58,7 +58,7 @@ test('catalog provider list returns candidates with 0 token modelInvocable: fals
 
   const result = await provider.list()
   assert.equal(result.complete, true)
-  assert.ok(result.candidates.length > 50, `expected >50 skills, got ${result.candidates.length}`)
+  assert.ok(result.candidates.length >= 16, `expected >=16 skills, got ${result.candidates.length}`)
 
   // Verify policy: modelInvocable must be strictly false for all catalog candidates (0 Token pollution to LLM)
   // and userInvocable must be strictly true (so users can find them in / slash composer)
@@ -70,14 +70,14 @@ test('catalog provider list returns candidates with 0 token modelInvocable: fals
   }
 
   const names = new Set(result.candidates.map(c => c.name))
-  assert.ok(names.has('ugc-confessional'), 'should contain ugc-confessional')
-  assert.ok(names.has('cinematic'), 'should contain cinematic')
-  assert.ok(names.has('ugc-showcase'), 'should contain ugc-showcase')
-  assert.ok(names.has('ecommerce'), 'should contain ecommerce')
-  assert.ok(names.has('static-image'), 'should contain static-image')
+  assert.ok(names.has('replicate-viral-video'), 'should contain replicate-viral-video')
+  assert.ok(names.has('create-selling-video'), 'should contain create-selling-video')
+  assert.ok(names.has('video-hook-analysis'), 'should contain video-hook-analysis')
+  assert.ok(names.has('reverse-video-prompt'), 'should contain reverse-video-prompt')
   assert.ok(names.has('replicate-carousel'), 'should contain replicate-carousel')
   assert.ok(names.has('shoppable-carousel'), 'should contain shoppable-carousel')
-  assert.ok(names.has('carousel'), 'should contain carousel')
+  assert.ok(names.has('global-ad-localizer'), 'should contain global-ad-localizer')
+  assert.ok(names.has('stickman-video-director'), 'should contain stickman-video-director')
 })
 
 test('catalog provider exposes all 4 quick-shortcut bundled skills with 0-token policy and real SKILL.md (#235)', async () => {
@@ -103,17 +103,17 @@ test('catalog provider exposes all 4 quick-shortcut bundled skills with 0-token 
 
 test('catalog provider loads a previously listed candidate with the official provider.get shape', async () => {
   const roots = env()
-  writeBundledSkill(roots, 'ugc-confessional', '# Ugc Confessional\n\nBundled fixture.')
+  writeBundledSkill(roots, 'replicate-carousel', '# Replicate Carousel\n\nBundled fixture.')
   const provider = createCatalogSkillProvider({
     catalog: loadCatalog(),
     ...roots,
   })
 
-  const def = await getListedDefinition(provider, 'ugc-confessional')
-  assert.equal(def.name, 'ugc-confessional')
+  const def = await getListedDefinition(provider, 'replicate-carousel')
+  assert.equal(def.name, 'replicate-carousel')
   assert.equal(def.invocation.modelInvocable, false)
   assert.equal(def.invocation.userInvocable, true)
-  assert.ok(def.content.includes('Ugc Confessional') || def.content.includes('ugc-confessional'))
+  assert.ok(def.content.includes('Replicate Carousel') || def.content.includes('replicate-carousel'))
 })
 
 test('catalog provider returns undefined when a candidate has no definition', async () => {
@@ -125,12 +125,12 @@ test('catalog provider returns undefined when a candidate has no definition', as
 
 test('catalog provider returns valid definition metadata for an installed candidate', async () => {
   const roots = env()
-  const dir = join(roots.home, 'skills', 'ugc-confessional')
+  const dir = join(roots.home, 'skills', 'replicate-carousel')
   mkdirSync(dir, { recursive: true })
   writeFileSync(join(dir, 'SKILL.md'), '---\ndescription: Installed fixture\n---\n\nInstalled body.', 'utf8')
   const provider = createCatalogSkillProvider({ catalog: loadCatalog(), ...roots })
 
-  const definition = await getListedDefinition(provider, 'ugc-confessional')
+  const definition = await getListedDefinition(provider, 'replicate-carousel')
   validateDefinition(definition)
   assert.equal(definition.source, 'omnimux-market')
   assert.equal(definition.provider, provider.name)
@@ -235,9 +235,9 @@ test('catalog rank loses to filesystem so installed skills stay model-invocable'
 
 test('resolved definitions satisfy official validateDefinition', async () => {
   const roots = env()
-  writeBundledSkill(roots, 'ugc-confessional', '# Ugc Confessional\n\nBundled fixture.')
+  writeBundledSkill(roots, 'replicate-carousel', '# Replicate Carousel\n\nBundled fixture.')
   const provider = createCatalogSkillProvider({ catalog: loadCatalog(), ...roots })
-  const definition = await getListedDefinition(provider, 'ugc-confessional')
+  const definition = await getListedDefinition(provider, 'replicate-carousel')
   validateDefinition(definition)
   assert.equal(definition.provider, provider.name)
   assert.equal(definition.source, 'omnimux-market')

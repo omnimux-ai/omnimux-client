@@ -4,6 +4,7 @@ import { packageRoot, mcpRowId, mcpRowPattern, skillDir } from './paths.js'
 
 const TABS = new Set(['experts', 'skills', 'connectors'])
 const KINDS = new Set(['expert', 'team', 'skill', 'connector', 'suite'])
+const ORIGINS = new Set(['first-party', 'third-party', 'upstream'])
 const ID = /^[a-z0-9]+(-[a-z0-9]+)*$/
 
 /** @type {Map<string, { mtimeMs: number, size: number, doc: ReturnType<typeof parseCatalog> }>} */
@@ -170,7 +171,17 @@ function parseItem(raw) {
   }
   const hub = parseHub(row.hub)
   const scenario = typeof row.scenario === 'string' && ID.test(row.scenario) ? row.scenario : undefined
-  const item = { id, tab, kind, title, subtitle, summary, category, scenario, tags, avatar, skill, serverName, source, hub }
+  const origin = typeof row.origin === 'string' && ORIGINS.has(row.origin) ? row.origin : undefined
+  const license = typeof row.license === 'string' && row.license.trim() ? row.license.trim().slice(0, 80) : undefined
+  const owner = typeof row.owner === 'string' && row.owner.trim() ? row.owner.trim().slice(0, 120) : undefined
+  const author = typeof row.author === 'string' && row.author.trim() ? row.author.trim().slice(0, 80) : undefined
+  const item = {
+    id, tab, kind, title, subtitle, summary, category, scenario, tags, avatar, skill, serverName, source, hub,
+    ...(origin ? { origin } : {}),
+    ...(license ? { license } : {}),
+    ...(owner ? { owner } : {}),
+    ...(author ? { author } : {}),
+  }
   if (typeof row.preinstalled === 'boolean') item.preinstalled = row.preinstalled
   if (kind === 'suite') item.suite = parseSuiteManifest(row.suite, id)
   // Skill-only metadata; expert/team fields and top-level featured retain their contract.

@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0.0",
-  "updatedAt": "2026-11-24T01:23:13.262Z",
+  "updatedAt": "2026-11-24T10:57:32.979Z",
   "topology": {
     "tiers": [
       {
@@ -538,6 +538,13 @@
         ],
         "systemBinaries": []
       },
+      "skillMetadata": {
+        "clip-craft": {
+          "origin": "first-party",
+          "license": "SEE LICENSE IN LICENSE",
+          "owner": "omnimux-clip"
+        }
+      },
       "path": "plugins/omnimux-clip"
     },
     {
@@ -650,6 +657,18 @@
           "omnimux"
         ],
         "systemBinaries": []
+      },
+      "skillMetadata": {
+        "inspiration-deconstruct": {
+          "origin": "first-party",
+          "license": "SEE LICENSE IN LICENSE",
+          "owner": "omnimux-inspiration"
+        },
+        "inspiration-translate": {
+          "origin": "first-party",
+          "license": "SEE LICENSE IN LICENSE",
+          "owner": "omnimux-inspiration"
+        }
       },
       "path": "plugins/omnimux-inspiration"
     },
@@ -799,7 +818,6 @@
         ]
       },
       "skills": [
-        "skills/sopilot-social-agents/SKILL.md",
         "skills/tiktok-growth/SKILL.md",
         "skills/omnimux-social-data/SKILL.md",
         "skills/omnimux-outlier-post-finder/SKILL.md",
@@ -824,6 +842,98 @@
           "omnimux"
         ],
         "systemBinaries": []
+      },
+      "skillMetadata": {
+        "tiktok-growth": {
+          "origin": "first-party",
+          "license": "MIT",
+          "owner": "omnimux-market"
+        },
+        "omnimux-social-data": {
+          "origin": "first-party",
+          "license": "MIT",
+          "owner": "omnimux-market"
+        },
+        "omnimux-outlier-post-finder": {
+          "origin": "first-party",
+          "license": "MIT",
+          "owner": "omnimux-market"
+        },
+        "omnimux-creator-teardown": {
+          "origin": "first-party",
+          "license": "MIT",
+          "owner": "omnimux-market"
+        },
+        "omnimux-transcript-intelligence": {
+          "origin": "first-party",
+          "license": "MIT",
+          "owner": "omnimux-market"
+        },
+        "omnimux-trend-discovery": {
+          "origin": "first-party",
+          "license": "MIT",
+          "owner": "omnimux-market"
+        },
+        "omnimux-competitor-research": {
+          "origin": "first-party",
+          "license": "MIT",
+          "owner": "omnimux-market"
+        },
+        "omnimux-social-listening": {
+          "origin": "first-party",
+          "license": "MIT",
+          "owner": "omnimux-market"
+        },
+        "omnimux-product-demand": {
+          "origin": "first-party",
+          "license": "MIT",
+          "owner": "omnimux-market"
+        },
+        "omnimux-content-repurposing": {
+          "origin": "first-party",
+          "license": "MIT",
+          "owner": "omnimux-market"
+        },
+        "omnimux-ecom-platform-rules": {
+          "origin": "first-party",
+          "license": "MIT",
+          "owner": "omnimux-market"
+        },
+        "omnimux-ecom-market-research": {
+          "origin": "first-party",
+          "license": "MIT",
+          "owner": "omnimux-market"
+        },
+        "omnimux-ecom-pricing-strategy": {
+          "origin": "first-party",
+          "license": "MIT",
+          "owner": "omnimux-market"
+        },
+        "omnimux-ecom-listing-copy": {
+          "origin": "first-party",
+          "license": "MIT",
+          "owner": "omnimux-market"
+        },
+        "omnimux-ecom-visual-qa": {
+          "origin": "first-party",
+          "license": "MIT",
+          "owner": "omnimux-market"
+        },
+        "omnimux-ecom-video-script": {
+          "origin": "first-party",
+          "license": "MIT",
+          "owner": "omnimux-market"
+        },
+        "omnimux-ecom-ads-diagnosis": {
+          "origin": "first-party",
+          "license": "MIT",
+          "owner": "omnimux-market"
+        },
+        "omnimux-ecom-review-voc": {
+          "origin": "first-party",
+          "license": "MIT",
+          "owner": "omnimux-market"
+        }
       },
       "path": "plugins/omnimux-market"
     },
@@ -889,17 +999,35 @@
           }
         ],
         "seamsProvided": [],
-        "seamsConsumed": [],
+        "seamsConsumed": [
+          "headlessSkill"
+        ],
         "slots": [],
         "storageDomains": [
           "$DSH_HOME/omnimux/products/"
         ]
       },
+      "skills": [
+        "skills/products-brand-strategy/SKILL.md",
+        "skills/products-physical-import/SKILL.md"
+      ],
       "dependencies": {
         "requiredPlugins": [
           "omnimux"
         ],
         "systemBinaries": []
+      },
+      "skillMetadata": {
+        "products-brand-strategy": {
+          "origin": "first-party",
+          "license": "SEE LICENSE IN LICENSE",
+          "owner": "omnimux-products"
+        },
+        "products-physical-import": {
+          "origin": "first-party",
+          "license": "SEE LICENSE IN LICENSE",
+          "owner": "omnimux-products"
+        }
       },
       "path": "plugins/omnimux-products"
     },
@@ -1083,6 +1211,18 @@
         ],
         "systemBinaries": []
       },
+      "skillMetadata": {
+        "tiktok-selection-risk-audit": {
+          "origin": "first-party",
+          "license": "SEE LICENSE IN LICENSE",
+          "owner": "omnimux-tiktok-selection"
+        },
+        "tiktok-selection-video-script": {
+          "origin": "first-party",
+          "license": "SEE LICENSE IN LICENSE",
+          "owner": "omnimux-tiktok-selection"
+        }
+      },
       "path": "plugins/omnimux-tiktok-selection"
     },
     {
@@ -1222,7 +1362,8 @@
         "seamsProvided": [],
         "seamsConsumed": [
           "mediaSeam",
-          "videoProcess"
+          "videoProcess",
+          "headlessSkill"
         ],
         "slots": [
           {
@@ -1238,11 +1379,27 @@
           "$DSH_HOME/omnimux/workflow/"
         ]
       },
+      "skills": [
+        "skills/workflow-video-deconstruct/SKILL.md",
+        "skills/workflow-director-analyze/SKILL.md"
+      ],
       "dependencies": {
         "requiredPlugins": [
           "omnimux"
         ],
         "systemBinaries": []
+      },
+      "skillMetadata": {
+        "workflow-video-deconstruct": {
+          "origin": "first-party",
+          "license": "SEE LICENSE IN LICENSE",
+          "owner": "omnimux-workflow"
+        },
+        "workflow-director-analyze": {
+          "origin": "first-party",
+          "license": "SEE LICENSE IN LICENSE",
+          "owner": "omnimux-workflow"
+        }
       },
       "path": "plugins/omnimux-workflow"
     },
@@ -1273,14 +1430,14 @@
           },
           {
             "name": "video_analyze",
-            "summary": "解析视频结构并进行分镜内容理解",
+            "summary": "解析视频结构并输出结构化五维拆解与分镜数组（Skill 真源 + JSON Schema）",
             "category": "video",
             "isWriteOperation": false,
             "requiresAuth": true
           },
           {
             "name": "video_reverse_prompt",
-            "summary": "基于视频抽帧反推结构化分镜生成提示词",
+            "summary": "基于参考视频反推 I2V 结构化分镜提示词（Skill 真源 + JSON Schema）",
             "category": "video",
             "isWriteOperation": false,
             "requiresAuth": true
@@ -1292,17 +1449,35 @@
             "interfaceDoc": "ctx.get('videoProcess').execute(task)"
           }
         ],
-        "seamsConsumed": [],
+        "seamsConsumed": [
+          "headlessSkill"
+        ],
         "storageDomains": [
           "temp/video_output/"
         ]
       },
+      "skills": [
+        "skills/video-analyze/SKILL.md",
+        "skills/video-reverse-prompt/SKILL.md"
+      ],
       "dependencies": {
         "requiredPlugins": [],
         "systemBinaries": [
           "ffmpeg",
           "ffprobe"
         ]
+      },
+      "skillMetadata": {
+        "video-analyze": {
+          "origin": "first-party",
+          "license": "SEE LICENSE IN LICENSE",
+          "owner": "omnimux-video"
+        },
+        "video-reverse-prompt": {
+          "origin": "first-party",
+          "license": "SEE LICENSE IN LICENSE",
+          "owner": "omnimux-video"
+        }
       },
       "path": "plugins/omnimux-video"
     },

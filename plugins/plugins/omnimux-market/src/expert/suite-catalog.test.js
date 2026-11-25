@@ -61,7 +61,7 @@ test('suite counts match the packaged content', () => {
   assert.deepEqual(counts('suite-social-content-team'), { skills: 0, rules: 5, agents: 7 })
   assert.deepEqual(counts('suite-content-distribution-team'), { skills: 6, rules: 0, agents: 5 })
   assert.deepEqual(counts('suite-social-engagement-team'), { skills: 1, rules: 0, agents: 5 })
-  assert.deepEqual(counts('suite-tiktok-agent'), { skills: 45, rules: 0, agents: 0 })
+  assert.deepEqual(counts('suite-tiktok-agent'), { skills: 44, rules: 0, agents: 0 })
 })
 
 test('preinstalled suite is declared with preinstalled flag', () => {

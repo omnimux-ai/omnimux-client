@@ -42,6 +42,10 @@ Desktop Host、profile 和 DSH home 位于本机。是否向外部服务发送�
 
 不会自动复制插件。每个 profile 都有自己的 bundle 和依赖组合；切换 profile 后，终端中的默认插件命令会作用于当前 profile，也可以使用 `--profile <name>` 显式指定目标。
 
+## 为什么当前桌面版（`dsh-desktop-next`）不包含内置 Office 技能与 LibreOffice 预览？
+
+这是为控制安装包体积所作的有意取舍。上游 DSH 的 `@deepseek-ai/dsh-skill-office`（含 `office`、`office-docx`、`office-pptx`、`office-xlsx`、`office-export-pdf`、`office-render`、`office-recalculate` 7 项技能）与 Office 预览依赖 `@deepseek-ai/libreoffice-kit`，会带来约 305 MB 的双架构原生体积；因此活跃桌面壳 `dsh-desktop-next` 在 [`cordis.patch.yml`](../dsh-desktop-next/cordis.patch.yml) 与 [`runtime-file-policy.ts`](../dsh-desktop-next/scripts/runtime-file-policy.ts) 中默认禁用并排除了该模块，而冻结的旧壳 `dsh-plugin-desktop`（`0.2.1-rc.3`）保留了上游默认挂载。详见[架构说明](architecture.md#双壳内置-office-技能分发边界)。如需处理表格或文档，可直接使用本机脚本能力或按需安装个人/社区技能。
+
 ## 应用如何更新？
 
 打包后的应用会在后台检查稳定版本，但不会静默安装。发现新版本后先征得用户确认；下载前可以在原生保存对话框中选择安装包的目录和文件名，取消保存不会开始下载。macOS 下载并打开 DMG，Windows 下载并启动 NSIS 安装程序。升级完成并重新启动后，应用会询问是否删除或保留安装包。网络或下载失败不会破坏当前安装。

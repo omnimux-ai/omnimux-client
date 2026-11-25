@@ -182,7 +182,7 @@ test('T01-10：真实目录官方货架技能全部通过判据（T01 验收证�
     .map((row) => `${row.id}:${row.check.missingFields.join(',')}`)
   assert.deepEqual(failed, [])
 
-  const sample = catalog.items.find((item) => item.id === 'sk-omx-ugc-confessional') as unknown as
+  const sample = catalog.items.find((item) => item.id === 'sk-omx-replicate-viral-video') as unknown as
     Record<string, unknown> | undefined
   assert.ok(sample, '样例技能必须存在于目录')
   assert.equal('titleZh' in sample, true)

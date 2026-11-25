@@ -109,7 +109,8 @@ test('omni-agent agent.cordis.yml is structurally valid and mounts generic subag
   // Skills ship from the plugin that owns them; Creator-mode Cordis skills are
   // owned exclusively by upstream `@deepseek-ai/dsh-agent-preset/skills/` (#234).
   ok(existsSync(join(root, 'plugins/omnimux-market/skills/tiktok-growth/SKILL.md')))
-  ok(existsSync(join(root, 'plugins/omnimux-market/skills/sopilot-social-agents/SKILL.md')))
+  ok(existsSync(join(root, 'plugins/omnimux-market/skills/omnimux-social-data/SKILL.md')))
+  ok(!existsSync(join(root, 'plugins/omnimux-market/skills/sopilot-social-agents/SKILL.md')))
   ok(!existsSync(join(root, 'plugins/omnimux/skills/cordis-plugin-development/SKILL.md')))
   ok(!existsSync(join(root, 'plugins/omnimux/skills/editing-cordis-compositions/SKILL.md')))
   const rows = parseWithPython(rel)

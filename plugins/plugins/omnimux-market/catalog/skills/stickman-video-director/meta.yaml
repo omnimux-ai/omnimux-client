@@ -15,4 +15,6 @@ desc-cn: "火柴人视频导演把一段文案、笔记或一个主题做成约�
 cover: ""
 author-en: "OmniMux Team"
 author-cn: "OmniMux 团队"
-source: official
+origin: first-party
+license: MIT
+owner: omnimux-market

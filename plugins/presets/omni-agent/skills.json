@@ -98,16 +98,16 @@
       "summary": "将分镜创意转化为精准的推拉摇移、景别与运动物理参数，提升视频生成可控性。"
     },
     {
-      "id": "sk-omx-kling-ad-localizer",
-      "slug": "kling-global-ad-localizer",
-      "skill": "kling-global-ad-localizer",
+      "id": "sk-omx-global-ad-localizer",
+      "slug": "global-ad-localizer",
+      "skill": "global-ad-localizer",
       "name": "多语言出海视频广告",
       "title": "多语言出海视频广告",
       "titleZh": "多语言出海视频广告",
       "titleEn": "Global Ad Localizer",
       "category": "创作视频",
-      "description": "面向 TikTok 与跨境电商锁定产品外观、本地化适配人设与语境的多语言广告矩阵。",
-      "summary": "面向 TikTok 与跨境电商锁定产品外观、本地化适配人设与语境的多语言广告矩阵。"
+      "description": "锁定商品外观与品牌事实真源，将验证过的广告创意扩展为多国家、多语言本地化视频矩阵。",
+      "summary": "锁定商品外观与品牌事实真源，将验证过的广告创意扩展为多国家、多语言本地化视频矩阵。"
     },
     {
       "id": "sk-omx-clip-export",
@@ -170,28 +170,28 @@
       "summary": "规划跨境 9 图商详视觉矩阵并执行白底、主体占比与文字合规质检。"
     },
     {
-      "id": "sk-omx-product-photoshoot",
-      "slug": "product-photoshoot",
-      "skill": "product-photoshoot",
-      "name": "商业产品静物摄影",
-      "title": "商业产品静物摄影",
-      "titleZh": "商业产品静物摄影",
-      "titleEn": "Product Photoshoot",
+      "id": "sk-omx-dynamic-poster",
+      "slug": "dynamic-poster",
+      "skill": "dynamic-poster",
+      "name": "动态海报",
+      "title": "动态海报",
+      "titleZh": "动态海报",
+      "titleEn": "Dynamic Poster",
       "category": "创作图片",
-      "description": "生成影棚级布光、材质细节与构图控制的商业静物产品摄影方案。",
-      "summary": "生成影棚级布光、材质细节与构图控制的商业静物产品摄影方案。"
+      "description": "围绕产品实拍或品牌主视觉，规划具备电影感构图与微动态演绎的商业动态海报。",
+      "summary": "围绕产品实拍或品牌主视觉，规划具备电影感构图与微动态演绎的商业动态海报。"
     },
     {
-      "id": "sk-omx-editorial-luxury-carousel",
-      "slug": "editorial-luxury-ig-carousel",
-      "skill": "editorial-luxury-ig-carousel",
-      "name": "杂志感品牌轮播图",
-      "title": "杂志感品牌轮播图",
-      "titleZh": "杂志感品牌轮播图",
-      "titleEn": "Editorial Luxury Carousel",
+      "id": "sk-omx-character-scene-storyboard",
+      "slug": "character-scene-storyboard",
+      "skill": "character-scene-storyboard",
+      "name": "角色场景分镜板",
+      "title": "角色场景分镜板",
+      "titleZh": "角色场景分镜板",
+      "titleEn": "Character & Scene Storyboard",
       "category": "创作图片",
-      "description": "面向时尚与生活方式品牌，构建杂志级排版与统一色调的社媒图文轮播。",
-      "summary": "面向时尚与生活方式品牌，构建杂志级排版与统一色调的社媒图文轮播。"
+      "description": "由参考图与剧本生成整合角色三视图、主场景概念图与 12 格分镜故事板的前期设定图。",
+      "summary": "由参考图与剧本生成整合角色三视图、主场景概念图与 12 格分镜故事板的前期设定图。"
     },
     {
       "id": "sk-omx-ecom-market-research",
@@ -420,18 +420,6 @@
       "category": "文案与运营",
       "description": "把一条视频、转写或长帖改写为短视频脚本、X 推文串与多平台可复用内容资产。",
       "summary": "把一条视频、转写或长帖改写为短视频脚本、X 推文串与多平台可复用内容资产。"
-    },
-    {
-      "id": "sk-omx-sopilot-social-agents",
-      "slug": "sopilot-social-agents",
-      "skill": "sopilot-social-agents",
-      "name": "SoPilot 社媒营销路由",
-      "title": "SoPilot 社媒营销路由",
-      "titleZh": "SoPilot 社媒营销路由",
-      "titleEn": "SoPilot Social Agents",
-      "category": "文案与运营",
-      "description": "按推特发帖、高赞评论、Threads 改写、引用转推与私信触达场景智能路由专项提示词。",
-      "summary": "按推特发帖、高赞评论、Threads 改写、引用转推与私信触达场景智能路由专项提示词。"
     }
   ]
 }

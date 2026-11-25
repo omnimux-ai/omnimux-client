@@ -34,7 +34,7 @@ test('E2E 分类栏：中英文界面与目录声明的场景分类一致', () =
   const zh = buildWorkshopCategories(null, tr('zh'))
   const en = buildWorkshopCategories(null, tr('en'))
   assert.deepEqual(zh.map((c) => c.id), ['', ...skillScenarios.map((c) => c.id)])
-  assert.equal(zh.length, 9)
+  assert.equal(zh.length, 7)
   for (const cat of skillScenarios) {
     assert.ok(zh.find((c) => c.id === cat.id).label, `zh label missing for ${cat.id}`)
     assert.ok(en.find((c) => c.id === cat.id).label, `en label missing for ${cat.id}`)
