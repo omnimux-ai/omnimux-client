@@ -49,7 +49,7 @@ plugins/    产品插件；仓库根单一 pnpm workspace；含共享包（如 p
 |---|---|
 | 仅开发文档、仓库指令或注释，无运行行为变化 | 跑 `git diff --check`，核对改动链接、命令和指令入口，运行子树已有的适用文档检查。产品端到端记为“不适用”，禁止为此重装依赖或跑构建/打包。 |
 | `plugins/` 业务与 UI | 根目录 `corepack pnpm --dir plugins run build:all` + 受影响插件单测 / `plugins` 门禁（UI 改动加跑对应阶段/视口浏览器验证） |
-| 工作区元数据 | `node scripts/workspace-check.mjs --check`（校验 `dsh-version.json` / `bundle.lock.json`） |
+| 工作区元数据 | `node scripts/workspace-check.mjs --check`（校验 `dsh-version.json` / `bundle.lock.json`）。合并或变基后禁止沿用自动合并的锁文件：先取主干版本，构建后重算再校验（见 [LESSONS.md](LESSONS.md)）。 |
 | `app/` 类型与壳代码 | `cd app && corepack yarn typecheck` + 受影响桌面单测 |
 | `app/` 打包（仅打包/发版边界） | `cd app && corepack yarn workspace dsh-desktop-next dist:mac`（前置需按 [app/AGENTS.md](app/AGENTS.md) staging） |
 
