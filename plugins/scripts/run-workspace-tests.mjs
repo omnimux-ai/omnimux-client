@@ -7,7 +7,8 @@
  * output contains no `not ok` line and no cancelled test, and every skip is accounted for.
  * The `not ok` scan matters because a suite that throws while collecting can print `not ok`
  * while node:test still exits 0. Environment skips are explicit-marker only; design skips
- * remain allowed but are printed in the package status line.
+ * remain allowed but are printed in the package status line. Vitest's default reporter is
+ * not TAP, so its summary is parsed separately and any vitest skip is fail-closed.
  *
  * Packages run without proxy variables so a test that silently depends on a reachable proxy
  * fails locally the same way it fails on a clean CI runner. HOME is left alone: headless Chrome
@@ -69,7 +70,10 @@ export function selectShard(packages, shard) {
 /**
  * Vitest's default (non-TAP) reporter prints a human-readable summary such as
  * `Tests  1 passed | 1 skipped (2)` instead of node:test's `# tests` counters.
- * @typedef {{ found: boolean, passed: number, failed: number, skipped: number, pending: number, total: number }} VitestSummary
+ * @typedef {{
+ *   found: boolean, passed: number, failed: number, expectedFail: number,
+ *   skipped: number, pending: number, total: number, malformed: string[],
+ * }} VitestSummary
  */
 /**
  * @typedef {{
@@ -120,32 +124,41 @@ function stripAnsi(text) {
  * @returns {VitestSummary}
  */
 export function parseVitestSummary(text) {
-  const result = { found: false, passed: 0, failed: 0, skipped: 0, pending: 0, total: 0 }
+  const result = { found: false, passed: 0, failed: 0, expectedFail: 0, skipped: 0, pending: 0, total: 0, malformed: [] }
   for (const raw of stripAnsi(text).split('\n')) {
     // Vitest right-aligns the label, e.g. `      Tests  1 passed | 1 skipped (2)`.
     const match = /^\s*Tests\s{2,}(.+)$/.exec(raw.trimEnd())
     if (!match) continue
+    result.found = true
     const body = match[1].trim()
-    if (/^no tests$/i.test(body)) {
-      result.found = true
+    if (/^no tests$/i.test(body)) continue
+    const declared = /\((\d+)\)\s*$/.exec(body)
+    const statuses = declared ? body.slice(0, declared.index).trim() : body
+    const parsed = { passed: 0, failed: 0, expectedFail: 0, skipped: 0, pending: 0 }
+    let segments = 0
+    let counted = 0
+    for (const part of statuses.split('|')) {
+      const segment = part.trim()
+      if (!segment) continue
+      const counts = /^(\d+)\s+(passed|failed|expected fail|skipped|todo)$/i.exec(segment)
+      if (!counts) {
+        segments = -1
+        break
+      }
+      segments += 1
+      const count = Number(counts[1])
+      counted += count
+      const kind = counts[2].toLowerCase().replace(' ', '')
+      parsed[kind === 'expectedfail' ? 'expectedFail' : kind === 'todo' ? 'pending' : kind] += count
+    }
+    if (segments <= 0) {
+      result.malformed.push(body)
       continue
     }
-    let recognized = false
-    for (const part of body.split('|')) {
-      const segment = part.trim().replace(/\s*\(\d+\)$/, '').trim()
-      const counts = /^(\d+)\s+(passed|failed|skipped|todo)\b/i.exec(segment)
-      if (!counts) continue
-      recognized = true
-      const count = Number(counts[1])
-      const kind = counts[2].toLowerCase()
-      if (kind === 'passed') result.passed += count
-      else if (kind === 'failed') result.failed += count
-      else if (kind === 'skipped') result.skipped += count
-      else result.pending += count
-    }
-    if (recognized) result.found = true
+    for (const [kind, count] of Object.entries(parsed)) result[kind] += count
+    if (!declared || Number(declared[1]) !== counted) result.malformed.push(body)
   }
-  result.total = result.passed + result.failed + result.skipped + result.pending
+  result.total = result.passed + result.failed + result.expectedFail + result.skipped + result.pending
   return result
 }
 
@@ -264,7 +277,10 @@ export function judge({ exitCode, tap }) {
   const skippedByDesign = allSkipped.length - skippedEnvironment
   const vitest = tap.vitest && tap.vitest.found ? tap.vitest : null
   const vitestUnclassified = vitest ? (Number(vitest.skipped) || 0) + (Number(vitest.pending) || 0) : 0
-  const vitestTests = vitest ? (Number(vitest.passed) || 0) + (Number(vitest.failed) || 0) + (Number(vitest.skipped) || 0) + (Number(vitest.pending) || 0) : 0
+  const vitestFailed = vitest ? (Number(vitest.failed) || 0) : 0
+  const vitestTests = vitest
+    ? (Number(vitest.passed) || 0) + vitestFailed + (Number(vitest.expectedFail) || 0) + vitestUnclassified
+    : 0
   // `# skipped` only counts leaf tests; suite-level skips are not part of it.
   const skippedMismatch = tap.skipped !== skippedCases.length
   const reasons = []
@@ -277,7 +293,11 @@ export function judge({ exitCode, tap }) {
   if (skippedEnvironment > 0) reasons.push(`${skippedEnvironment} environment-unavailable skip(s)`)
   // Vitest default output has no explicit environment marker, so every Vitest
   // skip/todo is treated as unclassified and fails the package (fail-closed).
-  if (vitestUnclassified > 0) reasons.push(`${vitestUnclassified} vitest skip(s) without an explicit environment marker`)
+  if (vitestUnclassified > 0) reasons.push(`${vitestUnclassified} unclassified vitest skip(s) (default reporter carries no reason)`)
+  if (vitestFailed > 0) reasons.push(`${vitestFailed} vitest failure(s) not represented in TAP counters`)
+  if (vitest && Array.isArray(vitest.malformed) && vitest.malformed.length > 0) {
+    reasons.push(`vitest summary unreadable: ${vitest.malformed[0]}`)
+  }
   if (skippedMismatch) reasons.push(`skip count mismatch: summary=${tap.skipped} parsed=${skippedCases.length}`)
   return {
     passed: reasons.length === 0,

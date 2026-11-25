@@ -65,7 +65,7 @@ const tapSummary = (overrides = {}) => ({
   failures: [],
   skippedCases: [],
   skippedSuites: [],
-  vitest: { found: false, passed: 0, failed: 0, skipped: 0, pending: 0, total: 0 },
+  vitest: { found: false, passed: 0, failed: 0, expectedFail: 0, skipped: 0, pending: 0, total: 0, malformed: [] },
   ...overrides,
 })
 
@@ -200,49 +200,72 @@ test('real node:test describe.skip output is parsed as a suite skip and does not
 test('vitest default reporter summary is parsed so skipped tests are counted', () => {
   // Strings below are verbatim from vitest 4.1.12 default reporter output.
   assert.deepEqual(parseVitestSummary('      Tests  1 passed | 1 skipped (2)'), {
-    found: true, passed: 1, failed: 0, skipped: 1, pending: 0, total: 2,
+    found: true, passed: 1, failed: 0, expectedFail: 0, skipped: 1, pending: 0, total: 2, malformed: [],
   })
   assert.deepEqual(parseVitestSummary(' Tests  2 skipped (2)'), {
-    found: true, passed: 0, failed: 0, skipped: 2, pending: 0, total: 2,
+    found: true, passed: 0, failed: 0, expectedFail: 0, skipped: 2, pending: 0, total: 2, malformed: [],
   })
   assert.deepEqual(parseVitestSummary(' Tests  1 failed | 1 passed (2)'), {
-    found: true, passed: 1, failed: 1, skipped: 0, pending: 0, total: 2,
+    found: true, passed: 1, failed: 1, expectedFail: 0, skipped: 0, pending: 0, total: 2, malformed: [],
   })
   assert.deepEqual(parseVitestSummary(' Tests  1 passed | 1 todo (2)'), {
-    found: true, passed: 1, failed: 0, skipped: 0, pending: 1, total: 2,
+    found: true, passed: 1, failed: 0, expectedFail: 0, skipped: 0, pending: 1, total: 2, malformed: [],
+  })
+  // Real extension output: expected failures are reported separately and must not
+  // be mistaken for skips or makes the declared total look short.
+  assert.deepEqual(parseVitestSummary('      Tests  1795 passed | 1 expected fail (1796)'), {
+    found: true, passed: 1795, failed: 0, expectedFail: 1, skipped: 0, pending: 0, total: 1796, malformed: [],
   })
   // ANSI colors from a TTY must not hide the counts.
   assert.deepEqual(parseVitestSummary(' \u001b[1mTests\u001b[22m  \u001b[32m1 passed\u001b[39m | \u001b[33m1 skipped\u001b[39m (2)'), {
-    found: true, passed: 1, failed: 0, skipped: 1, pending: 0, total: 2,
+    found: true, passed: 1, failed: 0, expectedFail: 0, skipped: 1, pending: 0, total: 2, malformed: [],
   })
   // Two vitest invocations concatenated (main suite + extension suite) sum.
   assert.deepEqual(parseVitestSummary(' Tests  3 passed (3)\n Tests  1 passed | 1 skipped (2)'), {
-    found: true, passed: 4, failed: 0, skipped: 1, pending: 0, total: 5,
+    found: true, passed: 4, failed: 0, expectedFail: 0, skipped: 1, pending: 0, total: 5, malformed: [],
   })
   // A `Test Files` line alone is not a Tests summary.
   assert.equal(parseVitestSummary(' Test Files  1 passed (1)').found, false)
+  // An unrecognisable or arithmetically inconsistent summary is surfaced, never silently dropped.
+  assert.deepEqual(parseVitestSummary(' Tests  1 passed | 1 mystery (2)').malformed, ['1 passed | 1 mystery (2)'])
+  assert.deepEqual(parseVitestSummary(' Tests  1 passed (2)').malformed, ['1 passed (2)'])
 })
 
 test('vitest skipped/todo tests fail the package instead of passing silently', () => {
   const tap = tapSummary({
     tests: 5,
     pass: 5,
-    vitest: { found: true, passed: 5, failed: 0, skipped: 2, pending: 0, total: 7 },
+    vitest: { found: true, passed: 5, failed: 0, expectedFail: 0, skipped: 2, pending: 0, total: 7, malformed: [] },
   })
   const result = judge({ exitCode: 0, tap })
   assert.equal(result.passed, false)
-  assert.ok(result.reasons.some((reason) => reason.includes('vitest skip(s)')), result.reasons.join('; '))
+  assert.ok(result.reasons.some((reason) => reason.includes('unclassified vitest skip(s)')), result.reasons.join('; '))
   assert.equal(result.skipSummary.vitestUnclassified, 2)
   assert.equal(formatSkipSummary(result.skipSummary), 'skip=2 (environment=0, by-design=0, vitest-unclassified=2)')
   const line = formatPackageLine({ name: 'demo', seconds: 1, tap, reasons: result.reasons, judgement: result })
   assert.match(line, /FAIL .*vitest-unclassified=2/)
 })
 
+test('vitest failures and unreadable summaries are fail-closed even when the shell exits 0', () => {
+  const failed = judge({
+    exitCode: 0,
+    tap: tapSummary({ vitest: { found: true, passed: 1, failed: 1, expectedFail: 0, skipped: 0, pending: 0, total: 2, malformed: [] } }),
+  })
+  assert.equal(failed.passed, false)
+  assert.deepEqual(failed.reasons, ['1 vitest failure(s) not represented in TAP counters'])
+  const malformed = judge({
+    exitCode: 0,
+    tap: tapSummary({ vitest: { found: true, passed: 0, failed: 0, expectedFail: 0, skipped: 0, pending: 0, total: 0, malformed: ['1 passed (2)'] } }),
+  })
+  assert.equal(malformed.passed, false)
+  assert.deepEqual(malformed.reasons, ['vitest summary unreadable: 1 passed (2)'])
+})
+
 test('a passing vitest-only package is not a false "no tests reported" red', () => {
   const tap = tapSummary({
     tests: 0,
     pass: 0,
-    vitest: { found: true, passed: 4, failed: 0, skipped: 0, pending: 0, total: 4 },
+    vitest: { found: true, passed: 4, failed: 0, expectedFail: 0, skipped: 0, pending: 0, total: 4, malformed: [] },
   })
   const result = judge({ exitCode: 0, tap })
   assert.equal(result.passed, true, result.reasons.join('; '))
