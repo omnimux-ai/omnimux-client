@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto'
+import { createHash, generateKeyPairSync, sign } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -13,6 +13,31 @@ import { NextUpdates, type NextUpdateOptions } from '../src/updates.ts'
 import { updateDownloadDirectory } from '../src/update-downloads.ts'
 import { isWindowsPortableCopy } from '../src/update-portable.ts'
 import { manualUpdate, manualUpdateHint, releaseNotesUrl, updateAction, updateLabel, type NextUpdateState } from '../src/update-state.ts'
+
+const ED25519_SPKI_PREFIX = Buffer.from('302a300506032b6570032100', 'hex')
+const TEST_SIGNING_KEY = (() => {
+  const { publicKey, privateKey } = generateKeyPairSync('ed25519')
+  const spki = publicKey.export({ type: 'spki', format: 'der' })
+  return {
+    publicKeyBase64: spki.subarray(ED25519_SPKI_PREFIX.length).toString('base64'),
+    privateKey,
+  }
+})()
+const TEST_PUBLIC_KEYS = Object.freeze({ k1: TEST_SIGNING_KEY.publicKeyBase64 })
+
+function signedManifestResponse(url: string, manifest: Record<string, unknown>): Response {
+  const raw = Buffer.from(`${JSON.stringify(manifest)}\n`, 'utf8')
+  if (url.endsWith('.sig')) {
+    return Response.json({
+      schemaVersion: 1,
+      algorithm: 'ed25519',
+      keyId: 'k1',
+      signature: sign(null, raw, TEST_SIGNING_KEY.privateKey).toString('base64'),
+      signedAt: '2026-11-26T00:00:00.000Z',
+    })
+  }
+  return new Response(raw, { status: 200, headers: { 'content-type': 'application/json' } })
+}
 
 vi.mock('@deepseek-ai/dsh-client-ui-primitives', () => ({
   Button: ({ children, ...props }: Record<string, unknown>) => createElement('button', props, children as never),
@@ -79,7 +104,7 @@ async function fixture(overrides: Partial<NextUpdateOptions> = {}) {
   const targetVersion = channel === 'beta' ? '2.0.26-beta.1' : '2.0.26'
   const request = vi.fn<UpdateRequest>(async url => {
     if (url.includes('/api/desktop/v2/')) {
-      return Response.json(makeManifestV2(targetVersion, channel, dmg, exe))
+      return signedManifestResponse(url, makeManifestV2(targetVersion, channel, dmg, exe))
     }
     return new Response('', { status: 404 })
   })
@@ -97,6 +122,7 @@ async function fixture(overrides: Partial<NextUpdateOptions> = {}) {
     packaged: true,
     channel,
     executablePath: '/Applications/OmniMux.app/Contents/MacOS/OmniMux',
+    publicKeys: TEST_PUBLIC_KEYS,
     preflight: async () => {},
     request,
     artifactRequest,
@@ -114,8 +140,10 @@ it('checks stable channel by default without downloading; download waits for exp
   const { updates, options, request } = await fixture()
   await updates.check()
   expect(updates.snapshot()).toMatchObject({ phase: 'available', version: '2.0.26', channel: 'stable' })
-  expect(request).toHaveBeenCalledTimes(1)
-  expect(request.mock.calls[0]![0]).toBe('https://dl.omnimux.ai/api/desktop/v2/stable.json')
+  expect(request.mock.calls.map(call => call[0])).toEqual([
+    'https://dl.omnimux.ai/api/desktop/v2/stable.json',
+    'https://dl.omnimux.ai/api/desktop/v2/stable.json.sig',
+  ])
   await Promise.all([updates.download(), updates.download()])
   expect(updates.snapshot()).toMatchObject({ phase: 'ready', received: 1024, total: 1024 })
   expect(options.prepare).toHaveBeenCalledOnce()
@@ -126,14 +154,26 @@ it('checks stable channel by default without downloading; download waits for exp
 })
 
 it('does not confuse an unpublished channel, invalid response or network failure with up to date', async () => {
-  for (const response of [
-    new Response('', { status: 400 }),
-    new Response('', { status: 503 }),
-    Response.json({ schemaVersion: 2, product: 'omnimux', channel: 'beta', version: '2.0.26-beta.1', publishedAt: '2026-11-26T00:00:00.000Z', urgency: 'normal', artifacts: {} }),
-  ]) {
-    const { updates } = await fixture({ request: async () => response })
+  const cases: Array<{ request: UpdateRequest; errorCode: NextUpdateState['errorCode'] }> = [
+    { request: async () => new Response('', { status: 400 }), errorCode: 'HTTP_ERROR' },
+    { request: async () => new Response('', { status: 503 }), errorCode: 'HTTP_ERROR' },
+    {
+      request: async url => signedManifestResponse(url, {
+        schemaVersion: 2,
+        product: 'omnimux',
+        channel: 'beta',
+        version: '2.0.26-beta.1',
+        publishedAt: '2026-11-26T00:00:00.000Z',
+        urgency: 'normal',
+        artifacts: {},
+      }),
+      errorCode: 'CHANNEL_MISMATCH',
+    },
+  ]
+  for (const { request, errorCode } of cases) {
+    const { updates } = await fixture({ request })
     await updates.check()
-    expect(updates.snapshot()).toMatchObject({ phase: 'error', error: 'service' })
+    expect(updates.snapshot()).toMatchObject({ phase: 'error', error: 'service', errorCode })
   }
 })
 
@@ -153,7 +193,10 @@ it('allows checks in development, but never downloads or replaces the developmen
   await updates.check()
   await updates.download()
   expect(updates.snapshot()).toMatchObject({ installable: false, error: 'development', environment: 'source' })
-  expect(request).toHaveBeenCalledOnce()
+  expect(request.mock.calls.map(call => call[0])).toEqual([
+    'https://dl.omnimux.ai/api/desktop/v2/stable.json',
+    'https://dl.omnimux.ai/api/desktop/v2/stable.json.sig',
+  ])
   expect(options.prepare).not.toHaveBeenCalled()
 })
 
@@ -168,7 +211,10 @@ it('polls on Linux without installation UUID, notifies once and leaves download 
   updates.start()
   await vi.advanceTimersByTimeAsync(30_000)
   await vi.waitFor(() => expect(updates.snapshot().phase).toBe('available'))
-  expect(request).toHaveBeenCalledOnce()
+  expect(request.mock.calls.map(call => call[0])).toEqual([
+    'https://dl.omnimux.ai/api/desktop/v2/stable.json',
+    'https://dl.omnimux.ai/api/desktop/v2/stable.json.sig',
+  ])
   const headers = new Headers(request.mock.calls[0]![1].headers)
   expect(headers.get('X-OmniMux-Channel')).toBe('stable')
   expect(headers.has('X-OmniMux-Installation-Id')).toBe(false)
@@ -177,7 +223,7 @@ it('polls on Linux without installation UUID, notifies once and leaves download 
   expect(available).toHaveBeenCalledExactlyOnceWith('2.0.26')
   await updates.download()
   expect(updates.snapshot()).toMatchObject({ phase: 'error', error: 'unsupported' })
-  expect(request).toHaveBeenCalledOnce()
+  expect(request).toHaveBeenCalledTimes(2)
 
   // Unpackaged Linux source runs must resolve as 'source' and never start background cache/poll I/O.
   const sourceLinux = await fixture({ platform: 'linux', packaged: false })
@@ -283,7 +329,7 @@ it('notifies once per newly discovered background update version and persists no
   const available = vi.fn()
   const { updates, options } = await fixture({
     available,
-    request: async () => Response.json(makeManifestV2(latestVersion, 'stable', dmg, exe)),
+    request: async url => signedManifestResponse(url, makeManifestV2(latestVersion, 'stable', dmg, exe)),
   })
   await updates.check(true)
   expect(available).toHaveBeenCalledTimes(1)

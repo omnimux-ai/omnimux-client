@@ -74,9 +74,10 @@ export const OMNIMUX_ALLOWED_UPDATE_HOSTS = Object.freeze(['dl.omnimux.ai'] as c
 
 /**
  * Raw 32-byte Ed25519 verification keys (Base64), indexed by `keyId` to support
- * zero-downtime key rotation (`k1`, `k2`). Populated when production signing keys
- * are provisioned; while empty, Manifest v2 gracefully falls back to v1 on 404.
- * Once non-empty, packaged builds strictly enforce Ed25519 verification and refuse
- * unsigned downgrade fallbacks.
+ * zero-downtime key rotation (`k1`, `k2`). Packaged builds strictly enforce
+ * Ed25519 signature verification against this keyring and refuse unsigned
+ * downgrade fallbacks.
  */
-export const OMNIMUX_UPDATE_VERIFICATION_KEYS: Readonly<Record<string, string>> = Object.freeze({})
+export const OMNIMUX_UPDATE_VERIFICATION_KEYS: Readonly<Record<string, string>> = Object.freeze({
+  k1: '1RNSdtGYGYGUVlq2kP4n63hp+inK7r4ft6bBdj++j2M=',
+})

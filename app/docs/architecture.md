@@ -82,7 +82,7 @@ Launcher 私有的 `desktopRuntime`、`desktopPnpmBootstrap`、Electron executab
 
 ## 稳定版更新与隔离恢复
 
-OmniMux 使用 `ai.omnimux.desktop`，通过 `app/dsh-desktop-next/src/omnimux-updater/` 独立更新引擎轮询 `https://dl.omnimux.ai/api/desktop/v2/<channel>.json`（附带 `.sig` Ed25519 原始字节签名信封；在未配置公钥前对 HTTP 404 回退到历史 `api/desktop/version-<channel>.json`）。正式包默认锁定 `stable` 通道（也支持在 `desktop-preferences-extra.json` 中独立保存 `updateChannel`，避免旧版降级启动失败）。
+OmniMux 使用 `ai.omnimux.desktop`，通过 `app/dsh-desktop-next/src/omnimux-updater/` 独立更新引擎轮询 `https://dl.omnimux.ai/api/desktop/v2/<channel>.json` 与同路径 `.sig` Ed25519 原始字节签名信封。客户端已在 `product-identity.ts` 内置生产验签公钥（`k1`），默认强制校验签名并禁用历史 `api/desktop/version-<channel>.json` 的无签名 404 回退。正式包默认锁定 `stable` 通道（也支持在 `desktop-preferences-extra.json` 中独立保存 `updateChannel`，避免旧版降级启动失败）。
 
 版本检查根据 `minSupportedVersion`、确定性灰度分桶（按安装 UUID 哈希）和系统版本门槛判定可用更新，直接下载版本固化路径 `releases/v<ver>/...`（支持 Range 分片并发、空闲超时、退避重试与 SHA-256 强制校验），并在安装前检查 macOS App Translocation、安装目录写入权限、磁盘余量与 Host 活跃任务（`host/update-tasks.ts` 锁准入并优雅停止 Host）。打包生产环境中，捆绑的 OmniMux 产品插件不会被同版本或更旧的 Profile 本地副本覆盖；Dev 版、源码运行与显式设置 `OMNIMUX_ALLOW_LOCAL_PLUGIN_OVERRIDE=1` 保留本地开发同步行为。
 
