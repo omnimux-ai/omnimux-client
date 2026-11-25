@@ -101,6 +101,35 @@ test('untracked drafts under the allow-list pass the cleanliness gate and procee
   assert.match(blocked.stderr, /unlisted\.txt/)
 })
 
+test('shared cleanliness helpers classify drafts, plugin strays and tracked edits for every caller', t => {
+  const f = fixture(t)
+  const probe = (fn) => spawnSync('bash', ['-c', `source "$1"; ${fn} "$2"`, 'probe', join(here, 'sync-main.sh'), f.repo], { encoding: 'utf8', env: f.gitEnv })
+  assert.equal(probe('omnimux_primary_is_clean').status, 0, 'clean fixture must be clean')
+
+  for (const draft of [
+    'ui-demo/preview.png',
+    'plugins/docs/evidence/report.json',
+    'plugins/.agent-reports/task/notes.md',
+    '.tmp/worktree-archive/task/spec.md',
+    'specs/draft.spec.md',
+    'docs/evidence/shot.png',
+  ]) {
+    mkdirSync(dirname(join(f.repo, draft)), { recursive: true })
+    writeFileSync(join(f.repo, draft), 'draft\n')
+  }
+  assert.equal(probe('omnimux_primary_is_clean').status, 0, 'allow-listed drafts must not block materialization')
+  assert.equal(probe('omnimux_primary_blocking_untracked').stdout.trim(), '')
+
+  mkdirSync(join(f.repo, 'plugins/plugins/omnimux'), { recursive: true })
+  writeFileSync(join(f.repo, 'plugins/plugins/omnimux/stray.js'), 'export const stray = 1\n')
+  assert.equal(probe('omnimux_primary_is_clean').status, 1)
+  assert.match(probe('omnimux_primary_blocking_untracked').stdout, /plugins\/plugins\/omnimux\/stray\.js/)
+
+  writeFileSync(join(f.repo, 'scripts/sync-main.sh'), readFileSync(join(f.repo, 'scripts/sync-main.sh'), 'utf8') + '\n')
+  assert.match(probe('omnimux_primary_tracked_changes').stdout, /scripts\/sync-main\.sh/)
+  assert.equal(probe('omnimux_primary_is_clean').status, 1)
+})
+
 test('both entrypoints reject external plugin roots even from clean aligned main', t => {
   const f = fixture(t)
   const external = join(f.home, 'external-plugins')
@@ -181,6 +210,10 @@ test('drifted or dirty git submodule does not block plugin sync-main while super
   gitIn(subDir, 'add', 'README.md')
   gitIn(subDir, '-c', 'commit.gpgsign=false', 'commit', '-m', 'sub v2')
   writeFileSync(join(subDir, 'untracked-in-sub.txt'), 'dirty\n')
+
+  // 同一口径的查询函数也必须忽略子模块：收尾入口直接复用它，不能两边判定不同。
+  const cleanProbe = spawnSync('bash', ['-c', 'source "$1"; omnimux_primary_is_clean "$2"', 'probe', join(here, 'sync-main.sh'), f.repo], { encoding: 'utf8', env: f.gitEnv })
+  assert.equal(cleanProbe.status, 0, 'submodule drift must not count as a blocking primary change')
 
   const allowed = spawnSync('bash', [join(here, 'sync-main.sh'), f.repo], { encoding: 'utf8', env: f.gitEnv })
   assert.equal(allowed.status, 0, allowed.stderr)

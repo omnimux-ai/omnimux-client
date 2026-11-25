@@ -20,6 +20,38 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# 主检出洁净度口径与物化门禁同源：直接复用 sync-main.sh 的判定函数，
+# 避免两边各写一份 allowlist 后漂移（子模块指针 / 演示证据草稿的放行规则必须一致）。
+if [ -f "${SCRIPT_DIR}/sync-main.sh" ]; then
+  # shellcheck source=sync-main.sh
+  source "${SCRIPT_DIR}/sync-main.sh"
+else
+  # 只有 worktree.sh 的裸拷贝/外部检出没有契约文件。这里保留同一口径的最小实现，
+  # 确保收尾入口不会退回旧判定；仓库内始终走上图的同源实现。两份判定的一致性由
+  # worktree-primary-cleanliness.test.mjs 的「有无契约文件」对照用例守护。
+  OMNIMUX_PRIMARY_ALLOWED_UNTRACKED_RE='^(specs|docs|ui-demo|tmp|\.tmp|\.workbuddy|\.agent-backups|\.worktrees|\.agent-reports|plugins/(docs/evidence|\.agent-reports))/'
+
+  omnimux_primary_tracked_changes() {
+    local root="${1:-}"
+    [ -n "$root" ] || return 2
+    git -C "$root" status --porcelain --untracked-files=no --ignore-submodules=all 2>/dev/null
+  }
+
+  omnimux_primary_blocking_untracked() {
+    local root="${1:-}" untracked
+    [ -n "$root" ] || return 2
+    untracked=$(git -C "$root" ls-files --others --exclude-standard 2>/dev/null) || return 2
+    [ -n "$untracked" ] || return 0
+    printf '%s\n' "$untracked" | grep -Ev "$OMNIMUX_PRIMARY_ALLOWED_UNTRACKED_RE" || true
+  }
+
+  omnimux_primary_is_clean() {
+    local root="${1:-}" tracked blocking
+    tracked=$(omnimux_primary_tracked_changes "$root") || return 2
+    blocking=$(omnimux_primary_blocking_untracked "$root") || return 2
+    [ -z "$tracked" ] && [ -z "$blocking" ]
+  }
+fi
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null || true)"
 if [ -z "${ROOT}" ]; then
   echo "worktree.sh: not inside a git work tree" >&2
@@ -710,8 +742,16 @@ cmd_ship() {
   if [ "${primary_branch}" != "${DEFAULT_BRANCH}" ]; then
     die "primary checkout is not on default branch (${DEFAULT_BRANCH}); got: ${primary_branch}"
   fi
-  if [ -n "$(git -C "${ROOT}" diff --name-only)" ] || [ -n "$(git -C "${ROOT}" diff --cached --name-only)" ]; then
-    die "primary checkout has tracked uncommitted changes; stash them before shipping"
+  # 与物化门禁同一口径：子模块指针漂移、demo/证据草稿不阻塞；真正会进产物的
+  # 已跟踪改动与未跟踪文件在这里提前拦住，避免走到 sync-to-app.sh 才失败。
+  local primary_state=0
+  omnimux_primary_is_clean "${ROOT}" || primary_state=$?
+  if [ "${primary_state}" -eq 2 ]; then
+    die "cannot read primary checkout status; refusing to ship"
+  fi
+  if [ "${primary_state}" -ne 0 ]; then
+    { omnimux_primary_tracked_changes "${ROOT}"; omnimux_primary_blocking_untracked "${ROOT}"; } | sed 's/^/    /' >&2 || true
+    die "primary checkout is not clean for materialization (paths above); commit, stash, or move them before shipping"
   fi
 
   say "verifying GitHub PR #${pr_number} merge state and task revision..."
@@ -838,7 +878,17 @@ cmd_remove() {
 
   # 合并确认后必装开发版。正式版本落后时先快进再装这次拉进来的范围；
   # 已经拉齐时也不能跳过——这次合并可能走了别的收尾，开发版还停在上一版。
-  if [ -n "${pr_number}" ] && [ -z "$(git -C "${ROOT}" status --porcelain 2>/dev/null)" ]; then
+  # 洁净度与物化门禁同一口径：只有「会进产物的改动」才跳过，并且必须说清原因与路径。
+  local primary_state=2
+  if [ -n "${pr_number}" ]; then
+    primary_state=0
+    omnimux_primary_is_clean "${ROOT}" || primary_state=$?
+    if [ "${primary_state}" -ne 0 ]; then
+      say "ℹ️ 主检出存在未提交改动或未跟踪产物，跳过自动物化；清理后请手动运行: plugins/scripts/sync-to-app.sh"
+      { omnimux_primary_tracked_changes "${ROOT}"; omnimux_primary_blocking_untracked "${ROOT}"; } | sed 's/^/    /' >&2 || true
+    fi
+  fi
+  if [ "${primary_state}" -eq 0 ]; then
     local cur_branch
     cur_branch="$(git -C "${ROOT}" symbolic-ref --short HEAD 2>/dev/null || true)"
     if [ "${cur_branch}" = "${DEFAULT_BRANCH}" ]; then
