@@ -294,8 +294,6 @@
     "qa/transparency-debt-acceptance.mjs",
     "qa/vids-composer-compact.mjs",
     "qa/vids-panel-chrome-trim.mjs",
-    "recover-media-build-3288.mjs",
-    "recover-media-build-3288.test.mjs",
     "release-check.mjs",
     "release-check.test.mjs",
     "repair-inspiration-covers.mjs",
