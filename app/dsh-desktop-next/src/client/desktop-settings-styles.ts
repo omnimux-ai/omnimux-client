@@ -311,6 +311,277 @@ button.dshDesktopSettingsButtonSecondary {
 button.dshDesktopSettingsButtonDanger {
   color: var(--dsw-alias-state-error-primary);
 }
+.dshDesktopSettingsButtonPrimary,
+button.dshDesktopSettingsButtonPrimary {
+  background: var(--dsw-alias-brand-primary);
+  color: var(--dsw-alias-label-primary-foreground);
+  font-weight: 500;
+}
+.dshDesktopSettingsButtonPrimary:hover:not(:disabled),
+button.dshDesktopSettingsButtonPrimary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--dsw-alias-brand-primary) 88%, var(--dsw-alias-label-primary));
+}
+.dshUpdateHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.dshUpdateIdentity {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.dshUpdateVersion {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.dshUpdateBadgeBrand {
+  background: var(--dsw-alias-state-business-tertiary);
+  color: var(--dsw-alias-state-business-primary);
+  font-weight: 500;
+}
+.dshUpdateBadgeWarn {
+  background: var(--dsw-alias-state-warn-tertiary);
+  color: var(--dsw-alias-state-warn-label);
+  font-weight: 500;
+}
+.dshUpdateStatusRow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.dshUpdateStatusText {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-primary);
+}
+.dshUpdateStatusText[data-tone="error"] { color: var(--dsw-alias-state-error-primary); }
+.dshUpdateStatusText[data-tone="success"] { color: var(--dsw-alias-state-success-primary); }
+.dshUpdateMeta {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.dshUpdateProgress {
+  appearance: none;
+  width: 100%;
+  height: 6px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--dsw-alias-bg-layer-2);
+  overflow: hidden;
+  accent-color: var(--dsw-alias-brand-primary);
+}
+.dshUpdateProgress::-webkit-progress-bar {
+  border-radius: 999px;
+  background: var(--dsw-alias-bg-layer-2);
+}
+.dshUpdateProgress::-webkit-progress-value {
+  border-radius: 999px;
+  background: var(--dsw-alias-brand-primary);
+  transition: width 150ms ease;
+}
+.dshUpdateNotes {
+  margin: 0;
+  padding: 12px 14px 12px 28px;
+  border-radius: var(--dsw-radius-md, 8px);
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  line-height: 1.65;
+}
+.dshUpdateNotes li + li { margin-top: 4px; }
+.dshUpdateErrorBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.dshUpdateErrorToggle {
+  align-self: flex-start;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.dshUpdateErrorToggle:focus-visible,
+.dshUpdatePill:focus-visible,
+.dshUpdateNoticeDismiss:focus-visible {
+  outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
+  outline-offset: 2px;
+}
+.dshUpdateErrorDetail {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: var(--dsw-radius-md, 8px);
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-secondary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.dshUpdatePill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  box-sizing: border-box;
+  width: 100%;
+  height: 32px;
+  padding: 0 10px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-md, 8px);
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+.dshUpdatePill:hover { background: var(--dsw-alias-interactive-bg-hover); }
+.dshUpdatePillLeft {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+.dshUpdatePillText {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dshUpdateDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--dsw-alias-brand-primary);
+  flex: none;
+}
+.dshUpdateDot[data-tone="ready"] { background: var(--dsw-alias-state-success-primary); }
+.dshUpdateDot[data-tone="mandatory"] { background: var(--dsw-alias-state-error-primary); }
+.dshUpdatePillVer {
+  flex: none;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.dshUpdatePill[data-compact="true"],
+body [class*="collapsed"] .dshUpdatePill {
+  width: 32px;
+  min-width: 32px;
+  padding: 0;
+  justify-content: center;
+}
+.dshUpdatePill[data-compact="true"] .dshUpdatePillText,
+.dshUpdatePill[data-compact="true"] .dshUpdatePillVer,
+body [class*="collapsed"] .dshUpdatePillText,
+body [class*="collapsed"] .dshUpdatePillVer {
+  display: none;
+}
+.dshPostUpdateNotice {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  max-width: min(420px, calc(100vw - 32px));
+  padding: 10px 14px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-xl, 12px);
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  pointer-events: auto;
+  -webkit-app-region: no-drag;
+}
+.dshPostUpdateCopy {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  font-size: 13px;
+}
+.dshPostUpdateActions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}
+.dshUpdateNoticeDismiss {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: var(--dsw-radius-md, 8px);
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+}
+.dshUpdateNoticeDismiss:hover { background: var(--dsw-alias-interactive-bg-hover); }
+.dshMandatoryBackdrop {
+  position: fixed;
+  z-index: 2147483003;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: var(--dsw-alias-bg-mask-1);
+  backdrop-filter: var(--dsw-mask-blur);
+  pointer-events: auto;
+  -webkit-app-region: no-drag;
+}
+.dshMandatoryCard {
+  width: min(460px, 100%);
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+  box-sizing: border-box;
+  padding: 20px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-xl, 12px);
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  pointer-events: auto;
+  -webkit-app-region: no-drag;
+}
+.dshMandatoryCard h4 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+}
+.dshMandatoryActions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .dshUpdateProgress::-webkit-progress-value,
+  .dshUpdatePill { transition: none; }
+}
 .dshDesktopSettingsButton:disabled,
 button.dshDesktopSettingsButton:disabled {
   cursor: default;
