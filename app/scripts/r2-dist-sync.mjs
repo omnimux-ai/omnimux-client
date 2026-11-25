@@ -22,7 +22,8 @@ import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
 import { Readable } from 'node:stream'
 import { fileURLToPath } from 'node:url'
-import { assertRemoteVersionAdvances } from './verify-version-advance.mjs'
+import { assertRemoteVersionAdvances, channelForVersion } from './verify-version-advance.mjs'
+import { parseSignatureEnvelope, verifyManifestBytes } from './sign-release-manifest.mjs'
 
 const ROOT_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const ACCOUNT_ID = process.env.CLOUDFLARE_ACCOUNT_ID
@@ -115,7 +116,7 @@ function contentTypeForKey(key) {
   if (key.endsWith('.dmg')) return 'application/x-apple-diskimage'
   if (key.endsWith('.zip')) return 'application/zip'
   // The desktop updaters parse these, so they must not arrive as octet-stream.
-  if (key.endsWith('.json')) return 'application/json; charset=utf-8'
+  if (key.endsWith('.json') || key.endsWith('.sig')) return 'application/json; charset=utf-8'
   if (key.endsWith('.txt') || key.endsWith('.yml')) return 'text/plain; charset=utf-8'
   return 'application/octet-stream'
 }
@@ -226,32 +227,40 @@ async function verifyEndpoint(key, expectedSize) {
   }
 }
 
-/** Platform token → metadata key and latest alias used by the desktop updater. */
+/** Platform token → v1/v2 metadata keys and latest alias used by the desktop updaters. */
 const VERIFY_PLATFORMS = {
-  'mac-arm64': { metadataKey: 'macArm64', latestKey: 'releases/latest/OmniMux-arm64.dmg' },
-  'mac-x64': { metadataKey: 'macX64', latestKey: 'releases/latest/OmniMux-x64.dmg' },
-  windows: { metadataKey: 'windows', latestKey: 'releases/latest/OmniMux-x64-Setup.exe' },
+  'mac-arm64': { metadataKey: 'macArm64', v2Key: 'darwin-arm64', latestKey: 'releases/latest/OmniMux-arm64.dmg' },
+  'mac-x64': { metadataKey: 'macX64', v2Key: 'darwin-x64', latestKey: 'releases/latest/OmniMux-x64.dmg' },
+  windows: { metadataKey: 'windows', v2Key: 'win32-x64', latestKey: 'releases/latest/OmniMux-x64-Setup.exe' },
+}
+
+/** Fetch raw bytes without relying on a stale CDN edge entry. */
+async function fetchRawBytes(url) {
+  const res = await fetch(`${url}${url.includes('?') ? '&' : '?'}verify=${String(Date.now())}`, {
+    headers: { 'cache-control': 'no-cache', pragma: 'no-cache' },
+  })
+  return res
 }
 
 /** Fetch JSON without relying on a stale CDN edge entry. */
 async function fetchJson(url) {
-  const res = await fetch(`${url}${url.includes('?') ? '&' : '?'}verify=${String(Date.now())}`, {
-    headers: { 'cache-control': 'no-cache', pragma: 'no-cache' },
-  })
+  const res = await fetchRawBytes(url)
   if (!res.ok) throw new Error(`GET ${url} failed: HTTP ${res.status} ${res.statusText}`)
   return res.json()
 }
 
-/** Download one artifact and return its sha256 without buffering the whole file. */
+/** Download one artifact and return its sha256 and byte length without buffering the whole file. */
 async function downloadSha256(url) {
-  const res = await fetch(`${url}${url.includes('?') ? '&' : '?'}verify=${String(Date.now())}`, {
-    headers: { 'cache-control': 'no-cache', pragma: 'no-cache' },
-  })
+  const res = await fetchRawBytes(url)
   if (!res.ok) throw new Error(`GET ${url} failed: HTTP ${res.status} ${res.statusText}`)
   if (res.body === null) throw new Error(`GET ${url} returned an empty body`)
   const hash = createHash('sha256')
-  for await (const chunk of Readable.fromWeb(res.body)) hash.update(chunk)
-  return hash.digest('hex')
+  let bytes = 0
+  for await (const chunk of Readable.fromWeb(res.body)) {
+    bytes += chunk.byteLength
+    hash.update(chunk)
+  }
+  return { sha256: hash.digest('hex'), bytes }
 }
 
 /**
@@ -395,9 +404,11 @@ async function main() {
     const requiredIdx = args.indexOf('--required-platforms')
     const requiredPlatforms = requiredIdx === -1 ? [] : (args[requiredIdx + 1] ?? '').split(',').map(token => token.trim()).filter(Boolean)
     const verifyHashes = args.includes('--verify-hashes')
-    if (requiredPlatforms.length > 0 || verifyHashes) {
-      const tag = /-([0-9A-Za-z.-]+)$/u.exec(version)?.[1]
-      const channel = tag === 'beta' ? 'beta' : tag === 'next' ? 'next' : 'stable'
+    const requireV2 = args.includes('--require-v2')
+    const publicKeyIdx = args.indexOf('--public-key')
+    const publicKey = publicKeyIdx !== -1 ? args[publicKeyIdx + 1] : process.env.OMNIMUX_UPDATE_PUBLIC_KEY
+    if (requiredPlatforms.length > 0 || verifyHashes || requireV2) {
+      const channel = channelForVersion(version)
       try {
         const metadata = await fetchJson(`${CDN_BASE_URL}/api/desktop/version-${channel}.json`)
         if (metadata?.version !== version) {
@@ -419,15 +430,76 @@ async function main() {
             if (expected === undefined) continue
             console.log(`  ⬇️  sha256 ${token} ${platform.latestKey}`)
             const actual = await downloadSha256(`${CDN_BASE_URL}/${platform.latestKey}`)
-            if (actual !== expected) {
-              throw new Error(`${token} sha256 mismatch: metadata=${expected}, downloaded=${actual}`)
+            if (actual.sha256 !== expected) {
+              throw new Error(`${token} sha256 mismatch: metadata=${expected}, downloaded=${actual.sha256}`)
             }
-            console.log(`  ✅ [SHA256] ${token} ${actual}`)
+            console.log(`  ✅ [SHA256] ${token} ${actual.sha256}`)
           }
         }
       } catch (err) {
         allOk = false
         console.log(`  ❌ [METADATA] ${err.message}`)
+      }
+
+      // Verify Manifest v2 (+ Ed25519 signature + immutable versioned artifacts).
+      try {
+        const v2Url = `${CDN_BASE_URL}/api/desktop/v2/${channel}.json`
+        const v2Res = await fetchRawBytes(v2Url)
+        if (v2Res.status === 404 && !requireV2) {
+          console.log(`  ℹ️  [MANIFEST v2] ${v2Url} not published yet (skipping without --require-v2)`)
+        } else {
+          if (!v2Res.ok) throw new Error(`GET ${v2Url} failed: HTTP ${v2Res.status} ${v2Res.statusText}`)
+          const rawV2 = Buffer.from(await v2Res.arrayBuffer())
+          const v2 = JSON.parse(rawV2.toString('utf8'))
+          if (v2?.schemaVersion !== 2 || v2?.product !== 'omnimux') {
+            throw new Error(`invalid Manifest v2 header: schemaVersion=${String(v2?.schemaVersion)} product=${String(v2?.product)}`)
+          }
+          if (v2?.version !== version || v2?.channel !== channel) {
+            throw new Error(`Manifest v2 version/channel (${String(v2?.version)}/${String(v2?.channel)}) does not match ${version}/${channel}`)
+          }
+          for (const token of requiredPlatforms) {
+            const platform = VERIFY_PLATFORMS[token]
+            const entry = v2.artifacts?.[platform.v2Key]
+            if (!entry || typeof entry.url !== 'string' || typeof entry.sha256 !== 'string' || !Number.isSafeInteger(entry.size) || entry.size <= 0) {
+              throw new Error(`Manifest v2 is missing complete artifact entry for ${token} (${platform.v2Key})`)
+            }
+          }
+          const sigUrl = `${CDN_BASE_URL}/api/desktop/v2/${channel}.json.sig`
+          const sigRes = await fetchRawBytes(sigUrl)
+          if (sigRes.status === 404) {
+            if (publicKey) throw new Error(`Manifest v2 signature missing at ${sigUrl}`)
+            console.log(`  ⚠️  [MANIFEST v2 SIG] ${sigUrl} not present (unsigned)`)
+          } else {
+            if (!sigRes.ok) throw new Error(`GET ${sigUrl} failed: HTTP ${sigRes.status} ${sigRes.statusText}`)
+            const envelope = parseSignatureEnvelope(await sigRes.json())
+            if (publicKey) {
+              const verdict = verifyManifestBytes(rawV2, envelope, publicKey)
+              if (!verdict.ok) throw new Error(`Manifest v2 signature verification failed: ${verdict.reason}`)
+              console.log(`  ✅ [MANIFEST v2 SIG] verified Ed25519 signature (keyId=${verdict.keyId})`)
+            } else {
+              console.log(`  ✅ [MANIFEST v2 SIG] envelope well-formed (keyId=${envelope.keyId}; pass --public-key to verify)`)
+            }
+          }
+          if (verifyHashes) {
+            for (const [token, platform] of Object.entries(VERIFY_PLATFORMS)) {
+              const entry = v2.artifacts?.[platform.v2Key]
+              if (!entry) continue
+              console.log(`  ⬇️  [v2] sha256 ${token} ${entry.url}`)
+              const actual = await downloadSha256(entry.url)
+              if (actual.bytes !== entry.size) {
+                throw new Error(`[v2] ${token} size mismatch: manifest=${String(entry.size)}, downloaded=${String(actual.bytes)}`)
+              }
+              if (actual.sha256 !== entry.sha256) {
+                throw new Error(`[v2] ${token} sha256 mismatch: manifest=${entry.sha256}, downloaded=${actual.sha256}`)
+              }
+              console.log(`  ✅ [v2 SHA256] ${token} ${actual.sha256} (${String(actual.bytes)}B)`)
+            }
+          }
+          console.log(`  ✅ [MANIFEST v2] ${v2Url} (${v2.version})`)
+        }
+      } catch (err) {
+        allOk = false
+        console.log(`  ❌ [MANIFEST v2] ${err.message}`)
       }
     }
 
@@ -619,7 +691,41 @@ async function main() {
           const stat = statSync(file)
           uploadPlan.push({ key: `api/desktop/${name}`, file, size: stat.size })
         }
-        console.log(`  • 版本元数据: ${metadataDir}`)
+        console.log(`  • 版本元数据 (v1): ${metadataDir}`)
+        // Manifest v2 + Ed25519 signature envelopes live under api/desktop/v2/.
+        // Upload them strictly after the immutable release artifacts above so no
+        // client can observe a v2 manifest pointing at an unuploaded object.
+        const v2Dir = join(metadataDir, 'v2')
+        if (existsSync(v2Dir)) {
+          const v2Names = readdirSync(v2Dir).sort((left, right) => {
+            // Upload `.json` manifests before `.sig` files when sorted.
+            if (left.endsWith('.sig') !== right.endsWith('.sig')) return left.endsWith('.sig') ? 1 : -1
+            return left.localeCompare(right)
+          })
+          for (const name of v2Names) {
+            if (/^(?:stable|beta|next)\.json$/u.test(name)) {
+              const file = join(v2Dir, name)
+              const v2 = JSON.parse(readFileSync(file, 'utf8'))
+              if (v2?.schemaVersion !== 2 || v2?.product !== 'omnimux') {
+                throw new Error(`refusing to publish ${name}: invalid Manifest v2 header`)
+              }
+              for (const key of ['darwin-arm64', 'darwin-x64', 'win32-x64']) {
+                const entry = v2.artifacts?.[key]
+                if (!entry || typeof entry.url !== 'string' || typeof entry.sha256 !== 'string' || !Number.isSafeInteger(entry.size) || entry.size <= 0) {
+                  throw new Error(`refusing to publish ${name}: missing complete v2 artifact ${key}`)
+                }
+              }
+              const stat = statSync(file)
+              uploadPlan.push({ key: `api/desktop/v2/${name}`, file, size: stat.size })
+            } else if (/^(?:stable|beta|next)\.json\.sig$/u.test(name)) {
+              const file = join(v2Dir, name)
+              parseSignatureEnvelope(JSON.parse(readFileSync(file, 'utf8')))
+              const stat = statSync(file)
+              uploadPlan.push({ key: `api/desktop/v2/${name}`, file, size: stat.size })
+            }
+          }
+          console.log(`  • 版本元数据 (v2 + sig): ${v2Dir}`)
+        }
       } else {
         console.log(`  ⚠️  未找到版本元数据目录 ${metadataDir}；应用将无法发现更新`)
       }
@@ -641,12 +747,11 @@ async function main() {
     console.log(`\n📤 开始同步 ${uploadPlan.length} 个分发节点...`)
     for (const item of uploadPlan) {
       const existingSize = existingMap.get(item.key)
-      // JSON metadata (`api/desktop/version-*.json`, `plugins/dsh-index.json`) must never be
-      // size-skipped: a new release usually has the exact same byte length (same JSON shape,
-      // only the version digits and sha256 values change), so a size match would leave the
-      // updater advertising the previous version + hashes while the installers were updated.
-      const isJsonMetadata = item.key.endsWith('.json')
-      if (!isForce && existingSize === item.size && !isJsonMetadata) {
+      // JSON/signature metadata (`api/desktop/version-*.json`, `api/desktop/v2/*.json{,.sig}`,
+      // `plugins/dsh-index.json`) must never be size-skipped: a new release usually has the exact
+      // same byte length, so a size match would leave the updater advertising stale hashes/signatures.
+      const isMetadata = item.key.endsWith('.json') || item.key.endsWith('.sig')
+      if (!isForce && existingSize === item.size && !isMetadata) {
         console.log(`  ⚡ [已存在] ${item.key} 大小一致 (${(item.size / (1024 * 1024)).toFixed(2)} MB)，跳过上传`)
         continue
       }

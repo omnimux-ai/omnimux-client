@@ -34,8 +34,15 @@ on:
       - 'app/scripts/verify-plugin-index.test.mjs'
       - 'app/scripts/plugin-tiers.mjs'
       - 'app/scripts/build-release-metadata.mjs'
+      - 'app/scripts/build-release-metadata.test.mjs'
+      - 'app/scripts/sign-release-manifest.mjs'
+      - 'app/scripts/sign-release-manifest.test.mjs'
+      - 'app/scripts/cf-purge-cache.mjs'
       - 'app/scripts/r2-dist-sync.mjs'
+      - 'app/scripts/r2-dist-sync.test.mjs'
       - 'app/scripts/verify-version-advance.mjs'
+      - 'app/scripts/verify-version-advance.test.mjs'
+      - 'dsh-version.json'
       - 'app/config/plugin-tiers.json'
       - 'app/*.json'
       - 'app/dsh-desktop-next/package.json'
@@ -59,6 +66,22 @@ on:
         required: false
         type: string
         default: 'mac-arm64,mac-x64,windows'
+      min_supported_version:
+        description: 'Optional minimum supported client version for Manifest v2 mandatory update floor (e.g. 2.0.20)'
+        required: false
+        type: string
+        default: ''
+      urgency:
+        description: 'Manifest v2 update urgency'
+        required: false
+        type: choice
+        options: [normal, critical]
+        default: normal
+      rollout_percentage:
+        description: 'Manifest v2 deterministic rollout percentage (0-100)'
+        required: false
+        type: string
+        default: '100'
       skip_purge:
         description: 'Skip the CDN cache purge (NOT recommended: without it users keep downloading the previous build)'
         required: false
@@ -87,8 +110,39 @@ jobs:
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38  # v6
         with:
           node-version: 22.23.2
-      - name: Test index package reconciliation
-        run: node --test app/scripts/verify-plugin-index.test.mjs
+      - name: Test release metadata, signing, and index reconciliation
+        run: |
+          node --test \
+            app/scripts/sign-release-manifest.test.mjs \
+            app/scripts/verify-version-advance.test.mjs \
+            app/scripts/verify-version.test.mjs \
+            app/scripts/build-release-metadata.test.mjs \
+            app/scripts/r2-dist-sync.test.mjs \
+            app/scripts/verify-plugin-index.test.mjs
+      - name: Rehearse Manifest v2 generation and Ed25519 signing
+        working-directory: app
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"
+          trap 'rm -rf "$tmp"' EXIT
+          ver="$(node -p "require('./dsh-desktop-next/package.json').version")"
+          printf 'arm64' > "$tmp/OmniMux-${ver}-arm64.dmg"
+          printf 'x64' > "$tmp/OmniMux-${ver}-x64.dmg"
+          printf 'win' > "$tmp/OmniMux-${ver}-x64-Setup.exe"
+          keys="$(node scripts/sign-release-manifest.mjs keygen)"
+          pub="$(printf '%s' "$keys" | node -e "console.log(JSON.parse(require('fs').readFileSync(0,'utf8')).publicKeyBase64)")"
+          priv="$(printf '%s' "$keys" | node -e "console.log(JSON.parse(require('fs').readFileSync(0,'utf8')).privateKeyBase64)")"
+          OMNIMUX_UPDATE_SIGNING_PRIVATE_KEY="$priv" node scripts/build-release-metadata.mjs \
+            --version "$ver" \
+            --dir "$tmp" \
+            --require-platforms mac-arm64,mac-x64,windows \
+            --key-id k1 \
+            --require-signature
+          node scripts/sign-release-manifest.mjs verify \
+            --input "$tmp/api/desktop/v2/stable.json" \
+            --sig "$tmp/api/desktop/v2/stable.json.sig" \
+            --public-key "$pub" \
+            --key-id k1
       - uses: ./.github/actions/generate-market-index
         with:
           preflight: 'true'
@@ -154,13 +208,34 @@ jobs:
             test -n "$(find release-assets -maxdepth 1 \( -name '*.dmg' -o -name '*.exe' \) -print -quit)" || { echo "::error::no installer asset attached to $tag"; exit 1; }
           fi
 
-      - name: Generate release metadata (api/desktop/version-stable.json)
+      - name: Generate release metadata (v1 + Manifest v2 + Ed25519 signature)
         if: ${{ inputs.mode == 'publish' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OMNIMUX_UPDATE_SIGNING_PRIVATE_KEY: ${{ secrets.OMNIMUX_UPDATE_SIGNING_PRIVATE_KEY }}
+          OMNIMUX_UPDATE_SIGNING_KEY_ID: ${{ secrets.OMNIMUX_UPDATE_SIGNING_KEY_ID || 'k1' }}
         run: |
+          set -euo pipefail
+          tag="v${{ steps.version.outputs.version }}"
+          notes_file="release-assets/release-notes.md"
+          gh release view "$tag" --repo "${{ github.repository }}" --json body --jq '.body // ""' > "$notes_file" || : > "$notes_file"
+          extra_args=()
+          if [ -n "${{ inputs.min_supported_version }}" ]; then
+            extra_args+=(--min-supported-version "${{ inputs.min_supported_version }}")
+          fi
+          if [ -n "${OMNIMUX_UPDATE_SIGNING_PRIVATE_KEY}" ]; then
+            extra_args+=(--require-signature --key-id "${OMNIMUX_UPDATE_SIGNING_KEY_ID}")
+          else
+            echo "::warning::OMNIMUX_UPDATE_SIGNING_PRIVATE_KEY is not configured; Manifest v2 will be published unsigned until signing keys are provisioned."
+          fi
           node scripts/build-release-metadata.mjs \
             --version "${{ steps.version.outputs.version }}" \
             --dir release-assets \
-            --require-platforms "${{ inputs.required_platforms }}"
+            --require-platforms "${{ inputs.required_platforms }}" \
+            --urgency "${{ inputs.urgency }}" \
+            --rollout-percentage "${{ inputs.rollout_percentage }}" \
+            --notes-file "$notes_file" \
+            "${extra_args[@]}"
 
       - uses: ./.github/actions/generate-market-index
         if: ${{ inputs.mode == 'publish' }}
@@ -223,4 +298,5 @@ jobs:
           node scripts/r2-dist-sync.mjs verify \
             --version "${{ steps.version.outputs.version }}" \
             --required-platforms "${{ inputs.required_platforms }}" \
-            --verify-hashes
+            --verify-hashes \
+            --require-v2

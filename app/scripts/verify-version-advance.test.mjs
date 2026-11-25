@@ -39,8 +39,29 @@ test('rejects equal and older versions', () => {
 test('derives the channel from the prerelease tag', () => {
   assert.equal(channelForVersion('2.0.24'), 'stable')
   assert.equal(channelForVersion('2.0.24-beta'), 'beta')
+  assert.equal(channelForVersion('2.0.24-beta.1'), 'beta')
   assert.equal(channelForVersion('2.0.24-next'), 'next')
+  assert.equal(channelForVersion('2.0.24-next.2'), 'next')
   assert.throws(() => channelForVersion('2.0.24-rc.1'), /does not belong/)
+})
+
+test('prefers Manifest v2 and falls back to legacy v1 when v2 returns 404', async () => {
+  const seen = []
+  const version = await fetchLiveVersion({
+    channel: 'stable',
+    fetchImpl: async url => {
+      seen.push(url)
+      if (url.includes('/api/desktop/v2/stable.json')) {
+        return { status: 404, ok: false, statusText: 'Not Found' }
+      }
+      return manifestResponse('2.0.25', 'stable')
+    },
+    timeoutMs: 100,
+  })
+  assert.equal(version, '2.0.25')
+  assert.equal(seen.length, 2)
+  assert.match(seen[0], /\/api\/desktop\/v2\/stable\.json/)
+  assert.match(seen[1], /\/api\/desktop\/version-stable\.json/)
 })
 
 test('rejects malformed versions', () => {
