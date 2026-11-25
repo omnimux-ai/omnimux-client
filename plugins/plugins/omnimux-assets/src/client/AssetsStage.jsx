@@ -10,6 +10,8 @@ import { CloudAssetsView } from './CloudAssetsView.jsx'
 import { cloudAssetToPreviewItem } from './cloud-preview.js'
 import { useCloudSave } from './use-cloud-save.js'
 import { computeEmptyState } from './feed-helpers.js'
+import { addAssetToConversation } from './add-to-chat.js'
+import { revealAssetEntry } from './api.js'
 import { injectAssetsStyles } from './styles.js'
 import { useAssetsFeed } from './use-assets-feed.js'
 import { ProductCategoryNav } from './ProductCategoryNav.jsx'
@@ -197,12 +199,52 @@ function AssetsFilterBar(props) {
 
 function AssetsSelectionBar(props) {
   const { t, feed } = props
+  const [batchAdded, setBatchAdded] = useState(false)
+  const batchTimerRef = useRef(null)
+
+  useEffect(() => {
+    return () => {
+      if (batchTimerRef.current) clearTimeout(batchTimerRef.current)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!feed.selecting) setBatchAdded(false)
+  }, [feed.selecting, feed.selectedCount])
+
   if (!feed.selecting) return null
+
+  const handleBatchAdd = () => {
+    if (batchAdded) return
+    const selectedIds = feed.selectedIds || new Set()
+    const visibleSelected = (feed.visible || []).filter((row) => selectedIds.has(row.id))
+    const seen = new Set(visibleSelected.map((row) => row.id))
+    const restSelected = (feed.assets || []).filter((row) => selectedIds.has(row.id) && !seen.has(row.id))
+    const targets = [...visibleSelected, ...restSelected]
+    if (targets.length === 0) return
+    for (const asset of targets) {
+      addAssetToConversation(asset)
+    }
+    setBatchAdded(true)
+    if (batchTimerRef.current) clearTimeout(batchTimerRef.current)
+    batchTimerRef.current = setTimeout(() => {
+      setBatchAdded(false)
+    }, 1800)
+  }
 
   return (
     <div className="omnimux-assets-selection">
       <span>{t('select.count').replace('{n}', String(feed.selectedCount))}</span>
       <div className="omnimux-assets-selection-actions">
+        <Button
+          variant="primary"
+          size="sm"
+          leadingIcon={<ChatIcon size={14} />}
+          disabled={batchAdded}
+          onClick={handleBatchAdd}
+        >
+          {batchAdded ? t('select.addedToConversation') : t('select.addToConversation')}
+        </Button>
         <Button variant="ghost" size="sm" onClick={feed.clearSelection}>
           {t('select.clear')}
         </Button>
@@ -216,8 +258,30 @@ function AssetsSelectionBar(props) {
 
 function AssetsMainView(props) {
   const { t, feed, emptyProps, onOpenAdd, onPreview, onEditDetail } = props
-  const { detail, setDetail, visible, viewMode, copyCite, copiedId, selectedIds, toggleSelect, handleRemoveSingle } = feed
+  const {
+    detail,
+    setDetail,
+    visible,
+    viewMode,
+    copyCite,
+    copiedId,
+    selectedIds,
+    setSelectedIds,
+    toggleSelect,
+    handleRemoveSingle,
+    sortKey,
+    sortDirection,
+    handleSortChange,
+    setError,
+  } = feed
   const { emptyLabel, emptyActionLabel, searching } = emptyProps
+
+  const handleRevealAsset = useCallback(async (asset) => {
+    const firstFile = Array.isArray(asset?.files) ? asset.files[0] : null
+    if (!asset?.id || !firstFile?.id) return
+    const result = await revealAssetEntry(asset.id, firstFile.id, '')
+    if (!result.ok) setError(t('browse.revealFailed'))
+  }, [setError, t])
 
   if (detail) {
     return (
@@ -245,9 +309,14 @@ function AssetsMainView(props) {
       onPreview={onPreview}
       onCopy={copyCite}
       onRemove={handleRemoveSingle}
+      onReveal={handleRevealAsset}
       copiedId={copiedId}
       selectedIds={selectedIds}
       onToggleSelect={toggleSelect}
+      onSelectionChange={setSelectedIds}
+      sortKey={sortKey}
+      sortDirection={sortDirection}
+      onSortChange={handleSortChange}
       onBrowse={setDetail}
     />
   )

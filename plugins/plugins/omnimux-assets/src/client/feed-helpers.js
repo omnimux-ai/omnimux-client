@@ -53,11 +53,70 @@ function matchAssetQuery(asset, query) {
   return hay.includes(query)
 }
 
-function sortAssetsBy(assets, sortKey) {
+const MACHINE_META_LINE_RE = /^云端(?:分类|来源)[：:]/
+
+/**
+ * Strip machine provenance lines appended when saving cloud catalog items so the
+ * list view shows clean human-written descriptions while tooltips keep full text.
+ * @param {string | null | undefined} description
+ * @returns {string}
+ */
+export function formatListDescription(description) {
+  const lines = String(description ?? '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+  const human = lines.filter((line) => !MACHINE_META_LINE_RE.test(line))
+  return human.join(' ')
+}
+
+function assetTimestampMs(asset) {
+  const raw = asset?.updated_at || asset?.updatedAt || asset?.created_at || asset?.createdAt || ''
+  if (typeof raw === 'number') return Number.isFinite(raw) ? raw : 0
+  const parsed = Date.parse(String(raw))
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+/**
+ * Default sort direction for a given column key.
+ * @param {string} sortKey
+ * @returns {'asc' | 'desc'}
+ */
+export function defaultSortDirection(sortKey) {
+  return sortKey === 'name' || sortKey === 'type' ? 'asc' : 'desc'
+}
+
+/**
+ * Sort assets by supported list columns with explicit direction.
+ * @param {Array<any>} assets
+ * @param {string} sortKey
+ * @param {'asc' | 'desc'} [sortDirection]
+ */
+export function sortAssetsBy(assets, sortKey, sortDirection) {
+  const list = Array.isArray(assets) ? [...assets] : []
+  const dir = (sortDirection || defaultSortDirection(sortKey)) === 'asc' ? 1 : -1
   if (sortKey === 'name') {
-    return [...assets].sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')))
+    return list.sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')) * dir)
   }
-  return [...assets].sort((a, b) => String(b.updated_at || '').localeCompare(String(a.updated_at || '')))
+  if (sortKey === 'type') {
+    return list.sort((a, b) => {
+      const cmp = String(a.type || '').localeCompare(String(b.type || '')) * dir
+      return cmp !== 0 ? cmp : String(a.name || '').localeCompare(String(b.name || ''))
+    })
+  }
+  if (sortKey === 'files') {
+    return list.sort((a, b) => {
+      const countA = Array.isArray(a.files) ? a.files.length : 0
+      const countB = Array.isArray(b.files) ? b.files.length : 0
+      if (countA !== countB) return (countA - countB) * dir
+      return String(a.name || '').localeCompare(String(b.name || ''))
+    })
+  }
+  return list.sort((a, b) => {
+    const diff = assetTimestampMs(a) - assetTimestampMs(b)
+    if (diff !== 0) return diff * dir
+    return String(b.updated_at || '').localeCompare(String(a.updated_at || '')) * (dir === -1 ? 1 : -1)
+  })
 }
 
 /**
@@ -66,15 +125,16 @@ function sortAssetsBy(assets, sortKey) {
  * @param {string} filterType
  * @param {string} query
  * @param {string} sortKey
+ * @param {'asc' | 'desc'} [sortDirection]
  */
-export function filterAndSortAssets(assets, filterType, query, sortKey) {
+export function filterAndSortAssets(assets, filterType, query, sortKey, sortDirection) {
   const list = Array.isArray(assets) ? assets : []
   const q = String(query || '').trim().toLowerCase()
   const filtered = list.filter((asset) => {
     if (filterType && asset.type !== filterType) return false
     return matchAssetQuery(asset, q)
   })
-  return sortAssetsBy(filtered, sortKey)
+  return sortAssetsBy(filtered, sortKey, sortDirection)
 }
 
 /**
@@ -108,6 +168,49 @@ export function toggleAssetIdInSet(prevSet, assetId) {
   const next = new Set(prevSet)
   if (next.has(assetId)) next.delete(assetId)
   else next.add(assetId)
+  return next
+}
+
+/**
+ * Select a contiguous range of asset IDs (Shift+Click) in the current visible order.
+ * @param {Set<string>} prevSet
+ * @param {string[]} orderedIds
+ * @param {string | null | undefined} anchorId
+ * @param {string} targetId
+ * @returns {Set<string>}
+ */
+export function selectRangeIds(prevSet, orderedIds, anchorId, targetId) {
+  const next = new Set(prevSet)
+  const list = Array.isArray(orderedIds) ? orderedIds : []
+  const targetIdx = list.indexOf(targetId)
+  const anchorIdx = anchorId ? list.indexOf(anchorId) : -1
+  if (targetIdx === -1 || anchorIdx === -1) {
+    return toggleAssetIdInSet(prevSet, targetId)
+  }
+  const start = Math.min(anchorIdx, targetIdx)
+  const end = Math.max(anchorIdx, targetIdx)
+  for (let i = start; i <= end; i += 1) {
+    next.add(list[i])
+  }
+  return next
+}
+
+/**
+ * Toggle select-all across currently visible asset IDs.
+ * @param {Set<string>} prevSet
+ * @param {string[]} visibleIds
+ * @returns {Set<string>}
+ */
+export function toggleAllVisibleIds(prevSet, visibleIds) {
+  const list = Array.isArray(visibleIds) ? visibleIds : []
+  if (list.length === 0) return new Set(prevSet)
+  const allSelected = list.every((id) => prevSet.has(id))
+  const next = new Set(prevSet)
+  if (allSelected) {
+    for (const id of list) next.delete(id)
+  } else {
+    for (const id of list) next.add(id)
+  }
   return next
 }
 

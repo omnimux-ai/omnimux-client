@@ -45,8 +45,21 @@ describe('AssetGrid cover preview and card CTA actions contract', () => {
   })
 
   it('completely removes copyCite and remove buttons from card actions and list rows', () => {
-    assert.doesNotMatch(gridJsx, /\{t\('card\.copyCite'\)\}/)
-    assert.doesNotMatch(gridJsx, /\{t\('mapping\.remove'\)\}/)
+    const cardSection = gridJsx.slice(
+      gridJsx.indexOf('function AssetGridCard'),
+      gridJsx.indexOf('function ListCheckbox'),
+    )
+    assert.doesNotMatch(cardSection, /card\.copyCite/)
+    assert.doesNotMatch(cardSection, /mapping\.remove/)
+
+    const rowSection = gridJsx.slice(
+      gridJsx.indexOf('function AssetListRow'),
+      gridJsx.indexOf('function AssetListMoreMenu'),
+    )
+    assert.doesNotMatch(rowSection, /t\('card\.view'\)/, 'list row must not duplicate inline View Details button')
+    assert.doesNotMatch(rowSection, /t\('card\.copyCite'\)/, 'list row must not render inline Copy Reference button')
+    assert.doesNotMatch(rowSection, /t\('mapping\.remove'\)/, 'list row must not render inline Remove button')
+    assert.match(gridJsx, /className="omnimux-assets-list-more-menu"/)
   })
 
   it('contains complete i18n locales for card actions with Add to Conversation updated', () => {
@@ -54,17 +67,28 @@ describe('AssetGrid cover preview and card CTA actions contract', () => {
     assert.equal(zh['card.addToConversation'], '添加到会话')
     assert.equal(zh['card.addedToConversation'], '已添加')
     assert.equal(zh['card.actions'], '操作')
+    assert.equal(zh['list.updatedAt'], '更新时间')
+    assert.equal(zh['list.selectAll'], '全选资产')
+    assert.equal(zh['list.moreActions'], '更多操作')
+    assert.equal(zh['select.addToConversation'], '批量加入会话')
 
     assert.equal(en['card.view'], 'View Details')
     assert.equal(en['card.addToConversation'], 'Add to Chat')
     assert.equal(en['card.addedToConversation'], 'Added')
     assert.equal(en['card.actions'], 'Actions')
+    assert.equal(en['list.updatedAt'], 'Updated')
+    assert.equal(en['list.selectAll'], 'Select all assets')
+    assert.equal(en['list.moreActions'], 'More actions')
+    assert.equal(en['select.addToConversation'], 'Add to Chat')
   })
 
   it('AssetsStage routes list and grid view cleanly through AssetGrid without raw inputs', () => {
     assert.doesNotMatch(stageJsx, /AssetsTableView/)
     assert.doesNotMatch(stageJsx, /<input\b/)
     assert.match(stageJsx, /<AssetGrid\b/)
+    assert.match(stageJsx, /onSelectionChange=\{setSelectedIds\}/)
+    assert.match(stageJsx, /onSortChange=\{handleSortChange\}/)
+    assert.match(stageJsx, /t\('select\.addToConversation'\)/)
   })
 
   it('migrates card CTA buttons into thumb hover overlay with EyeIcon and ChatIcon', () => {
@@ -98,5 +122,16 @@ describe('AssetGrid cover preview and card CTA actions contract', () => {
     assert.match(stylesJs, /\.omnimux-assets-card:not\(\.omnimux-assets-cloud-card\)\s+\[class\*="coverWrapper"\],\s*\n\.omnimux-assets-card:not\(\.omnimux-assets-cloud-card\)\s+\.omnimux-assets-card-thumb\s*\{[\s\S]*?aspect-ratio:\s*3\s*\/\s*4;/)
     assert.match(stylesJs, /\.omnimux-assets-card--character:not\(\.omnimux-assets-cloud-card\)\s+\.omnimux-assets-card-media[\s\S]*?object-fit:\s*cover;/)
     assert.match(stylesJs, /\.omnimux-assets-card:not\(\.omnimux-assets-card--character\):not\(\.omnimux-assets-cloud-card\)\s+\.omnimux-assets-card-media[\s\S]*?object-fit:\s*contain;/)
+  })
+
+  it('aligns list headers with right-aligned cells and keeps list popovers opaque with official DSW tokens', () => {
+    assert.match(stylesJs, /\.omnimux-assets-list-table thead th\.omnimux-assets-th-actions\s*\{[\s\S]*?text-align:\s*right;/)
+    assert.match(stylesJs, /\.omnimux-assets-list-table thead th\.omnimux-assets-th-files\s*\{[\s\S]*?text-align:\s*right;/)
+    assert.match(stylesJs, /\.omnimux-assets-list-table thead th\.omnimux-assets-th-updated\s*\{[\s\S]*?text-align:\s*right;/)
+    assert.match(stylesJs, /\.omnimux-assets-list-thumb\s*\{[\s\S]*?width:\s*40px;[\s\S]*?height:\s*28px;[\s\S]*?border-radius:\s*6px;/)
+    assert.match(stylesJs, /\.omnimux-assets-list-thumb-img\s*\{[\s\S]*?object-fit:\s*contain;/)
+    assert.match(stylesJs, /\.omnimux-assets-list-more-menu\s*\{[\s\S]*?background:\s*var\(--dsw-alias-bg-layer-2\);/)
+    assert.match(stylesJs, /\.omnimux-assets-list-preview-popover\s*\{[\s\S]*?background:\s*var\(--dsw-alias-bg-layer-2\);/)
+    assert.match(stylesJs, /\.omnimux-assets-list-actions \.omnimux-assets-list-add-btn\s*\{[\s\S]*?opacity:\s*0;/)
   })
 })
