@@ -8,9 +8,11 @@ export const SAFE_ARGUMENT = '--next-safe-mode'
 export const ONBOARDING_ARGUMENT = '--next-onboarding'
 /** Marks the instance an elevated Windows launch restarted with the user's normal token; never carried forward. */
 export const DE_ELEVATED_ARGUMENT = '--next-de-elevated'
+/** Marks a first launch immediately after an in-app update; stripped on subsequent manual relaunches. */
+export const UPDATED_ARGUMENT = '--updated'
 
 export function relaunchArguments(argv: readonly string[], recovery: boolean, safe: boolean, onboarding = false): string[] {
-  return [...argv.filter(value => value !== RECOVERY_ARGUMENT && value !== SAFE_ARGUMENT && value !== ONBOARDING_ARGUMENT && value !== DE_ELEVATED_ARGUMENT),
+  return [...argv.filter(value => value !== RECOVERY_ARGUMENT && value !== SAFE_ARGUMENT && value !== ONBOARDING_ARGUMENT && value !== DE_ELEVATED_ARGUMENT && value !== UPDATED_ARGUMENT),
     ...recovery ? [RECOVERY_ARGUMENT] : safe ? [SAFE_ARGUMENT] : onboarding ? [ONBOARDING_ARGUMENT] : []]
 }
 

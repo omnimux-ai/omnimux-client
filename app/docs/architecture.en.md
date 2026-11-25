@@ -82,7 +82,9 @@ Product plugins must never duplicate those 7 upstream Office skill slugs (enforc
 
 ## Stable updates and isolated recovery
 
-OmniMux uses `ai.omnimux.desktop` and retains its configured update endpoint. Version checks accept stable SemVer only. Downloads send the expected version and reject mismatched responses before replacing an installer. This repository does not ship a Beta application or a channel-switch action.
+OmniMux uses `ai.omnimux.desktop` and runs its standalone updater engine under `app/dsh-desktop-next/src/omnimux-updater/` against `https://dl.omnimux.ai/api/desktop/v2/<channel>.json` (paired with a sibling `.sig` raw-byte Ed25519 signature envelope; while verification keys are not yet provisioned, HTTP 404 falls back to legacy `api/desktop/version-<channel>.json`). Production builds default to the `stable` channel, and `updateChannel` is stored in `desktop-preferences-extra.json` so downgrades to older releases remain safe.
+
+Update checks enforce `minSupportedVersion`, deterministic rollout bucketing (hashed from installation UUID), and OS minimums, then download immutable versioned installers under `releases/v<ver>/...` with parallel Range chunks, idle-timeout retries, and mandatory SHA-256 verification. Before handoff, preflight checks macOS App Translocation, install-directory writability, free disk space, and active Host tasks (`host/update-tasks.ts` locks admission and tears down the Host gracefully). In packaged production installs, bundled OmniMux product plugins are never shadowed by an equal-or-older Profile-local copy, while Dev builds, source runs, and `OMNIMUX_ALLOW_LOCAL_PLUGIN_OVERRIDE=1` preserve local development overrides.
 
 Normal startup seeds the `omnimux` Profile. Dev uses `~/.omnimux-dev` and port `45120`; production uses `~/.omnimux` and port `44120`. Safe Mode selects disposable home and desktop-state directories and skips product seeding. Leaving Safe Mode restores normal Profile selection; the next normal launch removes the temporary environment.
 

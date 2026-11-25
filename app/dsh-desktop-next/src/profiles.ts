@@ -31,6 +31,7 @@ import { RETIRED_SCHEDULE_BUNDLE, retiredSchedulePatch } from './profile-schedul
 import { removeLinkProjectionsSafely } from '../../dsh-plugin-desktop/src/link-projections.ts'
 import { reclaimLegacyManagedPluginSkills } from '../../dsh-plugin-desktop/src/legacy-skill-reclaim.ts'
 import { insideArchive, unpackedPath } from './asar-archive-policy.ts'
+import { compareSemVer } from './omnimux-updater/semver.ts'
 import PLUGIN_TIERS from '../../config/plugin-tiers.json' with { type: 'json' }
 import { ON_DEMAND_BUNDLES, OPTIONAL_BUNDLES, PROFILE_TEMPLATES, RETIRED_PROFILE_BUNDLES } from './upstream-family.ts'
 
@@ -487,19 +488,80 @@ function retireStaleOnDemandBundles(manager: NextProfiles, name: string, pnpm: P
   }
 }
 
+function readPackageVersion(packageDir: string): string | undefined {
+  try {
+    const parsed = JSON.parse(readFileSync(join(packageDir, 'package.json'), 'utf8')) as { version?: unknown }
+    return typeof parsed.version === 'string' && parsed.version.trim().length > 0 ? parsed.version.trim() : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * Determine whether an archived installation anchor belongs to a packaged `OmniMux Dev.app`
+ * (`releaseChannel === 'development'`), where `yarn omnimux:sync` intentionally overrides bundled
+ * plugins with Profile-local copies.
+ */
+function isDevelopmentReleaseAnchor(installAnchor: string, releaseChannel?: string): boolean {
+  if (releaseChannel === 'development') return true
+  if (releaseChannel === 'stable') return false
+  if (process.env.DSH_NEXT_RELEASE_CHANNEL === 'development') return true
+  if (process.env.DSH_NEXT_RELEASE_CHANNEL === 'stable') return false
+  const normalized = installAnchor.replaceAll('\\', '/')
+  const asarIdx = normalized.toLowerCase().indexOf('/app.asar/')
+  if (asarIdx > 0) {
+    const resourcesDir = installAnchor.slice(0, asarIdx)
+    const buildInfoPath = join(resourcesDir, 'build-info.json')
+    if (existsSync(buildInfoPath)) {
+      try {
+        const parsed = JSON.parse(readFileSync(buildInfoPath, 'utf8')) as { channel?: unknown; releaseChannel?: unknown }
+        if (parsed.releaseChannel === 'development' || parsed.channel === 'package-dev') return true
+      } catch { /* fail closed to production protection */ }
+    }
+  }
+  return false
+}
+
 /**
  * Prefer Profile-local copies (`<profile>/node_modules/<pkg>`) for non-core bundles
- * over the `app.asar` installation copies when `omnimux:sync` has materialized an
- * external override. Official `@deepseek-ai/*` runtime packages and `dsh-desktop-next`
- * itself stay pinned to the installation so core services never split across versions.
+ * over the `app.asar` installation copies when `omnimux:sync` or a newer market install
+ * has materialized an external override. Official `@deepseek-ai/*` runtime packages and
+ * `dsh-desktop-next` itself stay pinned to the installation so core services never split
+ * across versions.
+ *
+ * In packaged production builds (`insideArchive(installAnchor)` and not `OmniMux Dev.app`),
+ * bundled OmniMux product plugins are never shadowed by an equal, older, or unversioned
+ * Profile-local copy (preventing stale Profile copies from masking an upgraded desktop release)
+ * unless the caller explicitly opts in via `OMNIMUX_ALLOW_LOCAL_PLUGIN_OVERRIDE=1`.
  */
-export function applyProfileLocalBundleOverrides(profile: Profile, projectDir: string): void {
+export function applyProfileLocalBundleOverrides(
+  profile: Profile,
+  projectDir: string,
+  installAnchor = NEXT_PACKAGE,
+  releaseChannel?: string,
+): void {
   const exemptions = profile.layers.length === 0 ? {} : readProfileVersionExemptions(projectDir)
+  const protectPackagedProductBundles = insideArchive(installAnchor)
+    && !isDevelopmentReleaseAnchor(installAnchor, releaseChannel)
+    && process.env.OMNIMUX_ALLOW_LOCAL_PLUGIN_OVERRIDE !== '1'
   for (let index = 0; index < profile.layers.length; index += 1) {
     const layer = profile.layers[index]!
     if (layer.packageName.startsWith('@deepseek-ai/') || layer.packageName === 'dsh-desktop-next') continue
     const localPackageDir = join(projectDir, 'node_modules', ...layer.packageName.split('/'))
     if (!existsSync(join(localPackageDir, 'package.json'))) continue
+    if (protectPackagedProductBundles && OMNIMUX_PRODUCT_BUNDLES.includes(layer.packageName)) {
+      const bundledVersion = readPackageVersion(layer.packageDir)
+      const localVersion = readPackageVersion(localPackageDir)
+      if (bundledVersion !== undefined) {
+        const cmp = localVersion === undefined ? null : compareSemVer(localVersion, bundledVersion)
+        if (cmp === null || cmp <= 0) {
+          process.stderr.write(
+            `dsh-desktop-next: skipping stale or unversioned Profile-local override for ${layer.packageName} (${localVersion ?? 'invalid'} vs bundled ${bundledVersion}); using bundled copy\n`,
+          )
+          continue
+        }
+      }
+    }
     const bundleManifest = readProfileManifest('dsh-desktop-next', localPackageDir)
     const bundle = bundleManifest.dsh?.bundle
     if (bundle === undefined) continue
@@ -521,7 +583,13 @@ export function applyProfileLocalBundleOverrides(profile: Profile, projectDir: s
  * Add product capabilities without replacing the upstream Web presentation.
  * @param pnpm - The bundled pnpm; the Host passes it so that on-demand bundles of another DSH release leave the Profile first.
  */
-export function loadNextProfile(projectDir: string, home: string, installAnchor = NEXT_PACKAGE, pnpm?: ProfilePnpmInvocation): Profile {
+export function loadNextProfile(
+  projectDir: string,
+  home: string,
+  installAnchor = NEXT_PACKAGE,
+  pnpm?: ProfilePnpmInvocation,
+  releaseChannel?: string,
+): Profile {
   const manager = new NextProfiles(home)
   if (manager.directory(basename(projectDir)) !== resolve(projectDir)) throw new Error('Profile must belong to Next home')
   manager.ensure(basename(projectDir), installAnchor)
@@ -545,7 +613,7 @@ export function loadNextProfile(projectDir: string, home: string, installAnchor 
   if (existingLink && (linkTarget === undefined || resolve(modules, readlinkSync(link)) !== linkTarget)) unlinkSync(link)
   if (linkTarget !== undefined && !lstatSync(link, { throwIfNoEntry: false })) symlinkSync(linkTarget, link, 'junction')
   const profile = loadProfileDirectory('dsh-desktop-next', projectDir, installAnchor)
-  applyProfileLocalBundleOverrides(profile, projectDir)
+  applyProfileLocalBundleOverrides(profile, projectDir, installAnchor, releaseChannel)
   profile.layers.push({ packageName: 'dsh-desktop-next', packageDir: target,
     patchPaths: [NEXT_BUNDLE_PATCH], patches: loadOverlayPatches('dsh-desktop-next', NEXT_BUNDLE_PATCH) })
   const overlay = [
@@ -581,9 +649,15 @@ function archivedAgentsAnywhereConfig(installAnchor: string): { connectorSourceD
 }
 
 /** Recompose Next's own layer before user/global patches on every manager or HMR read. */
-export function readNextProfilePatches(projectDir: string, home: string, overlays: readonly string[], profilePatches?: readonly Profile['patches'][number][]) {
+export function readNextProfilePatches(
+  projectDir: string,
+  home: string,
+  overlays: readonly string[],
+  profilePatches?: readonly Profile['patches'][number][],
+  releaseChannel?: string,
+) {
   const profile = loadProfileDirectory('dsh-desktop-next', projectDir, NEXT_PACKAGE, { userLayer: false })
-  applyProfileLocalBundleOverrides(profile, projectDir)
+  applyProfileLocalBundleOverrides(profile, projectDir, NEXT_PACKAGE, releaseChannel)
   profile.layers.push({ packageName: 'dsh-desktop-next', packageDir: dirname(NEXT_PACKAGE),
     patchPaths: [NEXT_BUNDLE_PATCH], patches: loadOverlayPatches('dsh-desktop-next', NEXT_BUNDLE_PATCH) })
   profile.patches = profilePatches === undefined
