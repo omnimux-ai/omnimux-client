@@ -43,12 +43,21 @@ try {
   await response.body?.cancel()
   // Every bundle the packaged installation exposes in Plugins must resolve cleanly; excluded
   // unused features (e.g. voice-input) must not linger in the packaged manifest as broken entries.
-  const bundlesReply = await (await fetch(`${origin}/api/pluginManager/listBundles`, {
+  const bundlesResponse = await fetch(`${origin}/api/pluginManager/listBundles`, {
     method: 'POST',
-    headers: { cookie: auth.cookie, origin, 'content-type': 'application/json' },
+    headers: {
+      cookie: auth.cookie,
+      origin,
+      'content-type': 'application/json',
+      'x-dsh-desktop-renderer': auth.token,
+    },
     body: JSON.stringify({ type: 'client-request', rpcId: crypto.randomUUID(), method: 'pluginManager/listBundles', payload: { args: {} } }),
-  })).json()
-  if (!bundlesReply?.result?.ok || !Array.isArray(bundlesReply.result.value)) {
+  })
+  if (!bundlesResponse.ok) {
+    throw new Error(`Packaged Host pluginManager/listBundles HTTP ${String(bundlesResponse.status)}: ${await bundlesResponse.text()}`)
+  }
+  const bundlesReply = await bundlesResponse.json()
+  if (!bundlesReply?.result?.ok || !Array.isArray(bundlesReply.result.value) || bundlesReply.result.value.length === 0) {
     throw new Error(`Packaged Host pluginManager/listBundles failed: ${JSON.stringify(bundlesReply)}`)
   }
   const brokenBundles = bundlesReply.result.value.filter(

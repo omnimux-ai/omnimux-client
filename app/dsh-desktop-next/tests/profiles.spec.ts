@@ -805,16 +805,23 @@ it('retires unshipped optional official bundles from upgraded profiles unless pr
   const { [voiceBundle]: _omitted, ...shippedDeps } = baseAnchor.dependencies
   writeFileSync(packagedAnchor, JSON.stringify({ ...baseAnchor, dependencies: shippedDeps }, null, 2) + '\n')
 
-  // Case 1: Profile upgraded from an earlier build that selected voice-input without installing it locally.
+  // Case 1: Profile upgraded from an earlier build that selected voice-input without installing it locally;
+  // on-demand bundles and third-party selections remain intact.
+  const [, codexBundle] = ON_DEMAND_BUNDLES as [string, string]
   const manifest = JSON.parse(readFileSync(file, 'utf8'))
-  manifest.dsh.profile.bundles.push(voiceBundle, 'third-party-plugin')
+  manifest.dsh.profile.bundles.push(voiceBundle, codexBundle, 'third-party-plugin')
   writeFileSync(file, JSON.stringify(manifest, null, 2) + '\n')
+  // Dev-mode default NEXT_PACKAGE still ships voice-input and must leave the selection intact.
+  manager.ensure('desktop')
+  expect(JSON.parse(readFileSync(file, 'utf8')).dsh.profile.bundles).toContain(voiceBundle)
+
   const recoveryDir = join(manager.home, 'recovery')
   const backupCountBefore = existsSync(recoveryDir) ? readdirSync(recoveryDir).length : 0
 
   manager.ensure('desktop', packagedAnchor)
   const migrated = JSON.parse(readFileSync(file, 'utf8'))
   expect(migrated.dsh.profile.bundles).not.toContain(voiceBundle)
+  expect(migrated.dsh.profile.bundles).toContain(codexBundle)
   expect(migrated.dsh.profile.bundles).toContain('third-party-plugin')
   expect(readdirSync(recoveryDir).length).toBe(backupCountBefore + 1)
   // Idempotent on subsequent starts.
