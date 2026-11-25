@@ -29,13 +29,14 @@ export function AssetVersionDiffModal(props) {
 
   const mergeContainerRef = useRef(null)
   const mergeViewRef = useRef(null)
-
-  const [snapshotContent, setSnapshotContent] = useState(null)
-  const [loading, setLoading] = useState(false)
-  const [loadError, setLoadError] = useState('')
-  const [retryToken, setRetryToken] = useState(0)
+  const tRef = useRef(t)
+  useEffect(() => { tRef.current = t }, [t])
 
   const snapshotId = snapshot?.id || ''
+  const [snapshotContent, setSnapshotContent] = useState(null)
+  const [loading, setLoading] = useState(Boolean(snapshotId))
+  const [loadError, setLoadError] = useState('')
+  const [retryToken, setRetryToken] = useState(0)
 
   useEffect(() => {
     if (!snapshotId || !assetId || !fileId) return undefined
@@ -48,7 +49,7 @@ export function AssetVersionDiffModal(props) {
       .then((res) => {
         if (controller.signal.aborted) return
         if (!res.ok) {
-          setLoadError(res.body?.message || res.body?.error || t('textEditor.diffLoadFailed'))
+          setLoadError(res.body?.message || res.body?.error || tRef.current('textEditor.diffLoadFailed'))
           setLoading(false)
           return
         }
@@ -58,12 +59,12 @@ export function AssetVersionDiffModal(props) {
       .catch((error) => {
         if (controller.signal.aborted) return
         console.warn('[omnimux-assets] readAssetTextVersion failed:', error)
-        setLoadError(t('textEditor.diffLoadFailed'))
+        setLoadError(tRef.current('textEditor.diffLoadFailed'))
         setLoading(false)
       })
 
     return () => controller.abort()
-  }, [snapshotId, assetId, fileId, subPath, retryToken, t])
+  }, [snapshotId, assetId, fileId, subPath, retryToken])
 
   useEffect(() => {
     if (!snapshot || snapshotContent === null || !mergeContainerRef.current) return undefined
@@ -99,7 +100,7 @@ export function AssetVersionDiffModal(props) {
       })
     } catch (error) {
       console.error('[omnimux-assets] MergeView init failed:', error)
-      setLoadError(t('textEditor.diffLoadFailed'))
+      setLoadError(tRef.current('textEditor.diffLoadFailed'))
     }
 
     return () => {
@@ -108,7 +109,7 @@ export function AssetVersionDiffModal(props) {
         mergeViewRef.current = null
       }
     }
-  }, [snapshot, snapshotContent, currentContent, isMarkdown, t])
+  }, [snapshot, snapshotContent, currentContent, isMarkdown])
 
   const handleApply = useCallback(async () => {
     if (!snapshot || readOnly || reverting) return

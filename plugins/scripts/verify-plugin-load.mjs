@@ -249,6 +249,7 @@ function makeClientEnv() {
   })
   const window = new Proxy({}, {
     get(target, prop) {
+      if (prop === '__ModuleLoader__' || prop === 'ModuleLoader') return moduleLoader
       if (typeof prop === 'symbol') return target[prop]
       if (Object.hasOwn(target, prop)) return target[prop]
       if (prop === 'document') return document
@@ -257,7 +258,6 @@ function makeClientEnv() {
       if (prop === 'localStorage' || prop === 'sessionStorage') return { getItem: () => null, setItem: () => {}, removeItem: () => {}, clear: () => {} }
       if (prop === 'matchMedia') return () => ({ matches: false, addEventListener: () => {}, removeEventListener: () => {} })
       if (prop === '__DSH_BOOT__' || prop === '__omnimuxWorkbench' || prop === '__omnimuxLocale') return serviceStub(prop)
-      if (prop === '__ModuleLoader__' || prop === 'ModuleLoader') return moduleLoader
       if (prop === 'addEventListener' || prop === 'removeEventListener') return () => {}
       if (prop === 'open') return () => null
       return serviceStub(`window.${String(prop)}`)

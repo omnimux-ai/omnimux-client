@@ -403,6 +403,72 @@ export function createLibraryStore(opts = {}) {
   }
 
   /**
+   * Async counterpart of `materializeAssetSync` for non-blocking text routes.
+   * @param {any} asset
+   */
+  async function materializeAssetAsync(asset) {
+    if (!asset || !Array.isArray(asset.files) || asset.files.length === 0) return asset
+    if (!filesDir || !vaultRoot) return asset
+    let changed = false
+    const nextFiles = []
+    for (const file of asset.files) {
+      if (str(file.relative_path)) {
+        nextFiles.push(file)
+        continue
+      }
+      const source = str(file.real_path)
+      if (!source) {
+        nextFiles.push(file)
+        continue
+      }
+      try {
+        const copied = await copyIntoVault({
+          sourceAbs: source,
+          destDir: managedDirOf(asset.id),
+          vaultRoot,
+          originalName: file.original_name || basename(source.replace(/\/+$/, '')),
+          fs,
+        })
+        nextFiles.push({
+          id: file.id,
+          relative_path: copied.relativePath,
+          original_name: file.original_name || copied.name,
+        })
+        changed = true
+      } catch (error) {
+        console.warn('[omnimux-assets] async asset materialize fallback:', error?.message || error)
+        nextFiles.push(file)
+      }
+    }
+    if (!changed) return asset
+    asset.files = nextFiles
+    persist()
+    return asset
+  }
+
+  /** @type {Map<string, Promise<unknown>>} */
+  const textWriteLocks = new Map()
+
+  /**
+   * Serialize concurrent text writes on the same managed file so overlapping
+   * ETag checks and atomic renames cannot race or silently clobber each other.
+   * @template T
+   * @param {string} key
+   * @param {() => Promise<T>} fn
+   * @returns {Promise<T>}
+   */
+  function withTextWriteLock(key, fn) {
+    const previous = textWriteLocks.get(key) ?? Promise.resolve()
+    const run = previous.then(fn, fn)
+    const settled = run.then(() => undefined, () => undefined)
+    textWriteLocks.set(key, settled)
+    void settled.finally(() => {
+      if (textWriteLocks.get(key) === settled) textWriteLocks.delete(key)
+    })
+    return run
+  }
+
+  /**
    * @param {string} assetId
    * @param {unknown} files
    */
@@ -915,7 +981,7 @@ export function createLibraryStore(opts = {}) {
     const live = get(assetId)
     if (!live) throw new AssetsError('asset-not-found', 'asset not found')
     const stored = state.assets.find((row) => row.id === live.id) || live
-    materializeAssetSync(stored)
+    await materializeAssetAsync(stored)
     const file = stored.files.find((row) => row.id === fileId)
     if (!file) throw new AssetsError('path-not-found', 'asset file not found')
     const abs = absoluteOf(file, vaultRoot)
@@ -924,7 +990,8 @@ export function createLibraryStore(opts = {}) {
     let rootInfo
     try {
       rootInfo = await stat(abs)
-    } catch {
+    } catch (error) {
+      console.warn('[omnimux-assets] resolveTextTarget stat failed:', error?.message || error)
       throw new AssetsError('path-not-found', 'path does not exist')
     }
 
@@ -937,7 +1004,8 @@ export function createLibraryStore(opts = {}) {
       if (cleanedSub !== '') throw new AssetsError('path-not-dir', 'file refs have no sub directories')
       try {
         absolutePath = await realpath(abs)
-      } catch {
+      } catch (error) {
+        console.warn('[omnimux-assets] resolveTextTarget realpath failed:', error?.message || error)
         throw new AssetsError('path-not-found', 'path does not exist')
       }
     } else {
@@ -947,20 +1015,26 @@ export function createLibraryStore(opts = {}) {
     let info
     try {
       info = await stat(absolutePath)
-    } catch {
+    } catch (error) {
+      console.warn('[omnimux-assets] resolveTextTarget target stat failed:', error?.message || error)
       throw new AssetsError('path-not-found', 'path does not exist')
     }
     if (!info.isFile()) throw new AssetsError('path-not-dir', 'target is not a file')
+
+    const editable = await isManagedWritablePath(stored.id, file, absolutePath)
+    if (str(file.relative_path) !== '' && !editable) {
+      throw new AssetsError('path-denied', 'managed asset file escapes vault boundary')
+    }
 
     const name = cleanedSub !== ''
       ? basename(cleanedSub)
       : (str(file.original_name) || basename(absolutePath.replace(/\/+$/, '')) || absolutePath)
     const ext = textExtOf(name)
-    if (!isEditableTextExt(ext)) {
+    const realExt = textExtOf(basename(absolutePath))
+    if (!isEditableTextExt(ext) || !isEditableTextExt(realExt)) {
       throw new AssetsError('path-unsupported', 'only supported plain text and markdown files can be opened')
     }
 
-    const editable = await isManagedWritablePath(stored.id, file, absolutePath)
     const relativePath = cleanedSub !== ''
       ? cleanedSub
       : (str(file.original_name) || basename(absolutePath))
@@ -1045,41 +1119,43 @@ export function createLibraryStore(opts = {}) {
     }
 
     const expectedEtag = typeof input.expectedEtag === 'string' ? input.expectedEtag.trim() : ''
-    if (expectedEtag !== '' && input.force !== true) {
-      const diskBytes = await readFile(target.absolutePath)
-      const currentEtag = createHash('sha256').update(diskBytes).digest('hex')
-      if (currentEtag !== expectedEtag) {
-        throw Object.assign(
-          new AssetsError('file-conflict', 'file has been modified on disk since it was opened'),
-          { currentEtag },
-        )
+    return withTextWriteLock(target.absolutePath, async () => {
+      if (expectedEtag !== '' && input.force !== true) {
+        const diskBytes = await readFile(target.absolutePath)
+        const currentEtag = createHash('sha256').update(diskBytes).digest('hex')
+        if (currentEtag !== expectedEtag) {
+          throw Object.assign(
+            new AssetsError('file-conflict', 'file has been modified on disk since it was opened'),
+            { currentEtag },
+          )
+        }
       }
-    }
 
-    const tmp = `${target.absolutePath}.tmp-${process.pid}-${Date.now()}-${randomBytes(4).toString('hex')}`
-    try {
-      await writeFile(tmp, bytes)
-      await rename(tmp, target.absolutePath)
-    } catch (error) {
-      await unlink(tmp).catch((cleanupErr) => {
-        console.warn('[omnimux-assets] failed to remove temp text file:', cleanupErr?.message || cleanupErr)
-      })
-      throw error
-    }
+      const tmp = `${target.absolutePath}.tmp-${process.pid}-${Date.now()}-${randomBytes(4).toString('hex')}`
+      try {
+        await writeFile(tmp, bytes, { mode: 0o600 })
+        await rename(tmp, target.absolutePath)
+      } catch (error) {
+        await unlink(tmp).catch((cleanupErr) => {
+          console.warn('[omnimux-assets] failed to remove temp text file:', cleanupErr?.message || cleanupErr)
+        })
+        throw error
+      }
 
-    const updatedInfo = await stat(target.absolutePath)
-    const etag = createHash('sha256').update(bytes).digest('hex')
-    target.stored.updated_at = new Date().toISOString()
-    state.revision += 1
-    persist()
+      const updatedInfo = await stat(target.absolutePath)
+      const etag = createHash('sha256').update(bytes).digest('hex')
+      target.stored.updated_at = new Date().toISOString()
+      state.revision += 1
+      persist()
 
-    return {
-      etag,
-      size: bytes.length,
-      mtime: new Date(Number(updatedInfo.mtimeMs) || Date.now()).toISOString(),
-      lrev: state.revision,
-      asset: viewOf(target.stored, fs, vaultRoot),
-    }
+      return {
+        etag,
+        size: bytes.length,
+        mtime: new Date(Number(updatedInfo.mtimeMs) || Date.now()).toISOString(),
+        lrev: state.revision,
+        asset: viewOf(target.stored, fs, vaultRoot),
+      }
+    })
   }
 
   return {

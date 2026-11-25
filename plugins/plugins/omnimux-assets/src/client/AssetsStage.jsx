@@ -652,6 +652,12 @@ export function AssetsStage(props) {
     }
   }, [])
 
+  const handleTextSaved = useCallback(() => {
+    if (typeof feed.refreshState === 'function') {
+      void feed.refreshState(true)
+    }
+  }, [feed.refreshState])
+
   return (
     <div
       ref={stageRootRef}
@@ -734,7 +740,7 @@ export function AssetsStage(props) {
             item={previewTarget}
             t={t}
             onClose={() => setPreviewTarget(null)}
-            onSaved={typeof feed.refresh === 'function' ? feed.refresh : undefined}
+            onSaved={handleTextSaved}
           />
         ) : (
           <AssetPreviewModal

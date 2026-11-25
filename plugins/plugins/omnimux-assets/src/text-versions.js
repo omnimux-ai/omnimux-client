@@ -21,6 +21,15 @@ const SAFE_ASSET_ID_RE = /^[A-Za-z0-9_-]+$/
 const SNAPSHOT_NAME_MAX = 120
 
 /**
+ * Matches the JSON response secret guard in http-routes.js so snapshot metadata
+ * persisted to disk can never poison subsequent JSON list responses with HTTP 500.
+ * @param {string} value
+ */
+function containsSecretText(value) {
+  return value.includes('access_token') || /(?:^|[^A-Za-z0-9])sk-[A-Za-z0-9]/.test(value)
+}
+
+/**
  * @param {string} assetId
  */
 function assertSafeAssetId(assetId) {
@@ -201,6 +210,9 @@ export function createTextVersionStore(opts = {}) {
     if (typeof input.content !== 'string') {
       throw new AssetsError('file-not-text', 'snapshot content must be a UTF-8 string')
     }
+    if (input.content.includes('\0')) {
+      throw new AssetsError('file-not-text', 'snapshot content cannot contain NUL bytes')
+    }
     const byteLength = Buffer.byteLength(input.content, 'utf8')
     if (byteLength > TEXT_FILE_MAX_BYTES) {
       throw new AssetsError('file-too-large', `text content exceeds ${TEXT_FILE_MAX_BYTES} bytes`)
@@ -209,6 +221,9 @@ export function createTextVersionStore(opts = {}) {
     const now = Date.now()
     const rawName = typeof input.name === 'string' ? input.name.trim() : ''
     const name = (rawName || defaultSnapshotName(now)).slice(0, SNAPSHOT_NAME_MAX)
+    if (containsSecretText(name)) {
+      throw new AssetsError('secret-detected', 'snapshot name contains a restricted token pattern')
+    }
     const source = typeof input.source === 'string' && VALID_SOURCES.has(input.source)
       ? input.source
       : 'manual'

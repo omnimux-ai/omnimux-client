@@ -373,4 +373,79 @@ describe('LibraryStore managed text read/write and safety boundaries', () => {
     store.remove(asset.id)
     assert.deepEqual(removedIds, [asset.id])
   })
+
+  it('blocks intra-folder symlink to non-allowlisted ext, managed single-file symlink escapes, external writes, and concurrent write races', async () => {
+    const store = makeStore()
+
+    // 1. Intra-folder symlink `note.md -> .env` must fail realpath extension check.
+    const pack = join(root, 'symlink-pack')
+    mkdirSync(pack, { recursive: true })
+    writeFileSync(join(pack, '.env'), 'KEY=1\n', 'utf8')
+    const packAsset = await store.add({ name: '符号链测试', files: [{ real_path: pack }] })
+    const packFileId = packAsset.files[0].id
+    symlinkSync(join(packAsset.files[0].real_path, '.env'), join(packAsset.files[0].real_path, 'note.md'))
+    await assert.rejects(
+      () => store.readTextFile(packAsset.id, packFileId, 'note.md'),
+      (error) => error.code === 'path-unsupported',
+    )
+
+    // 2. Managed single-file replaced by symlink escaping vault must be denied on READ too.
+    const singleOrig = join(root, 'single.md')
+    const externalTxt = join(root, 'outside-secret.txt')
+    writeFileSync(singleOrig, '# ok', 'utf8')
+    writeFileSync(externalTxt, 'outside text', 'utf8')
+    const singleAsset = await store.add({ name: '单文件符号链', files: [{ real_path: singleOrig }] })
+    const managedSingle = singleAsset.files[0].real_path
+    rmSync(managedSingle)
+    symlinkSync(externalTxt, managedSingle)
+    await assert.rejects(
+      () => store.readTextFile(singleAsset.id, singleAsset.files[0].id, ''),
+      (error) => error.code === 'path-denied',
+    )
+
+    // 3. Concurrent writeTextFile calls with identical expectedEtag serialize: 1 succeeds, 1 hits file-conflict.
+    const raceOrig = join(root, 'race.md')
+    writeFileSync(raceOrig, 'initial', 'utf8')
+    const raceAsset = await store.add({ name: '并发写入', files: [{ real_path: raceOrig }] })
+    const raceFileId = raceAsset.files[0].id
+    const v0 = await store.readTextFile(raceAsset.id, raceFileId, '')
+    const [r1, r2] = await Promise.allSettled([
+      store.writeTextFile(raceAsset.id, raceFileId, '', { content: 'writer-A', expectedEtag: v0.etag }),
+      store.writeTextFile(raceAsset.id, raceFileId, '', { content: 'writer-B', expectedEtag: v0.etag }),
+    ])
+    const fulfilled = [r1, r2].filter((r) => r.status === 'fulfilled')
+    const rejected = [r1, r2].filter((r) => r.status === 'rejected')
+    assert.equal(fulfilled.length, 1)
+    assert.equal(rejected.length, 1)
+    assert.equal(rejected[0].reason.code, 'file-conflict')
+
+    // 4. Unmaterialized legacy external file opens read-only and refuses writes (external file untouched).
+    const roStoreDir = join(root, 'ro-store')
+    mkdirSync(join(roStoreDir, 'data'), { recursive: true })
+    // Place a regular file at data/files so vault materialization cannot succeed and falls back to read-only.
+    writeFileSync(join(roStoreDir, 'data', 'files'), 'not-a-dir', 'utf8')
+    const extDoc = join(root, 'external-ro.md')
+    writeFileSync(extDoc, '# 只读外链', 'utf8')
+    writeFileSync(join(roStoreDir, 'library.json'), JSON.stringify({
+      schema: 2,
+      revision: 1,
+      assets: [{
+        id: 'ast_extro001',
+        name: '外部只读',
+        type: 'knowledge',
+        files: [{ id: 'fil_ext1', real_path: extDoc, original_name: 'external-ro.md' }],
+      }],
+    }), 'utf8')
+    const readonlyStore = createLibraryStore({
+      paths: { dir: roStoreDir, libraryFile: join(roStoreDir, 'library.json') },
+    })
+    const roRead = await readonlyStore.readTextFile('ast_extro001', 'fil_ext1', '')
+    assert.equal(roRead.editable, false)
+    assert.equal(roRead.content, '# 只读外链')
+    await assert.rejects(
+      () => readonlyStore.writeTextFile('ast_extro001', 'fil_ext1', '', { content: 'mutate' }),
+      (error) => error.code === 'path-denied',
+    )
+    assert.equal(readFileSync(extDoc, 'utf8'), '# 只读外链')
+  })
 })

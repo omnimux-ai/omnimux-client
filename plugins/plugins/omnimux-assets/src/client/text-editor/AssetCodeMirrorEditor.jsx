@@ -45,6 +45,7 @@ export const AssetCodeMirrorEditor = forwardRef(function AssetCodeMirrorEditor(p
   const onChangeRef = useRef(onChange)
   const onHistoryChangeRef = useRef(onHistoryChange)
   const initialValueRef = useRef(value)
+  const lastHistoryRef = useRef({ canUndo: false, canRedo: false })
 
   const [searchQuery, setSearchQuery] = useState('')
   const [matchIndex, setMatchIndex] = useState(0)
@@ -54,10 +55,13 @@ export const AssetCodeMirrorEditor = forwardRef(function AssetCodeMirrorEditor(p
 
   const emitHistory = useCallback((state) => {
     if (!state) return
-    onHistoryChangeRef.current?.({
-      canUndo: undoDepth(state) > 0,
-      canRedo: redoDepth(state) > 0,
-    })
+    const canUndo = undoDepth(state) > 0
+    const canRedo = redoDepth(state) > 0
+    if (lastHistoryRef.current.canUndo === canUndo && lastHistoryRef.current.canRedo === canRedo) {
+      return
+    }
+    lastHistoryRef.current = { canUndo, canRedo }
+    onHistoryChangeRef.current?.({ canUndo, canRedo })
   }, [])
 
   const matches = useMemo(() => {
@@ -262,6 +266,7 @@ export const AssetCodeMirrorEditor = forwardRef(function AssetCodeMirrorEditor(p
             value={searchQuery}
             onChange={(event) => setSearchQuery(event.target.value)}
             onKeyDown={(event) => {
+              if (event.nativeEvent?.isComposing || event.keyCode === 229) return
               if (event.key === 'Enter') {
                 event.preventDefault()
                 if (event.shiftKey) goToPrevMatch()

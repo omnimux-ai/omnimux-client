@@ -396,12 +396,65 @@ test('AssetTextEditorModal E2E: edit, undo/redo, search, save, snapshots, diff/r
     await waitFor(() => document.querySelector('.omnimux-ate-cm-container .cm-content')?.textContent?.includes('外部并发写入'))
 
     // 7. Dirty close opens 3-way modal: Cancel stays open; Save & Close persists and invokes onClose.
+    // Also verify parent re-render with fresh item object & fresh t closure does NOT wipe unsaved edits.
     const latestView = EditorView.findFromDOM(document.querySelector('.omnimux-ate-cm-container .cm-editor'))
     assert.notEqual(latestView, null)
     await act(async () => {
       latestView.dispatch({ changes: { from: latestView.state.doc.length, insert: '关闭前待保存\n' } })
     })
     await waitFor(() => Boolean(document.querySelector('.omnimux-ate-dirty-dot')))
+
+    await act(async () => {
+      reactRoot.render(React.createElement(AssetTextEditorModal, {
+        item: { ...skillItem },
+        t: (key) => zh[key] ?? key,
+        onClose: () => { closedCount += 1 },
+        onSaved: () => { savedEvents += 1 },
+      }))
+    })
+    assert.equal(
+      document.querySelector('.omnimux-ate-cm-container .cm-content')?.textContent?.includes('关闭前待保存'),
+      true,
+    )
+    assert.equal(Boolean(document.querySelector('.omnimux-ate-dirty-dot')), true)
+
+    // Snapshot creation form Escape cancels only the form, keeping the Version Drawer open.
+    await act(async () => {
+      Array.from(document.querySelectorAll('.omnimux-ate-drawer button'))
+        .find((b) => b.textContent?.includes('新建版本快照'))
+        .click()
+    })
+    const formInput = await waitFor(() => document.querySelector('.omnimux-ate-drawer input'))
+    await act(async () => {
+      formInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+    })
+    assert.equal(document.querySelector('.omnimux-ate-drawer input'), null)
+    assert.notEqual(document.querySelector('.omnimux-ate-drawer'), null)
+
+    // Narrow-viewport Cmd+F while ConfirmModal is open must NOT close drawer or deadlock Escape.
+    Object.defineProperty(window, 'innerWidth', { value: 640, configurable: true, writable: true })
+    await act(async () => {
+      document.querySelector('.omnimux-ate-version-card button[aria-label="删除快照"]').click()
+    })
+    await waitFor(() => document.querySelector('[data-testid="confirm-modal"]'))
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'f', metaKey: true, bubbles: true, cancelable: true }))
+    })
+    assert.notEqual(document.querySelector('.omnimux-ate-drawer'), null)
+    assert.notEqual(document.querySelector('[data-testid="confirm-modal"]'), null)
+    await act(async () => {
+      Array.from(document.querySelectorAll('[data-testid="confirm-modal"] button'))
+        .find((b) => b.textContent?.trim() === '取消')
+        .click()
+    })
+    await waitFor(() => !document.querySelector('[data-testid="confirm-modal"]'))
+
+    // IME composing Escape must not close drawer or modal.
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', isComposing: true, bubbles: true, cancelable: true }))
+    })
+    assert.notEqual(document.querySelector('.omnimux-ate-drawer'), null)
+
     await act(async () => {
       document.querySelector('button[aria-label="关闭 (ESC)"]').click()
     })

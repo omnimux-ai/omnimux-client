@@ -38,6 +38,7 @@ export function AssetVersionDrawer(props) {
     onRevertSnapshot,
     onDeleteSnapshot,
     onConfirmOpenChange,
+    onCreatingChange,
     t,
   } = props
 
@@ -46,11 +47,26 @@ export function AssetVersionDrawer(props) {
   const [pendingRevert, setPendingRevert] = useState(null)
   const [pendingDelete, setPendingDelete] = useState(null)
 
-  const confirmOpen = Boolean(pendingRevert || pendingDelete)
+  useEffect(() => {
+    if (!open) {
+      setIsCreating(false)
+      setSnapshotName('')
+      setPendingRevert(null)
+      setPendingDelete(null)
+    }
+  }, [open])
+
+  const confirmOpen = Boolean(open && (pendingRevert || pendingDelete))
   useEffect(() => {
     onConfirmOpenChange?.(confirmOpen)
     return () => onConfirmOpenChange?.(false)
   }, [confirmOpen, onConfirmOpenChange])
+
+  const creatingOpen = Boolean(open && isCreating)
+  useEffect(() => {
+    onCreatingChange?.(creatingOpen)
+    return () => onCreatingChange?.(false)
+  }, [creatingOpen, onCreatingChange])
 
   if (!open) return null
 
@@ -114,6 +130,7 @@ export function AssetVersionDrawer(props) {
                 autoFocus
                 onChange={(event) => setSnapshotName(event.target.value)}
                 onKeyDown={(event) => {
+                  if (event.nativeEvent?.isComposing || event.keyCode === 229) return
                   if (event.key === 'Enter') {
                     event.preventDefault()
                     void handleCreate()
@@ -230,7 +247,7 @@ export function AssetVersionDrawer(props) {
       {pendingRevert ? (
         <ConfirmModal
           open
-          onClose={() => setPendingRevert(null)}
+          onClose={() => { if (!busy) setPendingRevert(null) }}
           title={t('textEditor.revertTitle')}
           message={t('textEditor.revertConfirm').replace('{name}', String(pendingRevert.name || ''))}
           confirmLabel={t('textEditor.revert')}
@@ -244,7 +261,7 @@ export function AssetVersionDrawer(props) {
       {pendingDelete ? (
         <ConfirmModal
           open
-          onClose={() => setPendingDelete(null)}
+          onClose={() => { if (!busy) setPendingDelete(null) }}
           title={t('textEditor.deleteTitle')}
           message={t('textEditor.deleteConfirm').replace('{name}', String(pendingDelete.name || ''))}
           confirmLabel={t('textEditor.delete')}

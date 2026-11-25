@@ -1419,6 +1419,29 @@ describe('AssetsDispatcher managed text document & version routes', () => {
       ))
       assert.equal(cross.status, 403)
       assert.equal(cross.body.error, 'not-local')
+
+      // 9. Snapshot name containing restricted token pattern returns 400 secret-detected
+      // without writing to disk, so subsequent GET /versions stays 200 (no 500 poison).
+      const badSnap = await requestJson(routes.port, {
+        method: 'POST',
+        path: '/omnimux/assets/library/text/versions',
+        body: { id: assetId, file: fileId, path: 'SKILL.md', name: 'access_token 备份', content: initialBody },
+      })
+      assert.equal(badSnap.status, 400)
+      assert.equal(badSnap.body.error, 'secret-detected')
+      const listAfterBad = await requestJson(routes.port, {
+        path: `/omnimux/assets/library/text/versions?id=${assetId}&file=${fileId}&path=SKILL.md`,
+      })
+      assert.equal(listAfterBad.status, 200)
+
+      // 10. Request body exceeding 4 MiB is rejected with 413 payload-too-large.
+      const huge = await requestJson(routes.port, {
+        method: 'POST',
+        path: '/omnimux/assets/library/text',
+        body: { id: assetId, file: fileId, path: 'SKILL.md', content: 'x'.repeat(4 * 1024 * 1024 + 512) },
+      })
+      assert.equal(huge.status, 413)
+      assert.equal(huge.body.error, 'payload-too-large')
     } finally {
       await routes.close()
     }

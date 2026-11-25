@@ -59,7 +59,23 @@ export function AssetTextEditorModal({ item, t, onClose, onSaved }) {
 
   const editorRef = useRef(null)
   const requestGenRef = useRef(0)
+  const mountedRef = useRef(true)
   const addedTimerRef = useRef(null)
+  const tRef = useRef(t)
+  const itemFallbackRef = useRef({
+    title: String(item?.title || ''),
+    pathInfo: String(item?.pathInfo || ''),
+    extension: String(item?.extension || ''),
+  })
+
+  useEffect(() => { tRef.current = t }, [t])
+  useEffect(() => {
+    itemFallbackRef.current = {
+      title: String(item?.title || ''),
+      pathInfo: String(item?.pathInfo || ''),
+      extension: String(item?.extension || ''),
+    }
+  }, [item?.title, item?.pathInfo, item?.extension])
 
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
@@ -86,18 +102,23 @@ export function AssetTextEditorModal({ item, t, onClose, onSaved }) {
   const [isSearchOpen, setIsSearchOpen] = useState(false)
   const [diffSnapshot, setDiffSnapshot] = useState(null)
   const [drawerConfirmOpen, setDrawerConfirmOpen] = useState(false)
+  const [drawerCreating, setDrawerCreating] = useState(false)
   const [unsavedPromptOpen, setUnsavedPromptOpen] = useState(false)
   const [addedToChat, setAddedToChat] = useState(false)
 
   useEffect(() => {
+    mountedRef.current = true
     return () => {
+      mountedRef.current = false
       if (addedTimerRef.current) clearTimeout(addedTimerRef.current)
     }
   }, [])
 
   // Load document content and snapshot metadata with generation guard + AbortController.
+  // Intentionally depends ONLY on document identity + reloadNonce so parent re-renders
+  // with fresh item objects or t functions never wipe unsaved edits or remount CodeMirror.
   useEffect(() => {
-    if (!item || !assetId || !fileId) return undefined
+    if (!assetId || !fileId) return undefined
     const controller = new AbortController()
     const gen = ++requestGenRef.current
 
@@ -119,20 +140,21 @@ export function AssetTextEditorModal({ item, t, onClose, onSaved }) {
       }),
     ])
       .then(([textRes, versionsRes]) => {
-        if (controller.signal.aborted || requestGenRef.current !== gen) return
+        if (controller.signal.aborted || !mountedRef.current || requestGenRef.current !== gen) return
         if (!textRes.ok) {
-          setLoadError(mapLoadError(textRes.body, t))
+          setLoadError(mapLoadError(textRes.body, tRef.current))
           setLoading(false)
           return
         }
+        const fallback = itemFallbackRef.current
         setContent(textRes.content)
         setSavedContent(textRes.content)
         setEtag(textRes.etag || '')
         setEditable(textRes.editable !== false)
         setIsMarkdown(textRes.isMarkdown === true)
-        setFileName(textRes.name || String(item.title || ''))
-        setDisplayPath(textRes.relativePath || String(item.pathInfo || ''))
-        setFileExt((textRes.ext || String(item.extension || '')).replace(/^\./, '').toUpperCase())
+        setFileName(textRes.name || fallback.title)
+        setDisplayPath(textRes.relativePath || fallback.pathInfo)
+        setFileExt((textRes.ext || fallback.extension).replace(/^\./, '').toUpperCase())
         if (versionsRes?.ok && Array.isArray(versionsRes.body?.versions)) {
           setVersions(versionsRes.body.versions)
         } else {
@@ -142,22 +164,23 @@ export function AssetTextEditorModal({ item, t, onClose, onSaved }) {
         setLoading(false)
       })
       .catch((error) => {
-        if (controller.signal.aborted || requestGenRef.current !== gen) return
+        if (controller.signal.aborted || !mountedRef.current || requestGenRef.current !== gen) return
         console.warn('[omnimux-assets] readAssetText failed:', error)
-        setLoadError(t('textEditor.loadFailed'))
+        setLoadError(tRef.current('textEditor.loadFailed'))
         setLoading(false)
       })
 
     return () => controller.abort()
-  }, [assetId, fileId, subPath, reloadNonce, item, t])
+  }, [assetId, fileId, subPath, reloadNonce])
 
   const isDirty = !loading && !loadError && editable && content !== savedContent
   const stats = useMemo(() => calculateTextStats(content), [content])
 
-  const refreshVersions = useCallback(async () => {
+  const refreshVersions = useCallback(async (expectedGen = requestGenRef.current) => {
     if (!assetId || !fileId) return
     try {
       const res = await listAssetTextVersions(assetId, fileId, subPath)
+      if (!mountedRef.current || requestGenRef.current !== expectedGen) return
       if (res.ok && Array.isArray(res.body?.versions)) {
         setVersions(res.body.versions)
       }
@@ -168,6 +191,7 @@ export function AssetTextEditorModal({ item, t, onClose, onSaved }) {
 
   const handleSave = useCallback(async ({ force = false, closeAfter = false } = {}) => {
     if (!editable || saving || loading || loadError) return false
+    const gen = requestGenRef.current
     setSaving(true)
     setSaveError('')
     try {
@@ -176,6 +200,7 @@ export function AssetTextEditorModal({ item, t, onClose, onSaved }) {
         expectedEtag: force ? undefined : (etag || undefined),
         force,
       })
+      if (!mountedRef.current || requestGenRef.current !== gen) return false
       if (res.ok) {
         setSavedContent(content)
         if (typeof res.body?.etag === 'string') setEtag(res.body.etag)
@@ -193,18 +218,19 @@ export function AssetTextEditorModal({ item, t, onClose, onSaved }) {
         setUnsavedPromptOpen(false)
         return false
       }
-      setSaveError(res.body?.message || res.body?.error || t('textEditor.saveFailed'))
+      setSaveError(res.body?.message || res.body?.error || tRef.current('textEditor.saveFailed'))
       setUnsavedPromptOpen(false)
       return false
     } catch (error) {
+      if (!mountedRef.current || requestGenRef.current !== gen) return false
       console.warn('[omnimux-assets] saveAssetText failed:', error)
-      setSaveError(t('textEditor.saveFailed'))
+      setSaveError(tRef.current('textEditor.saveFailed'))
       setUnsavedPromptOpen(false)
       return false
     } finally {
-      setSaving(false)
+      if (mountedRef.current) setSaving(false)
     }
-  }, [editable, saving, loading, loadError, assetId, fileId, subPath, content, etag, onSaved, onClose, t])
+  }, [editable, saving, loading, loadError, assetId, fileId, subPath, content, etag, onSaved, onClose])
 
   const handleReloadLatest = useCallback(() => {
     setConflict(null)
@@ -238,6 +264,7 @@ export function AssetTextEditorModal({ item, t, onClose, onSaved }) {
 
   const handleCreateSnapshot = useCallback(async (name) => {
     if (!editable || versionBusy) return false
+    const gen = requestGenRef.current
     setVersionBusy(true)
     setSaveError('')
     try {
@@ -246,23 +273,26 @@ export function AssetTextEditorModal({ item, t, onClose, onSaved }) {
         content,
         source: 'manual',
       })
+      if (!mountedRef.current || requestGenRef.current !== gen) return false
       if (!res.ok) {
-        setSaveError(res.body?.message || res.body?.error || t('textEditor.saveFailed'))
+        setSaveError(res.body?.message || res.body?.error || tRef.current('textEditor.saveFailed'))
         return false
       }
-      await refreshVersions()
+      await refreshVersions(gen)
       return true
     } catch (error) {
+      if (!mountedRef.current || requestGenRef.current !== gen) return false
       console.warn('[omnimux-assets] createAssetTextVersion failed:', error)
-      setSaveError(t('textEditor.saveFailed'))
+      setSaveError(tRef.current('textEditor.saveFailed'))
       return false
     } finally {
-      setVersionBusy(false)
+      if (mountedRef.current) setVersionBusy(false)
     }
-  }, [editable, versionBusy, assetId, fileId, subPath, content, refreshVersions, t])
+  }, [editable, versionBusy, assetId, fileId, subPath, content, refreshVersions])
 
   const handleRevertSnapshot = useCallback(async (versionId) => {
     if (!editable || versionBusy || !versionId) return false
+    const gen = requestGenRef.current
     setVersionBusy(true)
     setSaveError('')
     try {
@@ -271,60 +301,71 @@ export function AssetTextEditorModal({ item, t, onClose, onSaved }) {
         expectedEtag: etag || undefined,
         force: false,
       })
+      if (!mountedRef.current || requestGenRef.current !== gen) return false
       if (!res.ok) {
         if (res.status === 409 || res.body?.error === 'file-conflict') {
           setConflict({ currentEtag: res.body?.currentEtag || '' })
           setDiffSnapshot(null)
           return false
         }
-        setSaveError(res.body?.message || res.body?.error || t('textEditor.saveFailed'))
+        setSaveError(res.body?.message || res.body?.error || tRef.current('textEditor.saveFailed'))
         return false
       }
 
       const fresh = await readAssetText(assetId, fileId, subPath)
-      if (fresh.ok) {
-        editorRef.current?.replaceDoc(fresh.content)
-        setContent(fresh.content)
-        setSavedContent(fresh.content)
-        setEtag(fresh.etag || res.body?.etag || '')
-      } else if (typeof res.body?.etag === 'string') {
-        setEtag(res.body.etag)
+      if (!mountedRef.current || requestGenRef.current !== gen) return false
+      if (!fresh.ok) {
+        // Disk already reverted; trigger a clean reload instead of pairing new etag with stale buffer.
+        setDiffSnapshot(null)
+        setConflict(null)
+        setSaveError(tRef.current('textEditor.loadFailed'))
+        setReloadNonce((n) => n + 1)
+        onSaved?.()
+        return false
       }
+      editorRef.current?.replaceDoc(fresh.content)
+      setContent(fresh.content)
+      setSavedContent(fresh.content)
+      setEtag(fresh.etag || res.body?.etag || '')
       setConflict(null)
       setDiffSnapshot(null)
-      await refreshVersions()
+      await refreshVersions(gen)
       onSaved?.()
       return true
     } catch (error) {
+      if (!mountedRef.current || requestGenRef.current !== gen) return false
       console.warn('[omnimux-assets] revertAssetTextVersion failed:', error)
-      setSaveError(t('textEditor.saveFailed'))
+      setSaveError(tRef.current('textEditor.saveFailed'))
       return false
     } finally {
-      setVersionBusy(false)
+      if (mountedRef.current) setVersionBusy(false)
     }
-  }, [editable, versionBusy, assetId, fileId, subPath, etag, refreshVersions, onSaved, t])
+  }, [editable, versionBusy, assetId, fileId, subPath, etag, refreshVersions, onSaved])
 
   const handleDeleteSnapshot = useCallback(async (versionId) => {
     if (!editable || versionBusy || !versionId) return false
+    const gen = requestGenRef.current
     setVersionBusy(true)
     setSaveError('')
     try {
       const res = await deleteAssetTextVersion(assetId, fileId, subPath, versionId)
+      if (!mountedRef.current || requestGenRef.current !== gen) return false
       if (!res.ok) {
-        setSaveError(res.body?.message || res.body?.error || t('error.generic'))
+        setSaveError(res.body?.message || res.body?.error || tRef.current('error.generic'))
         return false
       }
       setVersions((prev) => prev.filter((v) => v.id !== versionId))
       setDiffSnapshot((prev) => (prev?.id === versionId ? null : prev))
       return true
     } catch (error) {
+      if (!mountedRef.current || requestGenRef.current !== gen) return false
       console.warn('[omnimux-assets] deleteAssetTextVersion failed:', error)
-      setSaveError(t('error.generic'))
+      setSaveError(tRef.current('error.generic'))
       return false
     } finally {
-      setVersionBusy(false)
+      if (mountedRef.current) setVersionBusy(false)
     }
-  }, [editable, versionBusy, assetId, fileId, subPath, t])
+  }, [editable, versionBusy, assetId, fileId, subPath])
 
   const handleReveal = useCallback(async () => {
     if (!assetId || !fileId) return
@@ -347,25 +388,29 @@ export function AssetTextEditorModal({ item, t, onClose, onSaved }) {
     }, 1800)
   }, [item, addedToChat])
 
-  // Layered keyboard shortcuts: Cmd/Ctrl+S, Cmd/Ctrl+F, and Escape precedence.
+  // Layered keyboard shortcuts: Cmd/Ctrl+S & Cmd/Ctrl+F on capture (override browser defaults),
+  // Escape on bubble (lets inner inputs like snapshot form / search input cancel first),
+  // with IME composition guards and confirm-modal gating.
   useEffect(() => {
     if (!item) return undefined
 
-    const onKeyDown = (event) => {
+    const onCaptureShortcut = (event) => {
+      if (event.isComposing || event.keyCode === 229) return
       const mod = event.metaKey || event.ctrlKey
+      if (!mod) return
       const key = event.key.toLowerCase()
 
-      if (mod && key === 's') {
+      if (key === 's') {
         event.preventDefault()
-        if (editable && !loading && !loadError && !diffSnapshot) {
+        if (editable && !loading && !loadError && !diffSnapshot && !drawerConfirmOpen && !unsavedPromptOpen) {
           void handleSave()
         }
         return
       }
 
-      if (mod && key === 'f') {
+      if (key === 'f') {
         event.preventDefault()
-        if (!loading && !loadError && !diffSnapshot) {
+        if (!loading && !loadError && !diffSnapshot && !drawerConfirmOpen && !unsavedPromptOpen) {
           if (isSearchOpen) {
             editorRef.current?.focusSearch()
           } else {
@@ -373,31 +418,36 @@ export function AssetTextEditorModal({ item, t, onClose, onSaved }) {
             setIsSearchOpen(true)
           }
         }
-        return
-      }
-
-      if (event.key === 'Escape') {
-        if (drawerConfirmOpen || unsavedPromptOpen) return
-        event.preventDefault()
-        if (diffSnapshot) {
-          setDiffSnapshot(null)
-          return
-        }
-        if (isSearchOpen) {
-          setIsSearchOpen(false)
-          editorRef.current?.focus()
-          return
-        }
-        if (isDrawerOpen) {
-          setIsDrawerOpen(false)
-          return
-        }
-        requestClose()
       }
     }
 
-    window.addEventListener('keydown', onKeyDown, true)
-    return () => window.removeEventListener('keydown', onKeyDown, true)
+    const onBubbleEscape = (event) => {
+      if (event.key !== 'Escape' || event.defaultPrevented) return
+      if (event.isComposing || event.keyCode === 229) return
+      if (drawerConfirmOpen || unsavedPromptOpen || drawerCreating) return
+      event.preventDefault()
+      if (diffSnapshot) {
+        setDiffSnapshot(null)
+        return
+      }
+      if (isSearchOpen) {
+        setIsSearchOpen(false)
+        editorRef.current?.focus()
+        return
+      }
+      if (isDrawerOpen) {
+        setIsDrawerOpen(false)
+        return
+      }
+      requestClose()
+    }
+
+    window.addEventListener('keydown', onCaptureShortcut, true)
+    window.addEventListener('keydown', onBubbleEscape, false)
+    return () => {
+      window.removeEventListener('keydown', onCaptureShortcut, true)
+      window.removeEventListener('keydown', onBubbleEscape, false)
+    }
   }, [
     item,
     editable,
@@ -407,6 +457,7 @@ export function AssetTextEditorModal({ item, t, onClose, onSaved }) {
     isSearchOpen,
     isDrawerOpen,
     drawerConfirmOpen,
+    drawerCreating,
     unsavedPromptOpen,
     handleSave,
     requestClose,
@@ -611,6 +662,7 @@ export function AssetTextEditorModal({ item, t, onClose, onSaved }) {
             onRevertSnapshot={handleRevertSnapshot}
             onDeleteSnapshot={handleDeleteSnapshot}
             onConfirmOpenChange={setDrawerConfirmOpen}
+            onCreatingChange={setDrawerCreating}
             t={t}
           />
         </main>
@@ -677,7 +729,7 @@ export function AssetTextEditorModal({ item, t, onClose, onSaved }) {
           size="sm"
           title={t('textEditor.unsavedTitle')}
           closeLabel={t('textEditor.cancel')}
-          onClose={() => setUnsavedPromptOpen(false)}
+          onClose={() => { if (!saving) setUnsavedPromptOpen(false) }}
           footer={(
             <div className="omnimux-ate-unsaved-footer">
               <Button

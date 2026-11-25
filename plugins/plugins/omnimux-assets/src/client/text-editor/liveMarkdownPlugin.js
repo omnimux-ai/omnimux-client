@@ -85,9 +85,16 @@ function buildLiveMarkdownDecorations(view) {
           }
         }
 
-        if (node.name === 'Blockquote' && !decoratedLines.has(line.from)) {
-          decoratedLines.add(line.from)
-          ranges.push(blockquoteLine.range(line.from))
+        if (node.name === 'Blockquote') {
+          const firstLine = state.doc.lineAt(nodeFrom)
+          const lastLine = state.doc.lineAt(Math.max(nodeFrom, nodeTo))
+          for (let ln = firstLine.number; ln <= lastLine.number; ln += 1) {
+            const qLine = state.doc.line(ln)
+            if (!decoratedLines.has(qLine.from)) {
+              decoratedLines.add(qLine.from)
+              ranges.push(blockquoteLine.range(qLine.from))
+            }
+          }
         }
 
         if (node.name === 'QuoteMark' && !isCursorInLine) {

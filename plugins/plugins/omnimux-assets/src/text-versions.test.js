@@ -96,4 +96,21 @@ describe('TextVersionStore persistence, retention, and recycle', () => {
     assert.equal(existsSync(join(dir, 'ast_iso')), false)
     assert.deepEqual(await store.listSnapshots('ast_iso', 'f1', 'a.md'), [])
   })
+
+  it('rejects secret-pattern snapshot names and NUL bytes before writing to disk', async () => {
+    const store = createTextVersionStore({ paths: { textVersionsDir: join(root, 'text-versions') } })
+    await assert.rejects(
+      () => store.createSnapshot('ast_sec', 'f1', 'SKILL.md', { name: 'access_token 备份', content: 'ok' }),
+      (error) => error.code === 'secret-detected',
+    )
+    await assert.rejects(
+      () => store.createSnapshot('ast_sec', 'f1', 'SKILL.md', { name: '备份 sk-a', content: 'ok' }),
+      (error) => error.code === 'secret-detected',
+    )
+    await assert.rejects(
+      () => store.createSnapshot('ast_sec', 'f1', 'SKILL.md', { name: '正常名称', content: 'a\0b' }),
+      (error) => error.code === 'file-not-text',
+    )
+    assert.deepEqual(await store.listSnapshots('ast_sec', 'f1', 'SKILL.md'), [])
+  })
 })
