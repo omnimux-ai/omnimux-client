@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto'
+import { createHash, generateKeyPairSync, sign } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { mkdir, mkdtemp, readdir, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -7,6 +7,34 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { DesktopPreferenceStore } from '../../src/desktop-preferences.ts'
 import { OmniMuxUpdateCoordinator } from '../../src/omnimux-updater/coordinator.ts'
 import type { UpdateArtifactRequest, UpdateHttpRequest } from '../../src/omnimux-updater/types.ts'
+
+const ED25519_SPKI_PREFIX = Buffer.from('302a300506032b6570032100', 'hex')
+const TEST_KEY_PAIR = (() => {
+  const { publicKey, privateKey } = generateKeyPairSync('ed25519')
+  const spki = publicKey.export({ type: 'spki', format: 'der' })
+  return {
+    publicKeyBase64: spki.subarray(ED25519_SPKI_PREFIX.length).toString('base64'),
+    privateKey,
+  }
+})()
+const TEST_PUBLIC_KEYS = Object.freeze({ k1: TEST_KEY_PAIR.publicKeyBase64 })
+
+function makeSignedRequest(resolveManifest: (channel: 'stable' | 'beta') => Record<string, unknown>): UpdateHttpRequest {
+  return async url => {
+    const channel: 'stable' | 'beta' = url.includes('/beta.json') ? 'beta' : 'stable'
+    const raw = Buffer.from(`${JSON.stringify(resolveManifest(channel))}\n`, 'utf8')
+    if (url.endsWith('.sig')) {
+      return Response.json({
+        schemaVersion: 1,
+        algorithm: 'ed25519',
+        keyId: 'k1',
+        signature: sign(null, raw, TEST_KEY_PAIR.privateKey).toString('base64'),
+        signedAt: '2026-11-26T00:00:00.000Z',
+      })
+    }
+    return new Response(raw, { status: 200, headers: { 'content-type': 'application/json' } })
+  }
+}
 
 const roots: string[] = []
 const owners: OmniMuxUpdateCoordinator[] = []
@@ -46,7 +74,7 @@ function makeManifest(version: string, channel: 'stable' | 'beta', dmg: { bytes:
 it('supports cancelling an in-progress download and returning cleanly to available', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'omnimux-coord-cancel-')); roots.push(dir)
   const dmg = makeDmg()
-  const request: UpdateHttpRequest = async () => Response.json(makeManifest('2.0.26', 'stable', dmg))
+  const request = makeSignedRequest(() => makeManifest('2.0.26', 'stable', dmg))
   const artifactRequest: UpdateArtifactRequest = async (url, init) => {
     const stream = new ReadableStream<Uint8Array>({
       start(controller) {
@@ -64,6 +92,7 @@ it('supports cancelling an in-progress download and returning cleanly to availab
     channel: 'stable',
     userData: dir,
     arch: 'arm64',
+    publicKeys: TEST_PUBLIC_KEYS,
     preflight: async () => {},
     request,
     artifactRequest,
@@ -93,8 +122,9 @@ it('handles user cancellation during install (active tasks warning) by staying r
     channel: 'stable',
     userData: dir,
     arch: 'arm64',
+    publicKeys: TEST_PUBLIC_KEYS,
     preflight: async () => {},
-    request: async () => Response.json(makeManifest('2.0.26', 'stable', dmg)),
+    request: makeSignedRequest(() => makeManifest('2.0.26', 'stable', dmg)),
     artifactRequest: async url => ({ finalUrl: url, response: new Response(dmg.bytes, { status: 200 }) }),
     changed: vi.fn(),
     log: vi.fn(),
@@ -122,8 +152,9 @@ it('records post-update notice on --updated launch when version advances and sup
     environment: 'production',
     userData: dir,
     arch: 'arm64',
+    publicKeys: TEST_PUBLIC_KEYS,
     preflight: async () => {},
-    request: async () => Response.json(makeManifest('2.0.26', 'stable', dmg)),
+    request: makeSignedRequest(() => makeManifest('2.0.26', 'stable', dmg)),
     artifactRequest: async url => ({ finalUrl: url, response: new Response(dmg.bytes) }),
     changed: vi.fn(),
     log: vi.fn(),
@@ -141,11 +172,9 @@ it('records post-update notice on --updated launch when version advances and sup
     environment: 'production',
     userData: dir,
     arch: 'arm64',
+    publicKeys: TEST_PUBLIC_KEYS,
     preflight: async () => {},
-    request: async url => {
-      if (url.endsWith('/beta.json')) return Response.json(makeManifest('2.0.27-beta.1', 'beta', dmg))
-      return Response.json(makeManifest('2.0.26', 'stable', dmg))
-    },
+    request: makeSignedRequest(ch => ch === 'beta' ? makeManifest('2.0.27-beta.1', 'beta', dmg) : makeManifest('2.0.26', 'stable', dmg)),
     artifactRequest: async url => ({ finalUrl: url, response: new Response(dmg.bytes) }),
     changed: vi.fn(),
     log: vi.fn(),
@@ -181,11 +210,9 @@ it('serializes concurrent switchChannel calls so the final channel wins across d
     channel: 'stable',
     userData: dir,
     arch: 'arm64',
+    publicKeys: TEST_PUBLIC_KEYS,
     preflight: async () => {},
-    request: async url => {
-      if (url.endsWith('/beta.json')) return Response.json(makeManifest('2.0.27-beta.1', 'beta', dmg))
-      return Response.json(makeManifest('2.0.26', 'stable', dmg))
-    },
+    request: makeSignedRequest(ch => ch === 'beta' ? makeManifest('2.0.27-beta.1', 'beta', dmg) : makeManifest('2.0.26', 'stable', dmg)),
     artifactRequest: async url => ({ finalUrl: url, response: new Response(dmg.bytes) }),
     changed: vi.fn(),
     log: vi.fn(),
@@ -222,7 +249,8 @@ it('skips cleaning shared downloads dir in non-installable environments, cleans 
     environment: 'dev',
     userData: join(dir, 'dev-data'),
     downloads: sharedDownloads,
-    request: async () => Response.json(makeManifest('2.0.26', 'stable', dmg)),
+    publicKeys: TEST_PUBLIC_KEYS,
+    request: makeSignedRequest(() => makeManifest('2.0.26', 'stable', dmg)),
     artifactRequest: async url => ({ finalUrl: url, response: new Response(dmg.bytes) }),
     changed: vi.fn(),
     log: vi.fn(),
@@ -244,8 +272,9 @@ it('skips cleaning shared downloads dir in non-installable environments, cleans 
     userData: prodUserData,
     downloads: prodDownloads,
     arch: 'arm64',
+    publicKeys: TEST_PUBLIC_KEYS,
     preflight: async () => {},
-    request: async () => Response.json(makeManifest('2.0.26', 'stable', dmg)),
+    request: makeSignedRequest(() => makeManifest('2.0.26', 'stable', dmg)),
     artifactRequest: async url => ({ finalUrl: url, response: new Response(dmg.bytes, { status: 200 }) }),
     changed: vi.fn(),
     log: vi.fn(),
@@ -268,8 +297,9 @@ it('skips cleaning shared downloads dir in non-installable environments, cleans 
     environment: 'production',
     userData: join(dir, 'cancel-prep-data'),
     arch: 'arm64',
+    publicKeys: TEST_PUBLIC_KEYS,
     preflight: async () => {},
-    request: async () => Response.json(makeManifest('2.0.26', 'stable', dmg)),
+    request: makeSignedRequest(() => makeManifest('2.0.26', 'stable', dmg)),
     artifactRequest: async url => ({ finalUrl: url, response: new Response(dmg.bytes, { status: 200 }) }),
     changed: vi.fn(),
     log: vi.fn(),

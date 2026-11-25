@@ -1,6 +1,7 @@
-import { generateKeyPairSync, sign } from 'node:crypto'
+import { createPublicKey, generateKeyPairSync, sign } from 'node:crypto'
 import { expect, it } from 'vitest'
 import { checkOmniMuxManifest, OmniMuxUpdateError, rolloutBucket } from '../../src/omnimux-updater/manifest.ts'
+import { OMNIMUX_UPDATE_VERIFICATION_KEYS } from '../../src/product-identity.ts'
 import { macUpdateArch } from '../../src/update-arch.ts'
 
 const ED25519_SPKI_PREFIX = Buffer.from('302a300506032b6570032100', 'hex')
@@ -233,4 +234,54 @@ it('enforces minSupportedVersion mandatory floor, OS version gate, allowlist, an
     publicKeys: {},
     request: async () => new Response(new Uint8Array([0xff, 0xfe, 0xfd]), { status: 200 }),
   })).rejects.toMatchObject({ code: 'MANIFEST_INVALID' })
+})
+
+it('provisions a valid production Ed25519 k1 verification key and enforces signatures by default', async () => {
+  const k1 = OMNIMUX_UPDATE_VERIFICATION_KEYS.k1
+  expect(typeof k1).toBe('string')
+  const rawKey = Buffer.from(k1!, 'base64')
+  expect(rawKey.length).toBe(32)
+  expect(rawKey.toString('base64')).toBe(k1)
+  const keyObj = createPublicKey({
+    key: Buffer.concat([ED25519_SPKI_PREFIX, rawKey]),
+    format: 'der',
+    type: 'spki',
+  })
+  expect(keyObj.asymmetricKeyType).toBe('ed25519')
+
+  // Default keyring rejects unsigned manifests (missing .sig).
+  const foreign = makeSignedManifest()
+  await expect(checkOmniMuxManifest({
+    currentVersion: '2.0.25',
+    channel: 'stable',
+    platform: 'darwin',
+    arch: 'arm64',
+    manual: true,
+    request: async url => url.endsWith('.sig') ? new Response('', { status: 404 }) : new Response(foreign.raw),
+  })).rejects.toMatchObject({ code: 'SIGNATURE_INVALID' })
+
+  // Default keyring rejects manifests signed by an untrusted Ed25519 key.
+  await expect(checkOmniMuxManifest({
+    currentVersion: '2.0.25',
+    channel: 'stable',
+    platform: 'darwin',
+    arch: 'arm64',
+    manual: true,
+    request: async url => url.endsWith('.sig') ? Response.json(foreign.sig) : new Response(foreign.raw),
+  })).rejects.toMatchObject({ code: 'SIGNATURE_INVALID' })
+
+  // Default keyring blocks legacy unsigned v1 downgrade fallback when v2 returns 404.
+  let v1Requested = false
+  await expect(checkOmniMuxManifest({
+    currentVersion: '2.0.25',
+    channel: 'stable',
+    platform: 'darwin',
+    arch: 'arm64',
+    manual: true,
+    request: async url => {
+      if (url.includes('version-stable.json')) v1Requested = true
+      return new Response('', { status: 404 })
+    },
+  })).rejects.toMatchObject({ code: 'HTTP_ERROR' })
+  expect(v1Requested).toBe(false)
 })
