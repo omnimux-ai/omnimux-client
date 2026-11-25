@@ -1,6 +1,8 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { execSync } from 'node:child_process'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -73,5 +75,69 @@ describe('check-tracked-artifacts：全仓插件客户端生成物与 workflow �
       encoding: 'utf8',
     })
     assert.match(out, /未跟踪/)
+  })
+
+  it('拦截已跟踪的 .agent-reports 与 docs/evidence/dev-smoke* 运行期产物，同时放行普通文档', (t) => {
+    assert.equal(isForbiddenArtifact('.agent-reports/gallery-rail-height-2101/e2e-evidence.json'), true)
+    assert.equal(isForbiddenArtifact('plugins/.agent-reports/gallery-rail-height-2101/e2e-evidence.json'), true)
+    assert.equal(isForbiddenArtifact('docs/evidence/dev-smoke-report.json'), true)
+    assert.equal(isForbiddenArtifact('docs/evidence/dev-smoke-761bb9e2/dev-page.png'), true)
+    assert.equal(isForbiddenArtifact('docs/evidence/dev-smoke_1.json'), true)
+    assert.equal(isForbiddenArtifact('docs/evidence/dev-smoke2/a.png'), true)
+    assert.equal(isForbiddenArtifact('plugins/docs/evidence/dev-smoke-report.json'), true)
+    assert.equal(isForbiddenArtifact('plugins/docs/evidence/dev-smoke-abc/dev-page.png'), true)
+    assert.equal(isForbiddenArtifact('plugins/plugins/omnimux/lib/client.js'), true)
+    assert.equal(isForbiddenArtifact('plugins/plugins/omnimux-workflow/dist/index.js'), true)
+    assert.equal(isForbiddenArtifact('plugins/plugins/omnimux-workflow/lib/canvas.js'), true)
+
+    // 普通文档与契约文件不得被误伤
+    assert.equal(isForbiddenArtifact('docs/contracts/dev-pipeline.md'), false)
+    assert.equal(isForbiddenArtifact('docs/evidence/viewer-single-mode-3571/report.json'), false)
+    assert.equal(isForbiddenArtifact('plugins/plugins/omnimux/src/index.js'), false)
+
+    // 真实临时单仓 Git 仓库端到端验证：无论传入 <repo> 还是 <repo>/plugins，都检出全仓违规产物
+    const tempRepo = mkdtempSync(join(tmpdir(), 'omnimux-tracked-artifacts-'))
+    t.after(() => rmSync(tempRepo, { recursive: true, force: true }))
+    const gitEnv = { ...process.env, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null' }
+    execSync(`git -C "${tempRepo}" init -b main`, { encoding: 'utf8', env: gitEnv })
+    // 模拟 Linux CI 默认 core.quotepath=true，验证含非 ASCII 文件名仍被准确检出（NB-2）
+    execSync(`git -C "${tempRepo}" config core.quotepath true`, { encoding: 'utf8', env: gitEnv })
+    for (const relPath of [
+      '.agent-reports/leak/e2e.json',
+      '.agent-reports/中文报告/证据.json',
+      'plugins/.agent-reports/task-1/e2e-evidence.json',
+      'docs/evidence/dev-smoke-run1/dev-page.png',
+      'docs/evidence/dev-smoke_1.json',
+      'docs/evidence/dev-smoke2/a.png',
+      'plugins/plugins/omnimux/lib/client.js',
+      'plugins/plugins/omnimux-workflow/dist/index.js',
+      'plugins/plugins/omnimux-workflow/lib/canvas.js',
+      'plugins/plugins/omnimux/src/index.js',
+    ]) {
+      const full = join(tempRepo, relPath)
+      mkdirSync(dirname(full), { recursive: true })
+      writeFileSync(full, 'x\n')
+    }
+    execSync(`git -C "${tempRepo}" add .`, { encoding: 'utf8', env: gitEnv })
+
+    const expected = [
+      '.agent-reports/leak/e2e.json',
+      '.agent-reports/中文报告/证据.json',
+      'docs/evidence/dev-smoke-run1/dev-page.png',
+      'docs/evidence/dev-smoke2/a.png',
+      'docs/evidence/dev-smoke_1.json',
+      'plugins/.agent-reports/task-1/e2e-evidence.json',
+      'plugins/plugins/omnimux-workflow/dist/index.js',
+      'plugins/plugins/omnimux-workflow/lib/canvas.js',
+      'plugins/plugins/omnimux/lib/client.js',
+    ].sort()
+
+    for (const rootArg of [tempRepo, join(tempRepo, 'plugins')]) {
+      const result = checkTrackedArtifacts(rootArg)
+      assert.equal(result.ok, false)
+      assert.deepEqual(result.tracked.sort(), expected)
+      assert.match(result.message, /\.agent-reports/)
+      assert.match(result.message, /git rm --cached/)
+    }
   })
 })

@@ -109,6 +109,18 @@ test('verify-plugin-boundaries blocks non-Hub direct ctx.llm and llm.stream call
     'export function run(ctx) { return ctx.tools.get("omnimux_page_fetch").execute({ url }) }',
     'export async function run(ctx) { const tool = ctx.tools.get?.("omnimux_accounts_list")\n return tool.execute({ provider: "tiktok_direct" }) }',
     'export function run(tools) { const t = tools.executable("x")\n return t.execute({}) }',
+    // dynamic lookup name
+    'export function run(ctx, name) { return ctx.tools.get(name).execute({}) }',
+    // newline between assignment and invocation
+    'export async function run(ctx) { const tool =\n  ctx.tools.get("x")\n return tool.execute({}) }',
+    // optional call on both lookup and execute
+    'export function run(ctx) { return ctx.tools.get("x")?.execute?.({}) }',
+    // destructured execution body
+    'export async function run(ctx) { const { execute } = ctx.tools.get("x")\n return execute({}) }',
+    'export async function run(ctx) { const { execute: runIt } = ctx.tools.get("x")\n return runIt({}) }',
+    // legacy tools seat and multi-argument executable lookup
+    'export function run(ctx) { return ctx.get("tools").get("x").execute({}) }',
+    'export function run(ctx, scope, toolSet) { return ctx.tools.executable("x", scope, toolSet).execute({}) }',
   ]) {
     const blocked = checkSourceFileBoundaries({
       rel: 'plugins/omnimux-accounts/src/private-tools.js',
@@ -124,6 +136,15 @@ test('verify-plugin-boundaries blocks non-Hub direct ctx.llm and llm.stream call
     content: 'export async function run(tools) { const tool = tools.get("omnimux_publish_get")\n return tools.execute({ calls: [] }) }',
   })
   strictEqual(dispatchAllowed.length, 0)
+
+  // An unrelated helper object whose name merely ends in "Tools" must not be
+  // mistaken for the DSH tool registry.
+  const unrelatedAllowed = checkSourceFileBoundaries({
+    rel: 'plugins/omnimux-accounts/src/private-tools.js',
+    plugin: 'omnimux-accounts',
+    content: 'export function run(myTools) { const t = myTools.get("x")\n return t.execute({}) }',
+  })
+  strictEqual(unrelatedAllowed.length, 0)
 
   const hubToolReadAllowed = checkSourceFileBoundaries({
     rel: 'plugins/omnimux/src/host/apply.js',

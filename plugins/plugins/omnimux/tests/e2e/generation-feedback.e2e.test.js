@@ -1,9 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
-import { dirname, resolve } from 'node:path';
+import { tmpdir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const hasEgoBrowser = (() => {
@@ -23,8 +24,14 @@ const root = resolve(here, '../../../..');
 // Grounded in #1759 space700 and tmp/canvas-generation-feedback/video-browser.json.
 test('generation feedback: real browser transport-to-viewer journeys', { timeout: 240000 }, async (t) => {
   assert.equal(hasEgoBrowser, true, 'ego-browser is required; unavailable capabilities must fail');
-  const evidence = resolve(root, '.agent-reports/canvas-generation-feedback/e2e-runs', randomUUID());
+  const writeEvidence = process.env.OMNIMUX_WRITE_EVIDENCE === '1';
+  const evidence = writeEvidence
+    ? resolve(root, '.agent-reports/canvas-generation-feedback/e2e-runs', randomUUID())
+    : await mkdtemp(join(tmpdir(), 'omnimux-generation-feedback-'));
   await mkdir(evidence, { recursive: true });
+  if (!writeEvidence) {
+    t.after(() => rm(evidence, { recursive: true, force: true }));
+  }
   t.diagnostic(`retained evidence: ${evidence}`);
   const moduleUrl = new URL('../../test-support/generation-feedback/generation-feedback-browser.mjs', import.meta.url).href;
   const script = `const { runGenerationFeedbackBrowser } = await import(${JSON.stringify(moduleUrl)});

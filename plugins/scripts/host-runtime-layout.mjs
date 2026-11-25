@@ -348,28 +348,41 @@ const PRUNE_DROP = Symbol('prune-drop');
 
 
 
-/** 上游 bundle 已经声明过的 preset id：重复声明会让 Loader 直接拒绝启动。 */
+/**
+ * 上游 bundle 与调用方点名的 profile-local bundle 已经声明过的 preset id：
+ * 重复声明会让 Loader 直接拒绝启动。
+ *
+ * `extraDirectories` 用于隔离 profile：产品 bundle 装在 `<profile>/node_modules/<name>/presets`，
+ * 不在宿主 App 根目录下（旧壳是 `preset/plugins`，新壳在 app.asar 内），调用方须按真实布局传入。
+ */
 export function upstreamPresetIds(appRoot, options = {}) {
-  const directory = options.directory ?? resolveUnpackedPath(appRoot, UPSTREAM_PRESET_DIR);
+  const directories = [
+    ...(options.directory !== undefined
+      ? [options.directory]
+      : [resolveUnpackedPath(appRoot, UPSTREAM_PRESET_DIR)].filter(Boolean)),
+    ...(options.extraDirectories ?? []).filter((directory) => typeof directory === 'string' && directory.length > 0),
+  ];
   const ids = new Set();
-  if (!directory || !isDirectory(directory)) return ids;
-  for (const entry of readdirSync(directory)) {
-    if (!entry.endsWith('.patch.yml') && !entry.endsWith('.patch.yaml')) continue;
-    let document;
-    try {
-      document = readStructuredFile(join(directory, entry));
-    } catch {
-      continue;
-    }
-    if (!Array.isArray(document)) continue;
-    for (const patch of document) {
-      const insert = patch && typeof patch === 'object' ? patch.insert : undefined;
-      if (!Array.isArray(insert)) continue;
-      for (const row of insert) {
-        if (!row || typeof row !== 'object') continue;
-        if (row.name !== PRESET_DECLARATION_PACKAGE) continue;
-        const id = row.config && typeof row.config === 'object' ? row.config.id : undefined;
-        if (typeof id === 'string' && id.length > 0) ids.add(id);
+  for (const directory of directories) {
+    if (!directory || !isDirectory(directory)) continue;
+    for (const entry of readdirSync(directory)) {
+      if (!entry.endsWith('.patch.yml') && !entry.endsWith('.patch.yaml')) continue;
+      let document;
+      try {
+        document = readStructuredFile(join(directory, entry));
+      } catch {
+        continue;
+      }
+      if (!Array.isArray(document)) continue;
+      for (const patch of document) {
+        const insert = patch && typeof patch === 'object' ? patch.insert : undefined;
+        if (!Array.isArray(insert)) continue;
+        for (const row of insert) {
+          if (!row || typeof row !== 'object') continue;
+          if (row.name !== PRESET_DECLARATION_PACKAGE) continue;
+          const id = row.config && typeof row.config === 'object' ? row.config.id : undefined;
+          if (typeof id === 'string' && id.length > 0) ids.add(id);
+        }
       }
     }
   }
@@ -425,7 +438,10 @@ export function composeAgentPresetRows(options) {
   if (presetRoot === null) {
     return { rows: [], skippedPresetIds: [], droppedPackages: [], reducedPresetIds: [], unreadablePresetIds: [], unreadablePresetReasons: [] };
   }
-  const upstream = upstreamPresetIds(options.appRoot, { directory: options.upstreamDirectory });
+  const upstream = upstreamPresetIds(options.appRoot, {
+    ...(options.upstreamDirectory === undefined ? {} : { directory: options.upstreamDirectory }),
+    ...(options.extraPresetDirectories === undefined ? {} : { extraDirectories: options.extraPresetDirectories }),
+  });
   const rows = [];
   const skippedPresetIds = [];
   const droppedPackages = [];

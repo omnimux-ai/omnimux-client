@@ -502,3 +502,26 @@ test('归档布局下 upstreamPresetIds 走 unpacked（改回归档内路径会�
   assert.deepEqual([...upstreamPresetIds(layout.appRoot)], ['x'])
   assert.deepEqual(composeAgentPresetRows({ appRoot: layout.appRoot }).skippedPresetIds, ['x'])
 })
+
+test('隔离 profile 的随包 bundle 已声明 omni-agent 时，composeAgentPresetRows 跳过重复合成', (t) => {
+  const { appRoot } = fakeBundle(t, 'app')
+  writePreset(appRoot, 'omni-agent', { manifest: { name: 'OmniMux' }, plugins: [{ name: 'omnimux' }] })
+  // 真实布局：产品 bundle 装在隔离 profile 的 node_modules 下，不在 App 根目录。
+  const profileDir = mkdtempSync(join(tmpdir(), 'omnimux-isolated-profile-'))
+  t.after(() => rmSync(profileDir, { recursive: true, force: true }))
+  writeFileSync(join(profileDir, 'package.json'), JSON.stringify({
+    dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', 'omnimux'] } },
+  }))
+  const omnimuxPresets = join(profileDir, 'node_modules', 'omnimux', 'presets')
+  mkdirSync(omnimuxPresets, { recursive: true })
+  writeFileSync(join(omnimuxPresets, 'omni-agent.patch.yml'), JSON.stringify([
+    { insert: [{ id: 'omnimux-preset-omni-agent', name: '@deepseek-ai/dsh-agent-preset', config: { id: 'omni-agent' } }] },
+  ]))
+  assert.equal(upstreamPresetIds(appRoot, { extraDirectories: [omnimuxPresets] }).has('omni-agent'), true)
+  const composition = composeAgentPresetRows({ appRoot, extraPresetDirectories: [omnimuxPresets] })
+  assert.deepEqual(composition.rows, [])
+  assert.deepEqual(composition.skippedPresetIds, ['omni-agent'])
+  // App 根目录下没有产品 bundle 时不得误跳过（旧壳 preset/plugins、新壳 app.asar 都不在这里）。
+  assert.deepEqual(composeAgentPresetRows({ appRoot }).skippedPresetIds, [])
+  assert.equal(composeAgentPresetRows({ appRoot }).rows.length, 1)
+})

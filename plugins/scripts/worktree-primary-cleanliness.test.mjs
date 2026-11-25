@@ -33,7 +33,7 @@ function createFixture(t, { withContract }) {
   copyFileSync(join(root, 'scripts/worktree.sh'), join(repo, 'scripts/worktree.sh'))
   if (withContract) copyFileSync(join(root, 'scripts/sync-main.sh'), join(repo, 'scripts/sync-main.sh'))
   writeFileSync(join(repo, '.gitignore'), '.worktrees/\n')
-  writeFileSync(join(repo, 'scripts/sync-to-app.sh'), '#!/bin/sh\necho "SYNC_CALLED: $*" > sync_receipt.txt\n', { mode: 0o755 })
+  writeFileSync(join(repo, 'scripts/sync-to-app.sh'), '#!/bin/sh\necho "SYNC_CALLED: $*" >> sync_receipt.txt\n', { mode: 0o755 })
   git('add', '.')
   git('commit', '-m', 'seed')
   git('remote', 'add', 'origin', remote)
@@ -87,7 +87,7 @@ function createFixture(t, { withContract }) {
     return { worktree, head }
   }
 
-  const ship = (name, pr) => spawnSync('bash', ['scripts/worktree.sh', 'ship', name, '--pr', pr], {
+  const ship = (name, pr, bashPath = 'bash') => spawnSync(bashPath, ['scripts/worktree.sh', 'ship', name, '--pr', pr], {
     cwd: repo,
     encoding: 'utf8',
     env: {
@@ -177,13 +177,14 @@ test('bare worktree.sh copies still refuse untracked plugin sources', (t) => {
 
 test('ship derives plugin names from the monorepo plugins/plugins/<name> layout', (t) => {
   const f = createFixture(t, { withContract: true })
-  f.mergeFeature('plugin-feature', { 'plugins/plugins/omnimux-workflow/src/index.ts': 'export const workflow = 1\n' })
+  f.mergeFeature('plugin-feature', {
+    'plugins/plugins/omnimux-workflow/package.json': '{"name":"omnimux-workflow"}\n',
+    'plugins/plugins/omnimux-workflow/src/index.ts': 'export const workflow = 1\n',
+  })
 
   const result = f.ship('plugin-feature', '9201')
   assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
-  const receipt = readFileSync(join(f.repo, 'sync_receipt.txt'), 'utf8')
-  assert.match(receipt, /omnimux-workflow/)
-  assert.doesNotMatch(receipt, /(^|\s)plugins(\s|$)/, 'must not materialize the plugins/ workspace root as a plugin')
+  assert.equal(readFileSync(join(f.repo, 'sync_receipt.txt'), 'utf8').trim(), 'SYNC_CALLED: omnimux-workflow')
 })
 
 test('ship runs a full sync for workspace and shared package changes', (t) => {
@@ -199,4 +200,58 @@ test('ship runs a full sync for workspace and shared package changes', (t) => {
     assert.match(result.stdout, /共享依赖改动需要完整同步/, label)
     assert.equal(readFileSync(join(f.repo, 'sync_receipt.txt'), 'utf8').trim(), 'SYNC_CALLED:', `${label} must run a full sync without plugin arguments`)
   }
+})
+
+test('ship runs full sync and then the named plugins for mixed workspace changes', (t) => {
+  const f = createFixture(t, { withContract: true })
+  f.mergeFeature('plugin-feature', {
+    'plugins/package.json': '{"name":"omnimux-plugins"}\n',
+    'plugins/plugins/omnimux-browser/package.json': '{"name":"omnimux-browser"}\n',
+    'plugins/plugins/omnimux-browser/src/index.ts': 'export const browser = 1\n',
+  })
+
+  const result = f.ship('plugin-feature', '9301')
+  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
+  assert.deepEqual(readFileSync(join(f.repo, 'sync_receipt.txt'), 'utf8').trim().split('\n').map(line => line.trim()), [
+    'SYNC_CALLED:',
+    'SYNC_CALLED: omnimux-browser',
+  ], 'workspace sync must be followed by the named plugin sync')
+})
+
+test('ship ignores plugin-workspace directories that are not plugin packages', (t) => {
+  const f = createFixture(t, { withContract: true })
+  f.mergeFeature('plugin-feature', { 'plugins/.agents/skills/demo/SKILL.md': '# demo\n' })
+
+  const result = f.ship('plugin-feature', '9302')
+  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
+  assert.match(result.stdout, /无需物化/)
+  assert.equal(existsSync(join(f.repo, 'sync_receipt.txt')), false)
+})
+
+test('workspace-only ship survives bash 3.2 with an empty changed-plugin list', (t) => {
+  const f = createFixture(t, { withContract: true })
+  f.mergeFeature('plugin-feature', {
+    'plugins/package.json': '{"name":"omnimux-plugins"}\n',
+    'scripts/dev-smoke.mjs': 'process.exit(0)\n',
+  })
+
+  const result = f.ship('plugin-feature', '9303', '/bin/bash')
+  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
+  assert.doesNotMatch(result.stderr, /unbound variable/)
+  assert.match(result.stdout, /完整同步已完成/)
+})
+
+test('mixed sync distinguishes a named-plugin failure from a full-sync failure', (t) => {
+  const f = createFixture(t, { withContract: true })
+  f.mergeFeature('plugin-feature', {
+    'plugins/package.json': '{"name":"omnimux-plugins"}\n',
+    'plugins/plugins/omnimux-browser/package.json': '{"name":"omnimux-browser"}\n',
+    'plugins/plugins/omnimux-browser/src/index.ts': 'export const browser = 1\n',
+    'scripts/sync-to-app.sh': '#!/bin/sh\nif [ "$#" -eq 0 ]; then echo "SYNC_CALLED:" >> sync_receipt.txt; exit 0; fi\necho "SYNC_FAILED: $*" >> sync_receipt.txt; exit 1\n',
+  })
+
+  const result = f.ship('plugin-feature', '9304')
+  assert.equal(result.status, 3, `${result.stdout}\n${result.stderr}`)
+  assert.match(result.stdout, /完整同步成功，但本次插件 \[omnimux-browser\] 安装失败/)
+  assert.doesNotMatch(result.stdout, /完整同步失败/)
 })

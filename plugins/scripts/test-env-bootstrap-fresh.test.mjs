@@ -1,8 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { agentPresetPatchText, createTestEnvironmentStarter, normalizeTaskPlugins } from './test-env-bootstrap.mjs';
+import { agentPresetPatchText, createTestEnvironmentStarter, normalizeTaskPlugins, presetRowsFromPatchText, profileBundlePresetDirectories } from './test-env-bootstrap.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const WORKTREE_PRESETS = join(HERE, '..', 'presets');
@@ -53,4 +55,63 @@ test('agentPresetPatchText with worktree presetRoot emits only omni-agent and pr
   assert.doesNotMatch(patchText, /id:\s*omnimux-preset-(?:tiktok-agent|instagram-agent|drama-agent|standard|ptc|minimal)\b/);
   assert.match(patchText, /disabled:\s*!!js\s+"?process\.platform === 'win32'"?/);
   assert.match(patchText, /disabled:\s*!!js\s+"?process\.platform !== 'win32'"?/);
+});
+
+test('agentPresetPatchText skips a preset already declared by an installed profile bundle', () => {
+  const appRoot = mkdtempSync(join(tmpdir(), 'bootstrap-preset-app-'));
+  const profileDir = mkdtempSync(join(tmpdir(), 'bootstrap-preset-profile-'));
+  try {
+    const shipped = join(appRoot, 'preset', 'agent-presets', 'omni-agent');
+    mkdirSync(shipped, { recursive: true });
+    writeFileSync(join(shipped, 'preset.yml'), 'name: OmniMux\norder: 1\n');
+    writeFileSync(join(shipped, 'agent.cordis.yml'), [
+      '- id: persona',
+      "  name: '@deepseek-ai/dsh-persona'",
+      '  config:',
+      '    prefix: hi',
+      '',
+    ].join('\n'));
+    // Real isolated-profile layout: the product bundle lives under the profile's node_modules,
+    // as materialized by the task runtime; the App root has no `omnimux` directory.
+    writeFileSync(join(profileDir, 'package.json'), JSON.stringify({
+      dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', 'omnimux'] } },
+    }));
+    const bundlePresets = join(profileDir, 'node_modules', 'omnimux', 'presets');
+    mkdirSync(bundlePresets, { recursive: true });
+    writeFileSync(join(bundlePresets, 'omni-agent.patch.yml'), [
+      '- insert:',
+      '    - id: omnimux-preset-omni-agent',
+      "      name: '@deepseek-ai/dsh-agent-preset'",
+      '      config:',
+      '        id: omni-agent',
+      '        plugins: []',
+      '',
+    ].join('\n'));
+    const patchText = agentPresetPatchText(
+      { appRoot, layout: 'unpacked' },
+      { profileDir, createRequire: () => ({ resolve: (name) => name }) },
+    );
+    // The bundle layer already carries the row; a second one is a duplicate Loader id.
+    assert.equal(patchText, '', 'a bundle-declared preset must not be re-declared');
+    assert.deepEqual(profileBundlePresetDirectories(profileDir), [bundlePresets]);
+    // Without the bundle the shipped preset is still declared.
+    const withPreset = agentPresetPatchText(
+      { appRoot, layout: 'unpacked' },
+      { createRequire: () => ({ resolve: (name) => name }) },
+    );
+    assert.match(withPreset, /id:\s*omnimux-preset-omni-agent\b/);
+  } finally {
+    rmSync(appRoot, { recursive: true, force: true });
+    rmSync(profileDir, { recursive: true, force: true });
+  }
+});
+
+test('presetRowsFromPatchText treats an empty fragment as no extra rows', () => {
+  const empty = presetRowsFromPatchText('');
+  assert.deepEqual(empty.rows, []);
+  assert.equal(empty.document.errors.length, 0);
+
+  const filled = presetRowsFromPatchText('- insert:\n    - id: omnimux-preset-omni-agent\n      name: "@deepseek-ai/dsh-agent-preset"\n      config:\n        id: omni-agent\n');
+  assert.equal(filled.rows.length, 1);
+  assert.equal(filled.rows[0].insert.length, 1);
 });

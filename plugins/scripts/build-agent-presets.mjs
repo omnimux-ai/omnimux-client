@@ -1,17 +1,22 @@
 #!/usr/bin/env node
 /**
- * Sync `presets/omni-agent/Agent.md` into `presets/omni-agent/agent.cordis.yml`.
+ * Sync `presets/omni-agent/{Agent.md,preset.yml}` into the two shipped forms:
+ * `presets/omni-agent/agent.cordis.yml` (legacy shell) and
+ * `plugins/plugins/omnimux/presets/omni-agent.patch.yml` (Desktop Next bundle).
  *
  * `Agent.md` is the single source of truth for the default OmniMux content
  * e-commerce agent prompt. Running this script twice is strictly idempotent.
  */
-import { readFileSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { parse as parseYaml } from 'yaml'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const agentMdPath = join(root, 'presets/omni-agent/Agent.md')
+const presetYmlPath = join(root, 'presets/omni-agent/preset.yml')
 const cordisPath = join(root, 'presets/omni-agent/agent.cordis.yml')
+const hubPatchPath = join(root, 'plugins/omnimux/presets/omni-agent.patch.yml')
 
 function indentBlock(text, spaces) {
   const pad = ' '.repeat(spaces)
@@ -143,8 +148,13 @@ ${indentedPersona}
     - id: tool-subagent-control
       name: '@deepseek-ai/dsh-tool-subagent-control'
 
+    # DSH 0.2.1-rc.3 exports \`./list-agents\` as its own entry and registers
+    # \`list_agents\` only through it; 0.2.2-rc.5 folds the registration into the
+    # main entry and drops the subpath. Keep one row whose enabled state follows
+    # the installed package instead of picking one DSH line and breaking the other.
     - id: tool-subagent-list-agents
       name: '@deepseek-ai/dsh-tool-subagent-control/list-agents'
+      disabled: !!js "!(() => { try { return Boolean(process.getBuiltinModule('node:module').createRequire(baseUrl).resolve('@deepseek-ai/dsh-tool-subagent-control/list-agents')) } catch { return false } })()"
 
     - id: tool-subagent
       name: '@deepseek-ai/dsh-tool-subagent'
@@ -192,14 +202,59 @@ ${indentedPersona}
 `
 }
 
+function parsePresetMetadata(presetYml) {
+  const parsed = parseYaml(presetYml)
+  const meta = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {}
+  return {
+    ...(typeof meta.name === 'string' ? { name: meta.name } : {}),
+    ...(typeof meta.description === 'string' ? { description: meta.description } : {}),
+    ...(typeof meta.order === 'number' ? { order: meta.order } : {}),
+  }
+}
+
+function stripLeadingCommentHeader(cordisYml) {
+  const lines = cordisYml.replace(/\r\n/g, '\n').split('\n')
+  let i = 0
+  while (i < lines.length && (lines[i].startsWith('#') || lines[i].trim() === '')) i += 1
+  return lines.slice(i).join('\n').trimEnd()
+}
+
+export function renderOmniAgentPatch(agentMd, presetYml) {
+  const meta = parsePresetMetadata(presetYml)
+  const pluginsYaml = stripLeadingCommentHeader(renderOmniAgentCordis(agentMd))
+  const indentedPlugins = indentBlock(pluginsYaml, 10)
+  const metaLines = [
+    '        id: omni-agent',
+    ...(meta.name ? [`        name: ${meta.name}`] : []),
+    ...(meta.description ? [`        description: ${meta.description}`] : []),
+    ...(meta.order ? [`        order: ${meta.order}`] : []),
+  ]
+  return `# Agent preset omni-agent: one \`@deepseek-ai/dsh-agent-preset\` declaration
+# carried by the \`omnimux\` bundle (mirrors \`@deepseek-ai/dsh-web-app/presets/*.patch.yml\`).
+#
+# Generated from \`presets/omni-agent/{preset.yml,Agent.md}\` via \`node scripts/build-agent-presets.mjs\`.
+# Edit \`presets/omni-agent/Agent.md\` or \`preset.yml\`, then re-run the generator.
+- insert:
+    - id: omnimux-preset-omni-agent
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+${metaLines.join('\n')}
+        plugins:
+${indentedPlugins}
+`
+}
+
 export function buildAgentPresets() {
   const agentMd = readFileSync(agentMdPath, 'utf8')
+  const presetYml = readFileSync(presetYmlPath, 'utf8')
   const rendered = renderOmniAgentCordis(agentMd)
   writeFileSync(cordisPath, rendered, 'utf8')
-  return cordisPath
+  mkdirSync(dirname(hubPatchPath), { recursive: true })
+  writeFileSync(hubPatchPath, renderOmniAgentPatch(agentMd, presetYml), 'utf8')
+  return { cordisPath, hubPatchPath }
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   buildAgentPresets()
-  console.log('✓ synced presets/omni-agent/Agent.md -> presets/omni-agent/agent.cordis.yml')
+  console.log('✓ synced presets/omni-agent/{Agent.md,preset.yml} -> presets/omni-agent/agent.cordis.yml + plugins/omnimux/presets/omni-agent.patch.yml')
 }

@@ -26,6 +26,10 @@ function makeCtx(seat) {
 const DAILY_PAYLOAD = { series: [{ date: '2026-11-20', reach: 1200 }], meta: { timezone: 'Asia/Taipei' } }
 const POSTS_PAYLOAD = { rows: [{ id: 'p1', views: 180000 }], total: 1 }
 
+function daysBetween(fromDate, toDate) {
+  return Math.round((Date.parse(`${toDate}T00:00:00Z`) - Date.parse(`${fromDate}T00:00:00Z`)) / 86400000)
+}
+
 test('omnimux-analytics tools read the hub seam and never fabricate data', async () => {
   const queries = []
   const { registered, ctx } = makeCtx({
@@ -49,10 +53,19 @@ test('omnimux-analytics tools read the hub seam and never fabricate data', async
   assert.deepEqual(metricsRes.data.posts, POSTS_PAYLOAD)
   assert.deepEqual(metricsRes.errors, [])
   assert.equal(Object.hasOwn(metricsRes, 'metrics'), false, 'must not invent a normalized KPI block')
-  assert.match(metricsRes.query.fromDate, /^\d{4}-\d{2}-\d{2}$/)
-  assert.match(metricsRes.query.toDate, /^\d{4}-\d{2}-\d{2}$/)
+  assert.match(metricsRes.queries.daily.fromDate, /^\d{4}-\d{2}-\d{2}$/)
+  assert.match(metricsRes.queries.daily.toDate, /^\d{4}-\d{2}-\d{2}$/)
+  assert.equal(daysBetween(metricsRes.queries.daily.fromDate, metricsRes.queries.daily.toDate), 29, '30d is an inclusive 30-day window')
+  // Each endpoint gets only the parameters it actually honours.
+  assert.deepEqual(Object.keys(metricsRes.queries.daily).sort(), ['fromDate', 'platform', 'toDate'])
+  assert.deepEqual(metricsRes.queries.posts, { limit: '20', platform: 'tiktok' })
   assert.equal(queries.length, 2)
   assert.deepEqual(queries.map(([name]) => name).sort(), ['daily', 'posts'])
+  assert.deepEqual(metricsRes.warnings, [{
+    source: 'posts',
+    code: 'analytics-posts-unfiltered',
+    message: 'posts 接口只支持平台与分页，不按时间窗与账号过滤，返回的是默认首页（20 条）',
+  }])
 
   // 2. The summary tool returns the same payloads and an availability status,
   //    never synthesized insights or industry comparisons.
@@ -69,6 +82,7 @@ test('omnimux-analytics tools read the hub seam and never fabricate data', async
   assert.equal(withoutPosts.topPostsIncluded, false)
   assert.equal(Object.hasOwn(withoutPosts.data, 'posts'), false)
   assert.deepEqual(withoutPosts.data.daily, DAILY_PAYLOAD)
+  assert.deepEqual(withoutPosts.warnings, [])
 })
 
 test('omnimux-analytics reports a partial failure instead of filling gaps with defaults', async () => {
@@ -115,21 +129,69 @@ test('omnimux-analytics fails loudly when both sources fail, the seam is missing
 
   const calls = []
   const seam = makeCtx({
-    dailyMetrics: async (query) => { calls.push(query); return DAILY_PAYLOAD },
-    posts: async (query) => { calls.push(query); return POSTS_PAYLOAD },
+    dailyMetrics: async (query) => { calls.push(['daily', query]); return DAILY_PAYLOAD },
+    posts: async (query) => { calls.push(['posts', query]); return POSTS_PAYLOAD },
   })
   apply(seam.ctx, { enabled: false })
-  // A non-numeric connected-account id would be dropped upstream, which would
-  // silently widen the query to every account; refuse it instead.
-  await assert.rejects(
-    () => seam.registered.get('analytics_query_metrics').execute({ accountId: 'acc_1' }),
-    (error) => error.code === 'analytics-invalid-account-id',
-  )
+  // A dropped account filter would silently widen the query to every account,
+  // so zeros, negatives and out-of-range ids are refused before any call.
+  for (const accountId of ['acc_1', '0', '12,0', '-3', '99999999999999999999']) {
+    await assert.rejects(
+      () => seam.registered.get('analytics_query_metrics').execute({ accountId }),
+      (error) => error.code === 'analytics-invalid-account-id',
+      accountId,
+    )
+  }
   assert.deepEqual(calls, [], 'a rejected filter must never reach the upstream')
 
   const filtered = await seam.registered.get('analytics_query_metrics').execute({ accountId: '12, 34' })
-  assert.equal(filtered.query.account_ids, '12,34')
+  assert.equal(filtered.queries.daily.account_ids, '12,34')
   assert.equal(filtered.accountId, '12, 34')
+  // The posts endpoint cannot filter by account, so it never receives the key.
+  assert.equal(Object.hasOwn(filtered.queries.posts, 'account_ids'), false)
+})
+
+test('omnimux-analytics keeps posts out of a daily-only summary', async () => {
+  const calls = []
+  const { registered, ctx } = makeCtx({
+    dailyMetrics: async (query) => { calls.push(['daily', query]); return DAILY_PAYLOAD },
+    posts: async () => { calls.push(['posts']); throw new Error('posts unavailable') },
+  })
+  apply(ctx, { enabled: false })
+
+  const result = await registered.get('analytics_get_summary').execute({ includeTopPosts: false })
+  assert.equal(result.ok, true)
+  assert.equal(result.partial, false)
+  assert.deepEqual(result.data.daily, DAILY_PAYLOAD)
+  assert.equal(Object.hasOwn(result.data, 'posts'), false)
+  assert.deepEqual(calls.map(([name]) => name), ['daily'], 'a daily-only summary must not touch the posts source')
+})
+
+test('omnimux-analytics treats empty or explicit-failure payloads as errors', async () => {
+  const { registered, ctx } = makeCtx({
+    dailyMetrics: async () => null,
+    posts: async () => ({ success: false, message: 'upstream said no' }),
+  })
+  apply(ctx, { enabled: false })
+
+  await assert.rejects(
+    () => registered.get('analytics_query_metrics').execute({}),
+    (error) => {
+      assert.equal(error.code, 'analytics-empty-payload')
+      assert.deepEqual(error.errors, [
+        { source: 'daily', code: 'analytics-empty-payload', message: '分析数据源 dailyMetrics 返回空载荷' },
+        { source: 'posts', code: 'analytics-source-failed', message: 'upstream said no' },
+      ])
+      return true
+    },
+  )
+
+  const undefinedDaily = makeCtx({ dailyMetrics: async () => undefined, posts: async () => POSTS_PAYLOAD })
+  apply(undefinedDaily.ctx, { enabled: false })
+  const partial = await undefinedDaily.registered.get('analytics_query_metrics').execute({})
+  assert.equal(partial.partial, true)
+  assert.equal(partial.data.daily, null)
+  assert.deepEqual(partial.data.posts, POSTS_PAYLOAD)
 })
 
 test('omnimux-analytics tolerates a seam that only exposes one capability', async () => {

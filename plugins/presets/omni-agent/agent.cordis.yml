@@ -170,8 +170,13 @@
     - id: tool-subagent-control
       name: '@deepseek-ai/dsh-tool-subagent-control'
 
+    # DSH 0.2.1-rc.3 exports `./list-agents` as its own entry and registers
+    # `list_agents` only through it; 0.2.2-rc.5 folds the registration into the
+    # main entry and drops the subpath. Keep one row whose enabled state follows
+    # the installed package instead of picking one DSH line and breaking the other.
     - id: tool-subagent-list-agents
       name: '@deepseek-ai/dsh-tool-subagent-control/list-agents'
+      disabled: !!js "!(() => { try { return Boolean(process.getBuiltinModule('node:module').createRequire(baseUrl).resolve('@deepseek-ai/dsh-tool-subagent-control/list-agents')) } catch { return false } })()"
 
     - id: tool-subagent
       name: '@deepseek-ai/dsh-tool-subagent'

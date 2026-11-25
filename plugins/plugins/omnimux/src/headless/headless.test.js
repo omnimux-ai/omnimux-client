@@ -134,6 +134,7 @@ describe('mountHeadlessSkill', () => {
     assert.equal(result.model, 'gemini-2.5-pro')
     assert.equal(result.repaired, false)
     assert.equal(result.data.shots.length, 1)
+    assert.equal(Object.hasOwn(result, 'reasoningEffort'), false)
 
     assert.equal(seen.length, 1)
     assert.equal(seen[0].system, 'You are a video breakdown specialist.')
@@ -667,5 +668,10 @@ describe('prepareHeadlessTransport and Hub video preparation', () => {
     })
     assert.equal(untouched.repaired, true)
     assert.deepEqual(calls, [{}, { reasoning: 'minimal' }])
+    // The accepted text is the repair's, so its level is reported even though
+    // the caller never asked for a policy. A job that never resolves a level
+    // must omit the field entirely (asserted in the first mount test).
+    assert.equal(Object.hasOwn(untouched, 'reasoningEffort'), true)
+    assert.equal(untouched.reasoningEffort, 'off')
   })
 })

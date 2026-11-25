@@ -40,8 +40,12 @@ describe('verifyPackageFiles', () => {
       writeFileSync(join(dir, d, '.keep'), '')
     }
     if (pkg.dsh?.bundle?.patch) {
-      const patch = pkg.dsh.bundle.patch.replace(/^\.\//, '')
-      writeFileSync(join(dir, patch), '- id: x\n')
+      const patches = Array.isArray(pkg.dsh.bundle.patch) ? pkg.dsh.bundle.patch : [pkg.dsh.bundle.patch]
+      for (const rawPatch of patches) {
+        const patch = rawPatch.replace(/^\.\//, '')
+        mkdirSync(join(dir, patch, '..'), { recursive: true })
+        writeFileSync(join(dir, patch), '- id: x\n')
+      }
     }
   }
 
@@ -104,6 +108,41 @@ describe('verifyPackageFiles', () => {
     const { errors, auditedCount } = verifyPackageFiles(liveRoot)
     assert.ok(auditedCount >= 8, 'should audit multiple plugins')
     assert.deepEqual(errors, [], 'live monorepo must be clean: ' + errors.join('; '))
+  })
+
+  it('supports dsh.bundle.patch arrays and rejects missing or uncovered patch entries', () => {
+    root = mkdtempSync(join(tmpdir(), 'pkg-files-array-patch-'))
+    try {
+      writePlugin('ok-multi', {
+        name: 'ok-multi',
+        main: 'src/index.js',
+        files: ['src', 'cordis.patch.yml', 'presets'],
+        dsh: { bundle: { patch: ['./cordis.patch.yml', './presets/omni-agent.patch.yml'] } },
+      })
+      assert.deepEqual(verifyPackageFiles(root).errors, [])
+
+      writePlugin('uncovered-multi', {
+        name: 'uncovered-multi',
+        main: 'src/index.js',
+        files: ['src', 'cordis.patch.yml'],
+        dsh: { bundle: { patch: ['./cordis.patch.yml', './presets/omni-agent.patch.yml'] } },
+      })
+      const { errors } = verifyPackageFiles(root)
+      assert.ok(errors.some(e => e.includes('uncovered-multi') && e.includes('presets/omni-agent.patch.yml')))
+
+      // A declared array entry that never landed on disk is a packaging failure, not a silent skip.
+      writePlugin('missing-multi', {
+        name: 'missing-multi',
+        main: 'src/index.js',
+        files: ['src', 'cordis.patch.yml', 'presets'],
+        dsh: { bundle: { patch: ['./cordis.patch.yml', './presets/omni-agent.patch.yml'] } },
+      })
+      rmSync(join(root, 'plugins', 'missing-multi', 'presets', 'omni-agent.patch.yml'))
+      const missing = verifyPackageFiles(root).errors
+      assert.ok(missing.some(e => e.includes('missing-multi') && e.includes('presets/omni-agent.patch.yml') && e.includes('不存在')))
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
   })
 })
 
