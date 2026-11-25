@@ -25,6 +25,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [ -f "${SCRIPT_DIR}/sync-main.sh" ]; then
   # shellcheck source=sync-main.sh
   source "${SCRIPT_DIR}/sync-main.sh"
+  for fn in omnimux_primary_tracked_changes omnimux_primary_blocking_untracked omnimux_primary_is_clean; do
+    declare -F "$fn" >/dev/null || {
+      echo "worktree.sh: ❌ scripts/sync-main.sh 缺少 ${fn}（契约过期），拒绝在口径不明时收尾。" >&2
+      exit 2
+    }
+  done
 else
   # 只有 worktree.sh 的裸拷贝/外部检出没有契约文件。这里保留同一口径的最小实现，
   # 确保收尾入口不会退回旧判定；仓库内始终走上图的同源实现。两份判定的一致性由
@@ -42,7 +48,9 @@ else
     [ -n "$root" ] || return 2
     untracked=$(git -C "$root" ls-files --others --exclude-standard 2>/dev/null) || return 2
     [ -n "$untracked" ] || return 0
-    printf '%s\n' "$untracked" | grep -Ev "$OMNIMUX_PRIMARY_ALLOWED_UNTRACKED_RE" || true
+    local status=0
+    printf '%s\n' "$untracked" | grep -Ev "$OMNIMUX_PRIMARY_ALLOWED_UNTRACKED_RE" || status=$?
+    [ "$status" -le 1 ] || return 2
   }
 
   omnimux_primary_is_clean() {
@@ -883,7 +891,9 @@ cmd_remove() {
   if [ -n "${pr_number}" ]; then
     primary_state=0
     omnimux_primary_is_clean "${ROOT}" || primary_state=$?
-    if [ "${primary_state}" -ne 0 ]; then
+    if [ "${primary_state}" -eq 2 ]; then
+      say "ℹ️ 无法读取主检出状态，跳过自动物化；请手动运行: plugins/scripts/sync-to-app.sh"
+    elif [ "${primary_state}" -ne 0 ]; then
       say "ℹ️ 主检出存在未提交改动或未跟踪产物，跳过自动物化；清理后请手动运行: plugins/scripts/sync-to-app.sh"
       { omnimux_primary_tracked_changes "${ROOT}"; omnimux_primary_blocking_untracked "${ROOT}"; } | sed 's/^/    /' >&2 || true
     fi

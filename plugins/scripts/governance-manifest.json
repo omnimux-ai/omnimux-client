@@ -176,6 +176,7 @@
     "verify-tool-web-fetch-fallback.test.mjs",
     "worktree-app-qa.mjs",
     "worktree-delivery.test.mjs",
+    "worktree-primary-cleanliness.test.mjs",
     "worktree-sag-index.test.mjs",
     "worktree-web-qa.mjs",
     "worktree-web-qa.test.mjs",

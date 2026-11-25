@@ -6,7 +6,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { spawnSync, execFileSync } from 'node:child_process'
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -124,6 +124,33 @@ test('ship refuses untracked plugin sources before any materialization', (t) => 
   assert.match(result.stderr, /stray\.js/)
   assert.equal(existsSync(join(f.repo, 'sync_receipt.txt')), false, 'must not materialize from a blocked primary checkout')
   assert.ok(existsSync(join(worktree, 'feature.txt')), 'retain the task worktree when the primary checkout blocks delivery')
+})
+
+test('fallback allow-list literal matches the sync-main contract', () => {
+  const pattern = /OMNIMUX_PRIMARY_ALLOWED_UNTRACKED_RE='([^']+)'/
+  const contract = readFileSync(join(root, 'scripts/sync-main.sh'), 'utf8').match(pattern)?.[1]
+  const consumer = readFileSync(join(root, 'scripts/worktree.sh'), 'utf8').match(pattern)?.[1]
+  assert.ok(contract, 'sync-main.sh must declare the allow-list literal')
+  assert.equal(consumer, contract, 'worktree.sh fallback must not drift from the contract')
+})
+
+test('remove cleans the worktree and reports why materialization was skipped', (t) => {
+  const f = createFixture(t, { withContract: true })
+  const { worktree } = f.mergeFeature('plugin-feature')
+  mkdirSync(join(f.repo, 'plugins/plugins/omnimux'), { recursive: true })
+  writeFileSync(join(f.repo, 'plugins/plugins/omnimux/stray.js'), 'export const stray = 1\n')
+  writeFileSync(join(f.bin, 'gh'), '#!/bin/sh\necho MERGED\n', { mode: 0o755 })
+
+  const result = spawnSync('bash', ['scripts/worktree.sh', 'remove', 'plugin-feature', '--pr', '9105'], {
+    cwd: f.repo,
+    encoding: 'utf8',
+    env: { ...process.env, PATH: `${f.bin}:${process.env.PATH}`, OMNIMUX_DEV_SNAPSHOT: join(f.fixture, 'absent-dev'), OMNIMUX_SAG_INDEX: '0' },
+  })
+  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
+  assert.equal(existsSync(worktree), false, 'remove must still clean the merged worktree')
+  assert.equal(existsSync(join(f.repo, 'sync_receipt.txt')), false, 'blocked primary checkout must not materialize')
+  assert.match(result.stdout, /跳过自动物化/)
+  assert.match(result.stderr, /stray\.js/)
 })
 
 test('bare worktree.sh copies keep the same allow-list without sync-main.sh', (t) => {

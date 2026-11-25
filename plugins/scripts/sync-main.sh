@@ -27,7 +27,9 @@ omnimux_primary_blocking_untracked() {
   [ -n "$root" ] || return 2
   untracked=$(git -C "$root" ls-files --others --exclude-standard 2>/dev/null) || return 2
   [ -n "$untracked" ] || return 0
-  printf '%s\n' "$untracked" | grep -Ev "$OMNIMUX_PRIMARY_ALLOWED_UNTRACKED_RE" || true
+  local status=0
+  printf '%s\n' "$untracked" | grep -Ev "$OMNIMUX_PRIMARY_ALLOWED_UNTRACKED_RE" || status=$?
+  [ "$status" -le 1 ] || return 2
 }
 
 # 统一判定：0 = 可直接物化，1 = 有阻断路径，2 = 状态不可读。
