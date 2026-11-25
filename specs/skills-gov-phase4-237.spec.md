@@ -225,3 +225,23 @@
   - 原断言：断言 `TIKTOK.suite.skills.length` 为 45。
   - 变更理由：`sopilot-social-agents` 删除后该预装套件清单为 44 条。
   - 新期望证据：断言 44 条，后续卸载交互断言保持不变。
+- `plugins/plugins/omnimux-inspiration/src/explore/skills/skills-tab.test.js` :: `featured-skills-data: 快照文件格式与约束`
+  - 原断言：断言精选快照 113 条技能、8 个场景分类。
+  - 变更理由：Phase 4 下架 112 个外部技能并上架 16 款自研技能，快照收敛为 16 条 / 6 个有成员场景。
+  - 新期望证据：断言 16 条技能与 6 个分类，四字段双语校验保持不变。
+- `plugins/plugins/omnimux-inspiration/src/explore/skills/skills-tab.test.js` :: `TrendingReplicateSection: 头部渲染「创作灵感 / Skill」双 Tab 并支持平滑切换`
+  - 原断言：断言分类胶囊 9 个（「全部」+ 8 场景）与前 3 张热门精选为 `UGC 告白` / `电影级视觉大片` / `UGC 产品展示`。
+  - 变更理由：场景收敛为 6 个；热门精选置顶序列改为自研核心技能。
+  - 新期望证据：断言 7 个胶囊，前 3 张为 `复刻爆款视频` / `创作带货视频` / `视频拆解`。
+- `plugins/plugins/omnimux-inspiration/src/explore/skills/skills-tab.test.js` :: `TrendingReplicateSection: 技能卡片名称跟随 DSH 语言环境精准适配中英文双语`
+  - 原断言：断言 UGC 分类下中英文标题包含 `UGC 告白` / `UGC 好物开箱种草` / `UGC 穿搭检查` 及对应英文名，并点击 `UGC 告白`。
+  - 变更理由：UGC 分类下的外部技能已全部下架，`scene-seeding` 现由自研技能组成。
+  - 新期望证据：断言中文标题包含 `火柴人视频导演` / `内容策略` / `社媒文案`，英文包含对应英文名，点击 `火柴人视频导演` 验证只预填说明请求。
+- `plugins/plugins/omnimux-inspiration/src/explore/templates/home-skill-cards-aurora.test.js` :: `极光流光算法：确定性散列与 14 套炫彩流光完整性`
+  - 原断言：以 `sk-omx-ugc-confessional` / `sk-omx-cinematic` / `sk-omx-ugc-showcase` 验证流光算法。
+  - 变更理由：样例 ID 已随技能下架失效，改用仍在上架的自研技能。
+  - 新期望证据：以 `sk-omx-replicate-viral-video` / `sk-omx-cinematic` / `sk-omx-create-selling-video` 验证同样的确定性散列与 radial-gradient 输出。
+- `plugins/plugins/omnimux-inspiration/src/explore/templates/home-skill-cards-aurora.test.js` :: `首页 Skills 技能库货架卡片：100% 对齐图 2 技能插件高颜值极光样式`
+  - 原断言：断言渲染结果包含 `UGC 告白`。
+  - 变更理由：货架首卡已改为自研核心技能 `复刻爆款视频`。
+  - 新期望证据：断言渲染结果包含 `复刻爆款视频`，其余极光样式与卡片结构断言不变。

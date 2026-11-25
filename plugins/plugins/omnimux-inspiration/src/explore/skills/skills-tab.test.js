@@ -107,8 +107,8 @@ test('featured-skills-data: 快照文件格式与约束', () => {
   assert.equal(snapshot.schema, 'omnimux.session-guide.featured-skills/v1')
   assert.ok(Array.isArray(snapshot.skills))
   assert.ok(Array.isArray(snapshot.categories))
-  assert.equal(snapshot.skills.length, 113, '精选技能必须有 113 条（全量营销技能库入库）')
-  assert.equal(snapshot.categories.length, 8, '在册场景分类必须为 8 个')
+  assert.equal(snapshot.skills.length, 16, '精选技能必须有 16 条（Phase 4 自研货架全量入库）')
+  assert.equal(snapshot.categories.length, 6, '在册场景分类必须为 6 个有成员的真实场景')
   for (const s of snapshot.skills) {
     assert.ok(s.id && s.title, '技能条目必须包含 id 与 title')
     assert.ok(s.titleZh, `条目 ${s.id} 必须包含 titleZh`)
@@ -236,7 +236,7 @@ test('TrendingReplicateSection: 头部渲染「创作灵感 / Skill」双 Tab �
 
     // 3. 验证分类胶囊
     const chips = host.querySelectorAll('.omnimux-skills-chip')
-    assert.equal(chips.length, 9, '应有 1 个全选「全部」+ 8 个场景分类胶囊')
+    assert.equal(chips.length, 7, '应有 1 个全选「全部」+ 6 个场景分类胶囊')
     assert.equal(chips[0].getAttribute('aria-pressed'), 'true', '默认全部分类按下')
 
     // 4. 验证技能卡片渲染与图 2 规范对齐
@@ -245,9 +245,9 @@ test('TrendingReplicateSection: 头部渲染「创作灵感 / Skill」双 Tab �
 
     // 验证前 3 张置顶热门精选与前 6 张置顶新品上市
     const expectedTop3Titles = [
-      'UGC 告白',
-      '电影级视觉大片',
-      'UGC 产品展示',
+      '复刻爆款视频',
+      '创作带货视频',
+      '视频拆解',
     ]
     const actualTop3Titles = Array.from(cards).slice(0, 3).map((c) => c.querySelector('.omnimux-skill-card-title')?.textContent?.trim())
     assert.deepEqual(actualTop3Titles, expectedTop3Titles, '前 3 张卡片必须为热门精选')
@@ -326,14 +326,14 @@ test('TrendingReplicateSection: 技能卡片名称跟随 DSH 语言环境精准�
     const titlesZh = Array.from(cardsZh).map((c) => c.querySelector('.omnimux-skill-card-title')?.textContent?.trim())
 
     // 验证中文环境下成功适配为中文标题，且旧技能已全部从精选下架
-    assert.ok(titlesZh.includes('UGC 告白'), '中文环境下必须显示 "UGC 告白"')
-    assert.ok(titlesZh.includes('UGC 好物开箱种草'), '中文环境下必须显示 "UGC 好物开箱种草"')
-    assert.ok(titlesZh.includes('UGC 穿搭检查'), '中文环境下必须显示 "UGC 穿搭检查"')
+    assert.ok(titlesZh.includes('火柴人视频导演'), '中文环境下必须显示 "火柴人视频导演"')
+    assert.ok(titlesZh.includes('内容策略'), '中文环境下必须显示 "内容策略"')
+    assert.ok(titlesZh.includes('社媒文案'), '中文环境下必须显示 "社媒文案"')
     assert.ok(!titlesZh.includes('Shopee 关键词分析'), '旧版 Shopee 关键词分析已下架')
     assert.ok(!titlesZh.includes('亚马逊关键词流量分析'), '旧版 亚马逊关键词流量分析已下架')
 
     // 点击卡片并验证指令预填为中文
-    const ugcCard = Array.from(cardsZh).find((c) => c.querySelector('.omnimux-skill-card-title')?.textContent?.trim() === 'UGC 告白')
+    const ugcCard = Array.from(cardsZh).find((c) => c.querySelector('.omnimux-skill-card-title')?.textContent?.trim() === '火柴人视频导演')
     await click(ugcCard.querySelector('.omnimux-skill-card-btn'))
     await flush()
     assert.equal(appliedPrompt, '为我解释下这个技能的最佳使用方式。', '中文环境只预填说明请求，技能名不进输入框')
@@ -353,14 +353,14 @@ test('TrendingReplicateSection: 技能卡片名称跟随 DSH 语言环境精准�
     const titlesEn = Array.from(cardsEn).map((c) => c.querySelector('.omnimux-skill-card-title')?.textContent?.trim())
 
     // 验证英文环境下显示英文标题，且旧技能已下架
-    assert.ok(titlesEn.includes('UGC Confessional'), '英文环境下必须显示 "UGC Confessional"')
-    assert.ok(titlesEn.includes('UGC Unwrap'), '英文环境下必须显示 "UGC Unwrap"')
-    assert.ok(titlesEn.includes('UGC Fit Check'), '英文环境下必须显示 "UGC Fit Check"')
+    assert.ok(titlesEn.includes('Stickman Video Director'), '英文环境下必须显示 "Stickman Video Director"')
+    assert.ok(titlesEn.includes('Content Strategy'), '英文环境下必须显示 "Content Strategy"')
+    assert.ok(titlesEn.includes('Social Caption'), '英文环境下必须显示 "Social Caption"')
     assert.ok(!titlesEn.includes('Shopee Keyword Analysis'), 'Shopee Keyword Analysis 已从精选中下架')
     assert.ok(!titlesEn.includes('Amazon Keyword Traffic Analysis'), 'Amazon Keyword Traffic Analysis 已从精选中下架')
 
-    // 点击另一技能卡片（UGC Unwrap）并验证指令预填为英文
-    const unwrapCardEn = Array.from(cardsEn).find((c) => c.querySelector('.omnimux-skill-card-title')?.textContent?.trim() === 'UGC Unwrap')
+    // 点击另一技能卡片（Content Strategy）并验证指令预填为英文
+    const unwrapCardEn = Array.from(cardsEn).find((c) => c.querySelector('.omnimux-skill-card-title')?.textContent?.trim() === 'Content Strategy')
     await click(unwrapCardEn.querySelector('.omnimux-skill-card-btn'))
     await flush()
     assert.equal(appliedPrompt, 'Please explain the best way to use this skill.', '英文环境只预填英文说明请求')
