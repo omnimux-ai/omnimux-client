@@ -1279,6 +1279,152 @@ describe('Cloud save route', () => {
   })
 })
 
+describe('AssetsDispatcher managed text document & version routes', () => {
+  it('reads/writes .md files over real HTTP including access_token prose, handles 409 conflicts, and manages snapshots', async () => {
+    const packDir = join(root, 'skill-pack')
+    mkdirSync(packDir, { recursive: true })
+    const docOriginal = join(packDir, 'SKILL.md')
+    const initialBody = '# 技能说明\n示例字段：`access_token` 与 `sk-a` 仅作文档演示。\n'
+    writeFileSync(docOriginal, initialBody, 'utf8')
+
+    let changedCount = 0
+    const storeDir = join(root, 'store-text')
+    const mappings = createMappingStore({
+      paths: { mappingsFile: join(storeDir, 'mappings.json'), scansDir: join(storeDir, 'scans') },
+    })
+    const artifacts = createArtifactStore({
+      paths: { artifactsFile: join(storeDir, 'artifacts.json'), artifactsDir: join(storeDir, 'artifacts') },
+    })
+    const library = createLibraryStore({
+      paths: {
+        dir: storeDir,
+        libraryFile: join(storeDir, 'library.json'),
+        filesDir: join(storeDir, 'data', 'files'),
+      },
+    })
+    const dispatcher = createAssetsDispatcher({
+      mappings,
+      artifacts,
+      library,
+      onAssetChanged: () => { changedCount += 1 },
+    })
+
+    const routes = await openRegisteredRoutes(dispatcher)
+    try {
+      const created = await requestJson(routes.port, {
+        method: 'POST',
+        path: '/omnimux/assets/library',
+        body: { name: '技能包', type: 'knowledge', files: [{ real_path: packDir }] },
+      })
+      assert.equal(created.status, 200)
+      const assetId = created.body.asset.id
+      const fileId = created.body.asset.files[0].id
+
+      // 1. Read raw UTF-8 text via text/plain (must NOT be blocked by JSON secret guard).
+      const readRes = await fetch(
+        `http://127.0.0.1:${routes.port}/omnimux/assets/library/text?id=${assetId}&file=${fileId}&path=SKILL.md`,
+        { signal: AbortSignal.timeout(1000) },
+      )
+      assert.equal(readRes.status, 200)
+      assert.equal(readRes.headers.get('content-type'), 'text/plain; charset=utf-8')
+      assert.equal(readRes.headers.get('x-asset-text-markdown'), 'true')
+      assert.equal(readRes.headers.get('x-asset-text-editable'), 'true')
+      const etag1 = readRes.headers.get('etag')
+      assert.match(etag1 || '', /^[0-9a-f]{64}$/)
+      assert.equal(await readRes.text(), initialBody)
+
+      // 2. Create a manual snapshot of v1.
+      const snap1 = await requestJson(routes.port, {
+        method: 'POST',
+        path: '/omnimux/assets/library/text/versions',
+        body: { id: assetId, file: fileId, path: 'SKILL.md', name: '第一稿', content: initialBody },
+      })
+      assert.equal(snap1.status, 200)
+      assert.equal(snap1.body.version.name, '第一稿')
+      assert.equal(snap1.body.version.content, undefined)
+
+      // 3. Save v2 with matching ETag.
+      const updatedBody = '# 技能说明 v2\n已修订内容\n'
+      const saved = await requestJson(routes.port, {
+        method: 'POST',
+        path: '/omnimux/assets/library/text',
+        body: { id: assetId, file: fileId, path: 'SKILL.md', content: updatedBody, expectedEtag: etag1 },
+      })
+      assert.equal(saved.status, 200)
+      assert.notEqual(saved.body.etag, etag1)
+      assert.equal(changedCount >= 1, true)
+      // Original file on disk must remain untouched.
+      assert.equal(readFileSync(docOriginal, 'utf8'), initialBody)
+
+      // 4. Stale ETag write returns 409 file-conflict with currentEtag.
+      const conflict = await requestJson(routes.port, {
+        method: 'POST',
+        path: '/omnimux/assets/library/text',
+        body: { id: assetId, file: fileId, path: 'SKILL.md', content: 'stale write', expectedEtag: etag1 },
+      })
+      assert.equal(conflict.status, 409)
+      assert.equal(conflict.body.error, 'file-conflict')
+      assert.equal(conflict.body.currentEtag, saved.body.etag)
+
+      // 5. List snapshots (metadata only) and read snapshot content via text/plain.
+      const listRes = await requestJson(routes.port, {
+        path: `/omnimux/assets/library/text/versions?id=${assetId}&file=${fileId}&path=SKILL.md`,
+      })
+      assert.equal(listRes.status, 200)
+      assert.equal(listRes.body.versions.length, 1)
+      assert.equal(listRes.body.versions[0].content, undefined)
+
+      const verTextRes = await fetch(
+        `http://127.0.0.1:${routes.port}/omnimux/assets/library/text/version?id=${assetId}&file=${fileId}&path=SKILL.md&versionId=${snap1.body.version.id}`,
+        { signal: AbortSignal.timeout(1000) },
+      )
+      assert.equal(verTextRes.status, 200)
+      assert.equal(verTextRes.headers.get('content-type'), 'text/plain; charset=utf-8')
+      assert.equal(await verTextRes.text(), initialBody)
+
+      // 6. Revert to snap1 (writes v1 back & logs a revert snapshot).
+      const reverted = await requestJson(routes.port, {
+        method: 'POST',
+        path: '/omnimux/assets/library/text/versions/revert',
+        body: {
+          id: assetId,
+          file: fileId,
+          path: 'SKILL.md',
+          versionId: snap1.body.version.id,
+          expectedEtag: saved.body.etag,
+        },
+      })
+      assert.equal(reverted.status, 200)
+      assert.equal(reverted.body.version.source, 'revert')
+      const afterRevert = await fetch(
+        `http://127.0.0.1:${routes.port}/omnimux/assets/library/text?id=${assetId}&file=${fileId}&path=SKILL.md`,
+        { signal: AbortSignal.timeout(1000) },
+      )
+      assert.equal(await afterRevert.text(), initialBody)
+
+      // 7. Delete snapshot.
+      const delSnap = await requestJson(routes.port, {
+        method: 'POST',
+        path: '/omnimux/assets/library/text/versions/delete',
+        body: { id: assetId, file: fileId, path: 'SKILL.md', versionId: snap1.body.version.id },
+      })
+      assert.equal(delSnap.status, 200)
+      assert.equal(delSnap.body.deleted, true)
+
+      // 8. Cross-origin POST write refused with 403 not-local.
+      const cross = await dispatcher.dispatch(post(
+        '/omnimux/assets/library/text',
+        { id: assetId, file: fileId, path: 'SKILL.md', content: 'evil' },
+        { origin: 'http://evil.example' },
+      ))
+      assert.equal(cross.status, 403)
+      assert.equal(cross.body.error, 'not-local')
+    } finally {
+      await routes.close()
+    }
+  })
+})
+
 /** @param {{ status: number, contentType: string, text: string, body: unknown }} response @param {string} original */
 function assertRefused(response, original) {
   assert.equal(response.status, 500)

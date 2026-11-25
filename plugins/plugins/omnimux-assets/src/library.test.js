@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, it } from 'node:test'
@@ -239,5 +239,138 @@ describe('copyIntoVault disk + escape', () => {
       }),
       (error) => error instanceof AssetsError && error.code === 'path-denied',
     )
+  })
+})
+
+describe('LibraryStore managed text read/write and safety boundaries', () => {
+  it('reads and writes managed .md/.txt copies while keeping source originals untouched', async () => {
+    const store = makeStore()
+    const srcDoc = join(root, 'SKILL.md')
+    writeFileSync(srcDoc, '# 原始标题\n内容第一版', 'utf8')
+
+    const asset = await store.add({
+      name: '技能文档',
+      type: 'knowledge',
+      files: [{ real_path: srcDoc }],
+    })
+    const fileId = asset.files[0].id
+    const revBefore = store.revision()
+
+    const initial = await store.readTextFile(asset.id, fileId, '')
+    assert.equal(initial.content, '# 原始标题\n内容第一版')
+    assert.equal(initial.editable, true)
+    assert.equal(initial.isMarkdown, true)
+    assert.equal(initial.ext, '.md')
+    assert.match(initial.etag, /^[0-9a-f]{64}$/)
+
+    const saved = await store.writeTextFile(asset.id, fileId, '', {
+      content: '# 更新标题\n内容第二版',
+      expectedEtag: initial.etag,
+    })
+    assert.notEqual(saved.etag, initial.etag)
+    assert.equal(store.revision(), revBefore + 1)
+
+    const reread = await store.readTextFile(asset.id, fileId, '')
+    assert.equal(reread.content, '# 更新标题\n内容第二版')
+    assert.equal(reread.etag, saved.etag)
+    // User original file on disk MUST remain completely untouched.
+    assert.equal(readFileSync(srcDoc, 'utf8'), '# 原始标题\n内容第一版')
+  })
+
+  it('reads and writes nested text files inside folder assets and rejects path escapes / symlinks', async () => {
+    const store = makeStore()
+    const pack = join(root, 'doc-pack')
+    mkdirSync(join(pack, 'sub'), { recursive: true })
+    writeFileSync(join(pack, 'sub', 'notes.txt'), 'line 1\nline 2', 'utf8')
+    const outsideSecret = join(root, 'outside.md')
+    writeFileSync(outsideSecret, 'outside secret', 'utf8')
+
+    const asset = await store.add({
+      name: '文档包',
+      type: 'knowledge',
+      files: [{ real_path: pack }],
+    })
+    const fileId = asset.files[0].id
+    const managedRoot = asset.files[0].real_path
+    symlinkSync(outsideSecret, join(managedRoot, 'escape.md'))
+
+    const nested = await store.readTextFile(asset.id, fileId, 'sub/notes.txt')
+    assert.equal(nested.content, 'line 1\nline 2')
+    assert.equal(nested.isMarkdown, false)
+    assert.equal(nested.ext, '.txt')
+
+    await store.writeTextFile(asset.id, fileId, 'sub/notes.txt', {
+      content: 'updated notes',
+      expectedEtag: nested.etag,
+    })
+    assert.equal((await store.readTextFile(asset.id, fileId, 'sub/notes.txt')).content, 'updated notes')
+
+    await assert.rejects(
+      () => store.readTextFile(asset.id, fileId, '../outside.md'),
+      (error) => error.code === 'path-denied',
+    )
+    await assert.rejects(
+      () => store.readTextFile(asset.id, fileId, 'escape.md'),
+      (error) => error.code === 'path-denied',
+    )
+    await assert.rejects(
+      () => store.writeTextFile(asset.id, fileId, 'escape.md', { content: 'hijack' }),
+      (error) => error.code === 'path-denied',
+    )
+    assert.equal(readFileSync(outsideSecret, 'utf8'), 'outside secret')
+  })
+
+  it('enforces optimistic ETag concurrency, force overwrite, binary/size limits, and onRemoveAsset cleanup', async () => {
+    const removedIds = []
+    const store = createLibraryStore({
+      paths: {
+        dir: join(root, 'store-extra'),
+        libraryFile: join(root, 'store-extra', 'library.json'),
+        filesDir: join(root, 'store-extra', 'data', 'files'),
+      },
+      onRemoveAsset: (id) => { removedIds.push(id) },
+    })
+
+    const docPath = join(root, 'script.md')
+    writeFileSync(docPath, 'v1', 'utf8')
+    const binPath = join(root, 'fake.txt')
+    writeFileSync(binPath, Buffer.from([0x61, 0x00, 0x62]))
+    const bigPath = join(root, 'huge.md')
+    writeFileSync(bigPath, 'a'.repeat(2 * 1024 * 1024 + 64), 'utf8')
+
+    const asset = await store.add({ name: '剧本', files: [{ real_path: docPath }] })
+    const fId = asset.files[0].id
+    const v1 = await store.readTextFile(asset.id, fId, '')
+
+    // Simulate external disk edit after read.
+    writeFileSync(asset.files[0].real_path, 'external edit', 'utf8')
+
+    await assert.rejects(
+      () => store.writeTextFile(asset.id, fId, '', { content: 'user edit', expectedEtag: v1.etag }),
+      (error) => error.code === 'file-conflict' && typeof error.currentEtag === 'string' && error.currentEtag !== v1.etag,
+    )
+
+    const forced = await store.writeTextFile(asset.id, fId, '', {
+      content: 'user edit',
+      expectedEtag: v1.etag,
+      force: true,
+    })
+    assert.equal((await store.readTextFile(asset.id, fId, '')).content, 'user edit')
+    assert.equal(typeof forced.etag, 'string')
+
+    const binAsset = await store.add({ name: '坏文本', files: [{ real_path: binPath }] })
+    await assert.rejects(
+      () => store.readTextFile(binAsset.id, binAsset.files[0].id, ''),
+      (error) => error.code === 'file-not-text',
+    )
+
+    const bigAsset = await store.add({ name: '超大文档', files: [{ real_path: bigPath }] })
+    await assert.rejects(
+      () => store.readTextFile(bigAsset.id, bigAsset.files[0].id, ''),
+      (error) => error.code === 'file-too-large',
+    )
+
+    store.remove(asset.id)
+    assert.deepEqual(removedIds, [asset.id])
   })
 })

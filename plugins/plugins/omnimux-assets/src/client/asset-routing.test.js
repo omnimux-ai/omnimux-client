@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import {
   isDirectoryRef,
+  isEditableTextPreview,
   isFolderAsset,
   isMediaAsset,
   detectMediaKind,
@@ -178,6 +179,43 @@ describe('asset-routing pure functions and preview resolution contract', () => {
       assert.equal(model.title, '')
       assert.equal(model.kind, 'file')
       assert.equal(model.previewUrl, '')
+    })
+
+    it('marks local .md / .txt / .json files as editable text while keeping images, pdfs, and cloud items on preview modal', () => {
+      const singleMd = {
+        id: 'ast_md_1',
+        name: 'SKILL.md',
+        files: [{ id: 'f_md', name: 'SKILL.md', original_name: 'SKILL.md', relative_path: 'data/files/ast_md_1/SKILL.md' }],
+      }
+      const mdModel = resolveAssetMediaPreview(singleMd)
+      assert.equal(mdModel.editableText, true)
+      assert.equal(mdModel.markdown, true)
+      assert.equal(mdModel.assetId, 'ast_md_1')
+      assert.equal(mdModel.fileId, 'f_md')
+      assert.equal(mdModel.subPath, '')
+      assert.equal(isEditableTextPreview(mdModel), true)
+
+      const nestedTxt = resolveAssetMediaPreview(
+        { name: 'notes.txt', relative_path: 'sub/notes.txt' },
+        { asset: { id: 'ast_pack', name: '知识包' }, stack: { file: { id: 'f_dir', name: 'pack' }, path: 'sub' } },
+      )
+      assert.equal(nestedTxt.editableText, true)
+      assert.equal(nestedTxt.markdown, false)
+      assert.equal(nestedTxt.assetId, 'ast_pack')
+      assert.equal(nestedTxt.fileId, 'f_dir')
+      assert.equal(nestedTxt.subPath, 'sub/notes.txt')
+      assert.equal(isEditableTextPreview(nestedTxt), true)
+
+      const singlePdf = resolveAssetMediaPreview({
+        id: 'ast_pdf_1',
+        name: '手册.pdf',
+        files: [{ id: 'f_pdf', name: '手册.pdf' }],
+      })
+      assert.equal(singlePdf.editableText, false)
+      assert.equal(isEditableTextPreview(singlePdf), false)
+
+      const cloudDoc = { ...mdModel, cloud: true }
+      assert.equal(isEditableTextPreview(cloudDoc), false)
     })
   })
 })

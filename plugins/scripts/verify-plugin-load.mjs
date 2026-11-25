@@ -248,7 +248,9 @@ function makeClientEnv() {
     },
   })
   const window = new Proxy({}, {
-    get(_t, prop) {
+    get(target, prop) {
+      if (typeof prop === 'symbol') return target[prop]
+      if (Object.hasOwn(target, prop)) return target[prop]
       if (prop === 'document') return document
       if (prop === 'navigator') return { language: 'en-US', userAgent: 'plugin-load-check' }
       if (prop === 'location') return { href: 'http://localhost/', search: '', hash: '', protocol: 'http:', host: 'localhost', hostname: 'localhost', port: '', pathname: '/' }
@@ -260,7 +262,10 @@ function makeClientEnv() {
       if (prop === 'open') return () => null
       return serviceStub(`window.${String(prop)}`)
     },
-    set() { return true },
+    set(target, prop, value) {
+      target[prop] = value
+      return true
+    },
   })
   const timers = {
     setTimeout: (...args) => setTimeout(...args),

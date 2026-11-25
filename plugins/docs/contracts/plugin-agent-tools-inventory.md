@@ -112,6 +112,7 @@ superseded_by: null
 | 结构化创建新资产实体 | 新增资产模态框 | `assets_create` | L1 | `Implemented` | 否 |
 | 更新资产元数据、标签与描述 | 资产编辑模态框 | `assets_update` | L1 | `Implemented` | 否 |
 | 删除指定资产及其关联物料 | 资产卡片删除确认弹窗 | `assets_delete` | L1 | `Implemented` | 是 (`confirm: true`) |
+| 受管文本文档在线编辑与历史版本快照 | 文本编辑器大弹窗（`/library/text*`） | — | UI-Only | `UI-Only` | 豁免 (受管副本交互编辑；Agent 经 `assets_get` 获取受管路径读写) |
 | 资产网格视图切换 (Grid/List) | 顶部视图切换按钮 | — | UI-Only | `UI-Only` | 豁免 (前端纯排版状态) |
 
 ---

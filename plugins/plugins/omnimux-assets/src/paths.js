@@ -26,5 +26,6 @@ export function resolveAssetsPaths(opts = {}) {
     scansDir: join(dir, 'scans'),
     artifactsDir: join(dir, 'artifacts'),
     filesDir: join(dir, 'data', 'files'),
+    textVersionsDir: join(dir, 'data', 'text-versions'),
   }
 }

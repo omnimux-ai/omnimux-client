@@ -6,6 +6,8 @@ import { AssetBrowse } from './AssetBrowse.jsx'
 import { AssetGrid } from './AssetGrid.jsx'
 import { AssetDetail } from './AssetDetail.jsx'
 import { AssetPreviewModal } from './AssetPreviewModal.jsx'
+import { isEditableTextPreview } from './asset-routing.js'
+import { AssetTextEditorModal } from './text-editor/AssetTextEditorModal.jsx'
 import { CloudAssetsView } from './CloudAssetsView.jsx'
 import { cloudAssetToPreviewItem } from './cloud-preview.js'
 import { useCloudSave } from './use-cloud-save.js'
@@ -727,14 +729,23 @@ export function AssetsStage(props) {
         onCloseDetailModal={() => setDetailModalOpen(false)}
       />
       {previewTarget && (
-        <AssetPreviewModal
-          item={previewTarget}
-          t={t}
-          onClose={() => setPreviewTarget(null)}
-          saved={previewCloudId !== '' && cloudSave.savedIds.has(previewCloudId)}
-          saving={previewCloudId !== '' && cloudSave.savingIds.has(previewCloudId)}
-          onSaveToLocal={previewCloudId !== '' && !previewIsOfficialVoice ? savePreviewItem : undefined}
-        />
+        isEditableTextPreview(previewTarget) ? (
+          <AssetTextEditorModal
+            item={previewTarget}
+            t={t}
+            onClose={() => setPreviewTarget(null)}
+            onSaved={typeof feed.refresh === 'function' ? feed.refresh : undefined}
+          />
+        ) : (
+          <AssetPreviewModal
+            item={previewTarget}
+            t={t}
+            onClose={() => setPreviewTarget(null)}
+            saved={previewCloudId !== '' && cloudSave.savedIds.has(previewCloudId)}
+            saving={previewCloudId !== '' && cloudSave.savingIds.has(previewCloudId)}
+            onSaveToLocal={previewCloudId !== '' && !previewIsOfficialVoice ? savePreviewItem : undefined}
+          />
+        )
       )}
       {/* 产品二级页：挂在 Stage 根上铺满整个区域，与旧产品页同一几何。 */}
       {sourceTab === 'product' && productView && productView.name === 'form' ? (

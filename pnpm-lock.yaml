@@ -286,9 +286,30 @@ importers:
 
   plugins/plugins/omnimux-assets:
     dependencies:
+      '@codemirror/commands':
+        specifier: ^6.11.0
+        version: 6.11.1
+      '@codemirror/lang-markdown':
+        specifier: ^6.5.2
+        version: 6.5.2
+      '@codemirror/language':
+        specifier: ^6.12.4
+        version: 6.13.1
+      '@codemirror/merge':
+        specifier: ^6.12.2
+        version: 6.12.3
+      '@codemirror/state':
+        specifier: ^6.7.1
+        version: 6.7.6
+      '@codemirror/view':
+        specifier: ^6.43.9
+        version: 6.43.15
       '@deepseek-ai/dsh-client-ui-primitives':
         specifier: '>=0.1.0-rc.6 || >=0.2.1-rc.3 <0.3.0-0 || >=0.2.2-rc.5 <0.3.0-0'
         version: 0.2.2-rc.5(@deepseek-ai/cordis@4.1.0)
+      '@lezer/highlight':
+        specifier: ^1.2.3
+        version: 1.2.5
       dsh-ui-kit:
         specifier: ^0.1.0
         version: link:../../packages/dsh-ui-kit
