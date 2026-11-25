@@ -38,18 +38,23 @@ const themeCss = readFileSync(join(here, '../../theme/workbench-theme.css'), 'ut
 const componentsCss = readFileSync(join(here, '../../theme/components.css'), 'utf8');
 
 describe('Issue #111: P1 / P2 / P3 contract tests', () => {
-  it('P1: Toolbar exposes visible Add Node text and direct side-by-side Select/Hand mode buttons', () => {
-    assert.match(toolbarSrc, /wf-canvas-toolbar__add-text[^>]*>\{t\('menu\.addNode'\)\}/);
-    assert.match(toolbarSrc, /role="group"/);
+  it('P1: Toolbar keeps icon-only dock buttons, accessible labels, and pointer mode popover with V/H shortcuts', () => {
+    assert.doesNotMatch(toolbarSrc, /wf-canvas-toolbar__add-text/);
+    assert.doesNotMatch(toolbarSrc, /wf-canvas-toolbar__mode-label/);
+    assert.doesNotMatch(toolbarSrc, /wf-canvas-toolbar__label/);
+    assert.match(toolbarSrc, /aria-label=\{t\('toolbar\.addNode'\)\}/);
+    assert.match(toolbarSrc, /wf-canvas-toolbar__mode-trigger/);
+    assert.match(toolbarSrc, /wf-canvas-toolbar__mode-menu/);
+    assert.match(toolbarSrc, /role="menuitemradio"/);
     assert.match(toolbarSrc, /data-mode="select"/);
     assert.match(toolbarSrc, /data-mode="pan"/);
     assert.match(toolbarSrc, /aria-keyshortcuts="V"/);
     assert.match(toolbarSrc, /aria-keyshortcuts="H"/);
-    assert.match(toolbarSrc, /aria-pressed=\{pointerMode === 'select'\}/);
-    assert.match(toolbarSrc, /aria-pressed=\{pointerMode === 'pan'\}/);
+    assert.match(toolbarSrc, /aria-checked=\{pointerMode === 'select'\}/);
+    assert.match(toolbarSrc, /aria-checked=\{pointerMode === 'pan'\}/);
     assert.doesNotMatch(toolbarSrc, /<CustomDropdown/);
     assert.match(themeCss, /\.wf-canvas-toolbar__item:focus-visible/);
-    assert.match(themeCss, /\.wf-canvas-toolbar__mode-btn\[aria-pressed='true'\]/);
+    assert.match(themeCss, /\.wf-canvas-toolbar__mode-option--active/);
     assert.match(headerControlsSrc, /aria-pressed=\{isMinimapOpen\}/);
     assert.match(componentsCss, /\.wf-header-controls > \.wf-header-capsule \+ \.wf-header-capsule/);
     assert.match(componentsCss, /\.wf-header-capsule__btn:focus-visible/);

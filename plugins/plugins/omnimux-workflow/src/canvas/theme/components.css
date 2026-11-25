@@ -2443,8 +2443,8 @@ button.wf-slot-well.wf-slot-well--append:hover {
 
 .wf-canvas-toolbar__divider {
   width: 1px;
-  height: 18px;
-  margin: 0 1px;
+  height: 20px;
+  margin: 0 3px;
   background: var(--wb-border-strong, var(--wb-border));
 }
 
@@ -9792,6 +9792,8 @@ body:has(.wf-voice-picker-modal) > .wf-custom-select-dropdown .wf-custom-select-
 
 .wf-canvas-toolbar__anchor {
   position: relative;
+  display: inline-flex;
+  align-items: center;
 }
 
 /* 原生文件选择器仅由「导入」按钮触发，不占 Dock 版面 */
