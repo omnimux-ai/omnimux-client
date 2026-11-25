@@ -1,4 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import { createRequire } from 'node:module'
 import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import Schema from '@deepseek-ai/schemastery'
@@ -536,6 +537,20 @@ export function apply(ctx: Context, config: Config): void {
     const isPackageResolvable = pluginPackages && typeof pluginPackages.packageOf === 'function' && resolveBase
       ? (pkg: string) => pluginPackages.packageOf!(pkg, resolveBase) !== undefined
       : undefined
+    // `packageOf` deliberately strips the subpath, so it cannot tell whether a
+    // row's export actually exists. Resolve the full specifier for that, which
+    // is what distinguishes DSH 0.2.1 (own `./list-agents` entry) from 0.2.2
+    // (registration folded into the main entry, subpath removed).
+    const resolvesSpecifier = resolveBase
+      ? (specifier: string) => {
+          try {
+            createRequire(resolveBase).resolve(specifier)
+            return true
+          } catch {
+            return false
+          }
+        }
+      : undefined
 
     const runtime = new ExpertPresetRuntime({
       home: () => dshHome(),
@@ -546,6 +561,7 @@ export function apply(ctx: Context, config: Config): void {
           : undefined,
       },
       isPackageResolvable,
+      resolvesSpecifier,
       onChanged: notifyAgentPresetsChanged,
     })
 

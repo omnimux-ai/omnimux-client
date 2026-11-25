@@ -252,3 +252,50 @@ test('preset generators emit the persona `prefix` key, never `text`', async (t) 
   ok(cordisRaw.includes('provider: spawn'), 'market preset tool-subagent must configure provider: spawn')
   ok(cordisRaw.includes('provider: fork'), 'market preset tool-subagent-fork must configure provider: fork')
 })
+
+test('omnimux bundle declaratively ships omni-agent.patch.yml with a DSH-version-aware list-agents row', () => {
+  const patchRel = 'plugins/omnimux/presets/omni-agent.patch.yml'
+  ok(existsSync(join(root, patchRel)), `${patchRel} must exist`)
+  const patchText = read(patchRel)
+  const cordisText = read('presets/omni-agent/agent.cordis.yml')
+  const agentMd = read('presets/omni-agent/Agent.md')
+
+  // DSH 0.2.1-rc.3 needs the `./list-agents` entry; 0.2.2-rc.5 removes it and folds
+  // `list_agents` into the main entry. Both preset sources keep one row whose
+  // `disabled` expression follows the installed package's export map.
+  for (const [label, text] of [['agent.cordis.yml', cordisText], ['omni-agent.patch.yml', patchText]]) {
+    ok(text.includes("name: '@deepseek-ai/dsh-tool-subagent-control/list-agents'"), `${label} must keep the list-agents row`)
+    ok(
+      /disabled: !!js "!\(\(\) => \{ try \{ return Boolean\(process\.getBuiltinModule\('node:module'\)\.createRequire\(baseUrl\)\.resolve\('@deepseek-ai\/dsh-tool-subagent-control\/list-agents'\)\) \} catch \{ return false \} \}\)\(\)"/.test(text),
+      `${label} must gate the row on the installed export map`,
+    )
+  }
+
+  const docs = parsePresetDocuments(patchRel, patchText)
+  const patches = docs[0]
+  ok(Array.isArray(patches) && patches.length === 1, 'omni-agent.patch.yml must be a single insert patch')
+  const inserted = patches[0]?.insert
+  ok(Array.isArray(inserted) && inserted.length === 1, 'omni-agent.patch.yml must insert one preset row')
+  const row = inserted[0]
+  equal(row.id, 'omnimux-preset-omni-agent')
+  equal(row.name, '@deepseek-ai/dsh-agent-preset')
+  equal(row.config.id, 'omni-agent')
+  equal(row.config.name, 'OmniMux')
+  equal(row.config.order, 1)
+  ok(Array.isArray(row.config.plugins) && row.config.plugins.length > 0, 'omni-agent must declare plugins')
+  const persona = row.config.plugins.find((entry) => entry?.id === 'persona')
+  equal(persona?.config?.prefix?.trim(), agentMd.trim(), 'omni-agent.patch.yml persona must match Agent.md verbatim')
+
+  const pkg = JSON.parse(read('plugins/omnimux/package.json'))
+  const bundlePatches = Array.isArray(pkg.dsh?.bundle?.patch) ? pkg.dsh.bundle.patch : [pkg.dsh?.bundle?.patch]
+  ok(bundlePatches.includes('./cordis.patch.yml'), 'omnimux must keep ./cordis.patch.yml in dsh.bundle.patch')
+  ok(bundlePatches.includes('./presets/omni-agent.patch.yml'), 'omnimux must declare ./presets/omni-agent.patch.yml in dsh.bundle.patch')
+  ok(pkg.files.includes('presets'), 'omnimux files must include presets')
+  equal(pkg.exports['./presets/*.patch.yml'], './presets/*.patch.yml', 'omnimux must export ./presets/*.patch.yml')
+
+  // Idempotency also covers omni-agent.patch.yml
+  const beforePatch = patchText
+  const res = spawnSync('node', [join(root, 'scripts/build-agent-presets.mjs')], { cwd: root, encoding: 'utf8' })
+  equal(res.status, 0, res.stderr || res.stdout)
+  equal(read(patchRel), beforePatch, 'build-agent-presets.mjs must be idempotent for omni-agent.patch.yml')
+})

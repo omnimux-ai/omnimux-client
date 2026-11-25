@@ -97,6 +97,27 @@ try {
     assert.equal(reply.result.ok, true, JSON.stringify(reply))
     return reply.result.value
   }
+  // OmniMux ships its default `omni-agent` preset declaratively via the `omnimux` bundle
+  // and retires upstream standard/ptc/minimal while keeping native Creator Mode (`cordis`).
+  // Creating a session first reproduces the user-visible defect: the composer asks for the
+  // registry default, so a missing declaration fails with `agent-preset/not-found`.
+  const presetWorkspace = realpathSync(mkdtempSync(join(home, 'preset-workspace-')))
+  const presetSession = await rpc('create', { request: { cwd: presetWorkspace } }, 'session')
+  assert.ok(typeof presetSession.sessionId === 'string' && presetSession.sessionId.length > 0,
+    `a new session must start on the default omni-agent preset: ${JSON.stringify(presetSession)}`)
+  const presetRoster = await rpc('list', {}, 'agentPresets')
+  assert.deepEqual(
+    presetRoster.presets.map(row => row.id),
+    ['omni-agent', 'cordis'],
+    `expected converged OmniMux preset roster, got ${JSON.stringify(presetRoster)}`,
+  )
+  const omniPreset = presetRoster.presets.find(row => row.id === 'omni-agent')
+  const cordisPreset = presetRoster.presets.find(row => row.id === 'cordis')
+  assert.equal(omniPreset?.isDefault, true, `omni-agent must be default: ${JSON.stringify(omniPreset)}`)
+  assert.equal(omniPreset?.broken, undefined, `omni-agent must mount cleanly: ${JSON.stringify(omniPreset)}`)
+  assert.equal(cordisPreset?.broken, undefined, `cordis must mount cleanly: ${JSON.stringify(cordisPreset)}`)
+  console.log('verify-host: OmniMux converged preset roster (omni-agent default + native cordis) and default session creation passed')
+
   if (host.dragResources !== undefined) {
     // Native file drags borrow a Session's workspace file only after the real Host authorizes it over its IPC channel.
     const { sessionFileAddress } = await import('@deepseek-ai/dsh-util-workspace-path')

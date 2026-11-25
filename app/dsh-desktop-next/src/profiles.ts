@@ -49,7 +49,7 @@ export const OMNIMUX_PRODUCT_BUNDLES: readonly string[] = [
 /** Plugins that must never be preinstalled: internal testing and retired builds. */
 export const OMNIMUX_WITHHELD_BUNDLES: readonly string[] = [...TIERS.tiers.beta, ...TIERS.tiers.retired]
 
-export const WEB_BUNDLES = [...new Set([...OMNIMUX_PRODUCT_BUNDLES, ...PROFILE_TEMPLATES.web!.bundles])]
+export const WEB_BUNDLES = [...new Set([...PROFILE_TEMPLATES.web!.bundles, ...OMNIMUX_PRODUCT_BUNDLES])]
 const NEXT_BUNDLE_PATCH = fileURLToPath(new URL('../cordis.patch.yml', import.meta.url))
 /** How long removing on-demand bundles of another DSH release may hold up a Host start; pnpm runs offline. */
 const ON_DEMAND_REMOVAL_TIMEOUT_MS = 30_000
@@ -191,7 +191,20 @@ export class NextProfiles {
     }
     this.migrateSchedule(name)
     this.retireUpstreamBundles(name)
+    this.migrateBundleOrder(name)
     return dir
+  }
+  /** Put the upstream core bundles before product bundles so product patches apply over their rows. */
+  private migrateBundleOrder(name: string): void {
+    const manifest = this.manifest(name)
+    const current = manifest.dsh.profile.bundles
+    const core = WEB_BUNDLES.filter(bundle => current.includes(bundle))
+    const extras = current.filter(bundle => !WEB_BUNDLES.includes(bundle))
+    const ordered = [...core, ...extras]
+    if (ordered.every((bundle, index) => bundle === current[index])) return
+    new NextRecovery(this).backup(name, 'before-bundle-order')
+    manifest.dsh.profile.bundles = ordered
+    atomicJson(join(this.directory(name), 'package.json'), manifest)
   }
   create(name: string): string {
     const dir = this.directory(name)
@@ -202,6 +215,7 @@ export class NextProfiles {
     this.finishOnboarding(name)
     this.migrateSchedule(name)
     this.retireUpstreamBundles(name)
+    this.migrateBundleOrder(name)
     return dir
   }
   /** Remove obsolete upstream bundle selections after a recovery backup; keep all user patches. */

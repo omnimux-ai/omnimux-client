@@ -749,3 +749,46 @@ it('leaves no Profile link into an archived installation and points the AA bridg
   expect(lstatSync(link).isSymbolicLink()).toBe(true)
   expect(JSON.parse(readFileSync(join(dir, 'desktop-next.cordis.patch.json'), 'utf8'))).toEqual([{ id: 'agents-anywhere-bridge-next', config: { dshHome: manager.home } }])
 })
+
+it('migrates an earlier Next profile that stored product bundles before the core bundles', () => {
+  const manager = profiles()
+  const dir = manager.ensure('desktop')
+  const file = join(dir, 'package.json')
+  const manifest = JSON.parse(readFileSync(file, 'utf8'))
+  // Earlier Next builds wrote WEB_BUNDLES product-first; that silently skipped every
+  // `omnimux` override because the product patch layer applied before the rows existed.
+  manifest.dsh.profile.bundles = [
+    ...manifest.dsh.profile.bundles.filter((name: string) => name !== '@deepseek-ai/dsh-base' && name !== '@deepseek-ai/dsh-web-app'),
+    '@deepseek-ai/dsh-web-app',
+    '@deepseek-ai/dsh-base',
+  ]
+  writeFileSync(file, JSON.stringify(manifest, null, 2) + '\n')
+
+  manager.ensure('desktop')
+
+  const migrated = JSON.parse(readFileSync(file, 'utf8'))
+  expect(migrated.dsh.profile.bundles.slice(0, 2)).toEqual(['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'])
+  expect(migrated.dsh.profile.bundles.indexOf('omnimux')).toBeGreaterThan(migrated.dsh.profile.bundles.indexOf('@deepseek-ai/dsh-web-app'))
+  expect(readdirSync(join(manager.home, 'recovery')).length).toBeGreaterThan(0)
+  // Re-running is a no-op: no second backup, bytes unchanged.
+  const after = readFileSync(file, 'utf8')
+  manager.ensure('desktop')
+  expect(readFileSync(file, 'utf8')).toBe(after)
+})
+
+it('orders core DSH bundles before OmniMux bundles so omni-agent is declared and set as default', () => {
+  expect(WEB_BUNDLES.indexOf('@deepseek-ai/dsh-base')).toBeLessThan(WEB_BUNDLES.indexOf('@deepseek-ai/dsh-web-app'))
+  expect(WEB_BUNDLES.indexOf('@deepseek-ai/dsh-web-app')).toBeLessThan(WEB_BUNDLES.indexOf('omnimux'))
+  const manager = profiles()
+  const dir = manager.ensure('desktop')
+  const profile = loadNextProfile(dir, manager.home)
+  const rows = composeEntries([...profile.layers.map(layer => layer.patches), profile.patches])
+  const omniPreset = rows.find(row => row.id === 'omnimux-preset-omni-agent')
+  expect(omniPreset?.name).toBe('@deepseek-ai/dsh-agent-preset')
+  expect((omniPreset?.config as { id?: string } | undefined)?.id).toBe('omni-agent')
+  for (const retiredId of ['preset-standard', 'preset-ptc', 'preset-minimal']) {
+    expect(rows.find(row => row.id === retiredId)?.disabled, retiredId).toBe(true)
+  }
+  expect(rows.find(row => row.id === 'preset-cordis')?.disabled).toBeFalsy()
+  expect((rows.find(row => row.id === 'agent-preset-registry')?.config as { default?: string } | undefined)?.default).toBe('omni-agent')
+})

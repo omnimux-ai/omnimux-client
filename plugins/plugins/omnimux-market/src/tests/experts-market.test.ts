@@ -399,3 +399,27 @@ test('i18n, UI, and host source contracts align with DSH 0.1.7+ agent-preset-reg
   assert.match(host, /AGENT_PRESET_SETTINGS_NS\s*=\s*'agent-preset-registry'/, 'must broadcast official agent-preset-registry namespace')
   assert.doesNotMatch(host, /materializeEnabledMarketExperts/, 'host must not auto-materialize retired .agent-presets/')
 })
+
+test('market expert preset stack keeps list-agents only where .2.1 exports it', () => {
+  const collectNames = (rows: readonly { name?: string; config?: unknown }[]): string[] => {
+    const names: string[] = []
+    for (const row of rows) {
+      if (typeof row.name === 'string') names.push(row.name)
+      if (Array.isArray(row.config)) names.push(...collectNames(row.config as readonly { name?: string; config?: unknown }[]))
+    }
+    return names
+  }
+  const listAgents = '@deepseek-ai/dsh-tool-subagent-control/list-agents'
+
+  // DSH 0.2.1-rc.3: the subpath exists and is the only place `list_agents` registers.
+  const legacy = collectNames(buildMarketExpertPresetDefinition(DEFAULT_MARKET_EXPERTS[0]).plugins)
+  assert.ok(legacy.includes('@deepseek-ai/dsh-tool-subagent-control'), 'must mount main subagent-control package')
+  assert.ok(legacy.includes(listAgents), 'rc.3 stack must mount the list-agents entry')
+
+  // DSH 0.2.2-rc.5: the export is gone, so the row must be omitted instead of failing the mount.
+  const modern = collectNames(buildMarketExpertPresetDefinition(DEFAULT_MARKET_EXPERTS[0], {
+    resolvesSpecifier: (specifier) => specifier !== listAgents,
+  }).plugins)
+  assert.ok(modern.includes('@deepseek-ai/dsh-tool-subagent-control'))
+  assert.ok(!modern.includes(listAgents), 'rc.5 stack must not mount a removed subpath')
+})

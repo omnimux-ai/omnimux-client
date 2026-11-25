@@ -7,12 +7,14 @@
     ".": "./src/index.js",
     "./client": "./lib/client.js",
     "./package.json": "./package.json",
-    "./locale/*.json": "./locale/*.json"
+    "./locale/*.json": "./locale/*.json",
+    "./presets/*.patch.yml": "./presets/*.patch.yml"
   },
   "files": [
     "src",
     "apps",
     "assets",
+    "presets",
     "lib/client.js",
     "lib/generation-core.js",
     "lib/video-inspect.js",
@@ -88,7 +90,10 @@
   },
   "dsh": {
     "bundle": {
-      "patch": "./cordis.patch.yml"
+      "patch": [
+        "./cordis.patch.yml",
+        "./presets/omni-agent.patch.yml"
+      ]
     },
     "client": {
       "inject": [

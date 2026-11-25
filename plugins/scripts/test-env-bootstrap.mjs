@@ -636,6 +636,50 @@ async function runTaskPreparation({ options, io, deps }) {
 }
 
 /**
+ * 已安装 bundle 自带的 preset 声明目录。
+ *
+ * 产品 bundle（如 `omnimux`）把 `presets/*.patch.yml` 随包分发，安装后在
+ * `<profile>/node_modules/<bundle>/presets`。隔离 profile 已经带着这些 bundle 时，
+ * 再写一遍同名行会被 Loader 以重复 id 拒绝，所以按真实安装布局收集后跳过。
+ * 宿主 App 根目录没有这条路径：旧壳把插件放在 `preset/plugins`，新壳在 app.asar 内。
+ * @param {string | undefined} profileDir
+ * @returns {string[]}
+ */
+export function profileBundlePresetDirectories(profileDir) {
+  if (!profileDir) return [];
+  let bundles;
+  try {
+    bundles = JSON.parse(fs.readFileSync(join(profileDir, 'package.json'), 'utf8')).dsh?.profile?.bundles;
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(bundles)) return [];
+  const directories = [];
+  for (const bundle of bundles) {
+    // Core bundles are supplied by the installation and declare no product presets.
+    if (typeof bundle !== 'string' || bundle.startsWith('@deepseek-ai/')) continue;
+    const directory = join(profileDir, 'node_modules', ...bundle.split('/'), 'presets');
+    if (fs.existsSync(directory)) directories.push(directory);
+  }
+  return directories;
+}
+
+/**
+ * Parse an optional preset patch fragment into Loader rows.
+ *
+ * The bundle-declared case legitimately yields an empty fragment; YAML parses
+ * that as `null`, which must mean "no extra rows", not an invalid profile.
+ * @param {string} text
+ * @returns {{ document: import('yaml').Document.Parsed, rows: unknown[] }}
+ */
+export function presetRowsFromPatchText(text) {
+  const document = parseDocument(text);
+  const parsed = document.toJS();
+  const rows = text.trim() === '' ? [] : parsed;
+  return { document, rows };
+}
+
+/**
  * 隔离 profile 需要自己声明 agent preset（Issue #3871 的第二个后果）。
  *
  * rc.3 起预设不再由文件系统发现：壳在启动时向 profile 注入 `@deepseek-ai/dsh-agent-preset`
@@ -681,7 +725,13 @@ export function agentPresetPatchText(layout, deps = {}) {
       }
       resolvable = archiveResolvable(tree, nodeResolvable);
     }
-    composition = compose({ appRoot: layout.appRoot, resolvable, ...(deps.presetRoot ? { presetRoot: deps.presetRoot } : {}) });
+    const extraPresetDirectories = deps.bundlePresetDirectories ?? profileBundlePresetDirectories(deps.profileDir);
+    composition = compose({
+      appRoot: layout.appRoot,
+      resolvable,
+      ...(deps.presetRoot ? { presetRoot: deps.presetRoot } : {}),
+      ...(extraPresetDirectories.length > 0 ? { extraPresetDirectories } : {}),
+    });
   } catch (error) {
     // 已经是本模块的分类错误就原样上抛，别再用一个更模糊的 code 覆盖掉具体原因。
     if (typeof error?.code === 'string' && error.code.startsWith('TEST_ENV_')) throw error;
@@ -691,7 +741,13 @@ export function agentPresetPatchText(layout, deps = {}) {
     throw wrapped;
   }
   if (!composition.rows.length) {
-    throw failure('PRESET_ROWS_EMPTY', `预设目录存在但没合成出任何声明：${layout.appRoot}`);
+    // 一个已启用的 bundle（如随包的 `omnimux`）自己声明了这些预设时，隔离 profile
+    // 不需要再写一遍：重复的 Loader 行 id 或 preset id 会让 Loader 直接拒绝启动。
+    // 只有「什么都没合成、也没有任何 bundle 覆盖」才是真空壳，必须响亮失败。
+    if ((composition.skippedPresetIds ?? []).length === 0) {
+      throw failure('PRESET_ROWS_EMPTY', `预设目录存在但没合成出任何声明：${layout.appRoot}`);
+    }
+    return '';
   }
   // 声明行存在但插件行全空 = 空壳 patch：宿主能启动、建会话才报 agent-preset/invalid。
   // 这类退化不能当成功（评审建议 3）。
@@ -793,7 +849,7 @@ async function startFreshTaskRuntime({ options, io, deps }) {
     const worktreePresetRoot = [join(options.root, 'plugins', 'presets'), join(options.root, 'presets')]
       .find((candidateDir) => io.existsSync(candidateDir));
     const freshPresetDeps = worktreePresetRoot ? { ...deps, presetRoot: worktreePresetRoot } : deps;
-    const freshPresetPatch = agentPresetPatchText(layout, freshPresetDeps);
+    const freshPresetPatch = agentPresetPatchText(layout, { ...freshPresetDeps, profileDir: installed.installation.profile });
     const patchPath = join(installed.installation.profile, 'cordis.patch.yml');
     if (io.existsSync(patchPath)) {
       canonical(io, patchPath, false);
@@ -1457,10 +1513,10 @@ export function createTestEnvironmentStarter(deps = {}) {
       // 不允许退回「宿主照常启动、建会话才报 agent-preset/not-found」的静默降级。
       if (patchPathForPresets) {
         const base = parseDocument(io.readFileSync(patchPathForPresets, 'utf8'));
-        const agentPresets = parseDocument(agentPresetPatchText(layout, deps));
+        const agentPresets = presetRowsFromPatchText(agentPresetPatchText(layout, { ...deps, profileDir: dirname(patchPathForPresets) }));
         const baseRows = base.toJS() ?? [];
-        const presetRows = agentPresets.toJS();
-        if (base.errors.length || agentPresets.errors.length || !Array.isArray(baseRows) || !Array.isArray(presetRows)) {
+        const presetRows = agentPresets.rows;
+        if (base.errors.length || agentPresets.document.errors.length || !Array.isArray(baseRows) || !Array.isArray(presetRows)) {
           throw failure('SMOKE_PROFILE_INVALID', '隔离环境的插件配置必须是 YAML 列表。');
         }
         const localMedia = { id: 'omnimux', config: { media: { providers: { omnimux: { baseUrl: `${mock.origin}/v1` } } } } };

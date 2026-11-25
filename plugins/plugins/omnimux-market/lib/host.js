@@ -1,3 +1,4 @@
+import { createRequire } from 'node:module';
 import { defineTool } from '@deepseek-ai/dsh-tools';
 import Schema from '@deepseek-ai/schemastery';
 import { clamp } from './api.js';
@@ -477,6 +478,21 @@ export function apply(ctx, config) {
         const isPackageResolvable = pluginPackages && typeof pluginPackages.packageOf === 'function' && resolveBase
             ? (pkg) => pluginPackages.packageOf(pkg, resolveBase) !== undefined
             : undefined;
+        // `packageOf` deliberately strips the subpath, so it cannot tell whether a
+        // row's export actually exists. Resolve the full specifier for that, which
+        // is what distinguishes DSH 0.2.1 (own `./list-agents` entry) from 0.2.2
+        // (registration folded into the main entry, subpath removed).
+        const resolvesSpecifier = resolveBase
+            ? (specifier) => {
+                try {
+                    createRequire(resolveBase).resolve(specifier);
+                    return true;
+                }
+                catch {
+                    return false;
+                }
+            }
+            : undefined;
         const runtime = new ExpertPresetRuntime({
             home: () => dshHome(),
             registry: {
@@ -486,6 +502,7 @@ export function apply(ctx, config) {
                     : undefined,
             },
             isPackageResolvable,
+            resolvesSpecifier,
             onChanged: notifyAgentPresetsChanged,
         });
         setAgentPresetsProvider(() => runtime.listOfficial());

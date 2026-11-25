@@ -54,9 +54,19 @@ const PLAN_MODE_SECTION = [
 export interface BuildPresetOptions {
   platform?: NodeJS.Platform
   isPackageResolvable?: (packageName: string) => boolean
+  /** Whether a full module specifier (including a package subpath) resolves in this host. */
+  resolvesSpecifier?: (specifier: string) => boolean
   presetId?: string
   skills?: readonly string[]
 }
+
+/**
+ * DSH 0.2.1-rc.3 exports `./list-agents` and registers `list_agents` only from
+ * that entry; 0.2.2-rc.5 folds the registration into the main entry and drops
+ * the subpath. The row is kept only where the subpath really resolves, so the
+ * same expert stack works on both lines.
+ */
+const LIST_AGENTS_SUBPATH = '@deepseek-ai/dsh-tool-subagent-control/list-agents'
 
 function pruneUnresolvableRows(
   rows: readonly DynamicPresetRow[],
@@ -169,7 +179,9 @@ export function buildMarketExpertPluginRows(
       isolate: { workflowEngine: true },
       config: [
         { id: 'tool-subagent-control', name: '@deepseek-ai/dsh-tool-subagent-control' },
-        { id: 'tool-subagent-list-agents', name: '@deepseek-ai/dsh-tool-subagent-control/list-agents' },
+        ...(opts.resolvesSpecifier === undefined || opts.resolvesSpecifier(LIST_AGENTS_SUBPATH)
+          ? [{ id: 'tool-subagent-list-agents', name: LIST_AGENTS_SUBPATH }]
+          : []),
         {
           id: 'tool-subagent',
           name: '@deepseek-ai/dsh-tool-subagent',
@@ -245,6 +257,7 @@ export interface ExpertPresetRuntimeOptions {
   home: () => string
   registry: AgentPresetRegistryLike
   isPackageResolvable?: (packageName: string) => boolean
+  resolvesSpecifier?: (specifier: string) => boolean
   onChanged?: () => void
 }
 
@@ -270,6 +283,7 @@ export class ExpertPresetRuntime {
   private readonly home: () => string
   private readonly registry: AgentPresetRegistryLike
   private readonly isPackageResolvable?: (packageName: string) => boolean
+  private readonly resolvesSpecifier?: (specifier: string) => boolean
   private readonly onChanged?: () => void
   private readonly disposers = new Map<string, () => Promise<void>>()
   private readonly queues = new Map<string, Promise<unknown>>()
@@ -278,6 +292,7 @@ export class ExpertPresetRuntime {
     this.home = options.home
     this.registry = options.registry
     this.isPackageResolvable = options.isPackageResolvable
+    this.resolvesSpecifier = options.resolvesSpecifier
     this.onChanged = options.onChanged
   }
 
@@ -322,6 +337,7 @@ export class ExpertPresetRuntime {
       }
       const definition = buildMarketExpertPresetDefinition(exp, {
         isPackageResolvable: this.isPackageResolvable,
+        resolvesSpecifier: this.resolvesSpecifier,
       })
       const unregister = await this.registry.register(definition)
       this.disposers.set(exp.id, unregister)
