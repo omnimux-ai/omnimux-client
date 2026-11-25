@@ -2,6 +2,7 @@ import { createAssetsDispatcher, registerAssetsRoutes } from './http-routes.js'
 import { createArtifactStore } from './artifacts.js'
 import { createCloudCatalog } from './cloud-catalog.js'
 import { createLibraryStore } from './library.js'
+import { createTextVersionStore } from './text-versions.js'
 import { createMappingStore, AssetsError } from './mappings.js'
 import { resolveAssetsPaths } from './paths.js'
 import { formatAssetUri, isAssetUri, parseAssetUri, resolveAssetUri, toAssetUri } from './protocol.js'
@@ -154,19 +155,15 @@ export function apply(ctx, config) {
   const paths = resolveAssetsPaths()
   const mappings = createMappingStore({ paths })
   const artifacts = createArtifactStore({ paths })
-  const library = createLibraryStore({ paths })
+  const textVersions = createTextVersionStore({ paths })
+  const library = createLibraryStore({
+    paths,
+    onRemoveAsset: (assetId) => textVersions.recycleAssetSnapshots(assetId),
+  })
   library.migrateMappings(mappings)
   const cloud = createCloudCatalog({
     library,
     catalogDir: typeof config?.catalogDir === 'string' ? config.catalogDir : undefined,
-  })
-  const dispatcher = createAssetsDispatcher({
-    mappings,
-    artifacts,
-    library,
-    cloud,
-    paths,
-    getService: (name) => ctx.get?.(name),
   })
 
   // changed 事件的唯一出口：lrev/arev 取自同一对活跃 store，op 区分新建与追加，
@@ -188,6 +185,17 @@ export function apply(ctx, config) {
       },
     })
   }
+
+  const dispatcher = createAssetsDispatcher({
+    mappings,
+    artifacts,
+    library,
+    textVersions,
+    cloud,
+    paths,
+    onAssetChanged: emitChanged,
+    getService: (name) => ctx.get?.(name),
+  })
 
   // 浏览器图片真实入库的宿主内窄服务（#3052）：同一个活跃 library 实例
   // 持有物化/登记/changed 事件的唯一所有权。omnimux-browser 只经

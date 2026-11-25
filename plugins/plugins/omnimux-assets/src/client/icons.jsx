@@ -448,6 +448,109 @@ export function TrashIcon(props) {
   )
 }
 
+/** 撤销图标 */
+export function UndoIcon(props) {
+  return (
+    <Icon {...props}>
+      <path d="M9 14 4 9l5-5" />
+      <path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11" />
+    </Icon>
+  )
+}
+
+/** 重做图标 */
+export function RedoIcon(props) {
+  return (
+    <Icon {...props}>
+      <path d="m15 14 5-5-5-5" />
+      <path d="M20 9H9.5A5.5 5.5 0 0 0 4 14.5A5.5 5.5 0 0 0 9.5 20H13" />
+    </Icon>
+  )
+}
+
+/** 历史版本图标 */
+export function HistoryIcon(props) {
+  return (
+    <Icon {...props}>
+      <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+      <path d="M3 3v5h5" />
+      <path d="M12 7v5l4 2" />
+    </Icon>
+  )
+}
+
+/** 保存图标 */
+export function SaveIcon(props) {
+  return (
+    <Icon {...props}>
+      <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+      <polyline points="17 21 17 13 7 13 7 21" />
+      <polyline points="7 3 7 8 15 8" />
+    </Icon>
+  )
+}
+
+/** 查找图标 */
+export function SearchIcon(props) {
+  return (
+    <Icon {...props}>
+      <circle cx="11" cy="11" r="8" />
+      <path d="m21 21-4.3-4.3" />
+    </Icon>
+  )
+}
+
+/** 向上折叠/上一匹配箭头 */
+export function ChevronUpIcon(props) {
+  return (
+    <Icon {...props}>
+      <path d="m18 15-6-6-6 6" />
+    </Icon>
+  )
+}
+
+/** 差异对比图标 */
+export function GitCompareIcon(props) {
+  return (
+    <Icon {...props}>
+      <circle cx="18" cy="18" r="3" />
+      <circle cx="6" cy="6" r="3" />
+      <path d="M13 6h3a2 2 0 0 1 2 2v7" />
+      <path d="M11 18H8a2 2 0 0 1-2-2V9" />
+    </Icon>
+  )
+}
+
+/** 回滚恢复图标 */
+export function RotateCcwIcon(props) {
+  return (
+    <Icon {...props}>
+      <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
+      <path d="M3 3v5h5" />
+    </Icon>
+  )
+}
+
+/** 时钟空态图标 */
+export function ClockIcon(props) {
+  return (
+    <Icon {...props}>
+      <circle cx="12" cy="12" r="10" />
+      <polyline points="12 6 12 12 16 14" />
+    </Icon>
+  )
+}
+
+/** 标签图标 */
+export function TagIcon(props) {
+  return (
+    <Icon {...props}>
+      <path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z" />
+      <circle cx="7.5" cy="7.5" r=".5" fill="currentColor" />
+    </Icon>
+  )
+}
+
 const ASSET_TYPE_ICONS = {
   character: CharacterIcon,
   scene: SceneIcon,

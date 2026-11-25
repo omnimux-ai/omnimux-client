@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -8,6 +9,7 @@ import {
   checkPackage,
   collectLocaleDuplicates,
   discoverPlugins,
+  evalClientBundle,
   normalizeInject,
   pluginEntries,
   repoRoot,
@@ -100,4 +102,22 @@ test('cross-package duplicate locale namespace reports both registrants', async 
   assert.equal(dups[0].namespace, 'omnimux-shared-ns')
   const pkgs = dups[0].entries.map((e) => e.package).sort()
   assert.deepEqual(pkgs, ['fixture-client-locale-dup-a', 'fixture-client-locale-dup-b'])
+})
+
+test('evalClientBundle preserves Symbol properties on globalThis/window (style-mod / CodeMirror)', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'verify-load-sym-'))
+  const file = join(dir, 'client.js')
+  try {
+    writeFileSync(file, `
+      const KEY = Symbol.for('style-mod-test-counter');
+      const cur = globalThis[KEY] || 1;
+      globalThis[KEY] = cur + 1;
+      module.exports = { first: cur, second: globalThis[KEY] };
+    `, 'utf8')
+    const out = evalClientBundle(file)
+    assert.equal(out.first, 1)
+    assert.equal(out.second, 2)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
 })

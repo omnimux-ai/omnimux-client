@@ -248,19 +248,24 @@ function makeClientEnv() {
     },
   })
   const window = new Proxy({}, {
-    get(_t, prop) {
+    get(target, prop) {
+      if (prop === '__ModuleLoader__' || prop === 'ModuleLoader') return moduleLoader
+      if (typeof prop === 'symbol') return target[prop]
+      if (Object.hasOwn(target, prop)) return target[prop]
       if (prop === 'document') return document
       if (prop === 'navigator') return { language: 'en-US', userAgent: 'plugin-load-check' }
       if (prop === 'location') return { href: 'http://localhost/', search: '', hash: '', protocol: 'http:', host: 'localhost', hostname: 'localhost', port: '', pathname: '/' }
       if (prop === 'localStorage' || prop === 'sessionStorage') return { getItem: () => null, setItem: () => {}, removeItem: () => {}, clear: () => {} }
       if (prop === 'matchMedia') return () => ({ matches: false, addEventListener: () => {}, removeEventListener: () => {} })
       if (prop === '__DSH_BOOT__' || prop === '__omnimuxWorkbench' || prop === '__omnimuxLocale') return serviceStub(prop)
-      if (prop === '__ModuleLoader__' || prop === 'ModuleLoader') return moduleLoader
       if (prop === 'addEventListener' || prop === 'removeEventListener') return () => {}
       if (prop === 'open') return () => null
       return serviceStub(`window.${String(prop)}`)
     },
-    set() { return true },
+    set(target, prop, value) {
+      target[prop] = value
+      return true
+    },
   })
   const timers = {
     setTimeout: (...args) => setTimeout(...args),

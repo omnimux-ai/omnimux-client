@@ -1,8 +1,28 @@
 import { previewUrl } from './api.js'
 import { inferAssetExtension, pickCoverFile } from './add-to-chat.js'
+import { isEditableTextExt, isMarkdownExt, normalizeTextSubPath } from '../text-files.js'
 
 export const IMAGE_EXT = /\.(png|jpe?g|gif|webp|svg|bmp|ico|avif|heic|tiff)$/i
 export const VIDEO_EXT = /\.(mp4|mov|avi|mkv|webm|m4v|flv)$/i
+
+/**
+ * Whether a normalized preview target should open in the text document editor modal.
+ * Only local library files with a supported text extension qualify; cloud rows and
+ * generated artifacts stay on the read-only preview modal.
+ * @param {any} item
+ * @returns {boolean}
+ */
+export function isEditableTextPreview(item) {
+  return Boolean(
+    item
+    && item.editableText === true
+    && !item.cloud
+    && typeof item.assetId === 'string'
+    && item.assetId !== ''
+    && typeof item.fileId === 'string'
+    && item.fileId !== ''
+  )
+}
 
 /**
  * Check if a file descriptor or row reference is a directory.
@@ -95,8 +115,9 @@ export function resolveAssetMediaPreview(target, options = {}) {
     const coverFile = pickCoverFile(target) || (target.files ? target.files[0] : null)
     const ext = inferAssetExtension(coverFile, target.name)
     const kind = detectMediaKind(coverFile || target)
-    const pUrl = coverFile?.id
-      ? previewUrl(target.id, coverFile.id)
+    const fileId = String(coverFile?.id ?? '')
+    const pUrl = fileId
+      ? previewUrl(target.id, fileId)
       : (typeof coverFile?.preview_url === 'string' ? coverFile.preview_url : '')
     const path = String(
       options.pathInfo ||
@@ -107,6 +128,22 @@ export function resolveAssetMediaPreview(target, options = {}) {
       target.name ||
       ''
     )
+    const nameCandidate = String(
+      coverFile?.original_name ||
+      coverFile?.name ||
+      coverFile?.relative_path ||
+      coverFile?.real_path ||
+      target.name ||
+      ''
+    )
+    const editableText = Boolean(
+      target.id
+      && fileId
+      && kind === 'file'
+      && !isFolderAsset(target)
+      && isEditableTextExt(nameCandidate)
+    )
+    const markdown = editableText && isMarkdownExt(nameCandidate)
 
     return {
       id: String(target.id),
@@ -118,6 +155,11 @@ export function resolveAssetMediaPreview(target, options = {}) {
       sourceAssetId: String(target.id),
       sourceAsset: target,
       rawItem: target,
+      assetId: String(target.id),
+      fileId,
+      subPath: '',
+      editableText,
+      markdown,
     }
   }
 
@@ -139,16 +181,24 @@ export function resolveAssetMediaPreview(target, options = {}) {
   }
 
   let pUrl = ''
+  let fileId = ''
+  let subPath = ''
   if (options.stack && options.asset?.id && options.stack.file?.id) {
+    fileId = String(options.stack.file.id)
     const sub = target.relative_path || [options.stack.path, target.name].filter(Boolean).join('/')
-    pUrl = previewUrl(options.asset.id, options.stack.file.id, sub)
+    subPath = normalizeTextSubPath(sub)
+    pUrl = previewUrl(options.asset.id, fileId, sub)
   } else if (parentAsset?.id && target.id) {
-    pUrl = previewUrl(parentAsset.id, target.id)
+    fileId = String(target.id)
+    pUrl = previewUrl(parentAsset.id, fileId)
   } else if (typeof target.preview_url === 'string') {
     pUrl = target.preview_url
   }
 
   const itemId = String(target.id || (sourceAssetId ? `${sourceAssetId}:${calculatedPath}` : title))
+  const nameCandidate = String(target.name || target.original_name || subPath || title)
+  const editableText = Boolean(sourceAssetId && fileId && kind === 'file' && isEditableTextExt(nameCandidate))
+  const markdown = editableText && isMarkdownExt(nameCandidate)
 
   return {
     id: itemId,
@@ -160,5 +210,10 @@ export function resolveAssetMediaPreview(target, options = {}) {
     sourceAssetId,
     sourceAsset: parentAsset || null,
     rawItem: target,
+    assetId: sourceAssetId,
+    fileId,
+    subPath,
+    editableText,
+    markdown,
   }
 }

@@ -1,0 +1,99 @@
+{
+  "feature": "assets-text-editor",
+  "verifiedAt": "2026-11-25T13:36:52.253Z",
+  "checks": {
+    "pdfUsesPreviewModal": {
+      "previewOpen": true,
+      "editorOpen": false
+    },
+    "singleMdOpensEditor": {
+      "editorOpen": true,
+      "title": "短视频脚本模板.md",
+      "ext": "MD",
+      "hasHeading": true
+    },
+    "nestedPngUsesPreviewModal": {
+      "imgPresent": true,
+      "editorOpen": false
+    },
+    "txtPlainMode": {
+      "ext": "TXT",
+      "hiddenMarks": 0,
+      "bodyHasStars": true
+    },
+    "skillMdLoaded": {
+      "title": "SKILL.md",
+      "ext": "MD",
+      "h1Count": 1,
+      "hiddenMarks": 12,
+      "hasAccessTokenProse": true,
+      "undoDisabledInitially": true,
+      "redoDisabledInitially": true,
+      "historyDotVisible": true,
+      "noMiddleDotInModal": true
+    },
+    "afterEdit": {
+      "dirtyVisible": true,
+      "undoEnabled": true,
+      "statsText": "193 词307 字20 行"
+    },
+    "undoRedo": {
+      "removedByUndo": true,
+      "restoredByRedo": true
+    },
+    "search": {
+      "countBefore": "1/3",
+      "countAfter": "2/3"
+    },
+    "diskAfterSave": {
+      "originalUntouched": true,
+      "managedHasNewLine": true
+    },
+    "diffModal": {
+      "mergeEditors": 2,
+      "modalBg": "rgb(21, 21, 23)",
+      "isOpaque": true
+    },
+    "revertFromDiff": {
+      "cardCount": 3,
+      "hasRevertBadge": true,
+      "dirtyAfterRevert": false
+    },
+    "deleteSnapshot": {
+      "remainingCards": 2
+    },
+    "conflictBarShown": true,
+    "conflictReloaded": true,
+    "unsavedModalButtons": {
+      "hasSaveAndClose": true,
+      "hasDiscard": true,
+      "hasCancel": true
+    },
+    "lightTheme": {
+      "modalBg": "rgb(255, 255, 255)",
+      "topbarBg": "rgb(250, 250, 250)",
+      "drawerBg": "rgb(250, 250, 250)"
+    },
+    "narrowViewport": {
+      "narrowSearchState": {
+        "searchOpen": true,
+        "drawerOpen": false,
+        "overflowX": false
+      },
+      "narrowDrawerState": {
+        "searchOpen": false,
+        "drawerOpen": true,
+        "overflowX": false
+      }
+    },
+    "discardClosedCleanly": true
+  },
+  "screenshots": [
+    "01-dark-editor-search-drawer.png",
+    "02-dark-diff-modal.png",
+    "03-dark-conflict-bar.png",
+    "04-dark-unsaved-confirm.png",
+    "05-light-editor-drawer.png",
+    "06-light-narrow-drawer.png"
+  ]
+}

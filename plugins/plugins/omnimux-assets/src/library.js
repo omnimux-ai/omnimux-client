@@ -5,12 +5,21 @@
  * vault-relative `relative_path`. User originals are never unlinked.
  * Deleting a record recycles the managed copy only.
  */
+import { createHash, randomBytes } from 'node:crypto'
 import { accessSync, constants, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { readFile, realpath, rename, stat, unlink, writeFile } from 'node:fs/promises'
 import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 import { bucketOf, extOf, previewMimeOf, scanDir, scanFile, statStatus } from './scanner.js'
 import { AssetsError, newRecordId } from './mappings.js'
 import { formatAssetUri, isAssetUri, parseAssetUri, toAssetUri } from './protocol.js'
 import { copyIntoVault, copyIntoVaultSync, isInsideDir, resolveVaultRelPath } from './ingest.js'
+import {
+  TEXT_FILE_MAX_BYTES,
+  isEditableTextExt,
+  isMarkdownExt,
+  normalizeTextSubPath,
+  textExtOf,
+} from './text-files.js'
 
 const DEFAULT_FS = { accessSync, constants, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, writeFileSync }
 
@@ -266,6 +275,8 @@ export function createLibraryStore(opts = {}) {
   const paths = opts.paths ?? {}
   const vaultRoot = paths.dir || (paths.libraryFile ? dirname(paths.libraryFile) : '')
   const filesDir = paths.filesDir || (vaultRoot ? join(vaultRoot, 'data', 'files') : '')
+  const textVersionsDir = paths.textVersionsDir || (vaultRoot ? join(vaultRoot, 'data', 'text-versions') : '')
+  const onRemoveAsset = typeof opts.onRemoveAsset === 'function' ? opts.onRemoveAsset : null
 
   function loadState() {
     try {
@@ -389,6 +400,72 @@ export function createLibraryStore(opts = {}) {
     asset.files = files
     persist()
     return asset
+  }
+
+  /**
+   * Async counterpart of `materializeAssetSync` for non-blocking text routes.
+   * @param {any} asset
+   */
+  async function materializeAssetAsync(asset) {
+    if (!asset || !Array.isArray(asset.files) || asset.files.length === 0) return asset
+    if (!filesDir || !vaultRoot) return asset
+    let changed = false
+    const nextFiles = []
+    for (const file of asset.files) {
+      if (str(file.relative_path)) {
+        nextFiles.push(file)
+        continue
+      }
+      const source = str(file.real_path)
+      if (!source) {
+        nextFiles.push(file)
+        continue
+      }
+      try {
+        const copied = await copyIntoVault({
+          sourceAbs: source,
+          destDir: managedDirOf(asset.id),
+          vaultRoot,
+          originalName: file.original_name || basename(source.replace(/\/+$/, '')),
+          fs,
+        })
+        nextFiles.push({
+          id: file.id,
+          relative_path: copied.relativePath,
+          original_name: file.original_name || copied.name,
+        })
+        changed = true
+      } catch (error) {
+        console.warn('[omnimux-assets] async asset materialize fallback:', error?.message || error)
+        nextFiles.push(file)
+      }
+    }
+    if (!changed) return asset
+    asset.files = nextFiles
+    persist()
+    return asset
+  }
+
+  /** @type {Map<string, Promise<unknown>>} */
+  const textWriteLocks = new Map()
+
+  /**
+   * Serialize concurrent text writes on the same managed file so overlapping
+   * ETag checks and atomic renames cannot race or silently clobber each other.
+   * @template T
+   * @param {string} key
+   * @param {() => Promise<T>} fn
+   * @returns {Promise<T>}
+   */
+  function withTextWriteLock(key, fn) {
+    const previous = textWriteLocks.get(key) ?? Promise.resolve()
+    const run = previous.then(fn, fn)
+    const settled = run.then(() => undefined, () => undefined)
+    textWriteLocks.set(key, settled)
+    void settled.finally(() => {
+      if (textWriteLocks.get(key) === settled) textWriteLocks.delete(key)
+    })
+    return run
   }
 
   /**
@@ -693,6 +770,11 @@ export function createLibraryStore(opts = {}) {
     state.revision += 1
     persist()
     recycleManagedDir(assetId)
+    if (onRemoveAsset) {
+      void Promise.resolve(onRemoveAsset(assetId)).catch((error) => {
+        console.warn('[omnimux-assets] onRemoveAsset cleanup failed:', error?.message || error)
+      })
+    }
   }
 
   function revision() {
@@ -835,8 +917,250 @@ export function createLibraryStore(opts = {}) {
     return { absolutePath, isDirectory: info.isDirectory() }
   }
 
+  /**
+   * Async sub-path escape check for text file reads/writes (no sync Host I/O).
+   * @param {string} rootPath
+   * @param {string} subPath
+   */
+  async function resolveFileSubPathAsync(rootPath, subPath) {
+    const cleaned = normalizeTextSubPath(subPath)
+    if (cleaned === '') return realpath(rootPath)
+    let rootReal
+    try {
+      rootReal = await realpath(rootPath)
+    } catch {
+      throw new AssetsError('path-not-found', 'file root does not exist')
+    }
+    const resolved = resolve(rootReal, cleaned)
+    if (resolved !== rootReal && !resolved.startsWith(rootReal + sep)) {
+      throw new AssetsError('path-denied', 'sub path escapes the file root')
+    }
+    let real
+    try {
+      real = await realpath(resolved)
+    } catch {
+      throw new AssetsError('path-not-found', 'sub path does not exist')
+    }
+    if (real !== rootReal && !real.startsWith(rootReal + sep)) {
+      throw new AssetsError('path-denied', 'sub path escapes the file root')
+    }
+    return real
+  }
+
+  /**
+   * Verify a resolved real path stays strictly inside this asset's managed vault copy.
+   * Never grants write permission to external desktop originals.
+   * @param {string} assetId
+   * @param {{ relative_path?: string }} file
+   * @param {string} targetReal
+   */
+  async function isManagedWritablePath(assetId, file, targetReal) {
+    if (!file || !str(file.relative_path) || !vaultRoot || !filesDir) return false
+    const managedDir = managedDirOf(assetId)
+    if (!managedDir || !isInsideDir(managedDir, vaultRoot)) return false
+    try {
+      const [vaultReal, managedReal] = await Promise.all([
+        realpath(vaultRoot),
+        realpath(managedDir),
+      ])
+      if (!isInsideDir(managedReal, vaultReal)) return false
+      return isInsideDir(targetReal, managedReal)
+    } catch (error) {
+      console.warn('[omnimux-assets] managed writable check failed:', error?.message || error)
+      return false
+    }
+  }
+
+  /**
+   * Resolve and validate a text-document target inside an asset.
+   * @param {string} assetId
+   * @param {string} fileId
+   * @param {string} [subPath]
+   */
+  async function resolveTextTarget(assetId, fileId, subPath = '') {
+    const live = get(assetId)
+    if (!live) throw new AssetsError('asset-not-found', 'asset not found')
+    const stored = state.assets.find((row) => row.id === live.id) || live
+    await materializeAssetAsync(stored)
+    const file = stored.files.find((row) => row.id === fileId)
+    if (!file) throw new AssetsError('path-not-found', 'asset file not found')
+    const abs = absoluteOf(file, vaultRoot)
+    if (!abs) throw new AssetsError('path-not-found', 'path does not exist')
+
+    let rootInfo
+    try {
+      rootInfo = await stat(abs)
+    } catch (error) {
+      console.warn('[omnimux-assets] resolveTextTarget stat failed:', error?.message || error)
+      throw new AssetsError('path-not-found', 'path does not exist')
+    }
+
+    const cleanedSub = normalizeTextSubPath(subPath)
+    let absolutePath
+    if (rootInfo.isDirectory()) {
+      if (cleanedSub === '') throw new AssetsError('path-not-dir', 'folders cannot be opened as text')
+      absolutePath = await resolveFileSubPathAsync(abs, cleanedSub)
+    } else if (rootInfo.isFile()) {
+      if (cleanedSub !== '') throw new AssetsError('path-not-dir', 'file refs have no sub directories')
+      try {
+        absolutePath = await realpath(abs)
+      } catch (error) {
+        console.warn('[omnimux-assets] resolveTextTarget realpath failed:', error?.message || error)
+        throw new AssetsError('path-not-found', 'path does not exist')
+      }
+    } else {
+      throw new AssetsError('path-not-found', 'path does not exist')
+    }
+
+    let info
+    try {
+      info = await stat(absolutePath)
+    } catch (error) {
+      console.warn('[omnimux-assets] resolveTextTarget target stat failed:', error?.message || error)
+      throw new AssetsError('path-not-found', 'path does not exist')
+    }
+    if (!info.isFile()) throw new AssetsError('path-not-dir', 'target is not a file')
+
+    const editable = await isManagedWritablePath(stored.id, file, absolutePath)
+    if (str(file.relative_path) !== '' && !editable) {
+      throw new AssetsError('path-denied', 'managed asset file escapes vault boundary')
+    }
+
+    const name = cleanedSub !== ''
+      ? basename(cleanedSub)
+      : (str(file.original_name) || basename(absolutePath.replace(/\/+$/, '')) || absolutePath)
+    const ext = textExtOf(name)
+    const realExt = textExtOf(basename(absolutePath))
+    if (!isEditableTextExt(ext) || !isEditableTextExt(realExt)) {
+      throw new AssetsError('path-unsupported', 'only supported plain text and markdown files can be opened')
+    }
+
+    const relativePath = cleanedSub !== ''
+      ? cleanedSub
+      : (str(file.original_name) || basename(absolutePath))
+
+    return {
+      stored,
+      file,
+      subPath: cleanedSub,
+      absolutePath,
+      info,
+      name,
+      ext,
+      isMarkdown: isMarkdownExt(ext),
+      editable,
+      relativePath,
+    }
+  }
+
+  /**
+   * Read a managed text document asynchronously with size & UTF-8 guards.
+   * @param {string} assetId
+   * @param {string} fileId
+   * @param {string} [subPath]
+   */
+  async function readTextFile(assetId, fileId, subPath = '') {
+    const target = await resolveTextTarget(assetId, fileId, subPath)
+    if (Number(target.info.size) > TEXT_FILE_MAX_BYTES) {
+      throw new AssetsError('file-too-large', `text file exceeds ${TEXT_FILE_MAX_BYTES} bytes`)
+    }
+    const bytes = await readFile(target.absolutePath)
+    if (bytes.length > TEXT_FILE_MAX_BYTES) {
+      throw new AssetsError('file-too-large', `text file exceeds ${TEXT_FILE_MAX_BYTES} bytes`)
+    }
+    if (bytes.includes(0)) {
+      throw new AssetsError('file-not-text', 'binary file cannot be edited as text')
+    }
+    let content
+    try {
+      content = new TextDecoder('utf-8', { fatal: true }).decode(bytes)
+    } catch {
+      throw new AssetsError('file-not-text', 'file is not valid UTF-8 text')
+    }
+    const etag = createHash('sha256').update(bytes).digest('hex')
+    return {
+      content,
+      etag,
+      size: bytes.length,
+      mtime: new Date(Number(target.info.mtimeMs) || 0).toISOString(),
+      editable: target.editable,
+      name: target.name,
+      relativePath: target.relativePath,
+      ext: target.ext,
+      isMarkdown: target.isMarkdown,
+      assetId: target.stored.id,
+      fileId: target.file.id,
+      subPath: target.subPath,
+    }
+  }
+
+  /**
+   * Atomically save updated UTF-8 text into the managed vault copy only.
+   * Refuses external unmaterialized files and checks ETag optimistic concurrency.
+   * @param {string} assetId
+   * @param {string} fileId
+   * @param {string} [subPath]
+   * @param {{ content?: unknown, expectedEtag?: unknown, force?: unknown }} [input]
+   */
+  async function writeTextFile(assetId, fileId, subPath = '', input = {}) {
+    const target = await resolveTextTarget(assetId, fileId, subPath)
+    if (!target.editable) {
+      throw new AssetsError('path-denied', 'file is outside the managed assets vault and cannot be modified')
+    }
+    if (typeof input.content !== 'string') {
+      throw new AssetsError('file-not-text', 'content must be a UTF-8 string')
+    }
+    if (input.content.includes('\0')) {
+      throw new AssetsError('file-not-text', 'text content cannot contain NUL bytes')
+    }
+    const bytes = Buffer.from(input.content, 'utf8')
+    if (bytes.length > TEXT_FILE_MAX_BYTES) {
+      throw new AssetsError('file-too-large', `text content exceeds ${TEXT_FILE_MAX_BYTES} bytes`)
+    }
+
+    const expectedEtag = typeof input.expectedEtag === 'string' ? input.expectedEtag.trim() : ''
+    return withTextWriteLock(target.absolutePath, async () => {
+      if (expectedEtag !== '' && input.force !== true) {
+        const diskBytes = await readFile(target.absolutePath)
+        const currentEtag = createHash('sha256').update(diskBytes).digest('hex')
+        if (currentEtag !== expectedEtag) {
+          throw Object.assign(
+            new AssetsError('file-conflict', 'file has been modified on disk since it was opened'),
+            { currentEtag },
+          )
+        }
+      }
+
+      const tmp = `${target.absolutePath}.tmp-${process.pid}-${Date.now()}-${randomBytes(4).toString('hex')}`
+      try {
+        await writeFile(tmp, bytes, { mode: 0o600 })
+        await rename(tmp, target.absolutePath)
+      } catch (error) {
+        await unlink(tmp).catch((cleanupErr) => {
+          console.warn('[omnimux-assets] failed to remove temp text file:', cleanupErr?.message || cleanupErr)
+        })
+        throw error
+      }
+
+      const updatedInfo = await stat(target.absolutePath)
+      const etag = createHash('sha256').update(bytes).digest('hex')
+      target.stored.updated_at = new Date().toISOString()
+      state.revision += 1
+      persist()
+
+      return {
+        etag,
+        size: bytes.length,
+        mtime: new Date(Number(updatedInfo.mtimeMs) || Date.now()).toISOString(),
+        lrev: state.revision,
+        asset: viewOf(target.stored, fs, vaultRoot),
+      }
+    })
+  }
+
   return {
     list, get, getView, findBySource, add, appendFiles, update, remove, migrateMappings, revision,
-    listFileEntries, resolvePreview, resolveEntryPath,
+    listFileEntries, resolvePreview, resolveEntryPath, resolveTextTarget, readTextFile, writeTextFile,
+    paths: { dir: vaultRoot, filesDir, textVersionsDir },
   }
 }

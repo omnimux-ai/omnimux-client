@@ -10,8 +10,10 @@ import { createReadStream, realpathSync } from 'node:fs'
 import { resolve, sep } from 'node:path'
 import { statStatus, scanDir, scanFile } from './scanner.js'
 import { AssetsError } from './mappings.js'
+import { createTextVersionStore } from './text-versions.js'
 
 const LOCAL_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]', '::1'])
+const MAX_JSON_BODY_BYTES = 4 * 1024 * 1024
 
 const STATUS_BY_CODE = {
   'invalid-json': 400,
@@ -30,6 +32,7 @@ const STATUS_BY_CODE = {
   'mapping-not-found': 404,
   'artifact-not-found': 404,
   'asset-not-found': 404,
+  'version-not-found': 404,
   'catalog-not-found': 404,
   'catalog-unavailable': 503,
   'catalog-filter-invalid': 400,
@@ -37,12 +40,15 @@ const STATUS_BY_CODE = {
   'voice-preview-only': 403,
   'remote-fetch-failed': 502,
   'name-conflict': 409,
+  'file-conflict': 409,
   'type-invalid': 400,
   'name-invalid': 400,
   'description-too-long': 400,
   'tags-invalid': 400,
   'files-invalid': 400,
+  'file-not-text': 400,
   'file-too-large': 413,
+  'payload-too-large': 413,
   'not-local': 403,
   'disk-space-insufficient': 413,
   'invalid-path': 400,
@@ -151,6 +157,27 @@ export function sendJson(res, status, body) {
 }
 
 /**
+ * Send raw UTF-8 text (used for managed document bodies and snapshot bodies so
+ * technical prose mentioning words like `access_token` is never falsely blocked
+ * by JSON response guards).
+ * @param {import('node:http').ServerResponse} res
+ * @param {number} status
+ * @param {string} text
+ * @param {Record<string, string>} [headers]
+ */
+export function sendText(res, status, text, headers = {}) {
+  const payload = Buffer.from(String(text ?? ''), 'utf8')
+  res.writeHead(status, {
+    'Content-Type': 'text/plain; charset=utf-8',
+    'Content-Length': String(payload.length),
+    'X-Content-Type-Options': 'nosniff',
+    'Cache-Control': 'no-store',
+    ...headers,
+  })
+  res.end(payload)
+}
+
+/**
  * Inspect JSON as it will appear to the client. This deliberately runs after
  * the single serialization above so getters, toJSON(), boxed strings, and
  * escaped characters cannot produce a different value for the guard.
@@ -181,9 +208,17 @@ function containsSecretText(value) {
  * Parse a request body as JSON. Empty body = {}. Bad JSON = null.
  * @param {import('node:http').IncomingMessage} req
  */
-export async function readJsonBody(req) {
+export async function readJsonBody(req, maxBytes = MAX_JSON_BODY_BYTES) {
   const chunks = []
-  for await (const chunk of req) chunks.push(chunk)
+  let total = 0
+  for await (const chunk of req) {
+    const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
+    total += buf.length
+    if (total > maxBytes) {
+      throw new AssetsError('payload-too-large', `request body exceeds ${maxBytes} bytes`)
+    }
+    chunks.push(buf)
+  }
   if (chunks.length === 0) return {}
   try {
     return JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}')
@@ -301,6 +336,9 @@ function isPickerCode(error) {
  */
 export function createAssetsDispatcher(deps) {
   const { mappings, artifacts, library, cloud, paths } = deps
+  const textVersions = deps.textVersions
+    ?? ((paths || library?.paths?.dir) ? createTextVersionStore({ paths: paths ?? library.paths }) : null)
+  const onAssetChanged = typeof deps.onAssetChanged === 'function' ? deps.onAssetChanged : null
   const picker = deps.picker ?? nativePickerFromSeam(deps.getService)
 
   /**
@@ -645,6 +683,170 @@ export function createAssetsDispatcher(deps) {
         return { status: 200, stream: preview }
       }
 
+      if (library && method === 'GET' && path === '/omnimux/assets/library/text') {
+        const id = url.searchParams.get('id') || ''
+        const fileId = url.searchParams.get('file') || ''
+        const subPath = url.searchParams.get('path') || ''
+        const doc = await library.readTextFile(id, fileId, subPath)
+        return {
+          status: 200,
+          text: doc.content,
+          headers: {
+            'ETag': doc.etag,
+            'X-Asset-Text-Editable': doc.editable ? 'true' : 'false',
+            'X-Asset-Text-Mtime': doc.mtime,
+            'X-Asset-Text-Size': String(doc.size),
+            'X-Asset-Text-Name': encodeURIComponent(doc.name),
+            'X-Asset-Text-Path': encodeURIComponent(doc.relativePath),
+            'X-Asset-Text-Ext': doc.ext,
+            'X-Asset-Text-Markdown': doc.isMarkdown ? 'true' : 'false',
+          },
+        }
+      }
+
+      if (library && method === 'POST' && path === '/omnimux/assets/library/text') {
+        const problem = jsonBodyProblem(req)
+        if (problem) return problem
+        const body = /** @type {{ id?: unknown, file?: unknown, path?: unknown, content?: unknown, expectedEtag?: unknown, force?: unknown }} */ (req.body)
+        const saved = await library.writeTextFile(
+          String(body.id ?? ''),
+          String(body.file ?? ''),
+          String(body.path ?? ''),
+          {
+            content: body.content,
+            expectedEtag: body.expectedEtag,
+            force: body.force === true,
+          },
+        )
+        if (saved.asset && onAssetChanged) onAssetChanged('update', saved.asset)
+        return {
+          status: 200,
+          body: {
+            ok: true,
+            etag: saved.etag,
+            size: saved.size,
+            mtime: saved.mtime,
+            lrev: saved.lrev,
+          },
+        }
+      }
+
+      if (library && method === 'GET' && path === '/omnimux/assets/library/text/versions') {
+        if (!textVersions) throw new AssetsError('catalog-unavailable', 'text version store is not mounted')
+        const id = url.searchParams.get('id') || ''
+        const fileId = url.searchParams.get('file') || ''
+        const subPath = url.searchParams.get('path') || ''
+        const target = await library.resolveTextTarget(id, fileId, subPath)
+        const versions = await textVersions.listSnapshots(target.stored.id, target.file.id, target.subPath)
+        return { status: 200, body: { versions } }
+      }
+
+      if (library && method === 'GET' && path === '/omnimux/assets/library/text/version') {
+        if (!textVersions) throw new AssetsError('catalog-unavailable', 'text version store is not mounted')
+        const id = url.searchParams.get('id') || ''
+        const fileId = url.searchParams.get('file') || ''
+        const subPath = url.searchParams.get('path') || ''
+        const versionId = url.searchParams.get('versionId') || ''
+        const target = await library.resolveTextTarget(id, fileId, subPath)
+        const snapshot = await textVersions.getSnapshot(target.stored.id, target.file.id, target.subPath, versionId)
+        return {
+          status: 200,
+          text: snapshot.content,
+          headers: {
+            'X-Asset-Version-Id': snapshot.id,
+            'X-Asset-Version-Name': encodeURIComponent(snapshot.name),
+            'X-Asset-Version-Timestamp': String(snapshot.timestamp),
+            'X-Asset-Version-Source': snapshot.source,
+          },
+        }
+      }
+
+      if (library && method === 'POST' && path === '/omnimux/assets/library/text/versions') {
+        if (!textVersions) throw new AssetsError('catalog-unavailable', 'text version store is not mounted')
+        const problem = jsonBodyProblem(req)
+        if (problem) return problem
+        const body = /** @type {{ id?: unknown, file?: unknown, path?: unknown, name?: unknown, content?: unknown, source?: unknown }} */ (req.body)
+        const target = await library.resolveTextTarget(
+          String(body.id ?? ''),
+          String(body.file ?? ''),
+          String(body.path ?? ''),
+        )
+        if (!target.editable) {
+          throw new AssetsError('path-denied', 'cannot snapshot a read-only file outside managed vault')
+        }
+        const version = await textVersions.createSnapshot(target.stored.id, target.file.id, target.subPath, {
+          name: body.name,
+          content: body.content,
+          source: body.source,
+        })
+        return { status: 200, body: { ok: true, version } }
+      }
+
+      if (library && method === 'POST' && path === '/omnimux/assets/library/text/versions/revert') {
+        if (!textVersions) throw new AssetsError('catalog-unavailable', 'text version store is not mounted')
+        const problem = jsonBodyProblem(req)
+        if (problem) return problem
+        const body = /** @type {{ id?: unknown, file?: unknown, path?: unknown, versionId?: unknown, expectedEtag?: unknown, force?: unknown }} */ (req.body)
+        const target = await library.resolveTextTarget(
+          String(body.id ?? ''),
+          String(body.file ?? ''),
+          String(body.path ?? ''),
+        )
+        if (!target.editable) {
+          throw new AssetsError('path-denied', 'file is outside the managed assets vault and cannot be modified')
+        }
+        const snapshot = await textVersions.getSnapshot(
+          target.stored.id,
+          target.file.id,
+          target.subPath,
+          String(body.versionId ?? ''),
+        )
+        const saved = await library.writeTextFile(target.stored.id, target.file.id, target.subPath, {
+          content: snapshot.content,
+          expectedEtag: body.expectedEtag,
+          force: body.force === true,
+        })
+        const revertRecord = await textVersions.createSnapshot(target.stored.id, target.file.id, target.subPath, {
+          name: `回滚自「${snapshot.name}」`,
+          content: snapshot.content,
+          source: 'revert',
+        })
+        if (saved.asset && onAssetChanged) onAssetChanged('update', saved.asset)
+        return {
+          status: 200,
+          body: {
+            ok: true,
+            version: revertRecord,
+            etag: saved.etag,
+            size: saved.size,
+            mtime: saved.mtime,
+            lrev: saved.lrev,
+          },
+        }
+      }
+
+      if (library && method === 'POST' && path === '/omnimux/assets/library/text/versions/delete') {
+        if (!textVersions) throw new AssetsError('catalog-unavailable', 'text version store is not mounted')
+        const problem = jsonBodyProblem(req)
+        if (problem) return problem
+        const body = /** @type {{ id?: unknown, file?: unknown, path?: unknown, versionId?: unknown }} */ (req.body)
+        const target = await library.resolveTextTarget(
+          String(body.id ?? ''),
+          String(body.file ?? ''),
+          String(body.path ?? ''),
+        )
+        if (!target.editable) {
+          throw new AssetsError('path-denied', 'cannot delete snapshots for a read-only file outside managed vault')
+        }
+        const result = await textVersions.deleteSnapshot(
+          target.stored.id,
+          target.file.id,
+          target.subPath,
+          String(body.versionId ?? ''),
+        )
+        return { status: 200, body: result }
+      }
+
       if (library && method === 'POST' && path === '/omnimux/assets/library/reveal') {
         const problem = jsonBodyProblem(req)
         if (problem) return problem
@@ -790,9 +992,12 @@ export function createAssetsDispatcher(deps) {
       return { status: 404, body: { error: 'not-found', message: 'unknown route' } }
     } catch (error) {
       if (error instanceof AssetsError || isPickerCode(error)) {
+        const extra = error && typeof error === 'object' && typeof error.currentEtag === 'string'
+          ? { currentEtag: error.currentEtag }
+          : {}
         return {
           status: STATUS_BY_CODE[error.code] ?? 400,
-          body: { error: error.code, message: error.message },
+          body: { error: error.code, message: error.message, ...extra },
         }
       }
       return { status: 500, body: { error: 'internal', message: messageOf(error) } }
@@ -847,8 +1052,16 @@ export function registerAssetsRoutes(webServer, dispatcher) {
           sendPreview(res, result.status, result.stream)
           return
         }
+        if (typeof result.text === 'string') {
+          sendText(res, result.status, result.text, result.headers)
+          return
+        }
         sendJson(res, result.status, result.body)
-      } catch {
+      } catch (error) {
+        if (error instanceof AssetsError) {
+          sendJson(res, STATUS_BY_CODE[error.code] ?? 400, { error: error.code, message: error.message })
+          return
+        }
         sendJson(res, 500, { error: 'internal', message: 'internal error' })
       }
     },

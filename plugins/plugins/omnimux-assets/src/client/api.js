@@ -14,7 +14,7 @@ import { defaultRequestCoalescer } from './request-coalescer.js'
 
 /**
  * @param {string} path
- * @param {{ method?: string, body?: unknown }} [opts]
+ * @param {{ method?: string, body?: unknown, signal?: AbortSignal }} [opts]
  * @returns {Promise<{ ok: boolean, status: number, body: any }>}
  */
 export async function assetsRequest(path, opts = {}) {
@@ -22,14 +22,47 @@ export async function assetsRequest(path, opts = {}) {
     method: opts.method ?? 'GET',
     headers: opts.body === undefined ? undefined : { 'Content-Type': 'application/json' },
     body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
+    signal: opts.signal,
   })
   let json = {}
   try {
     json = await response.json()
-  } catch {
-    json = { error: `HTTP ${String(response.status)}` }
+  } catch (error) {
+    json = { error: `HTTP ${String(response.status)}`, detail: error instanceof Error ? error.message : String(error) }
   }
   return { ok: response.ok, status: response.status, body: json }
+}
+
+/**
+ * Fetch wrapper for raw UTF-8 text endpoints (`GET /library/text`, `GET /library/text/version`).
+ * On non-OK status, parses the structured JSON error body.
+ * @param {string} path
+ * @param {{ signal?: AbortSignal }} [opts]
+ */
+async function assetsTextRequest(path, opts = {}) {
+  const response = await fetch(path, { method: 'GET', signal: opts.signal })
+  if (!response.ok) {
+    let body = {}
+    try {
+      body = await response.json()
+    } catch (error) {
+      body = { error: `HTTP ${String(response.status)}`, detail: error instanceof Error ? error.message : String(error) }
+    }
+    return { ok: false, status: response.status, text: '', headers: response.headers, body }
+  }
+  const text = await response.text()
+  return { ok: true, status: response.status, text, headers: response.headers, body: null }
+}
+
+/** @param {string} value */
+function safeDecodeHeader(value) {
+  if (!value) return ''
+  try {
+    return decodeURIComponent(value)
+  } catch (error) {
+    console.warn('[omnimux-assets] failed to decode header value:', error?.message || error)
+    return value
+  }
 }
 
 /**
@@ -139,6 +172,160 @@ export function revealAssetEntry(assetId, fileId, subPath = '') {
   return assetsRequest('/omnimux/assets/library/reveal', {
     method: 'POST',
     body: { id: assetId, file: fileId, path: subPath },
+  })
+}
+
+/**
+ * Read a managed text document and its header metadata.
+ * @param {string} assetId
+ * @param {string} fileId
+ * @param {string} [subPath]
+ * @param {{ signal?: AbortSignal }} [opts]
+ */
+export async function readAssetText(assetId, fileId, subPath = '', opts = {}) {
+  const query = new URLSearchParams({ id: assetId, file: fileId })
+  if (subPath !== '') query.set('path', subPath)
+  const result = await assetsTextRequest(`/omnimux/assets/library/text?${query}`, opts)
+  if (!result.ok) {
+    return { ok: false, status: result.status, body: result.body }
+  }
+  const h = result.headers
+  return {
+    ok: true,
+    status: result.status,
+    content: result.text,
+    etag: h.get('etag') || '',
+    editable: h.get('x-asset-text-editable') !== 'false',
+    mtime: h.get('x-asset-text-mtime') || '',
+    size: Number(h.get('x-asset-text-size')) || result.text.length,
+    name: safeDecodeHeader(h.get('x-asset-text-name') || ''),
+    relativePath: safeDecodeHeader(h.get('x-asset-text-path') || ''),
+    ext: h.get('x-asset-text-ext') || '',
+    isMarkdown: h.get('x-asset-text-markdown') === 'true',
+  }
+}
+
+/**
+ * Save UTF-8 content back to the asset's managed copy.
+ * @param {string} assetId
+ * @param {string} fileId
+ * @param {string} [subPath]
+ * @param {{ content: string, expectedEtag?: string, force?: boolean }} [payload]
+ * @param {{ signal?: AbortSignal }} [opts]
+ */
+export function saveAssetText(assetId, fileId, subPath = '', payload = { content: '' }, opts = {}) {
+  return assetsRequest('/omnimux/assets/library/text', {
+    method: 'POST',
+    body: {
+      id: assetId,
+      file: fileId,
+      path: subPath,
+      content: payload.content,
+      expectedEtag: payload.expectedEtag,
+      force: payload.force === true,
+    },
+    signal: opts.signal,
+  })
+}
+
+/**
+ * List metadata-only version snapshots for a managed text file.
+ * @param {string} assetId
+ * @param {string} fileId
+ * @param {string} [subPath]
+ * @param {{ signal?: AbortSignal }} [opts]
+ */
+export function listAssetTextVersions(assetId, fileId, subPath = '', opts = {}) {
+  const query = new URLSearchParams({ id: assetId, file: fileId })
+  if (subPath !== '') query.set('path', subPath)
+  return assetsRequest(`/omnimux/assets/library/text/versions?${query}`, opts)
+}
+
+/**
+ * Fetch the raw UTF-8 content of one snapshot for diffing or preview.
+ * @param {string} assetId
+ * @param {string} fileId
+ * @param {string} subPath
+ * @param {string} versionId
+ * @param {{ signal?: AbortSignal }} [opts]
+ */
+export async function readAssetTextVersion(assetId, fileId, subPath, versionId, opts = {}) {
+  const query = new URLSearchParams({ id: assetId, file: fileId, versionId })
+  if (subPath !== '') query.set('path', subPath)
+  const result = await assetsTextRequest(`/omnimux/assets/library/text/version?${query}`, opts)
+  if (!result.ok) {
+    return { ok: false, status: result.status, body: result.body }
+  }
+  const h = result.headers
+  return {
+    ok: true,
+    status: result.status,
+    content: result.text,
+    id: h.get('x-asset-version-id') || versionId,
+    name: safeDecodeHeader(h.get('x-asset-version-name') || ''),
+    timestamp: Number(h.get('x-asset-version-timestamp')) || 0,
+    source: h.get('x-asset-version-source') || 'manual',
+  }
+}
+
+/**
+ * Create a named version snapshot.
+ * @param {string} assetId
+ * @param {string} fileId
+ * @param {string} subPath
+ * @param {{ name?: string, content: string, source?: string }} payload
+ */
+export function createAssetTextVersion(assetId, fileId, subPath, payload) {
+  return assetsRequest('/omnimux/assets/library/text/versions', {
+    method: 'POST',
+    body: {
+      id: assetId,
+      file: fileId,
+      path: subPath,
+      name: payload.name,
+      content: payload.content,
+      source: payload.source,
+    },
+  })
+}
+
+/**
+ * Revert the managed file to a stored snapshot and log a revert record.
+ * @param {string} assetId
+ * @param {string} fileId
+ * @param {string} subPath
+ * @param {{ versionId: string, expectedEtag?: string, force?: boolean }} payload
+ */
+export function revertAssetTextVersion(assetId, fileId, subPath, payload) {
+  return assetsRequest('/omnimux/assets/library/text/versions/revert', {
+    method: 'POST',
+    body: {
+      id: assetId,
+      file: fileId,
+      path: subPath,
+      versionId: payload.versionId,
+      expectedEtag: payload.expectedEtag,
+      force: payload.force === true,
+    },
+  })
+}
+
+/**
+ * Delete a stored version snapshot.
+ * @param {string} assetId
+ * @param {string} fileId
+ * @param {string} subPath
+ * @param {string} versionId
+ */
+export function deleteAssetTextVersion(assetId, fileId, subPath, versionId) {
+  return assetsRequest('/omnimux/assets/library/text/versions/delete', {
+    method: 'POST',
+    body: {
+      id: assetId,
+      file: fileId,
+      path: subPath,
+      versionId,
+    },
   })
 }
 
