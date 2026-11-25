@@ -20,7 +20,7 @@ PR #271 落地了「工具定义直调收口 + 分析假数据去除 + 语义推
 
 ## 不在本次范围
 
-- `omnimux-inspiration/src/index.js` 与 `rival/rival-remote.js` 中经本地 `getTool` 包装的间接直调（本 PR 不在范围；后续已由 [#275](https://github.com/omnimux-ai/omnimux-client/issues/275) 迁移）。
+- 当次 PR 不迁移 `omnimux-inspiration/src/index.js` 与 `rival/rival-remote.js` 中经本地 `getTool` 包装的间接直调（已由 [#275](https://github.com/omnimux-ai/omnimux-client/issues/275) 完成迁移）。
 - 不改网关 `/api/social/v1/analytics/posts` 的参数契约。
 
 ## 验证

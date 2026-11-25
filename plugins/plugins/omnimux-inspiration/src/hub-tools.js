@@ -76,7 +76,17 @@ function throwToolResult(result, toolName) {
     error.code = HUB_TOOL_NOT_READY
     throw error
   }
-  if (info.name === 'AbortError' || info.code === 'ABORT_ERR' || info.code === 'ABORTED') {
+  // DSH 0.2.2-rc.5 emits ABORTED_BEFORE_DISPATCH from
+  // `toolAbortedBeforeDispatchResult` (pipeline.ts) and `ToolBatchRunner.skip`
+  // (batch.ts) when cancellation lands before the tool body is invoked; a
+  // post-dispatch cancellation carries ABORTED. Treat both as the same caller
+  // AbortError. ABORT_ERR is the standard code raised by our signal guard.
+  if (
+    info.name === 'AbortError'
+    || info.code === 'ABORT_ERR'
+    || info.code === 'ABORTED'
+    || info.code === 'ABORTED_BEFORE_DISPATCH'
+  ) {
     const error = new Error(rawMessage)
     error.name = 'AbortError'
     error.code = 'ABORT_ERR'
@@ -142,9 +152,6 @@ export function createHubToolExecutor(deps = {}) {
           throw abortError
         }
         throw new Error(`工具 ${name} 执行失败: ${error instanceof Error ? error.message : String(error)}`)
-      }
-      if (legacySingle && isObject(raw) && !('isError' in raw) && !('content' in raw) && !('value' in raw)) {
-        return raw
       }
       const result = legacySingle ? raw : extractBatchResult(raw, callId, name)
       if (!isObject(result)) throw new Error(`工具 ${name} 未返回结果对象`)

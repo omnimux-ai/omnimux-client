@@ -46,7 +46,7 @@
 
 ## 不做
 
-- 不迁移 `omnimux-inspiration`（`getTool` 包装的 `socialData` / `video_analyze` / `text_complete`）与 `rival/rival-remote.js` 的间接直调：本地 `getTool` 包装不在静态规则可达范围，另立 follow-up issue 跟踪。
+- 当次 PR 不迁移 `omnimux-inspiration`（`getTool` 包装的 `socialData` / `video_analyze` / `text_complete`）与 `rival/rival-remote.js` 的间接直调：本地 `getTool` 包装不在静态规则可达范围（已由 [#275](https://github.com/omnimux-ai/omnimux-client/issues/275) 完成迁移）。
 - 不改网关 `omnimux_analytics_daily_metrics` / `omnimux_analytics_posts` 工具参数名（`accountIds` / `profileId` 与网关 `account_ids` 的既有不一致），接缝直接使用网关契约的参数名。
 - 不给 `chat.js` 复刻 pi-ai 全量协议方言，只消费已声明的 `reasoningEfforts` 映射。
 
