@@ -47,7 +47,11 @@ function fixture() {
   let cursor = 0
   let Page: (props: Record<string, unknown>) => Node
   let navigation: any
+  let mainChildren: Record<string, unknown> | undefined
+  let mainInject: (() => Record<string, unknown>) | undefined
   let apply: (context: unknown) => void
+  const slotEntries = new Map<string, Array<{ options: Record<string, unknown> }>>()
+  const slotVersions = new Map<string, number>()
   const source = readFileSync(createRequire(import.meta.url).resolve('@deepseek-ai/dsh-client-ui-plugin-manager/client'), 'utf8')
   const require = (id: string) => {
     if (id === 'react/jsx-runtime') return { jsx, jsxs: jsx, Fragment: 'fragment' }
@@ -78,18 +82,30 @@ function fixture() {
   runInNewContext(source, { window: { __ModuleLoader__: { load: (entry: { factory: (require: unknown) => { apply: typeof apply } }) => { apply = entry.factory(require).apply } } } })
   const noop = () => () => {}
   apply!({ effect: (effect: () => void) => effect(), on: noop, provide: noop,
-    locale: { register: noop, bind: () => (key: string) => key, resolveText: (text: string) => text }, remote: { $on: noop },
+    locale: { register: noop, bind: () => (key: string) => key, resolveText: (text: string) => text,
+      getSnapshot: () => ({ revision: 0 }), subscribe: noop }, remote: { $on: noop },
     // The page mounts only while the Peer may list bundles; this fixture always may.
     remoteAccess: { whenAccess: (_method: string, body: () => Iterable<unknown>) => { [...body()] } },
     layout: { panelInfo: { subscribe: noop }, selectPanel: vi.fn() }, reflect: { provide: noop },
     configForms: { describe: () => ({ getSnapshot: () => ({}), subscribe: noop }), get: () => undefined },
-    slots: { inject: (_name: string, register: () => unknown) => {
-      const result = register()
-      if (result && typeof result === 'object' && Symbol.iterator in result) [...result as Iterable<unknown>]
-    }, register: (options: { name: string; store?: any }, view: typeof Page) => {
-      if (options.name === 'main') { Page = view; navigation = options.store.create() }
-      return () => {}
-    } },
+    slots: {
+      entries: (name: string) => slotEntries.get(name) ?? [],
+      getVersion: (name: string) => slotVersions.get(name) ?? 0,
+      subscribe: noop,
+      inject: (_name: string, register: () => unknown) => {
+        const result = register()
+        if (result && typeof result === 'object' && Symbol.iterator in result) [...result as Iterable<unknown>]
+      },
+      register: (options: { name: string; store?: any; children?: Record<string, unknown>; inject?: () => Record<string, unknown> }, view: typeof Page) => {
+        if (options.name === 'main') {
+          Page = view
+          navigation = options.store.create()
+          mainChildren = options.children
+          mainInject = options.inject
+        }
+        return () => {}
+      },
+    },
   })
   const remote = { name: '@agents-anywhere/dsh-bridge-next', enabled: true, installed: false, optional: true, official: true,
     version: '0.1.0', description: 'Remote connection', rows: [{ entryId: undefined as string | undefined, rowId: 'bridge', moduleName: 'bridge', enabled: true, phase: 'active' }] }
@@ -113,7 +129,7 @@ function fixture() {
       return jsx('slot', { name, owner, options })
     },
   }
-  return { state, remote, item, ledger, setEnabled, setRowEnabled,
+  return { state, remote, item, ledger, setEnabled, setRowEnabled, mainChildren, mainInject, slotEntries, slotVersions,
     page: () => { cursor = 0; return Page!(props) }, overview: () => overview!,
   }
 }
@@ -441,11 +457,19 @@ it('renders the on-demand /computer-use command sub-switch on the Computer Use d
 
 it('hides core OmniMux base bundles, lists shipped business bundles without uninstall, and gates beta bundles by listedByDefault', () => {
   const app = fixture()
+  // Verify the patched official main slot declares plugins.bundle.listed and its real configLedgerSource reads it.
+  expect(app.mainChildren?.['plugins.bundle.listed']).toEqual({ kind: 'keyed', scope: 'root' })
+  expect(app.mainChildren?.['plugins.bundle.hidden']).toEqual({ kind: 'keyed', scope: 'root' })
+
   const ctx = {
     inject: (_services: unknown, callback: (context: unknown) => void) => { callback(ctx) },
     slots: {
       inject: (_name: string, callback: () => unknown) => { callback() },
       register: (options: { name: string; key?: string }) => {
+        const list = app.slotEntries.get(options.name) ?? []
+        list.push({ options })
+        app.slotEntries.set(options.name, list)
+        app.slotVersions.set(options.name, (app.slotVersions.get(options.name) ?? 0) + 1)
         if (options.name === 'plugins.bundle.hidden') app.ledger.hiddenBundles.add(options.key!)
         if (options.name === 'plugins.bundle.listed') app.ledger.listedBundles.add(options.key!)
         return () => {}
@@ -453,6 +477,14 @@ it('hides core OmniMux base bundles, lists shipped business bundles without unin
     },
   }
   registerPluginControls(ctx as unknown as Context)
+
+  const realHooks = app.mainInject!().hooks as { configLedger?: { getSnapshot: () => { hiddenBundles: Set<string>; listedBundles: Set<string> } } }
+  const realLedger = realHooks.configLedger!.getSnapshot()
+  expect(realLedger.hiddenBundles.has('omnimux')).toBe(true)
+  expect(realLedger.hiddenBundles.has('dsh-better-sidebar')).toBe(true)
+  expect(realLedger.listedBundles.has('omnimux-workflow')).toBe(true)
+  expect(realLedger.listedBundles.has('omnimux-accounts')).toBe(true)
+  expect(realLedger.listedBundles.has('omnimux')).toBe(false)
 
   const shippedBundle = (name: string, overrides: Record<string, unknown> = {}) => ({
     name,

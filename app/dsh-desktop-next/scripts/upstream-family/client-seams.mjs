@@ -16,11 +16,30 @@ const MagicString = require('magic-string')
 const remapping = require('@jridgewell/remapping')
 const ts = require('typescript')
 const version = '0.2.2-rc.5'
-const onlyFlagIndex = process.argv.indexOf('--only')
-const onlyPackage = onlyFlagIndex >= 0 ? process.argv[onlyFlagIndex + 1] : undefined
-if (onlyFlagIndex >= 0 && !onlyPackage) {
-  throw new Error('client-seams: --only requires a package name')
+let onlyPackage
+const cliArgs = process.argv.slice(2)
+for (let i = 0; i < cliArgs.length; i++) {
+  const arg = cliArgs[i]
+  if (arg === '--only') {
+    const next = cliArgs[++i]
+    if (!next || next.startsWith('-')) {
+      throw new Error('client-seams: --only requires a package name')
+    }
+    if (onlyPackage !== undefined) throw new Error('client-seams: --only may be specified only once')
+    onlyPackage = next
+  } else if (arg.startsWith('--only=')) {
+    const value = arg.slice('--only='.length)
+    if (!value || value.startsWith('-')) {
+      throw new Error('client-seams: --only= requires a package name')
+    }
+    if (onlyPackage !== undefined) throw new Error('client-seams: --only may be specified only once')
+    onlyPackage = value
+  } else {
+    throw new Error(`client-seams: unknown argument: ${arg}`)
+  }
 }
+const knownPackages = []
+let matchedPackages = 0
 
 function onboarding() {
   function DesktopOnboardingNavigation({ busy, t, onBack, onSkip }) {
@@ -109,7 +128,9 @@ async function readOnboardingApiKeyPresence(ctx) {
 }
 
 function patchPackage(name, edit, entry = () => 'lib/client.js') {
+  knownPackages.push(name)
   if (onlyPackage !== undefined && onlyPackage !== name) return
+  matchedPackages++
   const temp = mkdtempSync(join(tmpdir(), 'dsh-client-seam-'))
   try {
     execFileSync('tar', ['-xzf', join(root, `vendor/dsh-runtime/${version}/deepseek-ai-${name}-${version}.tgz`), '-C', temp])
@@ -275,3 +296,7 @@ patchPackage('dsh-client-ui-open-in-app', ({ once }) => {
   once('gnometerminal:`app.gnometerminal`,', 'gnometerminal:`app.gnometerminal`,ptyxis:`app.ptyxis`,gnomeconsole:`app.gnomeconsole`,')
   once('"app.gnometerminal":`GNOME Terminal`,', '"app.gnometerminal":`GNOME Terminal`,"app.ptyxis":`Ptyxis`,"app.gnomeconsole":`GNOME Console`,')
 })
+
+if (onlyPackage !== undefined && matchedPackages === 0) {
+  throw new Error(`client-seams: unknown --only package "${onlyPackage}". Expected one of: ${knownPackages.join(', ')}`)
+}

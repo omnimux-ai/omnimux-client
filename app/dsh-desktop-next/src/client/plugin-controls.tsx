@@ -27,10 +27,11 @@ import PLUGIN_TIERS from '../../../config/plugin-tiers.json' with { type: 'json'
 
 const REMOTE = '@agents-anywhere/dsh-bridge-next'
 const COMPUTER_ITEM = 'desktop-next-computer-use'
-const OMNIMUX_CORE_BUNDLES: readonly string[] = ['omnimux', ...PLUGIN_TIERS.tiers.infrastructure]
+const OMNIMUX_CORE_BUNDLES: readonly string[] = [...new Set(['omnimux', ...PLUGIN_TIERS.tiers.infrastructure])]
+const OMNIMUX_CORE_BUNDLE_SET = new Set(OMNIMUX_CORE_BUNDLES)
 const OMNIMUX_LISTED_BUNDLES: readonly string[] = [
-  ...PLUGIN_TIERS.tiers.preview.filter(name => name !== 'omnimux'),
-  ...PLUGIN_TIERS.tiers.beta,
+  ...PLUGIN_TIERS.tiers.preview.filter(name => !OMNIMUX_CORE_BUNDLE_SET.has(name)),
+  ...PLUGIN_TIERS.tiers.beta.filter(name => !OMNIMUX_CORE_BUNDLE_SET.has(name)),
 ]
 
 type Translate = (cn: string, en: string) => string
