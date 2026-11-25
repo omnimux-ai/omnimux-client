@@ -59,7 +59,7 @@
       "version": "0.1.2",
       "path": "plugins/plugins/omnimux-inspiration",
       "spec": "link:../../plugins/plugins/omnimux-inspiration",
-      "contentHash": "sha256:b11aec15910c67eb28b50ee258c4532b1480cb20599c36498b418078622c7767"
+      "contentHash": "sha256:e717d449455135c6edce38ac86a836fd7f5a9b86e938b3e7fdbd5374be16d48b"
     },
     {
       "name": "omnimux-market",
