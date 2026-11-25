@@ -1,13 +1,60 @@
-import { useEffect, useRef, useState } from 'react'
-import { Badge, Button, IconButton, MediaCard, Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from 'dsh-ui-kit'
-import { CheckIcon, FileIcon, EyeIcon, ChatIcon } from './icons.jsx'
-import { previewUrl } from './api.js'
-import { pickCoverFile, addAssetToConversation } from './add-to-chat.js'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Menu } from '@deepseek-ai/dsh-client-ui-primitives'
+import {
+  Badge,
+  Button,
+  IconButton,
+  IconEllipsisOutline16,
+  IconTrashOutline16,
+  MediaCard,
+  Table,
+  TableHeader,
+  TableBody,
+  TableRow,
+  TableHead,
+  TableCell,
+} from 'dsh-ui-kit'
+import {
+  CheckIcon,
+  DocIcon,
+  FileIcon,
+  FolderIcon,
+  EyeIcon,
+  ChatIcon,
+  PlayIcon,
+  RevealLocationIcon,
+} from './icons.jsx'
+import { previewUrl, revealAssetEntry } from './api.js'
+import { pickCoverFile, isVideoFile, addAssetToConversation } from './add-to-chat.js'
 import { isFolderAsset, resolveAssetMediaPreview } from './asset-routing.js'
-import { useGridColumns } from './use-grid-columns.js'
-import { MasonryGrid } from './masonry-grid.jsx'
-import { coverRatioCache } from './ratio-cache.js'
 import { formatTimeAgo } from './format.js'
+
+const PROGRESS_RING_RADIUS = 16
+const PROGRESS_RING_CIRCUMFERENCE = 2 * Math.PI * PROGRESS_RING_RADIUS
+
+/**
+ * Pick the first video file on an asset when no image cover exists.
+ * @param {any} asset
+ * @returns {any | null}
+ */
+function pickVideoFile(asset) {
+  if (!asset) return null
+  if (isVideoFile(asset.cover)) return asset.cover
+  const files = Array.isArray(asset.files) ? asset.files : []
+  return files.find(isVideoFile) ?? null
+}
+
+/**
+ * Resolve optional upload progress percentage [0, 100) for uploading assets.
+ * @param {any} asset
+ * @returns {number | null}
+ */
+function resolveUploadProgress(asset) {
+  const raw = asset?.uploadProgress ?? asset?.progress
+  if (typeof raw !== 'number' || !Number.isFinite(raw)) return null
+  if (raw < 0 || raw >= 100) return null
+  return Math.round(raw)
+}
 
 /**
  * @param {{
@@ -18,19 +65,36 @@ import { formatTimeAgo } from './format.js'
  *   onOpen: (asset: any) => void,
  *   onPreview?: (item: any) => void,
  *   onAddToConversation?: (asset: any) => void,
+ *   onRemove?: (asset: any) => void,
+ *   onError?: (message: string) => void,
  *   missing?: boolean,
  * }} props
  */
-function AssetGridCard({ asset, t, selected, onToggleSelect, onOpen, onPreview, onAddToConversation, missing }) {
+function AssetGridCard({
+  asset,
+  t,
+  selected,
+  onToggleSelect,
+  onOpen,
+  onPreview,
+  onAddToConversation,
+  onRemove,
+  onError,
+  missing,
+}) {
   const [broken, setBroken] = useState(false)
   const [added, setAdded] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
   const timerRef = useRef(null)
 
   const coverFile = pickCoverFile(asset)
+  const videoFile = coverFile ? null : pickVideoFile(asset)
+  const revealTarget = coverFile || videoFile || (Array.isArray(asset?.files) ? asset.files[0] : null)
+  const uploadProgress = resolveUploadProgress(asset)
 
   useEffect(() => {
     setBroken(false)
-  }, [asset?.id, coverFile?.id])
+  }, [asset?.id, coverFile?.id, videoFile?.id])
 
   useEffect(() => {
     return () => {
@@ -38,9 +102,10 @@ function AssetGridCard({ asset, t, selected, onToggleSelect, onOpen, onPreview, 
     }
   }, [])
 
-  const src = coverFile && !broken ? previewUrl(asset.id, coverFile.id) : ''
+  const imgSrc = coverFile && !broken ? previewUrl(asset.id, coverFile.id) : ''
+  const videoSrc = !imgSrc && videoFile && !broken ? previewUrl(asset.id, videoFile.id) : ''
 
-  const handleTriggerAction = () => {
+  const handleTriggerAction = useCallback(() => {
     if (isFolderAsset(asset)) {
       onOpen(asset)
     } else if (typeof onPreview === 'function') {
@@ -48,15 +113,9 @@ function AssetGridCard({ asset, t, selected, onToggleSelect, onOpen, onPreview, 
     } else {
       onOpen(asset)
     }
-  }
+  }, [asset, onOpen, onPreview])
 
-  const handleView = (event) => {
-    event.stopPropagation()
-    handleTriggerAction()
-  }
-
-  const handleAdd = (event) => {
-    event.stopPropagation()
+  const triggerAdd = useCallback(() => {
     if (added) return
     if (typeof onAddToConversation === 'function') {
       onAddToConversation(asset)
@@ -68,7 +127,144 @@ function AssetGridCard({ asset, t, selected, onToggleSelect, onOpen, onPreview, 
     timerRef.current = setTimeout(() => {
       setAdded(false)
     }, 1800)
+  }, [added, asset, onAddToConversation])
+
+  const handleAdd = useCallback((event) => {
+    event?.stopPropagation()
+    triggerAdd()
+  }, [triggerAdd])
+
+  const handleReveal = useCallback(async () => {
+    if (!revealTarget?.id) return
+    try {
+      const result = await revealAssetEntry(asset.id, revealTarget.id, '')
+      if (!result?.ok) {
+        onError?.(t('browse.revealFailed'))
+      }
+    } catch {
+      onError?.(t('browse.revealFailed'))
+    }
+  }, [asset?.id, onError, revealTarget?.id, t])
+
+  const handleMenuToggle = useCallback((event) => {
+    event.stopPropagation()
+    setMenuOpen((prev) => !prev)
+  }, [])
+
+  const handleMenuClose = useCallback((event) => {
+    event?.stopPropagation?.()
+    setMenuOpen(false)
+  }, [])
+
+  const handleMenuSelect = useCallback((id) => {
+    setMenuOpen(false)
+    if (id === 'view') {
+      if (typeof onOpen === 'function') onOpen(asset)
+      else handleTriggerAction()
+    } else if (id === 'add') {
+      triggerAdd()
+    } else if (id === 'reveal') {
+      void handleReveal()
+    } else if (id === 'remove') {
+      onRemove?.(asset)
+    }
+  }, [asset, handleReveal, handleTriggerAction, onOpen, onRemove, triggerAdd])
+
+  const menuItems = useMemo(() => {
+    const items = [
+      { id: 'view', label: t('card.view'), icon: <EyeIcon size={14} /> },
+      {
+        id: 'add',
+        label: added ? t('card.addedToConversation') : t('card.addToConversation'),
+        icon: added ? <CheckIcon size={14} /> : <ChatIcon size={14} />,
+        disabled: added,
+      },
+    ]
+    if (revealTarget?.id) {
+      items.push({ id: 'reveal', label: t('browse.revealLocation'), icon: <RevealLocationIcon size={14} /> })
+    }
+    if (typeof onRemove === 'function') {
+      items.push({ id: 'remove', label: t('mapping.remove'), icon: <IconTrashOutline16 size={14} />, danger: true })
+    }
+    return items
+  }, [added, onRemove, revealTarget?.id, t])
+
+  const stopNestedKey = (event) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.stopPropagation()
+    }
   }
+
+  let visualNode
+  if (uploadProgress !== null) {
+    const dashOffset = PROGRESS_RING_CIRCUMFERENCE * (1 - uploadProgress / 100)
+    visualNode = (
+      <div className="omnimux-assets-card-progress" aria-label={`${uploadProgress}%`}>
+        <div className="omnimux-assets-card-progress-ring">
+          <svg width="40" height="40" viewBox="0 0 40 40" aria-hidden="true">
+            <circle
+              className="omnimux-assets-card-progress-track"
+              cx="20"
+              cy="20"
+              r={PROGRESS_RING_RADIUS}
+              fill="none"
+              strokeWidth="3"
+            />
+            <circle
+              className="omnimux-assets-card-progress-arc"
+              cx="20"
+              cy="20"
+              r={PROGRESS_RING_RADIUS}
+              fill="none"
+              strokeWidth="3"
+              strokeLinecap="round"
+              strokeDasharray={PROGRESS_RING_CIRCUMFERENCE.toFixed(1)}
+              strokeDashoffset={dashOffset.toFixed(1)}
+            />
+          </svg>
+          <span className="omnimux-assets-card-progress-pct">{uploadProgress}%</span>
+        </div>
+      </div>
+    )
+  } else if (imgSrc) {
+    visualNode = (
+      <img
+        src={imgSrc}
+        className="omnimux-assets-card-media"
+        alt=""
+        onError={() => setBroken(true)}
+      />
+    )
+  } else if (videoSrc) {
+    visualNode = (
+      <>
+        <video
+          src={videoSrc}
+          muted
+          playsInline
+          preload="metadata"
+          className="omnimux-assets-card-video"
+          onError={() => setBroken(true)}
+        />
+        <span className="omnimux-assets-card-video-play" aria-hidden="true">
+          <PlayIcon size={13} />
+        </span>
+      </>
+    )
+  } else {
+    const FallbackIcon = isFolderAsset(asset)
+      ? FolderIcon
+      : asset?.type === 'knowledge'
+        ? DocIcon
+        : FileIcon
+    visualNode = (
+      <div className="omnimux-assets-card-placeholder" aria-hidden="true">
+        <FallbackIcon size={22} />
+      </div>
+    )
+  }
+
+  const addLabel = added ? t('card.addedToConversation') : t('card.addToConversation')
 
   const coverNode = (
     <div className="omnimux-assets-card-thumb">
@@ -81,6 +277,7 @@ function AssetGridCard({ asset, t, selected, onToggleSelect, onOpen, onPreview, 
           aria-label={t('select.toggle')}
           aria-pressed={selected ? 'true' : 'false'}
           title=""
+          onKeyDown={stopNestedKey}
           onClick={(event) => {
             event.stopPropagation()
             onToggleSelect(asset)
@@ -89,78 +286,63 @@ function AssetGridCard({ asset, t, selected, onToggleSelect, onOpen, onPreview, 
           {selected ? <CheckIcon size={12} /> : <span />}
         </IconButton>
       ) : null}
-      {src ? (
-        <img
-          src={src}
-          className="omnimux-assets-card-media"
-          alt=""
-          width={9}
-          height={16}
-          onLoad={(event) => {
-            const image = event.currentTarget
-            if (image.naturalWidth > 0 && image.naturalHeight > 0) {
-              image.setAttribute('width', String(image.naturalWidth))
-              image.setAttribute('height', String(image.naturalHeight))
-              if (asset?.id) {
-                coverRatioCache.set(asset.id, image.naturalWidth / image.naturalHeight)
-              }
-            }
-          }}
-          onError={() => setBroken(true)}
-        />
-      ) : (
-        <FileIcon size={22} />
-      )}
-      <Badge size="sm" shape="capsule" className="omnimux-assets-badge">
-        {t(`type.${asset.type}`)}
-      </Badge>
+      {visualNode}
+      <div className="omnimux-assets-card-corner">
+        <IconButton
+          variant="ghost"
+          size="xs"
+          className="omnimux-assets-quick-add"
+          data-added={added ? 'true' : 'false'}
+          aria-label={addLabel}
+          title={addLabel}
+          disabled={added}
+          onMouseDown={(event) => event.stopPropagation()}
+          onPointerDown={(event) => event.stopPropagation()}
+          onKeyDown={stopNestedKey}
+          onClick={handleAdd}
+        >
+          {added ? <CheckIcon size={13} /> : <ChatIcon size={13} />}
+        </IconButton>
+        <Badge size="sm" shape="capsule" className="omnimux-assets-badge">
+          {t(`type.${asset.type}`)}
+        </Badge>
+      </div>
       {missing ? <span className="omnimux-assets-missing">{t('card.missing')}</span> : null}
-      <div className="omnimux-assets-card-overlay">
-        <div className="omnimux-assets-card-overlay-actions">
-          <Button
-            type="button"
-            variant="ghost"
-            size="xs"
-            className="omnimux-assets-overlay-btn omnimux-assets-overlay-btn--secondary"
-            aria-label={t('card.view')}
-            leadingIcon={<EyeIcon size={14} />}
-            onClick={handleView}
-            onMouseDown={(event) => event.stopPropagation()}
-            onPointerDown={(event) => event.stopPropagation()}
-            onKeyDown={(event) => {
-              event.stopPropagation()
-              if (event.key === 'Enter' || event.key === ' ') {
-                event.preventDefault()
-                handleView(event)
-              }
-            }}
-          >
-            <span className="omnimux-assets-overlay-label">{t('card.view')}</span>
-          </Button>
-          <Button
-            type="button"
-            variant="primary"
-            size="xs"
-            className="omnimux-assets-overlay-btn omnimux-assets-overlay-btn--primary"
-            aria-label={added ? t('card.addedToConversation') : t('card.addToConversation')}
-            disabled={added}
-            leadingIcon={<ChatIcon size={14} />}
-            onClick={handleAdd}
-            onMouseDown={(event) => event.stopPropagation()}
-            onPointerDown={(event) => event.stopPropagation()}
-            onKeyDown={(event) => {
-              event.stopPropagation()
-              if (event.key === 'Enter' || event.key === ' ') {
-                event.preventDefault()
-                handleAdd(event)
-              }
-            }}
-          >
-            <span className="omnimux-assets-overlay-label">
-              {added ? t('card.addedToConversation') : t('card.addToConversation')}
-            </span>
-          </Button>
-        </div>
+    </div>
+  )
+
+  const titleNode = (
+    <div className="omnimux-assets-card-head">
+      <span className="omnimux-assets-card-title" title={asset.name}>{asset.name}</span>
+      <div
+        className="omnimux-assets-card-more"
+        onClick={(event) => event.stopPropagation()}
+        onMouseDown={(event) => event.stopPropagation()}
+        onPointerDown={(event) => event.stopPropagation()}
+        onKeyDown={(event) => event.stopPropagation()}
+      >
+        <Menu
+          open={menuOpen}
+          portal
+          dense
+          align="end"
+          items={menuItems}
+          onSelect={handleMenuSelect}
+          onClose={handleMenuClose}
+          anchor={(
+            <IconButton
+              variant="ghost"
+              size="xs"
+              className="omnimux-assets-card-more-btn"
+              aria-label={t('card.actions')}
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
+              onClick={handleMenuToggle}
+            >
+              <IconEllipsisOutline16 size={15} />
+            </IconButton>
+          )}
+        />
       </div>
     </div>
   )
@@ -171,13 +353,12 @@ function AssetGridCard({ asset, t, selected, onToggleSelect, onOpen, onPreview, 
 
   return (
     <MediaCard
-      className={`omnimux-assets-focusable omnimux-assets-card ${typeClass}`.trim()}
+      className={`omnimux-assets-focusable omnimux-assets-card omnimux-assets-card--tray ${typeClass}`.trim()}
       data-type={safeType ?? undefined}
       selected={selected}
       onClick={handleTriggerAction}
-      aspectRatio="3:4"
       coverNode={coverNode}
-      title={asset.name}
+      title={titleNode}
       subtitle={timeText || '—'}
     />
   )
@@ -327,13 +508,12 @@ export function AssetGrid({
   onOpen,
   onPreview,
   onAddToConversation,
+  onRemove,
+  onError,
   selectedIds,
   onToggleSelect,
   viewMode = 'grid',
 }) {
-  // 与公共货架共用同一列数规则，两个货架在同一窗口下必须给出相同的列数。
-  const [gridRef, gridColumns] = useGridColumns()
-
   if (assets.length === 0) {
     return (
       <div className="omnimux-assets-empty">
@@ -386,12 +566,8 @@ export function AssetGrid({
   }
 
   return (
-    <MasonryGrid
-      gridRef={gridRef}
-      columns={gridColumns}
-      items={assets}
-      getRatio={() => 3 / 4}
-      renderItem={(asset) => {
+    <div className="omnimux-assets-local-grid">
+      {assets.map((asset) => {
         const missing = Number(asset.missing_file_count) > 0 && (!asset.files || asset.files.length === 0)
         const selected = selectedIds?.has(asset.id)
         return (
@@ -404,10 +580,12 @@ export function AssetGrid({
             onOpen={onOpen}
             onPreview={onPreview}
             onAddToConversation={onAddToConversation}
+            onRemove={onRemove}
+            onError={onError}
             missing={missing}
           />
         )
-      }}
-    />
+      })}
+    </div>
   )
 }
