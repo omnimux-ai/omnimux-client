@@ -159,6 +159,24 @@ export function packageEnv(pkgDir, base = process.env, dshHome) {
   return env
 }
 
+/**
+ * Inline TAP summaries used to lose the probe diagnostic because the first 200
+ * characters only carried the spawn error. The probe now writes an explicit
+ * `[style-dom-probe] probeClass=...` marker into every failure message; only
+ * the explicit environment marker is trusted here. A bare "Chrome probe
+ * diagnostic" line accompanies every probe failure (including assertion
+ * failures), so matching that text would mislabel real product regressions as
+ * runner outages.
+ * @param {string} error
+ */
+export function classifyFailure(error) {
+  const text = String(error || '')
+  if (text.includes('[style-dom-probe] probeClass=environment-unavailable')) {
+    return 'environment-unavailable'
+  }
+  return 'assertion-or-product-failure'
+}
+
 function runPackage(pkg, logsDir) {
   const started = Date.now()
   // Fresh per-package ledger home; a test may still override DSH_HOME inside its
@@ -231,7 +249,8 @@ export function main(argv = process.argv.slice(2), env = process.env) {
     const status = result.reasons.length ? `FAIL (${result.reasons.join(', ')})` : 'ok'
     console.log(`${result.name.padEnd(26)} tests=${String(result.tap.tests).padStart(5)} fail=${result.tap.fail} cancelled=${result.tap.cancelled} ${result.seconds}s ${status}`)
     for (const failure of result.tap.failures.slice(0, 50)) {
-      console.log(`    ✖ ${failure.location || '(no location)'} — ${failure.name}${failure.error ? ` — ${failure.error.slice(0, 200)}` : ''}`)
+      const kind = classifyFailure(failure.error)
+      console.log(`    ✖ [${kind}] ${failure.location || '(no location)'} — ${failure.name}${failure.error ? ` — ${failure.error.slice(0, 200)}` : ''}`)
     }
   }
   if (options.json) writeFileSync(options.json, `${JSON.stringify(results, null, 2)}\n`)

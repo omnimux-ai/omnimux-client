@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { parse } from 'yaml'
-import { discoverPackages, main, selectShard, SHARD_NAMES } from './run-workspace-tests.mjs'
+import { classifyFailure, discoverPackages, main, selectShard, SHARD_NAMES } from './run-workspace-tests.mjs'
 
 const RUNNER = fileURLToPath(new URL('./run-workspace-tests.mjs', import.meta.url))
 
@@ -44,6 +44,23 @@ test('packageEnv injects an isolated DSH_HOME per package run', async () => {
   } finally {
     rmSync(home, { recursive: true, force: true })
   }
+})
+
+test('inline failure summary only trusts the explicit probeClass marker', () => {
+  assert.equal(classifyFailure('[style-dom-probe] probeClass=environment-unavailable after 3 attempt(s)'), 'environment-unavailable')
+  assert.equal(classifyFailure('spawn synthetic-chrome ETIMEDOUT\nChrome probe diagnostic: {}\n[style-dom-probe] probeClass=environment-unavailable after 1 attempt(s)'), 'environment-unavailable')
+  assert.equal(classifyFailure('页面未回传测量结果: synthetic empty DOM\nChrome probe diagnostic: {"measurementPresent":false}\n[style-dom-probe] probeClass=probe-result-invalid after 1 attempt(s)'), 'assertion-or-product-failure')
+  assert.equal(classifyFailure('spawnSync /usr/bin/google-chrome ETIMEDOUT Chrome probe diagnostic: {}'), 'assertion-or-product-failure')
+  assert.equal(classifyFailure('Unexpected token ... not valid JSON Chrome probe diagnostic: {}'), 'assertion-or-product-failure')
+  assert.equal(classifyFailure("Expected values to be strictly equal: actual: 'none'"), 'assertion-or-product-failure')
+})
+
+test('CI binds bounded style-probe retry to the Plugin unit suites step', () => {
+  const workflow = parse(readFileSync(new URL('../../.github/workflows/quality-gate.yml', import.meta.url), 'utf8'))
+  const unit = workflow.jobs['plugin-tests'].steps.find((step) => step.name === 'Plugin unit suites')
+  assert.ok(unit, 'Plugin unit suites step must exist')
+  assert.match(unit.run, /run-workspace-tests\.mjs/)
+  assert.equal(unit.env?.OMNIMUX_STYLE_PROBE_RETRY, '1', 'CI must enable bounded style probe retries on the workspace runner')
 })
 
 test('an empty shard value fails instead of running every package', () => {
