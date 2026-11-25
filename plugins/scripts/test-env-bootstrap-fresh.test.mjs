@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { agentPresetPatchText, createTestEnvironmentStarter, normalizeTaskPlugins, profileBundlePresetDirectories } from './test-env-bootstrap.mjs';
+import { agentPresetPatchText, createTestEnvironmentStarter, normalizeTaskPlugins, presetRowsFromPatchText, profileBundlePresetDirectories } from './test-env-bootstrap.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const WORKTREE_PRESETS = join(HERE, '..', 'presets');
@@ -104,4 +104,14 @@ test('agentPresetPatchText skips a preset already declared by an installed profi
     rmSync(appRoot, { recursive: true, force: true });
     rmSync(profileDir, { recursive: true, force: true });
   }
+});
+
+test('presetRowsFromPatchText treats an empty fragment as no extra rows', () => {
+  const empty = presetRowsFromPatchText('');
+  assert.deepEqual(empty.rows, []);
+  assert.equal(empty.document.errors.length, 0);
+
+  const filled = presetRowsFromPatchText('- insert:\n    - id: omnimux-preset-omni-agent\n      name: "@deepseek-ai/dsh-agent-preset"\n      config:\n        id: omni-agent\n');
+  assert.equal(filled.rows.length, 1);
+  assert.equal(filled.rows[0].insert.length, 1);
 });

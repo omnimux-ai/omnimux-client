@@ -665,6 +665,21 @@ export function profileBundlePresetDirectories(profileDir) {
 }
 
 /**
+ * Parse an optional preset patch fragment into Loader rows.
+ *
+ * The bundle-declared case legitimately yields an empty fragment; YAML parses
+ * that as `null`, which must mean "no extra rows", not an invalid profile.
+ * @param {string} text
+ * @returns {{ document: import('yaml').Document.Parsed, rows: unknown[] }}
+ */
+export function presetRowsFromPatchText(text) {
+  const document = parseDocument(text);
+  const parsed = document.toJS();
+  const rows = text.trim() === '' ? [] : parsed;
+  return { document, rows };
+}
+
+/**
  * 隔离 profile 需要自己声明 agent preset（Issue #3871 的第二个后果）。
  *
  * rc.3 起预设不再由文件系统发现：壳在启动时向 profile 注入 `@deepseek-ai/dsh-agent-preset`
@@ -1498,10 +1513,10 @@ export function createTestEnvironmentStarter(deps = {}) {
       // 不允许退回「宿主照常启动、建会话才报 agent-preset/not-found」的静默降级。
       if (patchPathForPresets) {
         const base = parseDocument(io.readFileSync(patchPathForPresets, 'utf8'));
-        const agentPresets = parseDocument(agentPresetPatchText(layout, { ...deps, profileDir: dirname(patchPathForPresets) }));
+        const agentPresets = presetRowsFromPatchText(agentPresetPatchText(layout, { ...deps, profileDir: dirname(patchPathForPresets) }));
         const baseRows = base.toJS() ?? [];
-        const presetRows = agentPresets.toJS();
-        if (base.errors.length || agentPresets.errors.length || !Array.isArray(baseRows) || !Array.isArray(presetRows)) {
+        const presetRows = agentPresets.rows;
+        if (base.errors.length || agentPresets.document.errors.length || !Array.isArray(baseRows) || !Array.isArray(presetRows)) {
           throw failure('SMOKE_PROFILE_INVALID', '隔离环境的插件配置必须是 YAML 列表。');
         }
         const localMedia = { id: 'omnimux', config: { media: { providers: { omnimux: { baseUrl: `${mock.origin}/v1` } } } } };

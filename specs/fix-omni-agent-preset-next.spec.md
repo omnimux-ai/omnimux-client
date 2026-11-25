@@ -41,7 +41,7 @@
 
 ## 假设
 
-当 `omnimux` bundle 按 DSH 原生契约随包声明 `./presets/omni-agent.patch.yml`（移除失效的 `./list-agents` 行），且 `dsh-desktop-next` 的 `WEB_BUNDLES` 将上游基础 bundle 置于产品插件之前、旧壳与隔离脚手架跳过已由 bundle 声明的预设 ID、并同步清理 `omnimux-market` 兄弟路径后：
+当 `omnimux` bundle 按 DSH 原生契约随包声明 `./presets/omni-agent.patch.yml`（`./list-agents` 行按宿主 export map 条件启用），且 `dsh-desktop-next` 的 `WEB_BUNDLES` 将上游基础 bundle 置于产品插件之前、旧壳与隔离脚手架跳过已由 bundle 声明的预设 ID、并同步清理 `omnimux-market` 兄弟路径后：
 - 无论是升级自旧壳的 `profiles/omnimux`（经 `omnimux:sync` 物化覆盖即可生效）还是全新初始化的 `dsh-desktop-next` Profile，`agentPresets` 都会健康挂载 `omni-agent`（`broken === undefined`、`isDefault === true`）与 `cordis`；
 - 新建会话默认使用 `omni-agent` 正常创建，不再出现 `agent-preset/not-found` 或 `agent-preset/invalid`；
 - 旧壳 `dsh-plugin-desktop` 与 `host-runtime-layout` 不产生重复预设 ID 冲突。
@@ -55,7 +55,7 @@
 
 ## 验收标准
 
-- `node plugins/scripts/build-agent-presets.mjs` 幂等生成 `plugins/presets/omni-agent/agent.cordis.yml` 与 `plugins/plugins/omnimux/presets/omni-agent.patch.yml`，两者均不含 `@deepseek-ai/dsh-tool-subagent-control/list-agents`。
+- `node plugins/scripts/build-agent-presets.mjs` 幂等生成 `plugins/presets/omni-agent/agent.cordis.yml` 与 `plugins/plugins/omnimux/presets/omni-agent.patch.yml`；两者都保留 `@deepseek-ai/dsh-tool-subagent-control/list-agents` 行，且带 `!!js` 条件 `disabled`（rc.3 解析成功则启用、rc.5 无该导出则禁用）。
 - `plugins/plugins/omnimux/package.json` 声明 `dsh.bundle.patch: ["./cordis.patch.yml", "./presets/omni-agent.patch.yml"]`，`files` 包含 `"presets"`，`exports` 包含 `"./presets/*.patch.yml"`，通过 `verify-package-files.mjs`、`verify-models.mjs`、`verify-plugin-load.mjs`、`presets:verify` 与 `workspace-check.mjs --check`。
 - 真实 `dsh-desktop-next` Host 冒烟与回归测试通过：`agentPresets/list` 仅返回健康的 `omni-agent`（默认）与 `cordis`，默认 `session/create` 成功，`list_agents` 工具由主包 `@deepseek-ai/dsh-tool-subagent-control` 正常提供。
 - `app/dsh-desktop-next`、`app/dsh-plugin-desktop`、`plugins/plugins/omnimux`、`plugins/plugins/omnimux-market` 及受影响门禁测试全绿。
@@ -64,7 +64,7 @@
 ## 实施要点
 
 - 新增 `plugins/plugins/omnimux/presets/omni-agent.patch.yml`（由 `build-agent-presets.mjs` 从 `Agent.md` + `preset.yml` 生成），`omnimux` 的 `dsh.bundle.patch` 改为 `["./cordis.patch.yml", "./presets/omni-agent.patch.yml"]`，`files` 增列 `presets`，`exports` 增列 `./presets/*.patch.yml`。
-- `plugins/scripts/build-agent-presets.mjs` 去掉 DSH `0.2.2-rc.5` 已移除的 `@deepseek-ai/dsh-tool-subagent-control/list-agents` 行（`dsh-tool-subagent-control` 主入口已包含 `registerListAgents`），并同时生成两份产物。
+- `plugins/scripts/build-agent-presets.mjs` 把 `@deepseek-ai/dsh-tool-subagent-control/list-agents` 行改为按宿主 export map 条件启用（`dsh-tool-subagent-control` 主入口在 rc.5 已包含 `registerListAgents`，rc.3 仍依赖该子路径），并同时生成两份产物。
 - `plugins/scripts/verify-package-files.mjs` 支持 `dsh.bundle.patch` 为字符串或数组，逐项校验落盘与 `files` 覆盖。
 - `plugins/scripts/test-env-bootstrap.mjs` 的 `agentPresetPatchText` 接收隔离 profile 的真实目录：`profileBundlePresetDirectories()` 从 `<profile>/node_modules/<bundle>/presets` 收集已安装 bundle 的声明并跳过重复；`host-runtime-layout.upstreamPresetIds` 不再扫描宿主 App 根（旧壳在 `preset/plugins`、新壳在 app.asar 内，均不存在该路径），改为由调用方传入真实目录。
 - `app/dsh-desktop-next/src/profiles.ts` 的 `WEB_BUNDLES` 改为「上游 core 在前、产品 bundle 在后」。
@@ -84,7 +84,7 @@
 | 预设门禁 | `corepack pnpm --dir plugins run presets:verify` | 16 通过 |
 | 插件门禁 | `presets:verify` + `verify:models` + `check:boundaries` + `verify:product-baseline` + `verify:plugin-load` | 全部通过（`15/15 package(s) passed plugin load check`） |
 | 工作区元数据 | `node scripts/workspace-check.mjs` | 通过（`bundle.lock.json` 14 插件一致） |
-| 脚本单测 | `node --test plugins/scripts/{host-runtime-layout,verify-package-files,verify-agent-presets-health,test-env-bootstrap*}.test.mjs` | 94 通过 |
+| 脚本单测 | `node --test plugins/scripts/{host-runtime-layout,verify-package-files,verify-agent-presets-health,test-env-bootstrap*}.test.mjs` | 95 通过 |
 
 ### 双向证伪（回退修复即红，恢复即绿）
 
