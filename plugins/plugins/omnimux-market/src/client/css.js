@@ -234,15 +234,15 @@ html[data-omnimux-composer-density='icon'] .sh-active-skill-chip:hover{backgroun
 html[data-omnimux-composer-density='icon'] .sh-active-skill-chip:hover .sh-chip-icon{display:none !important}
 html[data-omnimux-composer-density='icon'] .sh-active-skill-chip:hover .sh-chip-icon-hover{display:block !important}
 @keyframes sh-chip-in{from{opacity:0;transform:scale(.92)}to{opacity:1;transform:scale(1)}}
-button[class*="add"],.Q7WfXG_add,
+[data-composer-card] button[class*="add"],.Q7WfXG_add,
 .sh-picker-trigger{display:inline-flex !important;align-items:center !important;justify-content:center !important;gap:4px !important;height:28px !important;box-sizing:border-box !important;padding:0 8px !important;border:0 !important;box-shadow:none !important;border-radius:24px !important;background:transparent !important;color:var(--dsw-alias-label-secondary,inherit) !important;font:inherit !important;font-size:13px !important;font-weight:500 !important;line-height:20px !important;cursor:pointer !important;outline:none !important;transition:background-color .15s ease,color .15s ease,box-shadow .15s ease !important}
-button[class*="add"]:hover:not(:disabled),.Q7WfXG_add:hover:not(:disabled),
+[data-composer-card] button[class*="add"]:hover:not(:disabled),.Q7WfXG_add:hover:not(:disabled),
 .sh-picker-trigger:hover{background:var(--dsw-alias-interactive-bg-hover) !important;color:var(--dsw-alias-label-primary,inherit) !important}
-button[class*="add"]:focus-visible,.Q7WfXG_add:focus-visible,
+[data-composer-card] button[class*="add"]:focus-visible,.Q7WfXG_add:focus-visible,
 .sh-picker-trigger:focus-visible{box-shadow:0 0 0 2px var(--dsw-alias-border-l3) !important;outline:none !important}
 .sh-picker-trigger.on{background:var(--dsw-alias-interactive-bg-hover) !important;color:var(--dsw-alias-label-primary,inherit) !important}
-button[class*="add"],.Q7WfXG_add{width:28px !important;min-width:28px !important;padding:0 !important}
-button[class*="add"] svg,.Q7WfXG_add svg,
+[data-composer-card] button[class*="add"],.Q7WfXG_add{width:28px !important;min-width:28px !important;padding:0 !important}
+[data-composer-card] button[class*="add"] svg,.Q7WfXG_add svg,
 .sh-picker-trigger svg{flex:none !important;width:14px !important;height:14px !important;min-width:14px !important;min-height:14px !important;display:block !important}
 .sh-picker-trigger-label{white-space:nowrap}
 html[data-omnimux-composer-density='icon'] .sh-picker-trigger{width:28px !important;min-width:28px !important;padding:0 !important}

@@ -24,19 +24,16 @@ function ruleBlock(source, selector) {
 
 const baseBlock = ruleBlock(themeSrc, '.wf-canvas-toolbar__item--primary-add');
 
-test('E2E: 画布底部「+」添加节点按钮为圆角方形而非纯圆', () => {
+test('E2E: 画布底部「+」添加节点按钮为与胶囊底栏同心的纯圆图标按钮', () => {
   assert.match(
     baseBlock,
-    /border-radius:\s*var\(--wb-pill-radius,\s*12px\);/,
-    '主添加按钮圆角必须复用 --wb-pill-radius（12px），与设计体系同档',
+    /border-radius:\s*50%;/,
+    '主添加按钮必须保持纯圆，与 999px 全胶囊底栏曲率同心',
   );
-  assert.doesNotMatch(
-    baseBlock,
-    /border-radius:\s*50%/,
-    '主添加按钮严禁再使用 50% 纯圆',
-  );
-  assert.match(baseBlock, /width:\s*36px;/, '主添加按钮宽度必须保持 36px');
-  assert.match(baseBlock, /height:\s*36px;/, '主添加按钮高度必须保持 36px');
+  assert.match(baseBlock, /width:\s*40px;/, '主添加按钮宽度必须保持 40px');
+  assert.match(baseBlock, /height:\s*40px;/, '主添加按钮高度必须保持 40px');
+  const dockBlock = ruleBlock(themeSrc, '.wf-canvas-toolbar');
+  assert.match(dockBlock, /border-radius:\s*999px;/, '底部工具栏外框必须为全圆角胶囊');
 });
 
 test('E2E: 主添加按钮双主题高对比与 hover 反馈不被圆角改动破坏', () => {

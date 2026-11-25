@@ -109,3 +109,15 @@ test('#4112 Dock 其余入口仍保留', () => {
     assert.equal(toolbarSrc.includes(key), true, `missing Dock entry: ${key}`);
   }
 });
+
+test('底部工具栏源码锁定为纯图标：不渲染底栏按钮文本节点，采用同心圆主按钮与不透明指针浮层', () => {
+  assert.doesNotMatch(toolbarSrc, /wf-canvas-toolbar__add-text/);
+  assert.doesNotMatch(toolbarSrc, /wf-canvas-toolbar__mode-label/);
+  assert.doesNotMatch(toolbarSrc, /wf-canvas-toolbar__label/);
+  assert.doesNotMatch(toolbarSrc, /toolbar\.insertTemplateLabel/);
+  assert.doesNotMatch(themeSrc, /\.wf-canvas-toolbar__add-text\b/);
+  assert.doesNotMatch(themeSrc, /\.wf-canvas-toolbar__mode-label\b/);
+  assert.match(themeSrc, /\.wf-canvas-toolbar\s*\{[^}]*border-radius:\s*999px;/);
+  assert.match(themeSrc, /\.wf-canvas-toolbar__item--primary-add\s*\{[^}]*width:\s*40px;[^}]*height:\s*40px;[^}]*border-radius:\s*50%;/);
+  assert.match(themeSrc, /\.wf-canvas-toolbar__mode-menu\s*\{[^}]*background:\s*var\(--wb-surface-elevated\);/);
+});

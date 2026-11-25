@@ -136,8 +136,8 @@ test('#4112 底部工具栏不再渲染导出/导入按钮，其余 Dock 入口�
     assert.equal(probe.assets >= 0, true, '项目资产按钮必须保留');
     assert.equal(probe.help >= 0, true, '快捷键帮助按钮必须保留');
     assert.equal(
-      probe.addNode < probe.insertTemplate && probe.insertTemplate < probe.pointerMode
-        && probe.pointerMode < probe.assets && probe.assets < probe.help,
+      probe.addNode < probe.pointerMode && probe.pointerMode < probe.insertTemplate
+        && probe.insertTemplate < probe.assets && probe.assets < probe.help,
       true,
       `Dock 入口顺序必须保持：${probe.titles.join(' | ')}`,
     );
