@@ -457,7 +457,7 @@ try {
   await page.locator('[data-plugin-panel]').waitFor({ state: 'visible' })
   const controls = page.locator('[data-next-plugin-controls]')
   await controls.waitFor({ state: 'visible' })
-  for (const name of ['dsh-community-market', 'dshmarket', '@agents-anywhere/dsh-bridge-next']) {
+  for (const name of ['dsh-community-market', 'dshmarket', '@agents-anywhere/dsh-bridge-next', 'omnimux', 'dsh-better-sidebar']) {
     assert.equal(await page.locator(`[data-plugin-package="${name}"]`).count(), 0)
   }
   assert.equal(await page.locator('[data-plugin-item="desktop-next-computer-use"]').count(), 0)

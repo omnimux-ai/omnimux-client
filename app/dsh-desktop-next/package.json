@@ -353,6 +353,10 @@
         "dsh-community-market",
         "dshmarket"
       ]
+    ],
+    "protectedBundles": [
+      "omnimux",
+      "dsh-better-sidebar"
     ]
   },
   "build": {

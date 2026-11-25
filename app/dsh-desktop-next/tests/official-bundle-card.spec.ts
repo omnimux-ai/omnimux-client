@@ -20,6 +20,7 @@ vi.mock('@deepseek-ai/dsh-client-ui-primitives', () => ({
 }))
 import { registerPluginControls, type OfficialBundleCard } from '../src/client/plugin-controls.tsx'
 import { OFFICIAL_OAR_SUBAGENTS } from '../src/upstream-family-labels.ts'
+import PLUGIN_TIERS from '../../config/plugin-tiers.json' with { type: 'json' }
 
 afterEach(() => { hooks.states = []; hooks.cursor = 0; vi.unstubAllGlobals() })
 
@@ -31,11 +32,17 @@ const named = (tree: unknown, name: string): Node[] => nodes(tree).filter(node =
 const render = (node: Node): Node => (node.type as (props: Node['props']) => Node)(node.props)
 const oarSubagents: OfficialBundleCard | undefined = OFFICIAL_OAR_SUBAGENTS
 const BASE_BUNDLES = ['dsh-community-market', 'dshmarket', '@agents-anywhere/dsh-bridge-next']
+const CORE_HIDDEN_BUNDLES = ['omnimux', ...PLUGIN_TIERS.tiers.infrastructure]
+const EXPECTED_LISTED_BUNDLES = [
+  ...PLUGIN_TIERS.tiers.preview.filter(name => name !== 'omnimux'),
+  ...PLUGIN_TIERS.tiers.beta,
+]
 
 /** Register the Plugins overview against a Host whose official manager lists these bundles. */
 function overview(packages: { name: string; enabled: boolean; readOnlyReason?: string }[]) {
   vi.stubGlobal('window', { addEventListener: vi.fn(), removeEventListener: vi.fn() })
   const hidden: string[] = []
+  const listed: string[] = []
   const setBundleEnabled = vi.fn(async (_name: string, _enabled: boolean) => ({ ok: true as const, value: { application: 'applied' } }))
   let View: ((props: any) => Node) | undefined
   const ctx: any = {
@@ -54,19 +61,23 @@ function overview(packages: { name: string; enabled: boolean; readOnlyReason?: s
       register: (options: { name: string; key?: string }, view: (props: any) => Node) => {
         if (options.name === 'plugins.overview') View = view
         if (options.name === 'plugins.bundle.hidden') hidden.push(options.key!)
+        if (options.name === 'plugins.bundle.listed') listed.push(options.key!)
         return () => {}
       },
     },
   }
   registerPluginControls(ctx as Context)
   const props = { context: ctx, t: (key: string) => key === 'language' ? 'zh' : key, onOpenBundle: vi.fn(), onOpenItem: vi.fn() }
-  return { hidden, props, setBundleEnabled, tree: () => { hooks.cursor = 0; return View!(props) } }
+  return { hidden, listed, props, setBundleEnabled, tree: () => { hooks.cursor = 0; return View!(props) } }
 }
 
 it.runIf(oarSubagents !== undefined)('shows OAR subagents with a card of its own after Computer Use and keeps it off the official lists', () => {
   const card = oarSubagents!
   const page = overview([...BASE_BUNDLES.map(name => ({ name, enabled: false })), { name: card.bundle, enabled: false }])
-  expect(page.hidden).toEqual([...BASE_BUNDLES, card.bundle])
+  expect(page.hidden).toEqual([...BASE_BUNDLES, card.bundle, ...CORE_HIDDEN_BUNDLES])
+  expect(page.listed).toEqual(EXPECTED_LISTED_BUNDLES)
+  expect(page.listed).not.toContain('omnimux')
+  expect(page.listed).not.toContain('dsh-better-sidebar')
   const cards = named(page.tree(), 'PluginCard')
   expect(cards.map(node => node.props.title)).toEqual(['远程控制', 'Computer Use（Next）', card.title.zh])
   const oar = cards[2]!
@@ -106,7 +117,8 @@ it.runIf(oarSubagents !== undefined)('locks the OAR subagents switch while the H
 
 it.skipIf(oarSubagents !== undefined)('offers no OAR subagents card on a release without the provider', () => {
   const page = overview(BASE_BUNDLES.map(name => ({ name, enabled: false })))
-  expect(page.hidden).toEqual(BASE_BUNDLES)
+  expect(page.hidden).toEqual([...BASE_BUNDLES, ...CORE_HIDDEN_BUNDLES])
+  expect(page.listed).toEqual(EXPECTED_LISTED_BUNDLES)
   expect(named(page.tree(), 'PluginCard').map(node => node.props.title)).toEqual(['远程控制', 'Computer Use（Next）'])
   expect(named(page.tree(), 'BundleSwitch')).toEqual([])
 })
