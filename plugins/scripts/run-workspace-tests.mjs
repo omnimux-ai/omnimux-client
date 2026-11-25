@@ -67,10 +67,15 @@ export function selectShard(packages, shard) {
 /** @typedef {{ location: string, name: string, error: string }} TestFailure */
 /** @typedef {{ name: string, reason: string }} SkippedCase */
 /**
+ * Vitest's default (non-TAP) reporter prints a human-readable summary such as
+ * `Tests  1 passed | 1 skipped (2)` instead of node:test's `# tests` counters.
+ * @typedef {{ found: boolean, passed: number, failed: number, skipped: number, pending: number, total: number }} VitestSummary
+ */
+/**
  * @typedef {{
  *   tests: number, pass: number, fail: number, cancelled: number, skipped: number,
  *   notOk: number, failures: TestFailure[], skippedCases: SkippedCase[],
- *   skippedSuites: SkippedCase[],
+ *   skippedSuites: SkippedCase[], vitest: VitestSummary,
  * }} TapSummary
  */
 
@@ -97,6 +102,51 @@ function sumCounter(text, key) {
   let total = 0
   for (const match of text.matchAll(new RegExp(`^# ${key} (\\d+)$`, 'gm'))) total += Number(match[1])
   return total
+}
+
+function stripAnsi(text) {
+  // Vitest colors counts when it thinks it is on a TTY; strip escapes so the
+  // summary parses the same locally and on a piped CI runner.
+  return String(text || '').replace(/\u001b\[[0-9;]*m/g, '')
+}
+
+/**
+ * Parses Vitest's default reporter summary. `omnimux-browser` runs
+ * `vitest run` before a node:test command, and Vitest does not honor
+ * `NODE_OPTIONS=--test-reporter=tap`, so without this its skipped tests are
+ * invisible to the TAP parser and could pass silently. Several summaries may
+ * be concatenated (vitest + extension vitest), so counts are summed.
+ * @param {string} text
+ * @returns {VitestSummary}
+ */
+export function parseVitestSummary(text) {
+  const result = { found: false, passed: 0, failed: 0, skipped: 0, pending: 0, total: 0 }
+  for (const raw of stripAnsi(text).split('\n')) {
+    // Vitest right-aligns the label, e.g. `      Tests  1 passed | 1 skipped (2)`.
+    const match = /^\s*Tests\s{2,}(.+)$/.exec(raw.trimEnd())
+    if (!match) continue
+    const body = match[1].trim()
+    if (/^no tests$/i.test(body)) {
+      result.found = true
+      continue
+    }
+    let recognized = false
+    for (const part of body.split('|')) {
+      const segment = part.trim().replace(/\s*\(\d+\)$/, '').trim()
+      const counts = /^(\d+)\s+(passed|failed|skipped|todo)\b/i.exec(segment)
+      if (!counts) continue
+      recognized = true
+      const count = Number(counts[1])
+      const kind = counts[2].toLowerCase()
+      if (kind === 'passed') result.passed += count
+      else if (kind === 'failed') result.failed += count
+      else if (kind === 'skipped') result.skipped += count
+      else result.pending += count
+    }
+    if (recognized) result.found = true
+  }
+  result.total = result.passed + result.failed + result.skipped + result.pending
+  return result
 }
 
 /**
@@ -170,12 +220,14 @@ export function parseTap(text) {
     failures,
     skippedCases,
     skippedSuites,
+    vitest: parseVitestSummary(text),
   }
 }
 
-/** @param {{ total: number, environment: number, byDesign: number }} skip */
+/** @param {{ total: number, environment: number, byDesign: number, vitestUnclassified?: number }} skip */
 export function formatSkipSummary(skip) {
-  return `skip=${skip.total} (environment=${skip.environment}, by-design=${skip.byDesign})`
+  const extra = skip.vitestUnclassified > 0 ? `, vitest-unclassified=${skip.vitestUnclassified}` : ''
+  return `skip=${skip.total} (environment=${skip.environment}, by-design=${skip.byDesign}${extra})`
 }
 
 /** Render the package status line; skips are always visible and never a bare `ok`. */
@@ -191,12 +243,17 @@ export function formatPackageLine(result) {
  * Classifies skip lines by explicit marker only. A skipped test without
  * `[environment-unavailable]` is by-design: free-text matching would turn
  * legitimate optional-dependency/platform skips into false red packages.
+ *
+ * Vitest's default reporter carries no per-case reason, so its skipped/todo
+ * counts cannot be classified. They are fail-closed: an unlabelled Vitest skip
+ * can never be shown as a passing package, because that is exactly the silent
+ * hole this runner exists to close.
  * @param {{ exitCode: number | null, tap: TapSummary }} run
  * @returns {{
  *   passed: boolean,
  *   reasons: string[],
  *   counts: { passed: number, failed: number, skippedEnvironment: number, skippedByDesign: number },
- *   skipSummary: { total: number, parsed: number, environment: number, byDesign: number, mismatch: boolean },
+ *   skipSummary: { total: number, parsed: number, environment: number, byDesign: number, mismatch: boolean, vitestUnclassified: number },
  * }}
  */
 export function judge({ exitCode, tap }) {
@@ -205,16 +262,22 @@ export function judge({ exitCode, tap }) {
   const allSkipped = [...skippedCases, ...skippedSuites]
   const skippedEnvironment = allSkipped.filter((item) => String(item.reason || '').includes('[environment-unavailable]')).length
   const skippedByDesign = allSkipped.length - skippedEnvironment
+  const vitest = tap.vitest && tap.vitest.found ? tap.vitest : null
+  const vitestUnclassified = vitest ? (Number(vitest.skipped) || 0) + (Number(vitest.pending) || 0) : 0
+  const vitestTests = vitest ? (Number(vitest.passed) || 0) + (Number(vitest.failed) || 0) + (Number(vitest.skipped) || 0) + (Number(vitest.pending) || 0) : 0
   // `# skipped` only counts leaf tests; suite-level skips are not part of it.
   const skippedMismatch = tap.skipped !== skippedCases.length
   const reasons = []
   if (exitCode !== 0) reasons.push(`exit code ${exitCode}`)
-  // A package whose only test points are skipped suites has `# tests 0` but did
-  // report skip events; it must not read as "no tests".
-  if (tap.tests === 0 && allSkipped.length === 0) reasons.push('no tests reported')
+  // A package whose only test points are skipped suites or Vitest-only runs has
+  // `# tests 0` but did report tests; it must not read as "no tests".
+  if (tap.tests === 0 && allSkipped.length === 0 && vitestTests === 0) reasons.push('no tests reported')
   if (tap.notOk > 0) reasons.push(`${tap.notOk} not ok line(s)`)
   if (tap.cancelled > 0) reasons.push(`${tap.cancelled} cancelled`)
   if (skippedEnvironment > 0) reasons.push(`${skippedEnvironment} environment-unavailable skip(s)`)
+  // Vitest default output has no explicit environment marker, so every Vitest
+  // skip/todo is treated as unclassified and fails the package (fail-closed).
+  if (vitestUnclassified > 0) reasons.push(`${vitestUnclassified} vitest skip(s) without an explicit environment marker`)
   if (skippedMismatch) reasons.push(`skip count mismatch: summary=${tap.skipped} parsed=${skippedCases.length}`)
   return {
     passed: reasons.length === 0,
@@ -226,11 +289,12 @@ export function judge({ exitCode, tap }) {
       skippedByDesign,
     },
     skipSummary: {
-      total: (Number(tap.skipped) || 0) + skippedSuites.length,
-      parsed: allSkipped.length,
+      total: (Number(tap.skipped) || 0) + skippedSuites.length + vitestUnclassified,
+      parsed: allSkipped.length + vitestUnclassified,
       environment: skippedEnvironment,
       byDesign: skippedByDesign,
       mismatch: skippedMismatch,
+      vitestUnclassified,
     },
   }
 }

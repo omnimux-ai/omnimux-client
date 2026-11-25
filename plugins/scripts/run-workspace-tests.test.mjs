@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { parse } from 'yaml'
-import { classifyFailure, discoverPackages, formatPackageLine, formatSkipSummary, judge, main, parseTap, selectShard, SHARD_NAMES } from './run-workspace-tests.mjs'
+import { classifyFailure, discoverPackages, formatPackageLine, formatSkipSummary, judge, main, parseTap, parseVitestSummary, selectShard, SHARD_NAMES } from './run-workspace-tests.mjs'
 
 const RUNNER = fileURLToPath(new URL('./run-workspace-tests.mjs', import.meta.url))
 
@@ -64,6 +64,8 @@ const tapSummary = (overrides = {}) => ({
   notOk: 0,
   failures: [],
   skippedCases: [],
+  skippedSuites: [],
+  vitest: { found: false, passed: 0, failed: 0, skipped: 0, pending: 0, total: 0 },
   ...overrides,
 })
 
@@ -147,6 +149,104 @@ test('a package whose only tests are skipped suites is not a false "no tests rep
   assert.deepEqual(result.reasons, [])
   assert.deepEqual(result.counts, { passed: 0, failed: 0, skippedEnvironment: 0, skippedByDesign: 1 })
   assert.equal(formatSkipSummary(result.skipSummary), 'skip=1 (environment=0, by-design=1)')
+})
+
+test('real node:test describe.skip output is parsed as a suite skip and does not fail the package', () => {
+  // Verbatim `node --test --test-reporter=tap` output for a file containing
+  // `describe.skip('all skipped', () => it(...))` plus one passing suite
+  // (Node 25.8.0). Kept as captured bytes so the test pins Node's real
+  // suite-skip shape: `ok N - name # SKIP`, YAML `type: 'suite'`, and
+  // `# skipped 0` because the skipped suite does not count a leaf test.
+  const tap = parseTap([
+    'TAP version 13',
+    '# Subtest: all skipped',
+    'ok 1 - all skipped # SKIP',
+    '  ---',
+    '  duration_ms: 0.192667',
+    "  type: 'suite'",
+    '  ...',
+    '# Subtest: runs',
+    '    # Subtest: passes',
+    '    ok 1 - passes',
+    '      ---',
+    '      duration_ms: 0.144167',
+    "      type: 'test'",
+    '      ...',
+    '    1..1',
+    'ok 2 - runs',
+    '  ---',
+    '  duration_ms: 0.277375',
+    "  type: 'suite'",
+    '  ...',
+    '1..2',
+    '# tests 1',
+    '# suites 2',
+    '# pass 1',
+    '# fail 0',
+    '# cancelled 0',
+    '# skipped 0',
+    '# todo 0',
+  ].join('\n'))
+  assert.equal(tap.skippedCases.length, 0, 'a suite skip must never be counted as a leaf skip')
+  assert.deepEqual(tap.skippedSuites.map((item) => item.name), ['all skipped'])
+  assert.equal(tap.skipped, 0, 'node reports leaf skips only')
+  const result = judge({ exitCode: 0, tap })
+  assert.equal(result.passed, true, result.reasons.join('; '))
+  assert.equal(result.skipSummary.mismatch, false)
+  assert.deepEqual(result.counts, { passed: 1, failed: 0, skippedEnvironment: 0, skippedByDesign: 1 })
+  assert.equal(formatSkipSummary(result.skipSummary), 'skip=1 (environment=0, by-design=1)')
+})
+
+test('vitest default reporter summary is parsed so skipped tests are counted', () => {
+  // Strings below are verbatim from vitest 4.1.12 default reporter output.
+  assert.deepEqual(parseVitestSummary('      Tests  1 passed | 1 skipped (2)'), {
+    found: true, passed: 1, failed: 0, skipped: 1, pending: 0, total: 2,
+  })
+  assert.deepEqual(parseVitestSummary(' Tests  2 skipped (2)'), {
+    found: true, passed: 0, failed: 0, skipped: 2, pending: 0, total: 2,
+  })
+  assert.deepEqual(parseVitestSummary(' Tests  1 failed | 1 passed (2)'), {
+    found: true, passed: 1, failed: 1, skipped: 0, pending: 0, total: 2,
+  })
+  assert.deepEqual(parseVitestSummary(' Tests  1 passed | 1 todo (2)'), {
+    found: true, passed: 1, failed: 0, skipped: 0, pending: 1, total: 2,
+  })
+  // ANSI colors from a TTY must not hide the counts.
+  assert.deepEqual(parseVitestSummary(' \u001b[1mTests\u001b[22m  \u001b[32m1 passed\u001b[39m | \u001b[33m1 skipped\u001b[39m (2)'), {
+    found: true, passed: 1, failed: 0, skipped: 1, pending: 0, total: 2,
+  })
+  // Two vitest invocations concatenated (main suite + extension suite) sum.
+  assert.deepEqual(parseVitestSummary(' Tests  3 passed (3)\n Tests  1 passed | 1 skipped (2)'), {
+    found: true, passed: 4, failed: 0, skipped: 1, pending: 0, total: 5,
+  })
+  // A `Test Files` line alone is not a Tests summary.
+  assert.equal(parseVitestSummary(' Test Files  1 passed (1)').found, false)
+})
+
+test('vitest skipped/todo tests fail the package instead of passing silently', () => {
+  const tap = tapSummary({
+    tests: 5,
+    pass: 5,
+    vitest: { found: true, passed: 5, failed: 0, skipped: 2, pending: 0, total: 7 },
+  })
+  const result = judge({ exitCode: 0, tap })
+  assert.equal(result.passed, false)
+  assert.ok(result.reasons.some((reason) => reason.includes('vitest skip(s)')), result.reasons.join('; '))
+  assert.equal(result.skipSummary.vitestUnclassified, 2)
+  assert.equal(formatSkipSummary(result.skipSummary), 'skip=2 (environment=0, by-design=0, vitest-unclassified=2)')
+  const line = formatPackageLine({ name: 'demo', seconds: 1, tap, reasons: result.reasons, judgement: result })
+  assert.match(line, /FAIL .*vitest-unclassified=2/)
+})
+
+test('a passing vitest-only package is not a false "no tests reported" red', () => {
+  const tap = tapSummary({
+    tests: 0,
+    pass: 0,
+    vitest: { found: true, passed: 4, failed: 0, skipped: 0, pending: 0, total: 4 },
+  })
+  const result = judge({ exitCode: 0, tap })
+  assert.equal(result.passed, true, result.reasons.join('; '))
+  assert.deepEqual(result.reasons, [])
 })
 
 test('design-only skips do not fail the package but remain visible in the skip summary', () => {
