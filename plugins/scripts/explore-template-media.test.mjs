@@ -1,16 +1,14 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtemp, mkdir, readFile, writeFile, rm, symlink } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { createExploreMediaPlan } from './explore-template-media.mjs'
 
-const root = fileURLToPath(new URL('../', import.meta.url))
 const templates = JSON.parse(await readFile(new URL('../plugins/omnimux/src/client/session-guide/templates/creative-templates.json', import.meta.url)))
 
 test('offline plan validates source inputs, scope, containment and deterministic ordering', async () => {
-  await mkdir(join(root, '.agent-reports/explore-video-preview'), { recursive: true })
-  const sandbox = await mkdtemp(join(root, '.agent-reports/explore-video-preview/unit-media-'))
+  const sandbox = await mkdtemp(join(tmpdir(), 'omnimux-explore-media-'))
   const sourceRoot = join(sandbox, 'source')
   const sourceFile = join(sourceRoot, 'inspiration-library/video/pippit-marketing-agent.json')
   const items = templates.filter(t => t.sourcePlatform === 'pippit').map((template, index) => ({

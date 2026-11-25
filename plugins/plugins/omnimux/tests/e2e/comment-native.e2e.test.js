@@ -4,7 +4,8 @@ import { execFileSync, spawn } from 'node:child_process';
 // Only task-owned child processes are stopped; no shared desktop lifecycle calls.
 const assertNativeHostStopped = (stopped) => assert.equal(stopped.hostStopped, true);
 import { mkdtemp, mkdir, writeFile, readFile, rm, readdir } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { tmpdir } from 'node:os';
+import { basename, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { commentFixturePng, commentSeedSource } from '../../test-support/comment-native-seed.mjs';
 
@@ -29,9 +30,11 @@ const hasEgoBrowser = (() => {
 
 test('1756 official native comment ready, full-text pre-step expansion, and removal', { timeout: 300000 }, async () => {
   assert.equal(hasEgoBrowser, true, 'ego-browser is required; unavailable capabilities must fail');
-  await mkdir(resolve(root, '.tmp'), { recursive: true });
-  const temp = await mkdtemp(resolve(root, '.tmp/comment-native-e2e-'));
-  const evidence = resolve(root, '.agent-reports/comment-only-send/formal', temp.split('/').pop());
+  const writeEvidence = process.env.OMNIMUX_WRITE_EVIDENCE === '1';
+  const temp = await mkdtemp(join(tmpdir(), 'omnimux-comment-native-e2e-'));
+  const evidence = writeEvidence
+    ? resolve(root, '.agent-reports/comment-only-send/formal', basename(temp))
+    : join(temp, 'evidence');
   let host;
   let log = '';
   const environment = { root, sourceHashes: {}, artifactHashes: {} };

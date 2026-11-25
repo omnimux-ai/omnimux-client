@@ -8,14 +8,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../../../..');
 const plugin = join(root, 'plugins/omnimux-workflow');
-const evidenceDir = join(root, 'docs/evidence/slot-preview-card-fit');
+const defaultEvidenceDir = join(root, 'docs/evidence/slot-preview-card-fit');
 const PORT = 4943;
 const ORIGIN = `http://localhost:${PORT}`;
 
@@ -168,7 +169,14 @@ async function waitForServer(origin, timeoutMs = 60000) {
 }
 
 test('素材卡槽悬浮预览：卡片随素材比例，操作按钮在卡片外侧下方', async (t) => {
+  const writeEvidence = process.env.OMNIMUX_WRITE_EVIDENCE === '1';
+  const evidenceDir = writeEvidence
+    ? defaultEvidenceDir
+    : await mkdtemp(join(tmpdir(), 'omnimux-slot-preview-card-fit-'));
   await mkdir(evidenceDir, { recursive: true });
+  if (!writeEvidence) {
+    t.after(() => rm(evidenceDir, { recursive: true, force: true }));
+  }
   const harness = spawn(process.execPath, [join('scripts', 'canvas-harness.mjs'), '--port', String(PORT)], {
     cwd: plugin,
     env: { ...process.env },
