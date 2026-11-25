@@ -117,6 +117,10 @@ try {
         : null
     }
     if (command.type === 'app-icon') controlState.preferences = { ...controlState.preferences, appIcon: command.appIcon }
+    if (command.type === 'dismiss-post-update-notice' && controlState.updates) {
+      const { justUpdatedFrom: _dismissed, ...rest } = controlState.updates
+      controlState.updates = rest
+    }
     if (command.type === 'switch') controlState.selected = command.name
     if (command.type === 'features') controlState.features = command.features
     if (command.type === 'create') controlState.profiles.push(command.name)
@@ -853,23 +857,52 @@ try {
   await settings.locator('[data-desktop-material-row]').waitFor({ state: 'visible' })
   await settings.locator('[data-desktop-material-row]').scrollIntoViewIfNeeded()
   await page.screenshot({ path: join(screenshots, 'desktop-window-appearance.png'), animations: 'disabled' })
+  const waitForControlCommand = async (type, afterLength) => {
+    for (let attempt = 0; attempt < 60; attempt += 1) {
+      if (controlCommands.slice(afterLength).some(cmd => cmd.type === type)) return
+      await page.waitForTimeout(50)
+    }
+    assert.fail(`Timed out waiting for control command ${type}; saw: ${JSON.stringify(controlCommands.slice(afterLength))}`)
+  }
   const updateSection = settings.locator('[data-next-updates]')
   const releaseNotes = updateSection.getByRole('link', { name: /^(更新公告|Release notes)$/ })
   assert.equal(await releaseNotes.getAttribute('href'), `https://github.com/omnimux-ai/omnimux-client/releases/tag/v${controlState.version}`)
   assert.equal(await releaseNotes.getAttribute('target'), '_blank')
   assert.equal(await releaseNotes.getAttribute('rel'), 'noopener noreferrer')
+  const updateHeaderText = (await updateSection.locator('.dshUpdateHeader').textContent()) ?? ''
+  assert.ok(updateHeaderText.includes(`OmniMux v${controlState.version}`), `Expected version without middle dot, got: ${updateHeaderText}`)
+  assert.equal(updateHeaderText.includes('·'), false, 'Update header must not use middle-dot separator')
+  let cmdMark = controlCommands.length
   await updateSection.getByRole('button', { name: /检查更新|Check for updates/ }).click()
-  assert.equal(controlCommands.at(-1).type, 'check-updates')
+  await waitForControlCommand('check-updates', cmdMark)
+  controlState.updates = {
+    phase: 'available',
+    version: '2.0.26',
+    installable: true,
+    artifactSize: 128 * 1024 * 1024,
+    releaseNotes: { zh: ['支持签名校验与分片下载', '安装前检查活跃任务'], en: ['Signed manifests and chunked downloads', 'Active task guard'] },
+  }
+  await updateSection.locator('[data-next-update-notes]').getByText('支持签名校验与分片下载').waitFor()
+  await updateSection.getByText('128 MB').waitFor()
+  await page.locator('[data-next-update-pill]').waitFor({ state: 'visible' })
   controlState.updates = { phase: 'downloading', version: '2.0.20-next.1', installable: true, received: 50, total: 100 }
   await updateSection.getByText(/正在下载更新 50%|Downloading update 50%/).waitFor()
   assert.equal(await updateSection.locator('progress').getAttribute('value'), '50')
   assert.equal(await releaseNotes.getAttribute('href'), `https://github.com/omnimux-ai/omnimux-client/releases/tag/v${controlState.updates.version}`)
   await updateSection.scrollIntoViewIfNeeded()
   await page.screenshot({ path: join(screenshots, 'desktop-update-progress.png'), animations: 'disabled' })
+  cmdMark = controlCommands.length
+  await updateSection.getByRole('button', { name: /^(取消|Cancel)$/ }).click()
+  await waitForControlCommand('cancel-update-download', cmdMark)
+  controlState.updates = { phase: 'error', version: '2.0.26', installable: true, error: 'download', errorCode: 'APP_TRANSLOCATED' }
+  await updateSection.getByRole('button', { name: /^(查看诊断码|Show error code)$/ }).click()
+  await updateSection.locator('.dshUpdateErrorDetail').getByText('APP_TRANSLOCATED').waitFor()
   controlState.updates = { phase: 'ready', version: '2.0.20-next.1', installable: true }
+  cmdMark = controlCommands.length
   await updateSection.getByRole('button', { name: /安装并重启|Install and restart/ }).click()
-  assert.equal(controlCommands.at(-1).type, 'install-update')
+  await waitForControlCommand('install-update', cmdMark)
   controlState.updates = { phase: 'idle', installable: true }
+  await page.locator('[data-next-update-pill]').waitFor({ state: 'detached' })
   // The setup wizard has its own row in General, between system permissions and app updates.
   const setupWizardRow = settings.locator('[data-next-setup-wizard]')
   const setupWizard = setupWizardRow.getByRole('button', { name: /^(重新打开|Reopen)$/ })
@@ -1177,6 +1210,48 @@ try {
   assert.deepEqual(controlCommands.at(-1), { type: 'controls', page: 'recovery' })
   await page.locator('.dshNextSafeModeNotice').getByRole('button', { name: /关闭提示|Dismiss notice/ }).click()
   await page.locator('.dshNextSafeModeNotice').waitFor({ state: 'detached' })
+  controlState.safeMode = false
+  // Verify main-workspace update surfaces with Settings closed:
+  // 1. Sidebar update pill opens Desktop Settings directly.
+  controlState.updates = { phase: 'available', version: '2.0.26', installable: true }
+  const sidebarPill = page.locator('[data-next-update-pill]')
+  await sidebarPill.waitFor({ state: 'visible' })
+  await sidebarPill.click()
+  await page.locator('[data-next-desktop-settings]').waitFor({ state: 'visible' })
+  await page.getByRole('button', { name: /^(关闭|Close)$/ }).click()
+  await page.getByRole('dialog', { name: /^(设置|Settings)$/ }).waitFor({ state: 'hidden' })
+  // 2. Post-update notice appears when justUpdatedFrom is set and detaches on dismiss.
+  controlState.updates = { phase: 'current', version: controlState.version, installable: true, justUpdatedFrom: '2.0.13' }
+  const postNotice = page.locator('[data-next-post-update-notice]')
+  await postNotice.waitFor({ state: 'visible' })
+  const dismissMark = controlCommands.length
+  await postNotice.getByRole('button', { name: /^(关闭更新提示|Dismiss update notice)$/ }).click()
+  await waitForControlCommand('dismiss-post-update-notice', dismissMark)
+  await postNotice.waitFor({ state: 'detached' })
+  // 3. Mandatory update dialog portals to document.body above open modals, subtracts macOS drag, ignores Escape, and links dl.omnimux.ai.
+  controlState.updates = {
+    phase: 'available',
+    version: '2.0.26',
+    installable: true,
+    mandatory: true,
+    minSupportedVersion: '2.0.20',
+    releaseNotes: { zh: ['关键安全更新'], en: ['Critical security fix'] },
+  }
+  const mandatoryOverlay = page.locator('[data-next-mandatory-update]')
+  await mandatoryOverlay.waitFor({ state: 'visible' })
+  assert.equal(await mandatoryOverlay.evaluate(el => el.parentElement === document.body), true, 'Mandatory overlay must portal to document.body')
+  const mandatoryDialog = mandatoryOverlay.getByRole('dialog')
+  assert.equal(await mandatoryDialog.getAttribute('aria-modal'), 'true')
+  await checkModalDrag()
+  await mandatoryDialog.press('Escape')
+  assert.equal(await mandatoryOverlay.isVisible(), true, 'Escape must not dismiss a mandatory update modal')
+  assert.equal(await mandatoryOverlay.getByRole('link', { name: /^(官网手动下载|Manual download)$/ }).getAttribute('href'), 'https://dl.omnimux.ai/')
+  const mandatoryCmdMark = controlCommands.length
+  await mandatoryOverlay.getByRole('button', { name: /^(下载更新|Download update)$/ }).click()
+  await waitForControlCommand('download-update', mandatoryCmdMark)
+  controlState.updates = { phase: 'idle', installable: true }
+  await mandatoryOverlay.waitFor({ state: 'detached' })
+  await sidebarPill.waitFor({ state: 'detached' })
   // The marker-free Web frontend must not inherit any native Settings actions.
   const webContext = await browser.newContext({ locale: 'zh-CN', viewport: { width: 1280, height: 840 } })
   await webContext.addCookies([{ url: streamBaseUrl, name: cookie.slice(0, cookieSeparator), value: cookie.slice(cookieSeparator + 1) }])
