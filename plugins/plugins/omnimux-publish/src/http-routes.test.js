@@ -79,7 +79,7 @@ function freshDispatcher(handlerOverrides = {}) {
   const accounts = createAccountSource({ channel, overlayPath: '' })
   const config = parsePublishConfig({ dataDir: dir, submitTimeoutSeconds: 5 })
   service = createSubmitService({ store, media, channel, accounts, config, now: () => new Date(2026, 0, 1, 0, 0, ++tick).toISOString() })
-  dispatcher = createPublishDispatcher({ store, media, accounts, service, config })
+  dispatcher = createPublishDispatcher({ store, media, accounts, service, channel, config })
   return dispatcher
 }
 
@@ -294,6 +294,32 @@ describe('registerPublishRoutes: 前缀路由全家', () => {
     assert.equal(view.subtask_summary.submitted, 1)
   })
 
+  it('GET creator-info surfaces SOCIAL_TIKTOK_* status code and structured diagnostics', async () => {
+    freshDispatcher({
+      omnimux_accounts_creator_info: () => ({
+        success: false,
+        code: 'SOCIAL_TIKTOK_RATE_LIMITED',
+        upstream_code: 'rate_limit_exceeded',
+        upstream_log_id: 'log-1',
+        message: 'rate limited',
+      }),
+    })
+    const routes = []
+    const webServer = { register: (route) => { routes.push(route); return () => {} } }
+    registerPublishRoutes(webServer, dispatcher)
+    const { req, res, captured } = mockReqRes({
+      method: 'GET',
+      url: '/omnimux/publish/creator-info?id=acc-1',
+    })
+    await routes[0].handler(req, res)
+    assert.equal(captured.status, 429)
+    assert.equal(captured.body.error, 'SOCIAL_TIKTOK_RATE_LIMITED')
+    assert.equal(captured.body.code, 'SOCIAL_TIKTOK_RATE_LIMITED')
+    assert.equal(captured.body.upstream_code, 'rate_limit_exceeded')
+    assert.equal(captured.body.upstream_log_id, 'log-1')
+    assert.equal(captured.body.details.code, 'SOCIAL_TIKTOK_RATE_LIMITED')
+  })
+
   it('PublishError codes map to HTTP statuses', async () => {
     freshDispatcher()
     const result = await call({
@@ -331,6 +357,9 @@ describe('sendJson secret guard（自实现）', () => {
         captured.body = JSON.parse(text)
       },
     }
+    sendJson(res2, 200, { error: 'access_token_invalid', message: 'token rejected by TikTok' })
+    assert.equal(captured.status, 200)
+    assert.equal(captured.body.error, 'access_token_invalid')
     sendJson(res2, 200, { ok: true })
     assert.equal(captured.status, 200)
   })

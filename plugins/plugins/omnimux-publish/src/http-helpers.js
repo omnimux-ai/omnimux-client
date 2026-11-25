@@ -10,10 +10,16 @@ export const STATUS_BY_CODE = {
   'media-too-large': 413, 'record-not-draft': 409, 'task-not-retryable': 409, 'not-local': 403,
   'needs-hub': 503, 'needs-omnimux': 503, 'quota-exceeded': 402, 'hub-tool-error': 502,
   'upload-failed': 502, 'aborted': 500,
+  'SOCIAL_TIKTOK_RATE_LIMITED': 429,
+  'SOCIAL_TIKTOK_PUBLISH_RESTRICTED': 409,
+  'SOCIAL_TIKTOK_POSTING_BANNED': 409,
+  'SOCIAL_TIKTOK_TOKEN_INVALID': 409,
+  'SOCIAL_TIKTOK_SCOPE_MISSING': 409,
+  'SOCIAL_TIKTOK_UPSTREAM_ERROR': 502,
 }
 
-/** Minimal prompt-privacy guard: refuse obvious API tokens without falsely matching task/model names. */
-export const SECRET_PATTERN = /(?:^|[^A-Za-z0-9])sk-(?:proj-)?[A-Za-z0-9]{8,}|access_token/
+/** Minimal prompt-privacy guard: refuse obvious API tokens without falsely matching error codes like `access_token_invalid`. */
+export const SECRET_PATTERN = /(?:^|[^A-Za-z0-9])sk-(?:proj-)?[A-Za-z0-9]{8,}|\baccess_token\b/
 
 /** @param {import('node:http').ServerResponse} res @param {number} status @param {unknown} body */
 export function sendJson(res, status, body) {

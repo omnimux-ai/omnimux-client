@@ -100,23 +100,30 @@ export function validateContent(draft) {
 
 /** @type {Record<string, string>} */
 const TIKTOK_OPTION_MESSAGES = {
-  'commercial-brand-required': '商业内容披露需要选择「你的品牌」或「付费推广」',
-  'branded-requires-public': '付费推广不能设置为「仅自己可见」',
-  'music-confirmation-required': '商业内容需要勾选「已获得音乐使用授权」',
+  'privacy-level-required': 'TikTok 直发必须手动选择隐私级别（请在 settings.tiktok_options.privacy_level 指定该账号允许的可见范围）',
+  'privacy-level-disallowed': '所选隐私级别不在该 TikTok 账号允许的 privacy_level_options 范围内，请重新选择',
+  'commercial-brand-required': '开启商业内容披露后，必须至少选择「你的品牌（your_brand）」或「品牌合作内容（branded_content）」之一',
+  'branded-requires-public': '品牌合作内容（branded_content）不可设置为「仅自己可见（SELF_ONLY）」，请选择其他可见范围',
+  'music-confirmation-required': 'TikTok 直发必须确认音乐使用条款（请将 settings.tiktok_options.music_usage_confirmed 设为 true）',
 }
 
 /**
- * submit 前全量校验：内容 + 账号存在性 + 账号可用性 + 平台能力冲突。
+ * submit 前全量校验：内容 + 账号存在性 + 账号可用性 + 平台能力冲突 + TikTok Direct Post 合规与创作者能力校验。
  * @param {{
  *   type: string,
  *   title?: string,
  *   description?: string,
- *   mediaRows?: Array<{ kind: string, id: string, filename?: string, content_type?: string }>,
+ *   mediaRows?: Array<{ kind: string, id: string, filename?: string, content_type?: string, duration_sec?: number | null }>,
  *   coverRow?: { kind: string, id: string } | null,
  *   account_ids: string[],
  *   settings?: Record<string, unknown>,
  * }} draft
- * @param {{ accounts: Record<string, unknown>[], platforms: Record<string, import('./config.js').PlatformCapabilities> }} ctx
+ * @param {{
+ *   accounts: Record<string, unknown>[],
+ *   platforms: Record<string, import('./config.js').PlatformCapabilities>,
+ *   phase?: 'submit' | 'assign',
+ *   creatorInfo?: import('./shared/tiktok-options.js').AggregatedCreatorInfo | null,
+ * }} ctx
  * @returns {{ ok: boolean, errors: Array<{ code: string, field: string, message: string }> }}
  */
 export function validateForSubmit(draft, ctx) {
@@ -126,9 +133,48 @@ export function validateForSubmit(draft, ctx) {
     ? draft.account_ids.map((id) => byId.get(String(id))).filter((row) => row != null)
     : []
   const selectionMode = resolveSelectionPublishMode(selectedRows)
-  if (selectionMode !== 'draft_only' && draft.settings && isObject(draft.settings.tiktok_options)) {
-    for (const code of tiktokOptionProblems(normalizeTikTokOptions(draft.settings.tiktok_options))) {
+  const isAssignPhase = ctx.phase === 'assign'
+  const creatorInfo = ctx.creatorInfo ?? null
+  const hasTikTokOptions = Boolean(draft.settings && isObject(draft.settings.tiktok_options))
+  if (!isAssignPhase && (selectionMode === 'direct' || (selectionMode !== 'draft_only' && hasTikTokOptions))) {
+    const allowedPrivacyLevels = creatorInfo && creatorInfo.privacy_level_options.length > 0
+      ? creatorInfo.privacy_level_options
+      : null
+    for (const code of tiktokOptionProblems(
+      normalizeTikTokOptions(hasTikTokOptions ? draft.settings?.tiktok_options : undefined),
+      { allowedPrivacyLevels, type: draft.type, requireMusicConfirmation: true },
+    )) {
       errors.push({ code, field: 'settings.tiktok_options', message: TIKTOK_OPTION_MESSAGES[code] ?? code })
+    }
+  }
+  if (!isAssignPhase && selectionMode === 'direct' && creatorInfo) {
+    if (creatorInfo.blocked) {
+      const code = creatorInfo.blockedReason || 'creator-info-unavailable'
+      const defaultMsg = code === 'creator-cannot-post'
+        ? '当前 TikTok 账号暂时无法发布（已达发帖上限或受平台限制），请稍后再试'
+        : code === 'privacy-intersection-empty'
+          ? '所选多个 TikTok 账号之间没有共同可用的隐私级别，请调整账号选择'
+          : code === 'privacy-options-empty'
+            ? '当前 TikTok 账号未返回可用的隐私级别选项，已阻断发布，请重试后再试'
+            : '无法读取 TikTok 创作者发布能力（creator_info），请重试后再发布'
+      errors.push({
+        code,
+        field: 'account_ids',
+        message: creatorInfo.blockedMessage ? `${defaultMsg}（${creatorInfo.blockedMessage}）` : defaultMsg,
+      })
+    }
+    if (draft.type === 'video' && typeof creatorInfo.max_video_post_duration_sec === 'number' && creatorInfo.max_video_post_duration_sec > 0) {
+      const maxSec = creatorInfo.max_video_post_duration_sec
+      for (const row of Array.isArray(draft.mediaRows) ? draft.mediaRows : []) {
+        if (row.kind !== 'video') continue
+        if (typeof row.duration_sec === 'number' && Number.isFinite(row.duration_sec) && row.duration_sec > maxSec) {
+          errors.push({
+            code: 'video-duration-exceeded',
+            field: 'media',
+            message: `视频时长 ${Math.round(row.duration_sec)}s 超出当前 TikTok 账号允许的最大时长 ${maxSec}s`,
+          })
+        }
+      }
     }
   }
   if (!Array.isArray(draft.account_ids) || draft.account_ids.length === 0) {

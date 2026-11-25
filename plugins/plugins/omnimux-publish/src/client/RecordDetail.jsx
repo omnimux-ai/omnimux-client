@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Button, IconChevronLeftOutline14, IconRefreshOutline16 } from 'dsh-ui-kit'
 import { errorText, recordDetail, refreshRecord, retryTask } from './api.js'
 import { isPublishingAccount, isRetryablePublishingTask } from '../account-policy.js'
-import { showsInboxDraftNotice, showsPrivateNotice } from './detail-notice.js'
+import { showsDirectProcessingNotice, showsInboxDraftNotice, showsPrivateNotice } from './detail-notice.js'
 
 /**
  * A6/M8 记录详情：per-account 子任务状态展开 + 手动刷新（POST /records/refresh）
@@ -129,6 +129,11 @@ export function RecordDetail({ t, recordId, onBack, onChanged }) {
             <li>{t('detail.inboxNotice.step2')}</li>
             <li>{t('detail.inboxNotice.step3')}</li>
           </ol>
+        </div>
+      ) : null}
+      {showsDirectProcessingNotice(tasks, record) ? (
+        <div role="status" className="omnimux-publish-alert info" data-testid="direct-processing-notice">
+          {t('detail.directProcessingNotice')}
         </div>
       ) : null}
       {showsPrivateNotice(tasks, record) ? (

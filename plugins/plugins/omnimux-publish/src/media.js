@@ -10,6 +10,7 @@ import { basename, dirname, extname, join } from 'node:path'
 import { PublishError } from './publish-error.js'
 import { isObject } from './shared/values.js'
 import { isMediaRecord } from './media-types.js'
+import { probeVideoDurationSec } from './media-duration.js'
 /** @typedef {import('./media-types.js').MediaRecord} MediaRecord */
 /** @typedef {{ schema: number, revision: number, media: MediaRecord[] }} MediaState */
 
@@ -112,6 +113,8 @@ export function createMediaStore(opts = {}) {
     const contentType = typeof meta.content_type === 'string' && meta.content_type.trim() !== ''
       ? meta.content_type.trim()
       : contentTypeOf(filename)
+    const kind = mediaKindOf(contentType)
+    const durationSec = kind === 'video' ? probeVideoDurationSec(buffer, contentType, filename) : undefined
     const existing = findRow(sha256)
     const target = join(paths.mediaDir, sha256)
     if (!existing) {
@@ -119,14 +122,16 @@ export function createMediaStore(opts = {}) {
       const tmp = `${target}.tmp`
       fs.writeFileSync(tmp, buffer, { mode: 0o600 })
       fs.renameSync(tmp, target)
+      /** @type {MediaRecord} */
       const row = {
         id: sha256,
         sha256,
         filename,
         content_type: contentType,
-        kind: mediaKindOf(contentType),
+        kind,
         size: buffer.length,
         created_at: now(),
+        ...(kind === 'video' ? { duration_sec: durationSec ?? null } : {}),
       }
       state.media.push(row)
       state.revision += 1
@@ -135,7 +140,10 @@ export function createMediaStore(opts = {}) {
     }
     existing.filename = filename
     existing.content_type = contentType
-    existing.kind = mediaKindOf(contentType)
+    existing.kind = kind
+    if (kind === 'video' && (existing.duration_sec === undefined || existing.duration_sec === null)) {
+      existing.duration_sec = durationSec ?? null
+    }
     state.revision += 1
     persist()
     return { media: { ...existing }, deduplicated: true }
@@ -192,6 +200,32 @@ export function createMediaStore(opts = {}) {
     return { buffer, meta: { ...row } }
   }
 
+  /**
+   * 懒补探历史视频记录缺失的 duration_sec 并落盘，避免老草稿绕过时长校验。
+   * @param {string} id
+   * @returns {MediaRecord | null}
+   */
+  function probeDuration(id) {
+    const row = findRow(String(id))
+    if (!row) return null
+    if (row.kind !== 'video' || row.duration_sec !== undefined) return { ...row }
+    let probed = null
+    try {
+      const buffer = fs.readFileSync(join(paths.mediaDir, row.sha256))
+      probed = probeVideoDurationSec(buffer, row.content_type, row.filename)
+    } catch {
+      probed = null
+    }
+    row.duration_sec = probed
+    state.revision += 1
+    try {
+      persist()
+    } catch {
+      // Read-only / stubbed filesystem still returns the probed duration in memory.
+    }
+    return { ...row }
+  }
+
   function list() {
     return state.media.map((row) => ({ ...row })).sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))
   }
@@ -200,5 +234,5 @@ export function createMediaStore(opts = {}) {
     return state.revision
   }
 
-  return { importBuffer, importPath, get, open, list, revision }
+  return { importBuffer, importPath, get, open, probeDuration, list, revision }
 }

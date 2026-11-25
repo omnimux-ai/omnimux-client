@@ -9,6 +9,8 @@ import { createAccountSource } from './accounts.js'
 import { createMediaStore } from './media.js'
 import { createRecordStore, PublishError } from './store.js'
 import { composeContent, createSubmitService } from './submit.js'
+import { createCreatorInfoCache } from './creator-info-cache.js'
+import { buildSyntheticMp4 } from './media-duration.test.js'
 
 /** @type {string} */
 let dir = ''
@@ -262,6 +264,54 @@ describe('SubmitService.run 失败隔离与降级', () => {
     assert.equal(ok.post_id, 'post-acc-1')
   })
 
+  it('persists structured upstream_code and log_id diagnostics on a failed Direct Post create', async () => {
+    freshService({
+      omnimux_accounts_list: () => ({
+        success: true,
+        data: {
+          accounts: [
+            {
+              id: 'direct-1',
+              provider: 'tiktok_direct',
+              platform: 'tiktok',
+              status: 'active',
+              display_name: 'Alice',
+              capabilities: { upload_draft: true, publish_direct: true },
+            },
+          ],
+        },
+      }),
+      omnimux_accounts_creator_info: () => ({
+        success: true,
+        data: {
+          creator_nickname: 'Alice',
+          privacy_level_options: ['PUBLIC_TO_EVERYONE'],
+          max_video_post_duration_sec: 600,
+        },
+      }),
+      omnimux_publish_create: () => ({
+        success: false,
+        code: 'SOCIAL_TIKTOK_RATE_LIMITED',
+        upstream_code: 'rate_limit_exceeded',
+        upstream_log_id: 'log-9',
+        message: 'rate limited',
+      }),
+    })
+    const { media: vid } = media.importBuffer(buildSyntheticMp4({ durationSec: 30 }), { filename: 'ok.mp4', content_type: 'video/mp4' })
+    const draft = store.create({
+      type: 'video',
+      description: 'Diagnostics',
+      media_ids: [vid.id],
+      account_ids: ['direct-1'],
+      settings: { tiktok_options: { privacy_level: 'PUBLIC_TO_EVERYONE', music_usage_confirmed: true } },
+    })
+    const view = await service.run(draft.id)
+    assert.equal(view.subtasks[0].status, 'failed')
+    assert.match(view.subtasks[0].error, /rate limited/)
+    assert.match(view.subtasks[0].error, /upstream_code=rate_limit_exceeded/)
+    assert.match(view.subtasks[0].error, /log_id=log-9/)
+  })
+
   it('未登录（needs-omnimux）→ submit 明确报错，不物化子任务', async () => {
     freshService({
       omnimux_accounts_list: () => {
@@ -472,13 +522,15 @@ describe('TikTok publish options', () => {
   it('passes settings.tiktok_options into the create tool', async () => {
     freshService()
     const draft = seedDraft({
-      settings: { tiktok_options: { privacy_level: 'PUBLIC_TO_EVERYONE', allow_comment: false } },
+      settings: { tiktok_options: { privacy_level: 'PUBLIC_TO_EVERYONE', allow_comment: false, music_usage_confirmed: true } },
     })
     await service.run(draft.id)
     const create = tools.calls.find((call) => call.name === 'omnimux_publish_create')
     assert.equal(create.arguments.tiktok_options.privacy_level, 'PUBLIC_TO_EVERYONE')
     assert.equal(create.arguments.tiktok_options.allow_comment, false)
-    assert.equal(create.arguments.tiktok_options.allow_duet, true)
+    assert.equal(Object.hasOwn(create.arguments.tiktok_options, 'allow_duet'), false)
+    assert.equal(Object.hasOwn(create.arguments.tiktok_options, 'allow_stitch'), false)
+    assert.equal(create.arguments.tiktok_options.music_usage_confirmed, true)
   })
 
   it('leaves tiktok_options out when the draft has none', async () => {
@@ -756,5 +808,142 @@ describe('TikTok draft upload (video.upload / sent_to_inbox) (#185)', () => {
     assert.equal(finalView.record.subtasks[0].raw_status, 'PUBLISH_COMPLETE')
     assert.ok(finalView.record.subtasks[0].settled_at != null)
     assert.equal(finalView.record.aggregate, 'published')
+  })
+})
+
+describe('TikTok Direct Post compliance, preflight creator_info, duration guard & is_aigc (#186)', () => {
+  const DIRECT_ACCOUNTS_RESP = {
+    success: true,
+    data: {
+      accounts: [
+        { id: 'direct-1', provider: 'tiktok_direct', platform: 'tiktok', username: 'creator_a', display_name: 'Alice', status: 'active', capabilities: { upload_draft: true, publish_direct: true } },
+        { id: 'draft-1', provider: 'tiktok_direct', platform: 'tiktok', username: 'creator_b', display_name: 'BobDraft', status: 'active', capabilities: { upload_draft: true, publish_direct: false } },
+      ],
+    },
+  }
+
+  it('blocks direct accounts omitting settings.tiktok_options (closes Agent/API bypass)', async () => {
+    freshService({
+      omnimux_accounts_list: () => DIRECT_ACCOUNTS_RESP,
+      omnimux_accounts_creator_info: () => ({
+        success: true,
+        data: { creator_nickname: 'Alice', privacy_level_options: ['PUBLIC_TO_EVERYONE', 'SELF_ONLY'], max_video_post_duration_sec: 600 },
+      }),
+    })
+    const { media: vid } = media.importBuffer(buildSyntheticMp4({ durationSec: 45 }), { filename: 'short.mp4', content_type: 'video/mp4' })
+    const draft = store.create({ type: 'video', description: 'Bypass test', media_ids: [vid.id], account_ids: ['direct-1'] })
+    await assert.rejects(() => service.run(draft.id), (error) => error.code === 'validation-failed'
+      && error.details.errors.some((e) => e.code === 'privacy-level-required')
+      && error.details.errors.some((e) => e.code === 'music-confirmation-required'))
+    assert.equal(tools.calls.filter((c) => c.name === 'omnimux_publish_presign').length, 0)
+  })
+
+  it('blocks over-duration video and creator can_post:false before any presign or create', async () => {
+    freshService({
+      omnimux_accounts_list: () => DIRECT_ACCOUNTS_RESP,
+      omnimux_accounts_creator_info: () => ({
+        success: true,
+        data: { creator_nickname: 'Alice', privacy_level_options: ['PUBLIC_TO_EVERYONE'], max_video_post_duration_sec: 600 },
+      }),
+    })
+    const { media: longVid } = media.importBuffer(buildSyntheticMp4({ durationSec: 680 }), { filename: 'too-long.mp4', content_type: 'video/mp4' })
+    const longDraft = store.create({
+      type: 'video',
+      description: 'Long clip',
+      media_ids: [longVid.id],
+      account_ids: ['direct-1'],
+      settings: { tiktok_options: { privacy_level: 'PUBLIC_TO_EVERYONE', music_usage_confirmed: true } },
+    })
+    await assert.rejects(() => service.run(longDraft.id), (error) => error.code === 'validation-failed'
+      && error.details.errors.some((e) => e.code === 'video-duration-exceeded'))
+    assert.equal(tools.calls.filter((c) => c.name === 'omnimux_publish_presign').length, 0)
+
+    // Rate-limited creator (can_post: false)
+    freshService({
+      omnimux_accounts_list: () => DIRECT_ACCOUNTS_RESP,
+      omnimux_accounts_creator_info: () => ({
+        success: true,
+        data: { creator_nickname: 'Alice', can_post: false, privacy_level_options: ['PUBLIC_TO_EVERYONE'], max_video_post_duration_sec: 600 },
+      }),
+    })
+    const { media: okVid } = media.importBuffer(buildSyntheticMp4({ durationSec: 30 }), { filename: 'ok.mp4', content_type: 'video/mp4' })
+    const blockedDraft = store.create({
+      type: 'video',
+      description: 'Rate limited',
+      media_ids: [okVid.id],
+      account_ids: ['direct-1'],
+      settings: { tiktok_options: { privacy_level: 'PUBLIC_TO_EVERYONE', music_usage_confirmed: true } },
+    })
+    await assert.rejects(() => service.run(blockedDraft.id), (error) => error.code === 'validation-failed'
+      && error.details.errors.some((e) => e.code === 'creator-cannot-post'))
+    assert.equal(tools.calls.filter((c) => c.name === 'omnimux_publish_presign').length, 0)
+  })
+
+  it('forwards is_aigc on video direct post, enforces disabled interactions, preserves dual commercial flags, and shares 60s creatorInfoCache', async () => {
+    handlers = defaultHandlers({
+      omnimux_accounts_list: () => DIRECT_ACCOUNTS_RESP,
+      omnimux_accounts_creator_info: () => ({
+        success: true,
+        data: {
+          creator_nickname: 'Alice',
+          privacy_level_options: ['PUBLIC_TO_EVERYONE', 'SELF_ONLY'],
+          max_video_post_duration_sec: 600,
+          comment_disabled: false,
+          duet_disabled: true,
+          stitch_disabled: false,
+        },
+      }),
+    })
+    tools = mockTools()
+    const channel = createHubChannel({ tools, fetcher: async () => ({ ok: true, status: 200 }) })
+    const creatorInfoCache = createCreatorInfoCache({ channel, ttlMs: 60_000 })
+    const accounts = createAccountSource({ channel, overlayPath: '' })
+    const config = parsePublishConfig({ dataDir: dir, submitTimeoutSeconds: 5 })
+    service = createSubmitService({ store, media, channel, accounts, creatorInfoCache, config, now: () => new Date(2026, 0, 1, 0, 0, ++tick).toISOString() })
+
+    // Pre-warm cache as if UI already fetched creator-info
+    await creatorInfoCache.get('direct-1')
+    assert.equal(tools.calls.filter((c) => c.name === 'omnimux_accounts_creator_info').length, 1)
+
+    const { media: vid } = media.importBuffer(buildSyntheticMp4({ durationSec: 45 }), { filename: 'ok.mp4', content_type: 'video/mp4' })
+    const draft = store.create({
+      type: 'video',
+      description: 'AI branded video',
+      media_ids: [vid.id],
+      account_ids: ['direct-1', 'draft-1'],
+      settings: {
+        is_aigc: true,
+        tiktok_options: {
+          privacy_level: 'PUBLIC_TO_EVERYONE',
+          allow_comment: true,
+          allow_duet: true,
+          allow_stitch: false,
+          commercial_content: true,
+          your_brand: true,
+          branded_content: true,
+          music_usage_confirmed: true,
+        },
+      },
+    })
+    await service.run(draft.id)
+
+    // Still only 1 creator_info call total (reused 60s cache + draft-1 skipped!)
+    assert.equal(tools.calls.filter((c) => c.name === 'omnimux_accounts_creator_info').length, 1)
+
+    const creates = tools.calls.filter((c) => c.name === 'omnimux_publish_create')
+    const directCreate = creates.find((c) => c.arguments.account_ids[0] === 'direct-1')
+    const draftCreate = creates.find((c) => c.arguments.account_ids[0] === 'draft-1')
+
+    assert.equal(directCreate.arguments.is_aigc, true)
+    assert.equal(directCreate.arguments.tiktok_options.privacy_level, 'PUBLIC_TO_EVERYONE')
+    assert.equal(directCreate.arguments.tiktok_options.allow_comment, true)
+    assert.equal(directCreate.arguments.tiktok_options.allow_duet, false, 'duet_disabled:true must force allow_duet:false')
+    assert.equal(directCreate.arguments.tiktok_options.allow_stitch, false)
+    assert.equal(directCreate.arguments.tiktok_options.commercial_content, true)
+    assert.equal(directCreate.arguments.tiktok_options.your_brand, true)
+    assert.equal(directCreate.arguments.tiktok_options.branded_content, true)
+    assert.equal(directCreate.arguments.tiktok_options.music_usage_confirmed, true)
+
+    assert.equal(Object.hasOwn(draftCreate.arguments, 'tiktok_options'), false, 'draft_only account in mixed selection strips tiktok_options')
   })
 })

@@ -21,13 +21,17 @@ export function createSubmitMedia({ store, media, channel }) {
   /** @param {{ media_ids?: string[] }} record */
   function mediaRowsOf(record) {
     return (record.media_ids || []).map((id) => {
-      const row = media.get(id)
+      let row = media.get(id)
       if (!row) throw new PublishError('media-not-found', `media ${id} not found（草稿引用的媒体已被移出媒体仓）`)
+      if (row.kind === 'video' && row.duration_sec === undefined && typeof media.probeDuration === 'function') {
+        row = media.probeDuration(id) ?? row
+      }
       return {
         id: row.id,
         kind: row.kind,
         filename: row.filename,
         content_type: row.content_type,
+        ...(row.duration_sec !== undefined ? { duration_sec: row.duration_sec } : {}),
       }
     })
   }

@@ -287,3 +287,155 @@ describe('validateForSubmit: TikTok draft_only & no_publish_scope rules (#185)',
     assert.equal(okPhotos.ok, true)
   })
 })
+
+describe('validateForSubmit: TikTok Direct Post compliance (#186)', () => {
+  const TIKTOK_PLATFORMS = {
+    tiktok: { media_types: ['image', 'video'], supports_cover: false, supports_schedule: false, max_images: 35 },
+  }
+  const DIRECT_ACCOUNTS = [
+    { id: 'direct-1', provider: 'tiktok_direct', platform: 'tiktok', status: 'active', capabilities: { upload_draft: true, publish_direct: true } },
+  ]
+
+  it('blocks direct accounts when settings.tiktok_options is omitted (prevents Agent/API bypass)', () => {
+    const verdict = validateForSubmit({
+      type: 'video',
+      description: 'Agent direct post without tiktok_options',
+      mediaRows: [{ id: 'v1', kind: 'video', filename: 'a.mp4', content_type: 'video/mp4', duration_sec: 30 }],
+      account_ids: ['direct-1'],
+    }, { accounts: DIRECT_ACCOUNTS, platforms: TIKTOK_PLATFORMS })
+    assert.equal(verdict.ok, false)
+    assert.ok(verdict.errors.some((e) => e.code === 'privacy-level-required'))
+    assert.ok(verdict.errors.some((e) => e.code === 'music-confirmation-required'))
+  })
+
+  it('enforces allowedPrivacyLevels, creator blocked status, and video duration ceiling', () => {
+    const disallowedPrivacy = validateForSubmit({
+      type: 'video',
+      description: 'Sandbox mismatch',
+      mediaRows: [{ id: 'v1', kind: 'video', filename: 'a.mp4', content_type: 'video/mp4', duration_sec: 30 }],
+      account_ids: ['direct-1'],
+      settings: { tiktok_options: { privacy_level: 'PUBLIC_TO_EVERYONE', music_usage_confirmed: true } },
+    }, {
+      accounts: DIRECT_ACCOUNTS,
+      platforms: TIKTOK_PLATFORMS,
+      creatorInfo: {
+        ready: true,
+        blocked: false,
+        blockedReason: '',
+        blockedMessage: '',
+        blockedAccounts: [],
+        creators: [],
+        privacy_level_options: ['SELF_ONLY'],
+        max_video_post_duration_sec: 600,
+        comment_disabled: false,
+        duet_disabled: false,
+        stitch_disabled: false,
+        disabledBy: { comment: [], duet: [], stitch: [] },
+        can_post: true,
+        hasNonPrivatePrivacy: false,
+      },
+    })
+    assert.equal(disallowedPrivacy.ok, false)
+    assert.ok(disallowedPrivacy.errors.some((e) => e.code === 'privacy-level-disallowed'))
+
+    const overDuration = validateForSubmit({
+      type: 'video',
+      description: 'Too long',
+      mediaRows: [{ id: 'v1', kind: 'video', filename: 'long.mp4', content_type: 'video/mp4', duration_sec: 680 }],
+      account_ids: ['direct-1'],
+      settings: { tiktok_options: { privacy_level: 'PUBLIC_TO_EVERYONE', music_usage_confirmed: true } },
+    }, {
+      accounts: DIRECT_ACCOUNTS,
+      platforms: TIKTOK_PLATFORMS,
+      creatorInfo: {
+        ready: true,
+        blocked: false,
+        blockedReason: '',
+        blockedMessage: '',
+        blockedAccounts: [],
+        creators: [],
+        privacy_level_options: ['PUBLIC_TO_EVERYONE', 'SELF_ONLY'],
+        max_video_post_duration_sec: 600,
+        comment_disabled: false,
+        duet_disabled: false,
+        stitch_disabled: false,
+        disabledBy: { comment: [], duet: [], stitch: [] },
+        can_post: true,
+        hasNonPrivatePrivacy: true,
+      },
+    })
+    assert.equal(overDuration.ok, false)
+    assert.ok(overDuration.errors.some((e) => e.code === 'video-duration-exceeded'))
+
+    const rateLimited = validateForSubmit({
+      type: 'video',
+      description: 'Rate limited',
+      mediaRows: [{ id: 'v1', kind: 'video', filename: 'ok.mp4', content_type: 'video/mp4', duration_sec: 30 }],
+      account_ids: ['direct-1'],
+      settings: { tiktok_options: { privacy_level: 'PUBLIC_TO_EVERYONE', music_usage_confirmed: true } },
+    }, {
+      accounts: DIRECT_ACCOUNTS,
+      platforms: TIKTOK_PLATFORMS,
+      creatorInfo: {
+        ready: false,
+        blocked: true,
+        blockedReason: 'creator-cannot-post',
+        blockedMessage: 'Alice: spam_risk_too_many_posts',
+        blockedAccounts: [],
+        creators: [],
+        privacy_level_options: [],
+        max_video_post_duration_sec: null,
+        comment_disabled: false,
+        duet_disabled: false,
+        stitch_disabled: false,
+        disabledBy: { comment: [], duet: [], stitch: [] },
+        can_post: false,
+        hasNonPrivatePrivacy: false,
+      },
+    })
+    assert.equal(rateLimited.ok, false)
+    assert.ok(rateLimited.errors.some((e) => e.code === 'creator-cannot-post'))
+
+    const emptyPrivacy = validateForSubmit({
+      type: 'video',
+      description: 'No privacy options',
+      mediaRows: [{ id: 'v1', kind: 'video', filename: 'ok.mp4', content_type: 'video/mp4', duration_sec: 30 }],
+      account_ids: ['direct-1'],
+      settings: { tiktok_options: { privacy_level: 'PUBLIC_TO_EVERYONE', music_usage_confirmed: true } },
+    }, {
+      accounts: DIRECT_ACCOUNTS,
+      platforms: TIKTOK_PLATFORMS,
+      creatorInfo: {
+        ready: false,
+        blocked: true,
+        blockedReason: 'privacy-options-empty',
+        blockedCategory: 'privacy-options-empty',
+        blockedMessage: 'creator_info returned no available privacy_level_options',
+        blockedAccounts: [],
+        creators: [],
+        privacy_level_options: [],
+        max_video_post_duration_sec: 600,
+        comment_disabled: false,
+        duet_disabled: false,
+        stitch_disabled: false,
+        disabledBy: { comment: [], duet: [], stitch: [] },
+        can_post: false,
+        hasNonPrivatePrivacy: false,
+      },
+    })
+    assert.equal(emptyPrivacy.ok, false)
+    const privacyError = emptyPrivacy.errors.find((e) => e.code === 'privacy-options-empty')
+    assert.ok(privacyError)
+    assert.match(privacyError.message, /隐私级别/)
+  })
+
+  it('allows phase=assign for incomplete drafts before privacy_level is selected', () => {
+    const verdict = validateForSubmit({
+      type: 'video',
+      description: 'Draft in progress',
+      mediaRows: [{ id: 'v1', kind: 'video', filename: 'a.mp4', content_type: 'video/mp4', duration_sec: 30 }],
+      account_ids: ['direct-1'],
+    }, { accounts: DIRECT_ACCOUNTS, platforms: TIKTOK_PLATFORMS, phase: 'assign' })
+    assert.equal(verdict.ok, true)
+  })
+})

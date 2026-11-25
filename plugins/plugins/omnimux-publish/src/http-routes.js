@@ -4,6 +4,25 @@ import { STATUS_BY_CODE, sendJson, readJsonBody, readRawBody, assertLocalWrite, 
 export { createPublishDispatcher } from './publish-dispatcher.js'
 export { sendJson, readJsonBody, readRawBody, assertLocalWrite } from './http-helpers.js'
 
+/**
+ * Build a consistent wire error payload for PublishError, surfacing structured
+ * TikTok social error fields (`code`, `upstream_code`, `upstream_log_id`) when present.
+ * @param {PublishError} error
+ */
+function errorPayload(error) {
+  /** @type {Record<string, unknown>} */
+  const body = { error: error.code, message: error.message }
+  if (error.details && typeof error.details === 'object') {
+    body.details = error.details
+    if (typeof error.details.code === 'string' && error.details.code !== '') body.code = error.details.code
+    if (typeof error.details.upstream_code === 'string' && error.details.upstream_code !== '') body.upstream_code = error.details.upstream_code
+    if (typeof error.details.upstream_log_id === 'string' && error.details.upstream_log_id !== '') body.upstream_log_id = error.details.upstream_log_id
+  } else if (typeof error.code === 'string' && error.code.startsWith('SOCIAL_TIKTOK_')) {
+    body.code = error.code
+  }
+  return body
+}
+
 /** @param {string} pathname */
 function extractSubPath(pathname) {
   if (pathname.startsWith('/omnimux/publish')) return pathname.slice('/omnimux/publish'.length) || '/'
@@ -50,9 +69,11 @@ export function registerPublishRoutes(webServer, dispatcher) {
       }
       if (method === 'GET' && subPath === '/creator-info') {
         try {
-          sendJson(res, 200, await dispatcher.creatorInfo({ account_id: url.searchParams.get('id') || '' }))
+          const forceParam = (url.searchParams.get('force') || '').trim().toLowerCase()
+          const force = forceParam === '1' || forceParam === 'true'
+          sendJson(res, 200, await dispatcher.creatorInfo({ account_id: url.searchParams.get('id') || '', force }))
         } catch (error) {
-          if (error instanceof PublishError) sendJson(res, STATUS_BY_CODE[error.code] ?? 400, { error: error.code, message: error.message })
+          if (error instanceof PublishError) sendJson(res, STATUS_BY_CODE[error.code] ?? 400, errorPayload(error))
           else sendJson(res, 500, { error: 'internal', message: messageOf(error) })
         }
         return
@@ -132,9 +153,7 @@ export function registerPublishRoutes(webServer, dispatcher) {
       sendJson(res, 404, { error: 'not-found', message: 'unknown route' })
     } catch (error) {
       if (error instanceof PublishError) {
-        sendJson(res, STATUS_BY_CODE[error.code] ?? 500, {
-          error: error.code, message: error.message, ...(error.details ? { details: error.details } : {}),
-        })
+        sendJson(res, STATUS_BY_CODE[error.code] ?? 500, errorPayload(error))
         return
       }
       sendJson(res, 500, { error: 'internal', message: messageOf(error) })
