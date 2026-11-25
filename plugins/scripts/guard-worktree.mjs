@@ -3785,7 +3785,7 @@ function classifyGitMutationWords(gitInfo, segment) {
   }
   if (sub === 'stash') {
     const action = (args[0] || '').toLowerCase()
-    if (action === '' || action === 'push' || action === 'save') {
+    if (action === '' || action === 'push' || action === 'save' || action.startsWith('-')) {
       return { kind: 'stash-save', segment }
     }
     if (['pop', 'apply', 'drop', 'clear'].includes(action)) {
