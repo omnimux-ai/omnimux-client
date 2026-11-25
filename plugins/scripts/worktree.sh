@@ -618,12 +618,12 @@ auto_materialize_and_reload() {
   # 只认插件目录。文档、流程、脚本、测试夹具不进开发版。
   # 逐次提交收集：同一范围里先改后还原的文件，两端净差是空的，不能因此跳过。
   local changed_paths changed_plugins=() pending=()
-  changed_paths="$(git -C "${ROOT}" log --no-renames --name-only --diff-merges=first-parent --pretty=format: "${base_ref}..${target_ref}" -- plugins 2>/dev/null | grep -E '^plugins/' | sort -u || true)"
+  changed_paths="$(git -C "${ROOT}" log --no-renames --name-only --diff-merges=first-parent --pretty=format: "${base_ref}..${target_ref}" -- plugins pnpm-lock.yaml 2>/dev/null | grep -E '^(plugins/|pnpm-lock\.yaml$)' | sort -u || true)"
   # 插件根目录的 *.md（AGENTS.md / README*.md / PRD.md …）与 plugins/<name>/docs/ 只给人和 Agent 读，
   # 运行时不加载；测试文件（*.test.* 与 tests/、test/、test-support/、__tests__/）同样不进开发版运行时，
   # 两类改动都不物化也不触发重启。skills/、catalog/ 等运行时读取的 Markdown 不在此列。
   local source_paths
-  source_paths="$(printf '%s\n' "${changed_paths}" | grep -vE '^plugins/omnimux/scripts/run-tests\.mjs$|^plugins/[^/]+/[^/]+\.md$|^plugins/[^/]+/docs/|^plugins/[^/]+/(tests?|test-support|__tests__)/|\.test\.(js|mjs|ts|jsx|tsx|cjs)$' || true)"
+  source_paths="$(printf '%s\n' "${changed_paths}" | grep -vE '^plugins/omnimux/scripts/run-tests\.mjs$|^(plugins/plugins/[^/]+|plugins/[^/]+)/[^/]+\.md$|^(plugins/plugins/[^/]+|plugins/[^/]+)/(docs|tests?|test-support|__tests__)/|\.test\.(js|mjs|ts|jsx|tsx|cjs)$' || true)"
   if [ -n "${changed_paths}" ] && [ -z "${source_paths}" ]; then
     MATERIALIZE_STATUS="not-needed"
     say "ℹ️ 本次合入只改了插件文档或测试文件，无需物化。"
@@ -641,10 +641,16 @@ auto_materialize_and_reload() {
   while IFS= read -r p; do
     [ -n "${p}" ] || continue
     case "${p}" in
-      scripts|packages|docs|presets|node_modules|plugins|tests|test-support) continue ;;
+      scripts|packages|docs|presets|node_modules|plugins|tests|test-support|fixtures|.*) continue ;;
     esac
-    # 单仓真实布局是 plugins/plugins/<name>；隔离夹具/扁平布局是 plugins/<name>。
-    [ -d "${ROOT}/plugins/plugins/${p}" ] || [ -d "${ROOT}/plugins/${p}" ] || continue
+    # 单仓真实布局是 plugins/plugins/<name>；只认带 package.json 的插件包，避免把
+    # plugins/.agents、plugins/.dsh、plugins/fixtures 这类工作区目录当成插件。
+    if [ -d "${ROOT}/plugins/plugins" ]; then
+      [ -f "${ROOT}/plugins/plugins/${p}/package.json" ] || continue
+    else
+      # 隔离夹具/扁平布局是 plugins/<name>。
+      [ -d "${ROOT}/plugins/${p}" ] || continue
+    fi
     changed_plugins+=("${p}")
   done < <(printf '%s\n' "${changed_paths}" | sed -n -e 's|^plugins/plugins/\([^/]*\)/.*|\1|p' -e 's|^plugins/\([^/]*\)/.*|\1|p' | sort -u)
 
@@ -675,7 +681,7 @@ auto_materialize_and_reload() {
   # Client 产物由 Web 服务按请求从磁盘读取，刷新页面即取得新版；其余插件文件（宿主路由、
   # 清单、构建期入口）只有宿主进程重新加载后才生效，必须走受控重启，否则会留下新旧混装。
   local needs_restart=0
-  if printf '%s\n' "${changed_paths}" | grep -qvE '^plugins/[^/]+/src/client/'; then
+  if printf '%s\n' "${changed_paths}" | grep -qvE '^(plugins/plugins/[^/]+|plugins/[^/]+)/src/client/'; then
     needs_restart=1
   fi
 
@@ -692,6 +698,14 @@ auto_materialize_and_reload() {
     sync_mode="full"
     if (cd "${ROOT}" && bash "${SCRIPT_DIR}/sync-to-app.sh"); then
       sync_ok=1
+      if [ "${#changed_plugins[@]}" -gt 0 ]; then
+        # 完整同步只覆盖默认插件清单；同一范围里的具名插件（含不在默认清单的新插件）必须再装一次。
+        sync_mode="full+named"
+        if ! (cd "${ROOT}" && bash "${SCRIPT_DIR}/sync-to-app.sh" "${changed_plugins[@]}"); then
+          sync_ok=0
+          say "⚠️ 完整同步成功，但本次插件 [${changed_plugins[*]}] 安装失败。"
+        fi
+      fi
     fi
   elif (cd "${ROOT}" && bash "${SCRIPT_DIR}/sync-to-app.sh" "${changed_plugins[@]}"); then
     sync_ok=1
@@ -720,6 +734,9 @@ auto_materialize_and_reload() {
       say "✅ 物化成功（完整同步已完成）。"
       # 工作区/共享包变更属于宿主侧改动，需要受控重启。
       needs_restart=1
+    elif [ "${sync_mode}" = "full+named" ]; then
+      say "✅ 物化成功（完整同步 + 具名插件已完成）。"
+      needs_restart=1
     else
       say "✅ 增量物化成功！"
     fi
@@ -733,8 +750,10 @@ auto_materialize_and_reload() {
     fi
     # 物化后冒烟：验证 Dev 窗口可达 + 版本生效；失败/待重启如实报告，不阻断 ship。
     if [ -f "${SCRIPT_DIR}/dev-smoke.mjs" ]; then
-      local plugins_csv
-      plugins_csv="$(IFS=,; echo "${changed_plugins[*]}")"
+      local plugins_csv=""
+      if [ "${#changed_plugins[@]}" -gt 0 ]; then
+        plugins_csv="$(IFS=,; echo "${changed_plugins[*]}")"
+      fi
       if [ -n "${plugins_csv}" ]; then
         if ! node "${SCRIPT_DIR}/dev-smoke.mjs" --plugins "${plugins_csv}" ${needs_restart:+--expect-restart}; then
           say "⚠️ dev-smoke 未通过：请查看 ${ROOT}/.workbuddy/evidence/dev-smoke/dev-smoke-report.json"
@@ -745,7 +764,13 @@ auto_materialize_and_reload() {
     fi
   else
     MATERIALIZE_STATUS="failed"
-    say "⚠️ 自动物化未成功（增量与完整同步都失败）。"
+    if [ "${sync_mode}" = "full+named" ]; then
+      say "⚠️ 自动物化未成功（完整同步成功，但具名插件安装失败）。"
+    elif [ "${sync_mode}" = "full" ]; then
+      say "⚠️ 自动物化未成功（完整同步失败）。"
+    else
+      say "⚠️ 自动物化未成功（增量与完整同步都失败）。"
+    fi
     say "   补救：在主检出运行 plugins/scripts/sync-to-app.sh（无插件参数=完整同步，可覆盖 shared kit），完成后自行确认开发版版本。"
   fi
 }
