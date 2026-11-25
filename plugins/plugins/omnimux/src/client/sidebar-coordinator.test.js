@@ -972,3 +972,20 @@ test('0.2.2-rc.5：无 newSessionRow（canStartSession=false）时仍可挂进 n
     dispose()
   }
 })
+
+test('omnimux-pibrowse 在常驻侧栏白名单内，作为独立行挂入侧栏而不被收敛', () => {
+  setup()
+  installSidebarGlobal()
+  const api = SIDEBAR_GLOBAL()
+  const btn = document.createElement('button')
+  btn.dataset.omnimuxPibrowseEntry = ''
+  const dispose = api.register({ id: 'omnimux-pibrowse-entry', rank: 6.5, create: () => btn })
+  try {
+    api.place()
+    const root = document.querySelector('[data-pane="sidebar"]')
+    assert.equal(btn.parentElement, root, 'omnimux-pibrowse 必须直接挂入侧栏而非收敛到更多菜单')
+    assert.equal(getConvergedRowsForTests().has('omnimux-pibrowse-entry'), false)
+  } finally {
+    dispose()
+  }
+})

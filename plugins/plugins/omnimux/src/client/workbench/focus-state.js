@@ -29,6 +29,7 @@ export const WORKBENCH_TAB_TITLE_FALLBACKS = Object.freeze({
   'omnimux-market:plaza': '技能/专家',
   'omnimux-avatar:studio': '数字人',
   'omnimux-tiktok-selection:workbench': '跟爆选品',
+  'omnimux-pibrowse:workbench': '指纹浏览器',
 })
 
 /** Professional SaaS English fallback titles in English language environments. */
@@ -46,6 +47,7 @@ export const WORKBENCH_TAB_TITLE_FALLBACKS_EN = Object.freeze({
   'omnimux-workflow:library': 'Projects',
   'omnimux-market:plaza': 'Skills & Experts',
   'omnimux-tiktok-selection:workbench': 'TikTok Selection',
+  'omnimux-pibrowse:workbench': 'Fingerprint Browser',
 })
 
 function isEnLocale() {

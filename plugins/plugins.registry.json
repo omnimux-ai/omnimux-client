@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0.0",
-  "updatedAt": "2026-11-24T10:57:32.979Z",
+  "updatedAt": "2026-11-25T12:47:48.760Z",
   "topology": {
     "tiers": [
       {
@@ -23,9 +23,9 @@
       }
     ],
     "summary": {
-      "totalPlugins": 15,
-      "totalTools": 104,
-      "totalSeams": 7
+      "totalPlugins": 16,
+      "totalTools": 112,
+      "totalSeams": 10
     }
   },
   "plugins": [
@@ -81,7 +81,7 @@
           },
           {
             "name": "headlessSkill",
-            "interfaceDoc": "ctx.get('headlessSkill').run({ skillName, input, outputSchema, references?, ownerPlugin?, targetId?, inputFingerprint? }) / .listJobs() / .getJob() / .cancel()"
+            "interfaceDoc": "ctx.get('headlessSkill').run({ skillName, input, outputSchema, references?, ownerPlugin?, targetId?, inputFingerprint?, reasoning? }) / .listJobs() / .getJob() / .cancel()"
           },
           {
             "name": "modelCatalog",
@@ -90,6 +90,18 @@
           {
             "name": "decisions",
             "interfaceDoc": "ctx.get('decisions').evaluate(params)"
+          },
+          {
+            "name": "pageFetch",
+            "interfaceDoc": "ctx.get('pageFetch').fetch({ url }) → { mode, model, url, title, pageContent }"
+          },
+          {
+            "name": "omnimuxAccounts",
+            "interfaceDoc": "ctx.get('omnimuxAccounts').list({ provider }) → { accounts }"
+          },
+          {
+            "name": "omnimuxAnalytics",
+            "interfaceDoc": "ctx.get('omnimuxAnalytics').dailyMetrics({ fromDate, toDate, platform, timezone, account_ids }) / .posts({ post_id, platform, sortBy, sortOrder, page, limit })"
           }
         ],
         "seamsConsumed": [],
@@ -139,7 +151,7 @@
         "tools": [],
         "seamsProvided": [],
         "seamsConsumed": [
-          "identity"
+          "omnimuxAnalytics"
         ],
         "slots": [
           {
@@ -180,7 +192,8 @@
         "tools": [],
         "seamsProvided": [],
         "seamsConsumed": [
-          "identity"
+          "identity",
+          "omnimuxAccounts"
         ],
         "slots": [
           {
@@ -938,6 +951,126 @@
       "path": "plugins/omnimux-market"
     },
     {
+      "id": "omnimux-pibrowse",
+      "name": "omnimux-pibrowse",
+      "version": "0.1.0",
+      "tier": "tier-1-app",
+      "entrypoint": "src/index.js",
+      "status": "active",
+      "description": "管理隔离指纹浏览器配置、代理池、扩展插件、MCP 自动化与加密团队同步。",
+      "tags": [
+        "fingerprint-browser",
+        "antidetect",
+        "pibrowse",
+        "profiles",
+        "proxy",
+        "mcp",
+        "team-sync",
+        "e2e-encryption"
+      ],
+      "upstream": {
+        "project": "PiBrowse",
+        "repo": "https://github.com/aronhy/pibrowse",
+        "upstreamBase": "https://github.com/furyteamtop/fury-antidetect-browser",
+        "pinnedRelease": "v0.5.5",
+        "sourceCommit": "c72bc3654e7c70d6d5b654c30ee105e99cd60cba",
+        "license": "AGPL-3.0-or-later",
+        "integrationMode": "out-of-process-sidecar-and-mcp"
+      },
+      "capabilities": {
+        "tools": [
+          {
+            "name": "pibrowse_runtime_status",
+            "summary": "获取 PiBrowse 平台兼容、Sidecar、Core、Widevine、MCP 与 Team 全景运行状态",
+            "category": "browser",
+            "isWriteOperation": false,
+            "requiresAuth": false
+          },
+          {
+            "name": "pibrowse_manage_runtime",
+            "summary": "启停重启 fury-agent Sidecar、绑定本地路径、触发 Core 下载或清理内核缓存",
+            "category": "browser",
+            "isWriteOperation": true,
+            "requiresAuth": false
+          },
+          {
+            "name": "pibrowse_manage_profiles",
+            "summary": "克隆配置、重随机或重置指纹、管理回收站恢复彻底清除以及启动指纹检测页",
+            "category": "browser",
+            "isWriteOperation": true,
+            "requiresAuth": false
+          },
+          {
+            "name": "pibrowse_check_proxy",
+            "summary": "经代理检测出口 IP 国家时区、执行分段连通性诊断或触发移动代理轮换链接",
+            "category": "browser",
+            "isWriteOperation": false,
+            "requiresAuth": false
+          },
+          {
+            "name": "pibrowse_delete_proxy",
+            "summary": "校验配置引用后删除指定代理池条目（破坏性操作需 confirm）",
+            "category": "browser",
+            "isWriteOperation": true,
+            "requiresAuth": false
+          },
+          {
+            "name": "pibrowse_manage_blocklists",
+            "summary": "列出读取保存域名黑白名单规则（含 @allow-only）、绑定配置或删除规则",
+            "category": "browser",
+            "isWriteOperation": true,
+            "requiresAuth": false
+          },
+          {
+            "name": "pibrowse_manage_extensions_and_mirror",
+            "summary": "管理浏览器扩展安装移除以及多窗口镜像操作同步启停",
+            "category": "browser",
+            "isWriteOperation": true,
+            "requiresAuth": false
+          },
+          {
+            "name": "pibrowse_team_sync",
+            "summary": "管理自托管 Team Server 状态、项目配置成员查询、分布式锁启停、本地上传与断开",
+            "category": "browser",
+            "isWriteOperation": true,
+            "requiresAuth": false
+          }
+        ],
+        "mcpServers": [
+          {
+            "name": "pibrowse",
+            "transport": "stdio",
+            "command": "fury-agent mcp",
+            "toolPrefix": "mcp__pibrowse__fury_",
+            "upstreamToolCount": 19
+          }
+        ],
+        "seamsProvided": [],
+        "seamsConsumed": [],
+        "slots": [
+          {
+            "target": "sidebar.extra",
+            "componentPath": "src/client/sidebar-entry.js"
+          },
+          {
+            "target": "shell.overlay",
+            "componentPath": "src/client/PibrowseStage.jsx"
+          }
+        ],
+        "storageDomains": [
+          "$DSH_HOME/omnimux/pibrowse/"
+        ]
+      },
+      "skills": [],
+      "dependencies": {
+        "requiredPlugins": [
+          "omnimux"
+        ],
+        "systemBinaries": []
+      },
+      "path": "plugins/omnimux-pibrowse"
+    },
+    {
       "id": "omnimux-products",
       "name": "omnimux-products",
       "version": "0.1.2",
@@ -1000,7 +1133,9 @@
         ],
         "seamsProvided": [],
         "seamsConsumed": [
-          "headlessSkill"
+          "headlessSkill",
+          "pageFetch",
+          "socialData"
         ],
         "slots": [],
         "storageDomains": [

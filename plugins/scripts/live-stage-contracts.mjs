@@ -15,6 +15,7 @@ export const STAGE_CONTENT = Object.freeze({
   analytics: '.omnimux-analytics-stage-body',
   market: '.sh-plaza-body',
   'tiktok-selection': '.omnimux-ttsel-stage-body',
+  pibrowse: '.omnimux-pibrowse-stage-body',
 })
 
 export const STAGE_STATUS = Object.freeze({

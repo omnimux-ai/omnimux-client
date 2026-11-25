@@ -94,6 +94,14 @@ export const STAGE_PAGES = [
       'plugins/omnimux-tiktok-selection/src/client/TiktokSelectionStage.jsx',
     ],
   },
+  {
+    plugin: 'omnimux-pibrowse',
+    label: '指纹浏览器',
+    styles: 'plugins/omnimux-pibrowse/src/client/styles.js',
+    pages: [
+      'plugins/omnimux-pibrowse/src/client/PibrowseStage.jsx',
+    ],
+  },
 ]
 
 /**
