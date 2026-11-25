@@ -154,14 +154,26 @@ it('checks stable channel by default without downloading; download waits for exp
 })
 
 it('does not confuse an unpublished channel, invalid response or network failure with up to date', async () => {
-  for (const response of [
-    new Response('', { status: 400 }),
-    new Response('', { status: 503 }),
-    Response.json({ schemaVersion: 2, product: 'omnimux', channel: 'beta', version: '2.0.26-beta.1', publishedAt: '2026-11-26T00:00:00.000Z', urgency: 'normal', artifacts: {} }),
-  ]) {
-    const { updates } = await fixture({ request: async () => response })
+  const cases: Array<{ request: UpdateRequest; errorCode: NextUpdateState['errorCode'] }> = [
+    { request: async () => new Response('', { status: 400 }), errorCode: 'HTTP_ERROR' },
+    { request: async () => new Response('', { status: 503 }), errorCode: 'HTTP_ERROR' },
+    {
+      request: async url => signedManifestResponse(url, {
+        schemaVersion: 2,
+        product: 'omnimux',
+        channel: 'beta',
+        version: '2.0.26-beta.1',
+        publishedAt: '2026-11-26T00:00:00.000Z',
+        urgency: 'normal',
+        artifacts: {},
+      }),
+      errorCode: 'CHANNEL_MISMATCH',
+    },
+  ]
+  for (const { request, errorCode } of cases) {
+    const { updates } = await fixture({ request })
     await updates.check()
-    expect(updates.snapshot()).toMatchObject({ phase: 'error', error: 'service' })
+    expect(updates.snapshot()).toMatchObject({ phase: 'error', error: 'service', errorCode })
   }
 })
 

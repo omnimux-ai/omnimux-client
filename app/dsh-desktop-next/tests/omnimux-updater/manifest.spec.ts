@@ -258,7 +258,7 @@ it('provisions a valid production Ed25519 k1 verification key and enforces signa
     arch: 'arm64',
     manual: true,
     request: async url => url.endsWith('.sig') ? new Response('', { status: 404 }) : new Response(foreign.raw),
-  })).rejects.toMatchObject({ code: 'SIGNATURE_INVALID' })
+  })).rejects.toMatchObject({ code: 'SIGNATURE_INVALID', detail: 'sig HTTP 404' })
 
   // Default keyring rejects manifests signed by an untrusted Ed25519 key.
   await expect(checkOmniMuxManifest({
@@ -268,7 +268,7 @@ it('provisions a valid production Ed25519 k1 verification key and enforces signa
     arch: 'arm64',
     manual: true,
     request: async url => url.endsWith('.sig') ? Response.json(foreign.sig) : new Response(foreign.raw),
-  })).rejects.toMatchObject({ code: 'SIGNATURE_INVALID' })
+  })).rejects.toMatchObject({ code: 'SIGNATURE_INVALID', detail: 'Ed25519 signature mismatch' })
 
   // Default keyring blocks legacy unsigned v1 downgrade fallback when v2 returns 404.
   let v1Requested = false
