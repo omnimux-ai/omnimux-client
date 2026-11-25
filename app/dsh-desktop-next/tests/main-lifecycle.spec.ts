@@ -30,6 +30,10 @@ const fixture = vi.hoisted(() => ({
   saveStartupTimeout: vi.fn(),
   saveAppIcon: vi.fn(),
   dockIcon: vi.fn(),
+  inspectUpdateTasks: vi.fn(async () => false),
+  lockUpdateTasks: vi.fn(async () => false),
+  unlockUpdateTasks: vi.fn(async () => {}),
+  requiresGracefulUpdateShutdown: false,
   onPermission: undefined as ConstructorParameters<typeof NextDesktopRuntime>[0]['onPermission'],
   startupElevation: { relaunched: false, state: {} } as ReturnType<typeof import('../src/windows-elevation.ts').deElevateAtStartup>,
   elevation: undefined as import('../src/windows-elevation.ts').WindowsElevation | undefined,
@@ -56,6 +60,18 @@ vi.mock('../src/desktop-runtime.ts', async () => { const { NextProfiles } = awai
   backend = { stop: fixture.stop, get host() { return fixture.hostReady ? {} : undefined }, get state() { return { phase: fixture.phase } } }
   startup = Promise.resolve()
   get auth() { return fixture.hostReady ? { url: 'http://127.0.0.1:1234/' } : undefined }
+  get hasReadyHost() { return fixture.hostReady && fixture.phase === 'ready' }
+  get requiresGracefulUpdateShutdown() { return fixture.requiresGracefulUpdateShutdown }
+  async inspectUpdateTasks() { return fixture.inspectUpdateTasks() }
+  async lockUpdateTasks() {
+    const active = await fixture.lockUpdateTasks()
+    fixture.requiresGracefulUpdateShutdown = true
+    return active
+  }
+  async unlockUpdateTasks() {
+    fixture.requiresGracefulUpdateShutdown = false
+    await fixture.unlockUpdateTasks()
+  }
   async injections() { return [] }
   profiles: NextProfiles
   recovery: import('../src/recovery.ts').NextRecovery
@@ -171,7 +187,7 @@ vi.mock('electron', async () => {
   return { app, BrowserWindow, Tray, autoUpdater: Object.assign(new EventEmitter(), { setFeedURL: vi.fn(), checkForUpdates: vi.fn(), quitAndInstall: vi.fn() }), net: { fetch: vi.fn() },
     crashReporter: { start: fixture.crashStart },
     Notification: class { static isSupported() { return false } },
-    clipboard: {}, dialog: { showMessageBox: vi.fn(async () => ({ response: 0 })), showMessageBoxSync: vi.fn(() => 0), showOpenDialog: vi.fn(async () => ({ canceled: true, filePaths: [] })) }, shell: { showItemInFolder: vi.fn(), openExternal: vi.fn(async () => {}) }, safeStorage: {}, nativeTheme: Object.assign(new EventEmitter(), { shouldUseDarkColors: true, shouldUseDarkColorsForSystemIntegratedUI: false }),
+    clipboard: {}, dialog: { showErrorBox: vi.fn(), showMessageBox: vi.fn(async () => ({ response: 0 })), showMessageBoxSync: vi.fn(() => 0), showOpenDialog: vi.fn(async () => ({ canceled: true, filePaths: [] })) }, shell: { showItemInFolder: vi.fn(), openExternal: vi.fn(async () => {}) }, safeStorage: {}, nativeTheme: Object.assign(new EventEmitter(), { shouldUseDarkColors: true, shouldUseDarkColorsForSystemIntegratedUI: false }),
     nativeImage: { createFromPath: (path: string) => ({ path, isEmpty: () => false, setTemplateImage() {} }), createEmpty: () => ({ path: '', isEmpty: () => true }) },
     // Templates stay plain arrays for tray assertions; the popup spy is non-enumerable.
     Menu: { buildFromTemplate: (items: any) => Object.defineProperty(items, 'popup', { value: (options: unknown) => fixture.popup(items, options), configurable: true }), setApplicationMenu() {} },
@@ -196,6 +212,10 @@ beforeEach(async () => {
   fixture.plugin.mockReset(); fixture.pluginDone.mockReset().mockResolvedValue({ exitCode: 0 });
   fixture.load.mockReset(); fixture.report.mockReset(); fixture.diagnosticAppend.mockReset(); fixture.diagnosticSnapshot.mockClear();
   fixture.saveAppIcon.mockReset(); fixture.dockIcon.mockReset()
+  fixture.inspectUpdateTasks.mockReset().mockResolvedValue(false)
+  fixture.lockUpdateTasks.mockReset().mockResolvedValue(false)
+  fixture.unlockUpdateTasks.mockReset().mockResolvedValue(undefined)
+  fixture.requiresGracefulUpdateShutdown = false
   fixture.terminalTarget.mockReset(); fixture.openTerminal.mockClear(); fixture.popup.mockClear(); fixture.registerSchemes.mockClear()
   fixture.crashStart.mockReset(); for (const action of Object.values(fixture.memory)) action.mockReset()
   fixture.stop.mockReset().mockResolvedValue(undefined); fixture.start.mockClear(); fixture.close.mockReset().mockResolvedValue(undefined)
@@ -947,6 +967,119 @@ it.each(['timeout', 'failure'] as const)('still launches a staged update before 
   } finally {
     Object.defineProperty(process, 'platform', platform)
     vi.useRealTimers()
+    vi.doUnmock('../src/update-installer.ts'); vi.doUnmock('../src/updates.ts')
+    vi.unstubAllEnvs(); rmSync(home, { recursive: true, force: true })
+  }
+})
+
+it.each(['timeout', 'unclean'] as const)('gives a locked Host a 22s shutdown budget and refuses installer launch on %s', async outcome => {
+  const home = mkdtempSync(join(tmpdir(), 'next-install-update-guarded-'))
+  vi.stubEnv('DSH_DESKTOP_NEXT_HOME', home)
+  const platform = Object.getOwnPropertyDescriptor(process, 'platform')!
+  Object.defineProperty(process, 'platform', { ...platform, value: 'darwin' })
+  fixture.hostReady = true
+  const stage = vi.fn(async () => {})
+  const launch = vi.fn(async () => {})
+  vi.doMock('../src/update-installer.ts', () => ({ NEXT_APP_ID: 'ai.omnimux.desktop', NextUpdateInstaller: class { stage = stage; launch = launch } }))
+  vi.doMock('../src/updates.ts', () => ({ NextUpdates: class {
+    constructor(private options: { install(): Promise<boolean | void> }) {}
+    snapshot() { return { phase: 'ready', version: '2.0.26', installable: true } }
+    start() {}
+    observeLaunchArguments = async () => false
+    dispose = async () => {}
+    install = () => this.options.install()
+  } }))
+  if (outcome === 'timeout') {
+    fixture.close.mockImplementationOnce(() => new Promise<void>(() => {}))
+  } else {
+    fixture.close.mockRejectedValueOnce(new Error('desktop update: Host did not complete graceful task teardown'))
+  }
+  try {
+    await import('../src/main.ts')
+    await vi.waitFor(() => expect(fixture.windows).toHaveLength(1))
+    const { app, dialog } = await import('electron')
+    vi.mocked(dialog.showErrorBox).mockClear()
+    const window = fixture.windows[0]!
+    const sender = { sender: window.webContents, senderFrame: window.webContents.mainFrame }
+    if (outcome === 'timeout') vi.useFakeTimers()
+    await fixture.handlers.get('dsh-next:command')!(sender, { type: 'install-update' })
+    if (outcome === 'timeout') {
+      await vi.advanceTimersByTimeAsync(0)
+      expect(fixture.lockUpdateTasks).toHaveBeenCalledOnce()
+      expect(stage).toHaveBeenCalledOnce()
+      // Must NOT cut short at the 5s normal quit timeout while graceful Host teardown runs.
+      await vi.advanceTimersByTimeAsync(21_999)
+      expect(app.exit).not.toHaveBeenCalled()
+      expect(launch).not.toHaveBeenCalled()
+      await vi.advanceTimersByTimeAsync(1)
+      expect(launch).not.toHaveBeenCalled()
+      expect(dialog.showErrorBox).toHaveBeenCalledOnce()
+      expect(app.relaunch).toHaveBeenCalledOnce()
+      expect(app.exit).toHaveBeenCalledExactlyOnceWith(1)
+    } else {
+      await vi.waitFor(() => expect(app.exit).toHaveBeenCalledExactlyOnceWith(1))
+      expect(fixture.lockUpdateTasks).toHaveBeenCalledOnce()
+      expect(stage).toHaveBeenCalledOnce()
+      expect(launch).not.toHaveBeenCalled()
+      expect(dialog.showErrorBox).toHaveBeenCalledOnce()
+      expect(app.relaunch).toHaveBeenCalledOnce()
+    }
+  } finally {
+    Object.defineProperty(process, 'platform', platform)
+    vi.useRealTimers()
+    vi.doUnmock('../src/update-installer.ts'); vi.doUnmock('../src/updates.ts')
+    vi.unstubAllEnvs(); rmSync(home, { recursive: true, force: true })
+  }
+})
+
+it('unlocks Host admission on TOCTOU active tasks after lock and on lock failure without staging', async () => {
+  const home = mkdtempSync(join(tmpdir(), 'next-install-update-toctou-'))
+  vi.stubEnv('DSH_DESKTOP_NEXT_HOME', home)
+  const platform = Object.getOwnPropertyDescriptor(process, 'platform')!
+  Object.defineProperty(process, 'platform', { ...platform, value: 'darwin' })
+  fixture.hostReady = true
+  const stage = vi.fn(async () => {})
+  const launch = vi.fn(async () => {})
+  let installResult: boolean | void | undefined
+  let installError: unknown
+  vi.doMock('../src/update-installer.ts', () => ({ NEXT_APP_ID: 'ai.omnimux.desktop', NextUpdateInstaller: class { stage = stage; launch = launch } }))
+  vi.doMock('../src/updates.ts', () => ({ NextUpdates: class {
+    constructor(private options: { install(): Promise<boolean | void> }) {}
+    snapshot() { return { phase: 'ready', version: '2.0.26', installable: true } }
+    start() {}
+    observeLaunchArguments = async () => false
+    dispose = async () => {}
+    install = async () => {
+      installResult = undefined
+      installError = undefined
+      try { installResult = await this.options.install() } catch (error) { installError = error }
+    }
+  } }))
+  try {
+    await import('../src/main.ts')
+    await vi.waitFor(() => expect(fixture.windows).toHaveLength(1))
+    const { dialog } = await import('electron')
+    const window = fixture.windows[0]!
+    const sender = { sender: window.webContents, senderFrame: window.webContents.mainFrame }
+
+    // 1. TOCTOU: inspect returns false, lock returns true -> unlocks before prompting, user declines -> returns false without staging.
+    fixture.inspectUpdateTasks.mockResolvedValueOnce(false)
+    fixture.lockUpdateTasks.mockResolvedValueOnce(true)
+    vi.mocked(dialog.showMessageBox).mockResolvedValueOnce({ response: 1, checkboxChecked: false })
+    await fixture.handlers.get('dsh-next:command')!(sender, { type: 'install-update' })
+    await vi.waitFor(() => expect(installResult).toBe(false))
+    expect(fixture.unlockUpdateTasks).toHaveBeenCalledTimes(1)
+    expect(stage).not.toHaveBeenCalled()
+
+    // 2. Lock timeout/failure -> must still unlock to prevent permanent 503 leak and throw ACTIVE_TASKS_BLOCKED.
+    fixture.inspectUpdateTasks.mockResolvedValueOnce(false)
+    fixture.lockUpdateTasks.mockRejectedValueOnce(new Error('desktop update: task inspection timed out'))
+    await fixture.handlers.get('dsh-next:command')!(sender, { type: 'install-update' })
+    await vi.waitFor(() => expect(installError).toMatchObject({ code: 'ACTIVE_TASKS_BLOCKED' }))
+    expect(fixture.unlockUpdateTasks).toHaveBeenCalledTimes(2)
+    expect(stage).not.toHaveBeenCalled()
+  } finally {
+    Object.defineProperty(process, 'platform', platform)
     vi.doUnmock('../src/update-installer.ts'); vi.doUnmock('../src/updates.ts')
     vi.unstubAllEnvs(); rmSync(home, { recursive: true, force: true })
   }

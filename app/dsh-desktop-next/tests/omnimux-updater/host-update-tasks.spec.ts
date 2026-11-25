@@ -76,3 +76,31 @@ it('locks new HTTP requests with 503, drains in-flight requests, and restores on
   disposeEffect?.()
   await expect(control('inspect')).rejects.toThrow(/stopping/)
 })
+
+it('still locks HTTP /api admission and drains pending requests when agents or jobs service is absent', async () => {
+  type Handler = (req: unknown, res: { writeHead: (code: number) => void; end: () => void }, next: () => Promise<void>) => Promise<void>
+  let requestHandler: Handler | undefined
+  const fakeCtx = {
+    effect: () => {},
+    on: (event: string, fn: Handler) => { if (event === 'connection/request') requestHandler = fn },
+    get: () => undefined,
+  } as unknown as Context
+
+  const control = installDesktopUpdateTaskControl(fakeCtx)
+  let releaseInFlight!: () => void
+  const inFlight = requestHandler!({}, { writeHead: vi.fn(), end: vi.fn() }, () => new Promise<void>(r => { releaseInFlight = r }))
+
+  let lockSettled = false
+  const lockPromise = control('lock').then(result => { lockSettled = true; return result })
+
+  const rejectedRes = { writeHead: vi.fn(), end: vi.fn() }
+  const nextBlocked = vi.fn(async () => {})
+  await requestHandler!({}, rejectedRes, nextBlocked)
+  expect(rejectedRes.writeHead).toHaveBeenCalledWith(503)
+  expect(nextBlocked).not.toHaveBeenCalled()
+  expect(lockSettled).toBe(false)
+
+  releaseInFlight()
+  await inFlight
+  expect(await lockPromise).toBe(false)
+})

@@ -67,6 +67,11 @@ it('preserves application arguments while replacing one-shot launch modes', () =
   expect(relaunchArguments(argv, false, false)).toEqual(['/fixture/lib/main.js', '--next-keep-elevated', '--example=value'])
 })
 
+it('strips the one-shot --updated flag on subsequent relaunches', () => {
+  expect(relaunchArguments(['/fixture/lib/main.js', '--updated', '--example=value'], false, false))
+    .toEqual(['/fixture/lib/main.js', '--example=value'])
+})
+
 it('hands an AppImage relaunch to a detached shell instead of Electron\'s relauncher', () => {
   const appImage = '/home/user/Apps/DSH-NEXT.AppImage'
   const relaunches: Array<{ args: string[] }> = []

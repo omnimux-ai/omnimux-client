@@ -36,6 +36,8 @@ interface RuntimeOptions {
   root: string
   /** Bundled interpreter payload for this CPU; a development tree without one runs without Office skills. */
   primaryRuntime?: string
+  /** Resolved desktop release channel (`stable` vs `development`) forwarded to Host profile resolution. */
+  releaseChannel?: 'stable' | 'development'
   executable: string
   addresses(): string[]
   /** Finish login-shell and system-proxy discovery before a Host child captures `process.env`. */
@@ -298,6 +300,11 @@ export class NextDesktopRuntime {
   /** Whether a ready Host child process is currently available for IPC control queries. */
   get hasReadyHost(): boolean {
     return this.hostProcess !== undefined && this.backend.state.phase === 'ready'
+  }
+
+  /** Whether update handoff has locked a running Host so shutdown must wait for graceful teardown. */
+  get requiresGracefulUpdateShutdown(): boolean {
+    return this.gracefulUpdateShutdown
   }
 
   /** Inspect whether the running Host has active agent turns or background jobs. */
@@ -604,6 +611,7 @@ export class NextDesktopRuntime {
     const host = new DesktopHostProcess(options.executable, options.root, new NextProfiles(actualHome).directory(profile), undefined,
       { ...process.env, DSH_HOME: actualHome, DSH_NEXT_NATIVE_TOKEN: token,
         DSH_NEXT_PREFERENCES: JSON.stringify(effective), DSH_NEXT_TRUSTED_HOSTS: JSON.stringify(addresses),
+        ...(options.releaseChannel === undefined ? {} : { DSH_NEXT_RELEASE_CHANNEL: options.releaseChannel }),
         [SYSTEM_PROXY_ENV]: JSON.stringify(options.systemProxy?.() ?? {}),
         ...(this.safeMode ? { DSH_TELEMETRY_DISABLED: '1' } : {}) },
       onFailure, options.primaryRuntime, undefined, join(options.root, 'lib', 'host.js'), options.onRestart, options.onNotification,

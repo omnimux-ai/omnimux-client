@@ -1,21 +1,19 @@
 /**
- * Local drill for macOS in-app updates to the per-CPU DMGs: the installed, unmodified application keeps requesting
- * `https://www.dshdesktop.cn`, which a marked /etc/hosts block points at this Mac, where an HTTPS server with a
- * temporarily trusted certificate for that one name answers the version check and the download the way the release
- * service will once per-CPU DMGs ship.
+ * Local drill for macOS in-app updates: the installed, unmodified application requests
+ * `https://dl.omnimux.ai`, which a marked /etc/hosts block points at this Mac, where an HTTPS server with a
+ * temporarily trusted certificate answers Manifest v2 (+ Ed25519 `.sig`) and Range artifact downloads.
  *
- *   node scripts/local-update-drill.mjs prepare --channel next --version 2.0.22-next.1 --arm64 <dmg> [--x64 <dmg>]
+ *   node scripts/local-update-drill.mjs prepare --channel stable --version 2.0.26 --arm64 <dmg> [--x64 <dmg>]
  *     [--universal <dmg>] [--bridge-version <version> --bridge <dmg>]
- *   node scripts/local-update-drill.mjs check --channel next [--app "/Applications/DSH NEXT.app"]
+ *   node scripts/local-update-drill.mjs check --channel stable [--app "/Applications/OmniMux.app"] [--tamper-sig] [--tamper-hash] [--mandatory]
  *   sudo node scripts/local-update-drill.mjs start      # hosts, trust and HTTPS :443 until Ctrl+C, then restores
  *   sudo node scripts/local-update-drill.mjs restore    # cleanup when start did not exit normally
- *   node scripts/local-update-drill.mjs probe [--channel next]   # the app's network stack against the running drill
+ *   node scripts/local-update-drill.mjs probe [--channel stable]   # the app's network stack against the running drill
  *   node scripts/local-update-drill.mjs status
  *
- * Routing follows the planned service rules: a request naming its CPU (`X-DSH-Desktop-Arch`) gets that CPU's DMG, or
- * the universal one; a request naming none gets the bridge version when one is configured (installations from before
- * per-CPU DMGs), else the universal DMG, else nothing. Downloads are pinned with `X-DSH-Desktop-Target-Version` and
- * redirect to the artifact path on the same name, as the real service redirects to storage.
+ * Manifest v2 requests hit `/api/desktop/v2/<channel>.json{,.sig}` and download directly from immutable
+ * `/releases/v<version>/<file>` URLs with HTTP Range support; legacy `/api/desktop/version` routes remain
+ * supported for older installed clients.
  *
  * `check` drives the updater modules with Node's TLS and an explicit CA, so it cannot see what the app's Chromium
  * network stack accepts; `probe`, which `start` also runs once the server listens, fetches the version check through
@@ -198,9 +196,11 @@ async function prepare(values) {
 
 function logRequest(request, url, log) {
   const header = name => request.headers[name.toLowerCase()] ?? '-'
+  const channel = request.headers['x-omnimux-channel'] ?? request.headers['x-dsh-desktop-channel'] ?? '-'
+  const installed = request.headers['x-omnimux-version'] ?? request.headers['x-dsh-desktop-version'] ?? '-'
   const probe = request.headers[PROBE_HEADER.toLowerCase()] === undefined ? '' : '（自检）'
-  log(`[${new Date().toLocaleTimeString()}] ${request.method} ${url.pathname} channel=${header('X-DSH-Desktop-Channel')} `
-    + `installed=${header('X-DSH-Desktop-Version')} arch=${header('X-DSH-Desktop-Arch')} target=${header('X-DSH-Desktop-Target-Version')}${probe}`)
+  log(`[${new Date().toLocaleTimeString()}] ${request.method} ${url.pathname} channel=${channel} `
+    + `installed=${installed} arch=${header('X-DSH-Desktop-Arch')} range=${header('Range')}${probe}`)
 }
 
 /**
@@ -608,7 +608,7 @@ function drillArtifactRequest(fetcher) {
 
 async function check(values) {
   const channel = values.channel ?? 'stable'
-  if (!(channel in CHANNELS)) throw new Error('--channel 只能是 stable、beta 或 next')
+  if (channel !== 'stable' && channel !== 'beta') throw new Error('Manifest v2 本地演练仅支持 --channel stable 或 beta')
   const config = await readConfig()
   if (config.channels[channel] === undefined) throw new Error(`还没有登记 ${channel} 通道，请先 prepare`)
   await ensureCertificate()
@@ -649,7 +649,7 @@ async function check(values) {
       version: installedVersion,
       platform: 'darwin',
       packaged: true,
-      channel: channel === 'beta' ? 'beta' : 'stable',
+      channel,
       executablePath: join(installed, 'Contents', 'MacOS', executableName),
       userData,
       arch,

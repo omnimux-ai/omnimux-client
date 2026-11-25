@@ -56,13 +56,15 @@ export async function main(): Promise<void> {
   const trustedHosts = JSON.parse(process.env.DSH_NEXT_TRUSTED_HOSTS ?? '[]') as unknown
   if (!Array.isArray(trustedHosts) || trustedHosts.some(host => typeof host !== 'string')) throw new Error('Invalid Next trusted hosts')
   const systemProxy = parseSystemProxyProbe(process.env[SYSTEM_PROXY_ENV])
+  const releaseChannel = process.env.DSH_NEXT_RELEASE_CHANNEL
   configureNextBrowserAccess(process.env.DSH_NEXT_NATIVE_TOKEN, preferences.browserAccess)
   delete process.env.DSH_NEXT_NATIVE_TOKEN
   delete process.env.DSH_NEXT_PREFERENCES
   delete process.env.DSH_NEXT_TRUSTED_HOSTS
+  delete process.env.DSH_NEXT_RELEASE_CHANNEL
   delete process.env[SYSTEM_PROXY_ENV]
   const packageManager = bundledPnpmInvocation(runtimeDir)
-  const profile = loadNextProfile(projectDir, home, NEXT_PACKAGE, packageManager)
+  const profile = loadNextProfile(projectDir, home, NEXT_PACKAGE, packageManager, releaseChannel)
   recordSkippedBundles(profile.skippedBundles, hostLog)
   // The workspace dependency tool needs the bundled payload; Office skills are excluded (runtime-file-policy.ts).
   const dependencies = resolveWorkspaceDependenciesConfig(runtimeDir, primaryRuntime, home)
@@ -88,7 +90,7 @@ export async function main(): Promise<void> {
     environment, profile: basename(projectDir),
     resolvedProfile: { profile, installAnchor: NEXT_PACKAGE,
       readPatches: profilePatches => readNextProfilePatches(projectDir, home,
-        [join(runtimeDir, 'host.cordis.patch.yml'), join(projectDir, 'desktop-next.cordis.patch.json'), runtimePatch], profilePatches) },
+        [join(runtimeDir, 'host.cordis.patch.yml'), join(projectDir, 'desktop-next.cordis.patch.json'), runtimePatch], profilePatches, releaseChannel) },
     patchFiles: [join(runtimeDir, 'host.cordis.patch.yml'), join(projectDir, 'desktop-next.cordis.patch.json'), runtimePatch], args: ['--no-open', '--port', String(preferences.port)],
     packageManager,
   })
@@ -137,7 +139,7 @@ export async function main(): Promise<void> {
         const active = await control(action)
         await send({ type: 'update-tasks', requestId: request.requestId, active })
       }).catch(async (error: unknown) => {
-        await send({ type: 'update-tasks', requestId: request.requestId, error: error instanceof Error ? error.message : String(error) })
+        await send({ type: 'update-tasks', requestId: request.requestId, active: false, error: error instanceof Error ? error.message : String(error) })
       }).catch(fatal)
       return
     }

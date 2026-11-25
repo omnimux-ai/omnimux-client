@@ -115,11 +115,85 @@ async function writeAllAt(
   }
 }
 
+interface AttemptRequestResult {
+  readonly response: Response
+  readonly finalUrl: string
+  readonly abortAttempt: (reason?: unknown) => void
+  readonly cleanup: () => void
+}
+
+async function requestWithHeaderTimeout(
+  request: UpdateArtifactRequest,
+  url: string,
+  init: Omit<RequestInit, 'signal'>,
+  idleTimeoutMs: number,
+  outerSignal: AbortSignal | undefined,
+): Promise<AttemptRequestResult> {
+  throwIfAborted(outerSignal)
+  const attemptController = new AbortController()
+  const onOuterAbort = (): void => {
+    attemptController.abort(new OmniMuxUpdateError('DOWNLOAD_ABORTED', 'The update download was cancelled.', { cause: outerSignal?.reason }))
+  }
+  outerSignal?.addEventListener('abort', onOuterAbort, { once: true })
+
+  let timedOut = false
+  let headerTimer: ReturnType<typeof setTimeout> | undefined
+  const headerTimeout = new Promise<never>((_resolve, reject) => {
+    headerTimer = setTimeout(() => {
+      timedOut = true
+      const timeoutError = new OmniMuxUpdateError('DOWNLOAD_TIMEOUT', `No response headers received for ${String(idleTimeoutMs)}ms`, { detail: 'header-timeout' })
+      attemptController.abort(timeoutError)
+      reject(timeoutError)
+    }, idleTimeoutMs)
+  })
+  headerTimeout.catch(() => undefined)
+
+  const cleanup = (): void => {
+    if (headerTimer !== undefined) {
+      clearTimeout(headerTimer)
+      headerTimer = undefined
+    }
+    outerSignal?.removeEventListener('abort', onOuterAbort)
+  }
+
+  try {
+    const settled = await Promise.race([
+      request(url, { ...init, signal: attemptController.signal }),
+      headerTimeout,
+    ])
+    if (headerTimer !== undefined) {
+      clearTimeout(headerTimer)
+      headerTimer = undefined
+    }
+    return {
+      response: settled.response,
+      finalUrl: settled.finalUrl,
+      abortAttempt: (reason?: unknown) => {
+        if (!attemptController.signal.aborted) attemptController.abort(reason)
+      },
+      cleanup,
+    }
+  } catch (cause) {
+    cleanup()
+    if (cause instanceof OmniMuxUpdateError) throw cause
+    if (timedOut) {
+      throw new OmniMuxUpdateError('DOWNLOAD_TIMEOUT', `No response headers received for ${String(idleTimeoutMs)}ms`, { detail: 'header-timeout', cause })
+    }
+    if (outerSignal?.aborted === true || isAbortError(cause)) {
+      throw new OmniMuxUpdateError('DOWNLOAD_ABORTED', 'The update download was cancelled.', { cause })
+    }
+    throw new OmniMuxUpdateError('OFFLINE', 'Update download request failed', { cause })
+  }
+}
+
 async function writeSequential(
   filename: string,
   body: ReadableStream<Uint8Array>,
   idleTimeoutMs: number,
+  maxBytes: number,
+  expectedSize: number | undefined,
   signal: AbortSignal | undefined,
+  abortAttempt: (reason?: unknown) => void,
   onProgress?: (received: number) => void,
 ): Promise<number> {
   const handle = await open(filename, 'wx', PRIVATE_FILE_MODE)
@@ -129,8 +203,10 @@ async function writeSequential(
     while (true) {
       const step = await readWithIdleTimeout(reader, idleTimeoutMs, signal)
       if (step.done) break
-      if (step.value.byteLength > MAX_ARTIFACT_BYTES - written) {
-        throw new OmniMuxUpdateError('MANIFEST_INVALID', 'Downloaded installer exceeded size cap')
+      if (step.value.byteLength > maxBytes - written) {
+        throw expectedSize !== undefined && expectedSize > 0
+          ? new OmniMuxUpdateError('CHECKSUM_MISMATCH', `Downloaded installer exceeded expected size ${String(expectedSize)}`)
+          : new OmniMuxUpdateError('MANIFEST_INVALID', 'Downloaded installer exceeded size cap')
       }
       await writeAllAt(handle, step.value, written)
       written += step.value.byteLength
@@ -142,6 +218,7 @@ async function writeSequential(
     await handle.sync()
     return written
   } catch (error) {
+    abortAttempt(error)
     await reader.cancel(error).catch(() => undefined)
     throw error
   } finally {
@@ -153,6 +230,7 @@ async function writeSequential(
 async function writeParallel(options: {
   readonly filename: string
   readonly initialBody: ReadableStream<Uint8Array>
+  readonly initialAbortAttempt: (reason?: unknown) => void
   readonly totalBytes: number
   readonly chunkBytes: number
   readonly concurrency: number
@@ -166,7 +244,7 @@ async function writeParallel(options: {
   readonly onProgress?: (received: number) => void
 }): Promise<void> {
   const {
-    filename, initialBody, totalBytes, chunkBytes, concurrency, etag,
+    filename, initialBody, initialAbortAttempt, totalBytes, chunkBytes, concurrency, etag,
     url, request, idleTimeoutMs, maxChunkRetries, retryBaseDelayMs, signal, onProgress,
   } = options
   const handle = await open(filename, 'wx', PRIVATE_FILE_MODE)
@@ -189,35 +267,13 @@ async function writeParallel(options: {
     onProgress?.(totalReceived)
   }
 
-  const consumePrefix = async (): Promise<void> => {
-    const firstLimit = Math.min(totalBytes, chunkBytes)
-    const reader = initialBody.getReader()
-    let written = 0
-    try {
-      while (written < firstLimit) {
-        const step = await readWithIdleTimeout(reader, idleTimeoutMs, combined)
-        if (step.done) break
-        const toWrite = Math.min(step.value.byteLength, firstLimit - written)
-        if (toWrite > 0) {
-          await writeAllAt(handle, step.value, written, toWrite)
-          written += toWrite
-          addBytes(toWrite)
-        }
-      }
-      if (written < firstLimit) {
-        throw new OmniMuxUpdateError('OFFLINE', 'Initial range stream ended prematurely')
-      }
-    } finally {
-      await reader.cancel().catch(() => undefined)
-      reader.releaseLock()
-    }
-  }
-
   const downloadSliceOnce = async (slice: { readonly start: number; readonly end: number }): Promise<number> => {
     const expectedLength = slice.end - slice.start + 1
-    let settled
-    try {
-      settled = await request(url, {
+    const expectedContentRange = `bytes ${String(slice.start)}-${String(slice.end)}/${String(totalBytes)}`
+    const attempt = await requestWithHeaderTimeout(
+      request,
+      url,
+      {
         method: 'GET',
         headers: {
           Range: `bytes=${String(slice.start)}-${String(slice.end)}`,
@@ -225,54 +281,66 @@ async function writeParallel(options: {
         },
         cache: 'no-store',
         redirect: 'follow',
-        signal: combined,
-      })
-    } catch (cause) {
-      if (signal?.aborted === true || isAbortError(cause)) {
-        throw new OmniMuxUpdateError('DOWNLOAD_ABORTED', 'The update download was cancelled.', { cause })
+      },
+      idleTimeoutMs,
+      combined,
+    )
+    const { response, finalUrl } = attempt
+    try {
+      try {
+        assertSecureHttpsUrl(finalUrl)
+      } catch (error) {
+        attempt.abortAttempt(error)
+        await response.body?.cancel().catch(() => undefined)
+        throw error
       }
-      throw new OmniMuxUpdateError('OFFLINE', 'Parallel range request failed', { cause })
-    }
-    const { response, finalUrl } = settled
-    try {
-      assertSecureHttpsUrl(finalUrl)
-    } catch (error) {
-      await response.body?.cancel().catch(() => undefined)
-      throw error
-    }
-    if (response.status !== 206) {
-      await response.body?.cancel().catch(() => undefined)
-      throw new OmniMuxUpdateError('HTTP_ERROR', `Range request returned HTTP ${String(response.status)}`, {
-        detail: `HTTP ${String(response.status)}`,
-      })
-    }
-    if (response.body === null) {
-      throw new OmniMuxUpdateError('HTTP_ERROR', 'Range request returned empty body')
-    }
-    const reader = response.body.getReader()
-    let written = 0
-    try {
-      while (true) {
-        const step = await readWithIdleTimeout(reader, idleTimeoutMs, combined)
-        if (step.done) break
-        if (written + step.value.byteLength > expectedLength) {
-          throw new OmniMuxUpdateError('MANIFEST_INVALID', 'Range chunk exceeded requested slice')
+      if (response.status !== 206) {
+        attempt.abortAttempt()
+        await response.body?.cancel().catch(() => undefined)
+        throw new OmniMuxUpdateError('HTTP_ERROR', `Range request returned HTTP ${String(response.status)}`, {
+          detail: `HTTP ${String(response.status)}`,
+        })
+      }
+      const actualContentRange = response.headers.get('content-range')?.trim()
+      if (actualContentRange !== expectedContentRange) {
+        attempt.abortAttempt()
+        await response.body?.cancel().catch(() => undefined)
+        throw new OmniMuxUpdateError(
+          'MANIFEST_INVALID',
+          `Range response Content-Range ${actualContentRange ?? 'missing'} != ${expectedContentRange}`,
+        )
+      }
+      if (response.body === null) {
+        throw new OmniMuxUpdateError('HTTP_ERROR', 'Range request returned empty body')
+      }
+      const reader = response.body.getReader()
+      let written = 0
+      try {
+        while (true) {
+          const step = await readWithIdleTimeout(reader, idleTimeoutMs, combined)
+          if (step.done) break
+          if (written + step.value.byteLength > expectedLength) {
+            throw new OmniMuxUpdateError('MANIFEST_INVALID', 'Range chunk exceeded requested slice')
+          }
+          await writeAllAt(handle, step.value, slice.start + written, step.value.byteLength)
+          written += step.value.byteLength
+          addBytes(step.value.byteLength)
         }
-        await writeAllAt(handle, step.value, slice.start + written, step.value.byteLength)
-        written += step.value.byteLength
-        addBytes(step.value.byteLength)
+        if (written !== expectedLength) {
+          throw new OmniMuxUpdateError('OFFLINE', 'Range slice ended prematurely')
+        }
+        return written
+      } catch (error) {
+        attempt.abortAttempt(error)
+        await reader.cancel(error).catch(() => undefined)
+        // Roll back progress delta contributed by this failed attempt before retry.
+        if (written > 0) addBytes(-written)
+        throw error
+      } finally {
+        reader.releaseLock()
       }
-      if (written !== expectedLength) {
-        throw new OmniMuxUpdateError('OFFLINE', 'Range slice ended prematurely')
-      }
-      return written
-    } catch (error) {
-      await reader.cancel(error).catch(() => undefined)
-      // Roll back progress delta contributed by this failed attempt before retry.
-      if (written > 0) addBytes(-written)
-      throw error
     } finally {
-      reader.releaseLock()
+      attempt.cleanup()
     }
   }
 
@@ -301,6 +369,51 @@ async function writeParallel(options: {
     throw lastError
   }
 
+  const consumePrefix = async (): Promise<void> => {
+    const firstLimit = Math.min(totalBytes, chunkBytes)
+    const reader = initialBody.getReader()
+    let lockReleased = false
+    const releaseReader = (): void => {
+      if (lockReleased) return
+      lockReleased = true
+      reader.releaseLock()
+    }
+    let written = 0
+    try {
+      while (written < firstLimit) {
+        const step = await readWithIdleTimeout(reader, idleTimeoutMs, combined)
+        if (step.done) break
+        const toWrite = Math.min(step.value.byteLength, firstLimit - written)
+        if (toWrite > 0) {
+          await writeAllAt(handle, step.value, written, toWrite)
+          written += toWrite
+          addBytes(toWrite)
+        }
+      }
+      if (written < firstLimit) {
+        throw new OmniMuxUpdateError('OFFLINE', 'Initial range stream ended prematurely')
+      }
+    } catch (error) {
+      initialAbortAttempt(error)
+      await reader.cancel(error).catch(() => undefined)
+      releaseReader()
+      if (written > 0) addBytes(-written)
+      if (!combined.aborted && signal?.aborted !== true
+        && error instanceof OmniMuxUpdateError && (error.code === 'OFFLINE' || error.code === 'DOWNLOAD_TIMEOUT')) {
+        // Retry slice 0 via Range request when the initial full-GET prefix stalls or truncates.
+        await downloadSliceWithRetry({ start: 0, end: firstLimit - 1 })
+        return
+      }
+      throw error
+    } finally {
+      initialAbortAttempt()
+      if (!lockReleased) {
+        await reader.cancel().catch(() => undefined)
+        releaseReader()
+      }
+    }
+  }
+
   let nextSlice = 0
   const worker = async (): Promise<void> => {
     while (true) {
@@ -312,12 +425,27 @@ async function writeParallel(options: {
     }
   }
 
+  let rootError: unknown
+  const recordFailure = (error: unknown): void => {
+    if (rootError === undefined) {
+      rootError = error
+    } else if (rootError instanceof OmniMuxUpdateError && rootError.code === 'DOWNLOAD_ABORTED'
+      && !(error instanceof OmniMuxUpdateError && error.code === 'DOWNLOAD_ABORTED')) {
+      rootError = error
+    }
+    if (!controller.signal.aborted) controller.abort(error)
+  }
+
   const workerCount = Math.min(Math.max(1, concurrency - 1), slices.length)
   try {
-    await Promise.all([
-      consumePrefix().catch(error => { controller.abort(error); throw error }),
-      ...Array.from({ length: workerCount }, () => worker().catch(error => { controller.abort(error); throw error })),
+    const settled = await Promise.allSettled([
+      consumePrefix().catch(error => { recordFailure(error); throw error }),
+      ...Array.from({ length: workerCount }, () => worker().catch(error => { recordFailure(error); throw error })),
     ])
+    const rejected = settled.find((item): item is PromiseRejectedResult => item.status === 'rejected')
+    if (rejected !== undefined) {
+      throw rootError ?? rejected.reason
+    }
     await handle.sync()
   } finally {
     signal?.removeEventListener('abort', onCallerAbort)
@@ -424,49 +552,56 @@ export async function downloadOmniMuxArtifact(options: DownloadOmniMuxArtifactOp
 
   throwIfAborted(options.signal)
 
-  let response: Response
-  let finalUrl: string
-  try {
-    const settled = await options.request(secureUrl.href, {
+  const initialAttempt = await requestWithHeaderTimeout(
+    options.request,
+    secureUrl.href,
+    {
       method: 'GET',
       headers: { Accept: 'application/octet-stream' },
       cache: 'no-store',
       redirect: 'follow',
-      ...(options.signal === undefined ? {} : { signal: options.signal }),
-    })
-    response = settled.response
-    finalUrl = settled.finalUrl
-  } catch (cause) {
-    if (options.signal?.aborted === true || isAbortError(cause)) {
-      throw new OmniMuxUpdateError('DOWNLOAD_ABORTED', 'The update download was cancelled.', { cause })
+    },
+    idleTimeoutMs,
+    options.signal,
+  )
+  const { response, finalUrl } = initialAttempt
+
+  try {
+    if (response.status !== 200) {
+      initialAttempt.abortAttempt()
+      await response.body?.cancel().catch(() => undefined)
+      throw new OmniMuxUpdateError('HTTP_ERROR', `Download server returned HTTP ${String(response.status)}`, {
+        detail: `HTTP ${String(response.status)}`,
+      })
     }
-    throw new OmniMuxUpdateError('OFFLINE', 'The update installer could not be downloaded.', { cause })
-  }
+    if (response.body === null) {
+      throw new OmniMuxUpdateError('HTTP_ERROR', 'Download server returned an empty body')
+    }
+    try {
+      assertSecureHttpsUrl(finalUrl)
+    } catch (error) {
+      initialAttempt.abortAttempt(error)
+      await response.body.cancel().catch(() => undefined)
+      throw error
+    }
 
-  if (response.status !== 200) {
-    await response.body?.cancel().catch(() => undefined)
-    throw new OmniMuxUpdateError('HTTP_ERROR', `Download server returned HTTP ${String(response.status)}`, {
-      detail: `HTTP ${String(response.status)}`,
-    })
-  }
-  if (response.body === null) {
-    throw new OmniMuxUpdateError('HTTP_ERROR', 'Download server returned an empty body')
-  }
-  try {
-    assertSecureHttpsUrl(finalUrl)
-  } catch (error) {
-    await response.body.cancel().catch(() => undefined)
-    throw error
-  }
+    const declaredHeader = response.headers.get('content-length')
+    const declared = declaredHeader !== null && DECIMAL_BYTES.test(declaredHeader) ? Number(declaredHeader) : Number.NaN
+    if (Number.isFinite(declared) && declared > MAX_ARTIFACT_BYTES) {
+      initialAttempt.abortAttempt()
+      await response.body.cancel().catch(() => undefined)
+      throw new OmniMuxUpdateError('MANIFEST_INVALID', 'Installer exceeds maximum allowed size')
+    }
+    if (options.expectedSize !== undefined && options.expectedSize > 0 && Number.isFinite(declared) && declared !== options.expectedSize) {
+      initialAttempt.abortAttempt()
+      await response.body.cancel().catch(() => undefined)
+      throw new OmniMuxUpdateError(
+        'CHECKSUM_MISMATCH',
+        `Content-Length ${String(declared)} != expected ${String(options.expectedSize)}`,
+        { detail: `size ${String(declared)} != ${String(options.expectedSize)}` },
+      )
+    }
 
-  const declaredHeader = response.headers.get('content-length')
-  const declared = declaredHeader !== null && DECIMAL_BYTES.test(declaredHeader) ? Number(declaredHeader) : Number.NaN
-  if (Number.isFinite(declared) && declared > MAX_ARTIFACT_BYTES) {
-    await response.body.cancel().catch(() => undefined)
-    throw new OmniMuxUpdateError('MANIFEST_INVALID', 'Installer exceeds maximum allowed size')
-  }
-
-  try {
     const acceptsRanges = /\bbytes\b/iu.test(response.headers.get('accept-ranges') ?? '')
     const minBytes = Math.max(1024, options.parallel?.minBytes ?? PARALLEL_MIN_BYTES)
     const chunkBytes = Math.max(1024, options.parallel?.chunkBytes ?? PARALLEL_CHUNK_BYTES)
@@ -476,6 +611,7 @@ export async function downloadOmniMuxArtifact(options: DownloadOmniMuxArtifactOp
       await writeParallel({
         filename: temporary,
         initialBody: response.body,
+        initialAbortAttempt: initialAttempt.abortAttempt,
         totalBytes: declared,
         chunkBytes,
         concurrency,
@@ -490,9 +626,19 @@ export async function downloadOmniMuxArtifact(options: DownloadOmniMuxArtifactOp
       })
     } else {
       const total = Number.isFinite(declared) && declared > 0 ? declared : options.expectedSize
-      await writeSequential(temporary, response.body, idleTimeoutMs, options.signal, received => {
-        options.onProgress?.(received, total)
-      })
+      const maxBytes = options.expectedSize !== undefined && options.expectedSize > 0
+        ? Math.min(options.expectedSize, MAX_ARTIFACT_BYTES)
+        : MAX_ARTIFACT_BYTES
+      await writeSequential(
+        temporary,
+        response.body,
+        idleTimeoutMs,
+        maxBytes,
+        options.expectedSize,
+        options.signal,
+        initialAttempt.abortAttempt,
+        received => { options.onProgress?.(received, total) },
+      )
     }
 
     throwIfAborted(options.signal)
@@ -509,6 +655,7 @@ export async function downloadOmniMuxArtifact(options: DownloadOmniMuxArtifactOp
     }
     throw new OmniMuxUpdateError('OFFLINE', 'Update download failed', { cause: error })
   } finally {
+    initialAttempt.cleanup()
     await unlinkIfPresent(temporary).catch(() => undefined)
   }
 }

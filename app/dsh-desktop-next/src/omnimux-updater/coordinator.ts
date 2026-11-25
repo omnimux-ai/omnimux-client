@@ -92,6 +92,9 @@ export class OmniMuxUpdateCoordinator {
   private persistedLoaded = false
   private cacheReady?: Promise<void>
   private revision = 0
+  private switchSerial = 0
+  private switchQueue: Promise<void> = Promise.resolve()
+  private switchInFlight = false
   private consecutiveFailures = 0
   private disposed = false
   private readonly journal: OmniMuxUpdateJournal
@@ -164,7 +167,11 @@ export class OmniMuxUpdateCoordinator {
       if (this.disposed) return
       privateDirectory(this.stateDir)
       // Clean leftover staging directories from earlier launches.
-      for (const directory of new Set([this.stateDir, this.legacyStateDir, this.downloads])) {
+      // Only installable production instances touch the shared system downloads directory
+      // (`%TEMP%\omnimux-updates`) so Dev/source runs never delete a concurrent staged installer.
+      const dirsToClean = new Set([this.stateDir, this.legacyStateDir])
+      if (this.state.installable) dirsToClean.add(this.downloads)
+      for (const directory of dirsToClean) {
         if (this.disposed) return
         const entries = await readdir(directory, { withFileTypes: true }).catch((error: unknown) => {
           if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []
@@ -517,6 +524,10 @@ export class OmniMuxUpdateCoordinator {
           return
         }
         this.options.log(error)
+        if (this.directory !== undefined) {
+          await rm(this.directory, { recursive: true, force: true }).catch(this.options.log)
+          this.directory = undefined
+        }
         this.journal.record({
           event: 'error',
           channel: this.channel,
@@ -536,9 +547,9 @@ export class OmniMuxUpdateCoordinator {
     })
   }
 
-  /** Cancel an in-progress download or check and clean up partial files. */
+  /** Cancel an in-progress check, download, or prepare step and clean up partial files. */
   async cancelDownload(): Promise<void> {
-    if (this.disposed || this.state.phase !== 'downloading') return
+    if (this.disposed || !['checking', 'downloading', 'preparing'].includes(this.state.phase)) return
     this.controller?.abort(new OmniMuxUpdateError('DOWNLOAD_ABORTED', 'Cancelled by user'))
     await this.operation
   }
@@ -577,36 +588,54 @@ export class OmniMuxUpdateCoordinator {
   /**
    * Switch update channel, retiring any staged download from the previous channel,
    * persisting the choice via `persist`, and immediately checking the new channel.
+   * Concurrent calls are serialized so the latest channel always wins across disk and network.
    */
   async switchChannel(nextChannel: OmniMuxUpdateChannel, persist?: (channel: OmniMuxUpdateChannel) => Promise<void> | void): Promise<void> {
     if (this.disposed || this.state.phase === 'installing') {
       throw new OmniMuxUpdateError('INSTALL_FAILED', 'Cannot switch update channel during installation')
     }
-    if (nextChannel === this.channel && this.state.phase !== 'error') return
-    await persist?.(nextChannel)
+    if (!this.switchInFlight && nextChannel === this.channel && this.state.phase !== 'error') return
+    const ticket = ++this.switchSerial
+    this.switchInFlight = true
     this.revision += 1
     this.controller?.abort(new OmniMuxUpdateError('DOWNLOAD_ABORTED', 'Channel switched'))
-    await this.operation
-    if (this.directory !== undefined) {
-      await rm(this.directory, { recursive: true, force: true }).catch(this.options.log)
-      this.directory = undefined
-    }
-    this.result = undefined
-    this.channel = nextChannel
-    this.consecutiveFailures = 0
-    this.journal.record({ event: 'channel-switched', channel: nextChannel })
-    this.set({
-      phase: 'idle',
-      version: undefined,
-      received: undefined,
-      total: undefined,
-      mandatory: false,
-      minSupportedVersion: undefined,
-      releaseNotes: undefined,
-      releaseNotesUrl: undefined,
-      artifactSize: undefined,
+
+    const run = this.switchQueue.then(async () => {
+      try {
+        if (this.disposed || ticket !== this.switchSerial) return
+        if (this.state.phase === 'installing') {
+          throw new OmniMuxUpdateError('INSTALL_FAILED', 'Cannot switch update channel during installation')
+        }
+        await this.operation
+        if (this.disposed || ticket !== this.switchSerial) return
+        await persist?.(nextChannel)
+        this.channel = nextChannel
+        if (this.disposed || ticket !== this.switchSerial) return
+        if (this.directory !== undefined) {
+          await rm(this.directory, { recursive: true, force: true }).catch(this.options.log)
+          this.directory = undefined
+        }
+        this.result = undefined
+        this.consecutiveFailures = 0
+        this.journal.record({ event: 'channel-switched', channel: nextChannel })
+        this.set({
+          phase: 'idle',
+          version: undefined,
+          received: undefined,
+          total: undefined,
+          mandatory: false,
+          minSupportedVersion: undefined,
+          releaseNotes: undefined,
+          releaseNotesUrl: undefined,
+          artifactSize: undefined,
+        })
+        await this.check(false)
+      } finally {
+        if (ticket === this.switchSerial) this.switchInFlight = false
+      }
     })
-    await this.check(false)
+    this.switchQueue = run.catch(() => {})
+    return run
   }
 
   async dispose(keepInstaller = false): Promise<void> {

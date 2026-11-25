@@ -81,6 +81,7 @@ export function updateAction(state: NextUpdateState): 'check-updates' | 'downloa
   if (state.phase === 'ready') return 'install-update'
   if (state.phase === 'available') return 'download-update'
   if (state.phase === 'error' && state.version && state.error !== 'service'
+    && state.error !== 'development' && state.error !== 'unsupported'
     && state.errorCode !== 'UNSUPPORTED_OS' && state.errorCode !== 'APP_TRANSLOCATED' && state.errorCode !== 'SIGNATURE_INVALID') {
     return 'download-update'
   }

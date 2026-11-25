@@ -379,7 +379,12 @@ export async function checkOmniMuxManifest(options: CheckOmniMuxManifestOptions)
     }
   }
 
-  const manifestText = new TextDecoder('utf-8', { fatal: true }).decode(rawManifest)
+  let manifestText: string
+  try {
+    manifestText = new TextDecoder('utf-8', { fatal: true }).decode(rawManifest)
+  } catch (cause) {
+    throw new OmniMuxUpdateError('MANIFEST_INVALID', 'Manifest body is not valid UTF-8', { cause })
+  }
   const manifest = parseManifestV2(manifestText, options.channel, allowedHosts)
   const comparison = compareSemVer(manifest.version, current.version)
   if (comparison === null) {

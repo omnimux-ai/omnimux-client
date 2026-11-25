@@ -56,6 +56,7 @@ import { PlatformLoginWindow } from './platform-login-window.ts'
 import { DesktopPlatformView, platformBounds } from './platform-view.ts'
 import { PLATFORM_IPC } from './platform-ipc.ts'
 import { NextUpdates } from './updates.ts'
+import { OmniMuxUpdateError } from './omnimux-updater/index.ts'
 import { updateDownloadDirectory } from './update-downloads.ts'
 import { isWindowsPortableCopy } from './update-portable.ts'
 import { createArtifactRequest } from './update-transport.ts'
@@ -222,7 +223,7 @@ const primaryRuntime = join(app.isPackaged ? join(process.resourcesPath, 'runtim
  */
 const rendererEvidence = new RollingRendererEvidence(() => mainWindow?.webContents)
 const runtime = new NextDesktopRuntime({
-  home, root, primaryRuntime, executable: process.execPath, addresses: () => [...desktopLanAddresses()], systemProxy: () => systemProxy,
+  home, root, primaryRuntime, releaseChannel: identity.releaseChannel, executable: process.execPath, addresses: () => [...desktopLanAddresses()], systemProxy: () => systemProxy,
   prepareEnvironment: () => prepareHostEnvironment(),
   memoryProbe: {
     appMetrics: () => app.getAppMetrics(),
@@ -339,18 +340,27 @@ const updates = new NextUpdates({
   install: async () => {
     runtime.busy = true; native.refresh()
     let tasksLocked = false
+    const confirmActiveTasks = () => confirmed(
+      t('仍有任务正在运行，确定安装更新并重启？', 'Tasks are still running. Install the update and restart anyway?'),
+      t('继续安装会中断当前正在运行的对话或后台任务，Profile 和已保存会话会保留。', 'Continuing will interrupt running turns or background jobs. Profiles and saved sessions are preserved.'),
+    )
+    const releaseLock = async () => {
+      if (!tasksLocked) return
+      tasksLocked = false
+      await runtime.unlockUpdateTasks().catch(unlockErr => runtime.diagnostics.append(`Update admission unlock failed: ${String(unlockErr)}`, 'warn'))
+    }
     try {
+      let userConfirmedActiveTasks = false
       if (runtime.hasReadyHost) {
         let hasActiveTasks = false
         try { hasActiveTasks = await runtime.inspectUpdateTasks() } catch (error) {
           runtime.diagnostics.append(`Update task inspection failed: ${String(error)}`, 'warn')
+          throw new OmniMuxUpdateError('ACTIVE_TASKS_BLOCKED', 'Unable to inspect active tasks before update installation', { cause: error })
         }
         if (hasActiveTasks) {
-          const proceed = await confirmed(
-            t('仍有任务正在运行，确定安装更新并重启？', 'Tasks are still running. Install the update and restart anyway?'),
-            t('继续安装会中断当前正在运行的对话或后台任务，Profile 和已保存会话会保留。', 'Continuing will interrupt running turns or background jobs. Profiles and saved sessions are preserved.'),
-          )
+          const proceed = await confirmActiveTasks()
           if (!proceed) return false
+          userConfirmedActiveTasks = true
         }
       }
       if (process.platform === 'darwin' && mainWindow && !mainWindow.isDestroyed() && typeof mainWindow.isFullScreen === 'function' && mainWindow.isFullScreen()) {
@@ -363,20 +373,38 @@ const updates = new NextUpdates({
         })
       }
       if (runtime.hasReadyHost) {
+        tasksLocked = true
+        let activeAfterLock: boolean
         try {
-          await runtime.lockUpdateTasks()
-          tasksLocked = true
+          activeAfterLock = await runtime.lockUpdateTasks()
         } catch (error) {
-          runtime.diagnostics.append(`Update admission lock skipped: ${String(error)}`, 'warn')
+          runtime.diagnostics.append(`Update admission lock failed: ${String(error)}`, 'warn')
+          await releaseLock()
+          throw new OmniMuxUpdateError('ACTIVE_TASKS_BLOCKED', 'Unable to lock Host admission before update installation', { cause: error })
+        }
+        if (activeAfterLock && !userConfirmedActiveTasks) {
+          // A task began between initial inspection (or fullscreen exit) and lock.
+          // Unlock before showing the prompt so the UI/Host stays responsive while the user decides.
+          await releaseLock()
+          const proceed = await confirmActiveTasks()
+          if (!proceed) return false
+          if (runtime.hasReadyHost) {
+            tasksLocked = true
+            try {
+              await runtime.lockUpdateTasks()
+            } catch (error) {
+              runtime.diagnostics.append(`Update admission re-lock failed: ${String(error)}`, 'warn')
+              await releaseLock()
+              throw new OmniMuxUpdateError('ACTIVE_TASKS_BLOCKED', 'Unable to lock Host admission before update installation', { cause: error })
+            }
+          }
         }
       }
       await updateInstaller.stage()
       if (!quitting) { installingUpdate = true; app.quit() }
       return true
     } catch (error) {
-      if (tasksLocked) {
-        await runtime.unlockUpdateTasks().catch(unlockErr => runtime.diagnostics.append(`Update admission unlock failed: ${String(unlockErr)}`, 'warn'))
-      }
+      await releaseLock()
       throw error
     } finally { runtime.busy = false; if (!quitting) native.refresh() }
   },
@@ -1762,13 +1790,17 @@ app.on('before-quit', event => {
   runtime.diagnostics.record({ source: 'electron', event: 'shutdown.start' })
   runtime.diagnostics.flush()
   // Bound the whole shutdown, including cleanup before Host termination starts.
+  // When an update handoff has locked a running Host, give Host graceful teardown (10s + 5s SIGTERM + 5s SIGKILL)
+  // a 22s budget and refuse to launch the installer if the Host did not exit cleanly.
+  const gracefulUpdateGuard = installingUpdate && runtime.requiresGracefulUpdateShutdown === true
+  const shutdownTimeoutMs = gracefulUpdateGuard ? 22_000 : DESKTOP_SHUTDOWN_TIMEOUT_MS
   let finished = false
   const timeout = setTimeout(() => {
     if (finish()) {
-      runtime.diagnostics.record({ source: 'electron', event: 'shutdown.timeout', level: 'error', message: 'Shutdown exceeded five seconds', fields: { pending: JSON.stringify(runtime.diagnostics.pendingOperations()) } })
+      runtime.diagnostics.record({ source: 'electron', event: 'shutdown.timeout', level: 'error', message: `Shutdown exceeded ${String(shutdownTimeoutMs)}ms`, fields: { pending: JSON.stringify(runtime.diagnostics.pendingOperations()) } })
       void completeShutdown(false)
     }
-  }, DESKTOP_SHUTDOWN_TIMEOUT_MS)
+  }, shutdownTimeoutMs)
   timeout.unref()
   function finish(): boolean {
     if (finished) return false
@@ -1778,6 +1810,19 @@ app.on('before-quit', event => {
   }
   async function completeShutdown(clean: boolean): Promise<void> {
     if (installingUpdate) {
+      if (!clean && gracefulUpdateGuard) {
+        runtime.diagnostics.record({
+          source: 'electron',
+          event: 'installer.aborted-unclean-shutdown',
+          level: 'error',
+          message: 'Refusing to launch update installer because Host did not complete graceful teardown',
+        })
+        runtime.diagnostics.end(false)
+        dialog.showErrorBox(t('更新未能安装', 'Update could not be installed'), t('后台服务未能安全退出，应用将重新打开，请在设置中重试更新。', 'The background service did not exit cleanly. The application will reopen; retry the update in Settings.'))
+        relaunchApp(app, relaunchArguments(process.argv.slice(1), false, false))
+        app.exit(1)
+        return
+      }
       const installerDone = runtime.diagnostics.operation('electron', 'installer.launch')
       try { await updateInstaller.launch(); installerDone() }
       catch (error) {

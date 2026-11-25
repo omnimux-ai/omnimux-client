@@ -19,7 +19,7 @@ export function hasDesktopActiveTasks(liveAgents: ReturnType<Context['agents']['
 
 /**
  * Register update admission control on the booted Desktop Host context.
- * `lock` refuses new HTTP/WS requests with 503, drains admitted requests, and
+ * `lock` refuses new HTTP `/api` requests with 503, drains admitted requests, and
  * rechecks live tasks before allowing an update restart.
  */
 export function installDesktopUpdateTaskControl(ctx: Context): (action: 'inspect' | 'lock' | 'unlock') => Promise<boolean> {
@@ -42,9 +42,6 @@ export function installDesktopUpdateTaskControl(ctx: Context): (action: 'inspect
   return async (action) => {
     if (stopped) throw new Error('desktop update: Host is stopping')
     if (action === 'unlock') { locked = false; lockGeneration += 1 }
-    const agents = ctx.get('agents')
-    const jobs = ctx.get('jobs')
-    if (agents === undefined || jobs === undefined) return false
     if (action === 'lock') {
       locked = true
       const generation = ++lockGeneration
@@ -52,6 +49,9 @@ export function installDesktopUpdateTaskControl(ctx: Context): (action: 'inspect
       if (stopped) throw new Error('desktop update: Host is stopping')
       if (generation !== lockGeneration) throw new Error('desktop update: admission lock was superseded')
     }
+    const agents = ctx.get('agents')
+    const jobs = ctx.get('jobs')
+    if (agents === undefined || jobs === undefined) return false
     return hasDesktopActiveTasks(agents.list(), jobs)
   }
 }

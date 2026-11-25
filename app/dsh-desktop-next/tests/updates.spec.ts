@@ -234,6 +234,8 @@ it('shows progress and an actionable downloaded state in both languages', () => 
   expect(updateLabel({ phase: 'downloading', installable: true, received: 2 * 1048576 }, 'en')).toContain('2 MB')
   expect(updateAction({ phase: 'preparing', installable: true })).toBeUndefined()
   expect(updateAction({ phase: 'ready', installable: true })).toBe('install-update')
+  expect(updateAction({ phase: 'error', version: '2.0.26', error: 'development', installable: false })).toBe('check-updates')
+  expect(updateAction({ phase: 'error', version: '2.0.26', error: 'unsupported', installable: false })).toBe('check-updates')
 })
 
 it('keeps Windows installers in the system temporary directory under omnimux-updates', () => {

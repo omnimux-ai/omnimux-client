@@ -222,4 +222,15 @@ it('enforces minSupportedVersion mandatory floor, OS version gate, allowlist, an
     publicKeys: { k1: hostile.pair.publicKeyBase64 },
     request: async url => url.endsWith('.sig') ? Response.json(hostile.sig) : new Response(hostile.raw),
   })).rejects.toBeInstanceOf(OmniMuxUpdateError)
+
+  // 5. Rejects invalid UTF-8 bytes in manifest body as MANIFEST_INVALID (not uncaught TypeError).
+  await expect(checkOmniMuxManifest({
+    currentVersion: '2.0.25',
+    channel: 'stable',
+    platform: 'darwin',
+    arch: 'arm64',
+    manual: true,
+    publicKeys: {},
+    request: async () => new Response(new Uint8Array([0xff, 0xfe, 0xfd]), { status: 200 }),
+  })).rejects.toMatchObject({ code: 'MANIFEST_INVALID' })
 })
