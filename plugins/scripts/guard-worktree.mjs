@@ -5832,17 +5832,6 @@ export function decideSearchTarget({ toolName, toolInput = {}, homeDir = homedir
 export function decideBashCommand({ command, cwd, ownerRoot }) {
   if (!command || typeof command !== 'string') return { decision: 'allow' }
 
-  if(command.includes('recover-media-build-3288.mjs')&&command.trim()!=='node scripts/recover-media-build-3288.mjs --apply')return {decision:'deny',reason:'scoped-media-build-recovery-invalid-command'}
-  if(command.trim()==='node scripts/recover-media-build-3288.mjs --apply') {
-    const root=dirname(dirname(fileURLToPath(import.meta.url)))
-    const script='scripts/recover-media-build-3288.mjs'
-    const committed=spawnSync('git',['-C',root,'show','HEAD:'+script],{timeout:3000})
-    try {
-      if(realpathSync(cwd||process.cwd())===realpathSync(root)&&realpathSync(resolve(root,script))===resolve(root,script)&&committed.status===0&&committed.stdout.equals(readFileSync(resolve(root,script))))return {decision:'allow',reason:'scoped-media-build-recovery'}
-    } catch {}
-    return {decision:'deny',reason:'scoped-media-build-recovery-identity-mismatch'}
-  }
-
   // 1. 检查破坏性重置未推送提交（上游干净时严禁提前 return allow，必须继续经过步骤 2–6 全部防线）
   if (isDestructiveResetCommand(command)) {
     const unpushed = getUnpushedCommits(cwd)

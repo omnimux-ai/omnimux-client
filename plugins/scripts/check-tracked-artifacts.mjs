@@ -24,6 +24,7 @@ export const FORBIDDEN_ARTIFACT_GLOBS = [
   'plugins/.agent-reports',
   'docs/evidence/dev-smoke*',
   'plugins/docs/evidence/dev-smoke*',
+  ':(glob)**/node-compile-cache/**',
 ]
 
 export function isForbiddenArtifact(path) {
@@ -44,6 +45,9 @@ export function isForbiddenArtifact(path) {
   if (/(?:^|\/)docs\/evidence\/dev-smoke[^/]*(?:\/|$)/.test(rel)) {
     return true
   }
+  if (/(?:^|\/)node-compile-cache(?:\/|$)/.test(rel)) {
+    return true
+  }
   return false
 }
 
@@ -61,7 +65,7 @@ export function forbiddenTrackedPaths(lsFilesOutput) {
 
 export function formatFailure(paths) {
   return [
-    '插件客户端生成物、运行期报告（.agent-reports）与冒烟产物（dev-smoke*）不得进 Git（源码为唯一真相）。',
+    '插件客户端生成物、运行期报告（.agent-reports）、冒烟产物（dev-smoke*）与节点编译缓存（node-compile-cache）不得进 Git（源码为唯一真相）。',
     '请 git rm --cached 下列文件，构建产物走 sync-to-app 或 pnpm --filter <pkg> run build 现场生成，运行期证据改写 os.tmpdir() 或 .workbuddy/evidence/：',
     ...paths.map((p) => `  - ${p}`),
   ].join('\n')
