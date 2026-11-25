@@ -1508,7 +1508,7 @@
     "check:bilingual-docs": "yarn test:bilingual-docs && node scripts/verify-bilingual-docs.mjs",
     "test:architecture-gates": "node --test scripts/market-dependency-direction.test.mjs",
     "test:script-paths": "node --test scripts/omnimux-paths.test.mjs",
-    "test:release-guards": "node --test scripts/verify-version-advance.test.mjs scripts/verify-version.test.mjs scripts/build-release-metadata.test.mjs scripts/r2-dist-sync.test.mjs",
+    "test:release-guards": "node --test scripts/sign-release-manifest.test.mjs scripts/verify-version-advance.test.mjs scripts/verify-version.test.mjs scripts/build-release-metadata.test.mjs scripts/r2-dist-sync.test.mjs",
     "check:architecture": "yarn test:architecture-gates && node scripts/verify-market-dependency-direction.mjs",
     "check:vendored-runtime": "node scripts/sync-vendored-runtime.mjs --check",
     "check:layout": "yarn check:bilingual-docs && yarn check:architecture && yarn check:vendored-runtime && node scripts/verify-layout.mjs",

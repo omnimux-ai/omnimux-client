@@ -319,6 +319,7 @@ function AssetsMainView(props) {
       onCopy={copyCite}
       onRemove={handleRemoveSingle}
       onReveal={handleRevealAsset}
+      onError={feed.setError}
       copiedId={copiedId}
       selectedIds={selectedIds}
       onToggleSelect={toggleSelect}

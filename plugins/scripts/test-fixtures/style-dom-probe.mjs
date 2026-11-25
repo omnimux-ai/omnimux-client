@@ -8,6 +8,30 @@ import { pathToFileURL } from 'node:url'
 
 import { findChromePath } from '../worktree-web-qa.mjs'
 
+/**
+ * A browser cold start can exceed a single `spawnSync` window on a loaded CI
+ * runner. Keep each attempt short, retry a bounded number of times, and cap the
+ * whole probe so a wedged Chrome can never hold a test file indefinitely.
+ *
+ * `spawnSync` reports `ETIMEDOUT` when its timer kills the child, but a child
+ * that exits around the same instant can still carry `status: 0 / signal: null`.
+ * That exact shape is why the diagnostic records the original error object and
+ * the attempt history instead of inferring success from `status`.
+ */
+const CHROME_ATTEMPT_TIMEOUT_MS = 30_000
+const CHROME_MAX_ATTEMPTS = 1
+const CHROME_RETRY_BACKOFF_MS = Object.freeze([1_000, 2_000])
+const CHROME_TOTAL_BUDGET_MS = 60_000
+const CHROME_RETRY_ATTEMPT_TIMEOUT_MS = 15_000
+const CHROME_RETRY_MAX_ATTEMPTS = 3
+const CHROME_RETRY_TOTAL_BUDGET_MS = 48_000
+
+/** Synchronous sleep: the probe itself is synchronous (`spawnSync`). */
+function sleepSync(milliseconds) {
+  const waiter = new Int32Array(new SharedArrayBuffer(4))
+  Atomics.wait(waiter, 0, 0, milliseconds)
+}
+
 /** Runs inside the documented Ego Node runtime, not inside the test process. */
 async function runEgoFixture(input) {
   const { pathToFileURL } = await import('node:url')
@@ -55,14 +79,31 @@ async function runEgoFixture(input) {
  * Render an owned fixture using the explicitly selected transport. Ego reuses
  * a coordinator-owned page; this helper never creates or ends its TaskSpace.
  */
-export function runStyleDomProbe({ name, styles, html, measure, viewportHeight = 800, waitForCompletion = false }) {
+export function runStyleDomProbe({ name, styles, html, measure, viewportHeight = 800, waitForCompletion = false }, runtime = {}) {
   assert.match(name, /^[a-z0-9_-]+$/i, 'Chrome probe name must contain only letters, digits, underscores or hyphens')
+  const spawn = typeof runtime.spawnSync === 'function' ? runtime.spawnSync : spawnSync
+  const sleep = typeof runtime.sleep === 'function' ? runtime.sleep : sleepSync
+  const now = typeof runtime.now === 'function' ? runtime.now : Date.now
+  const retryEnabled = runtime.retry === true || process.env.OMNIMUX_STYLE_PROBE_RETRY === '1'
+  const attemptTimeoutMs = Number.isSafeInteger(runtime.attemptTimeoutMs) && runtime.attemptTimeoutMs > 0
+    ? runtime.attemptTimeoutMs
+    : (retryEnabled ? CHROME_RETRY_ATTEMPT_TIMEOUT_MS : CHROME_ATTEMPT_TIMEOUT_MS)
+  const maxAttempts = Number.isSafeInteger(runtime.maxAttempts) && runtime.maxAttempts > 0
+    ? runtime.maxAttempts
+    : (retryEnabled ? CHROME_RETRY_MAX_ATTEMPTS : CHROME_MAX_ATTEMPTS)
+  const totalBudgetMs = Number.isSafeInteger(runtime.totalBudgetMs) && runtime.totalBudgetMs > 0
+    ? runtime.totalBudgetMs
+    : (retryEnabled ? CHROME_RETRY_TOTAL_BUDGET_MS : CHROME_TOTAL_BUDGET_MS)
+  const disableDevShm = runtime.disableDevShm === true || (runtime.disableDevShm !== false && retryEnabled)
+  const killOnTimeout = runtime.killOnTimeout === true || (runtime.killOnTimeout !== false && retryEnabled)
+  const startedAt = now()
   const root = realpathSync(tmpdir())
   const prefix = `omnimux-${name}-`
   const dir = mkdtempSync(join(root, prefix))
   let directory
   const descriptors = []
   let output
+  let attempts = []
   let stdout = ''
   let stderr = ''
   let result
@@ -136,50 +177,107 @@ export function runStyleDomProbe({ name, styles, html, measure, viewportHeight =
 <script>document.title = 'RESULT:' + JSON.stringify((${measure.toString()})());</script>
 </body></html>`
     writeFileSync(page, source)
-    const stdoutPath = join(dir, 'stdout')
-    const stderrPath = join(dir, 'stderr')
-    const stdoutFd = openSync(stdoutPath, 'wx', 0o600)
-    descriptors.push(stdoutFd)
-    const stdoutFile = fstatSync(stdoutFd)
-    const stderrFd = openSync(stderrPath, 'wx', 0o600)
-    descriptors.push(stderrFd)
-    const stderrFile = fstatSync(stderrFd)
-    for (const file of [stdoutFile, stderrFile]) {
-      assert.ok(file.isFile(), 'Chrome output must be a regular file')
-      assert.equal(file.nlink, 1, 'Chrome output must have exactly one link')
-      assert.equal(file.uid, directory.uid, 'Chrome output must belong to the directory owner')
-    }
     const egoInput = transport === 'ego' ? { file: page, name, token, spaceId, pageLabel: 'p1', viewportHeight, waitForCompletion,
       ...(evidenceDir ? { screenshot: join(evidenceDir, `${name}-${token}.png`) } : {}) } : null
     const egoScript = join(dir, 'ego-probe.mjs')
     if (transport === 'ego') writeFileSync(egoScript,
       `const input = ${JSON.stringify(egoInput)}\nconst runEgoProbe = ${runEgoFixture.toString()}\nawait runEgoProbe(input)\n`, { flag: 'wx', mode: 0o600 })
-    output = transport === 'ego' ? spawnSync('ego-browser', ['nodejs', '-e', `await import(${JSON.stringify(pathToFileURL(egoScript).href)})`], {
-      encoding: 'utf8', timeout: 30000, stdio: ['ignore', stdoutFd, stderrFd],
-    }) : spawnSync(findChromePath(), [
-      '--headless=new',
-      '--incognito',
-      `--user-data-dir=${join(dir, 'profile')}`,
-      '--disable-gpu',
-      '--disable-extensions',
-      '--no-first-run',
-      '--no-default-browser-check',
-      `--window-size=1600,${viewportHeight}`,
-      '--virtual-time-budget=1500',
-      '--dump-dom',
-      `file://${page}`,
-    ], { encoding: 'utf8', timeout: 30000, stdio: ['ignore', stdoutFd, stderrFd] })
-    try {
-      stderr = readOutput(stderrPath, stderrFile, 8192, true)
-      stdout = readOutput(stdoutPath, stdoutFile, 8 * 1024 * 1024)
-    } catch (error) {
-      if (output.error) {
-        output.error.outputError = error
-        throw output.error
+    const chromeBinary = transport === 'chrome' ? (runtime.chromeBinary || findChromePath()) : null
+    const maxProbeAttempts = transport === 'ego' ? 1 : maxAttempts
+    attempts = []
+    // Each attempt is also the readiness wait: `--dump-dom` returns only after
+    // the page has produced its RESULT title, so there is no fixed sleep. A
+    // killed attempt gets a fresh profile and a bounded backoff before retry.
+    for (let attempt = 1; attempt <= maxProbeAttempts; attempt += 1) {
+      const elapsed = now() - startedAt
+      const remaining = totalBudgetMs - elapsed
+      if (remaining <= 0) break
+      const timeoutMs = Math.min(attemptTimeoutMs, remaining)
+      const attemptStdoutPath = join(dir, attempt === 1 ? 'stdout' : `stdout-${attempt}`)
+      const attemptStderrPath = join(dir, attempt === 1 ? 'stderr' : `stderr-${attempt}`)
+      const attemptStdoutFd = openSync(attemptStdoutPath, 'wx', 0o600)
+      descriptors.push(attemptStdoutFd)
+      const attemptStdoutFile = fstatSync(attemptStdoutFd)
+      const attemptStderrFd = openSync(attemptStderrPath, 'wx', 0o600)
+      descriptors.push(attemptStderrFd)
+      const attemptStderrFile = fstatSync(attemptStderrFd)
+      for (const file of [attemptStdoutFile, attemptStderrFile]) {
+        assert.ok(file.isFile(), 'Chrome output must be a regular file')
+        assert.equal(file.nlink, 1, 'Chrome output must have exactly one link')
+        assert.equal(file.uid, directory.uid, 'Chrome output must belong to the directory owner')
       }
-      throw error
+      const attemptStartedAt = now()
+      const profileDir = join(dir, attempt === 1 ? 'profile' : `profile-${attempt}`)
+      const chromeArgs = [
+        '--headless=new',
+        '--incognito',
+        `--user-data-dir=${profileDir}`,
+        '--disable-gpu',
+        ...(disableDevShm ? [
+          // Hosted runners have a small /dev/shm; Chrome's renderer/zygote can
+          // stall on shared-memory allocation during a cold start.
+          '--disable-dev-shm-usage',
+        ] : []),
+        '--disable-extensions',
+        '--no-first-run',
+        '--no-default-browser-check',
+        `--window-size=1600,${viewportHeight}`,
+        '--virtual-time-budget=1500',
+        '--dump-dom',
+        `file://${page}`,
+      ]
+      output = transport === 'ego' ? spawn('ego-browser', ['nodejs', '-e', `await import(${JSON.stringify(pathToFileURL(egoScript).href)})`], {
+        encoding: 'utf8', timeout: timeoutMs, ...(killOnTimeout ? { killSignal: 'SIGKILL' } : {}), stdio: ['ignore', attemptStdoutFd, attemptStderrFd],
+      }) : spawn(chromeBinary, chromeArgs, { encoding: 'utf8', timeout: timeoutMs, ...(killOnTimeout ? { killSignal: 'SIGKILL' } : {}), stdio: ['ignore', attemptStdoutFd, attemptStderrFd] })
+      const durationMs = now() - attemptStartedAt
+      try {
+        stderr = readOutput(attemptStderrPath, attemptStderrFile, 8192, true)
+        stdout = readOutput(attemptStdoutPath, attemptStdoutFile, 8 * 1024 * 1024)
+      } catch (error) {
+        if (output.error) {
+          output.error.outputError = error
+          throw output.error
+        }
+        throw error
+      }
+      const reason = output.error
+        ? (output.error.code || output.error.message)
+        : output.signal
+          ? `signal ${output.signal}`
+          : output.status !== 0
+            ? `exit ${output.status}`
+            : 'ok'
+      attempts.push({
+        attempt,
+        durationMs,
+        timeoutMs,
+        code: output.error?.code ?? null,
+        status: output.status ?? null,
+        signal: output.signal ?? null,
+        reason,
+        stderrTail: stderr.slice(-300),
+      })
+      const failed = Boolean(output.error) || output.status !== 0 || output.signal !== null
+      if (!failed) {
+        if (attempt > 1 || durationMs >= 2000) {
+          console.log(`[style-dom-probe] ${name} ${transport === 'ego' ? 'Ego' : 'Chrome'} ready in ${durationMs}ms (attempt ${attempt}/${maxProbeAttempts})`)
+        }
+        break
+      }
+      const retryable = output.error
+        ? output.error.code === 'ETIMEDOUT' || output.error.code === 'EAGAIN'
+        : true
+      if (!retryable || attempt >= maxProbeAttempts || now() - startedAt >= totalBudgetMs) break
+      const backoffMs = CHROME_RETRY_BACKOFF_MS[Math.min(attempt - 1, CHROME_RETRY_BACKOFF_MS.length - 1)]
+      console.warn(`[style-dom-probe] ${name} ${transport === 'ego' ? 'Ego' : 'Chrome'} attempt ${attempt}/${maxProbeAttempts} failed in ${durationMs}ms: ${reason}; retrying in ${backoffMs}ms`)
+      sleep(backoffMs)
     }
-    if (output.error) throw output.error
+    if (!output) throw new Error(`${transport === 'ego' ? 'Ego' : 'Chrome'} probe did not run within ${totalBudgetMs}ms`)
+    if (output.error) {
+      output.error.probeClass = 'environment-unavailable'
+      output.error.probeAttempts = attempts
+      throw output.error
+    }
     assert.equal(output.status, 0, stderr.slice(-2048) || `Chrome exited with ${output.status}`)
     assert.equal(output.signal, null, `Chrome terminated by ${output.signal}`)
     if (transport === 'ego') {
@@ -254,10 +352,18 @@ export function runStyleDomProbe({ name, styles, html, measure, viewportHeight =
     }
   }
   if (failure) {
+    // `output` can be undefined when setup fails before the first spawn (for
+    // example a bad argument or an exhausted budget). That is a probe-result
+    // problem, not evidence that Chrome was unavailable.
+    const classification = output?.error || (output !== undefined && output.status !== 0) || output?.signal
+      ? 'environment-unavailable'
+      : 'probe-result-invalid'
+    failure.probeClass ||= classification
+    if (attempts.length) failure.probeAttempts = attempts
     /** @type {{ name: string, timeoutMs: number, status: number | null, signal: string | null, stdoutTail: string, stderrTail: string, measurementPresent: boolean }} */
     const diagnostic = {
       name,
-      timeoutMs: 30000,
+      timeoutMs: attemptTimeoutMs,
       status: output?.status ?? null,
       signal: output?.signal ?? null,
       stdoutTail: stdout.slice(-2048),
@@ -266,6 +372,11 @@ export function runStyleDomProbe({ name, styles, html, measure, viewportHeight =
     }
     failure.diagnostic = diagnostic
     failure.message += `\n${transport === 'ego' ? 'Ego' : 'Chrome'} probe diagnostic: ${JSON.stringify(diagnostic)}`
+    // Always carry the explicit class, including the single-attempt path. The
+    // workspace runner treats this marker as the only trusted classification
+    // signal, so a bare "Chrome probe diagnostic" string cannot be mistaken for
+    // a runner/browser outage.
+    failure.message += `\n[style-dom-probe] probeClass=${failure.probeClass} after ${attempts.length} attempt(s)`
     throw failure
   }
   return result

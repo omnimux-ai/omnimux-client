@@ -37,9 +37,41 @@ try {
   const auth = runtime.auth
   if (!auth) throw new Error('Packaged Host reported ready without native credentials')
   // Only the native capability passes the request gate; a bare loopback browser request is refused.
-  const response = await fetch(new URL(auth.url).origin)
+  const origin = new URL(auth.url).origin
+  const response = await fetch(origin)
   if (response.status !== 403) throw new Error(`Packaged Host exposed the application to ordinary browsers: HTTP ${String(response.status)}`)
   await response.body?.cancel()
+  // Every bundle the packaged installation exposes in Plugins must resolve cleanly; excluded
+  // unused features (e.g. voice-input) must not linger in the packaged manifest as broken entries.
+  const bundlesResponse = await fetch(`${origin}/api/pluginManager/listBundles`, {
+    method: 'POST',
+    headers: {
+      cookie: auth.cookie,
+      origin,
+      'content-type': 'application/json',
+      'x-dsh-desktop-renderer': auth.token,
+    },
+    body: JSON.stringify({ type: 'client-request', rpcId: crypto.randomUUID(), method: 'pluginManager/listBundles', payload: { args: {} } }),
+  })
+  if (!bundlesResponse.ok) {
+    throw new Error(`Packaged Host pluginManager/listBundles HTTP ${String(bundlesResponse.status)}: ${await bundlesResponse.text()}`)
+  }
+  const bundlesReply = await bundlesResponse.json()
+  if (!bundlesReply?.result?.ok || !Array.isArray(bundlesReply.result.value) || bundlesReply.result.value.length === 0) {
+    throw new Error(`Packaged Host pluginManager/listBundles failed: ${JSON.stringify(bundlesReply)}`)
+  }
+  const brokenBundles = bundlesReply.result.value.filter(
+    bundle => bundle.error !== undefined && bundle.error.code !== 'unsupported-platform',
+  )
+  if (brokenBundles.length > 0) {
+    throw new Error(`Packaged Host listed broken bundles:\n${brokenBundles.map(bundle => JSON.stringify(bundle)).join('\n')}`)
+  }
+  const unshippedListed = bundlesReply.result.value.find(
+    bundle => bundle.name === '@deepseek-ai/dsh-experimental-voice-input-bundle',
+  )
+  if (unshippedListed !== undefined) {
+    throw new Error(`Packaged Host listed unshipped voice-input bundle: ${JSON.stringify(unshippedListed)}`)
+  }
   // Diagnostics export runs a worker thread from the archive.
   const report = join(home, 'diagnostics.json')
   await runtime.diagnostics.exportTo(report, { ...state, platform: process.platform, version: 'smoke', updates: null, trayAvailable: false, notificationsAvailable: false, onboarding: false })

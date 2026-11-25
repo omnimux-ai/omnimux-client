@@ -67,8 +67,9 @@ async function resolveZoneId(token) {
   return String(zone.id)
 }
 
-/** 发布产物在 CDN 上的全部键：latest 别名 + 版本目录 + 元数据。 */
-function releaseUrls(version) {
+/** 发布产物在 CDN 上的全部键：latest 别名 + 版本目录 + v1/v2 元数据与签名。 */
+export function releaseUrls(version, baseUrl = CDN_BASE_URL) {
+  const origin = baseUrl.replace(/\/$/u, '')
   // Only the aliases the current release actually publishes:
   //   macOS   — two single-architecture DMGs (OmniMux-<ver>-arm64.dmg / -x64.dmg)
   //   Windows — unsigned x64 NSIS (OmniMux-<ver>-x64-Setup.exe)
@@ -77,7 +78,14 @@ function releaseUrls(version) {
     'releases/latest/OmniMux-x64.dmg',
     'releases/latest/OmniMux-x64-Setup.exe',
     'api/desktop/version-stable.json',
+    'api/desktop/version-beta.json',
     'api/desktop/version-next.json',
+    'api/desktop/v2/stable.json',
+    'api/desktop/v2/stable.json.sig',
+    'api/desktop/v2/beta.json',
+    'api/desktop/v2/beta.json.sig',
+    'api/desktop/v2/next.json',
+    'api/desktop/v2/next.json.sig',
     'plugins/dsh-index.json',
   ]
   if (version) {
@@ -87,7 +95,7 @@ function releaseUrls(version) {
       `releases/v${version}/OmniMux-${version}-x64-Setup.exe`,
     )
   }
-  return paths.map(path => `${CDN_BASE_URL}/${path}`)
+  return paths.map(path => `${origin}/${path}`)
 }
 
 async function purge(token, zoneId, urls) {
@@ -121,7 +129,10 @@ async function main() {
   console.log(`✓ CDN 缓存已清理（${CDN_BASE_URL}，${String(urls.length)} 个 URL）`)
 }
 
-main().catch((error) => {
-  process.stderr.write(`✗ ${error instanceof Error ? error.message : String(error)}\n`)
-  process.exit(1)
-})
+const invokedPath = process.argv[1]
+if (invokedPath !== undefined && resolve(invokedPath) === fileURLToPath(import.meta.url)) {
+  main().catch((error) => {
+    process.stderr.write(`✗ ${error instanceof Error ? error.message : String(error)}\n`)
+    process.exit(1)
+  })
+}

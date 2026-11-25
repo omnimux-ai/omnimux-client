@@ -82,7 +82,7 @@ export function GenerationsCategoryNav(props) {
 
 /**
  * 单个生成物卡片组件
- * 采用原生自适应比例瀑布流布局，带有沉浸式悬浮遮罩和快速工具栏。
+ * 采用 16:10 横版托盘式展台（contain 内圆角完整呈现）与轻量化无框底栏。
  */
 export function GenerationCard({
   artifact,
@@ -145,7 +145,7 @@ export function GenerationCard({
 
   return (
     <div
-      className="omnimux-assets-card omnimux-generation-card omnimux-assets-focusable"
+      className="omnimux-assets-card omnimux-assets-card--tray omnimux-generation-card omnimux-assets-focusable"
       role="button"
       tabIndex={0}
       aria-label={artifact.title}
@@ -157,23 +157,23 @@ export function GenerationCard({
         }
       }}
     >
-      <div className="omnimux-generation-card-thumb">
+      <div className="omnimux-assets-card-thumb omnimux-generation-card-thumb">
         {isVideo ? (
-          <div className="omnimux-generation-video-placeholder">
+          <>
             <video
               src={preview}
               muted
               playsInline
               preload="metadata"
-              className="omnimux-generation-video-preview"
+              className="omnimux-assets-card-video omnimux-generation-video-preview"
             />
-            <div className="omnimux-generation-play-badge">
-              <PlayIcon />
+            <div className="omnimux-generation-play-badge" aria-hidden="true">
+              <PlayIcon size={13} />
             </div>
-          </div>
+          </>
         ) : isAudio ? (
           <div className="omnimux-generation-audio-placeholder">
-            <AudioIcon size={24} />
+            <AudioIcon size={22} />
             <span>{artifact.title || '音频素材'}</span>
           </div>
         ) : (
@@ -181,7 +181,7 @@ export function GenerationCard({
             src={preview}
             alt={artifact.title}
             loading="lazy"
-            className="omnimux-generation-image-thumb"
+            className="omnimux-assets-card-media omnimux-generation-image-thumb"
             onError={(e) => {
               e.currentTarget.style.display = 'none'
             }}

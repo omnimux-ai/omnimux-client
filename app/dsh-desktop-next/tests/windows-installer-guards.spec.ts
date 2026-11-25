@@ -42,7 +42,7 @@ it('removes the replaced version before relaunching an in-app update', () => {
 })
 
 it('explains each failure in both languages with the installer, the download page and the safety of user data', () => {
-  expect(script).toContain('!define DSH_DOWNLOAD_URL "https://dshdesktop.cn"')
+  expect(script).toContain('!define DSH_DOWNLOAD_URL "https://dl.omnimux.ai/"')
   for (const name of ['customInstallerStageFailed', 'customInstallerStaged', 'customInstallerExtractFailed', 'customInstallerDirectoryFailed',
     'dshRequireMediumIntegrity']) {
     const body = macro(name)

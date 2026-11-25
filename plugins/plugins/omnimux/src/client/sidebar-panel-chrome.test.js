@@ -5,6 +5,7 @@ import {
   MORE_MENU_SELECTOR,
   PANEL_CHROME_CSS,
   PANEL_CHROME_STYLE_ID,
+  PANEL_ENTRY_SELECTOR,
   PANEL_MENU_GAP,
   PANEL_MENU_MIN_WIDTH,
   PANEL_MENU_VIEWPORT_MARGIN,
@@ -36,6 +37,7 @@ test('样式把官方 panel 行压到产品行度量', () => {
   assert.match(PANEL_CHROME_CSS, new RegExp(`min-height: ${PRODUCT_ROW.height}px`))
   assert.match(PANEL_CHROME_CSS, new RegExp(`padding: 0 ${PRODUCT_ROW.paddingX}px`))
   assert.match(PANEL_CHROME_CSS, new RegExp(`margin: 0 ${PRODUCT_ROW.marginX}px`))
+  assert.match(PANEL_CHROME_CSS, /border-inline:\s*0/, '0.2.2-rc.5 .panelRow 带 3px 透明 border-inline，必须清零防双重缩进')
   assert.match(PANEL_CHROME_CSS, new RegExp(`gap: ${PRODUCT_ROW.gap}px`))
   assert.match(PANEL_CHROME_CSS, new RegExp(`border-radius: ${PRODUCT_ROW.radius}px`))
   assert.match(PANEL_CHROME_CSS, new RegExp(`font-size: ${PRODUCT_ROW.fontSize}px`))
@@ -78,11 +80,17 @@ test('收起态排除：度量规则只在没有 data-sidebar-collapsed 时命�
 })
 
 test('官方面板行折叠：非「更多」面板行在展开态与收起态都不显示', () => {
+  assert.equal(PANEL_ENTRY_SELECTOR, '[class*="panelEntry"]')
   const hideRules = cssRules(PANEL_CHROME_CSS)
     .filter((rule) => /panelRow/.test(rule.selector) && /display:\s*none/.test(rule.body))
   assert.equal(hideRules.length, 1, '只允许一条隐藏规则（不要为展开 / 收起各写一份）')
   const rule = hideRules[0]
   assert.match(rule.selector, /:not\(\[aria-haspopup="menu"\]\)/, '只隐藏非「更多」面板行')
+  assert.match(
+    rule.selector,
+    /\[class\*="panelEntry"\]:has\(\[class\*="panelRow"\]:not\(\[aria-haspopup="menu"\]\)\)/,
+    '0.2.2-rc.5 必须同步隐藏外层 panelEntry，消除空容器 2px 缝隙与残留 unpin 按钮',
+  )
   assert.match(rule.selector, /data-pane="sidebar"|sidebarCol/, '规则必须限定在侧栏作用域内')
   assert.doesNotMatch(rule.selector, /data-sidebar-collapsed/, '折叠在收起态同样生效，不带收起态排除')
 })
