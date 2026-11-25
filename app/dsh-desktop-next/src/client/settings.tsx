@@ -5,7 +5,6 @@ import { DesktopSettingsSection, DesktopSettingsSelect, DesktopSettingsToggleRow
 import { DesktopNativeActions } from '../../../dsh-plugin-desktop/src/client/DesktopNativeActions.tsx'
 import { en, zh, type DesktopSettingsLocaleKey } from '../../../dsh-plugin-desktop/src/client/desktop-settings-locales.ts'
 import type { DesktopCommand, DesktopState } from '../desktop-contract.ts'
-import { NextAppIconSetting } from './app-icon-setting.tsx'
 import { DEFAULT_HOST_STARTUP_TIMEOUT, HOST_STARTUP_TIMEOUT_PRESETS, hostStartupLimitTitle, hostStartupTimeoutLabel, type HostStartupTimeout } from '../host-startup-limit.ts'
 import { NextSettingsAdapter } from './settings-adapter.ts'
 import { DesktopPermissionsSection } from './permissions.tsx'
@@ -15,7 +14,7 @@ import { NextUpdateSettings } from './updates.tsx'
 export function desktopTranslate(language: string): (key: string) => string {
   const copy = language.startsWith('zh') ? zh : en
   return key => {
-    if (key === 'title') return language.startsWith('zh') ? 'DSH NEXT 设置' : 'DSH NEXT settings'
+    if (key === 'title') return language.startsWith('zh') ? 'OmniMux 设置' : 'OmniMux settings'
     if (key === 'presentationTitle') return language.startsWith('zh') ? '窗口外观' : 'Window appearance'
     if (key === 'windowMaterialBody') return language.startsWith('zh') ? '设置窗口背景效果，更改后立即生效。' : 'Set the window background effect. Changes apply immediately.'
     if (key === 'sidebarFooterCompat') return language.startsWith('zh') ? '侧边栏底部图标横向排列' : 'Arrange sidebar footer icons in a row'
@@ -44,7 +43,6 @@ export function NextDesktopSettings({ adapter, language, onOpenPlugins }: { adap
     desktopSettings={adapter.desktopSettings} notificationSettings={adapter.notificationSettings}
     capabilities={{ logging: false, windowModes: false, pluginSelectors: false, updates: false, materialRequiresRestart: false, nativeLanConfirmation: true, jobNotifications: false }}
     browserActions={state && <NextBrowserActions adapter={adapter} state={state} language={language} />}
-    presentationRows={state && <NextAppIconSetting state={state} language={language} run={command => adapter.command(command)} />}
     tabSections={{
       general: state && <NextGeneralOptions adapter={adapter} state={state} language={language} />,
       profiles: state && <NextDataOptions adapter={adapter} state={state} language={language} />,

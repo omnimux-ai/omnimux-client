@@ -27,6 +27,7 @@ function workspace(): { root: string; desktop: string; market: string } {
   completeApplication(desktop)
   const modules = join(desktop, 'node_modules')
   for (const path of ['src/main.ts', 'tests/main.spec.ts', 'README.md', '.desktop-next/home/desktop-next.json', 'build/app-icon.icns',
+    'build/app-icon-dark.ico', 'build/app-icon-dark.png', 'build/classic/app-icon.ico', 'build/classic/app-icon.png', 'build/classic/app-icon-mac.png',
     'build/classic/app-icon.icns', 'build/classic/app-icon-preview.png', 'build/app-icon-preview-dark.png', 'lib/main.js.map', 'lib/main.d.ts', 'assets/.DS_Store']) {
     mkdirSync(join(desktop, path, '..'), { recursive: true })
     writeFileSync(join(desktop, path), `dev:${path}\n`)
@@ -120,7 +121,9 @@ it('materializes, cleans and seals the payload the archive is later checked agai
   const descriptor = await preparePayload({ desktopRoot: desktop, output, target, electronVersion: '44.0.0',
     extraMetadata: { version: '2.0.1-next' }, log: message => log.push(message) })
   expect(readdirSync(output).sort()).toEqual(['assets', 'build', 'cordis.patch.yml', DESKTOP_RUNTIME_FILE, 'host.cordis.patch.yml', 'lib', 'node_modules', 'package.json', 'scripts'])
-  for (const absent of ['src', 'tests', 'README.md', '.desktop-next', 'build/app-icon.icns', 'build/classic/app-icon.icns', 'build/classic/app-icon-preview.png', 'build/app-icon-preview-dark.png',
+  for (const absent of ['src', 'tests', 'README.md', '.desktop-next', 'build/app-icon.icns',
+    'build/app-icon-dark.ico', 'build/app-icon-dark.png', 'build/classic', 'assets/classic',
+    'build/classic/app-icon.icns', 'build/classic/app-icon-preview.png', 'build/app-icon-preview-dark.png',
     'lib/main.js.map', 'lib/main.d.ts', 'assets/.DS_Store',
     'node_modules/dev-only', 'node_modules/.yarn-state.yml', 'node_modules/conflict/.DS_Store',
     'node_modules/@deepseek-ai/dsh/index.js.map', 'node_modules/@deepseek-ai/dsh/index.d.ts',
@@ -129,8 +132,8 @@ it('materializes, cleans and seals the payload the archive is later checked agai
     'node_modules/dsh-community-market/node_modules/only-here']) {
     expect(existsSync(join(output, ...absent.split('/'))), absent).toBe(false)
   }
-  for (const present of ['lib/main.js', 'lib/native-ui/index.html', 'build/app-icon.png', 'scripts/node-bin/node', 'assets/tray-icon-blue.png',
-    'build/app-icon-dark.ico', 'build/app-icon-dark.png', 'build/classic/app-icon.ico', 'build/classic/app-icon.png', 'build/classic/app-icon-mac.png', 'assets/classic/tray-iconTemplate.png',
+  for (const present of ['lib/main.js', 'lib/native-ui/index.html', 'build/app-icon.ico', 'build/app-icon.png', 'build/app-icon-mac.png',
+    'scripts/node-bin/node', 'assets/tray-icon-blue.png', 'assets/tray-iconTemplate.png',
     'node_modules/@deepseek-ai/dsh-web-frontend/dist/index.html', 'node_modules/nested-user/node_modules/conflict/index.js',
     'node_modules/dsh-community-market/lib/index.js', 'node_modules/dsh-community-market/README.md', 'node_modules/dsh-community-market/LICENSE',
     'node_modules/dsh-community-market/cordis.patch.yml', 'node_modules/dsh-community-market/node_modules/conflict/index.js', 'node_modules/only-here/index.js']) {

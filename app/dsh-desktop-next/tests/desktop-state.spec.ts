@@ -65,22 +65,26 @@ it('keeps the Host startup limit out of the file released builds validate, and r
   expect(() => store.read()).toThrow()
 })
 
-it('keeps the app icon beside the startup limit, out of the file released builds validate', () => {
+it('keeps the app icon beside the startup limit and normalizes retired classic values to default', () => {
   const { home } = environment()
   const warnings: string[] = []
   const store = new DesktopPreferenceStore(home, message => { warnings.push(message) })
-  expect(parsePreferences({ appIcon: 'classic' }).appIcon).toBe('classic')
+  expect(parsePreferences({ appIcon: 'classic' }).appIcon).toBe('default')
   for (const appIcon of ['whale-tail', '', null, 1]) expect(() => parsePreferences({ appIcon })).toThrow('appIcon')
-  store.write({ ...DEFAULT_PREFERENCES, appIcon: 'classic' })
+  store.write({ ...DEFAULT_PREFERENCES, appIcon: 'classic' as 'default' })
   expect(JSON.parse(readFileSync(store.file, 'utf8'))).not.toHaveProperty('appIcon')
-  expect(JSON.parse(readFileSync(store.extraFile, 'utf8'))).toEqual({ hostStartupTimeout: 60, appIcon: 'classic' })
-  expect(new DesktopPreferenceStore(home).read().appIcon).toBe('classic')
-  // Setup saves the icon alone; a 2.0.23 extra file without it reads as the default.
+  expect(JSON.parse(readFileSync(store.extraFile, 'utf8'))).toEqual({ hostStartupTimeout: 60, appIcon: 'default' })
+  expect(new DesktopPreferenceStore(home).read().appIcon).toBe('default')
+  // A legacy extra file carrying `classic` normalizes silently to `default`, and an absent key also defaults.
+  writeFileSync(store.extraFile, JSON.stringify({ hostStartupTimeout: 300, appIcon: 'classic' }))
+  expect(store.readExtra()).toEqual({ hostStartupTimeout: 300, appIcon: 'default' })
+  expect(warnings).toEqual([])
   writeFileSync(store.extraFile, JSON.stringify({ hostStartupTimeout: 300 }))
   expect(store.readExtra()).toEqual({ hostStartupTimeout: 300, appIcon: 'default' })
-  store.writeExtra({ appIcon: 'classic' })
-  expect(JSON.parse(readFileSync(store.extraFile, 'utf8'))).toEqual({ hostStartupTimeout: 300, appIcon: 'classic' })
-  expect(() => store.writeExtra({ appIcon: 'neon' as 'classic' })).toThrow('appIcon')
+  store.writeExtra({ appIcon: 'default' })
+  expect(JSON.parse(readFileSync(store.extraFile, 'utf8'))).toEqual({ hostStartupTimeout: 300, appIcon: 'default' })
+  expect(() => store.writeExtra({ appIcon: 'classic' as 'default' })).toThrow('appIcon')
+  expect(() => store.writeExtra({ appIcon: 'neon' as 'default' })).toThrow('appIcon')
   writeFileSync(store.extraFile, JSON.stringify({ appIcon: 'neon' }))
   expect(store.read().appIcon).toBe('default')
   expect(warnings).toEqual([`Ignored an invalid appIcon in ${store.extraFile}`])

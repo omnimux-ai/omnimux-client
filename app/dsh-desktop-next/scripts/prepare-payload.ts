@@ -13,13 +13,11 @@ import { packagingStep, packagingStepSync } from './packaging-step.ts'
 import { windowsCodePayload, writeWindowsCodeFiles } from './windows-asar-unpack.ts'
 
 /**
- * Shell entries copied beside the dependency tree; `package.json` is written separately. Windows and Linux show the
- * Dark rendition while the system theme is dark, and the classic icon set is the artwork users can switch the app
- * to; `assets` carries its tray images. Shortcuts and the Linux desktop entry name these files too.
+ * Shell entries copied beside the dependency tree; `package.json` is written separately. OmniMux ships
+ * one unified brand icon set (`app-icon.{ico,png,mac.png}` and `assets/tray-icon*`); upstream dark and
+ * classic whale sets are intentionally omitted.
  */
 const SHELL_ENTRIES = ['lib', 'assets', 'build/app-icon.ico', 'build/app-icon.png', 'build/app-icon-mac.png',
-  'build/app-icon-dark.ico', 'build/app-icon-dark.png',
-  'build/classic/app-icon.ico', 'build/classic/app-icon.png', 'build/classic/app-icon-mac.png',
   'cordis.patch.yml', 'host.cordis.patch.yml', 'scripts/node-bin'] as const
 
 /** Report of the unused-feature packages one preparation skipped, written beside the payload directory. */

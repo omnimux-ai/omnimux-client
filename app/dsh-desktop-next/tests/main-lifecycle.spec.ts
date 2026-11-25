@@ -65,7 +65,10 @@ vi.mock('../src/desktop-runtime.ts', async () => { const { NextProfiles } = awai
   failureReportFile = fixture.failureReportFile
   dragResource = fixture.dragResource
   saveStartupTimeout = fixture.saveStartupTimeout
-  saveAppIcon(value: 'default' | 'classic') { fixture.saveAppIcon(value); this.preferences.appIcon = value; fixture.runtimeOptions!.onChange() }
+  saveAppIcon(value: unknown) {
+    if (value !== 'default') throw new Error('Invalid app icon')
+    fixture.saveAppIcon(value); this.preferences.appIcon = 'default'; fixture.runtimeOptions!.onChange()
+  }
   constructor(options: ConstructorParameters<typeof NextDesktopRuntime>[0]) {
     fixture.runtimeOptions = options
     fixture.runtime = this
@@ -1481,7 +1484,7 @@ it.each(['complete', 'official', 'skip'] as const)('opens the setup wizard expli
   } finally { process.argv.splice(0, process.argv.length, ...argv); vi.unstubAllEnvs(); rmSync(home, { recursive: true, force: true }) }
 })
 
-it.each(['darwin', 'win32'] as const)('shows the app icon chosen during setup at once, before any Host starts, on %s', async target => {
+it.each(['darwin', 'win32'] as const)('keeps the single OmniMux icon across dark-theme updates and rejects classic icon commands on %s', async target => {
   const home = mkdtempSync(join(tmpdir(), 'next-onboarding-icon-'))
   vi.stubEnv('DSH_DESKTOP_NEXT_HOME', home)
   fixture.needsOnboarding = true
@@ -1499,30 +1502,29 @@ it.each(['darwin', 'win32'] as const)('shows the app icon chosen during setup at
     expect(fixture.trays[0].images).toEqual([expect.stringMatching(new RegExp(`[\\\\/]assets[\\\\/]${tray.replace('.', '\\.')}$`))])
     if (target === 'win32') {
       expect(window.options.icon).toMatch(/[\\/]build[\\/]app-icon\.ico$/)
-      // A dark taskbar shows the whale tail's Dark rendition at once, and a light one the default again.
+      // Toggling dark taskbar must not swap OmniMux to any upstream dark whale-tail icon.
       const { nativeTheme } = await import('electron')
+      window.setIcon.mockClear()
       Object.assign(nativeTheme, { shouldUseDarkColorsForSystemIntegratedUI: true })
       nativeTheme.emit('updated')
-      expect(window.setIcon).toHaveBeenLastCalledWith(expect.stringMatching(/[\\/]build[\\/]app-icon-dark\.ico$/))
+      expect(window.setIcon).not.toHaveBeenCalled()
       Object.assign(nativeTheme, { shouldUseDarkColorsForSystemIntegratedUI: false })
       nativeTheme.emit('updated')
-      expect(window.setIcon).toHaveBeenLastCalledWith(expect.stringMatching(/[\\/]build[\\/]app-icon\.ico$/))
+      expect(window.setIcon).not.toHaveBeenCalled()
     }
     window.setIcon.mockClear()
-    await command(sender, { type: 'app-icon', appIcon: 'classic' })
-    expect(fixture.saveAppIcon).toHaveBeenCalledExactlyOnceWith('classic')
+    await expect(command(sender, { type: 'app-icon', appIcon: 'classic' })).rejects.toThrow('Invalid app icon')
+    expect(fixture.saveAppIcon).not.toHaveBeenCalled()
     expect(fixture.start).not.toHaveBeenCalled()
-    expect(fixture.trays[0].images.at(-1)).toMatch(new RegExp(`[\\\\/]assets[\\\\/]classic[\\\\/]${tray.replace('.', '\\.')}$`))
+    expect(fixture.trays[0].images).toEqual([expect.stringMatching(new RegExp(`[\\\\/]assets[\\\\/]${tray.replace('.', '\\.')}$`))])
     if (target === 'darwin') {
-      expect(fixture.dockIcon).toHaveBeenLastCalledWith(expect.stringMatching(/[\\/]build[\\/]classic[\\/]app-icon-mac\.png$/))
+      expect(fixture.dockIcon).not.toHaveBeenCalledWith(expect.stringMatching(/classic/))
       expect(window.setIcon).not.toHaveBeenCalled()
     } else {
-      expect(window.setIcon).toHaveBeenCalledExactlyOnceWith(expect.stringMatching(/[\\/]build[\\/]classic[\\/]app-icon\.ico$/))
-      // Windows opened later, such as the sign-in window, take the choice when Electron announces them.
       const { app } = await import('electron')
       const later = { setIcon: vi.fn() }
       app.emit('browser-window-created', {}, later)
-      expect(later.setIcon).toHaveBeenCalledExactlyOnceWith(expect.stringMatching(/[\\/]build[\\/]classic[\\/]app-icon\.ico$/))
+      expect(later.setIcon).toHaveBeenCalledExactlyOnceWith(expect.stringMatching(/[\\/]build[\\/]app-icon\.ico$/))
     }
   } finally { process.argv.splice(0, process.argv.length, ...argv); Object.defineProperty(process, 'platform', platform); vi.unstubAllEnvs(); rmSync(home, { recursive: true, force: true }) }
 })
