@@ -930,4 +930,45 @@ describe('aggregated analytics dispatcher', () => {
     assert.equal(result.status, 402)
     assert.equal(result.body.error, 'quota-exceeded')
   })
+
+  it('rejects legacy camelCase analytics keys and invalid account ids with HTTP 400', async () => {
+    const calls = []
+    const dispatcher = createOfficialDispatcher({
+      official: { mount: true },
+      client: {
+        withPat(path, opts) {
+          calls.push({ path, opts })
+          return Promise.resolve({ ok: true })
+        },
+      },
+    })
+
+    const badDaily = await dispatcher.dispatch({ method: 'GET', url: '/omnimux/analytics/daily-metrics?accountIds=12' })
+    assert.equal(badDaily.status, 400)
+    assert.equal(badDaily.body.error, 'analytics-invalid-query')
+
+    const badOverview = await dispatcher.dispatch({ method: 'GET', url: '/omnimux/analytics/overview?timeRange=30d&profileId=acc_bad' })
+    assert.equal(badOverview.status, 400)
+    assert.equal(badOverview.body.error, 'analytics-invalid-account-id')
+
+    const badSync = await dispatcher.dispatch({
+      method: 'POST',
+      url: '/omnimux/analytics/sync-external-posts',
+      body: { accountId: '12' },
+    })
+    assert.equal(badSync.status, 400)
+    assert.equal(badSync.body.error, 'analytics-invalid-query')
+    assert.equal(calls.length, 0)
+
+    const okSync = await dispatcher.dispatch({
+      method: 'POST',
+      url: '/omnimux/analytics/sync-external-posts',
+      body: { account_id: '12', url: 'https://tiktok.com/@a/video/1' },
+    })
+    assert.equal(okSync.status, 200)
+    assert.deepEqual(calls[0], {
+      path: '/api/social/v1/analytics/sync-external-posts',
+      opts: { method: 'POST', body: { account_id: 12, url: 'https://tiktok.com/@a/video/1' } },
+    })
+  })
 })

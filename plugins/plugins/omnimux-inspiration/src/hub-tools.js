@@ -76,6 +76,11 @@ function throwToolResult(result, toolName) {
     error.code = HUB_TOOL_NOT_READY
     throw error
   }
+  // DSH 0.2.2-rc.5 emits ABORTED_BEFORE_DISPATCH from
+  // `toolAbortedBeforeDispatchResult` (pipeline.ts) and `ToolBatchRunner.skip`
+  // (batch.ts) when cancellation lands before the tool body is invoked; a
+  // post-dispatch cancellation carries ABORTED. Treat both as the same caller
+  // AbortError. ABORT_ERR is the standard code raised by our signal guard.
   if (
     info.name === 'AbortError'
     || info.code === 'ABORT_ERR'

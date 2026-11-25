@@ -5,6 +5,7 @@ import { assertLocalWrite } from '../apps/origin.js'
 import { OmnimuxError } from '../media/errors.js'
 import { connectAccount, disconnectAccount, listAccounts } from './accounts.js'
 import {
+  ANALYTICS_VALIDATION_ERROR_CODES,
   getDailyMetrics,
   getBestTimeToPost,
   getPostingFrequency,
@@ -90,8 +91,14 @@ export function avatarIdFromPath(pathname) {
  * @returns {{ status: number, body: Record<string, string> }}
  */
 export function mapOfficialError(error) {
-  if (error instanceof OmnimuxError && ['invalid-provider', 'account-provider-mismatch', 'post-provider-mismatch'].includes(error.code)) {
-    return { status: error.code === 'invalid-provider' ? 400 : 409, body: { error: error.code, message: error.message } }
+  if (error instanceof OmnimuxError && [
+    'invalid-provider',
+    'account-provider-mismatch',
+    'post-provider-mismatch',
+    ...ANALYTICS_VALIDATION_ERROR_CODES,
+  ].includes(error.code)) {
+    const status = error.code.endsWith('-mismatch') ? 409 : 400
+    return { status, body: { error: error.code, message: error.message } }
   }
   if (error instanceof OmnimuxError && error.code === 'quota-exceeded') {
     return { status: 402, body: { error: 'quota-exceeded', message: '当前操作需要更多额度，充值后即可继续使用 OmniMux。' } }

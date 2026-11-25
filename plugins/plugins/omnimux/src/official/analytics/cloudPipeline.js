@@ -5,12 +5,14 @@
 import { OmnimuxError } from '../../media/errors.js'
 import { listAccounts } from '../accounts.js'
 import {
+  ANALYTICS_VALIDATION_ERROR_CODES,
   getBestTimeToPost,
   getContentDecay,
   getDailyMetrics,
   getFollowerStats,
   getPostAnalytics,
   getPostingFrequency,
+  parsePositiveInt,
   syncExternalPosts,
 } from '../analytics.js'
 import { pickAccountsView } from '../public-account.js'
@@ -36,7 +38,9 @@ function calcDateRange(days, now) {
 }
 
 /**
- * UI query → cloud query. `profileId` on the dashboard is an account id.
+ * UI query → cloud query. `profileId` on the dashboard is a local numeric
+ * connected-account ID mapped onto the gateway's `account_ids` / `account_id`
+ * keys. Invalid IDs fail loudly instead of being silently dropped upstream.
  * @param {Record<string, unknown>} [query]
  * @param {number} [now]
  */
@@ -48,11 +52,54 @@ export function buildCloudQuery(query = {}, now = Date.now()) {
   if (q.platform && q.platform !== 'all') {
     cloud.platform = q.platform
   }
-  if (q.profileId && q.profileId !== 'all') {
-    cloud.accountIds = String(q.profileId)
-    cloud.accountId = String(q.profileId)
+  const rawProfile = typeof q.profileId === 'string' ? q.profileId.trim() : q.profileId
+  if (rawProfile && rawProfile !== 'all') {
+    const id = parsePositiveInt(rawProfile, 'account_id', { code: 'analytics-invalid-account-id', required: true })
+    cloud.account_ids = String(id)
+    cloud.account_id = String(id)
   }
   return cloud
+}
+
+/** @param {ReturnType<typeof buildCloudQuery>} cloud */
+function dailyMetricsQuery(cloud) {
+  return {
+    fromDate: cloud.fromDate,
+    toDate: cloud.toDate,
+    ...(cloud.platform ? { platform: cloud.platform } : {}),
+    ...(cloud.account_ids ? { account_ids: cloud.account_ids } : {}),
+  }
+}
+
+/** @param {ReturnType<typeof buildCloudQuery>} cloud */
+function postsQuery(cloud) {
+  return {
+    ...(cloud.platform ? { platform: cloud.platform } : {}),
+    sortBy: 'engagement',
+    sortOrder: 'desc',
+    limit: 50,
+  }
+}
+
+/** @param {ReturnType<typeof buildCloudQuery>} cloud */
+function bestTimeQuery(cloud) {
+  return {
+    ...(cloud.platform ? { platform: cloud.platform } : {}),
+    ...(cloud.account_id ? { account_id: cloud.account_id } : {}),
+  }
+}
+
+/** @param {ReturnType<typeof buildCloudQuery>} cloud */
+function platformOnlyQuery(cloud) {
+  return cloud.platform ? { platform: cloud.platform } : {}
+}
+
+/** @param {ReturnType<typeof buildCloudQuery>} cloud */
+function followerStatsQuery(cloud) {
+  return {
+    days: cloud.days,
+    ...(cloud.account_ids ? { account_ids: cloud.account_ids } : {}),
+  }
 }
 
 function resolveAccounts(raw) {
@@ -65,7 +112,7 @@ async function loadAccounts(client) {
 }
 
 /**
- * Cloud 502/404 must not blank the dashboard. Auth errors still bubble to 401.
+ * Cloud 502/404/400 must not blank the dashboard. Auth and local client-validation errors still bubble.
  * @param {Promise<unknown>} promise
  * @param {string} [label]
  */
@@ -74,7 +121,10 @@ export async function settleCloud(promise, label = 'cloud') {
     const value = await promise
     return { ok: true, value, error: null, label }
   } catch (caught) {
-    if (caught instanceof OmnimuxError && caught.code === 'needs-omnimux') {
+    if (
+      caught instanceof OmnimuxError
+      && (caught.code === 'needs-omnimux' || ANALYTICS_VALIDATION_ERROR_CODES.includes(caught.code))
+    ) {
       throw caught
     }
     const quotaError = caught instanceof OmnimuxError && caught.code === 'quota-exceeded' ? caught : undefined
@@ -117,13 +167,8 @@ export async function aggregateOverview(client, uiQuery = {}, opts = {}) {
   }
 
   const { results: [dailyRes, postsRes], partialErrors } = await settleDashboardSources([
-    ['daily-metrics', getDailyMetrics(client, cloud)],
-    ['posts', getPostAnalytics(client, {
-      ...cloud,
-      sortBy: 'engagement',
-      sortOrder: 'desc',
-      limit: 50,
-    })],
+    ['daily-metrics', getDailyMetrics(client, dailyMetricsQuery(cloud))],
+    ['posts', getPostAnalytics(client, postsQuery(cloud))],
   ])
 
   const daily = mapDailyMetrics(dailyRes.value, {
@@ -160,9 +205,9 @@ export async function aggregateInsights(client, uiQuery = {}, opts = {}) {
   const query = normalizeQuery(uiQuery)
   const cloud = buildCloudQuery(query, now)
   const { results: [heatRes, freqRes, decayRes], partialErrors } = await settleDashboardSources([
-    ['best-time-to-post', getBestTimeToPost(client, cloud)],
-    ['posting-frequency', getPostingFrequency(client, cloud)],
-    ['content-decay', getContentDecay(client, cloud)],
+    ['best-time-to-post', getBestTimeToPost(client, bestTimeQuery(cloud))],
+    ['posting-frequency', getPostingFrequency(client, platformOnlyQuery(cloud))],
+    ['content-decay', getContentDecay(client, platformOnlyQuery(cloud))],
   ])
   return {
     ...(partialErrors.length ? { partialErrors } : {}),
@@ -183,7 +228,7 @@ export async function aggregateFollowers(client, uiQuery = {}, opts = {}) {
   const now = opts.now ?? Date.now()
   const query = normalizeQuery(uiQuery)
   const cloud = buildCloudQuery(query, now)
-  const { results: [res] } = await settleDashboardSources([['follower-stats', getFollowerStats(client, cloud)]])
+  const { results: [res] } = await settleDashboardSources([['follower-stats', getFollowerStats(client, followerStatsQuery(cloud))]])
   const mapped = mapFollowers(res.value)
   return {
     followerEvolution: {
@@ -208,12 +253,7 @@ export async function aggregatePosts(client, uiQuery = {}, opts = {}) {
   const query = normalizeQuery(uiQuery)
   const cloud = buildCloudQuery(query, now)
   const { results: [res] } = await settleDashboardSources([
-    ['posts', getPostAnalytics(client, {
-      ...cloud,
-      sortBy: 'engagement',
-      sortOrder: 'desc',
-      limit: 50,
-    })],
+    ['posts', getPostAnalytics(client, postsQuery(cloud))],
   ])
   const topPosts = res.ok ? mapPosts(res.value) : []
   return { topPosts }
@@ -242,7 +282,7 @@ export async function aggregateSync(client, uiQuery = {}, opts = {}) {
   const query = normalizeQuery(uiQuery)
   const body = {}
   if (query.profileId && query.profileId !== 'all') {
-    body.accountId = query.profileId
+    body.account_id = query.profileId
   }
   const raw = await syncExternalPosts(client, body)
   const unwrapped = unwrap(raw) || {}

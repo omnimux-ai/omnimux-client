@@ -122,7 +122,7 @@ describe('createHubToolExecutor', () => {
     assert.equal('calls' in calls[0], false)
   })
 
-  it('rejects non-object return values on the 0.2.1 single-call fallback instead of returning raw payload heuristics', async () => {
+  it('unwraps only ToolExecutionResult on the 0.2.1 single-call fallback and rejects non-object values', async () => {
     const tools = {
       executionMode: () => 'single',
       async execute() {
@@ -131,6 +131,8 @@ describe('createHubToolExecutor', () => {
     }
     const executor = createHubToolExecutor({ resolveTools: () => tools, idFactory: () => 'legacy-raw' })
     const value = await executor.execute('video_analyze', { video: '/tmp/clip.mp4' })
+    // No envelope and no `value`: the executor returns undefined, and analyzer.js
+    // fails closed because `mode !== 'live'`; it never invents a report.
     assert.equal(value, undefined)
 
     const invalidTools = {
