@@ -70,6 +70,7 @@ export function selectShard(packages, shard) {
  * @typedef {{
  *   tests: number, pass: number, fail: number, cancelled: number, skipped: number,
  *   notOk: number, failures: TestFailure[], skippedCases: SkippedCase[],
+ *   skippedSuites: SkippedCase[],
  * }} TapSummary
  */
 
@@ -111,13 +112,36 @@ export function parseTap(text) {
   const failures = []
   /** @type {SkippedCase[]} */
   const skippedCases = []
+  /** @type {SkippedCase[]} */
+  const skippedSuites = []
   let notOk = 0
-  for (const line of lines) {
+  for (let i = 0; i < lines.length; i++) {
     // node:test emits skipped tests as `ok N - name # SKIP reason`. Keep the
     // reason intact: it is the only thing judge() may use to distinguish an
     // explicit environment skip from a design/by-design skip.
-    const skipped = /^\s*ok \d+ - (.*?)\s+#\s*SKIP(?:\s+(.*))?$/i.exec(line)
-    if (skipped) skippedCases.push({ name: skipped[1], reason: (skipped[2] ?? '').trim() })
+    //
+    // A `describe.skip` suite prints the same `ok … # SKIP` line but tags its
+    // YAML block `type: 'suite'`. Node's `# tests` / `# skipped` counters count
+    // only leaf tests, so a suite-level skip must be tracked apart from
+    // `skippedCases`: otherwise it looks like an unaccounted skip (mismatch)
+    // and a package whose tests all live in skipped suites looks like it
+    // reported no tests.
+    const skipped = /^\s*ok \d+ - (.*?)\s+#\s*SKIP(?:\s+(.*))?$/i.exec(lines[i])
+    if (!skipped) continue
+    let type = 'test'
+    for (let j = i + 1; j < lines.length; j++) {
+      if (/^\s*\.\.\.\s*$/.test(lines[j])) break
+      // The TAP YAML block is indented; the first flush-left line ends it.
+      if (!/^\s/.test(lines[j])) break
+      const hit = /^\s*type:\s*'?([^'\s]+)'?\s*$/.exec(lines[j])
+      if (hit) {
+        type = hit[1]
+        break
+      }
+    }
+    const entry = { name: skipped[1], reason: (skipped[2] ?? '').trim() }
+    if (type === 'suite') skippedSuites.push(entry)
+    else skippedCases.push(entry)
   }
   for (let i = 0; i < lines.length; i++) {
     const head = /^\s*not ok \d+ - (.*)$/.exec(lines[i])
@@ -145,6 +169,7 @@ export function parseTap(text) {
     notOk,
     failures,
     skippedCases,
+    skippedSuites,
   }
 }
 
@@ -176,12 +201,17 @@ export function formatPackageLine(result) {
  */
 export function judge({ exitCode, tap }) {
   const skippedCases = Array.isArray(tap.skippedCases) ? tap.skippedCases : []
-  const skippedEnvironment = skippedCases.filter((item) => String(item.reason || '').includes('[environment-unavailable]')).length
-  const skippedByDesign = skippedCases.length - skippedEnvironment
+  const skippedSuites = Array.isArray(tap.skippedSuites) ? tap.skippedSuites : []
+  const allSkipped = [...skippedCases, ...skippedSuites]
+  const skippedEnvironment = allSkipped.filter((item) => String(item.reason || '').includes('[environment-unavailable]')).length
+  const skippedByDesign = allSkipped.length - skippedEnvironment
+  // `# skipped` only counts leaf tests; suite-level skips are not part of it.
   const skippedMismatch = tap.skipped !== skippedCases.length
   const reasons = []
   if (exitCode !== 0) reasons.push(`exit code ${exitCode}`)
-  if (tap.tests === 0) reasons.push('no tests reported')
+  // A package whose only test points are skipped suites has `# tests 0` but did
+  // report skip events; it must not read as "no tests".
+  if (tap.tests === 0 && allSkipped.length === 0) reasons.push('no tests reported')
   if (tap.notOk > 0) reasons.push(`${tap.notOk} not ok line(s)`)
   if (tap.cancelled > 0) reasons.push(`${tap.cancelled} cancelled`)
   if (skippedEnvironment > 0) reasons.push(`${skippedEnvironment} environment-unavailable skip(s)`)
@@ -196,8 +226,8 @@ export function judge({ exitCode, tap }) {
       skippedByDesign,
     },
     skipSummary: {
-      total: tap.skipped,
-      parsed: skippedCases.length,
+      total: (Number(tap.skipped) || 0) + skippedSuites.length,
+      parsed: allSkipped.length,
       environment: skippedEnvironment,
       byDesign: skippedByDesign,
       mismatch: skippedMismatch,

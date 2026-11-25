@@ -91,6 +91,64 @@ test('parseTap captures skip reasons and judge separates all four categories', (
   assert.equal(formatSkipSummary(result.skipSummary), 'skip=2 (environment=1, by-design=1)')
 })
 
+test('suite-level skips are counted apart from leaf skips and never cause a mismatch', () => {
+  const tap = parseTap([
+    'TAP version 13',
+    'ok 1 - skipped suite no reason # SKIP',
+    '  ---',
+    "  type: 'suite'",
+    '  ...',
+    'ok 2 - skipped suite marker # SKIP [environment-unavailable] chrome missing',
+    '  ---',
+    "  type: 'suite'",
+    '  ...',
+    'ok 3 - a leaf passes',
+    '  ---',
+    "  type: 'test'",
+    '  ...',
+    '1..3',
+    '# tests 1',
+    '# suites 2',
+    '# pass 1',
+    '# fail 0',
+    '# cancelled 0',
+    '# skipped 0',
+  ].join('\n'))
+  assert.deepEqual(tap.skippedCases, [])
+  assert.deepEqual(tap.skippedSuites, [
+    { name: 'skipped suite no reason', reason: '' },
+    { name: 'skipped suite marker', reason: '[environment-unavailable] chrome missing' },
+  ])
+  const result = judge({ exitCode: 0, tap })
+  assert.equal(result.passed, false)
+  assert.deepEqual(result.reasons, ['1 environment-unavailable skip(s)'])
+  assert.equal(result.skipSummary.mismatch, false, 'suite skips are not part of # skipped and must not trigger a mismatch')
+  assert.deepEqual(result.counts, { passed: 1, failed: 0, skippedEnvironment: 1, skippedByDesign: 1 })
+  assert.equal(formatSkipSummary(result.skipSummary), 'skip=2 (environment=1, by-design=1)')
+})
+
+test('a package whose only tests are skipped suites is not a false "no tests reported" red', () => {
+  const tap = parseTap([
+    'TAP version 13',
+    'ok 1 - all skipped suite # SKIP LibreOffice is not installed',
+    '  ---',
+    "  type: 'suite'",
+    '  ...',
+    '1..1',
+    '# tests 0',
+    '# suites 1',
+    '# pass 0',
+    '# fail 0',
+    '# cancelled 0',
+    '# skipped 0',
+  ].join('\n'))
+  const result = judge({ exitCode: 0, tap })
+  assert.equal(result.passed, true)
+  assert.deepEqual(result.reasons, [])
+  assert.deepEqual(result.counts, { passed: 0, failed: 0, skippedEnvironment: 0, skippedByDesign: 1 })
+  assert.equal(formatSkipSummary(result.skipSummary), 'skip=1 (environment=0, by-design=1)')
+})
+
 test('design-only skips do not fail the package but remain visible in the skip summary', () => {
   const result = judge({
     exitCode: 0,
