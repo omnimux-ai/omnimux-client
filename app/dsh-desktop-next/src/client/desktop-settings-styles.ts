@@ -341,13 +341,13 @@ button.dshDesktopSettingsButtonPrimary:hover:not(:disabled) {
   font-variant-numeric: tabular-nums;
 }
 .dshUpdateBadgeBrand {
-  background: color-mix(in srgb, var(--dsw-alias-brand-primary) 14%, transparent);
+  background: var(--dsw-alias-state-business-tertiary);
   color: var(--dsw-alias-state-business-primary);
   font-weight: 500;
 }
 .dshUpdateBadgeWarn {
-  background: color-mix(in srgb, var(--dsw-alias-state-warning-primary) 14%, transparent);
-  color: var(--dsw-alias-state-warning-primary);
+  background: var(--dsw-alias-state-warn-tertiary);
+  color: var(--dsw-alias-state-warn-label);
   font-weight: 500;
 }
 .dshUpdateStatusRow {
@@ -478,11 +478,14 @@ button.dshDesktopSettingsButtonPrimary:hover:not(:disabled) {
   font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
+.dshUpdatePill[data-compact="true"],
 body [class*="collapsed"] .dshUpdatePill {
   width: 32px;
   padding: 0;
   justify-content: center;
 }
+.dshUpdatePill[data-compact="true"] .dshUpdatePillText,
+.dshUpdatePill[data-compact="true"] .dshUpdatePillVer,
 body [class*="collapsed"] .dshUpdatePillText,
 body [class*="collapsed"] .dshUpdatePillVer {
   display: none;
@@ -491,7 +494,7 @@ body [class*="collapsed"] .dshUpdatePillVer {
   position: absolute;
   right: 16px;
   bottom: 16px;
-  z-index: 2147483000;
+  z-index: 1;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -540,12 +543,15 @@ body [class*="collapsed"] .dshUpdatePillVer {
   display: grid;
   place-items: center;
   padding: 24px;
-  background: color-mix(in srgb, var(--dsw-alias-bg-base) 72%, transparent);
+  background: var(--dsw-alias-bg-mask-1);
+  backdrop-filter: var(--dsw-mask-blur);
   pointer-events: auto;
   -webkit-app-region: no-drag;
 }
 .dshMandatoryCard {
   width: min(460px, 100%);
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
   box-sizing: border-box;
   padding: 20px;
   border: 1px solid var(--dsw-alias-border-l2);

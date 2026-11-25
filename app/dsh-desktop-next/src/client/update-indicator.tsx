@@ -1,16 +1,22 @@
 /** Non-intrusive sidebar update pill, post-update notice, and mandatory update blocking overlay. */
-import { useState, useSyncExternalStore } from 'react'
-import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
+import { useRef, useState, useSyncExternalStore } from 'react'
+import { createPortal } from 'react-dom'
+import { Button, useModalLayer } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { DesktopCommand, DesktopState } from '../desktop-contract.ts'
 import { OMNIMUX_DOWNLOAD_URL } from '../product-identity.ts'
 import { manualUpdate, releaseNotesUrl, updateAction, updateLabel, type NextUpdateState } from '../update-state.ts'
 import { useDesktopState } from './desktop-state.ts'
 import type { NextSettingsAdapter } from './settings-adapter.ts'
-import { pickUpdateNotes } from './updates.tsx'
+import { pickUpdateNotes, updatePrimaryButtonLabel } from './updates.tsx'
+
+let cancelPendingOpenSettings: (() => void) | null = null
 
 /** Open the official Settings dialog and select the Desktop Settings section. */
 export function openDesktopUpdateSettings(): void {
-  if (typeof document === 'undefined') return
+  if (typeof document === 'undefined' || !document.body) return
+  cancelPendingOpenSettings?.()
+  cancelPendingOpenSettings = null
+
   const selectDesktopTab = (): boolean => {
     const dialog = document.querySelector('[data-shortcut-modal="settings"]')
     if (!dialog) return false
@@ -26,11 +32,11 @@ export function openDesktopUpdateSettings(): void {
 
   let menuOpened = false
   let settled = false
+  let stop: ReturnType<typeof setTimeout> | undefined
   const observer = new MutationObserver(() => {
     if (settled) return
     if (selectDesktopTab()) {
-      settled = true
-      observer.disconnect()
+      cleanup()
       return
     }
     if (menuOpened) {
@@ -41,11 +47,21 @@ export function openDesktopUpdateSettings(): void {
       }
     }
   })
-  observer.observe(document.body, { childList: true, subtree: true })
-  const stop = setTimeout(() => {
+
+  const cleanup = (): void => {
+    if (settled) return
     settled = true
+    if (stop !== undefined) {
+      clearTimeout(stop)
+      stop = undefined
+    }
     observer.disconnect()
-  }, 4_000)
+    if (cancelPendingOpenSettings === cleanup) cancelPendingOpenSettings = null
+  }
+
+  cancelPendingOpenSettings = cleanup
+  observer.observe(document.body, { childList: true, subtree: true })
+  stop = setTimeout(cleanup, 4_000)
 
   const trigger = document.querySelector('[data-slot="settings.trigger"]')?.closest('button')
   if (trigger) {
@@ -56,16 +72,14 @@ export function openDesktopUpdateSettings(): void {
       menuOpened = true
       launcher.click()
     } else {
-      settled = true
-      clearTimeout(stop)
-      observer.disconnect()
+      cleanup()
     }
   }
 }
 
 export function shouldShowSidebarUpdatePill(update: NextUpdateState | undefined): boolean {
   if (!update) return false
-  return update.mandatory === true
+  return (update.mandatory === true && update.phase !== 'current')
     || update.phase === 'available'
     || update.phase === 'downloading'
     || update.phase === 'preparing'
@@ -89,10 +103,12 @@ function sidebarPillLabel(update: NextUpdateState, zh: boolean): string {
 export function SidebarUpdatePillView({
   state,
   language,
+  wide = true,
   onOpen,
 }: {
   state: DesktopState | undefined
   language: string
+  wide?: boolean
   onOpen(): void
 }) {
   const update = state?.updates
@@ -101,27 +117,29 @@ export function SidebarUpdatePillView({
   const label = sidebarPillLabel(update, zh)
   const tone = update.mandatory === true ? 'mandatory' : update.phase === 'ready' ? 'ready' : 'available'
   const versionTag = update.version ? `v${update.version}` : ''
+  const accessible = versionTag ? `${label} ${versionTag}` : label
   return (
     <button
       type="button"
       className="dshUpdatePill"
       data-next-update-pill=""
-      aria-label={versionTag ? `${label} ${versionTag}` : label}
-      title={versionTag ? `${label} ${versionTag}` : label}
+      data-compact={wide ? undefined : 'true'}
+      aria-label={accessible}
+      title={accessible}
       onClick={onOpen}
     >
       <span className="dshUpdatePillLeft">
         <span className="dshUpdateDot" data-tone={tone} aria-hidden="true" />
-        <span className="dshUpdatePillText">{label}</span>
+        {wide && <span className="dshUpdatePillText">{label}</span>}
       </span>
-      {versionTag && <span className="dshUpdatePillVer">{versionTag}</span>}
+      {wide && versionTag && <span className="dshUpdatePillVer">{versionTag}</span>}
     </button>
   )
 }
 
-export function SidebarUpdatePill({ adapter, language }: { adapter: NextSettingsAdapter; language: string }) {
+export function SidebarUpdatePill({ adapter, language, wide = true }: { adapter: NextSettingsAdapter; language: string; wide?: boolean }) {
   const state = useSyncExternalStore(adapter.subscribe, adapter.getSnapshot)
-  return <SidebarUpdatePillView state={state} language={language} onOpen={openDesktopUpdateSettings} />
+  return <SidebarUpdatePillView state={state} language={language} wide={wide} onOpen={openDesktopUpdateSettings} />
 }
 
 export function UpdateShellOverlayView({
@@ -133,17 +151,29 @@ export function UpdateShellOverlayView({
   language: string
   run(command: DesktopCommand): void
 }) {
-  const [showErrorDetail, setShowErrorDetail] = useState(false)
+  const cardRef = useRef<HTMLDivElement>(null)
   const update = state?.updates
-  if (!state || !update) return null
+  const showMandatory = Boolean(state && update && update.mandatory === true && update.phase !== 'current')
+  const showPostNotice = Boolean(state && update && !showMandatory && !state.safeMode && update.justUpdatedFrom)
+  const errorKey = update?.phase === 'error' && update.errorCode
+    ? `${update.errorCode}:${update.errorDetail ?? ''}`
+    : null
+  const [expandedErrorKey, setExpandedErrorKey] = useState<string | null>(null)
+  const showErrorDetail = errorKey !== null && expandedErrorKey === errorKey
+
+  // Non-dismissible blocking modal: register on the host modal stack so focus moves
+  // inside, Tab/Shift+Tab cycle within the card, and Escape is swallowed without closing.
+  useModalLayer(cardRef, showMandatory, () => {})
+
+  if (!state || !update || (!showMandatory && !showPostNotice)) return null
   const zh = language.toLowerCase().startsWith('zh')
   const t = (cn: string, en: string) => zh ? cn : en
 
-  const showMandatory = update.mandatory === true && update.phase !== 'current'
-  const showPostNotice = !showMandatory && Boolean(update.justUpdatedFrom)
-  if (!showMandatory && !showPostNotice) return null
-
   if (showPostNotice) {
+    const postNotesHref = releaseNotesUrl(
+      state.version,
+      update.version === state.version ? update.releaseNotesUrl : undefined,
+    )
     return (
       <aside
         className="dshPostUpdateNotice"
@@ -158,7 +188,7 @@ export function UpdateShellOverlayView({
         <div className="dshPostUpdateActions">
           <a
             className="dshDesktopSettingsButton"
-            href={releaseNotesUrl(state.version, update.releaseNotesUrl)}
+            href={postNotesHref}
             target="_blank"
             rel="noopener noreferrer"
           >
@@ -190,9 +220,16 @@ export function UpdateShellOverlayView({
       )
     : t('此版本包含关键更新，请更新后继续使用。', 'This release includes required updates. Update to continue.')
 
-  return (
+  const mandatoryBackdrop = (
     <div className="dshMandatoryBackdrop" data-next-mandatory-update="">
-      <div className="dshMandatoryCard" role="dialog" aria-modal="true" aria-labelledby="dsh-mandatory-update-title">
+      <div
+        ref={cardRef}
+        tabIndex={-1}
+        className="dshMandatoryCard"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="dsh-mandatory-update-title"
+      >
         <div className="dshUpdateHeader">
           <h4 id="dsh-mandatory-update-title">
             {targetVer ? t(`需要更新至 ${targetVer}`, `Update required: ${targetVer}`) : t('需要更新应用', 'Update required')}
@@ -200,7 +237,11 @@ export function UpdateShellOverlayView({
           <span className="dshDesktopSettingsBadge dshUpdateBadgeWarn">{t('必需更新', 'Required')}</span>
         </div>
         <p className="dshDesktopSettingsHint">{reason}</p>
-        <p className="dshUpdateStatusText" data-tone={update.phase === 'error' ? 'error' : update.phase === 'ready' ? 'success' : 'default'} role={update.phase === 'error' ? 'alert' : 'status'}>
+        <p
+          className="dshUpdateStatusText"
+          data-tone={update.phase === 'error' ? 'error' : update.phase === 'ready' ? 'success' : 'default'}
+          role={update.phase === 'error' ? 'alert' : 'status'}
+        >
           {updateLabel(update, language)}
         </p>
 
@@ -219,13 +260,13 @@ export function UpdateShellOverlayView({
           </ul>
         )}
 
-        {update.phase === 'error' && update.errorCode && (
+        {errorKey !== null && update.errorCode && (
           <div className="dshUpdateErrorBlock">
             <button
               type="button"
               className="dshUpdateErrorToggle"
               aria-expanded={showErrorDetail}
-              onClick={() => { setShowErrorDetail(prev => !prev) }}
+              onClick={() => { setExpandedErrorKey(prev => prev === errorKey ? null : errorKey) }}
             >
               {showErrorDetail ? t('隐藏诊断码', 'Hide error code') : t('查看诊断码', 'Show error code')}
             </button>
@@ -243,6 +284,7 @@ export function UpdateShellOverlayView({
             href={OMNIMUX_DOWNLOAD_URL}
             target="_blank"
             rel="noopener noreferrer"
+            data-modal-autofocus={actionDisabled && !cancellable ? '' : undefined}
           >
             {t('官网手动下载', 'Manual download')}
           </a>
@@ -252,6 +294,7 @@ export function UpdateShellOverlayView({
               size="sm"
               className="dshDesktopSettingsButton"
               disabled={state.busy}
+              data-modal-autofocus=""
               onClick={() => { run({ type: 'cancel-update-download' }) }}
             >
               {t('取消', 'Cancel')}
@@ -262,19 +305,24 @@ export function UpdateShellOverlayView({
               size="sm"
               className={actionDisabled ? 'dshDesktopSettingsButton' : 'dshDesktopSettingsButton dshDesktopSettingsButtonPrimary'}
               disabled={actionDisabled}
+              data-modal-autofocus={actionDisabled ? undefined : ''}
               onClick={() => { if (action) run({ type: action }) }}
             >
-              {action === 'install-update'
-                ? t('安装并重启', 'Install and restart')
-                : action === 'download-update'
-                  ? manual ? t('前往下载', 'Open download page') : t('下载更新', 'Download update')
-                  : t('检查更新', 'Check for updates')}
+              {updatePrimaryButtonLabel(update, action, manual, language)}
             </Button>
           )}
         </div>
       </div>
     </div>
   )
+
+  // Portal directly under document.body so the mandatory blocker escapes [data-shell-overlay]'s
+  // stacking context (z-index: 20), covers open Settings/modals/drawers, and inherits Electron's
+  // `body > :not(#root) { -webkit-app-region: no-drag }` rule.
+  if (typeof document !== 'undefined' && document.body) {
+    return createPortal(mandatoryBackdrop, document.body)
+  }
+  return mandatoryBackdrop
 }
 
 export function UpdateShellOverlay({ adapter, language }: { adapter: NextSettingsAdapter; language: string }) {

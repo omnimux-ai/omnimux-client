@@ -187,8 +187,8 @@ function SettingsActions({ t, adapter }: PropsLocale<'desktop-next'> & { adapter
   return createElement(NextDesktopActions, { adapter, language: t('language') })
 }
 
-function DesktopSidebarUpdatePill({ t, adapter }: PropsLocale<'desktop-next'> & { adapter: NextSettingsAdapter }) {
-  return createElement(SidebarUpdatePill, { adapter, language: t('language') })
+function DesktopSidebarUpdatePill({ t, adapter, wide }: PropsLocale<'desktop-next'> & PropsRuntime<'sidebar.footer.action'> & { adapter: NextSettingsAdapter }) {
+  return createElement(SidebarUpdatePill, { adapter, language: t('language'), wide })
 }
 
 function DesktopUpdateOverlay({ t, adapter }: PropsLocale<'desktop-next'> & { adapter: NextSettingsAdapter }) {
