@@ -481,6 +481,7 @@ button.dshDesktopSettingsButtonPrimary:hover:not(:disabled) {
 .dshUpdatePill[data-compact="true"],
 body [class*="collapsed"] .dshUpdatePill {
   width: 32px;
+  min-width: 32px;
   padding: 0;
   justify-content: center;
 }

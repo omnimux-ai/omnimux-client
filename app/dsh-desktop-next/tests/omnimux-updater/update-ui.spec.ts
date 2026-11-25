@@ -242,4 +242,6 @@ it('uses only real allowlisted --dsw-* tokens and zero bare hex/rgba colors in u
   expect(referencedTokens.length).toBeGreaterThan(0)
   const unknown = [...new Set(referencedTokens)].filter(token => !allowed.has(token))
   expect(unknown).toEqual([])
+  // Compact sidebar pill must clamp width: max-content !important from sidebar-footer-styles.ts to a 32x32 target.
+  expect(updaterCss).toMatch(/\.dshUpdatePill\[data-compact="true"\],\s*body \[class\*="collapsed"\] \.dshUpdatePill\s*\{[^}]*min-width:\s*32px;/u)
 })
