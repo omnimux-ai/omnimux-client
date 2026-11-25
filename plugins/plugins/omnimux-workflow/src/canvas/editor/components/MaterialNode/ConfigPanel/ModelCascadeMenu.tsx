@@ -629,11 +629,9 @@ export const ModelCascadeMenu: React.FC<ModelCascadeMenuProps> = ({
     place();
     window.addEventListener('resize', place);
     window.addEventListener('scroll', place, true);
-    window.addEventListener('omnimux:config-panel-position', place);
     return () => {
       window.removeEventListener('resize', place);
       window.removeEventListener('scroll', place, true);
-      window.removeEventListener('omnimux:config-panel-position', place);
     };
   }, [isOpen]);
 
