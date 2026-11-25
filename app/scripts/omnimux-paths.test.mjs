@@ -243,3 +243,8 @@ test('app/scripts/worktree.sh disables direct-push ship and guard-worktree no lo
   assert.doesNotMatch(readFileSync(worktreeScriptPath, 'utf8'), /worktree\.sh ship </u)
   assert.doesNotMatch(readFileSync(guardScriptPath, 'utf8'), /worktree\.sh ship </u)
 })
+
+test('app/scripts/worktree.sh cmd_remove no longer suggests ship', () => {
+  const worktreeScriptPath = join(appDir, 'scripts', 'worktree.sh')
+  assert.doesNotMatch(readFileSync(worktreeScriptPath, 'utf8'), /'ship'\s+it/u)
+})

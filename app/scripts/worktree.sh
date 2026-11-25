@@ -347,7 +347,7 @@ cmd_remove() {
       if [ "${abandon}" -eq 1 ]; then
         say "branch ${branch} is not merged; removing as abandoned"
       else
-        die "branch ${branch} is not merged into ${DEFAULT_BRANCH}; use --abandon to drop, or 'ship' it"
+        die "branch ${branch} is not merged into ${DEFAULT_BRANCH}; use --abandon to drop, or push and merge it via PR"
       fi
     fi
   fi

@@ -62,6 +62,11 @@ function listWorkspacePackageNames(pluginsRoot) {
       const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'));
       if (typeof pkg.name === 'string' && pkg.name) names.add(pkg.name);
       names.add(entry.name);
+      const extPkgPath = join(dir, entry.name, 'extension', 'package.json');
+      if (existsSync(extPkgPath)) {
+        const extPkg = JSON.parse(readFileSync(extPkgPath, 'utf8'));
+        if (typeof extPkg.name === 'string' && extPkg.name) names.add(extPkg.name);
+      }
     }
   }
   return names;
@@ -163,6 +168,12 @@ function inspectPluginsPackageCommand(command) {
         if (token === '--filter' || token === '-F') {
           hasRecursiveOrFilter = true;
           expectFilterValue = true;
+          continue;
+        }
+        if (token.startsWith('--filter=') || token.startsWith('-F=')) {
+          hasRecursiveOrFilter = true;
+          const pkg = token.slice(token.indexOf('=') + 1);
+          if (pkg && !pkg.startsWith('-')) filterTargets.push(pkg);
           continue;
         }
         if (token === '-r' || token === '--recursive') {

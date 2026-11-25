@@ -1,5 +1,5 @@
 import { after, describe, it } from 'node:test'
-import { chmodSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, writeFileSync, symlinkSync, rmSync } from 'node:fs'
+import { chmodSync, existsSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, writeFileSync, symlinkSync, rmSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
@@ -2703,5 +2703,13 @@ describe('adversarial hardening regressions (materialization / wrapper / frozen-
       assert.notEqual(result.reason, 'scoped-media-build-recovery-identity-mismatch')
       assert.notEqual(result.reason, 'scoped-media-build-recovery-invalid-command')
     }
+  })
+
+  it('expired one-time recover-media-build-3288 script and test files are deleted without manifest ghosts', () => {
+    const scriptsDir = dirname(fileURLToPath(import.meta.url))
+    assert.equal(existsSync(join(scriptsDir, 'recover-media-build-3288.mjs')), false)
+    assert.equal(existsSync(join(scriptsDir, 'recover-media-build-3288.test.mjs')), false)
+    const manifest = readFileSync(join(scriptsDir, 'governance-manifest.json'), 'utf8')
+    assert.equal(manifest.includes('recover-media-build-3288'), false)
   })
 })
