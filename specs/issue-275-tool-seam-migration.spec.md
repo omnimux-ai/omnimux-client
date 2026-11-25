@@ -22,7 +22,7 @@
 ## 验证
 
 - `pnpm --dir plugins --filter omnimux-inspiration test`：全量单测通过，0 fail / 0 skipped
-- `node plugins/scripts/verify-plugin-boundaries.mjs`：全仓通过（5251 个源文件 = 基线 5249 + 本任务新增 `hub-tools.js`、`hub-tools.test.js`）
+- `node plugins/scripts/verify-plugin-boundaries.mjs`：全仓通过（#275 分支实测 5251 个源文件 = 基线 5249 + 本任务新增 `hub-tools.js`、`hub-tools.test.js`；该计数随主干新增源文件增长，不是恒定基线）
 - `node plugins/scripts/verify-dsw-tokens.mjs`：18 包 / 450 上游 Token / 651 存量 / `dsh-ui-kit 0`
 - `pnpm --dir plugins run test:gates`、`build:all`、`bundle-lock --check`、`workspace:check`、`plugins:verify`
 - `git diff --check`、`gitleaks`
