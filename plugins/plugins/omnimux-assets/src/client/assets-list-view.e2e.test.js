@@ -59,7 +59,7 @@ body[data-ds-dark-theme] {
   --dsw-alias-label-secondary: rgb(207, 211, 214);
   --dsw-alias-label-tertiary: rgb(173, 178, 184);
   --dsw-alias-state-warn-primary: rgb(245, 158, 11);
-  --dsw-alias-state-warn-label: rgb(245, 158, 11);
+  --dsw-alias-state-warn-label: rgb(221, 134, 41);
   --dsw-alias-state-warn-tertiary: rgb(39, 36, 31);
   --dsw-alias-state-error-primary: rgb(242, 90, 90);
   --dsw-shadow-lv3: 0 14px 36px rgba(0, 0, 0, 0.52);
@@ -191,12 +191,19 @@ test('资产中心本地列表视图真实浏览器渲染：16:10 缩略图、�
       }
       setTimeout(() => {
         try {
-          const thActions = document.querySelector('.omnimux-assets-th-actions').getBoundingClientRect()
-          const tdActions = document.querySelector('.omnimux-assets-td-actions').getBoundingClientRect()
-          const thFiles = document.querySelector('.omnimux-assets-th-files').getBoundingClientRect()
-          const tdFiles = document.querySelector('.omnimux-assets-td-files').getBoundingClientRect()
-          const thUpdated = document.querySelector('.omnimux-assets-th-updated').getBoundingClientRect()
-          const tdUpdated = document.querySelector('.omnimux-assets-td-updated').getBoundingClientRect()
+          const textRightEdge = (el) => {
+            const inner = el.querySelector('[class*="headCellContent"]')
+            if (inner) return inner.getBoundingClientRect().right
+            const range = document.createRange()
+            range.selectNodeContents(el)
+            return range.getBoundingClientRect().right
+          }
+          const thActionsEl = document.querySelector('.omnimux-assets-th-actions')
+          const tdActionsInner = document.querySelector('.omnimux-assets-list-actions')
+          const thFilesEl = document.querySelector('.omnimux-assets-th-files')
+          const tdFilesInner = document.querySelector('.omnimux-assets-list-files-inner')
+          const thUpdatedEl = document.querySelector('.omnimux-assets-th-updated')
+          const tdUpdatedInner = document.querySelector('.omnimux-assets-list-updated-inner')
           const row0 = document.querySelector('.omnimux-assets-list-row')
           const row0Rect = row0.getBoundingClientRect()
           const thumb0 = row0.querySelector('.omnimux-assets-list-thumb')
@@ -205,11 +212,16 @@ test('资产中心本地列表视图真实浏览器渲染：16:10 缩略图、�
           const addBtn0 = row0.querySelector('.omnimux-assets-list-add-btn')
           const moreBtn0 = row0.querySelector('.omnimux-assets-list-more-btn')
           const desc0 = row0.querySelector('.omnimux-assets-td-desc').textContent.trim()
+          const missingBadge = document.querySelector('.omnimux-assets-list-missing')
 
           const lightGeometry = {
-            actionsRightDelta: Math.abs(thActions.right - tdActions.right),
-            filesRightDelta: Math.abs(thFiles.right - tdFiles.right),
-            updatedRightDelta: Math.abs(thUpdated.right - tdUpdated.right),
+            actionsTextAlign: getComputedStyle(thActionsEl).textAlign,
+            filesTextAlign: getComputedStyle(thFilesEl).textAlign,
+            updatedTextAlign: getComputedStyle(thUpdatedEl).textAlign,
+            actionsContentRightDelta: Math.abs(textRightEdge(thActionsEl) - tdActionsInner.getBoundingClientRect().right),
+            filesContentRightDelta: Math.abs(textRightEdge(thFilesEl) - tdFilesInner.getBoundingClientRect().right),
+            updatedContentRightDelta: Math.abs(textRightEdge(thUpdatedEl) - tdUpdatedInner.getBoundingClientRect().right),
+            missingBadgeColor: missingBadge ? getComputedStyle(missingBadge).color : null,
             rowHeight: Math.round(row0Rect.height),
             thumbW: Math.round(thumb0Rect.width),
             thumbH: Math.round(thumb0Rect.height),
@@ -278,16 +290,20 @@ test('资产中心本地列表视图真实浏览器渲染：16:10 缩略图、�
                     try {
                       const hoverDismissedByEsc = !document.querySelector('.omnimux-assets-list-preview-popover')
 
-                      // Switch back light + shrink container to 740px narrow width
+                      // Switch back light + shrink container to 740px narrow width, then 560px compact width
                       document.body.removeAttribute('data-ds-dark-theme')
                       const host = document.getElementById('probe-host')
                       host.style.width = '740px'
                       const wrap = document.querySelector('.omnimux-assets-list-wrap')
                       const narrow = {
                         descDisplay: getComputedStyle(document.querySelector('.omnimux-assets-th-desc')).display,
+                        updatedDisplayAt740: getComputedStyle(document.querySelector('.omnimux-assets-th-updated')).display,
                         hasHorizOverflow: wrap.scrollWidth > wrap.clientWidth + 1,
                         actionsFits: document.querySelector('.omnimux-assets-th-actions').getBoundingClientRect().right <= wrap.getBoundingClientRect().right + 1,
                       }
+                      host.style.width = '560px'
+                      narrow.updatedDisplayAt560 = getComputedStyle(document.querySelector('.omnimux-assets-th-updated')).display
+                      host.style.width = '1200px'
 
                       // Sort by files asc/desc check
                       const filesHeader = document.querySelector('th[data-sort-key="files"]')
@@ -328,15 +344,19 @@ test('资产中心本地列表视图真实浏览器渲染：16:10 缩略图、�
 
   assert.equal(result.done, true, result.error || 'probe did not finish')
 
-  // 1. 16:10 thumbnail, row height 52-56px, right-aligned headers
+  // 1. 16:10 thumbnail, row height 52-56px, non-tautological header-content vs cell-content right alignment, badge contrast
   assert.equal(result.lightGeometry.thumbW, 40)
   assert.equal(result.lightGeometry.thumbH, 28)
   assert.equal(result.lightGeometry.thumbRadius, '6px')
   assert.equal(result.lightGeometry.thumbFit, 'contain')
   assert.ok(result.lightGeometry.rowHeight >= 52 && result.lightGeometry.rowHeight <= 56, `row height ${result.lightGeometry.rowHeight}`)
-  assert.ok(result.lightGeometry.actionsRightDelta < 1, `actions header/cell misaligned by ${result.lightGeometry.actionsRightDelta}px`)
-  assert.ok(result.lightGeometry.filesRightDelta < 1, `files header/cell misaligned by ${result.lightGeometry.filesRightDelta}px`)
-  assert.ok(result.lightGeometry.updatedRightDelta < 1, `updated header/cell misaligned by ${result.lightGeometry.updatedRightDelta}px`)
+  assert.equal(result.lightGeometry.actionsTextAlign, 'right')
+  assert.equal(result.lightGeometry.filesTextAlign, 'right')
+  assert.equal(result.lightGeometry.updatedTextAlign, 'right')
+  assert.ok(result.lightGeometry.actionsContentRightDelta <= 2, `actions header/cell content misaligned by ${result.lightGeometry.actionsContentRightDelta}px`)
+  assert.ok(result.lightGeometry.filesContentRightDelta <= 2, `files header/cell content misaligned by ${result.lightGeometry.filesContentRightDelta}px`)
+  assert.ok(result.lightGeometry.updatedContentRightDelta <= 2, `updated header/cell content misaligned by ${result.lightGeometry.updatedContentRightDelta}px`)
+  assert.equal(result.lightGeometry.missingBadgeColor, 'rgb(221, 134, 41)', 'missing badge must keep --dsw-alias-state-warn-label contrast')
   assert.equal(result.lightGeometry.defaultAddOpacity, '0')
   assert.equal(result.lightGeometry.hasCloudMeta, false)
   assert.equal(result.lightGeometry.rowDraggable, 'true')
@@ -362,8 +382,10 @@ test('资产中心本地列表视图真实浏览器渲染：16:10 缩略图、�
   assert.ok(result.hoverDark.imgH > 0 && result.hoverDark.imgH <= 340)
   assert.equal(result.hoverDismissedByEsc, true)
 
-  // 4. Narrow container query collapses description cleanly with zero clipping
+  // 4. Narrow container queries collapse description (<=820px) and updated (<=600px) cleanly with zero clipping
   assert.equal(result.narrow.descDisplay, 'none')
+  assert.notEqual(result.narrow.updatedDisplayAt740, 'none')
+  assert.equal(result.narrow.updatedDisplayAt560, 'none')
   assert.equal(result.narrow.hasHorizOverflow, false)
   assert.equal(result.narrow.actionsFits, true)
 

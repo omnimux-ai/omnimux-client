@@ -301,6 +301,9 @@ function ListCheckbox({ checked, label, onToggle, className = '' }) {
       aria-label={label}
       data-checked={checked}
       className={`omnimux-assets-checkbox ${className}`.trim()}
+      onMouseDown={(event) => {
+        if (event.shiftKey) event.preventDefault()
+      }}
       onClick={(event) => {
         event.stopPropagation()
         onToggle(Boolean(event.shiftKey))
@@ -389,7 +392,10 @@ function AssetListRow({
     : t('list.filesEmpty')
   const timeRaw = asset.updated_at || asset.updatedAt || asset.created_at || asset.createdAt || ''
   const updatedText = formatTimeAgo(timeRaw) || '—'
-  const updatedTitle = formatDateTime(timeRaw) || undefined
+  const updatedIso = typeof timeRaw === 'number' && Number.isFinite(timeRaw)
+    ? new Date(timeRaw).toISOString()
+    : timeRaw
+  const updatedTitle = formatDateTime(updatedIso) || undefined
 
   const handleTriggerAction = () => {
     onThumbLeave(asset.id)
@@ -406,7 +412,8 @@ function AssetListRow({
     onThumbLeave(asset.id)
     if (typeof onPreview === 'function') {
       const target = resolveAssetMediaPreview(asset)
-      if (target.previewUrl || !isFolderAsset(asset)) {
+      const isPlayableMedia = Boolean(target.previewUrl && (target.kind === 'image' || target.kind === 'video'))
+      if (isPlayableMedia || !isFolderAsset(asset)) {
         onPreview(target)
         return
       }
@@ -524,7 +531,7 @@ function AssetListRow({
         <span className="omnimux-assets-list-files-inner">
           <span>{fileCountText}</span>
           {missing ? (
-            <span className="omnimux-assets-missing omnimux-assets-list-missing" title={t('card.missing')}>
+            <span className="omnimux-assets-list-missing" title={t('card.missing')}>
               <span className="omnimux-assets-list-missing-dot" aria-hidden="true" />
               {t('list.missingShort')}
             </span>
@@ -532,7 +539,7 @@ function AssetListRow({
         </span>
       </TableCell>
       <TableCell align="right" className="omnimux-assets-td-updated" title={updatedTitle}>
-        {updatedText}
+        <span className="omnimux-assets-list-updated-inner">{updatedText}</span>
       </TableCell>
       <TableCell align="right" className="omnimux-assets-td-actions" onClick={(event) => event.stopPropagation()}>
         <div className="omnimux-assets-list-actions">
@@ -585,15 +592,24 @@ function AssetListRow({
  */
 function AssetListMoreMenu({ menuState, t, copiedId, onClose, onOpen, onReveal, onCopy, onRemove }) {
   const menuRef = useRef(null)
+  const copyCloseTimerRef = useRef(null)
+  const [localCopied, setLocalCopied] = useState(false)
   const { asset, coords } = menuState
   const firstFile = Array.isArray(asset?.files) ? asset.files[0] : null
   const missing = Number(asset?.missing_file_count) > 0 && (!asset?.files || asset.files.length === 0)
   const canReveal = Boolean(firstFile?.id && !missing)
-  const isCopied = Boolean(copiedId && copiedId === asset?.id)
+  const isCopied = localCopied || Boolean(copiedId && copiedId === asset?.id)
 
   useEffect(() => {
+    setLocalCopied(false)
     const firstItem = menuRef.current?.querySelector('[role="menuitem"]:not(:disabled)')
     firstItem?.focus?.()
+    return () => {
+      if (copyCloseTimerRef.current) {
+        clearTimeout(copyCloseTimerRef.current)
+        copyCloseTimerRef.current = null
+      }
+    }
   }, [asset?.id])
 
   useEffect(() => {
@@ -621,6 +637,10 @@ function AssetListMoreMenu({ menuState, t, copiedId, onClose, onOpen, onReveal, 
   }, [menuState.triggerEl, onClose])
 
   const handleMenuKeyDown = (event) => {
+    if (event.key === 'Tab') {
+      onClose(false)
+      return
+    }
     if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return
     const items = Array.from(menuRef.current?.querySelectorAll('[role="menuitem"]:not(:disabled)') ?? [])
     if (items.length === 0) return
@@ -632,22 +652,35 @@ function AssetListMoreMenu({ menuState, t, copiedId, onClose, onOpen, onReveal, 
   }
 
   const handleRevealClick = () => {
-    onClose(false)
+    onClose(true)
     if (!canReveal) return
     if (typeof onReveal === 'function') {
-      void onReveal(asset)
+      Promise.resolve(onReveal(asset)).catch((err) => {
+        console.warn('[omnimux-assets] reveal action failed:', err)
+      })
     } else if (asset?.id && firstFile?.id) {
-      void revealAssetEntry(asset.id, firstFile.id, '')
+      Promise.resolve(revealAssetEntry(asset.id, firstFile.id, '')).catch((err) => {
+        console.warn('[omnimux-assets] reveal fallback failed:', err)
+      })
     }
   }
 
   const handleCopyClick = () => {
-    onClose(false)
     if (typeof onCopy === 'function') {
-      onCopy(asset)
+      Promise.resolve(onCopy(asset)).catch((err) => {
+        console.warn('[omnimux-assets] copy citation failed:', err)
+      })
     } else if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
-      void navigator.clipboard.writeText(citeOf(asset))
+      Promise.resolve(navigator.clipboard.writeText(citeOf(asset))).catch((err) => {
+        console.warn('[omnimux-assets] clipboard write failed:', err)
+      })
     }
+    setLocalCopied(true)
+    if (copyCloseTimerRef.current) clearTimeout(copyCloseTimerRef.current)
+    copyCloseTimerRef.current = setTimeout(() => {
+      copyCloseTimerRef.current = null
+      onClose(true)
+    }, 650)
   }
 
   const menuNode = (
@@ -803,7 +836,10 @@ export function AssetGrid({
 
   const lastAnchorIdRef = useRef('')
   const hoverTimerRef = useRef(null)
+  const hoverPreviewRef = useRef(null)
+  const menuTriggerRef = useRef(null)
   const rowRefs = useRef(new Map())
+  hoverPreviewRef.current = hoverPreview
 
   const isSortControlled = typeof onSortChange === 'function'
   const activeSortKey = isSortControlled ? (sortKey || 'updated_at') : localSort.key
@@ -816,6 +852,11 @@ export function AssetGrid({
     return sortAssetsBy(assets, activeSortKey, activeSortDir)
   }, [assets, viewMode, isSortControlled, activeSortKey, activeSortDir])
 
+  const displaySignature = useMemo(
+    () => displayAssets.map((row) => row?.id ?? '').join('\0'),
+    [displayAssets],
+  )
+
   const clearHoverPreview = useCallback(() => {
     if (hoverTimerRef.current) {
       clearTimeout(hoverTimerRef.current)
@@ -827,52 +868,63 @@ export function AssetGrid({
   useEffect(() => clearHoverPreview, [clearHoverPreview])
 
   useEffect(() => {
-    if (!hoverPreview) return undefined
-    const handleScroll = () => clearHoverPreview()
-    const handleKeyDown = (event) => {
-      if (event.key === 'Escape') clearHoverPreview()
+    if (viewMode !== 'list') return undefined
+    const dismissHover = () => {
+      if (hoverTimerRef.current || hoverPreviewRef.current) clearHoverPreview()
     }
-    window.addEventListener('scroll', handleScroll, true)
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') dismissHover()
+    }
+    window.addEventListener('scroll', dismissHover, true)
     document.addEventListener('keydown', handleKeyDown, true)
     return () => {
-      window.removeEventListener('scroll', handleScroll, true)
+      window.removeEventListener('scroll', dismissHover, true)
       document.removeEventListener('keydown', handleKeyDown, true)
-    }
-  }, [hoverPreview, clearHoverPreview])
-
-  useEffect(() => {
-    if (viewMode !== 'list') {
-      clearHoverPreview()
-      setMenuState(null)
     }
   }, [viewMode, clearHoverPreview])
 
+  useEffect(() => {
+    clearHoverPreview()
+    menuTriggerRef.current = null
+    setMenuState(null)
+  }, [viewMode, displaySignature, clearHoverPreview])
+
+  useEffect(() => {
+    if (!selectedIds || selectedIds.size === 0) {
+      lastAnchorIdRef.current = ''
+    }
+  }, [selectedIds])
+
   const closeMenu = useCallback((restoreFocus = false) => {
-    setMenuState((prev) => {
-      if (restoreFocus && prev?.triggerEl && typeof prev.triggerEl.focus === 'function') {
-        prev.triggerEl.focus()
-      }
-      return null
-    })
+    const triggerEl = menuTriggerRef.current
+    menuTriggerRef.current = null
+    setMenuState(null)
+    if (restoreFocus && triggerEl && triggerEl.isConnected && typeof triggerEl.focus === 'function') {
+      triggerEl.focus()
+    }
   }, [])
 
   const handleToggleMenu = useCallback((asset, triggerEl) => {
     clearHoverPreview()
-    setMenuState((prev) => {
-      if (prev && prev.asset?.id === asset.id) return null
-      const rect = triggerEl.getBoundingClientRect()
-      const coords = computePopoverCoords(rect, {
-        width: MENU_ESTIMATED_WIDTH,
-        height: MENU_ESTIMATED_HEIGHT,
-        align: 'end',
-      })
-      return { asset, coords, triggerEl }
+    if (menuState && menuState.asset?.id === asset.id) {
+      menuTriggerRef.current = null
+      setMenuState(null)
+      return
+    }
+    const rect = triggerEl.getBoundingClientRect()
+    const coords = computePopoverCoords(rect, {
+      width: MENU_ESTIMATED_WIDTH,
+      height: MENU_ESTIMATED_HEIGHT,
+      align: 'end',
     })
-  }, [clearHoverPreview])
+    menuTriggerRef.current = triggerEl
+    setMenuState({ asset, coords, triggerEl })
+  }, [clearHoverPreview, menuState])
 
   const handleThumbEnter = useCallback((asset, src, rect) => {
     if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current)
     hoverTimerRef.current = setTimeout(() => {
+      hoverTimerRef.current = null
       const coords = computePopoverCoords(rect, {
         width: PREVIEW_ESTIMATED_WIDTH,
         height: PREVIEW_ESTIMATED_HEIGHT,
@@ -918,6 +970,7 @@ export function AssetGrid({
   const handleSelectAll = useCallback(() => {
     const visibleIds = displayAssets.map((a) => a.id)
     const next = toggleAllVisibleIds(selectedIds || new Set(), visibleIds)
+    if (next.size === 0) lastAnchorIdRef.current = ''
     applySelectionSet(next)
   }, [displayAssets, selectedIds, applySelectionSet])
 
@@ -925,9 +978,11 @@ export function AssetGrid({
     const current = selectedIds || new Set()
     if (shiftKey && lastAnchorIdRef.current) {
       const orderedIds = displayAssets.map((a) => a.id)
-      const next = selectRangeIds(current, orderedIds, lastAnchorIdRef.current, asset.id)
-      applySelectionSet(next)
-      return
+      if (orderedIds.includes(lastAnchorIdRef.current)) {
+        const next = selectRangeIds(current, orderedIds, lastAnchorIdRef.current, asset.id)
+        applySelectionSet(next)
+        return
+      }
     }
     lastAnchorIdRef.current = asset.id
     if (typeof onSelectionChange === 'function') {

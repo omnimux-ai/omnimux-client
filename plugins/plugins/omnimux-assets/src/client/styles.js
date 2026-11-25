@@ -75,7 +75,7 @@ export const ASSETS_CSS = `
 }
 .omnimux-assets-list-wrap {
   width: 100%;
-  overflow-x: auto;
+  overflow-x: clip;
   container-type: inline-size;
   container-name: assets-list;
 }
@@ -96,7 +96,7 @@ export const ASSETS_CSS = `
 }
 .omnimux-assets-list-wrap .omnimux-assets-list-table thead th {
   position: sticky;
-  top: 0;
+  top: var(--stage-rail-h, 0px);
   z-index: 2;
   background: var(--dsw-alias-bg-base);
   background-color: var(--dsw-alias-bg-base);
@@ -111,8 +111,8 @@ export const ASSETS_CSS = `
   white-space: nowrap;
 }
 .omnimux-assets-list-wrap .omnimux-assets-list-table thead th[aria-sort]:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
-  background-color: var(--dsw-alias-interactive-bg-hover);
+  background: var(--dsw-alias-bg-module-platform);
+  background-color: var(--dsw-alias-bg-module-platform);
   color: var(--dsw-alias-label-primary);
 }
 .omnimux-assets-list-wrap .omnimux-assets-list-table thead th.omnimux-assets-th-check {
@@ -122,7 +122,7 @@ export const ASSETS_CSS = `
 }
 .omnimux-assets-list-wrap .omnimux-assets-list-table thead th.omnimux-assets-th-name {
   width: 30%;
-  min-width: 220px;
+  min-width: 180px;
 }
 .omnimux-assets-list-wrap .omnimux-assets-list-table thead th.omnimux-assets-th-type {
   width: 88px;
@@ -139,7 +139,7 @@ export const ASSETS_CSS = `
   text-align: right;
 }
 .omnimux-assets-list-wrap .omnimux-assets-list-table thead th.omnimux-assets-th-actions {
-  width: 148px;
+  width: 164px;
   padding-right: 12px;
   text-align: right;
 }
@@ -155,12 +155,22 @@ export const ASSETS_CSS = `
   }
   .omnimux-assets-list-wrap .omnimux-assets-list-table thead th.omnimux-assets-th-name {
     width: auto;
+    min-width: 0;
   }
 }
 @container assets-list (max-width: 600px) {
   .omnimux-assets-list-table .omnimux-assets-th-updated,
   .omnimux-assets-list-table .omnimux-assets-td-updated {
     display: none;
+  }
+}
+@container assets-list (max-width: 460px) {
+  .omnimux-assets-list-table .omnimux-assets-th-type,
+  .omnimux-assets-list-table .omnimux-assets-td-type {
+    display: none;
+  }
+  .omnimux-assets-list-wrap .omnimux-assets-list-table thead th.omnimux-assets-th-files {
+    width: 78px;
   }
 }
 .omnimux-assets-list-wrap .omnimux-assets-list-table .omnimux-assets-list-row,
@@ -211,6 +221,10 @@ export const ASSETS_CSS = `
 .omnimux-assets-list-table .omnimux-assets-list-row:focus-visible td:first-child {
   box-shadow: inset 2px 0 0 var(--dsw-alias-brand-primary);
 }
+.omnimux-assets-td-check {
+  user-select: none;
+  -webkit-user-select: none;
+}
 .omnimux-assets-checkbox {
   display: inline-flex;
   align-items: center;
@@ -225,6 +239,8 @@ export const ASSETS_CSS = `
   vertical-align: middle;
   box-sizing: border-box;
   opacity: 0.85;
+  user-select: none;
+  -webkit-user-select: none;
   transition: background-color 120ms ease, border-color 120ms ease, opacity 120ms ease;
 }
 .omnimux-assets-th-check .omnimux-assets-checkbox,
@@ -313,8 +329,8 @@ export const ASSETS_CSS = `
   justify-content: flex-end;
   gap: 6px;
 }
-.omnimux-assets-list-missing {
-  position: static !important;
+.omnimux-assets-list-table .omnimux-assets-list-missing {
+  position: static;
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -397,13 +413,13 @@ export const ASSETS_CSS = `
   font-weight: 400;
   color: var(--dsw-alias-label-primary);
 }
-.omnimux-assets-list-more-menu .omnimux-assets-list-menu-item:hover:not(:disabled) {
+.omnimux-assets-list-more-menu .omnimux-assets-list-menu-item:hover:not(:disabled):not([aria-disabled="true"]) {
   background: var(--dsw-alias-interactive-bg-hover);
 }
 .omnimux-assets-list-more-menu .omnimux-assets-list-menu-item--danger {
   color: var(--dsw-alias-state-error-primary);
 }
-.omnimux-assets-list-more-menu .omnimux-assets-list-menu-item--danger:hover:not(:disabled) {
+.omnimux-assets-list-more-menu .omnimux-assets-list-menu-item--danger:hover:not(:disabled):not([aria-disabled="true"]) {
   background: var(--dsw-alias-interactive-bg-hover-danger);
   color: var(--dsw-alias-state-error-primary);
 }

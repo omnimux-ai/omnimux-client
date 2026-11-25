@@ -15,7 +15,7 @@
      - 相对时间格式真源：`plugins/plugins/omnimux-assets/src/client/format.js`（`formatTimeAgo`、`formatDateTime`）。
      - 机器元数据来源：`plugins/plugins/omnimux-assets/src/cloud-catalog.js:631-637`（保存云端素材时会以换行拼接 `云端分类：...` 与 `云端来源：...`）。
      - 表格与复选框基座：`plugins/packages/dsh-ui-kit/src/table/Table.tsx`（`TableHead` 已内置 `align`、`sortable`、`sortDirection` 与排序箭头）与 `DataTable.tsx`（无障碍 `role="checkbox"` + `aria-checked="true|false|mixed"`，不引入原生 `<button>` / `<input>`）。
-     - 画布拖拽投放契约：`plugins/plugins/omnimux-workflow/src/canvas/editor/CanvasEditor.tsx:911-935` 与 `assetImportAdapter.ts:50-87`（识别 `application/json` 的 `{ type: 'omnimux-asset', asset }`）；同步写入 `text/plain`（`@type/name` 引用）以适配会话输入框拖放。
+     - 画布拖拽投放契约：`plugins/plugins/omnimux-workflow/src/canvas/editor/CanvasEditor.tsx:911-935` 与 `plugins/plugins/omnimux-workflow/src/canvas/editor/utils/assetImportAdapter.ts:50-87`（识别 `application/json` 的 `{ type: 'omnimux-asset', asset }`）；同步写入 `text/plain`（`@type/name` 引用）以适配会话输入框拖放。
      - 浮层与 Token 硬门禁：`plugins/scripts/guard-no-transparent-popover.mjs`（禁止浮层 `backdrop-filter` 与未定义 `--dsw-alias-bg-elevated`）、`plugins/scripts/verify-dsw-tokens.mjs`（450 个宿主真源 Token 白名单）与 `plugins/scripts/scan-ui-gates.mjs`（UI01~UI10）。
 
 2. **基线现状与取舍**

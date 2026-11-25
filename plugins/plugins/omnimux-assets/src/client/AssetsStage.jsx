@@ -197,7 +197,7 @@ function AssetsFilterBar(props) {
   )
 }
 
-function AssetsSelectionBar(props) {
+export function AssetsSelectionBar(props) {
   const { t, feed } = props
   const [batchAdded, setBatchAdded] = useState(false)
   const batchTimerRef = useRef(null)
@@ -209,7 +209,11 @@ function AssetsSelectionBar(props) {
   }, [])
 
   useEffect(() => {
-    if (!feed.selecting) setBatchAdded(false)
+    setBatchAdded(false)
+    if (batchTimerRef.current) {
+      clearTimeout(batchTimerRef.current)
+      batchTimerRef.current = null
+    }
   }, [feed.selecting, feed.selectedCount])
 
   if (!feed.selecting) return null
@@ -279,8 +283,13 @@ function AssetsMainView(props) {
   const handleRevealAsset = useCallback(async (asset) => {
     const firstFile = Array.isArray(asset?.files) ? asset.files[0] : null
     if (!asset?.id || !firstFile?.id) return
-    const result = await revealAssetEntry(asset.id, firstFile.id, '')
-    if (!result.ok) setError(t('browse.revealFailed'))
+    try {
+      const result = await revealAssetEntry(asset.id, firstFile.id, '')
+      if (!result.ok) setError(t('browse.revealFailed'))
+    } catch (err) {
+      console.warn('[omnimux-assets] revealAssetEntry failed:', err)
+      setError(t('browse.revealFailed'))
+    }
   }, [setError, t])
 
   if (detail) {
