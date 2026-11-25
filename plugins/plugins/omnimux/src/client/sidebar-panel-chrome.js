@@ -26,7 +26,8 @@ export const PANEL_CHROME_STYLE_ID = 'omnimux-sidebar-panel-chrome'
 /** 侧栏列：桌面壳层包裹层与宿主内层列都在内，取第一个命中的即可。 */
 export const SIDEBAR_COLUMN_SELECTOR = '[data-pane="sidebar"], [class*="sidebarCol"]'
 
-/** 官方 panel 行 / 图标槽 / 选中态（官方 CSS Module 类名带 hash 前缀，用子串命中）。 */
+/** 官方 panel 包裹层 / 行 / 图标槽 / 选中态（官方 CSS Module 类名带 hash 前缀，用子串命中）。 */
+export const PANEL_ENTRY_SELECTOR = '[class*="panelEntry"]'
 export const PANEL_ROW_SELECTOR = '[class*="panelRow"]'
 export const PANEL_GLYPH_SELECTOR = '[class*="panelGlyph"]'
 export const PANEL_ACTIVE_SELECTOR = '[class*="panelActive"]'
@@ -87,6 +88,7 @@ html:not(:has([data-sidebar-collapsed])) ${SIDEBAR_SCOPE} ${PANEL_ROW_SELECTOR} 
   min-height: ${PANEL_ROW_METRICS.height}px;
   padding: 0 ${PANEL_ROW_METRICS.paddingX}px;
   margin: 0 ${PANEL_ROW_METRICS.marginX}px;
+  border-inline: 0;
   gap: ${PANEL_ROW_METRICS.gap}px;
   border-radius: ${PANEL_ROW_METRICS.radius}px;
   font-size: ${PANEL_ROW_METRICS.fontSize}px;
@@ -113,7 +115,11 @@ html:not(:has([data-sidebar-collapsed])) ${SIDEBAR_SCOPE} ${PANEL_ROW_SELECTOR}$
 
    识别方式：官方「更多」行带 aria-haspopup="menu"，其余面板行没有 —— 于是
    「隐藏所有非更多面板行」等价于「隐藏官方面板行」，不需要按 id / 文案匹配，
-   官方改文案、加面板、换语言都不会让这条规则失效。 */
+   官方改文案、加面板、换语言都不会让这条规则失效。
+   0.2.2-rc.5 起官方面板行新增外层包裹容器，只隐藏内层按钮会让空包裹层在
+   gap:2px 的导航列里继续占出缝隙并遗留取消固定按钮，因此同步隐藏外层容器并
+   保留内层选择器兼容旧宿主。 */
+${SIDEBAR_SCOPE} ${PANEL_ENTRY_SELECTOR}:has(${PANEL_ROW_SELECTOR}:not([aria-haspopup="menu"])),
 ${SIDEBAR_SCOPE} ${PANEL_ROW_SELECTOR}:not([aria-haspopup="menu"]) {
   display: none;
 }

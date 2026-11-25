@@ -596,10 +596,21 @@ function directChildOf(root, node) {
 }
 
 /** Optional external family rows (taskboard/atb/ssh) that precede our block. */
-function externalAnchor(root) {
-  return [...root.children].find(
+function externalAnchor(container) {
+  return [...container.children].find(
     (el) => el instanceof HTMLElement && el.matches('[data-dsh-taskboard-entry], [data-dsh-atb-entry], [data-dsh-ssh-entry]'),
   )
+}
+
+/**
+ * 宿主 `ui-sidebar` 全局导航列表（`nav[class*="panelList"]`）。
+ * 0.2.2-rc.5 起宿主把顶距（12px）迁到 `.scrollRegion` + `.scrollArea` 首行占位，
+ * 面板与「更多」位于 `.panelList`（`gap: 2px`）。将常驻自定义行挂入 `panelList`
+ * 头部以复用宿主顶距、行距与滚动交接；旧宿主缺失时回退到 `.root`。
+ */
+function findPanelList(root) {
+  const nav = root.querySelector('nav[class*="panelList"]')
+  return nav instanceof HTMLElement ? nav : undefined
 }
 
 function injectStyles(styleText, styleId) {
@@ -694,24 +705,40 @@ function runPlaceAll() {
   if (!railCollapsed()) closeNewMenu()
 }
 
-/** Below rows：按 rank 排序，落在「新建会话」下方（既有行为）。 */
+/**
+ * Below rows：按 rank 升序挂载。
+ * 优先挂进宿主 `nav[class*="panelList"]` 头部（「更多」与隐藏面板行之前），
+ * 复用宿主顶距、行间 `gap: 2px` 及滚动交接；无 `panelList` 时回退到「新建会话」下方。
+ */
 function placeBelow(root) {
   const sorted = [...ROWS].sort((a, b) => a.rank - b.rank)
-  let anchor = directChildOf(root, newSessionButton(root))
-  if (anchor === undefined) return
+  if (sorted.length === 0) return
+  const panelList = findPanelList(root)
+  const container = panelList ?? root
+  let anchor = panelList ? null : directChildOf(root, newSessionButton(root))
+  if (!panelList && anchor === undefined) return
   let slotExternal = true
   for (const row of sorted) {
     if (row.rank >= 3 && slotExternal) {
-      const ext = externalAnchor(root)
+      const ext = externalAnchor(container)
       if (ext instanceof HTMLElement) anchor = ext
       slotExternal = false
     }
     const el = row.element
-    if (el.parentElement === root && el.previousElementSibling === anchor) {
+    if (anchor === null) {
+      if (el.parentElement === container && el.previousElementSibling === null) {
+        anchor = el
+        continue
+      }
+      container.insertBefore(el, container.firstElementChild)
       anchor = el
       continue
     }
-    root.insertBefore(el, anchor.nextElementSibling ?? null)
+    if (el.parentElement === container && el.previousElementSibling === anchor) {
+      anchor = el
+      continue
+    }
+    container.insertBefore(el, anchor.nextElementSibling ?? null)
     anchor = el
   }
 }
