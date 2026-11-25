@@ -73,7 +73,7 @@ describe('Generations tab integration into Assets Stage', () => {
     assert.match(ASSETS_CSS, /\.omnimux-generations-grid\s*\{[^}]*display:\s*grid\s*!important/)
     assert.match(ASSETS_CSS, /\.omnimux-generation-card/)
     assert.match(ASSETS_CSS, /\.omnimux-generation-badge/)
-    assert.match(ASSETS_CSS, /\.omnimux-generations-grid\s*\{[^}]*grid-template-columns:\s*repeat\(auto-fill,\s*minmax\(220px,\s*1fr\)\)/)
+    assert.match(ASSETS_CSS, /\.omnimux-generations-grid\s*\{[^}]*grid-template-columns:\s*repeat\(auto-fill,\s*minmax\(min\(220px,\s*100%\),\s*1fr\)\)/)
     assert.match(ASSETS_CSS, /\.omnimux-generation-card-thumb\s*\{[^}]*aspect-ratio:\s*16\s*\/\s*10/)
     assert.match(ASSETS_CSS, /\.omnimux-generation-image-thumb,\s*\n\.omnimux-generation-video-preview\s*\{[^}]*object-fit:\s*contain/)
     assert.match(ASSETS_CSS, /\.omnimux-generation-image-thumb,\s*\n\.omnimux-generation-video-preview\s*\{[^}]*border-radius:\s*8px/)

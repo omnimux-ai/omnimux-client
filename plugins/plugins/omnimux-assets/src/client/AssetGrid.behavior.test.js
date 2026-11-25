@@ -1,7 +1,8 @@
 /**
- * AssetGrid 16:10 横版托盘卡片运行时交互契约测试（真实 React + JSDOM）。
+ * AssetGrid 16:10 横版托盘卡片运行时交互契约测试（真实 React + 真实 @deepseek-ai/dsh-client-ui-primitives Menu + JSDOM）。
  * 覆盖：点击展台预览/打开、右上角快捷加入会话、多选圆圈点击与键盘不冒泡、
- * 标题行 ... 菜单（查看详情 / 添加到会话 / 打开文件位置 / 移除）与视频/上传进度/无封面占位态。
+ * 标题行 ... 真实门户 Menu（单开互斥、ArrowDown 键盘导航、查看详情 / 添加到会话 / 打开文件位置 / 移除、无文件省略 reveal）、
+ * 媒体 error 降级占位、错误态在下次 reveal 清零，以及视频/上传进度(含 99.6 钳位)/无封面占位态。
  */
 import assert from 'node:assert/strict'
 import test from 'node:test'
@@ -23,64 +24,36 @@ function installDom() {
   globalThis.window = window
   globalThis.document = window.document
   Object.defineProperty(globalThis, 'navigator', { value: window.navigator, configurable: true, writable: true })
+  globalThis.Element = window.Element
   globalThis.HTMLElement = window.HTMLElement
+  globalThis.HTMLButtonElement = window.HTMLButtonElement
+  globalThis.HTMLInputElement = window.HTMLInputElement
+  globalThis.SVGElement = window.SVGElement
   globalThis.Node = window.Node
   globalThis.Event = window.Event
   globalThis.MouseEvent = window.MouseEvent
   globalThis.KeyboardEvent = window.KeyboardEvent
+  globalThis.MutationObserver = window.MutationObserver
+  globalThis.getComputedStyle = window.getComputedStyle.bind(window)
+  globalThis.requestAnimationFrame = window.requestAnimationFrame || ((cb) => setTimeout(cb, 0))
+  globalThis.cancelAnimationFrame = window.cancelAnimationFrame || ((id) => clearTimeout(id))
+  if (typeof window.PointerEvent === 'function') {
+    globalThis.PointerEvent = window.PointerEvent
+  } else {
+    globalThis.PointerEvent = window.MouseEvent
+    window.PointerEvent = window.MouseEvent
+  }
+  if (!window.ResizeObserver) {
+    window.ResizeObserver = class ResizeObserver {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    }
+    globalThis.ResizeObserver = window.ResizeObserver
+  }
   globalThis.IS_REACT_ACT_ENVIRONMENT = true
   return window
 }
-
-const PRIMITIVES_SHIM = `
-import React from 'react'
-export function Tooltip({ children }) { return children }
-export function Modal({ open, children }) { return open ? <div role="dialog">{children}</div> : null }
-export function Menu({ open, anchor, items = [], onSelect, onClose }) {
-  return (
-    <span data-test-menu-wrap="true">
-      {anchor}
-      {open ? (
-        <div role="menu" data-test-menu="true">
-          {items.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              role="menuitem"
-              data-menu-id={item.id}
-              disabled={item.disabled}
-              onClick={(e) => { e.stopPropagation(); if (!item.disabled) onSelect?.(item.id) }}
-            >
-              {item.label}
-            </button>
-          ))}
-          <button type="button" data-menu-close="true" onClick={() => onClose?.()}>close</button>
-        </div>
-      ) : null}
-    </span>
-  )
-}
-const Icon = () => <svg />
-export const IconEllipsisOutline16 = Icon
-export const IconTrashOutline16 = Icon
-export const IconSearchOutline16 = Icon
-export const IconCloseOutline16 = Icon
-export const IconCloseFill14 = Icon
-export const IconLoadingOutline16 = Icon
-export const IconCheckOutline16 = Icon
-export const IconRefreshOutline16 = Icon
-export const IconRefreshOutline14 = Icon
-export const IconDownloadOutline16 = Icon
-export const IconPlusOutline16 = Icon
-export const IconChevronDownOutline14 = Icon
-export const IconChevronUpOutline14 = Icon
-export const IconChevronLeftOutline14 = Icon
-export const IconEditOutline16 = Icon
-export const IconCopyOutline16 = Icon
-export const IconPaperclipOutline16 = Icon
-export const IconPlayOutline16 = Icon
-export const IconRightUpOutline14 = Icon
-`
 
 async function loadAssetGrid() {
   const esbuild = pluginRequire('esbuild')
@@ -95,17 +68,8 @@ async function loadAssetGrid() {
     external: ['react', 'react-dom', 'react-dom/client', 'react/jsx-runtime'],
     plugins: [
       {
-        name: 'shim-primitives-and-css',
+        name: 'stub-css-and-media',
         setup(build) {
-          build.onResolve({ filter: /^@deepseek-ai\/dsh-client-ui-primitives$/ }, () => ({
-            path: 'primitives-shim',
-            namespace: 'shim',
-          }))
-          build.onLoad({ filter: /.*/, namespace: 'shim' }, () => ({
-            contents: PRIMITIVES_SHIM,
-            loader: 'jsx',
-            resolveDir: here,
-          }))
           build.onResolve({ filter: /\.(css|less|scss|woff|woff2|ttf|png|jpg|jpeg|webp|svg|mp3|mp4)$/ }, (args) => ({
             path: args.path,
             namespace: 'stub-assets',
@@ -124,7 +88,13 @@ async function loadAssetGrid() {
   return mod.exports
 }
 
-test('AssetGrid 托盘卡片：预览/打开、快捷加入、多选防冒泡、... 菜单四项动作及视频/上传/无封面态', async () => {
+function dispatchPointerAndClick(window, el) {
+  el.dispatchEvent(new window.PointerEvent('pointerdown', { bubbles: true, cancelable: true, button: 0 }))
+  el.dispatchEvent(new window.MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0 }))
+  el.click()
+}
+
+test('AssetGrid 托盘卡片：挂接真实宿主 Menu 覆盖交互、键盘导航、互斥关闭、媒体降级与错误清零', async () => {
   const window = installDom()
   const React = pluginRequire('react')
   const { createRoot } = pluginRequire('react-dom/client')
@@ -172,7 +142,7 @@ test('AssetGrid 托盘卡片：预览/打开、快捷加入、多选防冒泡、
       id: 'ast_upload',
       name: '风格包导入中',
       type: 'style',
-      uploadProgress: 95,
+      uploadProgress: 99.6,
       created_at: new Date().toISOString(),
       files: [],
       cover: null,
@@ -213,10 +183,10 @@ test('AssetGrid 托盘卡片：预览/打开、快捷加入、多选防冒泡、
       }))
     })
 
-    const cards = [...container.querySelectorAll('.omnimux-assets-local-grid .omnimux-assets-card')]
+    const cards = Array.from(container.querySelectorAll('.omnimux-assets-local-grid .omnimux-assets-card'))
     assert.equal(cards.length, 5)
 
-    // 1. 图片卡不含旧 9x16 属性；视频卡渲染 <video> + 播放徽标；上传中渲染 95% 环；无封面知识包渲染占位底座
+    // 1. 图片卡不含旧 9x16 属性；视频卡渲染 <video> + 播放徽标；上传中 99.6 钳位 99%；无封面知识包渲染占位底座
     const img = cards[0].querySelector('img.omnimux-assets-card-media')
     assert.ok(img)
     assert.equal(img.getAttribute('width'), null)
@@ -224,7 +194,7 @@ test('AssetGrid 托盘卡片：预览/打开、快捷加入、多选防冒泡、
     assert.ok(cards[1].querySelector('video.omnimux-assets-card-video'))
     assert.ok(cards[1].querySelector('.omnimux-assets-card-video-play'))
     assert.equal(cards[1].querySelector('img'), null)
-    assert.equal(cards[2].querySelector('.omnimux-assets-card-progress-pct')?.textContent, '95%')
+    assert.equal(cards[2].querySelector('.omnimux-assets-card-progress-pct')?.textContent, '99%')
     assert.ok(cards[3].querySelector('.omnimux-assets-card-placeholder'))
     assert.ok(cards[4].querySelector('.omnimux-assets-card-placeholder'))
 
@@ -238,60 +208,101 @@ test('AssetGrid 托盘卡片：预览/打开、快捷加入、多选防冒泡、
     assert.equal(opened[0], 'ast_folder')
 
     // 3. 右上角快捷加入不冒泡触发卡片预览，且立即切换 data-added="true" 与 disabled
-    const quickAddBtn = cards[0].querySelector('.omnimux-assets-quick-add')
-    await React.act(async () => { quickAddBtn.click() })
+    const quickAddBtn0 = cards[0].querySelector('.omnimux-assets-quick-add')
+    await React.act(async () => { dispatchPointerAndClick(window, quickAddBtn0) })
     assert.deepEqual(added, ['ast_img'])
     assert.equal(previewed.length, 1)
-    assert.equal(quickAddBtn.getAttribute('data-added'), 'true')
-    assert.equal(quickAddBtn.disabled, true)
+    assert.equal(quickAddBtn0.getAttribute('data-added'), 'true')
+    assert.equal(quickAddBtn0.disabled, true)
 
-    // 4. 多选圆圈点击与 Enter/Space 键均不触发卡片预览
-    const checkBtn = cards[0].querySelector('.omnimux-assets-check')
+    // 4. 多选圆圈点击与 Enter 键均不触发卡片预览
+    const checkBtn0 = cards[0].querySelector('.omnimux-assets-check')
     await React.act(async () => {
-      checkBtn.click()
-      checkBtn.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+      dispatchPointerAndClick(window, checkBtn0)
+      checkBtn0.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
     })
     assert.deepEqual(toggled, ['ast_img'])
     assert.equal(previewed.length, 1)
 
-    // 5. 标题行 ... 菜单覆盖查看详情 / 添加到会话 / 打开文件位置（成功与失败回调）/ 移除
-    const moreBtn = cards[1].querySelector('.omnimux-assets-card-more-btn')
-    await React.act(async () => { moreBtn.click() })
-    const menuItems = [...cards[1].querySelectorAll('[role="menuitem"]')].map((el) => el.getAttribute('data-menu-id'))
-    assert.deepEqual(menuItems, ['view', 'add', 'reveal', 'remove'])
+    // 5. 真实门户 Menu 互斥关闭：开卡 0 菜单后点卡 1 菜单触发器，全页只剩 1 个 [role="menu"]
+    const moreBtn0 = cards[0].querySelector('.omnimux-assets-card-more-btn')
+    const moreBtn1 = cards[1].querySelector('.omnimux-assets-card-more-btn')
+    const moreBtn2 = cards[2].querySelector('.omnimux-assets-card-more-btn')
+
+    await React.act(async () => { dispatchPointerAndClick(window, moreBtn0) })
+    assert.equal(window.document.body.querySelectorAll('[role="menu"]').length, 1)
+
+    await React.act(async () => { dispatchPointerAndClick(window, moreBtn1) })
+    assert.equal(window.document.body.querySelectorAll('[role="menu"]').length, 1, '打开另一张卡的菜单时旧菜单必须自动关闭')
+
+    // 6. 真实门户 Menu 键盘导航：触发器与菜单项上的 ArrowDown 均能正常移动焦点且不误触卡片预览
+    moreBtn1.focus()
+    await React.act(async () => {
+      moreBtn1.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true }))
+    })
+    const activeItems1 = Array.from(window.document.body.querySelectorAll('[role="menu"] [role="menuitem"]'))
+    assert.equal(activeItems1.length, 4)
+    assert.deepEqual(
+      activeItems1.map((el) => el.textContent?.trim()),
+      [zh['card.view'], zh['card.addToConversation'], zh['browse.revealLocation'], zh['mapping.remove']],
+    )
+    assert.equal(window.document.activeElement, activeItems1[0], '触发器按 ArrowDown 后焦点应落入首条菜单项')
 
     await React.act(async () => {
-      cards[1].querySelector('[data-menu-id="view"]').click()
+      activeItems1[0].dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true }))
     })
+    assert.equal(window.document.activeElement, activeItems1[1], '菜单项按 ArrowDown 应前进到下一项')
+    assert.equal(previewed.length, 1)
+
+    // 点卡片快捷按钮（外部 pointerdown）时已打开的菜单必须关闭
+    const quickAddBtn4 = cards[4].querySelector('.omnimux-assets-quick-add')
+    await React.act(async () => { dispatchPointerAndClick(window, quickAddBtn4) })
+    assert.equal(window.document.body.querySelectorAll('[role="menu"]').length, 0, '点击外部快捷按钮后菜单应关闭')
+    assert.deepEqual(added, ['ast_img', 'ast_doc'])
+
+    // 7. 无文件资产（files: []）菜单省略「打开文件位置」
+    await React.act(async () => { dispatchPointerAndClick(window, moreBtn2) })
+    const uploadMenuLabels = Array.from(window.document.body.querySelectorAll('[role="menu"] [role="menuitem"]')).map((el) => el.textContent?.trim())
+    assert.deepEqual(uploadMenuLabels, [zh['card.view'], zh['card.addToConversation'], zh['mapping.remove']])
+
+    // 8. 真实门户 Menu 四项业务动作 + reveal 失败后再次成功清零旧错误
+    const clickMenuByText = async (trigger, label) => {
+      await React.act(async () => { dispatchPointerAndClick(window, trigger) })
+      const item = Array.from(window.document.body.querySelectorAll('[role="menu"] [role="menuitem"]'))
+        .find((el) => el.textContent?.trim() === label)
+      assert.ok(item, `未找到菜单项: ${label}`)
+      await React.act(async () => { dispatchPointerAndClick(window, item) })
+    }
+
+    await clickMenuByText(moreBtn1, zh['card.view'])
     assert.equal(opened[1], 'ast_vid')
 
-    await React.act(async () => { moreBtn.click() })
-    await React.act(async () => {
-      cards[1].querySelector('[data-menu-id="add"]').click()
-    })
-    assert.deepEqual(added, ['ast_img', 'ast_vid'])
-
-    await React.act(async () => { moreBtn.click() })
-    await React.act(async () => {
-      cards[1].querySelector('[data-menu-id="reveal"]').click()
-    })
-    assert.equal(fetchCalls.length, 1)
-    assert.match(fetchCalls[0].url, /\/omnimux\/assets\/library\/reveal$/)
-    assert.equal(errors.length, 0)
+    await clickMenuByText(moreBtn1, zh['card.addToConversation'])
+    assert.deepEqual(added, ['ast_img', 'ast_doc', 'ast_vid'])
 
     revealOk = false
-    await React.act(async () => { moreBtn.click() })
-    await React.act(async () => {
-      cards[1].querySelector('[data-menu-id="reveal"]').click()
-    })
-    assert.equal(errors.length, 1)
-    assert.equal(errors[0], zh['browse.revealFailed'])
+    await clickMenuByText(moreBtn1, zh['browse.revealLocation'])
+    assert.equal(fetchCalls.length, 1)
+    assert.match(fetchCalls[0].url, /\/omnimux\/assets\/library\/reveal$/)
+    assert.equal(errors[errors.length - 1], zh['browse.revealFailed'])
 
-    await React.act(async () => { moreBtn.click() })
-    await React.act(async () => {
-      cards[1].querySelector('[data-menu-id="remove"]').click()
-    })
+    revealOk = true
+    await clickMenuByText(moreBtn1, zh['browse.revealLocation'])
+    assert.equal(fetchCalls.length, 2)
+    assert.equal(errors[errors.length - 1], '', '再次 reveal 成功前应先清空陈旧错误提示')
+
+    await clickMenuByText(moreBtn1, zh['mapping.remove'])
     assert.deepEqual(removed, ['ast_vid'])
+
+    // 9. 图片与视频加载失败时自动降级到居中图标托座
+    await React.act(async () => {
+      cards[0].querySelector('img.omnimux-assets-card-media').dispatchEvent(new window.Event('error'))
+      cards[1].querySelector('video.omnimux-assets-card-video').dispatchEvent(new window.Event('error'))
+    })
+    assert.equal(cards[0].querySelector('img'), null)
+    assert.ok(cards[0].querySelector('.omnimux-assets-card-placeholder'))
+    assert.equal(cards[1].querySelector('video'), null)
+    assert.ok(cards[1].querySelector('.omnimux-assets-card-placeholder'))
   } finally {
     globalThis.fetch = origFetch
     await React.act(async () => { root.unmount() })

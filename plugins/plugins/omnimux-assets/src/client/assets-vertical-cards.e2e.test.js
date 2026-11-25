@@ -1,7 +1,17 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import test from 'node:test'
+import { fileURLToPath } from 'node:url'
 import { runStyleDomProbe } from '../../../../scripts/test-fixtures/style-dom-probe.mjs'
 import { ASSETS_CSS } from './styles.js'
+
+const here = dirname(fileURLToPath(import.meta.url))
+// 真实加载 dsh-ui-kit MediaCard 样式（还原编译后的 .dshUk-MediaCard-* 类名），验证层叠特异性胜出。
+const MEDIA_CARD_KIT_CSS = readFileSync(
+  join(here, '../../../../packages/dsh-ui-kit/src/card/MediaCard.module.css'),
+  'utf8',
+).replace(/\.([a-zA-Z_][a-zA-Z0-9_-]*)/g, '.dshUk-MediaCard-$1')
 
 const TOKEN_CSS = `
 :root {
@@ -39,11 +49,11 @@ test('本地资产统一 16:10 横版托盘展台：等高网格、全类型 con
   const result = runStyleDomProbe({
     name: 'assets-horizontal-tray-geometry',
     viewportHeight: 860,
-    styles: `${TOKEN_CSS}\n${ASSETS_CSS}`,
+    styles: `${TOKEN_CSS}\n${MEDIA_CARD_KIT_CSS}\n${ASSETS_CSS}`,
     html: `
       <div class="omnimux-assets-stage" style="width: 1280px; padding: 20px;">
         <div class="omnimux-assets-local-grid">
-          <div class="omnimux-assets-focusable omnimux-assets-card omnimux-assets-card--tray omnimux-assets-card--character">
+          <div class="dshUk-MediaCard-card dshUk-MediaCard-selected omnimux-assets-focusable omnimux-assets-card omnimux-assets-card--tray omnimux-assets-card--character" aria-selected="true">
             <div class="dshUk-MediaCard-coverWrapper">
               <div class="omnimux-assets-card-thumb">
                 <img src="${portraitSvg}" class="omnimux-assets-card-media char-portrait" alt="" />
@@ -57,7 +67,7 @@ test('本地资产统一 16:10 横版托盘展台：等高网格、全类型 con
               <div class="dshUk-MediaCard-subtitle omnimux-assets-card-desc">1小时前</div>
             </div>
           </div>
-          <div class="omnimux-assets-focusable omnimux-assets-card omnimux-assets-card--tray omnimux-assets-card--character">
+          <div class="dshUk-MediaCard-card omnimux-assets-focusable omnimux-assets-card omnimux-assets-card--tray omnimux-assets-card--character">
             <div class="dshUk-MediaCard-coverWrapper">
               <div class="omnimux-assets-card-thumb">
                 <img src="${wideCharSvg}" class="omnimux-assets-card-media char-wide" alt="" />
@@ -68,7 +78,7 @@ test('本地资产统一 16:10 横版托盘展台：等高网格、全类型 con
               <div class="dshUk-MediaCard-subtitle omnimux-assets-card-desc">2小时前</div>
             </div>
           </div>
-          <div class="omnimux-assets-focusable omnimux-assets-card omnimux-assets-card--tray omnimux-assets-card--scene">
+          <div class="dshUk-MediaCard-card omnimux-assets-focusable omnimux-assets-card omnimux-assets-card--tray omnimux-assets-card--scene">
             <div class="dshUk-MediaCard-coverWrapper scene-cover">
               <div class="omnimux-assets-card-thumb">
                 <img src="${landscapeSvg}" class="omnimux-assets-card-media scene-media" alt="" />
@@ -79,7 +89,7 @@ test('本地资产统一 16:10 横版托盘展台：等高网格、全类型 con
               <div class="dshUk-MediaCard-subtitle omnimux-assets-card-desc">3小时前</div>
             </div>
           </div>
-          <div class="omnimux-assets-focusable omnimux-assets-card omnimux-assets-card--tray omnimux-assets-card--prop">
+          <div class="dshUk-MediaCard-card omnimux-assets-focusable omnimux-assets-card omnimux-assets-card--tray omnimux-assets-card--prop">
             <div class="dshUk-MediaCard-coverWrapper prop-cover">
               <div class="omnimux-assets-card-thumb">
                 <img src="${squareSvg}" class="omnimux-assets-card-media prop-media" alt="" />
@@ -90,7 +100,7 @@ test('本地资产统一 16:10 横版托盘展台：等高网格、全类型 con
               <div class="dshUk-MediaCard-subtitle omnimux-assets-card-desc">5小时前</div>
             </div>
           </div>
-          <div class="omnimux-assets-focusable omnimux-assets-card omnimux-assets-card--tray omnimux-assets-card--knowledge">
+          <div class="dshUk-MediaCard-card omnimux-assets-focusable omnimux-assets-card omnimux-assets-card--tray omnimux-assets-card--knowledge">
             <div class="dshUk-MediaCard-coverWrapper knowledge-cover">
               <div class="omnimux-assets-card-thumb">
                 <div class="omnimux-assets-card-placeholder">DOC</div>
@@ -102,6 +112,7 @@ test('本地资产统一 16:10 横版托盘展台：等高网格、全类型 con
             </div>
           </div>
         </div>
+        <div class="omnimux-assets-card omnimux-assets-cloud-skeleton" style="width: 240px;"></div>
       </div>
     `,
     measure: () => {
@@ -141,6 +152,9 @@ test('本地资产统一 16:10 横版托盘展台：等高网格、全类型 con
       // Estimate visible rows under typical desktop header (~220px) in 860px viewport
       const visibleRows = +((860 - 220) / (cardRects[0].height + 20)).toFixed(2)
 
+      const cloudSkeleton = document.querySelector('.omnimux-assets-cloud-skeleton')
+      const cloudSkeletonCs = getComputedStyle(cloudSkeleton)
+
       return {
         firstRowCols,
         ratios,
@@ -149,6 +163,8 @@ test('本地资产统一 16:10 横版托盘展台：等高网格、全类型 con
         visibleRows,
         cardBorderWidth: card0Cs.borderTopWidth,
         cardBg: card0Cs.backgroundColor,
+        cardBoxShadow: card0Cs.boxShadow,
+        cloudSkeletonBorderWidth: cloudSkeletonCs.borderTopWidth,
         thumbAspectRatio: thumb0Cs.aspectRatio,
         thumbPadding: thumb0Cs.padding,
         thumbRadius: thumb0Cs.borderRadius,
@@ -179,12 +195,14 @@ test('本地资产统一 16:10 横版托盘展台：等高网格、全类型 con
   assert.equal(result.maxCardHeightDiff < 1, true, `同排卡片高度差应 < 1px，实际 ${result.maxCardHeightDiff}`)
   assert.equal(result.visibleRows >= 2.5, true, `首屏可见行数应 >= 2.5，实际 ${result.visibleRows}`)
 
-  // 2. 托盘样式：独立 12px 圆角 + 8px 呼吸内边距 + 无外卡边框
+  // 2. 托盘样式：独立 12px 圆角 + 8px 呼吸内边距 + 无外卡边框/阴影（覆盖 MediaCard.selected），且不污染公共云端骨架卡
   assert.equal(result.thumbAspectRatio, '16 / 10')
   assert.equal(result.thumbPadding, '8px')
   assert.equal(result.thumbRadius, '12px')
   assert.equal(result.cardBorderWidth, '0px')
   assert.equal(result.cardBg, 'rgba(0, 0, 0, 0)')
+  assert.equal(result.cardBoxShadow, 'none')
+  assert.equal(result.cloudSkeletonBorderWidth, '1px')
 
   // 3. 全类型统一 contain 居中 + 8px 独立内圆角，角色图保持原始构图不裁切
   assert.equal(result.charPortraitFit, 'contain')

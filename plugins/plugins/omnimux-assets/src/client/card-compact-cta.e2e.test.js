@@ -8,6 +8,10 @@ import { ASSETS_CSS } from './styles.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const gridSource = readFileSync(join(here, 'AssetGrid.jsx'), 'utf8')
+const BADGE_KIT_CSS = readFileSync(
+  join(here, '../../../../packages/dsh-ui-kit/src/badge/Badge.module.css'),
+  'utf8',
+).replace(/\.([a-zA-Z_][a-zA-Z0-9_-]*)/g, '.dshUk-Badge-$1')
 
 const html = (badgeText, longTitle, widths) => `
 <div class="omnimux-assets-stage" style="width:1600px;padding:20px">
@@ -17,7 +21,7 @@ const html = (badgeText, longTitle, widths) => `
         <button class="omnimux-assets-check" data-selected="true" aria-label="选择"><svg width="12" height="12"></svg></button>
         <div class="omnimux-assets-card-corner">
           <button class="omnimux-assets-quick-add" data-added="true" aria-label="添加到会话"><svg width="13" height="13"></svg></button>
-          <span class="omnimux-assets-badge">${badgeText}</span>
+          <span class="dshUk-Badge-badge dshUk-Badge-sm dshUk-Badge-capsule omnimux-assets-badge">${badgeText}</span>
         </div>
       </div>
     </div>
@@ -36,7 +40,7 @@ const html = (badgeText, longTitle, widths) => `
 function probeCardWidths(badgeText, longTitle, widths) {
   return runStyleDomProbe({
     name: 'assets-tray-controls',
-    styles: ASSETS_CSS,
+    styles: `${BADGE_KIT_CSS}\n${ASSETS_CSS}`,
     html: html(badgeText, longTitle, widths),
     measure: () => {
       const card = document.querySelector('.probe-card')
@@ -61,6 +65,7 @@ function probeCardWidths(badgeText, longTitle, widths) {
         rows.push({
           cardWidth: w,
           quickAddSize: [Math.round(qr.width), Math.round(qr.height)],
+          badgeHeight: Math.round(br.height),
           moreBtnSize: [Math.round(mr.width), Math.round(mr.height)],
           controlsInsideTray: cr.left >= tr.left && qr.left >= cr.right + 4 && br.right <= tr.right + 0.5,
           moreBtnInsideHead: mr.right <= hr.right + 0.5 && mr.left >= hr.left,
@@ -82,6 +87,7 @@ test('资产库托盘卡片：角标、右上角快捷动作与标题行 ... 在
     assert.equal(rows.length, 5)
     for (const row of rows) {
       assert.deepEqual(row.quickAddSize, [24, 24], `${locale} ${row.cardWidth}px: 快捷加入按钮尺寸固定 24x24`)
+      assert.equal(row.badgeHeight, 22, `${locale} ${row.cardWidth}px: 类型角标高度应覆盖 Badge.sm 16px 为 22px 防止文字裁切`)
       assert.deepEqual(row.moreBtnSize, [24, 24], `${locale} ${row.cardWidth}px: 更多按钮尺寸固定 24x24`)
       assert.equal(row.controlsInsideTray, true, `${locale} ${row.cardWidth}px: 顶部左右角标不得重叠或越出托盘`)
       assert.equal(row.moreBtnInsideHead, true, `${locale} ${row.cardWidth}px: ... 按钮不得被长标题挤出标题行`)

@@ -189,7 +189,7 @@ export const ASSETS_CSS = `
    常规桌面宽屏稳定呈现 4–5 列，同排展台严格齐平。 */
 .omnimux-assets-local-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(220px, 100%), 1fr));
   column-gap: 16px;
   row-gap: 20px;
   align-items: start;
@@ -236,8 +236,9 @@ export const ASSETS_CSS = `
   display: block;
 }
 /* ── 本地 / 钻取浏览 / AI 生成统一 16:10 横版托盘式卡片规范 ──
-   去重框底栏：取消整卡外框与底色，展台与底栏分离；底栏直接落在页面底色上。 */
-.omnimux-assets-card:not(.omnimux-assets-cloud-card),
+   去重框底栏：取消整卡外框与底色，展台与底栏分离；底栏直接落在页面底色上。
+   选择器保持高于 dsh-ui-kit MediaCard.module.css 的 :hover (0,4,0) 特异性，并排除公共云端卡片与骨架。 */
+.omnimux-assets-card:not(.omnimux-assets-cloud-card):not(.omnimux-assets-cloud-skeleton),
 .omnimux-assets-card.omnimux-assets-card--tray {
   border: none;
   border-radius: 12px;
@@ -247,16 +248,21 @@ export const ASSETS_CSS = `
   gap: 8px;
   min-width: 0;
 }
-.omnimux-assets-card:not(.omnimux-assets-cloud-card):hover,
-.omnimux-assets-card:not(.omnimux-assets-cloud-card)[aria-selected="true"],
-.omnimux-assets-card.omnimux-assets-card--tray:hover,
-.omnimux-assets-card.omnimux-assets-card--tray[aria-selected="true"] {
+.omnimux-assets-card:not(.omnimux-assets-cloud-card):not(.omnimux-assets-cloud-skeleton):hover,
+.omnimux-assets-card:not(.omnimux-assets-cloud-card):not(.omnimux-assets-cloud-skeleton)[aria-selected="true"],
+.omnimux-assets-card.omnimux-assets-card--tray:hover:not(.omnimux-assets-cloud-card):not(.omnimux-assets-cloud-skeleton),
+.omnimux-assets-card.omnimux-assets-card--tray:focus-within:not(.omnimux-assets-cloud-card):not(.omnimux-assets-cloud-skeleton),
+.omnimux-assets-card.omnimux-assets-card--tray[aria-selected="true"]:not(.omnimux-assets-cloud-card):not(.omnimux-assets-cloud-skeleton),
+.omnimux-assets-stage .omnimux-assets-card.omnimux-assets-card--tray:hover:not(.omnimux-assets-cloud-card):not(.omnimux-assets-cloud-skeleton),
+.omnimux-assets-stage .omnimux-assets-card.omnimux-assets-card--tray[aria-selected="true"]:not(.omnimux-assets-cloud-card):not(.omnimux-assets-cloud-skeleton) {
+  border: none;
   border-color: transparent;
   box-shadow: none;
   background: transparent;
+  overflow: visible;
 }
 /* 独立 16:10 圆角展台容器：统一呼吸内边距 8px，柔和中性次级底色（亮/暗双主题自然分离）。 */
-.omnimux-assets-card:not(.omnimux-assets-cloud-card) [class*="coverWrapper"] {
+.omnimux-assets-card:not(.omnimux-assets-cloud-card):not(.omnimux-assets-cloud-skeleton) [class*="coverWrapper"] {
   aspect-ratio: 16 / 10;
   width: 100%;
   border-radius: 12px;
@@ -264,9 +270,9 @@ export const ASSETS_CSS = `
   position: relative;
   background: var(--dsw-alias-bg-module-platform, var(--dsw-alias-bg-layer-1));
 }
-.omnimux-assets-card:not(.omnimux-assets-cloud-card) .omnimux-assets-card-thumb,
-.omnimux-assets-card:not(.omnimux-assets-cloud-card) .omnimux-assets-card-thumb:has(.omnimux-assets-card-media),
-.omnimux-assets-card:not(.omnimux-assets-cloud-card) .omnimux-assets-card-thumb:has(.omnimux-assets-card-video) {
+.omnimux-assets-card:not(.omnimux-assets-cloud-card):not(.omnimux-assets-cloud-skeleton) .omnimux-assets-card-thumb,
+.omnimux-assets-card:not(.omnimux-assets-cloud-card):not(.omnimux-assets-cloud-skeleton) .omnimux-assets-card-thumb:has(.omnimux-assets-card-media),
+.omnimux-assets-card:not(.omnimux-assets-cloud-card):not(.omnimux-assets-cloud-skeleton) .omnimux-assets-card-thumb:has(.omnimux-assets-card-video) {
   aspect-ratio: 16 / 10;
   width: 100%;
   height: 100%;
@@ -283,16 +289,16 @@ export const ASSETS_CSS = `
   box-shadow: inset 0 0 0 1px var(--dsw-alias-border-l1);
   transition: box-shadow 0.15s ease;
 }
-.omnimux-assets-card:not(.omnimux-assets-cloud-card):hover .omnimux-assets-card-thumb,
-.omnimux-assets-card:not(.omnimux-assets-cloud-card):focus-within .omnimux-assets-card-thumb {
+.omnimux-assets-card:not(.omnimux-assets-cloud-card):not(.omnimux-assets-cloud-skeleton):hover .omnimux-assets-card-thumb,
+.omnimux-assets-card:not(.omnimux-assets-cloud-card):not(.omnimux-assets-cloud-skeleton):focus-within .omnimux-assets-card-thumb {
   box-shadow: inset 0 0 0 1px var(--dsw-alias-border-l3);
 }
-.omnimux-assets-card:not(.omnimux-assets-cloud-card)[aria-selected="true"] .omnimux-assets-card-thumb {
+.omnimux-assets-card:not(.omnimux-assets-cloud-card):not(.omnimux-assets-cloud-skeleton)[aria-selected="true"] .omnimux-assets-card-thumb {
   box-shadow: inset 0 0 0 2px var(--dsw-alias-brand-primary);
 }
 /* 全类型媒体统一等比完整居中呈现（不裁切角色/横图/方图/视频），带独立 8px 内圆角。 */
-.omnimux-assets-card:not(.omnimux-assets-cloud-card) .omnimux-assets-card-media,
-.omnimux-assets-card:not(.omnimux-assets-cloud-card) .omnimux-assets-card-video {
+.omnimux-assets-card:not(.omnimux-assets-cloud-card):not(.omnimux-assets-cloud-skeleton) .omnimux-assets-card-media,
+.omnimux-assets-card:not(.omnimux-assets-cloud-card):not(.omnimux-assets-cloud-skeleton) .omnimux-assets-card-video {
   max-width: 100%;
   max-height: 100%;
   width: auto;
@@ -305,13 +311,13 @@ export const ASSETS_CSS = `
   outline-offset: -1px;
   transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1);
 }
-.omnimux-assets-card:not(.omnimux-assets-cloud-card):hover .omnimux-assets-card-media,
-.omnimux-assets-card:not(.omnimux-assets-cloud-card):hover .omnimux-assets-card-video {
+.omnimux-assets-card:not(.omnimux-assets-cloud-card):not(.omnimux-assets-cloud-skeleton):hover .omnimux-assets-card-media,
+.omnimux-assets-card:not(.omnimux-assets-cloud-card):not(.omnimux-assets-cloud-skeleton):hover .omnimux-assets-card-video {
   transform: scale(1.015);
 }
 @media (prefers-reduced-motion: reduce) {
-  .omnimux-assets-card:not(.omnimux-assets-cloud-card):hover .omnimux-assets-card-media,
-  .omnimux-assets-card:not(.omnimux-assets-cloud-card):hover .omnimux-assets-card-video {
+  .omnimux-assets-card:not(.omnimux-assets-cloud-card):not(.omnimux-assets-cloud-skeleton):hover .omnimux-assets-card-media,
+  .omnimux-assets-card:not(.omnimux-assets-cloud-card):not(.omnimux-assets-cloud-skeleton):hover .omnimux-assets-card-video {
     transform: none;
   }
 }
@@ -389,15 +395,18 @@ export const ASSETS_CSS = `
   display: block;
   background: var(--dsw-alias-bg-module-platform);
 }
-.omnimux-assets-badge {
+.omnimux-assets-badge,
+.omnimux-assets-stage .omnimux-assets-badge {
   position: absolute;
   top: 10px;
   right: 10px;
+  height: 22px;
+  box-sizing: border-box;
   font-size: 11px;
-  line-height: 16px;
-  padding: 2px 8px;
+  line-height: 20px;
+  padding: 0 8px;
   border-radius: 999px;
-  background: var(--dsw-alias-bg-base, var(--dsw-bg));
+  background: var(--dsw-alias-bg-base);
   border: 1px solid var(--dsw-alias-border-l2);
   color: var(--dsw-alias-label-secondary);
   z-index: 1;
@@ -412,7 +421,8 @@ export const ASSETS_CSS = `
   gap: 6px;
   z-index: 2;
 }
-.omnimux-assets-card-corner .omnimux-assets-badge {
+.omnimux-assets-card-corner .omnimux-assets-badge,
+.omnimux-assets-stage .omnimux-assets-card-corner .omnimux-assets-badge {
   position: static;
   top: auto;
   right: auto;
@@ -431,7 +441,7 @@ export const ASSETS_CSS = `
   min-height: 24px;
   padding: 0;
   border-radius: 6px;
-  background: var(--dsw-alias-bg-base, var(--dsw-bg));
+  background: var(--dsw-alias-bg-base);
   border: 1px solid var(--dsw-alias-border-l2);
   color: var(--dsw-alias-label-primary);
   transition: opacity 0.14s ease, background-color 0.14s ease, border-color 0.14s ease, color 0.14s ease;
@@ -461,17 +471,19 @@ export const ASSETS_CSS = `
   min-height: 24px;
   padding: 0;
   border-radius: 6px;
-  background: var(--dsw-alias-bg-base, var(--dsw-bg));
+  background: var(--dsw-alias-bg-base);
   border: 1px solid var(--dsw-alias-border-l2);
   color: var(--dsw-alias-label-secondary);
-  transition: opacity 0.15s ease, color 0.15s ease;
+  transition: opacity 0.15s ease, color 0.15s ease, border-color 0.15s ease, background-color 0.15s ease;
 }
 /* 悬停卡片才浮现；键盘进入卡片或聚焦按钮时同样可见，不牺牲可达性。 */
 .omnimux-assets-card:hover .omnimux-assets-card-corner .omnimux-assets-reveal,
 .omnimux-assets-card:focus-within .omnimux-assets-card-corner .omnimux-assets-reveal,
-.omnimux-assets-card-corner .omnimux-assets-reveal:hover,
+.omnimux-assets-card-corner .omnimux-assets-reveal:hover:not(:disabled):not([aria-disabled="true"]),
 .omnimux-assets-card-corner .omnimux-assets-reveal:focus-visible {
   opacity: 1;
+  background: var(--dsw-alias-bg-base);
+  border-color: var(--dsw-alias-border-l4);
   color: var(--dsw-alias-label-primary);
 }
 .omnimux-assets-missing {
@@ -495,20 +507,20 @@ export const ASSETS_CSS = `
   min-height: 48px;
 }
 /* 无框紧凑底栏：直接落在页面底色上，与托盘左右光学对齐。 */
-.omnimux-assets-card:not(.omnimux-assets-cloud-card) [class*="MediaCard-body"],
-.omnimux-assets-card:not(.omnimux-assets-cloud-card) .omnimux-assets-card-body {
+.omnimux-assets-card:not(.omnimux-assets-cloud-card):not(.omnimux-assets-cloud-skeleton) [class*="MediaCard-body"],
+.omnimux-assets-card:not(.omnimux-assets-cloud-card):not(.omnimux-assets-cloud-skeleton) .omnimux-assets-card-body {
   padding: 0 2px;
   min-height: 0;
   gap: 2px;
   background: transparent;
 }
-.omnimux-assets-card:not(.omnimux-assets-cloud-card) [class*="MediaCard-title"] {
+.omnimux-assets-card:not(.omnimux-assets-cloud-card):not(.omnimux-assets-cloud-skeleton) [class*="MediaCard-title"] {
   overflow: visible;
   font-size: 13px;
   font-weight: 500;
   line-height: 20px;
 }
-.omnimux-assets-card:not(.omnimux-assets-cloud-card) [class*="MediaCard-subtitle"] {
+.omnimux-assets-card:not(.omnimux-assets-cloud-card):not(.omnimux-assets-cloud-skeleton) [class*="MediaCard-subtitle"] {
   font-size: 12px;
   line-height: 16px;
   color: var(--dsw-alias-label-tertiary);
@@ -1858,7 +1870,7 @@ export const ASSETS_CSS = `
 }
 .omnimux-generations-grid {
   display: grid !important;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(220px, 100%), 1fr));
   column-gap: 16px;
   row-gap: 20px;
   align-items: start;
@@ -1977,12 +1989,18 @@ export const ASSETS_CSS = `
   gap: 6px;
 }
 .omnimux-generation-time {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 12px;
   line-height: 16px;
   color: var(--dsw-alias-label-tertiary);
   font-variant-numeric: tabular-nums;
 }
 .omnimux-generation-actions {
+  flex: none;
   display: flex;
   align-items: center;
   gap: 2px;

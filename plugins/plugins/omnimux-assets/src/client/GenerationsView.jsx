@@ -82,7 +82,7 @@ export function GenerationsCategoryNav(props) {
 
 /**
  * 单个生成物卡片组件
- * 采用原生自适应比例瀑布流布局，带有沉浸式悬浮遮罩和快速工具栏。
+ * 采用 16:10 横版托盘式展台（contain 内圆角完整呈现）与轻量化无框底栏。
  */
 export function GenerationCard({
   artifact,

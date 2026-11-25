@@ -53,7 +53,7 @@ function resolveUploadProgress(asset) {
   const raw = asset?.uploadProgress ?? asset?.progress
   if (typeof raw !== 'number' || !Number.isFinite(raw)) return null
   if (raw < 0 || raw >= 100) return null
-  return Math.round(raw)
+  return Math.min(99, Math.round(raw))
 }
 
 /**
@@ -136,6 +136,7 @@ function AssetGridCard({
 
   const handleReveal = useCallback(async () => {
     if (!revealTarget?.id) return
+    onError?.('')
     try {
       const result = await revealAssetEntry(asset.id, revealTarget.id, '')
       if (!result?.ok) {
@@ -296,8 +297,6 @@ function AssetGridCard({
           aria-label={addLabel}
           title={addLabel}
           disabled={added}
-          onMouseDown={(event) => event.stopPropagation()}
-          onPointerDown={(event) => event.stopPropagation()}
           onKeyDown={stopNestedKey}
           onClick={handleAdd}
         >
@@ -317,9 +316,7 @@ function AssetGridCard({
       <div
         className="omnimux-assets-card-more"
         onClick={(event) => event.stopPropagation()}
-        onMouseDown={(event) => event.stopPropagation()}
-        onPointerDown={(event) => event.stopPropagation()}
-        onKeyDown={(event) => event.stopPropagation()}
+        onKeyDown={stopNestedKey}
       >
         <Menu
           open={menuOpen}
@@ -494,6 +491,7 @@ function AssetListRow({ asset, t, selected, onToggleSelect, onOpen, onPreview, o
  *   viewMode?: 'grid' | 'list',
  *   onCopy?: (asset: any) => void,
  *   onRemove?: (asset: any) => void,
+ *   onError?: (message: string) => void,
  *   copiedId?: string,
  *   onBrowse?: (asset: any) => void,
  * }} props
