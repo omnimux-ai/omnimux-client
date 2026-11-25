@@ -19,44 +19,37 @@ export function applyWindowMaterial(window: BrowserWindow, preferences: DesktopP
   window.webContents.send(IPC.material, material)
 }
 
-/** icons:export writes the classic set into its own directory below `build` and `assets`. */
-function appIconFile(root: string, directory: 'build' | 'assets', icon: DesktopAppIcon, name: string): string {
-  return unpackedPath(join(root, directory, ...icon === 'classic' ? ['classic'] : [], name))
-}
-
 /**
  * @param root - The application directory.
  * @param platform - `process.platform`.
- * @param icon - The chosen artwork.
- * @param dark - Whether the system theme is dark. Only the default whale tail has a Dark rendition; the classic
- * composition already has the system-dark fill, so it looks the same either way.
- * @returns The icon of windows: every ICO frame on Windows, the full image on Linux, and none on macOS. Shortcuts and
- * the Linux desktop entry show the same files.
+ * @param _icon - Retained for contract compatibility; OmniMux always renders its single branded icon.
+ * @param _dark - Retained for contract compatibility; OmniMux uses one consistent icon across themes.
+ * @returns The icon of windows: every ICO frame on Windows, the full image on Linux, and none on macOS.
  */
-export function appWindowIcon(root: string, platform: NodeJS.Platform, icon: DesktopAppIcon, dark = false): string | undefined {
+export function appWindowIcon(root: string, platform: NodeJS.Platform, _icon: DesktopAppIcon = 'default', _dark = false): string | undefined {
   if (platform === 'darwin') return undefined
-  return appIconFile(root, 'build', icon, `app-icon${icon === 'default' && dark ? '-dark' : ''}.${platform === 'win32' ? 'ico' : 'png'}`)
+  return unpackedPath(join(root, 'build', `app-icon.${platform === 'win32' ? 'ico' : 'png'}`))
 }
 
 /**
  * @param root - The application directory.
  * @param packaged - Whether the app runs from its package.
- * @param icon - The chosen artwork.
- * @returns The Dock image, or null for the bundle's own layered icon, which follows the system's icon
- * appearances. An unpackaged Electron has no bundle icon of ours, so development always gets an image.
+ * @param _icon - Retained for contract compatibility; OmniMux always renders its single branded icon.
+ * @returns The Dock image, or null for the bundle's own layered icon. An unpackaged Electron has no bundle icon
+ * of ours, so development always gets the raster Dock image.
  */
-export function appDockIcon(root: string, packaged: boolean, icon: DesktopAppIcon): string | null {
-  return packaged && icon === 'default' ? null : appIconFile(root, 'build', icon, 'app-icon-mac.png')
+export function appDockIcon(root: string, packaged: boolean, _icon: DesktopAppIcon = 'default'): string | null {
+  return packaged ? null : unpackedPath(join(root, 'build', 'app-icon-mac.png'))
 }
 
 /**
  * @param root - The application directory.
  * @param platform - `process.platform`.
- * @param icon - The chosen artwork.
+ * @param _icon - Retained for contract compatibility; OmniMux always renders its single branded tray icon.
  * @returns The tray image: a template the macOS menu bar tints, or the colored image elsewhere.
  */
-export function appTrayIcon(root: string, platform: NodeJS.Platform, icon: DesktopAppIcon): string {
-  return appIconFile(root, 'assets', icon, platform === 'darwin' ? 'tray-iconTemplate.png' : 'tray-icon-blue.png')
+export function appTrayIcon(root: string, platform: NodeJS.Platform, _icon: DesktopAppIcon = 'default'): string {
+  return unpackedPath(join(root, 'assets', platform === 'darwin' ? 'tray-iconTemplate.png' : 'tray-icon-blue.png'))
 }
 
 export class NativeDesktop {
@@ -129,14 +122,12 @@ export class NativeDesktop {
     return image
   }
   /**
-   * Show the saved app icon wherever the running app can: the Dock, every window frame and the tray, then hand it on
-   * for what the installed package shows. Every refresh follows a state change and every theme change calls
-   * {@link NativeDesktop.appearanceChanged}, so a saved choice or a new theme shows at once; an unchanged choice and
-   * theme change nothing, and the first refresh of a launch applies them again.
+   * Apply the single-brand OmniMux app icon on first refresh: the Dock (in unpackaged dev), window frames,
+   * tray and installed shortcut restoration. Subsequent refreshes and system theme changes are no-ops.
    */
   private syncAppIcon(): void {
-    const icon = this.options.appIcon()
-    const dark = this.options.dark()
+    const icon: DesktopAppIcon = 'default'
+    const dark = false
     const previous = this.appIcon
     if (icon === previous && dark === this.dark) return
     this.appIcon = icon
@@ -145,14 +136,12 @@ export class NativeDesktop {
     try {
       if (process.platform === 'darwin' && icon !== previous) {
         const image = appDockIcon(root, packaged, icon)
-        // A launch leaves the Dock to the bundle's own layered icon, as releases before this choice did. Only a switch
-        // back from another icon hands it back, with an empty image that Electron passes to NSApp as nil.
+        // A launch leaves the Dock to the bundle's own layered icon.
         if (image !== null) this.options.dock()?.setIcon(image)
         else if (previous !== undefined) this.options.dock()?.setIcon(nativeImage.createEmpty())
       }
       const frame = appWindowIcon(root, process.platform, icon, dark)
       if (frame !== undefined) for (const window of this.options.windows()) if (!window.isDestroyed()) window.setIcon(frame)
-      // The tray keeps its colored glyph in either theme.
       if (icon !== previous && this.available) this.tray!.setImage(this.trayImage(icon))
     } catch (error) { this.options.warn(error) }
     try { this.options.installed?.(icon, dark) } catch (error) { this.options.warn(error) }

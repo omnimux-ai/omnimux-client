@@ -119,18 +119,12 @@ try {
   await openShell()
   assert.notEqual(await shell.evaluate(element => getComputedStyle(element).getPropertyValue('--spacing').trim()), '')
   assert.match(await shell.locator('h1').innerText(), /OmniMux/)
+  // OmniMux ships a single branded icon; the upstream icon switcher must stay hidden on welcome page 0.
+  assert.equal(await shell.locator('#onboarding-app-icon').count(), 0)
+  assert.equal(await shell.getByText('应用图标', { exact: true }).count(), 0)
+  assert.equal(await shell.getByText('经典', { exact: true }).count(), 0)
+  assert.deepEqual(standaloneCommands, [])
   await page.screenshot({ path: join(screenshots, 'onboarding-official-welcome.png') })
-  await shell.getByText('经典', { exact: true }).click()
-  await shell.getByRole('radio', { name: '经典', exact: true, checked: true }).waitFor()
-  assert.match(await whale(), /DeepSeek/)
-  assert.deepEqual(standaloneCommands.splice(0), [{ type: 'app-icon', appIcon: 'classic' }])
-  await page.evaluate(async () => {
-    await Promise.all(document.getAnimations().map(animation => animation.finished.catch(() => {})))
-  })
-  await page.screenshot({ path: join(screenshots, 'onboarding-official-welcome-classic.png') })
-  await shell.getByText('默认', { exact: true }).click()
-  await shell.getByRole('radio', { name: '默认', exact: true, checked: true }).waitFor()
-  assert.deepEqual(standaloneCommands.splice(0), [{ type: 'app-icon', appIcon: 'default' }])
   await next()
   const backBounds = await shell.getByRole('button', { name: /^(上一步|Back)$/ }).boundingBox()
   const progressBounds = await shell.locator('.next-onboarding-progress').boundingBox()
@@ -262,7 +256,7 @@ try {
   await next(); await shell.getByRole('switch').check(); await skip()
   assert.deepEqual(standaloneCommands.at(-1), { type: 'onboarding-skip', profile: 'desktop' })
   assert.deepEqual(errors, [])
-  console.log(`Next onboarding passed in standalone pre-Host shell and official account continuation: independent native eligibility, official progress ${officialPending ? 'unfinished' : 'completed'}, state-read and save retries, six pages, artwork, the app icon choice, back navigation, choices, skip, completion, inert cleanup, and no repeat.`)
+  console.log(`Next onboarding passed in standalone pre-Host shell and official account continuation: independent native eligibility, official progress ${officialPending ? 'unfinished' : 'completed'}, state-read and save retries, six pages, artwork, single-brand welcome without icon switcher, back navigation, choices, skip, completion, inert cleanup, and no repeat.`)
 } catch (error) {
   console.error(errors)
   if (page) { console.error(await page.locator('body').innerText()); await page.screenshot({ path: join(screenshots, 'onboarding-failure.png') }).catch(() => {}) }

@@ -24,6 +24,7 @@ import { readSystemProxyConfiguration } from './system-proxy-configuration.ts'
 import { resolveDesktopShellEnvironment, type DesktopShellEnvironmentResolution } from './shell-environment.ts'
 import { ensureUtf8Locale } from './shell-locale.ts'
 import type { DesktopAppIcon } from './app-icon.ts'
+import { unpackedPath } from './asar-archive-policy.ts'
 import { DEFAULT_PROFILE, NATIVE_ACCESS_HEADER, type DesktopCommand, type DesktopState, type DesktopSettingsPage } from './desktop-contract.ts'
 import { portsChanged, parsePreferences } from './desktop-preferences.ts'
 import { hostStartupLimitTitle, hostStartupTimeoutFromId, hostStartupTimeoutLabel } from './host-startup-limit.ts'
@@ -337,31 +338,29 @@ function systemDark(): boolean {
 }
 
 /**
- * Show the app icon in what the installed package shows outside the running app: the Windows shortcuts and the Linux
- * desktop entry, which no signature covers. The default whale tail in a light theme is what the package installed,
- * the program's own icon and the package's desktop entry. Development runs leave the installed app alone, and Safe
- * Mode leaves the saved choice in place. It runs after the current event, so reading shortcuts never holds up a window.
- * @param icon - The saved choice.
- * @param dark - Whether the system theme is dark.
+ * Restore the packaged OmniMux icon on Windows shortcuts and Linux desktop entries in case an earlier
+ * build had pointed them at retired upstream dark or classic icon files. Development runs leave the
+ * installed app alone, and Safe Mode makes no shortcut changes.
  */
-function applyInstalledAppIcon(icon: DesktopAppIcon, dark: boolean): void {
+function applyInstalledAppIcon(_icon: DesktopAppIcon, _dark: boolean): void {
   if (!app.isPackaged || runtime.safeMode || (process.platform !== 'win32' && process.platform !== 'linux')) return
   const platform = process.platform
-  const packaged = icon === 'default' && !dark
-  const label = icon === 'classic' ? 'classic' : dark ? 'dark' : 'default'
+  const legacyWindowsIcons = [
+    unpackedPath(join(root, 'build', 'app-icon-dark.ico')),
+    unpackedPath(join(root, 'build', 'classic', 'app-icon.ico')),
+  ]
   setImmediate(() => {
     if (quitting) return
     try {
       const result = platform === 'win32'
-        ? syncWindowsShortcuts({ icon: packaged ? process.execPath : appWindowIcon(root, platform, icon, dark)!,
-          ours: [appWindowIcon(root, platform, 'default', true)!, appWindowIcon(root, platform, 'classic')!], execPath: process.execPath, name: identity.productName,
+        ? syncWindowsShortcuts({ icon: process.execPath, ours: legacyWindowsIcons, execPath: process.execPath, name: identity.productName,
           directories: windowsShortcutDirectories({ desktop: app.getPath('desktop'), appData: app.getPath('appData') }, process.env), shell })
         : manifest.desktopName === undefined ? { changed: [], failed: [] }
-          : syncLinuxDesktopEntry({ image: packaged ? undefined : appWindowIcon(root, platform, icon, dark), label, execPath: process.execPath,
+          : syncLinuxDesktopEntry({ image: undefined, label: 'default', execPath: process.execPath,
             desktopId: manifest.desktopName, home: app.getPath('home'), env: process.env })
-      for (const path of result.changed) runtime.diagnostics.append(`App icon ${label}: updated ${path}`)
-      for (const path of result.failed) runtime.diagnostics.append(`App icon ${label}: could not update ${path}`, 'warn')
-    } catch (error) { runtime.diagnostics.append(`App icon ${label}: ${String(error)}`, 'warn') }
+      for (const path of result.changed) runtime.diagnostics.append(`App icon default: updated ${path}`)
+      for (const path of result.failed) runtime.diagnostics.append(`App icon default: could not update ${path}`, 'warn')
+    } catch (error) { runtime.diagnostics.append(`App icon default: ${String(error)}`, 'warn') }
   })
 }
 
