@@ -10,7 +10,7 @@
   "capabilities": {
     "tools": [],
     "seamsProvided": [],
-    "seamsConsumed": ["identity"],
+    "seamsConsumed": ["identity", "omnimuxAccounts"],
     "slots": [
       { "target": "sidebar.extra", "componentPath": "src/client/sidebar-entry.js" },
       { "target": "shell.overlay", "componentPath": "src/client/AccountsStage.jsx" }

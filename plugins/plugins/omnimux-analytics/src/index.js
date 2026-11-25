@@ -143,11 +143,17 @@ export function apply(ctx, config) {
   if (typeof ctx.inject === 'function') ctx.inject(['webServer'], mountIngest)
   else mountIngest(ctx)
 
-  // 3. Register Agent tools for analytics querying
+  // 3. Register Agent tools for analytics querying.
+  //
+  // Both tools read the Hub `omnimuxAnalytics` seam. They never execute a tool
+  // definition taken from `ctx.tools.get()` (that would skip the tool pipeline)
+  // and they never invent values: every number, sentence and recommendation in
+  // the answer must come from the upstream payload or the call must report the
+  // failure. See docs/contracts/headless-skill-execution.md.
   if (ctx.tools && typeof ctx.tools.register === 'function') {
     ctx.tools.register({
       name: 'analytics_query_metrics',
-      description: 'Query multi-dimensional social media KPI metrics including engagement rate, reach, followers growth, and posting stats.',
+      description: 'Fetch the upstream social-analytics payloads (daily metrics and post analytics) for a reporting window. Returns the provider payloads verbatim under data.daily / data.posts plus per-source availability and errors. It does not normalize fields into KPIs and does not fabricate metrics: a failed source is reported in errors, never replaced with placeholder numbers.',
       parameters: objectParams({
         timeRange: {
           type: 'string',
@@ -160,56 +166,18 @@ export function apply(ctx, config) {
         },
         accountId: {
           type: 'string',
-          description: 'Optional account ID filter',
+          description: 'Optional comma-separated connected-account numeric ID filter; the upstream only accepts numeric account IDs',
         },
       }),
       output: jsonOut,
       async execute(args) {
-        const timeRange = args.timeRange || '30d'
-        const platform = args.platform || 'all'
-        const accountId = args.accountId || 'all'
-
-        // Inquire hub metrics tools if available
-        let dailyData = null
-        let postsData = null
-        const dailyTool = ctx.tools.get?.('omnimux_analytics_daily_metrics')
-        if (dailyTool && typeof dailyTool.execute === 'function') {
-          try {
-            dailyData = await dailyTool.execute({ timeRange, platform, accountId })
-          } catch {
-            // fall through
-          }
-        }
-
-        const postsTool = ctx.tools.get?.('omnimux_analytics_posts')
-        if (postsTool && typeof postsTool.execute === 'function') {
-          try {
-            postsData = await postsTool.execute({ timeRange, platform, accountId })
-          } catch {
-            // fall through
-          }
-        }
-
-        return {
-          ok: true,
-          timeRange,
-          platform,
-          accountId,
-          metrics: {
-            engagementRate: dailyData?.engagementRate ?? 0.045,
-            totalReach: dailyData?.totalReach ?? 128500,
-            totalFollowers: dailyData?.totalFollowers ?? 54200,
-            followerGrowth: dailyData?.followerDiff ?? 1850,
-            postsCount: postsData?.total ?? 24,
-            bestPost: postsData?.bestPost ?? null,
-          },
-        }
+        return queryMetrics(ctx, args)
       },
     })
 
     ctx.tools.register({
       name: 'analytics_get_summary',
-      description: 'Generate an executive analytical summary report with key insights, best posting times, and content health diagnosis.',
+      description: 'Fetch the analytics payloads for a reporting window and report per-source availability. Returns the same upstream payloads as analytics_query_metrics; it does not synthesize a weekly/monthly report, industry comparisons or recommendations.',
       parameters: objectParams({
         timeRange: {
           type: 'string',
@@ -218,33 +186,157 @@ export function apply(ctx, config) {
         },
         includeTopPosts: {
           type: 'boolean',
-          description: 'Whether to include top performing post breakdown (default true)',
+          description: 'Whether to include the post-analytics payload (default true)',
         },
       }),
       output: jsonOut,
       async execute(args) {
-        const timeRange = args.timeRange || '30d'
         const includeTopPosts = args.includeTopPosts !== false
-
+        const result = await queryMetrics(ctx, args)
         return {
-          ok: true,
-          timeRange,
+          ...result,
           generatedAt: new Date().toISOString(),
-          summary: {
-            headline: `社媒矩阵在过去 ${timeRange} 内表现稳健，互动率与粉丝保持正向增长`,
-            keyFindings: [
-              '平均互动率达 4.5%，高于行业基准线 3.2%',
-              '周二与周四晚上 20:00-22:00 为发帖黄金窗口期',
-              '短剧/短视频题材完播率与转化效率显著优于纯图文',
-            ],
-            recommendations: [
-              '建议增加周中晚间黄金档发布频次至每周 4-5 条',
-              '建议针对互动衰减周期（48小时）进行二阶段评论区导流',
-            ],
-            topPostsIncluded: includeTopPosts,
+          data: {
+            daily: result.data.daily,
+            ...(includeTopPosts ? { posts: result.data.posts } : {}),
           },
+          topPostsIncluded: includeTopPosts,
         }
       },
     })
+  }
+}
+
+const TIME_RANGE_DAYS = Object.freeze({ '7d': 7, '30d': 30, '90d': 90 })
+
+/**
+ * Read one optional host service without turning an absent seat into a crash.
+ * A missing seat is reported by the caller with an actionable error.
+ * @param {unknown} ctx
+ * @param {string} name
+ * @returns {any}
+ */
+function readSeat(ctx, name) {
+  if (!ctx || typeof ctx !== 'object') return undefined
+  const getter = /** @type {{ get?: Function }} */ (ctx).get
+  if (typeof getter !== 'function') return undefined
+  try {
+    return getter.call(ctx, name)
+  } catch {
+    return undefined
+  }
+}
+
+/** @param {unknown} value */
+function normalizeTimeRange(value) {
+  const key = typeof value === 'string' ? value.trim() : ''
+  return Object.hasOwn(TIME_RANGE_DAYS, key) ? key : '30d'
+}
+
+/**
+ * The upstream analytics endpoints take an explicit date window and a
+ * comma-separated numeric account filter; a non-numeric filter would be
+ * silently dropped upstream, so it is rejected here instead of widening the
+ * query without telling the caller.
+ * @param {{ timeRange: string, platform: string, accountId: string }} input
+ */
+function buildQuery({ timeRange, platform, accountId }) {
+  const to = new Date()
+  const from = new Date(to.getTime() - TIME_RANGE_DAYS[timeRange] * 24 * 60 * 60 * 1000)
+  /** @type {Record<string, string>} */
+  const query = {
+    fromDate: from.toISOString().slice(0, 10),
+    toDate: to.toISOString().slice(0, 10),
+  }
+  if (platform && platform !== 'all') query.platform = platform
+  if (accountId && accountId !== 'all') {
+    const ids = accountId.split(',').map((id) => id.trim()).filter(Boolean)
+    if (ids.length === 0 || ids.some((id) => !/^\d+$/.test(id))) {
+      throw Object.assign(
+        new Error('accountId 必须是已连接账号的数字 ID（多个用逗号分隔）'),
+        { code: 'analytics-invalid-account-id', status: 400 },
+      )
+    }
+    query.account_ids = ids.join(',')
+  }
+  return query
+}
+
+/**
+ * Call one seam method and classify the outcome instead of swallowing it.
+ * @param {any} seam
+ * @param {'dailyMetrics' | 'posts'} method
+ * @param {Record<string, string>} query
+ */
+async function readSource(seam, method, query) {
+  if (typeof seam?.[method] !== 'function') {
+    return {
+      ok: false,
+      error: {
+        code: 'analytics-seam-incomplete',
+        message: `Hub 分析接缝缺少 ${method} 能力，请更新 omnimux 执行中枢`,
+      },
+    }
+  }
+  try {
+    return { ok: true, data: await seam[method](query) }
+  } catch (error) {
+    return {
+      ok: false,
+      error: {
+        code: typeof error?.code === 'string' ? error.code : 'analytics-source-failed',
+        message: error instanceof Error ? error.message : String(error),
+      },
+    }
+  }
+}
+
+/**
+ * Shared implementation for both Agent tools: resolve the seam, build the
+ * upstream query, read both sources concurrently and report per-source status.
+ * Both sources failing is a hard error, because an empty "success" would claim
+ * the account has no analytics data.
+ * @param {unknown} ctx
+ * @param {{ timeRange?: unknown, platform?: unknown, accountId?: unknown }} args
+ */
+async function queryMetrics(ctx, args) {
+  const timeRange = normalizeTimeRange(args?.timeRange)
+  const platform = typeof args?.platform === 'string' && args.platform.trim() ? args.platform.trim() : 'all'
+  const accountId = typeof args?.accountId === 'string' && args.accountId.trim() ? args.accountId.trim() : 'all'
+  const seam = readSeat(ctx, 'omnimuxAnalytics')
+  if (!seam) {
+    throw Object.assign(
+      new Error('needs-hub: Hub 分析接缝 (omnimuxAnalytics) 未就绪，请确认已登录 OmniMux 并启用官方能力'),
+      { code: 'needs-hub', status: 503 },
+    )
+  }
+  const query = buildQuery({ timeRange, platform, accountId })
+  const [daily, posts] = await Promise.all([
+    readSource(seam, 'dailyMetrics', query),
+    readSource(seam, 'posts', query),
+  ])
+  const errors = [
+    ...(daily.ok ? [] : [{ source: 'daily', ...daily.error }]),
+    ...(posts.ok ? [] : [{ source: 'posts', ...posts.error }]),
+  ]
+  if (errors.length === 2) {
+    const failure = new Error(`分析数据获取失败：${errors.map((row) => row.message).join('；')}`)
+    Object.assign(failure, { code: errors[0].code || 'analytics-source-failed', status: 502, errors })
+    throw failure
+  }
+  return {
+    ok: errors.length === 0,
+    partial: errors.length === 1,
+    timeRange,
+    platform,
+    accountId,
+    query,
+    data: {
+      daily: daily.ok ? daily.data ?? null : null,
+      posts: posts.ok ? posts.data ?? null : null,
+    },
+    errors,
+    fetchedAt: new Date().toISOString(),
+    source: 'upstream',
   }
 }

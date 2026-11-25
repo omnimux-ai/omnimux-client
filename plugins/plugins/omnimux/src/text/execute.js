@@ -207,6 +207,80 @@ function resolvePiAiProviderProfile(settingsService, providerId) {
   return null
 }
 
+/**
+ * One-shot calls may ask for a cheaper reasoning policy than the session
+ * default. `inherit` keeps whatever the route resolves on its own; `minimal`
+ * picks the lowest level the selected model actually declares. It never
+ * invents a level the route did not advertise.
+ */
+const REASONING_POLICIES = Object.freeze(['inherit', 'minimal'])
+
+/** DSH reasoning levels, least to greatest effort. */
+const THINKING_ORDER = Object.freeze(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'])
+
+/**
+ * @param {unknown} value
+ * @returns {'inherit' | 'minimal'}
+ */
+function normalizeReasoningPolicy(value) {
+  if (value === undefined || value === null || value === '') return 'inherit'
+  const policy = typeof value === 'string' ? value.trim() : ''
+  if (!REASONING_POLICIES.includes(policy)) {
+    throw new OmnimuxError('omnimux-invalid-request', `reasoning must be one of: ${REASONING_POLICIES.join(', ')}`)
+  }
+  return /** @type {'inherit' | 'minimal'} */ (policy)
+}
+
+/**
+ * Lowest reasoning level a provider profile explicitly declares for one model,
+ * together with the wire value that level maps to.
+ *
+ * Only the declaration is trusted: an undeclared dialect is never guessed, so a
+ * route that publishes no `reasoningEfforts` keeps its own default. `off` is
+ * skipped because it means "omit the option", which is the provider default
+ * rather than a downgrade.
+ * @param {unknown} settingsService
+ * @param {string} providerId
+ * @param {string} modelId
+ * @param {'inherit' | 'minimal'} policy
+ * @returns {{ effort: string, wire: string } | null}
+ */
+function resolveDeclaredReasoning(settingsService, providerId, modelId, policy) {
+  if (policy !== 'minimal') return null
+  const profile = resolvePiAiProviderProfile(settingsService, providerId)
+  if (!profile || !modelId) return null
+  const compat = isPlainObject(profile.compat) ? profile.compat : {}
+  if (compat.supportsReasoningEffort === false) return null
+  const entry = Array.isArray(profile.models)
+    ? profile.models.find((row) => isPlainObject(row) && row.id === modelId)
+    : undefined
+  const declared = isPlainObject(entry) && isPlainObject(entry.reasoningEfforts) ? entry.reasoningEfforts : null
+  if (!declared) return null
+  const effort = THINKING_ORDER.find((level) => level !== 'off'
+    && typeof declared[level] === 'string' && declared[level].trim() !== '')
+  if (!effort) return null
+  return { effort, wire: String(declared[effort]).trim() }
+}
+
+/**
+ * Pick the effort to send on a prepared `ctx.llm` call.
+ *
+ * A declared level wins only when the adapter advertises it. Without a
+ * declaration the least advertised level is used, which is what the harness's
+ * own lightweight callers select. Returning `null` leaves the call untouched.
+ * @param {{ reasoning?: { efforts?: Array<{ id?: unknown }> } }} model
+ * @param {string | undefined} preferredEffort
+ * @returns {string | null}
+ */
+function selectAdapterEffort(model, preferredEffort) {
+  const efforts = Array.isArray(model?.reasoning?.efforts)
+    ? model.reasoning.efforts.map((row) => row?.id).filter((id) => typeof id === 'string' && id)
+    : []
+  if (efforts.length === 0) return null
+  if (preferredEffort) return efforts.includes(preferredEffort) ? preferredEffort : null
+  return efforts[0]
+}
+
 function safeReadScenarioSettings(settingsService) {
   try {
     return readScenarioSettings(settingsService)
@@ -308,6 +382,10 @@ export async function executeOmnimuxText(input) {
   if (!prompt) {
     throw new OmnimuxError('omnimux-invalid-request', 'prompt is required')
   }
+  // Reasoning policy is opt-in per call. Background mechanical work asks for
+  // `minimal`; anything unset keeps the route default so analysis and
+  // multimodal deconstruction are never silently weakened.
+  const reasoning = normalizeReasoningPolicy(input.reasoning)
   const text = parseTextConfig(input.text)
   const references = normalizeTextReferences(input)
   const hasImage = references.some((asset) => asset.type === 'image')
@@ -387,6 +465,10 @@ export async function executeOmnimuxText(input) {
           model: pinnedTarget.model,
           references,
         }, text, officialEnv, gate, gatewayTextRows)
+        // Declared downgrade target for this exact route: chat and stream lanes
+        // read the same declaration so the reported effort cannot drift.
+        const declaredReasoning = resolveDeclaredReasoning(input.settings, text.defaultProvider, route.modelId, reasoning)
+        const reasoningOut = reasoning === 'inherit' ? {} : { reasoningEffort: declaredReasoning?.effort ?? null }
         const wantsDirectChat = hasComplexMedia
           || (route.routed && route.candidates.length > 0)
           || typeof input.resolveOfficialApiKey === 'function'
@@ -428,9 +510,10 @@ export async function executeOmnimuxText(input) {
             credentials: input.credentials,
             settings: input.settings,
             resolveOfficialApiKey: input.resolveOfficialApiKey,
+            ...(declaredReasoning ? { reasoningEffort: declaredReasoning.wire } : {}),
           })
           assertGuardOutput(guardPlan, officialResult, { capability: 'text' })
-          return { ...officialResult, model: compositeModel }
+          return { ...officialResult, model: compositeModel, ...reasoningOut }
         }
         if (!input.llm || typeof input.llm.stream !== 'function') {
           throw new OmnimuxError('needs-provider', 'textComplete requires ctx.llm')
@@ -470,10 +553,16 @@ export async function executeOmnimuxText(input) {
           content,
           signal: input.signal,
           sessionId: input.sessionId,
+          reasoningPolicy: reasoning,
+          ...(declaredReasoning ? { preferredEffort: declaredReasoning.effort } : {}),
         })
         assertGuardOutput(guardPlan, streamed, { capability: 'text' })
         return { ...streamed, model: compositeModel }
       }
+
+      // Unlisted official session models (for example the desktop default) have
+      // no whitelist row; resolve their declaration by the same base model id.
+      const unlistedReasoning = resolveDeclaredReasoning(input.settings, text.defaultProvider, pinnedBaseModel, reasoning)
 
       if (references.length > 0) {
         const accepted = contractAcceptedModalities(runtime.index, pinnedBaseModel)
@@ -504,8 +593,13 @@ export async function executeOmnimuxText(input) {
           credentials: input.credentials,
           settings: input.settings,
           resolveOfficialApiKey: input.resolveOfficialApiKey,
+          ...(unlistedReasoning ? { reasoningEffort: unlistedReasoning.wire } : {}),
         })
-        return { ...officialResult, model: compositeModel }
+        return {
+          ...officialResult,
+          model: compositeModel,
+          ...(reasoning === 'inherit' ? {} : { reasoningEffort: unlistedReasoning?.effort ?? null }),
+        }
       }
     }
 
@@ -522,6 +616,7 @@ export async function executeOmnimuxText(input) {
         const attachment = await saveProbedTextImage(media, input.attachments)
         content.push({ type: 'image', attachment })
       }
+      const pinnedReasoning = resolveDeclaredReasoning(input.settings, pinnedTarget.provider, pinnedTarget.model, reasoning)
       const streamed = await streamTextReply(input.llm, {
         provider: pinnedTarget.provider,
         model: pinnedTarget.model,
@@ -531,6 +626,8 @@ export async function executeOmnimuxText(input) {
         content,
         signal: input.signal,
         sessionId: input.sessionId,
+        reasoningPolicy: reasoning,
+        ...(pinnedReasoning ? { preferredEffort: pinnedReasoning.effort } : {}),
       })
       return { ...streamed, model: compositeModel }
     }
@@ -792,6 +889,7 @@ export async function executeOmnimuxText(input) {
   // video input, which carries the group and its failover candidates.
   const wantsChannels = route.routed && route.candidates.length > 0
   const usesAccountKeyResolver = isOfficialRequest && typeof input.resolveOfficialApiKey === 'function'
+  const declaredReasoning = resolveDeclaredReasoning(input.settings, route.providerId, route.modelId, reasoning)
   if (hasComplexMedia || wantsChannels || usesAccountKeyResolver) {
     const mediaParts = packMediaParts(references, probed)
     const result = await completeTextViaChat({
@@ -809,9 +907,12 @@ export async function executeOmnimuxText(input) {
       credentials: input.credentials,
       settings: input.settings,
       resolveOfficialApiKey: input.resolveOfficialApiKey,
+      ...(declaredReasoning ? { reasoningEffort: declaredReasoning.wire } : {}),
     })
     assertGuardOutput(guardPlan, result, { capability: 'text' })
-    return result
+    return reasoning === 'inherit'
+      ? result
+      : { ...result, reasoningEffort: declaredReasoning?.effort ?? null }
   }
 
   if (!input.llm || typeof input.llm.stream !== 'function') {
@@ -831,6 +932,8 @@ export async function executeOmnimuxText(input) {
     content,
     signal: input.signal,
     sessionId: input.sessionId,
+    reasoningPolicy: reasoning,
+    ...(declaredReasoning ? { preferredEffort: declaredReasoning.effort } : {}),
   })
   assertGuardOutput(guardPlan, result, { capability: 'text' })
   return result
@@ -844,24 +947,40 @@ export async function executeOmnimuxText(input) {
  * filtering, finish-error mapping, and the empty-body guard stay identical on
  * both paths.
  *
- * @param {{ stream: (options: object) => AsyncIterable<object> }} llm
- * @param {{ provider: string, model: string, prompt: string, system: string, maxTokens: number, content: Array<object>, signal?: AbortSignal, sessionId?: unknown }} input
+ * @param {{ stream: (options: object) => AsyncIterable<object>, prepareCall?: (config: object, signal: AbortSignal | undefined, configure: (controls: object, model: object) => object) => Promise<{ config: object, stream: (options: object) => AsyncIterable<object> }> }} llm
+ * @param {{ provider: string, model: string, prompt: string, system: string, maxTokens: number, content: Array<object>, signal?: AbortSignal, sessionId?: unknown, reasoningPolicy?: string, preferredEffort?: string }} input
  */
 async function streamTextReply(llm, input) {
-  const options = {
-    provider: input.provider,
-    model: input.model,
+  const policy = normalizeReasoningPolicy(input.reasoningPolicy)
+  const config = { provider: input.provider, model: input.model, maxTokens: input.maxTokens }
+  const request = {
     messages: [{ role: 'user', content: input.content }],
-    maxTokens: input.maxTokens,
-    ...(input.reasoningEffort ? { reasoningEffort: input.reasoningEffort } : {}),
     ...(input.system ? { system: input.system } : {}),
     ...(input.signal ? { signal: input.signal } : {}),
     ...(input.sessionId === undefined ? {} : { sessionId: input.sessionId }),
   }
+  /** Effective level, recorded only when a downgrade was requested. */
+  let appliedEffort = null
+  let stream
+  if (policy === 'minimal' && typeof llm.prepareCall === 'function') {
+    // `prepareCall` resolves the exact model metadata and materializes adapter
+    // defaults before dispatch; it also re-validates the level, so an effort the
+    // adapter does not advertise is never sent.
+    const prepared = await llm.prepareCall(config, input.signal, (controls, model) => {
+      const effort = selectAdapterEffort(model, input.preferredEffort)
+      if (!effort) return controls
+      appliedEffort = effort
+      return { ...controls, reasoningEffort: effort }
+    })
+    stream = prepared.stream({ ...prepared.config, ...request })
+  } else {
+    // Legacy or test hosts expose only `stream`; keep the untouched call.
+    stream = llm.stream({ ...config, ...request })
+  }
   let assembled = ''
   let sawReasoning = false
   let finish
-  for await (const chunk of llm.stream(options)) {
+  for await (const chunk of stream) {
     if (!chunk || typeof chunk !== 'object') continue
     const row = /** @type {Record<string, unknown>} */ (chunk)
     // Reasoning is a separate channel: it must never accumulate into the body,
@@ -908,5 +1027,10 @@ async function streamTextReply(llm, input) {
       ? '模型只返回了思考过程，没有给出正文，请重试或降低推理等级'
       : 'text complete produced no text')
   }
-  return { mode: 'live', model: input.model, text: assembled }
+  return {
+    mode: 'live',
+    model: input.model,
+    text: assembled,
+    ...(policy === 'inherit' ? {} : { reasoningEffort: appliedEffort }),
+  }
 }

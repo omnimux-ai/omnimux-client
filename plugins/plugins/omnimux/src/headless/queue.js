@@ -83,6 +83,7 @@ export function createHeadlessJobManager(options = {}) {
       status: entry.status,
       stage: entry.stage,
       model: entry.model,
+      reasoningEffort: entry.reasoningEffort,
       inputFingerprint: entry.inputFingerprint,
       createdAt: entry.createdAt,
       startedAt: entry.startedAt,
@@ -137,7 +138,7 @@ export function createHeadlessJobManager(options = {}) {
    * @param {(handle: {
    *   jobId: string,
    *   signal: AbortSignal,
-   *   update: (patch: { status?: string, stage?: string, model?: string }) => void,
+   *   update: (patch: { status?: string, stage?: string, model?: string, reasoningEffort?: string | null }) => void,
    * }) => Promise<T>} runner
    * @returns {Promise<T>}
    */
@@ -175,6 +176,10 @@ export function createHeadlessJobManager(options = {}) {
       status: 'queued',
       stage: 'queued',
       model: '',
+      // Effective reasoning level of the call that produced the final text.
+      // Empty until a caller asked for a non-default policy and the route
+      // resolved one.
+      reasoningEffort: '',
       inputFingerprint: meta.inputFingerprint || '',
       createdAt: new Date().toISOString(),
       startedAt: null,
@@ -224,6 +229,7 @@ export function createHeadlessJobManager(options = {}) {
           if (patch.status) entry.status = patch.status
           if (patch.stage) entry.stage = patch.stage
           if (patch.model) entry.model = patch.model
+          if (patch.reasoningEffort !== undefined) entry.reasoningEffort = patch.reasoningEffort ?? ''
           emitJob(entry)
         }
 

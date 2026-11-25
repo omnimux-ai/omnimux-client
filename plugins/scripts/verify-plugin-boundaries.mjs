@@ -8,6 +8,9 @@
  * 3. Verticals must not bypass public seams or import prohibited internal hubs
  * 4. Non-Hub plugins must not invoke DSH `ctx.llm` / `llm.stream` directly;
  *    background AI execution must go through Hub `headlessSkill` (or `textComplete` during migration).
+ * 5. Non-Hub plugins must not call `execute` on a tool definition read from the
+ *    registry (`ctx.tools.get` / `ctx.tools.executable`); a tool call is dispatched
+ *    through `ctx.tools.execute` or consumed through a Hub seam.
  *    Contract: docs/contracts/headless-skill-execution.md
  */
 
@@ -32,6 +35,46 @@ export const DIRECT_LLM_ACCESS_ALLOWLIST = new Set([
 
 const DIRECT_LLM_STREAM_RE = /\b(?:ctx\s*\??\.\s*|subCtx\s*\??\.\s*)?llm\s*\??\.\s*stream\s*\(/
 const DIRECT_LLM_ACCESS_RE = /\b(?:ctx|subCtx)\s*\??\.\s*llm\b|\b(?:ctx|subCtx)\s*\??\.\s*get(?:\?\.)?\(\s*['"]llm['"]\s*\)|\breadSeat\s*\([^,]+,\s*['"]llm['"]\s*\)/
+
+/**
+ * A tool registry expression: `tools`, `toolsService`, `ctx.tools`, `this.tools`.
+ * Anchoring on the receiver keeps `map.get(...)` / `settings.get(...)` out.
+ */
+const TOOL_REGISTRY_RECEIVER = String.raw`(?:[A-Za-z_$][\w$]*\s*\.\s*)*(?:tools|Tools|toolsService|toolRegistry|toolsRegistry|[A-Za-z_$][\w$]*[Tt]ools)`
+
+/** `ctx.tools.get('name').execute(...)` — chained read and invoke. */
+const TOOL_DEFINITION_CHAIN_RE = new RegExp(
+  `${TOOL_REGISTRY_RECEIVER}\\s*\\??\\.\\s*(?:get|executable)\\s*\\??\\.?\\s*\\(\\s*['"][^'"]+['"]\\s*\\)\\s*\\??\\.\\s*execute\\s*\\(`,
+)
+
+/** `const tool = ctx.tools.get('name')` — the definition may be invoked later. */
+const TOOL_DEFINITION_ASSIGN_RE = new RegExp(
+  `(?:const|let|var)\\s+([A-Za-z_$][\\w$]*)\\s*=[^;\\n]*${TOOL_REGISTRY_RECEIVER}\\s*\\??\\.\\s*(?:get|executable)\\s*\\??\\.?\\s*\\(`,
+  'g',
+)
+
+/**
+ * Find the identifiers (or `chained`) through which a runtime file invokes a
+ * registered tool definition directly. Such a call skips pre-execute policy,
+ * guards, approval and the result audit that `ctx.tools.execute` owns.
+ *
+ * Known limitation: a local wrapper that hides the registry read behind another
+ * function name (for example `const getTool = (name) => tools.get(name)`) is
+ * outside static reach and is tracked separately.
+ * @param {string} code source with comments removed
+ * @returns {string[]} one entry per detected invocation site
+ */
+export function findToolDefinitionInvokes(code) {
+  const hits = []
+  if (TOOL_DEFINITION_CHAIN_RE.test(code)) hits.push('chained')
+  for (const match of code.matchAll(TOOL_DEFINITION_ASSIGN_RE)) {
+    const identifier = match[1]
+    if (!identifier || hits.includes(identifier)) continue
+    const escaped = identifier.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    if (new RegExp(`\\b${escaped}\\s*\\??\\.\\s*execute\\s*\\(`).test(code)) hits.push(identifier)
+  }
+  return hits
+}
 
 function isTestOrVendorFile(rel) {
   const posix = rel.replace(/\\/g, '/')
@@ -125,6 +168,12 @@ export function checkSourceFileBoundaries({ rel, plugin, content, file = rel }) 
       fileErrors.push(`headless execution boundary violation in ${posixRel}: non-Hub plugins must not call llm.stream directly. Use Hub ctx.get('headlessSkill') per docs/contracts/headless-skill-execution.md.`)
     } else if (!DIRECT_LLM_ACCESS_ALLOWLIST.has(posixRel) && DIRECT_LLM_ACCESS_RE.test(codeOnly)) {
       fileErrors.push(`headless execution boundary violation in ${posixRel}: non-Hub plugins must not access ctx.llm directly. Use Hub ctx.get('headlessSkill') per docs/contracts/headless-skill-execution.md.`)
+    }
+    // 5. A registry-read tool definition must not be executed in place: dispatch
+    //    through ctx.tools.execute (pipeline), or consume a Hub seam.
+    const definitionInvokes = findToolDefinitionInvokes(codeOnly)
+    if (definitionInvokes.length > 0) {
+      fileErrors.push(`tool dispatch boundary violation in ${posixRel}: non-Hub plugins must not call execute() on a tool definition read from ctx.tools.get/executable (${definitionInvokes.join(', ')}). Consume a Hub seam or dispatch through ctx.tools.execute per docs/contracts/headless-skill-execution.md.`)
     }
   }
 

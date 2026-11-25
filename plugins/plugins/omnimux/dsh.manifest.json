@@ -16,9 +16,12 @@
     "seamsProvided": [
       { "name": "identity", "interfaceDoc": "ctx.get('identity').status / .require() / .getSnapshot()" },
       { "name": "textComplete", "interfaceDoc": "ctx.get('textComplete').generate(params)" },
-      { "name": "headlessSkill", "interfaceDoc": "ctx.get('headlessSkill').run({ skillName, input, outputSchema, references?, ownerPlugin?, targetId?, inputFingerprint? }) / .listJobs() / .getJob() / .cancel()" },
+      { "name": "headlessSkill", "interfaceDoc": "ctx.get('headlessSkill').run({ skillName, input, outputSchema, references?, ownerPlugin?, targetId?, inputFingerprint?, reasoning? }) / .listJobs() / .getJob() / .cancel()" },
       { "name": "modelCatalog", "interfaceDoc": "ctx.get('modelCatalog').list() → { source, fingerprint, defaults, text, image, video, audio }" },
-      { "name": "decisions", "interfaceDoc": "ctx.get('decisions').evaluate(params)" }
+      { "name": "decisions", "interfaceDoc": "ctx.get('decisions').evaluate(params)" },
+      { "name": "pageFetch", "interfaceDoc": "ctx.get('pageFetch').fetch({ url }) → { mode, model, url, title, pageContent }" },
+      { "name": "omnimuxAccounts", "interfaceDoc": "ctx.get('omnimuxAccounts').list({ provider }) → { accounts }" },
+      { "name": "omnimuxAnalytics", "interfaceDoc": "ctx.get('omnimuxAnalytics').dailyMetrics({ fromDate, toDate, platform, account_ids }) / .posts({ platform, limit, page })" }
     ],
     "seamsConsumed": [],
     "slots": [
