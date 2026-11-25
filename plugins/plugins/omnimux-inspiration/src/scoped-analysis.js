@@ -571,6 +571,10 @@ export async function handleBodyTranslation(ctx) {
         return sourceFingerprint(String(latest.content || '')) === fingerprint
       },
       maxTokens: 4096,
+      // Translation is mechanical: it rewrites the given text in another
+      // language and adds no judgement, so the cheapest declared reasoning level
+      // is enough and keeps the thinking preamble from eating the token budget.
+      reasoning: 'minimal',
       signal: ctx.signal,
     })
     cancelled(ctx.signal)
@@ -651,6 +655,8 @@ export async function handleScriptTranslation(ctx) {
         return scriptTranslationInputs(latest, lang).fingerprint === fingerprint
       },
       maxTokens: 2048,
+      // Same mechanical task on a shorter budget: no analysis is requested.
+      reasoning: 'minimal',
       signal: ctx.signal,
     })
     cancelled(ctx.signal)

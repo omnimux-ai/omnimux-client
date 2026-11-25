@@ -23,25 +23,25 @@ test('omnimux-accounts tools lifecycle', async (t) => {
       register(tool) {
         registered.set(tool.name, tool)
       },
-      get(name) {
-        if (name === 'omnimux_accounts_list') {
-          return {
-            async execute(args) {
-              assert.deepEqual(args, { provider: 'tiktok_direct' })
-              return {
-                accounts: [
-                  { id: 'acc_1', provider: 'tiktok_direct', platform: 'tiktok', account_name: 'same-name', agent_usable: true, capabilities: { upload_draft: true, publish_direct: false } },
-                  { id: 'acc_2', provider: 'tiktok_direct', platform: 'tiktok', account_name: 'TikTok Official', agent_usable: true, capabilities: { upload_draft: true, publish_direct: true, max_media_items: 12, max_images: 35, unpublished_note: 'drop me' } },
-                  { id: 'acc_zernio', provider: 'zernio', platform: 'tiktok', account_name: 'same-name' },
-                  { id: 'acc_missing', platform: 'tiktok' },
-                  { id: 'acc_unknown', provider: 'unknown', platform: 'tiktok' },
-                ],
-              }
-            },
-          }
+    },
+    get(name) {
+      if (name === 'omnimuxAccounts') {
+        return {
+          async list(args) {
+            assert.deepEqual(args, { provider: 'tiktok_direct' })
+            return {
+              accounts: [
+                { id: 'acc_1', provider: 'tiktok_direct', platform: 'tiktok', account_name: 'same-name', agent_usable: true, capabilities: { upload_draft: true, publish_direct: false } },
+                { id: 'acc_2', provider: 'tiktok_direct', platform: 'tiktok', account_name: 'TikTok Official', agent_usable: true, capabilities: { upload_draft: true, publish_direct: true, max_media_items: 12, max_images: 35, unpublished_note: 'drop me' } },
+                { id: 'acc_zernio', provider: 'zernio', platform: 'tiktok', account_name: 'same-name' },
+                { id: 'acc_missing', platform: 'tiktok' },
+                { id: 'acc_unknown', provider: 'unknown', platform: 'tiktok' },
+              ],
+            }
+          },
         }
-        return undefined
-      },
+      }
+      return undefined
     },
   }
 
@@ -85,4 +85,12 @@ test('omnimux-accounts tools lifecycle', async (t) => {
   const res3 = await listTool.execute({ agent_usable_only: true })
   assert.equal(res3.count, 1)
   assert.equal(res3.accounts[0].id, 'acc_2')
+
+  // 5. A missing hub seam fails loudly instead of listing nothing.
+  const bare = new Map()
+  apply({ tools: { register(tool) { bare.set(tool.name, tool) } }, get: () => undefined })
+  await assert.rejects(
+    () => bare.get('accounts_list').execute({}),
+    /needs-hub: install the OmniMux execution hub/,
+  )
 })

@@ -173,25 +173,17 @@ function readSeat(ctx, name) {
 }
 
 /**
- * The host tool registry: `ctx.tools` directly, else the `tools` seat.
- * @param {unknown} ctx
- * @returns {{ get?: Function, execute?: Function } | null}
- */
-function toolRegistry(ctx) {
-  if (!ctx || typeof ctx !== 'object') return null
-  const direct = /** @type {{ tools?: unknown }} */ (ctx).tools
-  if (direct && typeof direct === 'object') return /** @type {{ get?: Function }} */ (direct)
-  const seat = readSeat(ctx, 'tools')
-  return seat && typeof seat === 'object' ? /** @type {{ get?: Function }} */ (seat) : null
-}
-
-/**
  * Wrap the hub capabilities this vertical consumes, resolved lazily at call time
  * (load order between plugins is not this plugin's contract):
  *
  * - `headlessSkill` — the Hub shared headless skill runner (`ctx.get('headlessSkill')`);
- * - `pageFetch` — the official `omnimux_page_fetch` tool (OmniMux Jina Reader);
- * - `socialData` — the official `omnimux_social_data` tool (incl. TikTok Shop).
+ * - `pageFetch` — the Hub reader seam (`ctx.get('pageFetch')`, OmniMux Jina Reader);
+ * - `socialData` — the Hub social-data seam (`ctx.get('socialData')`, incl. TikTok Shop).
+ *
+ * Tool definitions are never executed from this plugin: reading
+ * `ctx.tools.get(name)` and calling `execute` would skip the tool pipeline
+ * (pre-execute policy, guards, result audit). See
+ * docs/contracts/headless-skill-execution.md.
  *
  * @param {unknown} ctx
  * @param {{ headlessSkill?: { run: Function, cancel?: Function, getJob?: Function, listJobs?: Function } }} [deps] test seam override
@@ -255,25 +247,24 @@ export function createHubSeams(ctx, deps) {
      * @returns {Promise<unknown>}
      */
     async pageFetch(url) {
-      const tools = toolRegistry(ctx)
-      const tool = tools && typeof tools.get === 'function' ? tools.get('omnimux_page_fetch') : null
-      if (!tool || typeof tool.execute !== 'function') {
+      const seam = /** @type {{ fetch?: Function } | undefined} */ (readSeat(ctx, 'pageFetch'))
+      if (!seam || typeof seam.fetch !== 'function') {
         throw new Error('omnimux_page_fetch unavailable: hub is not loaded or the reader is disabled')
       }
-      return tool.execute({ url })
+      return seam.fetch({ url })
     },
 
     /**
-     * Official social / shop data via `omnimux_social_data` (TikTok Shop models included).
+     * Official social / shop data via the hub `socialData` seam (TikTok Shop models included).
      * @param {Record<string, unknown>} args
+     * @param {{ signal?: AbortSignal }} [exec]
      */
-    async socialData(args) {
-      const tools = toolRegistry(ctx)
-      const tool = tools && typeof tools.get === 'function' ? tools.get('omnimux_social_data') : null
-      if (!tool || typeof tool.execute !== 'function') {
+    async socialData(args, exec) {
+      const seam = /** @type {{ fetch?: Function } | undefined} */ (readSeat(ctx, 'socialData'))
+      if (!seam || typeof seam.fetch !== 'function') {
         throw new Error('omnimux_social_data unavailable: hub is not loaded or the tool is disabled')
       }
-      return tool.execute(args)
+      return seam.fetch(args, exec)
     },
   }
   return seams

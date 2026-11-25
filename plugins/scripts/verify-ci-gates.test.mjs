@@ -103,6 +103,34 @@ test('verify-plugin-boundaries blocks non-Hub direct ctx.llm and llm.stream call
     content: '// Hub textComplete delegates to ctx.llm.stream internally\nexport const ok = true\n',
   })
   strictEqual(commentOnlyAllowed.length, 0)
+
+  // 5. A registry-read tool definition must not be executed in place.
+  for (const content of [
+    'export function run(ctx) { return ctx.tools.get("omnimux_page_fetch").execute({ url }) }',
+    'export async function run(ctx) { const tool = ctx.tools.get?.("omnimux_accounts_list")\n return tool.execute({ provider: "tiktok_direct" }) }',
+    'export function run(tools) { const t = tools.executable("x")\n return t.execute({}) }',
+  ]) {
+    const blocked = checkSourceFileBoundaries({
+      rel: 'plugins/omnimux-accounts/src/private-tools.js',
+      plugin: 'omnimux-accounts',
+      content,
+    })
+    ok(blocked.some((msg) => msg.includes('tool dispatch boundary violation')), content)
+  }
+
+  const dispatchAllowed = checkSourceFileBoundaries({
+    rel: 'plugins/omnimux-publish/src/hubtools.js',
+    plugin: 'omnimux-publish',
+    content: 'export async function run(tools) { const tool = tools.get("omnimux_publish_get")\n return tools.execute({ calls: [] }) }',
+  })
+  strictEqual(dispatchAllowed.length, 0)
+
+  const hubToolReadAllowed = checkSourceFileBoundaries({
+    rel: 'plugins/omnimux/src/host/apply.js',
+    plugin: 'omnimux',
+    content: 'export function run(ctx) { return ctx.tools.get("omnimux_page_fetch").execute({ url }) }',
+  })
+  strictEqual(hubToolReadAllowed.length, 0)
 })
 
 test('verify-stage-contracts passes on all first-level Stage and StageStore files', () => {

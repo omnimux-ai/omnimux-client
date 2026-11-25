@@ -303,10 +303,11 @@ describe('ProductsDispatcher import-from-link', () => {
   it('hands the host seats to the importer as hub seams', async () => {
     const seen = []
     const headlessSkill = { run: async () => ({ data: { ok: true }, model: 'hub-default' }) }
-    const pageFetch = { execute: async () => ({ pageContent: '# page' }) }
+    const pageFetch = { fetch: async () => ({ pageContent: '# page' }) }
     const ctx = {
-      tools: { get: (name) => (name === 'omnimux_page_fetch' ? pageFetch : undefined) },
-      get: (name) => (name === 'headlessSkill' ? headlessSkill : undefined),
+      get: (name) => (name === 'headlessSkill'
+        ? headlessSkill
+        : name === 'pageFetch' ? pageFetch : undefined),
     }
     const { dispatcher } = makeDispatcher({
       ctx,
@@ -449,12 +450,10 @@ describe('ProductsDispatcher import-from-link', () => {
             },
           }
         }
+        if (name === 'pageFetch') {
+          return { fetch: async () => ({ pageContent: '# 智能记账杯\n\n双层陶瓷保温，防滑底座' }) }
+        }
         return undefined
-      },
-      tools: {
-        get: (name) => (name === 'omnimux_page_fetch'
-          ? { execute: async () => ({ pageContent: '# 智能记账杯\n\n双层陶瓷保温，防滑底座' }) }
-          : undefined),
       },
     }
     const { dispatcher } = makeDispatcher({
@@ -526,7 +525,7 @@ describe('products hub seams', () => {
   })
 
   it('reads the page through omnimux_page_fetch, and fails with headless-skill-unavailable when headlessSkill is missing', async () => {
-    const ctx = { tools: { get: (name) => (name === 'omnimux_page_fetch' ? { execute: async (args) => ({ pageContent: `# ${args.url}` }) } : undefined) } }
+    const ctx = { get: (name) => (name === 'pageFetch' ? { fetch: async (args) => ({ pageContent: `# ${args.url}` }) } : undefined) }
     const seams = createHubSeams(ctx)
     assert.deepEqual(await seams.pageFetch('https://a.example'), { pageContent: '# https://a.example' })
 

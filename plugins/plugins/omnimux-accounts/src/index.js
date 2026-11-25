@@ -55,7 +55,8 @@ function pickCapabilities(raw) {
 
 /**
  * @param {{
- *   tools: { register: (tool: object) => unknown, get?: (name: string) => any },
+ *   tools: { register: (tool: object) => unknown },
+ *   get?: (name: string) => unknown,
  *   effect?: (factory: () => () => void, label?: string) => void,
  * }} ctx
  */
@@ -63,10 +64,21 @@ export function apply(ctx) {
   const homeDir = process.env.DSH_HOME || process.env.HOME || '.'
   const metaStore = createAccountMetaStore({ home: homeDir })
 
+  /**
+   * Connected-account rows come from the Hub's `omnimuxAccounts` seam.
+   *
+   * The seam resolves lazily so plugin load order is not this plugin's
+   * contract, and it keeps the credential lane inside the hub. Reading the
+   * `omnimux_accounts_list` tool definition and calling its `execute` would
+   * bypass the tool pipeline (pre-execute policy, guards, result audit) — see
+   * docs/contracts/headless-skill-execution.md.
+   */
   async function listDirectAccounts() {
-    const tool = ctx.tools.get?.('omnimux_accounts_list')
-    if (!tool || typeof tool.execute !== 'function') throw new Error('needs-hub: install the OmniMux execution hub')
-    const res = await tool.execute({ provider: ACCOUNTS_PROVIDER })
+    const seam = typeof ctx.get === 'function' ? ctx.get('omnimuxAccounts') : undefined
+    if (!seam || typeof seam.list !== 'function') {
+      throw new Error('needs-hub: install the OmniMux execution hub')
+    }
+    const res = await seam.list({ provider: ACCOUNTS_PROVIDER })
     if (res?.success === false) throw new Error(res.error?.message || res.message || 'account list failed')
     const rows = Array.isArray(res?.accounts) ? res.accounts : res?.data?.accounts
     if (!Array.isArray(rows)) throw new Error('invalid account list response')

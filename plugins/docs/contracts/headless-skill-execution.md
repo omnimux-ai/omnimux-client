@@ -5,7 +5,7 @@ type: "contract"
 status: "living"
 authority: "L1"
 date: "2026-11-23"
-updated: "2026-11-23"
+updated: "2026-11-25"
 ---
 
 # 后台无头技能执行契约
@@ -61,6 +61,13 @@ interface HeadlessSkillRunRequest<T = Record<string, unknown>> {
   inputFingerprint?: string
   /** 写回前可选校验钩子；若返回 false 表示源内容已变更，中止返回脏结果 */
   verifyFingerprint?: () => boolean | Promise<boolean>
+  /**
+   * 推理档位策略，缺省 `inherit`：
+   * - `inherit`：保留路由自身解析的默认档位，复杂分析、多模态解构与导演助手一律用它；
+   * - `minimal`：只给零副作用的机械环节（Schema 修复重试、翻译、文本切分）用，取该模型已声明的最低档；
+   *   模型未声明更低档位时不下发字段，行为等同 `inherit`，绝不猜造档位值。
+   */
+  reasoning?: 'inherit' | 'minimal'
   /** 可选模型覆盖、工作目录、最大输出与超时控制 */
   model?: string
   cwd?: string
@@ -78,6 +85,11 @@ interface HeadlessSkillRunResult<T = Record<string, unknown>> {
   model: string
   data: T
   repaired: boolean
+  /**
+   * 产出最终文本的这次调用的实际生效档位（`off` / `low` / …）。
+   * 仅在调用方显式传入 `reasoning` 时出现；未能解析到可下发档位时为 `null`。
+   */
+  reasoningEffort?: string | null
   inputFingerprint?: string
 }
 ```
@@ -107,11 +119,24 @@ interface HeadlessSkillRunResult<T = Record<string, unknown>> {
 
 Hub 通过 `hubEvents.emit({ type: 'omnimux:headless-skill', payload })` 推送任务状态变更，`payload` 包含：
 
-- `jobId`、`ownerPlugin`、`targetId`、`label`、`skillName`、`modality`、`status`、`stage`、`model`、`inputFingerprint`、`createdAt`、`startedAt`、`finishedAt`、`errorCode`、`error`
+- `jobId`、`ownerPlugin`、`targetId`、`label`、`skillName`、`modality`、`status`、`stage`、`model`、`reasoningEffort`、`inputFingerprint`、`createdAt`、`startedAt`、`finishedAt`、`errorCode`、`error`
+- `reasoningEffort` 缺省为空串；初始调用解析到档位后先写入，修复轮若改写了生效档位会再次推送。
+
+### 推理档位下发规则
+
+1. 只有显式声明 `reasoning: 'minimal'` 的调用才可能降档；不传该字段的调用完全不受影响。
+2. 档位只从模型已声明的能力里选：先读 `llm-pi-ai` 配置中该模型的 `reasoningEfforts`，再与适配器在 `prepareCall` 里公布的 `efforts` 取交集；交集为空就不下发。
+3. 官方直连轨（`completeTextViaChat`）把声明的档位映射成该 provider 自己的线值写入 `reasoning_effort`；未声明就不加字段，绝不按协议方言自行推测。
+4. 修复重试固定使用 `minimal`：它只把已写出的答案整形到 Schema，不重新理解素材，且重试请求不带媒体，降档不会削弱判定质量。
 
 ## 边界门禁
 
-`plugins/scripts/verify-plugin-boundaries.mjs` 强制校验非 Hub 插件不得直接访问 `ctx.llm` 或 `llm.stream`（仅显式豁免 `omnimux-browser/src/text-session-model.ts` 的只读会话模型目录查询）。新增业务后台 AI 能力必须走 `headlessSkill` 接缝。
+`plugins/scripts/verify-plugin-boundaries.mjs` 强制校验非 Hub 插件：
+
+1. 不得直接访问 `ctx.llm` 或 `llm.stream`（仅显式豁免 `omnimux-browser/src/text-session-model.ts` 的只读会话模型目录查询）；
+2. 不得对 `ctx.tools.get` / `ctx.tools.executable` 取得的工具定义直接调用 `execute`——那会绕过工具管线的前置策略、守卫与结果审计。跨插件读取一律消费 Hub 接缝：账号 `omnimuxAccounts`、分析 `omnimuxAnalytics`、网页读取 `pageFetch`、社媒数据 `socialData`、文本生成 `textComplete` 与 `headlessSkill`；确需走审批/写入管线的调用通过 `ctx.tools.execute` 批次契约派发。
+
+新增业务后台 AI 能力必须走 `headlessSkill` 接缝。
 
 ## 存量不合规模块迁移清单
 

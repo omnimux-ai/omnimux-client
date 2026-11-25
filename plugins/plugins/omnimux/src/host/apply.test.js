@@ -81,7 +81,7 @@ describe('hub apply composition', () => {
     assert.equal(catalog.defaults.text, 'gemini-3.8-flash')
   })
 
-  it('registers all 55 tools and 22 seams by default', () => {
+  it('registers all 55 tools and every provided seam by default', () => {
     const names = []
     const provided = []
     apply({
@@ -123,7 +123,7 @@ describe('hub apply composition', () => {
     assert.ok(names.includes('workbench_open_tab'))
     assert.ok(names.includes('omnimux_marketing_presets_search'))
 
-    assert.deepEqual(provided, ['identity', 'hubEvents', 'workbenchMailbox', 'composerAttachments', 'videoGenerate', 'imageGenerate', 'audioGenerate', 'speechToText', 'textComplete', 'headlessSkill', 'inspirationShare', 'socialData', 'youtube', 'tiktok', 'instagram', 'x', 'decisions', 'modelCatalog', 'generationProducts', 'mediaInspect', 'nativeFilePicker', 'mediaResolver'])
+    assert.deepEqual(provided, ['identity', 'hubEvents', 'workbenchMailbox', 'composerAttachments', 'videoGenerate', 'imageGenerate', 'audioGenerate', 'speechToText', 'textComplete', 'headlessSkill', 'inspirationShare', 'socialData', 'youtube', 'tiktok', 'instagram', 'x', 'omnimuxAccounts', 'omnimuxAnalytics', 'pageFetch', 'decisions', 'modelCatalog', 'generationProducts', 'mediaInspect', 'nativeFilePicker', 'mediaResolver'])
   })
 
   it('disables all gated capabilities when gate.enabled is false', () => {
@@ -170,11 +170,43 @@ describe('hub apply composition', () => {
     assert.ok(tools.omnimux_page_fetch)
     assert.ok(tools.omnimux_accounts_list)
 
-    assert.deepEqual(provided, ['identity', 'hubEvents', 'workbenchMailbox', 'composerAttachments', 'imageGenerate', 'audioGenerate', 'speechToText', 'textComplete', 'headlessSkill', 'inspirationShare', 'socialData', 'youtube', 'tiktok', 'instagram', 'x', 'decisions', 'modelCatalog', 'generationProducts', 'mediaInspect', 'nativeFilePicker', 'mediaResolver'])
+    assert.deepEqual(provided, ['identity', 'hubEvents', 'workbenchMailbox', 'composerAttachments', 'imageGenerate', 'audioGenerate', 'speechToText', 'textComplete', 'headlessSkill', 'inspirationShare', 'socialData', 'youtube', 'tiktok', 'instagram', 'x', 'omnimuxAccounts', 'omnimuxAnalytics', 'pageFetch', 'decisions', 'modelCatalog', 'generationProducts', 'mediaInspect', 'nativeFilePicker', 'mediaResolver'])
 
     // The local model is hidden; the gateway-only text model remains offered.
     const textEnum = tools.omnimux_text_complete.parameters.properties.model.enum
     assert.deepEqual(textEnum, ['gemini-4-argon', 'seed-evolving'])
+  })
+
+  it('keeps the read-only seams behind the same capability gate as their tools', async () => {
+    const seams = new Map()
+    apply({
+      tools: { register() {} },
+      provide(name, value) { seams.set(name, value) },
+      get() { return undefined },
+    }, {
+      gate: {
+        tools: {
+          omnimux_social_data: false,
+          omnimux_page_fetch: false,
+          omnimux_analytics_daily_metrics: false,
+        },
+      },
+    })
+
+    // Mount-time gate: a disabled reader exposes no seam at all, so a consumer
+    // reports "unavailable" instead of reaching the network.
+    assert.equal(seams.has('pageFetch'), false)
+    // Call-time gate: the social seam still exists for other capabilities but
+    // refuses the disabled one, exactly like the tool wrapper does.
+    const socialData = seams.get('socialData')
+    await assert.rejects(
+      async () => socialData.fetch({ platform: 'youtube', capability: 'search', query: 'q' }),
+      (error) => error.code === 'capability-disabled' && /omnimux_social_data/.test(error.message),
+    )
+    // Partial analytics seam: only the enabled capability is published.
+    const analytics = seams.get('omnimuxAnalytics')
+    assert.equal(typeof analytics.posts, 'function')
+    assert.equal(analytics.dailyMetrics, undefined)
   })
 })
 
