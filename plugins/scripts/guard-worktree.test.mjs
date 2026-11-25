@@ -2623,6 +2623,9 @@ describe('adversarial hardening regressions (materialization / wrapper / frozen-
       `cd "$(echo ${mainRepoRoot})"; echo pwn > package.json`,
       `p=${mainRepoRoot}; cd "$p"; echo pwn > package.json`,
       `pushd "$(echo ${mainRepoRoot})" >/dev/null; echo pwn > package.json`,
+      `bash -c "$(echo 'rm -rf ${mainRepoRoot}/package.json')"`,
+      `git -C "${mainRepoRoot}" pull . feature`,
+      `git -C "${mainRepoRoot}" pull origin feature`,
     ]) {
       assert.equal(
         decideBashCommand({ command, cwd: plain, ownerRoot: mainRepoRoot }).decision,
@@ -2660,6 +2663,9 @@ describe('adversarial hardening regressions (materialization / wrapper / frozen-
       `git -C "${mainRepoRoot}" checkout -b guard-e3-branch`,
       `git -C "${mainRepoRoot}" stash list`,
       `git -C "${mainRepoRoot}" clean -nf`,
+      `git -C "${mainRepoRoot}" rm -n package.json`,
+      `git -C "${mainRepoRoot}" mv -n package.json moved.json`,
+      `git -C "${mainRepoRoot}" pull origin main`,
       `git -C "${mainRepoRoot}" reset --hard origin/main`,
       `git -C "${mainRepoRoot}" merge origin/main`,
     ]) {

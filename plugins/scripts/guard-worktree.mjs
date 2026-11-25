@@ -3782,6 +3782,14 @@ function parseGitInvocation(effectiveWords, baseCwd, envMap = new Map()) {
 function classifyGitMutationWords(gitInfo, segment) {
   if (!gitInfo) return null
   const { sub, args } = gitInfo
+  // `git pull <other-ref>` merges a local/remote branch into the primary checkout.
+  if (sub === 'pull') {
+    const refs = collectNonOptionArgs(args, new Set(['-s', '--strategy', '-X', '--strategy-option', '-j', '--jobs', '--depth', '--upload-pack', '--reference', '--recurse-submodules']))
+    const allowedRefs = refs.every((ref) => ref === 'origin' || ref === 'upstream' || ref === 'main' || ref === 'master')
+    if (refs.length > 0 && !allowedRefs) {
+      return { kind: 'pull-other-ref', segment }
+    }
+  }
   if (GIT_SAFE_SUBCOMMANDS.has(sub)) return null
 
   // push --force / -f
@@ -3822,8 +3830,10 @@ function classifyGitMutationWords(gitInfo, segment) {
   }
   // Tracked files removed or renamed in the primary checkout.
   if (sub === 'rm' || sub === 'mv') {
-    return { kind: `git-${sub}`, segment }
+    const dryRun = args.some((w) => w === '-n' || w === '--dry-run')
+    if (!dryRun) return { kind: `git-${sub}`, segment }
   }
+
   if (sub === 'clean') {
     const forceClean = args.some((w) => /^-[a-zA-Z]*f[a-zA-Z]*$/.test(w) || w === '--force')
     const dryRun = args.some((w) => /^-[a-zA-Z]*n[a-zA-Z]*$/.test(w) || w === '--dry-run')
@@ -3914,7 +3924,7 @@ export function decideGitWorkingTreeMutation(command, cwd, depth = 0) {
         const shellMeta = parseShellInvocation(effectiveWords)
         if (shellMeta && !shellMeta.syntaxCheckOnly) {
           if (shellMeta.inlineScript) {
-            const nested = decideGitWorkingTreeMutation(shellMeta.inlineScript, effectiveCwd, depth + 1)
+            const nested = decideGitWorkingTreeMutation(resolveEvalScript(shellMeta.inlineScript), effectiveCwd, depth + 1)
             if (nested.decision === 'deny') return nested
           } else if (shellMeta.procSubCmd) {
             for (const body of extractProducerScriptsFromProcessSub(shellMeta.procSubCmd)) {
@@ -4542,7 +4552,7 @@ export function extractCommandWriteTargetsWithCwd(command, cwd = process.cwd(), 
         const shellMeta = parseShellInvocation(effectiveWords)
         if (shellMeta && !shellMeta.syntaxCheckOnly) {
           if (shellMeta.inlineScript) {
-            results.push(...extractCommandWriteTargetsWithCwd(shellMeta.inlineScript, effectiveCwd, depth + 1))
+            results.push(...extractCommandWriteTargetsWithCwd(resolveEvalScript(shellMeta.inlineScript), effectiveCwd, depth + 1))
           } else if (shellMeta.procSubCmd) {
             for (const body of extractProducerScriptsFromProcessSub(shellMeta.procSubCmd)) {
               results.push(...extractCommandWriteTargetsWithCwd(body, effectiveCwd, depth + 1))
@@ -5164,7 +5174,7 @@ export function decideMainBranchGitOp(command, cwd, options = {}, depth = 0) {
         const shellMeta = parseShellInvocation(effectiveWords)
         if (shellMeta && !shellMeta.syntaxCheckOnly) {
           if (shellMeta.inlineScript) {
-            const nested = decideMainBranchGitOp(shellMeta.inlineScript, effectiveCwd, { ownerRoot }, depth + 1)
+            const nested = decideMainBranchGitOp(resolveEvalScript(shellMeta.inlineScript), effectiveCwd, { ownerRoot }, depth + 1)
             if (nested.decision === 'deny') return nested
           } else if (shellMeta.procSubCmd) {
             for (const body of extractProducerScriptsFromProcessSub(shellMeta.procSubCmd)) {
