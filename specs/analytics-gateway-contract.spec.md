@@ -20,7 +20,7 @@ PR #271（`specs/tool-seam-and-reasoning-policy.spec.md`）在为 `omnimux-analy
 ## 假设
 
 - 根因假设：客户端 `omnimux` Hub 的分析传输层（`analytics.js`）、官方工具注册（`mount.js`）与看板聚合层（`analytics/cloudPipeline.js`）最初按 Zernio 上游直连字段编写，未随 OmniMux 网关的租户隔离层（服务端自行注入 `profileId`，本地正整数账号 ID 使用 `account_ids`/`account_id`，帖子查询使用 `post_id`）收敛，且传输层无白名单校验与正整数校验，导致错误键名或非法 ID 在网关侧被静默忽略或返回 400。
-- 设计假设：在 `analytics.js` 这一单一真源层对全部 8 个端点强制执行网关参数白名单、正整数账号/分页校验及 `sync-external-posts` 的 `account_id` 数值序列化，再同步对齐 `mount.js` 工具 Schema、`cloudPipeline.js` 按端点分源构造参数、`http-routes.js` 400 错误映射与 `dsh.manifest.json` 接缝声明，可消除工具面、接缝面、原始透传路由与看板聚合四条路径的契约漂移，且保持 `omnimux` 工具字符预算不高于冻结基线（38971 字符）。
+- 设计假设：在 `analytics.js` 这一单一真源层对全部 8 个端点强制执行网关参数白名单、正整数账号/分页校验及 `sync-external-posts` 的 `account_id` 数值序列化，再同步对齐 `mount.js` 工具 Schema、`cloudPipeline.js` 按端点分源构造参数、`http-routes.js` 400 错误映射与 `dsh.manifest.json` 接缝声明，可消除工具面、接缝面、原始透传路由与看板聚合四条路径的契约漂移，且保持 `omnimux` 工具字符预算净下降并处于冻结基线棘轮上限（38971 × 1.1 = 42868 字符）内（实测 40118 字符）。
 
 ## 证伪方式
 

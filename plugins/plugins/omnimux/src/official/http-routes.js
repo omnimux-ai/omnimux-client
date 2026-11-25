@@ -5,6 +5,7 @@ import { assertLocalWrite } from '../apps/origin.js'
 import { OmnimuxError } from '../media/errors.js'
 import { connectAccount, disconnectAccount, listAccounts } from './accounts.js'
 import {
+  ANALYTICS_VALIDATION_ERROR_CODES,
   getDailyMetrics,
   getBestTimeToPost,
   getPostingFrequency,
@@ -94,9 +95,7 @@ export function mapOfficialError(error) {
     'invalid-provider',
     'account-provider-mismatch',
     'post-provider-mismatch',
-    'analytics-invalid-account-id',
-    'analytics-invalid-query',
-    'analytics-invalid-capability',
+    ...ANALYTICS_VALIDATION_ERROR_CODES,
   ].includes(error.code)) {
     const status = error.code.endsWith('-mismatch') ? 409 : 400
     return { status, body: { error: error.code, message: error.message } }

@@ -824,7 +824,7 @@ export function mountOfficial(ctx, deps) {
       timezone: { type: 'string' },
     },
     (args) => {
-      const { capability, ...query } = args
+      const { capability, ...query } = args && typeof args === 'object' && !Array.isArray(args) ? args : {}
       return getInboxAnalytics(client, capability, query)
     },
   )

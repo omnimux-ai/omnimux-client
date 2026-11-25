@@ -5,6 +5,7 @@
 import { OmnimuxError } from '../../media/errors.js'
 import { listAccounts } from '../accounts.js'
 import {
+  ANALYTICS_VALIDATION_ERROR_CODES,
   getBestTimeToPost,
   getContentDecay,
   getDailyMetrics,
@@ -51,8 +52,9 @@ export function buildCloudQuery(query = {}, now = Date.now()) {
   if (q.platform && q.platform !== 'all') {
     cloud.platform = q.platform
   }
-  if (q.profileId && q.profileId !== 'all') {
-    const id = parsePositiveInt(q.profileId, 'account_id', { code: 'analytics-invalid-account-id' })
+  const rawProfile = typeof q.profileId === 'string' ? q.profileId.trim() : q.profileId
+  if (rawProfile && rawProfile !== 'all') {
+    const id = parsePositiveInt(rawProfile, 'account_id', { code: 'analytics-invalid-account-id', required: true })
     cloud.account_ids = String(id)
     cloud.account_id = String(id)
   }
@@ -110,7 +112,7 @@ async function loadAccounts(client) {
 }
 
 /**
- * Cloud 502/404 must not blank the dashboard. Auth and client-validation errors still bubble.
+ * Cloud 502/404/400 must not blank the dashboard. Auth and local client-validation errors still bubble.
  * @param {Promise<unknown>} promise
  * @param {string} [label]
  */
@@ -119,7 +121,10 @@ export async function settleCloud(promise, label = 'cloud') {
     const value = await promise
     return { ok: true, value, error: null, label }
   } catch (caught) {
-    if (caught instanceof OmnimuxError && (caught.code === 'needs-omnimux' || caught.status === 400)) {
+    if (
+      caught instanceof OmnimuxError
+      && (caught.code === 'needs-omnimux' || ANALYTICS_VALIDATION_ERROR_CODES.includes(caught.code))
+    ) {
       throw caught
     }
     const quotaError = caught instanceof OmnimuxError && caught.code === 'quota-exceeded' ? caught : undefined

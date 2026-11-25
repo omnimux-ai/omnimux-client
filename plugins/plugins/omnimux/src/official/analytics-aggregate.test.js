@@ -145,6 +145,17 @@ describe('buildCloudQuery', () => {
       )
     }
   })
+
+  it('treats whitespace-only profileId as unfiltered and trims padded numeric ids', () => {
+    const now = new Date(2026, 7, 25, 12, 0, 0).getTime()
+    const blank = buildCloudQuery({ timeRange: '30d', profileId: '   ' }, now)
+    assert.equal(Object.hasOwn(blank, 'account_ids'), false)
+    assert.equal(Object.hasOwn(blank, 'account_id'), false)
+
+    const padded = buildCloudQuery({ timeRange: '30d', profileId: ' 42 ' }, now)
+    assert.equal(padded.account_ids, '42')
+    assert.equal(padded.account_id, '42')
+  })
 })
 
 describe('dashboard aggregation endpoint query isolation', () => {
@@ -284,6 +295,39 @@ describe('settleCloud', () => {
       () => settleCloud(Promise.reject(new OmnimuxError('needs-omnimux', 'sign in'))),
       (err) => err instanceof OmnimuxError && err.code === 'needs-omnimux',
     )
+  })
+
+  it('degrades upstream HTTP 400 failures and HTTP 400 quota errors while rethrowing local validation errors', async () => {
+    const upstream400 = await settleCloud(
+      Promise.reject(new OmnimuxError('omnimux-request-failed', 'upstream bad request', { status: 400 })),
+      'content-decay',
+    )
+    assert.equal(upstream400.ok, false)
+    assert.match(upstream400.error, /upstream bad request/)
+
+    const quota400 = await settleCloud(
+      Promise.reject(new OmnimuxError('quota-exceeded', 'insufficient_user_quota', { status: 400 })),
+      'content-decay',
+    )
+    assert.equal(quota400.ok, false)
+    assert.equal(quota400.quotaError?.code, 'quota-exceeded')
+
+    await assert.rejects(
+      () => settleCloud(Promise.reject(new OmnimuxError('analytics-invalid-account-id', 'account_id must be a positive integer', { status: 400 }))),
+      (err) => err instanceof OmnimuxError && err.code === 'analytics-invalid-account-id',
+    )
+
+    const insights = await aggregateInsights({
+      async withPat(path) {
+        if (String(path).includes('best-time-to-post')) return { slots: [{ day_of_week: 1, hour: 9, score: 27 }] }
+        if (String(path).includes('posting-frequency')) {
+          throw new OmnimuxError('omnimux-request-failed', 'upstream bad request', { status: 400 })
+        }
+        throw new OmnimuxError('quota-exceeded', 'insufficient_user_quota', { status: 400 })
+      },
+    }, { timeRange: '30d' })
+    assert.equal(insights.heatmap.maxScore, 27)
+    assert.deepEqual(insights.partialErrors, [{ key: 'content-decay', status: 402, error: 'quota-exceeded' }])
   })
 })
 

@@ -247,5 +247,9 @@ it('analytics tools declare gateway contract parameter keys and wire valid reque
     () => capture.registeredTools.omnimux_analytics_inbox.execute({ capability: 'heatmap', fromDate: '2026-08-01' }),
     (err) => err instanceof OmnimuxError && err.code === 'analytics-invalid-query',
   )
+  await assert.rejects(
+    () => capture.registeredTools.omnimux_analytics_inbox.execute(undefined),
+    (err) => err instanceof OmnimuxError && err.code === 'analytics-invalid-capability',
+  )
   assert.equal(requests.length, beforeErrors, 'rejected analytics calls must never hit upstream')
 })

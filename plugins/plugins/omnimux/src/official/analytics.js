@@ -16,6 +16,12 @@ import { OmnimuxError } from '../media/errors.js'
 
 const API = '/api/social/v1/analytics'
 
+export const ANALYTICS_VALIDATION_ERROR_CODES = Object.freeze([
+  'analytics-invalid-account-id',
+  'analytics-invalid-query',
+  'analytics-invalid-capability',
+])
+
 const DAILY_METRICS_KEYS = Object.freeze(['fromDate', 'toDate', 'platform', 'timezone', 'account_ids'])
 const BEST_TIME_KEYS = Object.freeze(['platform', 'timezone', 'account_id'])
 const PLATFORM_ONLY_KEYS = Object.freeze(['platform'])
@@ -115,9 +121,14 @@ export function parseAccountIdList(value, fieldName = 'account_ids') {
   }
   if (Array.isArray(value)) {
     if (value.length === 0) return undefined
-    return value
-      .map((item) => String(parsePositiveInt(item, fieldName, { code: 'analytics-invalid-account-id' })))
-      .join(',')
+    const parsed = []
+    for (let i = 0; i < value.length; i += 1) {
+      if (!Object.hasOwn(value, i)) {
+        throw new OmnimuxError('analytics-invalid-account-id', `${fieldName} must be comma-separated positive integers`, { status: 400 })
+      }
+      parsed.push(String(parsePositiveInt(value[i], fieldName, { code: 'analytics-invalid-account-id', required: true })))
+    }
+    return parsed.join(',')
   }
   throw new OmnimuxError('analytics-invalid-account-id', `${fieldName} must be comma-separated positive integers`, { status: 400 })
 }

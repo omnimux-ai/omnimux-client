@@ -60,13 +60,28 @@ describe('analytics client lane', () => {
         (err) => err instanceof OmnimuxError && err.code === 'analytics-invalid-query' && err.status === 400,
       )
     }
-    for (const badIds of ['acc_1', '0', '-3', '12,0', '12,,34', '99999999999999999999']) {
+    for (const badIds of [
+      'acc_1',
+      '0',
+      '-3',
+      '12,0',
+      '12,,34',
+      '99999999999999999999',
+      [12, ''],
+      [12, null],
+      [undefined],
+      ['  '],
+      [12, , 34],
+    ]) {
       await assert.rejects(
         () => getDailyMetrics(rejectedClient, { account_ids: badIds }),
         (err) => err instanceof OmnimuxError && err.code === 'analytics-invalid-account-id' && err.status === 400,
       )
     }
     assert.equal(rejectedClient.calls.length, 0)
+
+    await getDailyMetrics(client, { account_ids: [12, '34'] })
+    assert.equal(client.calls[1].path, '/api/social/v1/analytics/daily-metrics?account_ids=12%2C34')
   })
 
   it('calls getBestTimeToPost', async () => {
