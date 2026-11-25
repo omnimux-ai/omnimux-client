@@ -719,7 +719,6 @@ describe('guard-worktree bash command write safety guard (防命令行绕过篡�
       'git fetch origin',
       'git checkout main',
       'git checkout -b new-feature-branch',
-      'git stash',
       'git stash list',
       'git status -s',
       'git log -n 5 --oneline',
@@ -731,6 +730,16 @@ describe('guard-worktree bash command write safety guard (防命令行绕过篡�
         decideBashCommand({ command: cmd, cwd: mainRepoRoot }).decision,
         'allow',
         `Expected command to be allowed: ${cmd}`,
+      )
+    }
+
+    // Bare `git stash` stashes (and clears) uncommitted tracked edits on the
+    // primary checkout, so it is no longer treated as a read-only sync command.
+    for (const cmd of ['git stash', 'git stash push -m wip', 'git stash save wip']) {
+      assert.equal(
+        decideBashCommand({ command: cmd, cwd: mainRepoRoot }).decision,
+        'deny',
+        `Expected primary stash to be denied: ${cmd}`,
       )
     }
   })
@@ -2569,6 +2578,70 @@ describe('adversarial hardening regressions (materialization / wrapper / frozen-
     } finally {
       gitCommand(mainRepoRoot, 'checkout', 'main')
       gitCommand(mainRepoRoot, 'branch', '-D', 'guard-d4-probe')
+    }
+  })
+
+  it('resolves eval payloads produced by substitutions, chains nested function calls, and blocks destructive git subcommands (E1/E2/E3)', () => {
+    const plain = join(fixture, 'plain')
+    mkdirSync(plain, { recursive: true })
+
+    // E1: eval payload produced by a command substitution / here-string / echo / printf
+    for (const command of [
+      `eval "$(cat <<'EOF'\ncd ${mainRepoRoot}\nEOF\n)"; echo pwn > package.json`,
+      `eval "$(echo cd ${mainRepoRoot})"; echo pwn > package.json`,
+      `eval "$(printf 'cd %s' ${mainRepoRoot})"; echo pwn > package.json`,
+      `eval "$(cat <<< 'cd ${mainRepoRoot}')"; echo pwn > package.json`,
+      // E2: nested function chain
+      `d() { e; }; e() { cd ${mainRepoRoot}; }; d; echo pwn > package.json`,
+    ]) {
+      assert.equal(
+        decideBashCommand({ command, cwd: plain, ownerRoot: mainRepoRoot }).decision,
+        'deny',
+        `Expected E1/E2 deny from plain cwd: ${command}`,
+      )
+    }
+    assert.equal(
+      decideBashCommand({ command: `d() { e; }; e() { cd ${mainRepoRoot}; }; d; echo pwn > package.json`, cwd: worktreeRoot, ownerRoot: mainRepoRoot }).decision,
+      'deny',
+      'Expected E2 deny from worktree cwd',
+    )
+    assert.equal(
+      decideBashCommand({ command: `eval "$(echo ok)"; echo ok`, cwd: plain, ownerRoot: mainRepoRoot }).decision,
+      'allow',
+    )
+
+    // E3: git subcommands that delete/rename tracked files or discard uncommitted edits
+    for (const command of [
+      `git -C "${mainRepoRoot}" rm -q package.json`,
+      `git -C "${mainRepoRoot}" mv package.json moved.json`,
+      `git -C "${mainRepoRoot}" reset --hard`,
+      `git -C "${mainRepoRoot}" stash`,
+      `git -C "${mainRepoRoot}" checkout .`,
+      `git -C "${mainRepoRoot}" checkout -f main`,
+      `git -C "${mainRepoRoot}" switch -f main`,
+      `git -C "${mainRepoRoot}" clean -fdx`,
+    ]) {
+      assert.equal(
+        decideBashCommand({ command, cwd: worktreeRoot, ownerRoot: mainRepoRoot }).decision,
+        'deny',
+        `Expected E3 deny on primary: ${command}`,
+      )
+    }
+    for (const command of [
+      `git -C "${mainRepoRoot}" status`,
+      `git -C "${mainRepoRoot}" checkout main`,
+      `git -C "${mainRepoRoot}" checkout -b guard-e3-branch`,
+      `git -C "${mainRepoRoot}" stash list`,
+      `git -C "${mainRepoRoot}" clean -nf`,
+      `git -C "${mainRepoRoot}" reset --hard origin/main`,
+      `git -C "${mainRepoRoot}" merge origin/main`,
+    ]) {
+      const result = decideBashCommand({ command, cwd: mainRepoRoot, ownerRoot: mainRepoRoot })
+      assert.equal(
+        result.decision,
+        'allow',
+        `Expected E3 zero-FP allow: ${command} (reason=${result.reason || ''})`,
+      )
     }
   })
 })

@@ -47,6 +47,11 @@
 
 ## 旧标准变更
 
+- `plugins/scripts/guard-worktree.test.mjs` :: `strictly allows legitimate git synchronization commands on the main checkout`
+  - 原断言：`git stash`（裸命令）在主检出返回 `allow`，与 `git stash list`、`git pull origin main` 等只读/同步命令同列。
+  - 变更理由：裸 `git stash` 会把主检出中已跟踪文件未提交的修改收进 stash 并清空工作树，属于丢弃用户改动的破坏性操作，与「主检出保持干净只读镜像、改动必须走 linked worktree」的守卫前提冲突；`git stash list` / `git stash show` 仍为只读放行。
+  - 新期望与证据：从放行清单移除 `git stash`，新增断言 `git stash`、`git stash push -m wip`、`git stash save wip` 在主检出返回 `deny`（`stash-save`）；`git stash list` 与其余同步命令仍返回 `allow`，linked worktree 内的 stash 操作不受影响。
+
 - `plugins/scripts/guard-worktree.test.mjs` :: `allows gitignored plugin paths in main repo`
   - 原断言：主检出向 `plugins/omnimux/node_modules/not-a-real-pkg/index.js` 直接 `write` 返回 `allow`（reason 为 `ephemeral` 或 `gitignored`）。
   - 变更理由：主检出写保护由黑名单枚举升级为根目录 Default-Deny（仅白名单放行真实 linked worktree 与 `.workbuddy/`），不再对 `ephemeral`/`gitignored` 放行直接写盘（依赖维护仍通过 `pnpm install --frozen-lockfile` / `yarn install --immutable` / `npm ci` 在 `decideMainCheckoutBuildCommand` 放行）。

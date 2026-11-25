@@ -2237,6 +2237,54 @@ function isProtectedPrimaryDirectory(dir, cache) {
  * assignments) or '' when the stage is not an eval. `eval` executes in the
  * current shell, so its cwd effects persist after the stage.
  */
+/**
+ * Best-effort textual output of a simple producer substitution body
+ * (`cat <<EOF`, `cat <<<`, `echo`, `printf`). Returns null when unknown.
+ */
+function evaluateProducerText(inner) {
+  const text = String(inner || '').trim()
+  const heredoc = /^cat\s+<<-?\s*(['"]?)([A-Za-z0-9_]+)\1\s*\n([\s\S]*?)\n\2\s*$/.exec(text)
+  if (heredoc) return heredoc[3]
+  const hereString = /^cat\s+<<<\s*(['"])([\s\S]*?)\1\s*$/.exec(text)
+  if (hereString) return hereString[2]
+  const hereStringBare = /^cat\s+<<<\s*([^\s'"]+)\s*$/.exec(text)
+  if (hereStringBare) return hereStringBare[1]
+  const echo = /^echo\s+([\s\S]*)$/.exec(text)
+  if (echo) return echo[1].replace(/^['"]|['"]$/g, '')
+  const printf = /^printf\s+([\s\S]*)$/.exec(text)
+  if (printf) {
+    const parts = tokenizeCommandLine(printf[1])
+    return formatPrintfPayload(parts[0] || '', parts.slice(1))
+  }
+  return null
+}
+
+/**
+ * Expand resolvable `$(...)` producers inside an `eval` payload so a later
+ * `eval "$(echo cd <dir>)"` is replayed as `cd <dir>`. Unresolvable substitutions
+ * are left untouched (static analysis boundary).
+ */
+function resolveEvalScript(script, depth = 0) {
+  const input = String(script || '')
+  if (depth > 3 || !input.includes('$(')) return input
+  let out = ''
+  for (let i = 0; i < input.length; i += 1) {
+    if (input[i] === '$' && input[i + 1] === '(') {
+      const end = scanBalancedParen(input, i + 1)
+      const produced = evaluateProducerText(input.slice(i + 2, end))
+      if (produced === null) {
+        out += input.slice(i, end + 1)
+      } else {
+        out += resolveEvalScript(produced, depth + 1)
+      }
+      i = end
+      continue
+    }
+    out += input[i]
+  }
+  return out
+}
+
 function extractEvalScript(words) {
   let i = 0
   while (i < words.length) {
@@ -2306,7 +2354,7 @@ function hasNoChdirFlag(args) {
  * `cd <wt> || ...`, `cd <wt> &`), `pushd`/`popd`, heredocs, and
  * `$(...)` / backtick / `<(...)` substitutions.
  */
-function walkShellCommands(command, initialCwd, visitor, depth = 0, protectedCache = new Map()) {
+function walkShellCommands(command, initialCwd, visitor, depth = 0, protectedCache = new Map(), inheritedFunctions = null) {
   if (!command || typeof command !== 'string' || depth > 4) return undefined
   let currentCwd = resolve(initialCwd || process.cwd())
   let prevCwd = currentCwd
@@ -2318,7 +2366,9 @@ function walkShellCommands(command, initialCwd, visitor, depth = 0, protectedCac
   let lastCdRollback = null
   let justRanCd = false
   let pendingFunctionBody = false
-  const shellFunctions = extractShellFunctionDefinitions(command)
+  const shellFunctions = inheritedFunctions
+    ? new Map([...inheritedFunctions, ...extractShellFunctionDefinitions(command)])
+    : extractShellFunctionDefinitions(command)
 
   /** Predict the cwd after running `script` in the current shell (call site only). */
   const predictCwdAfter = (script) => {
@@ -2336,7 +2386,7 @@ function walkShellCommands(command, initialCwd, visitor, depth = 0, protectedCac
       onStageEnd({ currentCwd: stageEndCwd }) {
         predicted = stageEndCwd
       },
-    }, depth + 1, protectedCache)
+    }, depth + 1, protectedCache, shellFunctions)
     return predicted
   }
 
@@ -2546,7 +2596,7 @@ function walkShellCommands(command, initialCwd, visitor, depth = 0, protectedCac
           // `eval cd <dir>` runs in the current shell, so a later relative write
           // resolves against the eval'd directory.
           if (subSegments.length === 1) {
-            const evalScript = extractEvalScript(stageWords)
+            const evalScript = resolveEvalScript(extractEvalScript(stageWords))
             if (evalScript.trim()) {
               const evalHead = commandBasename(evalScript.trim().split(/\s+/)[0] || '')
               const evalTarget = shellFunctions.get(evalHead) || evalScript
@@ -3709,24 +3759,66 @@ function classifyGitMutationWords(gitInfo, segment) {
     const preDashArgs = dashDashIdx === -1 ? args : args.slice(0, dashDashIdx)
     const refs = collectNonOptionArgs(preDashArgs)
     const targetRef = refs[0] || ''
+    const isHard = args.some((w) => w === '--hard')
+    // `git reset --hard` without a ref resets to HEAD and discards every
+    // uncommitted change in the primary checkout.
+    if (isHard && !targetRef) {
+      return { kind: 'reset-hard', segment }
+    }
     if (targetRef && targetRef !== 'origin/main' && targetRef !== 'origin/master' && targetRef !== 'HEAD') {
-      const isHard = args.some((w) => w === '--hard')
       return { kind: isHard ? 'reset-hard' : 'reset', segment }
     }
   }
+  // Tracked files removed or renamed in the primary checkout.
+  if (sub === 'rm' || sub === 'mv') {
+    return { kind: `git-${sub}`, segment }
+  }
+  if (sub === 'clean') {
+    const forceClean = args.some((w) => /^-[a-zA-Z]*f[a-zA-Z]*$/.test(w) || w === '--force')
+    const dryRun = args.some((w) => /^-[a-zA-Z]*n[a-zA-Z]*$/.test(w) || w === '--dry-run')
+    if (forceClean && !dryRun) {
+      return { kind: 'clean-force', segment }
+    }
+  }
+  if (sub === 'switch' && args.some((w) => w === '-f' || w === '--force' || w === '--discard-changes')) {
+    return { kind: 'switch-force', segment }
+  }
   if (sub === 'stash') {
     const action = (args[0] || '').toLowerCase()
+    if (action === '' || action === 'push' || action === 'save') {
+      return { kind: 'stash-save', segment }
+    }
     if (['pop', 'apply', 'drop', 'clear'].includes(action)) {
       return { kind: `stash-${action}`, segment }
     }
     return null
   }
   if (sub === 'checkout') {
-    // branch switch / create stay allowed; path restore (`--` or stash) is mutation
+    // branch switch / create stay allowed; path restore (`--`, stash, `.`, or an
+    // existing working-tree path) discards tracked edits and is mutation.
     if (args.includes('--') || args.some((w) => w.includes('stash@{'))) {
       return { kind: 'checkout-path', segment }
     }
-    // `git checkout -f` already covered by destructive reset; keep path-less branch ops allowed
+    if (args.some((w) => w === '-f' || w === '--force')) {
+      return { kind: 'checkout-force', segment }
+    }
+    const positional = collectNonOptionArgs(args, new Set(['-b', '-B', '--orphan', '--conflict', '-t', '--track']))
+    for (const target of positional) {
+      if (target === '.' || target.startsWith('./') || target.startsWith('../') || target.endsWith('/')) {
+        return { kind: 'checkout-path', segment }
+      }
+      const base = gitInfo && Array.isArray(gitInfo.targetDirs) && gitInfo.targetDirs.length > 0
+        ? gitInfo.targetDirs[0]
+        : ''
+      if (base && target && !target.startsWith('-')) {
+        try {
+          statSync(resolve(base, target))
+          return { kind: 'checkout-path', segment }
+        } catch {
+          // Not an existing path: treat as a ref/branch switch.
+        }
+      }
+    }
     return null
   }
   if (sub === 'restore') {
@@ -3819,7 +3911,8 @@ export function isDestructiveResetCommand(command) {
     if (/\breset\b/i.test(seg) && /(?:^|\s)--hard\b/.test(seg)) return true
     if (/\bcheckout\b/i.test(seg) && /(?:^|\s)-f\b/.test(seg)) return true
     if (/\brestore\b/i.test(seg) && /--source=origin\/(?:main|master)\b/.test(seg)) return true
-    if (/\bclean\b/i.test(seg) && /(?:^|\s)-[a-z]*[fx]\b/i.test(seg)) return true
+    if (/(?:^|\s)-[a-z]*n[a-z]*\b/i.test(seg) && /\bclean\b/i.test(seg)) return false
+    if (/\bclean\b/i.test(seg) && /(?:^|\s)-[a-z]*[fx][a-z]*\b/i.test(seg)) return true
     return false
   })
 }
