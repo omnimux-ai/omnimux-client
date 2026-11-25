@@ -44,6 +44,8 @@ export function installHubChrome(ctx) {
   if (typeof ctx.inject === 'function') {
     ctx.inject(['layout', 'sessions'], (inner) => {
       workbench.bind({ layout: inner.layout, sessions: inner.sessions })
+      // layout 异步就绪时立即对齐外壳 panels.rightbar，避免首开与刷新后分隔线把手停在 45% 默认位。
+      reconcileRightbarFromRatio(undefined, { doc: document })
     })
     ctx.inject(['betterSidebar'], (inner) => {
       inner.effect(() => {
@@ -61,7 +63,11 @@ export function installHubChrome(ctx) {
         // 让左栏激活位与工作台状态跟上，否则入口点击会继续拿旧/空会话。
         const mounted = inner.sidebarRight?.mounted
         const unsubscribe = typeof mounted?.subscribe === 'function'
-          ? mounted.subscribe(() => { requestRailActivationSync(); notifyWorkbenchChange() })
+          ? mounted.subscribe(() => {
+              requestRailActivationSync()
+              notifyWorkbenchChange()
+              reconcileRightbarFromRatio(undefined, { doc: document })
+            })
           : () => {}
         return () => {
           unsubscribe()
@@ -97,7 +103,11 @@ export function installHubChrome(ctx) {
     const unsubWelcome = installWelcomeGreetingObserver()
     const unsubScrollbar = installConversationScrollbarReveal()
     const unsubFullscreenCollapse = installFullscreenCollapseSync()
-    const unsubRightbarMirror = installRightbarStateMirror()
+    const unsubRightbarMirror = installRightbarStateMirror(document, {
+      onStateChange: (state, targetDoc) => {
+        if (state.open && !state.fullscreen) reconcileRightbarFromRatio(undefined, { doc: targetDoc })
+      },
+    })
     const unsubWidthGuard = installComposerWidthGuard()
     const unsubTabReconciler = installTabViewportReconciler()
     return () => {

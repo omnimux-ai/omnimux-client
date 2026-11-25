@@ -29,6 +29,7 @@ import {
   resetWorkbenchWidthMemory,
   resetSplitReconciliationForTests,
 } from './split-layout.js'
+import { installRightbarStateMirror } from './rightbar-state-mirror.js'
 import {
   resetConversationCollapseForTests,
 } from '../conversation-collapse.js'
@@ -291,5 +292,176 @@ describe('T04 面板宽度协调（D7-S1′）', () => {
     // 面板未展开：比例权威不适用，此时才允许走「健康宽度」兜底（视口 45% 且不低于 500）。
     assert.equal(layout.calls.length, 1)
     assert.equal(layout.calls[0].width, Math.max(500, Math.round(1920 * 0.45)))
+  })
+})
+
+function setupNextShellWindow(viewportPx) {
+  const dom = setupWindow(viewportPx)
+  dom.window.document.documentElement.setAttribute('data-platform', 'darwin')
+  dom.window.document.body.innerHTML = `
+    <div class="vcssFG_frame">
+      <div class="vcssFG_sidebarCol"></div>
+      <div class="vcssFG_centerCol"></div>
+      <div class="vcssFG_rightbarCol" data-rightbar-col="true">
+        <div class="Ng7Ira_panel" data-sidebar-right-panel="push" data-sidebar-right-open="true"></div>
+      </div>
+    </div>`
+  const frame = dom.window.document.querySelector('.vcssFG_frame')
+  frame.getBoundingClientRect = () => ({ width: viewportPx, height: 1080, top: 0, left: 0, right: viewportPx, bottom: 1080 })
+  const sidebarColumn = dom.window.document.querySelector('.vcssFG_sidebarCol')
+  sidebarColumn.getBoundingClientRect = () => ({ width: RAIL_PX, height: 1080, top: 0, left: 0, right: RAIL_PX, bottom: 1080 })
+  return dom
+}
+
+describe('Next 壳（DSH 0.2.2-rc.5 + DP-007）面板宽度协调与 Fiber 兜底', () => {
+  it('reconciles 1728px Next shell default 45% seed (778px) to target 1014px via DP-007 1-arg setRightbar', () => {
+    setupNextShellWindow(1728)
+    const calls = []
+    const state = {
+      sidebar: 280,
+      viewportWidth: 1728,
+      narrowExpanded: false,
+      rightbar: 778,
+      rightbarAuthored: false,
+      rightbarShown: true,
+      rightbarTrack: true,
+      rightbarFullscreen: false,
+      rightbarInstant: false,
+    }
+    const nextLayout = {
+      getSnapshot: () => ({ ...state }),
+      setRightbar(px) {
+        calls.push(px)
+        state.rightbar = Math.round(px)
+        state.rightbarAuthored = true
+      },
+    }
+    bindWorkbenchDeps({ layout: nextLayout })
+    focusRecordForTab(SESSION_ID, TAB_ID).mode = WORKBENCH_FOCUS.split
+
+    const verdict = reconcileRightbarFromRatio(makeState({ width: 778 }), {
+      sessionId: SESSION_ID,
+      officialSidebarWidth: RAIL_PX,
+      chatRatio: RATIO,
+    })
+
+    // 1728 - 280 = 1448 -> chat 434 -> target rightbar 1014 (eliminates 236px dead zone & handle drift).
+    assert.equal(verdict, 'written')
+    assert.deepEqual(calls, [1014])
+    assert.equal(nextLayout.getSnapshot().rightbar, 1014)
+    assert.equal(reconcileRightbarFromRatio(makeState({ width: 1014 }), {
+      sessionId: SESSION_ID,
+      officialSidebarWidth: RAIL_PX,
+      chatRatio: RATIO,
+    }), 'consistent')
+  })
+
+  it('resolves Next AppFrame memoizedProps.actions.setRightbar via React Fiber fallback when deps.layout is null', () => {
+    const dom = setupNextShellWindow(1728)
+    const frame = dom.window.document.querySelector('.vcssFG_frame')
+    const actionCalls = []
+    const actions = {
+      setRightbar(px) {
+        actionCalls.push(px)
+      },
+    }
+    frame.__reactFiber$next = {
+      memoizedProps: {},
+      return: {
+        memoizedProps: { actions },
+        return: null,
+      },
+    }
+    bindWorkbenchDeps({ layout: null })
+    focusRecordForTab(SESSION_ID, TAB_ID).mode = WORKBENCH_FOCUS.split
+
+    const verdict = reconcileRightbarFromRatio(makeState({ width: 778 }), {
+      sessionId: SESSION_ID,
+      officialSidebarWidth: RAIL_PX,
+      chatRatio: RATIO,
+    })
+    assert.equal(verdict, 'written')
+    assert.deepEqual(actionCalls, [1014])
+    // Second call with identical target must stay deduped because actions reference is stable.
+    assert.equal(reconcileRightbarFromRatio(makeState({ width: 1014 }), {
+      sessionId: SESSION_ID,
+      officialSidebarWidth: RAIL_PX,
+      chatRatio: RATIO,
+    }), 'consistent')
+    assert.equal(actionCalls.length, 1)
+  })
+
+  it('ensureHealthySplitWidth reaches Fiber fallback on Next AppFrame DOM without .dshDesktopFrame', () => {
+    const dom = setupNextShellWindow(1728)
+    const frame = dom.window.document.querySelector('.vcssFG_frame')
+    const calls = []
+    const handle = {
+      getSnapshot: () => ({ rightbar: 300, rightbarShown: false }),
+      setRightbar(px) {
+        calls.push(px)
+      },
+    }
+    frame.__reactFiber$next = {
+      memoizedProps: { layout: handle },
+      return: null,
+    }
+    bindWorkbenchDeps({ layout: null })
+    setAttachedStore({ getSnapshot: () => ({ sessionId: SESSION_ID, state: makeState() }) })
+    focusRecordForTab(SESSION_ID, TAB_ID).mode = WORKBENCH_FOCUS.split
+
+    ensureHealthySplitWidth(dom.window.document)
+    assert.deepEqual(calls, [Math.max(500, Math.round(1728 * 0.45))])
+  })
+
+  it('installRightbarStateMirror fires onStateChange when Next shell panel opens so handle aligns without waiting for resize', async () => {
+    const dom = setupNextShellWindow(1728)
+    const panel = dom.window.document.querySelector('.Ng7Ira_panel')
+    panel.removeAttribute('data-sidebar-right-open')
+    const state = {
+      sidebar: 280,
+      viewportWidth: 1728,
+      narrowExpanded: false,
+      rightbar: 778,
+      rightbarAuthored: false,
+      rightbarShown: false,
+      rightbarTrack: false,
+      rightbarFullscreen: false,
+      rightbarInstant: false,
+    }
+    const calls = []
+    bindWorkbenchDeps({
+      layout: {
+        getSnapshot: () => ({ ...state }),
+        setRightbar(px) {
+          calls.push(px)
+          state.rightbar = Math.round(px)
+          state.rightbarAuthored = true
+        },
+      },
+    })
+    focusRecordForTab(SESSION_ID, TAB_ID).mode = WORKBENCH_FOCUS.split
+
+    const stop = installRightbarStateMirror(dom.window.document, {
+      onStateChange: (mirrorState, targetDoc) => {
+        if (mirrorState.open && !mirrorState.fullscreen) {
+          reconcileRightbarFromRatio(makeState({ width: 778 }), {
+            doc: targetDoc,
+            sessionId: SESSION_ID,
+            officialSidebarWidth: RAIL_PX,
+            chatRatio: RATIO,
+          })
+        }
+      },
+    })
+    try {
+      assert.deepEqual(calls, [], 'closed panel must not reconcile')
+      state.rightbarShown = true
+      state.rightbarTrack = true
+      panel.setAttribute('data-sidebar-right-open', 'true')
+      await new Promise((r) => setTimeout(r, 20))
+      assert.deepEqual(calls, [1014], 'opening panel must reconcile rightbar to 1014px immediately without window resize')
+    } finally {
+      stop()
+    }
   })
 })

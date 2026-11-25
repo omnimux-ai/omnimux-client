@@ -92,7 +92,9 @@ body[data-dsh-desktop-mode] [class*="tabBar"] *{-webkit-app-region:no-drag!impor
    toggle). Electron app-region hit-tests the overlay; button no-drag alone cannot
    punch through, so raise logoRow above the strip. */
 body[data-dsh-desktop-platform="darwin"] [class*="sidebarCol"] [class*="logoRow"],
-body[data-dsh-desktop-platform="darwin"] [class*="sidebarCol"] [class*="logoRow"] *{
+body[data-dsh-desktop-platform="darwin"] [class*="sidebarCol"] [class*="logoRow"] *,
+html[data-platform="darwin"] [class*="sidebarCol"] [class*="logoRow"],
+html[data-platform="darwin"] [class*="sidebarCol"] [class*="logoRow"] *{
   position:relative;z-index:11;-webkit-app-region:no-drag!important;pointer-events:auto!important;
 }
 html[data-dsh-product-stage]:not([data-dsh-product-stage="omnimux-apps"]):not([data-dsh-product-stage="omnimux-vids"]) [data-dsh-better-sidebar],
@@ -117,6 +119,7 @@ html[data-dsh-product-stage]:not([data-dsh-product-stage="omnimux-apps"]) [data-
 html[data-dsh-product-stage]:not([data-dsh-product-stage="omnimux-apps"]) [data-slot="conversation"] > header {display:none!important;}
 html[data-dsh-product-stage]:not([data-dsh-product-stage="omnimux-apps"]) [role="treeitem"][aria-selected="true"]{background:transparent!important;}
 html[data-dsh-product-stage]:not([data-dsh-product-stage="omnimux-apps"]) .dshDesktopConversationSurface > *:not([data-slot="shell.overlay"]),
+html[data-dsh-product-stage]:not([data-dsh-product-stage="omnimux-apps"]) [class*="centerCol"] > *:not([data-slot="shell.overlay"]),
 html[data-dsh-product-stage]:not([data-dsh-product-stage="omnimux-apps"]) [data-slot="conversation.content"],
 html[data-dsh-product-stage]:not([data-dsh-product-stage="omnimux-apps"]) [data-slot="input.trigger"] {visibility:hidden!important;}
 /* Shared topbar geometry; native window gutters come from the host-aware layout. */
@@ -232,8 +235,8 @@ html[data-omnimux-sidebar-toggle-topbar] .dshDesktopFrame[data-sidebar-collapsed
    确保大屏下多出的所有空间全部反哺给右侧主舞台，中间保持 380px 紧凑控制台！ */
 html[data-omnimux-rightbar-open="true"]:not([data-omnimux-conversation-collapsed]):not([data-omnimux-left-collapsed]) .dshDesktopFrame:not([data-sidebar-collapsed]):not([data-rightbar-collapsed="true"]):not([data-details-collapsed="true"]),
 html[data-omnimux-rightbar-open="true"]:not([data-omnimux-conversation-collapsed]):not([data-omnimux-left-collapsed]) [class*="frame"]:not([data-sidebar-collapsed]):not([data-rightbar-collapsed="true"]):not([data-details-collapsed="true"]),
-html[data-omnimux-rightbar-open="true"][data-omnimux-sidebar-toggle-topbar]:not([data-omnimux-left-collapsed]) .dshDesktopFrame:not([data-sidebar-collapsed]):not([data-rightbar-collapsed="true"]):not([data-details-collapsed="true"]),
-html[data-omnimux-rightbar-open="true"][data-omnimux-sidebar-toggle-topbar]:not([data-omnimux-left-collapsed]) [class*="frame"]:not([data-sidebar-collapsed]):not([data-rightbar-collapsed="true"]):not([data-details-collapsed="true"]) {
+html[data-omnimux-rightbar-open="true"][data-omnimux-sidebar-toggle-topbar]:not([data-omnimux-conversation-collapsed]):not([data-omnimux-left-collapsed]) .dshDesktopFrame:not([data-sidebar-collapsed]):not([data-rightbar-collapsed="true"]):not([data-details-collapsed="true"]),
+html[data-omnimux-rightbar-open="true"][data-omnimux-sidebar-toggle-topbar]:not([data-omnimux-conversation-collapsed]):not([data-omnimux-left-collapsed]) [class*="frame"]:not([data-sidebar-collapsed]):not([data-rightbar-collapsed="true"]):not([data-details-collapsed="true"]) {
   grid-template-columns: var(--omnimux-sidebar-width, 280px) var(--omnimux-conversation-width, 380px) minmax(0px, 1fr) !important;
 }
 /* 当中间会话栏收起时（右侧全屏铺满状态）：
@@ -261,7 +264,9 @@ html[data-omnimux-conversation-collapsed] [class*="frame"][data-sidebar-collapse
    就是拖到最宽画布时分割线旁那道黑边。地板由外壳 computeDesktopColumns 统一负责，
    这里只保证不溢出自己的轨道。 */
 html:not([data-omnimux-conversation-collapsed]) .dshDesktopFrame:not([data-rightbar-collapsed="true"]) .dshDesktopConversationSurface,
-html:not([data-omnimux-conversation-collapsed]) [class*="frame"]:not([data-rightbar-collapsed="true"]) .dshDesktopConversationSurface {
+html:not([data-omnimux-conversation-collapsed]) [class*="frame"]:not([data-rightbar-collapsed="true"]) .dshDesktopConversationSurface,
+html:not([data-omnimux-conversation-collapsed]) .dshDesktopFrame:not([data-rightbar-collapsed="true"]) [class*="centerCol"],
+html:not([data-omnimux-conversation-collapsed]) [class*="frame"]:not([data-rightbar-collapsed="true"]) [class*="centerCol"] {
   min-width: 0 !important;
   flex: 1 1 0% !important;
   width: auto !important;
@@ -293,7 +298,8 @@ html[data-omnimux-sidebar-toggle-topbar] [data-dsh-better-sidebar] [data-dsh-pan
    above the page, and that strip already consumes the same gutter through
    --omnimux-tabbar-pad-left / dockkit-strip. Insetting the page header there only drags
    the title and subtitle 64px right of the page's own action row, tabs and card grid. */
-html[data-dsh-product-stage][data-omnimux-left-collapsed] body[data-dsh-desktop-platform="darwin"] .dshUk-PageHeader-pageHeader {
+html[data-dsh-product-stage][data-omnimux-left-collapsed] body[data-dsh-desktop-platform="darwin"] .dshUk-PageHeader-pageHeader,
+html[data-dsh-product-stage][data-omnimux-left-collapsed][data-platform="darwin"] .dshUk-PageHeader-pageHeader {
   padding-left: var(--omnimux-topbar-toggle-left, 84px) !important;
   box-sizing: border-box !important;
 }

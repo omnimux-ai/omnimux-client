@@ -27,7 +27,7 @@ import {
   uninstallSplitConversationMin,
   resetSplitReconciliationForTests,
 } from './workbench/split-layout.js'
-import { resetWorkbenchHostAdapter, setAttachedStore } from './workbench/host-adapter.js'
+import { bindWorkbenchDeps, resetWorkbenchHostAdapter, setAttachedStore } from './workbench/host-adapter.js'
 import {
   WORKBENCH_FOCUS,
   focusRecordForTab,
@@ -363,5 +363,72 @@ describe('T03 拖拽权威切换（防 #2097 复发）', () => {
     harness.flushFrames()
 
     assert.equal(readChatRatio(), null, '单栏态一律不结算、不落盘（不得覆盖用户既有比例）')
+  })
+
+  it('tracks Next shell minmax(400px, 1fr) minmax(0px, Npx) drag frames and settles exact ratio on pointerup', async () => {
+    const harness = createHarness()
+    // Swap to Next shell AppFrame class and authored grid syntax (DSH 0.2.2-rc.5)
+    harness.frame.className = 'vcssFG_frame'
+    harness.frame.style.gridTemplateColumns = '280px minmax(400px, 1fr) minmax(0px, 778px)'
+    armThreeColumnState()
+    cleanups.push(installSidebarToggleTopbar(harness.doc))
+    cleanups.push(installSplitConversationMin(harness.doc))
+    harness.flushFrames()
+
+    harness.frame.setAttribute('data-dragging', 'true')
+    const FINAL_RIGHT_PX = 640
+    harness.frame.style.gridTemplateColumns = `280px minmax(400px, 1fr) minmax(0px, ${FINAL_RIGHT_PX}px)`
+    await harness.settleObservers()
+    harness.flushFrames()
+
+    const expectedChatPx = VIEWPORT_PX - RAIL_PX - FINAL_RIGHT_PX
+    assert.equal(
+      publishedConversationWidth(harness.doc),
+      expectedChatPx,
+      'Next 壳拖拽期必须解析 minmax(0px, Npx) 第三轨并实时更新中栏宽度',
+    )
+
+    harness.frame.removeAttribute('data-dragging')
+    harness.doc.dispatchEvent(new harness.dom.window.Event('pointerup'))
+    await harness.settleObservers()
+    harness.flushFrames()
+    harness.flushFrames()
+
+    const stored = readChatRatio()
+    assert.ok(typeof stored === 'number', 'Next 壳松手后必须落盘比例')
+    assert.ok(
+      Math.abs(stored - expectedChatPx / STAGE_PX) <= 0.005,
+      `Next 壳落盘比例 ${stored} 必须匹配 ${expectedChatPx / STAGE_PX}`,
+    )
+  })
+
+  it('does not migrate Next shell DP-007 45% openRightbar seed (rightbarAuthored: false) as a user ratio (H-1)', () => {
+    const harness = createHarness()
+    harness.frame.className = 'vcssFG_frame'
+    harness.frame.style.gridTemplateColumns = '280px minmax(400px, 1fr) minmax(0px, 778px)'
+    armThreeColumnState()
+    bindWorkbenchDeps({
+      layout: {
+        getSnapshot: () => ({
+          sidebar: 280,
+          viewportWidth: VIEWPORT_PX,
+          rightbar: Math.round(VIEWPORT_PX * 0.45),
+          rightbarAuthored: false,
+          rightbarShown: true,
+          rightbarTrack: true,
+          rightbarFullscreen: false,
+        }),
+        setRightbar() {},
+      },
+    })
+    cleanups.push(installSidebarToggleTopbar(harness.doc))
+    harness.flushFrames()
+
+    assert.equal(readChatRatio(), null, 'Next 壳 openRightbar 默认 45% 种子绝不能误触发老用户迁移并落盘')
+    assert.equal(
+      publishedConversationWidth(harness.doc),
+      Math.round(STAGE_PX * 0.3),
+      '全新用户在 Next 壳首开右栏必须保持默认 30% 中栏比例',
+    )
   })
 })

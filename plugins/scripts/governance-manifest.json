@@ -152,6 +152,8 @@
     "verify-model-contracts.mjs",
     "verify-models.mjs",
     "verify-multimodal-contract-completeness.mjs",
+    "verify-next-shell-selectors.mjs",
+    "verify-next-shell-selectors.test.mjs",
     "verify-omnimux-image-live.mjs",
     "verify-package-files.mjs",
     "verify-picker-dialog.mjs",

@@ -138,6 +138,23 @@ describe('three-column sidebar collapse keeps conversation width (issue #2074)',
       '记忆式基准必须彻底移除',
     )
   })
+
+  it('tracks Next shell minmax(400px, 1fr) minmax(0px, Npx) drags across expanded and collapsed left rail', () => {
+    const expanded = deriveConversationWidthPx(
+      shellDoc('280px minmax(400px, 1fr) minmax(0px, 778px)', 1728, true),
+      false,
+      280,
+      280,
+    )
+    const afterDragCollapsed = deriveConversationWidthPx(
+      shellDoc('0px minmax(400px, 1fr) minmax(0px, 604px)', 1728, true),
+      true,
+      0,
+      280,
+    )
+    assert.equal(expanded, 1728 - 280 - 778)
+    assert.equal(afterDragCollapsed, 1728 - 280 - 604)
+  })
 })
 
 /**

@@ -53,13 +53,16 @@ export function getWorkbenchLayout() {
 export function resolveWorkbenchLayoutHandle(doc = hostDocument()) {
   if (deps.layout && typeof deps.layout.setRightbar === 'function') return deps.layout
   try {
-    const frame = doc?.querySelector?.('.dshDesktopFrame')
+    const frame = doc?.querySelector?.('.dshDesktopFrame:has([data-sidebar-right-panel]), [class*="frame"]:has([data-sidebar-right-panel])')
+      || doc?.querySelector?.('.dshDesktopFrame, [class*="frame"]')
     if (!frame) return null
     const key = Object.keys(frame).find((k) => k.startsWith('__reactFiber'))
     let node = key ? frame[key] : null
     while (node) {
       const layout = node.memoizedProps?.layout
       if (layout && typeof layout.setRightbar === 'function') return layout
+      const actions = node.memoizedProps?.actions
+      if (actions && typeof actions.setRightbar === 'function') return actions
       node = node.return
     }
   } catch {

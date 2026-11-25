@@ -41,14 +41,19 @@ const REPO_ROOT = resolve(__dirname, '..');
 
 /** 生产样式真源（三分栏网格规则的唯一合法来源）。 */
 export const COLLAPSE_STYLE_SOURCE_PATH = 'plugins/omnimux/src/client/conversation-box.js';
+/** 生产中栏收起与右面板铺满真源（Next 壳防黑洞兜底规则的唯一合法来源）。 */
+export const CONVERSATION_COLLAPSE_SOURCE_PATH = 'plugins/omnimux/src/client/conversation-collapse.js';
 /** 生产几何真源（`--omnimux-conversation-width` 的唯一合法写入方）。 */
 export const COLLAPSE_GEOMETRY_SOURCE_PATH = 'plugins/omnimux/src/client/sidebar-toggle-topbar.js';
 /** 生产比例算法真源（缩放档位期望值与页面内算式的唯一合法来源）。 */
 export const CONVERSATION_RATIO_SOURCE_PATH = 'plugins/omnimux/src/client/conversation-ratio.js';
 /** 夹具页面内 `import` 生产比例模块时走的路由（与 HTML 共用同一台临时服务）。 */
 export const CONVERSATION_RATIO_ROUTE = '/conversation-ratio.js';
+/** Next 壳（DSH 0.2.2-rc.5 AppFrame）双壳实测路由。 */
+export const NEXT_SHELL_ROUTE = '/next-shell';
 
 const STYLE_ANCHOR = 'export const PRODUCT_STAGE_CHROME = `';
+const COLLAPSE_CSS_ANCHOR = 'export const CONVERSATION_COLLAPSE_CSS = `';
 
 /** 夹具里左侧栏轨道宽度。 */
 export const FIXTURE_SIDEBAR_PX = 280;
@@ -161,6 +166,139 @@ export function extractProductStageChrome(sourceText) {
     '抽取结果缺少会话栏宽度变量（收起后保持比例的基准）',
   );
   return raw;
+}
+
+/**
+ * 从 `conversation-collapse.js` 源码文本抽取 `CONVERSATION_COLLAPSE_CSS` 样式，
+ * 还原模板插值以便直接注入真实 Chrome 验证 Next 壳右面板铺满与非压缩保护。
+ * @param {string} sourceText
+ * @returns {string}
+ */
+export function extractConversationCollapseCss(sourceText) {
+  assert.equal(typeof sourceText, 'string', '源码文本必须是字符串');
+  const start = sourceText.indexOf(COLLAPSE_CSS_ANCHOR);
+  assert.ok(start >= 0, `生产源码中未找到中栏收起样式锚点：${COLLAPSE_CSS_ANCHOR}`);
+  const bodyStart = start + COLLAPSE_CSS_ANCHOR.length;
+  const end = sourceText.indexOf('\n`', bodyStart);
+  assert.ok(end > bodyStart, '生产源码中的 CONVERSATION_COLLAPSE_CSS 模板字面量未闭合');
+  const raw = sourceText
+    .slice(bodyStart, end)
+    .replace(/\$\{CONVERSATION_COLLAPSED_ATTR\}/g, 'data-omnimux-conversation-collapsed')
+    .replace(
+      /\$\{IMAGE_CANVAS_PROJECTION_SELECTOR\}/g,
+      ':is(html:has([data-omnimux-image-canvas][data-visible="true"]) .dshDesktopFrame[data-rightbar-fullscreen="true"], html:has([data-omnimux-image-canvas][data-visible="true"]) [class*="frame"][data-rightbar-fullscreen="true"], html[data-omnimux-conversation-collapsed]:not(:has([data-rightbar-collapsed="true"])):has([data-omnimux-image-canvas][data-visible="true"]))',
+    );
+  assert.ok(raw.includes('[data-rightbar-col]'), '抽取结果缺少 Next 壳 [data-rightbar-col] 右面板铺满规则');
+  return raw;
+}
+
+/**
+ * 构建 Next 壳（DSH 0.2.2-rc.5 AppFrame + SidebarRight）真实层叠夹具页面。
+ * 注入真实生产 `PRODUCT_STAGE_CHROME` 与 `CONVERSATION_COLLAPSE_CSS`，
+ * 用于在真实 Chromium 内核中验证零黑空隙、手柄对齐与关闭/overlay 非压缩保护。
+ */
+export function buildNextShellFixtureHtml(chromeCss, collapseCss) {
+  return `<!doctype html>
+<html lang="zh-CN" data-platform="darwin" data-omnimux-sidebar-toggle-topbar="1" data-omnimux-rightbar-open="true">
+<head>
+  <meta charset="utf-8" />
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #141416; }
+    /* Faithful DSH 0.2.2-rc.5 AppFrame.module.css + SidebarRight.module.css geometry */
+    .vcssFG_frame {
+      display: grid;
+      grid-template-rows: minmax(0, 1fr) auto;
+      position: relative;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #141416;
+    }
+    .vcssFG_sidebarCol { grid-area: 1/1; min-width: 0; overflow: hidden; background: #1c1d21; }
+    .vcssFG_centerCol { grid-area: 1/2; display: flex; flex-direction: column; min-width: 0; overflow: hidden; background: #18191e; }
+    .vcssFG_rightbarCol { grid-area: 1/3; min-width: 0; position: relative; overflow: visible; background: #141416; }
+    .Ng7Ira_panel {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      right: 0;
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      overflow: clip;
+      background: #23252c;
+    }
+    .vcssFG_handle {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      width: 8px;
+      margin-left: -4px;
+      grid-area: 1 / 1 / 2 / -1;
+      z-index: 11;
+    }
+  </style>
+  <style id="qa-box-production">${chromeCss}</style>
+  <style id="qa-collapse-production">${collapseCss}</style>
+</head>
+<body>
+  <div class="vcssFG_frame" id="frame" style="grid-template-columns: 280px minmax(400px, 1fr) minmax(0px, 778px);">
+    <div class="vcssFG_sidebarCol" id="sidebar"></div>
+    <div class="vcssFG_centerCol" id="center"></div>
+    <div class="vcssFG_rightbarCol" id="rightbarCol" data-rightbar-col="true">
+      <div class="Ng7Ira_panel" id="panel" data-sidebar-right-panel="push" data-sidebar-right-open="true" style="width: 778px;"></div>
+    </div>
+    <div class="vcssFG_handle" id="handle" data-side="rightbar" style="left: 950px;"></div>
+  </div>
+  <script>
+    window.__nextQa = {
+      configure(spec) {
+        const html = document.documentElement;
+        const frame = document.getElementById('frame');
+        const panel = document.getElementById('panel');
+        const handle = document.getElementById('handle');
+        html.style.setProperty('--omnimux-sidebar-width', (spec.sidebarVar ?? 280) + 'px');
+        html.style.setProperty('--omnimux-conversation-width', (spec.chatVar ?? 434) + 'px');
+        html.toggleAttribute('data-omnimux-left-collapsed', !!spec.leftCollapsed);
+        html.toggleAttribute('data-omnimux-conversation-collapsed', !!spec.centerCollapsed);
+        html.setAttribute('data-omnimux-rightbar-open', spec.rightbarOpen === false ? 'false' : 'true');
+        frame.toggleAttribute('data-sidebar-collapsed', !!spec.leftCollapsed);
+        if (spec.rightbarCollapsed) frame.setAttribute('data-rightbar-collapsed', 'true');
+        else frame.removeAttribute('data-rightbar-collapsed');
+        frame.style.gridTemplateColumns = spec.authoredGrid;
+        panel.setAttribute('data-sidebar-right-panel', spec.panelMode || 'push');
+        if (spec.panelOpen === false) panel.removeAttribute('data-sidebar-right-open');
+        else panel.setAttribute('data-sidebar-right-open', 'true');
+        panel.style.width = spec.inlinePanelWidth + 'px';
+        handle.style.left = (spec.handleLeft ?? 0) + 'px';
+        const collapseStyle = document.getElementById('qa-collapse-production');
+        if (collapseStyle) collapseStyle.disabled = !!spec.disableCollapseCss;
+      },
+      measure() {
+        const frame = document.getElementById('frame').getBoundingClientRect();
+        const sidebar = document.getElementById('sidebar').getBoundingClientRect();
+        const center = document.getElementById('center').getBoundingClientRect();
+        const rightbarCol = document.getElementById('rightbarCol').getBoundingClientRect();
+        const panel = document.getElementById('panel').getBoundingClientRect();
+        const handle = document.getElementById('handle').getBoundingClientRect();
+        return {
+          viewport: window.innerWidth,
+          frameWidth: Math.round(frame.width),
+          sidebarRight: Math.round(sidebar.right),
+          centerRight: Math.round(center.right),
+          centerWidth: Math.round(center.width),
+          rightbarColWidth: Math.round(rightbarCol.width),
+          panelLeft: Math.round(panel.left),
+          panelRight: Math.round(panel.right),
+          panelWidth: Math.round(panel.width),
+          handleCenter: Math.round(handle.left + handle.width / 2),
+        };
+      },
+    };
+  </script>
+</body>
+</html>`;
 }
 
 /**
@@ -402,6 +540,7 @@ function arm() {
   const root = document.documentElement;
   root.removeAttribute('data-omnimux-left-collapsed');
   root.removeAttribute('data-omnimux-conversation-collapsed');
+  root.setAttribute('data-omnimux-rightbar-open', 'true');
   const frame = document.getElementById('frame');
   frame.removeAttribute('data-sidebar-collapsed');
   frame.removeAttribute('data-rightbar-collapsed');
@@ -574,6 +713,8 @@ async function main() {
     '比例真源缺少默认比例常量，门禁拒绝放行',
   );
   const chromeCss = extractProductStageChrome(chromeSource);
+  const collapseSource = readFileSync(join(REPO_ROOT, CONVERSATION_COLLAPSE_SOURCE_PATH), 'utf8');
+  const collapseCss = extractConversationCollapseCss(collapseSource);
 
   const evidenceDir = join(REPO_ROOT, 'docs', 'evidence');
   mkdirSync(evidenceDir, { recursive: true });
@@ -585,6 +726,7 @@ async function main() {
     startedAt: new Date().toISOString(),
     sourcePaths: [
       COLLAPSE_STYLE_SOURCE_PATH,
+      CONVERSATION_COLLAPSE_SOURCE_PATH,
       COLLAPSE_GEOMETRY_SOURCE_PATH,
       CONVERSATION_RATIO_SOURCE_PATH,
     ],
@@ -601,11 +743,18 @@ async function main() {
 
   try {
     const htmlContent = buildFixtureHtml(chromeCss);
+    const nextShellHtmlContent = buildNextShellFixtureHtml(chromeCss, collapseCss);
     server = http.createServer((req, res) => {
       // 生产比例模块按**原文**送出：页面里 `import` 的就是生产文件本身，不是脚本内的副本。
-      if (String(req.url).split('?')[0] === CONVERSATION_RATIO_ROUTE) {
+      const reqPath = String(req.url).split('?')[0];
+      if (reqPath === CONVERSATION_RATIO_ROUTE) {
         res.writeHead(200, { 'Content-Type': 'text/javascript; charset=utf-8' });
         res.end(ratioModuleSource);
+        return;
+      }
+      if (reqPath === NEXT_SHELL_ROUTE) {
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.end(nextShellHtmlContent);
         return;
       }
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
@@ -996,6 +1145,173 @@ async function main() {
       bytes: tierShotBuf.length,
     };
     add('viewport-tier-screenshot-captured', tierPng.width > 0 && tierPng.height > 0, report.viewportTierScreenshot);
+
+    // ---- Next 壳（DSH 0.2.2-rc.5 AppFrame + SidebarRight）真浏览器硬像素验收 ----
+    await sendCdp('Page.navigate', { url: `http://127.0.0.1:${report.serverPort}${NEXT_SHELL_ROUTE}` });
+    await new Promise((r) => setTimeout(r, 300));
+    await waitForLayoutFrame(evaluate);
+
+    report.nextShell = [];
+    const nextCases = [
+      // 1440 / 1728 / 1920 展开态：即使内联 panelWidth 处于默认 45%，CSS 兜底也必须保证零黑空隙；
+      // 1728 / 1920 经 DP-007 同步后手柄与视觉分割线偏差 <= 2px。
+      {
+        name: 'next-1440-expanded-no-void',
+        viewport: 1440,
+        spec: {
+          sidebarVar: 280,
+          chatVar: 360,
+          authoredGrid: '280px minmax(400px, 1fr) minmax(0px, 760px)',
+          inlinePanelWidth: 648,
+          handleLeft: 1440 - 760,
+        },
+        check: (m) => ({
+          gap: Math.abs(m.panelLeft - m.centerRight),
+          rightEdgeDrift: Math.abs(m.panelRight - 1440),
+          pass: Math.abs(m.panelLeft - m.centerRight) <= 1 && Math.abs(m.panelRight - 1440) <= 1,
+        }),
+      },
+      {
+        name: 'next-1728-expanded-no-void-and-handle-aligned',
+        viewport: 1728,
+        spec: {
+          sidebarVar: 280,
+          chatVar: 434,
+          authoredGrid: '280px minmax(400px, 1fr) minmax(0px, 1014px)',
+          inlinePanelWidth: 778,
+          handleLeft: 1728 - 1014,
+        },
+        check: (m) => ({
+          gap: Math.abs(m.panelLeft - m.centerRight),
+          rightEdgeDrift: Math.abs(m.panelRight - 1728),
+          handleDrift: Math.abs(m.handleCenter - m.panelLeft),
+          pass:
+            Math.abs(m.panelLeft - m.centerRight) <= 1 &&
+            Math.abs(m.panelRight - 1728) <= 1 &&
+            Math.abs(m.handleCenter - m.panelLeft) <= 2,
+        }),
+      },
+      {
+        name: 'next-1920-expanded-no-void-and-handle-aligned',
+        viewport: 1920,
+        spec: {
+          sidebarVar: 280,
+          chatVar: 492,
+          authoredGrid: '280px minmax(400px, 1fr) minmax(0px, 1148px)',
+          inlinePanelWidth: 864,
+          handleLeft: 1920 - 1148,
+        },
+        check: (m) => ({
+          gap: Math.abs(m.panelLeft - m.centerRight),
+          rightEdgeDrift: Math.abs(m.panelRight - 1920),
+          handleDrift: Math.abs(m.handleCenter - m.panelLeft),
+          pass:
+            Math.abs(m.panelLeft - m.centerRight) <= 1 &&
+            Math.abs(m.panelRight - 1920) <= 1 &&
+            Math.abs(m.handleCenter - m.panelLeft) <= 2,
+        }),
+      },
+      {
+        name: 'next-1728-left-collapsed-no-void',
+        viewport: 1728,
+        spec: {
+          leftCollapsed: true,
+          sidebarVar: 0,
+          chatVar: 434,
+          authoredGrid: '0px minmax(400px, 1fr) minmax(0px, 1210px)',
+          inlinePanelWidth: 1210,
+          handleLeft: 1728 - 1210,
+        },
+        check: (m) => ({
+          gap: Math.abs(m.panelLeft - m.centerRight),
+          rightEdgeDrift: Math.abs(m.panelRight - 1728),
+          pass: Math.abs(m.panelLeft - m.centerRight) <= 1 && Math.abs(m.panelRight - 1728) <= 1,
+        }),
+      },
+      {
+        name: 'next-1728-center-collapsed-no-void',
+        viewport: 1728,
+        spec: {
+          centerCollapsed: true,
+          sidebarVar: 280,
+          chatVar: 434,
+          authoredGrid: '280px minmax(400px, 1fr) minmax(0px, 1014px)',
+          inlinePanelWidth: 1014,
+          handleLeft: 714,
+        },
+        check: (m) => ({
+          gap: Math.abs(m.panelLeft - m.sidebarRight),
+          rightEdgeDrift: Math.abs(m.panelRight - 1728),
+          pass: Math.abs(m.panelLeft - m.sidebarRight) <= 1 && Math.abs(m.panelRight - 1728) <= 1,
+        }),
+      },
+      {
+        name: 'next-980-narrow-overlay-not-squashed',
+        viewport: 980,
+        spec: {
+          leftCollapsed: true,
+          rightbarCollapsed: true,
+          sidebarVar: 0,
+          chatVar: 360,
+          authoredGrid: '0px minmax(0px, 1fr) minmax(0px, 0px)',
+          inlinePanelWidth: 580,
+          handleLeft: 400,
+        },
+        check: (m) => ({
+          panelWidth: m.panelWidth,
+          pass: Math.abs(m.panelWidth - 580) <= 2,
+        }),
+      },
+      {
+        name: 'next-1728-rightbar-closed-not-squashed',
+        viewport: 1728,
+        spec: {
+          rightbarCollapsed: true,
+          rightbarOpen: false,
+          panelOpen: false,
+          sidebarVar: 280,
+          chatVar: 434,
+          authoredGrid: '280px minmax(0px, 1fr) minmax(0px, 0px)',
+          inlinePanelWidth: 778,
+          handleLeft: 950,
+        },
+        check: (m) => ({
+          panelWidth: m.panelWidth,
+          pass: Math.abs(m.panelWidth - 778) <= 2,
+        }),
+      },
+      {
+        name: 'next-1728-reverse-control-reproduces-236px-void',
+        viewport: 1728,
+        spec: {
+          disableCollapseCss: true,
+          sidebarVar: 280,
+          chatVar: 434,
+          authoredGrid: '280px minmax(400px, 1fr) minmax(0px, 778px)',
+          inlinePanelWidth: 778,
+          handleLeft: 950,
+        },
+        check: (m) => ({
+          gap: m.panelLeft - m.centerRight,
+          pass: m.panelLeft - m.centerRight >= 200,
+        }),
+      },
+    ];
+
+    for (const nc of nextCases) {
+      await sendCdp('Emulation.setDeviceMetricsOverride', {
+        width: nc.viewport,
+        height: VIEWPORT_TIER_HEIGHT,
+        deviceScaleFactor: 1,
+        mobile: false,
+      });
+      await evaluate(`window.__nextQa.configure(${JSON.stringify(nc.spec)})`);
+      await waitForLayoutFrame(evaluate);
+      const measured = await evaluate('window.__nextQa.measure()');
+      const verdict = nc.check(measured);
+      report.nextShell.push({ name: nc.name, viewport: nc.viewport, measured, ...verdict });
+      add(nc.name, verdict.pass, { viewport: nc.viewport, measured, ...verdict });
+    }
 
     report.pass = report.assertions.every((a) => a.pass !== false) && report.errors.length === 0;
   } catch (err) {

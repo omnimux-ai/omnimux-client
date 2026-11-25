@@ -471,7 +471,7 @@ function installWatchers(doc) {
 function findFrameHost(doc) {
   const rightbar = findRightSidebarRoot(doc)
   if (rightbar?.parentElement) return rightbar.parentElement
-  return doc?.querySelector?.('.dshDesktopFrame') || null
+  return doc?.querySelector?.('.dshDesktopFrame, [class*="frame"]') || null
 }
 
 /** @param {Document | undefined} doc */

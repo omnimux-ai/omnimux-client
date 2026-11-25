@@ -79,17 +79,14 @@ export function ensureHealthySplitWidth(doc = hostDocument()) {
     } catch {}
   }
 
-  // DOM React Fiber 兜底探测
+  // DOM React Fiber 兜底探测（兼容旧壳 .dshDesktopFrame 与 Next 壳 [class*="frame"]）
   try {
-    const frame = doc.querySelector?.('.dshDesktopFrame')
-    if (frame) {
-      const layoutHandle = resolveWorkbenchLayoutHandle(doc)
-      if (layoutHandle) {
-        const snap = layoutHandle.getSnapshot?.()
-        if (snap && typeof snap.rightbar === 'number' && snap.rightbar < 450) {
-          layoutHandle.setRightbar(targetHealthyWidth, viewport)
-          notePluginPanelWidthWrite()
-        }
+    const layoutHandle = resolveWorkbenchLayoutHandle(doc)
+    if (layoutHandle && layoutHandle !== layout) {
+      const snap = layoutHandle.getSnapshot?.()
+      if (snap && typeof snap.rightbar === 'number' && snap.rightbar < 450) {
+        layoutHandle.setRightbar(targetHealthyWidth, viewport)
+        notePluginPanelWidthWrite()
       }
     }
   } catch {}

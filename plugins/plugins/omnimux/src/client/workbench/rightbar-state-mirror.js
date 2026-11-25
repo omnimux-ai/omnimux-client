@@ -41,12 +41,24 @@ export function syncRightbarStateMirror(doc = typeof document !== 'undefined' ? 
  * 只响应右栏面板/展开属性变化、会话包装的 hidden/aria-hidden 变化，以及涉及
  * 面板/会话包装的子树增删；普通节点的插入或隐藏不触发重算。
  * @param {Document} [doc]
+ * @param {{ onStateChange?: (state: { panel: Element | null, open: boolean, fullscreen: boolean }, doc: Document) => void }} [options]
  * @returns {() => void}
  */
-export function installRightbarStateMirror(doc = typeof document !== 'undefined' ? document : undefined) {
+export function installRightbarStateMirror(doc = typeof document !== 'undefined' ? document : undefined, options = {}) {
   if (!doc?.documentElement) return () => {}
   const root = doc.documentElement
-  const run = () => syncRightbarStateMirror(doc)
+  const onStateChange = typeof options?.onStateChange === 'function' ? options.onStateChange : null
+  let lastOpen = null
+  let lastFullscreen = null
+  const run = () => {
+    const state = syncRightbarStateMirror(doc)
+    if (onStateChange && (state.open !== lastOpen || state.fullscreen !== lastFullscreen)) {
+      lastOpen = state.open
+      lastFullscreen = state.fullscreen
+      try { onStateChange(state, doc) } catch { /* ignore */ }
+    }
+    return state
+  }
   run()
 
   const Observer = doc.defaultView?.MutationObserver
