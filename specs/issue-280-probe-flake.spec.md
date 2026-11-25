@@ -46,14 +46,14 @@ Chrome probe diagnostic: {"timeoutMs":30000,"status":0,"signal":null,...}
 1. **有界重试**：单次 attempt 15s，最多 3 次（2 次重试），指数退避 1s → 2s，整次 probe 总预算 48s。成功/失败/重试均输出 attempt、耗时、原因。
 2. **就绪等待**：每次 attempt 的 `--dump-dom` 本身就是就绪等待——Chrome 只有在页面产生 `RESULT` 标题后才退出；不使用固定 sleep。超时 attempt 使用独立 profile 重试。
 3. **启动参数与清理**：增加 `--disable-dev-shm-usage`，避免托管 runner 较小 `/dev/shm` 下 Chrome renderer/zygote 的共享内存冷启动卡顿；超时 attempt 用 `SIGKILL` 结束，避免旧 Chrome 残留继续占用 CPU/内存。
-4. **失败语义**：最终失败保留原始 `ETIMEDOUT` 错误对象与 `cause`，附加 `probeClass: 'environment-unavailable'`、`probeAttempts` 与分类诊断；`run-workspace-tests` 的内联摘要标注 `[environment-unavailable]` / `[assertion-or-product-failure]`。断言失败仍是普通 `AssertionError`。不跳过、不计入通过。
-5. **日志可查**：修正 `quality-gate.yml` 中 `Upload plugin test logs` 的路径。`actions/upload-artifact` 不受 `defaults.run.working-directory` 影响，原路径 `.tmp/...` 实际指向仓根，导致失败 job 的 TAP 日志从未上传；改为 `plugins/.tmp/...`，并同步测试断言。
+4. **失败语义**：最终失败保留原始 `ETIMEDOUT` 错误对象与 `cause`，附加 `probeClass: 'environment-unavailable'`、`probeAttempts` 与分类诊断；失败消息始终写入显式 `[style-dom-probe] probeClass=...`（单 attempt 与多次 attempt 都写）。`run-workspace-tests` 的 `classifyFailure` 只认 `probeClass=environment-unavailable` 显式标记，`probe-result-invalid`、缺 RESULT、invalid JSON、`SyntaxError` 等一律归 `assertion-or-product-failure`。断言失败仍是普通 `AssertionError`。不跳过、不计入通过。
+5. **日志可查**：`actions/upload-artifact` 不受 `defaults.run.working-directory` 影响，原 `Upload plugin test logs` 的 `.tmp/...` 实际指向仓根，而 runner 日志写在 `plugins/.tmp/...`，导致失败 job 的 TAP 日志从未上传。新增 `Stage plugin test logs for artifact upload` 步骤把 `plugins/.tmp/ci-workspace-logs` 与 `plugins/.tmp/ci-workspace-summary.json` 复制到仓根 `.tmp`；`Upload plugin test logs` 的 upload path 保持 `.tmp/...`，并同步测试断言。
 
 ## 验证
 
-- `node --test plugins/scripts/style-dom-probe.test.mjs`：18 项通过，覆盖超时重试、1s/2s 退避、3 次上限、总预算截断、失败分类、Ego 行为不回退。
+- `node --test plugins/scripts/style-dom-probe.test.mjs`：16 项通过（14 个声明用例 + 1 组双参数循环 2 项），覆盖探针成功路径、超时保留原始错误、缺 RESULT、无效 JSON、Ego 行为等。
+- `node --test plugins/scripts/style-dom-probe-retry.test.mjs`：9 项通过，覆盖重试、1s/2s 退避、3 次上限、总预算截断，以及 `probe-result-invalid`、单次/多次超时的显式分类。
 - `pnpm --dir plugins --filter omnimux-inspiration test`：全量通过。
 - 真实 Chrome 探针本地复跑通过，8 并发启动耗时 2.03–2.23s/次。
 - `pnpm --dir plugins run test:gates`、`build:all`、`verify-plugin-boundaries`、`verify-dsw-tokens`、`bundle-lock --check`、`workspace:check`、`plugins:verify`、`git diff --check`、`gitleaks --no-git` 均通过。
 - 无 UI 变更，浏览器视觉验收不适用；未调用真实模型/网关。
-

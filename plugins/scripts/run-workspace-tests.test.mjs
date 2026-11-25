@@ -46,10 +46,21 @@ test('packageEnv injects an isolated DSH_HOME per package run', async () => {
   }
 })
 
-test('inline failure summary distinguishes probe environment failures from assertions', () => {
-  assert.equal(classifyFailure('spawnSync /usr/bin/google-chrome ETIMEDOUT Chrome probe diagnostic: {}'), 'environment-unavailable')
-  assert.equal(classifyFailure('Ego probe diagnostic: {"classification":"environment-unavailable"}'), 'environment-unavailable')
+test('inline failure summary only trusts the explicit probeClass marker', () => {
+  assert.equal(classifyFailure('[style-dom-probe] probeClass=environment-unavailable after 3 attempt(s)'), 'environment-unavailable')
+  assert.equal(classifyFailure('spawn synthetic-chrome ETIMEDOUT\nChrome probe diagnostic: {}\n[style-dom-probe] probeClass=environment-unavailable after 1 attempt(s)'), 'environment-unavailable')
+  assert.equal(classifyFailure('页面未回传测量结果: synthetic empty DOM\nChrome probe diagnostic: {"measurementPresent":false}\n[style-dom-probe] probeClass=probe-result-invalid after 1 attempt(s)'), 'assertion-or-product-failure')
+  assert.equal(classifyFailure('spawnSync /usr/bin/google-chrome ETIMEDOUT Chrome probe diagnostic: {}'), 'assertion-or-product-failure')
+  assert.equal(classifyFailure('Unexpected token ... not valid JSON Chrome probe diagnostic: {}'), 'assertion-or-product-failure')
   assert.equal(classifyFailure("Expected values to be strictly equal: actual: 'none'"), 'assertion-or-product-failure')
+})
+
+test('CI binds bounded style-probe retry to the Plugin unit suites step', () => {
+  const workflow = parse(readFileSync(new URL('../../.github/workflows/quality-gate.yml', import.meta.url), 'utf8'))
+  const unit = workflow.jobs['plugin-tests'].steps.find((step) => step.name === 'Plugin unit suites')
+  assert.ok(unit, 'Plugin unit suites step must exist')
+  assert.match(unit.run, /run-workspace-tests\.mjs/)
+  assert.equal(unit.env?.OMNIMUX_STYLE_PROBE_RETRY, '1', 'CI must enable bounded style probe retries on the workspace runner')
 })
 
 test('an empty shard value fails instead of running every package', () => {

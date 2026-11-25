@@ -352,7 +352,10 @@ export function runStyleDomProbe({ name, styles, html, measure, viewportHeight =
     }
   }
   if (failure) {
-    const classification = output?.error || output?.status !== 0 || output?.signal
+    // `output` can be undefined when setup fails before the first spawn (for
+    // example a bad argument or an exhausted budget). That is a probe-result
+    // problem, not evidence that Chrome was unavailable.
+    const classification = output?.error || (output !== undefined && output.status !== 0) || output?.signal
       ? 'environment-unavailable'
       : 'probe-result-invalid'
     failure.probeClass ||= classification
@@ -369,7 +372,11 @@ export function runStyleDomProbe({ name, styles, html, measure, viewportHeight =
     }
     failure.diagnostic = diagnostic
     failure.message += `\n${transport === 'ego' ? 'Ego' : 'Chrome'} probe diagnostic: ${JSON.stringify(diagnostic)}`
-    if (attempts.length > 1) failure.message += `\n[style-dom-probe] ${classification} after ${attempts.length} attempt(s)`
+    // Always carry the explicit class, including the single-attempt path. The
+    // workspace runner treats this marker as the only trusted classification
+    // signal, so a bare "Chrome probe diagnostic" string cannot be mistaken for
+    // a runner/browser outage.
+    failure.message += `\n[style-dom-probe] probeClass=${failure.probeClass} after ${attempts.length} attempt(s)`
     throw failure
   }
   return result

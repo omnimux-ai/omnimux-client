@@ -3,6 +3,7 @@ import { writeFileSync } from 'node:fs'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
 import { parse } from 'yaml'
+import { classifyFailure } from './run-workspace-tests.mjs'
 import { runStyleDomProbe } from './test-fixtures/style-dom-probe.mjs'
 
 const input = { name: 'retry-probe', styles: '', html: '', measure: () => ({ ok: true }) }
@@ -26,6 +27,23 @@ function makeSpawn(outcomes, onSpawn) {
       error: current.error,
     }
   }
+}
+
+function probeFailure(outcome, runtime = {}) {
+  let caught
+  try {
+    runStyleDomProbe(input, {
+      retry: false,
+      chromeBinary: 'synthetic-chrome',
+      spawnSync: makeSpawn([outcome]),
+      sleep: () => {},
+      ...runtime,
+    })
+  } catch (error) {
+    caught = error
+  }
+  assert.ok(caught, 'a probe failure must throw instead of returning a value')
+  return caught
 }
 
 test('retries a timed-out Chrome once with 1s backoff and returns the second result', () => {
@@ -67,7 +85,10 @@ test('caps retries at three attempts with 1s then 2s backoff', () => {
       assert.equal(error.code, 'ETIMEDOUT')
       assert.equal(error.probeClass, 'environment-unavailable')
       assert.equal(error.probeAttempts.length, 3)
-      assert.match(error.message, /environment-unavailable after 3 attempt\(s\)/)
+      assert.deepEqual(error.probeAttempts.map((attempt) => attempt.attempt), [1, 2, 3])
+      assert.ok(error.probeAttempts.every((attempt) => attempt.code === 'ETIMEDOUT'))
+      assert.match(error.message, /\[style-dom-probe\] probeClass=environment-unavailable after 3 attempt\(s\)/)
+      assert.equal(classifyFailure(error.message), 'environment-unavailable')
       return true
     },
   )
@@ -102,6 +123,46 @@ test('stops before a second attempt when the total budget is exhausted', () => {
     },
   )
   assert.equal(calls.length, 1)
+})
+
+for (const [label, stdout] of [
+  ['missing RESULT', '<html><head><title>pending</title></head><body>no measurement</body></html>'],
+  ['empty DOM', ''],
+]) {
+  test(`probe-result-invalid: ${label} is classified as an assertion/product failure`, () => {
+    const error = probeFailure({ status: 0, signal: null, stdout, stderr: 'synthetic browser stderr' })
+    assert.equal(error.probeClass, 'probe-result-invalid')
+    assert.match(error.message, /\[style-dom-probe\] probeClass=probe-result-invalid after 1 attempt\(s\)/)
+    assert.equal(classifyFailure(error.message), 'assertion-or-product-failure')
+  })
+}
+
+test('probe-result-invalid: invalid JSON stays a SyntaxError and is classified as an assertion/product failure', () => {
+  const error = probeFailure({ status: 0, signal: null, stdout: '<html><head><title>RESULT:not-json</title></head></html>', stderr: '' })
+  assert.ok(error instanceof SyntaxError, 'invalid JSON must surface as SyntaxError')
+  assert.equal(error.probeClass, 'probe-result-invalid')
+  assert.match(error.message, /\[style-dom-probe\] probeClass=probe-result-invalid after 1 attempt\(s\)/)
+  assert.equal(classifyFailure(error.message), 'assertion-or-product-failure')
+})
+
+test('probe-result-invalid: a probe that never starts is not classified as environment-unavailable', () => {
+  let clock = 0
+  const error = probeFailure(
+    { status: 0, signal: null, stdout: RESULT, stderr: '' },
+    { totalBudgetMs: 5, now: () => { const current = clock; clock += 10; return current } },
+  )
+  assert.equal(error.probeClass, 'probe-result-invalid')
+  assert.match(error.message, /probeClass=probe-result-invalid after 0 attempt\(s\)/)
+  assert.equal(classifyFailure(error.message), 'assertion-or-product-failure')
+})
+
+test('single-attempt timeout still carries the explicit environment-unavailable marker', () => {
+  const error = probeFailure({ status: 0, signal: 'SIGTERM', stdout: '', stderr: 'cold start', error: timeoutError() })
+  assert.equal(error.code, 'ETIMEDOUT')
+  assert.equal(error.probeClass, 'environment-unavailable')
+  assert.equal(error.probeAttempts.length, 1)
+  assert.match(error.message, /\[style-dom-probe\] probeClass=environment-unavailable after 1 attempt\(s\)/)
+  assert.equal(classifyFailure(error.message), 'environment-unavailable')
 })
 
 test('quality gate stages plugin logs into the repo-root path consumed by upload-artifact', () => {

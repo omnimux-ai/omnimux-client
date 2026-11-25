@@ -161,13 +161,17 @@ export function packageEnv(pkgDir, base = process.env, dshHome) {
 
 /**
  * Inline TAP summaries used to lose the probe diagnostic because the first 200
- * characters only carried the spawn error. Label the failure kind so a runner
- * log says whether Chrome/Ego was unavailable or an assertion actually failed.
+ * characters only carried the spawn error. The probe now writes an explicit
+ * `[style-dom-probe] probeClass=...` marker into every failure message; only
+ * the explicit environment marker is trusted here. A bare "Chrome probe
+ * diagnostic" line accompanies every probe failure (including assertion
+ * failures), so matching that text would mislabel real product regressions as
+ * runner outages.
  * @param {string} error
  */
 export function classifyFailure(error) {
   const text = String(error || '')
-  if (/Chrome probe diagnostic|Ego probe diagnostic|environment-unavailable|spawnSync .*ETIMEDOUT/.test(text)) {
+  if (text.includes('[style-dom-probe] probeClass=environment-unavailable')) {
     return 'environment-unavailable'
   }
   return 'assertion-or-product-failure'
