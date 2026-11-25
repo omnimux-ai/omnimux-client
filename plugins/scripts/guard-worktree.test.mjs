@@ -2610,16 +2610,43 @@ describe('adversarial hardening regressions (materialization / wrapper / frozen-
       'allow',
     )
 
+    // E4: eval payload produced by producers that write/delete files must be analyzed
+    for (const command of [
+      `eval "$(echo rm -rf ${mainRepoRoot}/package.json)"`,
+      `eval "$(echo -n cd ${mainRepoRoot})"; echo pwn > package.json`,
+      'eval `echo cd ' + mainRepoRoot + '`; echo pwn > package.json',
+      `a() { b; }; b() { c; }; c() { d; }; d() { e; }; e() { cd ${mainRepoRoot}; }; a; echo pwn > package.json`,
+      `eval "$(printf 'rm -rf %s' ${mainRepoRoot}/package.json)"`,
+      `eval "$(printf -- 'cd %s' ${mainRepoRoot})"; echo pwn > package.json`,
+      `CD() { cd ${mainRepoRoot}; }; cd /tmp; CD; echo pwn > package.json`,
+      `Pushd() { cd ${mainRepoRoot}; }; cd /tmp; Pushd; echo pwn > package.json`,
+      `cd "$(echo ${mainRepoRoot})"; echo pwn > package.json`,
+      `p=${mainRepoRoot}; cd "$p"; echo pwn > package.json`,
+      `pushd "$(echo ${mainRepoRoot})" >/dev/null; echo pwn > package.json`,
+    ]) {
+      assert.equal(
+        decideBashCommand({ command, cwd: plain, ownerRoot: mainRepoRoot }).decision,
+        'deny',
+        `Expected E4 deny from plain cwd: ${command}`,
+      )
+    }
+
     // E3: git subcommands that delete/rename tracked files or discard uncommitted edits
     for (const command of [
       `git -C "${mainRepoRoot}" rm -q package.json`,
       `git -C "${mainRepoRoot}" mv package.json moved.json`,
       `git -C "${mainRepoRoot}" reset --hard`,
       `git -C "${mainRepoRoot}" stash`,
+      `git -C "${mainRepoRoot}" stash -m wip`,
+      `git -C "${mainRepoRoot}" stash -u`,
+      `git -C "${mainRepoRoot}" stash --keep-index`,
       `git -C "${mainRepoRoot}" checkout .`,
+      `git -C "${mainRepoRoot}" checkout -p`,
       `git -C "${mainRepoRoot}" checkout -f main`,
       `git -C "${mainRepoRoot}" switch -f main`,
       `git -C "${mainRepoRoot}" clean -fdx`,
+      `git -C "${mainRepoRoot}" read-tree -u --reset HEAD`,
+      `git -C "${mainRepoRoot}" checkout-index -a -f`,
     ]) {
       assert.equal(
         decideBashCommand({ command, cwd: worktreeRoot, ownerRoot: mainRepoRoot }).decision,

@@ -2250,10 +2250,16 @@ function evaluateProducerText(inner) {
   const hereStringBare = /^cat\s+<<<\s*([^\s'"]+)\s*$/.exec(text)
   if (hereStringBare) return hereStringBare[1]
   const echo = /^echo\s+([\s\S]*)$/.exec(text)
-  if (echo) return echo[1].replace(/^['"]|['"]$/g, '')
+  if (echo) {
+    let body = echo[1]
+    // strip echo options (`-n`, `-e`, `-E`, `-neE` combinations)
+    body = body.replace(/^(?:-[neE]+\s+)+/, '')
+    return body.replace(/^['"]|['"]$/g, '')
+  }
   const printf = /^printf\s+([\s\S]*)$/.exec(text)
   if (printf) {
-    const parts = tokenizeCommandLine(printf[1])
+    let parts = tokenizeCommandLine(printf[1])
+    if (parts[0] === '--') parts = parts.slice(1)
     return formatPrintfPayload(parts[0] || '', parts.slice(1))
   }
   return null
@@ -2266,17 +2272,20 @@ function evaluateProducerText(inner) {
  */
 function resolveEvalScript(script, depth = 0) {
   const input = String(script || '')
-  if (depth > 3 || !input.includes('$(')) return input
+  if (depth > 4 || (!input.includes('$(') && !input.includes('`'))) return input
   let out = ''
   for (let i = 0; i < input.length; i += 1) {
     if (input[i] === '$' && input[i + 1] === '(') {
       const end = scanBalancedParen(input, i + 1)
       const produced = evaluateProducerText(input.slice(i + 2, end))
-      if (produced === null) {
-        out += input.slice(i, end + 1)
-      } else {
-        out += resolveEvalScript(produced, depth + 1)
-      }
+      out += produced === null ? input.slice(i, end + 1) : resolveEvalScript(produced, depth + 1)
+      i = end
+      continue
+    }
+    if (input[i] === '`') {
+      const end = scanBacktick(input, i)
+      const produced = evaluateProducerText(input.slice(i + 1, end))
+      out += produced === null ? input.slice(i, end + 1) : resolveEvalScript(produced, depth + 1)
       i = end
       continue
     }
@@ -2355,7 +2364,7 @@ function hasNoChdirFlag(args) {
  * `$(...)` / backtick / `<(...)` substitutions.
  */
 function walkShellCommands(command, initialCwd, visitor, depth = 0, protectedCache = new Map(), inheritedFunctions = null) {
-  if (!command || typeof command !== 'string' || depth > 4) return undefined
+  if (!command || typeof command !== 'string' || depth > 12) return undefined
   let currentCwd = resolve(initialCwd || process.cwd())
   let prevCwd = currentCwd
   const cwdStack = []
@@ -2366,9 +2375,25 @@ function walkShellCommands(command, initialCwd, visitor, depth = 0, protectedCac
   let lastCdRollback = null
   let justRanCd = false
   let pendingFunctionBody = false
+  const shellVars = new Map()
   const shellFunctions = inheritedFunctions
     ? new Map([...inheritedFunctions, ...extractShellFunctionDefinitions(command)])
     : extractShellFunctionDefinitions(command)
+
+  /** Expand `$VAR` / `${VAR}` from literal assignments and `$(echo …)` producers. */
+  const resolveDynamicTarget = (raw) => {
+    let value = String(raw || '')
+    const producer = /^\$\((.*)\)$/.exec(value)
+    if (producer) {
+      const produced = evaluateProducerText(producer[1])
+      if (produced !== null) return produced.trim()
+    }
+    value = value.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)/g, (m, a, b) => {
+      const key = a || b
+      return shellVars.has(key) ? shellVars.get(key) : m
+    })
+    return value
+  }
 
   /** Predict the cwd after running `script` in the current shell (call site only). */
   const predictCwdAfter = (script) => {
@@ -2587,9 +2612,16 @@ function walkShellCommands(command, initialCwd, visitor, depth = 0, protectedCac
 
         if (!parsed.isControlHeaderOnly) {
           const stageWords = tokenizeCommandLine(stripShellRedirection(stageBody))
+          for (const w of stageWords) {
+            const assign = /^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/.exec(w)
+            if (assign) shellVars.set(assign[1], assign[2].replace(/^['"]|['"]$/g, ''))
+          }
           const builtinWords = unwrapDirBuiltinWords(stageWords)
           const headVerb = builtinWords.length > 0 ? commandBasename(builtinWords[0]) : ''
+          const rawHeadWord = builtinWords.length > 0 ? builtinWords[0] : ''
+          const isFunctionCall = subSegments.length === 1 && shellFunctions.has(rawHeadWord)
           const isStandaloneDirOp =
+            !isFunctionCall &&
             subSegments.length === 1 &&
             (headVerb === 'cd' || headVerb === 'pushd' || headVerb === 'popd')
 
@@ -2598,8 +2630,8 @@ function walkShellCommands(command, initialCwd, visitor, depth = 0, protectedCac
           if (subSegments.length === 1) {
             const evalScript = resolveEvalScript(extractEvalScript(stageWords))
             if (evalScript.trim()) {
-              const evalHead = commandBasename(evalScript.trim().split(/\s+/)[0] || '')
-              const evalTarget = shellFunctions.get(evalHead) || evalScript
+              const evalHeadRaw = evalScript.trim().split(/\s+/)[0] || ''
+              const evalTarget = shellFunctions.get(evalHeadRaw) || shellFunctions.get(commandBasename(evalHeadRaw)) || evalScript
               const predictedCwd = predictCwdAfter(evalTarget)
               if (predictedCwd !== currentCwd) {
                 applyCwdTransition(predictedCwd, currentCwd, {
@@ -2612,8 +2644,8 @@ function walkShellCommands(command, initialCwd, visitor, depth = 0, protectedCac
 
           // A function call runs its body in the caller's shell, so `f() { cd <primary>; }`
           // followed by `cd /tmp && f` still ends up in the primary checkout.
-          if (!isStandaloneDirOp && subSegments.length === 1 && shellFunctions.has(headVerb)) {
-            const predictedCwd = predictCwdAfter(shellFunctions.get(headVerb))
+          if (!isStandaloneDirOp && isFunctionCall) {
+            const predictedCwd = predictCwdAfter(shellFunctions.get(rawHeadWord))
             if (predictedCwd !== currentCwd) {
               applyCwdTransition(predictedCwd, currentCwd, {
                 prevOp: stmt.prevOp,
@@ -2632,7 +2664,8 @@ function walkShellCommands(command, initialCwd, visitor, depth = 0, protectedCac
             if (stmt.nextOp !== '&') {
               const insideLeadingGroup = parsed.leadingOpenParens > 0 || parsed.leadingOpenBraces > 0
               if (headVerb === 'cd') {
-                const updated = applyCdCommand(builtinWords, currentCwd, prevCwd)
+                const cdWords = builtinWords.map((w, idx) => (idx === builtinWords.length - 1 ? resolveDynamicTarget(w) : w))
+                const updated = applyCdCommand(cdWords, currentCwd, prevCwd)
                 applyCwdTransition(updated.nextCwd, updated.nextPrevCwd, { prevOp: stmt.prevOp, insideLeadingGroup })
               } else if (headVerb === 'pushd') {
                 const pushdArgs = builtinWords.slice(1)
@@ -2656,8 +2689,11 @@ function walkShellCommands(command, initialCwd, visitor, depth = 0, protectedCac
                     break
                   }
                   if (!afterDash && w.startsWith('-') && w !== '-') continue
-                  targetArg = w
-                  if (/[$`]/.test(w)) hasDynamicArg = true
+                  {
+                    const resolved = resolveDynamicTarget(w)
+                    targetArg = resolved
+                    hasDynamicArg = /[$`]/.test(resolved)
+                  }
                   break
                 }
                 const protectedInStack = dirStack.find((d) => isProtectedPrimaryDirectory(d, protectedCache))
@@ -2666,7 +2702,7 @@ function walkShellCommands(command, initialCwd, visitor, depth = 0, protectedCac
                     applyCwdTransition(protectedInStack, currentCwd, { prevOp: stmt.prevOp, insideLeadingGroup })
                   }
                 } else if (targetArg) {
-                  const targetPath = toFullPath(targetArg, currentCwd)
+                  const targetPath = toFullPath(resolveDynamicTarget(targetArg), currentCwd)
                   if (noChdir) {
                     // `pushd -n <dir>` inserts `<dir>` at stack slot [1] while keeping cwd unchanged;
                     // a subsequent `popd` or `pushd` rotation will move into `<dir>`.
@@ -2869,7 +2905,7 @@ function extractShellFunctionDefinitions(command) {
     const openIdx = match.index + match[0].length - 1
     const closeIdx = findMatchingBrace(input, openIdx)
     if (closeIdx === -1) continue
-    if (name) defs.set(name.toLowerCase(), input.slice(openIdx + 1, closeIdx))
+    if (name) defs.set(name, input.slice(openIdx + 1, closeIdx))
     re.lastIndex = closeIdx
   }
   return defs
@@ -3454,9 +3490,10 @@ function unwrapExecutionWrapperWithMeta(words) {
       rest = current.slice(i)
     } else if (head === 'eval') {
       // `eval` joins its arguments and executes them as shell code in the current shell.
+      // Resolve simple producer substitutions so `eval "$(echo rm -rf …)"` is analyzed.
       let i = 1
       if (current[i] === '--') i += 1
-      const script = current.slice(i).join(' ')
+      const script = resolveEvalScript(current.slice(i).join(' '))
       if (!script.trim()) break
       rest = ['sh', '-c', script]
     } else if (COMMAND_PREFIX_WRAPPERS.has(head)) {
@@ -3760,13 +3797,27 @@ function classifyGitMutationWords(gitInfo, segment) {
     const refs = collectNonOptionArgs(preDashArgs)
     const targetRef = refs[0] || ''
     const isHard = args.some((w) => w === '--hard')
-    // `git reset --hard` without a ref resets to HEAD and discards every
-    // uncommitted change in the primary checkout.
-    if (isHard && !targetRef) {
-      return { kind: 'reset-hard', segment }
-    }
-    if (targetRef && targetRef !== 'origin/main' && targetRef !== 'origin/master' && targetRef !== 'HEAD') {
-      return { kind: isHard ? 'reset-hard' : 'reset', segment }
+    if (isHard) {
+      // `--hard` discards every uncommitted tracked edit. Allow it only when the
+      // target tree is clean and the ref is a sanctioned sync point.
+      const cleanTargets = Array.isArray(gitInfo.targetDirs) && gitInfo.targetDirs.length > 0
+        ? gitInfo.targetDirs
+        : ['']
+      const hasDirtyTracked = cleanTargets.some((target) => {
+        if (!target) return true
+        const status = spawnSync('git', ['-C', target, 'status', '--porcelain', '--untracked-files=no'], {
+          encoding: 'utf8',
+          timeout: 3000,
+        })
+        if (status.error || status.status !== 0) return true
+        return Boolean((status.stdout || '').trim())
+      })
+      const sanctionedRef = !targetRef || targetRef === 'origin/main' || targetRef === 'origin/master' || targetRef === 'HEAD'
+      if (hasDirtyTracked || !sanctionedRef) {
+        return { kind: 'reset-hard', segment }
+      }
+    } else if (targetRef && targetRef !== 'origin/main' && targetRef !== 'origin/master' && targetRef !== 'HEAD') {
+      return { kind: 'reset', segment }
     }
   }
   // Tracked files removed or renamed in the primary checkout.
@@ -3782,6 +3833,12 @@ function classifyGitMutationWords(gitInfo, segment) {
   }
   if (sub === 'switch' && args.some((w) => w === '-f' || w === '--force' || w === '--discard-changes')) {
     return { kind: 'switch-force', segment }
+  }
+  if (sub === 'read-tree' && args.some((w) => w === '-u' || w === '--reset' || w === '-m')) {
+    return { kind: 'read-tree', segment }
+  }
+  if (sub === 'checkout-index' && args.some((w) => w === '-a' || w === '--all' || w === '-f' || w === '--force')) {
+    return { kind: 'checkout-index', segment }
   }
   if (sub === 'stash') {
     const action = (args[0] || '').toLowerCase()
@@ -3801,6 +3858,9 @@ function classifyGitMutationWords(gitInfo, segment) {
     }
     if (args.some((w) => w === '-f' || w === '--force')) {
       return { kind: 'checkout-force', segment }
+    }
+    if (args.some((w) => w === '-p' || w === '--patch')) {
+      return { kind: 'checkout-patch', segment }
     }
     const positional = collectNonOptionArgs(args, new Set(['-b', '-B', '--orphan', '--conflict', '-t', '--track']))
     for (const target of positional) {
@@ -4433,7 +4493,7 @@ function hasPythonInlineCodeFlag(args) {
 const XARGS_WRITE_VERBS = new Set(['rm', 'rmdir', 'unlink', 'mv', 'cp', 'sed', 'perl', 'truncate', 'tee', 'touch', 'mkdir', 'ln'])
 
 export function extractCommandWriteTargetsWithCwd(command, cwd = process.cwd(), depth = 0) {
-  if (!command || typeof command !== 'string' || depth > 4) return []
+  if (!command || typeof command !== 'string' || depth > 8) return []
   const results = []
   let upstreamStdinText = ''
 
