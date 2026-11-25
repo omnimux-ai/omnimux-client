@@ -147,9 +147,9 @@ const suiteCard = (item) => ({
 })
 
 test('A1 分类栏：按场景收敛为「全部」+ 8 个场景', () => {
-  const SCENARIOS = ['', 'scene-seeding', 'scene-brand', 'scene-product', 'scene-performance', 'scene-app', 'scene-local', 'scene-repurpose', 'scene-tools']
+  const SCENARIOS = ['', 'scene-seeding', 'scene-brand', 'scene-product', 'scene-performance', 'scene-repurpose', 'scene-tools']
   const categories = buildWorkshopCategories(null, tr)
-  assert.equal(categories.length, 9)
+  assert.equal(categories.length, 7)
   assert.deepEqual(categories.map((c) => c.id), SCENARIOS)
   assert.ok(categories.slice(1).every((c) => c.count > 0), '每个场景必须有目录成员')
   // 分类栏固定为场景目录，预设绑定不再注入套件/自定义分类

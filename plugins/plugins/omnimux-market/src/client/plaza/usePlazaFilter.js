@@ -129,11 +129,13 @@ export function buildWorkshopCategories(presetBinding, tr) {
     : { total: 0, byId: {} };
   return [
     { id: '', label: allLabel, count: counts.total || 0 },
-    ...rows.map((row) => ({
-      id: row.id,
-      label: getCatLabel(row.id, row.titleZh || row.title, row.titleEn || row.title),
-      count: counts.byId[row.id] || 0,
-    })),
+    ...rows
+      .map((row) => ({
+        id: row.id,
+        label: getCatLabel(row.id, row.titleZh || row.title, row.titleEn || row.title),
+        count: counts.byId[row.id] || 0,
+      }))
+      .filter((row) => row.count > 0),
   ];
 }
 

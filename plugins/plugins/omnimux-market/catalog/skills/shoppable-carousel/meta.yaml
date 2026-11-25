@@ -15,4 +15,6 @@ desc-cn: "适用于已有商品图片、需要规划 TikTok Shop 商品轮播图
 cover: ""
 author-en: "OmniMux Team"
 author-cn: "OmniMux 团队"
-source: official
+origin: first-party
+license: MIT
+owner: omnimux-market

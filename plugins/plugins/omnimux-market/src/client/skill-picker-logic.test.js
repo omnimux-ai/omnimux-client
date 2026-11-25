@@ -399,7 +399,7 @@ describe('agent preset skill bindings', () => {
   it('tiktok-agent preset carries complete per-skill metadata (ec1590182 社媒纯化后 22 款)', () => {
     const binding = getPresetSkillBinding('tiktok-agent')
     assert.equal(binding.skills.length, AGENT_PRESET_SKILL_BINDINGS['tiktok-agent'].skills.length)
-    assert.equal(binding.skills.length, 34)
+    assert.equal(binding.skills.length, 33)
 
     const titles = new Set(binding.skills.map((s) => s.name))
     // 创作视频（含 4 条首页快捷方式与跨境视频 SOP）
@@ -416,13 +416,15 @@ describe('agent preset skill bindings', () => {
     assert.ok(titles.has('图文复刻'))
     assert.ok(titles.has('电商商品套图'))
     assert.ok(titles.has('9图视觉矩阵与质检'))
+    assert.ok(titles.has('动态海报'))
+    assert.ok(titles.has('角色场景分镜板'))
     // 选品与需求 + 趋势与达人复盘 + 文案与运营
     assert.ok(titles.has('类目市场与选品调研'))
     assert.ok(titles.has('社媒选品与需求验证'))
     assert.ok(titles.has('细分赛道趋势挖掘'))
     assert.ok(titles.has('达人主页深度拆解'))
     assert.ok(titles.has('跨境多语商详文案'))
-    assert.ok(titles.has('SoPilot 社媒营销路由'))
+    assert.ok(titles.has('多平台原生配图文案'))
 
     // 每条技能都必须有完整元数据且由真实清单派生 bundled/available（未落盘时 installed 为 false）
     const catIds = new Set(binding.categories.map((c) => c.id))

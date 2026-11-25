@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * verify-skill-hygiene.mjs — 内置 Skill 目录卫生与单一真源门禁 (#234 / #235)
+ * verify-skill-hygiene.mjs — 内置 Skill 目录卫生与单一真源门禁 (#234 / #235 / #237)
  *
  * 强制校验结构性不变量：
  * 1. 零上游重名：产品插件 `skills/`、`dsh.manifest.json`（按路径归一化解析）与 `catalog/skills/` 均不得复制 DSH 上游内核/Creator 模式自带技能；
@@ -8,7 +8,8 @@
  * 3. 零符号链接：递归扫描 `plugins/plugins/<p>/skills/**` 与 `catalog/skills/**`（含根目录自身），严禁任何深度出现符号链接；
  * 4. 市场目录闭环与去重：`catalog/skills/` 存在且非空，每个目录包含常规非空 `SKILL.md`，且被 `catalog/index.json`（本地 bundled 技能）或 `catalog/bundled-skills.json` 唯一认领（无孤儿、无重叠、无悬空、无重复 `item.skill`、无错误 `source.path`、无逐字节重复正文）；
  * 5. 零空壳与禁静态 `installed: true`（#235）：首页快捷方式、`presets/<p>/skills.json`、`catalog/preset-skills.json` 与内置专家引用的每一个技能 slug 必须解析到真实非空 `SKILL.md`，且静态货架 JSON 不得硬编码 `installed` 字段；
- * 6. 工具引用真源校验（#235）：首页快捷方式与产品插件随包技能引用的具体 OmniMux 工具名必须属于当前工作区实际已注册运行时工具集合。
+ * 6. 工具引用真源校验（#235）：首页快捷方式与产品插件随包技能引用的具体 OmniMux 工具名必须属于当前工作区实际已注册运行时工具集合；
+ * 7. 来源/许可元数据与第三方声明闭环（#237）：`catalog/index.json` 全部条目、`catalog/bundled-skills.json` 与插件 `dsh.manifest.json`（`skillMetadata`）均须携带经校验的 `origin` / `license` / `owner`，禁止不实 `"author": "Official"`、外部热链（`cdn.hailuoai.com`）与第三方厂商契约残留，并与 `THIRD_PARTY_NOTICES.md` 双向一致。
  */
 
 import { createHash } from 'node:crypto'
@@ -34,6 +35,15 @@ export const UPSTREAM_RESERVED_SKILL_SLUGS = new Set([
   'diagnose-windows-sandbox-acl',
   'dsh-badge',
 ])
+
+/** 合法的技能/目录条目来源归属枚举（#237）。 */
+export const VALID_SKILL_ORIGINS = new Set(['first-party', 'third-party', 'upstream'])
+
+/** 随仓分发（bundled）技能禁止使用的模糊/未定许可字面量。 */
+export const FORBIDDEN_BUNDLED_LICENSES = new Set(['UNKNOWN', 'SEE UPSTREAM', 'NONE', 'UNLICENSED', 'TBD'])
+
+const EXTERNAL_HOTLINK_RE = /https?:\/\/cdn\.hailuoai\.com\//i
+const THIRD_PARTY_VENDOR_LEFTOVER_RE = /\b(?:kling-generation-runtime|WorkBuddy)\b/
 
 /**
  * @typedef {{ code: string; message: string; path?: string }} SkillHygieneIssue
@@ -236,6 +246,10 @@ export function verifySkillHygiene(pluginsWorkspaceRoot = PLUGINS_WORKSPACE_ROOT
 
   /** @type {Map<string, string>} slug -> declaring plugin name */
   const pluginSkillOwners = new Map()
+  /** @type {Array<{ slug: string; relDir: string; absDir: string; upstream: string; noticeRef: string; sourcePath: string }>} */
+  const bundledThirdPartySkills = []
+  let manifestMetadataCount = 0
+  let catalogItemCount = 0
 
   // 1. 产品插件：禁止与上游重名、禁止软链、校验 manifest ↔ skills/ 双向一致与跨插件去重
   if (existsSync(pluginsDir)) {
@@ -347,6 +361,82 @@ export function verifySkillHygiene(pluginsWorkspaceRoot = PLUGINS_WORKSPACE_ROOT
             })
           }
         }
+
+        // 1b. 插件随包技能来源/许可/责任方元数据校验（#237）
+        if (declaredSlugs.size > 0) {
+          const pkgPath = join(pluginRoot, 'package.json')
+          const pkgLicense = existsSync(pkgPath) ? String(readJson(pkgPath)?.license || '').trim() : ''
+          const skillMeta = manifest.skillMetadata
+          if (!skillMeta || typeof skillMeta !== 'object' || Array.isArray(skillMeta)) {
+            issues.push({
+              code: 'missing-manifest-skill-metadata',
+              path: `plugins/${pluginName}/dsh.manifest.json`,
+              message: `${pluginName}/dsh.manifest.json 声明了随包技能但缺少 skillMetadata 来源/许可映射`,
+            })
+          } else {
+            for (const slug of declaredSlugs) {
+              const entryMeta = skillMeta[slug]
+              if (!entryMeta || typeof entryMeta !== 'object') {
+                issues.push({
+                  code: 'missing-manifest-skill-provenance',
+                  path: `plugins/${pluginName}/dsh.manifest.json`,
+                  message: `${pluginName}/dsh.manifest.json 的 skillMetadata 缺少技能 ${slug} 的元数据`,
+                })
+                continue
+              }
+              manifestMetadataCount += 1
+              const origin = String(entryMeta.origin || '').trim()
+              const license = String(entryMeta.license || '').trim()
+              const owner = String(entryMeta.owner || '').trim()
+              if (!VALID_SKILL_ORIGINS.has(origin)) {
+                issues.push({
+                  code: 'invalid-manifest-skill-origin',
+                  path: `plugins/${pluginName}/dsh.manifest.json`,
+                  message: `${pluginName}/dsh.manifest.json 技能 ${slug} 的 origin 非法: ${origin || '(empty)'}`,
+                })
+              }
+              if (!license || FORBIDDEN_BUNDLED_LICENSES.has(license.toUpperCase())) {
+                issues.push({
+                  code: 'invalid-manifest-skill-license',
+                  path: `plugins/${pluginName}/dsh.manifest.json`,
+                  message: `${pluginName}/dsh.manifest.json 技能 ${slug} 缺少具体 license: ${license || '(empty)'}`,
+                })
+              } else if (origin === 'first-party' && pkgLicense && license !== pkgLicense) {
+                issues.push({
+                  code: 'manifest-skill-license-mismatch',
+                  path: `plugins/${pluginName}/dsh.manifest.json`,
+                  message: `${pluginName}/dsh.manifest.json 自研技能 ${slug} 的 license (${license}) 与 package.json (${pkgLicense}) 不一致`,
+                })
+              }
+              if (!owner) {
+                issues.push({
+                  code: 'missing-manifest-skill-owner',
+                  path: `plugins/${pluginName}/dsh.manifest.json`,
+                  message: `${pluginName}/dsh.manifest.json 技能 ${slug} 缺少 owner 字段`,
+                })
+              }
+              if (origin === 'third-party') {
+                bundledThirdPartySkills.push({
+                  slug,
+                  relDir: `skills/${slug}`,
+                  absDir: join(pluginRoot, 'skills', slug),
+                  upstream: String(entryMeta.upstream || '').trim(),
+                  noticeRef: String(entryMeta.noticeRef || '').trim(),
+                  sourcePath: `plugins/${pluginName}/dsh.manifest.json`,
+                })
+              }
+            }
+            for (const key of Object.keys(skillMeta)) {
+              if (!declaredSlugs.has(key)) {
+                issues.push({
+                  code: 'stale-manifest-skill-metadata',
+                  path: `plugins/${pluginName}/dsh.manifest.json`,
+                  message: `${pluginName}/dsh.manifest.json 的 skillMetadata 存在未声明技能键: ${key}`,
+                })
+              }
+            }
+          }
+        }
       }
     }
   }
@@ -363,7 +453,54 @@ export function verifySkillHygiene(pluginsWorkspaceRoot = PLUGINS_WORKSPACE_ROOT
     const indexDoc = readJson(catalogIndexPath)
     const items = Array.isArray(indexDoc?.items) ? indexDoc.items : []
     for (const item of items) {
-      if (!item || item.tab !== 'skills' || item.kind !== 'skill') continue
+      if (!item || typeof item !== 'object') continue
+      catalogItemCount += 1
+      const itemId = String(item.id || '(no-id)')
+
+      // 2a. catalog/index.json 全量来源/许可/责任方与禁止 Official 归属校验（#237）
+      if (String(item.author || '').trim() === 'Official') {
+        issues.push({
+          code: 'official-author-forbidden',
+          path: 'plugins/omnimux-market/catalog/index.json',
+          message: `catalog/index.json 条目 ${itemId} 禁止使用不实归属 "author": "Official"`,
+        })
+      }
+      const origin = String(item.origin || '').trim()
+      const license = String(item.license || '').trim()
+      const owner = String(item.owner || '').trim()
+      if (!VALID_SKILL_ORIGINS.has(origin)) {
+        issues.push({
+          code: 'invalid-catalog-origin',
+          path: 'plugins/omnimux-market/catalog/index.json',
+          message: `catalog/index.json 条目 ${itemId} 缺少合法 origin (first-party|third-party|upstream): ${origin || '(empty)'}`,
+        })
+      }
+      if (!license) {
+        issues.push({
+          code: 'missing-catalog-license',
+          path: 'plugins/omnimux-market/catalog/index.json',
+          message: `catalog/index.json 条目 ${itemId} 缺少 license 字段`,
+        })
+      }
+      if (!owner) {
+        issues.push({
+          code: 'missing-catalog-owner',
+          path: 'plugins/omnimux-market/catalog/index.json',
+          message: `catalog/index.json 条目 ${itemId} 缺少 owner 字段`,
+        })
+      }
+
+      const sourceType = item.source && typeof item.source === 'object' ? item.source.type : undefined
+      const isBundledItem = sourceType === 'bundled' || (item.tab === 'skills' && item.kind === 'skill' && sourceType === undefined)
+      if (isBundledItem && license && FORBIDDEN_BUNDLED_LICENSES.has(license.toUpperCase())) {
+        issues.push({
+          code: 'non-concrete-bundled-license',
+          path: 'plugins/omnimux-market/catalog/index.json',
+          message: `catalog/index.json 随包条目 ${itemId} 必须声明具体 license，不得为 ${license}`,
+        })
+      }
+
+      if (item.tab !== 'skills' || item.kind !== 'skill') continue
       const slug = typeof item.skill === 'string' ? item.skill.trim() : ''
       if (!slug) continue
       if (allIndexedSkillSlugs.has(slug)) {
@@ -376,10 +513,19 @@ export function verifySkillHygiene(pluginsWorkspaceRoot = PLUGINS_WORKSPACE_ROOT
       }
       allIndexedSkillSlugs.add(slug)
 
-      const sourceType = item.source && typeof item.source === 'object' ? item.source.type : undefined
       const isBundled = sourceType === undefined || sourceType === 'bundled'
       if (isBundled) {
         bundledIndexedSlugs.add(slug)
+        if (origin === 'third-party') {
+          bundledThirdPartySkills.push({
+            slug,
+            relDir: `catalog/skills/${slug}`,
+            absDir: join(catalogSkillsDir, slug),
+            upstream: String(item.upstream || '').trim(),
+            noticeRef: String(item.noticeRef || '').trim(),
+            sourcePath: 'plugins/omnimux-market/catalog/index.json',
+          })
+        }
         if (item.source && typeof item.source === 'object' && typeof item.source.path === 'string') {
           const normalizedPath = item.source.path.replace(/\\/g, '/').replace(/\/+$/, '')
           const expectedDir = `catalog/skills/${slug}`
@@ -430,6 +576,41 @@ export function verifySkillHygiene(pluginsWorkspaceRoot = PLUGINS_WORKSPACE_ROOT
           code: 'overlap-bundled-and-indexed',
           path: 'plugins/omnimux-market/catalog/bundled-skills.json',
           message: `技能 ${slug} 同时出现在 index.json 与 bundled-skills.json 中（必须唯一归属）`,
+        })
+      }
+      // 2b. bundled-skills.json 来源/许可/责任方校验（#237）
+      const origin = String(item?.origin || '').trim()
+      const license = String(item?.license || '').trim()
+      const owner = String(item?.owner || '').trim()
+      if (!VALID_SKILL_ORIGINS.has(origin)) {
+        issues.push({
+          code: 'invalid-bundled-origin',
+          path: 'plugins/omnimux-market/catalog/bundled-skills.json',
+          message: `bundled-skills.json 条目 ${slug} 缺少合法 origin: ${origin || '(empty)'}`,
+        })
+      }
+      if (!license || FORBIDDEN_BUNDLED_LICENSES.has(license.toUpperCase())) {
+        issues.push({
+          code: 'invalid-bundled-license',
+          path: 'plugins/omnimux-market/catalog/bundled-skills.json',
+          message: `bundled-skills.json 条目 ${slug} 缺少具体 license: ${license || '(empty)'}`,
+        })
+      }
+      if (!owner) {
+        issues.push({
+          code: 'missing-bundled-owner',
+          path: 'plugins/omnimux-market/catalog/bundled-skills.json',
+          message: `bundled-skills.json 条目 ${slug} 缺少 owner 字段`,
+        })
+      }
+      if (origin === 'third-party') {
+        bundledThirdPartySkills.push({
+          slug,
+          relDir: `catalog/skills/${slug}`,
+          absDir: join(catalogSkillsDir, slug),
+          upstream: String(item?.upstream || '').trim(),
+          noticeRef: String(item?.noticeRef || '').trim(),
+          sourcePath: 'plugins/omnimux-market/catalog/bundled-skills.json',
         })
       }
     }
@@ -514,13 +695,53 @@ export function verifySkillHygiene(pluginsWorkspaceRoot = PLUGINS_WORKSPACE_ROOT
           continue
         }
         const raw = readFileSync(mdPath)
-        if (raw.toString('utf8').trim().length === 0) {
+        const mdText = raw.toString('utf8')
+        if (mdText.trim().length === 0) {
           issues.push({
             code: 'empty-skill-md',
             path: `plugins/omnimux-market/catalog/skills/${name}/SKILL.md`,
             message: `catalog/skills/${name}/SKILL.md 为空文件`,
           })
           continue
+        }
+        if (EXTERNAL_HOTLINK_RE.test(mdText)) {
+          issues.push({
+            code: 'external-hotlink-forbidden',
+            path: `plugins/omnimux-market/catalog/skills/${name}/SKILL.md`,
+            message: `catalog/skills/${name}/SKILL.md 包含禁止的外部媒体热链 (cdn.hailuoai.com)`,
+          })
+        }
+        if (THIRD_PARTY_VENDOR_LEFTOVER_RE.test(mdText)) {
+          issues.push({
+            code: 'third-party-vendor-leftover',
+            path: `plugins/omnimux-market/catalog/skills/${name}/SKILL.md`,
+            message: `catalog/skills/${name}/SKILL.md 包含外部厂商契约/品牌残留`,
+          })
+        }
+        const metaYamlPath = join(full, 'meta.yaml')
+        if (existsSync(metaYamlPath) && !lstatSync(metaYamlPath).isSymbolicLink()) {
+          const metaText = readFileSync(metaYamlPath, 'utf8')
+          if (EXTERNAL_HOTLINK_RE.test(metaText)) {
+            issues.push({
+              code: 'external-hotlink-forbidden',
+              path: `plugins/omnimux-market/catalog/skills/${name}/meta.yaml`,
+              message: `catalog/skills/${name}/meta.yaml 包含禁止的外部媒体热链 (cdn.hailuoai.com)`,
+            })
+          }
+          if (/^source:\s*official\s*$/m.test(metaText)) {
+            issues.push({
+              code: 'legacy-official-source-forbidden',
+              path: `plugins/omnimux-market/catalog/skills/${name}/meta.yaml`,
+              message: `catalog/skills/${name}/meta.yaml 不得使用旧版模糊归属 source: official`,
+            })
+          }
+          if (THIRD_PARTY_VENDOR_LEFTOVER_RE.test(metaText)) {
+            issues.push({
+              code: 'third-party-vendor-leftover',
+              path: `plugins/omnimux-market/catalog/skills/${name}/meta.yaml`,
+              message: `catalog/skills/${name}/meta.yaml 包含外部厂商契约/品牌残留`,
+            })
+          }
         }
         const digest = sha256(raw)
         if (contentHashes.has(digest)) {
@@ -759,6 +980,59 @@ export function verifySkillHygiene(pluginsWorkspaceRoot = PLUGINS_WORKSPACE_ROOT
     }
   }
 
+  // 6. 随仓第三方技能与 THIRD_PARTY_NOTICES.md 双向审校闭环（#237）
+  const noticesPath = join(marketRoot, 'THIRD_PARTY_NOTICES.md')
+  const noticesExists = existsSync(noticesPath)
+  const noticesText = noticesExists ? readFileSync(noticesPath, 'utf8') : ''
+  const bundledThirdPartyRelDirs = new Set(bundledThirdPartySkills.map((s) => s.relDir))
+
+  for (const tp of bundledThirdPartySkills) {
+    if (!tp.upstream) {
+      issues.push({
+        code: 'missing-third-party-upstream',
+        path: tp.sourcePath,
+        message: `随仓第三方技能 ${tp.slug} 缺少 upstream 来源 URL`,
+      })
+    }
+    if (!tp.noticeRef) {
+      issues.push({
+        code: 'missing-third-party-notice-ref',
+        path: tp.sourcePath,
+        message: `随仓第三方技能 ${tp.slug} 缺少 noticeRef 声明引用`,
+      })
+    }
+    if (!existsSync(join(tp.absDir, 'LICENSE'))) {
+      issues.push({
+        code: 'missing-third-party-license-file',
+        path: `plugins/omnimux-market/${tp.relDir}`,
+        message: `随仓第三方技能 ${tp.slug} 目录内缺少 LICENSE 许可原文`,
+      })
+    }
+    if (!noticesExists || !noticesText.includes(tp.relDir)) {
+      issues.push({
+        code: 'undocumented-third-party-skill',
+        path: 'plugins/omnimux-market/THIRD_PARTY_NOTICES.md',
+        message: `随仓第三方技能 ${tp.slug} (${tp.relDir}) 未在 THIRD_PARTY_NOTICES.md 中登记`,
+      })
+    }
+  }
+
+  if (noticesExists) {
+    const citedPaths = new Set()
+    for (const m of noticesText.matchAll(/(?<![A-Za-z0-9_/-])((?:catalog\/skills|skills)\/[a-z0-9][a-z0-9-]*)(?=\/|[\s`),.;]|$)/g)) {
+      citedPaths.add(m[1])
+    }
+    for (const cited of citedPaths) {
+      if (!bundledThirdPartyRelDirs.has(cited)) {
+        issues.push({
+          code: 'stale-third-party-notice',
+          path: 'plugins/omnimux-market/THIRD_PARTY_NOTICES.md',
+          message: `THIRD_PARTY_NOTICES.md 引用了并非当前随仓第三方技能的路径: ${cited}`,
+        })
+      }
+    }
+  }
+
   return {
     ok: issues.length === 0,
     issues,
@@ -766,7 +1040,10 @@ export function verifySkillHygiene(pluginsWorkspaceRoot = PLUGINS_WORKSPACE_ROOT
       indexedCount: bundledIndexedSlugs.size,
       bundledCount: bundledSlugs.size,
       catalogDirCount: realDirs.size,
+      catalogItemCount,
       pluginSkillCount: pluginSkillOwners.size,
+      manifestMetadataCount,
+      bundledThirdPartyCount: bundledThirdPartySkills.length,
       quickShortcutCount,
       presetSkillRefCount,
       builtinExpertSkillRefCount,
@@ -789,9 +1066,11 @@ if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import
     `✅ verify-skill-hygiene 通过：`
     + `catalog/skills 共 ${result.stats.catalogDirCount} 个目录`
     + `（市场已上架 ${result.stats.indexedCount} + 随包登记 ${result.stats.bundledCount}），`
-    + `插件随包声明 ${result.stats.pluginSkillCount} 个，`
+    + `目录全量元数据校验 ${result.stats.catalogItemCount} 条，`
+    + `插件随包声明 ${result.stats.pluginSkillCount} 个（skillMetadata ${result.stats.manifestMetadataCount} 条），`
+    + `随仓第三方技能 ${result.stats.bundledThirdPartyCount} 个与 THIRD_PARTY_NOTICES.md 对齐，`
     + `快捷方式 ${result.stats.quickShortcutCount} 条、预设/货架引用 ${result.stats.presetSkillRefCount} 条、内置专家引用 ${result.stats.builtinExpertSkillRefCount} 条，`
     + `工具真源校验 ${result.stats.toolCheckedSkillCount} 份技能（已注册工具 ${result.stats.registeredToolCount} 个），`
-    + `零上游重名、零符号链接、零孤儿、零空壳、零静态 installed、零未注册工具引用。`,
+    + `零上游重名、零符号链接、零孤儿、零空壳、零静态 installed、零未注册工具引用、零不实 Official 归属。`,
   )
 }

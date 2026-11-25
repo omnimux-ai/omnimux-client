@@ -49,8 +49,8 @@ test('install action opens existing modal and category row precedes content', ()
   assert.ok(stateWrites.some(([, value]) => value === true))
   const categories = walk(tree, (node) => node.props.className === 'category-bar')
   const categoryButtons = categories.children.filter((node) => node.type === 'button')
-  assert.equal(categoryButtons.length, 9)
-  // 按场景分类：「场景分类」标签 +「全部」+ 8 个场景，顺序由 SKILL_SCENARIOS 固定。
+  assert.equal(categoryButtons.length, 7)
+  // 按场景分类：「场景分类」标签 +「全部」+ 6 个活跃场景，顺序由 SKILL_SCENARIOS 固定。
   assert.deepEqual(
     categoryButtons.slice(0, 5).map((node) => node.props.key),
     ['', 'scene-seeding', 'scene-brand', 'scene-product', 'scene-performance'],

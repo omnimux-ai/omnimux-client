@@ -15,7 +15,7 @@ const skills = catalog.items.filter((item) => item.kind === 'skill')
 test('场景 taxonomy：8 个场景，每个都有成员，114 个技能无未映射孤儿', () => {
   assert.deepEqual(SKILL_SCENARIOS.map((row) => row.id), [
     'scene-seeding', 'scene-brand', 'scene-product', 'scene-performance',
-    'scene-app', 'scene-local', 'scene-repurpose', 'scene-tools',
+    'scene-repurpose', 'scene-tools',
   ])
   const declared = new Set(SKILL_SCENARIOS.map((row) => row.id))
   const orphans = skills.filter((item) => !declared.has(item.scenario)).map((item) => item.id)
@@ -29,13 +29,13 @@ test('场景 taxonomy：8 个场景，每个都有成员，114 个技能无未�
 })
 
 test('场景过滤：显式 scenario 命中，旧 category 条目按兼容映射命中', () => {
-  const ugc = skills.find((item) => item.title === 'UGC 告白')
-  assert.equal(scenarioForItem(ugc), 'scene-seeding')
-  assert.equal(matchesScenarioTag(ugc, 'scene-seeding'), true)
-  assert.equal(matchesScenarioTag(ugc, 'scene-brand'), false)
+  const sample = skills.find((item) => item.skill === 'stickman-video-director')
+  assert.equal(scenarioForItem(sample), 'scene-seeding')
+  assert.equal(matchesScenarioTag(sample, 'scene-seeding'), true)
+  assert.equal(matchesScenarioTag(sample, 'scene-brand'), false)
 
   // 已安装技能没有 scenario 时，按 slug 从目录回查
-  assert.equal(scenarioForItem({ skill: 'ugc-confessional', category: '' }), 'scene-seeding')
+  assert.equal(scenarioForItem({ skill: 'stickman-video-director', category: '' }), 'scene-seeding')
   // 既没有 scenario 也没有目录命中的预设条目，按旧 category 兼容映射
   assert.equal(scenarioForItem({ category: 'product-showcase' }), 'scene-product')
   assert.equal(scenarioForItem({ category: 'other' }), 'scene-tools')
@@ -43,7 +43,7 @@ test('场景过滤：显式 scenario 命中，旧 category 条目按兼容映射
 
 test('场景分类栏：全部 + 8 个场景，数量为真实目录计数', () => {
   const categories = buildWorkshopCategories(null)
-  assert.equal(categories.length, 9)
+  assert.equal(categories.length, 7)
   assert.equal(categories[0].id, '')
   assert.equal(categories[0].count, skills.length)
   for (const category of categories.slice(1)) {

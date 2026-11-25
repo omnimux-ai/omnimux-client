@@ -19,11 +19,11 @@ function roots() {
 test('installs a bundled skill once', () => {
   const env = roots()
   const catalog = loadCatalog()
-  const first = installItem({ catalog, id: 'sk-omx-ugc-confessional', ...env })
-  const second = installItem({ catalog, id: 'sk-omx-ugc-confessional', ...env })
+  const first = installItem({ catalog, id: 'sk-omx-replicate-viral-video', ...env })
+  const second = installItem({ catalog, id: 'sk-omx-replicate-viral-video', ...env })
   assert.equal(first.already, undefined)
   assert.equal(second.already, true)
-  assert.equal(existsSync(join(env.home, 'skills', 'ugc-confessional', 'SKILL.md')), true)
+  assert.equal(existsSync(join(env.home, 'skills', 'replicate-viral-video', 'SKILL.md')), true)
 })
 
 test('installs a git-source skill from a local fixture remote (no network)', () => {

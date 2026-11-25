@@ -6,18 +6,50 @@
   "entrypoint": "src/index.js",
   "status": "active",
   "description": "使用本机 FFmpeg 处理视频、提取深度图并理解视频内容。",
-  "tags": ["video", "ffmpeg", "transcode", "video-process", "editing", "understanding"],
+  "tags": [
+    "video",
+    "ffmpeg",
+    "transcode",
+    "video-process",
+    "editing",
+    "understanding"
+  ],
   "capabilities": {
     "tools": [
-      { "name": "video_process", "summary": "执行本地 FFmpeg 视频剪辑/合并/拆分/转码等 11 项原子能力", "category": "video", "isWriteOperation": true, "requiresAuth": false },
-      { "name": "video_analyze", "summary": "解析视频结构并输出结构化五维拆解与分镜数组（Skill 真源 + JSON Schema）", "category": "video", "isWriteOperation": false, "requiresAuth": true },
-      { "name": "video_reverse_prompt", "summary": "基于参考视频反推 I2V 结构化分镜提示词（Skill 真源 + JSON Schema）", "category": "video", "isWriteOperation": false, "requiresAuth": true }
+      {
+        "name": "video_process",
+        "summary": "执行本地 FFmpeg 视频剪辑/合并/拆分/转码等 11 项原子能力",
+        "category": "video",
+        "isWriteOperation": true,
+        "requiresAuth": false
+      },
+      {
+        "name": "video_analyze",
+        "summary": "解析视频结构并输出结构化五维拆解与分镜数组（Skill 真源 + JSON Schema）",
+        "category": "video",
+        "isWriteOperation": false,
+        "requiresAuth": true
+      },
+      {
+        "name": "video_reverse_prompt",
+        "summary": "基于参考视频反推 I2V 结构化分镜提示词（Skill 真源 + JSON Schema）",
+        "category": "video",
+        "isWriteOperation": false,
+        "requiresAuth": true
+      }
     ],
     "seamsProvided": [
-      { "name": "videoProcess", "interfaceDoc": "ctx.get('videoProcess').execute(task)" }
+      {
+        "name": "videoProcess",
+        "interfaceDoc": "ctx.get('videoProcess').execute(task)"
+      }
     ],
-    "seamsConsumed": ["headlessSkill"],
-    "storageDomains": ["temp/video_output/"]
+    "seamsConsumed": [
+      "headlessSkill"
+    ],
+    "storageDomains": [
+      "temp/video_output/"
+    ]
   },
   "skills": [
     "skills/video-analyze/SKILL.md",
@@ -25,6 +57,21 @@
   ],
   "dependencies": {
     "requiredPlugins": [],
-    "systemBinaries": ["ffmpeg", "ffprobe"]
+    "systemBinaries": [
+      "ffmpeg",
+      "ffprobe"
+    ]
+  },
+  "skillMetadata": {
+    "video-analyze": {
+      "origin": "first-party",
+      "license": "SEE LICENSE IN LICENSE",
+      "owner": "omnimux-video"
+    },
+    "video-reverse-prompt": {
+      "origin": "first-party",
+      "license": "SEE LICENSE IN LICENSE",
+      "owner": "omnimux-video"
+    }
   }
 }

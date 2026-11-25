@@ -88,7 +88,7 @@ test('sync-agent-presets.sh never writes preset skills into the target skill roo
   cpSync(join(root, 'presets'), join(fixture, 'presets'), { recursive: true })
 
   // A skill the user already owns at the same name must survive untouched.
-  const owned = join(home, 'skills', 'sopilot-social-agents')
+  const owned = join(home, 'skills', 'omnimux-social-data')
   mkdirSync(owned, { recursive: true })
   writeFileSync(join(owned, 'SKILL.md'), 'user-owned\n')
 

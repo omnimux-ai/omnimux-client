@@ -69,6 +69,17 @@ The outer workspace uses Yarn. The pinned `deepseek-harness/` submodule keeps it
 
 The physical runtime includes `lib`, `node_modules`, package metadata, and the product preset. CLI and Worker processes use this same tree. Unsigned directory builds disable signing and publishing; final artifact checks verify Electron fuses and execute the packaged CLI and diagnostic Worker.
 
+### Dual-shell built-in Office skill boundary
+
+`dsh-desktop-next` and `dsh-plugin-desktop` intentionally differ in whether they ship upstream Office skills and document preview binaries:
+
+| Desktop shell | Pinned DSH baseline | Upstream Office skills (`@deepseek-ai/dsh-skill-office`, 7 skills: `office`, `office-docx`, `office-pptx`, `office-xlsx`, `office-export-pdf`, `office-render`, `office-recalculate`) | Rationale & source of truth |
+|---|---|---|---|
+| `app/dsh-desktop-next` (active shell) | `0.2.2-rc.5` | **Not shipped** (disabled by default) | Installer size tradeoff: Office preview pulls `@deepseek-ai/libreoffice-kit-*` (~305 MB across dual CPU architectures). [`cordis.patch.yml`](../dsh-desktop-next/cordis.patch.yml) explicitly disables `office-kit` and `skill-office`, paired with [`runtime-file-policy.ts`](../dsh-desktop-next/scripts/runtime-file-policy.ts) excluding `@deepseek-ai/dsh-skill-office`, `@deepseek-ai/dsh-office-kit`, `@deepseek-ai/dsh-tool-office`, and `@deepseek-ai/libreoffice-kit-*` from the release payload (pinned by `dsh-desktop-next/tests/payload-exclusions.spec.ts`). |
+| `app/dsh-plugin-desktop` (frozen legacy shell) | `0.2.1-rc.3` | **Retained from upstream baseline** | Keeps the frozen `0.2.1-rc.3` upstream composition without excluding `@deepseek-ai/dsh-skill-office`. |
+
+Product plugins must never duplicate those 7 upstream Office skill slugs (enforced by `plugins/scripts/verify-skill-hygiene.mjs`). On `dsh-desktop-next`, users who need `.docx` / `.xlsx` / `.pptx` processing can rely on local scripts/tools or install community/personal skills on demand via DSH Terminal.
+
 ## Stable updates and isolated recovery
 
 OmniMux uses `ai.omnimux.desktop` and retains its configured update endpoint. Version checks accept stable SemVer only. Downloads send the expected version and reject mismatched responses before replacing an installer. This repository does not ship a Beta application or a channel-switch action.

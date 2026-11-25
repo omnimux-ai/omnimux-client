@@ -37,7 +37,7 @@ describe('E2E: Creatify 技能卡片 1:1 视觉复刻、一行三列与流光渐
 
   it('buildWorkshopCategories() 返回 8 个场景分类，默认全部', () => {
     const cats = buildWorkshopCategories(null);
-    assert.equal(cats.length, 9, '应包含 1 个全部 + 8 个场景分类');
+    assert.equal(cats.length, 7, '应包含 1 个全部 + 6 个活跃场景分类');
     assert.equal(cats[0].id, '');
     assert.equal(cats[0].label, '全部');
     assert.equal(cats[1].id, 'scene-seeding');

@@ -6,7 +6,13 @@
   "entrypoint": "src/index.js",
   "status": "active",
   "description": "收集、整理并分析热门内容与参考素材，辅助选题创作。",
-  "tags": ["inspiration", "trends", "ideas", "creative", "workbench"],
+  "tags": [
+    "inspiration",
+    "trends",
+    "ideas",
+    "creative",
+    "workbench"
+  ],
   "capabilities": {
     "tools": [
       {
@@ -47,19 +53,45 @@
       }
     ],
     "seamsProvided": [],
-    "seamsConsumed": ["reader", "headlessSkill", "hubEvents"],
-    "slots": [
-      { "target": "sidebar.extra", "componentPath": "src/client/sidebar-entry.js" },
-      { "target": "shell.overlay", "componentPath": "src/client/InspirationStage.jsx" }
+    "seamsConsumed": [
+      "reader",
+      "headlessSkill",
+      "hubEvents"
     ],
-    "storageDomains": ["$DSH_HOME/omnimux/inspirations/"]
+    "slots": [
+      {
+        "target": "sidebar.extra",
+        "componentPath": "src/client/sidebar-entry.js"
+      },
+      {
+        "target": "shell.overlay",
+        "componentPath": "src/client/InspirationStage.jsx"
+      }
+    ],
+    "storageDomains": [
+      "$DSH_HOME/omnimux/inspirations/"
+    ]
   },
   "skills": [
     "skills/inspiration-deconstruct/SKILL.md",
     "skills/inspiration-translate/SKILL.md"
   ],
   "dependencies": {
-    "requiredPlugins": ["omnimux"],
+    "requiredPlugins": [
+      "omnimux"
+    ],
     "systemBinaries": []
+  },
+  "skillMetadata": {
+    "inspiration-deconstruct": {
+      "origin": "first-party",
+      "license": "SEE LICENSE IN LICENSE",
+      "owner": "omnimux-inspiration"
+    },
+    "inspiration-translate": {
+      "origin": "first-party",
+      "license": "SEE LICENSE IN LICENSE",
+      "owner": "omnimux-inspiration"
+    }
   }
 }
