@@ -38,6 +38,7 @@ import { removeLinkProjectionsSafely } from './link-projections.ts'
 import { defaultDesktopWebPort } from './desktop-port.ts'
 import { RETIRED_SCHEDULE_BUNDLE, retiredSchedulePatch, SCHEDULE_RETIREMENT_MARKER } from './profile-schedule.ts'
 import {
+  AGENT_PRESET_DECLARATION_PACKAGE,
   NATIVE_PICKER_BACKEND,
   NATIVE_PICKER_SURFACE,
   agentPresetPatchOptions,
@@ -2008,8 +2009,15 @@ export function prepareDesktopProfile(
   }
   // 0.1.7-alpha.1 removed the filesystem preset discovery the profile's
   // `agent-presets` roots row used to feed, so the shipped presets have to be
-  // declared as Loader rows or every session naming one fails to start.
-  patches.push(...agentPresetPatchOptions(composeShippedAgentPresetRows()))
+  // declared as Loader rows or every session naming one fails to start. Skip
+  // any preset id already declared by an active bundle (e.g. `omnimux`).
+  const declaredPresetIds = new Set<string>()
+  for (const row of rows.values()) {
+    if (row.name !== AGENT_PRESET_DECLARATION_PACKAGE) continue
+    const id = rowConfig(row).id
+    if (typeof id === 'string' && id.length > 0) declaredPresetIds.add(id)
+  }
+  patches.push(...agentPresetPatchOptions(composeShippedAgentPresetRows({ declaredPresetIds })))
   // Loader patches cannot change an existing row's package identity. Disable the
   // profile row by its current identity and insert the Desktop-owned provider.
   const webserverConfig = { host: desktopWebServerHost(networkExposure), port }

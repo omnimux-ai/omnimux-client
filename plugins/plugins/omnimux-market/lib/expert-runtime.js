@@ -20,6 +20,13 @@ const PLAN_MODE_SECTION = [
     'Explore first. Use non-mutating reads, searches, static analysis, and checks to ground the plan in the actual workspace. Do not edit or write files or execute destructive mutations while in plan mode.',
     'Make the plan decision-complete and submit it via exit_plan_mode as the final tool call.',
 ].join('\n\n');
+/**
+ * DSH 0.2.1-rc.3 exports `./list-agents` and registers `list_agents` only from
+ * that entry; 0.2.2-rc.5 folds the registration into the main entry and drops
+ * the subpath. The row is kept only where the subpath really resolves, so the
+ * same expert stack works on both lines.
+ */
+const LIST_AGENTS_SUBPATH = '@deepseek-ai/dsh-tool-subagent-control/list-agents';
 function pruneUnresolvableRows(rows, isPackageResolvable) {
     const out = [];
     for (const row of rows) {
@@ -124,7 +131,9 @@ export function buildMarketExpertPluginRows(persona, opts = {}) {
             isolate: { workflowEngine: true },
             config: [
                 { id: 'tool-subagent-control', name: '@deepseek-ai/dsh-tool-subagent-control' },
-                { id: 'tool-subagent-list-agents', name: '@deepseek-ai/dsh-tool-subagent-control/list-agents' },
+                ...(opts.resolvesSpecifier === undefined || opts.resolvesSpecifier(LIST_AGENTS_SUBPATH)
+                    ? [{ id: 'tool-subagent-list-agents', name: LIST_AGENTS_SUBPATH }]
+                    : []),
                 {
                     id: 'tool-subagent',
                     name: '@deepseek-ai/dsh-tool-subagent',
@@ -194,6 +203,7 @@ export class ExpertPresetRuntime {
     home;
     registry;
     isPackageResolvable;
+    resolvesSpecifier;
     onChanged;
     disposers = new Map();
     queues = new Map();
@@ -201,6 +211,7 @@ export class ExpertPresetRuntime {
         this.home = options.home;
         this.registry = options.registry;
         this.isPackageResolvable = options.isPackageResolvable;
+        this.resolvesSpecifier = options.resolvesSpecifier;
         this.onChanged = options.onChanged;
     }
     serialize(id, task) {
@@ -244,6 +255,7 @@ export class ExpertPresetRuntime {
             }
             const definition = buildMarketExpertPresetDefinition(exp, {
                 isPackageResolvable: this.isPackageResolvable,
+                resolvesSpecifier: this.resolvesSpecifier,
             });
             const unregister = await this.registry.register(definition);
             this.disposers.set(exp.id, unregister);

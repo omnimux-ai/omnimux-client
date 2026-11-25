@@ -10,7 +10,8 @@
  * `agent-preset/not-found`.
  *
  * Three rules keep the declarations bootable against a moving kernel:
- * - a preset the upstream bundle already declares is skipped: two rows for one
+ * - a preset the upstream bundle, or an active product bundle, already declares is
+ *   skipped: two rows for one
  *   preset id is a duplicate-`config.id` registration, and the row id itself
  *   (`preset-standard`, …) collides first;
  * - a plugin row whose package the installation cannot resolve is dropped, so a
@@ -245,12 +246,14 @@ export function upstreamAgentPresetIds(moduleUrl: string = import.meta.url): Rea
  * @param options.moduleUrl - Shell module URL anchoring preset and kernel lookups.
  * @param options.presetRoot - Override for tests.
  * @param options.resolvable - Override for tests.
+ * @param options.declaredPresetIds - Preset ids an active bundle already declares; skipped to avoid a duplicate row.
  * @returns Composition result; empty rows when no preset ships.
  */
 export function composeShippedAgentPresetRows(options: {
   readonly moduleUrl?: string
   readonly presetRoot?: string
   readonly resolvable?: (name: string) => boolean
+  readonly declaredPresetIds?: ReadonlySet<string>
 } = {}): AgentPresetRowComposition {
   const moduleUrl = options.moduleUrl ?? import.meta.url
   const presetRoot = options.presetRoot ?? shippedAgentPresetRoot(moduleUrl)
@@ -277,10 +280,14 @@ export function composeShippedAgentPresetRows(options: {
     const plugins = existsSync(cordisPath) ? readYamlDocument(cordisPath) : undefined
     return { manifest, plugins: Array.isArray(plugins) ? plugins : undefined }
   }
+  const existingPresetIds = new Set(upstreamAgentPresetIds(moduleUrl))
+  for (const id of options.declaredPresetIds ?? []) {
+    if (typeof id === 'string' && id.length > 0) existingPresetIds.add(id)
+  }
   return composeAgentPresetRows({
     presetIds,
     readPreset,
-    upstreamPresetIds: upstreamAgentPresetIds(moduleUrl),
+    upstreamPresetIds: existingPresetIds,
     resolvable,
   })
 }

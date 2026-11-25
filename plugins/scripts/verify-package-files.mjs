@@ -117,10 +117,25 @@ export function verifyPackageFiles(root = repoRoot) {
       }
     }
 
-    // 检查 4: dsh.bundle 声明的 cordis.patch.yml 必须在 files 中
+    // 检查 4: dsh.bundle 声明的补丁文件（字符串或数组）必须在磁盘上存在且被 files 白名单包含
     const bundlePatch = pkg.dsh?.bundle?.patch
-    if (bundlePatch || existsSync(join(pluginDir, 'cordis.patch.yml'))) {
-      const patchRel = bundlePatch ? normalizeRelPath(bundlePatch) : 'cordis.patch.yml'
+    const patchSpecs = Array.isArray(bundlePatch)
+      ? bundlePatch
+      : typeof bundlePatch === 'string' && bundlePatch.length > 0
+        ? [bundlePatch]
+        : existsSync(join(pluginDir, 'cordis.patch.yml'))
+          ? ['cordis.patch.yml']
+          : []
+    for (const patchSpec of patchSpecs) {
+      if (typeof patchSpec !== 'string' || patchSpec.trim().length === 0) {
+        errors.push('[' + pluginName + '] dsh.bundle.patch 包含非法路径条目: ' + JSON.stringify(patchSpec))
+        continue
+      }
+      const patchRel = normalizeRelPath(patchSpec)
+      if (!existsSync(join(pluginDir, patchRel))) {
+        errors.push('[' + pluginName + '] 声明了 Cordis 补丁文件 "' + patchRel + '"，但文件在磁盘上不存在！')
+        continue
+      }
       if (!isPathCoveredByFiles(patchRel, files)) {
         errors.push('[' + pluginName + '] 声明了 Cordis 补丁文件 "' + patchRel + '"，但未被 files 白名单包含，打包后插件扩展将无法装载！')
       }
