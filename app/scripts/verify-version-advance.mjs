@@ -85,9 +85,10 @@ export function compareVersions(left, right) {
 export function channelForVersion(version) {
   const { prerelease } = parseVersion(version)
   if (prerelease.length === 0) return 'stable'
-  const tag = prerelease.join('.')
-  if (tag === 'beta') return 'beta'
-  if (tag === 'next') return 'next'
+  const [head, second] = prerelease
+  const validNumericSuffix = prerelease.length === 1 || (prerelease.length === 2 && /^(?:0|[1-9]\d*)$/u.test(second))
+  if (head === 'beta' && validNumericSuffix) return 'beta'
+  if (head === 'next' && validNumericSuffix) return 'next'
   throw new Error(`${version} does not belong to the stable, beta, or next channel`)
 }
 
@@ -106,15 +107,7 @@ export function assertVersionAdvances(candidate, live) {
   return { candidate, live, comparison }
 }
 
-/**
- * Fetch the live channel manifest, tolerating only a genuine 404 (first publish).
- * Any other failure is closed: a network error must never be read as "no live version".
- * @param {{ channel: string, baseUrl?: string, fetchImpl?: typeof fetch, timeoutMs?: number }} options
- * @returns {Promise<string | null>}
- */
-export async function fetchLiveVersion({ channel, baseUrl = DEFAULT_BASE_URL, fetchImpl = fetch, timeoutMs = 20_000 }) {
-  if (!CHANNELS.includes(channel)) throw new Error(`unknown channel ${JSON.stringify(channel)}; use stable, beta, or next`)
-  const url = `${baseUrl.replace(/\/$/u, '')}/api/desktop/version-${channel}.json?verify=${String(Date.now())}`
+async function fetchChannelManifestVersion({ url, channel, fetchImpl, timeoutMs }) {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
   let response
@@ -144,6 +137,37 @@ export async function fetchLiveVersion({ channel, baseUrl = DEFAULT_BASE_URL, fe
   // making every future comparison look like "unknown".
   parseVersion(manifest.version)
   return manifest.version
+}
+
+/**
+ * Fetch the live channel manifests (both v2 and legacy v1, tolerating 404 on
+ * either) and return the highest published version. Checking both prevents
+ * v1/v2 skew after a partial failure from allowing a downgrade on either endpoint.
+ * Any non-404 failure fails closed.
+ * @param {{ channel: string, baseUrl?: string, fetchImpl?: typeof fetch, timeoutMs?: number }} options
+ * @returns {Promise<string | null>}
+ */
+export async function fetchLiveVersion({ channel, baseUrl = DEFAULT_BASE_URL, fetchImpl = fetch, timeoutMs = 20_000 }) {
+  if (!CHANNELS.includes(channel)) throw new Error(`unknown channel ${JSON.stringify(channel)}; use stable, beta, or next`)
+  const origin = baseUrl.replace(/\/$/u, '')
+  const bust = String(Date.now())
+  const [v2Version, v1Version] = await Promise.all([
+    fetchChannelManifestVersion({
+      url: `${origin}/api/desktop/v2/${channel}.json?verify=${bust}`,
+      channel,
+      fetchImpl,
+      timeoutMs,
+    }),
+    fetchChannelManifestVersion({
+      url: `${origin}/api/desktop/version-${channel}.json?verify=${bust}`,
+      channel,
+      fetchImpl,
+      timeoutMs,
+    }),
+  ])
+  if (v2Version === null) return v1Version
+  if (v1Version === null) return v2Version
+  return compareVersions(v2Version, v1Version) >= 0 ? v2Version : v1Version
 }
 
 /**

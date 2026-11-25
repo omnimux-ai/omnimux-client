@@ -6,7 +6,7 @@ Var pid
 ; which scripts/windows-directory-installer.ts enables by defining DSH_SEVENZIP_PATH.
 ; Frozen Stable never defines it and keeps electron-builder's in-place installation.
 !define /ifndef DSH_INSTALLER_SCRIPTS_DIR "${__FILEDIR__}"
-!define DSH_DOWNLOAD_URL "https://dshdesktop.cn"
+!define DSH_DOWNLOAD_URL "https://dl.omnimux.ai/"
 ; The transaction keeps its failure evidence beside the Setup log.
 !define DSH_INSTALLER_LOG_DIR "$dshInstallLogDir"
 
