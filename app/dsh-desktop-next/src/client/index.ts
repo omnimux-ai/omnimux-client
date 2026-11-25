@@ -7,10 +7,12 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
+import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import { installDesktopSettingsStyles } from './desktop-settings-styles.ts'
 import { installSidebarFooterStyles, setSidebarFooterBalanced, setSidebarFooterCompat } from './sidebar-footer-styles.ts'
 import { NextSettingsAdapter } from './settings-adapter.ts'
 import { NextDesktopSettings, NextDesktopActions } from './settings.tsx'
+import { SidebarUpdatePill, UpdateShellOverlay } from './update-indicator.tsx'
 import { installWindowStyles } from './styles.ts'
 import { registerDesktopOnboarding } from './onboarding.tsx'
 import './onboarding.css'
@@ -85,9 +87,17 @@ export function apply(ctx: Context): void {
     ctx.slots.inject('settings.action', () => ctx.slots.register({
       name: 'settings.action', id: 'desktop-native-actions', order: 1, locale: 'desktop-next', inject: () => ({ adapter }),
     }, SettingsActions))
+    ctx.slots.inject('sidebar.footer.action', () => ctx.slots.register({
+      name: 'sidebar.footer.action', id: 'desktop-next-update-pill', order: 99, locale: 'desktop-next',
+      inject: () => ({ adapter }),
+    }, DesktopSidebarUpdatePill))
     ctx.slots.inject('shell.overlay', () => ctx.slots.register({
       name: 'shell.overlay', id: 'desktop-next-settings-requests', order: 90, locale: 'desktop-next',
     }, SettingsRequests))
+    ctx.slots.inject('shell.overlay', () => ctx.slots.register({
+      name: 'shell.overlay', id: 'desktop-next-update-overlay', order: 95, locale: 'desktop-next',
+      inject: () => ({ adapter }),
+    }, DesktopUpdateOverlay))
     ctx.slots.inject('shell.overlay', () => ctx.slots.register({
       name: 'shell.overlay', id: 'desktop-next-safe-mode', order: 100, locale: 'desktop-next',
     }, SafeModeNotice))
@@ -175,4 +185,12 @@ function DesktopSettings({ t, adapter, close, openPlugins }: PropsLocale<'deskto
 
 function SettingsActions({ t, adapter }: PropsLocale<'desktop-next'> & { adapter: NextSettingsAdapter }) {
   return createElement(NextDesktopActions, { adapter, language: t('language') })
+}
+
+function DesktopSidebarUpdatePill({ t, adapter }: PropsLocale<'desktop-next'> & { adapter: NextSettingsAdapter }) {
+  return createElement(SidebarUpdatePill, { adapter, language: t('language') })
+}
+
+function DesktopUpdateOverlay({ t, adapter }: PropsLocale<'desktop-next'> & { adapter: NextSettingsAdapter }) {
+  return createElement(UpdateShellOverlay, { adapter, language: t('language') })
 }
