@@ -60,22 +60,44 @@ describe('AssetGrid 16:10 horizontal tray and restrained card actions contract',
     assert.match(gridJsx, /onPreview\(resolveAssetMediaPreview\(asset\)\)/)
   })
 
+  it('keeps secondary list row actions inside overflow menu without inline duplicates', () => {
+    const rowSection = gridJsx.slice(
+      gridJsx.indexOf('function AssetListRow'),
+      gridJsx.indexOf('function AssetListMoreMenu'),
+    )
+    assert.doesNotMatch(rowSection, /t\('card\.view'\)/, 'list row must not duplicate inline View Details button')
+    assert.doesNotMatch(rowSection, /t\('card\.copyCite'\)/, 'list row must not render inline Copy Reference button')
+    assert.doesNotMatch(rowSection, /t\('mapping\.remove'\)/, 'list row must not render inline Remove button')
+    assert.match(gridJsx, /className="omnimux-assets-list-more-menu"/)
+  })
+
   it('contains complete i18n locales for card actions in zh and en', () => {
     assert.equal(zh['card.view'], '查看详情')
     assert.equal(zh['card.addToConversation'], '添加到会话')
     assert.equal(zh['card.addedToConversation'], '已添加')
     assert.equal(zh['card.actions'], '操作')
+    assert.equal(zh['list.updatedAt'], '更新时间')
+    assert.equal(zh['list.selectAll'], '全选资产')
+    assert.equal(zh['list.moreActions'], '更多操作')
+    assert.equal(zh['select.addToConversation'], '批量加入会话')
 
     assert.equal(en['card.view'], 'View Details')
     assert.equal(en['card.addToConversation'], 'Add to Chat')
     assert.equal(en['card.addedToConversation'], 'Added')
     assert.equal(en['card.actions'], 'Actions')
+    assert.equal(en['list.updatedAt'], 'Updated')
+    assert.equal(en['list.selectAll'], 'Select all assets')
+    assert.equal(en['list.moreActions'], 'More actions')
+    assert.equal(en['select.addToConversation'], 'Add to Chat')
   })
 
   it('AssetsStage routes list and grid view cleanly through AssetGrid without raw inputs', () => {
     assert.doesNotMatch(stageJsx, /AssetsTableView/)
     assert.doesNotMatch(stageJsx, /<input\b/)
     assert.match(stageJsx, /<AssetGrid\b/)
+    assert.match(stageJsx, /onSelectionChange=\{setSelectedIds\}/)
+    assert.match(stageJsx, /onSortChange=\{handleSortChange\}/)
+    assert.match(stageJsx, /t\('select\.addToConversation'\)/)
   })
 
   it('conforms to 16:10 equal-height horizontal tray grid and unified contain presentation', () => {
@@ -96,5 +118,16 @@ describe('AssetGrid 16:10 horizontal tray and restrained card actions contract',
     assert.match(stylesJs, /\.omnimux-assets-card:not\(\.omnimux-assets-cloud-card\):not\(\.omnimux-assets-cloud-skeleton\)\s+\.omnimux-assets-card-media,[\s\S]*?object-fit:\s*contain;/)
     assert.match(stylesJs, /\.omnimux-assets-card:not\(\.omnimux-assets-cloud-card\):not\(\.omnimux-assets-cloud-skeleton\)\s+\.omnimux-assets-card-media,[\s\S]*?border-radius:\s*8px;/)
     assert.doesNotMatch(stylesJs, /\.omnimux-assets-card--character:not\(\.omnimux-assets-cloud-card\)[\s\S]*?\.omnimux-assets-card-media[\s\S]*?object-fit:\s*cover;/)
+  })
+
+  it('aligns list headers with right-aligned cells and keeps list popovers opaque with official DSW tokens', () => {
+    assert.match(stylesJs, /\.omnimux-assets-list-table thead th\.omnimux-assets-th-actions\s*\{[\s\S]*?text-align:\s*right;/)
+    assert.match(stylesJs, /\.omnimux-assets-list-table thead th\.omnimux-assets-th-files\s*\{[\s\S]*?text-align:\s*right;/)
+    assert.match(stylesJs, /\.omnimux-assets-list-table thead th\.omnimux-assets-th-updated\s*\{[\s\S]*?text-align:\s*right;/)
+    assert.match(stylesJs, /\.omnimux-assets-list-thumb\s*\{[\s\S]*?width:\s*40px;[\s\S]*?height:\s*28px;[\s\S]*?border-radius:\s*6px;/)
+    assert.match(stylesJs, /\.omnimux-assets-list-thumb-img\s*\{[\s\S]*?object-fit:\s*contain;/)
+    assert.match(stylesJs, /\.omnimux-assets-list-more-menu\s*\{[\s\S]*?background:\s*var\(--dsw-alias-bg-layer-2\);/)
+    assert.match(stylesJs, /\.omnimux-assets-list-preview-popover\s*\{[\s\S]*?background:\s*var\(--dsw-alias-bg-layer-2\);/)
+    assert.match(stylesJs, /\.omnimux-assets-list-actions \.omnimux-assets-list-add-btn\s*\{[\s\S]*?opacity:\s*0;/)
   })
 })

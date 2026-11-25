@@ -5,11 +5,16 @@ import {
   cleanRemovedSelection,
   computeEmptyState,
   countAssetsByType,
+  defaultSortDirection,
   errText,
   filterAndSortAssets,
+  formatListDescription,
   messageOf,
   parsePickedPathsResult,
   pickErrorText,
+  selectRangeIds,
+  sortAssetsBy,
+  toggleAllVisibleIds,
   toggleAssetIdInSet,
 } from './client/feed-helpers.js'
 
@@ -234,6 +239,49 @@ describe('Assets feed pure helpers', () => {
       assert.deepEqual(countAssetsByType([]), {})
       assert.deepEqual(countAssetsByType(undefined), {})
       assert.deepEqual(countAssetsByType(null), {})
+    })
+  })
+
+  describe('list view helpers (description cleaning, sorting, range & select-all)', () => {
+    it('strips cloud machine provenance lines while preserving user description', () => {
+      const raw = '室内自然光立绘\n云端分类：角色 / 女性角色\n云端来源：character-female-01'
+      assert.equal(formatListDescription(raw), '室内自然光立绘')
+      assert.equal(formatListDescription('云端分类：场景\n云端来源：scene-01'), '')
+      assert.equal(formatListDescription(''), '')
+    })
+
+    it('sorts by name, type, files count, and updated_at in both directions', () => {
+      const rows = [
+        { id: '1', name: 'Beta', type: 'scene', files: [{ id: 'f1' }, { id: 'f2' }], updated_at: '2026-01-01T10:00:00Z' },
+        { id: '2', name: 'Alpha', type: 'character', files: [], updated_at: '2026-01-03T10:00:00Z' },
+        { id: '3', name: 'Gamma', type: 'prop', files: [{ id: 'f3' }], updated_at: '2026-01-02T10:00:00Z' },
+      ]
+      assert.equal(defaultSortDirection('name'), 'asc')
+      assert.equal(defaultSortDirection('type'), 'asc')
+      assert.equal(defaultSortDirection('files'), 'desc')
+      assert.equal(defaultSortDirection('updated_at'), 'desc')
+
+      assert.deepEqual(sortAssetsBy(rows, 'name', 'desc').map((r) => r.id), ['3', '1', '2'])
+      assert.deepEqual(sortAssetsBy(rows, 'type', 'asc').map((r) => r.id), ['2', '3', '1'])
+      assert.deepEqual(sortAssetsBy(rows, 'files', 'desc').map((r) => r.id), ['1', '3', '2'])
+      assert.deepEqual(sortAssetsBy(rows, 'files', 'asc').map((r) => r.id), ['2', '3', '1'])
+      assert.deepEqual(sortAssetsBy(rows, 'updated_at', 'asc').map((r) => r.id), ['1', '3', '2'])
+    })
+
+    it('selects contiguous ranges with selectRangeIds in forward and reverse directions', () => {
+      const ordered = ['a1', 'a2', 'a3', 'a4']
+      const forward = selectRangeIds(new Set(['a1']), ordered, 'a1', 'a3')
+      assert.deepEqual([...forward], ['a1', 'a2', 'a3'])
+      const reverse = selectRangeIds(new Set(['a4']), ordered, 'a4', 'a2')
+      assert.deepEqual([...reverse].sort(), ['a2', 'a3', 'a4'])
+    })
+
+    it('toggles all visible IDs on and off cleanly', () => {
+      const visible = ['a1', 'a2', 'a3']
+      const all = toggleAllVisibleIds(new Set(['a1']), visible)
+      assert.deepEqual([...all].sort(), ['a1', 'a2', 'a3'])
+      const none = toggleAllVisibleIds(all, visible)
+      assert.deepEqual([...none], [])
     })
   })
 })

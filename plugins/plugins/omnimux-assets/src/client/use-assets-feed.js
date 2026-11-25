@@ -5,6 +5,7 @@ import { useFormFilePicker } from './use-form-file-picker.js'
 import {
   citeOf,
   cleanRemovedSelection,
+  defaultSortDirection,
   errText,
   filterAndSortAssets,
   messageOf,
@@ -97,7 +98,13 @@ function useFeedFilterState() {
   const [filterType, setFilterType] = useState('')
   const [query, setQuery] = useState('')
   const [sortKey, setSortKey] = useState('updated_at')
+  const [sortDirection, setSortDirection] = useState('desc')
   const [viewMode, setViewMode] = useState('grid')
+
+  const handleSortChange = useCallback((nextKey, nextDirection) => {
+    setSortKey(nextKey)
+    setSortDirection(nextDirection || defaultSortDirection(nextKey))
+  }, [])
 
   return {
     filterType,
@@ -106,6 +113,9 @@ function useFeedFilterState() {
     setQuery,
     sortKey,
     setSortKey,
+    sortDirection,
+    setSortDirection,
+    handleSortChange,
     viewMode,
     setViewMode,
   }
@@ -370,8 +380,8 @@ export function useAssetsFeed(options) {
   })
 
   const visible = useMemo(() => {
-    return filterAndSortAssets(assets, filters.filterType, filters.query, filters.sortKey)
-  }, [assets, filters.filterType, filters.query, filters.sortKey])
+    return filterAndSortAssets(assets, filters.filterType, filters.query, filters.sortKey, filters.sortDirection)
+  }, [assets, filters.filterType, filters.query, filters.sortKey, filters.sortDirection])
 
   return {
     ...data,

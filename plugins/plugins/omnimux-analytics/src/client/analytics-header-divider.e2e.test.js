@@ -18,6 +18,11 @@ const CHROME_CANDIDATES = [
   '/usr/bin/chromium',
   '/snap/bin/chromium',
 ]
+const CHROME_SEARCH_PATHS = [
+  process.env.OMNIMUX_QA_CHROME,
+  process.env.CHROME_PATH,
+  ...CHROME_CANDIDATES,
+].filter(Boolean)
 const CHROME_PATH = process.env.OMNIMUX_QA_CHROME || process.env.CHROME_PATH
   || CHROME_CANDIDATES.find((candidate) => existsSync(candidate))
 const HAS_CHROME = CHROME_PATH !== undefined && existsSync(CHROME_PATH)
@@ -100,7 +105,7 @@ function probePageHtml() {
 }
 
 async function runStageProbe() {
-  if (!HAS_CHROME) return { skipped: true, reason: `chrome not found (searched ${CHROME_CANDIDATES.join(', ')})` }
+  if (!HAS_CHROME) return { skipped: true, reason: `chrome not found (searched ${CHROME_SEARCH_PATHS.join(', ')})` }
   const dir = mkdtempSync(join(tmpdir(), 'e2e-analytics-divider-'))
   try {
     const entry = join(dir, 'entry.jsx')
