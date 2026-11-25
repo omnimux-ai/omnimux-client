@@ -32,7 +32,7 @@
 
 - **主干动过锁文件或插件包后，合并/变基禁止沿用自动合并的 `bundle.lock.json`，须取主干版本并在构建后重算**（`seen 2` · 最近 `2026-11-25`）
   - 为什么：`bundle.lock.json` 按包记录 `contentHash`，自动三方合并只按文本行拼装；主干与本分支各改不同槽位时文本不冲突，但「合并结果里每个哈希是否对应真实内容」只能靠按当前树重算来证明，沿用合并结果会让 `workspace-check` 与后续安装拿到的清单同实际产物脱节。
-  - 反例：#186 的 PR #273（分支 rebase 到含 Token 门禁的主干时，`bundle.lock.json` 与 `dsh-ui-kit` 被两个来源同时改动）、#275 的 PR #277（本分支改 `omnimux-inspiration` 槽，主干 #276 改 `omnimux` 槽，文本可自动合并）。
+  - 反例：#186 的 PR #273（分支自 `f9d27045` 切出、落后主干 4 个提交，期间 #262/#266 改了 `dsh-ui-kit` 与 `bundle.lock.json`；分支变基到 `91e15206` 后，publish 槽哈希必须在合并后的树上重算，分支自身未改 `dsh-ui-kit`）、#275 的 PR #277（本分支改 `omnimux-inspiration` 槽，主干 #276 改 `omnimux` 槽，槽位正交但文本可自动合并）。
   - 正例：PR #277 `abfc670a`、PR #281 `d3144835`（先 `git checkout origin/main -- bundle.lock.json`，`build:all` 后 `pnpm run bundle:lock` 重算，`git diff origin/main -- bundle.lock.json` 只剩本任务单槽，再 `bundle:lock:check`）。
   - 入口：[AGENTS.md · 工作区元数据](AGENTS.md#验证按改动边界选最小集)。
 
