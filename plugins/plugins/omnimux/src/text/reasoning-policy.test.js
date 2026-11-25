@@ -72,6 +72,14 @@ function preparedLlm(seen, { efforts, throwOn } = { efforts: [] }) {
       return {
         config: resolved,
         stream(options) {
+          // Mirror DSH's `callConfigEquals`: a prepared call may only dispatch
+          // with the exact resolved config.
+          if (options.provider !== resolved.provider
+            || options.model !== resolved.model
+            || options.maxTokens !== resolved.maxTokens
+            || options.reasoningEffort !== resolved.reasoningEffort) {
+            throw new Error('prepared config changed before dispatch')
+          }
           seen.push(options)
           return (async function* stream() {
             yield { type: 'text-delta', index: 0, text: 'structure' }
@@ -194,7 +202,7 @@ describe('textComplete reasoning policy', () => {
     assert.deepEqual(llm.calls, ['gemini-3.8-flash'])
   })
 
-  it('uses the least advertised level when the provider declares none', async () => {
+  it('sends nothing when the provider declares no level', async () => {
     const seen = []
     const llm = preparedLlm(seen, { efforts: ['off', 'low', 'high'] })
     const result = await executeOmnimuxText({
@@ -204,8 +212,28 @@ describe('textComplete reasoning policy', () => {
       settings: settingsWith(NO_LADDER_PROVIDER),
       reasoning: 'minimal',
     })
-    assert.equal(seen[0].reasoningEffort, 'off')
-    assert.equal(result.reasoningEffort, 'off')
+    // pi-ai synthesizes `off`/`minimal` for hand-declared models; naming one
+    // would promise a level the upstream never declared.
+    assert.equal(Object.hasOwn(seen[0], 'reasoningEffort'), false)
+    assert.equal(result.reasoningEffort, null)
+  })
+
+  it('refuses to downgrade a request that carries media references', async () => {
+    const seen = []
+    await assert.rejects(
+      () => executeOmnimuxText({
+        prompt: 'describe this frame',
+        model: 'gemini-3.8-flash',
+        image: `data:image/png;base64,${Buffer.from([0x89, 0x50, 0x4e, 0x47]).toString('base64')}`,
+        llm: preparedLlm(seen),
+        settings: settingsWith(OMNIMUX_PROVIDER),
+        reasoning: 'minimal',
+      }),
+      (error) => error instanceof OmnimuxError
+        && error.code === 'omnimux-invalid-request'
+        && /纯文本机械环节/.test(error.message),
+    )
+    assert.deepEqual(seen, [])
   })
 
   it('keeps the plain stream path on a host without prepareCall', async () => {

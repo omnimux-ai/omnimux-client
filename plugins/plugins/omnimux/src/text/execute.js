@@ -265,20 +265,22 @@ function resolveDeclaredReasoning(settingsService, providerId, modelId, policy) 
 /**
  * Pick the effort to send on a prepared `ctx.llm` call.
  *
- * A declared level wins only when the adapter advertises it. Without a
- * declaration the least advertised level is used, which is what the harness's
- * own lightweight callers select. Returning `null` leaves the call untouched.
+ * A declared level is sent only when the adapter advertises it. With no
+ * declaration, or with a level the adapter does not accept, nothing is sent and
+ * the route keeps its own default. Returning `null` leaves the call untouched.
  * @param {{ reasoning?: { efforts?: Array<{ id?: unknown }> } }} model
  * @param {string | undefined} preferredEffort
  * @returns {string | null}
  */
 function selectAdapterEffort(model, preferredEffort) {
+  // Only a level the provider profile actually declared may be sent: pi-ai
+  // reports synthetic `off`/`minimal` entries for hand-declared models, and
+  // sending one would name a level the upstream never promised.
+  if (!preferredEffort) return null
   const efforts = Array.isArray(model?.reasoning?.efforts)
     ? model.reasoning.efforts.map((row) => row?.id).filter((id) => typeof id === 'string' && id)
     : []
-  if (efforts.length === 0) return null
-  if (preferredEffort) return efforts.includes(preferredEffort) ? preferredEffort : null
-  return efforts[0]
+  return efforts.includes(preferredEffort) ? preferredEffort : null
 }
 
 function safeReadScenarioSettings(settingsService) {
@@ -388,6 +390,12 @@ export async function executeOmnimuxText(input) {
   const reasoning = normalizeReasoningPolicy(input.reasoning)
   const text = parseTextConfig(input.text)
   const references = normalizeTextReferences(input)
+  // `minimal` exists for zero-side-effect text work only. Media analysis and
+  // deconstruction must keep the route default: the repair retry is text-only,
+  // so a weaker first pass would ask the model to fill gaps without the source.
+  if (reasoning === 'minimal' && references.length > 0) {
+    throw new OmnimuxError('omnimux-invalid-request', 'reasoning: minimal 只适用于纯文本机械环节，媒体分析请使用 inherit')
+  }
   const hasImage = references.some((asset) => asset.type === 'image')
   const hasVideo = references.some((asset) => asset.type === 'video')
   const hasAudio = references.some((asset) => asset.type === 'audio')

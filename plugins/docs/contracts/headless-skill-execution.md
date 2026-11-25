@@ -87,9 +87,9 @@ interface HeadlessSkillRunResult<T = Record<string, unknown>> {
   repaired: boolean
   /**
    * 产出最终文本的这次调用的实际生效档位（`off` / `low` / …）。
-   * 仅在调用方显式传入 `reasoning` 时出现；未能解析到可下发档位时为 `null`。
+   * 解析到档位时出现（包括自动修复轮）；未解析到可下发档位时省略该字段。
    */
-  reasoningEffort?: string | null
+  reasoningEffort?: string
   inputFingerprint?: string
 }
 ```
@@ -125,7 +125,8 @@ Hub 通过 `hubEvents.emit({ type: 'omnimux:headless-skill', payload })` 推送�
 ### 推理档位下发规则
 
 1. 只有显式声明 `reasoning: 'minimal'` 的调用才可能降档；不传该字段的调用完全不受影响。
-2. 档位只从模型已声明的能力里选：先读 `llm-pi-ai` 配置中该模型的 `reasoningEfforts`，再与适配器在 `prepareCall` 里公布的 `efforts` 取交集；交集为空就不下发。
+2. 档位只从模型已声明的能力里选：先读 `llm-pi-ai` 配置中该模型的 `reasoningEfforts`，再与适配器在 `prepareCall` 里公布的 `efforts` 取交集；交集为空就不下发，路由保持自己的默认档位。
+5. 带任何媒体引用（图片、视频、音频、文档）的请求拒绝 `minimal`，直接报 `omnimux-invalid-request`：修复重试不重传媒体，降档首轮会让模型在没有素材时补字段。
 3. 官方直连轨（`completeTextViaChat`）把声明的档位映射成该 provider 自己的线值写入 `reasoning_effort`；未声明就不加字段，绝不按协议方言自行推测。
 4. 修复重试固定使用 `minimal`：它只把已写出的答案整形到 Schema，不重新理解素材，且重试请求不带媒体，降档不会削弱判定质量。
 
@@ -137,6 +138,8 @@ Hub 通过 `hubEvents.emit({ type: 'omnimux:headless-skill', payload })` 推送�
 2. 不得对 `ctx.tools.get` / `ctx.tools.executable` 取得的工具定义直接调用 `execute`——那会绕过工具管线的前置策略、守卫与结果审计。跨插件读取一律消费 Hub 接缝：账号 `omnimuxAccounts`、分析 `omnimuxAnalytics`、网页读取 `pageFetch`、社媒数据 `socialData`、文本生成 `textComplete` 与 `headlessSkill`；确需走审批/写入管线的调用通过 `ctx.tools.execute` 批次契约派发。
 
 新增业务后台 AI 能力必须走 `headlessSkill` 接缝。
+
+已知局限：本地函数包装（如 `const getTool = () => tools.get(name)`）会把注册表读取藏在另一层调用后面，静态规则无法判定；`omnimux-inspiration/src/index.js` 与 `omnimux-inspiration/src/rival/rival-remote.js` 的该形态按 [#275](https://github.com/omnimux-ai/omnimux-client/issues/275) 迁移，迁移前不得继续扩散。
 
 ## 存量不合规模块迁移清单
 

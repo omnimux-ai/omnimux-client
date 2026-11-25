@@ -37,21 +37,50 @@ const DIRECT_LLM_STREAM_RE = /\b(?:ctx\s*\??\.\s*|subCtx\s*\??\.\s*)?llm\s*\??\.
 const DIRECT_LLM_ACCESS_RE = /\b(?:ctx|subCtx)\s*\??\.\s*llm\b|\b(?:ctx|subCtx)\s*\??\.\s*get(?:\?\.)?\(\s*['"]llm['"]\s*\)|\breadSeat\s*\([^,]+,\s*['"]llm['"]\s*\)/
 
 /**
- * A tool registry expression: `tools`, `toolsService`, `ctx.tools`, `this.tools`.
- * Anchoring on the receiver keeps `map.get(...)` / `settings.get(...)` out.
+ * A tool registry expression: `tools`, `toolsService`, `toolRegistry`,
+ * `toolsRegistry`, `ctx.tools`, `this.tools`, or the legacy
+ * `ctx.get('tools')` seat lookup. Anchoring on these exact names keeps an
+ * unrelated helper such as `myTools` out of the rule.
  */
-const TOOL_REGISTRY_RECEIVER = String.raw`(?:[A-Za-z_$][\w$]*\s*\.\s*)*(?:tools|Tools|toolsService|toolRegistry|toolsRegistry|[A-Za-z_$][\w$]*[Tt]ools)`
+const TOOL_REGISTRY_RECEIVER = String.raw`\b(?:(?:[A-Za-z_$][\w$]*\s*\.\s*)*(?:tools|Tools|toolsService|toolRegistry|toolsRegistry)|(?:ctx|subCtx|this)\s*\.\s*get\s*\(\s*['"]tools['"]\s*\))`
+
+/** Optional call syntax on either the lookup or `execute`. */
+const TOOL_LOOKUP_CALL = String.raw`(?:get|executable)\s*\??\.?\s*\([^()]*\)`
+const EXECUTE_CALL = String.raw`\??\.\s*execute\s*\??\.?\s*\(`
 
 /** `ctx.tools.get('name').execute(...)` — chained read and invoke. */
 const TOOL_DEFINITION_CHAIN_RE = new RegExp(
-  `${TOOL_REGISTRY_RECEIVER}\\s*\\??\\.\\s*(?:get|executable)\\s*\\??\\.?\\s*\\(\\s*['"][^'"]+['"]\\s*\\)\\s*\\??\\.\\s*execute\\s*\\(`,
+  `${TOOL_REGISTRY_RECEIVER}\\s*\\??\\.\\s*${TOOL_LOOKUP_CALL}\\s*${EXECUTE_CALL}`,
 )
 
 /** `const tool = ctx.tools.get('name')` — the definition may be invoked later. */
 const TOOL_DEFINITION_ASSIGN_RE = new RegExp(
-  `(?:const|let|var)\\s+([A-Za-z_$][\\w$]*)\\s*=[^;\\n]*${TOOL_REGISTRY_RECEIVER}\\s*\\??\\.\\s*(?:get|executable)\\s*\\??\\.?\\s*\\(`,
+  `(?:const|let|var)\\s+([A-Za-z_$][\\w$]*)\\s*=[^;]*${TOOL_REGISTRY_RECEIVER}\\s*\\??\\.\\s*${TOOL_LOOKUP_CALL}`,
   'g',
 )
+
+/** `const { execute } = ctx.tools.get('name')` — destructured execution body. */
+const TOOL_DEFINITION_DESTRUCTURE_RE = new RegExp(
+  `(?:const|let|var)\\s*\\{([^}]*)\\}\\s*=[^;]*${TOOL_REGISTRY_RECEIVER}\\s*\\??\\.\\s*${TOOL_LOOKUP_CALL}`,
+  'g',
+)
+
+/**
+ * Collect the identifiers a destructuring pattern binds for `execute`
+ * (`{ execute }`, `{ execute: run }`, `{ execute = fallback }`).
+ * @param {string} body
+ * @returns {string[]}
+ */
+function destructuredNames(body) {
+  const names = []
+  for (const part of String(body).split(',')) {
+    const [rawKey, ...rest] = part.split(':')
+    if (rawKey.trim() !== 'execute') continue
+    const target = (rest.length ? rest.join(':') : rawKey).split('=')[0].trim()
+    if (/^[A-Za-z_$][\w$]*$/.test(target)) names.push(target)
+  }
+  return names
+}
 
 /**
  * Find the identifiers (or `chained`) through which a runtime file invokes a
@@ -67,11 +96,25 @@ const TOOL_DEFINITION_ASSIGN_RE = new RegExp(
 export function findToolDefinitionInvokes(code) {
   const hits = []
   if (TOOL_DEFINITION_CHAIN_RE.test(code)) hits.push('chained')
+  /** @type {Set<string>} */
+  const memberIdentifiers = new Set()
+  /** @type {Set<string>} */
+  const bareIdentifiers = new Set()
   for (const match of code.matchAll(TOOL_DEFINITION_ASSIGN_RE)) {
-    const identifier = match[1]
-    if (!identifier || hits.includes(identifier)) continue
+    if (match[1]) memberIdentifiers.add(match[1])
+  }
+  for (const match of code.matchAll(TOOL_DEFINITION_DESTRUCTURE_RE)) {
+    for (const name of destructuredNames(match[1] ?? '')) bareIdentifiers.add(name)
+  }
+  for (const identifier of memberIdentifiers) {
+    if (hits.includes(identifier)) continue
     const escaped = identifier.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-    if (new RegExp(`\\b${escaped}\\s*\\??\\.\\s*execute\\s*\\(`).test(code)) hits.push(identifier)
+    if (new RegExp(`\\b${escaped}\\s*\\??\\.\\s*execute\\s*\\??\\.?\\s*\\(`).test(code)) hits.push(identifier)
+  }
+  for (const identifier of bareIdentifiers) {
+    if (hits.includes(identifier)) continue
+    const escaped = identifier.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    if (new RegExp(`\\b${escaped}\\s*\\??\\.?\\s*\\(`).test(code)) hits.push(identifier)
   }
   return hits
 }

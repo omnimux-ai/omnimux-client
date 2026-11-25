@@ -153,20 +153,20 @@ export function apply(ctx, config) {
   if (ctx.tools && typeof ctx.tools.register === 'function') {
     ctx.tools.register({
       name: 'analytics_query_metrics',
-      description: 'Fetch the upstream social-analytics payloads (daily metrics and post analytics) for a reporting window. Returns the provider payloads verbatim under data.daily / data.posts plus per-source availability and errors. It does not normalize fields into KPIs and does not fabricate metrics: a failed source is reported in errors, never replaced with placeholder numbers.',
+      description: 'Fetch upstream social-analytics payloads (daily, posts) for a window. Returns them verbatim with per-source errors; never normalizes KPIs or invents values.',
       parameters: objectParams({
         timeRange: {
           type: 'string',
           enum: ['7d', '30d', '90d'],
-          description: 'Time window (default 30d)',
+          description: 'Window: 7d | 30d | 90d',
         },
         platform: {
           type: 'string',
-          description: 'Optional platform filter (tiktok | instagram | youtube | x)',
+          description: 'Optional platform filter',
         },
         accountId: {
           type: 'string',
-          description: 'Optional comma-separated connected-account numeric ID filter; the upstream only accepts numeric account IDs',
+          description: 'Optional numeric account ids, comma separated',
         },
       }),
       output: jsonOut,
@@ -177,29 +177,25 @@ export function apply(ctx, config) {
 
     ctx.tools.register({
       name: 'analytics_get_summary',
-      description: 'Fetch the analytics payloads for a reporting window and report per-source availability. Returns the same upstream payloads as analytics_query_metrics; it does not synthesize a weekly/monthly report, industry comparisons or recommendations.',
+      description: 'Fetch analytics payloads with per-source availability. Same upstream payloads as analytics_query_metrics; no synthesized report or recommendations.',
       parameters: objectParams({
         timeRange: {
           type: 'string',
           enum: ['7d', '30d', '90d'],
-          description: 'Time window for summary report (default 30d)',
+          description: 'Window: 7d | 30d | 90d',
         },
         includeTopPosts: {
           type: 'boolean',
-          description: 'Whether to include the post-analytics payload (default true)',
+          description: 'Include posts payload (default true)',
         },
       }),
       output: jsonOut,
       async execute(args) {
         const includeTopPosts = args.includeTopPosts !== false
-        const result = await queryMetrics(ctx, args)
+        const result = await queryMetrics(ctx, args, { includePosts: includeTopPosts })
         return {
           ...result,
           generatedAt: new Date().toISOString(),
-          data: {
-            daily: result.data.daily,
-            ...(includeTopPosts ? { posts: result.data.posts } : {}),
-          },
           topPostsIncluded: includeTopPosts,
         }
       },
@@ -208,6 +204,8 @@ export function apply(ctx, config) {
 }
 
 const TIME_RANGE_DAYS = Object.freeze({ '7d': 7, '30d': 30, '90d': 90 })
+/** The upstream post-analytics endpoint pages instead of taking a date window. */
+const POSTS_PAGE_LIMIT = 20
 
 /**
  * Read one optional host service without turning an absent seat into a crash.
@@ -234,36 +232,67 @@ function normalizeTimeRange(value) {
 }
 
 /**
- * The upstream analytics endpoints take an explicit date window and a
- * comma-separated numeric account filter; a non-numeric filter would be
- * silently dropped upstream, so it is rejected here instead of widening the
- * query without telling the caller.
- * @param {{ timeRange: string, platform: string, accountId: string }} input
+ * Parse the optional connected-account filter.
+ *
+ * The gateway parses `account_ids` into positive int64 values and silently
+ * drops every invalid entry, so accepting `0`, a negative number or an
+ * out-of-range digit string would widen the query without telling the caller.
+ * @param {string} accountId
+ * @returns {string | null} comma-separated ids, or null when unfiltered
  */
-function buildQuery({ timeRange, platform, accountId }) {
+function parseAccountIds(accountId) {
+  if (!accountId || accountId === 'all') return null
+  const ids = accountId.split(',').map((id) => id.trim()).filter(Boolean)
+  const valid = ids.length > 0 && ids.every((id) => /^[1-9]\d*$/.test(id)
+    && Number(id) <= Number.MAX_SAFE_INTEGER)
+  if (!valid) {
+    throw Object.assign(
+      new Error('accountId 必须是已连接账号的正整数 ID（多个用逗号分隔）'),
+      { code: 'analytics-invalid-account-id', status: 400 },
+    )
+  }
+  return ids.join(',')
+}
+
+/**
+ * Daily metrics accept the reporting window, platform and account filter.
+ * `profileId` is resolved server-side from the signed-in tenant.
+ * @param {{ timeRange: string, platform: string, accountId: string }} input
+ * @returns {Record<string, string>}
+ */
+function buildDailyQuery({ timeRange, platform, accountId }) {
   const to = new Date()
-  const from = new Date(to.getTime() - TIME_RANGE_DAYS[timeRange] * 24 * 60 * 60 * 1000)
+  // from/to are inclusive dates upstream, so an N-day window spans N-1 days.
+  const from = new Date(to.getTime() - (TIME_RANGE_DAYS[timeRange] - 1) * 24 * 60 * 60 * 1000)
   /** @type {Record<string, string>} */
   const query = {
     fromDate: from.toISOString().slice(0, 10),
     toDate: to.toISOString().slice(0, 10),
   }
   if (platform && platform !== 'all') query.platform = platform
-  if (accountId && accountId !== 'all') {
-    const ids = accountId.split(',').map((id) => id.trim()).filter(Boolean)
-    if (ids.length === 0 || ids.some((id) => !/^\d+$/.test(id))) {
-      throw Object.assign(
-        new Error('accountId 必须是已连接账号的数字 ID（多个用逗号分隔）'),
-        { code: 'analytics-invalid-account-id', status: 400 },
-      )
-    }
-    query.account_ids = ids.join(',')
-  }
+  const ids = parseAccountIds(accountId)
+  if (ids) query.account_ids = ids
+  return query
+}
+
+/**
+ * The post-analytics endpoint accepts platform and paging only. Sending the
+ * daily window/account keys here would be silently ignored by the gateway, so
+ * they are not sent and the caller is told the result is unfiltered by them.
+ * @param {{ platform: string }} input
+ * @returns {Record<string, string>}
+ */
+function buildPostsQuery({ platform }) {
+  /** @type {Record<string, string>} */
+  const query = { limit: String(POSTS_PAGE_LIMIT) }
+  if (platform && platform !== 'all') query.platform = platform
   return query
 }
 
 /**
  * Call one seam method and classify the outcome instead of swallowing it.
+ * A null/undefined payload or an upstream `success:false` envelope is a
+ * failure, never an empty success.
  * @param {any} seam
  * @param {'dailyMetrics' | 'posts'} method
  * @param {Record<string, string>} query
@@ -279,7 +308,25 @@ async function readSource(seam, method, query) {
     }
   }
   try {
-    return { ok: true, data: await seam[method](query) }
+    const data = await seam[method](query)
+    if (data === null || data === undefined) {
+      return {
+        ok: false,
+        error: { code: 'analytics-empty-payload', message: `分析数据源 ${method} 返回空载荷` },
+      }
+    }
+    if (typeof data === 'object' && !Array.isArray(data) && data.success === false) {
+      return {
+        ok: false,
+        error: {
+          code: 'analytics-source-failed',
+          message: typeof data.message === 'string' && data.message.trim()
+            ? data.message
+            : `分析数据源 ${method} 返回 success:false`,
+        },
+      }
+    }
+    return { ok: true, data }
   } catch (error) {
     return {
       ok: false,
@@ -292,14 +339,16 @@ async function readSource(seam, method, query) {
 }
 
 /**
- * Shared implementation for both Agent tools: resolve the seam, build the
- * upstream query, read both sources concurrently and report per-source status.
- * Both sources failing is a hard error, because an empty "success" would claim
- * the account has no analytics data.
+ * Shared implementation for both Agent tools: resolve the seam, build each
+ * source's own upstream query, read the requested sources and report per-source
+ * status. Every requested source failing is a hard error, because an empty
+ * "success" would claim the account has no analytics data.
  * @param {unknown} ctx
  * @param {{ timeRange?: unknown, platform?: unknown, accountId?: unknown }} args
+ * @param {{ includePosts?: boolean }} [options]
  */
-async function queryMetrics(ctx, args) {
+async function queryMetrics(ctx, args, options = {}) {
+  const includePosts = options.includePosts !== false
   const timeRange = normalizeTimeRange(args?.timeRange)
   const platform = typeof args?.platform === 'string' && args.platform.trim() ? args.platform.trim() : 'all'
   const accountId = typeof args?.accountId === 'string' && args.accountId.trim() ? args.accountId.trim() : 'all'
@@ -310,32 +359,44 @@ async function queryMetrics(ctx, args) {
       { code: 'needs-hub', status: 503 },
     )
   }
-  const query = buildQuery({ timeRange, platform, accountId })
+  const queries = {
+    daily: buildDailyQuery({ timeRange, platform, accountId }),
+    ...(includePosts ? { posts: buildPostsQuery({ platform }) } : {}),
+  }
   const [daily, posts] = await Promise.all([
-    readSource(seam, 'dailyMetrics', query),
-    readSource(seam, 'posts', query),
+    readSource(seam, 'dailyMetrics', queries.daily),
+    includePosts
+      ? readSource(seam, 'posts', queries.posts)
+      : Promise.resolve({ ok: true, skipped: true, data: null }),
   ])
   const errors = [
     ...(daily.ok ? [] : [{ source: 'daily', ...daily.error }]),
     ...(posts.ok ? [] : [{ source: 'posts', ...posts.error }]),
   ]
-  if (errors.length === 2) {
+  if (errors.length > 0 && errors.length === (includePosts ? 2 : 1)) {
     const failure = new Error(`分析数据获取失败：${errors.map((row) => row.message).join('；')}`)
     Object.assign(failure, { code: errors[0].code || 'analytics-source-failed', status: 502, errors })
     throw failure
   }
   return {
     ok: errors.length === 0,
-    partial: errors.length === 1,
+    partial: errors.length > 0,
     timeRange,
     platform,
     accountId,
-    query,
+    queries,
     data: {
       daily: daily.ok ? daily.data ?? null : null,
-      posts: posts.ok ? posts.data ?? null : null,
+      ...(includePosts ? { posts: posts.ok ? posts.data ?? null : null } : {}),
     },
     errors,
+    warnings: includePosts
+      ? [{
+          source: 'posts',
+          code: 'analytics-posts-unfiltered',
+          message: 'posts 接口只支持平台与分页，不按时间窗与账号过滤，返回的是默认首页（20 条）',
+        }]
+      : [],
     fetchedAt: new Date().toISOString(),
     source: 'upstream',
   }
