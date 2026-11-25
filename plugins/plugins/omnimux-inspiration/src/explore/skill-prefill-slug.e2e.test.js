@@ -7,7 +7,7 @@ import { build } from 'esbuild'
 import { createRequire } from 'node:module'
 
 const output = await build({
-  entryPoints: [new URL('../../src/client/session-guide/SessionGuide.jsx', import.meta.url).pathname],
+  entryPoints: [new URL('./SessionGuide.jsx', import.meta.url).pathname],
   bundle: true,
   write: false,
   format: 'cjs',
