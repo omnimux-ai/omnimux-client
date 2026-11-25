@@ -15,4 +15,6 @@ desc-cn: "基于导演与制片人专业心法的全链路爆款视频复刻套�
 cover: ""
 author-en: "OmniMux Team"
 author-cn: "OmniMux 团队"
-source: official
+origin: first-party
+license: MIT
+owner: omnimux-market

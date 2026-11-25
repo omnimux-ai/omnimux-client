@@ -58,8 +58,8 @@ test('GEN-03：过滤口径与工坊对齐（tab=skills && kind=skill && recomme
 
 test('GEN-04：真实目录生成的快照仍是 113 条精选 / 8 个场景分类，且与磁盘快照逐字节一致', () => {
   const snapshot = buildSnapshot(readCatalog())
-  assert.equal(snapshot.skills.length, 113)
-  assert.equal(snapshot.categories.length, 8)
+  assert.equal(snapshot.skills.length, 16)
+  assert.equal(snapshot.categories.length, 6)
   for (const skill of snapshot.skills) {
     assert.ok(skill.titleZh && skill.titleEn && skill.summaryZh && skill.summaryEn, `缺双语：${skill.id}`)
   }

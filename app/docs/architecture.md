@@ -69,6 +69,17 @@ Launcher 私有的 `desktopRuntime`、`desktopPnpmBootstrap`、Electron executab
 
 物理运行时包含 `lib`、`node_modules`、包元数据和产品 preset；CLI 与 Worker 共用这套路径。Unsigned directory build 禁止签名和发布；最终产物校验检查 Electron Fuse，并执行包内 CLI 和诊断 Worker。
 
+### 双壳内置 Office 技能分发边界
+
+`dsh-desktop-next` 与 `dsh-plugin-desktop` 在内置上游 Office 技能与文档预览能力上存在有意设计差异：
+
+| 桌面壳 | DSH 基线 | 上游 Office 技能（`@deepseek-ai/dsh-skill-office` 7 项：`office`、`office-docx`、`office-pptx`、`office-xlsx`、`office-export-pdf`、`office-render`、`office-recalculate`） | 原因与配置位置 |
+|---|---|---|---|
+| `app/dsh-desktop-next`（活跃发布壳） | `0.2.2-rc.5` | **不随包分发**（默认禁用） | 出于安装包体积权衡：Office 预览依赖 `@deepseek-ai/libreoffice-kit-*`（双架构原生二进制约 305 MB）。在 [`cordis.patch.yml`](../dsh-desktop-next/cordis.patch.yml) 中显式禁用 `office-kit` 与 `skill-office`，并由 [`runtime-file-policy.ts`](../dsh-desktop-next/scripts/runtime-file-policy.ts) 在打包阶段排除 `@deepseek-ai/dsh-skill-office`、`@deepseek-ai/dsh-office-kit`、`@deepseek-ai/dsh-tool-office` 与 `@deepseek-ai/libreoffice-kit-*`（由 `dsh-desktop-next/tests/payload-exclusions.spec.ts` 锁定配对）。 |
+| `app/dsh-plugin-desktop`（冻结旧壳） | `0.2.1-rc.3` | **保留上游默认挂载** | 随上游 `0.2.1-rc.3` 基线保留，未排除 `@deepseek-ai/dsh-skill-office`。 |
+
+所有产品插件严禁自行复制上述 7 个上游 Office 技能 slug（由 `plugins/scripts/verify-skill-hygiene.mjs` 强制拦截）。在 `dsh-desktop-next` 中如需处理 `.docx` / `.xlsx` / `.pptx`，用户可使用内置 Python/Node 依赖或通过 DSH Terminal 按需安装社区/个人技能。
+
 ## 稳定版更新与隔离恢复
 
 OmniMux 使用 `ai.omnimux.desktop` 并保留既有更新端点。版本检查只接受稳定版 SemVer；下载携带预期版本，并在替换安装包前拒绝版本不符的响应。本仓不交付 Beta 应用或通道切换入口。

@@ -1,0 +1,24 @@
+display-name-zh: 多语言出海视频广告
+version: 2.0.0
+tag-en: "Video Production / Global Ads Localization"
+tag-cn: "视频创作 / 出海广告本地化"
+complete-tags-en:
+  - "Video Production"
+  - "Global Ads"
+  - "TikTok Marketing"
+  - "Cross-Border Ecommerce"
+complete-tags-cn:
+  - "视频创作"
+  - "出海广告"
+  - "TikTok营销"
+  - "跨境电商"
+summary-en: "Localizes validated product video ads for TikTok, Amazon, and cross-border storefronts into culturally adapted multilingual video matrices."
+summary-cn: "面向 TikTok 与跨境电商锁定产品外观、本地化适配人设与语境的多语言广告矩阵。"
+desc-en: "Global Ad Localizer turns validated product ads into multicultural, multilingual video matrices for international markets. It separates locked product and brand facts from market-specific personas, scenes, and compliance checks, then validates a single sample before scaling across regions with OmniMux native media workflows."
+desc-cn: "多语言出海视频广告技能负责将验证过的商品广告创意扩展为多国家、多语言、多平台语境的高转化出海视频矩阵。通过四栏本地化拆解锁定商品外观与品牌事实真源，重塑目标市场人设与使用场景，并遵循先提案、单条小样核验再扩量的 OmniMux 多模态制作流程。"
+cover: ""
+author-en: "OmniMux Team"
+author-cn: "OmniMux 团队"
+origin: first-party
+license: MIT
+owner: omnimux-market

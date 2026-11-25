@@ -20,19 +20,19 @@ test('E2E-1 目录配置验证：脚本转视频 与 UGC 脚本全流程策划 �
   const catalog = JSON.parse(catalogSrc);
   const items = catalog.items || [];
 
-  const scriptToVideo = items.find((i) => i.id === 'sk-omx-script-to-video');
-  assert.ok(scriptToVideo, '必须存在脚本转视频技能');
-  assert.equal(scriptToVideo.isHot, true, '脚本转视频必须标记为 isHot: true');
-  assert.ok(scriptToVideo.tags?.includes('热门精选'), '脚本转视频必须打上“热门精选”标签');
+  const replicateViral = items.find((i) => i.id === 'sk-omx-replicate-viral-video');
+  assert.ok(replicateViral, '必须存在复刻爆款视频技能');
+  assert.equal(replicateViral.isHot, true, '复刻爆款视频必须标记为 isHot: true');
+  assert.ok(replicateViral.tags?.includes('热门精选'), '复刻爆款视频必须打上“热门精选”标签');
 
-  const ugcPlanner = items.find((i) => i.id === 'sk-omx-ugc-script-planner');
-  assert.ok(ugcPlanner, '必须存在 UGC 脚本全流程策划技能');
-  assert.equal(ugcPlanner.isHot, true, 'UGC 脚本全流程策划必须标记为 isHot: true');
-  assert.ok(ugcPlanner.tags?.includes('热门精选'), 'UGC 脚本全流程策划必须打上“热门精选”标签');
+  const createSelling = items.find((i) => i.id === 'sk-omx-create-selling-video');
+  assert.ok(createSelling, '必须存在创作带货视频技能');
+  assert.equal(createSelling.isHot, true, '创作带货视频必须标记为 isHot: true');
+  assert.ok(createSelling.tags?.includes('热门精选'), '创作带货视频必须打上“热门精选”标签');
 
   // 全量热门精选总数
   const hotItems = items.filter((i) => i.isHot || i.tags?.includes('热门精选'));
-  assert.ok(hotItems.length > 0, '热门精选必须非零');
+  assert.equal(hotItems.length, 5, '热门精选必须恰好为 5 款');
 });
 
 test('E2E-2 渲染组件契约：hotPicks 和 newArrivals 各截取前 5 个排满一行', () => {

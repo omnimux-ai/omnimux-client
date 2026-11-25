@@ -16,27 +16,30 @@ describe('E2E: 112套营销技能库全面去品牌化与专有工具描述彻�
     const catalog = JSON.parse(fs.readFileSync(catalogPath, 'utf8'))
 
     // 1. 验证快照 skills 数量与 tags
-    assert.equal(snapshot.skills.length, 112, '必须有 112 套完整营销技能')
+    assert.equal(snapshot.skills.length, 16, '必须有 16 套完整自研上架技能')
     for (const s of snapshot.skills) {
       assert.ok(!s.tags.some(t => t.toLowerCase() === 'creatify'), `技能 ${s.id} 标签不得包含原厂词汇`)
       assert.ok(!s.cover.includes('creatify'), `技能 ${s.id} 封面路径不得泄漏原厂目录`)
     }
 
-    // 2. 验证 catalog items 中的技能
+    // 2. 验证 catalog items 中的技能（Phase 4：禁用不实 Official 归属，要求结构化 provenance）
     const activeSkills = catalog.items.filter(i => i.kind === 'skill' && i.recommended)
-    assert.equal(activeSkills.length, 112, 'catalog 激活技能数必须为 112')
+    assert.equal(activeSkills.length, 16, 'catalog 激活技能数必须为 16')
     for (const item of activeSkills) {
-      assert.equal(item.author, 'Official', `技能 ${item.id} 作者必须脱敏为 Official`)
+      assert.equal(item.author, 'OmniMux', `技能 ${item.id} 作者必须为 OmniMux`)
+      assert.equal(item.origin, 'first-party', `技能 ${item.id} origin 必须为 first-party`)
+      assert.equal(item.license, 'MIT', `技能 ${item.id} license 必须为 MIT`)
+      assert.equal(item.owner, 'omnimux-market', `技能 ${item.id} owner 必须为 omnimux-market`)
       assert.ok(!item.tags.some(t => t.toLowerCase() === 'creatify'), `技能 ${item.id} 标签不得包含原厂词汇`)
       assert.ok(!item.cover.asset.includes('creatify'), `技能 ${item.id} 封面路径必须脱敏`)
     }
 
-    // 3. 验证关键技能正文去专有工具化
-    const c2sSkillMd = fs.readFileSync(path.join(skillsDir, 'course-to-short-video/SKILL.md'), 'utf8')
-    assert.ok(!c2sSkillMd.toLowerCase().includes('creatify'), 'course-to-short-video 正文不得包含原厂词汇')
-    assert.ok(!c2sSkillMd.includes('mcp__creatify'), 'course-to-short-video 不得绑定私有 MCP')
+    // 3. 验证自研技能正文零外部品牌/厂商契约残留
+    const localizerMd = fs.readFileSync(path.join(skillsDir, 'global-ad-localizer/SKILL.md'), 'utf8')
+    assert.ok(!localizerMd.includes('kling-generation-runtime'), 'global-ad-localizer 不得包含外部运行契约')
+    assert.ok(!localizerMd.includes('WorkBuddy'), 'global-ad-localizer 不得包含外部品牌残留')
 
-    const mdfSkillMd = fs.readFileSync(path.join(skillsDir, 'motion-design-flow/SKILL.md'), 'utf8')
-    assert.ok(!mdfSkillMd.toLowerCase().includes('creatify'), 'motion-design-flow 正文不得包含原厂词汇')
+    const ecomMeta = fs.readFileSync(path.join(skillsDir, 'ecommerce-image/meta.yaml'), 'utf8')
+    assert.ok(!ecomMeta.includes('cdn.hailuoai.com'), 'ecommerce-image 不得包含外部热链')
   })
 })

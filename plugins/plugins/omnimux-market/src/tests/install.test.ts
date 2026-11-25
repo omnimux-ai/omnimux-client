@@ -113,20 +113,20 @@ test('installSkill routes catalog slugs to local installItem', async () => {
   process.env.DSH_HOME = dir
   try {
     const skillsDir = join(dir, 'skills')
-    const result = await installSkill('ugc-confessional', testCfg(skillsDir), {
+    const result = await installSkill('replicate-viral-video', testCfg(skillsDir), {
       fetchBytes: async () => {
         throw new Error('should not download zip for catalog skills')
       },
     })
-    assert.equal(result.slug, 'ugc-confessional')
-    const skillMd = await readFile(join(skillsDir, 'ugc-confessional', 'SKILL.md'), 'utf8')
-    assert.match(skillMd, /SKILL|UGC/i)
+    assert.equal(result.slug, 'replicate-viral-video')
+    const skillMd = await readFile(join(skillsDir, 'replicate-viral-video', 'SKILL.md'), 'utf8')
+    assert.match(skillMd, /SKILL|Viral|复刻/i)
     const byId = await installSkill('ignored', testCfg(skillsDir), {
       fetchBytes: async () => {
         throw new Error('should not download zip for catalogId')
       },
-    }, undefined, undefined, 'sk-omx-ugc-confessional')
-    assert.equal(byId.slug, 'ugc-confessional')
+    }, undefined, undefined, 'sk-omx-replicate-viral-video')
+    assert.equal(byId.slug, 'replicate-viral-video')
   }
   finally {
     if (prev === undefined) delete process.env.DSH_HOME

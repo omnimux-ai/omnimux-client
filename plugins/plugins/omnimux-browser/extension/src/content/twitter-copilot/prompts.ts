@@ -1,6 +1,6 @@
 /**
  * Twitter Copilot Prompts & Scenarios (Bilingual Support: zh / en)
- * Powered by self-built Twitter skills (sopilot-social-agents)
+ * Built-in OmniMux Twitter/X Copilot prompts & scenarios
  */
 
 import type { CopilotMenuItem, FeedHotTweet, PerspectiveDef, TwitterContext } from './types.ts'

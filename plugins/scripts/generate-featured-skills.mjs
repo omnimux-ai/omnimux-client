@@ -25,19 +25,20 @@ export const SNAPSHOT_PATH = join(ROOT, 'plugins/omnimux/src/client/session-guid
 export const SNAPSHOT_SCHEMA = 'omnimux.session-guide.featured-skills/v1'
 
 /**
- * 官方重磅精选置顶序列：热门精选 3 套 + 新品上市 6 套置顶
+ * 官方自研精选置顶序列：热门精选 5 套 + 新品上市 6 套置顶
  */
 export const PINNED_TOP_SKILL_IDS = [
-  'sk-omx-ugc-confessional',
-  'sk-omx-cinematic',
-  'sk-omx-ugc-showcase',
-  'sk-omx-ecommerce',
-  'sk-omx-static-image',
-  'sk-omx-carousel',
+  'sk-omx-replicate-viral-video',
+  'sk-omx-create-selling-video',
+  'sk-omx-video-hook-analysis',
+  'sk-omx-reverse-video-prompt',
   'sk-omx-replicate-carousel',
-  'sk-omx-course-to-short-video',
-  'sk-omx-ugc-fit-check',
-  'sk-omx-youth-sports-hype-reel',
+  'sk-omx-shoppable-carousel',
+  'sk-omx-ecommerce-image',
+  'sk-omx-ad-creative',
+  'sk-omx-global-ad-localizer',
+  'sk-omx-stickman-video-director',
+  'sk-omx-dynamic-poster',
 ]
 
 /** 快照双语字段域：与 `plugins/omnimux-market/src/skill-bilingual.ts` 的判据同域。 */

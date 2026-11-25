@@ -41,18 +41,18 @@ describe('E2E: Creatify 112套营销技能库置顶分区与1:1卡片视觉交�
 
     // 1. 验证分类胶囊
     const chips = document.querySelectorAll('.omnimux-skills-chip')
-    assert.equal(chips.length, 9, '应包含 1 个全部胶囊 + 8 个场景分类胶囊')
+    assert.equal(chips.length, 7, '应包含 1 个全部胶囊 + 6 个活跃场景分类胶囊')
     assert.equal(chips[0].getAttribute('aria-pressed'), 'true', '默认全选高亮')
 
     // 2. 验证专区结构
     const sections = document.querySelectorAll('.omnimux-creatify-section')
     assert.equal(sections.length, 3, '默认分类下必须呈现热门精选、新品上市与探索更多 3 大专区')
 
-    // 验证热门精选 3 张卡片
+    // 验证热门精选 5 张卡片
     const hotSection = sections[0]
     assert.match(hotSection.querySelector('.omnimux-creatify-section-title').textContent, /热门精选/)
     const hotCards = hotSection.querySelectorAll('.omnimux-creatify-card')
-    assert.equal(hotCards.length, 3, '热门精选必须置顶 3 张核心爆款大卡')
+    assert.equal(hotCards.length, 5, '热门精选必须置顶 5 张自研核心大卡')
     assert.ok(hotCards[0].querySelector('.omnimux-creatify-badge-hot'), '热门卡片必须带有火苗徽标')
 
     // 验证新品上市 6 张卡片与查看全部按钮
@@ -63,11 +63,11 @@ describe('E2E: Creatify 112套营销技能库置顶分区与1:1卡片视觉交�
     assert.ok(newCards[0].querySelector('.omnimux-creatify-badge-new'), '新品卡片必须带有新微标')
     assert.ok(newSection.querySelector('.omnimux-creatify-see-all-btn'), '新品上市右侧必须具备查看全部按钮')
 
-    // 验证探索更多 103 张卡片
+    // 验证探索更多 5 张卡片
     const exploreSection = sections[2]
     assert.match(exploreSection.querySelector('.omnimux-creatify-section-title').textContent, /探索更多/)
     const exploreCards = exploreSection.querySelectorAll('.omnimux-creatify-card')
-    assert.equal(exploreCards.length, 103, '探索更多区域必须容纳剩余 103 套技能')
+    assert.equal(exploreCards.length, 5, '探索更多区域必须容纳剩余 5 套自研技能')
 
     // 3. 验证卡片 1:1 视觉要素与属性
     const sampleCard = hotCards[0]
@@ -81,6 +81,6 @@ describe('E2E: Creatify 112套营销技能库置顶分区与1:1卡片视觉交�
       sampleCard.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }))
     })
     assert.ok(selectedSkill, '点击卡片必须触发 onSelectSkill')
-    assert.equal(selectedSkill.id, 'sk-omx-ugc-confessional', '选中的应为 UGC 告白')
+    assert.equal(selectedSkill.id, 'sk-omx-replicate-viral-video', '选中的应为 复刻爆款视频')
   })
 })

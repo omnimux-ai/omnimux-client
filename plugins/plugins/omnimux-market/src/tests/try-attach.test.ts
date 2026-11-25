@@ -47,9 +47,9 @@ test('tryAttach loads bundled skill into the session without writing skills dir'
     const req = postReq({
       method: 'tryAttach',
       sessionId: 'sess-try-1',
-      slug: 'ugc-confessional',
-      catalogId: 'sk-omx-ugc-confessional',
-      title: 'UGC 告白',
+      slug: 'replicate-carousel',
+      catalogId: 'sk-omx-replicate-carousel',
+      title: '图文复刻',
     })
     const res = mockRes()
     await handleApi(req, res, cfg)
@@ -61,7 +61,7 @@ test('tryAttach loads bundled skill into the session without writing skills dir'
     assert.equal(body.hasBody, true)
     const trial = readSessionTrial(home, 'sess-try-1')
     assert.ok(trial)
-    assert.equal(trial.slug, 'ugc-confessional')
+    assert.equal(trial.slug, 'replicate-carousel')
     assert.ok(trial.body.length > 0)
     const leftover = existsSync(skillsDir) ? readdirSync(skillsDir).filter((n) => !n.startsWith('.')) : []
     assert.deepEqual(leftover, [])

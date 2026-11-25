@@ -42,6 +42,10 @@ Yes. DSH Desktop uses the official Harness plugin system. Open DSH Terminal from
 
 No plugins are copied automatically. Each profile has its own bundle and dependency composition. After switching profiles, default plugin commands target the active profile; `--profile <name>` can always select one explicitly.
 
+## Why doesn't the active desktop shell (`dsh-desktop-next`) bundle Office skills or LibreOffice preview?
+
+This is an intentional installer-size tradeoff. Upstream DSH's `@deepseek-ai/dsh-skill-office` (7 skills: `office`, `office-docx`, `office-pptx`, `office-xlsx`, `office-export-pdf`, `office-render`, `office-recalculate`) and Office preview pull `@deepseek-ai/libreoffice-kit`, adding ~305 MB of dual-architecture native binaries. The active `dsh-desktop-next` shell disables and excludes them in [`cordis.patch.yml`](../dsh-desktop-next/cordis.patch.yml) and [`runtime-file-policy.ts`](../dsh-desktop-next/scripts/runtime-file-policy.ts), whereas the frozen legacy `dsh-plugin-desktop` (`0.2.1-rc.3`) retains the upstream default mount. See the [architecture guide](architecture.en.md#dual-shell-built-in-office-skill-boundary) for details. If you need spreadsheet or document workflows on `dsh-desktop-next`, use local scripts or install personal/community skills on demand.
+
 ## How are updates installed?
 
 Packaged applications check for stable releases in the background but never install silently. A newer version requires confirmation. Before downloading, a native save dialog lets you choose the installer's directory and filename; cancelling it does not start a download. macOS downloads and opens a DMG; Windows downloads and starts an NSIS installer. After the upgrade and next launch, the app asks whether to delete or keep the installer. Network and download failures leave the current installation intact.
