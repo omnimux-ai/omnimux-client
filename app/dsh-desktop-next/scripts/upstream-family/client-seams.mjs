@@ -16,6 +16,30 @@ const MagicString = require('magic-string')
 const remapping = require('@jridgewell/remapping')
 const ts = require('typescript')
 const version = '0.2.2-rc.5'
+let onlyPackage
+const cliArgs = process.argv.slice(2)
+for (let i = 0; i < cliArgs.length; i++) {
+  const arg = cliArgs[i]
+  if (arg === '--only') {
+    const next = cliArgs[++i]
+    if (!next || next.startsWith('-')) {
+      throw new Error('client-seams: --only requires a package name')
+    }
+    if (onlyPackage !== undefined) throw new Error('client-seams: --only may be specified only once')
+    onlyPackage = next
+  } else if (arg.startsWith('--only=')) {
+    const value = arg.slice('--only='.length)
+    if (!value || value.startsWith('-')) {
+      throw new Error('client-seams: --only= requires a package name')
+    }
+    if (onlyPackage !== undefined) throw new Error('client-seams: --only may be specified only once')
+    onlyPackage = value
+  } else {
+    throw new Error(`client-seams: unknown argument: ${arg}`)
+  }
+}
+const knownPackages = []
+let matchedPackages = 0
 
 function onboarding() {
   function DesktopOnboardingNavigation({ busy, t, onBack, onSkip }) {
@@ -104,6 +128,9 @@ async function readOnboardingApiKeyPresence(ctx) {
 }
 
 function patchPackage(name, edit, entry = () => 'lib/client.js') {
+  knownPackages.push(name)
+  if (onlyPackage !== undefined && onlyPackage !== name) return
+  matchedPackages++
   const temp = mkdtempSync(join(tmpdir(), 'dsh-client-seam-'))
   try {
     execFileSync('tar', ['-xzf', join(root, `vendor/dsh-runtime/${version}/deepseek-ai-${name}-${version}.tgz`), '-C', temp])
@@ -171,14 +198,19 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 })
 
 patchPackage('dsh-client-ui-plugin-manager', ({ once, append }) => {
-  once('const SLOTS=[', 'const SLOTS=[`plugins.bundle.hidden`,`plugins.item.hidden`,')
-  once('let ledger={items:[],', 'let ledger={items:[],hiddenBundles:new Set,hiddenItems:new Set,')
-  once('bundles:keysOf(`plugins.bundle.config`)', 'hiddenBundles:keysOf(`plugins.bundle.hidden`),hiddenItems:keysOf(`plugins.item.hidden`),bundles:keysOf(`plugins.bundle.config`)')
+  once('const SLOTS=[', 'const SLOTS=[`plugins.bundle.hidden`,`plugins.bundle.listed`,`plugins.item.hidden`,')
+  once('let ledger={items:[],', 'let ledger={items:[],hiddenBundles:new Set,listedBundles:new Set,hiddenItems:new Set,')
+  once('bundles:keysOf(`plugins.bundle.config`)', 'hiddenBundles:keysOf(`plugins.bundle.hidden`),listedBundles:keysOf(`plugins.bundle.listed`),hiddenItems:keysOf(`plugins.item.hidden`),bundles:keysOf(`plugins.bundle.config`)')
   once('const listed=state.packages.filter(pkg=>!HIDDEN_BUNDLES', 'const available=state.packages.filter(pkg=>!HIDDEN_BUNDLES')
+  once('&&(pkg.installed||pkg.official||pkg.error!==void 0)', '&&(pkg.installed||pkg.official||(pkg.availability===`installation`&&ledger.listedBundles.has(pkg.name))||pkg.error!==void 0)')
   once('const mine=listed.filter', 'const listed=available.filter(pkg=>!ledger.hiddenBundles.has(pkg.name));const mine=listed.filter')
   once('?listed.find(pkg=>pkg.name===view.name)', '?available.find(pkg=>pkg.name===view.name)')
   once('const basicCards=ledger.items.map(', 'const basicCards=ledger.items.filter(item=>!ledger.hiddenItems.has(item.id)).map(')
-  once('children:{"plugins.add.actions":', 'children:{"plugins.overview":{kind:"list",scope:"root"},"plugins.bundle.hidden":{kind:"keyed",scope:"root"},"plugins.item.hidden":{kind:"keyed",scope:"root"},"plugins.add.actions":')
+  once(
+    'pkg.installed||pkg.removable?(0,react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Button,{variant:`outline`,size:`sm`,className:PluginManagerPage_module_css_default.danger,',
+    '(pkg.installed&&pkg.availability!==`installation`)||pkg.removable?(0,react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Button,{variant:`outline`,size:`sm`,className:PluginManagerPage_module_css_default.danger,',
+  )
+  once('children:{"plugins.add.actions":', 'children:{"plugins.overview":{kind:"list",scope:"root"},"plugins.bundle.hidden":{kind:"keyed",scope:"root"},"plugins.bundle.listed":{kind:"keyed",scope:"root"},"plugins.item.hidden":{kind:"keyed",scope:"root"},"plugins.add.actions":')
   once('installedCards&&!loaded?', `onInstalled&&showsMainList&&loaded?renderSlot('plugins.overview', {
     onOpenBundle: name => {
       if (!available.some(pkg => pkg.name === name)) return;
@@ -199,6 +231,7 @@ patchPackage('dsh-client-ui-plugin-manager', ({ once, append }) => {
       onOpenItem(id: string): void;
     } };
     'plugins.bundle.hidden': { kind: 'keyed'; scope: 'root' };
+    'plugins.bundle.listed': { kind: 'keyed'; scope: 'root' };
     'plugins.item.hidden': { kind: 'keyed'; scope: 'root' };
   }
 }`)
@@ -263,3 +296,7 @@ patchPackage('dsh-client-ui-open-in-app', ({ once }) => {
   once('gnometerminal:`app.gnometerminal`,', 'gnometerminal:`app.gnometerminal`,ptyxis:`app.ptyxis`,gnomeconsole:`app.gnomeconsole`,')
   once('"app.gnometerminal":`GNOME Terminal`,', '"app.gnometerminal":`GNOME Terminal`,"app.ptyxis":`Ptyxis`,"app.gnomeconsole":`GNOME Console`,')
 })
+
+if (onlyPackage !== undefined && matchedPackages === 0) {
+  throw new Error(`client-seams: unknown --only package "${onlyPackage}". Expected one of: ${knownPackages.join(', ')}`)
+}

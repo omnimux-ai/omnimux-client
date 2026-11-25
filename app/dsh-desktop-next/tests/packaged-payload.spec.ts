@@ -179,11 +179,14 @@ it('accepts a missing unused-feature edge and flags an unused-feature package th
     const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as {
       dependencies: Record<string, string>
       optionalDependencies?: Record<string, string>
-      dsh?: { optionalBundles?: string[] }
+      dsh?: { optionalBundles?: string[]; protectedBundles?: string[] }
     }
     manifest.dependencies['@deepseek-ai/dsh-experimental-voice-input-bundle'] = '0.2.2-rc.5'
     manifest.optionalDependencies = { '@deepseek-ai/dsh-skill-office': '0.2.2-rc.5' }
-    manifest.dsh = { optionalBundles: ['@deepseek-ai/dsh-experimental-voice-input-bundle'] }
+    manifest.dsh = {
+      optionalBundles: ['@deepseek-ai/dsh-experimental-voice-input-bundle'],
+      protectedBundles: ['@deepseek-ai/dsh-experimental-voice-input-bundle', 'missing-protected-bundle', '' as string],
+    }
     writeFileSync(manifestPath, `${JSON.stringify(manifest, undefined, 2)}\n`)
   }, false)
   const staleManifestSource = archivedPayload(staleManifest)
@@ -192,8 +195,23 @@ it('accepts a missing unused-feature edge and flags an unused-feature package th
       'package.json: dependencies.@deepseek-ai/dsh-experimental-voice-input-bundle: Voice input is not shipped must not remain in packaged manifest',
       'package.json: optionalDependencies.@deepseek-ai/dsh-skill-office: Office skill is not shipped must not remain in packaged manifest',
       'package.json: dsh.optionalBundles.@deepseek-ai/dsh-experimental-voice-input-bundle: Voice input is not shipped must not remain in packaged manifest',
+      'package.json: dsh.protectedBundles.@deepseek-ai/dsh-experimental-voice-input-bundle: Voice input is not shipped must not remain in packaged manifest',
+      'package.json: dsh.protectedBundles.missing-protected-bundle: must be declared in dependencies',
+      'package.json: dsh.protectedBundles: entries must be non-empty strings',
     ]))
   } finally { staleManifestSource.close() }
+  const { resources: malformedProtected } = await assembled((app) => {
+    const manifestPath = join(app, 'package.json')
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as Record<string, unknown>
+    manifest.dsh = { protectedBundles: 'omnimux' }
+    writeFileSync(manifestPath, `${JSON.stringify(manifest, undefined, 2)}\n`)
+  }, false)
+  const malformedProtectedSource = archivedPayload(malformedProtected)
+  try {
+    expect(auditNextPayload(malformedProtectedSource, target)).toContain(
+      'package.json: dsh.protectedBundles: must be an array of package names',
+    )
+  } finally { malformedProtectedSource.close() }
 })
 
 it('requires the Office CLI closure unpacked only when the payload carries the kit', async () => {

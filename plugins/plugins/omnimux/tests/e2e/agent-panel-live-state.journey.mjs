@@ -22,13 +22,9 @@ export default async function agentPanelLiveStateJourney({ send, sleep, evidence
     await evaluate(`[...document.querySelectorAll('button')].find((button) => button.textContent.trim() === '更多')?.click()`)
     check('plugins-menu-item-visible', await waitFor(`[...document.querySelectorAll('button, [role="menuitem"]')].some((button) => button.textContent.trim() === '插件')`))
     await evaluate(`[...document.querySelectorAll('button, [role="menuitem"]')].find((button) => button.textContent.trim() === '插件')?.click()`)
-    check('omnimux-card-visible', await waitFor(`!!document.querySelector('[data-plugin-package="omnimux"]')`))
-    await evaluate(`(() => {
-      const card = document.querySelector('[data-plugin-package="omnimux"]')
-      const open = card ? [...card.querySelectorAll('button')].find((button) => button.textContent.trim() === 'omnimux') : null
-      open?.click()
-    })()`)
-    check('omnimux-detail-visible', await waitFor(`!!document.querySelector('[data-plugin-detail="omnimux"]')`))
+    check('model-settings-item-visible', await waitFor(`!!document.querySelector('[data-plugin-item="omnimux-model-settings"]')`))
+    await evaluate(`document.querySelector('[data-plugin-item="omnimux-model-settings"] button')?.click()`)
+    check('model-settings-detail-visible', await waitFor(`!!document.querySelector('[data-plugin-item-detail="omnimux-model-settings"]')`))
     check('cli-rows-visible', await waitFor(`document.querySelectorAll('.omx-agent-card').length > 0`))
     const before = await evaluate(`(() => {
       const status = document.querySelector('.omx-agent-status')
@@ -92,7 +88,7 @@ export default async function agentPanelLiveStateJourney({ send, sleep, evidence
     await sleep(800)
     const after = await evaluate(`(() => {
       const status = document.querySelector('.omx-agent-status')
-      return { known: Number(status?.getAttribute('data-known')), detail: !!document.querySelector('[data-plugin-detail="omnimux"]') }
+      return { known: Number(status?.getAttribute('data-known')), detail: !!document.querySelector('[data-plugin-item-detail="omnimux-model-settings"]') }
     })()`)
     assert.equal(after.known, 4, 'rescan keeps known set')
     assert.equal(after.detail, true, 'panel mounted after rescan')
