@@ -4202,11 +4202,31 @@ function extractFindExecPayloads(args) {
  * or `os.system` / `subprocess.*` (Python).
  */
 function extractInlineShellPayloads(code) {
+  const input = String(code || '')
   const payloads = []
+  const quotedTokens = (listText) => {
+    const out = []
+    const re = /(['"])((?:\\.|(?!\1)[\s\S])*?)\1/g
+    for (const m of listText.matchAll(re)) out.push(m[2])
+    return out
+  }
+  // `execSync('<cmd>')` / `system('<cmd>')` / `subprocess.run('<cmd>', shell=True)`
   const re = /\b(?:execSync|execFileSync|spawnSync|execFile|exec|spawn|system|systemSync|check_output|check_call|call|run|Popen)\s*\(\s*(['"`])((?:\\.|(?!\1)[\s\S])*?)\1/g
-  for (const m of String(code || '').matchAll(re)) {
+  for (const m of input.matchAll(re)) {
     const body = m[2]
     if (body && /[;&|<>$`]|\s/.test(body)) payloads.push(body)
+  }
+  // `spawnSync('<cmd>', ['-rf', '<path>'])`
+  const cmdPlusArrayRe = /\b(?:execSync|execFileSync|spawnSync|execFile|spawn)\s*\(\s*(['"`])((?:\\.|(?!\1)[\s\S])*?)\1\s*,\s*\[([\s\S]*?)\]/g
+  for (const m of input.matchAll(cmdPlusArrayRe)) {
+    const argv = [m[2], ...quotedTokens(m[3])].join(' ').trim()
+    if (argv) payloads.push(argv)
+  }
+  // `subprocess.run(['rm', '-rf', '<path>'])`
+  const arrayOnlyRe = /\b(?:execFileSync|spawnSync|execFile|spawn|check_output|check_call|run|call|Popen)\s*\(\s*\[([\s\S]*?)\]/g
+  for (const m of input.matchAll(arrayOnlyRe)) {
+    const argv = quotedTokens(m[1]).join(' ').trim()
+    if (argv) payloads.push(argv)
   }
   return payloads
 }
@@ -4450,9 +4470,15 @@ export function extractCommandWriteTargetsWithCwd(command, cwd = process.cwd(), 
             results.push(...extractCommandWriteTargetsWithCwd(payload, effectiveCwd, depth + 1))
           }
         }
-      } else if (verb === 'perl' && hasInPlaceFlag(args, new Set(['-e', '-E', '-I', '-M', '-m', '-F']))) {
-        for (const item of extractPerlInPlaceTargets(args)) {
-          pushTarget(item)
+      } else if (verb === 'perl') {
+        if (hasInPlaceFlag(args, new Set(['-e', '-E', '-I', '-M', '-m', '-F']))) {
+          for (const item of extractPerlInPlaceTargets(args)) {
+            pushTarget(item)
+          }
+        }
+        // `perl -e 'system("rm -rf …")'` executes another shell
+        for (const payload of extractInlineShellPayloads(args.join(' '))) {
+          results.push(...extractCommandWriteTargetsWithCwd(payload, effectiveCwd, depth + 1))
         }
       } else if (verb === 'find') {
         if (args.includes('-delete')) {

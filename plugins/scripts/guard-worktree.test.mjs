@@ -2425,7 +2425,10 @@ describe('adversarial hardening regressions (materialization / wrapper / frozen-
       `echo x | xargs -I{} bash -c '${bashScript}'`,
       `find . -maxdepth 1 -name README.md -exec bash -c '${bashScript}' {} +`,
       `node -e "require('child_process').execSync('${evalScript}')"`,
+      `node -e "require('child_process').spawnSync('rm', ['-rf', '${mainRepoRoot}/package.json'])"`,
       `python3 -c "import os; os.system('${evalScript}')"`,
+      `python3 -c "import subprocess; subprocess.run(['rm', '-rf', '${mainRepoRoot}/package.json'])"`,
+      `perl -e 'system("rm -rf ${mainRepoRoot}/package.json")'`,
     ]) {
       assert.equal(
         decideBashCommand({ command, cwd: worktreeRoot, ownerRoot: mainRepoRoot }).decision,
