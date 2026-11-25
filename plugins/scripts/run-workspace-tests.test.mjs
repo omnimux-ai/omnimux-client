@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { parse } from 'yaml'
-import { discoverPackages, main, selectShard, SHARD_NAMES } from './run-workspace-tests.mjs'
+import { classifyFailure, discoverPackages, main, selectShard, SHARD_NAMES } from './run-workspace-tests.mjs'
 
 const RUNNER = fileURLToPath(new URL('./run-workspace-tests.mjs', import.meta.url))
 
@@ -44,6 +44,12 @@ test('packageEnv injects an isolated DSH_HOME per package run', async () => {
   } finally {
     rmSync(home, { recursive: true, force: true })
   }
+})
+
+test('inline failure summary distinguishes probe environment failures from assertions', () => {
+  assert.equal(classifyFailure('spawnSync /usr/bin/google-chrome ETIMEDOUT Chrome probe diagnostic: {}'), 'environment-unavailable')
+  assert.equal(classifyFailure('Ego probe diagnostic: {"classification":"environment-unavailable"}'), 'environment-unavailable')
+  assert.equal(classifyFailure("Expected values to be strictly equal: actual: 'none'"), 'assertion-or-product-failure')
 })
 
 test('an empty shard value fails instead of running every package', () => {

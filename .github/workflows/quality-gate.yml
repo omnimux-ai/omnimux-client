@@ -249,7 +249,7 @@ jobs:
           node --test scripts/windows-build-portability.test.mjs
           node --test scripts/input-capability.test.mjs
           node --test scripts/replicate-cta.test.mjs
-          node --test scripts/test-dx-pipeline.mjs scripts/worktree-delivery.test.mjs scripts/worktree-primary-cleanliness.test.mjs scripts/dev-launch-env.test.mjs scripts/omnimux-paths.test.mjs scripts/dev-app-unlock.test.mjs scripts/app-restart.test.mjs scripts/run-workspace-tests.test.mjs scripts/style-dom-probe.test.mjs
+          node --test scripts/test-dx-pipeline.mjs scripts/worktree-delivery.test.mjs scripts/worktree-primary-cleanliness.test.mjs scripts/dev-launch-env.test.mjs scripts/omnimux-paths.test.mjs scripts/dev-app-unlock.test.mjs scripts/app-restart.test.mjs scripts/run-workspace-tests.test.mjs scripts/style-dom-probe.test.mjs scripts/style-dom-probe-retry.test.mjs
           node --test scripts/auto-qa-scan.test.mjs
           node --test scripts/test-authoring-inspection.test.mjs scripts/test-change-review.test.mjs scripts/review-packet.test.mjs
           node --test scripts/impact-matrix.test.mjs scripts/authorization.test.mjs scripts/qa-label.test.mjs scripts/ci-verdict.test.mjs scripts/auto-pipeline.test.mjs scripts/auto-pipeline-docs.test.mjs scripts/auto-pipeline-qa.test.mjs scripts/check-tracked-artifacts.test.mjs scripts/live-runtime-proof.test.mjs scripts/ego-browser-page.test.mjs scripts/live-page-preparation.test.mjs scripts/ego-live-qa.test.mjs scripts/repair-inspiration-covers.test.mjs scripts/import-gxgen-inspirations.test.mjs
@@ -366,10 +366,18 @@ jobs:
       - name: Plugin unit suites
         env:
           OMNIMUX_TEST_SHARD: ${{ matrix.shard }}
+          OMNIMUX_STYLE_PROBE_RETRY: '1'
         run: node scripts/run-workspace-tests.mjs --logs .tmp/ci-workspace-logs --json .tmp/ci-workspace-summary.json
 
       # The workspace runner invokes omnimux-browser's test script, which
       # includes the browser extension's Vitest suite.
+
+      - name: Stage plugin test logs for artifact upload
+        if: ${{ always() }}
+        run: |
+          mkdir -p ../.tmp
+          if [ -d .tmp/ci-workspace-logs ]; then cp -R .tmp/ci-workspace-logs ../.tmp/; fi
+          if [ -f .tmp/ci-workspace-summary.json ]; then cp .tmp/ci-workspace-summary.json ../.tmp/; fi
 
       - name: Upload plugin test logs
         if: ${{ always() }}
