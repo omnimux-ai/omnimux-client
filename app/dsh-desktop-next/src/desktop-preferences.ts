@@ -1,6 +1,6 @@
 /** Preferences remain readable when no Host or user plugin can start. */
 import { join } from 'node:path'
-import { isDesktopAppIcon } from './app-icon.ts'
+import { isDesktopAppIcon, normalizeDesktopAppIcon } from './app-icon.ts'
 import { DEFAULT_PREFERENCES, type DesktopPreferences } from './desktop-contract.ts'
 import { isHostStartupTimeout } from './host-startup-limit.ts'
 import { atomicJson, readPrivateFile } from './private-files.ts'
@@ -28,6 +28,9 @@ export function parsePreferences(value: unknown): DesktopPreferences {
   // Acrylic and Mica were removed like in the original Desktop. Old preference
   // files stay readable and fail closed to the ordinary opaque Windows window.
   if (source.windowsMaterial === 'acrylic' || source.windowsMaterial === 'mica') result.windowsMaterial = 'off'
+  // Upstream's classic DeepSeek whale icon choice is retired in OmniMux. Old
+  // preference files stay readable and fail closed to the single OmniMux icon.
+  if (source.appIcon === 'classic') result.appIcon = 'default'
   for (const key of ['developerLogging', 'sidebarFooterCompat', 'sidebarFooterBalanced', 'closeToTray', 'browserAccess', 'notifications', 'turnCompleted', 'turnFailed', 'jobCompleted', 'jobFailed', 'scheduleCompleted', 'scheduleFailed'] as const) {
     if (typeof result[key] !== 'boolean') throw new Error(`Invalid Desktop preference: ${key}`)
   }
@@ -108,7 +111,8 @@ export class DesktopPreferenceStore {
     const values = Object.fromEntries(EXTRA_PREFERENCE_KEYS.map(key => [key, DEFAULT_PREFERENCES[key]])) as ExtraPreferences
     for (const key of EXTRA_PREFERENCE_KEYS) {
       if (!(key in stored)) continue
-      if (EXTRA_PREFERENCES[key](stored[key])) Object.assign(values, { [key]: stored[key] })
+      const candidate = key === 'appIcon' ? normalizeDesktopAppIcon(stored[key]) : stored[key]
+      if (candidate !== undefined && EXTRA_PREFERENCES[key](candidate)) Object.assign(values, { [key]: candidate })
       else this.warn(`Ignored an invalid ${key} in ${this.extraFile}`)
     }
     return { values, stored }

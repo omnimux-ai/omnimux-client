@@ -42,7 +42,7 @@ export interface DesktopPreferences {
   scheduleFailed: boolean
   /** How long a Host start may take before recovery opens; stored apart, see desktop-preferences.ts. */
   hostStartupTimeout: HostStartupTimeout
-  /** The artwork in the Dock, window frames and tray; stored apart, see desktop-preferences.ts. */
+  /** Single-brand OmniMux app icon (`default`); legacy `'classic'` files normalize on read. */
   appIcon: DesktopAppIcon
 }
 

@@ -265,9 +265,9 @@ export class NextDesktopRuntime {
   }
 
   /**
-   * Save the app icon on its own, so setup can change it before any other preference is chosen. Only the extra
-   * preference file changes; the change notification lets the native shell show the icon at once.
-   * @param value - `default` or `classic`; anything else is refused, and so is any choice in Safe Mode.
+   * Persist the single-brand OmniMux app icon preference (`default`). Any retired or unknown icon choice
+   * is refused, and Safe Mode refuses preference writes.
+   * @param value - Must be `'default'`.
    */
   saveAppIcon(value: unknown): void {
     if (!isDesktopAppIcon(value)) throw new Error('Invalid app icon')

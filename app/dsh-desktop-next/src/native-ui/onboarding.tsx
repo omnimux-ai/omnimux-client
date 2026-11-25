@@ -6,9 +6,7 @@ import { Switch } from '../../../dsh-plugin-desktop/src/native-ui/components/ui/
 import { RadioGroup, RadioGroupItem } from '../../../dsh-plugin-desktop/src/native-ui/components/ui/radio-group.tsx'
 import { Alert, AlertDescription } from '../../../dsh-plugin-desktop/src/native-ui/components/ui/alert.tsx'
 import { DesktopFrame } from '../../../dsh-plugin-desktop/src/native-ui/shared/DesktopFrame.tsx'
-import { appIconLabel, DESKTOP_APP_ICONS, isDesktopAppIcon, type DesktopAppIcon } from '../app-icon.ts'
 import type { DesktopBridge, DesktopPreferences, DesktopState } from '../desktop-contract.ts'
-import { AppIconPreview } from '../client/app-icon-previews.tsx'
 import { installPluginControlsStyles } from '../client/plugin-controls-styles.ts'
 import { OFFICIAL_PLUGIN_INDEX } from '../upstream-family-labels.ts'
 import './onboarding.css'
@@ -37,8 +35,6 @@ export function Onboarding({ state, locale, bridge }: { state: Pick<DesktopState
   const [computerUse, setComputerUse] = useState(state.onboardingComputerUse ?? false)
   const [browserAccess, setBrowserAccess] = useState(state.preferences?.browserAccess ?? false)
   const [networkExposure, setNetworkExposure] = useState<'loopback' | 'lan'>(state.preferences?.browserAccess && state.preferences?.networkExposure === 'lan' ? 'lan' : 'loopback')
-  const [appIcon, setAppIcon] = useState<DesktopAppIcon>(state.preferences?.appIcon ?? 'default')
-  const appIconRequest = useRef(0)
   const confirmingLan = useRef(false)
   const slide = useRef<HTMLDivElement>(null)
   const navigationLock = useRef(false)
@@ -83,19 +79,6 @@ export function Onboarding({ state, locale, bridge }: { state: Pick<DesktopState
     navigationLock.current = false
   }
 
-  // Unlike the other choices, the icon is saved and shown at once, so skipping setup keeps it.
-  function chooseAppIcon(value: string) {
-    if (!isDesktopAppIcon(value) || value === appIcon || disabled) return
-    const previous = appIcon
-    const request = ++appIconRequest.current
-    setAppIcon(value); setFailure('')
-    void bridge.command({ type: 'app-icon', appIcon: value }).catch(error => {
-      if (!mounted.current || request !== appIconRequest.current) return
-      setAppIcon(previous)
-      setFailure(error instanceof Error ? error.message : String(error))
-    })
-  }
-
   async function finish(skip: boolean) {
     if (saving.current || navigationLock.current) return
     saving.current = true
@@ -132,17 +115,6 @@ export function Onboarding({ state, locale, bridge }: { state: Pick<DesktopState
           {page > 0 && <p className="next-onboarding-eyebrow">{steps[page]}</p>}
           <h1 id="onboarding-title" tabIndex={-1}>{titles[page]!.split('\n').map((line, i) => <span className="next-onboarding-reveal" key={i} style={{ animationDelay: `${80 + i * 130}ms` }}>{line}</span>)}</h1>
           <p className="next-onboarding-description next-onboarding-reveal">{descriptions[page]}</p>
-          {page === 0 && <div className="next-onboarding-option next-onboarding-reveal">
-            <div className="next-onboarding-toggle"><span id="onboarding-app-icon">{t('应用图标', 'App icon')}</span></div>
-            <RadioGroup aria-labelledby="onboarding-app-icon" className="next-onboarding-icon-choices" value={appIcon} disabled={disabled} onValueChange={value => { chooseAppIcon(String(value)) }}>
-              {DESKTOP_APP_ICONS.map(icon => <label className="next-onboarding-choice next-onboarding-icon-choice" data-selected={appIcon === icon} key={icon}>
-                <AppIconPreview icon={icon} size={36} />
-                <span className="next-onboarding-choice-copy"><strong id={`app-icon-${icon}`}>{appIconLabel(icon, locale === 'zh')}</strong></span>
-                <RadioGroupItem value={icon} aria-labelledby={`app-icon-${icon}`} />
-              </label>)}
-            </RadioGroup>
-            <p>{t('以后也可以在桌面设置中切换。', 'You can also switch icons later in Desktop settings.')}</p>
-          </div>}
           {page === 1 && <div className="next-onboarding-option next-onboarding-reveal">
             <div className="next-onboarding-toggle"><label htmlFor="onboarding-market">{t('启用插件市场', 'Enable plugin market')}</label><Switch id="onboarding-market" checked={marketEnabled} disabled={disabled} onCheckedChange={setMarketEnabled} /></div>
             <p>{t('以后也可以在插件页面开启或调整。', 'You can also enable or change this later in Plugins.')}</p>
