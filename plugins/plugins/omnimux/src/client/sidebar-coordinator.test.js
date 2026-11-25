@@ -803,3 +803,172 @@ test('运行时注册接缝：action 优先于 tabId，非法形状与 id 冲突
   assert.equal(resolveExploreMenuItems().length, EXPLORE_MENU_ITEMS.length, '全部注销后回到初始项数')
   delete window.__omnimuxWorkbench
 })
+
+/* ========================================================================= */
+/* 0.2.2-rc.5 nav.panelList 结构挂载回归                                       */
+/* ========================================================================= */
+
+const RC5_SIDEBAR_HTML = `<!doctype html><html><body>
+  <div data-slot="root">
+    <div class="AppFrame_frame__rc5" data-omnimux-frame>
+      <div class="AppFrame_sidebarCol__rc5" data-pane="sidebar">
+        <div class="SidebarRoot_root__rc5">
+          <div class="SidebarRoot_logoRow__rc5">
+            <button type="button" class="SidebarRoot_brand__rc5" aria-label="OmniMux">OmniMux</button>
+          </div>
+          <div class="SidebarRoot_newSessionRow__rc5">
+            <button type="button" class="SidebarRoot_newSession__rc5" aria-label="新对话">新对话</button>
+          </div>
+          <div class="SidebarRoot_scrollRegion__rc5">
+            <div class="SidebarRoot_scrollArea__rc5">
+              <nav class="SidebarRoot_panelList__rc5" aria-label="面板">
+                <div class="SidebarRoot_panelEntry__rc5" data-entry="plugins">
+                  <button type="button" class="SidebarRoot_panelRow__rc5" aria-label="插件">插件</button>
+                </div>
+                <div class="SidebarRoot_panelEntry__rc5" data-entry="schedules">
+                  <button type="button" class="SidebarRoot_panelRow__rc5" aria-label="自动化任务">自动化任务</button>
+                </div>
+                <span class="SidebarRoot_moreAnchor__rc5">
+                  <button type="button" class="SidebarRoot_panelRow__rc5" aria-label="更多" aria-haspopup="menu">更多</button>
+                </span>
+              </nav>
+              <div class="SidebarRoot_regionArea__rc5"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</body></html>`
+
+test('0.2.2-rc.5：自定义常驻行挂入 nav.panelList 头部（panelEntry 与更多之前），重复 place 零 DOM 变更', async () => {
+  setup(RC5_SIDEBAR_HTML)
+  installSidebarGlobal()
+  const api = SIDEBAR_GLOBAL()
+
+  const workflow = document.createElement('button')
+  workflow.id = 'rc5-workflow'
+  const market = document.createElement('button')
+  market.id = 'rc5-market'
+  const assets = document.createElement('button')
+  assets.id = 'rc5-assets'
+  const inspiration = document.createElement('button')
+  inspiration.id = 'rc5-inspiration'
+
+  const disposers = [
+    api.register({ id: 'omnimux-inspiration-entry', rank: 7, create: () => inspiration }),
+    api.register({ id: 'omnimux-workflow-entry', rank: 4, create: () => workflow }),
+    api.register({ id: 'omnimux-assets-entry', rank: 6, create: () => assets }),
+    api.register({ id: 'omnimux-market-entry', rank: 4.1, create: () => market }),
+  ]
+
+  try {
+    api.place()
+    const panelList = document.querySelector('nav[class*="panelList"]')
+    const moreAnchor = panelList.querySelector('[class*="moreAnchor"]')
+    const pluginsEntry = panelList.querySelector('[data-entry="plugins"]')
+    const schedulesEntry = panelList.querySelector('[data-entry="schedules"]')
+    const children = [...panelList.children]
+
+    assert.deepEqual(
+      children.slice(0, 4),
+      [workflow, market, assets, inspiration],
+      '自定义常驻行必须按 rank 升序位于 nav.panelList 头部',
+    )
+    assert.ok(children.indexOf(inspiration) < children.indexOf(pluginsEntry), '自定义行排在官方面板包裹层之前')
+    assert.ok(children.indexOf(inspiration) < children.indexOf(moreAnchor), '自定义行排在「更多」之前')
+
+    // 幂等性：重复调用 place() 不产生任何 DOM 变更，避免 MutationObserver 自激回路
+    let mutations = 0
+    const observer = new MutationObserver((records) => { mutations += records.length })
+    observer.observe(panelList, { childList: true })
+    for (let i = 0; i < 5; i += 1) api.place()
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    observer.disconnect()
+    assert.equal(mutations, 0, '已就位后重复 place() 不得触发 DOM 变更')
+
+    // React 动态取消固定/重新固定 panelEntry 时，自定义行顺序稳定
+    schedulesEntry.remove()
+    panelList.insertBefore(schedulesEntry, moreAnchor)
+    api.place()
+    assert.deepEqual([...panelList.children].slice(0, 4), [workflow, market, assets, inspiration])
+  } finally {
+    for (const dispose of disposers) dispose()
+  }
+})
+
+test('0.2.2-rc.5：nav.panelList 延迟挂载迁入、卸载时回退到 newSessionRow 后方', () => {
+  setup(`<!doctype html><html><body>
+    <div data-pane="sidebar">
+      <div class="SidebarRoot_root__rc5">
+        <div class="SidebarRoot_logoRow__rc5"></div>
+        <div class="SidebarRoot_newSessionRow__rc5">
+          <button type="button" class="SidebarRoot_newSession__rc5">新对话</button>
+        </div>
+        <div class="SidebarRoot_scrollRegion__rc5">
+          <div class="SidebarRoot_scrollArea__rc5">
+            <div class="SidebarRoot_regionArea__rc5"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </body></html>`)
+  installSidebarGlobal()
+  const api = SIDEBAR_GLOBAL()
+  const workflow = document.createElement('button')
+  const dispose = api.register({ id: 'omnimux-workflow-entry', rank: 4, create: () => workflow })
+  try {
+    const root = document.querySelector('.SidebarRoot_root__rc5')
+    const newSessionRow = document.querySelector('.SidebarRoot_newSessionRow__rc5')
+    assert.equal(workflow.parentElement, root, '无 panelList 时先回退挂在 root 下')
+    assert.equal(workflow.previousElementSibling, newSessionRow)
+
+    // 宿主异步挂载 nav.panelList 后迁入
+    const scrollArea = document.querySelector('.SidebarRoot_scrollArea__rc5')
+    const panelList = document.createElement('nav')
+    panelList.className = 'SidebarRoot_panelList__rc5'
+    const more = document.createElement('span')
+    more.className = 'SidebarRoot_moreAnchor__rc5'
+    panelList.append(more)
+    scrollArea.prepend(panelList)
+    api.place()
+    assert.equal(workflow.parentElement, panelList, 'panelList 出现后迁入 panelList')
+    assert.equal(workflow.nextElementSibling, more)
+
+    // 宿主卸载 nav.panelList（如 panels 为空）时安全回退，不丢失自定义行
+    panelList.remove()
+    api.place()
+    assert.equal(workflow.parentElement, root, 'panelList 卸载后回退到 root，不丢失入口')
+    assert.equal(workflow.previousElementSibling, newSessionRow)
+  } finally {
+    dispose()
+  }
+})
+
+test('0.2.2-rc.5：无 newSessionRow（canStartSession=false）时仍可挂进 nav.panelList', () => {
+  setup(`<!doctype html><html><body>
+    <div data-pane="sidebar">
+      <div class="SidebarRoot_root__rc5">
+        <div class="SidebarRoot_logoRow__rc5"></div>
+        <div class="SidebarRoot_scrollRegion__rc5">
+          <div class="SidebarRoot_scrollArea__rc5">
+            <nav class="SidebarRoot_panelList__rc5">
+              <span class="SidebarRoot_moreAnchor__rc5"></span>
+            </nav>
+          </div>
+        </div>
+      </div>
+    </div>
+  </body></html>`)
+  installSidebarGlobal()
+  const api = SIDEBAR_GLOBAL()
+  const workflow = document.createElement('button')
+  const dispose = api.register({ id: 'omnimux-workflow-entry', rank: 4, create: () => workflow })
+  try {
+    const panelList = document.querySelector('nav[class*="panelList"]')
+    api.place()
+    assert.equal(workflow.parentElement, panelList, '缺少新对话按钮时依然挂进 nav.panelList')
+  } finally {
+    dispose()
+  }
+})
