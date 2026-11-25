@@ -127,6 +127,89 @@ describe('HubPublishChannel error mapping', () => {
     assert.equal(typeof globalThis.window, 'undefined')
   })
 
+  it('surfaces SOCIAL_TIKTOK_* structured errors and never downgrades them to quota/needs-omnimux', async () => {
+    const tools = {
+      get: () => ({ name: 'omnimux_publish_get' }),
+      async execute(batch) {
+        return {
+          results: [{
+            callId: batch.calls[0].id,
+            result: {
+              content: [{ type: 'text', text: 'rate limited' }],
+              isError: true,
+              error: {
+                message: 'quota-exceeded must not win',
+                info: {
+                  code: 'SOCIAL_TIKTOK_RATE_LIMITED',
+                  upstream_code: 'rate_limit_exceeded',
+                  upstream_log_id: 'log-1',
+                },
+              },
+            },
+          }],
+          additionalContexts: [],
+          concluded: false,
+        }
+      },
+    }
+    const channel = createHubChannel({ tools })
+    await assert.rejects(
+      () => channel.getPost('p1'),
+      (e) => e instanceof PublishError
+        && e.code === 'SOCIAL_TIKTOK_RATE_LIMITED'
+        && e.message === 'rate limited'
+        && e.details.upstream_code === 'rate_limit_exceeded'
+        && e.details.upstream_log_id === 'log-1',
+    )
+  })
+
+  it('parses a trailing structured TikTok tag before legacy text classification', async () => {
+    const tools = {
+      get: () => ({ name: 'omnimux_publish_get' }),
+      async execute(batch) {
+        return {
+          results: [{
+            callId: batch.calls[0].id,
+            result: {
+              content: [{ type: 'text', text: 'rate limited [code=SOCIAL_TIKTOK_RATE_LIMITED upstream_code=rate_limit_exceeded upstream_log_id=log-2]' }],
+              isError: true,
+            },
+          }],
+          additionalContexts: [],
+          concluded: false,
+        }
+      },
+    }
+    const channel = createHubChannel({ tools })
+    await assert.rejects(
+      () => channel.getPost('p1'),
+      (e) => e instanceof PublishError
+        && e.code === 'SOCIAL_TIKTOK_RATE_LIMITED'
+        && e.message === 'rate limited'
+        && e.details.upstream_code === 'rate_limit_exceeded'
+        && e.details.upstream_log_id === 'log-2',
+    )
+  })
+
+  it('unwraps success:false with a structured SOCIAL_TIKTOK_* envelope into a typed error', async () => {
+    const tools = mockTools({
+      omnimux_accounts_creator_info: () => ({
+        success: false,
+        error: 'SOCIAL_TIKTOK_TOKEN_INVALID',
+        upstream_code: 'access_token_invalid',
+        upstream_log_id: 'log-3',
+      }),
+    })
+    const channel = createHubChannel({ tools })
+    await assert.rejects(
+      () => channel.creatorInfo('a1'),
+      (e) => e instanceof PublishError
+        && e.code === 'SOCIAL_TIKTOK_TOKEN_INVALID'
+        && e.details.upstream_code === 'access_token_invalid'
+        && e.details.upstream_log_id === 'log-3',
+    )
+  })
+
   it('maps UNKNOWN_TOOL to needs-hub', async () => {
     const tools = mockTools({ omnimux_publish_get: () => ({}) }, { getNames: ['omnimux_publish_get'] })
     // get 允许（lazy 存在），execute 走 UNKNOWN_TOOL 分支：用 getNames 排除法模拟

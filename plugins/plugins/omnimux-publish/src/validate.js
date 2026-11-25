@@ -154,7 +154,9 @@ export function validateForSubmit(draft, ctx) {
         ? '当前 TikTok 账号暂时无法发布（已达发帖上限或受平台限制），请稍后再试'
         : code === 'privacy-intersection-empty'
           ? '所选多个 TikTok 账号之间没有共同可用的隐私级别，请调整账号选择'
-          : '无法读取 TikTok 创作者发布能力（creator_info），请重试后再发布'
+          : code === 'privacy-options-empty'
+            ? '当前 TikTok 账号未返回可用的隐私级别选项，已阻断发布，请重试后再试'
+            : '无法读取 TikTok 创作者发布能力（creator_info），请重试后再发布'
       errors.push({
         code,
         field: 'account_ids',

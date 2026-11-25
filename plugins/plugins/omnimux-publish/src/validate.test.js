@@ -395,6 +395,38 @@ describe('validateForSubmit: TikTok Direct Post compliance (#186)', () => {
     })
     assert.equal(rateLimited.ok, false)
     assert.ok(rateLimited.errors.some((e) => e.code === 'creator-cannot-post'))
+
+    const emptyPrivacy = validateForSubmit({
+      type: 'video',
+      description: 'No privacy options',
+      mediaRows: [{ id: 'v1', kind: 'video', filename: 'ok.mp4', content_type: 'video/mp4', duration_sec: 30 }],
+      account_ids: ['direct-1'],
+      settings: { tiktok_options: { privacy_level: 'PUBLIC_TO_EVERYONE', music_usage_confirmed: true } },
+    }, {
+      accounts: DIRECT_ACCOUNTS,
+      platforms: TIKTOK_PLATFORMS,
+      creatorInfo: {
+        ready: false,
+        blocked: true,
+        blockedReason: 'privacy-options-empty',
+        blockedCategory: 'privacy-options-empty',
+        blockedMessage: 'creator_info returned no available privacy_level_options',
+        blockedAccounts: [],
+        creators: [],
+        privacy_level_options: [],
+        max_video_post_duration_sec: 600,
+        comment_disabled: false,
+        duet_disabled: false,
+        stitch_disabled: false,
+        disabledBy: { comment: [], duet: [], stitch: [] },
+        can_post: false,
+        hasNonPrivatePrivacy: false,
+      },
+    })
+    assert.equal(emptyPrivacy.ok, false)
+    const privacyError = emptyPrivacy.errors.find((e) => e.code === 'privacy-options-empty')
+    assert.ok(privacyError)
+    assert.match(privacyError.message, /隐私级别/)
   })
 
   it('allows phase=assign for incomplete drafts before privacy_level is selected', () => {

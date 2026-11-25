@@ -94,4 +94,40 @@ describe('createCreatorInfoCache (60s TTL, in-flight coalescing, error exclusion
     assert.equal(isCacheableCreatorInfo(blocked), false)
     assert.equal(isCacheableCreatorInfo(recovered), true)
   })
+
+  it('rejects error envelopes, degraded data, and explicit empty privacy options from the cache', async () => {
+    assert.equal(isCacheableCreatorInfo({ data: { privacy_level_options: ['SELF_ONLY'] } }), true)
+    assert.equal(isCacheableCreatorInfo({ data: { privacy_level_options: [] } }), false)
+    assert.equal(isCacheableCreatorInfo({ data: { privacy_level_options: ['UNKNOWN'] } }), false)
+    assert.equal(isCacheableCreatorInfo({ data: { degraded: true, privacy_level_options: ['SELF_ONLY'] } }), false)
+    assert.equal(isCacheableCreatorInfo({ data: { code: 'SOCIAL_TIKTOK_RATE_LIMITED', privacy_level_options: ['SELF_ONLY'] } }), false)
+    assert.equal(isCacheableCreatorInfo({ data: { code: 'ERROR', privacy_level_options: ['SELF_ONLY'] } }), false)
+    assert.equal(isCacheableCreatorInfo({ upstream_code: 'rate_limit_exceeded', data: { privacy_level_options: ['SELF_ONLY'] } }), false)
+    assert.equal(isCacheableCreatorInfo({ data: { error: { code: 'access_token_invalid' }, privacy_level_options: ['SELF_ONLY'] } }), false)
+    assert.equal(isCacheableCreatorInfo({ success: false, data: { privacy_level_options: ['SELF_ONLY'] } }), false)
+    assert.equal(isCacheableCreatorInfo({ data: { can_post: false, privacy_level_options: ['SELF_ONLY'] } }), false)
+  })
+
+  it('never caches an explicit empty privacy response, then re-fetches a healthy one', async () => {
+    let calls = 0
+    const cache = createCreatorInfoCache({
+      ttlMs: 60_000,
+      channel: {
+        async creatorInfo() {
+          calls += 1
+          if (calls === 1) return { data: { creator_nickname: 'Empty', privacy_level_options: [] } }
+          return { data: { creator_nickname: 'Recovered', privacy_level_options: ['SELF_ONLY'] } }
+        },
+      },
+    })
+    const empty = await cache.get('acc-1')
+    assert.equal(calls, 1)
+    assert.deepEqual(empty.data.privacy_level_options, [])
+    const recovered = await cache.get('acc-1')
+    assert.equal(calls, 2)
+    assert.equal(recovered.data.creator_nickname, 'Recovered')
+    const cached = await cache.get('acc-1')
+    assert.equal(calls, 2, 'healthy response should be cached')
+    assert.equal(cached.data.creator_nickname, 'Recovered')
+  })
 })

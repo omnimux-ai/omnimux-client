@@ -12,9 +12,13 @@
 6. **§5.d 发布后处理可见性提示与历史兼容（AC-12）**：提交前操作栏与 `RecordDetail.jsx` 明确提示发布后需数分钟处理方可于 TikTok 主页可见，且与 `inboxNotice` 隔离；`detail-notice.js` 同步兼容 `privacy === '' || privacy === 'SELF_ONLY'` 保护历史旧直发记录。
 7. **`is_aigc` 双支持（拍板口径 #3）**：Direct Post 下视频与图文均暴露默认关闭的 `is_aigc` 开关，`submit.js` 视频与图文直发均透传 `is_aigc`。
 8. **多账号聚合与 `draft_only` 零回归（AC-13 / AC-14）**：多 `direct` 账号隐私取交集、时长取最小、互动禁用取并集；`direct + draft_only` 混选仅对 `direct` 账号拉取 `creator-info` 并按账号能力分流；纯 `draft_only` 严格 0 次 `creator-info` 请求且零 `tiktok_options`。
-9. **二阶护栏**：
-   - `creator_info` 60s 短 TTL 内存缓存（合并并发 in-flight 请求、仅缓存健康成功响应、不缓存错误态，支持 `force=1` / `force: true` 破缓存），供 UI 与 `prepareNow()` 共享以保护 6 次/分钟限频；
+9. **二阶护栏与结构化错误闭环**：
+   - `creator_info` 60s 短 TTL 内存缓存（合并并发 in-flight 请求；仅缓存健康成功响应，`success:false` / 非 `ok` 的 `code` / `upstream_code` / `degraded:true` / `can_post:false` / 空或非法 `privacy_level_options` 一律不缓存，支持 `force=1` / `force: true` 破缓存），供 UI 与 `prepareNow()` 共享以保护 6 次/分钟限频；
+   - `SOCIAL_TIKTOK_*` 结构化错误分类严格按 `upstream_code` → `SOCIAL_TIKTOK_*` → 文本兜底，映射 HTTP 429/409/502，并保留 `upstream_code` / `upstream_log_id` 到 Host 任务错误、HTTP 错误体与 UI 阻断 Banner，避免被误判为 `quota-exceeded` / `needs-omnimux`；
+   - `privacyChoices(null|undefined)` 仅供 `legacy_unknown` 兼容态回退官方四级；显式空数组或未知值一律返回 `[]` 并 fail-closed；
    - 更新 `src/index.js` 中 `PUBLISH_PROMPT` 与工具参数描述，以及 `validate.js` 错误提示，使 Agent 能自助补齐合规参数。
+
+10. **窄屏布局与可访问性（AC-15）**：`max-width: 960px` 时 Composer 改为文档流堆叠（账号栏 → 表单 → 预览 → 操作栏），编辑区/预览区不再互相覆盖；muted 文案改用 `--dsw-alias-label-secondary`，合规外链使用 `--dsw-alias-label-primary` 文本 + `--dsw-alias-link` 下划线，状态徽标文字使用 `--dsw-alias-label-primary`；390px 实测 `scrollWidth == clientWidth`、0 横向溢出，亮/暗主题文本最低对比度 5.80 / 5.55，0 `backdrop-filter`。
 
 ## 假设
 
@@ -58,7 +62,22 @@
   - 变更理由：依据 §2.b（无默认隐私）、§2.c（互动默认全 `false` 且图文省略 Duet/Stitch）及 §4（所有 Direct Post 均携带 `music_usage_confirmed`），商业披露项仅在开启 `commercial_content` 时输出，`music_usage_confirmed` 则在所有直发勾选确认时输出。
   - 新期望证据：非商业直发输出显式 `privacy_level`、`allow_comment/allow_duet/allow_stitch` 默认 `false` 与 `music_usage_confirmed: true`（不含 `commercial_content`/`your_brand`/`branded_content`）；商业直发完整包含 `commercial_content`、独立多选的 `your_brand`/`branded_content` 与 `music_usage_confirmed: true`。
 
+- `plugins/plugins/omnimux-publish/src/shared/tiktok-options.test.js` :: `falls back to all levels when creator-info is missing or empty`
+  - 原断言：`privacyChoices(null)` 与 `privacyChoices({ privacy_level_options: [] })`、`privacyChoices({ privacy_level_options: ['UNKNOWN'] })` 均返回官方四级。
+  - 变更理由：Direct Post 必须严格消费上游 `privacy_level_options`；显式空数组或未知值必须 fail-closed，不能伪造官方可选项。仅 `null`/`undefined` 的 `legacy_unknown` 兼容路径允许回退。
+  - 新期望证据：`privacyChoices(null|undefined)` 返回官方四级，显式 `[]`、`['UNKNOWN']`、`{}` 返回 `[]`；新增 `aggregateCreatorInfo` 单账号空选项 `privacy-options-empty` 阻断断言。
+
 - `plugins/plugins/omnimux-publish/src/submit.test.js` :: `passes settings.tiktok_options into the create tool`
   - 原断言：对 `type: 'image'` 草稿仅传 `{ privacy_level: 'PUBLIC_TO_EVERYONE', allow_comment: false }`（未传 `music_usage_confirmed`），并断言 `create.arguments.tiktok_options.allow_duet === true`。
   - 变更理由：按 §2.c 互动项默认必须全为 `false` 且图文直发不输出 `allow_duet`/`allow_stitch`，按 §4 所有直发必须携带 `music_usage_confirmed: true`。
   - 新期望证据：补齐 `music_usage_confirmed: true` 后，图文直发断言 `privacy_level === 'PUBLIC_TO_EVERYONE'`、`allow_comment === false`、省略 `allow_duet`/`allow_stitch`；并新增视频直发用例断言未勾选的 `allow_duet`/`allow_stitch` 默认 `false`。
+
+## 验证记录（2026-11-25 本机与真实浏览器）
+
+- `corepack pnpm --dir plugins --filter omnimux-publish test`：399 pass / 0 fail（含新增 `creator-info-cache`、`tiktok-options`、`hubtools`、`http-routes`、`validate`、`submit`、`composer-direct-post` 回归）。
+- `node plugins/scripts/verify-dsw-tokens.mjs`：18 个插件/包、450 上游 Token、651 存量未定义引用、`dsh-ui-kit 0`。
+- `corepack pnpm --dir plugins run test:gates`：通过（末尾 768 + 27 项门禁测试 0 fail，DSH 宿主兼容声明通过）。
+- `corepack pnpm --dir plugins run build:all`：13/13 成功；`bundle.lock.json` 仅 `omnimux-publish` 单槽 `contentHash` 变化。
+- `workspace:check` / `bundle:lock:check` / `plugins:verify` / `git diff --check` / `gitleaks`：本机通过。
+- 真实浏览器（工作树最终源码经 esbuild 打包后挂真实 Chromium；仓外证据不提交）：覆盖视频/图文/沙箱/超时长/限流重试/空隐私/纯草稿草稿箱/多账号/RecordDetail 两态，1280 / 768 / 390px × Light / Dark；0 pageerror、0 console.error、0 横向溢出、0 `backdrop-filter`，文本最低对比度 5.80（亮）/ 5.55（暗）；19 张截图保存在仓外本地证据目录。
+- 真实 TikTok 线上网关调用：未执行（离线 mock）。真实发布、OAuth、账号数据与线上限流状态需人工/发布环境确认。

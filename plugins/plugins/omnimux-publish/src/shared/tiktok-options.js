@@ -21,6 +21,10 @@
  * @property {string} [display_name]
  * @property {Record<string, unknown> | null} [data]
  * @property {string | null} [error]
+ * @property {string | null} [error_code]
+ * @property {string | null} [upstream_code]
+ * @property {string | null} [upstream_log_id]
+ * @property {Record<string, unknown> | null} [errorBody]
  */
 
 /** @typedef {object} NormalizedCreatorInfo
@@ -37,12 +41,25 @@
  * @property {boolean} stitch_disabled
  */
 
+/** @typedef {object} BlockedAccountEntry
+ * @property {string} account_id
+ * @property {string} display_name
+ * @property {string} code
+ * @property {string} category
+ * @property {string} social_code
+ * @property {string} upstream_code
+ * @property {string} upstream_log_id
+ * @property {string} message
+ */
+
 /** @typedef {object} AggregatedCreatorInfo
  * @property {boolean} ready
  * @property {boolean} blocked
  * @property {string} blockedReason
+ * @property {string} blockedCategory
+ * @property {string} blockedLogId
  * @property {string} blockedMessage
- * @property {Array<{ account_id: string, display_name: string, code: string, message: string }>} blockedAccounts
+ * @property {BlockedAccountEntry[]} blockedAccounts
  * @property {NormalizedCreatorInfo[]} creators
  * @property {string[]} privacy_level_options
  * @property {number | null} max_video_post_duration_sec
@@ -56,6 +73,247 @@
 
 export const TIKTOK_MUSIC_USAGE_URL = 'https://www.tiktok.com/legal/page/global/music-usage-confirmation/en'
 export const TIKTOK_BRANDED_CONTENT_URL = 'https://www.tiktok.com/legal/page/global/bc-policy/en'
+
+export const SOCIAL_TIKTOK_CODES = Object.freeze({
+  RATE_LIMITED: 'SOCIAL_TIKTOK_RATE_LIMITED',
+  PUBLISH_RESTRICTED: 'SOCIAL_TIKTOK_PUBLISH_RESTRICTED',
+  POSTING_BANNED: 'SOCIAL_TIKTOK_POSTING_BANNED',
+  TOKEN_INVALID: 'SOCIAL_TIKTOK_TOKEN_INVALID',
+  SCOPE_MISSING: 'SOCIAL_TIKTOK_SCOPE_MISSING',
+  UPSTREAM_ERROR: 'SOCIAL_TIKTOK_UPSTREAM_ERROR',
+})
+
+const SAFE_TAG_TOKEN_RE = /^[A-Za-z0-9_.-]+$/
+const TRAILING_SOCIAL_TAG_RE = /\s*\[((?:(?:code|upstream_code|upstream_log_id)=[A-Za-z0-9_.-]+\s*)+)\]\s*$/
+
+/** @param {unknown} value @returns {boolean} */
+export function isSocialTikTokCode(value) {
+  return typeof value === 'string' && value.startsWith('SOCIAL_TIKTOK_')
+}
+
+/** @param {unknown} value @returns {string} */
+function safeTagToken(value) {
+  if (typeof value !== 'string') return ''
+  const trimmed = value.trim()
+  return trimmed !== '' && SAFE_TAG_TOKEN_RE.test(trimmed) ? trimmed : ''
+}
+
+/**
+ * Parse a structured tail tag appended by the hub boundary:
+ * `... [code=SOCIAL_TIKTOK_* upstream_code=... upstream_log_id=...]`
+ * @param {string} rawText
+ * @returns {{ message: string, code: string, upstream_code: string, upstream_log_id: string } | null}
+ */
+export function parseSocialTikTokTag(rawText) {
+  if (typeof rawText !== 'string' || rawText === '') return null
+  const match = TRAILING_SOCIAL_TAG_RE.exec(rawText)
+  if (!match) return null
+  let code = ''
+  let upstreamCode = ''
+  let upstreamLogId = ''
+  for (const part of match[1].trim().split(/\s+/)) {
+    const eq = part.indexOf('=')
+    if (eq <= 0) continue
+    const key = part.slice(0, eq)
+    const val = safeTagToken(part.slice(eq + 1))
+    if (!val) continue
+    if (key === 'code') code = val
+    else if (key === 'upstream_code') upstreamCode = val
+    else if (key === 'upstream_log_id') upstreamLogId = val
+  }
+  if (!code && !upstreamCode && !upstreamLogId) return null
+  return {
+    message: rawText.slice(0, match.index).trim(),
+    code,
+    upstream_code: upstreamCode,
+    upstream_log_id: upstreamLogId,
+  }
+}
+
+const UPSTREAM_CODE_PATTERNS = [
+  ['rate_limit_exceeded', 'rate_limited', SOCIAL_TIKTOK_CODES.RATE_LIMITED],
+  ['spam_risk_user_banned_from_posting', 'posting_banned', SOCIAL_TIKTOK_CODES.POSTING_BANNED],
+  ['spam_risk_too_many_posts', 'publish_restricted', SOCIAL_TIKTOK_CODES.PUBLISH_RESTRICTED],
+  ['reached_active_user_cap', 'publish_restricted', SOCIAL_TIKTOK_CODES.PUBLISH_RESTRICTED],
+  ['spam_risk_too_many_pending_share', 'publish_restricted', SOCIAL_TIKTOK_CODES.PUBLISH_RESTRICTED],
+  ['unaudited_client_can_only_post_to_private_accounts', 'publish_restricted', SOCIAL_TIKTOK_CODES.PUBLISH_RESTRICTED],
+  ['url_ownership_unverified', 'publish_restricted', SOCIAL_TIKTOK_CODES.PUBLISH_RESTRICTED],
+  ['access_token_invalid', 'token_invalid', SOCIAL_TIKTOK_CODES.TOKEN_INVALID],
+  ['scope_not_authorized', 'scope_missing', SOCIAL_TIKTOK_CODES.SCOPE_MISSING],
+]
+
+/** @param {string} code @returns {string} */
+function categoryFromUpstreamCode(code) {
+  const lower = code.trim().toLowerCase()
+  if (!lower) return ''
+  for (const [token, category] of UPSTREAM_CODE_PATTERNS) {
+    if (lower === token) return category
+  }
+  if (lower.includes('banned_from_posting') || lower.includes('user_banned')) return 'posting_banned'
+  if (lower.includes('rate_limit')) return 'rate_limited'
+  if (lower.includes('spam_risk') || lower.includes('active_user_cap') || lower.includes('unaudited_client') || lower.includes('url_ownership')) {
+    return 'publish_restricted'
+  }
+  if (lower === 'access_token_invalid') return 'token_invalid'
+  if (lower === 'scope_not_authorized') return 'scope_missing'
+  return ''
+}
+
+/** @param {string} code @returns {string} */
+function categoryFromSocialCode(code) {
+  switch (code) {
+    case SOCIAL_TIKTOK_CODES.RATE_LIMITED: return 'rate_limited'
+    case SOCIAL_TIKTOK_CODES.POSTING_BANNED: return 'posting_banned'
+    case SOCIAL_TIKTOK_CODES.PUBLISH_RESTRICTED: return 'publish_restricted'
+    case SOCIAL_TIKTOK_CODES.TOKEN_INVALID: return 'token_invalid'
+    case SOCIAL_TIKTOK_CODES.SCOPE_MISSING: return 'scope_missing'
+    case SOCIAL_TIKTOK_CODES.UPSTREAM_ERROR: return 'upstream_error'
+    default: return ''
+  }
+}
+
+/** @param {string} category @returns {string} */
+export function socialCodeFromCategory(category) {
+  switch (category) {
+    case 'rate_limited': return SOCIAL_TIKTOK_CODES.RATE_LIMITED
+    case 'posting_banned': return SOCIAL_TIKTOK_CODES.POSTING_BANNED
+    case 'publish_restricted': return SOCIAL_TIKTOK_CODES.PUBLISH_RESTRICTED
+    case 'token_invalid': return SOCIAL_TIKTOK_CODES.TOKEN_INVALID
+    case 'scope_missing': return SOCIAL_TIKTOK_CODES.SCOPE_MISSING
+    default: return SOCIAL_TIKTOK_CODES.UPSTREAM_ERROR
+  }
+}
+
+/** @param {...unknown} values @returns {string} */
+function firstNonEmptyString(...values) {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim() !== '') return value.trim()
+  }
+  return ''
+}
+
+/**
+ * Extract structured TikTok error metadata from a wire error body, Error, or string.
+ * @param {unknown} source
+ * @returns {{ code: string, upstream_code: string, upstream_log_id: string, message: string }}
+ */
+export function extractTikTokErrorMeta(source) {
+  if (typeof source === 'string') {
+    const tagged = parseSocialTikTokTag(source)
+    if (tagged) {
+      return {
+        code: tagged.code,
+        upstream_code: tagged.upstream_code,
+        upstream_log_id: tagged.upstream_log_id,
+        message: tagged.message || source.trim(),
+      }
+    }
+    return { code: '', upstream_code: '', upstream_log_id: '', message: source.trim() }
+  }
+  const obj = asObj(source)
+  if (!obj) return { code: '', upstream_code: '', upstream_log_id: '', message: '' }
+  const details = asObj(obj.details)
+  const errObj = asObj(obj.error)
+  const rawMessage = firstNonEmptyString(
+    obj.message,
+    errObj?.message,
+    typeof obj.error === 'string' ? obj.error : '',
+  )
+  const tagged = parseSocialTikTokTag(rawMessage)
+  const codeCandidates = [
+    obj.code,
+    details?.code,
+    typeof obj.error === 'string' ? obj.error : '',
+    obj.error_code,
+    tagged?.code,
+  ]
+  const socialCode = /** @type {string | undefined} */ (codeCandidates.find((c) => isSocialTikTokCode(c)))
+  const code = socialCode || firstNonEmptyString(...codeCandidates)
+  const upstreamCode = firstNonEmptyString(
+    obj.upstream_code,
+    details?.upstream_code,
+    errObj && typeof errObj.code === 'string' && errObj.code.toLowerCase() !== 'ok' ? errObj.code : '',
+    tagged?.upstream_code,
+  )
+  const upstreamLogId = firstNonEmptyString(
+    obj.upstream_log_id,
+    details?.upstream_log_id,
+    errObj?.log_id,
+    tagged?.upstream_log_id,
+  )
+  const message = tagged && tagged.message ? tagged.message : rawMessage
+  return { code, upstream_code: upstreamCode, upstream_log_id: upstreamLogId, message }
+}
+
+/**
+ * Classify a TikTok social error with strict priority:
+ * `upstream_code` -> `code` (`SOCIAL_TIKTOK_*`) -> legacy text fallback -> fail-closed (`upstream_error`).
+ * @param {unknown} input
+ * @returns {{ category: string, code: string, upstream_code: string, upstream_log_id: string, message: string, matchedSocial: boolean }}
+ */
+export function classifyTikTokError(input) {
+  const meta = extractTikTokErrorMeta(input)
+  const message = meta.message
+  let upstreamCode = meta.upstream_code
+  let category = categoryFromUpstreamCode(upstreamCode)
+  if (!category && isSocialTikTokCode(meta.code)) {
+    category = categoryFromSocialCode(meta.code)
+  }
+  if (!category && message) {
+    const lower = message.toLowerCase()
+    for (const [token, cat] of UPSTREAM_CODE_PATTERNS) {
+      if (lower.includes(token)) {
+        if (!upstreamCode) upstreamCode = token
+        category = cat
+        break
+      }
+    }
+    if (!category) {
+      if (/rate_limit|too many requests|\bhttp\s*429\b/i.test(message)) category = 'rate_limited'
+      else if (/banned_from_posting|user_banned/i.test(message)) category = 'posting_banned'
+      else if (/spam_risk|too_many_posts|active_user_cap|too_many_pending|unaudited_client|url_ownership|cannot_post/i.test(message)) category = 'publish_restricted'
+      else if (/access_token_invalid/i.test(message)) category = 'token_invalid'
+      else if (/scope_not_authorized/i.test(message)) category = 'scope_missing'
+    }
+  }
+  const matchedSocial = Boolean(
+    category
+    || isSocialTikTokCode(meta.code)
+    || upstreamCode
+    || /\btiktok:/i.test(message),
+  )
+  const resolvedCategory = category || 'upstream_error'
+  const upstreamCategory = categoryFromUpstreamCode(meta.upstream_code)
+  const resolvedCode = upstreamCategory
+    ? socialCodeFromCategory(upstreamCategory)
+    : (isSocialTikTokCode(meta.code)
+      ? meta.code
+      : (matchedSocial ? socialCodeFromCategory(resolvedCategory) : meta.code))
+  return {
+    category: resolvedCategory,
+    code: resolvedCode,
+    upstream_code: upstreamCode,
+    upstream_log_id: meta.upstream_log_id,
+    message,
+    matchedSocial,
+  }
+}
+
+/**
+ * Format a compact diagnostic message for task ledger persistence (preserves
+ * upstream_code and upstream_log_id without leaking secrets).
+ * @param {unknown} error
+ * @returns {string}
+ */
+export function formatTikTokErrorDiagnostic(error) {
+  const info = classifyTikTokError(error)
+  const base = info.message || (error instanceof Error ? error.message : String(error || 'publish failed'))
+  /** @type {string[]} */
+  const suffix = []
+  if (info.upstream_code && !base.includes(info.upstream_code)) suffix.push(`upstream_code=${info.upstream_code}`)
+  if (info.upstream_log_id && !base.includes(info.upstream_log_id)) suffix.push(`log_id=${info.upstream_log_id}`)
+  return suffix.length > 0 ? `${base} (${suffix.join(', ')})` : base
+}
 
 /** @type {readonly string[]} */
 export const TIKTOK_PRIVACY_LEVELS = Object.freeze([
@@ -134,18 +392,20 @@ function parsePrivacyList(options) {
 }
 
 /**
- * Privacy levels the account may actually choose. When creator-info reports a
- * non-empty list we trust it (unaudited sandbox apps only allow SELF_ONLY).
+ * Privacy levels the account may actually choose.
+ * - When `creatorInfo` is provided (Direct Post), strictly trust upstream
+ *   `privacy_level_options` without fabricating fallback levels (explicit `[]`
+ *   or unknown values stay `[]` for fail-closed handling).
+ * - Only when `creatorInfo` is null/undefined (legacy compatibility path with
+ *   no `creator_info` query) return all official levels.
  * @param {unknown} creatorInfo
  * @returns {string[]}
  */
 export function privacyChoices(creatorInfo) {
   const info = asObj(creatorInfo)
-  const allowed = parsePrivacyList(info?.privacy_level_options)
-  return allowed.length > 0 ? allowed : [...TIKTOK_PRIVACY_LEVELS]
+  if (!info) return [...TIKTOK_PRIVACY_LEVELS]
+  return parsePrivacyList(info.privacy_level_options)
 }
-
-const POST_BLOCK_ERROR_RE = /spam_risk|too_many_posts|banned|cannot_post|active_user_cap|rate_limit|reached_active_user_cap/i
 
 /**
  * Unwrap a creator-info envelope (`{ data: {...} }` or direct payload).
@@ -160,11 +420,24 @@ export function unwrapCreatorInfoData(raw) {
 }
 
 /**
+ * Map a classified TikTok error category to the coarse Direct Post block code.
+ * @param {string} category
+ * @returns {string}
+ */
+function blockCodeForCategory(category) {
+  if (category === 'rate_limited' || category === 'posting_banned' || category === 'publish_restricted') {
+    return 'creator-cannot-post'
+  }
+  return 'creator-info-unavailable'
+}
+
+/**
  * Aggregate `creator_info` responses across one or more Direct Post accounts:
- * - Privacy options: intersection (preserving official ordering).
+ * - Privacy options: intersection (preserving official ordering); explicit empty
+ *   `privacy_level_options` never falls back to all 4 levels (fail-closed).
  * - Max video duration: minimum positive `max_video_post_duration_sec`.
  * - Interaction disabled flags: union (OR), recording which accounts disable each.
- * - Any error / `can_post === false` / empty privacy intersection -> fail-closed `blocked: true`.
+ * - Any error / `can_post === false` / empty privacy options -> fail-closed `blocked: true`.
  * @param {CreatorInfoEntry[]} entries
  * @returns {AggregatedCreatorInfo}
  */
@@ -172,7 +445,7 @@ export function aggregateCreatorInfo(entries) {
   const list = Array.isArray(entries) ? entries : []
   /** @type {NormalizedCreatorInfo[]} */
   const creators = []
-  /** @type {Array<{ account_id: string, display_name: string, code: string, message: string }>} */
+  /** @type {BlockedAccountEntry[]} */
   const blockedAccounts = []
   /** @type {{ comment: string[], duet: string[], stitch: string[] }} */
   const disabledBy = { comment: [], duet: [], stitch: [] }
@@ -181,10 +454,45 @@ export function aggregateCreatorInfo(entries) {
     if (!entry || typeof entry !== 'object') continue
     const accountId = String(entry.account_id || '')
     const fallbackName = String(entry.display_name || accountId)
-    if (typeof entry.error === 'string' && entry.error.trim() !== '') {
-      const msg = entry.error.trim()
-      const code = POST_BLOCK_ERROR_RE.test(msg) ? 'creator-cannot-post' : 'creator-info-unavailable'
-      blockedAccounts.push({ account_id: accountId, display_name: fallbackName, code, message: msg })
+    const hasExplicitError = (typeof entry.error === 'string' && entry.error.trim() !== '')
+      || (typeof entry.error_code === 'string' && entry.error_code.trim() !== '')
+      || (typeof entry.upstream_code === 'string' && entry.upstream_code.trim() !== '')
+      || Boolean(asObj(entry.errorBody))
+    if (hasExplicitError) {
+      const errSource = asObj(entry.errorBody) ?? {
+        code: entry.error_code ?? '',
+        upstream_code: entry.upstream_code ?? '',
+        upstream_log_id: entry.upstream_log_id ?? '',
+        message: typeof entry.error === 'string' ? entry.error.trim() : '',
+      }
+      const classified = classifyTikTokError(errSource)
+      const msg = classified.message || (typeof entry.error === 'string' ? entry.error.trim() : '') || classified.upstream_code || classified.code || 'creator_info unavailable'
+      blockedAccounts.push({
+        account_id: accountId,
+        display_name: fallbackName,
+        code: blockCodeForCategory(classified.category),
+        category: classified.category,
+        social_code: isSocialTikTokCode(classified.code) ? classified.code : '',
+        upstream_code: classified.upstream_code,
+        upstream_log_id: classified.upstream_log_id,
+        message: msg,
+      })
+      continue
+    }
+    const rawEnvelope = asObj(entry.data)
+    if (rawEnvelope && (rawEnvelope.success === false || isSocialTikTokCode(rawEnvelope.code) || (typeof rawEnvelope.upstream_code === 'string' && rawEnvelope.upstream_code.trim() !== ''))) {
+      const classified = classifyTikTokError(rawEnvelope)
+      const msg = classified.message || classified.upstream_code || classified.code || 'creator_info unavailable'
+      blockedAccounts.push({
+        account_id: accountId,
+        display_name: fallbackName,
+        code: blockCodeForCategory(classified.category),
+        category: classified.category,
+        social_code: isSocialTikTokCode(classified.code) ? classified.code : '',
+        upstream_code: classified.upstream_code,
+        upstream_log_id: classified.upstream_log_id,
+        message: msg,
+      })
       continue
     }
     const data = unwrapCreatorInfoData(entry.data)
@@ -193,6 +501,10 @@ export function aggregateCreatorInfo(entries) {
         account_id: accountId,
         display_name: fallbackName,
         code: 'creator-info-unavailable',
+        category: 'upstream_error',
+        social_code: '',
+        upstream_code: '',
+        upstream_log_id: '',
         message: 'creator_info unavailable',
       })
       continue
@@ -202,10 +514,19 @@ export function aggregateCreatorInfo(entries) {
     const errMsg = errObj && typeof errObj.message === 'string' ? errObj.message.trim() : ''
     if (errCode !== '' && errCode.toLowerCase() !== 'ok') {
       const detail = errMsg ? `${errCode}: ${errMsg}` : errCode
+      const classified = classifyTikTokError({
+        upstream_code: errCode,
+        upstream_log_id: errObj && typeof errObj.log_id === 'string' ? errObj.log_id : '',
+        message: detail,
+      })
       blockedAccounts.push({
         account_id: accountId,
         display_name: fallbackName,
-        code: POST_BLOCK_ERROR_RE.test(detail) ? 'creator-cannot-post' : 'creator-info-unavailable',
+        code: blockCodeForCategory(classified.category),
+        category: classified.category,
+        social_code: isSocialTikTokCode(classified.code) ? classified.code : '',
+        upstream_code: classified.upstream_code || errCode,
+        upstream_log_id: classified.upstream_log_id,
         message: detail,
       })
       continue
@@ -231,7 +552,7 @@ export function aggregateCreatorInfo(entries) {
       creator_avatar_url: avatarUrl,
       max_video_post_duration_sec: maxDuration,
       can_post: canPost,
-      privacy_level_options: allowed.length > 0 ? allowed : [...TIKTOK_PRIVACY_LEVELS],
+      privacy_level_options: allowed,
       comment_disabled: commentDisabled,
       duet_disabled: duetDisabled,
       stitch_disabled: stitchDisabled,
@@ -245,10 +566,20 @@ export function aggregateCreatorInfo(entries) {
       const reason = typeof data.cannot_post_reason === 'string' && data.cannot_post_reason.trim() !== ''
         ? data.cannot_post_reason.trim()
         : (typeof data.message === 'string' && data.message.trim() !== '' ? data.message.trim() : 'creator cannot post right now')
+      const classified = classifyTikTokError({
+        code: data.code,
+        upstream_code: data.upstream_code,
+        upstream_log_id: data.upstream_log_id,
+        message: reason,
+      })
       blockedAccounts.push({
         account_id: accountId,
         display_name: nickname,
         code: 'creator-cannot-post',
+        category: classified.category === 'upstream_error' ? 'publish_restricted' : classified.category,
+        social_code: isSocialTikTokCode(classified.code) ? classified.code : '',
+        upstream_code: classified.upstream_code,
+        upstream_log_id: classified.upstream_log_id,
         message: reason,
       })
     }
@@ -274,15 +605,24 @@ export function aggregateCreatorInfo(entries) {
   let blockedReason = blockedAccounts.some((b) => b.code === 'creator-cannot-post')
     ? 'creator-cannot-post'
     : (blockedAccounts[0]?.code ?? '')
-  let blockedMessage = blockedAccounts.map((b) => `${b.display_name}: ${b.message}`).join('; ')
+  const primaryBlocked = blockedAccounts.find((b) => b.code === blockedReason) ?? blockedAccounts[0] ?? null
+  let blockedCategory = primaryBlocked?.category ?? ''
+  const blockedLogId = blockedAccounts.find((b) => b.upstream_log_id)?.upstream_log_id ?? ''
+  let blockedMessage = blockedAccounts.map((b) => {
+    const logSuffix = b.upstream_log_id && !b.message.includes(b.upstream_log_id) ? ` [log_id=${b.upstream_log_id}]` : ''
+    return `${b.display_name}: ${b.message}${logSuffix}`
+  }).join('; ')
 
   if (!blocked && creators.length > 0 && intersectedPrivacy.length === 0) {
     blocked = true
-    blockedReason = 'privacy-intersection-empty'
-    blockedMessage = 'selected accounts share no common privacy level'
+    blockedReason = creators.length > 1 ? 'privacy-intersection-empty' : 'privacy-options-empty'
+    blockedCategory = blockedReason
+    blockedMessage = creators.length > 1
+      ? 'selected accounts share no common privacy level'
+      : 'creator_info returned no available privacy_level_options'
   }
 
-  const ready = list.length > 0 && blockedAccounts.length === 0 && creators.length === list.length
+  const ready = list.length > 0 && !blocked && blockedAccounts.length === 0 && creators.length === list.length
   const canPost = !blocked && creators.every((c) => c.can_post)
   const hasNonPrivatePrivacy = intersectedPrivacy.some((level) => level !== 'SELF_ONLY')
 
@@ -290,6 +630,8 @@ export function aggregateCreatorInfo(entries) {
     ready,
     blocked,
     blockedReason,
+    blockedCategory,
+    blockedLogId,
     blockedMessage,
     blockedAccounts,
     creators,

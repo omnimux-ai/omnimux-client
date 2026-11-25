@@ -13,6 +13,7 @@ import { PUBLISH_PROVIDER } from './account-policy.js'
  * - 媒体 PUT 走预签名 URL（自授权），不带任何 secret header。
  */
 import { PublishError } from './publish-error.js'
+import { classifyTikTokError, isSocialTikTokCode, parseSocialTikTokTag } from './shared/tiktok-options.js'
 import { isObject } from './shared/values.js'
 /** @typedef {{ type: 'tool-call', id: string, name: string, arguments: string }} ToolBatchCall */
 /** @typedef {{ calls: ToolBatchCall[], signal: AbortSignal, agent?: unknown }} ToolBatchInput */
@@ -111,9 +112,30 @@ export function createHubChannel(deps = {}) {
     if (result.isError) {
       // harness 把 execute 抛错物化为 content 文本 `Error: <message>`；
       // hub OmnimuxError 的 code 不进 content（errorInfo 只认 HarnessError），
-      // 所以 needs-omnimux 要按 code + 已知消息特征双路识别（client.js 实证的消息串）。
+      // 所以先优先解析结构化 TikTok 业务错误（尾标 / info.code / 已知 upstream_code），
+      // 严禁把 SOCIAL_TIKTOK_* 误判为 needs-omnimux 或 quota-exceeded。
       const errorInfo = isObject(result.error) ? result.error : {}
       const info = isObject(errorInfo.info) ? errorInfo.info : {}
+      const rawMessage = text.trim() || String(errorInfo.message || '').trim()
+      const tagged = parseSocialTikTokTag(rawMessage)
+      const taggedCode = tagged && isSocialTikTokCode(tagged.code) ? tagged.code : ''
+      const infoCode = typeof info.code === 'string' ? info.code.trim() : ''
+      const infoUpstreamCode = typeof info.upstream_code === 'string' ? info.upstream_code.trim() : ''
+      const infoLogId = typeof info.upstream_log_id === 'string' ? info.upstream_log_id.trim() : ''
+      const socialCandidate = classifyTikTokError({
+        code: taggedCode || (isSocialTikTokCode(infoCode) ? infoCode : ''),
+        upstream_code: tagged?.upstream_code || infoUpstreamCode,
+        upstream_log_id: tagged?.upstream_log_id || infoLogId,
+        message: tagged ? (tagged.message || rawMessage) : rawMessage,
+      })
+      if (socialCandidate.matchedSocial && isSocialTikTokCode(socialCandidate.code)) {
+        const cleanMessage = (tagged && tagged.message ? tagged.message : rawMessage) || socialCandidate.code
+        /** @type {Record<string, unknown>} */
+        const details = { code: socialCandidate.code }
+        if (socialCandidate.upstream_code) details.upstream_code = socialCandidate.upstream_code
+        if (socialCandidate.upstream_log_id) details.upstream_log_id = socialCandidate.upstream_log_id
+        throw new PublishError(socialCandidate.code, cleanMessage, details)
+      }
       const structured = `${String(errorInfo.message || '')} ${String(info.code || '')}`
       const errText = `${text}\n${structured}`
       const sourceError = ['invalid-provider', 'account-provider-mismatch', 'post-provider-mismatch']
@@ -143,7 +165,7 @@ export function createHubChannel(deps = {}) {
 
   /**
    * 解包 `{ success, data }` 上游信封（docs/hub-tool-contracts.md）。
-   * 兼容无信封的直返对象；success:false → 确定性错误。
+   * 兼容无信封的直返对象；success:false → 确定性错误（优先保留 SOCIAL_TIKTOK_* 结构化错误字段）。
    * @param {unknown} value
    * @param {string} toolName
    */
@@ -153,7 +175,16 @@ export function createHubChannel(deps = {}) {
     }
     const row = /** @type {Record<string, unknown>} */ (value)
     if ('success' in row && row.success === false) {
-      throw new PublishError('hub-tool-error', String(row.message || row.error || `${toolName} upstream success:false`))
+      const classified = classifyTikTokError(row)
+      const msg = classified.message || String(row.message || row.error || `${toolName} upstream success:false`)
+      if (classified.matchedSocial && isSocialTikTokCode(classified.code)) {
+        /** @type {Record<string, unknown>} */
+        const details = { code: classified.code }
+        if (classified.upstream_code) details.upstream_code = classified.upstream_code
+        if (classified.upstream_log_id) details.upstream_log_id = classified.upstream_log_id
+        throw new PublishError(classified.code, msg, details)
+      }
+      throw new PublishError('hub-tool-error', msg)
     }
     if ('data' in row && row.data && typeof row.data === 'object' && !Array.isArray(row.data)) {
       return /** @type {Record<string, unknown>} */ (row.data)

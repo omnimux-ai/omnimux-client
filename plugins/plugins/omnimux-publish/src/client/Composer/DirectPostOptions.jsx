@@ -50,6 +50,7 @@ export function formatDurationSec(sec) {
  *   onToggleAigc: () => void,
  *   overDurationVideo: { filename: string, duration_sec: number } | null,
  *   optionsProblems: string[],
+ *   isLegacyCompat?: boolean,
  * }} props
  */
 export function DirectPostOptions({
@@ -70,10 +71,14 @@ export function DirectPostOptions({
   onToggleAigc,
   overDurationVideo,
   optionsProblems,
+  isLegacyCompat = false,
 }) {
+  // Single source of truth: Direct Post accounts strictly use upstream privacy_level_options
+  // (explicit [] stays [] -> fail-closed). Only the legacy compatibility path (no creator_info)
+  // falls back to the 4 official levels.
   const allowedPrivacy = aggregatedCreator.ready && aggregatedCreator.privacy_level_options.length > 0
     ? aggregatedCreator.privacy_level_options
-    : (aggregatedCreator.blocked ? [] : privacyChoices(null))
+    : (isLegacyCompat && !aggregatedCreator.blocked ? privacyChoices(null) : [])
   const isBranded = tiktokOptions.commercial_content && tiktokOptions.branded_content
   const sandboxSelfOnly = aggregatedCreator.ready && !aggregatedCreator.hasNonPrivatePrivacy
   const privacyOptions = allowedPrivacy.map((level) => {
@@ -112,11 +117,24 @@ export function DirectPostOptions({
 
   const creatorNames = aggregatedCreator.creators.map((c) => c.creator_nickname).filter(Boolean)
   const maxDurLabel = formatDurationSec(aggregatedCreator.max_video_post_duration_sec)
-  const blockedTitle = aggregatedCreator.blockedReason === 'creator-cannot-post'
-    ? t('form.options.creator.blockedTitle')
-    : aggregatedCreator.blockedReason === 'privacy-intersection-empty'
-      ? t('form.options.creator.privacyIntersectionEmpty')
-      : t('form.options.creator.unavailableTitle')
+  const blockedCategory = aggregatedCreator.blockedCategory || ''
+  const blockedTitle = blockedCategory === 'rate_limited'
+    ? t('form.options.creator.rateLimitedTitle')
+    : blockedCategory === 'posting_banned'
+      ? t('form.options.creator.postingBannedTitle')
+      : blockedCategory === 'publish_restricted'
+        ? t('form.options.creator.publishRestrictedTitle')
+        : blockedCategory === 'token_invalid'
+          ? t('form.options.creator.tokenInvalidTitle')
+          : blockedCategory === 'scope_missing'
+            ? t('form.options.creator.scopeMissingTitle')
+            : aggregatedCreator.blockedReason === 'privacy-options-empty'
+              ? t('form.options.creator.privacyOptionsEmpty')
+              : aggregatedCreator.blockedReason === 'privacy-intersection-empty'
+                ? t('form.options.creator.privacyIntersectionEmpty')
+                : aggregatedCreator.blockedReason === 'creator-cannot-post'
+                  ? t('form.options.creator.blockedTitle')
+                  : t('form.options.creator.unavailableTitle')
 
   return (
     <div className="omnimux-publish-settings" data-testid="direct-post-options">
@@ -149,7 +167,12 @@ export function DirectPostOptions({
           ) : null}
 
           {!optionsLoading && aggregatedCreator.blocked ? (
-            <div role="alert" className="omnimux-publish-mode-banner error" data-testid="creator-blocked-banner">
+            <div
+              role="alert"
+              className="omnimux-publish-mode-banner error"
+              data-testid="creator-blocked-banner"
+              data-error-category={blockedCategory || undefined}
+            >
               <div className="omnimux-publish-mode-banner-head">
                 <span className="omnimux-publish-mode-banner-title">{blockedTitle}</span>
                 <Button
@@ -165,6 +188,11 @@ export function DirectPostOptions({
               </div>
               {aggregatedCreator.blockedMessage ? (
                 <div className="omnimux-publish-mode-banner-body">{aggregatedCreator.blockedMessage}</div>
+              ) : null}
+              {aggregatedCreator.blockedLogId && !(aggregatedCreator.blockedMessage || '').includes(aggregatedCreator.blockedLogId) ? (
+                <div className="omnimux-publish-mode-banner-body" data-testid="creator-blocked-log-id">
+                  {t('form.options.creator.logId', { id: aggregatedCreator.blockedLogId })}
+                </div>
               ) : null}
             </div>
           ) : null}

@@ -14,6 +14,7 @@ import { isSupportedImageFormat, unsupportedImageRows } from '../image-format.js
 import {
   DEFAULT_TIKTOK_OPTIONS,
   aggregateCreatorInfo,
+  classifyTikTokError,
   normalizeTikTokOptions,
   storeTikTokOptions,
   tiktokOptionProblems,
@@ -171,19 +172,22 @@ export function Composer({ t, draftId, onBack, onManageAccounts, onSubmitted, on
         if (result.ok && result.body && typeof result.body === 'object') {
           setCreatorInfoMap((prev) => ({
             ...prev,
-            [accountId]: { loading: false, data: result.body, error: null },
+            [accountId]: { loading: false, data: result.body, error: null, errorBody: null },
           }))
         } else {
+          const errorBody = result.body && typeof result.body === 'object' && !Array.isArray(result.body)
+            ? /** @type {Record<string, unknown>} */ (result.body)
+            : null
           setCreatorInfoMap((prev) => ({
             ...prev,
-            [accountId]: { loading: false, data: null, error: errorText(result.body, result.status) },
+            [accountId]: { loading: false, data: null, error: errorText(result.body, result.status), errorBody },
           }))
         }
       }).catch((caught) => {
         if (disposed) return
         setCreatorInfoMap((prev) => ({
           ...prev,
-          [accountId]: { loading: false, data: null, error: caught instanceof Error ? caught.message : String(caught) },
+          [accountId]: { loading: false, data: null, error: caught instanceof Error ? caught.message : String(caught), errorBody: null },
         }))
       })
     }
@@ -207,6 +211,7 @@ export function Composer({ t, draftId, onBack, onManageAccounts, onSubmitted, on
         display_name: String(row.display_name || row.username || id),
         data: entry?.data ?? null,
         error: entry?.error ?? null,
+        errorBody: entry?.errorBody ?? null,
       }
     })
     return aggregateCreatorInfo(entries)
@@ -643,6 +648,7 @@ export function Composer({ t, draftId, onBack, onManageAccounts, onSubmitted, on
                 onToggleAigc={() => { setIsAigc((prev) => !prev) }}
                 overDurationVideo={overDurationVideo}
                 optionsProblems={optionsProblems}
+                isLegacyCompat={isLegacyCompat}
               />
             ) : null}
 
@@ -972,6 +978,26 @@ function describeError(caught, t) {
     : null
   if (details && details.length > 0) {
     return `${t('form.submitBlocked', { reason: '' })}${details.map((e) => String(e.message || e.code || '')).join('\n')}`
+  }
+  if (body && typeof body === 'object') {
+    const classified = classifyTikTokError(body)
+    if (classified.matchedSocial) {
+      const titleKey = classified.category === 'rate_limited'
+        ? 'form.options.creator.rateLimitedTitle'
+        : classified.category === 'posting_banned'
+          ? 'form.options.creator.postingBannedTitle'
+          : classified.category === 'publish_restricted'
+            ? 'form.options.creator.publishRestrictedTitle'
+            : classified.category === 'token_invalid'
+              ? 'form.options.creator.tokenInvalidTitle'
+              : classified.category === 'scope_missing'
+                ? 'form.options.creator.scopeMissingTitle'
+                : 'form.options.creator.unavailableTitle'
+      const parts = [t(titleKey)]
+      if (classified.message && classified.message !== classified.code) parts.push(classified.message)
+      if (classified.upstream_log_id) parts.push(t('form.options.creator.logId', { id: classified.upstream_log_id }))
+      return parts.join(' — ')
+    }
   }
   return caught instanceof Error ? caught.message : String(caught)
 }

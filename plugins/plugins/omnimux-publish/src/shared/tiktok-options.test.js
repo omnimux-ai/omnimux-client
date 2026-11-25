@@ -2,12 +2,17 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import {
   DEFAULT_TIKTOK_OPTIONS,
+  SOCIAL_TIKTOK_CODES,
   TIKTOK_BRANDED_CONTENT_URL,
   TIKTOK_MUSIC_USAGE_URL,
   TIKTOK_PRIVACY_LEVELS,
   aggregateCreatorInfo,
   buildCreateTikTokOptions,
+  classifyTikTokError,
+  extractTikTokErrorMeta,
+  formatTikTokErrorDiagnostic,
   normalizeTikTokOptions,
+  parseSocialTikTokTag,
   privacyChoices,
   tiktokOptionProblems,
 } from './tiktok-options.js'
@@ -59,10 +64,12 @@ describe('privacyChoices', () => {
     )
   })
 
-  it('falls back to all levels when creator-info is missing or empty', () => {
+  it('falls back to all levels only on the legacy null path and fails closed on explicit empty/unknown options', () => {
     assert.deepEqual(privacyChoices(null), [...TIKTOK_PRIVACY_LEVELS])
-    assert.deepEqual(privacyChoices({ privacy_level_options: [] }), [...TIKTOK_PRIVACY_LEVELS])
-    assert.deepEqual(privacyChoices({ privacy_level_options: ['UNKNOWN'] }), [...TIKTOK_PRIVACY_LEVELS])
+    assert.deepEqual(privacyChoices(undefined), [...TIKTOK_PRIVACY_LEVELS])
+    assert.deepEqual(privacyChoices({ privacy_level_options: [] }), [])
+    assert.deepEqual(privacyChoices({ privacy_level_options: ['UNKNOWN'] }), [])
+    assert.deepEqual(privacyChoices({}), [])
   })
 })
 
@@ -185,6 +192,48 @@ describe('buildCreateTikTokOptions', () => {
   })
 })
 
+describe('TikTok structured error classification', () => {
+  it('parses the hub trailing tag and prefers upstream codes over generic codes', () => {
+    assert.deepEqual(parseSocialTikTokTag('busy [code=SOCIAL_TIKTOK_RATE_LIMITED upstream_code=rate_limit_exceeded upstream_log_id=log-42]'), {
+      message: 'busy',
+      code: SOCIAL_TIKTOK_CODES.RATE_LIMITED,
+      upstream_code: 'rate_limit_exceeded',
+      upstream_log_id: 'log-42',
+    })
+    assert.equal(parseSocialTikTokTag('plain message'), null)
+    assert.equal(parseSocialTikTokTag(''), null)
+
+    const meta = extractTikTokErrorMeta({
+      error: 'SOCIAL_TIKTOK_UPSTREAM_ERROR',
+      details: { upstream_code: 'access_token_invalid', upstream_log_id: 'log-7' },
+      message: 'token no longer valid',
+    })
+    assert.equal(meta.code, SOCIAL_TIKTOK_CODES.UPSTREAM_ERROR)
+    assert.equal(meta.upstream_code, 'access_token_invalid')
+    assert.equal(meta.upstream_log_id, 'log-7')
+
+    const classified = classifyTikTokError(meta)
+    assert.equal(classified.category, 'token_invalid')
+    assert.equal(classified.code, SOCIAL_TIKTOK_CODES.TOKEN_INVALID)
+    assert.equal(classified.matchedSocial, true)
+  })
+
+  it('does not downgrade SOCIAL_TIKTOK errors to quota/needs-omnimux text and formats diagnostics', () => {
+    const rate = classifyTikTokError({ upstream_code: 'rate_limit_exceeded', message: 'quota-exceeded should not win' })
+    assert.equal(rate.category, 'rate_limited')
+    assert.equal(rate.code, SOCIAL_TIKTOK_CODES.RATE_LIMITED)
+    assert.equal(formatTikTokErrorDiagnostic({ upstream_code: 'rate_limit_exceeded', upstream_log_id: 'log-9', message: 'busy' }), 'busy (upstream_code=rate_limit_exceeded, log_id=log-9)')
+
+    const banned = classifyTikTokError({ code: SOCIAL_TIKTOK_CODES.POSTING_BANNED })
+    assert.equal(banned.category, 'posting_banned')
+    const scope = classifyTikTokError({ code: SOCIAL_TIKTOK_CODES.SCOPE_MISSING })
+    assert.equal(scope.category, 'scope_missing')
+    const text = classifyTikTokError('spam_risk_too_many_posts: daily limit')
+    assert.equal(text.category, 'publish_restricted')
+    assert.equal(text.code, SOCIAL_TIKTOK_CODES.PUBLISH_RESTRICTED)
+  })
+})
+
 describe('aggregateCreatorInfo', () => {
   it('computes privacy intersection, minimum duration, and disabled interaction union across multiple direct accounts', () => {
     const agg = aggregateCreatorInfo([
@@ -254,6 +303,48 @@ describe('aggregateCreatorInfo', () => {
     ])
     assert.equal(sandbox.blocked, false)
     assert.equal(sandbox.hasNonPrivatePrivacy, false)
+  })
+
+  it('fails closed on an explicit empty privacy list instead of fabricating fallback levels', () => {
+    const one = aggregateCreatorInfo([
+      { account_id: 'a1', display_name: 'Alice', data: { creator_nickname: 'Alice', privacy_level_options: [] } },
+    ])
+    assert.equal(one.blocked, true)
+    assert.equal(one.ready, false)
+    assert.equal(one.can_post, false)
+    assert.equal(one.blockedReason, 'privacy-options-empty')
+    assert.equal(one.blockedCategory, 'privacy-options-empty')
+    assert.deepEqual(one.privacy_level_options, [])
+  })
+
+  it('keeps structured social error fields and log ids on blocked accounts', () => {
+    const rate = aggregateCreatorInfo([
+      {
+        account_id: 'a1',
+        display_name: 'Alice',
+        error_code: SOCIAL_TIKTOK_CODES.RATE_LIMITED,
+        upstream_code: 'rate_limit_exceeded',
+        upstream_log_id: 'log-1',
+        error: 'rate limit reached',
+      },
+    ])
+    assert.equal(rate.blocked, true)
+    assert.equal(rate.blockedReason, 'creator-cannot-post')
+    assert.equal(rate.blockedCategory, 'rate_limited')
+    assert.equal(rate.blockedLogId, 'log-1')
+    assert.ok(rate.blockedMessage.includes('log-1'))
+    const blocked = rate.blockedAccounts[0]
+    assert.equal(blocked.category, 'rate_limited')
+    assert.equal(blocked.social_code, SOCIAL_TIKTOK_CODES.RATE_LIMITED)
+    assert.equal(blocked.upstream_code, 'rate_limit_exceeded')
+    assert.equal(blocked.upstream_log_id, 'log-1')
+
+    const token = aggregateCreatorInfo([
+      { account_id: 'a2', display_name: 'Bob', data: { success: false, code: SOCIAL_TIKTOK_CODES.TOKEN_INVALID, upstream_log_id: 'log-2' } },
+    ])
+    assert.equal(token.blockedReason, 'creator-info-unavailable')
+    assert.equal(token.blockedCategory, 'token_invalid')
+    assert.equal(token.blockedLogId, 'log-2')
   })
 
   it('exposes official TikTok legal policy URLs', () => {

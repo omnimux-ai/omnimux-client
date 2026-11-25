@@ -735,7 +735,7 @@ th[style*="--pub-min-w"] { min-width: var(--pub-min-w); }
 .omnimux-publish-accounts-muted {
   font-size: 12px;
   line-height: 18px;
-  color: var(--dsw-alias-label-tertiary, #94a3b8);
+  color: var(--dsw-alias-label-secondary, #64748b);
 }
 .omnimux-publish-accounts-alert {
   padding: 8px 10px;
@@ -805,7 +805,7 @@ th[style*="--pub-min-w"] { min-width: var(--pub-min-w); }
 .omnimux-publish-accounts-unavail {
   flex: none;
   font-size: 11px;
-  color: var(--dsw-alias-label-tertiary, #94a3b8);
+  color: var(--dsw-alias-label-secondary, #64748b);
 }
 .omnimux-publish-accounts-foot {
   flex: none;
@@ -830,7 +830,7 @@ th[style*="--pub-min-w"] { min-width: var(--pub-min-w); }
   margin-left: 8px;
   font-size: 12px;
   font-weight: 400;
-  color: var(--dsw-alias-label-tertiary, #94a3b8);
+  color: var(--dsw-alias-label-secondary, #64748b);
 }
 .omnimux-publish-workspace {
   flex: 1;
@@ -864,8 +864,10 @@ th[style*="--pub-min-w"] { min-width: var(--pub-min-w); }
   min-height: 32px;
 }
 .omnimux-publish-editor-title {
+  flex: none;
   font-size: 15px;
   font-weight: 600;
+  white-space: nowrap;
   color: var(--dsw-alias-label-primary, #0f172a);
 }
 .omnimux-publish-preview {
@@ -928,7 +930,7 @@ th[style*="--pub-min-w"] { min-width: var(--pub-min-w); }
 }
 .omnimux-publish-preview-handle {
   font-size: 12px;
-  color: var(--dsw-alias-label-tertiary, #94a3b8);
+  color: var(--dsw-alias-label-secondary, #64748b);
 }
 .omnimux-publish-preview-media {
   display: grid;
@@ -971,14 +973,14 @@ th[style*="--pub-min-w"] { min-width: var(--pub-min-w); }
   color: var(--dsw-alias-brand-primary, #6366f1);
 }
 .omnimux-publish-preview-placeholder {
-  color: var(--dsw-alias-label-tertiary, #94a3b8);
+  color: var(--dsw-alias-label-secondary, #64748b);
 }
 .omnimux-publish-preview-foot {
   display: flex;
   align-items: center;
   gap: 8px;
   font-size: 12px;
-  color: var(--dsw-alias-label-tertiary, #94a3b8);
+  color: var(--dsw-alias-label-secondary, #64748b);
   flex-wrap: wrap;
 }
 .omnimux-publish-preview-pill {
@@ -991,7 +993,7 @@ th[style*="--pub-min-w"] { min-width: var(--pub-min-w); }
 .omnimux-publish-preview-note {
   font-size: 11px;
   line-height: 16px;
-  color: var(--dsw-alias-label-tertiary, #94a3b8);
+  color: var(--dsw-alias-label-secondary, #64748b);
 }
 .omnimux-publish-actionbar {
   flex: none;
@@ -1014,7 +1016,7 @@ th[style*="--pub-min-w"] { min-width: var(--pub-min-w); }
 }
 .omnimux-publish-actionbar-hint {
   font-size: 11px;
-  color: var(--dsw-alias-label-tertiary, #94a3b8);
+  color: var(--dsw-alias-label-secondary, #64748b);
 }
 .omnimux-publish-actionbar-actions {
   margin-inline-start: auto;
@@ -1117,7 +1119,7 @@ th[style*="--pub-min-w"] { min-width: var(--pub-min-w); }
 }
 .omnimux-publish-settings-summary {
   font-size: 12px;
-  color: var(--dsw-alias-label-tertiary, #94a3b8);
+  color: var(--dsw-alias-label-secondary, #64748b);
 }
 .omnimux-publish-setting-row {
   display: flex;
@@ -1128,7 +1130,7 @@ th[style*="--pub-min-w"] { min-width: var(--pub-min-w); }
 .omnimux-publish-setting-label {
   flex: 0 0 56px;
   font-size: 12px;
-  color: var(--dsw-alias-label-tertiary, #94a3b8);
+  color: var(--dsw-alias-label-secondary, #64748b);
 }
 .omnimux-publish-setting-chips {
   display: flex;
@@ -1185,7 +1187,7 @@ th[style*="--pub-min-w"] { min-width: var(--pub-min-w); }
 .omnimux-publish-hint {
   font-size: 12px;
   line-height: 18px;
-  color: var(--dsw-alias-label-tertiary, #94a3b8);
+  color: var(--dsw-alias-label-secondary, #64748b);
 }
 .omnimux-publish-hint.warn {
   color: var(--dsw-alias-state-warn-text, #b45309);
@@ -1632,15 +1634,15 @@ th[style*="--pub-min-w"] { min-width: var(--pub-min-w); }
 }
 .omnimux-publish-cap-badge.draft {
   background: var(--dsw-alias-state-business-tertiary);
-  color: var(--dsw-alias-state-business-primary);
+  color: var(--dsw-alias-label-primary);
 }
 .omnimux-publish-cap-badge.direct {
   background: var(--dsw-alias-state-success-tertiary);
-  color: var(--dsw-alias-state-success-primary);
+  color: var(--dsw-alias-label-primary);
 }
 .omnimux-publish-cap-badge.warn {
   background: var(--dsw-alias-state-warn-tertiary);
-  color: var(--dsw-alias-state-warn-label);
+  color: var(--dsw-alias-label-primary);
 }
 .omnimux-publish-accounts-row-wrap {
   display: flex;
@@ -1679,6 +1681,16 @@ th[style*="--pub-min-w"] { min-width: var(--pub-min-w); }
 .omnimux-publish-setting-control {
   flex: 1 1 auto;
   min-width: 0;
+}
+.omnimux-publish-setting-control > .dshUk-DropdownSelect-anchor {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  flex: 1 1 auto;
+  box-sizing: border-box;
+}
+.omnimux-publish-setting-control .dshUk-DropdownSelect-placeholder {
+  color: var(--dsw-alias-label-secondary);
 }
 .omnimux-publish-chip-wrap {
   display: inline-flex;
@@ -1733,13 +1745,16 @@ th[style*="--pub-min-w"] { min-width: var(--pub-min-w); }
   color: var(--dsw-alias-label-primary);
 }
 .omnimux-publish-compliance-link {
-  color: var(--dsw-alias-link);
+  color: var(--dsw-alias-label-primary);
   text-decoration: underline;
+  text-decoration-color: var(--dsw-alias-link);
   text-underline-offset: 2px;
+  text-decoration-thickness: 1.5px;
   font-weight: 500;
 }
 .omnimux-publish-compliance-link:hover {
-  color: var(--dsw-alias-state-business-primary);
+  color: var(--dsw-alias-label-primary);
+  text-decoration-thickness: 2px;
 }
 .omnimux-publish-compliance-note {
   font-size: 11px;
@@ -1808,12 +1823,35 @@ th[style*="--pub-min-w"] { min-width: var(--pub-min-w); }
 @media (max-width: 960px) {
   .omnimux-publish-composer {
     flex-direction: column;
-    overflow: auto;
+    height: auto;
+    min-height: 100%;
+    overflow: visible;
+  }
+  .omnimux-publish-workspace {
+    flex: none;
+  }
+  .omnimux-publish-main {
+    flex: none;
+    overflow: visible;
+  }
+  .omnimux-publish-editor-pane {
+    flex: none;
+    overflow: visible;
+  }
+  .omnimux-publish-preview {
+    flex: none;
   }
   .omnimux-publish-accounts {
     width: auto;
     border-right: none;
     border-bottom: 1px solid var(--dsw-alias-border-l1);
+  }
+  .omnimux-publish-editor-head {
+    flex-wrap: wrap;
+  }
+  .omnimux-publish-lock {
+    flex: 1 1 100%;
+    margin-left: 0;
   }
   .omnimux-publish-callout {
     margin-left: 0;

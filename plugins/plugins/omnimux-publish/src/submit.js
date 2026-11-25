@@ -5,7 +5,7 @@ import { validateForSubmit, validationError } from './validate.js'
 import { requirePublishingAccounts } from './accounts.js'
 import { ACCOUNT_SOURCE_MESSAGE, PUBLISH_PROVIDER } from './account-policy.js'
 import { createSubmitMedia, composeContent } from './submit-media.js'
-import { aggregateCreatorInfo, buildCreateTikTokOptions } from './shared/tiktok-options.js'
+import { aggregateCreatorInfo, buildCreateTikTokOptions, formatTikTokErrorDiagnostic } from './shared/tiktok-options.js'
 import { accountPublishMode } from './shared/tiktok-capabilities.js'
 import { createCreatorInfoCache } from './creator-info-cache.js'
 import { isObject } from './shared/values.js'
@@ -87,10 +87,14 @@ export function createSubmitService(deps) {
             data: isObject(data) ? data : null,
           }
         } catch (error) {
+          const details = error instanceof PublishError && isObject(error.details) ? error.details : null
           return {
             account_id: accountId,
             display_name: displayName,
             error: error instanceof Error ? error.message : String(error),
+            ...(error instanceof PublishError ? { error_code: error.code } : {}),
+            ...(details && typeof details.upstream_code === 'string' ? { upstream_code: details.upstream_code } : {}),
+            ...(details && typeof details.upstream_log_id === 'string' ? { upstream_log_id: details.upstream_log_id } : {}),
           }
         }
       }))
@@ -203,7 +207,7 @@ export function createSubmitService(deps) {
           store.updateTask(task.id, { status: 'failed', error: 'aborted', settled_at: now() })
           continue
         }
-        const message = error instanceof Error ? error.message : String(error)
+        const message = formatTikTokErrorDiagnostic(error)
         store.updateTask(task.id, { status: 'failed', error: message, settled_at: now() })
       }
     }
@@ -293,7 +297,7 @@ export function createSubmitService(deps) {
         store.updateTask(taskId, { status: 'failed', error: 'aborted', settled_at: now() })
         throw new PublishError('aborted', `retry of ${taskId} aborted`)
       }
-      const message = error instanceof Error ? error.message : String(error)
+      const message = formatTikTokErrorDiagnostic(error)
       store.updateTask(taskId, { status: 'failed', error: message, settled_at: now() })
       throw error instanceof PublishError ? error : new PublishError('hub-tool-error', message)
     }

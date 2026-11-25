@@ -365,3 +365,90 @@ test('AC-12: RecordDetail renders direct-processing-notice for Direct Post and k
     },
   )
 })
+
+test('AC-10: creator-info structured SOCIAL_TIKTOK error renders category, log id, and force retry recovery', async () => {
+  let attempts = 0
+  await withDom(
+    (url) => {
+      if (url.includes('/capabilities')) return jsonResponse({ platforms: { tiktok: { media_types: ['image', 'video'], max_images: 35 } } })
+      if (url.includes('/omnimux/accounts')) {
+        return jsonResponse({
+          accounts: [
+            { id: 'direct-1', platform: 'tiktok', provider: 'tiktok_direct', display_name: 'Alice', status: 'active', capabilities: { upload_draft: true, publish_direct: true } },
+          ],
+        })
+      }
+      if (url.includes('/records/detail?id=rec-rate')) {
+        return jsonResponse({
+          record: { id: 'rec-rate', type: 'video', title: 'Rate', description: 'Caption', topics: [], media_ids: ['v1'], account_ids: ['direct-1'], settings: {} },
+          media: [{ id: 'v1', kind: 'video', filename: 'clip.mp4', content_type: 'video/mp4', duration_sec: 30 }],
+        })
+      }
+      if (url.includes('creator-info')) {
+        attempts += 1
+        if (attempts === 1) {
+          return jsonResponse({
+            error: 'SOCIAL_TIKTOK_RATE_LIMITED',
+            message: 'rate limited',
+            upstream_code: 'rate_limit_exceeded',
+            upstream_log_id: 'log-1',
+          }, 429)
+        }
+        return jsonResponse({
+          data: { creator_nickname: 'Alice', privacy_level_options: ['PUBLIC_TO_EVERYONE'], max_video_post_duration_sec: 600 },
+        })
+      }
+      return jsonResponse({ ok: true })
+    },
+    () => React.createElement(Composer, { t, draftId: 'rec-rate', onBack() {}, onSubmitted() {}, onSaved() {} }),
+    async (container, calls) => {
+      const banner = container.querySelector('[data-testid="creator-blocked-banner"]')
+      assert.ok(banner)
+      assert.equal(banner.getAttribute('data-error-category'), 'rate_limited')
+      assert.match(banner.textContent, /form\.options\.creator\.rateLimitedTitle/)
+      assert.match(banner.textContent, /log-1/)
+      assert.equal(container.querySelector('[data-testid="composer-submit-btn"]').disabled, true)
+
+      await act(async () => { container.querySelector('[data-testid="creator-info-retry"]').click() })
+      await act(async () => { await new Promise((resolve) => setTimeout(resolve, 10)) })
+      assert.ok(calls.some((c) => c.url.includes('creator-info') && c.url.includes('force=1')))
+      assert.equal(container.querySelector('[data-testid="creator-blocked-banner"]'), null)
+      assert.equal(attempts, 2)
+    },
+  )
+})
+
+test('AC-01/AC-10: explicit empty privacy_level_options fail closed without fabricated options', async () => {
+  await withDom(
+    (url) => {
+      if (url.includes('/capabilities')) return jsonResponse({ platforms: { tiktok: { media_types: ['image', 'video'], max_images: 35 } } })
+      if (url.includes('/omnimux/accounts')) {
+        return jsonResponse({
+          accounts: [
+            { id: 'direct-1', platform: 'tiktok', provider: 'tiktok_direct', display_name: 'Alice', status: 'active', capabilities: { upload_draft: true, publish_direct: true } },
+          ],
+        })
+      }
+      if (url.includes('/records/detail?id=rec-empty-privacy')) {
+        return jsonResponse({
+          record: { id: 'rec-empty-privacy', type: 'video', title: 'Empty', description: 'Caption', topics: [], media_ids: ['v1'], account_ids: ['direct-1'], settings: {} },
+          media: [{ id: 'v1', kind: 'video', filename: 'clip.mp4', content_type: 'video/mp4', duration_sec: 30 }],
+        })
+      }
+      if (url.includes('creator-info')) return jsonResponse({ data: { creator_nickname: 'Alice', privacy_level_options: [] } })
+      return jsonResponse({ ok: true })
+    },
+    () => React.createElement(Composer, { t, draftId: 'rec-empty-privacy', onBack() {}, onSubmitted() {}, onSaved() {} }),
+    async (container) => {
+      const banner = container.querySelector('[data-testid="creator-blocked-banner"]')
+      assert.ok(banner)
+      assert.equal(banner.getAttribute('data-error-category'), 'privacy-options-empty')
+      assert.match(banner.textContent, /form\.options\.creator\.privacyOptionsEmpty/)
+      const privacySelect = container.querySelector('select[aria-label="form.options.privacy"]')
+      assert.equal(privacySelect.value, '')
+      const realOptions = [...privacySelect.querySelectorAll('option')].filter((o) => o.value !== '')
+      assert.deepEqual(realOptions, [])
+      assert.equal(container.querySelector('[data-testid="composer-submit-btn"]').disabled, true)
+    },
+  )
+})

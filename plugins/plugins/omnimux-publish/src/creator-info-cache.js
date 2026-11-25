@@ -9,25 +9,37 @@
  *   - Supports `{ force: true }` to bypass cache (e.g. UI Retry button).
  */
 import { PublishError } from './publish-error.js'
+import { privacyChoices } from './shared/tiktok-options.js'
 import { isObject } from './shared/values.js'
 
 export const DEFAULT_CREATOR_INFO_TTL_MS = 60_000
 
 /**
  * Determine whether a `creator_info` response is healthy enough to cache.
- * Errors, `success: false`, upstream TikTok error payloads, and `can_post: false`
- * are never cached.
+ * Errors, `success: false`, `SOCIAL_TIKTOK_*` / `upstream_code` error envelopes,
+ * `degraded: true`, `can_post: false`, and empty `privacy_level_options` are never cached.
  * @param {unknown} response
  * @returns {boolean}
  */
 export function isCacheableCreatorInfo(response) {
   if (!isObject(response)) return false
   if (response.success === false) return false
+  if (typeof response.code === 'string' && response.code.trim() !== '' && response.code.toLowerCase() !== 'ok') return false
+  if (typeof response.upstream_code === 'string' && response.upstream_code.trim() !== '' && response.upstream_code.toLowerCase() !== 'ok') return false
+  if (typeof response.error === 'string' && response.error.trim() !== '') return false
+  if (isObject(response.error) && typeof response.error.code === 'string' && response.error.code !== '' && response.error.code.toLowerCase() !== 'ok') {
+    return false
+  }
   const data = isObject(response.data) ? response.data : response
+  if (data.success === false) return false
+  if (data.degraded === true) return false
+  if (typeof data.code === 'string' && data.code.trim() !== '' && data.code.toLowerCase() !== 'ok') return false
+  if (typeof data.upstream_code === 'string' && data.upstream_code.trim() !== '' && data.upstream_code.toLowerCase() !== 'ok') return false
   if (isObject(data.error) && typeof data.error.code === 'string' && data.error.code !== '' && data.error.code.toLowerCase() !== 'ok') {
     return false
   }
   if (data.can_post === false || data.can_post_more === false) return false
+  if (privacyChoices(data).length === 0) return false
   return true
 }
 

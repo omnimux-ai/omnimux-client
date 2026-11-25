@@ -264,6 +264,54 @@ describe('SubmitService.run 失败隔离与降级', () => {
     assert.equal(ok.post_id, 'post-acc-1')
   })
 
+  it('persists structured upstream_code and log_id diagnostics on a failed Direct Post create', async () => {
+    freshService({
+      omnimux_accounts_list: () => ({
+        success: true,
+        data: {
+          accounts: [
+            {
+              id: 'direct-1',
+              provider: 'tiktok_direct',
+              platform: 'tiktok',
+              status: 'active',
+              display_name: 'Alice',
+              capabilities: { upload_draft: true, publish_direct: true },
+            },
+          ],
+        },
+      }),
+      omnimux_accounts_creator_info: () => ({
+        success: true,
+        data: {
+          creator_nickname: 'Alice',
+          privacy_level_options: ['PUBLIC_TO_EVERYONE'],
+          max_video_post_duration_sec: 600,
+        },
+      }),
+      omnimux_publish_create: () => ({
+        success: false,
+        code: 'SOCIAL_TIKTOK_RATE_LIMITED',
+        upstream_code: 'rate_limit_exceeded',
+        upstream_log_id: 'log-9',
+        message: 'rate limited',
+      }),
+    })
+    const { media: vid } = media.importBuffer(buildSyntheticMp4({ durationSec: 30 }), { filename: 'ok.mp4', content_type: 'video/mp4' })
+    const draft = store.create({
+      type: 'video',
+      description: 'Diagnostics',
+      media_ids: [vid.id],
+      account_ids: ['direct-1'],
+      settings: { tiktok_options: { privacy_level: 'PUBLIC_TO_EVERYONE', music_usage_confirmed: true } },
+    })
+    const view = await service.run(draft.id)
+    assert.equal(view.subtasks[0].status, 'failed')
+    assert.match(view.subtasks[0].error, /rate limited/)
+    assert.match(view.subtasks[0].error, /upstream_code=rate_limit_exceeded/)
+    assert.match(view.subtasks[0].error, /log_id=log-9/)
+  })
+
   it('未登录（needs-omnimux）→ submit 明确报错，不物化子任务', async () => {
     freshService({
       omnimux_accounts_list: () => {
