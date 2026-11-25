@@ -30,9 +30,13 @@ import { isObject } from './shared/values.js'
  * @returns {unknown}
  */
 function resolveToolDefinition(tools, name) {
-  if (typeof tools.executable === 'function') return tools.executable(name)
-  if (typeof tools.get === 'function') return tools.get(name)
-  return undefined
+  // `executable()` refuses registrations that carry a `when` condition unless
+  // the step's tool set is supplied, while `execute()` still dispatches them.
+  // Fall back to `get()` so a conditional registration is not reported as a
+  // missing hub on the 0.2.2 shell.
+  const executable = typeof tools.executable === 'function' ? tools.executable(name) : undefined
+  if (executable) return executable
+  return typeof tools.get === 'function' ? tools.get(name) : undefined
 }
 
 /**

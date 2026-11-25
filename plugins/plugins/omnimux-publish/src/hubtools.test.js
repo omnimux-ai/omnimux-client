@@ -105,6 +105,25 @@ describe('HubPublishChannel lazy resolution', () => {
     assert.deepEqual(await modernChannel.getPost('1'), { id: '1', status: 'published' })
     assert.deepEqual(modernProbes, ['omnimux_publish_get'])
 
+    // 0.2.2-rc.5 hides conditional registrations from executable() unless the
+    // step's tool set is supplied; get() still sees them and execute() still
+    // dispatches, so a conditional hub tool must not be reported as missing.
+    const conditionalProbes = []
+    const conditional = {
+      executable: (name) => { conditionalProbes.push(['executable', name]); return undefined },
+      get: (name) => { conditionalProbes.push(['get', name]); return name === 'omnimux_publish_get' ? { name } : undefined },
+      async execute(batch) {
+        return {
+          results: [{ callId: batch.calls[0].id, result: { isError: false, content: [], value: okEnvelope({ id: 'conditional' }) } }],
+          additionalContexts: [],
+          concluded: false,
+        }
+      },
+    }
+    const conditionalChannel = createHubChannel({ tools: conditional })
+    assert.deepEqual(await conditionalChannel.getPost('c1'), { id: 'conditional' })
+    assert.deepEqual(conditionalProbes, [['executable', 'omnimux_publish_get'], ['get', 'omnimux_publish_get']])
+
     // Frozen 0.2.1-rc.3 shell: no executable(); keep the get() probe.
     const legacyProbes = []
     const legacy = {
