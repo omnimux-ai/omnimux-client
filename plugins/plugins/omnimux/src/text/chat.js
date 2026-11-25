@@ -34,6 +34,7 @@ const DEFAULT_UA =
  *   settings?: { get: (section: string) => any },
  *   resolveOfficialApiKey?: (env: Record<string, string | undefined>) => Promise<string | undefined>,
  *   credentialScope?: 'official' | 'byok',
+ *   reasoningEffort?: string,
  * }} input
  */
 export async function completeTextViaChat(input) {
@@ -110,6 +111,12 @@ export async function completeTextViaChat(input) {
       model: candidateModel,
       max_tokens: input.maxTokens,
       messages,
+      // Only the provider-declared wire value ever reaches the request: the
+      // caller resolves it from the pi-ai profile, so an undeclared dialect is
+      // never invented here.
+      ...(typeof input.reasoningEffort === 'string' && input.reasoningEffort.trim()
+        ? { reasoning_effort: input.reasoningEffort.trim() }
+        : {}),
     }
     let response
     try {

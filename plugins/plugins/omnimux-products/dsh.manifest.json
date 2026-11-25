@@ -61,7 +61,9 @@
     ],
     "seamsProvided": [],
     "seamsConsumed": [
-      "headlessSkill"
+      "headlessSkill",
+      "pageFetch",
+      "socialData"
     ],
     "slots": [],
     "storageDomains": [

@@ -630,31 +630,47 @@ auto_materialize_and_reload() {
     return 0
   fi
   changed_paths="${source_paths}"
+  # 只有 plugins/plugins/<name>/ 下的路径才是可物化插件。plugins/ 根下的 package.json、
+  # scripts/、packages/、docs/、presets/ 与 plugins.registry.json 属于工作区/工具链，不能
+  # 被当成插件名（否则会去同步 plugins/plugins/package.json 这类不存在的目录）。
+  # 共享包（plugins/packages/*）改动无法按单插件增量安装，必须走完整同步重建 kit。
+  local full_sync=0
+  if printf '%s\n' "${changed_paths}" | grep -qE '^plugins/packages/|^plugins/package\.json$|^pnpm-lock\.yaml$'; then
+    full_sync=1
+  fi
   while IFS= read -r p; do
-    [ -n "${p}" ] && changed_plugins+=("${p}")
-  done < <(printf '%s\n' "${changed_paths}" | cut -d'/' -f2 | sort -u)
+    [ -n "${p}" ] || continue
+    case "${p}" in
+      scripts|packages|docs|presets|node_modules|plugins|tests|test-support) continue ;;
+    esac
+    # 单仓真实布局是 plugins/plugins/<name>；隔离夹具/扁平布局是 plugins/<name>。
+    [ -d "${ROOT}/plugins/plugins/${p}" ] || [ -d "${ROOT}/plugins/${p}" ] || continue
+    changed_plugins+=("${p}")
+  done < <(printf '%s\n' "${changed_paths}" | sed -n -e 's|^plugins/plugins/\([^/]*\)/.*|\1|p' -e 's|^plugins/\([^/]*\)/.*|\1|p' | sort -u)
 
-  if [ "${#changed_plugins[@]}" -eq 0 ]; then
+  if [ "${#changed_plugins[@]}" -eq 0 ] && [ "${full_sync}" -eq 0 ]; then
     MATERIALIZE_STATUS="not-needed"
-    say "ℹ️ 本次合入未包含 plugins/ 插件源码变更，无需物化。"
+    say "ℹ️ 本次合入未包含可物化的插件源码变更，无需物化。"
     return 0
   fi
 
-  # 开发版已经包含整段范围的插件不再装第二遍。
-  local plugin
-  for plugin in "${changed_plugins[@]}"; do
-    if dev_plugin_matches_range "${plugin}" "${base_ref}" "${target_ref}"; then
-      say "ℹ️ ${plugin} 已包含 ${base_ref}..${target_ref}，跳过重复安装。"
-    else
-      pending+=("${plugin}")
+  if [ "${full_sync}" -eq 0 ]; then
+    # 开发版已经包含整段范围的插件不再装第二遍。
+    local plugin
+    for plugin in "${changed_plugins[@]}"; do
+      if dev_plugin_matches_range "${plugin}" "${base_ref}" "${target_ref}"; then
+        say "ℹ️ ${plugin} 已包含 ${base_ref}..${target_ref}，跳过重复安装。"
+      else
+        pending+=("${plugin}")
+      fi
+    done
+    if [ "${#pending[@]}" -eq 0 ]; then
+      MATERIALIZE_STATUS="already-current"
+      say "✅ 开发版已包含本次合入，无需重复安装。"
+      return 0
     fi
-  done
-  if [ "${#pending[@]}" -eq 0 ]; then
-    MATERIALIZE_STATUS="already-current"
-    say "✅ 开发版已包含本次合入，无需重复安装。"
-    return 0
+    changed_plugins=("${pending[@]}")
   fi
-  changed_plugins=("${pending[@]}")
 
   # Client 产物由 Web 服务按请求从磁盘读取，刷新页面即取得新版；其余插件文件（宿主路由、
   # 清单、构建期入口）只有宿主进程重新加载后才生效，必须走受控重启，否则会留下新旧混装。
@@ -663,12 +679,21 @@ auto_materialize_and_reload() {
     needs_restart=1
   fi
 
-  say "🔄 自动物化：合并已确认，变更插件 [${changed_plugins[*]}] 开始装进开发版 (~/.omnimux-dev)，不写正式版..."
+  if [ "${full_sync}" -eq 1 ]; then
+    say "🔄 自动物化：合并已确认，共享依赖改动需要完整同步 (~/.omnimux-dev)，不写正式版..."
+  else
+    say "🔄 自动物化：合并已确认，变更插件 [${changed_plugins[*]}] 开始装进开发版 (~/.omnimux-dev)，不写正式版..."
+  fi
   # 单插件同步拒绝覆盖 shared kit（避免共享依赖被单个插件顺带改掉）。失败后的兜底必须是
   # 「先刷新 shared kit，再重试本次插件」：只跑无参数完整同步会漏掉不在默认清单里的插件
   # （omnimux-studio / device / intercept 等），那会造出「本次插件没进开发版却报成功」的新假闭环。
   local sync_ok=0 sync_mode="incremental"
-  if (cd "${ROOT}" && bash "${SCRIPT_DIR}/sync-to-app.sh" "${changed_plugins[@]}"); then
+  if [ "${full_sync}" -eq 1 ]; then
+    sync_mode="full"
+    if (cd "${ROOT}" && bash "${SCRIPT_DIR}/sync-to-app.sh"); then
+      sync_ok=1
+    fi
+  elif (cd "${ROOT}" && bash "${SCRIPT_DIR}/sync-to-app.sh" "${changed_plugins[@]}"); then
     sync_ok=1
   elif [ "${kit_refresh_allowed}" -eq 1 ] && [ "${OMNIMUX_SHIP_NO_FULL_SYNC:-0}" != "1" ]; then
     say "⚠️ 增量物化失败（常见原因：shared kit 漂移）。先刷新 shared kit，再重试本次插件..."
@@ -691,6 +716,10 @@ auto_materialize_and_reload() {
       say "✅ 物化成功（本次增量先失败，刷新 shared kit 后重试成功）。"
       # shared kit 刷新属于宿主侧变更，需要受控重启。
       needs_restart=1
+    elif [ "${sync_mode}" = "full" ]; then
+      say "✅ 物化成功（完整同步已完成）。"
+      # 工作区/共享包变更属于宿主侧改动，需要受控重启。
+      needs_restart=1
     else
       say "✅ 增量物化成功！"
     fi
@@ -706,7 +735,11 @@ auto_materialize_and_reload() {
     if [ -f "${SCRIPT_DIR}/dev-smoke.mjs" ]; then
       local plugins_csv
       plugins_csv="$(IFS=,; echo "${changed_plugins[*]}")"
-      if ! node "${SCRIPT_DIR}/dev-smoke.mjs" --plugins "${plugins_csv}" ${needs_restart:+--expect-restart}; then
+      if [ -n "${plugins_csv}" ]; then
+        if ! node "${SCRIPT_DIR}/dev-smoke.mjs" --plugins "${plugins_csv}" ${needs_restart:+--expect-restart}; then
+          say "⚠️ dev-smoke 未通过：请查看 ${ROOT}/.workbuddy/evidence/dev-smoke/dev-smoke-report.json"
+        fi
+      elif ! node "${SCRIPT_DIR}/dev-smoke.mjs" ${needs_restart:+--expect-restart}; then
         say "⚠️ dev-smoke 未通过：请查看 ${ROOT}/.workbuddy/evidence/dev-smoke/dev-smoke-report.json"
       fi
     fi

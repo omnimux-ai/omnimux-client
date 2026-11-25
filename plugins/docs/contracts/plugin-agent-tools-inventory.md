@@ -273,8 +273,8 @@ superseded_by: null
 
 | 业务功能描述 | 对应 UI 交互 / HTTP 路由 | Agent 工具名称 (`Tool Name`) | 分级 | 状态 | 破坏性 confirm |
 |---|---|---|---|---|---|
-| 查询指定账号或全局核心指标 | 概览卡片与趋势图表 | `analytics_query_metrics` | L2 | `Implemented` | 否 |
-| 生成结构化数据分析周报/月报 | 一键生成总结报告按钮 | `analytics_get_summary` | L2 | `Implemented` | 否 |
+| 拉取指定账号或全局的分析载荷（原样透出，不归一化为 KPI） | 分析看板与 Agent 取数 | `analytics_query_metrics` | L2 | `Implemented` | 否 |
+| 汇总分析窗口内的数据源可用性并返回上游分析载荷（不生成结论报告） | 分析中心取数与 Agent 取数 | `analytics_get_summary` | L2 | `Implemented` | 否 |
 | 图表 Hover Tooltip 渲染 | ECharts 鼠标悬停交互 | — | UI-Only | `UI-Only` | 豁免 (DOM 临时渲染) |
 
 ---

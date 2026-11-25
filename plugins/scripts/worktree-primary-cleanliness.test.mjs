@@ -174,3 +174,29 @@ test('bare worktree.sh copies still refuse untracked plugin sources', (t) => {
   assert.equal(result.status, 1, `${result.stdout}\n${result.stderr}`)
   assert.match(result.stderr, /stray\.js/)
 })
+
+test('ship derives plugin names from the monorepo plugins/plugins/<name> layout', (t) => {
+  const f = createFixture(t, { withContract: true })
+  f.mergeFeature('plugin-feature', { 'plugins/plugins/omnimux-workflow/src/index.ts': 'export const workflow = 1\n' })
+
+  const result = f.ship('plugin-feature', '9201')
+  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
+  const receipt = readFileSync(join(f.repo, 'sync_receipt.txt'), 'utf8')
+  assert.match(receipt, /omnimux-workflow/)
+  assert.doesNotMatch(receipt, /(^|\s)plugins(\s|$)/, 'must not materialize the plugins/ workspace root as a plugin')
+})
+
+test('ship runs a full sync for workspace and shared package changes', (t) => {
+  const cases = [
+    { files: { 'plugins/package.json': '{"name":"omnimux-plugins"}\n' }, label: 'workspace package.json' },
+    { files: { 'plugins/packages/dsh-ui-kit/src/index.js': 'export const kit = 1\n' }, label: 'shared ui kit' },
+  ]
+  for (const { files, label } of cases) {
+    const f = createFixture(t, { withContract: true })
+    f.mergeFeature('plugin-feature', files)
+    const result = f.ship('plugin-feature', '9202')
+    assert.equal(result.status, 0, `${label}: ${result.stdout}\n${result.stderr}`)
+    assert.match(result.stdout, /共享依赖改动需要完整同步/, label)
+    assert.equal(readFileSync(join(f.repo, 'sync_receipt.txt'), 'utf8').trim(), 'SYNC_CALLED:', `${label} must run a full sync without plugin arguments`)
+  }
+})
