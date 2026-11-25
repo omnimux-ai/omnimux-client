@@ -10,14 +10,8 @@ const script = fileURLToPath(new URL('./r2-dist-sync.mjs', import.meta.url))
 const good = Buffer.from('good latest bytes')
 const tampered = Buffer.from('tampered latest bytes')
 
-async function withServer(options, fn) {
-  const {
-    metadataSha256,
-    body,
-    v2Manifest,
-    v2Sig,
-    versionedBody = body,
-  } = options
+async function withServer(metadataSha256, body, fn, extra = {}) {
+  const { v2Manifest, v2Sig, versionedBody = body } = extra
   let baseUrl = ''
   const server = createServer((request, response) => {
     const url = new URL(request.url, 'http://127.0.0.1')
@@ -80,15 +74,15 @@ function runVerify(baseUrl, extraArgs = []) {
 }
 
 test('rejects a sha256 mismatch between metadata and the downloaded latest artifact', async () => {
-  await withServer({ metadataSha256: createHash('sha256').update(good).digest('hex'), body: tampered }, async baseUrl => {
+  await withServer(createHash('sha256').update(good).digest('hex'), tampered, async baseUrl => {
     const result = await runVerify(baseUrl)
     assert.equal(result.status, 1)
     assert.match(result.stdout, /sha256 mismatch/)
   })
 })
 
-test('accepts matching legacy metadata and latest artifact hashes', async () => {
-  await withServer({ metadataSha256: createHash('sha256').update(good).digest('hex'), body: good }, async baseUrl => {
+test('accepts matching metadata and latest artifact hashes', async () => {
+  await withServer(createHash('sha256').update(good).digest('hex'), good, async baseUrl => {
     const result = await runVerify(baseUrl)
     assert.equal(result.status, 0, result.stdout + result.stderr)
     assert.match(result.stdout, /\[SHA256\] mac-arm64/)
@@ -118,15 +112,7 @@ test('verifies signed Manifest v2 and immutable versioned artifact hashes', asyn
     },
   }, null, 2)}\n`
 
-  await withServer({
-    metadataSha256: sha,
-    body: good,
-    v2Manifest: makeManifest,
-    v2Sig: baseUrl => JSON.stringify(signManifestBytes(Buffer.from(makeManifest(baseUrl), 'utf8'), {
-      privateKey: pair.privateKeyBase64,
-      keyId: 'k1',
-    })),
-  }, async baseUrl => {
+  await withServer(sha, good, async baseUrl => {
     const ok = await runVerify(baseUrl, ['--require-v2', '--public-key', pair.publicKeyBase64])
     assert.equal(ok.status, 0, ok.stdout + ok.stderr)
     assert.match(ok.stdout, /\[MANIFEST v2 SIG\] verified Ed25519 signature/)
@@ -136,11 +122,21 @@ test('verifies signed Manifest v2 and immutable versioned artifact hashes', asyn
     const badSig = await runVerify(baseUrl, ['--require-v2', '--public-key', wrongPair.publicKeyBase64])
     assert.equal(badSig.status, 1)
     assert.match(badSig.stdout, /signature verification failed/)
+
+    const emptyKey = await runVerify(baseUrl, ['--require-v2', '--public-key'])
+    assert.equal(emptyKey.status, 1)
+    assert.match(emptyKey.stderr, /--public-key requires/)
+  }, {
+    v2Manifest: makeManifest,
+    v2Sig: baseUrl => JSON.stringify(signManifestBytes(Buffer.from(makeManifest(baseUrl), 'utf8'), {
+      privateKey: pair.privateKeyBase64,
+      keyId: 'k1',
+    })),
   })
 })
 
 test('fails --require-v2 when Manifest v2 is missing', async () => {
-  await withServer({ metadataSha256: createHash('sha256').update(good).digest('hex'), body: good }, async baseUrl => {
+  await withServer(createHash('sha256').update(good).digest('hex'), good, async baseUrl => {
     const result = await runVerify(baseUrl, ['--require-v2'])
     assert.equal(result.status, 1)
     assert.match(result.stdout, /\[MANIFEST v2\].*404/)

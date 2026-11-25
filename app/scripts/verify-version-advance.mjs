@@ -86,7 +86,7 @@ export function channelForVersion(version) {
   const { prerelease } = parseVersion(version)
   if (prerelease.length === 0) return 'stable'
   const [head, second] = prerelease
-  const validNumericSuffix = prerelease.length === 1 || (prerelease.length === 2 && /^\d+$/u.test(second))
+  const validNumericSuffix = prerelease.length === 1 || (prerelease.length === 2 && /^(?:0|[1-9]\d*)$/u.test(second))
   if (head === 'beta' && validNumericSuffix) return 'beta'
   if (head === 'next' && validNumericSuffix) return 'next'
   throw new Error(`${version} does not belong to the stable, beta, or next channel`)
@@ -140,9 +140,10 @@ async function fetchChannelManifestVersion({ url, channel, fetchImpl, timeoutMs 
 }
 
 /**
- * Fetch the live channel manifest, preferring Manifest v2 and falling back to
- * legacy v1 when v2 is not yet published (404). Any other failure is closed:
- * a network error must never be read as "no live version".
+ * Fetch the live channel manifests (both v2 and legacy v1, tolerating 404 on
+ * either) and return the highest published version. Checking both prevents
+ * v1/v2 skew after a partial failure from allowing a downgrade on either endpoint.
+ * Any non-404 failure fails closed.
  * @param {{ channel: string, baseUrl?: string, fetchImpl?: typeof fetch, timeoutMs?: number }} options
  * @returns {Promise<string | null>}
  */
@@ -150,19 +151,23 @@ export async function fetchLiveVersion({ channel, baseUrl = DEFAULT_BASE_URL, fe
   if (!CHANNELS.includes(channel)) throw new Error(`unknown channel ${JSON.stringify(channel)}; use stable, beta, or next`)
   const origin = baseUrl.replace(/\/$/u, '')
   const bust = String(Date.now())
-  const v2Version = await fetchChannelManifestVersion({
-    url: `${origin}/api/desktop/v2/${channel}.json?verify=${bust}`,
-    channel,
-    fetchImpl,
-    timeoutMs,
-  })
-  if (v2Version !== null) return v2Version
-  return fetchChannelManifestVersion({
-    url: `${origin}/api/desktop/version-${channel}.json?verify=${bust}`,
-    channel,
-    fetchImpl,
-    timeoutMs,
-  })
+  const [v2Version, v1Version] = await Promise.all([
+    fetchChannelManifestVersion({
+      url: `${origin}/api/desktop/v2/${channel}.json?verify=${bust}`,
+      channel,
+      fetchImpl,
+      timeoutMs,
+    }),
+    fetchChannelManifestVersion({
+      url: `${origin}/api/desktop/version-${channel}.json?verify=${bust}`,
+      channel,
+      fetchImpl,
+      timeoutMs,
+    }),
+  ])
+  if (v2Version === null) return v1Version
+  if (v1Version === null) return v2Version
+  return compareVersions(v2Version, v1Version) >= 0 ? v2Version : v1Version
 }
 
 /**

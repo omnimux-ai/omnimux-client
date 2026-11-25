@@ -126,6 +126,7 @@ jobs:
           tmp="$(mktemp -d)"
           trap 'rm -rf "$tmp"' EXIT
           ver="$(node -p "require('./dsh-desktop-next/package.json').version")"
+          channel="$(node --input-type=module -e "import { channelForVersion } from './scripts/verify-version-advance.mjs'; console.log(channelForVersion(process.argv[1]))" "$ver")"
           printf 'arm64' > "$tmp/OmniMux-${ver}-arm64.dmg"
           printf 'x64' > "$tmp/OmniMux-${ver}-x64.dmg"
           printf 'win' > "$tmp/OmniMux-${ver}-x64-Setup.exe"
@@ -139,8 +140,8 @@ jobs:
             --key-id k1 \
             --require-signature
           node scripts/sign-release-manifest.mjs verify \
-            --input "$tmp/api/desktop/v2/stable.json" \
-            --sig "$tmp/api/desktop/v2/stable.json.sig" \
+            --input "$tmp/api/desktop/v2/${channel}.json" \
+            --sig "$tmp/api/desktop/v2/${channel}.json.sig" \
             --public-key "$pub" \
             --key-id k1
       - uses: ./.github/actions/generate-market-index
@@ -162,13 +163,36 @@ jobs:
         with:
           node-version: 22.23.2
 
-      - name: Resolve and validate version
+      - name: Resolve and validate release inputs
         id: version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_MIN_SUPPORTED_VERSION: ${{ inputs.min_supported_version }}
+          INPUT_ROLLOUT_PERCENTAGE: ${{ inputs.rollout_percentage }}
+          INPUT_URGENCY: ${{ inputs.urgency }}
         run: |
-          raw="${{ inputs.version }}"
+          set -euo pipefail
+          raw="${INPUT_VERSION}"
           version="${raw#v}"
           if ! printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
             echo "::error::version input '$raw' is not a valid x.y.z (or x.y.z-tag) version"
+            exit 1
+          fi
+          if [ -n "${INPUT_MIN_SUPPORTED_VERSION}" ]; then
+            min_ver="${INPUT_MIN_SUPPORTED_VERSION#v}"
+            if ! printf '%s' "$min_ver" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
+              echo "::error::min_supported_version '$INPUT_MIN_SUPPORTED_VERSION' is not a valid SemVer"
+              exit 1
+            fi
+          fi
+          if [ -n "${INPUT_ROLLOUT_PERCENTAGE}" ]; then
+            if ! printf '%s' "${INPUT_ROLLOUT_PERCENTAGE}" | grep -Eq '^(0|[1-9][0-9]?|100)$'; then
+              echo "::error::rollout_percentage '$INPUT_ROLLOUT_PERCENTAGE' must be an integer between 0 and 100"
+              exit 1
+            fi
+          fi
+          if [ "${INPUT_URGENCY}" != "normal" ] && [ "${INPUT_URGENCY}" != "critical" ]; then
+            echo "::error::urgency '$INPUT_URGENCY' must be normal or critical"
             exit 1
           fi
           echo "version=${version}" >> "$GITHUB_OUTPUT"
@@ -192,6 +216,7 @@ jobs:
       - name: Download installers from the GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          INPUT_MODE: ${{ inputs.mode }}
         run: |
           set -euo pipefail
           tag="v${{ steps.version.outputs.version }}"
@@ -201,7 +226,7 @@ jobs:
           gh release download "$tag" --repo "${{ github.repository }}" --dir release-assets --pattern '*.exe' --clobber
           echo "Downloaded assets:"
           ls -lh release-assets
-          if [ "${{ inputs.mode }}" = "publish" ]; then
+          if [ "${INPUT_MODE}" = "publish" ]; then
             test -n "$(find release-assets -maxdepth 1 -name '*.dmg' -print -quit)" || { echo "::error::no .dmg asset attached to $tag"; exit 1; }
             test -n "$(find release-assets -maxdepth 1 -name '*.exe' -print -quit)" || { echo "::error::no .exe asset attached to $tag"; exit 1; }
           else
@@ -213,27 +238,37 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           OMNIMUX_UPDATE_SIGNING_PRIVATE_KEY: ${{ secrets.OMNIMUX_UPDATE_SIGNING_PRIVATE_KEY }}
-          OMNIMUX_UPDATE_SIGNING_KEY_ID: ${{ secrets.OMNIMUX_UPDATE_SIGNING_KEY_ID || 'k1' }}
+          OMNIMUX_UPDATE_SIGNING_KEY_ID: ${{ vars.OMNIMUX_UPDATE_SIGNING_KEY_ID || 'k1' }}
+          OMNIMUX_UPDATE_PUBLIC_KEY: ${{ vars.OMNIMUX_UPDATE_PUBLIC_KEY }}
+          INPUT_MIN_SUPPORTED_VERSION: ${{ inputs.min_supported_version }}
+          INPUT_REQUIRED_PLATFORMS: ${{ inputs.required_platforms }}
+          INPUT_URGENCY: ${{ inputs.urgency }}
+          INPUT_ROLLOUT_PERCENTAGE: ${{ inputs.rollout_percentage }}
         run: |
           set -euo pipefail
           tag="v${{ steps.version.outputs.version }}"
           notes_file="release-assets/release-notes.md"
           gh release view "$tag" --repo "${{ github.repository }}" --json body --jq '.body // ""' > "$notes_file" || : > "$notes_file"
           extra_args=()
-          if [ -n "${{ inputs.min_supported_version }}" ]; then
-            extra_args+=(--min-supported-version "${{ inputs.min_supported_version }}")
+          if [ -n "${INPUT_MIN_SUPPORTED_VERSION}" ]; then
+            extra_args+=(--min-supported-version "${INPUT_MIN_SUPPORTED_VERSION#v}")
           fi
           if [ -n "${OMNIMUX_UPDATE_SIGNING_PRIVATE_KEY}" ]; then
             extra_args+=(--require-signature --key-id "${OMNIMUX_UPDATE_SIGNING_KEY_ID}")
+          elif [ -n "${OMNIMUX_UPDATE_PUBLIC_KEY}" ]; then
+            echo "::error::OMNIMUX_UPDATE_PUBLIC_KEY is configured, so OMNIMUX_UPDATE_SIGNING_PRIVATE_KEY is required (refusing unsigned publish that would leave stale .sig on CDN)."
+            exit 1
           else
             echo "::warning::OMNIMUX_UPDATE_SIGNING_PRIVATE_KEY is not configured; Manifest v2 will be published unsigned until signing keys are provisioned."
+          fi
+          if [ -n "${INPUT_ROLLOUT_PERCENTAGE}" ]; then
+            extra_args+=(--rollout-percentage "${INPUT_ROLLOUT_PERCENTAGE}")
           fi
           node scripts/build-release-metadata.mjs \
             --version "${{ steps.version.outputs.version }}" \
             --dir release-assets \
-            --require-platforms "${{ inputs.required_platforms }}" \
-            --urgency "${{ inputs.urgency }}" \
-            --rollout-percentage "${{ inputs.rollout_percentage }}" \
+            --require-platforms "${INPUT_REQUIRED_PLATFORMS}" \
+            --urgency "${INPUT_URGENCY}" \
             --notes-file "$notes_file" \
             "${extra_args[@]}"
 
@@ -257,6 +292,7 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          INPUT_MODE: ${{ inputs.mode }}
         run: |
           if [ -z "${CLOUDFLARE_API_TOKEN}" ] || [ -z "${CLOUDFLARE_ACCOUNT_ID}" ]; then
             echo "::error::CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID are required to publish."
@@ -264,7 +300,7 @@ jobs:
           fi
           # --skip-verify: the edge cache still serves the previous build until the
           # purge step below runs, so a post-upload verify here would race the cache.
-          if [ "${{ inputs.mode }}" = "partial" ]; then
+          if [ "${INPUT_MODE}" = "partial" ]; then
             node scripts/r2-dist-sync.mjs upload \
               --dir release-assets \
               --version "${{ steps.version.outputs.version }}" \
@@ -294,9 +330,11 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          OMNIMUX_UPDATE_PUBLIC_KEY: ${{ vars.OMNIMUX_UPDATE_PUBLIC_KEY }}
+          INPUT_REQUIRED_PLATFORMS: ${{ inputs.required_platforms }}
         run: |
           node scripts/r2-dist-sync.mjs verify \
             --version "${{ steps.version.outputs.version }}" \
-            --required-platforms "${{ inputs.required_platforms }}" \
+            --required-platforms "${INPUT_REQUIRED_PLATFORMS}" \
             --verify-hashes \
             --require-v2

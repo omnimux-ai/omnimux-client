@@ -406,7 +406,14 @@ async function main() {
     const verifyHashes = args.includes('--verify-hashes')
     const requireV2 = args.includes('--require-v2')
     const publicKeyIdx = args.indexOf('--public-key')
-    const publicKey = publicKeyIdx !== -1 ? args[publicKeyIdx + 1] : process.env.OMNIMUX_UPDATE_PUBLIC_KEY
+    let publicKey = process.env.OMNIMUX_UPDATE_PUBLIC_KEY
+    if (publicKeyIdx !== -1) {
+      const value = args[publicKeyIdx + 1]
+      if (!value || value.startsWith('--')) {
+        throw new Error('--public-key requires a non-empty Base64 Ed25519 public key')
+      }
+      publicKey = value
+    }
     if (requiredPlatforms.length > 0 || verifyHashes || requireV2) {
       const channel = channelForVersion(version)
       try {
@@ -457,11 +464,16 @@ async function main() {
           if (v2?.version !== version || v2?.channel !== channel) {
             throw new Error(`Manifest v2 version/channel (${String(v2?.version)}/${String(v2?.channel)}) does not match ${version}/${channel}`)
           }
+          const versionPrefix = `${CDN_BASE_URL}/releases/v${version}/`
           for (const token of requiredPlatforms) {
             const platform = VERIFY_PLATFORMS[token]
+            if (platform === undefined) throw new Error(`unknown required platform ${JSON.stringify(token)}`)
             const entry = v2.artifacts?.[platform.v2Key]
             if (!entry || typeof entry.url !== 'string' || typeof entry.sha256 !== 'string' || !Number.isSafeInteger(entry.size) || entry.size <= 0) {
               throw new Error(`Manifest v2 is missing complete artifact entry for ${token} (${platform.v2Key})`)
+            }
+            if (!entry.url.startsWith(versionPrefix)) {
+              throw new Error(`Manifest v2 ${token} url (${entry.url}) must point under ${versionPrefix}`)
             }
           }
           const sigUrl = `${CDN_BASE_URL}/api/desktop/v2/${channel}.json.sig`
@@ -675,56 +687,65 @@ async function main() {
     }
 
     if (!isPartial) {
-      // Release metadata the desktop updaters poll. It lives at a fixed path beside
-      // nothing else, so it is uploaded as-is rather than under releases/.
+      // Release metadata the desktop updaters poll. Scope strictly to the active
+      // release's channel and verify version/channel identity so stale files in
+      // a reused staging directory can never overwrite another channel or leave
+      // an orphaned signature.
+      const expectedChannel = channelForVersion(version)
+      const versionPrefix = `${CDN_BASE_URL}/releases/v${version}/`
       const metadataDir = join(searchDir ?? join(ROOT_DIR, 'dist/release-download'), 'api', 'desktop')
       if (existsSync(metadataDir)) {
-        for (const name of readdirSync(metadataDir)) {
-          if (!/^version-(?:stable|beta|next)\.json$/u.test(name)) continue
-          const file = join(metadataDir, name)
-          const metadata = JSON.parse(readFileSync(file, 'utf8'))
+        const v1Name = `version-${expectedChannel}.json`
+        const v1File = join(metadataDir, v1Name)
+        if (existsSync(v1File)) {
+          const metadata = JSON.parse(readFileSync(v1File, 'utf8'))
+          if (metadata?.version !== version || metadata?.channel !== expectedChannel) {
+            throw new Error(`refusing to publish ${v1Name}: version/channel (${String(metadata?.version)}/${String(metadata?.channel)}) does not match ${version}/${expectedChannel}`)
+          }
           for (const key of ['macArm64', 'macX64', 'windows']) {
             if (typeof metadata.sha256?.[key] !== 'string' || metadata.sha256[key].length === 0) {
-              throw new Error(`refusing to publish ${name}: missing required platform hash ${key}`)
+              throw new Error(`refusing to publish ${v1Name}: missing required platform hash ${key}`)
             }
           }
-          const stat = statSync(file)
-          uploadPlan.push({ key: `api/desktop/${name}`, file, size: stat.size })
+          const stat = statSync(v1File)
+          uploadPlan.push({ key: `api/desktop/${v1Name}`, file: v1File, size: stat.size })
+          console.log(`  • 版本元数据 (v1): ${v1File}`)
         }
-        console.log(`  • 版本元数据 (v1): ${metadataDir}`)
         // Manifest v2 + Ed25519 signature envelopes live under api/desktop/v2/.
         // Upload them strictly after the immutable release artifacts above so no
         // client can observe a v2 manifest pointing at an unuploaded object.
         const v2Dir = join(metadataDir, 'v2')
-        if (existsSync(v2Dir)) {
-          const v2Names = readdirSync(v2Dir).sort((left, right) => {
-            // Upload `.json` manifests before `.sig` files when sorted.
-            if (left.endsWith('.sig') !== right.endsWith('.sig')) return left.endsWith('.sig') ? 1 : -1
-            return left.localeCompare(right)
-          })
-          for (const name of v2Names) {
-            if (/^(?:stable|beta|next)\.json$/u.test(name)) {
-              const file = join(v2Dir, name)
-              const v2 = JSON.parse(readFileSync(file, 'utf8'))
-              if (v2?.schemaVersion !== 2 || v2?.product !== 'omnimux') {
-                throw new Error(`refusing to publish ${name}: invalid Manifest v2 header`)
-              }
-              for (const key of ['darwin-arm64', 'darwin-x64', 'win32-x64']) {
-                const entry = v2.artifacts?.[key]
-                if (!entry || typeof entry.url !== 'string' || typeof entry.sha256 !== 'string' || !Number.isSafeInteger(entry.size) || entry.size <= 0) {
-                  throw new Error(`refusing to publish ${name}: missing complete v2 artifact ${key}`)
-                }
-              }
-              const stat = statSync(file)
-              uploadPlan.push({ key: `api/desktop/v2/${name}`, file, size: stat.size })
-            } else if (/^(?:stable|beta|next)\.json\.sig$/u.test(name)) {
-              const file = join(v2Dir, name)
-              parseSignatureEnvelope(JSON.parse(readFileSync(file, 'utf8')))
-              const stat = statSync(file)
-              uploadPlan.push({ key: `api/desktop/v2/${name}`, file, size: stat.size })
+        const v2Name = `${expectedChannel}.json`
+        const v2File = join(v2Dir, v2Name)
+        const sigName = `${expectedChannel}.json.sig`
+        const sigFile = join(v2Dir, sigName)
+        if (existsSync(v2File)) {
+          const v2 = JSON.parse(readFileSync(v2File, 'utf8'))
+          if (v2?.schemaVersion !== 2 || v2?.product !== 'omnimux') {
+            throw new Error(`refusing to publish ${v2Name}: invalid Manifest v2 header`)
+          }
+          if (v2?.version !== version || v2?.channel !== expectedChannel) {
+            throw new Error(`refusing to publish ${v2Name}: version/channel (${String(v2?.version)}/${String(v2?.channel)}) does not match ${version}/${expectedChannel}`)
+          }
+          for (const key of ['darwin-arm64', 'darwin-x64', 'win32-x64']) {
+            const entry = v2.artifacts?.[key]
+            if (!entry || typeof entry.url !== 'string' || typeof entry.sha256 !== 'string' || !Number.isSafeInteger(entry.size) || entry.size <= 0) {
+              throw new Error(`refusing to publish ${v2Name}: missing complete v2 artifact ${key}`)
+            }
+            if (!entry.url.startsWith(versionPrefix)) {
+              throw new Error(`refusing to publish ${v2Name}: artifact ${key} url (${entry.url}) must point under ${versionPrefix}`)
             }
           }
-          console.log(`  • 版本元数据 (v2 + sig): ${v2Dir}`)
+          const stat = statSync(v2File)
+          uploadPlan.push({ key: `api/desktop/v2/${v2Name}`, file: v2File, size: stat.size })
+          if (existsSync(sigFile)) {
+            parseSignatureEnvelope(JSON.parse(readFileSync(sigFile, 'utf8')))
+            const sigStat = statSync(sigFile)
+            uploadPlan.push({ key: `api/desktop/v2/${sigName}`, file: sigFile, size: sigStat.size })
+          }
+          console.log(`  • 版本元数据 (v2 + sig): ${v2File}`)
+        } else if (existsSync(sigFile)) {
+          throw new Error(`refusing to publish orphan signature ${sigName} without ${v2Name}`)
         }
       } else {
         console.log(`  ⚠️  未找到版本元数据目录 ${metadataDir}；应用将无法发现更新`)

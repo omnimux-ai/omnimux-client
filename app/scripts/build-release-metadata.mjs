@@ -18,7 +18,7 @@
  */
 
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { signManifestBytes } from './sign-release-manifest.mjs'
@@ -154,10 +154,14 @@ export function parseReleaseNotesInput({ notesFile, notesZh = [], notesEn = [] }
   const text = readFileSync(resolve(notesFile), 'utf8').trim()
   if (text.length === 0) return { zh, en }
   if (text.startsWith('{')) {
-    const parsed = JSON.parse(text)
-    return {
-      zh: zh.length > 0 ? zh : normalizeNotesList(parsed?.zh),
-      en: en.length > 0 ? en : normalizeNotesList(parsed?.en),
+    try {
+      const parsed = JSON.parse(text)
+      return {
+        zh: zh.length > 0 ? zh : normalizeNotesList(parsed?.zh),
+        en: en.length > 0 ? en : normalizeNotesList(parsed?.en),
+      }
+    } catch (error) {
+      if (notesFile.toLowerCase().endsWith('.json')) throw error
     }
   }
   // Markdown fallback: extract bullet lines; if bilingual headings exist, split them.
@@ -234,7 +238,14 @@ export function buildManifestV2(dir, {
   if (urgency !== 'normal' && urgency !== 'critical') {
     throw new Error(`invalid urgency ${JSON.stringify(urgency)}; use normal or critical`)
   }
-  const percentage = Number(rolloutPercentage)
+  let percentage
+  if (typeof rolloutPercentage === 'number') {
+    percentage = rolloutPercentage
+  } else if (typeof rolloutPercentage === 'string' && /^\d+$/u.test(rolloutPercentage.trim())) {
+    percentage = Number(rolloutPercentage.trim())
+  } else {
+    percentage = Number.NaN
+  }
   if (!Number.isInteger(percentage) || percentage < 0 || percentage > 100) {
     throw new Error(`rolloutPercentage must be an integer between 0 and 100 (received ${String(rolloutPercentage)})`)
   }
@@ -320,7 +331,9 @@ function main() {
     notesZh: args.notesZh,
     notesEn: args.notesEn,
   })
-  const rolloutPercentage = args.rolloutPercentage === undefined ? 100 : Number(args.rolloutPercentage)
+  const rolloutPercentage = args.rolloutPercentage === undefined || args.rolloutPercentage.trim() === ''
+    ? 100
+    : args.rolloutPercentage.trim()
   const outDirV1 = join(dir, 'api', 'desktop')
   const outDirV2 = join(outDirV1, 'v2')
   const suffix = args.partial ? '-partial' : ''
@@ -361,20 +374,25 @@ function main() {
     return
   }
 
-  mkdirSync(outDirV2, { recursive: true })
-  writeFileSync(v1Path, serializedV1)
-  writeFileSync(v2Path, serializedV2)
-
   const signingPrivateKey = process.env.OMNIMUX_UPDATE_SIGNING_PRIVATE_KEY
+  let signatureEnvelope = null
   if (signingPrivateKey && signingPrivateKey.trim().length > 0) {
-    const envelope = signManifestBytes(Buffer.from(serializedV2, 'utf8'), {
+    signatureEnvelope = signManifestBytes(Buffer.from(serializedV2, 'utf8'), {
       privateKey: signingPrivateKey,
       keyId: args.keyId,
     })
-    writeFileSync(sigPath, `${JSON.stringify(envelope, null, 2)}\n`)
-    console.log(`wrote ${sigPath} (keyId=${envelope.keyId})`)
   } else if (args.requireSignature) {
     throw new Error('OMNIMUX_UPDATE_SIGNING_PRIVATE_KEY is required when --require-signature is set')
+  }
+
+  mkdirSync(outDirV2, { recursive: true })
+  writeFileSync(v1Path, serializedV1)
+  writeFileSync(v2Path, serializedV2)
+  if (signatureEnvelope !== null) {
+    writeFileSync(sigPath, `${JSON.stringify(signatureEnvelope, null, 2)}\n`)
+    console.log(`wrote ${sigPath} (keyId=${signatureEnvelope.keyId})`)
+  } else {
+    rmSync(sigPath, { force: true })
   }
 
   const parts = [

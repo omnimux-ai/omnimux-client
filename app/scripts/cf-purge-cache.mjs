@@ -84,6 +84,8 @@ export function releaseUrls(version, baseUrl = CDN_BASE_URL) {
     'api/desktop/v2/stable.json.sig',
     'api/desktop/v2/beta.json',
     'api/desktop/v2/beta.json.sig',
+    'api/desktop/v2/next.json',
+    'api/desktop/v2/next.json.sig',
     'plugins/dsh-index.json',
   ]
   if (version) {

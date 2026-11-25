@@ -23,7 +23,7 @@
  *     --public-key <base64-32-bytes>
  */
 
-import { createPrivateKey, createPublicKey, generateKeyPairSync, sign, verify } from 'node:crypto'
+import { createPrivateKey, createPublicKey, generateKeyPairSync, KeyObject, sign, verify } from 'node:crypto'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -55,6 +55,9 @@ export function generateEd25519KeyPair() {
     throw new Error('unexpected Ed25519 SPKI DER length')
   }
   const pkcs8Der = privateKey.export({ type: 'pkcs8', format: 'der' })
+  if (!pkcs8Der.subarray(0, ED25519_PKCS8_PREFIX.length).equals(ED25519_PKCS8_PREFIX) || pkcs8Der.length !== 48) {
+    throw new Error('unexpected Ed25519 PKCS#8 DER length')
+  }
   return {
     publicKeyBase64: spkiDer.subarray(ED25519_SPKI_PREFIX.length).toString('base64'),
     privateKeyBase64: pkcs8Der.toString('base64'),
@@ -136,10 +139,13 @@ export function parseSignatureEnvelope(value) {
 
 /** Sign raw manifest bytes and return the serializable signature envelope. */
 export function signManifestBytes(rawBytes, { privateKey, keyId = 'k1', signedAt = new Date().toISOString() }) {
-  if (!KEY_ID_PATTERN.test(keyId)) {
+  if (typeof keyId !== 'string' || !KEY_ID_PATTERN.test(keyId)) {
     throw new Error(`invalid signing keyId: ${JSON.stringify(keyId)}`)
   }
-  const keyObject = typeof privateKey === 'string' ? importEd25519PrivateKey(privateKey) : privateKey
+  const keyObject = privateKey instanceof KeyObject ? privateKey : importEd25519PrivateKey(privateKey)
+  if (keyObject.type !== 'private' || keyObject.asymmetricKeyType !== 'ed25519') {
+    throw new Error(`expected an ed25519 private key, received ${String(keyObject.type)}/${String(keyObject.asymmetricKeyType)}`)
+  }
   const payload = Buffer.isBuffer(rawBytes) ? rawBytes : Buffer.from(rawBytes)
   const signature = sign(null, payload, keyObject).toString('base64')
   return {

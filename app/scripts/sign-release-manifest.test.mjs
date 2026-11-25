@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { generateKeyPairSync } from 'node:crypto'
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
@@ -48,6 +49,15 @@ test('rejects tampered bytes, wrong public keys, unknown keyId, and malformed en
   assert.equal(verifyManifestBytes(payload, { ...envelope, algorithm: 'rsa' }, { k1: pairA.publicKeyBase64 }).ok, false)
   assert.equal(verifyManifestBytes(payload, { ...envelope, schemaVersion: 2 }, { k1: pairA.publicKeyBase64 }).ok, false)
   assert.equal(verifyManifestBytes(payload, { ...envelope, signature: Buffer.alloc(32).toString('base64') }, { k1: pairA.publicKeyBase64 }).ok, false)
+})
+
+test('rejects undefined private keys, non-string keyIds, and non-Ed25519 KeyObjects', () => {
+  const payload = Buffer.from('{"schemaVersion":2}\n', 'utf8')
+  assert.throws(() => signManifestBytes(payload, { privateKey: undefined, keyId: 'k1' }), /OMNIMUX_UPDATE_SIGNING_PRIVATE_KEY is required/)
+  const pair = generateEd25519KeyPair()
+  assert.throws(() => signManifestBytes(payload, { privateKey: pair.privateKeyBase64, keyId: 123 }), /invalid signing keyId/)
+  const ed448 = generateKeyPairSync('ed448')
+  assert.throws(() => signManifestBytes(payload, { privateKey: ed448.privateKey, keyId: 'k1' }), /expected an ed25519 private key/)
 })
 
 test('CLI keygen -> sign -> verify round-trips and fails on tampering', () => {
