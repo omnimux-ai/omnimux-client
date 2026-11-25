@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { createRivalAccountsStore } from '../rival/rival-accounts-store.js'
 import { resolveRivalPaths } from '../rival/rival-paths.js'
 import { createRivalRefreshScheduler } from '../rival/rival-refresh.js'
-import { createRivalRemote, SOCIAL_DATA_TOOL } from '../rival/rival-remote.js'
+import { createRivalRemote } from '../rival/rival-remote.js'
 import { createRivalAccountsService } from '../rival/rival-accounts-service.js'
 import { createRivalDispatcher, RIVAL_PREFIX } from '../rival/rival-routes.js'
 import {
@@ -42,10 +42,9 @@ const POSTS_FIXTURE = {
 function makeCountingCloud(behaviour = {}) {
   const cloud = {
     calls: [],
-    getTool(name) {
-      if (name !== SOCIAL_DATA_TOOL) return undefined
+    resolveSocialData() {
       return {
-        async execute(args) {
+        async fetch(args) {
           cloud.calls.push({ capability: args.capability, id: args.id })
           if (args.capability === 'user') {
             if (behaviour.failUser) throw behaviour.failUser
@@ -68,7 +67,7 @@ function makeWorld(options = {}) {
   const now = () => NOW
   const store = createRivalAccountsStore({ paths, now, ...(options.limits ? { limits: options.limits } : {}) })
   const cloud = options.cloud ?? makeCountingCloud()
-  const remote = createRivalRemote({ getTool: cloud.getTool, now })
+  const remote = createRivalRemote({ resolveSocialData: cloud.resolveSocialData, now })
   let service = null
   const scheduler = createRivalRefreshScheduler({
     store,

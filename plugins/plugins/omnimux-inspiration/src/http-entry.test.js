@@ -29,7 +29,6 @@ import { resolveInspirationPaths } from './paths.js'
 import { createRivalAccountsStore } from './rival/rival-accounts-store.js'
 import { resolveRivalPaths } from './rival/rival-paths.js'
 import { RIVAL_BOUNDARY, RIVAL_PREFIX } from './rival/rival-routes.js'
-import { SOCIAL_DATA_TOOL } from './rival/rival-remote.js'
 
 const USER_FIXTURE = {
   channel_id: 'UCabcdefghijklmnopqrstuv',
@@ -76,7 +75,7 @@ afterEach(() => {
  */
 function makeCloudTool() {
   return {
-    async execute(args) {
+    async fetch(args) {
       cloudCalls.push({ platform: args.platform, capability: args.capability, id: args.id })
       if (args.capability === 'user') {
         return { platform: args.platform, capability: 'user', field: 'channel_id', value: args.id, data: USER_FIXTURE }
@@ -93,7 +92,7 @@ function makeCloudTool() {
  * `ctx.tools` for tool registration, `ctx.inject` for the async `webServer`
  * dependency, and `ctx.effect` for teardown. `ctx.get` is the hub seam; a test
  * passes the capability it wants the hub to have exposed (`inspirationShare`).
- * @param {{ capability?: Record<string, unknown>, socialTool?: { execute: Function } }} [options]
+ * @param {{ capability?: Record<string, unknown>, socialTool?: { fetch: Function } }} [options]
  */
 function bootPlugin(options = {}) {
   const root = mkdtempSync(join(tmpdir(), 'inspiration-http-entry-'))
@@ -110,11 +109,9 @@ function bootPlugin(options = {}) {
       register(tool) {
         registeredTools.push(tool)
       },
-      get(toolName) {
-        return toolName === SOCIAL_DATA_TOOL ? (options.socialTool || makeCloudTool()) : undefined
-      },
     },
     get(capability) {
+      if (capability === 'socialData') return options.socialTool || makeCloudTool()
       return capability === 'inspirationShare' ? options.capability : undefined
     },
     inject(deps, callback) {
@@ -210,7 +207,7 @@ describe('HTTP entry: import request cancellation', () => {
     let release
     let signal
     const entered = new Promise((resolve) => { started = resolve })
-    const world = bootPlugin({ socialTool: { async execute(_args, execution) {
+    const world = bootPlugin({ socialTool: { async fetch(_args, execution) {
       signal = execution?.signal
       started()
       await new Promise((resolve) => { release = resolve })

@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { createRivalAccountsStore } from './rival-accounts-store.js'
 import { createRivalAccountsService } from './rival-accounts-service.js'
 import { createRivalRefreshScheduler } from './rival-refresh.js'
-import { createRivalRemote, SOCIAL_DATA_TOOL } from './rival-remote.js'
+import { createRivalRemote } from './rival-remote.js'
 import { resolveRivalPaths } from './rival-paths.js'
 
 /**
@@ -97,10 +97,9 @@ function makeWorld(platform, postsData) {
   const paths = resolveRivalPaths({ paths: { dir: join(root, 'inspirations'), mediaDir: join(root, 'inspirations', 'media') } })
   const store = createRivalAccountsStore({ paths, now: () => FIXED_NOW })
   const cloud = {
-    getTool(name) {
-      if (name !== SOCIAL_DATA_TOOL) return undefined
+    resolveSocialData() {
       return {
-        async execute(args) {
+        async fetch(args) {
           if (args.capability === 'user') {
             return { platform: args.platform, capability: 'user', model: 'user', field: 'id', value: args.id, data: USER }
           }
@@ -109,7 +108,7 @@ function makeWorld(platform, postsData) {
       }
     },
   }
-  const remote = createRivalRemote({ getTool: cloud.getTool, now: () => FIXED_NOW })
+  const remote = createRivalRemote({ resolveSocialData: cloud.resolveSocialData, now: () => FIXED_NOW })
   let service = null
   const scheduler = createRivalRefreshScheduler({
     store,

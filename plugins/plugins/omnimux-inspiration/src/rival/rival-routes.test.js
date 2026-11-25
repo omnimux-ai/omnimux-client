@@ -16,7 +16,7 @@ import { fileURLToPath } from 'node:url'
 import { createRivalAccountsStore } from './rival-accounts-store.js'
 import { resolveRivalPaths } from './rival-paths.js'
 import { createRivalRefreshScheduler } from './rival-refresh.js'
-import { createRivalRemote, SOCIAL_DATA_TOOL } from './rival-remote.js'
+import { createRivalRemote } from './rival-remote.js'
 import { createRivalAccountsService } from './rival-accounts-service.js'
 import { createRivalDispatcher, matchRivalRoute, RIVAL_PREFIX } from './rival-routes.js'
 import {
@@ -42,10 +42,9 @@ function makeCountingCloud(behaviour = {}) {
   const cloud = {
     calls: [],
     behaviour,
-    getTool(name) {
-      if (name !== SOCIAL_DATA_TOOL) return undefined
+    resolveSocialData() {
       return {
-        async execute(args) {
+        async fetch(args) {
           cloud.calls.push({ platform: args.platform, capability: args.capability, id: args.id })
           if (args.capability === 'user') {
             if (behaviour.failUser) throw behaviour.failUser
@@ -76,7 +75,7 @@ function makeWorld(options = {}) {
   const now = () => FIXED_NOW
   const store = createRivalAccountsStore({ paths, now, ...(options.limits ? { limits: options.limits } : {}) })
   const cloud = options.cloud ?? makeCountingCloud()
-  const remote = createRivalRemote({ getTool: cloud.getTool, now })
+  const remote = createRivalRemote({ resolveSocialData: cloud.resolveSocialData, now })
   let service = null
   const scheduler = createRivalRefreshScheduler({
     store,

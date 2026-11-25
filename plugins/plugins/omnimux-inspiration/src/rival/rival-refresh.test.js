@@ -20,7 +20,6 @@ import {
   createRivalRemote,
   classifyRemoteError,
   RivalRemoteError,
-  SOCIAL_DATA_TOOL,
 } from './rival-remote.js'
 import { createRivalRefreshScheduler } from './rival-refresh.js'
 import { advanceMetrics, computeAnalysis, computeMonitor, deltaPct } from './rival-analyze.js'
@@ -56,10 +55,9 @@ function makeCountingCloud(behaviour = {}) {
     // The behaviour object stays live: a test can swap an answer between two
     // refreshes and the same remote instance will serve it.
     behaviour,
-    getTool(name) {
-      if (name !== SOCIAL_DATA_TOOL) return undefined
+    resolveSocialData() {
       return {
-        async execute(args) {
+        async fetch(args) {
           calls.push({ platform: args.platform, capability: args.capability, id: args.id })
           // Guardrail: a third call in one cycle is a contract violation, not a
           // slower refresh. The counter is per cycle, so it is reset through
@@ -204,7 +202,7 @@ function makeWorld(options = {}) {
   const now = options.nowMs ?? (() => clock)
   const store = createRivalAccountsStore({ paths, now, ...(options.limits ? { limits: options.limits } : {}) })
   const cloud = options.cloud ?? makeCountingCloud()
-  const remote = createRivalRemote({ getTool: cloud.getTool, now })
+  const remote = createRivalRemote({ resolveSocialData: cloud.resolveSocialData, now })
   const scheduler = createRivalRefreshScheduler({
     store,
     remote,
@@ -457,10 +455,9 @@ describe('T03: one account failing does not affect another (G9)', () => {
     const perCycle = new Map()
     const cloud = {
       calls: [],
-      getTool(name) {
-        if (name !== SOCIAL_DATA_TOOL) return undefined
-        return {
-          async execute(args) {
+      resolveSocialData() {
+          return {
+          async fetch(args) {
             cloud.calls.push({ capability: args.capability, id: args.id })
             // Per-cycle guardrail, keyed by account so one account's calls can
             // never excuse another's third call.
@@ -760,7 +757,7 @@ describe('T03: error classification and the tool seam', () => {
   })
 
   it('raises an actionable error when the hub seam is missing', () => {
-    const remote = createRivalRemote({ getTool: () => undefined })
+    const remote = createRivalRemote({ resolveSocialData: () => undefined })
     assert.throws(() => remote.createCycle(), (err) => {
       assert.match(err.message, /omnimux_social_data/)
       return true

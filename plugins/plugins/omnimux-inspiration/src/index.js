@@ -13,6 +13,7 @@ import { createRivalDispatcher } from './rival/rival-routes.js'
 import { registerRivalTools, RIVAL_TOOL_NAMES } from './rival/rival-agent-tools.js'
 import { RIVAL_MEDIA_DIR_NAME } from './rival/constants.js'
 import { registerInspirationSkills } from './inspiration-skills.js'
+import { createTextCompleteAdapter, createVideoAnalyzeAdapter } from './hub-tools.js'
 
 export const name = 'omnimux-inspiration'
 export const inject = ['tools']
@@ -133,23 +134,23 @@ function socialFailureMessage({ platform, cloudUnsupported, cloudError, toolRead
 /**
  * Build the social fetcher consumed by the import pipeline.
  *
- * Order: cloud `omnimux_social_data` (only for platforms the catalog serves) →
+ * Order: Hub `socialData` seam (only for platforms the catalog serves) →
  * public no-key fallback resolver → actionable error that names the real reason
  * instead of a generic "check the link or network".
- * @param {{ getTool?: (name: string) => any, fallback?: Function }} [deps]
+ * @param {{ resolveSocialData?: () => { fetch?: Function } | undefined, fallback?: Function }} [deps]
  */
-export function createSocialFetcher({ getTool, fallback = fallbackResolveSocial } = {}) {
+export function createSocialFetcher({ resolveSocialData, fallback = fallbackResolveSocial } = {}) {
   return async function socialFetcher({ platform, capability, url, signal }) {
     if (signal?.aborted) throw createAbortError()
     const cloudUnsupported = !SUPPORTED_CLOUD_PLATFORMS.has(platform)
     const resolvedCapability = capability || capabilityOf(platform)
-    const socialDataTool = cloudUnsupported || typeof getTool !== 'function' ? undefined : getTool('omnimux_social_data')
-    const toolReady = Boolean(socialDataTool && typeof socialDataTool.execute === 'function')
+    const socialData = cloudUnsupported || typeof resolveSocialData !== 'function' ? undefined : resolveSocialData()
+    const seamReady = Boolean(socialData && typeof socialData.fetch === 'function')
     let cloudError = null
 
-    if (toolReady) {
+    if (seamReady) {
       try {
-        const res = await socialDataTool.execute({ platform, capability: resolvedCapability, url }, { signal })
+        const res = await socialData.fetch({ platform, capability: resolvedCapability, url }, { signal })
         if (res && hasSocialPayload(res.data)) return res
       } catch (err) {
         if (signal?.aborted) {
@@ -166,7 +167,7 @@ export function createSocialFetcher({ getTool, fallback = fallbackResolveSocial 
     const fallbackRes = await runFallback(fallback, { platform, capability: resolvedCapability, url, signal })
     if (fallbackRes && hasSocialPayload(fallbackRes.data)) return fallbackRes
 
-    throw new Error(socialFailureMessage({ platform, cloudUnsupported, cloudError, toolReady }))
+    throw new Error(socialFailureMessage({ platform, cloudUnsupported, cloudError, toolReady: seamReady }))
   }
 }
 
@@ -209,36 +210,19 @@ export function apply(ctx) {
   void RIVAL_MEDIA_DIR_NAME
   registerInspirationSkills(ctx)
 
-  const getTool = (toolName) => {
-    const toolsService = ctx.tools ?? (typeof ctx.get === 'function' ? /** @type {any} */ (ctx.get('tools')) : undefined)
-    if (toolsService && typeof toolsService.get === 'function') {
-      return toolsService.get(toolName)
-    }
-    return undefined
-  }
+  const resolveSocialData = () => (typeof ctx.get === 'function' ? ctx.get('socialData') : undefined)
+  const socialFetcher = createSocialFetcher({ resolveSocialData, fallback: fallbackResolveSocial })
 
-  const socialFetcher = createSocialFetcher({ getTool, fallback: fallbackResolveSocial })
+  // Video analyze has no Hub seam; dispatch the registered `video_analyze`
+  // tool through the host pipeline (policy, approval and audit included).
+  const videoAnalyzeTool = createVideoAnalyzeAdapter({
+    resolveTools: () => ctx.tools ?? (typeof ctx.get === 'function' ? ctx.get('tools') : undefined),
+  })
 
-  // Video analyze tool: exclusively consumes omnimux-video tool video_analyze
-  const videoAnalyzeTool = {
-    async execute(args, exec) {
-      const tool = getTool('video_analyze')
-      if (tool && typeof tool.execute === 'function') {
-        return tool.execute(args, exec)
-      }
-      throw new Error('多模态视频分析工具 (video_analyze) 未就绪，请检查 omnimux-video 插件是否加载')
-    },
-  }
-
-  const textComplete = {
-    async execute(args, exec) {
-      const tool = getTool('omnimux_text_complete')
-      if (tool && typeof tool.execute === 'function') {
-        return tool.execute(args, exec)
-      }
-      throw new Error('omnimux_text_complete 未就绪')
-    },
-  }
+  // One-shot text completion has a Hub seam with a single request argument.
+  const textComplete = createTextCompleteAdapter({
+    resolveTextComplete: () => (typeof ctx.get === 'function' ? ctx.get('textComplete') : undefined),
+  })
 
   // ── 对标账号 (rival accounts) ─────────────────────────────────────────────
   // Wired here, at the single assembly point, so the module's dependencies are
@@ -248,7 +232,7 @@ export function apply(ctx) {
   // re-implemented in the server handler.
   const rivalPaths = resolveRivalPaths({ paths })
   const rivalStore = createRivalAccountsStore({ paths: rivalPaths })
-  const rivalRemote = createRivalRemote({ getTool })
+  const rivalRemote = createRivalRemote({ resolveSocialData })
   let rivalService = null
   const rivalScheduler = createRivalRefreshScheduler({
     store: rivalStore,

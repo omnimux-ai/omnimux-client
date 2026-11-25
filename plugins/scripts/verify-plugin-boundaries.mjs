@@ -86,10 +86,6 @@ function destructuredNames(body) {
  * Find the identifiers (or `chained`) through which a runtime file invokes a
  * registered tool definition directly. Such a call skips pre-execute policy,
  * guards, approval and the result audit that `ctx.tools.execute` owns.
- *
- * Known limitation: a local wrapper that hides the registry read behind another
- * function name (for example `const getTool = (name) => tools.get(name)`) is
- * outside static reach and is tracked separately.
  * @param {string} code source with comments removed
  * @returns {string[]} one entry per detected invocation site
  */

@@ -175,22 +175,22 @@ export function createCostGuard(opts = {}) {
 }
 
 /**
- * @param {{ getTool?: (name: string) => any, now?: () => number, limitCallsPerCycle?: number }} [opts]
+ * @param {{ resolveSocialData?: () => { fetch?: (args: Record<string, any>, exec?: { signal?: AbortSignal }) => Promise<any> } | undefined, now?: () => number, limitCallsPerCycle?: number }} [opts]
  */
 export function createRivalRemote(opts = {}) {
-  const getTool = typeof opts.getTool === 'function' ? opts.getTool : () => undefined
+  const resolveSocialData = typeof opts.resolveSocialData === 'function' ? opts.resolveSocialData : () => undefined
   const now = typeof opts.now === 'function' ? opts.now : () => Date.now()
   const limit = typeof opts.limitCallsPerCycle === 'number' ? opts.limitCallsPerCycle : LIMIT_CALLS_PER_ACCOUNT_CYCLE
 
   /**
    * Resolve the hub seam, or throw the actionable "tool not ready" error.
    */
-  function resolveTool() {
-    const tool = getTool(SOCIAL_DATA_TOOL)
-    if (!tool || typeof tool.execute !== 'function') {
+  function resolveSeam() {
+    const seam = resolveSocialData()
+    if (!seam || typeof seam.fetch !== 'function') {
       throw new RivalRemoteError(RIVAL_ERROR_CODES.CLOUD_ERROR, TOOL_MISSING_MESSAGE)
     }
-    return tool
+    return seam
   }
 
   return {
@@ -206,8 +206,8 @@ export function createRivalRemote(opts = {}) {
         limit,
         onViolation: cycleOpts.onViolation,
       })
-      const tool = resolveTool()
-      const execute = guard.wrap((args) => tool.execute(args))
+      const seam = resolveSeam()
+      const execute = guard.wrap((args) => seam.fetch(args))
       return {
         calls: guard.calls,
         /**
