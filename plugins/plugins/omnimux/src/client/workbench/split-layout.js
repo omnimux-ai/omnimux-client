@@ -6,8 +6,10 @@
 
 import {
   CONVERSATION_COLLAPSED_ATTR,
+  getConversationCollapsed,
   setConversationCollapsed,
 } from '../conversation-collapse.js'
+import { readCurrentRightbarState } from './current-panel.js'
 import {
   activeTabId,
   getAttachedStore,
@@ -162,11 +164,13 @@ export function clampLiveSplitDom(state = liveSnapshot()?.state, env = {}) {
 let lastReconciledHandle = null
 let lastReconciledTarget = null
 let lastReconciledViewport = null
+let lastReconciledSnapshotViewport = null
 
 export function resetSplitReconciliationForTests() {
   lastReconciledHandle = null
   lastReconciledTarget = null
   lastReconciledViewport = null
+  lastReconciledSnapshotViewport = null
 }
 
 /**
@@ -195,7 +199,14 @@ export function reconcileRightbarFromRatio(state, env = {}) {
   // 于是在指针拖拽进行中写 `panels.rightbar`，与指针抢同一根轨道（H-2）。
   // 两者取并集：任一为真即不写（保守方向是「不写」，代价只是下一帧再协调）。
   if (isWorkbenchPanelDragging(doc) || isShellSplitDragging(doc)) return 'skipped'
-  if (!splitConversationMinApplies(resolvedState, env)) return 'skipped'
+  // 显式传入 falsy state（如 null）或已有 better-sidebar 状态时走既有 splitConversationMinApplies 裁决；
+  // 仅当调用方省略 state 且 better-sidebar 尚未挂载/无状态（Next 原生 SidebarRight 路径）时，
+  // 允许在确认原生分栏右面板已展开、未全屏、未收起中栏后继续协调。
+  if (resolvedState !== undefined) {
+    if (!splitConversationMinApplies(resolvedState, env)) return 'skipped'
+  } else if (state !== undefined || getConversationCollapsed()) {
+    return 'skipped'
+  }
   const handle = resolveWorkbenchLayoutHandle(doc)
   if (!handle || typeof handle.setRightbar !== 'function') return 'skipped'
   const snapshot = handle.getSnapshot?.()
@@ -211,20 +222,36 @@ export function reconcileRightbarFromRatio(state, env = {}) {
     || snapshot?.rightbarFullscreen === true) {
     return 'skipped'
   }
-  if (snapshot?.rightbarShown === false) {
+  if (snapshot?.rightbarShown === false || snapshot?.rightbarTrack === false) {
     return 'skipped'
+  }
+  if (resolvedState === undefined) {
+    const nativeRightbar = readCurrentRightbarState(doc)
+    const nativeOpenSplit = Boolean(
+      (nativeRightbar.open && !nativeRightbar.fullscreen
+        && nativeRightbar.panel?.getAttribute?.('data-sidebar-right-panel') !== 'fullscreen')
+      || (snapshot?.rightbarShown === true && snapshot?.rightbarTrack !== false && !snapshot?.rightbarFullscreen),
+    )
+    if (!nativeOpenSplit) return 'skipped'
   }
   const frameViewport = readFrameWidthPx(doc)
   if (!(frameViewport > 0)) return 'skipped'
   const target = workbenchDefaultWidthPx(resolvedState, { ...env, doc, viewportWidth: frameViewport })
   if (typeof snapshot?.rightbar === 'number' && Math.abs(snapshot.rightbar - target) < 1) return 'consistent'
-  if (lastReconciledHandle === handle && lastReconciledTarget === target && lastReconciledViewport === frameViewport) {
+  const snapshotViewport = typeof snapshot?.viewportWidth === 'number' ? snapshot.viewportWidth : null
+  if (
+    lastReconciledHandle === handle
+    && lastReconciledTarget === target
+    && lastReconciledViewport === frameViewport
+    && lastReconciledSnapshotViewport === snapshotViewport
+  ) {
     return 'consistent'
   }
   handle.setRightbar(target, frameViewport)
   lastReconciledHandle = handle
   lastReconciledTarget = target
   lastReconciledViewport = frameViewport
+  lastReconciledSnapshotViewport = snapshotViewport
   // 登记「本插件写了面板宽」：写出去的数字下一帧会被读回来，不登记就会被老用户迁移探针
   // 当成「用户亲手定过的版式」反推（H-1 的自证读数）。
   notePluginPanelWidthWrite()

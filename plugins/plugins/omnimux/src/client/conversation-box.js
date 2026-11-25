@@ -88,13 +88,11 @@ html:not([data-dsh-product-stage]) [class*="toggleCluster"] *{pointer-events:aut
    strip sits under toggleCluster and Electron app-region swallows the clicks. */
 body[data-dsh-desktop-mode] [class*="tabBar"],
 body[data-dsh-desktop-mode] [class*="tabBar"] *{-webkit-app-region:no-drag!important;}
-/* Desktop macOS sidebarCol::before drag strip overlays logoRow (Collapse sidebar
-   toggle). Electron app-region hit-tests the overlay; button no-drag alone cannot
-   punch through, so raise logoRow above the strip. */
+/* legacy-shell-only: DP-001 lifts Next macOS logoRow into the draggable 52px title strip,
+   so only legacy desktop macOS sidebarCol::before drag strip overlays logoRow (Collapse
+   sidebar toggle) and requires no-drag elevation. */
 body[data-dsh-desktop-platform="darwin"] [class*="sidebarCol"] [class*="logoRow"],
-body[data-dsh-desktop-platform="darwin"] [class*="sidebarCol"] [class*="logoRow"] *,
-html[data-platform="darwin"] [class*="sidebarCol"] [class*="logoRow"],
-html[data-platform="darwin"] [class*="sidebarCol"] [class*="logoRow"] *{
+body[data-dsh-desktop-platform="darwin"] [class*="sidebarCol"] [class*="logoRow"] *{
   position:relative;z-index:11;-webkit-app-region:no-drag!important;pointer-events:auto!important;
 }
 html[data-dsh-product-stage]:not([data-dsh-product-stage="omnimux-apps"]):not([data-dsh-product-stage="omnimux-vids"]) [data-dsh-better-sidebar],

@@ -70,6 +70,52 @@ export function findLegacyOnly(doc) {
     assert.deepEqual(auditSource(exempt, 'sample.js'), [])
   })
 
+  it('does not let backticks inside JS comments break CSS template literal scanning', () => {
+    const badWithCommentBackticks = `
+// A comment with an odd backtick: \`something
+/* Block comment with single backtick \` too */
+export const CSS = \`
+.dshDesktopRightbarSurface [class*="_panel"] {
+  width: 100% !important;
+}
+\`
+`
+    const violations = auditSource(badWithCommentBackticks, 'sample.js')
+    assert.equal(violations.length, 1)
+    assert.equal(violations[0].rule, 'legacy-rightbar-surface-missing-next-twin')
+  })
+
+  it('flags multi-line JS querySelector calling bare .dshDesktopFrame without [class*="frame"]', () => {
+    const multilineBad = `
+export function findFrame(doc) {
+  return doc.querySelector(
+    '.dshDesktopFrame'
+  )
+}
+`
+    const violations = auditSource(multilineBad, 'sample.js')
+    assert.equal(violations.length, 1)
+    assert.equal(violations[0].rule, 'js-legacy-frame-query-missing-next-twin')
+  })
+
+  it('flags bare JS data-dsh-desktop-platform="darwin" lookup without html[data-platform="darwin"] / dataset.platform twin', () => {
+    const bad = `
+export function isMac(doc) {
+  return Boolean(doc.body.matches('[data-dsh-desktop-platform="darwin"]'))
+}
+`
+    const good = `
+export function isMac(doc) {
+  return doc.documentElement?.dataset?.platform === 'darwin'
+    || Boolean(doc.body.matches('[data-dsh-desktop-platform="darwin"]'))
+}
+`
+    const violations = auditSource(bad, 'sample.js')
+    assert.equal(violations.length, 1)
+    assert.equal(violations[0].rule, 'js-legacy-darwin-platform-query-missing-next-twin')
+    assert.deepEqual(auditSource(good, 'sample.js'), [])
+  })
+
   it('passes on the real plugins/omnimux/src/client tree with zero unpaired legacy selectors', () => {
     const { filesScanned, violations } = auditDirectory()
     assert.ok(filesScanned > 10, `expected >10 client files scanned, got ${filesScanned}`)

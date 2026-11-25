@@ -135,12 +135,16 @@ ${IMAGE_CANVAS_PROJECTION_SELECTOR} [data-composer-card]{
   opacity:1!important;
 }
 /* 分栏与普通展开态下，右侧面板必须 100% 铺满右侧网格容器，绝不因绝对定位 shrink-to-fit 产生左侧黑洞空隙；
-   Next 壳严格限定 :not([data-rightbar-collapsed="true"]) 与 push+open，避免关闭滑出或窄屏 overlay 被压扁成 0px。 */
+   Next 壳严格限定 :not([data-rightbar-collapsed="true"]) 与 push+open，避免关闭滑出或窄屏 overlay 被压扁成 0px；
+   无 data-sidebar-right-panel 的旧面板兜底仅匹配直接子元素或 [data-dsh-panel-host] 直接子元素，绝不误伤
+   documentpreview (.Dj9pYa_panel)、panelBody (._6dqGca_panelBody) 或 react-flow__panel 等内部弹层/子容器。 */
 .dshDesktopRightbarSurface [class*="_panel"]:not([data-sidebar-right-panel="fullscreen"]):not([class*="bottom"]):not([class*="Hidden"]),
 [class*="frame"]:not([data-rightbar-collapsed="true"]) [data-rightbar-col] [class*="_panel"][data-sidebar-right-panel="push"][data-sidebar-right-open],
 [class*="frame"]:not([data-rightbar-collapsed="true"]) [class*="rightbarCol"] [class*="_panel"][data-sidebar-right-panel="push"][data-sidebar-right-open],
-[class*="frame"]:not([data-rightbar-collapsed="true"]) [data-rightbar-col] [class*="_panel"]:not([data-sidebar-right-panel]):not([class*="bottom"]):not([class*="Hidden"]),
-[class*="frame"]:not([data-rightbar-collapsed="true"]) [class*="rightbarCol"] [class*="_panel"]:not([data-sidebar-right-panel]):not([class*="bottom"]):not([class*="Hidden"]){
+[class*="frame"]:not([data-rightbar-collapsed="true"]) [data-rightbar-col] > [class*="_panel"]:not([data-sidebar-right-panel]):not([class*="bottom"]):not([class*="Hidden"]),
+[class*="frame"]:not([data-rightbar-collapsed="true"]) [class*="rightbarCol"] > [class*="_panel"]:not([data-sidebar-right-panel]):not([class*="bottom"]):not([class*="Hidden"]),
+[class*="frame"]:not([data-rightbar-collapsed="true"]) [data-rightbar-col] [data-dsh-panel-host] > [class*="_panel"]:not([data-sidebar-right-panel]):not([class*="bottom"]):not([class*="Hidden"]),
+[class*="frame"]:not([data-rightbar-collapsed="true"]) [class*="rightbarCol"] [data-dsh-panel-host] > [class*="_panel"]:not([data-sidebar-right-panel]):not([class*="bottom"]):not([class*="Hidden"]){
   left:0!important;
   right:0!important;
   width:100%!important;
@@ -154,16 +158,20 @@ ${IMAGE_CANVAS_PROJECTION_SELECTOR} [data-composer-card]{
    必须排除全屏态面板：它是 position:fixed（视口坐标由 sidebar-toggle-topbar 的
    fullscreen 规则负责），误套容器坐标会让它左移一个侧栏宽、压住左侧导航。 */
 html[${CONVERSATION_COLLAPSED_ATTR}]:not([data-omnimux-left-collapsed]) .dshDesktopRightbarSurface [class*="_panel"]:not([data-sidebar-right-panel]):not([class*="bottom"]):not([class*="Hidden"]):not([data-sidebar-right-panel="fullscreen"]),
-html[${CONVERSATION_COLLAPSED_ATTR}]:not([data-omnimux-left-collapsed]) [data-rightbar-col] [class*="_panel"]:not([data-sidebar-right-panel]):not([class*="bottom"]):not([class*="Hidden"]):not([data-sidebar-right-panel="fullscreen"]),
-html[${CONVERSATION_COLLAPSED_ATTR}]:not([data-omnimux-left-collapsed]) [class*="rightbarCol"] [class*="_panel"]:not([data-sidebar-right-panel]):not([class*="bottom"]):not([class*="Hidden"]):not([data-sidebar-right-panel="fullscreen"]){
+html[${CONVERSATION_COLLAPSED_ATTR}]:not([data-omnimux-left-collapsed]) [data-rightbar-col] > [class*="_panel"]:not([data-sidebar-right-panel]):not([class*="bottom"]):not([class*="Hidden"]):not([data-sidebar-right-panel="fullscreen"]),
+html[${CONVERSATION_COLLAPSED_ATTR}]:not([data-omnimux-left-collapsed]) [class*="rightbarCol"] > [class*="_panel"]:not([data-sidebar-right-panel]):not([class*="bottom"]):not([class*="Hidden"]):not([data-sidebar-right-panel="fullscreen"]),
+html[${CONVERSATION_COLLAPSED_ATTR}]:not([data-omnimux-left-collapsed]) [data-rightbar-col] [data-dsh-panel-host] > [class*="_panel"]:not([data-sidebar-right-panel]):not([class*="bottom"]):not([class*="Hidden"]):not([data-sidebar-right-panel="fullscreen"]),
+html[${CONVERSATION_COLLAPSED_ATTR}]:not([data-omnimux-left-collapsed]) [class*="rightbarCol"] [data-dsh-panel-host] > [class*="_panel"]:not([data-sidebar-right-panel]):not([class*="bottom"]):not([class*="Hidden"]):not([data-sidebar-right-panel="fullscreen"]){
   left:0!important;
   right:0!important;
   width:auto!important;
   max-width:none!important;
 }
 html[${CONVERSATION_COLLAPSED_ATTR}][data-omnimux-left-collapsed] .dshDesktopRightbarSurface [class*="_panel"]:not([data-sidebar-right-panel]):not([class*="bottom"]):not([class*="Hidden"]),
-html[${CONVERSATION_COLLAPSED_ATTR}][data-omnimux-left-collapsed] [data-rightbar-col] [class*="_panel"]:not([data-sidebar-right-panel]):not([class*="bottom"]):not([class*="Hidden"]),
-html[${CONVERSATION_COLLAPSED_ATTR}][data-omnimux-left-collapsed] [class*="rightbarCol"] [class*="_panel"]:not([data-sidebar-right-panel]):not([class*="bottom"]):not([class*="Hidden"]){
+html[${CONVERSATION_COLLAPSED_ATTR}][data-omnimux-left-collapsed] [data-rightbar-col] > [class*="_panel"]:not([data-sidebar-right-panel]):not([class*="bottom"]):not([class*="Hidden"]),
+html[${CONVERSATION_COLLAPSED_ATTR}][data-omnimux-left-collapsed] [class*="rightbarCol"] > [class*="_panel"]:not([data-sidebar-right-panel]):not([class*="bottom"]):not([class*="Hidden"]),
+html[${CONVERSATION_COLLAPSED_ATTR}][data-omnimux-left-collapsed] [data-rightbar-col] [data-dsh-panel-host] > [class*="_panel"]:not([data-sidebar-right-panel]):not([class*="bottom"]):not([class*="Hidden"]),
+html[${CONVERSATION_COLLAPSED_ATTR}][data-omnimux-left-collapsed] [class*="rightbarCol"] [data-dsh-panel-host] > [class*="_panel"]:not([data-sidebar-right-panel]):not([class*="bottom"]):not([class*="Hidden"]){
   left:0!important;
   right:0!important;
   width:100vw!important;

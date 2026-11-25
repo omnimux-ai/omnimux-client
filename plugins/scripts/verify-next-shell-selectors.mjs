@@ -76,6 +76,12 @@ const JS_QUERY_TWIN_RULES = [
     nextRe: /sidebarCol|\[data-pane=["']sidebar["']\]/,
     hint: 'Pair .dshDesktopSidebarSurface DOM lookup with [class*="sidebarCol"] / [data-pane="sidebar"]',
   },
+  {
+    name: 'js-legacy-darwin-platform-query-missing-next-twin',
+    legacyRe: /data-dsh-desktop-platform=["']darwin["']/,
+    nextRe: /data-platform(?:=["']darwin["'])?|dataset\??\.platform/,
+    hint: 'Pair data-dsh-desktop-platform="darwin" DOM lookup with html[data-platform="darwin"] / dataset.platform',
+  },
 ]
 
 function lineNumberAt(text, offset) {
@@ -91,45 +97,134 @@ function stripBlockComments(text) {
 }
 
 /**
- * Extract template literals that appear to contain CSS stylesheets (rules with `{ ... : ... }`).
- * Returns offsets in the original source so violations report exact line numbers.
+ * Advance past a JS string literal (`'...'` or `"..."`), returning the index
+ * immediately after the closing quote (or line end / EOF).
  */
-function findCssTemplateRanges(source) {
-  const ranges = []
-  let i = 0
+function skipQuotedString(source, start) {
+  const quote = source[start]
+  let i = start + 1
   while (i < source.length) {
-    if (source[i] === '`') {
-      const start = i + 1
-      let j = start
-      let depth = 0
-      while (j < source.length) {
-        if (source[j] === '\\') {
-          j += 2
-          continue
-        }
-        if (source[j] === '$' && source[j + 1] === '{') {
-          depth += 1
-          j += 2
-          continue
-        }
-        if (source[j] === '}' && depth > 0) {
-          depth -= 1
-          j += 1
-          continue
-        }
-        if (source[j] === '`' && depth === 0) break
-        j += 1
+    if (source[i] === '\\') {
+      i += 2
+      continue
+    }
+    if (source[i] === quote) return i + 1
+    if (source[i] === '\n') return i
+    i += 1
+  }
+  return i
+}
+
+/**
+ * Advance past a JS template literal starting at the opening backtick,
+ * respecting escapes, nested `${...}` expressions, and comments/strings inside `${...}`.
+ * Returns `{ start, end }` (the body bounds exclusive of backticks) and `nextIndex`.
+ */
+function scanTemplateLiteral(source, openIndex) {
+  const start = openIndex + 1
+  let i = start
+  let depth = 0
+  while (i < source.length) {
+    const ch = source[i]
+    if (depth === 0) {
+      if (ch === '\\') {
+        i += 2
+        continue
       }
-      const body = source.slice(start, j)
-      if (/\{[^{}]*:[^}]*\}/.test(body) && /\.dshDesktop|data-dsh-desktop-platform/.test(body)) {
-        ranges.push({ start, end: j, body })
+      if (ch === '$' && source[i + 1] === '{') {
+        depth = 1
+        i += 2
+        continue
       }
-      i = j + 1
+      if (ch === '`') {
+        return { start, end: i, nextIndex: i + 1 }
+      }
+      i += 1
+      continue
+    }
+    // Inside `${ ... }` expression: skip comments, strings, nested templates, and track braces.
+    if (ch === '/' && source[i + 1] === '/') {
+      const nl = source.indexOf('\n', i + 2)
+      i = nl === -1 ? source.length : nl + 1
+      continue
+    }
+    if (ch === '/' && source[i + 1] === '*') {
+      const end = source.indexOf('*/', i + 2)
+      i = end === -1 ? source.length : end + 2
+      continue
+    }
+    if (ch === '\'' || ch === '"') {
+      i = skipQuotedString(source, i)
+      continue
+    }
+    if (ch === '`') {
+      const nested = scanTemplateLiteral(source, i)
+      i = nested.nextIndex
+      continue
+    }
+    if (ch === '{') {
+      depth += 1
+      i += 1
+      continue
+    }
+    if (ch === '}') {
+      depth -= 1
+      i += 1
       continue
     }
     i += 1
   }
-  return ranges
+  return { start, end: i, nextIndex: i }
+}
+
+/**
+ * Strip JS line/block comments outside string and template literals while
+ * preserving exact character offsets and newlines, and collect CSS template ranges.
+ */
+function scanJsSource(source) {
+  const cssRanges = []
+  let codeChars = ''
+  let i = 0
+  while (i < source.length) {
+    const ch = source[i]
+    const next = source[i + 1]
+    if (ch === '/' && next === '/') {
+      const nl = source.indexOf('\n', i + 2)
+      const end = nl === -1 ? source.length : nl
+      codeChars += ' '.repeat(end - i)
+      i = end
+      continue
+    }
+    if (ch === '/' && next === '*') {
+      const close = source.indexOf('*/', i + 2)
+      const end = close === -1 ? source.length : close + 2
+      codeChars += source.slice(i, end).replace(/[^\n]/g, ' ')
+      i = end
+      continue
+    }
+    if (ch === '\'' || ch === '"') {
+      const end = skipQuotedString(source, i)
+      codeChars += source.slice(i, end)
+      i = end
+      continue
+    }
+    if (ch === '`') {
+      const tpl = scanTemplateLiteral(source, i)
+      const body = source.slice(tpl.start, tpl.end)
+      if (/\{[^{}]*:[^}]*\}/.test(body) && /\.dshDesktop|data-dsh-desktop-platform/.test(body)) {
+        cssRanges.push({ start: tpl.start, end: tpl.end, body })
+        // Blank CSS template body in JS code view so JS audit doesn't double-report CSS rules.
+        codeChars += source.slice(i, tpl.nextIndex).replace(/[^\n]/g, ' ')
+      } else {
+        codeChars += source.slice(i, tpl.nextIndex)
+      }
+      i = tpl.nextIndex
+      continue
+    }
+    codeChars += ch
+    i += 1
+  }
+  return { cssRanges, codeWithoutComments: codeChars }
 }
 
 function auditCssBlock(cssBody, baseOffset, fullSource, filePath, violations) {
@@ -161,36 +256,34 @@ function auditCssBlock(cssBody, baseOffset, fullSource, filePath, violations) {
   }
 }
 
-function auditJsQueries(source, cssRanges, filePath, violations) {
-  const lines = source.split('\n')
-  const lineOffsets = []
-  let cursor = 0
-  for (const line of lines) {
-    lineOffsets.push(cursor)
-    cursor += line.length + 1
-  }
-  const inCssRange = (offset) => cssRanges.some((r) => offset >= r.start && offset <= r.end)
+function auditJsQueries(originalSource, codeWithoutComments, filePath, violations) {
+  const origLines = originalSource.split('\n')
+  const codeLines = codeWithoutComments.split('\n')
 
-  for (let idx = 0; idx < lines.length; idx += 1) {
-    const line = lines[idx]
-    const offset = lineOffsets[idx]
-    if (inCssRange(offset)) continue
-    const trimmed = line.trim()
-    if (trimmed.startsWith('//') || trimmed.startsWith('*') || trimmed.startsWith('/*')) continue
-    // Only inspect active DOM selector calls or selector constants
-    if (!/(?:querySelector(?:All)?|matches|closest)\s*\(|(?:SELECTOR|SELECTORS)\s*=/.test(line)) continue
-    if (EXEMPT_RE.test(line) || (idx > 0 && EXEMPT_RE.test(lines[idx - 1]))) continue
+  for (let idx = 0; idx < codeLines.length; idx += 1) {
+    const codeLine = codeLines[idx]
+    if (!codeLine.trim()) continue
+    // Fast pre-filter: only lines referencing a legacy desktop shell token in active code
+    if (!/\.dshDesktop|data-dsh-desktop-platform/.test(codeLine)) continue
 
-    // Allow pairing within a surrounding statement window (e.g. `const inner = querySelector('[class*="sidebarCol"]'); if (inner) return inner; const shell = querySelector('.dshDesktopSidebarSurface')`)
-    const windowText = lines.slice(Math.max(0, idx - 2), Math.min(lines.length, idx + 3)).join('\n')
+    // Check exemption on current or two preceding original lines (handles multi-line querySelector calls)
+    const exemptWindow = origLines.slice(Math.max(0, idx - 2), idx + 1).join('\n')
+    if (EXEMPT_RE.test(exemptWindow)) continue
+
+    // Surrounding statement window (supports multi-line querySelector(\n '.dshDesktopFrame'\n) and selector arrays)
+    const windowText = codeLines.slice(Math.max(0, idx - 3), Math.min(codeLines.length, idx + 4)).join('\n')
+    if (!/(?:querySelector(?:All)?|matches|closest|getAttribute|hasAttribute)\s*\(|(?:SELECTOR|SELECTORS)\s*=|['"`][^'"`]*(?:\.dshDesktop|data-dsh-desktop-platform)/.test(windowText)) {
+      continue
+    }
+
     for (const rule of JS_QUERY_TWIN_RULES) {
-      if (!rule.legacyRe.test(line)) continue
+      if (!rule.legacyRe.test(codeLine)) continue
       if (rule.nextRe.test(windowText)) continue
       violations.push({
         file: filePath,
         line: idx + 1,
         rule: rule.name,
-        selector: trimmed.slice(0, 180),
+        selector: origLines[idx].trim().slice(0, 180),
         hint: rule.hint,
       })
     }
@@ -208,11 +301,11 @@ export function auditSource(source, filePath = '<memory>') {
     auditCssBlock(source, 0, source, filePath, violations)
     return violations
   }
-  const cssRanges = findCssTemplateRanges(source)
+  const { cssRanges, codeWithoutComments } = scanJsSource(source)
   for (const range of cssRanges) {
     auditCssBlock(range.body, range.start, source, filePath, violations)
   }
-  auditJsQueries(source, cssRanges, filePath, violations)
+  auditJsQueries(source, codeWithoutComments, filePath, violations)
   return violations
 }
 

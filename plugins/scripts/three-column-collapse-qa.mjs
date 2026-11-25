@@ -203,10 +203,10 @@ export function buildNextShellFixtureHtml(chromeCss, collapseCss) {
 <head>
   <meta charset="utf-8" />
   <style>
-    * { box-sizing: border-box; }
     html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #141416; }
     /* Faithful DSH 0.2.2-rc.5 AppFrame.module.css + SidebarRight.module.css geometry */
     .vcssFG_frame {
+      box-sizing: border-box;
       display: grid;
       grid-template-rows: minmax(0, 1fr) auto;
       position: relative;
@@ -1152,6 +1152,36 @@ async function main() {
     await waitForLayoutFrame(evaluate);
 
     report.nextShell = [];
+    // 由生产比例算法 conversation-ratio.js 实时派生各档中栏/右栏/手柄期望值，禁止手写魔法数
+    const nextSpecFor = (viewport, { leftCollapsed = false } = {}) => {
+      const railVisible = leftCollapsed ? 0 : FIXTURE_SIDEBAR_PX;
+      const stage = conversationStageWidthPx({
+        viewportWidth: viewport,
+        railVisiblePx: railVisible,
+        railBaselinePx: FIXTURE_SIDEBAR_PX,
+        collapsed: leftCollapsed,
+      });
+      const chatVar = conversationWidthFromRatio(stage, CONVERSATION_RATIO_DEFAULT);
+      const visibleStage = viewport - railVisible;
+      const rawRightbar = visibleStage - chatVar;
+      // 模拟 DSH 0.2.2-rc.5 AppFrame computeColumns: available = viewport - s - 400, cap = viewport * 0.7
+      const authoredRightbar = Math.min(
+        viewport - railVisible - 400,
+        Math.round(Math.min(viewport * 0.7, Math.max(300, rawRightbar))),
+      );
+      const seed45 = Math.round(viewport * 0.45);
+      return {
+        chatVar,
+        authoredRightbar,
+        seed45,
+        handleLeft: viewport - authoredRightbar,
+      };
+    };
+    const next1440 = nextSpecFor(1440);
+    const next1728 = nextSpecFor(1728);
+    const next1920 = nextSpecFor(1920);
+    const next1728Collapsed = nextSpecFor(1728, { leftCollapsed: true });
+
     const nextCases = [
       // 1440 / 1728 / 1920 展开态：即使内联 panelWidth 处于默认 45%，CSS 兜底也必须保证零黑空隙；
       // 1728 / 1920 经 DP-007 同步后手柄与视觉分割线偏差 <= 2px。
@@ -1159,11 +1189,11 @@ async function main() {
         name: 'next-1440-expanded-no-void',
         viewport: 1440,
         spec: {
-          sidebarVar: 280,
-          chatVar: 360,
-          authoredGrid: '280px minmax(400px, 1fr) minmax(0px, 760px)',
-          inlinePanelWidth: 648,
-          handleLeft: 1440 - 760,
+          sidebarVar: FIXTURE_SIDEBAR_PX,
+          chatVar: next1440.chatVar,
+          authoredGrid: `${FIXTURE_SIDEBAR_PX}px minmax(400px, 1fr) minmax(0px, ${next1440.authoredRightbar}px)`,
+          inlinePanelWidth: next1440.seed45,
+          handleLeft: next1440.handleLeft,
         },
         check: (m) => ({
           gap: Math.abs(m.panelLeft - m.centerRight),
@@ -1175,11 +1205,11 @@ async function main() {
         name: 'next-1728-expanded-no-void-and-handle-aligned',
         viewport: 1728,
         spec: {
-          sidebarVar: 280,
-          chatVar: 434,
-          authoredGrid: '280px minmax(400px, 1fr) minmax(0px, 1014px)',
-          inlinePanelWidth: 778,
-          handleLeft: 1728 - 1014,
+          sidebarVar: FIXTURE_SIDEBAR_PX,
+          chatVar: next1728.chatVar,
+          authoredGrid: `${FIXTURE_SIDEBAR_PX}px minmax(400px, 1fr) minmax(0px, ${next1728.authoredRightbar}px)`,
+          inlinePanelWidth: next1728.seed45,
+          handleLeft: next1728.handleLeft,
         },
         check: (m) => ({
           gap: Math.abs(m.panelLeft - m.centerRight),
@@ -1195,11 +1225,11 @@ async function main() {
         name: 'next-1920-expanded-no-void-and-handle-aligned',
         viewport: 1920,
         spec: {
-          sidebarVar: 280,
-          chatVar: 492,
-          authoredGrid: '280px minmax(400px, 1fr) minmax(0px, 1148px)',
-          inlinePanelWidth: 864,
-          handleLeft: 1920 - 1148,
+          sidebarVar: FIXTURE_SIDEBAR_PX,
+          chatVar: next1920.chatVar,
+          authoredGrid: `${FIXTURE_SIDEBAR_PX}px minmax(400px, 1fr) minmax(0px, ${next1920.authoredRightbar}px)`,
+          inlinePanelWidth: next1920.seed45,
+          handleLeft: next1920.handleLeft,
         },
         check: (m) => ({
           gap: Math.abs(m.panelLeft - m.centerRight),
@@ -1217,10 +1247,10 @@ async function main() {
         spec: {
           leftCollapsed: true,
           sidebarVar: 0,
-          chatVar: 434,
-          authoredGrid: '0px minmax(400px, 1fr) minmax(0px, 1210px)',
-          inlinePanelWidth: 1210,
-          handleLeft: 1728 - 1210,
+          chatVar: next1728Collapsed.chatVar,
+          authoredGrid: `0px minmax(400px, 1fr) minmax(0px, ${next1728Collapsed.authoredRightbar}px)`,
+          inlinePanelWidth: next1728Collapsed.authoredRightbar,
+          handleLeft: next1728Collapsed.handleLeft,
         },
         check: (m) => ({
           gap: Math.abs(m.panelLeft - m.centerRight),
@@ -1233,11 +1263,11 @@ async function main() {
         viewport: 1728,
         spec: {
           centerCollapsed: true,
-          sidebarVar: 280,
-          chatVar: 434,
-          authoredGrid: '280px minmax(400px, 1fr) minmax(0px, 1014px)',
-          inlinePanelWidth: 1014,
-          handleLeft: 714,
+          sidebarVar: FIXTURE_SIDEBAR_PX,
+          chatVar: next1728.chatVar,
+          authoredGrid: `${FIXTURE_SIDEBAR_PX}px minmax(400px, 1fr) minmax(0px, ${next1728.authoredRightbar}px)`,
+          inlinePanelWidth: next1728.authoredRightbar,
+          handleLeft: next1728.handleLeft,
         },
         check: (m) => ({
           gap: Math.abs(m.panelLeft - m.sidebarRight),
@@ -1252,7 +1282,7 @@ async function main() {
           leftCollapsed: true,
           rightbarCollapsed: true,
           sidebarVar: 0,
-          chatVar: 360,
+          chatVar: CONVERSATION_MIN_CHAT_PX,
           authoredGrid: '0px minmax(0px, 1fr) minmax(0px, 0px)',
           inlinePanelWidth: 580,
           handleLeft: 400,
@@ -1269,15 +1299,15 @@ async function main() {
           rightbarCollapsed: true,
           rightbarOpen: false,
           panelOpen: false,
-          sidebarVar: 280,
-          chatVar: 434,
-          authoredGrid: '280px minmax(0px, 1fr) minmax(0px, 0px)',
-          inlinePanelWidth: 778,
-          handleLeft: 950,
+          sidebarVar: FIXTURE_SIDEBAR_PX,
+          chatVar: next1728.chatVar,
+          authoredGrid: `${FIXTURE_SIDEBAR_PX}px minmax(0px, 1fr) minmax(0px, 0px)`,
+          inlinePanelWidth: next1728.seed45,
+          handleLeft: 1728 - next1728.seed45,
         },
         check: (m) => ({
           panelWidth: m.panelWidth,
-          pass: Math.abs(m.panelWidth - 778) <= 2,
+          pass: Math.abs(m.panelWidth - next1728.seed45) <= 2,
         }),
       },
       {
@@ -1285,11 +1315,11 @@ async function main() {
         viewport: 1728,
         spec: {
           disableCollapseCss: true,
-          sidebarVar: 280,
-          chatVar: 434,
-          authoredGrid: '280px minmax(400px, 1fr) minmax(0px, 778px)',
-          inlinePanelWidth: 778,
-          handleLeft: 950,
+          sidebarVar: FIXTURE_SIDEBAR_PX,
+          chatVar: next1728.chatVar,
+          authoredGrid: `${FIXTURE_SIDEBAR_PX}px minmax(400px, 1fr) minmax(0px, ${next1728.seed45}px)`,
+          inlinePanelWidth: next1728.seed45,
+          handleLeft: 1728 - next1728.seed45,
         },
         check: (m) => ({
           gap: m.panelLeft - m.centerRight,

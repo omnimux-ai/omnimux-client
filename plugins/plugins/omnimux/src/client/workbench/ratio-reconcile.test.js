@@ -31,6 +31,10 @@ import {
 } from './split-layout.js'
 import { installRightbarStateMirror } from './rightbar-state-mirror.js'
 import {
+  installSidebarToggleTopbar,
+  setTopbarGeometryHook,
+} from '../sidebar-toggle-topbar.js'
+import {
   resetConversationCollapseForTests,
 } from '../conversation-collapse.js'
 import { resetWorkspaceLayoutStoreForTests, writeChatRatio } from './workspace-layout-store.js'
@@ -413,7 +417,7 @@ describe('Next 壳（DSH 0.2.2-rc.5 + DP-007）面板宽度协调与 Fiber 兜�
     assert.deepEqual(calls, [Math.max(500, Math.round(1728 * 0.45))])
   })
 
-  it('installRightbarStateMirror fires onStateChange when Next shell panel opens so handle aligns without waiting for resize', async () => {
+  it('installRightbarStateMirror fires onStateChange and reconciles with state=undefined even when betterSidebar is unattached', async () => {
     const dom = setupNextShellWindow(1728)
     const panel = dom.window.document.querySelector('.Ng7Ira_panel')
     panel.removeAttribute('data-sidebar-right-open')
@@ -429,6 +433,7 @@ describe('Next 壳（DSH 0.2.2-rc.5 + DP-007）面板宽度协调与 Fiber 兜�
       rightbarInstant: false,
     }
     const calls = []
+    setAttachedStore(null)
     bindWorkbenchDeps({
       layout: {
         getSnapshot: () => ({ ...state }),
@@ -439,14 +444,12 @@ describe('Next 壳（DSH 0.2.2-rc.5 + DP-007）面板宽度协调与 Fiber 兜�
         },
       },
     })
-    focusRecordForTab(SESSION_ID, TAB_ID).mode = WORKBENCH_FOCUS.split
 
     const stop = installRightbarStateMirror(dom.window.document, {
       onStateChange: (mirrorState, targetDoc) => {
         if (mirrorState.open && !mirrorState.fullscreen) {
-          reconcileRightbarFromRatio(makeState({ width: 778 }), {
+          reconcileRightbarFromRatio(undefined, {
             doc: targetDoc,
-            sessionId: SESSION_ID,
             officialSidebarWidth: RAIL_PX,
             chatRatio: RATIO,
           })
@@ -455,13 +458,130 @@ describe('Next 壳（DSH 0.2.2-rc.5 + DP-007）面板宽度协调与 Fiber 兜�
     })
     try {
       assert.deepEqual(calls, [], 'closed panel must not reconcile')
+      assert.equal(
+        reconcileRightbarFromRatio(undefined, { doc: dom.window.document, officialSidebarWidth: RAIL_PX, chatRatio: RATIO }),
+        'skipped',
+        'state=undefined must still skip while rightbar is closed',
+      )
       state.rightbarShown = true
       state.rightbarTrack = true
       panel.setAttribute('data-sidebar-right-open', 'true')
       await new Promise((r) => setTimeout(r, 20))
-      assert.deepEqual(calls, [1014], 'opening panel must reconcile rightbar to 1014px immediately without window resize')
+      assert.deepEqual(calls, [1014], 'opening native Next panel must reconcile rightbar to 1014px without betterSidebar attached')
     } finally {
       stop()
+    }
+  })
+
+  it('retries rightbar reconcile once stale store viewportWidth catches up after a window-grow race', () => {
+    const dom = setupNextShellWindow(1920)
+    const storeState = {
+      sidebar: 280,
+      viewportWidth: 1200,
+      narrowExpanded: false,
+      rightbar: 540,
+      rightbarAuthored: false,
+      rightbarShown: true,
+      rightbarTrack: true,
+      rightbarFullscreen: false,
+      rightbarInstant: false,
+    }
+    const writes = []
+    bindWorkbenchDeps({
+      layout: {
+        getSnapshot: () => ({ ...storeState }),
+        // Simulate a 1-arg store that clamps against its own stale viewportWidth until ResizeObserver commits 1920.
+        setRightbar(px) {
+          writes.push(px)
+          storeState.rightbar = Math.min(Math.round(storeState.viewportWidth * 0.7), Math.max(300, Math.round(px)))
+        },
+      },
+    })
+    setAttachedStore(null)
+
+    const env = { doc: dom.window.document, officialSidebarWidth: RAIL_PX, chatRatio: RATIO }
+    // First call during window.resize before ResizeObserver: store clamps 1148 to 840 (1200 * 0.7).
+    assert.equal(reconcileRightbarFromRatio(undefined, env), 'written')
+    assert.equal(storeState.rightbar, 840)
+    // Once ResizeObserver commits viewportWidth = 1920, reconcile must NOT stay stuck on stale dedup cache.
+    storeState.viewportWidth = 1920
+    assert.equal(reconcileRightbarFromRatio(undefined, env), 'written')
+    assert.equal(storeState.rightbar, 1148)
+    assert.deepEqual(writes, [1148, 1148])
+    assert.equal(reconcileRightbarFromRatio(undefined, env), 'consistent')
+  })
+
+  it('installRightbarStateMirror cleanup cancels pending scheduled callback so onStateChange does not fire after dispose', async () => {
+    const dom = setupNextShellWindow(1728)
+    const panel = dom.window.document.querySelector('.Ng7Ira_panel')
+    panel.removeAttribute('data-sidebar-right-open')
+    const events = []
+    const stop = installRightbarStateMirror(dom.window.document, {
+      onStateChange: (mirrorState) => {
+        events.push(mirrorState.open)
+      },
+    })
+    assert.deepEqual(events, [false], 'initial sync emits closed state once')
+    panel.setAttribute('data-sidebar-right-open', 'true')
+    stop()
+    await new Promise((r) => setTimeout(r, 20))
+    assert.deepEqual(events, [false], 'disposed mirror must not deliver scheduled callback after stop()')
+  })
+
+  it('reconciles rightbar handle width when left rail collapses/expands via topbar geometry hook', async () => {
+    const dom = setupNextShellWindow(1728)
+    const frame = dom.window.document.querySelector('.vcssFG_frame')
+    const sidebarCol = dom.window.document.querySelector('.vcssFG_sidebarCol')
+    const topStrip = dom.window.document.createElement('div')
+    topStrip.className = 'vcssFG_topStrip'
+    topStrip.getBoundingClientRect = () => ({ width: 280, height: 40, top: 0, left: 0, right: 280, bottom: 40 })
+    sidebarCol.appendChild(topStrip)
+    sidebarCol.getBoundingClientRect = () => ({
+      width: frame.hasAttribute('data-sidebar-collapsed') ? 0 : RAIL_PX,
+      height: 1080,
+      top: 0,
+      left: 0,
+      right: frame.hasAttribute('data-sidebar-collapsed') ? 0 : RAIL_PX,
+      bottom: 1080,
+    })
+    writeChatRatio(0.41022)
+    const storeState = {
+      sidebar: 280,
+      viewportWidth: 1728,
+      narrowExpanded: false,
+      rightbar: 854,
+      rightbarAuthored: true,
+      rightbarShown: true,
+      rightbarTrack: true,
+      rightbarFullscreen: false,
+      rightbarInstant: false,
+    }
+    const calls = []
+    setAttachedStore(null)
+    bindWorkbenchDeps({
+      layout: {
+        getSnapshot: () => ({ ...storeState }),
+        setRightbar(px) {
+          calls.push(px)
+          storeState.rightbar = Math.round(px)
+        },
+      },
+    })
+
+    const unsubTopbar = installSidebarToggleTopbar(dom.window.document)
+    setTopbarGeometryHook((targetDoc) => { reconcileRightbarFromRatio(undefined, { doc: targetDoc }) })
+    try {
+      frame.setAttribute('data-sidebar-collapsed', 'true')
+      await new Promise((r) => setTimeout(r, 30))
+      assert.equal(storeState.rightbar, 1134, 'left rail collapse must expand rightbar target by 280px so handle stays aligned')
+
+      frame.removeAttribute('data-sidebar-collapsed')
+      await new Promise((r) => setTimeout(r, 30))
+      assert.equal(storeState.rightbar, 854, 'left rail re-expand must restore expanded rightbar target')
+      assert.equal(calls.length, 2)
+    } finally {
+      setTopbarGeometryHook(null)
+      unsubTopbar()
     }
   })
 })

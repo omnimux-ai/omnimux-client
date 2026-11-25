@@ -65,16 +65,31 @@ export function installRightbarStateMirror(doc = typeof document !== 'undefined'
     || (typeof MutationObserver !== 'undefined' ? MutationObserver : undefined)
   if (!Observer) return () => {}
 
+  let disposed = false
   let scheduled = false
+  let rafId = null
   const schedule = () => {
-    if (scheduled) return
+    if (disposed || scheduled) return
     scheduled = true
     const raf = doc.defaultView?.requestAnimationFrame
-    if (typeof raf === 'function') raf(() => { scheduled = false; run() })
-    else Promise.resolve().then(() => { scheduled = false; run() })
+    if (typeof raf === 'function') {
+      rafId = raf(() => {
+        rafId = null
+        scheduled = false
+        if (disposed) return
+        run()
+      })
+    } else {
+      Promise.resolve().then(() => {
+        scheduled = false
+        if (disposed) return
+        run()
+      })
+    }
   }
 
   const observer = new Observer((records) => {
+    if (disposed) return
     const relevant = records.some((record) => {
       const name = record.attributeName
       if (name === 'hidden' || name === 'aria-hidden') {
@@ -96,7 +111,16 @@ export function installRightbarStateMirror(doc = typeof document !== 'undefined'
     subtree: true,
     attributeFilter: ['data-sidebar-right-panel', 'data-sidebar-right-open', 'hidden', 'aria-hidden'],
   })
-  return () => observer.disconnect()
+  return () => {
+    disposed = true
+    observer.disconnect()
+    if (rafId !== null) {
+      const cancel = doc.defaultView?.cancelAnimationFrame
+      if (typeof cancel === 'function') cancel(rafId)
+      rafId = null
+    }
+    scheduled = false
+  }
 }
 
 export { currentRightbarPanel }

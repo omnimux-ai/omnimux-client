@@ -199,4 +199,41 @@ describe('DP-007: dsh-client-ui-layout@0.2.2-rc.5 LayoutController contract', ()
       disposeAll()
     }
   })
+
+  it('uses optional viewport argument on setRightbar to avoid stale-viewport clamp on window-grow race', () => {
+    // Store still holds stale viewportWidth=1200 before ResizeObserver rAF commits 1920.
+    const { layout, disposeAll } = mountLayoutService(1200)
+    try {
+      layout.openRightbar(true, false)
+      // Without explicit viewport arg, 1148 is clamped against stale 1200 * 0.7 = 840.
+      layout.setRightbar(1148)
+      expect(layout.getSnapshot()?.rightbar).toBe(1200 * 0.7)
+
+      // With explicit live frame viewport=1920, 1148 is within 1920 * 0.7 = 1344 and preserved verbatim.
+      layout.setRightbar(1148, 1920)
+      expect(layout.getSnapshot()?.rightbar).toBe(1148)
+      expect(layout.getSnapshot()?.rightbarAuthored).toBe(true)
+    } finally {
+      disposeAll()
+    }
+  })
+
+  it('ignores non-finite setRightbar widths without poisoning rightbar or rightbarAuthored', () => {
+    const { layout, disposeAll } = mountLayoutService(1728)
+    try {
+      layout.openRightbar(true, false)
+      const seeded = layout.getSnapshot()?.rightbar
+      expect(seeded).toBe(Math.round(1728 * 0.45))
+
+      layout.setRightbar(Number.NaN)
+      layout.setRightbar(Number.POSITIVE_INFINITY)
+      layout.setRightbar(Number.NEGATIVE_INFINITY)
+
+      const after = layout.getSnapshot()
+      expect(after?.rightbar).toBe(seeded)
+      expect(after?.rightbarAuthored).toBe(false)
+    } finally {
+      disposeAll()
+    }
+  })
 })

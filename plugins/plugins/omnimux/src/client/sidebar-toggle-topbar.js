@@ -1752,10 +1752,12 @@ export function installSidebarToggleTopbar(doc = typeof document !== 'undefined'
   /** @type {number | any} */
   let pendingSchedule = null
   let isEnsuring = false
+  let lastHookLeftCollapsed = isEffectivelyLeftCollapsed(doc)
 
   // Track mounted controls and leaf panes so split dragging updates overlap.
   const syncGeometry = () => {
     safeDom(() => applyTopbarToggleCssVars(doc))
+    lastHookLeftCollapsed = isEffectivelyLeftCollapsed(doc)
     runTopbarGeometryHook(doc)
   }
   /** @type {Set<Element>} */
@@ -1804,6 +1806,11 @@ export function installSidebarToggleTopbar(doc = typeof document !== 'undefined'
           && topbarRetryAttempt >= TOPBAR_RETRY_BACKOFF_MS.length
         const allowBodyFallback = isEffectivelyLeftCollapsed(doc) || retryExhausted
         ensureSidebarToggleTopbar(doc, { allowBodyFallback })
+        const nextLeftCollapsed = isEffectivelyLeftCollapsed(doc)
+        if (nextLeftCollapsed !== lastHookLeftCollapsed) {
+          lastHookLeftCollapsed = nextLeftCollapsed
+          runTopbarGeometryHook(doc)
+        }
         ensureObserveTargets()
         rebindHostObservers()
         watchTopbarAnchorAppearance()

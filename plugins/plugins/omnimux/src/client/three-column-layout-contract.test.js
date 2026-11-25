@@ -518,4 +518,51 @@ describe('Next 壳（DSH 0.2.2-rc.5 AppFrame）双壳布局契约与右面板铺
     assert.equal(normalizeGrid(legacyWinner?.grid), 'var(--omnimux-sidebar-width, 280px) 0px minmax(0px, 1fr)')
     assert.equal(normalizeGrid(nextWinner?.grid), 'var(--omnimux-sidebar-width, 280px) 0px minmax(0px, 1fr)')
   })
+
+  it('Next 壳右面板铺满规则不得误伤嵌套内部弹层与子容器（.Dj9pYa_panel / ._6dqGca_panelBody / .react-flow__panel）', () => {
+    const states = [
+      'data-omnimux-rightbar-open="true" data-omnimux-sidebar-toggle-topbar',
+      `${CONVERSATION_COLLAPSED} data-omnimux-rightbar-open="true" data-omnimux-sidebar-toggle-topbar`,
+      `${CONVERSATION_COLLAPSED} data-omnimux-left-collapsed="1" data-omnimux-rightbar-open="true" data-omnimux-sidebar-toggle-topbar`,
+    ]
+    const nestedClasses = ['Dj9pYa_panel', '_6dqGca_panelBody', 'wf-comfy-page-panel__panel', 'react-flow__panel']
+    for (const htmlAttrs of states) {
+      const dom = new JSDOM(
+        `<!doctype html><html ${htmlAttrs}><body>` +
+          `<div class="vcssFG_frame">` +
+          `<div class="vcssFG_sidebarCol"></div>` +
+          `<div class="vcssFG_centerCol"></div>` +
+          `<div class="vcssFG_rightbarCol" data-rightbar-col="true">` +
+          `<div class="Ng7Ira_panel" data-sidebar-right-panel="push" data-sidebar-right-open="true">` +
+          `<div class="_6dqGca_panelBody"><div class="Dj9pYa_panel"></div><div class="wf-comfy-page-panel__panel"></div><div class="react-flow__panel"></div></div>` +
+          `</div></div></div></body></html>`,
+      )
+      for (const cls of nestedClasses) {
+        const el = dom.window.document.querySelector(`.${cls}`)
+        assert.ok(el, `fixture missing .${cls}`)
+        const matched = collapseWidthRules.some((rule) =>
+          rule.selectorText
+            .split(',')
+            .map((part) => part.trim())
+            .filter(Boolean)
+            .some((selector) => {
+              try {
+                return el.matches(selector)
+              } catch {
+                return false
+              }
+            }),
+        )
+        assert.equal(matched, false, `嵌套节点 .${cls} 在 ${htmlAttrs} 下不应命中 CONVERSATION_COLLAPSE_CSS 宽度覆盖规则`)
+      }
+    }
+  })
+
+  it('Next 壳 macOS 展开态不得对 logoRow 注入 no-drag（保留 DP-001 52px 标题条拖拽区）', () => {
+    assert.doesNotMatch(
+      boxSource,
+      /html\[data-platform="darwin"\]\s+\[class\*="sidebarCol"\]\s+\[class\*="logoRow"\]/,
+      'Next 壳 macOS logoRow 已由 DP-001 上提到 52px 可拖拽标题区，不得对其强加 no-drag',
+    )
+  })
 })
