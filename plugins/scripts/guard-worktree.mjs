@@ -2232,6 +2232,28 @@ function isProtectedPrimaryDirectory(dir, cache) {
   return protectedDir
 }
 
+/**
+ * Script passed to `eval` (optionally behind `builtin`/`command`/`exec` and env
+ * assignments) or '' when the stage is not an eval. `eval` executes in the
+ * current shell, so its cwd effects persist after the stage.
+ */
+function extractEvalScript(words) {
+  let i = 0
+  while (i < words.length) {
+    const w = words[i]
+    if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(w) || w === 'command' || w === 'builtin' || w === 'exec') {
+      i += 1
+      if (words[i] === '--') i += 1
+      continue
+    }
+    break
+  }
+  if (i >= words.length || commandBasename(words[i]) !== 'eval') return ''
+  const rest = words.slice(i + 1)
+  if (rest[0] === '--') rest.shift()
+  return rest.join(' ')
+}
+
 function unwrapDirBuiltinWords(words) {
   let idx = 0
   while (idx < words.length) {
@@ -2297,6 +2319,26 @@ function walkShellCommands(command, initialCwd, visitor, depth = 0, protectedCac
   let justRanCd = false
   let pendingFunctionBody = false
   const shellFunctions = extractShellFunctionDefinitions(command)
+
+  /** Predict the cwd after running `script` in the current shell (call site only). */
+  const predictCwdAfter = (script) => {
+    let predicted = currentCwd
+    walkShellCommands(script, currentCwd, {
+      onStage() {
+        return undefined
+      },
+      onCdStage() {
+        return undefined
+      },
+      onCloserTail() {
+        return undefined
+      },
+      onStageEnd({ currentCwd: stageEndCwd }) {
+        predicted = stageEndCwd
+      },
+    }, depth + 1, protectedCache)
+    return predicted
+  }
 
   const applyCwdTransition = (nextCwd, nextPrevCwd, { prevOp, insideLeadingGroup }) => {
     const fromProtected = isProtectedPrimaryDirectory(currentCwd, protectedCache)
@@ -2501,25 +2543,27 @@ function walkShellCommands(command, initialCwd, visitor, depth = 0, protectedCac
             subSegments.length === 1 &&
             (headVerb === 'cd' || headVerb === 'pushd' || headVerb === 'popd')
 
+          // `eval cd <dir>` runs in the current shell, so a later relative write
+          // resolves against the eval'd directory.
+          if (subSegments.length === 1) {
+            const evalScript = extractEvalScript(stageWords)
+            if (evalScript.trim()) {
+              const evalHead = commandBasename(evalScript.trim().split(/\s+/)[0] || '')
+              const evalTarget = shellFunctions.get(evalHead) || evalScript
+              const predictedCwd = predictCwdAfter(evalTarget)
+              if (predictedCwd !== currentCwd) {
+                applyCwdTransition(predictedCwd, currentCwd, {
+                  prevOp: stmt.prevOp,
+                  insideLeadingGroup: parsed.leadingOpenParens > 0 || parsed.leadingOpenBraces > 0,
+                })
+              }
+            }
+          }
+
           // A function call runs its body in the caller's shell, so `f() { cd <primary>; }`
           // followed by `cd /tmp && f` still ends up in the primary checkout.
           if (!isStandaloneDirOp && subSegments.length === 1 && shellFunctions.has(headVerb)) {
-            const body = shellFunctions.get(headVerb)
-            let predictedCwd = currentCwd
-            walkShellCommands(body, currentCwd, {
-              onStage() {
-                return undefined
-              },
-              onCdStage() {
-                return undefined
-              },
-              onCloserTail() {
-                return undefined
-              },
-              onStageEnd({ currentCwd: stageEndCwd }) {
-                predictedCwd = stageEndCwd
-              },
-            }, depth + 1, protectedCache)
+            const predictedCwd = predictCwdAfter(shellFunctions.get(headVerb))
             if (predictedCwd !== currentCwd) {
               applyCwdTransition(predictedCwd, currentCwd, {
                 prevOp: stmt.prevOp,
@@ -2700,7 +2744,13 @@ function walkShellCommands(command, initialCwd, visitor, depth = 0, protectedCac
               dirStack.length = 0
               dirStack.push(...frame.entryDirStack)
             }
-            if (
+            if (frame.isolatesDirStack || isClosingPipedOrBg) {
+              // Function bodies execute at the call site, and piped/background
+              // groups run in a subshell: neither may move the enclosing cwd.
+              currentCwd = frame.entryCwd
+              prevCwd = frame.entryPrevCwd
+              conditionalRollback = null
+            } else if (
               mustRestore &&
               isProtectedPrimaryDirectory(frame.entryCwd, protectedCache) &&
               !isProtectedPrimaryDirectory(currentCwd, protectedCache)
@@ -2769,7 +2819,7 @@ function extractShellFunctionDefinitions(command) {
     const openIdx = match.index + match[0].length - 1
     const closeIdx = findMatchingBrace(input, openIdx)
     if (closeIdx === -1) continue
-    if (name) defs.set(name, input.slice(openIdx + 1, closeIdx))
+    if (name) defs.set(name.toLowerCase(), input.slice(openIdx + 1, closeIdx))
     re.lastIndex = closeIdx
   }
   return defs
@@ -2804,6 +2854,16 @@ function findMatchingBrace(input, openIdx) {
       continue
     }
     if (inSingle || inDouble) continue
+    if (ch === '<' && input[i + 1] === '<' && input[i + 2] !== '<') {
+      const decl = parseHeredocDecl(input, i)
+      if (decl.delim) {
+        const nl = input.indexOf('\n', i)
+        const bodyStart = nl === -1 ? input.length : nl + 1
+        const consumed = consumeHeredocBody(input, bodyStart, decl)
+        i = consumed.nextPos - 1
+        continue
+      }
+    }
     if (ch === '{') depth += 1
     else if (ch === '}') {
       depth -= 1
@@ -3046,9 +3106,9 @@ function matchNoptFlag(word, fullNames, minPrefixLengths) {
 }
 
 const PNPM_NEGATED_SHELL_FLAGS = ['--no-shell-mode', '--no-config.shell-mode']
-const PNPM_NEGATED_SHELL_MIN_PREFIX = ['--no-shell'.length, '--no-config.shell'.length]
+const PNPM_NEGATED_SHELL_MIN_PREFIX = ['--no-shell'.length, '--no-config.shell-mode'.length]
 const PNPM_SHELL_FLAGS = ['--shell-mode', '--config.shell-mode']
-const PNPM_SHELL_MIN_PREFIX = ['--shell'.length, '--config.shell'.length]
+const PNPM_SHELL_MIN_PREFIX = ['--shell'.length, '--config.shell-mode'.length]
 
 /**
  * Parse pnpm shell-mode flags as real pnpm 11 resolves them:

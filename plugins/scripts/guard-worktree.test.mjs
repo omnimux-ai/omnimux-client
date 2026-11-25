@@ -2278,6 +2278,7 @@ describe('adversarial hardening regressions (materialization / wrapper / frozen-
       `pnpm --config.shell-mode=false exec 'echo ok'`,
       `pnpm --config.shell-mode false exec 'echo ok'`,
       `pnpm --no-config.shell-mode exec 'echo ok'`,
+      `pnpm --config.shell-m=true exec 'echo ok'`,
       `pnpm -c --shell-mode=false exec 'echo ok'`,
     ]) {
       assert.equal(
@@ -2489,7 +2490,6 @@ describe('adversarial hardening regressions (materialization / wrapper / frozen-
       `pnpm --shell exec 'echo pwn > ${primaryFile}'`,
       `pnpm --no-shell-mode=false exec 'echo pwn > ${primaryFile}'`,
       `pnpm --no-config.shell-mode=false exec 'echo pwn > ${primaryFile}'`,
-      `pnpm --config.shell-m=true exec 'echo pwn > ${primaryFile}'`,
       `pnpm --config.shell-mode=0 exec 'echo pwn > ${primaryFile}'`,
       `cat <<A#B\nbody\nA#B\necho pwn > package.json`,
       `cat <<-A#B\n\tbody\n\tA#B\necho pwn > package.json`,
