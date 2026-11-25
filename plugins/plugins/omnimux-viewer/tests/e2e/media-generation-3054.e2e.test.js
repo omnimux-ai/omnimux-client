@@ -1,8 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { readFile, mkdir, writeFile } from 'node:fs/promises';
-import { dirname, resolve } from 'node:path';
+import { readFile, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../../../..');
@@ -10,9 +11,15 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '../../../..');
 // External Hub responses are synthetic. Browser interaction, viewer, runner,
 // persistence and local-file byte serving execute the task worktree's code.
 // Verify evidence: docs/evidence/media-generation-3054/verify-8-strict.
-test('3054 real browser: original-task recovery, refresh, decoded media and zero-submit local failures', { timeout: 180000 }, async () => {
-  const evidenceDir = resolve(root, 'docs/evidence/media-generation-3054', `e2e-${Date.now()}`);
+test('3054 real browser: original-task recovery, refresh, decoded media and zero-submit local failures', { timeout: 180000 }, async (t) => {
+  const writeEvidence = process.env.OMNIMUX_WRITE_EVIDENCE === '1';
+  const evidenceDir = writeEvidence
+    ? resolve(root, 'docs/evidence/media-generation-3054', `e2e-${Date.now()}`)
+    : await mkdtemp(join(tmpdir(), 'omnimux-media-generation-3054-'));
   await mkdir(evidenceDir, { recursive: true });
+  if (!writeEvidence) {
+    t.after(() => rm(evidenceDir, { recursive: true, force: true }));
+  }
   const browserUrl = pathToFileURL(resolve(root, 'plugins/omnimux-viewer/test-support/media-generation-3054/browser.mjs')).href;
   const journeyUrl = pathToFileURL(resolve(root, 'plugins/omnimux-viewer/test-support/media-generation-3054/journey.mjs')).href;
   const script = `const { runBrowser } = await import(${JSON.stringify(browserUrl)});\nconst { verifyJourney } = await import(${JSON.stringify(journeyUrl)});\nawait runBrowser(taskSpace, ${JSON.stringify(evidenceDir)}, verifyJourney);`;

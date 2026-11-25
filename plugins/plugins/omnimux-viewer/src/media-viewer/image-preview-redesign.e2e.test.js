@@ -4,8 +4,9 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdir, writeFile } from 'node:fs/promises';
-import { resolve, dirname } from 'node:path';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { resolve, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { createMediaViewerStore } from '../../../omnimux/src/client/media-viewer/media-viewer-store.js';
@@ -15,8 +16,14 @@ const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, '../../../../..');
 
 test('E2E: 图像生成大图预览消除黑边、手势缩放记忆与左上角 1:1 居中缩略图全流程验证', async (t) => {
-  const evidenceDir = resolve(root, '.agent-reports/image-preview-redesign');
+  const writeEvidence = process.env.OMNIMUX_WRITE_EVIDENCE === '1';
+  const evidenceDir = writeEvidence
+    ? resolve(root, '.agent-reports/image-preview-redesign')
+    : await mkdtemp(join(tmpdir(), 'omnimux-image-preview-redesign-'));
   await mkdir(evidenceDir, { recursive: true });
+  if (!writeEvidence) {
+    t.after(() => rm(evidenceDir, { recursive: true, force: true }));
+  }
 
   const checks = [];
   const record = (name, ok, detail) => {
