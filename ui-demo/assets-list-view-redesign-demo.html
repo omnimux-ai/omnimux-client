@@ -1,0 +1,1393 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>资产中心本地列表视图重构 — 前后对照演示</title>
+<style>
+/* Host real DSW tokens from @deepseek-ai/dsh-client-ui-theme design-platform.css */
+body {
+  --dsw-static-amber-100: rgb(254, 245, 231);
+  --dsw-static-amber-500: rgb(245, 158, 11);
+  --dsw-static-amber-600: rgb(221, 134, 41);
+  --dsw-static-amber-900: rgb(39, 36, 31);
+  --dsw-static-neutral-00: rgb(255, 255, 255);
+  --dsw-static-neutral-50: rgb(250, 250, 250);
+  --dsw-static-neutral-100: rgb(245, 245, 245);
+  --dsw-static-neutral-850: rgb(33, 33, 35);
+  --dsw-static-neutral-bluish-00: rgb(255, 255, 255);
+  --dsw-static-neutral-bluish-50: rgb(249, 250, 251);
+  --dsw-static-neutral-bluish-60: rgb(245, 246, 247);
+  --dsw-static-neutral-bluish-75: rgb(241, 243, 245);
+  --dsw-static-neutral-bluish-100: rgb(235, 238, 242);
+  --dsw-static-neutral-bluish-300: rgb(207, 211, 214);
+  --dsw-static-neutral-bluish-400: rgb(173, 178, 184);
+  --dsw-static-neutral-bluish-600: rgb(129, 133, 140);
+  --dsw-static-neutral-bluish-700: rgb(97, 102, 107);
+  --dsw-static-neutral-bluish-750: rgb(67, 69, 74);
+  --dsw-static-neutral-bluish-800: rgb(53, 54, 56);
+  --dsw-static-neutral-bluish-850: rgb(44, 44, 46);
+  --dsw-static-neutral-bluish-875: rgb(35, 35, 36);
+  --dsw-static-neutral-bluish-900: rgb(27, 27, 28);
+  --dsw-static-neutral-bluish-950: rgb(21, 21, 23);
+  --dsw-static-neutral-bluish-1000: rgb(15, 17, 21);
+  --dsw-static-red-400: rgb(242, 90, 90);
+  --dsw-static-red-600: rgb(236, 19, 19);
+
+  --dsw-alias-bg-base: var(--dsw-static-neutral-bluish-00);
+  --dsw-alias-bg-layer-1: var(--dsw-static-neutral-bluish-00);
+  --dsw-alias-bg-layer-2: var(--dsw-static-neutral-bluish-00);
+  --dsw-alias-bg-layer-3: var(--dsw-static-neutral-bluish-50);
+  --dsw-alias-bg-module-platform: var(--dsw-static-neutral-bluish-60);
+  --dsw-alias-bg-multi-select: var(--dsw-static-neutral-bluish-60);
+  --dsw-alias-border-l1: rgba(0, 0, 0, 0.04);
+  --dsw-alias-border-l2: rgba(0, 0, 0, 0.1);
+  --dsw-alias-border-l3: rgba(0, 0, 0, 0.12);
+  --dsw-alias-border-l4: rgba(0, 0, 0, 0.16);
+  --dsw-alias-brand-primary: var(--dsw-static-neutral-bluish-1000);
+  --dsw-alias-button-primary-fill: var(--dsw-alias-brand-primary);
+  --dsw-alias-button-primary-hover: var(--dsw-static-neutral-bluish-750);
+  --dsw-alias-interactive-bg-hover: rgba(38, 49, 72, 0.06);
+  --dsw-alias-interactive-bg-active: rgba(38, 49, 72, 0.1);
+  --dsw-alias-interactive-bg-hover-danger: rgba(236, 19, 19, 0.05);
+  --dsw-alias-label-primary: var(--dsw-static-neutral-bluish-1000);
+  --dsw-alias-label-primary-foreground: var(--dsw-static-neutral-bluish-00);
+  --dsw-alias-label-secondary: var(--dsw-static-neutral-bluish-700);
+  --dsw-alias-label-tertiary: var(--dsw-static-neutral-bluish-600);
+  --dsw-alias-state-warn-primary: var(--dsw-static-amber-500);
+  --dsw-alias-state-warn-label: var(--dsw-static-amber-600);
+  --dsw-alias-state-warn-tertiary: var(--dsw-static-amber-100);
+  --dsw-alias-state-error-primary: var(--dsw-static-red-600);
+  --dsw-shadow-lv2: 0 4px 16px rgba(15, 17, 21, 0.1);
+  --dsw-shadow-lv3: 0 12px 32px rgba(15, 17, 21, 0.16);
+
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-primary);
+  -webkit-font-smoothing: antialiased;
+}
+
+body[data-ds-dark-theme] {
+  --dsw-alias-bg-base: var(--dsw-static-neutral-bluish-950);
+  --dsw-alias-bg-layer-1: var(--dsw-static-neutral-bluish-875);
+  --dsw-alias-bg-layer-2: var(--dsw-static-neutral-bluish-850);
+  --dsw-alias-bg-layer-3: var(--dsw-static-neutral-bluish-800);
+  --dsw-alias-bg-module-platform: var(--dsw-static-neutral-bluish-800);
+  --dsw-alias-bg-multi-select: var(--dsw-static-neutral-850);
+  --dsw-alias-border-l1: rgba(255, 255, 255, 0.06);
+  --dsw-alias-border-l2: rgba(255, 255, 255, 0.12);
+  --dsw-alias-border-l3: rgba(255, 255, 255, 0.16);
+  --dsw-alias-border-l4: rgba(255, 255, 255, 0.2);
+  --dsw-alias-brand-primary: var(--dsw-static-neutral-bluish-50);
+  --dsw-alias-button-primary-fill: var(--dsw-alias-brand-primary);
+  --dsw-alias-button-primary-hover: var(--dsw-static-neutral-bluish-100);
+  --dsw-alias-interactive-bg-hover: rgba(255, 255, 255, 0.08);
+  --dsw-alias-interactive-bg-active: rgba(255, 255, 255, 0.14);
+  --dsw-alias-interactive-bg-hover-danger: rgba(242, 90, 90, 0.15);
+  --dsw-alias-label-primary: var(--dsw-static-neutral-bluish-50);
+  --dsw-alias-label-primary-foreground: var(--dsw-static-neutral-bluish-1000);
+  --dsw-alias-label-secondary: var(--dsw-static-neutral-bluish-300);
+  --dsw-alias-label-tertiary: var(--dsw-static-neutral-bluish-400);
+  --dsw-alias-state-warn-primary: var(--dsw-static-amber-500);
+  --dsw-alias-state-warn-label: var(--dsw-static-amber-500);
+  --dsw-alias-state-warn-tertiary: var(--dsw-static-amber-900);
+  --dsw-alias-state-error-primary: var(--dsw-static-red-400);
+  --dsw-shadow-lv2: 0 6px 20px rgba(0, 0, 0, 0.36);
+  --dsw-shadow-lv3: 0 14px 36px rgba(0, 0, 0, 0.52);
+}
+
+* { box-sizing: border-box; }
+
+/* Demo Harness Bar */
+.demo-bar {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 20px;
+  background: var(--dsw-alias-bg-layer-2);
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+}
+.demo-bar-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.demo-bar-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+}
+.demo-seg {
+  display: inline-flex;
+  padding: 2px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-base);
+  gap: 2px;
+}
+.demo-btn {
+  height: 28px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+.demo-btn:hover { color: var(--dsw-alias-label-primary); background: var(--dsw-alias-interactive-bg-hover); }
+.demo-btn.active {
+  background: var(--dsw-alias-button-primary-fill);
+  color: var(--dsw-alias-label-primary-foreground);
+}
+
+.demo-shell {
+  margin: 20px auto 40px;
+  padding: 0 20px;
+  max-width: 1320px;
+  transition: max-width 150ms ease;
+}
+.demo-shell[data-width="narrow"] {
+  max-width: 780px;
+}
+.demo-stage-frame {
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-base);
+  overflow: hidden;
+}
+
+/* Mock Stage Header + Toolbar */
+.stage-top {
+  padding: 16px 20px 12px;
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
+}
+.stage-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 28px;
+}
+.stage-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
+  gap: 12px;
+}
+.stage-tabs {
+  display: flex;
+  gap: 18px;
+  font-size: 13px;
+}
+.stage-tab {
+  padding: 6px 0;
+  color: var(--dsw-alias-label-tertiary);
+  border-bottom: 2px solid transparent;
+  font-weight: 500;
+}
+.stage-tab.active {
+  color: var(--dsw-alias-label-primary);
+  border-bottom-color: var(--dsw-alias-label-primary);
+}
+.stage-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 12px 20px 6px;
+}
+.stage-chip {
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.stage-chip.active {
+  background: var(--dsw-alias-interactive-bg-active);
+  border-color: var(--dsw-alias-border-l3);
+  color: var(--dsw-alias-label-primary);
+  font-weight: 600;
+}
+
+/* Batch Selection Bar */
+.omnimux-assets-selection {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 20px;
+  background: var(--dsw-alias-bg-module-platform);
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  font-size: 13px;
+}
+.omnimux-assets-selection-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.btn-kit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: background-color 120ms ease, color 120ms ease, opacity 120ms ease, transform 120ms ease;
+}
+.btn-kit:active { transform: scale(0.96); }
+.btn-kit--primary {
+  background: var(--dsw-alias-button-primary-fill);
+  color: var(--dsw-alias-label-primary-foreground);
+}
+.btn-kit--primary:hover { background: var(--dsw-alias-button-primary-hover); }
+.btn-kit--ghost {
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+}
+.btn-kit--ghost:hover { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
+.btn-kit--danger {
+  background: var(--dsw-alias-state-error-primary);
+  color: var(--dsw-alias-label-primary-foreground);
+}
+
+.stage-main {
+  padding: 12px 20px 20px;
+}
+
+/* ============================================================================
+   BEFORE (Legacy Current Implementation)
+   ============================================================================ */
+.legacy-wrap { width: 100%; overflow-x: auto; }
+.legacy-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  background: var(--dsw-alias-bg-layer-1);
+}
+.legacy-table th {
+  text-align: left;
+  padding: 8px 12px;
+  color: var(--dsw-alias-label-tertiary);
+  font-weight: 500;
+  font-size: 12px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-layer-2);
+}
+.legacy-table td {
+  padding: 10px 12px;
+  vertical-align: middle;
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
+}
+.legacy-table tr:hover { background: var(--dsw-alias-interactive-bg-hover); }
+.legacy-td-check { width: 40px; text-align: center; }
+.legacy-td-name { min-width: 160px; font-weight: 500; }
+.legacy-name-inner { display: flex; align-items: center; gap: 10px; }
+.legacy-td-desc {
+  color: var(--dsw-alias-label-secondary);
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.legacy-td-actions { width: 196px; text-align: right; }
+.legacy-actions { display: inline-flex; gap: 6px; justify-content: flex-end; }
+.legacy-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  background: var(--dsw-alias-bg-module-platform);
+  color: var(--dsw-alias-label-secondary);
+  border: 1px solid var(--dsw-alias-border-l2);
+}
+
+/* ============================================================================
+   AFTER (Redesigned Modern Desktop Asset List)
+   ============================================================================ */
+.omnimux-assets-list-wrap {
+  width: 100%;
+  overflow-x: auto;
+  container-type: inline-size;
+  container-name: assets-list;
+}
+.omnimux-assets-list-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0 2px;
+  table-layout: fixed;
+  font-size: 13px;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+}
+.omnimux-assets-list-table thead {
+  background: transparent;
+}
+.omnimux-assets-list-table th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--dsw-alias-bg-base);
+  padding: 8px 10px;
+  height: 36px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 16px;
+  color: var(--dsw-alias-label-tertiary);
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  text-align: left;
+  user-select: none;
+  white-space: nowrap;
+}
+.omnimux-assets-list-table th.omnimux-assets-th-check {
+  width: 36px;
+  padding: 8px 0 8px 10px;
+  text-align: center;
+}
+.omnimux-assets-list-table th.omnimux-assets-th-name {
+  width: 30%;
+  min-width: 220px;
+}
+.omnimux-assets-list-table th.omnimux-assets-th-type {
+  width: 88px;
+}
+.omnimux-assets-list-table th.omnimux-assets-th-desc {
+  width: auto;
+}
+.omnimux-assets-list-table th.omnimux-assets-th-files {
+  width: 108px;
+  text-align: right;
+}
+.omnimux-assets-list-table th.omnimux-assets-th-updated {
+  width: 104px;
+  text-align: right;
+}
+.omnimux-assets-list-table th.omnimux-assets-th-actions {
+  width: 148px;
+  padding-right: 12px;
+  text-align: right;
+}
+@container assets-list (max-width: 820px) {
+  .omnimux-assets-th-desc,
+  .omnimux-assets-td-desc {
+    display: none;
+  }
+  .omnimux-assets-list-table th.omnimux-assets-th-name {
+    width: auto;
+  }
+}
+@container assets-list (max-width: 600px) {
+  .omnimux-assets-th-updated,
+  .omnimux-assets-td-updated {
+    display: none;
+  }
+}
+.omnimux-assets-th-sortable {
+  cursor: pointer;
+  transition: color 120ms ease;
+}
+.omnimux-assets-th-sortable:hover {
+  color: var(--dsw-alias-label-primary);
+}
+.omnimux-assets-th-sort-inner {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.omnimux-assets-th-sort-icon {
+  display: inline-flex;
+  align-items: center;
+  color: var(--dsw-alias-label-tertiary);
+  opacity: 0.45;
+  transition: opacity 120ms ease, color 120ms ease;
+}
+.omnimux-assets-th-sortable:hover .omnimux-assets-th-sort-icon {
+  opacity: 0.85;
+}
+.omnimux-assets-th-sort-icon[data-active="true"] {
+  opacity: 1;
+  color: var(--dsw-alias-label-primary);
+}
+
+/* Rows */
+.omnimux-assets-list-row {
+  cursor: pointer;
+  outline: none;
+}
+.omnimux-assets-list-row td {
+  height: 52px;
+  padding: 8px 10px;
+  vertical-align: middle;
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
+  transition: background-color 120ms ease;
+}
+.omnimux-assets-list-row td:first-child {
+  padding: 8px 0 8px 10px;
+  border-top-left-radius: 8px;
+  border-bottom-left-radius: 8px;
+}
+.omnimux-assets-list-row td:last-child {
+  padding-right: 12px;
+  border-top-right-radius: 8px;
+  border-bottom-right-radius: 8px;
+}
+.omnimux-assets-list-row:hover td,
+.omnimux-assets-list-row[data-menu-open="true"] td {
+  background-color: var(--dsw-alias-interactive-bg-hover);
+  border-bottom-color: transparent;
+}
+.omnimux-assets-list-row[aria-selected="true"] td {
+  background-color: var(--dsw-alias-interactive-bg-active);
+  border-bottom-color: transparent;
+}
+.omnimux-assets-list-row:focus-visible td {
+  background-color: var(--dsw-alias-interactive-bg-hover);
+}
+.omnimux-assets-list-row:focus-visible td:first-child {
+  box-shadow: inset 2px 0 0 var(--dsw-alias-brand-primary);
+}
+
+/* Checkbox */
+.omnimux-assets-td-check {
+  width: 36px;
+  text-align: center;
+}
+.omnimux-assets-checkbox {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  border: 1.5px solid var(--dsw-alias-border-l4);
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-primary-foreground);
+  cursor: pointer;
+  vertical-align: middle;
+  opacity: 0.85;
+  transition: background-color 120ms ease, border-color 120ms ease, opacity 120ms ease;
+}
+.omnimux-assets-th-check .omnimux-assets-checkbox,
+.omnimux-assets-list-table[data-selecting="true"] .omnimux-assets-checkbox,
+.omnimux-assets-list-row:hover .omnimux-assets-checkbox,
+.omnimux-assets-list-row:focus-within .omnimux-assets-checkbox,
+.omnimux-assets-checkbox[aria-checked="true"],
+.omnimux-assets-checkbox[aria-checked="mixed"] {
+  opacity: 1;
+}
+.omnimux-assets-checkbox:hover {
+  border-color: var(--dsw-alias-label-secondary);
+}
+.omnimux-assets-checkbox[aria-checked="true"],
+.omnimux-assets-checkbox[aria-checked="mixed"] {
+  background: var(--dsw-alias-brand-primary);
+  border-color: var(--dsw-alias-brand-primary);
+}
+.omnimux-assets-checkbox:focus-visible {
+  outline: 2px solid var(--dsw-alias-brand-primary);
+  outline-offset: 2px;
+}
+.omnimux-assets-checkbox-minus {
+  width: 8px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--dsw-alias-label-primary-foreground);
+}
+
+/* Name + 40x28 16:10 Micro Thumbnail */
+.omnimux-assets-list-cell-name {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.omnimux-assets-list-thumb {
+  flex: none;
+  width: 40px;
+  height: 28px;
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-module-platform);
+  border: 1px solid var(--dsw-alias-border-l1);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  color: var(--dsw-alias-label-tertiary);
+}
+.omnimux-assets-list-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+.omnimux-assets-list-name-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
+  color: var(--dsw-alias-label-primary);
+}
+
+/* Type badge */
+.omnimux-assets-list-badge {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 500;
+  background: var(--dsw-alias-bg-module-platform);
+  color: var(--dsw-alias-label-secondary);
+  border: 1px solid var(--dsw-alias-border-l1);
+  white-space: nowrap;
+}
+
+/* Description */
+.omnimux-assets-td-desc {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  color: var(--dsw-alias-label-secondary);
+}
+.omnimux-assets-desc-muted {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* Files count + missing dot */
+.omnimux-assets-td-files {
+  text-align: right;
+  font-size: 13px;
+  color: var(--dsw-alias-label-secondary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.omnimux-assets-files-inner {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.omnimux-assets-list-missing {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--dsw-alias-state-warn-label);
+  background: var(--dsw-alias-state-warn-tertiary);
+}
+.omnimux-assets-list-missing-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--dsw-alias-state-warn-primary);
+}
+
+/* Updated Time */
+.omnimux-assets-td-updated {
+  text-align: right;
+  font-size: 12px;
+  color: var(--dsw-alias-label-tertiary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* Hover-reveal Actions */
+.omnimux-assets-td-actions {
+  text-align: right;
+  white-space: nowrap;
+}
+.omnimux-assets-list-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.omnimux-assets-list-add-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: none;
+  background: var(--dsw-alias-button-primary-fill);
+  color: var(--dsw-alias-label-primary-foreground);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 140ms ease, background-color 120ms ease, transform 120ms ease;
+}
+.omnimux-assets-list-add-btn:hover { background: var(--dsw-alias-button-primary-hover); }
+.omnimux-assets-list-add-btn:active { transform: scale(0.96); }
+.omnimux-assets-list-add-btn[data-added="true"] {
+  opacity: 1;
+  pointer-events: auto;
+  cursor: default;
+}
+.omnimux-assets-list-more-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+  opacity: 0.42;
+  transition: opacity 140ms ease, background-color 120ms ease, color 120ms ease;
+}
+.omnimux-assets-list-more-btn:hover {
+  background: var(--dsw-alias-interactive-bg-active);
+  color: var(--dsw-alias-label-primary);
+}
+.omnimux-assets-list-row:hover .omnimux-assets-list-add-btn,
+.omnimux-assets-list-row:focus-within .omnimux-assets-list-add-btn,
+.omnimux-assets-list-row[data-menu-open="true"] .omnimux-assets-list-add-btn {
+  opacity: 1;
+  pointer-events: auto;
+}
+.omnimux-assets-list-row:hover .omnimux-assets-list-more-btn,
+.omnimux-assets-list-row:focus-within .omnimux-assets-list-more-btn,
+.omnimux-assets-list-row[data-menu-open="true"] .omnimux-assets-list-more-btn {
+  opacity: 1;
+}
+
+/* Overflow Menu Popover (Solid Opaque Surface, zero backdrop-filter) */
+.omnimux-assets-list-more-menu {
+  position: fixed;
+  z-index: 60;
+  min-width: 156px;
+  padding: 4px;
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-2);
+  border: 1px solid var(--dsw-alias-border-l2);
+  box-shadow: var(--dsw-shadow-lv3);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.omnimux-assets-list-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 30px;
+  padding: 0 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+  transition: background-color 100ms ease;
+}
+.omnimux-assets-list-menu-item:hover { background: var(--dsw-alias-interactive-bg-hover); }
+.omnimux-assets-list-menu-item--danger { color: var(--dsw-alias-state-error-primary); }
+.omnimux-assets-list-menu-item--danger:hover { background: var(--dsw-alias-interactive-bg-hover-danger); }
+.omnimux-assets-list-menu-sep {
+  height: 1px;
+  margin: 3px 6px;
+  background: var(--dsw-alias-border-l1);
+}
+
+/* Thumbnail Hover Large Preview Popover (Solid Opaque, Concentric Radii) */
+.omnimux-assets-list-preview-popover {
+  position: fixed;
+  z-index: 70;
+  padding: 6px;
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-layer-2);
+  border: 1px solid var(--dsw-alias-border-l2);
+  box-shadow: var(--dsw-shadow-lv3);
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.omnimux-assets-list-preview-img {
+  display: block;
+  max-width: 340px;
+  max-height: 340px;
+  width: auto;
+  height: auto;
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-module-platform);
+  object-fit: contain;
+}
+.omnimux-assets-list-preview-caption {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 0 2px;
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+  max-width: 340px;
+}
+.omnimux-assets-list-preview-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+  color: var(--dsw-alias-label-primary);
+}
+
+/* Drop target sandbox strip */
+.demo-drop-zone {
+  margin-top: 14px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  border: 1px dashed var(--dsw-alias-border-l3);
+  font-size: 12px;
+  color: var(--dsw-alias-label-tertiary);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  transition: border-color 120ms ease, background-color 120ms ease;
+}
+.demo-drop-zone.over {
+  border-color: var(--dsw-alias-brand-primary);
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.compare-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+.compare-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-secondary);
+  margin: 0 0 8px 4px;
+}
+
+/* Status Log Banner (demo-only inspector) */
+.demo-event-line {
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+  font-variant-numeric: tabular-nums;
+}
+</style>
+</head>
+<body>
+<div class="demo-bar">
+  <div class="demo-bar-group">
+    <span class="demo-bar-title">资产中心「本地」列表视图</span>
+    <div class="demo-seg" role="group" aria-label="视图对照">
+      <button class="demo-btn active" data-mode="after">修改后</button>
+      <button class="demo-btn" data-mode="before">修改前</button>
+      <button class="demo-btn" data-mode="both">上下对照</button>
+    </div>
+  </div>
+  <div class="demo-bar-group">
+    <div class="demo-seg" role="group" aria-label="主题切换">
+      <button class="demo-btn active" data-theme="light">亮色</button>
+      <button class="demo-btn" data-theme="dark">暗色</button>
+    </div>
+    <div class="demo-seg" role="group" aria-label="视口宽度">
+      <button class="demo-btn active" data-width="wide">1280px</button>
+      <button class="demo-btn" data-width="narrow">760px</button>
+    </div>
+  </div>
+</div>
+
+<div class="demo-shell" id="demoShell" data-width="wide">
+  <div id="mount"></div>
+</div>
+
+<script>
+function makeThumbSvg(w, h, bg1, bg2, shape) {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
+    <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="${bg1}"/><stop offset="100%" stop-color="${bg2}"/></linearGradient></defs>
+    <rect width="${w}" height="${h}" fill="url(#g)"/>
+    ${shape}
+  </svg>`
+  return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg)
+}
+
+const PORTRAIT_1 = makeThumbSvg(240, 320, '#3a4f7a', '#1b2438', '<circle cx="120" cy="112" r="46" fill="#f2d2c4"/><path d="M56 320c6-68 38-104 64-104s58 36 64 104Z" fill="#e58ca8"/><path d="M74 104c0-38 22-60 46-60s46 22 46 60c-12-18-32-24-46-24s-34 6-46 24Z" fill="#1e222e"/>')
+const PORTRAIT_2 = makeThumbSvg(240, 320, '#2e4a47', '#182625', '<circle cx="120" cy="110" r="44" fill="#efd0bd"/><path d="M54 320c10-72 42-102 66-102s56 30 66 102Z" fill="#dce4ec"/><rect x="86" y="102" width="24" height="14" rx="4" fill="none" stroke="#222" stroke-width="4"/><rect x="130" y="102" width="24" height="14" rx="4" fill="none" stroke="#222" stroke-width="4"/>')
+const SCENE_1 = makeThumbSvg(360, 202, '#1a2038', '#4b2d5e', '<rect x="0" y="138" width="360" height="64" fill="#121524"/><rect x="28" y="54" width="110" height="90" rx="4" fill="#283556"/><rect x="44" y="72" width="78" height="36" fill="#63d2ff" opacity="0.85"/><rect x="186" y="34" width="144" height="110" rx="4" fill="#232c47"/><rect x="208" y="58" width="96" height="24" fill="#ff6b9d" opacity="0.85"/>')
+const SCENE_2 = makeThumbSvg(360, 202, '#ebe4d8', '#c8bba7', '<rect x="20" y="24" width="130" height="154" rx="4" fill="#fffaf0" opacity="0.82"/><path d="M0 156h360v46H0Z" fill="#b7a48a"/><circle cx="268" cy="110" r="34" fill="#e8c89b"/>')
+const PROP_1 = makeThumbSvg(280, 280, '#e2e8f0', '#cbd5e1', '<rect x="114" y="48" width="52" height="36" rx="6" fill="#334155"/><rect x="92" y="84" width="96" height="144" rx="18" fill="#ffffff" opacity="0.92"/><rect x="108" y="128" width="64" height="44" rx="4" fill="#e2e8f0"/>')
+const STYLE_1 = makeThumbSvg(360, 225, '#8c5338', '#2a3a4a', '<rect x="26" y="28" width="90" height="169" rx="6" fill="#d9936a" opacity="0.88"/><rect x="135" y="28" width="90" height="169" rx="6" fill="#6b8e78" opacity="0.88"/><rect x="244" y="28" width="90" height="169" rx="6" fill="#46637f" opacity="0.88"/>')
+
+const ASSETS = [
+  { id: 'a1', name: '科技 Vlogger 粉衣女郎 Yuna', type: 'character', description: '室内自然光半身立绘，适合口播带货与测评开场\n云端分类：角色 / 女性角色\n云端来源：character-female-yuna', files: 4, missing: false, updatedMs: Date.now() - 12 * 60 * 1000, updatedText: '12分钟前', cover: PORTRAIT_1 },
+  { id: 'a2', name: '霓虹雨夜便利店街景', type: 'scene', description: '16:9 夜景空镜，适合情感短剧转场与氛围渲染\n云端分类：场景 / 城市街景\n云端来源：scene-city-rain', files: 7, missing: false, updatedMs: Date.now() - 2 * 3600 * 1000, updatedText: '2小时前', cover: SCENE_1 },
+  { id: 'a3', name: '磨砂玻璃滴管精华瓶', type: 'prop', description: '高光白底商品三维视图，可直接合成进台面镜头', files: 3, missing: false, updatedMs: Date.now() - 5 * 3600 * 1000, updatedText: '5小时前', cover: PROP_1 },
+  { id: 'a4', name: '小红书美妆脚本结构手册', type: 'knowledge', description: '包含痛点切入、成分证明与转化引导三段式结构模板', files: 6, missing: false, updatedMs: Date.now() - 26 * 3600 * 1000, updatedText: '1天前', cover: '' },
+  { id: 'a5', name: '35mm 柯达胶片调色包', type: 'style', description: '暖调肤色还原与暗部青灰颗粒，适配室内外人像', files: 12, missing: false, updatedMs: Date.now() - 3 * 86400 * 1000, updatedText: '3天前', cover: STYLE_1 },
+  { id: 'a6', name: '复古机械键盘道具（外置盘已拔出）', type: 'prop', description: '桌面科技风近景摆件，包含键帽特写与俯拍素材', files: 0, missing: true, updatedMs: Date.now() - 5 * 86400 * 1000, updatedText: '5天前', cover: '' },
+  { id: 'a7', name: '都市白领主播 Lin 商务正式形象', type: 'character', description: '云端分类：角色 / 职场商务\n云端来源：character-business-lin', files: 2, missing: false, updatedMs: Date.now() - 7 * 86400 * 1000, updatedText: '7天前', cover: PORTRAIT_2 },
+  { id: 'a8', name: '极简日系阳光影棚', type: 'scene', description: '木质桌面与百叶窗自然投影，适合日用家居展示', files: 5, missing: false, updatedMs: Date.now() - 14 * 86400 * 1000, updatedText: '14天前', cover: SCENE_2 },
+  { id: 'a9', name: '短视频黄金前 3 秒钩子合集与分镜参考资料', type: 'custom', description: '按行业归类的开场视觉冲击镜头与节奏标注表，便于快速复刻高完播结构', files: 9, missing: false, updatedMs: Date.now() - 35 * 86400 * 1000, updatedText: '1个月前', cover: '' },
+]
+
+const TYPE_LABELS = {
+  character: '角色',
+  scene: '场景',
+  style: '风格包',
+  prop: '道具',
+  knowledge: '知识包',
+  custom: '自定义',
+}
+
+const ICONS = {
+  file: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z"/><path d="M14 3v5h5"/></svg>',
+  character: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M5 20a7 7 0 0 1 14 0"/></svg>',
+  scene: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.5"/><path d="m21 16-5-5-6 6-2-2-5 5"/></svg>',
+  style: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="13.5" cy="6.5" r="1" fill="currentColor" stroke="none"/><circle cx="17.5" cy="10.5" r="1" fill="currentColor" stroke="none"/><circle cx="8.5" cy="7.5" r="1" fill="currentColor" stroke="none"/><path d="M12 2a10 10 0 1 0 0 20 2 2 0 0 0 2-2v-.5a1.5 1.5 0 0 1 1.5-1.5H18a4 4 0 0 0 4-4c0-6.6-4.5-12-10-12Z"/></svg>',
+  prop: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8 12 3 3 8v8l9 5 9-5Z"/><path d="m3 8 9 5 9-5"/><path d="M12 13v8"/></svg>',
+  knowledge: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z"/></svg>',
+  custom: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m12 2 9 4.5-9 4.5-9-4.5Z"/><path d="m3 12 9 4.5 9-4.5"/><path d="m3 17.5 9 4.5 9-4.5"/></svg>',
+  chat: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2Z"/></svg>',
+  eye: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>',
+  dots: '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg>',
+  check: '<svg width="10" height="10" viewBox="0 0 11 11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 5.5 4.5 8 9 2.5"/></svg>',
+  sortIdle: '<svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor"><path d="M5 1.5 7.5 4.5H2.5L5 1.5ZM5 8.5 2.5 5.5H7.5L5 8.5Z"/></svg>',
+  sortAsc: '<svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor"><path d="M5 2 8.5 7H1.5L5 2Z"/></svg>',
+  sortDesc: '<svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor"><path d="M5 8 1.5 3H8.5L5 8Z"/></svg>',
+  reveal: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 5a2 2 0 0 1 2-2h4l2 2h10a2 2 0 0 1 2 2v2"/><path d="m6 14 1.5-3A2 2 0 0 1 9.3 10H20a2 2 0 0 1 1.9 2.5l-1.5 6a2 2 0 0 1-2 1.5H4a2 2 0 0 1-2-2v-3.5"/></svg>',
+  copy: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="8" width="14" height="14" rx="2"/><path d="M4 16a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2"/></svg>',
+  trash: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M6 6l1 14h10l1-14"/></svg>',
+}
+
+function cleanDescription(raw) {
+  const text = String(raw || '')
+  const lines = text.split(/\r?\n/).map(s => s.trim()).filter(Boolean)
+  const human = lines.filter(line => !/^云端(?:分类|来源)[：:]/.test(line))
+  if (human.length > 0) return { text: human.join(' '), muted: false }
+  return { text: '—', muted: true }
+}
+
+const state = {
+  mode: 'after',
+  theme: 'light',
+  width: 'wide',
+  sortKey: 'updated_at',
+  sortDir: 'desc',
+  selected: new Set(),
+  lastSelectedId: null,
+  addedIds: new Set(),
+  menuAssetId: null,
+  menuRect: null,
+  hoverPreview: null,
+  lastEvent: '就绪（支持表头排序、全选、Shift连选、悬停微缩图预览、↑↓SpaceEnter、行拖拽）',
+}
+
+let hoverTimer = null
+
+function sortedAssets() {
+  const dir = state.sortDir === 'asc' ? 1 : -1
+  return [...ASSETS].sort((a, b) => {
+    if (state.sortKey === 'name') return a.name.localeCompare(b.name, 'zh-CN') * dir
+    if (state.sortKey === 'type') return (TYPE_LABELS[a.type] || '').localeCompare(TYPE_LABELS[b.type] || '', 'zh-CN') * dir
+    if (state.sortKey === 'files') return (a.files - b.files) * dir
+    return (a.updatedMs - b.updatedMs) * dir
+  })
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+}
+
+function renderBeforeSection() {
+  const rows = ASSETS.map(a => `
+    <tr>
+      <td class="legacy-td-check"><span></span></td>
+      <td class="legacy-td-name"><div class="legacy-name-inner">${ICONS.file}<span>${escapeHtml(a.name)}</span></div></td>
+      <td><span class="legacy-pill">${TYPE_LABELS[a.type]}</span></td>
+      <td class="legacy-td-desc">${escapeHtml(a.description.replace(/\n/g, ' '))}</td>
+      <td>${a.files ? `${a.files} 个素材` : '无素材'}${a.missing ? ' <span style="color:var(--dsw-alias-state-warn-primary);font-size:11px">素材缺失</span>' : ''}</td>
+      <td class="legacy-td-actions">
+        <div class="legacy-actions">
+          <button class="btn-kit btn-kit--ghost" type="button">${ICONS.eye} 查看详情</button>
+          <button class="btn-kit btn-kit--ghost" type="button">${ICONS.chat} 添加到会话</button>
+        </div>
+      </td>
+    </tr>
+  `).join('')
+
+  return `
+    <div class="demo-stage-frame">
+      <div class="stage-top"><h1 class="stage-title">资产中心</h1></div>
+      <div class="stage-toolbar"><div class="stage-tabs"><span class="stage-tab active">本地</span><span class="stage-tab">公共</span><span class="stage-tab">产品库</span><span class="stage-tab">AI生成</span></div></div>
+      <div class="stage-main">
+        <div class="legacy-wrap">
+          <table class="legacy-table">
+            <thead>
+              <tr>
+                <th class="legacy-td-check"></th>
+                <th>名称</th>
+                <th>类型</th>
+                <th>描述</th>
+                <th>素材</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  `
+}
+
+function sortArrow(key) {
+  if (state.sortKey !== key) return `<span class="omnimux-assets-th-sort-icon" data-active="false">${ICONS.sortIdle}</span>`
+  return `<span class="omnimux-assets-th-sort-icon" data-active="true">${state.sortDir === 'asc' ? ICONS.sortAsc : ICONS.sortDesc}</span>`
+}
+
+function renderAfterSection() {
+  const list = sortedAssets()
+  const allSelected = list.length > 0 && list.every(a => state.selected.has(a.id))
+  const someSelected = list.some(a => state.selected.has(a.id))
+  const headerChecked = allSelected ? 'true' : (someSelected ? 'mixed' : 'false')
+
+  const selectionBar = state.selected.size > 0 ? `
+    <div class="omnimux-assets-selection">
+      <span>已选 ${state.selected.size} 项</span>
+      <div class="omnimux-assets-selection-actions">
+        <button class="btn-kit btn-kit--primary" id="batchAddBtn" type="button">${ICONS.chat} 批量加入会话</button>
+        <button class="btn-kit btn-kit--ghost" id="clearSelBtn" type="button">取消选择</button>
+        <button class="btn-kit btn-kit--danger" id="batchDelBtn" type="button">移除 ${state.selected.size} 项</button>
+      </div>
+    </div>
+  ` : ''
+
+  const rows = list.map((a, idx) => {
+    const isSel = state.selected.has(a.id)
+    const isAdded = state.addedIds.has(a.id)
+    const isMenuOpen = state.menuAssetId === a.id
+    const desc = cleanDescription(a.description)
+    const thumb = a.cover
+      ? `<img src="${a.cover}" alt="" />`
+      : (ICONS[a.type] || ICONS.file)
+
+    return `
+      <tr
+        class="omnimux-assets-list-row"
+        data-asset-id="${a.id}"
+        data-row-index="${idx}"
+        aria-selected="${isSel ? 'true' : 'false'}"
+        data-menu-open="${isMenuOpen ? 'true' : 'false'}"
+        tabindex="${idx === 0 ? '0' : '-1'}"
+        draggable="true"
+      >
+        <td class="omnimux-assets-td-check" data-stop="true">
+          <span
+            role="checkbox"
+            tabindex="0"
+            class="omnimux-assets-checkbox"
+            aria-label="选择 ${escapeHtml(a.name)}"
+            aria-checked="${isSel ? 'true' : 'false'}"
+            data-check-id="${a.id}"
+          >${isSel ? ICONS.check : ''}</span>
+        </td>
+        <td class="omnimux-assets-td-name">
+          <div class="omnimux-assets-list-cell-name">
+            <span class="omnimux-assets-list-thumb" data-thumb-id="${a.id}">${thumb}</span>
+            <span class="omnimux-assets-list-name-text" title="${escapeHtml(a.name)}">${escapeHtml(a.name)}</span>
+          </div>
+        </td>
+        <td class="omnimux-assets-td-type">
+          <span class="omnimux-assets-list-badge">${TYPE_LABELS[a.type]}</span>
+        </td>
+        <td class="omnimux-assets-td-desc ${desc.muted ? 'omnimux-assets-desc-muted' : ''}" title="${escapeHtml(a.description)}">
+          ${escapeHtml(desc.text)}
+        </td>
+        <td class="omnimux-assets-td-files">
+          <span class="omnimux-assets-files-inner">
+            <span>${a.files} 项</span>
+            ${a.missing ? '<span class="omnimux-assets-list-missing"><span class="omnimux-assets-list-missing-dot"></span>缺失</span>' : ''}
+          </span>
+        </td>
+        <td class="omnimux-assets-td-updated">${a.updatedText}</td>
+        <td class="omnimux-assets-td-actions" data-stop="true">
+          <div class="omnimux-assets-list-actions">
+            <button
+              type="button"
+              class="omnimux-assets-list-add-btn"
+              data-add-id="${a.id}"
+              data-added="${isAdded ? 'true' : 'false'}"
+              ${isAdded ? 'disabled' : ''}
+            >${ICONS.chat}<span>${isAdded ? '已添加' : '添加到会话'}</span></button>
+            <button
+              type="button"
+              class="omnimux-assets-list-more-btn"
+              aria-label="更多操作"
+              aria-haspopup="menu"
+              aria-expanded="${isMenuOpen ? 'true' : 'false'}"
+              data-more-id="${a.id}"
+            >${ICONS.dots}</button>
+          </div>
+        </td>
+      </tr>
+    `
+  }).join('')
+
+  return `
+    <div class="demo-stage-frame">
+      <div class="stage-top"><h1 class="stage-title">资产中心</h1></div>
+      <div class="stage-toolbar">
+        <div class="stage-tabs"><span class="stage-tab active">本地</span><span class="stage-tab">公共</span><span class="stage-tab">产品库</span><span class="stage-tab">AI生成</span></div>
+        <div class="demo-event-line" id="demoEventLine">${escapeHtml(state.lastEvent)}</div>
+      </div>
+      <div class="stage-chips">
+        <button class="stage-chip active" type="button">全部</button>
+        <button class="stage-chip" type="button">角色</button>
+        <button class="stage-chip" type="button">场景</button>
+        <button class="stage-chip" type="button">风格包</button>
+        <button class="stage-chip" type="button">道具</button>
+        <button class="stage-chip" type="button">知识包</button>
+        <button class="stage-chip" type="button">自定义</button>
+      </div>
+      ${selectionBar}
+      <div class="stage-main">
+        <div class="omnimux-assets-list-wrap">
+          <table class="omnimux-assets-list-table" data-selecting="${state.selected.size > 0 ? 'true' : 'false'}">
+            <thead>
+              <tr>
+                <th class="omnimux-assets-th-check">
+                  <span
+                    role="checkbox"
+                    tabindex="0"
+                    id="selectAllCheckbox"
+                    class="omnimux-assets-checkbox"
+                    aria-label="全选资产"
+                    aria-checked="${headerChecked}"
+                  >${headerChecked === 'true' ? ICONS.check : (headerChecked === 'mixed' ? '<span class="omnimux-assets-checkbox-minus"></span>' : '')}</span>
+                </th>
+                <th class="omnimux-assets-th-name omnimux-assets-th-sortable" data-sort="name" aria-sort="${state.sortKey === 'name' ? (state.sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}">
+                  <span class="omnimux-assets-th-sort-inner"><span>名称</span>${sortArrow('name')}</span>
+                </th>
+                <th class="omnimux-assets-th-type omnimux-assets-th-sortable" data-sort="type" aria-sort="${state.sortKey === 'type' ? (state.sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}">
+                  <span class="omnimux-assets-th-sort-inner"><span>类型</span>${sortArrow('type')}</span>
+                </th>
+                <th class="omnimux-assets-th-desc">描述</th>
+                <th class="omnimux-assets-th-files omnimux-assets-th-sortable" data-sort="files" aria-sort="${state.sortKey === 'files' ? (state.sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}">
+                  <span class="omnimux-assets-th-sort-inner"><span>素材</span>${sortArrow('files')}</span>
+                </th>
+                <th class="omnimux-assets-th-updated omnimux-assets-th-sortable" data-sort="updated_at" aria-sort="${state.sortKey === 'updated_at' ? (state.sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}">
+                  <span class="omnimux-assets-th-sort-inner"><span>更新时间</span>${sortArrow('updated_at')}</span>
+                </th>
+                <th class="omnimux-assets-th-actions">操作</th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+        <div class="demo-drop-zone" id="demoDropZone">
+          <span>拖拽任意列表行到此处，模拟投放到会话输入框或画布工作区</span>
+          <span id="demoDropPayload">等待拖拽</span>
+        </div>
+      </div>
+    </div>
+  `
+}
+
+function renderPortals() {
+  document.querySelectorAll('.omnimux-assets-list-more-menu, .omnimux-assets-list-preview-popover').forEach(el => el.remove())
+
+  if (state.menuAssetId && state.menuRect) {
+    const asset = ASSETS.find(a => a.id === state.menuAssetId)
+    if (asset) {
+      const menu = document.createElement('div')
+      menu.className = 'omnimux-assets-list-more-menu'
+      menu.setAttribute('role', 'menu')
+      const top = Math.min(window.innerHeight - 156, state.menuRect.bottom + 4)
+      const left = Math.max(12, state.menuRect.right - 160)
+      menu.style.top = `${top}px`
+      menu.style.left = `${left}px`
+      menu.innerHTML = `
+        <button class="omnimux-assets-list-menu-item" data-act="detail" role="menuitem">${ICONS.eye}<span>查看详情</span></button>
+        <button class="omnimux-assets-list-menu-item" data-act="reveal" role="menuitem">${ICONS.reveal}<span>打开文件位置</span></button>
+        <button class="omnimux-assets-list-menu-item" data-act="copy" role="menuitem">${ICONS.copy}<span>复制引用</span></button>
+        <div class="omnimux-assets-list-menu-sep" role="separator"></div>
+        <button class="omnimux-assets-list-menu-item omnimux-assets-list-menu-item--danger" data-act="remove" role="menuitem">${ICONS.trash}<span>移除</span></button>
+      `
+      menu.addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-act]')
+        if (!btn) return
+        const act = btn.getAttribute('data-act')
+        state.lastEvent = `菜单操作：${act} -> ${asset.name}`
+        state.menuAssetId = null
+        state.menuRect = null
+        render()
+      })
+      document.body.appendChild(menu)
+    }
+  }
+
+  if (state.hoverPreview) {
+    const { asset, rect } = state.hoverPreview
+    const pop = document.createElement('div')
+    pop.className = 'omnimux-assets-list-preview-popover'
+    const left = Math.min(window.innerWidth - 368, rect.right + 12)
+    const top = Math.max(12, Math.min(window.innerHeight - 380, rect.top - 24))
+    pop.style.left = `${left}px`
+    pop.style.top = `${top}px`
+    pop.innerHTML = `
+      <img class="omnimux-assets-list-preview-img" src="${asset.cover}" alt="" />
+      <div class="omnimux-assets-list-preview-caption">
+        <span class="omnimux-assets-list-preview-title">${escapeHtml(asset.name)}</span>
+        <span>${TYPE_LABELS[asset.type]}</span>
+      </div>
+    `
+    document.body.appendChild(pop)
+  }
+}
+
+function bindAfterEvents() {
+  const selectAll = document.getElementById('selectAllCheckbox')
+  if (selectAll) {
+    selectAll.addEventListener('click', () => {
+      const list = sortedAssets()
+      const all = list.every(a => state.selected.has(a.id))
+      if (all) state.selected.clear()
+      else list.forEach(a => state.selected.add(a.id))
+      state.lastEvent = all ? '已取消全选' : `已全选 ${state.selected.size} 项`
+      render()
+    })
+  }
+
+  const clearBtn = document.getElementById('clearSelBtn')
+  if (clearBtn) clearBtn.addEventListener('click', () => { state.selected.clear(); render() })
+  const batchAddBtn = document.getElementById('batchAddBtn')
+  if (batchAddBtn) batchAddBtn.addEventListener('click', () => {
+    state.lastEvent = `已批量加入会话：${state.selected.size} 项`
+    render()
+  })
+
+  document.querySelectorAll('[data-sort]').forEach(th => {
+    th.addEventListener('click', () => {
+      const key = th.getAttribute('data-sort')
+      if (state.sortKey === key) {
+        state.sortDir = state.sortDir === 'asc' ? 'desc' : 'asc'
+      } else {
+        state.sortKey = key
+        state.sortDir = (key === 'name' || key === 'type') ? 'asc' : 'desc'
+      }
+      state.lastEvent = `排序：${key} (${state.sortDir})`
+      render()
+    })
+  })
+
+  document.querySelectorAll('[data-check-id]').forEach(cb => {
+    cb.addEventListener('click', (e) => {
+      e.stopPropagation()
+      const id = cb.getAttribute('data-check-id')
+      const list = sortedAssets()
+      if (e.shiftKey && state.lastSelectedId) {
+        const i1 = list.findIndex(a => a.id === state.lastSelectedId)
+        const i2 = list.findIndex(a => a.id === id)
+        if (i1 !== -1 && i2 !== -1) {
+          const [start, end] = i1 < i2 ? [i1, i2] : [i2, i1]
+          for (let i = start; i <= end; i++) state.selected.add(list[i].id)
+          state.lastEvent = `Shift 连选：已选 ${state.selected.size} 项`
+          render()
+          return
+        }
+      }
+      if (state.selected.has(id)) state.selected.delete(id)
+      else state.selected.add(id)
+      state.lastSelectedId = id
+      state.lastEvent = `已选 ${state.selected.size} 项`
+      render()
+    })
+  })
+
+  document.querySelectorAll('[data-add-id]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation()
+      const id = btn.getAttribute('data-add-id')
+      state.addedIds.add(id)
+      const asset = ASSETS.find(a => a.id === id)
+      state.lastEvent = `已添加到会话：${asset?.name || id}`
+      render()
+      setTimeout(() => { state.addedIds.delete(id); render() }, 1800)
+    })
+  })
+
+  document.querySelectorAll('[data-more-id]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation()
+      const id = btn.getAttribute('data-more-id')
+      if (state.menuAssetId === id) {
+        state.menuAssetId = null
+        state.menuRect = null
+      } else {
+        state.menuAssetId = id
+        state.menuRect = btn.getBoundingClientRect()
+      }
+      render()
+    })
+  })
+
+  document.querySelectorAll('[data-thumb-id]').forEach(el => {
+    const id = el.getAttribute('data-thumb-id')
+    const asset = ASSETS.find(a => a.id === id)
+    if (!asset?.cover) return
+    el.addEventListener('mouseenter', () => {
+      clearTimeout(hoverTimer)
+      const rect = el.getBoundingClientRect()
+      hoverTimer = setTimeout(() => {
+        state.hoverPreview = { asset, rect }
+        renderPortals()
+      }, 200)
+    })
+    el.addEventListener('mouseleave', () => {
+      clearTimeout(hoverTimer)
+      if (state.hoverPreview) {
+        state.hoverPreview = null
+        renderPortals()
+      }
+    })
+  })
+
+  const rows = [...document.querySelectorAll('.omnimux-assets-list-row')]
+  rows.forEach((row, idx) => {
+    const id = row.getAttribute('data-asset-id')
+    const asset = ASSETS.find(a => a.id === id)
+    row.addEventListener('click', (e) => {
+      if (e.target.closest('[data-stop="true"]')) return
+      state.lastEvent = `点击整行打开预览/详情：${asset?.name || id}`
+      render()
+    })
+    row.addEventListener('keydown', (e) => {
+      if (e.target !== row) return
+      if (e.key === 'ArrowDown' && idx < rows.length - 1) {
+        e.preventDefault()
+        rows[idx + 1].focus()
+      } else if (e.key === 'ArrowUp' && idx > 0) {
+        e.preventDefault()
+        rows[idx - 1].focus()
+      } else if (e.key === ' ') {
+        e.preventDefault()
+        state.lastEvent = `Space 快速预览：${asset?.name || id}`
+        render()
+      } else if (e.key === 'Enter') {
+        e.preventDefault()
+        state.lastEvent = `Enter 打开详情：${asset?.name || id}`
+        render()
+      }
+    })
+    row.addEventListener('dragstart', (e) => {
+      const payload = { type: 'omnimux-asset', asset: { id: asset.id, name: asset.name, type: asset.type } }
+      e.dataTransfer.setData('application/json', JSON.stringify(payload))
+      e.dataTransfer.setData('text/plain', `@${asset.type}/${asset.name}`)
+      e.dataTransfer.effectAllowed = 'copy'
+    })
+  })
+
+  const dropZone = document.getElementById('demoDropZone')
+  const dropPayload = document.getElementById('demoDropPayload')
+  if (dropZone && dropPayload) {
+    dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('over') })
+    dropZone.addEventListener('dragleave', () => { dropZone.classList.remove('over') })
+    dropZone.addEventListener('drop', (e) => {
+      e.preventDefault()
+      dropZone.classList.remove('over')
+      const cite = e.dataTransfer.getData('text/plain')
+      dropPayload.textContent = `已接收：${cite}`
+    })
+  }
+}
+
+function render() {
+  const mount = document.getElementById('mount')
+  document.getElementById('demoShell').setAttribute('data-width', state.width)
+  if (state.theme === 'dark') document.body.setAttribute('data-ds-dark-theme', '')
+  else document.body.removeAttribute('data-ds-dark-theme')
+
+  if (state.mode === 'before') {
+    mount.innerHTML = renderBeforeSection()
+  } else if (state.mode === 'after') {
+    mount.innerHTML = renderAfterSection()
+    bindAfterEvents()
+  } else {
+    mount.innerHTML = `<div class="compare-grid"><div><p class="compare-label">修改后（新版桌面列表）</p>${renderAfterSection()}</div><div><p class="compare-label">修改前（当前旧版表格）</p>${renderBeforeSection()}</div></div>`
+    bindAfterEvents()
+  }
+  renderPortals()
+}
+
+document.querySelectorAll('[data-mode]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    state.mode = btn.getAttribute('data-mode')
+    document.querySelectorAll('[data-mode]').forEach(b => b.classList.toggle('active', b === btn))
+    render()
+  })
+})
+document.querySelectorAll('[data-theme]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    state.theme = btn.getAttribute('data-theme')
+    document.querySelectorAll('[data-theme]').forEach(b => b.classList.toggle('active', b === btn))
+    render()
+  })
+})
+document.querySelectorAll('[data-width]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    state.width = btn.getAttribute('data-width')
+    document.querySelectorAll('[data-width]').forEach(b => b.classList.toggle('active', b === btn))
+    render()
+  })
+})
+document.addEventListener('click', (e) => {
+  if (state.menuAssetId && !e.target.closest('.omnimux-assets-list-more-menu') && !e.target.closest('[data-more-id]')) {
+    state.menuAssetId = null
+    state.menuRect = null
+    render()
+  }
+})
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && (state.menuAssetId || state.hoverPreview)) {
+    state.menuAssetId = null
+    state.menuRect = null
+    state.hoverPreview = null
+    clearTimeout(hoverTimer)
+    render()
+  }
+})
+
+render()
+</script>
+</body>
+</html>

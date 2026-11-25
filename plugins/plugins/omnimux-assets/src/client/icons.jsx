@@ -383,4 +383,87 @@ export function CopyIcon(props) {
   )
 }
 
+/** 角色语义图标：人物轮廓 */
+export function CharacterIcon(props) {
+  return (
+    <Icon {...props}>
+      <circle cx="12" cy="8" r="4" />
+      <path d="M5 20a7 7 0 0 1 14 0" />
+    </Icon>
+  )
+}
+
+/** 场景语义图标：画框山水 */
+export function SceneIcon(props) {
+  return (
+    <Icon {...props}>
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <circle cx="8.5" cy="9.5" r="1.5" />
+      <path d="m21 16-5-5-6 6-2-2-5 5" />
+    </Icon>
+  )
+}
+
+/** 风格包语义图标：调色盘轮廓 */
+export function StyleIcon(props) {
+  return (
+    <Icon {...props}>
+      <circle cx="13.5" cy="6.5" r="1" fill="currentColor" stroke="none" />
+      <circle cx="17.5" cy="10.5" r="1" fill="currentColor" stroke="none" />
+      <circle cx="8.5" cy="7.5" r="1" fill="currentColor" stroke="none" />
+      <path d="M12 2a10 10 0 1 0 0 20 2 2 0 0 0 2-2v-.5a1.5 1.5 0 0 1 1.5-1.5H18a4 4 0 0 0 4-4c0-6.6-4.5-12-10-12Z" />
+    </Icon>
+  )
+}
+
+/** 知识包语义图标：书册轮廓 */
+export function KnowledgeIcon(props) {
+  return (
+    <Icon {...props}>
+      <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+      <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z" />
+    </Icon>
+  )
+}
+
+/** 自定义资产语义图标：叠层轮廓 */
+export function CustomAssetIcon(props) {
+  return (
+    <Icon {...props}>
+      <path d="m12 2 9 4.5-9 4.5-9-4.5Z" />
+      <path d="m3 12 9 4.5 9-4.5" />
+      <path d="m3 17.5 9 4.5 9-4.5" />
+    </Icon>
+  )
+}
+
+/** 删除/移除图标：回收桶轮廓 */
+export function TrashIcon(props) {
+  return (
+    <Icon {...props}>
+      <path d="M3 6h18" />
+      <path d="M8 6V4h8v2" />
+      <path d="M6 6l1 14h10l1-14" />
+    </Icon>
+  )
+}
+
+const ASSET_TYPE_ICONS = {
+  character: CharacterIcon,
+  scene: SceneIcon,
+  style: StyleIcon,
+  prop: BoxIcon,
+  knowledge: KnowledgeIcon,
+  custom: CustomAssetIcon,
+}
+
+/**
+ * Semantic asset-type icon for list rows without a cover thumbnail.
+ * @param {{ type?: string, size?: number }} props
+ */
+export function AssetTypeIcon({ type, size = 15 }) {
+  const Component = ASSET_TYPE_ICONS[type] ?? FileIcon
+  return <Component size={size} />
+}
+
 
