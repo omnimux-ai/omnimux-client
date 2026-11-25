@@ -2,7 +2,7 @@
 
 ## 1. 背景与目标
 
-PR #190（Issue #111）在 `omnimux-workflow` 底部悬浮工具栏（`.wf-canvas-toolbar`）为「添加节点」和「选择 / 抓手」增加了可见文本标签，导致底栏冗长；同时 `omnimux-market` 在 [css.js](plugins/plugins/omnimux-market/src/client/css.js) 中声明了无作用域限定的全局规则 `button[class*="add"] { width: 28px !important; background: transparent !important; ... }`，在真实宿主中直接压毁了画布主添加按钮 `.wf-canvas-toolbar__item--primary-add` 的尺寸、底色与排版。
+PR #190（Issue #111）在 `omnimux-workflow` 底部悬浮工具栏（`.wf-canvas-toolbar`）为「添加节点」和「选择 / 抓手」增加了可见文本标签，导致底栏冗长；同时 `omnimux-market` 在 [css.js](../plugins/plugins/omnimux-market/src/client/css.js) 中声明了无作用域限定的全局规则 `button[class*="add"] { width: 28px !important; background: transparent !important; ... }`，在真实宿主中直接压毁了画布主添加按钮 `.wf-canvas-toolbar__item--primary-add` 的尺寸、底色与排版。
 
 用户明确要求：
 1. 工具栏这一行的按钮**只保留图标，不要文本**，并用测试锁定；

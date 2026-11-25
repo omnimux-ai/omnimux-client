@@ -5,8 +5,8 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 // 端到端契约（静态断言型，沿用 tabs-toolbar-polish.e2e.test.mjs 先例）：
-// 真实浏览器证据见 docs/evidence/canvas-add-node-squircle/ ——
-// 画布 harness 中浅色主题为黑底、深色主题为白底，两者 36×36 且 border-radius=12px。
+// 画布底栏为全圆角胶囊（border-radius=999px），主「+」按钮为同心 40×40 纯圆（border-radius=50%），
+// 浅色主题黑底白图标、深色主题白底黑图标。
 const here = dirname(fileURLToPath(import.meta.url));
 const themePath = join(here, '../../src/canvas/theme/workbench-theme.css');
 const toolbarPath = join(here, '../../src/canvas/editor/components/Toolbar.tsx');

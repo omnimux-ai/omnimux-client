@@ -560,7 +560,7 @@ body[data-ds-dark-theme] .wf-canvas-root {
   font-family: inherit;
   font-size: 12px;
   font-weight: 500;
-  color: var(--wb-text-muted);
+  color: var(--wb-text-secondary);
 }
 
 .wf-canvas-toolbar__item--primary-add:hover {

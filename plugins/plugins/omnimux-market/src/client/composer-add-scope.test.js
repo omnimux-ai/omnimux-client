@@ -31,6 +31,7 @@ test('CSS cascade: market styles apply inside [data-composer-card] and .Q7WfXG_a
   const dom = new JSDOM(
     `<!doctype html><html><head><style>
       .wf-canvas-toolbar__item--primary-add { width: 40px; height: 40px; border-radius: 50%; background: rgb(255, 255, 255); }
+      .wf-canvas-toolbar__item--primary-add svg { width: 20px; height: 20px; }
       ${cssText}
     </style></head><body>
       <div data-composer-card>
@@ -50,14 +51,21 @@ test('CSS cascade: market styles apply inside [data-composer-card] and .Q7WfXG_a
     const legacyQ7Add = window.document.querySelector('button.Q7WfXG_add')
     const canvasAdd = window.document.querySelector('button.wf-canvas-toolbar__item--primary-add')
 
+    const composerSvg = composerAdd.querySelector('svg')
+    const canvasSvg = canvasAdd.querySelector('svg')
+
     assert.equal(window.getComputedStyle(composerAdd).width, '28px')
     assert.equal(window.getComputedStyle(composerAdd).height, '28px')
+    assert.equal(window.getComputedStyle(composerSvg).width, '14px')
+    assert.equal(window.getComputedStyle(composerSvg).height, '14px')
     assert.equal(window.getComputedStyle(legacyQ7Add).width, '28px')
 
     assert.equal(window.getComputedStyle(canvasAdd).width, '40px')
     assert.equal(window.getComputedStyle(canvasAdd).height, '40px')
     assert.equal(window.getComputedStyle(canvasAdd).borderRadius, '50%')
     assert.equal(window.getComputedStyle(canvasAdd).backgroundColor, 'rgb(255, 255, 255)')
+    assert.equal(window.getComputedStyle(canvasSvg).width, '20px')
+    assert.equal(window.getComputedStyle(canvasSvg).height, '20px')
   } finally {
     dom.window.close()
   }

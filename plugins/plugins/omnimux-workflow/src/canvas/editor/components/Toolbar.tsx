@@ -22,7 +22,8 @@ import {
   Check,
 } from 'lucide-react';
 import { useT } from '../../i18n';
-import { useClickOutside } from '../hooks/useClickOutside';
+import { isOutsideClickTarget, useClickOutside, type ClickTargetLike } from '../hooks/useClickOutside';
+import { useCanvasDismissLayer } from '../utils/canvasDismissLayer.ts';
 import { COMFY_PAGE_TEMPLATE_EVENT } from '../../nodes/definitions/comfyPage';
 import {
   preventToolbarAddContextMenu,
@@ -85,6 +86,7 @@ const Toolbar: React.FC<ToolbarProps> = ({
   const pointerMenuRef = useRef<HTMLDivElement>(null);
   const pointerTriggerRef = useRef<HTMLButtonElement>(null);
   const pointerMenuListRef = useRef<HTMLDivElement>(null);
+  const pendingPointerFocusRef = useRef<'first' | 'last' | null>(null);
   const templateMenuRef = useRef<HTMLDivElement>(null);
 
   const isAddOpen = externalIsAddMenuOpen !== undefined ? externalIsAddMenuOpen : internalIsAddMenuOpen;
@@ -98,6 +100,11 @@ const Toolbar: React.FC<ToolbarProps> = ({
   const closePointerMenu = useCallback(() => {
     setIsPointerMenuOpen(false);
   }, []);
+  const openPointerMenu = useCallback(() => {
+    closeAdd();
+    setIsTemplateMenuOpen(false);
+    setIsPointerMenuOpen(true);
+  }, [closeAdd]);
   const toggleAdd = useCallback(() => {
     if (!isAddOpen) {
       setIsPointerMenuOpen(false);
@@ -111,56 +118,82 @@ const Toolbar: React.FC<ToolbarProps> = ({
   }, [isAddOpen, onToggleAddMenu]);
 
   const togglePointerMenu = useCallback(() => {
-    setIsPointerMenuOpen((open) => {
-      const next = !open;
-      if (next) {
-        closeAdd();
-        setIsTemplateMenuOpen(false);
-      }
-      return next;
-    });
-  }, [closeAdd]);
+    const next = !isPointerMenuOpen;
+    if (next) {
+      closeAdd();
+      setIsTemplateMenuOpen(false);
+    }
+    setIsPointerMenuOpen(next);
+  }, [closeAdd, isPointerMenuOpen]);
 
   const toggleTemplateMenu = useCallback(() => {
-    setIsTemplateMenuOpen((open) => {
-      const next = !open;
-      if (next) {
-        closeAdd();
-        setIsPointerMenuOpen(false);
-      }
-      return next;
+    const next = !isTemplateMenuOpen;
+    if (next) {
+      closeAdd();
+      setIsPointerMenuOpen(false);
+    }
+    setIsTemplateMenuOpen(next);
+  }, [closeAdd, isTemplateMenuOpen]);
+
+  const focusPointerTrigger = useCallback(() => {
+    const triggerEl = pointerTriggerRef.current;
+    if (!triggerEl?.isConnected) return;
+    queueMicrotask(() => {
+      if (triggerEl.isConnected) triggerEl.focus();
     });
-  }, [closeAdd]);
+  }, []);
 
   const handleSelectPointerMode = useCallback(
     (mode: CanvasPointerMode) => {
+      const ownerDoc = pointerTriggerRef.current?.ownerDocument;
+      const shouldRestoreFocus = Boolean(
+        ownerDoc && pointerMenuListRef.current?.contains(ownerDoc.activeElement),
+      );
       onPointerModeChange?.(mode);
       setIsPointerMenuOpen(false);
+      if (shouldRestoreFocus) focusPointerTrigger();
     },
-    [onPointerModeChange],
+    [focusPointerTrigger, onPointerModeChange],
   );
 
-  const handlePointerMenuKeyDown = useCallback(
+  const handlePointerAnchorKeyDown = useCallback(
     (event: KeyboardEvent<HTMLDivElement>) => {
-      if (event.key === 'Escape') {
+      if (event.key === 'Escape' && isPointerMenuOpen) {
         event.preventDefault();
         event.stopPropagation();
         setIsPointerMenuOpen(false);
-        pointerTriggerRef.current?.focus();
+        focusPointerTrigger();
+        return;
+      }
+      if (isPointerMenuOpen && (event.key === 'v' || event.key === 'V' || event.key === 'h' || event.key === 'H')) {
+        event.preventDefault();
+        event.stopPropagation();
+        handleSelectPointerMode(event.key.toLowerCase() === 'v' ? 'select' : 'pan');
         return;
       }
       if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
       event.preventDefault();
+      if (!isPointerMenuOpen) {
+        pendingPointerFocusRef.current = event.key === 'ArrowUp' ? 'last' : 'first';
+        openPointerMenu();
+        return;
+      }
       const options = Array.from(
         pointerMenuListRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]') ?? [],
       );
       if (options.length === 0) return;
-      const activeIdx = options.indexOf(document.activeElement as HTMLButtonElement);
+      const activeEl = event.currentTarget.ownerDocument.activeElement as HTMLButtonElement | null;
+      const activeIdx = activeEl ? options.indexOf(activeEl) : -1;
+      if (activeIdx < 0) {
+        const target = event.key === 'ArrowUp' ? options[options.length - 1] : options[0];
+        target?.focus();
+        return;
+      }
       const delta = event.key === 'ArrowDown' ? 1 : -1;
-      const nextIdx = activeIdx < 0 ? 0 : (activeIdx + delta + options.length) % options.length;
+      const nextIdx = (activeIdx + delta + options.length) % options.length;
       options[nextIdx]?.focus();
     },
-    [],
+    [focusPointerTrigger, handleSelectPointerMode, isPointerMenuOpen, openPointerMenu],
   );
 
   const handleSelectNodeType = useCallback(
@@ -170,6 +203,25 @@ const Toolbar: React.FC<ToolbarProps> = ({
     },
     [onAddNode, closeAdd],
   );
+
+  /** 通过键盘方向键展开指针菜单后，将焦点移入对应选项。 */
+  useEffect(() => {
+    if (!isPointerMenuOpen || !pendingPointerFocusRef.current) return;
+    const direction = pendingPointerFocusRef.current;
+    pendingPointerFocusRef.current = null;
+    const options = Array.from(
+      pointerMenuListRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]') ?? [],
+    );
+    const target = direction === 'last' ? options[options.length - 1] : options[0];
+    target?.focus();
+  }, [isPointerMenuOpen]);
+
+  /** 受控 isAddOpen（如全局快捷键 N）展开时，互斥收起指针与模板浮层。 */
+  useEffect(() => {
+    if (!isAddOpen) return;
+    setIsPointerMenuOpen(false);
+    setIsTemplateMenuOpen(false);
+  }, [isAddOpen]);
 
   /** 外部快捷键（V/H）切换模式时收起指针模式菜单。 */
   useEffect(() => {
@@ -195,10 +247,15 @@ const Toolbar: React.FC<ToolbarProps> = ({
     enabled: isAddOpen,
   });
 
-  useClickOutside({
-    refs: pointerMenuRef,
-    onClose: closePointerMenu,
-    enabled: isPointerMenuOpen,
+  useCanvasDismissLayer({
+    open: isPointerMenuOpen,
+    containsTarget: (target) => !isOutsideClickTarget(
+      target as ClickTargetLike | null,
+      [pointerMenuRef.current],
+    ),
+    onDismiss: closePointerMenu,
+    deferRegistration: true,
+    returnFocusRef: pointerTriggerRef,
   });
 
   useClickOutside({
@@ -240,7 +297,11 @@ const Toolbar: React.FC<ToolbarProps> = ({
       <div className="wf-canvas-toolbar__divider" />
 
       {/* 指针模式聚合触发器 + 悬浮切换菜单：选择 (V) / 抓手 (H)（底栏纯图标） */}
-      <div ref={pointerMenuRef} className="wf-canvas-toolbar__anchor">
+      <div
+        ref={pointerMenuRef}
+        className="wf-canvas-toolbar__anchor"
+        onKeyDown={handlePointerAnchorKeyDown}
+      >
         <button
           ref={pointerTriggerRef}
           type="button"
@@ -266,7 +327,6 @@ const Toolbar: React.FC<ToolbarProps> = ({
             className="wf-canvas-toolbar__mode-menu"
             role="menu"
             aria-label={t('toolbar.pointerModeGroup')}
-            onKeyDown={handlePointerMenuKeyDown}
           >
             <button
               type="button"
