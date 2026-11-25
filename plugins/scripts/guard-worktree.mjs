@@ -471,6 +471,9 @@ function parseHeredocDecl(input, ltIdx) {
     }
     break
   }
+  // Bash only starts a comment when `#` begins a word; a leading `#` here means
+  // the heredoc has no delimiter (e.g. `cat << # note`).
+  if (input[j] === '#') return { delim: '', stripTabs, nextIdx: j }
   let delim = ''
   let dSingle = false
   let dDouble = false
@@ -498,6 +501,11 @@ function parseHeredocDecl(input, ltIdx) {
       j = decoded.endIdx + 1
       continue
     }
+    // `$"..."` is locale quoting: bash applies quote removal and keeps the contents.
+    if (!dSingle && !dDouble && dc === '$' && input[j + 1] === '"') {
+      j += 1
+      continue
+    }
     if (dc === "'" && !dDouble) {
       dSingle = !dSingle
       j += 1
@@ -508,7 +516,8 @@ function parseHeredocDecl(input, ltIdx) {
       j += 1
       continue
     }
-    if (!dSingle && !dDouble && /[\s;&|<>()#]/.test(dc)) break
+    // `#` is literal inside a delimiter word (`<<A#B`); only shell metacharacters end it.
+    if (!dSingle && !dDouble && /[\s;&|<>()]/.test(dc)) break
     delim += dc
     j += 1
   }
@@ -2287,6 +2296,7 @@ function walkShellCommands(command, initialCwd, visitor, depth = 0, protectedCac
   let lastCdRollback = null
   let justRanCd = false
   let pendingFunctionBody = false
+  const shellFunctions = extractShellFunctionDefinitions(command)
 
   const applyCwdTransition = (nextCwd, nextPrevCwd, { prevOp, insideLeadingGroup }) => {
     const fromProtected = isProtectedPrimaryDirectory(currentCwd, protectedCache)
@@ -2490,6 +2500,33 @@ function walkShellCommands(command, initialCwd, visitor, depth = 0, protectedCac
           const isStandaloneDirOp =
             subSegments.length === 1 &&
             (headVerb === 'cd' || headVerb === 'pushd' || headVerb === 'popd')
+
+          // A function call runs its body in the caller's shell, so `f() { cd <primary>; }`
+          // followed by `cd /tmp && f` still ends up in the primary checkout.
+          if (!isStandaloneDirOp && subSegments.length === 1 && shellFunctions.has(headVerb)) {
+            const body = shellFunctions.get(headVerb)
+            let predictedCwd = currentCwd
+            walkShellCommands(body, currentCwd, {
+              onStage() {
+                return undefined
+              },
+              onCdStage() {
+                return undefined
+              },
+              onCloserTail() {
+                return undefined
+              },
+              onStageEnd({ currentCwd: stageEndCwd }) {
+                predictedCwd = stageEndCwd
+              },
+            }, depth + 1, protectedCache)
+            if (predictedCwd !== currentCwd) {
+              applyCwdTransition(predictedCwd, currentCwd, {
+                prevOp: stmt.prevOp,
+                insideLeadingGroup: parsed.leadingOpenParens > 0 || parsed.leadingOpenBraces > 0,
+              })
+            }
+          }
 
           if (isStandaloneDirOp) {
             // Even on `cd`/`pushd`/`popd`, still inspect any redirections (`cd /tmp > README.md`)
@@ -2710,8 +2747,70 @@ function walkShellCommands(command, initialCwd, visitor, depth = 0, protectedCac
       currentCwd = restoreAfterExitFallback.currentCwd
       prevCwd = restoreAfterExitFallback.prevCwd
     }
+
+    if (visitor.onStageEnd) {
+      visitor.onStageEnd({ currentCwd, prevCwd, stmt })
+    }
   }
   return undefined
+}
+
+/**
+ * Extract `name() { … }` / `function name { … }` definitions with their bodies.
+ * Function bodies run in the caller's shell, so a later call can move the cwd.
+ */
+function extractShellFunctionDefinitions(command) {
+  const input = String(command || '')
+  const defs = new Map()
+  const re = /(?:^|[\s;&|(){}\n])(?:function\s+([A-Za-z_][\w-]*)|([A-Za-z_][\w-]*)\s*\(\s*\))\s*\{/g
+  let match
+  while ((match = re.exec(input)) !== null) {
+    const name = match[1] || match[2]
+    const openIdx = match.index + match[0].length - 1
+    const closeIdx = findMatchingBrace(input, openIdx)
+    if (closeIdx === -1) continue
+    if (name) defs.set(name, input.slice(openIdx + 1, closeIdx))
+    re.lastIndex = closeIdx
+  }
+  return defs
+}
+
+/** Index of the `}` matching the `{` at `openIdx`, or -1 when unbalanced. */
+function findMatchingBrace(input, openIdx) {
+  let depth = 0
+  let inSingle = false
+  let inDouble = false
+  let escaped = false
+  for (let i = openIdx; i < input.length; i += 1) {
+    const ch = input[i]
+    if (escaped) {
+      escaped = false
+      continue
+    }
+    if (ch === '\\' && !inSingle) {
+      escaped = true
+      continue
+    }
+    if (!inSingle && !inDouble && ch === '$' && input[i + 1] === "'") {
+      i = scanAnsiSingleQuote(input, i)
+      continue
+    }
+    if (ch === "'" && !inDouble) {
+      inSingle = !inSingle
+      continue
+    }
+    if (ch === '"' && !inSingle) {
+      inDouble = !inDouble
+      continue
+    }
+    if (inSingle || inDouble) continue
+    if (ch === '{') depth += 1
+    else if (ch === '}') {
+      depth -= 1
+      if (depth === 0) return i
+    }
+  }
+  return -1
 }
 
 /** Flags whose next token is a value, not a positional/package argument. Note: `-w` is boolean (`--workspace-root`) in pnpm and value-taking only in npm/npx. */
@@ -2840,6 +2939,75 @@ const WRAPPER_FLAGS_WITH_VALUE = new Set([
   '--workspace', '--prefix', '--userconfig',
 ])
 const ENV_FLAGS_WITH_VALUE = new Set(['-u', '--unset', '-C', '--chdir'])
+
+/**
+ * Command-executing wrappers that prefix another command. Each entry lists the
+ * flags that consume a value and how many positional tokens (e.g. `timeout`'s
+ * duration) precede the wrapped command. `eval` is handled separately because it
+ * joins its arguments into a shell script.
+ */
+const COMMAND_PREFIX_WRAPPERS = new Map([
+  ['time', { valueFlags: new Set(['-o', '--output', '-f', '--format']), leadingPositionals: 0 }],
+  ['sudo', {
+    valueFlags: new Set([
+      '-u', '--user', '-g', '--group', '-h', '--host', '-p', '--prompt', '-r', '--role',
+      '-t', '--type', '-U', '--other-user', '-C', '--close-from', '-D', '--chdir',
+      '-R', '--chroot', '-T', '--command-timeout',
+    ]),
+    leadingPositionals: 0,
+  }],
+  ['doas', { valueFlags: new Set(['-u', '-C']), leadingPositionals: 0 }],
+  ['nice', { valueFlags: new Set(['-n', '--adjustment']), leadingPositionals: 0, niceShortValue: true }],
+  ['timeout', { valueFlags: new Set(['-s', '--signal', '-k', '--kill-after']), leadingPositionals: 1 }],
+  ['stdbuf', { valueFlags: new Set(['-i', '--input', '-o', '--output', '-e', '--error']), leadingPositionals: 0 }],
+  ['setsid', { valueFlags: new Set(), leadingPositionals: 0 }],
+  ['ionice', {
+    valueFlags: new Set(['-c', '--class', '-n', '--classdata', '-p', '--pid', '-t', '--ignore-autogroup']),
+    leadingPositionals: 0,
+  }],
+  ['unbuffer', { valueFlags: new Set(['-p']), leadingPositionals: 0 }],
+  ['xargs', {
+    valueFlags: new Set([
+      '-I', '--replace', '-n', '--max-args', '-L', '--max-lines', '-P', '--max-procs',
+      '-s', '--max-chars', '-d', '--delimiter', '-E', '--eof', '-a', '--arg-file', '-e',
+    ]),
+    leadingPositionals: 0,
+  }],
+])
+
+/** Strip wrapper flags from a command-prefix wrapper, returning the wrapped command words. */
+function skipCommandPrefixWrapper(words, spec) {
+  let i = 0
+  while (i < words.length) {
+    const w = words[i]
+    if (w === '--') {
+      i += 1
+      break
+    }
+    if (!w.startsWith('-') || w === '-') break
+    if (spec.valueFlags && spec.valueFlags.has(w)) {
+      i += 2
+      continue
+    }
+    if (spec.niceShortValue && /^-\d+$/.test(w)) {
+      i += 1
+      continue
+    }
+    // Attached short flag values (`-uroot`, `-oL`, `-n5`) and `--flag=value` forms.
+    if (w.startsWith('--') && w.includes('=')) {
+      i += 1
+      continue
+    }
+    i += 1
+  }
+  let remaining = spec.leadingPositionals || 0
+  while (remaining > 0 && i < words.length) {
+    i += 1
+    remaining -= 1
+  }
+  return words.slice(i)
+}
+
 const SHELL_VALUE_FLAGS = new Set(['-o', '+o', '-O', '+O', '--rcfile', '--init-file'])
 const NODE_VALUE_FLAGS = new Set([
   '-r', '--require', '--import', '--loader', '--experimental-loader',
@@ -2859,21 +3027,58 @@ const NODE_VALUE_FLAGS = new Set([
  * (including `=0`, `=no`, `=off`, `=`, `=FALSE`), bare `--shell-mode` / `--config.shell-mode`,
  * `--shell-mode true`, `--config.shell-mode true`, and `-c` enable shell mode.
  */
+/**
+ * Match a nopt-style flag, accepting unique prefixes (`--shell`, `--shell-m`,
+ * `--shell-mod`) because real pnpm resolves ambiguous-free abbreviations.
+ * Returns `{ name, value }` where `value` is null for the bare form.
+ */
+function matchNoptFlag(word, fullNames, minPrefixLengths) {
+  if (!word.startsWith('--')) return null
+  const eq = word.indexOf('=')
+  const name = eq === -1 ? word : word.slice(0, eq)
+  const value = eq === -1 ? null : word.slice(eq + 1)
+  for (let k = 0; k < fullNames.length; k += 1) {
+    const full = fullNames[k]
+    if (name === full) return { full, value }
+    if (name.length >= minPrefixLengths[k] && full.startsWith(name)) return { full, value }
+  }
+  return null
+}
+
+const PNPM_NEGATED_SHELL_FLAGS = ['--no-shell-mode', '--no-config.shell-mode']
+const PNPM_NEGATED_SHELL_MIN_PREFIX = ['--no-shell'.length, '--no-config.shell'.length]
+const PNPM_SHELL_FLAGS = ['--shell-mode', '--config.shell-mode']
+const PNPM_SHELL_MIN_PREFIX = ['--shell'.length, '--config.shell'.length]
+
+/**
+ * Parse pnpm shell-mode flags as real pnpm 11 resolves them:
+ *   - `-c` enables shell mode.
+ *   - Bare `--shell-mode` / `--config.shell-mode` enable it; `--shell-mode false`
+ *     and `--config.shell-mode false` disable it.
+ *   - `--shell-mode=<v>` disables it only for the exact lowercase `false`; every
+ *     other value (`0`, `no`, `off`, empty, `FALSE`, `1`, `true`) enables it.
+ *   - Bare `--no-shell-mode` / `--no-config.shell-mode` disable it, but the nopt
+ *     negation-with-value form (`--no-shell-mode=false`) enables it again.
+ *   - Unique prefixes (`--shell`, `--shell-m`, `--shell-mod`, `--config.shell-m`, …)
+ *     are accepted; pnpm itself rejects ambiguous abbreviations without running.
+ */
 function parsePnpmShellModeFlag(word, nextWord = '') {
   if (word === '-c' || /^-[a-zA-Z]*c[a-zA-Z]*$/.test(word)) {
     return { value: true, consumed: 1 }
   }
-  if (word === '--no-shell-mode' || word === '--no-config.shell-mode') {
-    return { value: false, consumed: 1 }
+  const negated = matchNoptFlag(word, PNPM_NEGATED_SHELL_FLAGS, PNPM_NEGATED_SHELL_MIN_PREFIX)
+  if (negated) {
+    // `--no-shell-mode` disables; any `=value` re-enables (`--no-X=false` ⇒ X=true).
+    return { value: negated.value === null ? false : negated.value === 'true' ? false : true, consumed: 1 }
   }
-  if (word === '--shell-mode' || word === '--config.shell-mode') {
-    if (nextWord === 'false') return { value: false, consumed: 2 }
-    if (nextWord === 'true') return { value: true, consumed: 2 }
-    return { value: true, consumed: 1 }
-  }
-  if (word.startsWith('--shell-mode=') || word.startsWith('--config.shell-mode=')) {
-    const val = word.slice(word.indexOf('=') + 1)
-    return { value: val !== 'false', consumed: 1 }
+  const positive = matchNoptFlag(word, PNPM_SHELL_FLAGS, PNPM_SHELL_MIN_PREFIX)
+  if (positive) {
+    if (positive.value === null) {
+      if (nextWord === 'false') return { value: false, consumed: 2 }
+      if (nextWord === 'true') return { value: true, consumed: 2 }
+      return { value: true, consumed: 1 }
+    }
+    return { value: positive.value !== 'false', consumed: 1 }
   }
   return null
 }
@@ -3137,6 +3342,16 @@ function unwrapExecutionWrapperWithMeta(words) {
       let i = 1
       if (current[i] === '--') i += 1
       rest = current.slice(i)
+    } else if (head === 'eval') {
+      // `eval` joins its arguments and executes them as shell code in the current shell.
+      let i = 1
+      if (current[i] === '--') i += 1
+      const script = current.slice(i).join(' ')
+      if (!script.trim()) break
+      rest = ['sh', '-c', script]
+    } else if (COMMAND_PREFIX_WRAPPERS.has(head)) {
+      rest = skipCommandPrefixWrapper(current.slice(1), COMMAND_PREFIX_WRAPPERS.get(head))
+      if (rest.length === 0) break
     } else if (head === 'corepack') {
       rest = skipLeadingWrapperFlags(current.slice(1))
     } else if (head === 'command') {
@@ -3952,6 +4167,51 @@ function extractFindSearchRoots(args) {
   return roots.length > 0 ? roots : ['.']
 }
 
+/**
+ * Extract commands embedded in `find ... -exec/-execdir/-ok/-okdir CMD ... ;|+`.
+ * The wrapped command must be inspected as a real command (e.g. `-exec rm {} +`
+ * deletes matches under the search root). Returns token arrays so quoted
+ * `-c '<script>'` payloads keep their single-token form.
+ */
+function extractFindExecPayloads(args) {
+  const payloads = []
+  const execMarkers = new Set(['-exec', '-execdir', '-ok', '-okdir'])
+  let current = null
+  for (let i = 0; i < args.length; i += 1) {
+    const w = args[i]
+    if (execMarkers.has(w)) {
+      if (current && current.length > 0) payloads.push(current)
+      current = []
+      continue
+    }
+    if (current) {
+      if (w === ';' || w === '+' || w === '\\;') {
+        if (current.length > 0) payloads.push(current)
+        current = null
+        continue
+      }
+      current.push(w)
+    }
+  }
+  if (current && current.length > 0) payloads.push(current)
+  return payloads
+}
+
+/**
+ * Extract shell commands executed from inline code via `child_process` (Node)
+ * or `os.system` / `subprocess.*` (Python).
+ */
+function extractInlineShellPayloads(code) {
+  const payloads = []
+  const re = /\b(?:execSync|execFileSync|spawnSync|execFile|exec|spawn|system|systemSync|check_output|check_call|call|run|Popen)\s*\(\s*(['"`])((?:\\.|(?!\1)[\s\S])*?)\1/g
+  for (const m of String(code || '').matchAll(re)) {
+    const body = m[2]
+    if (body && /[;&|<>$`]|\s/.test(body)) payloads.push(body)
+  }
+  return payloads
+}
+
+
 function hasNodeEvalFlag(args) {
   let i = 0
   while (i < args.length) {
@@ -3993,6 +4253,12 @@ function hasPythonInlineCodeFlag(args) {
   return false
 }
 
+/**
+ * Write verbs whose argument list comes from `xargs` stdin when no explicit
+ * target is present (`printf 'README.md' | xargs rm`).
+ */
+const XARGS_WRITE_VERBS = new Set(['rm', 'rmdir', 'unlink', 'mv', 'cp', 'sed', 'perl', 'truncate', 'tee', 'touch', 'mkdir', 'ln'])
+
 export function extractCommandWriteTargetsWithCwd(command, cwd = process.cwd(), depth = 0) {
   if (!command || typeof command !== 'string' || depth > 4) return []
   const results = []
@@ -4020,6 +4286,10 @@ export function extractCommandWriteTargetsWithCwd(command, cwd = process.cwd(), 
 
       const words = tokenizeCommandLine(stripShellRedirection(rawStage), { keepEmpty: true })
       if (words.length === 0) return undefined
+
+      // `xargs` supplies stdin tokens as arguments; target-less write verbs are
+      // therefore indeterminate and resolve against the current directory.
+      const hadXargs = words.some((w) => commandBasename(w) === 'xargs')
 
       if (isPipeline) {
         const stdinText = extractUpstreamStdinScript(words, heredocs)
@@ -4154,6 +4424,10 @@ export function extractCommandWriteTargetsWithCwd(command, cwd = process.cwd(), 
             if (m[0].startsWith('rename')) pushTarget(m[1])
             pushTarget(m[2])
           }
+          // `node -e "require('child_process').execSync('rm -rf …')"` executes another shell
+          for (const payload of extractInlineShellPayloads(joined)) {
+            results.push(...extractCommandWriteTargetsWithCwd(payload, effectiveCwd, depth + 1))
+          }
         }
       } else if (verb === 'python' || verb === 'python3') {
         const hasC = hasPythonInlineCodeFlag(args)
@@ -4172,15 +4446,45 @@ export function extractCommandWriteTargetsWithCwd(command, cwd = process.cwd(), 
             if (m[0].includes('rename') || m[0].includes('replace') || m[0].includes('move')) pushTarget(m[1])
             pushTarget(m[2])
           }
+          for (const payload of extractInlineShellPayloads(joined)) {
+            results.push(...extractCommandWriteTargetsWithCwd(payload, effectiveCwd, depth + 1))
+          }
         }
       } else if (verb === 'perl' && hasInPlaceFlag(args, new Set(['-e', '-E', '-I', '-M', '-m', '-F']))) {
         for (const item of extractPerlInPlaceTargets(args)) {
           pushTarget(item)
         }
-      } else if (verb === 'find' && args.includes('-delete')) {
-        for (const rootTarget of extractFindSearchRoots(args)) {
-          pushTarget(rootTarget)
+      } else if (verb === 'find') {
+        if (args.includes('-delete')) {
+          for (const rootTarget of extractFindSearchRoots(args)) {
+            pushTarget(rootTarget)
+          }
         }
+        // `find <root> … -exec <cmd> {} +` runs `<cmd>` with matches under each root
+        const execPayloads = extractFindExecPayloads(args)
+        if (execPayloads.length > 0) {
+          for (const rootTarget of extractFindSearchRoots(args)) {
+            const execCwd = toFullPath(rootTarget, effectiveCwd) || effectiveCwd
+            for (const payloadWords of execPayloads) {
+              const payloadShell = parseShellInvocation(payloadWords)
+              if (payloadShell && payloadShell.inlineScript) {
+                results.push(...extractCommandWriteTargetsWithCwd(payloadShell.inlineScript, execCwd, depth + 1))
+                continue
+              }
+              const payloadText = payloadWords
+                .map((w) => (w === '{}' ? '.' : w))
+                .filter((w) => w !== '+' && w !== ';')
+                .join(' ')
+              if (!payloadText.trim()) continue
+              results.push(...extractCommandWriteTargetsWithCwd(payloadText, execCwd, depth + 1))
+            }
+          }
+        }
+      }
+      // `xargs` appends stdin tokens as arguments; without an explicit target the
+      // write verb receives unknown paths inherited from the current directory.
+      if (hadXargs && XARGS_WRITE_VERBS.has(verb) && collectNonOptionArgs(args, new Set()).length === 0) {
+        pushTarget('.')
       }
       return undefined
     },
@@ -4671,37 +4975,22 @@ export function decideMainBranchGitOp(command, cwd, options = {}, depth = 0) {
         const targetRoot = commandTargetRepoRoot(target)
         if (!ownerRoot || targetRoot !== ownerRoot) continue
 
-        const branchResult = spawnSync('git', ['-C', target, 'symbolic-ref', '--quiet', '--short', 'HEAD'], {
-          encoding: 'utf8',
-          timeout: 3000,
-        })
-        let branch = (branchResult.stdout || '').trim()
-        if (branch !== 'main' && Array.isArray(gitInfo.explicitGitDirs) && gitInfo.explicitGitDirs.length > 0) {
-          for (const gd of gitInfo.explicitGitDirs) {
-            const gdBranchRes = spawnSync('git', ['--git-dir', gd, 'symbolic-ref', '--quiet', '--short', 'HEAD'], {
-              encoding: 'utf8',
-              timeout: 3000,
-            })
-            if ((gdBranchRes.stdout || '').trim() === 'main') {
-              branch = 'main'
-              break
-            }
+        // 主检出必须保持在干净的 origin/main 上：分支身份由本地 HEAD 决定，
+        // 而 `git checkout -b` / `git symbolic-ref` 可以先切走分支再提交绕过
+        // 「分支 = main」判断，因此这里按**目标目录是否主检出**判定提交与合并，
+        // 不再依赖当前分支名。linked worktree 已在上面豁免。
+        if (isMerge) {
+          return {
+            decision: 'deny',
+            reason: 'forbidden-main-branch-merge',
+            cwd: target,
           }
         }
-        if (branch === 'main') {
-          if (isMerge) {
-            return {
-              decision: 'deny',
-              reason: 'forbidden-main-branch-merge',
-              cwd: target,
-            }
-          }
-          if (isCommit) {
-            return {
-              decision: 'deny',
-              reason: 'forbidden-main-branch-commit',
-              cwd: target,
-            }
+        if (isCommit) {
+          return {
+            decision: 'deny',
+            reason: 'forbidden-main-branch-commit',
+            cwd: target,
           }
         }
       }

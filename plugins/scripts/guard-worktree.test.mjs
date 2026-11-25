@@ -2404,4 +2404,168 @@ describe('adversarial hardening regressions (materialization / wrapper / frozen-
       'allow',
     )
   })
+
+  it('unwraps command-executing prefixes (eval/time/sudo/nice/timeout/stdbuf/setsid/xargs) and find -exec payloads (C6)', () => {
+    const evalScript = `cd "${mainRepoRoot}"; echo pwn > README.md`
+    const bashScript = `cd ${mainRepoRoot}; echo pwn > README.md`
+
+    for (const command of [
+      `eval "${evalScript}"`,
+      `eval '${evalScript}'`,
+      `builtin eval "${evalScript}"`,
+      `command eval "${evalScript}"`,
+      `time bash -c '${bashScript}'`,
+      `time -p bash -c '${bashScript}'`,
+      `sudo -n bash -c '${bashScript}'`,
+      `nice -n 5 bash -c '${bashScript}'`,
+      `nice -5 bash -c '${bashScript}'`,
+      `timeout -s KILL 5 bash -c '${bashScript}'`,
+      `stdbuf -o0 bash -c '${bashScript}'`,
+      `setsid bash -c '${bashScript}'`,
+      `echo x | xargs -I{} bash -c '${bashScript}'`,
+      `find . -maxdepth 1 -name README.md -exec bash -c '${bashScript}' {} +`,
+      `node -e "require('child_process').execSync('${evalScript}')"`,
+      `python3 -c "import os; os.system('${evalScript}')"`,
+    ]) {
+      assert.equal(
+        decideBashCommand({ command, cwd: worktreeRoot, ownerRoot: mainRepoRoot }).decision,
+        'deny',
+        `Expected C6 deny from worktree: ${command}`,
+      )
+    }
+
+    for (const command of [
+      `eval "echo pwn > ${mainRepoRoot}/README.md"`,
+      `time bash -c 'echo pwn > ${mainRepoRoot}/README.md'`,
+      `nice -n 5 bash -c 'echo pwn > ${mainRepoRoot}/README.md'`,
+      `timeout 5 bash -c 'echo pwn > ${mainRepoRoot}/README.md'`,
+      `stdbuf -oL bash -c 'echo pwn > ${mainRepoRoot}/README.md'`,
+      `find ${mainRepoRoot} -maxdepth 1 -name README.md -exec rm {} +`,
+      `echo README.md | xargs rm -f`,
+    ]) {
+      assert.equal(
+        decideBashCommand({ command, cwd: mainRepoRoot, ownerRoot: mainRepoRoot }).decision,
+        'deny',
+        `Expected C6 deny on primary: ${command}`,
+      )
+    }
+
+    // Zero-FP: wrappers around read-only/legit commands keep working
+    for (const command of [
+      `eval "echo ok"`,
+      `time npm run build`,
+      `time -p pnpm test`,
+      `nice -n 10 node script.mjs`,
+      `timeout 30 node --test x.mjs`,
+      `stdbuf -oL grep foo bar.txt`,
+      `setsid node daemon.mjs`,
+      `echo hi | xargs -n1 echo`,
+      `find . -name "*.md" -exec cat {} +`,
+      `find src -name "*.ts" -exec sed -n 1,5p {} +`,
+      `node -e "console.log(1+1)"`,
+      `python3 -c "print(1+1)"`,
+    ]) {
+      assert.equal(
+        decideBashCommand({ command, cwd: worktreeRoot, ownerRoot: mainRepoRoot }).decision,
+        'allow',
+        `Expected C6 zero-FP allow: ${command}`,
+      )
+    }
+
+    assert.equal(
+      decideWrite({ filePath: join(mainRepoRoot, 'package.json'), cwd: worktreeRoot, toolName: 'write' }).decision,
+      'deny',
+    )
+  })
+
+  it('matches pnpm nopt prefix/negation semantics and heredoc delimiters with # or $"..." (D1/D2)', () => {
+    const primaryFile = join(mainRepoRoot, 'package.json')
+    for (const command of [
+      `pnpm --shell-m exec 'echo pwn > ${primaryFile}'`,
+      `pnpm --shell-mod exec 'echo pwn > ${primaryFile}'`,
+      `pnpm --shell exec 'echo pwn > ${primaryFile}'`,
+      `pnpm --no-shell-mode=false exec 'echo pwn > ${primaryFile}'`,
+      `pnpm --no-config.shell-mode=false exec 'echo pwn > ${primaryFile}'`,
+      `pnpm --config.shell-m=true exec 'echo pwn > ${primaryFile}'`,
+      `pnpm --config.shell-mode=0 exec 'echo pwn > ${primaryFile}'`,
+      `cat <<A#B\nbody\nA#B\necho pwn > package.json`,
+      `cat <<-A#B\n\tbody\n\tA#B\necho pwn > package.json`,
+      `cat <<$"EOF"\nbody\nEOF\necho pwn > package.json`,
+      `cat <<$'EOF'\nbody\nEOF\necho pwn > package.json`,
+      `cat <<EOF # trailing note\nbody\nEOF\necho pwn > package.json`,
+    ]) {
+      assert.equal(
+        decideBashCommand({ command, cwd: mainRepoRoot, ownerRoot: mainRepoRoot }).decision,
+        'deny',
+        `Expected D1/D2 deny on primary: ${command}`,
+      )
+    }
+
+    for (const command of [
+      `pnpm --shell-mode=false exec 'echo ok'`,
+      `pnpm --shell-mode false exec 'echo ok'`,
+      `pnpm --no-shell-mode exec 'echo ok'`,
+      `pnpm --config.shell-mode=false exec 'echo ok'`,
+      `pnpm --no-config.shell-mode exec 'echo ok'`,
+      `pnpm exec eslint src`,
+      `cat <<'A#B'\nit's fine\nA#B\n[[ "b" > "a" ]] && echo ok`,
+      `cat <<EOF # trailing note\nbody\nEOF\n[[ "b" > "a" ]] && echo ok`,
+      `cat <<A#B\nbody\nA#B\necho ok`,
+    ]) {
+      assert.equal(
+        decideBashCommand({ command, cwd: mainRepoRoot, ownerRoot: mainRepoRoot }).decision,
+        'allow',
+        `Expected D1/D2 zero-FP allow: ${command}`,
+      )
+    }
+  })
+
+  it('replays function-call cwd effects and blocks primary commits after a branch switch (D3/D4)', () => {
+    for (const command of [
+      `f() { cd "${mainRepoRoot}"; }; cd /tmp; f; echo pwn > package.json`,
+      `f() {\n  cd "${mainRepoRoot}"\n}\ncd /tmp\nf\necho pwn > package.json`,
+      `f() { pushd "${mainRepoRoot}" >/dev/null; }; cd /tmp && f && echo pwn > package.json`,
+    ]) {
+      assert.equal(
+        decideBashCommand({ command, cwd: mainRepoRoot, ownerRoot: mainRepoRoot }).decision,
+        'deny',
+        `Expected D3 deny on primary: ${command}`,
+      )
+      assert.equal(
+        decideBashCommand({ command, cwd: worktreeRoot, ownerRoot: mainRepoRoot }).decision,
+        'deny',
+        `Expected D3 deny from worktree: ${command}`,
+      )
+    }
+
+    for (const command of [
+      `f() { echo hi; }; cd /tmp; f; echo ok`,
+      `f() { cd /tmp; }; f; echo ok`,
+    ]) {
+      assert.equal(
+        decideBashCommand({ command, cwd: mainRepoRoot, ownerRoot: mainRepoRoot }).decision,
+        'allow',
+        `Expected D3 zero-FP allow: ${command}`,
+      )
+    }
+
+    // `git checkout -b x` on the primary must not re-enable commits there.
+    gitCommand(mainRepoRoot, 'checkout', '-b', 'guard-d4-probe')
+    try {
+      for (const command of [
+        `git -C "${mainRepoRoot}" commit --allow-empty -m pwn`,
+        `git -C "${mainRepoRoot}" merge --no-edit origin/main~0`,
+      ]) {
+        const result = decideBashCommand({ command, cwd: worktreeRoot, ownerRoot: mainRepoRoot })
+        assert.equal(result.decision, 'deny', `Expected D4 deny: ${command}`)
+      }
+      assert.equal(
+        decideBashCommand({ command: 'git commit -m x', cwd: worktreeRoot, ownerRoot: mainRepoRoot }).decision,
+        'allow',
+      )
+    } finally {
+      gitCommand(mainRepoRoot, 'checkout', 'main')
+      gitCommand(mainRepoRoot, 'branch', '-D', 'guard-d4-probe')
+    }
+  })
 })
