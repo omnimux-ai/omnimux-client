@@ -304,14 +304,14 @@ const updateInstaller = new NextUpdateInstaller({ platform: process.platform, ex
   language: () => windowsLanguage,
   log: error => runtime.diagnostics.append(String(error), 'warn') })
 const updatePortable = isWindowsPortableCopy(process.platform, app.isPackaged, process.execPath)
-const updateEnvironment: OmniMuxUpdateEnvironment = process.platform === 'linux'
-  ? 'linux'
-  : updatePortable
-    ? 'portable'
-    : !app.isPackaged
-      ? 'source'
-      : identity.releaseChannel === 'development'
-        ? 'dev'
+const updateEnvironment: OmniMuxUpdateEnvironment = !app.isPackaged
+  ? 'source'
+  : identity.releaseChannel === 'development'
+    ? 'dev'
+    : process.platform === 'linux'
+      ? 'linux'
+      : updatePortable
+        ? 'portable'
         : 'production'
 const updates = new NextUpdates({
   version,

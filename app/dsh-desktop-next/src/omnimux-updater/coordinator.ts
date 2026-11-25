@@ -643,6 +643,7 @@ export class OmniMuxUpdateCoordinator {
     clearTimeout(this.timer)
     this.controller?.abort()
     await this.operation
+    await this.cacheReady?.catch(() => undefined)
     if (this.directory !== undefined && !keepInstaller) {
       await rm(this.directory, { recursive: true, force: true }).catch(this.options.log)
       this.directory = undefined

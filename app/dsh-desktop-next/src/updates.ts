@@ -51,9 +51,10 @@ export interface NextUpdateOptions {
 
 function resolveEnvironment(options: NextUpdateOptions): OmniMuxUpdateEnvironment {
   if (options.environment !== undefined) return options.environment
+  if (!options.packaged) return 'source'
   if (options.platform === 'linux') return 'linux'
   if (options.portable === true) return 'portable'
-  return options.packaged ? 'production' : 'source'
+  return 'production'
 }
 
 export class NextUpdates extends OmniMuxUpdateCoordinator {

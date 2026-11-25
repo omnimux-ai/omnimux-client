@@ -178,6 +178,14 @@ it('polls on Linux without installation UUID, notifies once and leaves download 
   await updates.download()
   expect(updates.snapshot()).toMatchObject({ phase: 'error', error: 'unsupported' })
   expect(request).toHaveBeenCalledOnce()
+
+  // Unpackaged Linux source runs must resolve as 'source' and never start background cache/poll I/O.
+  const sourceLinux = await fixture({ platform: 'linux', packaged: false })
+  expect(sourceLinux.updates.snapshot()).toMatchObject({ environment: 'source', installable: false })
+  sourceLinux.updates.start()
+  await vi.advanceTimersByTimeAsync(60_000)
+  expect(sourceLinux.request).not.toHaveBeenCalled()
+  expect(existsSync(join(sourceLinux.options.userData, 'omnimux-updates'))).toBe(false)
 })
 
 it('recognizes a packaged Windows copy without the uninstaller Setup writes beside it as portable', () => {
