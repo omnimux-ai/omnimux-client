@@ -13,6 +13,7 @@
  * hardcoded row data remains.
  */
 
+import { getCanonicalBrandName, isValidBrandId, sanitizeBrandIconPath } from './brand-contract.js';
 import { loadAll, DEFAULT_SPECS_DIR } from './contract/load.js';
 import { checkAdmission } from './contract/admission.js';
 import { CANONICAL_SCHEMA_VERSION } from './contract/schema.js';
@@ -178,6 +179,100 @@ export function mergeInputCapability(ops) {
 }
 
 /**
+ * Resolve validated brand presentation fields for a projected model row.
+ * Prefers fields attached on the runtime model and falls back to the gateway
+ * snapshot row/dictionary so local-YAML models also inherit gateway brand truth.
+ *
+ * @param {object} model
+ * @param {object} [snapshot]
+ * @returns {{ brandId?: string, brandName?: string, brandIconPath?: string }}
+ */
+export function resolveProjectedBrand(model, snapshot) {
+  const snapshotModel = findSnapshotModel(snapshot, model?.id);
+  const snapshotBrands = snapshot?.brands && typeof snapshot.brands === 'object' && !Array.isArray(snapshot.brands)
+    ? snapshot.brands
+    : {};
+  const snapshotContract = snapshotModel?.contract && typeof snapshotModel.contract === 'object'
+    ? snapshotModel.contract
+    : {};
+  const rawBrandId = model?.brandId
+    ?? snapshotModel?.brandId
+    ?? snapshotModel?.brand_id
+    ?? snapshotContract?.brand_id
+    ?? snapshotContract?.brandId;
+  const brandId = isValidBrandId(rawBrandId) ? rawBrandId : undefined;
+  const brandMeta = brandId
+    && Object.hasOwn(snapshotBrands, brandId)
+    && snapshotBrands[brandId]
+    && typeof snapshotBrands[brandId] === 'object'
+    ? snapshotBrands[brandId]
+    : undefined;
+  const rawName = (typeof model?.brandName === 'string' && model.brandName.trim())
+    || (typeof snapshotModel?.brandName === 'string' && snapshotModel.brandName.trim())
+    || (typeof snapshotModel?.brand_name === 'string' && snapshotModel.brand_name.trim())
+    || (typeof snapshotContract?.brand_name === 'string' && snapshotContract.brand_name.trim())
+    || (typeof brandMeta?.name === 'string' && brandMeta.name.trim())
+    || (brandId ? getCanonicalBrandName(brandId) : null)
+    || undefined;
+  const rawIconPath = (typeof model?.brandIconPath === 'string' && model.brandIconPath.length > 0)
+    ? model.brandIconPath
+    : ((typeof brandMeta?.iconPath === 'string' && brandMeta.iconPath.length > 0)
+        ? brandMeta.iconPath
+        : brandMeta?.icon_path);
+  const iconPath = sanitizeBrandIconPath(rawIconPath) ?? undefined;
+  return {
+    ...(brandId ? { brandId } : {}),
+    ...(rawName ? { brandName: rawName } : {}),
+    ...(iconPath ? { brandIconPath: iconPath } : {}),
+  };
+}
+
+/**
+ * Build a scoped top-level `brands` dictionary containing only brands
+ * referenced by the supplied projected rows/models.
+ *
+ * @param {Array<object>} rows
+ * @param {object} [snapshot]
+ * @returns {Record<string, { id: string, name: string, iconPath?: string }>}
+ */
+export function collectProjectedBrands(rows, snapshot) {
+  const snapshotBrands = snapshot?.brands && typeof snapshot.brands === 'object' && !Array.isArray(snapshot.brands)
+    ? snapshot.brands
+    : {};
+  /** @type {Record<string, { id: string, name: string, iconPath?: string }>} */
+  const out = {};
+  for (const row of Array.isArray(rows) ? rows : []) {
+    if (!row || typeof row !== 'object') continue;
+    const brandId = isValidBrandId(row.brandId) ? row.brandId : '';
+    if (!brandId || Object.hasOwn(out, brandId)) continue;
+    const meta = Object.hasOwn(snapshotBrands, brandId)
+      && snapshotBrands[brandId]
+      && typeof snapshotBrands[brandId] === 'object'
+      ? snapshotBrands[brandId]
+      : {};
+    const name = (typeof row.brandName === 'string' && row.brandName.trim())
+      || (typeof meta.name === 'string' && meta.name.trim())
+      || getCanonicalBrandName(brandId)
+      || brandId;
+    const rawIconPath = (typeof row.brandIconPath === 'string' && row.brandIconPath.length > 0)
+      ? row.brandIconPath
+      : ((typeof meta.iconPath === 'string' && meta.iconPath.length > 0)
+          ? meta.iconPath
+          : meta.icon_path);
+    const iconPath = sanitizeBrandIconPath(rawIconPath);
+    out[brandId] = {
+      id: brandId,
+      name,
+      ...(iconPath ? { iconPath } : {}),
+    };
+  }
+  /** @type {Record<string, { id: string, name: string, iconPath?: string }>} */
+  const sorted = {};
+  for (const key of Object.keys(out).sort()) sorted[key] = out[key];
+  return sorted;
+}
+
+/**
  * Project one legacy-shaped catalog row from a model + the ops that justify it.
  * @param {object} model
  * @param {object[]} ops
@@ -187,6 +282,7 @@ export function mergeInputCapability(ops) {
 export function projectRow(model, ops, snapshot) {
   const availability = resolveCatalogAvailability(model, snapshot);
   const effectiveVersion = effectiveVideoVersion(model, snapshot);
+  const brand = resolveProjectedBrand(model, snapshot);
   /** @type {Record<string, unknown>} */
   const row = {
     id: model.id,
@@ -199,12 +295,15 @@ export function projectRow(model, ops, snapshot) {
     ...(model.providerId ? { providerId: model.providerId } : {}),
     ...(model.sourceLabel ? { sourceLabel: model.sourceLabel } : {}),
     ...(effectiveVersion !== undefined ? { effectiveVideoVersion: effectiveVersion } : {}),
+    ...(brand.brandId ? { brandId: brand.brandId } : {}),
+    ...(brand.brandName ? { brandName: brand.brandName } : {}),
+    ...(brand.brandIconPath ? { brandIconPath: brand.brandIconPath } : {}),
   };
   if (typeof model.badge === 'string') row.badge = model.badge;
   if (typeof model.subtitle === 'string') row.subtitle = model.subtitle;
   if (typeof model.family === 'string') {
     row.family = model.family;
-    const familyLabel = familyLabelFor(model.family);
+    const familyLabel = familyLabelFor(model.family, brand.brandName);
     if (familyLabel) row.familyLabel = familyLabel;
   }
   if (model.executionProfile && typeof model.executionProfile === 'object') {
@@ -367,6 +466,7 @@ export function projectModelDto(model, dispositionsDoc, snapshot) {
   const row = resolveDisposition(dispositionsDoc, model.id);
   const availability = resolveCatalogAvailability(model, snapshot);
   const effectiveVersion = effectiveVideoVersion(model, snapshot);
+  const brand = resolveProjectedBrand(model, snapshot);
   return {
     id: model.id,
     label: model.label,
@@ -378,7 +478,10 @@ export function projectModelDto(model, dispositionsDoc, snapshot) {
     ...(model.providerId ? { providerId: model.providerId } : {}),
     ...(model.sourceLabel ? { sourceLabel: model.sourceLabel } : {}),
     ...(effectiveVersion !== undefined ? { effectiveVideoVersion: effectiveVersion } : {}),
-    ...(typeof model.family === 'string' ? { family: model.family, familyLabel: familyLabelFor(model.family) } : {}),
+    ...(brand.brandId ? { brandId: brand.brandId } : {}),
+    ...(brand.brandName ? { brandName: brand.brandName } : {}),
+    ...(brand.brandIconPath ? { brandIconPath: brand.brandIconPath } : {}),
+    ...(typeof model.family === 'string' ? { family: model.family, familyLabel: familyLabelFor(model.family, brand.brandName) } : {}),
     ...(typeof model.badge === 'string' ? { badge: model.badge } : {}),
     ...(typeof model.subtitle === 'string' ? { subtitle: model.subtitle } : {}),
     ...(Array.isArray(model.aliases) ? { aliases: [...model.aliases] } : {}),
@@ -455,10 +558,15 @@ export function projectCatalog(index, dispositionsDoc, defaultsCfg = {}, snapsho
     defaultsCfg && typeof defaultsCfg === 'object' && defaultsCfg.byOperation && typeof defaultsCfg.byOperation === 'object'
       ? { ...defaultsCfg.byOperation }
       : {};
+  const brands = collectProjectedBrands(
+    [...models.filter((m) => m.visible !== false), ...lists.text, ...lists.image, ...lists.video, ...lists.audio],
+    snapshot,
+  );
   return {
     schemaVersion: CANONICAL_SCHEMA_VERSION,
     source: 'omnimux',
     models,
+    ...(Object.keys(brands).length > 0 ? { brands } : {}),
     text: lists.text,
     image: lists.image,
     video: lists.video,

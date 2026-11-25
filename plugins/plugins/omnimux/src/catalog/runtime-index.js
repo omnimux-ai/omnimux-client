@@ -11,7 +11,7 @@ import { contentFingerprint } from './contract/load.js'
 import { getHealthyContractIndex } from './project.js'
 import { resolveCurrentSnapshot } from './cloud/current.js'
 import { readBundledSnapshot } from './cloud/bundled.js'
-import { snapshotContentDigest } from './cloud/snapshot.js'
+import { snapshotPresentationDigest } from './cloud/snapshot.js'
 import { gatewayContractModels } from './gateway-contract.js'
 
 /** @type {Map<string, RuntimeIndexResult>} */
@@ -140,7 +140,7 @@ export function getRuntimeContractIndex(opts = {}) {
       gatewayDigest: null,
     }
   }
-  const key = `${localIndex?.contentFingerprint ?? ''}|${snapshot?.generatedAt ?? ''}|${snapshotContentDigest(withBundledGatewayContracts(snapshot))}`
+  const key = `${localIndex?.contentFingerprint ?? ''}|${snapshot?.generatedAt ?? ''}|${snapshotPresentationDigest(withBundledGatewayContracts(snapshot))}`
   const cached = runtimeCache.get(key)
   if (cached) return cached
   const result = mergeRuntimeContractIndex(localIndex, snapshot)

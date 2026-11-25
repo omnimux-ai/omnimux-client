@@ -17,6 +17,7 @@ import { applyLocalMediaProbe, collectRealPaths } from '../../shared/localMedia.
 import type { CapabilityCatalog } from '../../shared/api';
 import type { CanvasWorkspaceSnapshot } from '../../shared/canvasTypes';
 import {
+  getCachedCatalog,
   getCachedFingerprint,
   invalidateCachedCatalog,
   setCachedCatalog,
@@ -85,9 +86,12 @@ export function useCanvasBoot(opts: UseCanvasBootOptions = {}) {
           return;
         }
         const next = normalizeCatalog(result.body);
+        const cachedCatalog = getCachedCatalog();
         if (shouldReplaceCatalogCache({
           cachedFingerprint: getCachedFingerprint(),
           nextFingerprint: next.fingerprint,
+          cachedPresentationFingerprint: cachedCatalog?.presentationFingerprint,
+          nextPresentationFingerprint: next.presentationFingerprint,
           force,
         })) {
           setCachedCatalog(next);

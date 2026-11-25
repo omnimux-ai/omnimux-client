@@ -395,7 +395,15 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
 
   const modelOptions = useMemo(() => {
     return filteredModels.options.map((row) => {
-      const visuals = getModelVisuals(row.id, { family: row.family, kind: outputTypeForCompat });
+      const visuals = getModelVisuals(row.id, {
+        family: row.family,
+        kind: outputTypeForCompat,
+        brandId: row.brandId,
+        brandName: row.brandName,
+        brandIconPath: row.brandIconPath,
+        label: row.label,
+        brands: activeCatalog?.brands,
+      });
       const icon = visuals.icon;
       const badge = row.badge ?? visuals.badge;
       const subtitle = row.subtitle ?? visuals.subtitle;
@@ -414,7 +422,7 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
         disabled: row.executable === false,
       };
     });
-  }, [filteredModels.options, outputTypeForCompat]);
+  }, [filteredModels.options, outputTypeForCompat, activeCatalog?.brands]);
 
 
   const {
@@ -1108,6 +1116,7 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
               modelValue={modelValue}
               routing={routing}
               options={filteredModels.options}
+              brands={activeCatalog?.brands}
               execBusy={execBusy}
               runtimeSettings={effectiveRuntimeSettings}
               fallbackState={fallbackState}

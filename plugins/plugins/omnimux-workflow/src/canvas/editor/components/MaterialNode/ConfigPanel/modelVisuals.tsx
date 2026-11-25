@@ -9,6 +9,8 @@
  */
 
 import React from 'react';
+import { canonicalizeLocalBrandId, isValidBrandId } from 'dsh-ui-kit/model-brands';
+import type { CatalogBrandMeta } from '../../../../../shared/api';
 import { ModelBrandIcon } from '../../../../ui/ModelBrandIcon';
 
 export interface ModelVisualsResult {
@@ -17,12 +19,22 @@ export interface ModelVisualsResult {
   subtitle?: string;
 }
 
-/** Catalog context for one model row; both fields are optional (legacy catalogs omit them). */
+/** Catalog context for one model row; all fields are optional (legacy catalogs omit them). */
 export interface ModelVisualsContext {
   /** Contract `family` of the row (e.g. `midjourney`, `nanobanana`, `openai`). */
   family?: string;
   /** Output type the picker renders for; disambiguates families that span modalities. */
   kind?: string;
+  /** Canonical gateway vendor brand slug. */
+  brandId?: string;
+  /** Gateway human-readable brand display name. */
+  brandName?: string;
+  /** Optional validated gateway fallback SVG `<path d>`. */
+  brandIconPath?: string;
+  /** Display label for monogram fallback. */
+  label?: string;
+  /** Scoped gateway brand dictionary from the catalog. */
+  brands?: Readonly<Record<string, CatalogBrandMeta>> | null;
 }
 
 interface VisualRule {
@@ -69,28 +81,38 @@ const FAMILY_RULES: ReadonlyArray<readonly [string, VisualRule & { kind?: string
 ];
 
 /** Fallback for catalogs without contract rows (ids only). Mirrors the family rules above. */
-const LEGACY_ID_RULES: ReadonlyArray<VisualRule & { match: (id: string) => boolean }> = [
+const LEGACY_ID_RULES: ReadonlyArray<VisualRule & { brandIds: readonly string[]; kind?: string; match: (id: string) => boolean }> = [
   {
+    brandIds: ['google'],
+    kind: 'image',
     match: (id) => id.startsWith('nanobanana') || id.startsWith('nano-banana'),
     badge: 'Yearly -20%',
     getSubtitle: () => 'auto-4K',
   },
   {
+    brandIds: ['bytedance'],
+    kind: 'image',
     match: (id) => id.startsWith('seedream'),
     badge: 'Yearly -20%',
     getSubtitle: (id) => (id.includes('5.0') || id.includes('5-0') ? '1K-2K' : '2K-4K'),
   },
   {
+    brandIds: ['midjourney'],
+    kind: 'image',
     match: (id) => id.startsWith('midjourney') || id.startsWith('mj-'),
     badge: 'Yearly -20%',
     getSubtitle: (id) => (id.includes('8.1') || id.includes('8-1') ? '2K' : '1080P'),
   },
   {
+    brandIds: ['openai'],
+    kind: 'image',
     match: (id) => id.startsWith('gpt-image') || id.startsWith('openai'),
     badge: 'Yearly -20%',
     getSubtitle: () => '1k-4k',
   },
   {
+    brandIds: ['kling'],
+    kind: 'video',
     match: (id) => id.startsWith('kling'),
     getSubtitle: (id) => {
       if (id === 'kling-o3') return '4K · 3-15s';
@@ -99,10 +121,14 @@ const LEGACY_ID_RULES: ReadonlyArray<VisualRule & { match: (id: string) => boole
     },
   },
   {
+    brandIds: ['alibaba'],
+    kind: 'video',
     match: (id) => id.startsWith('wan'),
     getSubtitle: () => '720P-1080P · 5-15s',
   },
   {
+    brandIds: ['google', 'veo'],
+    kind: 'video',
     match: (id) => id.startsWith('veo'),
     getSubtitle: () => '720p-1080p · 8s',
   },
@@ -120,7 +146,18 @@ function buildResult(icon: React.ReactNode, id: string, rule: VisualRule): Model
  * @param context Contract family and output kind of the row, when the catalog exposes them.
  */
 export function getModelVisuals(id: string, context: ModelVisualsContext = {}): ModelVisualsResult {
-  const icon = <ModelBrandIcon modelId={id} size={15} />;
+  const icon = (
+    <ModelBrandIcon
+      modelId={id}
+      brandId={context.brandId}
+      brandName={context.brandName}
+      brandIconPath={context.brandIconPath}
+      family={context.family}
+      label={context.label}
+      brands={context.brands}
+      size={15}
+    />
+  );
   const family = typeof context.family === 'string' ? context.family.trim().toLowerCase() : '';
   if (family) {
     for (const [name, rule] of FAMILY_RULES) {
@@ -129,7 +166,13 @@ export function getModelVisuals(id: string, context: ModelVisualsContext = {}): 
       return buildResult(icon, id, rule);
     }
   }
+  const explicitBrandId = isValidBrandId(context.brandId) ? context.brandId : '';
+  const explicitCanonicalBrand = explicitBrandId
+    ? (canonicalizeLocalBrandId(explicitBrandId) ?? explicitBrandId)
+    : '';
   for (const rule of LEGACY_ID_RULES) {
+    if (explicitCanonicalBrand && !rule.brandIds.includes(explicitCanonicalBrand)) continue;
+    if (context.kind && rule.kind && rule.kind !== context.kind) continue;
     if (rule.match(id)) return buildResult(icon, id, rule);
   }
   return { icon };

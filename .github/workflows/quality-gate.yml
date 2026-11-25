@@ -97,6 +97,7 @@ jobs:
           node --check scripts/verify-skill-bilingual.mjs
           node --check scripts/verify-skill-hygiene.mjs
           node --check scripts/verify-global-skills.mjs
+          node --check scripts/verify-dsw-tokens.mjs
           node --check scripts/generate-featured-skills.mjs
           node --check scripts/report-blocker.mjs
           node --check scripts/lib/silent-catch-delta.mjs
@@ -112,12 +113,14 @@ jobs:
       - name: Forbid tracked omnimux-workflow artifacts
         run: node scripts/check-tracked-artifacts.mjs
 
-      # 仓库静态门禁：插件边界、双语配对、AGENTS.md 预算与链接（侧栏契约需 dsh-ui-kit 实物依赖，暂不入此环境）。
+      # 仓库静态门禁：插件边界、双语配对、AGENTS.md 预算与链接、--dsw-* Token 真源白名单/棘轮（侧栏契约需 dsh-ui-kit 实物依赖，暂不入此环境）。
       # 静默吞错为告警档（恒以成功状态退出，只打印存量清单），豁免清单出现僵尸条目才失败。
       - name: Repo gate scripts (boundaries, bilingual, AGENTS.md)
         run: |
           node scripts/verify-plugin-boundaries.mjs
           node scripts/verify-bilingual-docs.mjs
+          node scripts/verify-dsw-tokens.mjs
+          node --test scripts/verify-dsw-tokens.test.mjs
           node scripts/verify-silent-catch.mjs
           node --test scripts/verify-silent-catch.test.mjs
           node scripts/verify-message-source-kinds.mjs

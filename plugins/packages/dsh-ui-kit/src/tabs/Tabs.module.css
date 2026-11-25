@@ -80,14 +80,14 @@
 }
 
 .pill .tabItem.active {
-  background: var(--dsw-alias-bg-elevated);
+  background: var(--dsw-alias-bg-layer-3);
   color: var(--dsw-alias-label-primary);
   font-weight: 600;
   box-shadow: 0 1px 2px var(--dsw-alias-border-l1);
 }
 
 .pill .tabItem.active:hover {
-  background: var(--dsw-alias-bg-elevated);
+  background: var(--dsw-alias-bg-layer-3);
   color: var(--dsw-alias-label-primary);
 }
 

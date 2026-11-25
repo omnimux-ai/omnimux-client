@@ -8,6 +8,7 @@
  * establish.
  */
 
+import { isValidBrandId, sanitizeBrandIconPath } from './brand-contract.js'
 import { mapLegacyOperation } from './contract/legacy-operation-map.js'
 import { approvedOperationLabel, approvedVideoModeLabels } from './contract/operation-label.js'
 import { executionProfileFromContract, isExecutionProfileComplete, mergeExecutionProfiles } from './execution-profile.js'
@@ -102,8 +103,22 @@ function humanizeId(id) {
 }
 
 /** Infer a display family when the gateway model has no local contract. */
-function familyFor(id, contract) {
+function familyFor(id, contract, brandId = '') {
   const prefix = String(id).toLowerCase()
+  if (brandId) {
+    // Preserve product sub-families only under their owning canonical vendor so
+    // an unrelated id prefix (e.g. `gpt-acme-vision` with `brand_id: acme-labs`)
+    // never hijacks a gateway-declared brand into another vendor's family.
+    if (brandId === 'bytedance') {
+      if (prefix.startsWith('seedance')) return 'seedance'
+      if (prefix.startsWith('seedream')) return 'seedream'
+    }
+    if (brandId === 'alibaba') {
+      if (prefix.startsWith('wan')) return 'wan'
+      if (prefix.startsWith('happyhorse')) return 'happyhorse'
+    }
+    return brandId
+  }
   if (prefix.startsWith('gemini') || prefix.startsWith('nano-banana') || prefix.startsWith('imagen')) return 'google'
   if (prefix.startsWith('gpt') || prefix.startsWith('dall-e') || prefix.startsWith('openai')) return 'openai'
   if (prefix.startsWith('claude')) return 'anthropic'
@@ -123,7 +138,8 @@ function familyFor(id, contract) {
 
 /** @param {unknown} family */
 function groupForFamily(family) {
-  return GROUP_BY_FAMILY[text(family)] ?? null
+  const key = text(family)
+  return Object.hasOwn(GROUP_BY_FAMILY, key) ? GROUP_BY_FAMILY[key] : null
 }
 
 /** @param {string} format */
@@ -649,19 +665,53 @@ function effectiveVideoOperations(groups, profiles, contract) {
 }
 
 /**
+ * Resolve validated gateway brand presentation fields for a snapshot model.
+ *
+ * @param {Record<string, unknown>} snapshotModel
+ * @param {Record<string, unknown>} contract
+ * @param {Record<string, unknown>} snapshotBrands
+ * @returns {{ brandId: string, brandName: string, brandIconPath: string }}
+ */
+function resolveGatewayBrand(snapshotModel, contract, snapshotBrands) {
+  const rawRowId = snapshotModel.brandId !== undefined ? snapshotModel.brandId : snapshotModel.brand_id
+  const rawContractId = contract.brand_id !== undefined ? contract.brand_id : contract.brandId
+  const brandId = isValidBrandId(rawRowId)
+    ? rawRowId
+    : (isValidBrandId(rawContractId) ? rawContractId : '')
+  const brandMeta = brandId && Object.hasOwn(snapshotBrands, brandId)
+    ? object(snapshotBrands[brandId])
+    : {}
+  const contractMatches = !brandId || rawContractId === brandId
+  const brandName = text(snapshotModel.brandName ?? snapshotModel.brand_name)
+    || (contractMatches ? text(contract.brand_name ?? contract.brandName) : '')
+    || text(brandMeta.name)
+  const rawIconPath = (typeof snapshotModel.brandIconPath === 'string' && snapshotModel.brandIconPath.length > 0)
+    ? snapshotModel.brandIconPath
+    : ((typeof snapshotModel.brand_icon_path === 'string' && snapshotModel.brand_icon_path.length > 0)
+        ? snapshotModel.brand_icon_path
+        : ((typeof brandMeta.iconPath === 'string' && brandMeta.iconPath.length > 0)
+            ? brandMeta.iconPath
+            : brandMeta.icon_path))
+  const brandIconPath = sanitizeBrandIconPath(rawIconPath) || ''
+  return { brandId, brandName, brandIconPath }
+}
+
+/**
  * Build one runtime model from a gateway contract.
  *
  * @param {Record<string, unknown>} snapshotModel
  * @param {object | null} localModel
  * @param {object} profiles
+ * @param {Record<string, unknown>} [snapshotBrands]
  * @returns {{ model: Record<string, unknown>, adapterSupported: boolean } | null}
  */
-function toRuntimeModel(snapshotModel, localModel, profiles) {
+function toRuntimeModel(snapshotModel, localModel, profiles, snapshotBrands = {}) {
   const contract = object(snapshotModel.contract)
   if (text(contract.schemaVersion) !== GATEWAY_CONTRACT_SCHEMA_VERSION) return null
   const gatewayOperations = array(contract.operations)
   if (gatewayOperations.length === 0) return null
-  const family = text(localModel?.family) || familyFor(text(snapshotModel.id), contract)
+  const brand = resolveGatewayBrand(snapshotModel, contract, snapshotBrands)
+  const family = text(localModel?.family) || familyFor(text(snapshotModel.id), contract, brand.brandId)
   const gatewayFamily = text(contract.family)
   const managementGroup = text(localModel?.managementGroup) || groupForFamily(gatewayFamily)
   if (!managementGroup) return null
@@ -701,6 +751,9 @@ function toRuntimeModel(snapshotModel, localModel, profiles) {
     id,
     label: (effectiveVideo && displayName) || text(localModel?.label) || (displayName && displayName !== id ? displayName : humanizeId(id)),
     ...(text(localModel?.family) ? { family: text(localModel.family) } : { family }),
+    ...(brand.brandId ? { brandId: brand.brandId } : {}),
+    ...(brand.brandName ? { brandName: brand.brandName } : {}),
+    ...(brand.brandIconPath ? { brandIconPath: brand.brandIconPath } : {}),
     ...(text(localModel?.badge) ? { badge: text(localModel.badge) } : {}),
     ...(text(localModel?.subtitle) ? { subtitle: text(localModel.subtitle) } : {}),
     ...(array(localModel?.aliases).length > 0 ? { aliases: [...localModel.aliases] } : {}),
@@ -757,6 +810,7 @@ export function gatewayContractModels(snapshot, localIndex, profiles = localInde
     ? (id) => localIndex.get(id)
     : () => undefined
 
+  const snapshotBrands = object(snapshot?.brands)
   for (const snapshotModel of array(snapshot?.models)) {
     if (!snapshotModel || typeof snapshotModel !== 'object') continue
     const id = text(snapshotModel.id)
@@ -768,7 +822,7 @@ export function gatewayContractModels(snapshot, localIndex, profiles = localInde
       if (!localHasListed) missingContract.push(id)
       continue
     }
-    const result = toRuntimeModel(/** @type {Record<string, unknown>} */ (snapshotModel), localModel, profiles)
+    const result = toRuntimeModel(/** @type {Record<string, unknown>} */ (snapshotModel), localModel, profiles, snapshotBrands)
     if (!result) {
       if (!localHasListed) missingContract.push(id)
       continue

@@ -17,6 +17,7 @@
  */
 
 import { createHash } from 'node:crypto'
+import { isValidBrandId, sanitizeBrandIconPath } from '../brand-contract.js'
 import { gatewayEnableGroups, gatewayGroupDisplay } from './view.js'
 
 export const CLOUD_SNAPSHOT_SCHEMA_VERSION = 1
@@ -155,6 +156,50 @@ function arrayOrKeyed(input, keys) {
 }
 
 /**
+ * Normalize and validate the optional top-level gateway `brands` map.
+ * Rejects malformed brand IDs or unsafe `icon_path` payloads fail-closed so
+ * untrusted markup can never enter the cached snapshot.
+ *
+ * @param {unknown} rawBrands
+ * @param {Array<{ code: string, detail?: string }>} issues
+ * @returns {Record<string, { id: string, name: string, iconPath?: string }>}
+ */
+function normalizeBrandsMap(rawBrands, issues) {
+  const source = objectOrEmpty(rawBrands)
+  /** @type {Record<string, { id: string, name: string, iconPath?: string }>} */
+  const out = {}
+  for (const key of Object.keys(source).sort()) {
+    const meta = objectOrEmpty(source[key])
+    const rawId = meta.id !== undefined ? meta.id : key
+    if (!isValidBrandId(rawId) || !isValidBrandId(key) || rawId !== key) {
+      issues.push({ code: 'invalid-brand-meta', detail: String(key) })
+      continue
+    }
+    const name = text(meta.name)
+    if (!name) {
+      issues.push({ code: 'invalid-brand-meta', detail: rawId })
+      continue
+    }
+    const rawIconPath = meta.icon_path !== undefined ? meta.icon_path : meta.iconPath
+    let iconPath
+    if (rawIconPath !== undefined && rawIconPath !== null && rawIconPath !== '') {
+      const safe = sanitizeBrandIconPath(rawIconPath)
+      if (!safe) {
+        issues.push({ code: 'invalid-brand-icon-path', detail: rawId })
+      } else {
+        iconPath = safe
+      }
+    }
+    out[rawId] = {
+      id: rawId,
+      name,
+      ...(iconPath ? { iconPath } : {}),
+    }
+  }
+  return out
+}
+
+/**
  * Normalize a `/api/pricing` payload.
  *
  * @param {unknown} payload
@@ -171,6 +216,7 @@ export function normalizePricingPayload(payload, opts = {}) {
     return { snapshot: emptySnapshot('pricing', opts, issues), issues }
   }
 
+  const brands = normalizeBrandsMap(root.brands, issues)
   const rawUsableGroups = root.usable_group ?? root.usableGroup
   const usableGroups = rawUsableGroups === undefined ? undefined : keyedObject(rawUsableGroups)
   /** @type {Map<string, object>} */
@@ -199,9 +245,27 @@ export function normalizePricingPayload(payload, opts = {}) {
       && (!enableGroups.includes(defaultGroup) || (usableGroups && !Object.hasOwn(usableGroups, defaultGroup)))))) {
       issues.push({ code: 'invalid-default-group', detail: id })
     }
+    const contract = objectOrEmpty(row.contract)
+    const rawRowBrandId = row.brand_id !== undefined ? row.brand_id : row.brandId
+    const rawContractBrandId = contract.brand_id !== undefined ? contract.brand_id : contract.brandId
+    let brandId = ''
+    if (rawRowBrandId !== undefined && rawRowBrandId !== null && rawRowBrandId !== '') {
+      if (isValidBrandId(rawRowBrandId)) brandId = rawRowBrandId
+      else issues.push({ code: 'invalid-brand-id', detail: id })
+    }
+    if (!brandId && rawContractBrandId !== undefined && rawContractBrandId !== null && rawContractBrandId !== '') {
+      if (isValidBrandId(rawContractBrandId)) brandId = rawContractBrandId
+      else issues.push({ code: 'invalid-brand-id', detail: id })
+    }
+    const contractMatchesBrand = !brandId || rawContractBrandId === brandId
+    const brandName = text(row.brand_name ?? row.brandName)
+      || (contractMatchesBrand ? text(contract.brand_name ?? contract.brandName) : '')
+      || (brandId && Object.hasOwn(brands, brandId) ? brands[brandId].name : '')
     models.set(id, {
       id,
       displayName: text(row.model_name) === id ? text(row.display_name) || id : text(row.model_name) || id,
+      ...(brandId ? { brandId } : {}),
+      ...(brandName ? { brandName } : {}),
       enableGroups,
       // An explicit empty default is distinct from a legacy response that omitted it.
       ...(hasDefault ? { defaultGroup } : {}),
@@ -218,8 +282,8 @@ export function normalizePricingPayload(payload, opts = {}) {
         // is present.
         expr: text(row.billing_expr ?? row.billingExpr) || null,
       },
-      contract: objectOrEmpty(row.contract),
-      contractPresent: Object.keys(objectOrEmpty(row.contract)).length > 0,
+      contract,
+      contractPresent: Object.keys(contract).length > 0,
       // Presence with no usable group is authoritative. An invalid declaration
       // must also stay on this branch, so it cannot revive the wide model rule.
       ...(Object.hasOwn(row, 'effective_video') ? {
@@ -248,6 +312,7 @@ export function normalizePricingPayload(payload, opts = {}) {
       auto: stringList(root.auto_groups ?? root.autoGroups),
     },
     ...(root.defaults && typeof root.defaults === 'object' ? { defaults: keyedObject(root.defaults) } : {}),
+    ...(Object.keys(brands).length > 0 ? { brands } : {}),
     coverage: {
       models: models.size,
       channels: null,
@@ -389,15 +454,40 @@ export function snapshotDigest(snapshot) {
 }
 
 /**
- * Digest of what the snapshot *says*, ignoring when it was fetched.
+ * Strip display-only brand fields from a normalized snapshot copy so execution
+ * and capability digests remain invariant to brand name / icon path updates.
  *
- * Change detection must not treat "fetched again a minute later" as new
- * content: `generatedAt` moves on every refresh, so the full identity digest
- * would make every refresh look changed. Runtime paths use this one.
- *
- * @param {unknown} snapshot
+ * @param {Record<string, unknown>} content
  */
-export function snapshotContentDigest(snapshot) {
+function stripPresentationBrandFields(content) {
+  delete content.brands
+  if (!Array.isArray(content.models)) return content
+  content.models = content.models.map((rawModel) => {
+    if (!rawModel || typeof rawModel !== 'object' || Array.isArray(rawModel)) return rawModel
+    const model = { .../** @type {Record<string, unknown>} */ (rawModel) }
+    delete model.brandId
+    delete model.brandName
+    delete model.brandIconPath
+    delete model.brand_id
+    delete model.brand_name
+    delete model.brand_icon_path
+    if (model.contract && typeof model.contract === 'object' && !Array.isArray(model.contract)) {
+      const contract = { .../** @type {Record<string, unknown>} */ (model.contract) }
+      delete contract.brand_id
+      delete contract.brand_name
+      delete contract.brand_icon_path
+      delete contract.brandId
+      delete contract.brandName
+      delete contract.brandIconPath
+      model.contract = contract
+    }
+    return model
+  })
+  return content
+}
+
+/** @param {unknown} snapshot */
+function normalizedDigestContent(snapshot) {
   const record = snapshot && typeof snapshot === 'object' && !Array.isArray(snapshot)
     ? /** @type {Record<string, unknown>} */ (snapshot)
     : {}
@@ -410,6 +500,35 @@ export function snapshotContentDigest(snapshot) {
       ? { ...model, enableGroups: gatewayGroupDisplay(model, gatewayEnableGroups(model)).orderedGroups }
       : model)
   }
+  return content
+}
+
+/**
+ * Execution/capability digest of what the snapshot *says*, ignoring when it was
+ * fetched and ignoring display-only brand metadata (`brands`, `brandId`,
+ * `brandName`, `contract.brand_id`, `contract.brand_name`).
+ *
+ * Feeds `catalog.fingerprint` so brand visual updates never trigger canvas
+ * `stale_fingerprint`, `input_changed`, or graph reconciliation.
+ *
+ * @param {unknown} snapshot
+ */
+export function snapshotContentDigest(snapshot) {
+  const content = stripPresentationBrandFields(normalizedDigestContent(snapshot))
+  return createHash('sha256').update(JSON.stringify(sortDeep(content))).digest('hex')
+}
+
+/**
+ * Full presentation + execution digest, ignoring only `generatedAt`.
+ *
+ * Used by cache persistence (`store.acceptRefresh`), live notifications, and
+ * runtime index caching so brand name or fallback `icon_path` updates flush to
+ * disk and refresh UI immediately while `snapshotContentDigest` stays stable.
+ *
+ * @param {unknown} snapshot
+ */
+export function snapshotPresentationDigest(snapshot) {
+  const content = normalizedDigestContent(snapshot)
   return createHash('sha256').update(JSON.stringify(sortDeep(content))).digest('hex')
 }
 

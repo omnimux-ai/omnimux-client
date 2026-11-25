@@ -1,4 +1,4 @@
-<!-- reviewed-through: 8d58f0c806e0c6fdb41d5faea7d70a54e1d57d24 (2026-11-23) -->
+<!-- reviewed-through: ba51fda433df5483345c3dc3f48beb7dd0d279ce (2026-11-24) -->
 # Lessons from merged work
 
 改动源码或评审 PR 前先读本页活跃条目。本页只留可公开的工程反模式与正反例，**严禁写入密钥、内部地址、本机绝对路径或未公开信息**。
@@ -20,12 +20,17 @@
   - 反例：`plugins/scripts/test-fixtures/style-dom-probe.mjs:134` 全局注入 `* { box-sizing: border-box; margin: 0; padding: 0; }`，掩盖了 `.sh-mkt` 只写 `.sh-mkt *` 漏写自身导致的 `+40px` 右侧溢出。
   - 正例：#224 `8d58f0c8`（补 `.sh-mkt { box-sizing: border-box }`，并在 `skills-expert-overflow.e2e.test.js` 用 `:where(...) { box-sizing: content-box }` 显式还原宿主默认盒模型完成双向证伪）。
 
-### 契约与运行时边界
+- **宿主契约与插件入口回归须挂接真实宿主包/真代理并覆盖延迟 `inject` 与完整入口执行，禁止仅靠手写旧契约假桩**（`seen 1` · 最近 `2026-11-24`）
+  - 为什么：手写宽松假桩会冻结在旧版服务签名或跳过 Cordis `inject` 代理守卫与不存在的主题 Token，导致单测和 `verify-plugin-load` 全绿而真机直接 `ReferenceError` 或 HTTP 502。
+  - 反例：#239 `4327ad1e`（`omnimux/src/client/index.js` 漏导入 `createGenerationFeedback` 致桌面启动崩溃，因无入口测试且 `verify-plugin-load` 未触发嵌套 `connection→sessions` 延迟 `inject` 潜伏 10 天）、#253 一轮 `17ce47bc`（未注入 `headlessSkill` 却直读 `ctx.headlessSkill`，被普通 JS 对象桩掩盖）、#259 `362f88c2`（`omnimux-publish` 5 套单测手写旧单调用 `ctx.tools.execute` 假桩，掩盖 DSH `0.2.2-rc.5` 批次契约 HTTP 502 及宿主不存在的 `--dsw-alias-label-inverse`）。
+  - 正例：#239（补 `client/index.test.js` 直接执行真实入口）、#253 `f9d27045`（改走 `readSeat(ctx, 'headlessSkill')` 并用真实 `@deepseek-ai/cordis` 探针证伪）、#259（新增 `hubtools-runtime.test.js` 挂接真实 `@deepseek-ai/dsh-tools` 并校验真实主题 Token）。
 
-- **网关、目录与宿主运行时契约单一真源，客户端不得自造默认值、推导命名或伪造就绪状态**（`seen 2` · 最近 `2026-11-23`）
-  - 为什么：把线路顺序、模式命名、请求头或宿主能力状态硬编码在客户端，上游契约演进时会触发多插件连续返修。
-  - 反例：#72/#74（DSH rc.3 会话读口漂移）、#107→#117（H3 对口型载荷与未发布已受理任务被误判失败）、#136（按参考图数量推导视频模式名）、#176（画布绕过目录默认线路与分组顺序）、#196（漏发 `X-Omnimux-Group` 请求头）、#209（市场伪造专家预设状态而非读取 `ctx.agentPresets`）。
-  - 正例：#136/#176（直接消费网关目录模式名、默认线路与分组顺序）、#209（统一经 `ctx.agentPresets` 读取真实安装态并展示可恢复错误）。
+- **测试与冒烟脚本不得原地覆写已跟踪文件或写入未忽略目录，产物必须落临时目录或 `.gitignore` 路径**（`seen 1` · 最近 `2026-11-24`）
+  - 为什么：测试或冒烟脚本每次运行就弄脏已跟踪文件或未忽略目录，会持续阻断 `sync-main` 净室物化门禁。
+  - 反例：#247 之前 `chat-media-gallery-rail-height.e2e.test.js` 原地覆写已跟踪的 `plugins/.agent-reports/gallery-rail-height-2101/e2e-evidence.json`，且 `dev-smoke.mjs` 落盘到未忽略目录。
+  - 正例：#247 `39a96534`（单测证据默认写入 `os.tmpdir()` 并于用例结束清理，冒烟产物统一落 `.gitignore` 已忽略的 `.workbuddy/evidence/dev-smoke/`）。
+
+### 契约与运行时边界
 
 - **异步交接、共享状态作用域与宿主主线程边界：跨会话/跨节点交接须带作用域与代际取消，Host 主线程严禁同步文件 I/O**（`seen 2` · 最近 `2026-11-22`）
   - 为什么：异步回执缺少作用域或代际取消，会导致草稿丢失、导入串节点或共享路由卡在加载态；Host 主线程同步扫盘会卡死桌面交互。
@@ -44,11 +49,6 @@
   - 反例：#1（以精简发布导出作开发基线致测试缺失）、#13（直接搬运未跑绿 WIP 暴露 4 条回归）、#14 初版（`PROVENANCE.json` 保留旧仓 commit）。
   - 正例：#4（恢复完整开发基线）、#14 `45aa422`（用 `git cat-file -t` 核对本仓真实提交）。
 
-- **内核与运行时基线切换须同步核对公开文档中的硬编码版本声明，避免并行合入即刻漂移**（`seen 1` · 最近 `2026-11-23`）
-  - 为什么：文档 PR 与内核升级 PR 并行合入且缺少跨文件版本一致性校验时，主干公开说明会立即落后于锁定真源 `dsh-version.json` / `app/upstream.json`。
-  - 反例：#221 `77fe4b17` 在 `README.md`、`docs/README.zh-CN.md` 与 `app/docs/architecture.{md,en.md}` 写入 `0.2.1-rc.3`，28 分钟后 #208 `57c3b9bd` 将 `dsh-version.json` 与 `app/upstream.json` 切至 `next`（`0.2.2-rc.5`），导致主干文档版本滞后。
-  - 正例：内核升级合入前/后按 `dsh-version.json` 检索全仓硬编码版本同步收口，或纳入 `workspace-check` 机检。
-
 ## 已毕业（已转规则或门禁）
 
 | 主题 | 落地位置 |
@@ -58,3 +58,5 @@
 | `fix:` 回归测试存在性门禁 | [AGENTS.md · 一坑一测试](AGENTS.md#一坑一测试) · [verify-fix-regression-test.mjs](plugins/scripts/verify-fix-regression-test.mjs)（PR #207） |
 | 真实非空载荷与双向证伪回归测试（`seen 3`） | [AGENTS.md · 一坑一测试](AGENTS.md#一坑一测试)（#18/#49/#53/#90/#107/#132/#142） |
 | UI 真实渲染几何、连续操作与浮层防透底（`seen 3`） | [AGENTS.md · 合并与复核](AGENTS.md#合并与复核) · [guard-no-transparent-popover.mjs](plugins/scripts/guard-no-transparent-popover.mjs)（#45/#54/#112→#116/#155/#171） |
+| 公开文档 DSH 运行时版本声明一致性 | [verify-docs-dsh-version.mjs](scripts/verify-docs-dsh-version.mjs) · [workspace-check.mjs](scripts/workspace-check.mjs)（PR #256） |
+| 网关、目录与宿主运行时契约单一真源（`seen 3`） | [AGENTS.md · 硬约束](AGENTS.md#硬约束) · [verify-dsw-tokens.mjs](plugins/scripts/verify-dsw-tokens.mjs)（#264 / PR #266） |

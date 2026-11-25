@@ -1,0 +1,624 @@
+{
+  "version": 1,
+  "description": "Soft-shrink ratchet baseline for existing undefined --dsw-* references (#264). Only actual <= baseline is enforced; shrink freely via --update-baseline.",
+  "entries": {
+    "plugins/plugins/omnimux": {
+      "src/client/DshPluginsSection.jsx": {
+        "count": 2,
+        "tokens": [
+          "--dsw-text-primary",
+          "--dsw-text-secondary"
+        ],
+        "bare": 0,
+        "fallback": 2
+      },
+      "src/client/attachments/dockStyles.ts": {
+        "count": 1,
+        "tokens": [
+          "--dsw-alias-bg-elevated"
+        ],
+        "bare": 1,
+        "fallback": 0
+      },
+      "src/client/attachments/modalStyles.ts": {
+        "count": 2,
+        "tokens": [
+          "--dsw-alias-bg-elevated"
+        ],
+        "bare": 2,
+        "fallback": 0
+      },
+      "src/client/attachments/styles.css": {
+        "count": 3,
+        "tokens": [
+          "--dsw-alias-bg-elevated"
+        ],
+        "bare": 3,
+        "fallback": 0
+      },
+      "src/client/attachments/userMessageAttachmentsEnhancer.ts": {
+        "count": 2,
+        "tokens": [
+          "--dsw-alias-backdrop-overlay"
+        ],
+        "bare": 0,
+        "fallback": 2
+      },
+      "src/client/components/product-picker/ProductPickerButton.jsx": {
+        "count": 1,
+        "tokens": [
+          "--dsw-alias-border-hover"
+        ],
+        "bare": 1,
+        "fallback": 0
+      },
+      "src/client/components/product-picker/ProductPickerCard.jsx": {
+        "count": 3,
+        "tokens": [
+          "--dsw-alias-backdrop-overlay",
+          "--dsw-alias-border-solid"
+        ],
+        "bare": 0,
+        "fallback": 3
+      },
+      "src/client/composer-mode/styles.js": {
+        "count": 4,
+        "tokens": [
+          "--dsw-alias-shadow-sm",
+          "--dsw-alias-text-secondary",
+          "--dsw-alias-text-strong"
+        ],
+        "bare": 4,
+        "fallback": 0
+      },
+      "src/client/composer-quick-shortcuts/styles.js": {
+        "count": 2,
+        "tokens": [
+          "--dsw-alias-bg-elevated",
+          "--dsw-alias-state-success"
+        ],
+        "bare": 0,
+        "fallback": 2
+      },
+      "src/client/media-viewer/styles.js": {
+        "count": 15,
+        "tokens": [
+          "--dsw-alias-bg-elevated",
+          "--dsw-alias-border-hover",
+          "--dsw-alias-danger"
+        ],
+        "bare": 5,
+        "fallback": 10
+      },
+      "src/client/presets/styles.js": {
+        "count": 3,
+        "tokens": [
+          "--dsw-alias-shadow-lg",
+          "--dsw-alias-shadow-md"
+        ],
+        "bare": 0,
+        "fallback": 3
+      },
+      "src/client/session-guide/styles.js": {
+        "count": 16,
+        "tokens": [
+          "--dsw-alias-bg-elevated",
+          "--dsw-alias-border",
+          "--dsw-alias-border-hover",
+          "--dsw-alias-button-primary-text",
+          "--dsw-alias-interactive-bg-subtle"
+        ],
+        "bare": 9,
+        "fallback": 7
+      },
+      "src/client/styles.js": {
+        "count": 44,
+        "tokens": [
+          "--dsw-alias-bg-control-hover",
+          "--dsw-alias-bg-elevated",
+          "--dsw-alias-bg-primary",
+          "--dsw-alias-bg-secondary",
+          "--dsw-alias-border",
+          "--dsw-alias-label-accent",
+          "--dsw-alias-label-error",
+          "--dsw-alias-label-warning",
+          "--dsw-alias-success",
+          "--dsw-alias-surface-raised",
+          "--dsw-bg",
+          "--dsw-border",
+          "--dsw-text-primary",
+          "--dsw-text-secondary"
+        ],
+        "bare": 6,
+        "fallback": 38
+      },
+      "src/client/workbench/sidebar-controller.js": {
+        "count": 1,
+        "tokens": [
+          "--dsw-alias-bg-elevated"
+        ],
+        "bare": 0,
+        "fallback": 1
+      }
+    },
+    "plugins/plugins/omnimux-accounts": {
+      "src/client/platforms.js": {
+        "count": 4,
+        "tokens": [
+          "--dsw-platform-instagram",
+          "--dsw-platform-tiktok",
+          "--dsw-platform-x",
+          "--dsw-platform-youtube"
+        ],
+        "bare": 0,
+        "fallback": 4
+      },
+      "src/client/styles.js": {
+        "count": 49,
+        "tokens": [
+          "--dsw-alias-bg-elevated",
+          "--dsw-alias-bg-primary",
+          "--dsw-alias-bg-secondary",
+          "--dsw-alias-border",
+          "--dsw-alias-border-hover",
+          "--dsw-alias-state-warning-primary",
+          "--dsw-bg",
+          "--dsw-platform-facebook",
+          "--dsw-platform-tiktok",
+          "--dsw-platform-x",
+          "--dsw-platform-youtube",
+          "--dsw-text-primary"
+        ],
+        "bare": 0,
+        "fallback": 49
+      }
+    },
+    "plugins/plugins/omnimux-analytics": {
+      "src/client/components/FollowerEvolution.jsx": {
+        "count": 3,
+        "tokens": [
+          "--dsw-alias-brand-instagram",
+          "--dsw-alias-brand-twitter",
+          "--dsw-alias-brand-youtube"
+        ],
+        "bare": 0,
+        "fallback": 3
+      },
+      "src/client/components/StrategyCharts.jsx": {
+        "count": 3,
+        "tokens": [
+          "--dsw-alias-brand-instagram",
+          "--dsw-alias-brand-twitter",
+          "--dsw-alias-brand-youtube"
+        ],
+        "bare": 0,
+        "fallback": 3
+      },
+      "src/client/styles.js": {
+        "count": 22,
+        "tokens": [
+          "--dsw-alias-brand-instagram",
+          "--dsw-alias-brand-pink",
+          "--dsw-alias-brand-secondary",
+          "--dsw-alias-brand-tertiary",
+          "--dsw-alias-brand-twitter",
+          "--dsw-alias-brand-youtube",
+          "--dsw-alias-chart-heat-1",
+          "--dsw-alias-chart-heat-2",
+          "--dsw-alias-chart-heat-3",
+          "--dsw-alias-chart-heat-4",
+          "--dsw-alias-label-success",
+          "--dsw-alias-state-success-soft",
+          "--dsw-bg"
+        ],
+        "bare": 0,
+        "fallback": 22
+      }
+    },
+    "plugins/plugins/omnimux-assets": {
+      "src/asset-hub/styles/asset-hub-styles.js": {
+        "count": 1,
+        "tokens": [
+          "--dsw-alias-bg-elevated"
+        ],
+        "bare": 0,
+        "fallback": 1
+      },
+      "src/client/ArtifactNav.jsx": {
+        "count": 1,
+        "tokens": [
+          "--dsw-text-secondary"
+        ],
+        "bare": 0,
+        "fallback": 1
+      },
+      "src/client/DetailPanel.jsx": {
+        "count": 1,
+        "tokens": [
+          "--dsw-text-secondary"
+        ],
+        "bare": 0,
+        "fallback": 1
+      },
+      "src/client/MappingNav.jsx": {
+        "count": 9,
+        "tokens": [
+          "--dsw-alias-bg-elevated",
+          "--dsw-alias-border",
+          "--dsw-alias-label-danger",
+          "--dsw-alias-label-warning",
+          "--dsw-bg",
+          "--dsw-border",
+          "--dsw-text-secondary"
+        ],
+        "bare": 0,
+        "fallback": 9
+      },
+      "src/client/styles.js": {
+        "count": 23,
+        "tokens": [
+          "--dsw-alias-bg-card",
+          "--dsw-alias-bg-elevated",
+          "--dsw-alias-bg-secondary",
+          "--dsw-alias-border",
+          "--dsw-alias-border-hover",
+          "--dsw-alias-shadow-popover",
+          "--dsw-alias-shadow-strong",
+          "--dsw-bg"
+        ],
+        "bare": 16,
+        "fallback": 7
+      }
+    },
+    "plugins/plugins/omnimux-clip": {
+      "src/client/ClipStage.jsx": {
+        "count": 1,
+        "tokens": [
+          "--dsw-alias-label-danger"
+        ],
+        "bare": 1,
+        "fallback": 0
+      },
+      "src/client/live/canvas-relink-dialog.css": {
+        "count": 6,
+        "tokens": [
+          "--dsw-alias-bg-layer1",
+          "--dsw-alias-interactive-bg-selected",
+          "--dsw-alias-state-warning-primary"
+        ],
+        "bare": 2,
+        "fallback": 4
+      },
+      "src/client/store/timelineTypes.js": {
+        "count": 2,
+        "tokens": [
+          "--dsw-specific-caption-accent",
+          "--dsw-specific-caption-stroke"
+        ],
+        "bare": 0,
+        "fallback": 2
+      },
+      "src/client/theme/dsw-map.css": {
+        "count": 3,
+        "tokens": [
+          "--dsw-alias-bg-elevated",
+          "--dsw-alias-border",
+          "--dsw-alias-interactive-bg-selected"
+        ],
+        "bare": 0,
+        "fallback": 3
+      }
+    },
+    "plugins/plugins/omnimux-forms": {
+      "src/client/theme.js": {
+        "count": 1,
+        "tokens": [
+          "--dsw-alias-bg-elevated"
+        ],
+        "bare": 1,
+        "fallback": 0
+      }
+    },
+    "plugins/plugins/omnimux-inspiration": {
+      "src/client/collection-styles.js": {
+        "count": 1,
+        "tokens": [
+          "--dsw-alias-bg-elevated"
+        ],
+        "bare": 1,
+        "fallback": 0
+      },
+      "src/client/rival-styles.js": {
+        "count": 12,
+        "tokens": [
+          "--dsw-alias-bg-elevated",
+          "--dsw-alias-label-danger",
+          "--dsw-alias-label-warning",
+          "--dsw-alias-state-error-text",
+          "--dsw-specific-shadow-pop"
+        ],
+        "bare": 9,
+        "fallback": 3
+      },
+      "src/client/styles.js": {
+        "count": 20,
+        "tokens": [
+          "--dsw-alias-bg-elevated",
+          "--dsw-alias-bg-secondary",
+          "--dsw-alias-border",
+          "--dsw-alias-border-hover",
+          "--dsw-alias-state-warning-primary",
+          "--dsw-alias-state-warning-tertiary",
+          "--dsw-bg"
+        ],
+        "bare": 2,
+        "fallback": 18
+      }
+    },
+    "plugins/plugins/omnimux-market": {
+      "src/client/constants.js": {
+        "count": 1,
+        "tokens": [
+          "--dsw-alias-state-warn"
+        ],
+        "bare": 0,
+        "fallback": 1
+      },
+      "src/client/css.js": {
+        "count": 70,
+        "tokens": [
+          "--dsw-alias-accent-primary",
+          "--dsw-alias-bg-elevated",
+          "--dsw-alias-bg-subtle",
+          "--dsw-alias-bg-surface",
+          "--dsw-alias-border-default",
+          "--dsw-alias-border-focus",
+          "--dsw-alias-border-hover",
+          "--dsw-alias-border-subtle",
+          "--dsw-alias-brand-bg",
+          "--dsw-alias-brand-border",
+          "--dsw-alias-label-danger",
+          "--dsw-alias-mask-55",
+          "--dsw-alias-mask-92",
+          "--dsw-alias-shadow-color",
+          "--dsw-alias-shadow-overlay",
+          "--dsw-alias-state-warn",
+          "--dsw-alias-text-muted",
+          "--dsw-alias-text-secondary",
+          "--dsw-bg",
+          "--dsw-color-danger",
+          "--dsw-color-success",
+          "--dsw-color-warning",
+          "--dsw-font-code",
+          "--dsw-shadow-overlay",
+          "--dsw-static-white-38"
+        ],
+        "bare": 0,
+        "fallback": 70
+      }
+    },
+    "plugins/plugins/omnimux-products": {
+      "src/client/styles.js": {
+        "count": 12,
+        "tokens": [
+          "--dsw-alias-bg-elevated",
+          "--dsw-alias-shadow-elevated",
+          "--dsw-bg"
+        ],
+        "bare": 7,
+        "fallback": 5
+      }
+    },
+    "plugins/plugins/omnimux-publish": {
+      "src/client/styles.js": {
+        "count": 70,
+        "tokens": [
+          "--dsw-alias-backdrop-bg",
+          "--dsw-alias-bg-elevated",
+          "--dsw-alias-brand",
+          "--dsw-alias-brand-border",
+          "--dsw-alias-brand-subtle",
+          "--dsw-alias-label-inverse",
+          "--dsw-alias-platform-sph",
+          "--dsw-alias-platform-tiktok",
+          "--dsw-alias-platform-xhs",
+          "--dsw-alias-state-draft-subtle",
+          "--dsw-alias-state-error",
+          "--dsw-alias-state-error-subtle",
+          "--dsw-alias-state-error-text",
+          "--dsw-alias-state-partial-subtle",
+          "--dsw-alias-state-partial-text",
+          "--dsw-alias-state-publishing",
+          "--dsw-alias-state-publishing-subtle",
+          "--dsw-alias-state-success",
+          "--dsw-alias-state-success-subtle",
+          "--dsw-alias-state-success-text",
+          "--dsw-alias-state-warn",
+          "--dsw-alias-state-warn-subtle",
+          "--dsw-alias-state-warn-text",
+          "--dsw-alias-thumb-bg",
+          "--dsw-bg"
+        ],
+        "bare": 0,
+        "fallback": 70
+      }
+    },
+    "plugins/plugins/omnimux-tiktok-selection": {
+      "src/client/styles.js": {
+        "count": 40,
+        "tokens": [
+          "--dsw-alias-bg-hover",
+          "--dsw-alias-bg-layer",
+          "--dsw-alias-bg-muted",
+          "--dsw-alias-bg-secondary",
+          "--dsw-alias-bg-subtle",
+          "--dsw-alias-border-default",
+          "--dsw-alias-border-subtle",
+          "--dsw-alias-state-danger",
+          "--dsw-bg",
+          "--dsw-shadow-popover",
+          "--dsw-specific-shadow-popover"
+        ],
+        "bare": 24,
+        "fallback": 16
+      }
+    },
+    "plugins/plugins/omnimux-viewer": {
+      "src/media-viewer/MediaConfigControls.jsx": {
+        "count": 1,
+        "tokens": [
+          "--dsw-alias-state-success"
+        ],
+        "bare": 0,
+        "fallback": 1
+      }
+    },
+    "plugins/plugins/omnimux-workflow": {
+      "src/canvas/components/text-stage/text-stage.css": {
+        "count": 20,
+        "tokens": [
+          "--dsw-alias-accent-primary",
+          "--dsw-alias-code-inline",
+          "--dsw-alias-danger",
+          "--dsw-alias-info",
+          "--dsw-alias-link-hover",
+          "--dsw-alias-primary",
+          "--dsw-alias-primary-hover",
+          "--dsw-alias-success",
+          "--dsw-alias-warning"
+        ],
+        "bare": 0,
+        "fallback": 20
+      },
+      "src/canvas/editor/components/MaterialNode/ConfigPanel/ModelCascadeMenu.tsx": {
+        "count": 1,
+        "tokens": [
+          "--dsw-alias-label-danger"
+        ],
+        "bare": 1,
+        "fallback": 0
+      },
+      "src/canvas/editor/components/MaterialNode/ConfigPanel/index.tsx": {
+        "count": 2,
+        "tokens": [
+          "--dsw-alias-state-danger",
+          "--dsw-alias-text-primary"
+        ],
+        "bare": 2,
+        "fallback": 0
+      },
+      "src/canvas/editor/components/publish/PublishWizardModal.tsx": {
+        "count": 3,
+        "tokens": [
+          "--dsw-alias-label-success",
+          "--dsw-alias-label-warning"
+        ],
+        "bare": 0,
+        "fallback": 3
+      },
+      "src/canvas/theme/comfyPage.css": {
+        "count": 8,
+        "tokens": [
+          "--dsw-alias-bg-layer-0",
+          "--dsw-alias-state-error",
+          "--dsw-alias-state-success",
+          "--dsw-alias-state-warning"
+        ],
+        "bare": 0,
+        "fallback": 8
+      },
+      "src/canvas/theme/components.css": {
+        "count": 119,
+        "tokens": [
+          "--dsw-alias-badge-bg",
+          "--dsw-alias-bg-hover",
+          "--dsw-alias-bg-secondary",
+          "--dsw-alias-bg-tertiary",
+          "--dsw-alias-border",
+          "--dsw-alias-border-focus",
+          "--dsw-alias-border-hover",
+          "--dsw-alias-border-strong",
+          "--dsw-alias-border-subtle",
+          "--dsw-alias-brand-purple",
+          "--dsw-alias-control-bg-hover",
+          "--dsw-alias-control-primary",
+          "--dsw-alias-danger",
+          "--dsw-alias-fill-tertiary",
+          "--dsw-alias-label-brand",
+          "--dsw-alias-label-danger",
+          "--dsw-alias-label-success",
+          "--dsw-alias-label-warning",
+          "--dsw-alias-on-accent",
+          "--dsw-alias-on-primary",
+          "--dsw-alias-primary",
+          "--dsw-alias-success",
+          "--dsw-alias-warning",
+          "--dsw-specific-danger"
+        ],
+        "bare": 20,
+        "fallback": 99
+      },
+      "src/canvas/theme/workbench-theme.css": {
+        "count": 15,
+        "tokens": [
+          "--dsw-alias-bg-primary",
+          "--dsw-alias-bg-secondary",
+          "--dsw-alias-bg-tertiary",
+          "--dsw-alias-border",
+          "--dsw-alias-border-strong",
+          "--dsw-alias-brand-purple"
+        ],
+        "bare": 0,
+        "fallback": 15
+      },
+      "src/client/projects/folderStyles.js": {
+        "count": 3,
+        "tokens": [
+          "--dsw-alias-border-hover",
+          "--dsw-specific-ai-accent",
+          "--dsw-specific-media-bg"
+        ],
+        "bare": 1,
+        "fallback": 2
+      },
+      "src/client/projects/promptNewProjectName.js": {
+        "count": 1,
+        "tokens": [
+          "--dsw-alias-label-error"
+        ],
+        "bare": 1,
+        "fallback": 0
+      },
+      "src/client/styles.js": {
+        "count": 11,
+        "tokens": [
+          "--dsw-alias-border",
+          "--dsw-alias-border-hover",
+          "--dsw-alias-brand-purple",
+          "--dsw-alias-label-danger",
+          "--dsw-alias-label-error",
+          "--dsw-alias-surface-raised",
+          "--dsw-bg"
+        ],
+        "bare": 10,
+        "fallback": 1
+      },
+      "src/director/controls.css": {
+        "count": 12,
+        "tokens": [
+          "--dsw-alias-border"
+        ],
+        "bare": 12,
+        "fallback": 0
+      },
+      "src/director/services.ts": {
+        "count": 1,
+        "tokens": [
+          "--dsw-alias-border"
+        ],
+        "bare": 1,
+        "fallback": 0
+      }
+    }
+  }
+}

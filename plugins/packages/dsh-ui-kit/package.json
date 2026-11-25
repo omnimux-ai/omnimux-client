@@ -18,6 +18,10 @@
       "types": "./src/native-file-picker.d.ts",
       "default": "./src/native-file-picker.js"
     },
+    "./model-brands": {
+      "types": "./src/model-brands.d.ts",
+      "default": "./src/model-brands.js"
+    },
     "./package.json": "./package.json"
   },
   "files": [
@@ -34,7 +38,8 @@
   "scripts": {
     "build": "tsdown",
     "typecheck": "tsc --noEmit",
-    "check": "pnpm typecheck && pnpm build",
+    "test": "node --test \"src/*.test.js\" \"src/**/*.test.js\"",
+    "check": "pnpm typecheck && pnpm build && pnpm test",
     "prepublishOnly": "node ../../scripts/verify-publish-source.mjs ."
   },
   "peerDependencies": {
