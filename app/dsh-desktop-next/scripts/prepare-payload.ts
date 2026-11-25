@@ -363,6 +363,45 @@ export interface PreparePayloadOptions {
 }
 
 /**
+ * Strip unused-feature packages omitted from the packaged `node_modules` out of the packaged root
+ * manifest (`dependencies`, `optionalDependencies`, and `dsh.optionalBundles`). Leaving an excluded
+ * official optional bundle such as `@deepseek-ai/dsh-experimental-voice-input-bundle` in
+ * `app.asar/package.json` makes `@deepseek-ai/dsh-plugin-manager` treat it as installation-shipped,
+ * fail to read its missing manifest, and surface a broken "Not installed / Problem" card in Plugins.
+ * @param manifest - Parsed source application manifest.
+ * @returns A pruned manifest when any entry matched the unused-feature table, else undefined.
+ */
+function stripUnusedFeatureManifestDeclarations(manifest: Record<string, unknown>): Record<string, unknown> | undefined {
+  let changed = false
+  const next: Record<string, unknown> = { ...manifest }
+  for (const field of ['dependencies', 'optionalDependencies'] as const) {
+    const record = next[field]
+    if (record !== null && typeof record === 'object' && !Array.isArray(record)) {
+      const entries = Object.entries(record as Record<string, unknown>)
+      const kept = entries.filter(([name]) => nextRuntimeUnusedFeatureExclusion(name) === undefined)
+      if (kept.length !== entries.length) {
+        next[field] = Object.fromEntries(kept)
+        changed = true
+      }
+    }
+  }
+  const dsh = next.dsh
+  if (dsh !== null && typeof dsh === 'object' && !Array.isArray(dsh)) {
+    const dshRecord = dsh as Record<string, unknown>
+    if (Array.isArray(dshRecord.optionalBundles)) {
+      const kept = dshRecord.optionalBundles.filter(
+        name => typeof name !== 'string' || nextRuntimeUnusedFeatureExclusion(name) === undefined,
+      )
+      if (kept.length !== dshRecord.optionalBundles.length) {
+        next.dsh = { ...dshRecord, optionalBundles: kept }
+        changed = true
+      }
+    }
+  }
+  return changed ? next : undefined
+}
+
+/**
  * Materialize the payload: the shell files, the application manifest as electron-builder would
  * transform it, the production closure with the file policy applied and every manifest cleaned
  * the way electron-builder cleans it, then the sealed descriptor at the payload root.
@@ -383,7 +422,12 @@ export async function preparePayload(options: PreparePayloadOptions): Promise<De
       copyTree(source, join(output, ...entry.split('/')), (path, name) => !IGNORED_NAMES.has(name) && nextRuntimeFileExclusion(`${entry}/${path}`, target) === undefined)
     }
   })
-  writeFileSync(join(output, 'package.json'), readFileSync(join(desktopRoot, 'package.json')))
+  const rawMainManifest = readFileSync(join(desktopRoot, 'package.json'))
+  const prunedMainManifest = stripUnusedFeatureManifestDeclarations(JSON.parse(rawMainManifest.toString('utf8')) as Record<string, unknown>)
+  writeFileSync(
+    join(output, 'package.json'),
+    prunedMainManifest === undefined ? rawMainManifest : `${JSON.stringify(prunedMainManifest, undefined, 2)}\n`,
+  )
   const transformMain = createTransformer(output, {}, options.extraMetadata)
   const mainManifest = await packagingStep('payload:transform-main-manifest', async () => transformMain(join(output, 'package.json')))
   if (mainManifest != null) writeFileSync(join(output, 'package.json'), mainManifest)

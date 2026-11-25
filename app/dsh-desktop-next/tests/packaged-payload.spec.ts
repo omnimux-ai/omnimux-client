@@ -174,6 +174,23 @@ it('accepts a missing unused-feature edge and flags an unused-feature package th
   try {
     expect(auditNextPayload(leakedSource, target)).toContain('node_modules/@dataiku/uv/package.json: Python runtime for the unshipped Agents Anywhere bridge must not be packaged')
   } finally { leakedSource.close() }
+  const { resources: staleManifest } = await assembled((app) => {
+    const manifestPath = join(app, 'package.json')
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as {
+      dependencies: Record<string, string>
+      dsh?: { optionalBundles?: string[] }
+    }
+    manifest.dependencies['@deepseek-ai/dsh-experimental-voice-input-bundle'] = '0.2.2-rc.5'
+    manifest.dsh = { optionalBundles: ['@deepseek-ai/dsh-experimental-voice-input-bundle'] }
+    writeFileSync(manifestPath, `${JSON.stringify(manifest, undefined, 2)}\n`)
+  }, false)
+  const staleManifestSource = archivedPayload(staleManifest)
+  try {
+    expect(auditNextPayload(staleManifestSource, target)).toEqual(expect.arrayContaining([
+      'package.json: dependencies.@deepseek-ai/dsh-experimental-voice-input-bundle: Voice input is not shipped must not remain in packaged manifest',
+      'package.json: dsh.optionalBundles.@deepseek-ai/dsh-experimental-voice-input-bundle: Voice input is not shipped must not remain in packaged manifest',
+    ]))
+  } finally { staleManifestSource.close() }
 })
 
 it('requires the Office CLI closure unpacked only when the payload carries the kit', async () => {

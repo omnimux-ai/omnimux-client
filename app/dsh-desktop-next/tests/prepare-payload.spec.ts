@@ -2,6 +2,10 @@ import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSyn
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { Context } from '@deepseek-ai/cordis'
+import Loader from '@deepseek-ai/cordis-plugin-loader'
+import { initProfile, type ProfileContext } from '@deepseek-ai/dsh-app-boot'
+import PluginManager from '@deepseek-ai/dsh-plugin-manager'
 import { afterEach, expect, it, vi } from 'vitest'
 import beforeBuild from '../scripts/before-build.ts'
 import { nextPackagingTarget, PAYLOAD_DIR, payloadDir, verifyNextPayload } from '../scripts/packaged-payload.ts'
@@ -330,6 +334,17 @@ it('skips a required unused-feature package, records why, and still seals a reso
   expect(existsSync(join(output, 'node_modules', '@deepseek-ai', 'dsh-skill-office'))).toBe(false)
   expect(existsSync(join(output, 'node_modules', '@deepseek-ai', 'libreoffice-kit'))).toBe(false)
   expect(existsSync(join(output, 'node_modules', '@dataiku', 'uv'))).toBe(false)
+  // The packaged manifest drops skipped unused-feature packages so PluginManager never surfaces them as missing/problem.
+  const preparedManifest = JSON.parse(readFileSync(join(output, 'package.json'), 'utf8')) as {
+    dependencies?: Record<string, string>
+  }
+  expect(preparedManifest.dependencies?.['@deepseek-ai/dsh-skill-office']).toBeUndefined()
+  expect(preparedManifest.dependencies?.['@deepseek-ai/dsh-experimental-voice-input-bundle']).toBeUndefined()
+  // The source manifest remains untouched for development checks and audit reporting.
+  const sourceManifest = JSON.parse(readFileSync(join(desktop, 'package.json'), 'utf8')) as {
+    dependencies?: Record<string, string>
+  }
+  expect(sourceManifest.dependencies?.['@deepseek-ai/dsh-experimental-voice-input-bundle']).toBe('*')
   // A shared package the payload does not carry cannot be recorded, and the dependency check accepts the deliberate gap.
   expect(descriptor.sharedPackages.map(entry => entry.name)).not.toContain('@deepseek-ai/dsh-skill-office')
   expect(descriptor.sharedPackages.map(entry => entry.name)).not.toContain('@deepseek-ai/dsh-experimental-voice-input-bundle')
@@ -345,6 +360,54 @@ it('skips a required unused-feature package, records why, and still seals a reso
   manifest.dependencies['@fixture/other-os'] = '*'
   writeFileSync(join(desktop, 'package.json'), JSON.stringify(manifest))
   expect(() => collectProductionClosure(desktop, target)).toThrow(/@fixture\/other-os required by dsh-desktop-next cannot be packaged: package OS does not match target/u)
+})
+
+it('prevents real PluginManager.listBundles() from reporting excluded optional voice-input as missing/problem', async () => {
+  const { root, desktop } = workspace()
+  const modules = join(desktop, 'node_modules')
+  const manifest = JSON.parse(readFileSync(join(desktop, 'package.json'), 'utf8')) as {
+    dependencies: Record<string, string>
+    dsh?: { optionalBundles?: string[] }
+  }
+  manifest.dependencies['@deepseek-ai/dsh-experimental-voice-input-bundle'] = '0.2.2-rc.5'
+  manifest.dsh = { optionalBundles: ['@deepseek-ai/dsh-experimental-voice-input-bundle'] }
+  writeFileSync(join(desktop, 'package.json'), JSON.stringify(manifest))
+  writePackage(modules, '@deepseek-ai/dsh-experimental-voice-input-bundle', { version: '0.2.2-rc.5' })
+
+  const output = join(root, 'payload')
+  await preparePayload({ desktopRoot: desktop, output, target, electronVersion: '44.0.0' })
+  const preparedManifest = JSON.parse(readFileSync(join(output, 'package.json'), 'utf8')) as {
+    dependencies?: Record<string, string>
+    dsh?: { optionalBundles?: string[] }
+  }
+  expect(preparedManifest.dsh?.optionalBundles).toEqual([])
+
+  const profileHome = join(root, 'profile-home')
+  const profileDir = join(profileHome, 'profiles', 'desktop')
+  initProfile(profileDir, [])
+  const ctx = new Context()
+  try {
+    await ctx.plugin(Loader)
+    const profileContext: ProfileContext = {
+      name: 'desktop',
+      dir: profileDir,
+      patchPath: join(profileDir, 'cordis.patch.yml'),
+      installAnchor: join(output, 'package.json'),
+      cwd: profileHome,
+      home: profileHome,
+      startedBundles: [],
+      overlays: [],
+      telemetryDisabledEnv: undefined,
+    }
+    ctx.provide('profileContext', profileContext)
+    await ctx.plugin(PluginManager, {})
+    const bundles = await ctx.pluginManager.listBundles()
+    expect(bundles.length).toBeGreaterThan(0)
+    expect(bundles.find(bundle => bundle.name === '@deepseek-ai/dsh-experimental-voice-input-bundle')).toBeUndefined()
+    expect(bundles.filter(bundle => bundle.error !== undefined)).toEqual([])
+  } finally {
+    await ctx.fiber.dispose()
+  }
 })
 
 it('isolates single-architecture payloads while preserving the legacy universal and Windows layout', () => {

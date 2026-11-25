@@ -32,7 +32,7 @@ import { removeLinkProjectionsSafely } from '../../dsh-plugin-desktop/src/link-p
 import { reclaimLegacyManagedPluginSkills } from '../../dsh-plugin-desktop/src/legacy-skill-reclaim.ts'
 import { insideArchive, unpackedPath } from './asar-archive-policy.ts'
 import PLUGIN_TIERS from '../../config/plugin-tiers.json' with { type: 'json' }
-import { ON_DEMAND_BUNDLES, PROFILE_TEMPLATES, RETIRED_PROFILE_BUNDLES } from './upstream-family.ts'
+import { ON_DEMAND_BUNDLES, OPTIONAL_BUNDLES, PROFILE_TEMPLATES, RETIRED_PROFILE_BUNDLES } from './upstream-family.ts'
 
 export const NEXT_PACKAGE = fileURLToPath(new URL('../package.json', import.meta.url))
 /** Legacy OmniMux Profile name used by the previous desktop shell (`<home>/profiles/omnimux`). */
@@ -168,7 +168,7 @@ export class NextProfiles {
       try { return existsSync(join(this.directory(entry.name), 'package.json')) } catch { return false }
     }).map(entry => entry.name).sort()
   }
-  ensure(name: string): string {
+  ensure(name: string, installAnchor = NEXT_PACKAGE): string {
     const dir = this.directory(name)
     const existing = existsSync(join(dir, 'package.json'))
     if (!existing) initProfile(dir, WEB_BUNDLES)
@@ -190,7 +190,7 @@ export class NextProfiles {
       this.finishOnboarding(name)
     }
     this.migrateSchedule(name)
-    this.retireUpstreamBundles(name)
+    this.retireUpstreamBundles(name, installAnchor)
     this.migrateBundleOrder(name)
     return dir
   }
@@ -218,11 +218,23 @@ export class NextProfiles {
     this.migrateBundleOrder(name)
     return dir
   }
-  /** Remove obsolete upstream bundle selections after a recovery backup; keep all user patches. */
-  private retireUpstreamBundles(name: string): void {
-    if (RETIRED_PROFILE_BUNDLES.length === 0) return
+  /**
+   * Remove obsolete upstream bundle selections — and optional official bundles omitted from
+   * this packaged installation unless the Profile itself installed them — after a recovery
+   * backup; keep all user patches.
+   */
+  private retireUpstreamBundles(name: string, installAnchor = NEXT_PACKAGE): void {
     const manifest = this.manifest(name)
-    const bundles = manifest.dsh.profile.bundles.filter(bundle => !RETIRED_PROFILE_BUNDLES.includes(bundle))
+    const retired = new Set(RETIRED_PROFILE_BUNDLES)
+    const profileDeps = isRecord(manifest.dependencies) ? manifest.dependencies : {}
+    const installationDeps = readInstallationDependencies(installAnchor)
+    if (installationDeps !== undefined) {
+      for (const bundle of OPTIONAL_BUNDLES) {
+        if (!Object.hasOwn(profileDeps, bundle) && !installationDeps.has(bundle)) retired.add(bundle)
+      }
+    }
+    if (retired.size === 0) return
+    const bundles = manifest.dsh.profile.bundles.filter(bundle => !retired.has(bundle))
     if (bundles.length === manifest.dsh.profile.bundles.length) return
     new NextRecovery(this).backup(name, 'before-upstream-bundle-retirement')
     manifest.dsh.profile.bundles = bundles
@@ -402,6 +414,16 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
+function readInstallationDependencies(installAnchor: string): Set<string> | undefined {
+  try {
+    const raw = JSON.parse(readFileSync(installAnchor, 'utf8')) as { dependencies?: unknown }
+    if (!isRecord(raw) || !isRecord(raw.dependencies)) return undefined
+    return new Set(Object.keys(raw.dependencies))
+  } catch {
+    return undefined
+  }
+}
+
 /**
  * Decide whether upstream's repair can update a manifest as it is.
  * @param name - The Profile, named in a replacement manifest.
@@ -502,7 +524,7 @@ export function applyProfileLocalBundleOverrides(profile: Profile, projectDir: s
 export function loadNextProfile(projectDir: string, home: string, installAnchor = NEXT_PACKAGE, pnpm?: ProfilePnpmInvocation): Profile {
   const manager = new NextProfiles(home)
   if (manager.directory(basename(projectDir)) !== resolve(projectDir)) throw new Error('Profile must belong to Next home')
-  manager.ensure(basename(projectDir))
+  manager.ensure(basename(projectDir), installAnchor)
   retireLinkProjections(projectDir)
   retireLegacyManagedPluginSkills(home)
   if (pnpm !== undefined) retireStaleOnDemandBundles(manager, basename(projectDir), pnpm)

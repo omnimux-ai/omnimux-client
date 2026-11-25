@@ -288,6 +288,27 @@ export function auditNextPayload(source: PayloadSource, target: NextPackagingTar
   const requiredUnpacked = source.entry('node_modules/@deepseek-ai/libreoffice-kit/package.json') === undefined
     ? REQUIRED_UNPACKED : [...REQUIRED_UNPACKED, ...OFFICE_REQUIRED_UNPACKED]
   const sharpManifests: string[] = []
+  const rootManifestEntry = source.entry('package.json')
+  if (rootManifestEntry !== undefined) {
+    const rootManifest = JSON.parse(rootManifestEntry.read().toString('utf8')) as {
+      dependencies?: Record<string, string>
+      optionalDependencies?: Record<string, string>
+      dsh?: { optionalBundles?: unknown }
+    }
+    for (const field of ['dependencies', 'optionalDependencies'] as const) {
+      for (const name of Object.keys(rootManifest[field] ?? {})) {
+        const reason = nextRuntimeUnusedFeatureExclusion(name)
+        if (reason !== undefined) problems.push(`package.json: ${field}.${name}: ${reason} must not remain in packaged manifest`)
+      }
+    }
+    if (Array.isArray(rootManifest.dsh?.optionalBundles)) {
+      for (const name of rootManifest.dsh.optionalBundles) {
+        if (typeof name !== 'string') continue
+        const reason = nextRuntimeUnusedFeatureExclusion(name)
+        if (reason !== undefined) problems.push(`package.json: dsh.optionalBundles.${name}: ${reason} must not remain in packaged manifest`)
+      }
+    }
+  }
   for (const entry of source.list()) {
     const root = entry.path.split('/')[0] ?? ''
     if (!ALLOWED_ROOT_ENTRIES.has(root)) { strayRoots.add(root); continue }

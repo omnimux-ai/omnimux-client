@@ -792,3 +792,40 @@ it('orders core DSH bundles before OmniMux bundles so omni-agent is declared and
   expect(rows.find(row => row.id === 'preset-cordis')?.disabled).toBeFalsy()
   expect((rows.find(row => row.id === 'agent-preset-registry')?.config as { default?: string } | undefined)?.default).toBe('omni-agent')
 })
+
+it('retires unshipped optional official bundles from upgraded profiles unless profile-installed', () => {
+  const manager = profiles()
+  const dir = manager.ensure('desktop')
+  const file = join(dir, 'package.json')
+  const voiceBundle = '@deepseek-ai/dsh-experimental-voice-input-bundle'
+  const packagedRoot = mkdtempSync(join(tmpdir(), 'dsh-next-packaged-anchor-'))
+  roots.push(packagedRoot)
+  const packagedAnchor = join(packagedRoot, 'package.json')
+  const baseAnchor = JSON.parse(readFileSync(NEXT_PACKAGE, 'utf8')) as { dependencies: Record<string, string> }
+  const { [voiceBundle]: _omitted, ...shippedDeps } = baseAnchor.dependencies
+  writeFileSync(packagedAnchor, JSON.stringify({ ...baseAnchor, dependencies: shippedDeps }, null, 2) + '\n')
+
+  // Case 1: Profile upgraded from an earlier build that selected voice-input without installing it locally.
+  const manifest = JSON.parse(readFileSync(file, 'utf8'))
+  manifest.dsh.profile.bundles.push(voiceBundle, 'third-party-plugin')
+  writeFileSync(file, JSON.stringify(manifest, null, 2) + '\n')
+  const recoveryDir = join(manager.home, 'recovery')
+  const backupCountBefore = existsSync(recoveryDir) ? readdirSync(recoveryDir).length : 0
+
+  manager.ensure('desktop', packagedAnchor)
+  const migrated = JSON.parse(readFileSync(file, 'utf8'))
+  expect(migrated.dsh.profile.bundles).not.toContain(voiceBundle)
+  expect(migrated.dsh.profile.bundles).toContain('third-party-plugin')
+  expect(readdirSync(recoveryDir).length).toBe(backupCountBefore + 1)
+  // Idempotent on subsequent starts.
+  const after = readFileSync(file, 'utf8')
+  manager.ensure('desktop', packagedAnchor)
+  expect(readFileSync(file, 'utf8')).toBe(after)
+
+  // Case 2: Profile explicitly installed the optional bundle in its own dependencies; keep its selection.
+  migrated.dependencies = { ...(migrated.dependencies ?? {}), [voiceBundle]: '0.2.2-rc.5' }
+  migrated.dsh.profile.bundles.push(voiceBundle)
+  writeFileSync(file, JSON.stringify(migrated, null, 2) + '\n')
+  manager.ensure('desktop', packagedAnchor)
+  expect(JSON.parse(readFileSync(file, 'utf8')).dsh.profile.bundles).toContain(voiceBundle)
+})
