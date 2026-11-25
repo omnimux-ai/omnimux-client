@@ -3369,6 +3369,15 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@deepseek-ai/dsh-client-ui-layout@patch:@deepseek-ai/dsh-client-ui-layout@file%3Avendor/dsh-runtime/0.2.2-rc.5/deepseek-ai-dsh-client-ui-layout-0.2.2-rc.5.tgz#./patches/dsh-client-ui-layout@0.2.2-rc.5.patch::locator=deepseek-harness-desktop%40workspace%3A.":
+  version: 0.2.2-rc.5
+  resolution: "@deepseek-ai/dsh-client-ui-layout@patch:@deepseek-ai/dsh-client-ui-layout@file%3Avendor/dsh-runtime/0.2.2-rc.5/deepseek-ai-dsh-client-ui-layout-0.2.2-rc.5.tgz%23vendor/dsh-runtime/0.2.2-rc.5/deepseek-ai-dsh-client-ui-layout-0.2.2-rc.5.tgz%3A%3Ahash=5d8bd2&locator=deepseek-harness-desktop%2540workspace%253A.#./patches/dsh-client-ui-layout@0.2.2-rc.5.patch::version=0.2.2-rc.5&hash=4b8e6e&locator=deepseek-harness-desktop%40workspace%3A."
+  peerDependencies:
+    "@deepseek-ai/cordis": ~4.1.0
+  checksum: 10c0/7bd3ce4e2f04aef0dc2c21ff06f9e5bb2cbac3de0fc831e8a1e356fdf818c69ebcf63f77777eb912243df4331d813991ef77e24d0ced2c1ec9ddacca7df64315
+  languageName: node
+  linkType: hard
+
 "@deepseek-ai/dsh-client-ui-message-feedback@file:vendor/dsh-runtime/0.2.1-rc.3/deepseek-ai-dsh-client-ui-message-feedback-0.2.1-rc.3.tgz::locator=deepseek-harness-desktop%40workspace%3A.":
   version: 0.2.1-rc.3
   resolution: "@deepseek-ai/dsh-client-ui-message-feedback@file:vendor/dsh-runtime/0.2.1-rc.3/deepseek-ai-dsh-client-ui-message-feedback-0.2.1-rc.3.tgz#vendor/dsh-runtime/0.2.1-rc.3/deepseek-ai-dsh-client-ui-message-feedback-0.2.1-rc.3.tgz::hash=fd0486&locator=deepseek-harness-desktop%40workspace%3A."

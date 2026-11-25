@@ -374,3 +374,195 @@ describe('禁改清单（INV-3 / INV-10 / INV-12）', () => {
     }
   })
 })
+
+/* ------------------------------------------------------------------ Next 壳双壳契约 */
+
+function parseWidthRules(css) {
+  const clean = String(css || '').replace(/\/\*[\s\S]*?\*\//g, '')
+  const rules = []
+  const re = /([^{}]+)\{([^{}]*)\}/g
+  let matched
+  while ((matched = re.exec(clean))) {
+    const selectorText = matched[1].trim()
+    if (!selectorText || selectorText.startsWith('@')) continue
+    const widthDecl = matched[2]
+      .split(';')
+      .find((part) => part.split(':')[0]?.trim() === 'width')
+    if (!widthDecl) continue
+    const value = widthDecl.slice(widthDecl.indexOf(':') + 1).replace(/!important\s*$/i, '').trim()
+    if (!value) continue
+    rules.push({ selectorText, width: value, index: rules.length })
+  }
+  return rules
+}
+
+function resolveNextFrameGridWinner(rules, state = {}) {
+  const htmlAttrs = state.htmlAttrs ? ` ${state.htmlAttrs}` : ''
+  const frameAttrs = state.frameAttrs ? ` ${state.frameAttrs}` : ''
+  const dom = new JSDOM(
+    `<!doctype html><html${htmlAttrs}><body><div class="vcssFG_frame"${frameAttrs}></div></body></html>`,
+  )
+  const frame = dom.window.document.querySelector('.vcssFG_frame')
+  const hits = []
+  for (const rule of rules) {
+    for (const selector of rule.selectorText.split(',').map((part) => part.trim())) {
+      if (!selector) continue
+      let matched = false
+      try {
+        matched = frame.matches(selector)
+      } catch {
+        matched = false
+      }
+      if (!matched) continue
+      hits.push({ grid: rule.grid, selectorText: selector, specificity: specificity(selector), index: rule.index })
+    }
+  }
+  if (hits.length === 0) return null
+  hits.sort((a, b) => compareSpecificity(a.specificity, b.specificity) || a.index - b.index)
+  return hits.at(-1)
+}
+
+function matchPanelWidthRule(rules, { htmlAttrs = '', frameAttrs = '', panelAttrs = '' } = {}) {
+  const dom = new JSDOM(
+    `<!doctype html><html${htmlAttrs ? ` ${htmlAttrs}` : ''}><body>` +
+      `<div class="vcssFG_frame"${frameAttrs ? ` ${frameAttrs}` : ''}>` +
+      `<div class="vcssFG_sidebarCol"></div>` +
+      `<div class="vcssFG_centerCol"></div>` +
+      `<div class="vcssFG_rightbarCol" data-rightbar-col="true">` +
+      `<div class="Ng7Ira_panel"${panelAttrs ? ` ${panelAttrs}` : ''}></div>` +
+      `</div></div></body></html>`,
+  )
+  const panel = dom.window.document.querySelector('.Ng7Ira_panel')
+  const hits = []
+  for (const rule of rules) {
+    for (const selector of rule.selectorText.split(',').map((part) => part.trim())) {
+      if (!selector) continue
+      let matched = false
+      try {
+        matched = panel.matches(selector)
+      } catch {
+        matched = false
+      }
+      if (!matched) continue
+      hits.push({ width: rule.width, selectorText: selector, specificity: specificity(selector), index: rule.index })
+    }
+  }
+  if (hits.length === 0) return null
+  hits.sort((a, b) => compareSpecificity(a.specificity, b.specificity) || a.index - b.index)
+  return hits.at(-1)
+}
+
+describe('Next 壳（DSH 0.2.2-rc.5 AppFrame）双壳布局契约与右面板铺满保护', () => {
+  const collapseWidthRules = parseWidthRules(CONVERSATION_COLLAPSE_CSS)
+
+  it('Next 壳全部状态组合矩阵的胜出列宽与旧壳契约一致', () => {
+    for (const entry of MATRIX) {
+      const winner = resolveNextFrameGridWinner(PRODUCTION_RULES, entry.state)
+      const observed = winner ? normalizeGrid(winner.grid) : null
+      const expected = entry.observedGrid ?? entry.contractGrid
+      assert.equal(
+        observed,
+        expected === null ? null : normalizeGrid(expected),
+        `Next 壳 ${entry.id} ${entry.label} 网格胜出规则与旧壳漂移：期望「${expected}」，实测「${observed}」`,
+      )
+    }
+  })
+
+  it('Next 壳三栏展开 push+open 时内层右面板必须命中 width: 100%（消除 236px 黑空隙）', () => {
+    const winner = matchPanelWidthRule(collapseWidthRules, {
+      htmlAttrs: 'data-omnimux-rightbar-open="true" data-omnimux-sidebar-toggle-topbar',
+      panelAttrs: 'data-sidebar-right-panel="push" data-sidebar-right-open="true"',
+    })
+    assert.ok(winner, 'Next 壳开放 push 面板必须命中右栏铺满兜底规则，否则绝对右锚定会留出 236px 黑空隙')
+    assert.equal(winner.width, '100%')
+  })
+
+  it('Next 壳右栏关闭态不得命中 width: 100%（保护滑出动画不被压扁成 0px）', () => {
+    const winner = matchPanelWidthRule(collapseWidthRules, {
+      frameAttrs: 'data-rightbar-collapsed="true"',
+      panelAttrs: 'data-sidebar-right-panel="push"',
+    })
+    assert.equal(winner, null, '右栏关闭态命中 width: 100% 会把滑出面板在 0px 轨道里压扁')
+  })
+
+  it('Next 壳窄屏 overlay 态（data-rightbar-collapsed="true" 且 push+open）不得命中 width: 100%', () => {
+    const winner = matchPanelWidthRule(collapseWidthRules, {
+      frameAttrs: 'data-rightbar-collapsed="true"',
+      panelAttrs: 'data-sidebar-right-panel="push" data-sidebar-right-open="true"',
+    })
+    assert.equal(winner, null, '窄屏 overlay 第三轨为 0px，命中 width: 100% 会把悬浮面板压成 0px')
+  })
+
+  it('Next 壳全屏态不得命中 push 铺满规则', () => {
+    const winner = matchPanelWidthRule(collapseWidthRules, {
+      frameAttrs: 'data-rightbar-fullscreen="true"',
+      panelAttrs: 'data-sidebar-right-panel="fullscreen" data-sidebar-right-open="true"',
+    })
+    assert.equal(winner, null, '全屏面板由 fixed 规则负责，不得落入容器相对宽规则')
+  })
+
+  it('Next 壳图像画布全屏态必须保留原生输入框投射孪生选择器', () => {
+    assert.match(
+      collapseSource,
+      /\[class\*="frame"\]\[data-rightbar-fullscreen="true"\]/,
+      'conversation-collapse.js 必须同时覆盖 Next 壳 [class*="frame"][data-rightbar-fullscreen="true"]',
+    )
+  })
+
+  it('带 data-omnimux-rightbar-open="true" 与 topbar 标记时收起中栏仍必须归零第二轨（防 434px 中栏黑空隙）', () => {
+    const state = {
+      htmlAttrs: `${TOGGLE_ATTR} ${CONVERSATION_COLLAPSED} data-omnimux-rightbar-open="true"`,
+    }
+    const legacyWinner = resolveGridWinner(PRODUCTION_RULES, state)
+    const nextWinner = resolveNextFrameGridWinner(PRODUCTION_RULES, state)
+    assert.equal(normalizeGrid(legacyWinner?.grid), 'var(--omnimux-sidebar-width, 280px) 0px minmax(0px, 1fr)')
+    assert.equal(normalizeGrid(nextWinner?.grid), 'var(--omnimux-sidebar-width, 280px) 0px minmax(0px, 1fr)')
+  })
+
+  it('Next 壳右面板铺满规则不得误伤嵌套内部弹层与子容器（.Dj9pYa_panel / ._6dqGca_panelBody / .react-flow__panel）', () => {
+    const states = [
+      'data-omnimux-rightbar-open="true" data-omnimux-sidebar-toggle-topbar',
+      `${CONVERSATION_COLLAPSED} data-omnimux-rightbar-open="true" data-omnimux-sidebar-toggle-topbar`,
+      `${CONVERSATION_COLLAPSED} data-omnimux-left-collapsed="1" data-omnimux-rightbar-open="true" data-omnimux-sidebar-toggle-topbar`,
+    ]
+    const nestedClasses = ['Dj9pYa_panel', '_6dqGca_panelBody', 'wf-comfy-page-panel__panel', 'react-flow__panel']
+    for (const htmlAttrs of states) {
+      const dom = new JSDOM(
+        `<!doctype html><html ${htmlAttrs}><body>` +
+          `<div class="vcssFG_frame">` +
+          `<div class="vcssFG_sidebarCol"></div>` +
+          `<div class="vcssFG_centerCol"></div>` +
+          `<div class="vcssFG_rightbarCol" data-rightbar-col="true">` +
+          `<div class="Ng7Ira_panel" data-sidebar-right-panel="push" data-sidebar-right-open="true">` +
+          `<div class="_6dqGca_panelBody"><div class="Dj9pYa_panel"></div><div class="wf-comfy-page-panel__panel"></div><div class="react-flow__panel"></div></div>` +
+          `</div></div></div></body></html>`,
+      )
+      for (const cls of nestedClasses) {
+        const el = dom.window.document.querySelector(`.${cls}`)
+        assert.ok(el, `fixture missing .${cls}`)
+        const matched = collapseWidthRules.some((rule) =>
+          rule.selectorText
+            .split(',')
+            .map((part) => part.trim())
+            .filter(Boolean)
+            .some((selector) => {
+              try {
+                return el.matches(selector)
+              } catch {
+                return false
+              }
+            }),
+        )
+        assert.equal(matched, false, `嵌套节点 .${cls} 在 ${htmlAttrs} 下不应命中 CONVERSATION_COLLAPSE_CSS 宽度覆盖规则`)
+      }
+    }
+  })
+
+  it('Next 壳 macOS 展开态不得对 logoRow 注入 no-drag（保留 DP-001 52px 标题条拖拽区）', () => {
+    assert.doesNotMatch(
+      boxSource,
+      /html\[data-platform="darwin"\]\s+\[class\*="sidebarCol"\]\s+\[class\*="logoRow"\]/,
+      'Next 壳 macOS logoRow 已由 DP-001 上提到 52px 可拖拽标题区，不得对其强加 no-drag',
+    )
+  })
+})

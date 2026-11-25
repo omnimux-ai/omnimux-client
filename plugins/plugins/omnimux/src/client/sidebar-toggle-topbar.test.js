@@ -2262,6 +2262,43 @@ describe('topbar anchor visibility (#67 AC-4)', () => {
   })
 })
 
+describe('Next shell readShellSplitPx and RIGHTBAR_CHROME_STYLES parity', () => {
+  it('parses both Legacy bare px and Next minmax(0px, Npx) authored third tracks', () => {
+    const makeDoc = (grid) => ({
+      querySelector: (sel) => (String(sel).includes('frame') ? { style: { gridTemplateColumns: grid } } : null),
+    })
+
+    assert.deepEqual(readShellSplitPx(makeDoc('280px minmax(0px, 1fr) 778px')), { rail: 280, right: 778 })
+    assert.deepEqual(readShellSplitPx(makeDoc('280px minmax(400px, 1fr) minmax(0px, 778px)')), { rail: 280, right: 778 })
+    assert.deepEqual(readShellSplitPx(makeDoc('0px minmax(400px, 1fr) minmax(0, 1014.5px)')), { rail: 0, right: 1015 })
+    assert.deepEqual(readShellSplitPx(makeDoc('280px minmax(0px, 1fr) minmax(0px, 0px)')), { rail: 280, right: 0 })
+    assert.deepEqual(readShellSplitPx(makeDoc('280px minmax(0px, 778px)')), { rail: 280, right: null })
+  })
+
+  it('includes Next shell [class*="frame"] and html[data-platform="darwin"] fullscreen strip clearance rules', () => {
+    const doc = setup(`<!doctype html><html data-platform="darwin"><body>
+      <div class="vcssFG_frame" data-sidebar-collapsed="true">
+        <div class="vcssFG_rightbarCol" data-rightbar-col="true">
+          <div class="Ng7Ira_panel" data-sidebar-right-panel="fullscreen" data-sidebar-right-open="true">
+            <div data-dockkit-strip="true"></div>
+          </div>
+        </div>
+      </div>
+      <div class="tabBar_n" data-dsh-better-sidebar><div class="tabList_m"></div></div>
+    </body></html>`)
+    const stop = installSidebarToggleTopbar(doc)
+    try {
+      const css = doc.getElementById('omnimux-rightbar-chrome-styles')?.textContent || ''
+      assert.match(css, /\[class\*="frame"\]\s+\[data-sidebar-right-panel="fullscreen"\]\[data-sidebar-right-open\]/)
+      assert.match(css, /\[class\*="frame"\]\[data-sidebar-collapsed\]\s+\[data-sidebar-right-panel="fullscreen"\]/)
+      assert.match(css, /html\[data-platform="darwin"\]\[data-omnimux-left-collapsed\]\s+\[data-sidebar-right-panel="fullscreen"\]\s+\[data-dockkit-strip\]/)
+      assert.match(css, /html\[data-platform="darwin"\]\s+\[class\*="frame"\]\[data-sidebar-collapsed\]\s+\[data-sidebar-right-panel="fullscreen"\]\s+\[data-dockkit-strip\]/)
+    } finally {
+      stop()
+    }
+  })
+})
+
 async function waitFor(predicate, timeoutMs = 500) {
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {

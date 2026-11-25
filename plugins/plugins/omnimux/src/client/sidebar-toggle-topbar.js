@@ -623,31 +623,70 @@ export function readFrame(doc) {
 }
 
 /**
+ * Split a CSS `grid-template-columns` track list at top-level whitespace
+ * (preserving spaces inside `minmax(...)` / `calc(...)`).
+ * @param {string} grid
+ * @returns {string[]}
+ */
+function splitGridTrackTokens(grid) {
+  const tracks = []
+  let depth = 0
+  let current = ''
+  for (let i = 0; i < grid.length; i += 1) {
+    const ch = grid[i]
+    if (ch === '(') {
+      depth += 1
+      current += ch
+    } else if (ch === ')') {
+      depth = Math.max(0, depth - 1)
+      current += ch
+    } else if (/\s/.test(ch) && depth === 0) {
+      if (current) {
+        tracks.push(current)
+        current = ''
+      }
+    } else {
+      current += ch
+    }
+  }
+  if (current) tracks.push(current)
+  return tracks
+}
+
+/**
  * The split the shell authored, as `{ rail, right }` px (null when absent).
  *
  * `conversation-box.js` pins the frame's rails with `!important`, so a *measured*
  * column width is a function of the value we are about to write — a
  * self-confirming reading. The inline `grid-template-columns` is authored by the
  * shell and survives that override, which makes it the authoritative split
- * input. The middle token may contain spaces (`minmax(0px, 1fr)`), so the third
- * track is read from the end of the list.
+ * input. Supports both Legacy (`280px minmax(0px, 1fr) 778px`) and Next
+ * (`280px minmax(400px, 1fr) minmax(0px, 778px)`) track formats.
  * @param {Document | null | undefined} doc
  * @returns {{ rail: number | null, right: number | null }}
  */
 export function readShellSplitPx(doc) {
   const grid = String(readFrame(doc)?.style?.gridTemplateColumns || '').trim()
   if (!grid) return { rail: null, right: null }
-  const tokens = grid.split(/\s+/)
-  /** @param {string} token */
-  const toPx = (token) => {
-    const matched = /^(\d+(?:\.\d+)?)px$/.exec(token || '')
-    if (!matched) return null
-    const px = Math.round(Number(matched[1]))
-    return Number.isFinite(px) ? px : null
+  const tracks = splitGridTrackTokens(grid)
+  /** @param {string | undefined} token */
+  const parseTrackPx = (token) => {
+    const raw = String(token || '').trim()
+    const bare = /^(\d+(?:\.\d+)?)px$/.exec(raw)
+    if (bare) {
+      const px = Math.round(Number(bare[1]))
+      return Number.isFinite(px) ? px : null
+    }
+    const minmax = /^minmax\(\s*0(?:px)?\s*,\s*(\d+(?:\.\d+)?)px\s*\)$/.exec(raw)
+    if (minmax) {
+      const px = Math.round(Number(minmax[1]))
+      return Number.isFinite(px) ? px : null
+    }
+    return null
   }
   return {
-    rail: toPx(tokens[0]),
-    right: tokens.length >= 3 ? toPx(tokens[tokens.length - 1]) : null,
+    rail: parseTrackPx(tracks[0]),
+    right: tracks.length >= 3 ? parseTrackPx(tracks[tracks.length - 1]) : null,
   }
 }
 
@@ -848,6 +887,9 @@ function migrateConversationRatioOnce(doc) {
  */
 function hasUserAuthoredPanelWidth(snapshot) {
   if (shellSplitDragObserved) return true
+  // Next 壳（DSH 0.2.2-rc.5 + DP-007）在 openRightbar 首开时会把 layoutInfo.rightbar
+  // 种子化为 45% 并标 rightbarAuthored: false；该默认种子绝不能当成老用户版式迁移（H-1）。
+  if (snapshot?.rightbarAuthored === false) return false
   // 若首帧外壳尚未 authored 出数字宽度（rightbar 为 null/undefined），不提前锁定基线，
   // 留给后续就绪帧；仅当首次观察到数字宽度时锁定基线（M-4）。
   if (typeof snapshot?.rightbar === 'number') {
@@ -1515,6 +1557,7 @@ button[data-sidebar-right-expand] {
    面板左缘最多落后分割线 71px（黑缝），松手后才回弹；同时它给面板声明的 0.3s
    宽度过渡不在外壳 data-dragging 的中和范围内（那只覆盖帧与手柄），面板只能
    以 300ms 缓动追赶指针，跟手彻底丢失。分栏态的定位、宽度与过渡一律归还原生。 */
+[class*="frame"] [data-sidebar-right-panel="fullscreen"][data-sidebar-right-open],
 .dshDesktopFrame [data-sidebar-right-panel="fullscreen"][data-sidebar-right-open] {
   position: fixed !important;
   left: auto !important;
@@ -1524,6 +1567,7 @@ button[data-sidebar-right-expand] {
               transform var(--ds-transition-duration-slow) var(--ds-ease-in-out) !important;
 }
 @media (prefers-reduced-motion: reduce) {
+  [class*="frame"] [data-sidebar-right-panel="fullscreen"][data-sidebar-right-open],
   .dshDesktopFrame [data-sidebar-right-panel="fullscreen"][data-sidebar-right-open] {
     transition: none !important;
   }
@@ -1549,6 +1593,8 @@ button[data-sidebar-right-expand] {
 /* 5.2 真正的全屏态（左侧侧边栏折叠/隐藏时）：铺满整个 100vw 视口 */
 html[data-omnimux-left-collapsed] [data-sidebar-right-panel="fullscreen"],
 html[data-omnimux-left-collapsed] [class*="_panel"][data-sidebar-right-panel="fullscreen"],
+[class*="frame"][data-sidebar-collapsed] [data-sidebar-right-panel="fullscreen"],
+[class*="frame"][data-sidebar-collapsed] [class*="_panel"][data-sidebar-right-panel="fullscreen"],
 .dshDesktopFrame[data-sidebar-collapsed] [data-sidebar-right-panel="fullscreen"],
 .dshDesktopFrame[data-sidebar-collapsed] [class*="_panel"][data-sidebar-right-panel="fullscreen"] {
   left: auto !important;
@@ -1570,13 +1616,19 @@ html[data-omnimux-left-collapsed] body[data-dsh-desktop-platform="darwin"] [data
 body[data-dsh-desktop-platform="darwin"] html[data-omnimux-left-collapsed] [data-sidebar-right-panel="fullscreen"] [class*="_tabStrip"],
 html[data-omnimux-left-collapsed] body[data-dsh-desktop-platform="darwin"] [data-sidebar-right-panel="fullscreen"] [class*="_tabStrip"],
 body[data-dsh-desktop-platform="darwin"] .dshDesktopFrame[data-sidebar-collapsed] [data-sidebar-right-panel="fullscreen"] [data-dockkit-strip],
-body[data-dsh-desktop-platform="darwin"] .dshDesktopFrame[data-sidebar-collapsed] [data-sidebar-right-panel="fullscreen"] [class*="_tabStrip"] {
+body[data-dsh-desktop-platform="darwin"] .dshDesktopFrame[data-sidebar-collapsed] [data-sidebar-right-panel="fullscreen"] [class*="_tabStrip"],
+html[data-platform="darwin"][data-omnimux-left-collapsed] [data-sidebar-right-panel="fullscreen"] [data-dockkit-strip],
+html[data-platform="darwin"][data-omnimux-left-collapsed] [data-sidebar-right-panel="fullscreen"] [class*="_tabStrip"],
+html[data-platform="darwin"] [class*="frame"][data-sidebar-collapsed] [data-sidebar-right-panel="fullscreen"] [data-dockkit-strip],
+html[data-platform="darwin"] [class*="frame"][data-sidebar-collapsed] [data-sidebar-right-panel="fullscreen"] [class*="_tabStrip"] {
   padding-left: var(--omnimux-topbar-toggle-end, 164px) !important;
 }
 html[data-omnimux-left-collapsed] [data-sidebar-right-panel="fullscreen"] [data-dockkit-strip],
 html[data-omnimux-left-collapsed] [data-sidebar-right-panel="fullscreen"] [class*="_tabStrip"],
 .dshDesktopFrame[data-sidebar-collapsed] [data-sidebar-right-panel="fullscreen"] [data-dockkit-strip],
-.dshDesktopFrame[data-sidebar-collapsed] [data-sidebar-right-panel="fullscreen"] [class*="_tabStrip"] {
+.dshDesktopFrame[data-sidebar-collapsed] [data-sidebar-right-panel="fullscreen"] [class*="_tabStrip"],
+[class*="frame"][data-sidebar-collapsed] [data-sidebar-right-panel="fullscreen"] [data-dockkit-strip],
+[class*="frame"][data-sidebar-collapsed] [data-sidebar-right-panel="fullscreen"] [class*="_tabStrip"] {
   padding-left: var(--omnimux-topbar-toggle-end, 88px) !important;
 }
 
@@ -1700,10 +1752,12 @@ export function installSidebarToggleTopbar(doc = typeof document !== 'undefined'
   /** @type {number | any} */
   let pendingSchedule = null
   let isEnsuring = false
+  let lastHookLeftCollapsed = isEffectivelyLeftCollapsed(doc)
 
   // Track mounted controls and leaf panes so split dragging updates overlap.
   const syncGeometry = () => {
     safeDom(() => applyTopbarToggleCssVars(doc))
+    lastHookLeftCollapsed = isEffectivelyLeftCollapsed(doc)
     runTopbarGeometryHook(doc)
   }
   /** @type {Set<Element>} */
@@ -1752,6 +1806,11 @@ export function installSidebarToggleTopbar(doc = typeof document !== 'undefined'
           && topbarRetryAttempt >= TOPBAR_RETRY_BACKOFF_MS.length
         const allowBodyFallback = isEffectivelyLeftCollapsed(doc) || retryExhausted
         ensureSidebarToggleTopbar(doc, { allowBodyFallback })
+        const nextLeftCollapsed = isEffectivelyLeftCollapsed(doc)
+        if (nextLeftCollapsed !== lastHookLeftCollapsed) {
+          lastHookLeftCollapsed = nextLeftCollapsed
+          runTopbarGeometryHook(doc)
+        }
         ensureObserveTargets()
         rebindHostObservers()
         watchTopbarAnchorAppearance()

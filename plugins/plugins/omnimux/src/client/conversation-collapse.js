@@ -39,22 +39,28 @@ const IMAGE_CANVAS_VISIBLE = '[data-omnimux-image-canvas][data-visible="true"]'
  * 左基准由既有左栏规则归零，投射后卡片仍居中于画布。
  */
 export const IMAGE_CANVAS_IDENTITY_SELECTOR = `html:has(${IMAGE_CANVAS_VISIBLE})`
-/** 会话列不可见 · 成因一：右栏全屏面板遮挡。 */
-export const IMAGE_CANVAS_FULLSCREEN_SELECTOR = `${IMAGE_CANVAS_IDENTITY_SELECTOR} .dshDesktopFrame[data-rightbar-fullscreen="true"]`
-/** 会话列不可见 · 成因二：布局折叠且右栏未确证收起。 */
+/** 会话列不可见成因一（旧壳）：右栏全屏面板遮挡。 */
+export const IMAGE_CANVAS_FULLSCREEN_LEGACY_SELECTOR = `${IMAGE_CANVAS_IDENTITY_SELECTOR} .dshDesktopFrame[data-rightbar-fullscreen="true"]`
+/** 会话列不可见成因一（Next 壳）：右栏全屏面板遮挡。 */
+export const IMAGE_CANVAS_FULLSCREEN_NEXT_SELECTOR = `${IMAGE_CANVAS_IDENTITY_SELECTOR} [class*="frame"][data-rightbar-fullscreen="true"]`
+/** 会话列不可见成因一：右栏全屏面板遮挡（双壳并集）。 */
+export const IMAGE_CANVAS_FULLSCREEN_SELECTOR = `${IMAGE_CANVAS_FULLSCREEN_LEGACY_SELECTOR}, ${IMAGE_CANVAS_FULLSCREEN_NEXT_SELECTOR}`
+/** 会话列不可见成因二：布局折叠且右栏未确证收起。 */
 export const CONVERSATION_COLUMN_HIDDEN_SELECTOR = `html[${CONVERSATION_COLLAPSED_ATTR}]:not(:has([data-rightbar-collapsed="true"])):has(${IMAGE_CANVAS_VISIBLE})`
 /**
  * 投射规则的前缀。**必须用 `:is()` 包裹**：这个常量会被当作前缀拼上 `[data-composer-seat]`，
  * 若直接写成逗号并集，展开后是 `A, B [data-composer-seat]`——第一条分支会丢掉座席后代，
  * 变成「把 `position:fixed` 打在画布外框上」，全屏路径静默失效（实机预演抓到的真实缺陷）。
  */
-export const IMAGE_CANVAS_PROJECTION_SELECTOR = `:is(${IMAGE_CANVAS_FULLSCREEN_SELECTOR}, ${CONVERSATION_COLUMN_HIDDEN_SELECTOR})`
+export const IMAGE_CANVAS_PROJECTION_SELECTOR = `:is(${IMAGE_CANVAS_FULLSCREEN_LEGACY_SELECTOR}, ${IMAGE_CANVAS_FULLSCREEN_NEXT_SELECTOR}, ${CONVERSATION_COLUMN_HIDDEN_SELECTOR})`
 
 export const CONVERSATION_COLLAPSE_CSS = `
 /* Middle conversation column — collapse layout width while projecting native composer fixed to canvas bottom.
    Excludes rightbar collapsed state so conversation remains fully visible when auxiliary panel is closed. */
 html[${CONVERSATION_COLLAPSED_ATTR}] .dshDesktopFrame:not([data-rightbar-collapsed="true"]) [class*="centerCol"],
 html[${CONVERSATION_COLLAPSED_ATTR}] .dshDesktopFrame:not([data-rightbar-collapsed="true"]) .dshDesktopConversationSurface,
+html[${CONVERSATION_COLLAPSED_ATTR}] [class*="frame"]:not([data-rightbar-collapsed="true"]) [class*="centerCol"],
+html[${CONVERSATION_COLLAPSED_ATTR}] [class*="frame"]:not([data-rightbar-collapsed="true"]) .dshDesktopConversationSurface,
 html[${CONVERSATION_COLLAPSED_ATTR}]:not(:has([data-rightbar-collapsed="true"])) [class*="centerCol"],
 html[${CONVERSATION_COLLAPSED_ATTR}]:not(:has([data-rightbar-collapsed="true"])) .dshDesktopConversationSurface{
   flex:0 0 0!important;
@@ -67,8 +73,12 @@ html[${CONVERSATION_COLLAPSED_ATTR}]:not(:has([data-rightbar-collapsed="true"]))
 }
 html[${CONVERSATION_COLLAPSED_ATTR}] .dshDesktopFrame:not([data-rightbar-collapsed="true"]) .dshDesktopConversationSurface,
 html[${CONVERSATION_COLLAPSED_ATTR}] .dshDesktopFrame:not([data-rightbar-collapsed="true"]) .dshDesktopConversationSurface > *,
+html[${CONVERSATION_COLLAPSED_ATTR}] [class*="frame"]:not([data-rightbar-collapsed="true"]) [class*="centerCol"],
+html[${CONVERSATION_COLLAPSED_ATTR}] [class*="frame"]:not([data-rightbar-collapsed="true"]) [class*="centerCol"] > *,
 html[${CONVERSATION_COLLAPSED_ATTR}]:not(:has([data-rightbar-collapsed="true"])) .dshDesktopConversationSurface,
 html[${CONVERSATION_COLLAPSED_ATTR}]:not(:has([data-rightbar-collapsed="true"])) .dshDesktopConversationSurface > *,
+html[${CONVERSATION_COLLAPSED_ATTR}]:not(:has([data-rightbar-collapsed="true"])) [class*="centerCol"],
+html[${CONVERSATION_COLLAPSED_ATTR}]:not(:has([data-rightbar-collapsed="true"])) [class*="centerCol"] > *,
 html[${CONVERSATION_COLLAPSED_ATTR}]:not(:has([data-rightbar-collapsed="true"])) [data-slot="conversation"],
 html[${CONVERSATION_COLLAPSED_ATTR}]:not(:has([data-rightbar-collapsed="true"])) [data-slot="conversation"] > *,
 html[${CONVERSATION_COLLAPSED_ATTR}]:not(:has([data-rightbar-collapsed="true"])) [data-phase="active"],
@@ -110,6 +120,7 @@ ${IMAGE_CANVAS_PROJECTION_SELECTOR} [data-composer-seat]{
    不能把带 html 前缀的投射选择器再接在它后面——那会要求 html 是 html 的后代，
    整条规则永远不命中（聚合校验抓不到，只有真实浏览器会暴露）。 */
 html[data-omnimux-left-collapsed]:has([data-omnimux-image-canvas][data-visible="true"]) .dshDesktopFrame[data-rightbar-fullscreen="true"] [data-composer-seat],
+html[data-omnimux-left-collapsed]:has([data-omnimux-image-canvas][data-visible="true"]) [class*="frame"][data-rightbar-fullscreen="true"] [data-composer-seat],
 html[data-omnimux-left-collapsed][${CONVERSATION_COLLAPSED_ATTR}]:not(:has([data-rightbar-collapsed="true"])):has([data-omnimux-image-canvas][data-visible="true"]) [data-composer-seat]{
   left:0!important;
 }
@@ -123,8 +134,17 @@ ${IMAGE_CANVAS_PROJECTION_SELECTOR} [data-composer-card]{
   visibility:visible!important;
   opacity:1!important;
 }
-/* 分栏与普通展开态下，右侧面板必须 100% 铺满右侧网格容器，绝不因绝对定位 shrink-to-fit 产生左侧黑洞空隙 */
-.dshDesktopRightbarSurface [class*="_panel"]:not([data-sidebar-right-panel="fullscreen"]):not([class*="bottom"]):not([class*="Hidden"]){
+/* 分栏与普通展开态下，右侧面板必须 100% 铺满右侧网格容器，绝不因绝对定位 shrink-to-fit 产生左侧黑洞空隙；
+   Next 壳严格限定 :not([data-rightbar-collapsed="true"]) 与 push+open，避免关闭滑出或窄屏 overlay 被压扁成 0px；
+   无 data-sidebar-right-panel 的旧面板兜底仅匹配直接子元素或 [data-dsh-panel-host] 直接子元素，绝不误伤
+   documentpreview (.Dj9pYa_panel)、panelBody (._6dqGca_panelBody) 或 react-flow__panel 等内部弹层/子容器。 */
+.dshDesktopRightbarSurface [class*="_panel"]:not([data-sidebar-right-panel="fullscreen"]):not([class*="bottom"]):not([class*="Hidden"]),
+[class*="frame"]:not([data-rightbar-collapsed="true"]) [data-rightbar-col] [class*="_panel"][data-sidebar-right-panel="push"][data-sidebar-right-open],
+[class*="frame"]:not([data-rightbar-collapsed="true"]) [class*="rightbarCol"] [class*="_panel"][data-sidebar-right-panel="push"][data-sidebar-right-open],
+[class*="frame"]:not([data-rightbar-collapsed="true"]) [data-rightbar-col] > [class*="_panel"]:not([data-sidebar-right-panel]):not([class*="bottom"]):not([class*="Hidden"]),
+[class*="frame"]:not([data-rightbar-collapsed="true"]) [class*="rightbarCol"] > [class*="_panel"]:not([data-sidebar-right-panel]):not([class*="bottom"]):not([class*="Hidden"]),
+[class*="frame"]:not([data-rightbar-collapsed="true"]) [data-rightbar-col] [data-dsh-panel-host] > [class*="_panel"]:not([data-sidebar-right-panel]):not([class*="bottom"]):not([class*="Hidden"]),
+[class*="frame"]:not([data-rightbar-collapsed="true"]) [class*="rightbarCol"] [data-dsh-panel-host] > [class*="_panel"]:not([data-sidebar-right-panel]):not([class*="bottom"]):not([class*="Hidden"]){
   left:0!important;
   right:0!important;
   width:100%!important;
@@ -137,13 +157,21 @@ ${IMAGE_CANVAS_PROJECTION_SELECTOR} [data-composer-card]{
    写成视口偏移会把左侧导航宽度算两遍，面板右移一个侧栏宽。
    必须排除全屏态面板：它是 position:fixed（视口坐标由 sidebar-toggle-topbar 的
    fullscreen 规则负责），误套容器坐标会让它左移一个侧栏宽、压住左侧导航。 */
-html[${CONVERSATION_COLLAPSED_ATTR}]:not([data-omnimux-left-collapsed]) .dshDesktopRightbarSurface [class*="_panel"]:not([data-sidebar-right-panel]):not([class*="bottom"]):not([class*="Hidden"]):not([data-sidebar-right-panel="fullscreen"]){
+html[${CONVERSATION_COLLAPSED_ATTR}]:not([data-omnimux-left-collapsed]) .dshDesktopRightbarSurface [class*="_panel"]:not([data-sidebar-right-panel]):not([class*="bottom"]):not([class*="Hidden"]):not([data-sidebar-right-panel="fullscreen"]),
+html[${CONVERSATION_COLLAPSED_ATTR}]:not([data-omnimux-left-collapsed]) [data-rightbar-col] > [class*="_panel"]:not([data-sidebar-right-panel]):not([class*="bottom"]):not([class*="Hidden"]):not([data-sidebar-right-panel="fullscreen"]),
+html[${CONVERSATION_COLLAPSED_ATTR}]:not([data-omnimux-left-collapsed]) [class*="rightbarCol"] > [class*="_panel"]:not([data-sidebar-right-panel]):not([class*="bottom"]):not([class*="Hidden"]):not([data-sidebar-right-panel="fullscreen"]),
+html[${CONVERSATION_COLLAPSED_ATTR}]:not([data-omnimux-left-collapsed]) [data-rightbar-col] [data-dsh-panel-host] > [class*="_panel"]:not([data-sidebar-right-panel]):not([class*="bottom"]):not([class*="Hidden"]):not([data-sidebar-right-panel="fullscreen"]),
+html[${CONVERSATION_COLLAPSED_ATTR}]:not([data-omnimux-left-collapsed]) [class*="rightbarCol"] [data-dsh-panel-host] > [class*="_panel"]:not([data-sidebar-right-panel]):not([class*="bottom"]):not([class*="Hidden"]):not([data-sidebar-right-panel="fullscreen"]){
   left:0!important;
   right:0!important;
   width:auto!important;
   max-width:none!important;
 }
-html[${CONVERSATION_COLLAPSED_ATTR}][data-omnimux-left-collapsed] .dshDesktopRightbarSurface [class*="_panel"]:not([data-sidebar-right-panel]):not([class*="bottom"]):not([class*="Hidden"]){
+html[${CONVERSATION_COLLAPSED_ATTR}][data-omnimux-left-collapsed] .dshDesktopRightbarSurface [class*="_panel"]:not([data-sidebar-right-panel]):not([class*="bottom"]):not([class*="Hidden"]),
+html[${CONVERSATION_COLLAPSED_ATTR}][data-omnimux-left-collapsed] [data-rightbar-col] > [class*="_panel"]:not([data-sidebar-right-panel]):not([class*="bottom"]):not([class*="Hidden"]),
+html[${CONVERSATION_COLLAPSED_ATTR}][data-omnimux-left-collapsed] [class*="rightbarCol"] > [class*="_panel"]:not([data-sidebar-right-panel]):not([class*="bottom"]):not([class*="Hidden"]),
+html[${CONVERSATION_COLLAPSED_ATTR}][data-omnimux-left-collapsed] [data-rightbar-col] [data-dsh-panel-host] > [class*="_panel"]:not([data-sidebar-right-panel]):not([class*="bottom"]):not([class*="Hidden"]),
+html[${CONVERSATION_COLLAPSED_ATTR}][data-omnimux-left-collapsed] [class*="rightbarCol"] [data-dsh-panel-host] > [class*="_panel"]:not([data-sidebar-right-panel]):not([class*="bottom"]):not([class*="Hidden"]){
   left:0!important;
   right:0!important;
   width:100vw!important;

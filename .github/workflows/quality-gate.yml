@@ -98,6 +98,7 @@ jobs:
           node --check scripts/verify-skill-hygiene.mjs
           node --check scripts/verify-global-skills.mjs
           node --check scripts/verify-dsw-tokens.mjs
+          node --check scripts/verify-next-shell-selectors.mjs
           node --check scripts/generate-featured-skills.mjs
           node --check scripts/report-blocker.mjs
           node --check scripts/lib/silent-catch-delta.mjs
@@ -121,6 +122,8 @@ jobs:
           node scripts/verify-bilingual-docs.mjs
           node scripts/verify-dsw-tokens.mjs
           node --test scripts/verify-dsw-tokens.test.mjs
+          node scripts/verify-next-shell-selectors.mjs
+          node --test scripts/verify-next-shell-selectors.test.mjs
           node scripts/verify-silent-catch.mjs
           node --test scripts/verify-silent-catch.test.mjs
           node scripts/verify-message-source-kinds.mjs
