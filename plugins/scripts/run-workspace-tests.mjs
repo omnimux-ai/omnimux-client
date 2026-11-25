@@ -3,9 +3,11 @@
  * Runs every workspace package's `test` script the same way locally and in CI, and fails on
  * anything short of a clean pass.
  *
- * A package passes only when its test command exits 0, reports at least one test, and its TAP
- * output contains no `not ok` line and no cancelled test. The `not ok` scan matters because a
- * suite that throws while collecting can print `not ok` while node:test still exits 0.
+ * A package passes only when its test command exits 0, reports at least one test, its TAP
+ * output contains no `not ok` line and no cancelled test, and every skip is accounted for.
+ * The `not ok` scan matters because a suite that throws while collecting can print `not ok`
+ * while node:test still exits 0. Environment skips are explicit-marker only; design skips
+ * remain allowed but are printed in the package status line.
  *
  * Packages run without proxy variables so a test that silently depends on a reachable proxy
  * fails locally the same way it fails on a clean CI runner. HOME is left alone: headless Chrome
@@ -63,10 +65,11 @@ export function selectShard(packages, shard) {
   return packages.filter((pkg) => TEST_SHARDS[shard].includes(pkg.name))
 }
 /** @typedef {{ location: string, name: string, error: string }} TestFailure */
+/** @typedef {{ name: string, reason: string }} SkippedCase */
 /**
  * @typedef {{
  *   tests: number, pass: number, fail: number, cancelled: number, skipped: number,
- *   notOk: number, failures: TestFailure[],
+ *   notOk: number, failures: TestFailure[], skippedCases: SkippedCase[],
  * }} TapSummary
  */
 
@@ -106,7 +109,16 @@ export function parseTap(text) {
   const lines = text.split('\n')
   /** @type {TestFailure[]} */
   const failures = []
+  /** @type {SkippedCase[]} */
+  const skippedCases = []
   let notOk = 0
+  for (const line of lines) {
+    // node:test emits skipped tests as `ok N - name # SKIP reason`. Keep the
+    // reason intact: it is the only thing judge() may use to distinguish an
+    // explicit environment skip from a design/by-design skip.
+    const skipped = /^\s*ok \d+ - (.*?)\s+#\s*SKIP(?:\s+(.*))?$/i.exec(line)
+    if (skipped) skippedCases.push({ name: skipped[1], reason: (skipped[2] ?? '').trim() })
+  }
   for (let i = 0; i < lines.length; i++) {
     const head = /^\s*not ok \d+ - (.*)$/.exec(lines[i])
     if (!head) continue
@@ -132,20 +144,65 @@ export function parseTap(text) {
     skipped: sumCounter(text, 'skipped'),
     notOk,
     failures,
+    skippedCases,
   }
 }
 
+/** @param {{ total: number, environment: number, byDesign: number }} skip */
+export function formatSkipSummary(skip) {
+  return `skip=${skip.total} (environment=${skip.environment}, by-design=${skip.byDesign})`
+}
+
+/** Render the package status line; skips are always visible and never a bare `ok`. */
+export function formatPackageLine(result) {
+  const status = result.reasons.length ? `FAIL (${result.reasons.join(', ')})` : 'ok'
+  const skipSummary = result.judgement.skipSummary.total > 0 || result.judgement.skipSummary.parsed > 0
+    ? ` ${formatSkipSummary(result.judgement.skipSummary)}`
+    : ''
+  return `${result.name.padEnd(26)} tests=${String(result.tap.tests).padStart(5)} pass=${String(result.tap.pass).padStart(5)} fail=${result.tap.fail} cancelled=${result.tap.cancelled} ${status}${skipSummary} ${result.seconds}s`
+}
+
 /**
+ * Classifies skip lines by explicit marker only. A skipped test without
+ * `[environment-unavailable]` is by-design: free-text matching would turn
+ * legitimate optional-dependency/platform skips into false red packages.
  * @param {{ exitCode: number | null, tap: TapSummary }} run
- * @returns {string[]} reasons the package did not pass; empty means it passed
+ * @returns {{
+ *   passed: boolean,
+ *   reasons: string[],
+ *   counts: { passed: number, failed: number, skippedEnvironment: number, skippedByDesign: number },
+ *   skipSummary: { total: number, parsed: number, environment: number, byDesign: number, mismatch: boolean },
+ * }}
  */
 export function judge({ exitCode, tap }) {
+  const skippedCases = Array.isArray(tap.skippedCases) ? tap.skippedCases : []
+  const skippedEnvironment = skippedCases.filter((item) => String(item.reason || '').includes('[environment-unavailable]')).length
+  const skippedByDesign = skippedCases.length - skippedEnvironment
+  const skippedMismatch = tap.skipped !== skippedCases.length
   const reasons = []
   if (exitCode !== 0) reasons.push(`exit code ${exitCode}`)
   if (tap.tests === 0) reasons.push('no tests reported')
   if (tap.notOk > 0) reasons.push(`${tap.notOk} not ok line(s)`)
   if (tap.cancelled > 0) reasons.push(`${tap.cancelled} cancelled`)
-  return reasons
+  if (skippedEnvironment > 0) reasons.push(`${skippedEnvironment} environment-unavailable skip(s)`)
+  if (skippedMismatch) reasons.push(`skip count mismatch: summary=${tap.skipped} parsed=${skippedCases.length}`)
+  return {
+    passed: reasons.length === 0,
+    reasons,
+    counts: {
+      passed: tap.pass,
+      failed: tap.fail,
+      skippedEnvironment,
+      skippedByDesign,
+    },
+    skipSummary: {
+      total: tap.skipped,
+      parsed: skippedCases.length,
+      environment: skippedEnvironment,
+      byDesign: skippedByDesign,
+      mismatch: skippedMismatch,
+    },
+  }
 }
 
 /** Environment for one package run: TAP reporter, repo-local bins first, no proxy, isolated DSH_HOME. */
@@ -197,7 +254,8 @@ function runPackage(pkg, logsDir) {
     rmSync(dshHome, { recursive: true, force: true })
   }
   if (logsDir) writeFileSync(join(logsDir, `${pkg.name.replaceAll('/', '__')}.log`), output)
-  return { name: pkg.name, exitCode, seconds: Math.round((Date.now() - started) / 1000), tap, reasons: judge({ exitCode, tap }) }
+  const judgement = judge({ exitCode, tap })
+  return { name: pkg.name, exitCode, seconds: Math.round((Date.now() - started) / 1000), tap, reasons: judgement.reasons, judgement }
 }
 
 function parseArgs(argv, env) {
@@ -246,8 +304,7 @@ export function main(argv = process.argv.slice(2), env = process.env) {
   for (const pkg of packages) {
     const result = runPackage(pkg, options.logs)
     results.push(result)
-    const status = result.reasons.length ? `FAIL (${result.reasons.join(', ')})` : 'ok'
-    console.log(`${result.name.padEnd(26)} tests=${String(result.tap.tests).padStart(5)} fail=${result.tap.fail} cancelled=${result.tap.cancelled} ${result.seconds}s ${status}`)
+    console.log(formatPackageLine(result))
     for (const failure of result.tap.failures.slice(0, 50)) {
       const kind = classifyFailure(failure.error)
       console.log(`    ✖ [${kind}] ${failure.location || '(no location)'} — ${failure.name}${failure.error ? ` — ${failure.error.slice(0, 200)}` : ''}`)

@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { parse } from 'yaml'
-import { classifyFailure, discoverPackages, main, selectShard, SHARD_NAMES } from './run-workspace-tests.mjs'
+import { classifyFailure, discoverPackages, formatPackageLine, formatSkipSummary, judge, main, parseTap, selectShard, SHARD_NAMES } from './run-workspace-tests.mjs'
 
 const RUNNER = fileURLToPath(new URL('./run-workspace-tests.mjs', import.meta.url))
 
@@ -53,6 +53,94 @@ test('inline failure summary only trusts the explicit probeClass marker', () => 
   assert.equal(classifyFailure('spawnSync /usr/bin/google-chrome ETIMEDOUT Chrome probe diagnostic: {}'), 'assertion-or-product-failure')
   assert.equal(classifyFailure('Unexpected token ... not valid JSON Chrome probe diagnostic: {}'), 'assertion-or-product-failure')
   assert.equal(classifyFailure("Expected values to be strictly equal: actual: 'none'"), 'assertion-or-product-failure')
+})
+
+const tapSummary = (overrides = {}) => ({
+  tests: 3,
+  pass: 1,
+  fail: 0,
+  cancelled: 0,
+  skipped: 0,
+  notOk: 0,
+  failures: [],
+  skippedCases: [],
+  ...overrides,
+})
+
+test('parseTap captures skip reasons and judge separates all four categories', () => {
+  const tap = parseTap([
+    'TAP version 13',
+    'ok 1 - passes',
+    'ok 2 - env skip # SKIP [environment-unavailable] chrome not found',
+    'ok 3 - design skip # SKIP LibreOffice is not installed',
+    '1..3',
+    '# tests 3',
+    '# pass 1',
+    '# fail 0',
+    '# cancelled 0',
+    '# skipped 2',
+  ].join('\n'))
+  assert.deepEqual(tap.skippedCases, [
+    { name: 'env skip', reason: '[environment-unavailable] chrome not found' },
+    { name: 'design skip', reason: 'LibreOffice is not installed' },
+  ])
+  const result = judge({ exitCode: 0, tap })
+  assert.equal(result.passed, false)
+  assert.deepEqual(result.reasons, ['1 environment-unavailable skip(s)'])
+  assert.deepEqual(result.counts, { passed: 1, failed: 0, skippedEnvironment: 1, skippedByDesign: 1 })
+  assert.equal(formatSkipSummary(result.skipSummary), 'skip=2 (environment=1, by-design=1)')
+})
+
+test('design-only skips do not fail the package but remain visible in the skip summary', () => {
+  const result = judge({
+    exitCode: 0,
+    tap: tapSummary({ tests: 2, pass: 1, skipped: 1, skippedCases: [{ name: 'optional dep', reason: 'LibreOffice is not installed' }] }),
+  })
+  assert.equal(result.passed, true)
+  assert.deepEqual(result.reasons, [])
+  assert.deepEqual(result.counts, { passed: 1, failed: 0, skippedEnvironment: 0, skippedByDesign: 1 })
+  assert.equal(formatSkipSummary(result.skipSummary), 'skip=1 (environment=0, by-design=1)')
+})
+
+test('free-text skip reasons are never guessed as environment failures without the explicit marker', () => {
+  const result = judge({
+    exitCode: 0,
+    tap: tapSummary({ skipped: 1, skippedCases: [{ name: 'probe-like', reason: 'chrome not found at a path' }] }),
+  })
+  assert.equal(result.passed, true)
+  assert.deepEqual(result.reasons, [])
+  assert.deepEqual(result.counts, { passed: 1, failed: 0, skippedEnvironment: 0, skippedByDesign: 1 })
+})
+
+test('environment-only skips fail the package', () => {
+  const result = judge({
+    exitCode: 0,
+    tap: tapSummary({ skipped: 1, skippedCases: [{ name: 'probe', reason: '[environment-unavailable] chrome not found' }] }),
+  })
+  assert.equal(result.passed, false)
+  assert.deepEqual(result.reasons, ['1 environment-unavailable skip(s)'])
+  assert.deepEqual(result.counts, { passed: 1, failed: 0, skippedEnvironment: 1, skippedByDesign: 0 })
+})
+
+test('package status line always shows the skip summary instead of a bare ok', () => {
+  const tap = tapSummary({ tests: 2, pass: 1, skipped: 1, skippedCases: [{ name: 'optional dep', reason: 'LibreOffice is not installed' }] })
+  const judgement = judge({ exitCode: 0, tap })
+  const line = formatPackageLine({ name: 'demo', seconds: 1, tap, reasons: judgement.reasons, judgement })
+  assert.match(line, / ok skip=1 \(environment=0, by-design=1\) 1s$/)
+  assert.doesNotMatch(line, / ok 1s$/)
+  const failing = judge({ exitCode: 0, tap: tapSummary({ skipped: 1, skippedCases: [{ name: 'probe', reason: '[environment-unavailable] chrome' }] }) })
+  assert.match(formatPackageLine({ name: 'demo', seconds: 1, tap: failing, reasons: failing.reasons, judgement: failing }), /FAIL \(1 environment-unavailable skip\(s\)\) skip=1 \(environment=1, by-design=0\)/)
+})
+
+test('a skip count mismatch cannot pass as green', () => {
+  for (const tap of [
+    tapSummary({ skipped: 2, skippedCases: [{ name: 'one parsed', reason: '[environment-unavailable] chrome' }] }),
+    tapSummary({ skipped: 0, skippedCases: [{ name: 'unexpected skip', reason: 'LibreOffice is not installed' }] }),
+  ]) {
+    const result = judge({ exitCode: 0, tap })
+    assert.equal(result.passed, false)
+    assert.ok(result.reasons.some((reason) => reason.startsWith('skip count mismatch:')), result.reasons.join('; '))
+  }
 })
 
 test('CI binds bounded style-probe retry to the Plugin unit suites step', () => {

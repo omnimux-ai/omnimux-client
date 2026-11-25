@@ -6,6 +6,7 @@ import { dirname, join } from 'node:path'
 import test from 'node:test'
 import { fileURLToPath } from 'node:url'
 import * as esbuild from 'esbuild'
+import { skipProbeUnavailable } from '../../tests/fixtures/probe-skip.mjs'
 
 const CHROME_PATH = process.env.OMNIMUX_QA_CHROME
   || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
@@ -136,7 +137,8 @@ async function runStageProbe() {
 
 const probe = await runStageProbe()
 
-test('数据分析看板的分割线渲染在页头与标签行之间', { skip: probe.skipped === true }, () => {
+test('数据分析看板的分割线渲染在页头与标签行之间', { skip: false }, (t) => {
+  if (probe.skipped === true) return skipProbeUnavailable(t, probe)
   assert.equal(probe.separatorCount, 1)
   assert.equal(probe.dividerFollowsHeader, true)
   assert.equal(probe.dividerPrecedesActionRow, true)
@@ -152,14 +154,16 @@ test('数据分析看板的分割线渲染在页头与标签行之间', { skip: 
   ])
 })
 
-test('标签行与筛选行之间不再有分割线，且筛选栏无底边框', { skip: probe.skipped === true }, () => {
+test('标签行与筛选行之间不再有分割线，且筛选栏无底边框', { skip: false }, (t) => {
+  if (probe.skipped === true) return skipProbeUnavailable(t, probe)
   assert.equal(probe.actionRowPrecedesFilterBar, true)
   assert.equal(probe.actionRow.bottom <= probe.filterBar.top + 0.5, true)
   assert.equal(probe.filterBorderBottomWidth, '0px')
   assert.equal(probe.filterBorderBottomStyle, 'none')
 })
 
-test('分割线保持 1px 高、贯通 stage 全宽，两侧净空落在 8~28px 节奏内', { skip: probe.skipped === true }, () => {
+test('分割线保持 1px 高、贯通 stage 全宽，两侧净空落在 8~28px 节奏内', { skip: false }, (t) => {
+  if (probe.skipped === true) return skipProbeUnavailable(t, probe)
   assert.equal(probe.divider.height, 1)
   assert.ok(Math.abs(probe.divider.width - probe.stage.width) < 1)
   assert.ok(Math.abs(probe.divider.left - probe.stage.left) < 1)
