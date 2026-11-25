@@ -121,4 +121,71 @@ describe('createHubToolExecutor', () => {
     assert.deepEqual(calls[0].arguments, { video: '/tmp/clip.mp4' })
     assert.equal('calls' in calls[0], false)
   })
+
+  it('rejects non-object return values on the 0.2.1 single-call fallback instead of returning raw payload heuristics', async () => {
+    const tools = {
+      executionMode: () => 'single',
+      async execute() {
+        return { mode: 'raw-without-envelope' }
+      },
+    }
+    const executor = createHubToolExecutor({ resolveTools: () => tools, idFactory: () => 'legacy-raw' })
+    const value = await executor.execute('video_analyze', { video: '/tmp/clip.mp4' })
+    assert.equal(value, undefined)
+
+    const invalidTools = {
+      executionMode: () => 'single',
+      async execute() {
+        return null
+      },
+    }
+    const invalidExecutor = createHubToolExecutor({ resolveTools: () => invalidTools })
+    await assert.rejects(
+      () => invalidExecutor.execute('video_analyze', { video: '/tmp/clip.mp4' }),
+      /未返回结果对象/,
+    )
+  })
+
+  it('maps AbortError, ABORT_ERR, ABORTED, and ABORTED_BEFORE_DISPATCH batch errors to AbortError', async () => {
+    const cases = [
+      { name: 'AbortError', code: undefined },
+      { name: 'Error', code: 'ABORT_ERR' },
+      { name: 'Error', code: 'ABORTED' },
+      { name: 'Error', code: 'ABORTED_BEFORE_DISPATCH' },
+    ]
+    for (const info of cases) {
+      const tools = {
+        async execute(input) {
+          return {
+            results: [{
+              callId: input.calls[0].id,
+              result: {
+                isError: true,
+                content: [{ type: 'text', text: 'aborted by caller' }],
+                error: { message: 'aborted by caller', info },
+              },
+            }],
+          }
+        },
+      }
+      const executor = createHubToolExecutor({ resolveTools: () => tools })
+      await assert.rejects(
+        () => executor.execute('video_analyze', { video: '/tmp/clip.mp4' }),
+        (err) => err instanceof Error && err.name === 'AbortError' && err.code === 'ABORT_ERR',
+      )
+    }
+
+    const controller = new AbortController()
+    controller.abort()
+    const throwingTools = {
+      async execute() {
+        throw new Error('socket closed')
+      },
+    }
+    const abortExecutor = createHubToolExecutor({ resolveTools: () => throwingTools })
+    await assert.rejects(
+      () => abortExecutor.execute('video_analyze', { video: '/tmp/clip.mp4' }, { signal: controller.signal }),
+      (err) => err instanceof Error && err.name === 'AbortError' && err.code === 'ABORT_ERR',
+    )
+  })
 })

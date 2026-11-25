@@ -76,7 +76,12 @@ function throwToolResult(result, toolName) {
     error.code = HUB_TOOL_NOT_READY
     throw error
   }
-  if (info.name === 'AbortError' || info.code === 'ABORT_ERR' || info.code === 'ABORTED') {
+  if (
+    info.name === 'AbortError'
+    || info.code === 'ABORT_ERR'
+    || info.code === 'ABORTED'
+    || info.code === 'ABORTED_BEFORE_DISPATCH'
+  ) {
     const error = new Error(rawMessage)
     error.name = 'AbortError'
     error.code = 'ABORT_ERR'
@@ -142,9 +147,6 @@ export function createHubToolExecutor(deps = {}) {
           throw abortError
         }
         throw new Error(`工具 ${name} 执行失败: ${error instanceof Error ? error.message : String(error)}`)
-      }
-      if (legacySingle && isObject(raw) && !('isError' in raw) && !('content' in raw) && !('value' in raw)) {
-        return raw
       }
       const result = legacySingle ? raw : extractBatchResult(raw, callId, name)
       if (!isObject(result)) throw new Error(`工具 ${name} 未返回结果对象`)
