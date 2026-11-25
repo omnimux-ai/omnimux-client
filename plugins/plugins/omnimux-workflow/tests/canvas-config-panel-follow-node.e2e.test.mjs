@@ -6,7 +6,7 @@
  * 1. 真实渲染 ConfigPanelShell（包含分组节点 .react-flow__node-group 同在画布的场景），
  *    确认面板直接挂载在选中节点 DOM 内并随 zoom 反向缩放；
  * 2. 样式契约确认 components.css 不存在 dock 分栏裁切规则与通栏 ::after 分隔线，
- *    同时保留 .wf-panel-shell / .wf-panel-shell__card 防透底样式；
+ *    同时保留 .wf-panel-shell / .wf-panel-shell__card 既有外壳定位与内边距样式；
  * 3. 子浮层（CfgPopoverShell / ModelCascadeMenu / CustomSelect）无废弃 dock 位移事件残留。
  */
 import assert from 'node:assert/strict';
@@ -16,10 +16,10 @@ import { dirname, join } from 'node:path';
 import { describe, it } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
-import { inverseScaleForZoom } from '../../src/canvas/editor/utils/nodeVisualMath.ts';
+import { inverseScaleForZoom } from '../src/canvas/editor/utils/nodeVisualMath.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const pkgRoot = join(here, '../..');
+const pkgRoot = join(here, '..');
 const workflowRequire = createRequire(join(pkgRoot, 'package.json'));
 const React = workflowRequire('react');
 const { createRoot } = workflowRequire('react-dom/client');

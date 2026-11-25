@@ -14,17 +14,17 @@ PR #190（Issue #111 P3）将 `omnimux-workflow` 创作画布中的节点配置�
 
 - 不新增「自动停靠」开关或替代性分栏模式，始终保持画布 100% 完整高度与节点下方跟随交互。
 - 不改动节点业务能力、模型目录契约、`#88` 具名卡槽语义或画布保存/执行协议。
-- 严格消费既有宿主语义 Token 与 `.wf-panel-shell__card` 防透底规则，不新增冗余状态提示条（Show, Don't Tell）。
+- 保留 `.wf-panel-shell` / `.wf-panel-shell__card` 既有外壳定位与内边距样式，且全部子浮层继续满足 `guard:popover` 防透底门禁与宿主语义 Token 约束，不新增冗余状态提示条（Show, Don't Tell）。
 
 ## 3. 验收矩阵
 
 1. **前后对比 HTML 演示**：交付独立可打开的前后对比演示并在 `ego-browser` 核验深/浅双主题、分组内节点、反缩放与参数浮层交互。
-2. **构建、单测与门禁**：`build:all`、`omnimux-workflow` `typecheck` 与全量单测（含新增 `ConfigPanelShell.followNode.test.mjs` 与 `canvas-config-panel-follow-node.e2e.test.mjs`）、`test:gates`、`guard:popover`、`verify:dsw-tokens`、`verify-test-standard-declarations`、`verify-fix-regression-test`、`workspace-check` 与 `bundle.lock.json` 全绿；完成双向证伪。
+2. **构建、单测与门禁**：`build:all`、`omnimux-workflow` `typecheck` 与全量单测（含新增 `ConfigPanelShell.followNode.test.mjs` 与已接入 `omnimux-workflow` 测试命令及 CI 的 `tests/canvas-config-panel-follow-node.e2e.test.mjs`）、`guard:popover`、`verify:dsw-tokens`、`verify-test-standard-declarations`、`verify-fix-regression-test`、`workspace-check` 与 `bundle.lock.json` 全绿；完成双向证伪。
 3. **真实浏览器验证**：在任务 worktree 启动真实画布（`canvas-harness`），使用 `ego-browser` 在浅/暗双主题、宽/窄视口（`1440×900` 与 `1024×720`）下实测普通节点与分组内节点选中、缩放（`54%`/`100%`/`140%`）、节点拖拽与参数浮层打开，确认画布保持 100% 完整高度、无通栏分界线、面板紧随节点卡片正下方。
 
 ## 旧标准变更
 
-以下既有测试因用户明确要求「恢复之前的输入框面板跟随节点下方的 UI 交互方式（移除 PR #190 P3 底部停靠与上下分栏）」而随退役模块删除或按新契约更新，已由新增真实渲染单测 `ConfigPanelShell.followNode.test.mjs` 与端到端回归测试 `canvas-config-panel-follow-node.e2e.test.mjs` 锁定新行为：
+以下既有测试因用户明确要求「恢复之前的输入框面板跟随节点下方的 UI 交互方式（移除 PR #190 P3 底部停靠与上下分栏）」而随退役模块删除或按新契约更新，已由新增真实渲染单测 `ConfigPanelShell.followNode.test.mjs` 与端到端回归测试 `tests/canvas-config-panel-follow-node.e2e.test.mjs` 锁定新行为：
 
 - `plugins/plugins/omnimux-workflow/src/canvas/editor/components/MaterialNode/ConfigPanel/configPanelPlacement.test.mjs` :: `Issue #111 P3: configPanelPlacement`
 - `plugins/plugins/omnimux-workflow/src/canvas/editor/components/MaterialNode/ConfigPanel/configPanelPlacement.test.mjs` :: `stays anchored when sparse layout has ample room below owner card`
