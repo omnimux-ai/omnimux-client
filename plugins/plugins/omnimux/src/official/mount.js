@@ -216,8 +216,8 @@ export function mountOfficial(ctx, deps) {
     if (isToolEnabled(gate, 'omnimux_analytics_daily_metrics')) {
       /**
        * Daily aggregated metrics. `args` are the gateway's own query keys
-       * (`fromDate`, `toDate`, `platform`, `account_ids`); `profileId` is
-       * resolved server-side from the signed-in tenant and is not accepted.
+       * (`fromDate`, `toDate`, `platform`, `timezone`, `account_ids`); `profileId`
+       * is resolved server-side from the signed-in tenant and is not accepted.
        */
       analyticsSeam.dailyMetrics = (args) => {
         assertCapabilityEnabled(gate, 'omnimux_analytics_daily_metrics', 'tool')
@@ -225,6 +225,10 @@ export function mountOfficial(ctx, deps) {
       }
     }
     if (isToolEnabled(gate, 'omnimux_analytics_posts')) {
+      /**
+       * Post analytics list or single post detail (`post_id`, `platform`,
+       * `sortBy`, `sortOrder`, `page`, `limit`).
+       */
       analyticsSeam.posts = (args) => {
         assertCapabilityEnabled(gate, 'omnimux_analytics_posts', 'tool')
         return getPostAnalytics(client, args ?? {})
@@ -739,9 +743,9 @@ export function mountOfficial(ctx, deps) {
     {
       fromDate: { type: 'string' },
       toDate: { type: 'string' },
-      profileId: { type: 'string' },
       platform: { type: 'string' },
-      accountIds: { type: 'string' },
+      timezone: { type: 'string' },
+      account_ids: { type: 'string' },
     },
     (args) => getDailyMetrics(client, args),
   )
@@ -751,8 +755,8 @@ export function mountOfficial(ctx, deps) {
     'Fetch 7x24h best times to post based on historical engagement. Requires OmniMux sign-in.',
     {
       platform: { type: 'string' },
-      accountId: { type: 'string' },
-      profileId: { type: 'string' },
+      account_id: { type: 'string' },
+      timezone: { type: 'string' },
     },
     (args) => getBestTimeToPost(client, args),
   )
@@ -762,7 +766,6 @@ export function mountOfficial(ctx, deps) {
     'Fetch correlation between posting frequency and engagement rate. Requires OmniMux sign-in.',
     {
       platform: { type: 'string' },
-      profileId: { type: 'string' },
     },
     (args) => getPostingFrequency(client, args),
   )
@@ -772,7 +775,6 @@ export function mountOfficial(ctx, deps) {
     'Fetch how engagement accumulates over time post-publishing (decay curve). Requires OmniMux sign-in.',
     {
       platform: { type: 'string' },
-      profileId: { type: 'string' },
     },
     (args) => getContentDecay(client, args),
   )
@@ -781,8 +783,7 @@ export function mountOfficial(ctx, deps) {
     'omnimux_analytics_follower_stats',
     'Fetch follower count history and growth for connected accounts. Requires OmniMux sign-in.',
     {
-      profileId: { type: 'string' },
-      accountIds: { type: 'string' },
+      account_ids: { type: 'string' },
       days: { type: 'number' },
     },
     (args) => getFollowerStats(client, args),
@@ -792,7 +793,7 @@ export function mountOfficial(ctx, deps) {
     'omnimux_analytics_posts',
     'Fetch post analytics list or single post detail with sorting and pagination. Requires OmniMux sign-in.',
     {
-      postId: { type: 'string' },
+      post_id: { type: 'string' },
       sortBy: { type: 'string' },
       sortOrder: { type: 'string', enum: ['asc', 'desc'] },
       platform: { type: 'string' },
@@ -806,7 +807,7 @@ export function mountOfficial(ctx, deps) {
     'omnimux_analytics_sync_external',
     'Trigger on-demand sync for external posts published directly on platform. Requires OmniMux sign-in.',
     {
-      accountId: { type: 'string', required: true },
+      account_id: { type: 'string', required: true },
       url: { type: 'string' },
     },
     (args) => syncExternalPosts(client, args),
@@ -817,14 +818,14 @@ export function mountOfficial(ctx, deps) {
     'Fetch inbox and conversation analytics (volume, response-time, heatmap, source-breakdown). Requires OmniMux sign-in.',
     {
       capability: { type: 'string', required: true, enum: ['volume', 'response-time', 'heatmap', 'source-breakdown'] },
+      platform: { type: 'string' },
       fromDate: { type: 'string' },
       toDate: { type: 'string' },
-      profileId: { type: 'string' },
-      accountId: { type: 'string' },
+      timezone: { type: 'string' },
     },
     (args) => {
       const { capability, ...query } = args
-      return getInboxAnalytics(client, String(capability), query)
+      return getInboxAnalytics(client, capability, query)
     },
   )
 }

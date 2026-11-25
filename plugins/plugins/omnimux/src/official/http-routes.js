@@ -90,8 +90,16 @@ export function avatarIdFromPath(pathname) {
  * @returns {{ status: number, body: Record<string, string> }}
  */
 export function mapOfficialError(error) {
-  if (error instanceof OmnimuxError && ['invalid-provider', 'account-provider-mismatch', 'post-provider-mismatch'].includes(error.code)) {
-    return { status: error.code === 'invalid-provider' ? 400 : 409, body: { error: error.code, message: error.message } }
+  if (error instanceof OmnimuxError && [
+    'invalid-provider',
+    'account-provider-mismatch',
+    'post-provider-mismatch',
+    'analytics-invalid-account-id',
+    'analytics-invalid-query',
+    'analytics-invalid-capability',
+  ].includes(error.code)) {
+    const status = error.code.endsWith('-mismatch') ? 409 : 400
+    return { status, body: { error: error.code, message: error.message } }
   }
   if (error instanceof OmnimuxError && error.code === 'quota-exceeded') {
     return { status: 402, body: { error: 'quota-exceeded', message: '当前操作需要更多额度，充值后即可继续使用 OmniMux。' } }

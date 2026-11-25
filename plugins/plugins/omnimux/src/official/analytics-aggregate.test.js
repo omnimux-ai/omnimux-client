@@ -2,7 +2,10 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import { OmnimuxError } from '../media/errors.js'
 import {
+  aggregateFollowers,
+  aggregateInsights,
   aggregateOverview,
+  aggregatePosts,
   bestPostScore,
   buildCloudQuery,
   cloudSundayToMonday,
@@ -123,12 +126,57 @@ describe('cloudSundayToMonday', () => {
 describe('buildCloudQuery', () => {
   it('expands 30d into fromDate/toDate and forwards a concrete account id', () => {
     const now = new Date(2026, 7, 25, 12, 0, 0).getTime()
-    const cloud = buildCloudQuery({ timeRange: '30d', profileId: 'acc_tt_01', platform: 'tiktok' }, now)
+    const cloud = buildCloudQuery({ timeRange: '30d', profileId: '42', platform: 'tiktok' }, now)
     assert.equal(cloud.days, 30)
     assert.equal(cloud.platform, 'tiktok')
-    assert.equal(cloud.accountIds, 'acc_tt_01')
+    assert.equal(cloud.account_ids, '42')
+    assert.equal(cloud.account_id, '42')
+    assert.equal(Object.hasOwn(cloud, 'accountIds'), false)
+    assert.equal(Object.hasOwn(cloud, 'accountId'), false)
     assert.equal(cloud.toDate, '2026-08-25')
     assert.equal(cloud.fromDate, '2026-07-27')
+  })
+
+  it('rejects non-numeric or non-positive profileId filters before upstream calls', () => {
+    for (const bad of ['acc_tt_01', '0', '-5', '12,34']) {
+      assert.throws(
+        () => buildCloudQuery({ timeRange: '30d', profileId: bad }),
+        (err) => err instanceof OmnimuxError && err.code === 'analytics-invalid-account-id',
+      )
+    }
+  })
+})
+
+describe('dashboard aggregation endpoint query isolation', () => {
+  it('sends only gateway-supported query keys per endpoint when filtering by account', async () => {
+    /** @type {string[]} */
+    const paths = []
+    const client = {
+      async withPat(path) {
+        paths.push(String(path))
+        if (path === '/api/social/v1/accounts?provider=zernio') {
+          return { accounts: [{ id: '42', provider: 'zernio', platform: 'tiktok', username: 'dsh' }] }
+        }
+        return {}
+      },
+    }
+    const query = { timeRange: '30d', platform: 'tiktok', profileId: '42' }
+    const now = new Date(2026, 7, 25, 12, 0, 0).getTime()
+    await aggregateOverview(client, query, { now })
+    await aggregateInsights(client, query, { now })
+    await aggregateFollowers(client, query, { now })
+    await aggregatePosts(client, query, { now })
+
+    assert.deepEqual(paths, [
+      '/api/social/v1/accounts?provider=zernio',
+      '/api/social/v1/analytics/daily-metrics?fromDate=2026-07-27&toDate=2026-08-25&platform=tiktok&account_ids=42',
+      '/api/social/v1/analytics/posts?platform=tiktok&sortBy=engagement&sortOrder=desc&limit=50',
+      '/api/social/v1/analytics/best-time-to-post?platform=tiktok&account_id=42',
+      '/api/social/v1/analytics/posting-frequency?platform=tiktok',
+      '/api/social/v1/analytics/content-decay?platform=tiktok',
+      '/api/social/v1/accounts/follower-stats?days=30&account_ids=42',
+      '/api/social/v1/analytics/posts?platform=tiktok&sortBy=engagement&sortOrder=desc&limit=50',
+    ])
   })
 })
 
@@ -315,15 +363,32 @@ describe('analytics modular index exports & submodules', () => {
 
   it('stamps incremental sync timestamps in aggregateSync', async () => {
     const { aggregateSync } = await import('./analytics/cloudPipeline.js')
+    /** @type {Array<{ path: string, opts: unknown }>} */
+    const calls = []
     const client = {
-      async withPat() {
+      async withPat(path, opts) {
+        calls.push({ path, opts })
         return { lastSyncedAt: 1700000000000, syncIntervalMs: 1800000 }
       },
     }
-    const res = await aggregateSync(client, { profileId: 'acc_01' }, { now: 1700000000000 })
+    const res = await aggregateSync(client, { profileId: '42' }, { now: 1700000000000 })
     assert.equal(res.ok, true)
     assert.equal(res.syncStatus.lastSyncedAt, 1700000000000)
     assert.equal(res.syncStatus.nextSyncAt, 1700000000000 + 1800000)
     assert.equal(res.syncStatus.syncIntervalMs, 1800000)
+    assert.equal(calls.length, 1)
+    assert.equal(calls[0].path, '/api/social/v1/analytics/sync-external-posts')
+    assert.deepEqual(calls[0].opts, { method: 'POST', body: { account_id: 42 } })
+    assert.equal(typeof calls[0].opts.body.account_id, 'number')
+
+    await assert.rejects(
+      () => aggregateSync(client, { profileId: 'all' }, { now: 1700000000000 }),
+      (err) => err instanceof OmnimuxError && err.code === 'analytics-invalid-account-id',
+    )
+    await assert.rejects(
+      () => aggregateSync(client, { profileId: 'acc_01' }, { now: 1700000000000 }),
+      (err) => err instanceof OmnimuxError && err.code === 'analytics-invalid-account-id',
+    )
+    assert.equal(calls.length, 1)
   })
 })

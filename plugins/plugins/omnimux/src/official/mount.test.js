@@ -165,3 +165,87 @@ it('X tweet dedicated tool preserves caller cancellation before any request (#33
   await assert.rejects(capture.registeredTools.omnimux_x_tweet.execute({ tweet_id: '12345' }, { signal: controller.signal }), { name: 'AbortError' })
   assert.equal(calls, 0)
 })
+
+it('analytics tools declare gateway contract parameter keys and wire valid requests', async () => {
+  const capture = registerCapture()
+  /** @type {Array<{ url: string, method: string, body: unknown }>} */
+  const requests = []
+  capture.deps.fetcher = async (url, init) => {
+    requests.push({
+      url: String(url),
+      method: init?.method || 'GET',
+      body: init?.body ? JSON.parse(String(init.body)) : undefined,
+    })
+    return new Response(JSON.stringify({ ok: true }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    })
+  }
+  mountOfficial(capture.ctx, capture.deps)
+
+  const toolSchemaPairs = [
+    ['omnimux_analytics_daily_metrics', capture.registeredTools.omnimux_analytics_daily_metrics, ['account_ids', 'fromDate', 'platform', 'timezone', 'toDate']],
+    ['omnimux_analytics_best_time', capture.registeredTools.omnimux_analytics_best_time, ['account_id', 'platform', 'timezone']],
+    ['omnimux_analytics_frequency', capture.registeredTools.omnimux_analytics_frequency, ['platform']],
+    ['omnimux_analytics_content_decay', capture.registeredTools.omnimux_analytics_content_decay, ['platform']],
+    ['omnimux_analytics_follower_stats', capture.registeredTools.omnimux_analytics_follower_stats, ['account_ids', 'days']],
+    ['omnimux_analytics_posts', capture.registeredTools.omnimux_analytics_posts, ['limit', 'page', 'platform', 'post_id', 'sortBy', 'sortOrder']],
+    ['omnimux_analytics_sync_external', capture.registeredTools.omnimux_analytics_sync_external, ['account_id', 'url']],
+    ['omnimux_analytics_inbox', capture.registeredTools.omnimux_analytics_inbox, ['capability', 'fromDate', 'platform', 'timezone', 'toDate']],
+  ]
+
+  for (const [name, tool, keys] of toolSchemaPairs) {
+    const props = tool.parameters.properties
+    assert.deepEqual(Object.keys(props).sort(), keys, `${name} schema keys must match gateway`)
+    for (const legacy of ['profileId', 'accountIds', 'accountId', 'postId']) {
+      assert.equal(Object.hasOwn(props, legacy), false, `${name} must not expose legacy key ${legacy}`)
+    }
+  }
+  assert.equal(capture.registeredTools.omnimux_analytics_sync_external.parameters.properties.account_id.required, true)
+  assert.equal(capture.registeredTools.omnimux_analytics_inbox.parameters.properties.capability.required, true)
+
+  await capture.registeredTools.omnimux_analytics_daily_metrics.execute({
+    fromDate: '2026-08-01',
+    toDate: '2026-08-07',
+    platform: 'tiktok',
+    timezone: 'Asia/Shanghai',
+    account_ids: '12, 34',
+  })
+  assert.equal(
+    requests.at(-1).url,
+    'https://omnimux.ai/api/social/v1/analytics/daily-metrics?fromDate=2026-08-01&toDate=2026-08-07&platform=tiktok&timezone=Asia%2FShanghai&account_ids=12%2C34',
+  )
+
+  await capture.registeredTools.omnimux_analytics_best_time.execute({ platform: 'tiktok', account_id: '12', timezone: 'UTC' })
+  assert.equal(requests.at(-1).url, 'https://omnimux.ai/api/social/v1/analytics/best-time-to-post?platform=tiktok&timezone=UTC&account_id=12')
+
+  await capture.registeredTools.omnimux_analytics_follower_stats.execute({ account_ids: '12', days: 14 })
+  assert.equal(requests.at(-1).url, 'https://omnimux.ai/api/social/v1/accounts/follower-stats?days=14&account_ids=12')
+
+  await capture.registeredTools.omnimux_analytics_posts.execute({ post_id: 'post_9', platform: 'tiktok', limit: 10, page: 1 })
+  assert.equal(requests.at(-1).url, 'https://omnimux.ai/api/social/v1/analytics/posts?post_id=post_9&platform=tiktok&page=1&limit=10')
+
+  await capture.registeredTools.omnimux_analytics_sync_external.execute({ account_id: '12', url: 'https://tiktok.com/@a/video/1' })
+  assert.equal(requests.at(-1).url, 'https://omnimux.ai/api/social/v1/analytics/sync-external-posts')
+  assert.equal(requests.at(-1).method, 'POST')
+  assert.deepEqual(requests.at(-1).body, { account_id: 12, url: 'https://tiktok.com/@a/video/1' })
+  assert.equal(typeof requests.at(-1).body.account_id, 'number')
+
+  await capture.registeredTools.omnimux_analytics_inbox.execute({ capability: 'heatmap', platform: 'tiktok', timezone: 'UTC' })
+  assert.equal(requests.at(-1).url, 'https://omnimux.ai/api/social/v1/inbox-analytics/heatmap?platform=tiktok&timezone=UTC')
+
+  const beforeErrors = requests.length
+  await assert.rejects(
+    () => capture.registeredTools.omnimux_analytics_daily_metrics.execute({ account_ids: 'acc_1' }),
+    (err) => err instanceof OmnimuxError && err.code === 'analytics-invalid-account-id',
+  )
+  await assert.rejects(
+    () => capture.registeredTools.omnimux_analytics_sync_external.execute({ account_id: 'acc_1' }),
+    (err) => err instanceof OmnimuxError && err.code === 'analytics-invalid-account-id',
+  )
+  await assert.rejects(
+    () => capture.registeredTools.omnimux_analytics_inbox.execute({ capability: 'heatmap', fromDate: '2026-08-01' }),
+    (err) => err instanceof OmnimuxError && err.code === 'analytics-invalid-query',
+  )
+  assert.equal(requests.length, beforeErrors, 'rejected analytics calls must never hit upstream')
+})
