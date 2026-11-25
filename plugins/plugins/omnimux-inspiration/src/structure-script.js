@@ -243,6 +243,9 @@ export async function extractScriptStructure(textComplete, { content = '', markd
     system: STRUCTURE_SYSTEM,
     prompt: buildStructurePrompt({ content, markdown }),
     maxTokens: 1800,
+    // Splitting an existing script by its own headings and timecodes is
+    // mechanical; the model only restates what the text already says.
+    reasoning: 'minimal',
   })
   const parsed = parseStructureJson(result?.text || result)
   return {

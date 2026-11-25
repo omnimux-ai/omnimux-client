@@ -5,6 +5,8 @@ import { fetchPage } from './fetch.js'
 /**
  * @param {{
  *   tools: { register: (tool: object) => unknown },
+ *   provide?: (name: string, value: unknown) => void,
+ *   get?: (name: string) => unknown,
  * }} ctx
  * @param {{
  *   hub: { official: { mount: boolean }, gate?: object },
@@ -24,6 +26,31 @@ export function mountReader(ctx, deps) {
 
   if (!isToolEnabled(gate, toolName)) return
 
+  /**
+   * Read one public page. Both the tool surface and the shared seam call this
+   * exact function, so the capability gate, credential lane and error codes
+   * cannot drift between them.
+   * @param {{ url: string }} args
+   */
+  async function readPage(args) {
+    assertCapabilityEnabled(gate, toolName, 'tool')
+    return fetchPage(
+      { env: deps.env, fetcher: deps.fetcher, resolveApiKey: deps.resolveApiKey },
+      args,
+    )
+  }
+
+  // Domain plugins read pages through this seam. Calling `.execute()` on the
+  // tool definition obtained from `ctx.tools.get()` would bypass the tool
+  // pipeline (pre-execute policy, guards, result audit) — see
+  // docs/contracts/headless-skill-execution.md.
+  if (typeof ctx.provide === 'function') {
+    ctx.provide('pageFetch', {
+      /** @param {{ url: string }} args */
+      fetch: (args) => readPage(args ?? {}),
+    })
+  }
+
   ctx.tools.register({
     name: toolName,
     description:
@@ -34,11 +61,7 @@ export function mountReader(ctx, deps) {
     output: deps.jsonOut,
     async execute(args) {
       try {
-        assertCapabilityEnabled(gate, toolName, 'tool')
-        return await fetchPage(
-          { env: deps.env, fetcher: deps.fetcher, resolveApiKey: deps.resolveApiKey },
-          args,
-        )
+        return await readPage(args)
       } catch (error) {
         if (error instanceof OmnimuxError) throw error
         return deps.rethrow(error)

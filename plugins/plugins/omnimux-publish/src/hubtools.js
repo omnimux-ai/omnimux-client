@@ -1,10 +1,13 @@
 import { PUBLISH_PROVIDER } from './account-policy.js'
 /**
- * HubPublishChannel: 懒封装 `ctx.tools.get/execute` 程序化调用 hub
+ * HubPublishChannel: 懒封装 `ctx.tools.executable/execute` 程序化调用 hub
  * `omnimux_publish_*` / `omnimux_accounts_list` 官方工具。
  *
- * - 懒解析：调用时才 get(name)，规避插件加载顺序；不存在 → 确定性
- *   `needs-hub`，不假装成功。
+ * - 懒解析：调用时才探测工具（0.2.2-rc.5 起用 `tools.executable`，它排除不满足
+ *   `when` 条件的注册；旧壳 0.2.1-rc.3 无该方法时回退 `tools.get`），规避插件
+ *   加载顺序；不存在 → 确定性 `needs-hub`，不假装成功。
+ * - 探测只用于存在性与错误分流；实际执行一律走 `ctx.tools.execute` 批次契约，
+ *   绝不直接调用工具定义上的 `execute`（那会绕过策略、审批与结果审计）。
  * - `ctx.tools.execute` 走完整策略/审批管线（与模型直调同一条路）：
  *   - 默认按 DSH 0.2.2-rc.5 批次契约传 `ToolBatchInput`（`{ calls: [{ type: 'tool-call', id, name, arguments: JSON.stringify(...) }], signal, agent? }`），
  *     从 `ToolBatchResult.results` 按 `callId` 解出 `{ content, isError, value, error }`；
@@ -18,7 +21,20 @@ import { isObject } from './shared/values.js'
 /** @typedef {{ type: 'tool-call', id: string, name: string, arguments: string }} ToolBatchCall */
 /** @typedef {{ calls: ToolBatchCall[], signal: AbortSignal, agent?: unknown }} ToolBatchInput */
 /** @typedef {{ callId: string, name: string, arguments: Record<string, unknown>, signal: AbortSignal, agent?: unknown }} LegacyToolExecution */
-/** @typedef {{ get?: (name: string) => unknown, execute?: (input: ToolBatchInput | LegacyToolExecution) => Promise<unknown>, executionMode?: (...args: unknown[]) => unknown, setExecutor?: (...args: unknown[]) => unknown }} ToolRegistry */
+/** @typedef {{ get?: (name: string) => unknown, executable?: (name: string) => unknown, execute?: (input: ToolBatchInput | LegacyToolExecution) => Promise<unknown>, executionMode?: (...args: unknown[]) => unknown, setExecutor?: (...args: unknown[]) => unknown }} ToolRegistry */
+
+/**
+ * 探测一个工具定义：0.2.2-rc.5 用 `executable`（不含被 `when` 排除的注册），
+ * 旧壳回退 `get`。两者都缺时返回 undefined，由调用方报确定性 `needs-hub`。
+ * @param {ToolRegistry} tools
+ * @param {string} name
+ * @returns {unknown}
+ */
+function resolveToolDefinition(tools, name) {
+  if (typeof tools.executable === 'function') return tools.executable(name)
+  if (typeof tools.get === 'function') return tools.get(name)
+  return undefined
+}
 
 /**
  * 精准识别冻结旧壳 DSH 0.2.1-rc.3 的单调用 ToolsService：
@@ -65,10 +81,10 @@ export function createHubChannel(deps = {}) {
    * @returns {Promise<unknown>}
    */
   async function exec(name, args, opts = {}) {
-    if (!tools || typeof tools.get !== 'function' || typeof tools.execute !== 'function') {
+    if (!tools || typeof tools.execute !== 'function') {
       throw new PublishError('needs-hub', 'omnimux hub 插件未装载（ctx.tools 不可用），请安装/启用 omnimux hub 插件后再使用发布通道')
     }
-    const tool = tools.get(name)
+    const tool = resolveToolDefinition(tools, name)
     if (!tool) {
       throw new PublishError('needs-hub', `omnimux hub 插件未装载（工具 ${name} 不存在），请安装/启用 omnimux hub 插件后再使用发布通道`)
     }

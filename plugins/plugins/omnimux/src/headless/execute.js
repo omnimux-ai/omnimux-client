@@ -96,6 +96,7 @@ function createTimedSignal(parentSignal, timeoutMs) {
  *   maxTokens?: number,
  *   timeoutMs?: number,
  *   maxRepairAttempts?: number,
+ *   reasoning?: 'inherit' | 'minimal', // inherit (default) keeps the route default; minimal is for mechanical stages
  *   signal?: AbortSignal,
  * }} request
  */
@@ -159,12 +160,21 @@ export async function executeHeadlessSkill(deps, request) {
           model: request.model,
           ...(request.toolModel !== undefined ? { toolModel: request.toolModel } : {}),
           ...(request.sessionId !== undefined ? { sessionId: request.sessionId } : {}),
+          // The policy is the caller's decision: complex analysis keeps the
+          // route default, and only the mechanical stages below ask for less.
+          ...(request.reasoning !== undefined ? { reasoning: request.reasoning } : {}),
           maxTokens,
           signal: timed.signal,
         }, timed)
 
         const modelUsed = typeof initial?.model === 'string' ? initial.model : (request.model || '')
-        update({ stage: 'validating', ...(modelUsed ? { model: modelUsed } : {}) })
+        /** Effective level of the call whose text was accepted. */
+        let reasoningEffort = typeof initial?.reasoningEffort === 'string' ? initial.reasoningEffort : null
+        update({
+          stage: 'validating',
+          ...(modelUsed ? { model: modelUsed } : {}),
+          ...(reasoningEffort !== null ? { reasoningEffort } : {}),
+        })
 
         let rawText = typeof initial?.text === 'string' ? initial.text : ''
         let validation = parseAndValidate(rawText, request.outputSchema)
@@ -177,19 +187,29 @@ export async function executeHeadlessSkill(deps, request) {
             errors: validation.errors,
             outputSchema: request.outputSchema,
           })
-          // Schema repair is text-only so heavy media bytes are not re-uploaded.
+          // Schema repair is text-only so heavy media bytes are not re-uploaded,
+          // and it is purely mechanical: shape the already-written answer to the
+          // schema. Asking for the cheapest level here keeps a thinking preamble
+          // from eating the whole token budget without weakening any judgement.
           const fixed = await runCompletion(deps.textComplete, {
             system: systemPrompt,
             prompt: repairPrompt,
             model: request.model,
             ...(request.toolModel !== undefined ? { toolModel: request.toolModel } : {}),
             ...(request.sessionId !== undefined ? { sessionId: request.sessionId } : {}),
+            reasoning: 'minimal',
             maxTokens,
             signal: timed.signal,
           }, timed)
           rawText = typeof fixed?.text === 'string' ? fixed.text : ''
           validation = parseAndValidate(rawText, request.outputSchema)
           repaired = validation.ok
+          if (validation.ok) {
+            // The accepted text is the repair's, so its level replaces the
+            // initial one even when the repair resolved no level at all.
+            reasoningEffort = typeof fixed?.reasoningEffort === 'string' ? fixed.reasoningEffort : null
+            update({ reasoningEffort })
+          }
         }
 
         if (!validation.ok) {
@@ -217,6 +237,7 @@ export async function executeHeadlessSkill(deps, request) {
           model: modelUsed,
           data: validation.data,
           repaired,
+          ...(reasoningEffort !== null ? { reasoningEffort } : {}),
           ...(request.inputFingerprint ? { inputFingerprint: request.inputFingerprint } : {}),
         }
       } catch (error) {

@@ -100,6 +100,11 @@ export function mountTextComplete(ctx, hub, jsonOut, onError, deps = {}) {
       reason: { type: 'string', required: true, description: 'Which missing capability, or which user / contract line authorizes this call.' },
       system: { type: 'string', description: 'Optional system text for this one request only.' },
       max_tokens: { type: 'number', description: 'Optional output cap. Defaults to Config.text.maxTokens.' },
+      reasoning: {
+        type: 'string',
+        enum: ['inherit', 'minimal'],
+        description: 'Reasoning policy. inherit (default) keeps the route default; minimal is only for mechanical, zero-side-effect work such as schema repair, translation or text splitting, and is ignored when the model declares no lower level.',
+      },
       strategy: {
         type: 'string',
         enum: ['auto', 'stability_first', 'cost_first'],
@@ -138,6 +143,7 @@ export function mountTextComplete(ctx, hub, jsonOut, onError, deps = {}) {
           document: args.document,
           system: args.system,
           maxTokens: args.max_tokens,
+          reasoning: args.reasoning,
           strategy: args.strategy,
           group: args.group,
           allowedGroups: args.allowed_groups,

@@ -82,7 +82,12 @@ export function mountOfficial(ctx, deps) {
       resolveApiKey: deps.resolveApiKey ?? (() => env.OMNIMUX_API_KEY || env.OMNIMUX_TOKEN),
     }))
     ctx.provide('socialData', {
-      fetch: (args, exec) => fetchSocial(args, exec),
+      // Same capability assertion the tool wrapper runs, so a consumer of the
+      // seam cannot reach the upstream while `omnimux_social_data` is disabled.
+      fetch: (args, exec) => {
+        assertCapabilityEnabled(gate, 'omnimux_social_data', 'tool')
+        return fetchSocial(args, exec)
+      },
     })
     ctx.provide('youtube', {
       getVideo: (args) => {
@@ -191,6 +196,41 @@ export function mountOfficial(ctx, deps) {
         return fetchSocialData(client, { platform: 'x', capability: 'search', query })
       },
     })
+    // Domain plugins read connected accounts and analytics through these seams.
+    // Reaching the same data by executing a tool definition taken from
+    // `ctx.tools.get()` would skip the tool pipeline (pre-execute policy,
+    // guards, result audit) — see docs/contracts/headless-skill-execution.md.
+    // A seam exists only while its tool capability is enabled, so the capability
+    // gate keeps governing both entry points instead of leaking a second door.
+    if (isToolEnabled(gate, 'omnimux_accounts_list')) {
+      ctx.provide('omnimuxAccounts', {
+        /** @param {{ provider?: unknown }} args */
+        list: (args) => {
+          assertCapabilityEnabled(gate, 'omnimux_accounts_list', 'tool')
+          return listAccounts(client, args ?? {})
+        },
+      })
+    }
+    /** @type {Record<string, (args: Record<string, unknown>) => Promise<unknown>>} */
+    const analyticsSeam = {}
+    if (isToolEnabled(gate, 'omnimux_analytics_daily_metrics')) {
+      /**
+       * Daily aggregated metrics. `args` are the gateway's own query keys
+       * (`fromDate`, `toDate`, `platform`, `account_ids`); `profileId` is
+       * resolved server-side from the signed-in tenant and is not accepted.
+       */
+      analyticsSeam.dailyMetrics = (args) => {
+        assertCapabilityEnabled(gate, 'omnimux_analytics_daily_metrics', 'tool')
+        return getDailyMetrics(client, args ?? {})
+      }
+    }
+    if (isToolEnabled(gate, 'omnimux_analytics_posts')) {
+      analyticsSeam.posts = (args) => {
+        assertCapabilityEnabled(gate, 'omnimux_analytics_posts', 'tool')
+        return getPostAnalytics(client, args ?? {})
+      }
+    }
+    if (Object.keys(analyticsSeam).length > 0) ctx.provide('omnimuxAnalytics', analyticsSeam)
   }
 
   /**

@@ -85,6 +85,47 @@ describe('HubPublishChannel lazy resolution', () => {
     // 构造时 omnimux_publish_presign 还不存在 → 调用时也不存在 → needs-hub
     await assert.rejects(() => channel.presign({ filename: 'a.png' }), (e) => e.code === 'needs-hub')
   })
+
+  it('probes with tools.executable on 0.2.2-rc.5 and falls back to tools.get on the 0.2.1-rc.3 shell', async () => {
+    // 0.2.2-rc.5: executable is the execution lookup, and it must be preferred
+    // because `get` also returns conditional registrations the step refused.
+    const modernProbes = []
+    const modern = {
+      executable: (name) => { modernProbes.push(name); return name === 'omnimux_publish_get' ? { name } : undefined },
+      get: () => { throw new Error('get() must not be used when executable() exists') },
+      async execute(batch) {
+        return {
+          results: [{ callId: batch.calls[0].id, result: { isError: false, content: [], value: okEnvelope({ id: '1', status: 'published' }) } }],
+          additionalContexts: [],
+          concluded: false,
+        }
+      },
+    }
+    const modernChannel = createHubChannel({ tools: modern })
+    assert.deepEqual(await modernChannel.getPost('1'), { id: '1', status: 'published' })
+    assert.deepEqual(modernProbes, ['omnimux_publish_get'])
+
+    // Frozen 0.2.1-rc.3 shell: no executable(); keep the get() probe.
+    const legacyProbes = []
+    const legacy = {
+      executionMode: () => ({ kind: 'exclusive' }),
+      get: (name) => { legacyProbes.push(name); return name === 'omnimux_publish_get' ? { name } : undefined },
+      async execute(exec) {
+        return { isError: false, content: [], value: okEnvelope({ id: '2' }) }
+      },
+    }
+    const legacyChannel = createHubChannel({ tools: legacy })
+    assert.deepEqual(await legacyChannel.getPost('2'), { id: '2' })
+    assert.deepEqual(legacyProbes, ['omnimux_publish_get'])
+
+    // A registry with neither probe cannot prove the tool exists.
+    const blind = { async execute() { throw new Error('must not dispatch') } }
+    const blindChannel = createHubChannel({ tools: blind })
+    await assert.rejects(
+      () => blindChannel.getPost('3'),
+      (e) => e instanceof PublishError && e.code === 'needs-hub' && /工具 omnimux_publish_get 不存在/.test(e.message),
+    )
+  })
 })
 
 describe('HubPublishChannel error mapping', () => {

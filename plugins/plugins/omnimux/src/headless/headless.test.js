@@ -617,4 +617,55 @@ describe('prepareHeadlessTransport and Hub video preparation', () => {
       { sessionId: 'sess-42', toolModel: 'override-prov:override-m' },
     ])
   })
+
+  it('downgrades only the mechanical schema repair and publishes the effective reasoning effort', async () => {
+    const calls = []
+    const env = createMockEnv({
+      skills: { 'reasoning-skill': { name: 'reasoning-skill', content: 'Return JSON' } },
+      onExecute: async (req) => {
+        calls.push('reasoning' in req ? { reasoning: req.reasoning } : {})
+        if (calls.length === 1) {
+          return { mode: 'live', model: 'reasoning-prov:model', text: 'not json', reasoningEffort: 'low' }
+        }
+        return {
+          mode: 'live',
+          model: 'reasoning-prov:model',
+          text: JSON.stringify({ hook: 'h', structure: 's', shots: [] }),
+          reasoningEffort: 'off',
+        }
+      },
+    })
+    const api = mountHeadlessSkill(env.ctx)
+
+    // An explicit inherit keeps the analysis call on the route default while
+    // the repair round, which only reshapes the answer, asks for the cheapest
+    // level.
+    const result = await api.run({
+      skillName: 'reasoning-skill',
+      input: 'hello',
+      outputSchema: BREAKDOWN_SCHEMA,
+      reasoning: 'inherit',
+    })
+    assert.equal(result.repaired, true)
+    assert.deepEqual(calls, [{ reasoning: 'inherit' }, { reasoning: 'minimal' }])
+    assert.equal(result.reasoningEffort, 'off', 'the accepted text came from the repair round')
+
+    const snapshot = api.getJob(result.jobId)
+    assert.equal(snapshot.reasoningEffort, 'off')
+    const validating = env.events
+      .filter((event) => event.type === HEADLESS_SKILL_EVENT_TYPE)
+      .find((event) => event.payload.stage === 'validating')
+    assert.equal(validating.payload.reasoningEffort, 'low')
+    assert.equal(env.events.at(-1).payload.reasoningEffort, 'off')
+
+    // A caller that says nothing never gains a policy field.
+    calls.length = 0
+    const untouched = await api.run({
+      skillName: 'reasoning-skill',
+      input: 'hello again',
+      outputSchema: BREAKDOWN_SCHEMA,
+    })
+    assert.equal(untouched.repaired, true)
+    assert.deepEqual(calls, [{}, { reasoning: 'minimal' }])
+  })
 })
