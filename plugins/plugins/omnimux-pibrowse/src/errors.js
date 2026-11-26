@@ -21,6 +21,7 @@ const CODE_STATUS_MAP = Object.freeze({
   'invalid-url': 400,
   'confirmation-required': 400,
   'not-local': 403,
+  'insecure-socket': 403,
   'unauthorized': 401,
   'totp-required': 401,
   'forbidden': 403,

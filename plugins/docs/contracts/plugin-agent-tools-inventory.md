@@ -376,7 +376,7 @@ superseded_by: null
 | 业务功能描述 | 对应 UI 交互 / HTTP 路由 | Agent 工具名称 (`Tool Name`) | 分级 | 状态 | 破坏性 confirm |
 |---|---|---|---|---|---|
 | 查询平台兼容、Sidecar、Core、Widevine、MCP 与 Team 全景状态 | 环境与运行态 / `GET /omnimux/pibrowse/overview` | `pibrowse_runtime_status` | L2 | `Implemented` | 否 |
-| 启停重启 Sidecar、配置路径、触发 Core 下载、探测/重连 MCP 或清理内核缓存 | 环境与运行态操作按钮 / `POST /omnimux/pibrowse/runtime` | `pibrowse_manage_runtime` | L1 | `Implemented` | 条件 (`action=clear_cache` 需 `confirm: true`) |
+| 启停重启 Sidecar、安装/复用受管运行时、触发 Core 下载、探测/重连 MCP 或清理内核缓存（自定义二进制路径覆盖 `configure_paths` 仅限 UI 显式确认，不对 Agent 工具开放） | 环境与运行态操作按钮 / `POST /omnimux/pibrowse/runtime` | `pibrowse_manage_runtime` | L1 | `Implemented` | 条件 (`action=clear_cache` 需 `confirm: true`) |
 | 克隆配置、重随机/重置指纹、回收站列表/恢复/彻底清除或启动指纹检测页 | 配置列表操作与回收站 / `POST /omnimux/pibrowse/profiles/manage` | `pibrowse_manage_profiles` | L1 | `Implemented` | 条件 (`action=purge` 需 `confirm: true`) |
 | 经代理检测出口 IP/国家/时区、执行分段连通性诊断或触发移动代理轮换 | 代理池检测/诊断/换 IP / `POST /omnimux/pibrowse/proxies/check` | `pibrowse_check_proxy` | L2 | `Implemented` | 否 |
 | 校验活跃配置引用后删除指定代理条目 | 代理池删除确认框 / `POST /omnimux/pibrowse/proxies/delete` | `pibrowse_delete_proxy` | L1 | `Implemented` | 是 (`confirm: true`) |

@@ -1,4 +1,5 @@
 import { MCP_SERVER_NAME, UPSTREAM_MCP_TOOL_NAMES } from './constants.js'
+import { ensurePrivateSocketDir, verifySocketTrust } from './paths.js'
 import { resolveAgentBinary, resolveCoreExecutable } from './platform.js'
 import { redactLogLine } from './redact.js'
 
@@ -206,6 +207,25 @@ export function createMcpBridge(opts) {
 
     if (registered) {
       unregister()
+    }
+
+    // Ensure private 0700 socket directory and verify no untrusted socket exists BEFORE spawning `fury-agent mcp`.
+    try {
+      await ensurePrivateSocketDir(opts.paths.socketPath, { platform: opts.platform, uid: opts.uid, lstatImpl: opts.lstatImpl })
+      await verifySocketTrust(opts.paths.socketPath, { platform: opts.platform, uid: opts.uid, lstatImpl: opts.lstatImpl })
+    } catch (err) {
+      const safeErr = redactLogLine(err instanceof Error ? err.message : String(err))
+      if (registered) unregister()
+      lastStatus = {
+        ...lastStatus,
+        registered: false,
+        state: 'error',
+        command: resolved.path,
+        error: safeErr,
+        updatedAt: new Date().toISOString(),
+      }
+      opts.logger?.warn?.('omnimux-pibrowse: mcpBridge refused untrusted IPC socket', { error: safeErr })
+      return getStatus()
     }
 
     // Explicitly neutralize FURY_API_PORT / FURY_API_TOKEN so parent env cannot open a TCP port.

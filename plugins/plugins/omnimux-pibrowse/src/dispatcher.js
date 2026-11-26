@@ -1,3 +1,4 @@
+import { lstat } from 'node:fs/promises'
 import { PINNED_UPSTREAM, UPSTREAM_MCP_TOOL_NAMES } from './constants.js'
 import { PibrowseError, normalizeCoreLaunchError } from './errors.js'
 import { validateUserPath } from './paths.js'
@@ -7,6 +8,8 @@ import {
   probeWidevineCdm,
   resolveAgentBinary,
   resolveCoreExecutable,
+  validateAgentBinaryFile,
+  validateCoreExecutableFile,
 } from './platform.js'
 import { redactAny, redactProfile, redactProxy, toLosslessJson } from './redact.js'
 
@@ -372,7 +375,7 @@ export function createPibrowseDispatcher(deps) {
 
   // ---- Runtime & Installer ----
 
-  async function manageRuntime(args = {}) {
+  async function manageRuntime(args = {}, runtimeOpts = {}) {
     const action = String(args.action || 'status')
     if (action === 'status') {
       return getOverview()
@@ -468,10 +471,51 @@ export function createPibrowseDispatcher(deps) {
       return toLosslessJson({ ok: true, ipcStatus: null, installer: installer.getStatus() })
     }
     if (action === 'configure_paths') {
+      if (runtimeOpts.caller === 'agent') {
+        throw new PibrowseError(
+          'forbidden',
+          'configure_paths is disabled for agent tools; configure runtime paths directly in the UI settings',
+        )
+      }
+      const touchesExecutablePaths = 'agentPath' in args || 'corePath' in args
+      if (runtimeOpts.caller === 'http' && touchesExecutablePaths) {
+        const blocked = requireConfirm(args.confirm, 'configure_paths')
+        if (blocked) return toLosslessJson(blocked)
+      }
       const prev = await configStore.load()
       const patch = {}
-      if ('agentPath' in args) patch.agentPath = args.agentPath
-      if ('corePath' in args) patch.corePath = args.corePath
+      if ('agentPath' in args) {
+        if (args.agentPath !== null && args.agentPath !== '') {
+          const normalized = validateUserPath(args.agentPath, { label: 'agentPath' })
+          const check = await validateAgentBinaryFile(normalized, deps.platform)
+          if (!check.ok) {
+            throw new PibrowseError('invalid-path', check.reason || 'Invalid fury-agent binary path')
+          }
+          patch.agentPath = normalized
+        } else {
+          patch.agentPath = null
+        }
+      }
+      if ('corePath' in args) {
+        if (args.corePath !== null && args.corePath !== '') {
+          const normalizedCore = validateUserPath(args.corePath, { label: 'corePath' })
+          const coreStat = await lstat(normalizedCore).catch(() => null)
+          if (coreStat) {
+            if (coreStat.isSymbolicLink()) {
+              throw new PibrowseError('invalid-path', 'corePath must not be a symbolic link')
+            }
+            if (coreStat.isFile()) {
+              const coreCheck = await validateCoreExecutableFile(normalizedCore, deps.platform)
+              if (!coreCheck.ok) {
+                throw new PibrowseError('invalid-path', coreCheck.reason || 'Invalid Chromium Core executable path')
+              }
+            }
+          }
+          patch.corePath = normalizedCore
+        } else {
+          patch.corePath = null
+        }
+      }
       if ('geoipPath' in args) patch.geoipPath = args.geoipPath
       if ('autoStartSidecar' in args) patch.autoStartSidecar = args.autoStartSidecar
       const next = await configStore.update(patch)

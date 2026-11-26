@@ -1,10 +1,129 @@
-import { access, readdir, readFile, stat } from 'node:fs/promises'
+import { access, lstat, readdir, readFile, realpath, stat } from 'node:fs/promises'
 import { constants as fsConstants } from 'node:fs'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { basename, isAbsolute, join } from 'node:path'
 import { PINNED_UPSTREAM } from './constants.js'
+import { resolveCurrentUid } from './paths.js'
 
 const STANDALONE_MAC_APP_AGENT = '/Applications/PiBrowse.app/Contents/MacOS/fury-agent'
+const ALLOWED_AGENT_BASENAME_RE = /^(?:[A-Za-z0-9._-]+-)?fury-agent(?:\.exe)?$/i
+
+function hasSafeAbsolutePathSyntax(targetPath) {
+  if (!targetPath || typeof targetPath !== 'string') return false
+  const trimmed = targetPath.trim()
+  if (!trimmed || trimmed.includes('\0') || !isAbsolute(trimmed)) return false
+  return !trimmed.split(/[\\/]+/).includes('..')
+}
+
+function isAllowedCoreBasename(name, platform = process.platform) {
+  const leaves = getCoreLeaves(platform).map((rel) => basename(rel))
+  if (platform === 'linux') {
+    return leaves.includes(name)
+  }
+  const lower = name.toLowerCase()
+  return leaves.some((leaf) => leaf.toLowerCase() === lower)
+}
+
+/**
+ * Check whether an agent binary path refers to a real, non-symlink, executable
+ * `fury-agent` binary owned by the current user or root and not group/world writable.
+ * @param {string} targetPath
+ * @param {NodeJS.Platform} [platform]
+ * @param {{ uid?: number | null }} [opts]
+ * @returns {Promise<{ ok: boolean, reason?: string }>}
+ */
+export async function validateAgentBinaryFile(targetPath, platform = process.platform, opts = {}) {
+  if (!hasSafeAbsolutePathSyntax(targetPath)) {
+    return { ok: false, reason: 'agentPath must be a normalized absolute path without traversal' }
+  }
+  const trimmed = targetPath.trim()
+  const base = basename(trimmed)
+  if (!ALLOWED_AGENT_BASENAME_RE.test(base)) {
+    return { ok: false, reason: `agentPath basename "${base}" must be a fury-agent executable` }
+  }
+  let info
+  try {
+    info = await lstat(trimmed)
+  } catch {
+    return { ok: false, reason: `agentPath does not exist: ${trimmed}` }
+  }
+  if (info.isSymbolicLink() || !info.isFile()) {
+    return { ok: false, reason: 'agentPath must be a regular non-symlink executable file' }
+  }
+  if (platform !== 'win32') {
+    if ((info.mode & 0o022) !== 0) {
+      return { ok: false, reason: 'agentPath must not be group-writable or world-writable' }
+    }
+    const expectedUid = resolveCurrentUid({ platform, uid: opts.uid })
+    if (expectedUid !== null && info.uid !== expectedUid && info.uid !== 0) {
+      return { ok: false, reason: `agentPath owner UID (${info.uid}) is not trusted` }
+    }
+  }
+  try {
+    const resolvedReal = await realpath(trimmed)
+    if (!ALLOWED_AGENT_BASENAME_RE.test(basename(resolvedReal))) {
+      return { ok: false, reason: 'agentPath resolved target must be a fury-agent executable' }
+    }
+  } catch {
+    return { ok: false, reason: 'agentPath realpath could not be resolved' }
+  }
+  const execMode = platform === 'win32' ? fsConstants.F_OK : fsConstants.X_OK
+  if (!(await pathAccessible(trimmed, execMode))) {
+    return { ok: false, reason: 'agentPath is not executable' }
+  }
+  return { ok: true }
+}
+
+/**
+ * Check whether a Core executable leaf is a real, non-symlink, executable file matching
+ * an expected upstream Chromium/Fury Core basename, owned by current user or root and
+ * not group/world writable.
+ * @param {string} targetPath
+ * @param {NodeJS.Platform} [platform]
+ * @param {{ uid?: number | null }} [opts]
+ * @returns {Promise<{ ok: boolean, reason?: string }>}
+ */
+export async function validateCoreExecutableFile(targetPath, platform = process.platform, opts = {}) {
+  if (!hasSafeAbsolutePathSyntax(targetPath)) {
+    return { ok: false, reason: 'corePath must be a normalized absolute path without traversal' }
+  }
+  const trimmed = targetPath.trim()
+  const base = basename(trimmed)
+  if (!isAllowedCoreBasename(base, platform)) {
+    return { ok: false, reason: `corePath basename "${base}" is not a recognized Chromium Core executable` }
+  }
+  let info
+  try {
+    info = await lstat(trimmed)
+  } catch {
+    return { ok: false, reason: `corePath does not exist: ${trimmed}` }
+  }
+  if (info.isSymbolicLink() || !info.isFile()) {
+    return { ok: false, reason: 'corePath executable must be a regular non-symlink file' }
+  }
+  if (platform !== 'win32') {
+    if ((info.mode & 0o022) !== 0) {
+      return { ok: false, reason: 'corePath executable must not be group-writable or world-writable' }
+    }
+    const expectedUid = resolveCurrentUid({ platform, uid: opts.uid })
+    if (expectedUid !== null && info.uid !== expectedUid && info.uid !== 0) {
+      return { ok: false, reason: `corePath executable owner UID (${info.uid}) is not trusted` }
+    }
+  }
+  try {
+    const resolvedReal = await realpath(trimmed)
+    if (!isAllowedCoreBasename(basename(resolvedReal), platform)) {
+      return { ok: false, reason: 'corePath resolved executable basename is not recognized' }
+    }
+  } catch {
+    return { ok: false, reason: 'corePath realpath could not be resolved' }
+  }
+  const execMode = platform === 'win32' ? fsConstants.F_OK : fsConstants.X_OK
+  if (!(await pathAccessible(trimmed, execMode))) {
+    return { ok: false, reason: 'corePath is not executable' }
+  }
+  return { ok: true }
+}
 
 /**
  * Check whether a filesystem path exists (and optionally is executable).
@@ -166,7 +285,8 @@ export async function probeStandaloneAgent(opts = {}) {
       : []
 
   for (const candidate of candidates) {
-    if (await pathAccessible(candidate, fsConstants.X_OK)) {
+    const check = await validateAgentBinaryFile(candidate, platform, opts)
+    if (check.ok) {
       return {
         found: true,
         path: candidate,
@@ -203,10 +323,9 @@ export function getCoreLeaves(platform = process.platform) {
   return ['pibrowse-core', 'fury-core', 'chrome']
 }
 
-async function isAccessibleExecutableFile(candidatePath, execMode) {
-  const info = await stat(candidatePath).catch(() => null)
-  if (!info || !info.isFile()) return false
-  return pathAccessible(candidatePath, execMode)
+async function isAccessibleCoreFile(candidatePath, platform) {
+  const check = await validateCoreExecutableFile(candidatePath, platform)
+  return check.ok
 }
 
 /**
@@ -219,15 +338,13 @@ async function isAccessibleExecutableFile(candidatePath, execMode) {
  * @returns {Promise<string | null>}
  */
 export async function resolveCoreExecutable(targetPath, platform = process.platform) {
-  if (!targetPath || typeof targetPath !== 'string') return null
+  if (!hasSafeAbsolutePathSyntax(targetPath)) return null
   const trimmed = targetPath.trim()
-  if (!trimmed) return null
-  const info = await stat(trimmed).catch(() => null)
-  if (!info) return null
+  const info = await lstat(trimmed).catch(() => null)
+  if (!info || info.isSymbolicLink()) return null
 
-  const execMode = platform === 'win32' ? fsConstants.F_OK : fsConstants.X_OK
   if (info.isFile()) {
-    return (await pathAccessible(trimmed, execMode)) ? trimmed : null
+    return (await isAccessibleCoreFile(trimmed, platform)) ? trimmed : null
   }
   if (!info.isDirectory()) return null
 
@@ -243,21 +360,21 @@ export async function resolveCoreExecutable(targetPath, platform = process.platf
 
   for (const rel of directCandidates) {
     const candidate = join(trimmed, rel)
-    if (await isAccessibleExecutableFile(candidate, execMode)) {
+    if (await isAccessibleCoreFile(candidate, platform)) {
       return candidate
     }
   }
 
-  // Match upstream `install_core::find_core()` one-level-down archive wrapper search
+  // Match upstream `install_core::find_core()` one-level-down archive wrapper search (non-symlink dirs only).
   if (!(platform === 'darwin' && trimmed.endsWith('.app'))) {
     const entries = await readdir(trimmed, { withFileTypes: true }).catch(() => null)
     if (entries) {
       const leaves = getCoreLeaves(platform)
       for (const entry of entries) {
-        if ((!entry.isDirectory() && !entry.isSymbolicLink()) || entry.name.startsWith('.')) continue
+        if (!entry.isDirectory() || entry.name.startsWith('.')) continue
         for (const rel of leaves) {
           const candidate = join(trimmed, entry.name, rel)
-          if (await isAccessibleExecutableFile(candidate, execMode)) {
+          if (await isAccessibleCoreFile(candidate, platform)) {
             return candidate
           }
         }
@@ -325,16 +442,18 @@ export async function resolveAgentBinary(opts) {
     : null
 
   if (configured) {
-    const exists = await pathAccessible(configured, execMode)
+    const check = await validateAgentBinaryFile(configured, opts.platform ?? process.platform)
     return {
-      installed: exists,
-      source: exists ? 'custom' : 'missing',
-      path: configured,
+      installed: check.ok,
+      source: check.ok ? 'custom' : 'missing',
+      path: check.ok ? configured : null,
       standaloneCandidate: null,
+      ...(check.ok ? {} : { problem: check.reason }),
     }
   }
 
-  if (await pathAccessible(opts.paths.managedAgentPath, execMode)) {
+  const managedCheck = await validateAgentBinaryFile(opts.paths.managedAgentPath, opts.platform ?? process.platform, opts)
+  if (managedCheck.ok) {
     return {
       installed: true,
       source: 'managed',
