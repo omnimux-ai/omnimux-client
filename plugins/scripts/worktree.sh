@@ -1129,12 +1129,12 @@ cmd_rescue_primary() {
   command -v node >/dev/null 2>&1 || die "node is required for rescue-primary"
 
   # 清洗可能污染主检出判断的环境变量（与 sync-main.sh 口径一致），并拒绝通过
-  # WORKTREE_REMOTE / WORKTREE_DEFAULT_BRANCH 绕过远端与默认分支校验。
+  # WORKTREE_REMOTE / WORKTREE_DEFAULT_BRANCH / BASH_ENV / ENV / NODE_OPTIONS 绕过或劫持执行。
   local _git_var
-  for _git_var in $(env | awk -F= '/^GIT_/{print $1}'); do
+  for _git_var in $(env | awk -F= '/^GIT_[A-Za-z0-9_]*=/{print $1}'); do
     unset "${_git_var}"
   done
-  unset WORKTREE_REMOTE WORKTREE_DEFAULT_BRANCH
+  unset WORKTREE_REMOTE WORKTREE_DEFAULT_BRANCH BASH_ENV ENV NODE_OPTIONS
 
   local rescue_root rescue_git_common rescue_primary_root rescue_wt_dir
   rescue_root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
@@ -1372,7 +1372,28 @@ cmd_rescue_primary() {
       }
     }
 
-    function fingerprintPath(baseDir, relPath, { allowReplacedByDir = false } = {}) {
+    function inspectReplacedDirectoryTree(baseDir, dirRel, knownPathSet, enforceNoUnrescuedFiles) {
+      const { abs: startAbs } = safeTargetPath(baseDir, dirRel)
+      const stack = [{ abs: startAbs, rel: dirRel }]
+      while (stack.length > 0) {
+        const { abs, rel } = stack.pop()
+        for (const name of readdirSync(abs)) {
+          if (name === ".git") {
+            throw new Error(`refusing to rescue directory entry containing nested git repo: ${rel}/${name}`)
+          }
+          const childRel = `${rel}/${name}`
+          const childAbs = join(abs, name)
+          const st = lstatSync(childAbs)
+          if (st.isDirectory()) {
+            stack.push({ abs: childAbs, rel: childRel })
+          } else if (enforceNoUnrescuedFiles && (!knownPathSet || !knownPathSet.has(childRel))) {
+            throw new Error(`refusing to rescue file-to-dir replacement containing uncollected path: ${childRel}`)
+          }
+        }
+      }
+    }
+
+    function fingerprintPath(baseDir, relPath, { allowReplacedByDir = false, knownPathSet = null, enforceNoUnrescuedFiles = false } = {}) {
       const { abs } = safeTargetPath(baseDir, relPath)
       let st
       try {
@@ -1386,14 +1407,10 @@ cmd_rescue_primary() {
       }
       if (st.isDirectory()) {
         // When a previously tracked file was replaced by a regular directory (file -> dir swap),
-        // treat the old file path as absent while its child files are captured individually;
-        // still refuse nested git repositories (presence of .git) or untracked directory entries.
-        let hasNestedGit = false
-        try {
-          lstatSync(join(abs, ".git"))
-          hasNestedGit = true
-        } catch {}
-        if (allowReplacedByDir && !hasNestedGit) {
+        // recursively verify zero nested .git markers and zero uncollected files (such as .gitignore
+        // secrets/logs or allowed drafts) before treating the old file path as absent.
+        if (allowReplacedByDir) {
+          inspectReplacedDirectoryTree(baseDir, relPath, knownPathSet, enforceNoUnrescuedFiles)
           return { kind: "absent" }
         }
         throw new Error(`refusing to rescue directory entry directly (possible nested repo): ${relPath}`)
@@ -1407,11 +1424,13 @@ cmd_rescue_primary() {
       return { kind: "file", execBit, sha256 }
     }
 
-    function snapshotPaths(baseDir, paths, trackedPathSet) {
+    function snapshotPaths(baseDir, paths, trackedPathSet, { knownPathSet = null, enforceNoUnrescuedFiles = false } = {}) {
       const map = {}
       for (const rel of paths) {
         map[rel] = fingerprintPath(baseDir, rel, {
           allowReplacedByDir: trackedPathSet ? trackedPathSet.has(rel) : false,
+          knownPathSet,
+          enforceNoUnrescuedFiles,
         })
       }
       return map
@@ -1428,12 +1447,37 @@ cmd_rescue_primary() {
       return true
     }
 
-    function removeFileAndEmptyParents(baseDir, relPath) {
+    function removeEmptyDirTreeBottomUp(dirAbs, rootAbs) {
+      if (dirAbs === rootAbs || !dirAbs.startsWith(rootAbs + sep)) return
+      let st
+      try {
+        st = lstatSync(dirAbs)
+      } catch (err) {
+        if (err && (err.code === "ENOENT" || err.code === "ENOTDIR")) return
+        throw err
+      }
+      if (!st.isDirectory()) return
+      for (const name of readdirSync(dirAbs)) {
+        const childAbs = join(dirAbs, name)
+        const childSt = lstatSync(childAbs)
+        if (!childSt.isDirectory()) {
+          throw new Error(`refusing to remove non-empty directory containing file on primary checkout: ${childAbs}`)
+        }
+        removeEmptyDirTreeBottomUp(childAbs, rootAbs)
+      }
+      rmdirSync(dirAbs)
+    }
+
+    function removeFileAndEmptyParents(baseDir, relPath, { allowRecursiveDir = false } = {}) {
       const { rootAbs, abs } = safeTargetPath(baseDir, relPath)
       try {
         const st = lstatSync(abs)
         if (st.isDirectory()) {
-          rmSync(abs, { recursive: true, force: true })
+          if (allowRecursiveDir) {
+            rmSync(abs, { recursive: true, force: true })
+          } else {
+            removeEmptyDirTreeBottomUp(abs, rootAbs)
+          }
         } else {
           unlinkSync(abs)
         }
@@ -1537,7 +1581,11 @@ cmd_rescue_primary() {
       throw new Error("no blocking dirty paths found during rescue snapshot")
     }
     const trackedPathSet = new Set(initial.trackedPaths)
-    const snap1 = snapshotPaths(primaryRoot, initial.allPaths, trackedPathSet)
+    const allPathSet = new Set(initial.allPaths)
+    const snap1 = snapshotPaths(primaryRoot, initial.allPaths, trackedPathSet, {
+      knownPathSet: allPathSet,
+      enforceNoUnrescuedFiles: true,
+    })
 
     let commitCount = 0
     // Always capture staged index state first whenever any staged entry exists.
@@ -1549,13 +1597,13 @@ cmd_rescue_primary() {
         stagedPaths.add(entry.p1)
         if (entry.p2) stagedPaths.add(entry.p2)
       }
-      // Pass 1: deletions (D entries and R source paths)
+      // Pass 1: deletions (D entries and R source paths) — recursive dir deletion is allowed only in wtRoot
       for (const entry of initial.stagedEntries) {
         if (entry.p2 && entry.x === "R") {
-          removeFileAndEmptyParents(wtRoot, entry.p2)
+          removeFileAndEmptyParents(wtRoot, entry.p2, { allowRecursiveDir: true })
         }
         if (entry.x === "D") {
-          removeFileAndEmptyParents(wtRoot, entry.p1)
+          removeFileAndEmptyParents(wtRoot, entry.p1, { allowRecursiveDir: true })
         }
       }
       // Pass 2: writes from primary index (:0:<path>)
@@ -1578,10 +1626,10 @@ cmd_rescue_primary() {
       }
     }
 
-    // Two-pass working-tree replay: Pass 1 deletions, Pass 2 writes.
+    // Two-pass working-tree replay: Pass 1 deletions (wtRoot only), Pass 2 writes.
     for (const rel of initial.allPaths) {
       if (snap1[rel].kind === "absent") {
-        removeFileAndEmptyParents(wtRoot, rel)
+        removeFileAndEmptyParents(wtRoot, rel, { allowRecursiveDir: true })
       }
     }
     for (const rel of initial.allPaths) {
@@ -1600,7 +1648,10 @@ cmd_rescue_primary() {
     }
 
     // Verification 1: rescued worktree matches Snapshot 1 byte-for-byte (including mode & symlink)
-    const wtSnap = snapshotPaths(wtRoot, initial.allPaths, trackedPathSet)
+    const wtSnap = snapshotPaths(wtRoot, initial.allPaths, trackedPathSet, {
+      knownPathSet: allPathSet,
+      enforceNoUnrescuedFiles: false,
+    })
     if (!snapshotsEqual(snap1, wtSnap, initial.allPaths)) {
       throw new Error("post-copy checksum mismatch between primary snapshot and rescue worktree; aborting cleanup")
     }
@@ -1626,13 +1677,18 @@ cmd_rescue_primary() {
     ) {
       throw new Error("primary checkout dirty file set changed concurrently during rescue; aborting cleanup")
     }
-    const snap2 = snapshotPaths(primaryRoot, initial.allPaths, trackedPathSet)
+    const snap2 = snapshotPaths(primaryRoot, initial.allPaths, trackedPathSet, {
+      knownPathSet: allPathSet,
+      enforceNoUnrescuedFiles: true,
+    })
     if (!snapshotsEqual(snap1, snap2, initial.allPaths)) {
       throw new Error("primary checkout file contents changed concurrently during rescue; aborting cleanup")
     }
 
-    // Cleanup primary checkout strictly for the verified rescued paths.
-    // Remove newly added/untracked paths before `git checkout HEAD` so file<->dir replacements succeed cleanly.
+    // Cleanup primary checkout strictly for the verified rescued paths (NEVER recursive rmSync on primaryRoot).
+    // 1. Reset index entries and remove blocking untracked child files first so replaced directories become empty.
+    // 2. Remove notInHead files and strictly-empty replaced directory shells bottom-up.
+    // 3. Checkout HEAD for inHead tracked paths.
     const inHead = []
     const notInHead = []
     if (initial.trackedPaths.length > 0) {
@@ -1644,13 +1700,23 @@ cmd_rescue_primary() {
           notInHead.push(rel)
         }
       }
-      for (const rel of notInHead) {
-        removeFileAndEmptyParents(primaryRoot, rel)
-      }
     }
     for (const rel of initial.blockingUntrackedPaths) {
       if (trackedPathSet.has(rel)) continue
       removeFileAndEmptyParents(primaryRoot, rel)
+    }
+    for (const rel of notInHead) {
+      removeFileAndEmptyParents(primaryRoot, rel)
+    }
+    for (const rel of inHead) {
+      const { rootAbs, abs } = safeTargetPath(primaryRoot, rel)
+      try {
+        if (lstatSync(abs).isDirectory()) {
+          removeEmptyDirTreeBottomUp(abs, rootAbs)
+        }
+      } catch (err) {
+        if (!err || (err.code !== "ENOENT" && err.code !== "ENOTDIR")) throw err
+      }
     }
     if (inHead.length > 0) {
       git(primaryRoot, ["--literal-pathspecs", "checkout", "-q", "HEAD", "--", ...inHead])

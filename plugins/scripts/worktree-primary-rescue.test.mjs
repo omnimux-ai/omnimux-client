@@ -456,11 +456,11 @@ test('rescue-primary handles chained renames, file<->dir swaps, glob metachar pa
   f.git('mv', 'chain-b.txt', 'chain-c.txt')
   f.git('mv', 'chain-a.txt', 'chain-b.txt')
 
-  // Directory -> file swap AND file -> directory swap
+  // Directory -> file swap AND file -> directory swap (including an empty nested subdir)
   rmSync(join(f.repo, 'swap-dir'), { recursive: true, force: true })
   writeFileSync(join(f.repo, 'swap-dir'), 'now-a-regular-file\n')
   rmSync(join(f.repo, 'swap-file'))
-  mkdirSync(join(f.repo, 'swap-file'), { recursive: true })
+  mkdirSync(join(f.repo, 'swap-file/empty-sub'), { recursive: true })
   writeFileSync(join(f.repo, 'swap-file/child.txt'), 'now-inside-dir\n')
 
   // Glob metacharacter path: edit src/[id]/page.js while src/i/page.js stays untouched
@@ -531,6 +531,39 @@ test('rescue-primary rejects real unmerged conflicts (ls-files -u) and nested un
     assert.match(res.stderr, /refusing to rescue directory entry|cleaned empty shell worktree/)
     assert.equal(existsSync(join(f.repo, '.worktrees/rescue-nested')), false)
     assert.equal(existsSync(join(nested, 'README.md')), true)
+  }
+
+  // 3. File -> directory swap containing gitignored file (notInHead staged path) refuses fail-closed and preserves ignored data
+  {
+    const f = createFixture(t)
+    writeFileSync(join(f.repo, 'staged-swap'), 'temp-staged\n')
+    f.git('add', 'staged-swap')
+    rmSync(join(f.repo, 'staged-swap'))
+    mkdirSync(join(f.repo, 'staged-swap'), { recursive: true })
+    writeFileSync(join(f.repo, 'staged-swap/child.txt'), 'tracked-like\n')
+    writeFileSync(join(f.repo, 'staged-swap/ignored.log'), 'precious-local-secret\n')
+
+    const res = f.rescue(['--task', 'rescue-swap-ignored', '--no-sync'])
+    assert.notEqual(res.status, 0)
+    assert.match(res.stderr, /uncollected path|cleaned empty shell worktree/)
+    assert.equal(existsSync(join(f.repo, '.worktrees/rescue-swap-ignored')), false)
+    assert.equal(readFileSync(join(f.repo, 'staged-swap/ignored.log'), 'utf8'), 'precious-local-secret\n')
+    assert.equal(readFileSync(join(f.repo, 'staged-swap/child.txt'), 'utf8'), 'tracked-like\n')
+  }
+
+  // 4. File -> directory swap containing deep nested .git refuses fail-closed and preserves nested repo
+  {
+    const f = createFixture(t)
+    rmSync(join(f.repo, 'swap-file'))
+    mkdirSync(join(f.repo, 'swap-file/sub/deep-repo'), { recursive: true })
+    f.gitAt(join(f.repo, 'swap-file/sub/deep-repo'), 'init', '-b', 'main')
+    writeFileSync(join(f.repo, 'swap-file/sub/deep-repo/data.txt'), 'deep-data\n')
+
+    const res = f.rescue(['--task', 'rescue-swap-deep-git', '--no-sync'])
+    assert.notEqual(res.status, 0)
+    assert.match(res.stderr, /nested git repo|cleaned empty shell worktree/)
+    assert.equal(existsSync(join(f.repo, '.worktrees/rescue-swap-deep-git')), false)
+    assert.equal(readFileSync(join(f.repo, 'swap-file/sub/deep-repo/data.txt'), 'utf8'), 'deep-data\n')
   }
 })
 

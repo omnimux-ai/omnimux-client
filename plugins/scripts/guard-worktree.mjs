@@ -4360,6 +4360,7 @@ function extractProcessSubstitutionPayloads(segment) {
   const input = String(segment || '')
   const scripts = []
   const materializationScripts = []
+  const rawInners = []
   let inSingle = false
   let inDouble = false
   let escaped = false
@@ -4389,6 +4390,7 @@ function extractProcessSubstitutionPayloads(segment) {
       const end = scanBalancedParen(input, i + 1)
       const inner = input.slice(i + 2, end).trim()
       if (inner) {
+        rawInners.push(inner)
         const info = extractProcessSubInfo(inner)
         scripts.push(...info.scripts)
         materializationScripts.push(...info.materializationScripts)
@@ -4396,7 +4398,7 @@ function extractProcessSubstitutionPayloads(segment) {
       i = end
     }
   }
-  return { scripts, materializationScripts }
+  return { scripts, materializationScripts, rawInners }
 }
 
 function extractFindSearchRoots(args) {
@@ -5857,9 +5859,9 @@ function resolvePrimaryRepoRootFromDir(dir) {
 
 function collectForbiddenRescueEnv(words, armedForbiddenEnv) {
   if (!words || words.length === 0) return
-  if (words[0] === 'export') {
+  if (words[0] === 'export' || words[0] === 'declare' || words[0] === 'typeset') {
     for (const token of words.slice(1)) {
-      if (token.startsWith('-')) continue
+      if (token === '--' || token.startsWith('-') || token.startsWith('+')) continue
       const key = token.split('=')[0]
       if (PRIMARY_RESCUE_FORBIDDEN_ENV_RE.test(key)) armedForbiddenEnv.add(key)
     }
@@ -6056,8 +6058,13 @@ export function decidePrimaryRescueCommand(command, cwd, options = {}, depth = 0
   let upstreamStdinText = ''
   let upstreamWorktreeScript = ''
   let sawStdinShellInStmt = false
+  let sawStdinShellInCmd = false
   let sawSetPositionalRescue = false
   const armedForbiddenEnv = new Set(normalizedOpts.inheritedForbiddenEnv || [])
+
+  const rawInnerMentionsWorktree = (inner) =>
+    PRIMARY_RESCUE_SCRIPT_RE.test(inner) ||
+    tokenizeCommandLine(inner).some((w) => PRIMARY_RESCUE_SCRIPT_RE.test(w))
 
   const denied = walkShellCommands(command, sessionCwd, {
     onStatementStart() {
@@ -6066,12 +6073,24 @@ export function decidePrimaryRescueCommand(command, cwd, options = {}, depth = 0
       sawStdinShellInStmt = false
     },
     onCloserTail({ tail }) {
+      const hasStdinShell = sawStdinShellInStmt || sawStdinShellInCmd
+      if (!hasStdinShell) return undefined
       const redirectedScript = extractInputRedirectionTargets(tail).find((t) => PRIMARY_RESCUE_SCRIPT_RE.test(t))
-      if (redirectedScript && sawStdinShellInStmt) {
+      if (redirectedScript) {
         return {
           decision: 'deny',
           reason: 'forbidden-untrusted-primary-rescue-script',
           script: redirectedScript,
+          segment: tail,
+        }
+      }
+      const tailProcSub = extractProcessSubstitutionPayloads(tail)
+      const procHit = tailProcSub.rawInners.find(rawInnerMentionsWorktree)
+      if (procHit) {
+        return {
+          decision: 'deny',
+          reason: 'forbidden-untrusted-primary-rescue-script',
+          script: `process-substitution (${procHit})`,
           segment: tail,
         }
       }
@@ -6230,9 +6249,11 @@ export function decidePrimaryRescueCommand(command, cwd, options = {}, depth = 0
 
         if (!shellMeta.scriptFile) {
           sawStdinShellInStmt = true
-          // Block stdin-fed execution of worktree.sh via `<`, pipe, or process substitution.
+          sawStdinShellInCmd = true
+          // Block stdin-fed execution of worktree.sh via `<`, pipe, or redirected process substitution `< <(...)`.
+          const stageMentionsRescue = effectiveWords.some((w) => w === 'rescue-primary')
           const redirectedWorktree = inputRedirects.find((t) => PRIMARY_RESCUE_SCRIPT_RE.test(t))
-          if (redirectedWorktree && effectiveWords.some((w) => w === 'rescue-primary')) {
+          if (redirectedWorktree && stageMentionsRescue) {
             return {
               decision: 'deny',
               reason: 'forbidden-untrusted-primary-rescue-script',
@@ -6240,7 +6261,7 @@ export function decidePrimaryRescueCommand(command, cwd, options = {}, depth = 0
               segment: rawStage,
             }
           }
-          if (upstreamWorktreeScript && effectiveWords.some((w) => w === 'rescue-primary')) {
+          if (upstreamWorktreeScript && stageMentionsRescue) {
             return {
               decision: 'deny',
               reason: 'forbidden-untrusted-primary-rescue-script',
@@ -6249,6 +6270,15 @@ export function decidePrimaryRescueCommand(command, cwd, options = {}, depth = 0
             }
           }
           const procSubInfo = extractProcessSubstitutionPayloads(rawStage)
+          const procHit = procSubInfo.rawInners.find(rawInnerMentionsWorktree)
+          if (procHit && stageMentionsRescue) {
+            return {
+              decision: 'deny',
+              reason: 'forbidden-untrusted-primary-rescue-script',
+              script: `process-substitution (${procHit})`,
+              segment: rawStage,
+            }
+          }
           for (const body of heredocs) {
             const nested = decidePrimaryRescueCommand(body, effectiveCwd, childOpts, effectiveDepth + 1)
             if (nested.decision === 'deny') return nested

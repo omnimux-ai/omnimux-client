@@ -2792,6 +2792,11 @@ describe('adversarial hardening regressions (materialization / wrapper / frozen-
         `bash -s rescue-primary --discard < "${join(wt, 'plugins/scripts/worktree.sh')}"`,
         `cat "${join(wt, 'plugins/scripts/worktree.sh')}" | bash -s rescue-primary --discard`,
         `bash <(cat "${join(wt, 'plugins/scripts/worktree.sh')}") rescue-primary --discard`,
+        `bash -s rescue-primary < <(cat "${join(wt, 'plugins/scripts/worktree.sh')}")`,
+        'bash -s rescue-primary --discard < <(cat plugins/scripts/worktree.sh)',
+        `{ bash -s rescue-primary; } < "${join(wt, 'plugins/scripts/worktree.sh')}"`,
+        '{ bash -s rescue-primary --discard; } < plugins/scripts/worktree.sh',
+        `{ bash -s rescue-primary; } < <(cat "${join(wt, 'plugins/scripts/worktree.sh')}")`,
         `pnpm --dir "${join(wt, 'plugins')}" wt rescue-primary`,
         `set -- rescue-primary --discard; source "${join(wt, 'plugins/scripts/worktree.sh')}"`,
         `echo rescue-primary | xargs bash "${join(wt, 'plugins/scripts/worktree.sh')}"`,
@@ -2822,6 +2827,9 @@ describe('adversarial hardening regressions (materialization / wrapper / frozen-
         'NODE_OPTIONS=--require=/tmp/pwn.js bash plugins/scripts/worktree.sh rescue-primary',
         'export GIT_INDEX_FILE=/tmp/idx; bash plugins/scripts/worktree.sh rescue-primary',
         'export WORKTREE_REMOTE=fake; bash -c "bash plugins/scripts/worktree.sh rescue-primary"',
+        'declare -x BASH_ENV=/tmp/pwn.sh; bash plugins/scripts/worktree.sh rescue-primary',
+        'declare -x NODE_OPTIONS=--require=/tmp/pwn.js; bash plugins/scripts/worktree.sh rescue-primary',
+        'typeset -x BASH_ENV=/tmp/pwn.sh; bash plugins/scripts/worktree.sh rescue-primary',
         deepNestedRescue,
       ]) {
         const res = decideBashCommand({ command, cwd: repo, ownerRoot: repo })
