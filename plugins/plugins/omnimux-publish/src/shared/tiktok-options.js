@@ -279,7 +279,6 @@ export function classifyTikTokError(input) {
   const matchedSocial = Boolean(
     category
     || isSocialTikTokCode(meta.code)
-    || upstreamCode
     || /\btiktok:/i.test(message),
   )
   const resolvedCategory = category || 'upstream_error'

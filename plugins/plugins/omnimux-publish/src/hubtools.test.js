@@ -270,6 +270,37 @@ describe('HubPublishChannel error mapping', () => {
     )
   })
 
+  it('preserves quota-exceeded when a non-TikTok error includes an arbitrary upstream_code', async () => {
+    const tools = {
+      get: () => ({ name: 'omnimux_publish_create' }),
+      async execute(batch) {
+        return {
+          results: [{
+            callId: batch.calls[0].id,
+            result: {
+              content: [{ type: 'text', text: 'insufficient_user_quota: top up required' }],
+              isError: true,
+              error: {
+                message: 'insufficient_user_quota',
+                info: {
+                  code: 'insufficient_user_quota',
+                  upstream_code: 'billing_cap_reached',
+                },
+              },
+            },
+          }],
+          additionalContexts: [],
+          concluded: false,
+        }
+      },
+    }
+    const channel = createHubChannel({ tools })
+    await assert.rejects(
+      () => channel.createPost({ provider: 'tiktok_direct', account_ids: ['a1'], media_items: [{ url: 'https://example.com/a.mp4' }] }),
+      (e) => e instanceof PublishError && e.code === 'quota-exceeded',
+    )
+  })
+
   it('maps UNKNOWN_TOOL to needs-hub', async () => {
     const tools = mockTools({ omnimux_publish_get: () => ({}) }, { getNames: ['omnimux_publish_get'] })
     // get 允许（lazy 存在），execute 走 UNKNOWN_TOOL 分支：用 getNames 排除法模拟

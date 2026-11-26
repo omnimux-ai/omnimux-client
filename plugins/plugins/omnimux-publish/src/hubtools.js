@@ -143,7 +143,7 @@ export function createHubChannel(deps = {}) {
       const infoUpstreamCode = typeof info.upstream_code === 'string' ? info.upstream_code.trim() : ''
       const infoLogId = typeof info.upstream_log_id === 'string' ? info.upstream_log_id.trim() : ''
       const socialCandidate = classifyTikTokError({
-        code: taggedCode || (isSocialTikTokCode(infoCode) ? infoCode : ''),
+        code: taggedCode || infoCode,
         upstream_code: tagged?.upstream_code || infoUpstreamCode,
         upstream_log_id: tagged?.upstream_log_id || infoLogId,
         message: tagged ? (tagged.message || rawMessage) : rawMessage,

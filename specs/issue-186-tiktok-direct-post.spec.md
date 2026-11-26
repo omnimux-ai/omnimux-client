@@ -18,7 +18,7 @@
    - `privacyChoices(null|undefined)` 仅供 `legacy_unknown` 兼容态回退官方四级；显式空数组或未知值一律返回 `[]` 并 fail-closed；
    - 更新 `src/index.js` 中 `PUBLISH_PROMPT` 与工具参数描述，以及 `validate.js` 错误提示，使 Agent 能自助补齐合规参数。
 
-10. **窄屏布局与可访问性（AC-15）**：`max-width: 960px` 时 Composer 改为文档流堆叠（账号栏 → 表单 → 预览 → 操作栏），编辑区/预览区不再互相覆盖；muted 文案改用 `--dsw-alias-label-secondary`，合规外链使用 `--dsw-alias-label-primary` 文本 + `--dsw-alias-link` 下划线，状态徽标文字使用 `--dsw-alias-label-primary`；390px 实测 `scrollWidth == clientWidth`、0 横向溢出，亮/暗主题文本最低对比度 5.80 / 5.55，0 `backdrop-filter`。
+10. **窄屏布局与可访问性（AC-15）**：`max-width: 960px` 时 Composer 改为文档流堆叠（账号栏 → 表单 → 预览 → 操作栏），编辑区/预览区不再互相覆盖；muted 文案改用 `--dsw-alias-label-secondary`，合规外链使用 `--dsw-alias-label-primary` 文本 + `--dsw-alias-link` 下划线，状态徽标文字使用 `--dsw-alias-label-primary`；390px 实测 `scrollWidth == clientWidth`、0 横向溢出，亮/暗主题独立评审实测对比度合规声明 `19.8 / 18.97`、发布后处理提示 `4.74 / 7.66`（均达 WCAG AA ≥ 4.5:1），0 `backdrop-filter`。
 
 ## 假设
 
@@ -79,5 +79,5 @@
 - `corepack pnpm --dir plugins run test:gates`：通过（末尾 768 + 27 项门禁测试 0 fail，DSH 宿主兼容声明通过）。
 - `corepack pnpm --dir plugins run build:all`：13/13 成功；`bundle.lock.json` 仅 `omnimux-publish` 单槽 `contentHash` 变化。
 - `workspace:check` / `bundle:lock:check` / `plugins:verify` / `git diff --check` / `gitleaks`：本机通过。
-- 真实浏览器（工作树最终源码经 esbuild 打包后挂真实 Chromium；仓外证据不提交）：覆盖视频/图文/沙箱/超时长/限流重试/空隐私/纯草稿草稿箱/多账号/RecordDetail 两态，1280 / 768 / 390px × Light / Dark；0 pageerror、0 console.error、0 横向溢出、0 `backdrop-filter`，文本最低对比度 5.80（亮）/ 5.55（暗）；19 张截图保存在仓外本地证据目录。
+- 真实浏览器（工作树最终源码经 esbuild 打包后挂真实 Chromium；仓外证据不提交）：覆盖视频/图文/沙箱/超时长/限流重试/空隐私/纯草稿草稿箱/多账号/RecordDetail 两态，1280 / 768 / 390px × Light / Dark；0 pageerror、0 console.error、0 横向溢出、0 `backdrop-filter`，独立评审实测合规声明对比度 `19.8`（亮）/ `18.97`（暗）、发布后处理提示 `4.74`（亮）/ `7.66`（暗）；19 张截图保存在仓外本地证据目录。
 - 真实 TikTok 线上网关调用：未执行（离线 mock）。真实发布、OAuth、账号数据与线上限流状态需人工/发布环境确认。

@@ -84,9 +84,9 @@ curl -X POST "$B/omnimux/publish/media?filename=a.png" -H "Origin: http://127.0.
 
 - 账号列表从 hub 透传 `capabilities: { upload_draft, publish_direct, max_media_items?, max_images? }`：
   - **仅草稿上传（`upload_draft: true, publish_direct: false`）**：全部已选 TikTok 账号均为草稿模式时，Composer 切换为草稿箱上传态（零 `creator-info` 请求，隐藏 Direct Post 隐私/互动/商业披露选项）；单视频提交仅送 `video_url` 并剥离全部 Direct Post 选项；图文轮播按 1–35 张、仅 JPEG/WebP、禁混发校验（托管默认 35 张，服务端能力下发更小 `max_media_items` / `max_images` 时按服务端上限收敛展示与拦截，超限被拒时完整透传服务端原始报错），仅透传 `title` / `description` / `photo_cover_index` / `is_aigc`。送达后落为独立展示态 `sent_to_inbox`（「已送达草稿箱」），不触发直发审核隐私提示、不自动轮询，详情页展示草稿箱完成引导并支持手动点击「同步平台状态」追踪最终发布。
-  - **支持直发（`publish_direct: true`）**：保留 Direct Post 选项面板与 `creator-info` 拉取。
+  - **支持直发（`publish_direct: true`）**：展示 Direct Post 选项面板并按需拉取 `creator-info`（60 秒健康响应缓存），无默认隐私级别、互动默认全关，商业披露独立多选且强制确认合规外链后方可提交。
   - **无发布权限（`upload_draft: false && publish_direct: false`）**：前后端同源 fail-closed 拦截提交，并引导重新授权 TikTok。
-  - **旧网关兼容（缺失 `capabilities`）**：默认折叠高级直发选项且零 `creator-info` 请求，展开时按需拉取且不阻断提交。
+  - **旧网关兼容（缺失 `capabilities`）**：默认折叠高级直发选项且零 `creator-info` 请求，未展开且未携带 `tiktok_options` 时保留旧兼容路径；展开并进入直发选项后按需拉取 `creator-info`，且必须手动选择合法隐私级别并确认合规声明才可提交。
 
 ## 版本观察
 
