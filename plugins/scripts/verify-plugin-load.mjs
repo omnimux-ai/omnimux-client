@@ -122,7 +122,7 @@ export function discoverPlugins(root = repoRoot) {
       const manifestPath = join(dir, 'package.json')
       if (!existsSync(manifestPath)) continue
       const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
-      // Workspace libraries (dsh-ui-kit, craft, form-contract) are not Cordis
+      // Workspace libraries (dsh-ui-kit, craft) are not Cordis
       // plugins: they have no cordis.patch.yml. Skip rather than fail on apply/inject.
       if (!existsSync(join(dir, 'cordis.patch.yml'))) continue
       const { entry: hostEntry, clientEntry, clientDeclared } = pluginEntries(dir, manifest)
@@ -165,7 +165,7 @@ export function evalClientBundle(file) {
   const fn = new Function('module', 'exports', 'require', 'window', 'document', 'globalThis', 'self', 'top', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'requestAnimationFrame', 'cancelAnimationFrame', 'location', 'navigator', 'console', 'fetch', code)
   // Prefer the REAL module over a stub: esbuild's __toESM() copies own enumerable
   // properties, which an absorb-anything proxy cannot provide — `extends EventEmitter`
-  // or `React.createContext` then collapse to undefined (omnimux-clip/omnimux-forms).
+  // or `React.createContext` then collapse to undefined (omnimux-clip).
   const realRequire = createRequire(file)
   const fakeRequire = (id) => {
     try { return realRequire(id) } catch { return serviceStub(`require:${id}`) }

@@ -22,9 +22,9 @@
  * 架构收敛（Architecture Convergence）：
  * 1. 排除核心常驻项：`omnimux-workflow`（项目）、`omnimux-assets`（资产库）、`omnimux-inspiration`（灵感社区）以及 inline 的新建项目，继续挂载在侧栏；
  * 2. 排除技能专家（`omnimux-market`，在底部 footer）；
- * 3. 其余所有插件（包括所有 Alpha 插件 accounts, publish, analytics, forms, automation 以及垂直插件 video, products, device, clip, social-harvest, apps 等）全部收敛，不再作为独立行渲染在侧边栏；
+ * 3. 其余所有插件（包括 Alpha 插件 accounts, publish, analytics 以及垂直插件 video, products, device, clip, apps 等）全部收敛，不再作为独立行渲染在侧边栏；
  * 4. 收敛项的渲染面是官方「更多」菜单（seat `sidebar.panellist.actions`，注册点在 `explore-more-menu.jsx`）：本模块只提供清单真源与激活委托，不再自绘侧栏行或浮动菜单；
- * 5. 清单严格按照产品 Spec 白名单（9项：应用、图像生成、视频剪辑、发布、账号、手机管理、数据分析、任务表单、社交采收），带纯矢量 SVG 图标；自动化已退役、产品库已并入资产库，均不再单列；
+ * 5. 清单严格按照产品 Spec 白名单（7项：应用、图像生成、视频剪辑、发布、账号、手机管理、数据分析），带纯矢量 SVG 图标；自动化、任务表单与社交采收已退役，产品库已并入资产库，均不再单列；
  * 6. 入口可见性按发布渠道区分：开发版（development）全部保留；正式版（production）只过滤 `isAlphaEntry()` 标为 Alpha 的测试版入口（含 `plugin-lifecycle.json` 与仓外内测入口补集）。
  */
 
@@ -55,7 +55,6 @@ const ALPHA_STYLES = `
  */
 const EXTERNAL_ALPHA_PLUGINS = new Set([
   'omnimux-device',
-  'omnimux-social-harvest',
   'omnimux-avatar',
 ])
 
@@ -192,9 +191,9 @@ const INLINE_STYLES = `
 `
 
 /**
- * 探索菜单项白名单（9项，逐字锁定）：
- * 应用、图像生成、视频剪辑、发布、账号、手机管理、数据分析、任务表单、社交采收
- * （自动化已退役、产品库已并入资产库，均不再单列）
+ * 探索菜单项白名单（7项，逐字锁定）：
+ * 应用、图像生成、视频剪辑、发布、账号、手机管理、数据分析
+ * （自动化、任务表单、社交采收已退役；产品库已并入资产库，均不再单列）
  * 统一带纯矢量 SVG 图标，严禁 Emoji、零冗余徽章、零副标题、零同义重复。
  * 产品库已并入资产库（specs/products-into-assets.spec.md），不再单独占一项。
  */
@@ -265,22 +264,6 @@ export const EXPLORE_MENU_ITEMS = [
     label: '数据分析',
     tabId: 'omnimux-analytics:library',
     iconSvg: '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 14h12"/><path d="M4 11l3-4 3 2 4-5"/></svg>',
-  },
-  {
-    id: 'forms',
-    pluginId: 'omnimux-forms',
-    entryId: 'omnimux-forms-entry',
-    label: '任务表单',
-    tabId: 'omnimux-forms:tasks',
-    iconSvg: '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="2" width="10" height="12" rx="1.5"/><path d="M6 5.5h4M6 8h4M6 10.5h2.5"/></svg>',
-  },
-  {
-    id: 'social-harvest',
-    pluginId: 'omnimux-social-harvest',
-    entryId: 'omnimux-social-harvest-entry',
-    label: '社交采收',
-    tabId: 'omnimux-social-harvest:library',
-    iconSvg: '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="6"/><circle cx="8" cy="8" r="3"/><circle cx="8" cy="8" r="1" fill="currentColor" stroke="none"/></svg>',
   },
 ]
 

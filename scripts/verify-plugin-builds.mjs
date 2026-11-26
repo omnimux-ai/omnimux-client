@@ -74,7 +74,7 @@ function trackedSourceMtime(directory) {
 
 let failed = 0
 const specs = pluginSpecs()
-if (specs.length !== 14) fail(`expected 14 omnimux dependencies, found ${specs.length}`)
+if (specs.length !== 13) fail(`expected 13 omnimux dependencies, found ${specs.length}`)
 
 for (const [name, spec] of specs) {
   const { target, rel } = resolvePlugin(name, spec)

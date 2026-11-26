@@ -169,7 +169,6 @@ test('default focus matrix: canvas and all libraries default to gui (Issue #2006
   const libraries = [
     'omnimux-clip:studio',
     'omnimux-assets:library',
-    'omnimux-forms:tasks',
     'omnimux-accounts:library',
     'omnimux-inspiration:library',
     'omnimux-publish:library',
@@ -181,7 +180,8 @@ test('default focus matrix: canvas and all libraries default to gui (Issue #2006
     assert.equal(resolveDefaultFocus(lib), WORKBENCH_FOCUS.gui, `${lib} must default to gui`)
     assert.ok(isWorkbenchTab(lib), `${lib} must be recognized as workbench tab`)
   }
-  assert.equal(WORKBENCH_OCCUPANTS.length, 10)
+  assert.equal(WORKBENCH_OCCUPANTS.includes('omnimux-forms:tasks'), false)
+  assert.equal(WORKBENCH_OCCUPANTS.length, 9)
 })
 
 test('workbenchDefaultWidthPx gives the panel everything the ratio column does not take', () => {
@@ -432,6 +432,29 @@ test('sweepRetiredWorkbenchTabs: 返回关闭数、幂等、不误伤其它 type
   assert.equal(closedCount, 0, '抛错的 Tab 不算成功关闭')
   assert.equal(boom.closed.length, 2, '抛错不阻断后续 Tab，两个都尝试过')
   assert.equal(warnings.length, 2, '每个失败都留下告警，不静默吞错')
+})
+
+test('sweepRetiredWorkbenchTabs: 自动关闭已下线的任务表单与社交采收残留 Tab', () => {
+  const closed = []
+  const snapshot = {
+    sessionId: 's-retired-forms-harvest',
+    state: makeState([
+      { id: 'tab:forms', type: 'omnimux-forms:tasks', title: '任务表单' },
+      { id: 'tab:harvest', type: 'omnimux-social-harvest:library', title: '社交采收' },
+      { id: 'tab:assets', type: 'omnimux-assets:library', title: '资产库' },
+    ]),
+  }
+  const service = {
+    getSnapshot() { return snapshot },
+    closeTab(id, scope) { closed.push({ id, scope }) },
+  }
+  assert.equal(sweepRetiredWorkbenchTabs(service), 2)
+  assert.deepEqual(closed, [
+    { id: 'tab:forms', scope: { sessionId: 's-retired-forms-harvest' } },
+    { id: 'tab:harvest', scope: { sessionId: 's-retired-forms-harvest' } },
+  ])
+  assert.equal(sweepRetiredWorkbenchTabs(service), 0)
+  assert.equal(closed.length, 2)
 })
 
 test('sweepRetiredWorkbenchTabs: 幂等按会话记，切到仍带旧 Tab 的会话不漏扫', () => {

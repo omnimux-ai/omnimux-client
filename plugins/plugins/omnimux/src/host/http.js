@@ -1,4 +1,3 @@
-import { registerFormAttachmentRoutes } from './form-attachments-http.js'
 import { createAuthDispatcher, registerAuthRoutes } from '../auth/http-routes.js'
 import { createPendingStore } from '../auth/pending.js'
 import { registerPluginRoutes, createPluginDispatcher } from '../plugins/http-routes.js'
@@ -105,10 +104,6 @@ export function mountHubHttp(httpCtx, deps) {
       store: deps.avatarStore,
       identity: deps.identity,
     }))
-    const stopFormAttachments = registerFormAttachmentRoutes(webServer, {
-      homeDir: deps.homeDir, getConnection: deps.getConnection,
-      getWorkspaceRegistry: deps.getWorkspaceRegistry, getSessionQuery: () => deps.sessionQuery,
-    })
     const stopComposerAttachments = registerComposerAttachmentRoutes(
       webServer,
       createComposerAttachmentsDispatcher({
@@ -151,7 +146,6 @@ export function mountHubHttp(httpCtx, deps) {
       stopInspiration()
       stopAvatar()
       stopComposerAttachments()
-      stopFormAttachments()
       stopTextComplete()
       stopByok()
       stopAgents()

@@ -35,9 +35,11 @@ describe('plugin release tiers', () => {
     const tiers = readPluginTiers()
 
     assert.ok(tiers.preview.includes('omnimux'))
-    assert.ok(tiers.preview.includes('omnimux-forms'))
+    assert.ok(!tiers.preview.includes('omnimux-forms'))
     assert.ok(tiers.beta.includes('omnimux-accounts'))
     assert.ok(tiers.retired.includes('omnimux-automation'))
+    assert.ok(tiers.retired.includes('omnimux-forms'))
+    assert.ok(tiers.retired.includes('omnimux-social-harvest'))
   })
 
   it('preinstalls infrastructure before preview so the sidebar loads first', () => {

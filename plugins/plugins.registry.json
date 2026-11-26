@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0.0",
-  "updatedAt": "2026-11-25T12:47:48.760Z",
+  "updatedAt": "2026-11-26T04:42:59.066Z",
   "topology": {
     "tiers": [
       {
@@ -23,7 +23,7 @@
       }
     ],
     "summary": {
-      "totalPlugins": 16,
+      "totalPlugins": 15,
       "totalTools": 112,
       "totalSeams": 10
     }
@@ -559,33 +559,6 @@
         }
       },
       "path": "plugins/omnimux-clip"
-    },
-    {
-      "id": "omnimux-forms",
-      "name": "omnimux-forms",
-      "version": "0.1.2",
-      "tier": "tier-1-app",
-      "entrypoint": "src/index.js",
-      "status": "active",
-      "description": "提供结构化表单模板，整理参考视频拆解与复刻需求。",
-      "capabilities": {
-        "tools": [],
-        "seamsProvided": [],
-        "seamsConsumed": [
-          "omnimuxForms"
-        ],
-        "slots": [],
-        "storageDomains": [
-          "$DSH_HOME/omnimux/forms/"
-        ]
-      },
-      "dependencies": {
-        "requiredPlugins": [
-          "omnimux"
-        ],
-        "systemBinaries": []
-      },
-      "path": "plugins/omnimux-forms"
     },
     {
       "id": "omnimux-inspiration",

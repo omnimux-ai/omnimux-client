@@ -64,16 +64,6 @@
         descEn: "Sellable objects library: specs, selling points extraction, and media references.",
         isProtected: false,
       },
-      {
-        id: "omnimux-forms",
-        categoryId: "content-creation",
-        iconKey: "forms",
-        titleZh: "动态表单",
-        titleEn: "Dynamic Forms",
-        descZh: "任务与配置表单套件：声明式表单引擎与交互收集。",
-        descEn: "Form contract suite: declarative forms engine and prompt input collection.",
-        isProtected: false,
-      },
 
       // 2. 视频与媒体
       {
@@ -136,16 +126,6 @@
         titleEn: "Multi-Publish",
         descZh: "多平台一键排期分发、账号发布账本与发布状态监控。",
         descEn: "Multi-platform scheduled publishing, subtask ledger, and distribution monitoring.",
-        isProtected: false,
-      },
-      {
-        id: "omnimux-social-harvest",
-        categoryId: "social-marketing",
-        iconKey: "social-harvest",
-        titleZh: "社媒采集",
-        titleEn: "Social Harvest",
-        descZh: "全网社媒爆款内容解析、达人账号数据解构与追踪。",
-        descEn: "Read-only social media data harvesting via native OpenCLI adapters.",
         isProtected: false,
       },
       {
@@ -274,13 +254,6 @@
             h("path", { d: "M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z" }),
             h("path", { d: "M3 6h18M16 10a4 4 0 0 1-8 0" }),
           );
-        case "forms":
-          // Clipboard list
-          return h("svg", p,
-            h("rect", { width: "8", height: "4", x: "8", y: "2", rx: "1" }),
-            h("path", { d: "M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" }),
-            h("path", { d: "M12 11h4M12 16h4M8 11h.01M8 16h.01" }),
-          );
         case "clip":
           // Clapperboard
           return h("svg", p,
@@ -324,15 +297,6 @@
             h("line", { x1: "8.59", x2: "15.42", y1: "13.51", y2: "17.49" }),
             h("line", { x1: "15.41", x2: "8.59", y1: "6.51", y2: "10.49" }),
           );
-        case "social-harvest":
-          // Radio
-          return h("svg", p,
-            h("path", { d: "M4.9 19.1C1 15.2 1 8.8 4.9 4.9" }),
-            h("path", { d: "M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5" }),
-            h("circle", { cx: "12", cy: "12", r: "2" }),
-            h("path", { d: "M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5" }),
-            h("path", { d: "M19.1 4.9C23 8.8 23 15.1 19.1 19" }),
-          );
         case "accounts":
           // Users
           return h("svg", p,
@@ -352,12 +316,6 @@
           // Zap
           return h("svg", p,
             h("polygon", { points: "13 2 3 14 12 14 11 22 21 10 12 10 13 2" }),
-          );
-        case "automation":
-          // Clock
-          return h("svg", p,
-            h("circle", { cx: "12", cy: "12", r: "10" }),
-            h("polyline", { points: "12 6 12 12 16 14" }),
           );
         case "workflow":
           // Git branch

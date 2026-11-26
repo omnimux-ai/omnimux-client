@@ -146,10 +146,10 @@ test('真实仓库：无跟踪软链，仓库自有技能全部入库', () => {
   assert.ok(result.audited >= 4)
 })
 
-test('真实仓库：4 个仓库自有技能以真实目录入库', () => {
+test('真实仓库：仓库自有技能以真实目录入库', () => {
   const result = verifyAgentsSkillsSymlinks(repoRoot)
   assert.deepEqual(result.errors, [])
-  for (const name of ['omnimux-form-authoring', 'omnimux-rc-upgrade', 'omnimux-repo-workflow', 'tiktok-drama-center']) {
+  for (const name of ['omnimux-rc-upgrade', 'omnimux-repo-workflow', 'tiktok-drama-center']) {
     assert.ok(readFileSync(join(repoRoot, '.agents', 'skills', name, 'SKILL.md'), 'utf8').length > 0, name)
   }
 })

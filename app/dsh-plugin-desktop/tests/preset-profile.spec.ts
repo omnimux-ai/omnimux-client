@@ -1,12 +1,15 @@
 import { describe, expect, it, vi } from 'vitest'
+import { execFileSync } from 'node:child_process'
 import { cpSync, existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir, homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { createRequire } from 'node:module'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { parseDocument } from 'yaml'
 import {
   completeOmnimuxProfileMaterialization,
   PROFILE_MATERIALIZATION_PENDING,
+  readRetiredPackages,
   resolveDesktopHarnessHome,
   resolveDesktopL2Launch,
   resolveHarnessHome,
@@ -521,6 +524,133 @@ describe('seedOmnimuxProfile managed sources', () => {
       completeOmnimuxProfileMaterialization(first.profileDir)
       expect(seedOmnimuxProfile({ home, presetDir: productionPreset }))
         .toMatchObject({ created: false, refreshedPlugins: false, materializationRequired: false })
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  }, 30_000)
+
+  it('prunes retired-tier packages on development upgrade without overwriting a synced hub', () => {
+    const root = mkdtempSync(join(tmpdir(), 'omnimux-retired-dev-'))
+    try {
+      const presetDir = createPreset(root)
+      const home = join(root, 'home')
+      const first = seedOmnimuxProfile({ home, presetDir })
+      const hubGuard = join(managedSourcePath(first.profileDir, 'omnimux'), 'src', 'gate', 'guard.js')
+      writeFileSync(hubGuard, 'export const customSyncedHub = true\n')
+
+      const manifestPath = join(first.profileDir, 'package.json')
+      const manifest = readJson(manifestPath) as {
+        dependencies: Record<string, string>
+        dsh: { profile: { bundles: string[] } }
+      }
+      manifest.dependencies['omnimux-forms'] = 'file:.materialize-snapshots/plugins/omnimux-forms'
+      manifest.dsh.profile.bundles.push('omnimux-forms', 'omnimux-social-harvest')
+      writeJson(manifestPath, manifest)
+
+      const formsSource = managedSourcePath(first.profileDir, 'omnimux-forms')
+      mkdirSync(formsSource, { recursive: true })
+      writeJson(join(formsSource, 'package.json'), { name: 'omnimux-forms', version: '0.1.2' })
+
+      const upgraded = seedOmnimuxProfile({ home, presetDir })
+      expect(upgraded).toMatchObject({ created: false, refreshedPlugins: true, materializationRequired: true })
+      const updated = readJson(manifestPath) as typeof manifest
+      expect(updated.dsh.profile.bundles).not.toContain('omnimux-forms')
+      expect(updated.dsh.profile.bundles).not.toContain('omnimux-social-harvest')
+      expect(Object.hasOwn(updated.dependencies, 'omnimux-forms')).toBe(false)
+      expect(existsSync(formsSource)).toBe(false)
+      expect(readFileSync(hubGuard, 'utf8')).toBe('export const customSyncedHub = true\n')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('preserves manually installed retired package names while still pruning snapshot copies', () => {
+    const root = mkdtempSync(join(tmpdir(), 'omnimux-retired-manual-'))
+    try {
+      const presetDir = createPreset(root)
+      const home = join(root, 'home')
+      const first = seedOmnimuxProfile({ home, presetDir })
+
+      const manifestPath = join(first.profileDir, 'package.json')
+      const manifest = readJson(manifestPath) as {
+        dependencies: Record<string, string>
+        dsh: { profile: { bundles: string[] } }
+      }
+      manifest.dependencies['omnimux-forms'] = '0.1.2'
+      manifest.dependencies['omnimux-social-harvest'] = 'file:.materialize-snapshots/plugins/omnimux-social-harvest'
+      manifest.dsh.profile.bundles.push('omnimux-forms', 'omnimux-social-harvest')
+      writeJson(manifestPath, manifest)
+
+      const formsNodeModule = join(first.profileDir, 'node_modules', 'omnimux-forms')
+      mkdirSync(formsNodeModule, { recursive: true })
+      writeJson(join(formsNodeModule, 'package.json'), { name: 'omnimux-forms', version: '0.1.2' })
+
+      const harvestSource = managedSourcePath(first.profileDir, 'omnimux-social-harvest')
+      mkdirSync(harvestSource, { recursive: true })
+      writeJson(join(harvestSource, 'package.json'), { name: 'omnimux-social-harvest', version: '0.1.0' })
+
+      const upgraded = seedOmnimuxProfile({ home, presetDir })
+      expect(upgraded).toMatchObject({ created: false, refreshedPlugins: true, materializationRequired: true })
+      const updated = readJson(manifestPath) as typeof manifest
+      expect(updated.dsh.profile.bundles).toContain('omnimux-forms')
+      expect(updated.dependencies['omnimux-forms']).toBe('0.1.2')
+      expect(existsSync(formsNodeModule)).toBe(true)
+      expect(updated.dsh.profile.bundles).not.toContain('omnimux-social-harvest')
+      expect(Object.hasOwn(updated.dependencies, 'omnimux-social-harvest')).toBe(false)
+      expect(existsSync(harvestSource)).toBe(false)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('retires omnimux-forms and omnimux-social-harvest from bundled lib/preset-profile.js even when config/plugin-tiers.json is absent on disk', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'omnimux-retired-packaged-'))
+    try {
+      const desktopRoot = dirname(dirname(fileURLToPath(import.meta.url)))
+      const missingTiers = join(root, 'missing-plugin-tiers.json')
+      expect(readRetiredPackages({
+        tiersPath: missingTiers,
+        bakedJson: JSON.stringify({ tiers: { retired: ['omnimux-forms', 'omnimux-social-harvest'] } }),
+      })).toEqual(['omnimux-forms', 'omnimux-social-harvest'])
+      expect(() => readRetiredPackages({ tiersPath: missingTiers, bakedJson: undefined })).toThrow(/plugin tier config is missing/)
+
+      const builtDir = join(root, 'isolated-app', 'lib')
+      if (existsSync(join(desktopRoot, 'lib', 'preset-profile.js'))) {
+        cpSync(join(desktopRoot, 'lib'), builtDir, { recursive: true })
+      } else {
+        const tsdownBin = join(desktopRoot, 'node_modules', '.bin', 'tsdown')
+        execFileSync(tsdownBin, ['--config', join(desktopRoot, 'tsdown.config.ts'), '--outDir', builtDir], {
+          cwd: desktopRoot,
+          stdio: 'pipe',
+        })
+      }
+      symlinkSync(join(desktopRoot, 'node_modules'), join(root, 'isolated-app', 'node_modules'))
+      writeJson(join(root, 'isolated-app', 'package.json'), { name: 'dsh-plugin-desktop', type: 'module' })
+
+      const presetDir = createPreset(root, true, 'production')
+      const home = join(root, 'home')
+      const first = seedOmnimuxProfile({ home, presetDir })
+      const manifestPath = join(first.profileDir, 'package.json')
+      const manifest = readJson(manifestPath) as {
+        dependencies: Record<string, string>
+        dsh: { profile: { bundles: string[] } }
+      }
+      manifest.dependencies['omnimux-forms'] = 'file:.materialize-snapshots/plugins/omnimux-forms'
+      manifest.dsh.profile.bundles.push('omnimux-forms', 'omnimux-social-harvest')
+      writeJson(manifestPath, manifest)
+
+      // Execute the bundled build in a subprocess whose parent chain has no config/plugin-tiers.json.
+      execFileSync(process.execPath, [
+        '--input-type=module',
+        '-e',
+        `import { seedOmnimuxProfile } from ${JSON.stringify(pathToFileURL(join(builtDir, 'preset-profile.js')).href)};
+         seedOmnimuxProfile({ home: ${JSON.stringify(home)}, presetDir: ${JSON.stringify(presetDir)} });`,
+      ], { cwd: root, stdio: 'pipe' })
+
+      const updated = readJson(manifestPath) as typeof manifest
+      expect(updated.dsh.profile.bundles).not.toContain('omnimux-forms')
+      expect(updated.dsh.profile.bundles).not.toContain('omnimux-social-harvest')
+      expect(Object.hasOwn(updated.dependencies, 'omnimux-forms')).toBe(false)
     } finally {
       rmSync(root, { recursive: true, force: true })
     }

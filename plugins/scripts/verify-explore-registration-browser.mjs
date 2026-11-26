@@ -13,9 +13,9 @@
  * 自绘「探索」常驻行与浮动菜单已在 #3785 退役；本脚本的渲染面随之改为官方「更多」菜单，
  * 不再驱动 `#omnimux-explore-entry` / `#omnimux-explore-menu`。
  *
- * Journey: boot → menu has the 10 builtin items → register a runtime item → 11 items with
+ * Journey: boot → menu has the 7 builtin items → register a runtime item → 8 items with
  * the new one last → a REAL mouse click on it opens the workbench tab and dismisses the
- * menu → unregister → back to 10 → malformed input and builtin-id conflicts are rejected
+ * menu → unregister → back to 7 → malformed input and builtin-id conflicts are rejected
  * without throwing or changing the menu.
  *
  * Artifacts land in `docs/evidence/explore-registration-3124/`:
@@ -648,7 +648,7 @@ async function main() {
     )
 
     // ---- step 1: boot -----------------------------------------------------------
-    await assert('boot：官方「更多」菜单渲染内置 9 项，文案与真源清单一致', async () => {
+    await assert('boot：官方「更多」菜单渲染内置 7 项，文案与真源清单一致', async () => {
       const rendered = await evalIn(`window.__QA.boot()`)
       const menu = await evalIn(`window.__QA.readMenu()`)
       const builtinCount = await evalIn(`window.__QA.builtinCount()`)
@@ -658,17 +658,17 @@ async function main() {
         rendered, count: menu.count, labels: menu.labels,
         builtinCount, builtinLabels, builtinIds, separatorCount: menu.separatorCount,
       }
-      if (builtinCount !== 9) throw fail(`内置白名单应为 9 项，实际 ${builtinCount}`, actual)
-      if (menu.count !== 9) throw fail(`菜单行数应为 9，实际 ${menu.count}`, actual)
+      if (builtinCount !== 7) throw fail(`内置白名单应为 7 项，实际 ${builtinCount}`, actual)
+      if (menu.count !== 7) throw fail(`菜单行数应为 7，实际 ${menu.count}`, actual)
       if (!deepEqual(menu.labels, builtinLabels)) throw fail('行文案与真源清单不一致', actual)
-      if (builtinIds.length !== 9) throw fail(`真源清单 id 应为 9 个，实际 ${builtinIds.length}`, actual)
+      if (builtinIds.length !== 7) throw fail(`真源清单 id 应为 7 个，实际 ${builtinIds.length}`, actual)
       if (menu.separatorCount !== 2) throw fail(`分组分隔线应为 2 条，实际 ${menu.separatorCount}`, actual)
       return actual
     })
     await capture('step-1-boot')
 
     // ---- step 1b: Alpha 内测标识（Issue #3823） ---------------------------------
-    await assert('Alpha 内测标识：只出现在 5 个 Alpha 项，文案与顺序不变', async () => {
+    await assert('Alpha 内测标识：只出现在 4 个 Alpha 项，文案与顺序不变', async () => {
       const menu = await evalIn(`window.__QA.readMenu()`)
       const expectedAlphaLabels = await evalIn(
         `window.__QA.module.coordinator.EXPLORE_MENU_ITEMS
@@ -687,8 +687,8 @@ async function main() {
       if (menu.alphaBadgeCount !== expectedAlphaLabels.length) {
         throw fail(`标识元素数应为 ${expectedAlphaLabels.length}，实际 ${menu.alphaBadgeCount}`, actual)
       }
-      if (expectedAlphaLabels.length !== 5) {
-        throw fail(`Alpha 项应为 5 个，实际 ${expectedAlphaLabels.length}`, actual)
+      if (expectedAlphaLabels.length !== 4) {
+        throw fail(`Alpha 项应为 4 个，实际 ${expectedAlphaLabels.length}`, actual)
       }
       return actual
     })
@@ -696,7 +696,7 @@ async function main() {
 
     // ---- step 1c: 标识在真实布局里可见（不是只在 props 里存在） -----------------
     await assert('Alpha 标识在行内可见：落在行矩形内、宽高非零、文案未被挤没', async () => {
-      const label = '自动化'
+      const label = '发布'
       const geometry = await evalIn(`window.__QA.alphaBadgeGeometry(${JSON.stringify(label)})`)
       const actual = geometry
       if (!geometry) throw fail(`未找到「${label}」行的 Alpha 标识`, actual)
@@ -722,12 +722,12 @@ async function main() {
       return actual
     })
 
-    // ---- step 3: 11 rows, new one last ------------------------------------------
-    await assert("重新挂载菜单：10 行，末项文案为「快讯中枢」", async () => {
+    // ---- step 3: 8 rows, new one last -------------------------------------------
+    await assert("重新挂载菜单：8 行，末项文案为「快讯中枢」", async () => {
       const rendered = await evalIn(`window.__QA.rerender()`)
       const menu = await evalIn(`window.__QA.readMenu()`)
       const actual = { rendered, count: menu.count, lastLabel: menu.lastLabel, labels: menu.labels }
-      if (menu.count !== 10) throw fail(`菜单行数应为 10，实际 ${menu.count}`, actual)
+      if (menu.count !== 8) throw fail(`菜单行数应为 8，实际 ${menu.count}`, actual)
       if (menu.lastLabel !== '快讯中枢') throw fail(`末项文案应为「快讯中枢」，实际「${menu.lastLabel}」`, actual)
       return actual
     })
@@ -775,13 +775,13 @@ async function main() {
     await capture('step-4-after-click')
 
     // ---- step 5: unregister -----------------------------------------------------
-    await assert('注销：重新挂载后回到 9 行且不含该项', async () => {
+    await assert('注销：重新挂载后回到 7 行且不含该项', async () => {
       const removed = await evalIn(`window.__QA.unregister()`)
       const rendered = await evalIn(`window.__QA.rerender()`)
       const menu = await evalIn(`window.__QA.readMenu()`)
       const actual = { removed, rendered, count: menu.count, labels: menu.labels }
       if (!removed) throw fail('注销函数调用失败', actual)
-      if (menu.count !== 9) throw fail(`注销后应为 9 行，实际 ${menu.count}`, actual)
+      if (menu.count !== 7) throw fail(`注销后应为 7 行，实际 ${menu.count}`, actual)
       if (menu.labels.includes('快讯中枢')) throw fail('注销后菜单仍含「快讯中枢」', actual)
       return actual
     })
@@ -811,12 +811,12 @@ async function main() {
       const actual = { results, count: menu.count, labels: menu.labels }
       const threw = results.filter((r) => r.threw)
       if (threw.length > 0) throw fail(`非法输入抛错：${normalize(threw)}`, actual)
-      if (menu.count !== 9) throw fail(`非法输入后菜单行数应为 9，实际 ${menu.count}`, actual)
+      if (menu.count !== 7) throw fail(`非法输入后菜单行数应为 7，实际 ${menu.count}`, actual)
       return actual
     })
 
     // ---- step 7: builtin id conflict --------------------------------------------
-    await assert('与内置 9 项 id 冲突时不注册（菜单仍 9 行，首项仍为「应用」）', async () => {
+    await assert('与内置 7 项 id 冲突时不注册（菜单仍 7 行，首项仍为「应用」）', async () => {
       const outcome = await evalIn(
         `window.__QA.registerRaw(${JSON.stringify({ id: 'apps', label: '冲突项', iconSvg: '<svg viewBox="0 0 16 16"></svg>' })})`,
       )
@@ -824,13 +824,13 @@ async function main() {
       const menu = await evalIn(`window.__QA.readMenu()`)
       const actual = { outcome, count: menu.count, firstLabel: menu.firstLabel, labels: menu.labels }
       if (outcome.threw) throw fail('冲突注册抛错', actual)
-      if (menu.count !== 9) throw fail(`冲突注册后应仍为 9 行，实际 ${menu.count}`, actual)
+      if (menu.count !== 7) throw fail(`冲突注册后应仍为 7 行，实际 ${menu.count}`, actual)
       if (actual.firstLabel !== '应用') throw fail(`内置首项文案应仍为「应用」，实际「${actual.firstLabel}」`, actual)
       return actual
     })
 
     // ---- step 8: same-id re-registration overwrites -----------------------------
-    await assert('同 id 二次注册覆盖（10 行，末项为后一次注册的文案）', async () => {
+    await assert('同 id 二次注册覆盖（8 行，末项为后一次注册的文案）', async () => {
       await evalIn(
         `window.__QA.registerRaw(${JSON.stringify({ id: 'dup-probe', label: '首次', iconSvg: '<svg viewBox="0 0 16 16"></svg>', tabId: 'dup' })})`,
       )
@@ -840,7 +840,7 @@ async function main() {
       const rendered = await evalIn(`window.__QA.rerender()`)
       const menu = await evalIn(`window.__QA.readMenu()`)
       const actual = { rendered, count: menu.count, lastLabel: menu.lastLabel, labels: menu.labels }
-      if (menu.count !== 10) throw fail(`二次注册后应为 10 行，实际 ${menu.count}`, actual)
+      if (menu.count !== 8) throw fail(`二次注册后应为 8 行，实际 ${menu.count}`, actual)
       if (menu.lastLabel !== '二次') throw fail('二次注册未覆盖同 id 条目', actual)
       return actual
     })

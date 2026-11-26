@@ -206,11 +206,8 @@ jobs:
           test "$(corepack pnpm --version)" = 11.7.0
           corepack pnpm --config.verify-deps-before-run=false test:managed-tarball:unit
 
-      - name: Verify form contracts, authoring tools and generated references
-        run: pnpm --config.verify-deps-before-run=false verify:forms
-
-      - name: Verify task form runtime and protected draft handoff
-        run: node --test plugins/omnimux-forms/src/*.test.mjs plugins/omnimux-forms/src/client/*.test.mjs plugins/omnimux/src/host/form-attachments*.test.js plugins/omnimux/src/client/forms/*.test.js
+      - name: Verify protected session prefill handoff
+        run: node --test plugins/omnimux/src/client/session-prefill/*.test.js
 
       # [client-port] Omitted from the imported Quality Gate workflow: the
       # "prepare public evidence data repository", "verify public evidence core",

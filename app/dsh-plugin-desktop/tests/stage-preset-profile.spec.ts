@@ -60,7 +60,6 @@ const PRODUCT_PLUGINS = [
   'omnimux-video',
   'omnimux-analytics',
   'omnimux-publish',
-  'omnimux-forms',
   'omnimux-browser',
   'omnimux-viewer',
 ] as const
@@ -68,13 +67,11 @@ const ALPHA_PLUGINS = [
   'omnimux-accounts',
   'omnimux-publish',
   'omnimux-analytics',
-  'omnimux-forms',
 ] as const
 const LIFECYCLE = {
   'omnimux-accounts': { stage: 'alpha', toolPrefixes: ['omnimux_accounts_'] },
   'omnimux-publish': { stage: 'alpha', toolPrefixes: ['omnimux_publish_'] },
   'omnimux-analytics': { stage: 'alpha', toolPrefixes: ['omnimux_analytics_'] },
-  'omnimux-forms': { stage: 'alpha', toolPrefixes: ['omnimux_forms_'] },
 } as const
 
 describe('stagePresetProfile', () => {
@@ -167,7 +164,7 @@ describe('stagePresetProfile', () => {
       )
 
       sidebarFixture.path = sidebar
-      expect(stagePresetProfile({ pluginsRoot, presetDir, releaseChannel: 'development' })).toBe(18)
+      expect(stagePresetProfile({ pluginsRoot, presetDir, releaseChannel: 'development' })).toBe(17)
       const stagedPresets = join(presetDir, 'agent-presets')
       expect(readdirSync(stagedPresets).sort()).toEqual(['cordis', 'daily-work', 'standard', 'tiktok-agent'])
       expect(readFileSync(join(stagedPresets, 'cordis', 'preset.yml'), 'utf8')).toBe('name: cordis\n')
@@ -318,7 +315,7 @@ describe('stagePresetProfile', () => {
       })
 
       sidebarFixture.path = sidebar
-      expect(stagePresetProfile({ pluginsRoot, presetDir, releaseChannel: 'development' })).toBe(15)
+      expect(stagePresetProfile({ pluginsRoot, presetDir, releaseChannel: 'development' })).toBe(14)
       expect(listPackageNames(join(presetDir, 'plugins'))).not.toContain('@fixture/excluded')
       expect(readJson(join(presetDir, 'owned-packages.json'))).not.toContain('@fixture/excluded')
     } finally {
@@ -419,7 +416,7 @@ describe('stagePresetProfile', () => {
       createProductPlugins(pluginsRoot)
       createPresetSkeleton(presetDir)
 
-      expect(stagePresetProfile({ pluginsRoot, presetDir, releaseChannel: 'development' })).toBe(15)
+      expect(stagePresetProfile({ pluginsRoot, presetDir, releaseChannel: 'development' })).toBe(14)
 
       const output = join(presetDir, 'plugins')
       const owned = readJson(join(presetDir, 'owned-packages.json')) as unknown as string[]
@@ -451,7 +448,7 @@ describe('stagePresetProfile', () => {
       const options = { pluginsRoot, presetDir, freshPresetDir, releaseChannel: 'development' as const }
 
       expect(() => stagePresetProfile({ pluginsRoot, presetDir, freshPresetDir })).toThrow('requires the development channel')
-      expect(stagePresetProfile(options)).toBe(15)
+      expect(stagePresetProfile(options)).toBe(14)
       expect(readFileSync(sourceManifest)).toEqual(before)
       expect(readdirSync(presetDir)).toEqual(entries)
       expect(readdirSync(freshPresetDir).some(name => name.startsWith('.preset-backup-'))).toBe(false)
@@ -504,7 +501,8 @@ describe('stagePresetProfile', () => {
       const skeleton = readJson(join(presetDir, 'skeleton', 'package.json'))
       const declared = (skeleton.dsh.profile.bundles as string[])
         .filter((name: string) => !name.startsWith('@deepseek-ai/'))
-      expect(declared).toContain('omnimux-forms')
+      expect(declared).toContain('omnimux-workflow')
+      expect(declared).not.toContain('omnimux-forms')
       for (const name of declared) {
         expect(existsSync(join(presetDir, 'plugins', name, 'package.json'))).toBe(true)
       }
@@ -652,17 +650,17 @@ describe('stagePresetProfile', () => {
     const fixture = mkdtempSync(join(tmpdir(), 'omnimux staged manifest '))
     try {
       const stagedRoot = join(fixture, 'packages')
-      const packageDir = join(stagedRoot, 'omnimux-forms')
+      const packageDir = join(stagedRoot, 'omnimux-assets')
       createPackage(join(stagedRoot, 'omnimux-hub'), 'omnimux-hub')
-      createPackage(packageDir, 'omnimux-forms', {
+      createPackage(packageDir, 'omnimux-assets', {
         dependencies: { 'omnimux-hub': 'file:../omnimux-hub' },
         devDependencies: {
           'dsh-ui-kit': 'file:../../../../personal/dsh-ui-kit',
-          '@omnimux/form-contract': 'file:../../packages/form-contract',
+          '@omnimux/generation-capabilities': 'file:../../packages/generation-capabilities',
         },
       })
 
-      normalizeStagedManifest('omnimux-forms', packageDir, stagedRoot)
+      normalizeStagedManifest('omnimux-assets', packageDir, stagedRoot)
 
       const manifest = readJson(join(packageDir, 'package.json'))
       expect(manifest.devDependencies).toBeUndefined()
@@ -676,12 +674,12 @@ describe('stagePresetProfile', () => {
     const fixture = mkdtempSync(join(tmpdir(), 'omnimux staged workspace '))
     try {
       const stagedRoot = join(fixture, 'packages')
-      const packageDir = join(stagedRoot, 'omnimux-forms')
-      createPackage(packageDir, 'omnimux-forms', {
-        dependencies: { '@omnimux/form-contract': 'workspace:*' },
+      const packageDir = join(stagedRoot, 'omnimux-assets')
+      createPackage(packageDir, 'omnimux-assets', {
+        dependencies: { '@omnimux/generation-capabilities': 'workspace:*' },
       })
 
-      expect(() => normalizeStagedManifest('omnimux-forms', packageDir, stagedRoot))
+      expect(() => normalizeStagedManifest('omnimux-assets', packageDir, stagedRoot))
         .toThrowError('a workspace-only spec cannot resolve after the preset is relocated')
     } finally {
       rmSync(fixture, { recursive: true, force: true })
@@ -692,12 +690,12 @@ describe('stagePresetProfile', () => {
     const fixture = mkdtempSync(join(tmpdir(), 'omnimux staged link '))
     try {
       const stagedRoot = join(fixture, 'packages')
-      const packageDir = join(stagedRoot, 'omnimux-forms')
-      createPackage(packageDir, 'omnimux-forms', {
+      const packageDir = join(stagedRoot, 'omnimux-assets')
+      createPackage(packageDir, 'omnimux-assets', {
         dependencies: { 'omnimux-hub': 'link:../omnimux-hub' },
       })
 
-      expect(() => normalizeStagedManifest('omnimux-forms', packageDir, stagedRoot))
+      expect(() => normalizeStagedManifest('omnimux-assets', packageDir, stagedRoot))
         .toThrowError('symbolic links are forbidden in the preset')
     } finally {
       rmSync(fixture, { recursive: true, force: true })
@@ -708,12 +706,12 @@ describe('stagePresetProfile', () => {
     const fixture = mkdtempSync(join(tmpdir(), 'omnimux staged escape '))
     try {
       const stagedRoot = join(fixture, 'packages')
-      const packageDir = join(stagedRoot, 'omnimux-forms')
-      createPackage(packageDir, 'omnimux-forms', {
+      const packageDir = join(stagedRoot, 'omnimux-assets')
+      createPackage(packageDir, 'omnimux-assets', {
         dependencies: { outside: 'file:../../../outside' },
       })
 
-      expect(() => normalizeStagedManifest('omnimux-forms', packageDir, stagedRoot))
+      expect(() => normalizeStagedManifest('omnimux-assets', packageDir, stagedRoot))
         .toThrowError('escapes the staged root')
     } finally {
       rmSync(fixture, { recursive: true, force: true })
@@ -725,7 +723,7 @@ describe('stagePresetProfile', () => {
     try {
       const pluginsDir = join(fixture, 'plugins')
       createPackage(join(pluginsDir, 'omnimux-hub'), 'omnimux-hub')
-      createPackage(join(pluginsDir, 'omnimux-forms'), 'omnimux-forms', {
+      createPackage(join(pluginsDir, 'omnimux-assets'), 'omnimux-assets', {
         dependencies: { 'omnimux-hub': 'file:../omnimux-hub' },
       })
 
@@ -739,12 +737,12 @@ describe('stagePresetProfile', () => {
     const fixture = mkdtempSync(join(tmpdir(), 'omnimux preset workspace '))
     try {
       const pluginsDir = join(fixture, 'plugins')
-      createPackage(join(pluginsDir, 'omnimux-forms'), 'omnimux-forms', {
-        dependencies: { '@omnimux/form-contract': 'workspace:*' },
+      createPackage(join(pluginsDir, 'omnimux-assets'), 'omnimux-assets', {
+        dependencies: { '@omnimux/generation-capabilities': 'workspace:*' },
       })
 
       expect(() => assertStagedSelfContained(pluginsDir))
-        .toThrowError('declares "@omnimux/form-contract" as "workspace:*"')
+        .toThrowError('declares "@omnimux/generation-capabilities" as "workspace:*"')
     } finally {
       rmSync(fixture, { recursive: true, force: true })
     }
@@ -754,7 +752,7 @@ describe('stagePresetProfile', () => {
     const fixture = mkdtempSync(join(tmpdir(), 'omnimux preset dangling '))
     try {
       const pluginsDir = join(fixture, 'plugins')
-      createPackage(join(pluginsDir, 'omnimux-forms'), 'omnimux-forms', {
+      createPackage(join(pluginsDir, 'omnimux-assets'), 'omnimux-assets', {
         dependencies: { 'omnimux-hub': 'file:../omnimux-hub' },
       })
 

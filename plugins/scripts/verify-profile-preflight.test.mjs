@@ -110,7 +110,7 @@ function runPreflight(profileRoot, appRoot, env = process.env) {
 
 test('preflight provides its own DSH_HOME and cleans it on success and failure', (t) => {
   const ambientHome = mkdtempSync(join(tmpdir(), 'omnimux-ambient-home-'))
-  const profile = makeProfile([{ name: 'omnimux-forms', source: `
+  const profile = makeProfile([{ name: 'omnimux-accounts', source: `
     import { statSync, writeFileSync } from 'node:fs'
     import { join } from 'node:path'
     export function apply() {

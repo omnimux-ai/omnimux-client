@@ -497,12 +497,16 @@ export function closeWorkbenchPanel() {
 
 /**
  * 已下架的工作台 Tab 类型：这些页面不再有任何插件注册，留在快照里只会渲染
- * 「插件未加载」占位页（specs/products-into-assets.spec.md AC-305）。
+ * 「插件未加载」占位页（specs/products-into-assets.spec.md AC-305；specs/retire-forms-social-harvest.spec.md）。
  */
-const RETIRED_WORKBENCH_TAB_TYPES = Object.freeze(['omnimux-products:library'])
+const RETIRED_WORKBENCH_TAB_TYPES = Object.freeze([
+  'omnimux-products:library',
+  'omnimux-forms:tasks',
+  'omnimux-social-harvest:library',
+])
 
 /**
- * 一次性收编残留的下架 Tab（产品库已并入资产库）。
+ * 一次性收编残留的下架 Tab（已合并或下线归档的插件页）。
  *
  * 约束：幂等（同一会话只扫一遍，且关闭动作本身可重复执行）、不阻塞（不 await 任何
  * 异步结果）、失败不影响主流程（只 console.warn，绝不吞掉原因）。
