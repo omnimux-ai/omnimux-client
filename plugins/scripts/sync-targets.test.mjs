@@ -140,7 +140,6 @@ describe('OmniMux Profile Target Selection Matrix', () => {
       [syncStableScript, ['--target=dsh-desktop', 'omnimux-video']],
       [syncToAppScript, ['--dsh', 'omnimux-video']],
       [syncToAppScript, ['--target=dsh', 'omnimux-video']],
-      [join(root, 'scripts/materialize-with-rollback.sh'), ['--dsh', 'omnimux-video']],
     ]
     for (const [script, args] of cases) {
       const res = spawnSync('bash', [script, ...args], {
@@ -689,64 +688,6 @@ describe('OmniMux Profile Target Selection Matrix', () => {
       assert.match(result.stderr, /已安装包解析到 profile 外部: omnimux-external-package/)
     } finally {
       rmSync(validationHome, { recursive: true, force: true })
-    }
-  })
-
-  it('restores pnpm links and transitive package resolution after a failed materialization', () => {
-    const rollbackHome = join(tmpdir(), 'test-managed-rollback-' + Date.now())
-    const rollbackRepo = join(rollbackHome, 'rollback-repo')
-    const rollbackScripts = join(rollbackRepo, 'scripts')
-    const profile = join(rollbackHome, '.omnimux-dev', 'profiles', 'omnimux')
-    const stage = join(profile, '.materialize-snapshots', 'plugins')
-    const plugin = join(stage, 'rollback-plugin')
-    const dependency = join(stage, 'rollback-dependency')
-    const rollbackScript = join(rollbackScripts, 'materialize-with-rollback.sh')
-    mkdirSync(rollbackScripts, { recursive: true })
-    mkdirSync(plugin, { recursive: true })
-    mkdirSync(dependency, { recursive: true })
-    cpSync(join(root, 'scripts', 'materialize-with-rollback.sh'), rollbackScript)
-    writeFileSync(join(dependency, 'package.json'), JSON.stringify({ name: 'rollback-dependency', version: '1.0.0', main: 'index.js' }) + '\n')
-    writeFileSync(join(dependency, 'index.js'), "module.exports = { revision: 'old-dependency' }\n")
-    writeFileSync(join(plugin, 'package.json'), JSON.stringify({
-      name: 'rollback-plugin', version: '1.0.0', main: 'index.js', dependencies: { 'rollback-dependency': 'file:../rollback-dependency' },
-    }) + '\n')
-    writeFileSync(join(plugin, 'index.js'), "module.exports = require('rollback-dependency')\n")
-    mkdirSync(profile, { recursive: true })
-    if (!existsSync(join(profile, 'pnpm-workspace.yaml'))) {
-      writeFileSync(join(profile, 'pnpm-workspace.yaml'), 'packages:\n  - .\n')
-    }
-    writeFileSync(join(profile, 'package.json'), JSON.stringify({
-      name: 'rollback-profile', private: true, dependencies: { 'rollback-plugin': 'file:.materialize-snapshots/plugins/rollback-plugin' },
-    }, null, 2) + '\n')
-    const initialInstall = spawnSync('corepack', ['pnpm', 'install'], {
-      cwd: profile,
-      env: syncEnv({ HOME: rollbackHome }),
-      encoding: 'utf8',
-    })
-    assert.equal(initialInstall.status, 0, initialInstall.stderr)
-    const originalRequire = createRequire(join(profile, 'package.json'))
-    assert.equal(originalRequire('rollback-plugin').revision, 'old-dependency')
-    writeFileSync(join(rollbackScripts, 'sync-to-app.sh'), `#!/usr/bin/env bash\nset -euo pipefail\nprofile="$HOME/.omnimux-dev/profiles/omnimux"\nprintf '%s\\n' "module.exports = { revision: 'new-dependency' }" > "$profile/.materialize-snapshots/plugins/rollback-dependency/index.js"\n(cd "$profile" && corepack pnpm install)\nexit 42\n`)
-    chmodSync(join(rollbackScripts, 'sync-to-app.sh'), 0o755)
-
-    try {
-      const result = spawnSync('bash', [rollbackScript, 'rollback-plugin'], {
-        cwd: rollbackRepo,
-        env: syncEnv({ HOME: rollbackHome, OMNIMUX_MERGE_CONFIRMED: '1' }),
-        encoding: 'utf8',
-      })
-      assert.equal(result.status, 42, result.stderr)
-      assert.match(result.stderr, /已恢复 pnpm 受管依赖拓扑/)
-      assert.ok(lstatSync(join(profile, 'node_modules', 'rollback-plugin')).isSymbolicLink())
-      const restored = spawnSync(process.execPath, ['-e', [
-        "const { createRequire } = require('node:module')",
-        "const requireFromProfile = createRequire(process.argv[1])",
-        "process.stdout.write(requireFromProfile('rollback-plugin').revision)",
-      ].join('; '), join(profile, 'package.json')], { encoding: 'utf8' })
-      assert.equal(restored.status, 0, restored.stderr)
-      assert.equal(restored.stdout, 'old-dependency')
-    } finally {
-      rmSync(rollbackHome, { recursive: true, force: true })
     }
   })
 

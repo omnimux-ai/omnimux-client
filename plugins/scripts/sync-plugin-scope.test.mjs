@@ -52,7 +52,7 @@ function setupFixture({
   mkdirSync(join(profile, 'node_modules', 'omnimux-workflow'), { recursive: true })
   mkdirSync(bin, { recursive: true })
 
-  for (const name of ['managed-tarball-archive.py', 'plugin-lifecycle.mjs', 'sync-main.sh']) {
+  for (const name of ['profile-lock-archive.py', 'plugin-lifecycle.mjs', 'sync-main.sh']) {
     writeFileSync(join(scripts, name), readFileSync(join(root, 'scripts', name)))
   }
   mkdirSync(join(fixture, 'plugins/omnimux/src'), { recursive: true })

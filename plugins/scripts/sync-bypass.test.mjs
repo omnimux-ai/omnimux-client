@@ -147,16 +147,6 @@ test('both entrypoints reject external plugin roots even from clean aligned main
   assert.equal(result.status, 0, result.stderr)
 })
 
-test('rollback wrapper does not accept the obsolete unmerged flag instead of merge confirmation', t => {
-  const f = fixture(t)
-  copyFileSync(join(here, 'materialize-with-rollback.sh'), join(f.repo, 'scripts/materialize-with-rollback.sh'))
-  const result = spawnSync('bash', [join(f.repo, 'scripts/materialize-with-rollback.sh'), 'omnimux'], {
-    encoding: 'utf8', env: { ...f.gitEnv, HOME: f.home, OMNIMUX_MERGE_CONFIRMED: '0', OMNIMUX_ALLOW_UNMERGED_MATERIALIZE: '1' },
-  })
-  assert.equal(result.status, 1)
-  assert.match(result.stderr, /OMNIMUX_MERGE_CONFIRMED/)
-})
-
 test('monorepo evidence and archive paths pass while untracked plugin source stays blocked', t => {
   const f = fixture(t)
   for (const draft of [

@@ -93,7 +93,6 @@ jobs:
           node --check scripts/live-page-preparation.mjs
           node --check scripts/live-qa-request.mjs
           node --check scripts/live-browser-utils.mjs
-          bash -n scripts/materialize-with-rollback.sh
           node --check scripts/verify-skill-bilingual.mjs
           node --check scripts/verify-skill-hygiene.mjs
           node --check scripts/verify-global-skills.mjs
@@ -181,17 +180,17 @@ jobs:
           mkdir -p "$GITHUB_WORKSPACE/.workbuddy/evidence"
           node scripts/auto-qa-gate.mjs . --diff --base "$QA_BASE" --json --output "$GITHUB_WORKSPACE/.workbuddy/evidence/auto-qa-report.json"
 
-      - name: Setup Python for managed archives
+      - name: Setup Python for isolated pnpm helper
         uses: actions/setup-python@v5
         with:
           python-version: '3.14'
 
-      - name: Test managed tarball unit suite
+      - name: Test isolated pnpm unit suite
         run: |
           set -euo pipefail
-          export HOME="$RUNNER_TEMP/managed-tarball-home"
-          export TMPDIR="$RUNNER_TEMP/managed-tarball-tmp"
-          export COREPACK_HOME="$RUNNER_TEMP/managed-tarball-corepack"
+          export HOME="$RUNNER_TEMP/isolated-pnpm-home"
+          export TMPDIR="$RUNNER_TEMP/isolated-pnpm-tmp"
+          export COREPACK_HOME="$RUNNER_TEMP/isolated-pnpm-corepack"
           export XDG_CONFIG_HOME="$HOME/config" XDG_CACHE_HOME="$HOME/cache" XDG_STATE_HOME="$HOME/state"
           export npm_config_userconfig="$HOME/empty-user.npmrc" npm_config_globalconfig="$HOME/empty-global.npmrc"
           export npm_config_cache="$HOME/npm-cache" npm_config_store_dir="$HOME/store" npm_config_global_dir="$HOME/global"
@@ -204,7 +203,7 @@ jobs:
           corepack prepare pnpm@11.7.0 --activate
           export COREPACK_ENABLE_NETWORK=0
           test "$(corepack pnpm --version)" = 11.7.0
-          corepack pnpm --config.verify-deps-before-run=false test:managed-tarball:unit
+          corepack pnpm --config.verify-deps-before-run=false test:isolated-pnpm
 
       - name: Verify protected session prefill handoff
         run: node --test plugins/omnimux/src/client/session-prefill/*.test.js

@@ -1075,7 +1075,6 @@ describe('guard-worktree materialization safety guard (多 Agent 物化防覆盖
     assert.equal(isMaterializationCommand('./scripts/sync-to-app.sh'), true)
     assert.equal(isMaterializationCommand('bash scripts/sync-to-app.sh omnimux-assets'), true)
     assert.equal(isMaterializationCommand('./scripts/sync-stable.sh'), true)
-    assert.equal(isMaterializationCommand('bash scripts/materialize-with-rollback.sh omnimux'), true)
     assert.equal(isMaterializationCommand('node scripts/omnimux.mjs sync'), true)
     assert.equal(isMaterializationCommand('omnimux.mjs sync --prod'), true)
 
