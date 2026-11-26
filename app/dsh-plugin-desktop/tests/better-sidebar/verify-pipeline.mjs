@@ -74,7 +74,7 @@ const firstHashes = hashes(first.packedRoot)
 const productNames = [
   'omnimux', 'omnimux-accounts', 'omnimux-assets', 'omnimux-products',
   'omnimux-workflow', 'omnimux-market', 'omnimux-inspiration', 'omnimux-clip',
-  'omnimux-video', 'omnimux-analytics', 'omnimux-publish', 'omnimux-forms',
+  'omnimux-video', 'omnimux-analytics', 'omnimux-publish',
 ]
 const pluginsRoot = join(workRoot, 'product-plugins')
 for (const name of productNames) {

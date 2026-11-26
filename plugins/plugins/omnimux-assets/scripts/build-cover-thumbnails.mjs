@@ -58,7 +58,7 @@
 import { execFile } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { createRequire } from 'node:module'
-import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, extname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -437,6 +437,40 @@ export function extractVideoFirstFrame(url, opts = {}) {
 }
 
 /**
+ * Backfill `meta.bytes` from `all/page-*.json` onto `index.json` rows when present:
+ * `index.json` omits `meta.bytes` to stay compact, whereas `all/page-*.json` holds
+ * each asset's recorded byte size needed by `--max-bytes`.
+ * @param {string} catalogDir
+ * @param {any[]} indexRows
+ * @returns {any[]}
+ */
+export function enrichIndexRowsWithPageBytes(catalogDir, indexRows) {
+  const allDir = join(catalogDir, 'all')
+  if (!existsSync(allDir)) return indexRows
+  /** @type {Map<string, number>} */
+  const bytesById = new Map()
+  for (const file of readdirSync(allDir).sort()) {
+    if (!/^page-\d+\.json$/.test(file)) continue
+    const page = readJsonFile(join(allDir, file))
+    const items = Array.isArray(page?.items) ? page.items : []
+    for (const item of items) {
+      const bytes = Number(item?.meta?.bytes)
+      if (item && typeof item.id === 'string' && Number.isFinite(bytes) && bytes > 0) {
+        bytesById.set(item.id, bytes)
+      }
+    }
+  }
+  if (bytesById.size === 0) return indexRows
+  return indexRows.map((row) => {
+    if (!row || typeof row.id !== 'string') return row
+    if (Number(row.meta?.bytes) > 0) return row
+    const bytes = bytesById.get(row.id)
+    if (bytes === undefined) return row
+    return { ...row, meta: { ...(row.meta || {}), bytes } }
+  })
+}
+
+/**
  * @param {{
  *   catalogDir?: string,
  *   outDir: string,
@@ -459,10 +493,11 @@ export async function buildThumbnails(options) {
   const catalogDir = options.catalogDir ?? DEFAULT_CATALOG_DIR
   const outDir = resolve(options.outDir)
   const log = options.log ?? ((line) => { process.stdout.write(`${line}\n`) })
-  const index = readJsonFile(join(catalogDir, 'index.json'))
-  if (!Array.isArray(index)) {
+  const rawIndex = readJsonFile(join(catalogDir, 'index.json'))
+  if (!Array.isArray(rawIndex)) {
     throw new Error(`catalog index is missing or unreadable: ${join(catalogDir, 'index.json')}`)
   }
+  const index = enrichIndexRowsWithPageBytes(catalogDir, rawIndex)
 
   const effectiveIncludeCategories = options.recommended === true
     ? new Set([...RECOMMENDED_CATEGORIES, ...parseIncludeCategories(options.includeCategories)])

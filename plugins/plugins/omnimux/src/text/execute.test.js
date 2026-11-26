@@ -907,6 +907,120 @@ describe('omnimux_text_complete tool', () => {
       (error) => error instanceof OmnimuxError && error.code === 'omnimux-unconfigured',
     )
   })
+
+  it('agent mode prefers active ctx.llm subscription route without spawning local CLI', async () => {
+    const seen = []
+    const agentSettings = {
+      runtimeMode: 'agent',
+      runtimeAgentId: 'codex',
+      runtimeAgentVerified: true,
+    }
+    const result = await executeOmnimuxText({
+      prompt: 'write one sentence',
+      env: {},
+      settings: { get: (key) => key === 'omnimux' ? agentSettings : undefined },
+      llm: {
+        listModels: async (providerId) => providerId === 'openai-codex'
+          ? [{ id: 'gpt-6.1-sol', name: 'GPT-6.1 Sol' }]
+          : [],
+        async * stream(options) {
+          seen.push(options)
+          yield { type: 'text-delta', text: 'via codex oauth' }
+          yield { type: 'finish', reason: { kind: 'stop' } }
+        },
+      },
+    })
+    assert.equal(seen.length, 1)
+    assert.equal(seen[0].provider, 'openai-codex')
+    assert.equal(seen[0].model, 'gpt-6.1-sol')
+    assert.deepEqual(result, { mode: 'live', model: 'openai-codex:gpt-6.1-sol', text: 'via codex oauth' })
+  })
+
+  it('agent mode does NOT hijack an explicit apiKeyEnv route and falls back to local CLI', async () => {
+    let streamCalls = 0
+    const cliCalls = []
+    const agentSettings = {
+      runtimeMode: 'agent',
+      runtimeAgentId: 'claude',
+      runtimeAgentVerified: true,
+    }
+    const result = await executeOmnimuxText({
+      prompt: 'keep billing isolated',
+      env: {},
+      settings: {
+        get: (key) => (key === 'omnimux' ? agentSettings : undefined),
+        describe: () => [
+          { ns: 'omnimux', revision: 1, value: agentSettings },
+          {
+            ns: 'llm-pi-ai',
+            revision: 1,
+            value: { providers: { anthropic: { displayName: 'Anthropic API', apiKeyEnv: 'ANTHROPIC_API_KEY' } } },
+          },
+        ],
+      },
+      credentials: {
+        describeRecord: async () => ({ configured: true }),
+      },
+      llm: {
+        listModels: async (providerId) => (providerId === 'anthropic' ? [{ id: 'claude-sonnet-4-6', name: 'Claude Sonnet 4.6' }] : []),
+        async * stream() {
+          streamCalls += 1
+          yield { type: 'text-delta', text: 'must not bill api key route' }
+        },
+      },
+      agentRun: async (args) => {
+        cliCalls.push(args)
+        return 'local claude cli reply'
+      },
+    })
+    assert.equal(streamCalls, 0)
+    assert.equal(cliCalls.length, 1)
+    assert.equal(cliCalls[0].id, 'claude')
+    assert.deepEqual(result, { mode: 'live', model: 'claude', text: 'local claude cli reply' })
+  })
+
+  it('agent mode falls back to local CLI when a keyless route lacks a stored subscription credential', async () => {
+    let streamCalls = 0
+    const cliCalls = []
+    const agentSettings = {
+      runtimeMode: 'agent',
+      runtimeAgentId: 'codex',
+      runtimeAgentVerified: true,
+    }
+    const result = await executeOmnimuxText({
+      prompt: 'fallback when unauthenticated',
+      env: {},
+      settings: {
+        get: (key) => (key === 'omnimux' ? agentSettings : undefined),
+        describe: () => [
+          { ns: 'omnimux', revision: 1, value: agentSettings },
+          {
+            ns: 'llm-pi-ai',
+            revision: 1,
+            value: { providers: { 'openai-codex': { displayName: 'Codex', transport: 'sse' } } },
+          },
+        ],
+      },
+      credentials: {
+        describeRecord: async () => ({ configured: false }),
+      },
+      llm: {
+        listModels: async (providerId) => (providerId === 'openai-codex' ? [{ id: 'gpt-6.1-sol', name: 'GPT-6.1 Sol' }] : []),
+        async * stream() {
+          streamCalls += 1
+          yield { type: 'text-delta', text: 'must not call unauthenticated stream' }
+        },
+      },
+      agentRun: async (args) => {
+        cliCalls.push(args)
+        return 'local codex cli reply'
+      },
+    })
+    assert.equal(streamCalls, 0)
+    assert.equal(cliCalls.length, 1)
+    assert.equal(cliCalls[0].id, 'codex')
+    assert.deepEqual(result, { mode: 'live', model: 'codex', text: 'local codex cli reply' })
+  })
 })
 
 describe('textComplete toolModel bypass', () => {

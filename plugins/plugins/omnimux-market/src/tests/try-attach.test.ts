@@ -82,10 +82,10 @@ test('tryAttach resolves all 4 homepage quick shortcuts & bundled SOP skills off
     const cfg = withDefaults({ skillsDir, apiBase: 'http://127.0.0.1:1', timeoutMs: 500, userAgent: 't' })
     const targets = [
       { slug: 'replicate-viral-video', title: '复刻爆款视频' },
-      { slug: 'video-hook-analysis', title: '视频拆解' },
+      { slug: 'video-hook-analysis', title: '拆解视频' },
       { slug: 'create-selling-video', title: '创作带货视频' },
-      { slug: 'reverse-video-prompt', title: '反推视频提示词' },
-      { slug: 'omnimux-ecom-market-research', title: '类目市场与选品调研' },
+      { slug: 'reverse-video-prompt', title: '视频转提示词' },
+      { slug: 'omnimux-ecom-market-research', title: '分析类目市场' },
     ]
     for (const target of targets) {
       const sessionId = `sess-${target.slug}`

@@ -19,6 +19,7 @@ import {
 } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { parseDocument } from 'yaml'
 import {
   assertExistingManagedProfile,
@@ -26,6 +27,7 @@ import {
   assertManagedSourceGraph,
   createFreshManagedSources,
   hashDirectory,
+  managedDependencySpec,
   managedSourcePath,
 } from './managed-profile.ts'
 import { isLegacyPluginSkillMarker, reclaimLegacyManagedPluginSkills } from './legacy-skill-reclaim.ts'
@@ -112,6 +114,8 @@ type ReleaseChannel = 'production' | 'development'
 interface PresetPolicy {
   readonly requiredBundles: readonly string[]
   readonly excludedPackages: readonly string[]
+  readonly retiredPackages: readonly string[]
+  readonly refreshHubOnPolicyChange: boolean
 }
 
 /** Inputs for {@link seedOmnimuxProfile}. */
@@ -381,9 +385,10 @@ export function seedOmnimuxProfile(options: SeedOmnimuxProfileOptions): SeedOmni
   const created = !existsSync(join(profileDir, 'package.json'))
   const owned = readOwnedPackages(presetDir, pluginsDir)
   assertDistributionRecordAgrees(presetDir, owned)
-  const excludedOwned = owned.filter(name => policy.excludedPackages.includes(name))
+  const blockedOwned = new Set([...policy.excludedPackages, ...policy.retiredPackages])
+  const excludedOwned = owned.filter(name => blockedOwned.has(name))
   if (excludedOwned.length > 0) {
-    throw new Error(`production desktop preset owns excluded Alpha packages: ${excludedOwned.join(', ')}`)
+    throw new Error(`production desktop preset owns excluded or retired packages: ${excludedOwned.join(', ')}`)
   }
   assertManagedSourceGraph(pluginsDir, owned)
   if (!created) {
@@ -393,7 +398,9 @@ export function seedOmnimuxProfile(options: SeedOmnimuxProfileOptions): SeedOmni
       profileDir,
       pluginsDir,
       policy.excludedPackages,
+      policy.retiredPackages,
       version,
+      policy.refreshHubOnPolicyChange,
     )
     seedSettingsInHome(home)
     reclaimLegacyManagedPluginSkills(options.home, listStagedSkills(presetDir))
@@ -573,6 +580,45 @@ function assertRequiredBundles(profileDir: string, requiredBundles: readonly str
   }
 }
 
+/**
+ * Resolve retired plugin bundle names from `app/config/plugin-tiers.json` in checkout,
+ * or from the build-time baked JSON when running inside packaged bundles where `app/config`
+ * is absent on disk.
+ */
+export function readRetiredPackages(options: {
+  readonly requiredBundles?: readonly string[]
+  readonly tiersPath?: string
+  readonly bakedJson?: string | undefined
+} = {}): readonly string[] {
+  const requiredBundles = options.requiredBundles ?? []
+  const tiersPath = options.tiersPath ?? fileURLToPath(new URL('../../config/plugin-tiers.json', import.meta.url))
+  const bakedJson = options.bakedJson !== undefined ? options.bakedJson : process.env.OMNIMUX_BAKED_RETIRED_TIERS_JSON
+  const raw = existsSync(tiersPath) ? readFileSync(tiersPath, 'utf8') : bakedJson
+  const sourceLabel = existsSync(tiersPath) ? tiersPath : 'baked plugin tier config'
+  if (raw === undefined) {
+    throw new Error(`plugin tier config is missing at ${tiersPath} and no baked retired tiers are available`)
+  }
+  const parsed = JSON.parse(raw) as unknown
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    throw new Error(`${sourceLabel} must be a JSON object`)
+  }
+  const retired = (parsed as { tiers?: { retired?: unknown } }).tiers?.retired
+  if (!Array.isArray(retired)) {
+    throw new Error(`${sourceLabel}: tiers.retired must be an array`)
+  }
+  const retiredPackages: string[] = []
+  for (const entry of retired) {
+    if (typeof entry !== 'string' || entry === '') {
+      throw new Error(`${sourceLabel}: tiers.retired entries must be non-empty strings`)
+    }
+    packageDirSegments(entry)
+    if (!requiredBundles.includes(entry) && !retiredPackages.includes(entry)) {
+      retiredPackages.push(entry)
+    }
+  }
+  return retiredPackages
+}
+
 function readPresetPolicy(skeletonDir: string, pluginsDir: string): PresetPolicy {
   const skeletonPath = join(skeletonDir, 'package.json')
   const skeleton = readJsonObject(skeletonPath, 'desktop preset skeleton') as {
@@ -624,9 +670,12 @@ function readPresetPolicy(skeletonDir: string, pluginsDir: string): PresetPolicy
       throw new Error(`production desktop preset includes Alpha bundles: ${includedAlpha.join(', ')}`)
     }
   }
+  const retiredPackages = readRetiredPackages({ requiredBundles })
   return {
     requiredBundles,
     excludedPackages: releaseChannel === 'production' ? alphaPlugins : [],
+    retiredPackages,
+    refreshHubOnPolicyChange: releaseChannel === 'production',
   }
 }
 
@@ -956,13 +1005,32 @@ export function reconcileManagedProfile(options: {
   return { updated, keptUserEdits, adopted }
 }
 
+function isSnapshotOrAbsentDependency(
+  name: string,
+  dependencies: Record<string, string>,
+  optionalDependencies: Record<string, string> | undefined,
+  devDependencies: Record<string, string> | undefined,
+): boolean {
+  const snapshotSpec = managedDependencySpec(name)
+  for (const dependencyMap of [dependencies, optionalDependencies, devDependencies]) {
+    if (dependencyMap === undefined || !Object.hasOwn(dependencyMap, name)) continue
+    const spec = dependencyMap[name]
+    if (spec !== undefined && spec !== snapshotSpec && !spec.startsWith('file:.materialize-snapshots/')) {
+      return false
+    }
+  }
+  return true
+}
+
 function removeExcludedPackages(
   profileDir: string,
   presetPluginsDir: string,
   excludedPackages: readonly string[],
+  retiredPackages: readonly string[],
   seedVersion: number,
+  refreshHub: boolean,
 ): boolean {
-  if (excludedPackages.length === 0) return false
+  if (excludedPackages.length === 0 && retiredPackages.length === 0) return false
   const manifestPath = join(profileDir, 'package.json')
   const manifest = readJsonObject(manifestPath, 'OmniMux Profile manifest') as {
     dependencies?: Record<string, string>
@@ -977,8 +1045,14 @@ function removeExcludedPackages(
   const devDependencies = manifest.devDependencies === undefined
     ? undefined
     : { ...manifest.devDependencies }
+  const pruneTargets = new Set<string>(excludedPackages)
+  for (const name of retiredPackages) {
+    if (isSnapshotOrAbsentDependency(name, dependencies, optionalDependencies, devDependencies)) {
+      pruneTargets.add(name)
+    }
+  }
   const currentBundles = manifest.dsh?.profile?.bundles ?? []
-  const bundles = currentBundles.filter(name => !excludedPackages.includes(name))
+  const bundles = currentBundles.filter(name => !pruneTargets.has(name))
   const packagedHub = join(presetPluginsDir, 'omnimux')
   const installedHub = managedSourcePath(profileDir, 'omnimux')
   const hubPolicyFiles = [
@@ -986,12 +1060,12 @@ function removeExcludedPackages(
     'src/plugin-lifecycle.json',
     'src/gate/guard.js',
   ] as const
-  const hubNeedsRefresh = hubPolicyFiles.some(relativePath => !filesEqual(
+  const hubNeedsRefresh = refreshHub && hubPolicyFiles.some(relativePath => !filesEqual(
     join(packagedHub, relativePath),
     join(installedHub, relativePath),
   ))
   let changed = bundles.length !== currentBundles.length || hubNeedsRefresh
-  for (const name of excludedPackages) {
+  for (const name of pruneTargets) {
     for (const dependencyMap of [dependencies, optionalDependencies, devDependencies]) {
       if (dependencyMap === undefined) continue
       if (Object.hasOwn(dependencyMap, name)) {
@@ -1029,7 +1103,7 @@ function removeExcludedPackages(
   } finally {
     rmSync(updateDir, { recursive: true, force: true })
   }
-  for (const name of excludedPackages) {
+  for (const name of pruneTargets) {
     rmSync(managedSourcePath(profileDir, name), { recursive: true, force: true })
     rmSync(join(profileDir, 'node_modules', ...packageDirSegments(name)), { recursive: true, force: true })
   }

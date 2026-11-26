@@ -1,4 +1,3 @@
-import { registerFormAttachmentRoutes } from './form-attachments-http.js'
 import { createAuthDispatcher, registerAuthRoutes } from '../auth/http-routes.js'
 import { createPendingStore } from '../auth/pending.js'
 import { registerPluginRoutes, createPluginDispatcher } from '../plugins/http-routes.js'
@@ -105,10 +104,6 @@ export function mountHubHttp(httpCtx, deps) {
       store: deps.avatarStore,
       identity: deps.identity,
     }))
-    const stopFormAttachments = registerFormAttachmentRoutes(webServer, {
-      homeDir: deps.homeDir, getConnection: deps.getConnection,
-      getWorkspaceRegistry: deps.getWorkspaceRegistry, getSessionQuery: () => deps.sessionQuery,
-    })
     const stopComposerAttachments = registerComposerAttachmentRoutes(
       webServer,
       createComposerAttachmentsDispatcher({
@@ -126,6 +121,8 @@ export function mountHubHttp(httpCtx, deps) {
       // Services arrive after mount; resolve them per request, never eagerly.
       getSettings: () => deps.settings ?? httpCtx.get?.('settings'),
       getCredentials: () => deps.credentials ?? httpCtx.get?.('credentials'),
+      getConfigEditor: () => deps.getConfigEditor?.() ?? httpCtx.get?.('configEditor'),
+      getAgentDefaultModel: () => deps.getAgentDefaultModel?.() ?? httpCtx.get?.('agentDefaultModel'),
       getConnection: deps.getConnection,
       hubEvents: deps.hubEvents,
       onCredentialUpdated: typeof httpCtx.on === 'function'
@@ -139,6 +136,13 @@ export function mountHubHttp(httpCtx, deps) {
     })
     const stopAgents = registerAgentRoutes(webServer, {
       getSettings: () => deps.settings ?? httpCtx.get?.('settings'),
+      getConfigEditor: () => deps.getConfigEditor?.() ?? httpCtx.get?.('configEditor'),
+      getCredentials: () => deps.credentials ?? httpCtx.get?.('credentials'),
+      getAuthorization: () => deps.getAuthorization?.() ?? httpCtx.get?.('authorization'),
+      getLlm: () => deps.getLlm?.() ?? httpCtx.get?.('llm'),
+      getAgentDefaultModel: () => deps.getAgentDefaultModel?.() ?? httpCtx.get?.('agentDefaultModel'),
+      refreshLiveLlmSnapshot: deps.refreshLiveLlmSnapshot,
+      hubEvents: deps.hubEvents,
     })
     const stopTemplates = registerTemplatesRoutes(webServer, createTemplatesDispatcher())
     return () => {
@@ -151,7 +155,6 @@ export function mountHubHttp(httpCtx, deps) {
       stopInspiration()
       stopAvatar()
       stopComposerAttachments()
-      stopFormAttachments()
       stopTextComplete()
       stopByok()
       stopAgents()

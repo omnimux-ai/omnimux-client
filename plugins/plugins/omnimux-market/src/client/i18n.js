@@ -563,12 +563,12 @@
       "skill.desc.clip-craft": "OmniMux Clip 专业剪辑判断层。用于剪视频、修时间轴、加字幕花字、去黑场、自动切片和导出成片。",
       "skill.desc.cinematic-ai-comic-director": "专业影视级 AI 漫剧导演。严格执行剧本创作、漫剧落地与影视镜头库自动匹配。",
       "skill.desc.ip-character-consistency-studio": "可持续复用的 AI IP 角色形象包制作，锁定角色多角度人设、表情、姿势与场景一致性。",
-      "skill.desc.replicate-viral-video": "爆款视频智能解构与变体复刻，提炼黄金 Hook 与节奏节拍，批量生成多模态素材矩阵。",
+      "skill.desc.replicate-viral-video": "参考爆款视频结构，生成同款商品带货视频",
       "skill.desc.tiktok-shop-product-video-maker": "TikTok Shop 商品视频出海方案，快速生成爆款钩子、实拍脚本与本地化行动引导。",
       "skill.desc.3d-animation-short-generator": "3D 风格化动画短片生成，涵盖叙事场景与角色动作呈现。",
       "skill.desc.skill-creator": "技能脚手架与编写辅助工具，快速定义并扩展 Agent 专属能力。",
       "skill.desc.video-analysis": "视频全景拆解引擎，深度解析镜头景别、节奏节拍与视听语言。",
-      "skill.desc.video-hook-analysis": "前 3 秒黄金开场 Hook 与停留率留存诊断分析。",
+      "skill.desc.video-hook-analysis": "提取字幕与脚本，拆解钩子、卖点和分镜",
     };
     const EN = {
       locale: "en",

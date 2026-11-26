@@ -13,8 +13,7 @@
         "omnimux-workflow",
         "omnimux-accounts",
         "omnimux-publish",
-        "omnimux-analytics",
-        "omnimux-forms"
+        "omnimux-analytics"
       ]
     }
   }

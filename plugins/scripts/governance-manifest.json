@@ -95,7 +95,6 @@
     "materialize-cache.test.mjs",
     "materialize-graph.mjs",
     "omnimux.mjs",
-    "package-preparation.test.mjs",
     "pipeline-state.mjs",
     "pr-wait.mjs",
     "pr-wait.test.mjs",

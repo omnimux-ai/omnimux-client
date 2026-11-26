@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict'
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, it } from 'node:test'
 import {
   buildThumbnails,
+  enrichIndexRowsWithPageBytes,
   extractVideoFirstFrame,
   needsThumbnail,
   needsVideoPoster,
@@ -12,6 +13,7 @@ import {
   RECOMMENDED_MAX_COVER_BYTES,
   validateVideoSourceUrl,
 } from '../scripts/build-cover-thumbnails.mjs'
+import { applyThumbManifest, resolveThumbPublicUrl } from '../scripts/apply-thumb-manifest.mjs'
 
 const temps = []
 function makeTempDir() {
@@ -202,5 +204,105 @@ describe('build-cover-thumbnails: 扩展角色 JPG、大图阈值与无封面视
     assert.equal(capturedArgs[wlIdx + 1], 'https,http,tcp,tls')
     const iIdx = capturedArgs.indexOf('-i')
     assert.equal(capturedArgs[iIdx + 1], 'https://assets.omnimux.ai/elements/hooks/clip.mp4')
+  })
+
+  it('enrichIndexRowsWithPageBytes 从 all/page-*.json 回填缺失的 meta.bytes，使 --max-bytes 精准生效', () => {
+    const dir = makeTempDir()
+    mkdirSync(join(dir, 'all'), { recursive: true })
+    writeFileSync(join(dir, 'all', 'page-0000.json'), JSON.stringify({
+      items: [
+        { id: 'scene-big', meta: { bytes: 512_000 } },
+        { id: 'scene-small', meta: { bytes: 42_000 } },
+      ],
+    }))
+    const enriched = enrichIndexRowsWithPageBytes(dir, [
+      { id: 'scene-big', category: 'scene', media_type: 'image', cover_url: 'https://assets.omnimux.ai/scenes/big.jpg', media_url: 'https://assets.omnimux.ai/scenes/big.jpg', meta: {} },
+      { id: 'scene-small', category: 'scene', media_type: 'image', cover_url: 'https://assets.omnimux.ai/scenes/small.jpg', media_url: 'https://assets.omnimux.ai/scenes/small.jpg', meta: {} },
+    ])
+    assert.equal(enriched[0].meta.bytes, 512_000)
+    assert.equal(enriched[1].meta.bytes, 42_000)
+    assert.equal(needsThumbnail(enriched[0], { maxBytes: 300 * 1024 }), true)
+    assert.equal(needsThumbnail(enriched[1], { maxBytes: 300 * 1024 }), false)
+  })
+
+  it('applyThumbManifest 幂等回填 index.json 与全部 page 分片，保留已有 thumb_url 并拒绝越界 key', () => {
+    assert.throws(() => resolveThumbPublicUrl('../escape.webp'))
+    assert.throws(() => resolveThumbPublicUrl('other/a.webp'))
+    assert.throws(() => resolveThumbPublicUrl('thumbs/'))
+    assert.throws(() => resolveThumbPublicUrl('/thumbs/a.webp'))
+    assert.throws(() => resolveThumbPublicUrl('thumbs/%2e%2e/a.webp'))
+    assert.throws(() => resolveThumbPublicUrl('thumbs/..a.webp'))
+    assert.throws(() => resolveThumbPublicUrl('thumbs/sub/a.webp'))
+    assert.throws(() => resolveThumbPublicUrl('thumbs/a.webp?q=1'))
+    assert.throws(() => resolveThumbPublicUrl('thumbs/a.webp#frag'))
+    assert.throws(() => resolveThumbPublicUrl('thumbs/a.png'))
+    assert.throws(() => resolveThumbPublicUrl('thumbs/demo.webp', 'http://assets.omnimux.ai'))
+    assert.throws(() => resolveThumbPublicUrl('thumbs/demo.webp', 'https://assets.omnimux.ai?q=1'))
+    assert.throws(() => resolveThumbPublicUrl('thumbs/demo.webp', ''))
+    assert.equal(
+      resolveThumbPublicUrl('thumbs/demo.webp'),
+      'https://assets.omnimux.ai/thumbs/demo.webp',
+    )
+
+    const dir = makeTempDir()
+    const catalogDir = join(dir, 'catalog')
+    mkdirSync(join(catalogDir, 'all'), { recursive: true })
+    mkdirSync(join(catalogDir, 'material'), { recursive: true })
+
+    const initialIndexText = JSON.stringify([
+      { id: 'existing-row', category: 'character', thumb_url: 'https://assets.omnimux.ai/thumbs/existing-row.webp' },
+      { id: 'hook-1', category: 'material', cover_url: '', media_type: 'video' },
+      { id: 'replace-row', category: 'scene', thumb_url: 'https://assets.omnimux.ai/thumbs/old-replace-row.webp' },
+    ])
+    writeFileSync(join(catalogDir, 'index.json'), initialIndexText)
+    writeFileSync(join(catalogDir, 'all', 'page-0000.json'), JSON.stringify({
+      scope: 'all',
+      items: [
+        { id: 'existing-row', category: 'character', thumb_url: 'https://assets.omnimux.ai/thumbs/existing-row.webp' },
+        { id: 'hook-1', category: 'material', cover_url: '', media_type: 'video' },
+        { id: 'replace-row', category: 'scene', thumb_url: 'https://assets.omnimux.ai/thumbs/old-replace-row.webp' },
+      ],
+    }))
+    writeFileSync(join(catalogDir, 'material', 'page-0000.json'), JSON.stringify({
+      scope: 'material',
+      items: [{ id: 'hook-1', category: 'material', cover_url: '', media_type: 'video' }],
+    }))
+    const manifestPath = join(dir, 'thumb-manifest.json')
+    writeFileSync(manifestPath, JSON.stringify({
+      schema: 1,
+      rows: [
+        { id: 'hook-1', key: 'thumbs/hook-1.webp', bytes: 22_000, sha256: 'abc' },
+        { id: 'replace-row', key: 'thumbs/replace-row.webp', bytes: 30_000, sha256: 'def' },
+      ],
+    }))
+
+    // dryRun 仅统计，不修改任何磁盘文件
+    const preview = applyThumbManifest({ manifestPath, catalogDir, dryRun: true })
+    assert.equal(preview.dryRun, true)
+    assert.equal(preview.indexAdded, 1)
+    assert.equal(preview.indexUpdated, 1)
+    assert.equal(preview.indexPreserved, 1)
+    assert.equal(readFileSync(join(catalogDir, 'index.json'), 'utf8'), initialIndexText)
+
+    const first = applyThumbManifest({ manifestPath, catalogDir })
+    assert.equal(first.indexAdded, 1)
+    assert.equal(first.indexUpdated, 1)
+    assert.equal(first.indexPreserved, 1)
+    assert.equal(first.indexTotalWithThumb, 3)
+    assert.equal(first.pagesTouched, 2)
+    assert.equal(first.pageItemsAttached, 3)
+
+    const updatedIndex = JSON.parse(readFileSync(join(catalogDir, 'index.json'), 'utf8'))
+    assert.equal(updatedIndex[0].thumb_url, 'https://assets.omnimux.ai/thumbs/existing-row.webp')
+    assert.equal(updatedIndex[1].thumb_url, 'https://assets.omnimux.ai/thumbs/hook-1.webp')
+    assert.equal(updatedIndex[2].thumb_url, 'https://assets.omnimux.ai/thumbs/replace-row.webp')
+    const updatedMatPage = JSON.parse(readFileSync(join(catalogDir, 'material', 'page-0000.json'), 'utf8'))
+    assert.equal(updatedMatPage.items[0].thumb_url, 'https://assets.omnimux.ai/thumbs/hook-1.webp')
+
+    // 二次运行应完全幂等（0 新增、0 更新、0 分片重写）
+    const second = applyThumbManifest({ manifestPath, catalogDir })
+    assert.equal(second.indexAdded, 0)
+    assert.equal(second.indexUpdated, 0)
+    assert.equal(second.pagesTouched, 0)
   })
 })

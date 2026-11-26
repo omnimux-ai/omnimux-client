@@ -71,3 +71,70 @@ export function shouldAutoRefresh(lastAt, now, visibilityState = 'visible') {
   if (!Number.isFinite(lastAt) || lastAt <= 0) return true
   return now - lastAt >= AGENT_AUTO_REFRESH_MS
 }
+
+/**
+ * Whether an agent card can be clicked/selected by the user.
+ * Subscription-capable agents (Codex, Claude, Kimi) are selectable even when
+ * the local CLI binary is not installed because Route 1 OAuth runs in-app.
+ * @param {{ installed?: boolean, subscription?: { supported?: boolean } } | null} agent
+ * @returns {boolean}
+ */
+export function isAgentSelectable(agent) {
+  return Boolean(agent && (agent.installed === true || agent.subscription?.supported === true))
+}
+
+/**
+ * Whether Route 2 (controlled read-only local CLI credential reuse) is ready.
+ * @param {{ subscription?: { cliImport?: { importable?: boolean } } } | null} agent
+ * @returns {boolean}
+ */
+export function canImportCliAuth(agent) {
+  return Boolean(agent?.subscription?.cliImport?.importable === true)
+}
+
+/**
+ * Compact connection status pill for an agent card, or null when unconfigured
+ * and not selectable.
+ * @param {(key: string, params?: Record<string, string>) => string} t
+ * @param {{ installed?: boolean, subscription?: { supported?: boolean, connected?: boolean, cliImport?: { importable?: boolean } } } | null} agent
+ * @returns {{ kind: 'connected' | 'cli-ready' | 'oauth' | 'cli-only', label: string } | null}
+ */
+export function agentConnectionBadge(t, agent) {
+  if (!agent) return null
+  const sub = agent.subscription
+  if (sub && sub.supported === true) {
+    if (sub.connected === true) return { kind: 'connected', label: t('runtime.badgeConnected') }
+    if (sub.cliImport?.importable === true) return { kind: 'cli-ready', label: t('runtime.badgeCliReady') }
+    return { kind: 'oauth', label: t('runtime.badgeOAuth') }
+  }
+  if (agent.installed === true) {
+    return { kind: 'cli-only', label: t('runtime.badgeCliOnly') }
+  }
+  return null
+}
+
+/**
+ * Secondary line under an agent card title. Preserves existing CLI version
+ * behavior while surfacing OAuth availability when no local CLI is installed.
+ * @param {(key: string, params?: Record<string, string>) => string} t
+ * @param {{ installed?: boolean, version?: string, auth?: { state?: string, loginSupported?: boolean }, subscription?: { supported?: boolean, connected?: boolean, liveModels?: string[] } } | null} agent
+ * @returns {string}
+ */
+export function agentCardSubtitle(t, agent) {
+  if (!agent) return t('runtime.notDetected')
+  const sub = agent.subscription
+  if (sub && sub.supported === true) {
+    if (sub.connected === true) {
+      if (agent.installed === true && typeof agent.version === 'string' && agent.version) {
+        return agent.version
+      }
+      const count = Array.isArray(sub.liveModels) ? sub.liveModels.length : 0
+      if (count > 0) return t('runtime.modelsReadyCount', { count: String(count) })
+      return t('runtime.badgeConnected')
+    }
+    if (agent.installed !== true) {
+      return t('runtime.noCliNeeded')
+    }
+  }
+  return agentStatusText(t, agent)
+}

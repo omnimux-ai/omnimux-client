@@ -1,5 +1,5 @@
 import { createElement } from 'react'
-import { mountFormsBridge } from './forms/mount.js'
+import { mountSessionPrefill } from './session-prefill/mount.js'
 /** Registers OmniMux profile in Settings and Apps under 新会话. */
 import { NS } from './locales.js'
 import { ProfileSection } from './ProfileSection.jsx'
@@ -279,7 +279,7 @@ export function apply(ctx) {
   }, ComposerQuickShortcutControls))
   // 素材卡槽回到官方输入框内侧。Host 直接把上传回调交给托盘，不再经外侧桥接。
   const attachmentStore = getGlobalAttachmentStore()
-  mountFormsBridge(ctx, attachmentStore)
+  mountSessionPrefill(ctx)
   const attachmentAdmission = createAttachmentAdmission({ getSessions: () => hostSessions || guideSessions, store: attachmentStore })
   ctx.effect(() => () => { attachmentAdmission.dispose() }, 'omnimux: attachment admission')
   ctx.slots.inject('conversation.input.dock', () => ctx.slots.register({

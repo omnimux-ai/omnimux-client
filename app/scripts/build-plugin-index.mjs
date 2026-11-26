@@ -112,15 +112,6 @@ export const DESCRIBED_PLUGINS = [
     },
   },
   {
-    dir: 'omnimux-forms',
-    category: 'feature',
-    title: { en: 'Task Forms', zh: '任务表单' },
-    description: {
-      en: 'Use structured forms to organize reference video breakdown and remake tasks.',
-      zh: '提供结构化表单模板，整理参考视频拆解与复刻需求。',
-    },
-  },
-  {
     dir: 'omnimux-inspiration',
     category: 'feature',
     title: { en: 'Inspiration Library', zh: '灵感库' },

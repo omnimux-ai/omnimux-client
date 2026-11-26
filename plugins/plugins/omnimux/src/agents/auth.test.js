@@ -185,6 +185,31 @@ describe('probeAgentAuth · codex (exit code is the only verdict)', () => {
     })
     assert.equal(result.state, 'signed-in', 'codex has no JSON verdict; only the exit code decides')
   })
+
+  it('resolves codex from extra GUI bin dirs and passes widened PATH under minimal Electron PATH', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'omnimux-auth-path-'))
+    const localBin = path.join(dir, '.local', 'bin')
+    fs.mkdirSync(localBin, { recursive: true })
+    const fakeCodex = path.join(localBin, 'codex')
+    fs.writeFileSync(fakeCodex, '#!/bin/sh\nexit 0\n', { mode: 0o755 })
+    try {
+      const calls = []
+      const result = await probeAgentAuth('codex', {
+        home: dir,
+        env: { HOME: dir, PATH: '/usr/bin:/bin' },
+        run: async (bin, args, opts) => {
+          calls.push({ bin, args, opts })
+          return { stdout: '', stderr: 'Logged in using ChatGPT\n' }
+        },
+      })
+      assert.deepEqual(result, { state: 'signed-in', method: 'command' })
+      assert.equal(calls.length, 1)
+      assert.equal(calls[0].bin, fs.realpathSync(fakeCodex))
+      assert.ok(String(calls[0].opts?.env?.PATH || '').includes(path.dirname(fs.realpathSync(fakeCodex))))
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true })
+    }
+  })
 })
 
 describe('probeAgentAuth · kimi (file probe)', () => {

@@ -3,7 +3,7 @@ import path from 'node:path'
 import os from 'node:os'
 import { execFile, spawn } from 'node:child_process'
 import { promisify } from 'node:util'
-import { KNOWN_AGENTS } from './local.js'
+import { KNOWN_AGENTS, resolveBinPath, buildAugmentedPath } from './local.js'
 
 const execFileAsync = promisify(execFile)
 
@@ -90,8 +90,22 @@ async function probeByCommand(spec, options) {
   const timeoutMs = Number.isFinite(options.timeoutMs) ? options.timeoutMs : AUTH_TIMEOUT_MS
   const method = /** @type {'command'} */ ('command')
   let verdict = /** @type {AgentAuth} */ ({ state: 'unknown', method })
+  // Resolve the binary with widened PATH so GUI Electron launches find nvm /
+  // Homebrew CLIs instead of failing with ENOENT and downgrading to `unknown`.
+  const shouldResolveBin = typeof options.run !== 'function' || Boolean(options.fsImpl) || Boolean(options.env)
+  const resolvedBin = shouldResolveBin
+    ? (resolveBinPath(spec.command.bin, options) || spec.command.bin)
+    : spec.command.bin
+  const runOptions = { timeout: timeoutMs }
+  if (shouldResolveBin) {
+    const env = options.env || process.env
+    runOptions.env = {
+      ...env,
+      PATH: buildAugmentedPath(resolvedBin, options),
+    }
+  }
   try {
-    const { stdout } = await run(spec.command.bin, [...spec.command.args], { timeout: timeoutMs })
+    const { stdout } = await run(resolvedBin, [...spec.command.args], runOptions)
     verdict = { state: 'signed-in', method }
     const flag = typeof spec.jsonFlag === 'string' ? spec.jsonFlag : ''
     if (flag) {
@@ -347,9 +361,11 @@ export async function launchAgentLogin(id, options = {}) {
   const logPath = path.join(scriptDir, `omnimux-${agent.id}-login.log`)
   const invocation = `cd "$HOME" || exit 1\nexec ${parts.bin} ${parts.args.join(' ')}`
   const spawnImpl = typeof options.spawnImpl === 'function' ? options.spawnImpl : spawn
+  const resolvedBin = resolveBinPath(parts.bin, options)
+  const widenedPath = buildAugmentedPath(resolvedBin, { home, env: process.env, fsImpl })
   const safeEnv = {
     HOME: home,
-    PATH: process.env.PATH || '/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin',
+    PATH: widenedPath || process.env.PATH || '/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin',
     TERM: 'xterm-256color',
   }
   for (const key of ['USER', 'LOGNAME', 'SHELL', 'TMPDIR', 'LANG', 'LC_ALL', 'LC_CTYPE']) {

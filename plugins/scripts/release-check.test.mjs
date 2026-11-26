@@ -138,7 +138,7 @@ test('checkManifest rejects machine-local specifiers that npm would ship verbati
     dependencies: { 'dsh-ui-kit': 'file:../../packages/dsh-ui-kit' },
     optionalDependencies: { 'omnimux-products': 'workspace:^0.1.0' },
     peerDependencies: { 'omnimux-video': 'link:../omnimux-video' },
-    devDependencies: { '@omnimux/form-contract': 'file:../../packages/form-contract' },
+    devDependencies: { '@omnimux/generation-capabilities': 'file:../../packages/generation-capabilities' },
   }
   const problems = checkManifest({ manifest, packageDir: 'plugins/plugins/omnimux', remoteUrl })
   assert.equal(problems.length, 3)
@@ -152,7 +152,7 @@ test('checkManifest accepts published semver ranges for workspace packages', () 
   const manifest = {
     ...MANIFEST,
     dependencies: { 'dsh-ui-kit': '^0.1.0', 'omnimux-products': '^0.1.2' },
-    devDependencies: { '@omnimux/form-contract': 'file:../../packages/form-contract' },
+    devDependencies: { '@omnimux/generation-capabilities': 'file:../../packages/generation-capabilities' },
   }
   assert.deepEqual(
     checkManifest({ manifest, packageDir: 'plugins/plugins/omnimux', remoteUrl: 'https://github.com/omnimux-ai/omnimux-client.git' }),

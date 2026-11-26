@@ -1,0 +1,50 @@
+{
+  "task": "retire-forms-social-harvest",
+  "spaceId": 150,
+  "spaceName": "retire-forms-harvest-qa-1795668670263",
+  "verifiedAt": "2026-11-26T04:51:19.751Z",
+  "realStats": {
+    "errors": [],
+    "menuItems": [
+      "应用",
+      "图像生成",
+      "视频剪辑",
+      "发布Alpha",
+      "账号Alpha",
+      "手机管理Alpha",
+      "数据分析Alpha"
+    ],
+    "marketNames": [
+      "灵感工作台",
+      "创意资产库",
+      "带货选品库",
+      "视频工作台",
+      "视觉创作台",
+      "视频处理引擎",
+      "视频预览流",
+      "多媒体查看器",
+      "矩阵分发",
+      "账号矩阵",
+      "表现分析",
+      "爆速截流",
+      "工作流画布",
+      "浏览器伴侣",
+      "移动真机矩阵",
+      "应用门户",
+      "核心执行中枢",
+      "技能与专家市场"
+    ],
+    "overflow": false
+  },
+  "realNarrowOverflow": false,
+  "demoNarrowOverflow": false,
+  "screenshots": [
+    "docs/evidence/retire-forms-social-harvest/01-real-ui-dark.png",
+    "docs/evidence/retire-forms-social-harvest/02-real-ui-light.png",
+    "docs/evidence/retire-forms-social-harvest/03-real-ui-narrow.png",
+    "docs/evidence/retire-forms-social-harvest/04-demo-dark.png",
+    "docs/evidence/retire-forms-social-harvest/05-demo-light.png",
+    "docs/evidence/retire-forms-social-harvest/06-demo-narrow.png"
+  ],
+  "spaceClosed": true
+}

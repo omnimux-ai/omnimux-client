@@ -1225,7 +1225,7 @@ export function createTestEnvironmentStarter(deps = {}) {
               if (mode === 'live' && io.existsSync(join(devHome, '.credentials.yaml'))) {
                 try { io.symlinkSync(join(devHome, '.credentials.yaml'), join(env.DSH_HOME, '.credentials.yaml')); } catch {}
               }
-              for (const sharedEntry of ['agent-presets-shipped', '.agent-presets', 'skills', 'omnimux-market', 'omnimux-social-harvest', '.dsh-viewer-asset-key', '.omnimux-video-preview-key']) {
+              for (const sharedEntry of ['agent-presets-shipped', '.agent-presets', 'skills', 'omnimux-market', '.dsh-viewer-asset-key', '.omnimux-video-preview-key']) {
                 const srcShared = join(devHome, sharedEntry);
                 if (io.existsSync(srcShared)) {
                   try { io.symlinkSync(srcShared, join(env.DSH_HOME, sharedEntry)); } catch {}

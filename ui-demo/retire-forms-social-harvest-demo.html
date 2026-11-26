@@ -1,0 +1,492 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>下线任务表单与社交采收（修改前后交互演示）</title>
+<style>
+  :root {
+    --dsw-alias-bg-primary: #111317;
+    --dsw-alias-bg-secondary: #181b21;
+    --dsw-alias-bg-elevated: #20242c;
+    --dsw-alias-bg-hover: rgba(255, 255, 255, 0.06);
+    --dsw-alias-border: rgba(255, 255, 255, 0.1);
+    --dsw-alias-border-l1: rgba(255, 255, 255, 0.07);
+    --dsw-alias-label-primary: #f3f4f6;
+    --dsw-alias-label-secondary: #9ca3af;
+    --dsw-alias-label-tertiary: #6b7280;
+    --dsw-alias-interactive-bg-selected: rgba(99, 102, 241, 0.16);
+    --dsw-specific-accent: #6366f1;
+    --dsw-specific-danger: #ef4444;
+    --dsw-specific-danger-soft: rgba(239, 68, 68, 0.12);
+    --dsw-specific-ok: #10b981;
+    --dsw-specific-ok-soft: rgba(16, 185, 129, 0.12);
+  }
+  body[data-theme="light"] {
+    --dsw-alias-bg-primary: #f5f6f8;
+    --dsw-alias-bg-secondary: #ffffff;
+    --dsw-alias-bg-elevated: #ffffff;
+    --dsw-alias-bg-hover: rgba(17, 24, 39, 0.05);
+    --dsw-alias-border: rgba(17, 24, 39, 0.11);
+    --dsw-alias-border-l1: rgba(17, 24, 39, 0.08);
+    --dsw-alias-label-primary: #111827;
+    --dsw-alias-label-secondary: #4b5563;
+    --dsw-alias-label-tertiary: #6b7280;
+    --dsw-alias-interactive-bg-selected: rgba(79, 70, 229, 0.1);
+    --dsw-specific-accent: #4f46e5;
+    --dsw-specific-danger: #dc2626;
+    --dsw-specific-danger-soft: rgba(220, 38, 38, 0.09);
+    --dsw-specific-ok: #059669;
+    --dsw-specific-ok-soft: rgba(5, 150, 105, 0.09);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--dsw-alias-bg-primary);
+    color: var(--dsw-alias-label-primary);
+    font: 13px/1.5 -apple-system, BlinkMacSystemFont, "PingFang SC", "SF Pro Text", sans-serif;
+  }
+  .topbar {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 20px;
+    background: var(--dsw-alias-bg-secondary);
+    border-bottom: 1px solid var(--dsw-alias-border);
+  }
+  .topbar h1 {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 600;
+  }
+  .topbar .controls {
+    margin-left: auto;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .seg {
+    display: inline-flex;
+    padding: 2px;
+    border-radius: 8px;
+    border: 1px solid var(--dsw-alias-border);
+    background: var(--dsw-alias-bg-primary);
+  }
+  .seg button {
+    border: 0;
+    background: transparent;
+    color: var(--dsw-alias-label-secondary);
+    font: inherit;
+    font-size: 12px;
+    padding: 5px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  .seg button.active {
+    background: var(--dsw-alias-bg-elevated);
+    color: var(--dsw-alias-label-primary);
+    font-weight: 600;
+  }
+  .wrap {
+    max-width: 1120px;
+    margin: 0 auto;
+    padding: 20px;
+    display: grid;
+    gap: 18px;
+  }
+  .compare-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+  }
+  body[data-viewport="narrow"] .compare-grid {
+    grid-template-columns: minmax(0, 1fr);
+    max-width: 420px;
+  }
+  .card {
+    background: var(--dsw-alias-bg-secondary);
+    border: 1px solid var(--dsw-alias-border);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  .card-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 11px 14px;
+    border-bottom: 1px solid var(--dsw-alias-border-l1);
+  }
+  .card-head h2 {
+    margin: 0;
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .tag {
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: var(--dsw-alias-interactive-bg-selected);
+    color: var(--dsw-specific-accent);
+  }
+  .tag.before {
+    background: var(--dsw-specific-danger-soft);
+    color: var(--dsw-specific-danger);
+  }
+  .tag.after {
+    background: var(--dsw-specific-ok-soft);
+    color: var(--dsw-specific-ok);
+  }
+  .card-body { padding: 14px; }
+  .menu-list {
+    display: grid;
+    gap: 4px;
+    max-width: 280px;
+    padding: 6px;
+    border-radius: 10px;
+    background: var(--dsw-alias-bg-elevated);
+    border: 1px solid var(--dsw-alias-border);
+  }
+  .menu-item {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    width: 100%;
+    text-align: left;
+    border: 0;
+    background: transparent;
+    color: var(--dsw-alias-label-primary);
+    font: inherit;
+    font-size: 13px;
+    padding: 7px 9px;
+    border-radius: 7px;
+    cursor: pointer;
+  }
+  .menu-item:hover { background: var(--dsw-alias-bg-hover); }
+  .menu-item.removed {
+    background: var(--dsw-specific-danger-soft);
+    color: var(--dsw-specific-danger);
+    text-decoration: line-through;
+  }
+  .alpha-pill {
+    margin-left: auto;
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 999px;
+    border: 1px solid var(--dsw-alias-border);
+    color: var(--dsw-alias-label-secondary);
+  }
+  .market-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+  body[data-viewport="narrow"] .market-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .market-card {
+    padding: 10px;
+    border-radius: 9px;
+    border: 1px solid var(--dsw-alias-border);
+    background: var(--dsw-alias-bg-elevated);
+  }
+  .market-card.removed {
+    border-style: dashed;
+    border-color: var(--dsw-specific-danger);
+    background: var(--dsw-specific-danger-soft);
+  }
+  .market-title { font-weight: 600; font-size: 12px; }
+  .market-id { font-size: 11px; color: var(--dsw-alias-label-tertiary); font-family: ui-monospace, Menlo, monospace; }
+  .probe-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+  }
+  .btn {
+    border: 1px solid var(--dsw-alias-border);
+    background: var(--dsw-alias-bg-elevated);
+    color: var(--dsw-alias-label-primary);
+    padding: 7px 12px;
+    border-radius: 8px;
+    font: inherit;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+  }
+  .btn:hover { background: var(--dsw-alias-bg-hover); }
+  .status-box {
+    margin-top: 10px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: var(--dsw-alias-bg-primary);
+    border: 1px solid var(--dsw-alias-border);
+    font-family: ui-monospace, Menlo, monospace;
+    font-size: 12px;
+    white-space: pre-wrap;
+  }
+</style>
+</head>
+<body data-theme="dark" data-channel="development" data-viewport="standard">
+<header class="topbar">
+  <h1>彻底下线任务表单与社交采收 交互前后对照演示</h1>
+  <div class="controls">
+    <div class="seg" role="group" aria-label="主题切换">
+      <button type="button" data-theme-btn="dark" class="active">暗色主题</button>
+      <button type="button" data-theme-btn="light">亮色主题</button>
+    </div>
+    <div class="seg" role="group" aria-label="发布渠道">
+      <button type="button" data-channel-btn="development" class="active">开发版</button>
+      <button type="button" data-channel-btn="production">正式版</button>
+    </div>
+    <div class="seg" role="group" aria-label="布局宽度">
+      <button type="button" data-viewport-btn="standard" class="active">常规宽度</button>
+      <button type="button" data-viewport-btn="narrow">窄屏布局</button>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <section class="compare-grid">
+    <article class="card">
+      <div class="card-head">
+        <h2>左侧「更多」菜单（修改前）</h2>
+        <span class="tag before" id="menu-before-count"></span>
+      </div>
+      <div class="card-body">
+        <div class="menu-list" id="menu-before" role="menu" aria-label="修改前更多菜单"></div>
+      </div>
+    </article>
+
+    <article class="card">
+      <div class="card-head">
+        <h2>左侧「更多」菜单（修改后）</h2>
+        <span class="tag after" id="menu-after-count"></span>
+      </div>
+      <div class="card-body">
+        <div class="menu-list" id="menu-after" role="menu" aria-label="修改后更多菜单"></div>
+      </div>
+    </article>
+  </section>
+
+  <section class="compare-grid">
+    <article class="card">
+      <div class="card-head">
+        <h2>官方插件栏目录（修改前）</h2>
+        <span class="tag before" id="market-before-count"></span>
+      </div>
+      <div class="card-body">
+        <div class="market-grid" id="market-before"></div>
+      </div>
+    </article>
+
+    <article class="card">
+      <div class="card-head">
+        <h2>官方插件栏目录（修改后）</h2>
+        <span class="tag after" id="market-after-count"></span>
+      </div>
+      <div class="card-body">
+        <div class="market-grid" id="market-after"></div>
+      </div>
+    </article>
+  </section>
+
+  <section class="card">
+    <div class="card-head">
+      <h2>跨插件接缝与旧版本用户升级迁移验证</h2>
+      <span class="tag">关键路径交互验证</span>
+    </div>
+    <div class="card-body">
+      <div class="probe-row">
+        <button type="button" class="btn" id="btn-test-prefill">验证灵感复刻到对话（SessionPrefill）</button>
+        <button type="button" class="btn" id="btn-test-forms-gone">验证任务表单运行态接口已清除</button>
+        <button type="button" class="btn" id="btn-test-upgrade">模拟旧版 Profile 启动升级</button>
+      </div>
+      <div class="status-box" id="probe-output" aria-live="polite">点击上方按钮核对修改后的运行态行为。</div>
+    </div>
+  </section>
+</main>
+
+<script>
+const RETIRED_IDS = new Set(['omnimux-forms', 'omnimux-social-harvest'])
+const MENU_ITEMS = [
+  { id: 'apps', label: '应用', alpha: false },
+  { id: 'image-generation', label: '图像生成', alpha: false },
+  { id: 'clip', label: '视频剪辑', alpha: false },
+  { id: 'publish', pluginId: 'omnimux-publish', label: '发布', alpha: true },
+  { id: 'accounts', pluginId: 'omnimux-accounts', label: '账号', alpha: true },
+  { id: 'device', pluginId: 'omnimux-device', label: '手机管理', alpha: true },
+  { id: 'analytics', pluginId: 'omnimux-analytics', label: '数据分析', alpha: true },
+  { id: 'forms', pluginId: 'omnimux-forms', label: '任务表单', alpha: true },
+  { id: 'social-harvest', pluginId: 'omnimux-social-harvest', label: '社交采收', alpha: true },
+]
+
+const MARKET_PLUGINS = [
+  { id: 'omnimux-inspiration', name: '灵感工作台', cat: 'content-creation' },
+  { id: 'omnimux-assets', name: '创意资产库', cat: 'content-creation' },
+  { id: 'omnimux-products', name: '带货选品库', cat: 'content-creation' },
+  { id: 'omnimux-forms', name: '动态表单', cat: 'content-creation' },
+  { id: 'omnimux-clip', name: '视频工作台', cat: 'video-visuals' },
+  { id: 'omnimux-studio', name: '视觉创作台', cat: 'video-visuals' },
+  { id: 'omnimux-video', name: '视频处理引擎', cat: 'video-visuals' },
+  { id: 'omnimux-video-preview', name: '视频预览流', cat: 'video-visuals' },
+  { id: 'omnimux-viewer', name: '多媒体查看器', cat: 'video-visuals' },
+  { id: 'omnimux-publish', name: '矩阵分发', cat: 'social-marketing' },
+  { id: 'omnimux-social-harvest', name: '社媒采集', cat: 'social-marketing' },
+  { id: 'omnimux-accounts', name: '账号矩阵', cat: 'social-marketing' },
+  { id: 'omnimux-analytics', name: '表现分析', cat: 'social-marketing' },
+  { id: 'omnimux-intercept', name: '爆速截流', cat: 'social-marketing' },
+  { id: 'omnimux-workflow', name: '工作流画布', cat: 'agents-automation' },
+  { id: 'omnimux-browser', name: '浏览器伴侣', cat: 'agents-automation' },
+  { id: 'omnimux-device', name: '移动真机矩阵', cat: 'agents-automation' },
+  { id: 'omnimux-apps', name: '应用门户', cat: 'agents-automation' },
+  { id: 'omnimux', name: '核心执行中枢', cat: 'agents-automation' },
+  { id: 'omnimux-market', name: '技能与专家市场', cat: 'agents-automation' },
+]
+const WORKBENCH_OCCUPANTS_AFTER = [
+  'omnimux-workflow:canvas', 'omnimux-clip:studio', 'omnimux-assets:library',
+  'omnimux-accounts:library', 'omnimux-inspiration:library', 'omnimux-publish:library',
+  'omnimux-analytics:library', 'omnimux-products:library', 'omnimux-media:viewer',
+]
+let pendingPrefillQueue = []
+window.__omnimuxSessionPrefill = {
+  slot: 'conversation.input.dock',
+  slotEntryId: 'omnimux:session-prefill',
+  queueSessionPrefill(intent) {
+    pendingPrefillQueue.push({ ...intent, status: 'queued' })
+    return { queued: true, requestId: intent.requestId }
+  },
+  consumeNext(sessionState) {
+    const next = pendingPrefillQueue.find((it) => it.sessionId === sessionState.sessionId && it.status === 'queued')
+    if (!next) return { consumed: false, draft: sessionState.draft }
+    if (sessionState.phase !== 'plain' || sessionState.imageIds.length > 0) {
+      return { consumed: false, protected: true, reason: 'composer protected', draft: sessionState.draft }
+    }
+    next.status = 'consumed'
+    const draft = sessionState.draft ? `${sessionState.draft}\n\n${next.prompt}` : next.prompt
+    return { consumed: true, requestId: next.requestId, draft }
+  },
+}
+
+function render() {
+  const channel = document.body.dataset.channel
+  const beforeMenu = MENU_ITEMS.filter((it) => channel !== 'production' || !it.alpha)
+  const afterMenu = beforeMenu.filter((it) => !RETIRED_IDS.has(it.pluginId))
+
+  const renderMenu = (el, rows, markRemoved) => {
+    el.innerHTML = ''
+    for (const row of rows) {
+      const btn = document.createElement('button')
+      btn.type = 'button'
+      btn.className = 'menu-item' + (markRemoved && RETIRED_IDS.has(row.pluginId) ? ' removed' : '')
+      btn.setAttribute('role', 'menuitem')
+      btn.textContent = row.label
+      if (row.alpha) {
+        const badge = document.createElement('span')
+        badge.className = 'alpha-pill'
+        badge.textContent = 'Alpha'
+        btn.append(badge)
+      }
+      el.append(btn)
+    }
+  }
+
+  renderMenu(document.getElementById('menu-before'), beforeMenu, true)
+  renderMenu(document.getElementById('menu-after'), afterMenu, false)
+  document.getElementById('menu-before-count').textContent = `${beforeMenu.length} 项`
+  document.getElementById('menu-after-count').textContent = `${afterMenu.length} 项`
+
+  const beforeMarket = MARKET_PLUGINS
+  const afterMarket = MARKET_PLUGINS.filter((it) => !RETIRED_IDS.has(it.id))
+  const renderMarket = (el, rows, markRemoved) => {
+    el.innerHTML = ''
+    for (const row of rows) {
+      const card = document.createElement('div')
+      card.className = 'market-card' + (markRemoved && RETIRED_IDS.has(row.id) ? ' removed' : '')
+      const title = document.createElement('div')
+      title.className = 'market-title'
+      title.textContent = row.name
+      const pid = document.createElement('div')
+      pid.className = 'market-id'
+      pid.textContent = row.id
+      card.append(title, pid)
+      el.append(card)
+    }
+  }
+  renderMarket(document.getElementById('market-before'), beforeMarket, true)
+  renderMarket(document.getElementById('market-after'), afterMarket, false)
+  document.getElementById('market-before-count').textContent = `${beforeMarket.length} 项`
+  document.getElementById('market-after-count').textContent = `${afterMarket.length} 项`
+}
+
+for (const attr of ['theme', 'channel', 'viewport']) {
+  document.querySelectorAll(`[data-${attr}-btn]`).forEach((btn) => {
+    btn.addEventListener('click', () => {
+      document.body.dataset[attr] = btn.dataset[`${attr}Btn`]
+      document.querySelectorAll(`[data-${attr}-btn]`).forEach((b) => b.classList.toggle('active', b === btn))
+      render()
+    })
+  })
+}
+
+const out = document.getElementById('probe-output')
+document.getElementById('btn-test-prefill').addEventListener('click', () => {
+  const reqId = `req-${Date.now()}`
+  const q = window.__omnimuxSessionPrefill.queueSessionPrefill({
+    requestId: reqId,
+    sessionId: 'sess-demo-1',
+    prompt: '按爆款结构复刻开场镜头',
+  })
+  const plainResult = window.__omnimuxSessionPrefill.consumeNext({ sessionId: 'sess-demo-1', phase: 'plain', imageIds: [], draft: '已有草稿' })
+  out.textContent = JSON.stringify({
+    module: 'omnimux/src/client/session-prefill/mount.js',
+    slot: window.__omnimuxSessionPrefill.slot,
+    slotEntryId: window.__omnimuxSessionPrefill.slotEntryId,
+    queued: q,
+    consumedInPlainComposer: plainResult,
+  }, null, 2)
+})
+document.getElementById('btn-test-forms-gone').addEventListener('click', () => {
+  const activeMenu = MENU_ITEMS.filter((it) => !RETIRED_IDS.has(it.pluginId))
+  const activeMarket = MARKET_PLUGINS.filter((it) => !RETIRED_IDS.has(it.id))
+  out.textContent = JSON.stringify({
+    __omnimuxForms: typeof window.__omnimuxForms,
+    __omnimuxSessionPrefill: typeof window.__omnimuxSessionPrefill,
+    formsAttachmentRouteMounted: false,
+    exploreMenuCount: activeMenu.length,
+    marketCardCount: activeMarket.length,
+    workbenchOccupantCount: WORKBENCH_OCCUPANTS_AFTER.length,
+    hasRetiredWorkbenchTab: WORKBENCH_OCCUPANTS_AFTER.includes('omnimux-forms:tasks'),
+    retiredMenuIdsPresent: activeMenu.some((it) => RETIRED_IDS.has(it.pluginId)),
+  }, null, 2)
+})
+document.getElementById('btn-test-upgrade').addEventListener('click', () => {
+  const before = {
+    dependencies: { 'omnimux': 'file:.materialize-snapshots/plugins/omnimux', 'omnimux-forms': 'file:.materialize-snapshots/plugins/omnimux-forms', 'manual-npm-plugin': '1.0.0' },
+    bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', 'omnimux', 'omnimux-forms', 'omnimux-social-harvest', 'manual-npm-plugin'],
+  }
+  const retired = new Set(['omnimux-automation', 'omnimux-forms', 'omnimux-social-harvest'])
+  const afterDeps = { ...before.dependencies }
+  const afterBundles = before.bundles.filter((b) => {
+    if (!retired.has(b)) return true
+    if (typeof afterDeps[b] === 'string' && afterDeps[b].startsWith('file:.materialize-snapshots/')) {
+      delete afterDeps[b]
+      return false
+    }
+    return Object.hasOwn(afterDeps, b)
+  })
+  out.textContent = JSON.stringify({
+    migration: 'retireUpstreamBundles (with recovery backup)',
+    before,
+    after: { dependencies: afterDeps, bundles: afterBundles },
+  }, null, 2)
+})
+
+render()
+</script>
+</body>
+</html>

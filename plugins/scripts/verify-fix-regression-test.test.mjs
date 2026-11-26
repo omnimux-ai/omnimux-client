@@ -33,7 +33,7 @@ test('路径与标题分类覆盖产品源码、测试、构建产物与标签',
   assert.equal(isProductCodePath('app/dsh-desktop-next/src/main.ts'), true)
   assert.equal(isProductCodePath('app/dsh-community-market/src/index.ts'), true)
   assert.equal(isProductCodePath('app/dsh-desktop-next/scripts/build.mjs'), true)
-  assert.equal(isProductCodePath('plugins/plugins/omnimux-forms/scripts/build-client.mjs'), true)
+  assert.equal(isProductCodePath('plugins/plugins/omnimux/scripts/build-client.mjs'), true)
   assert.equal(isProductCodePath('plugins/scripts/verify-fix-regression-test.mjs'), true)
   assert.equal(isProductCodePath('plugins/scripts/auto-qa-gate.mjs'), true)
   assert.equal(isProductCodePath('plugins/plugins/omnimux/lib/client.js'), false)
