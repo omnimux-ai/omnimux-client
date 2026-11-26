@@ -16,7 +16,7 @@ describe('E2E: 112套营销技能库全面去品牌化与专有工具描述彻�
     const catalog = JSON.parse(fs.readFileSync(catalogPath, 'utf8'))
 
     // 1. 验证快照 skills 数量与 tags
-    assert.equal(snapshot.skills.length, 16, '必须有 16 套完整自研上架技能')
+    assert.equal(snapshot.skills.length, 36, '必须有 36 套完整自研上架技能')
     for (const s of snapshot.skills) {
       assert.ok(!s.tags.some(t => t.toLowerCase() === 'creatify'), `技能 ${s.id} 标签不得包含原厂词汇`)
       assert.ok(!s.cover.includes('creatify'), `技能 ${s.id} 封面路径不得泄漏原厂目录`)
@@ -24,12 +24,14 @@ describe('E2E: 112套营销技能库全面去品牌化与专有工具描述彻�
 
     // 2. 验证 catalog items 中的技能（Phase 4：禁用不实 Official 归属，要求结构化 provenance）
     const activeSkills = catalog.items.filter(i => i.kind === 'skill' && i.recommended)
-    assert.equal(activeSkills.length, 16, 'catalog 激活技能数必须为 16')
+    assert.equal(activeSkills.length, 36, 'catalog 激活技能数必须为 36')
     for (const item of activeSkills) {
+      const expectedOwner = item.skill === 'clip-craft' ? 'omnimux-clip' : 'omnimux-market'
+      const expectedLicense = item.skill === 'clip-craft' ? 'SEE LICENSE IN LICENSE' : 'MIT'
       assert.equal(item.author, 'OmniMux', `技能 ${item.id} 作者必须为 OmniMux`)
       assert.equal(item.origin, 'first-party', `技能 ${item.id} origin 必须为 first-party`)
-      assert.equal(item.license, 'MIT', `技能 ${item.id} license 必须为 MIT`)
-      assert.equal(item.owner, 'omnimux-market', `技能 ${item.id} owner 必须为 omnimux-market`)
+      assert.equal(item.license, expectedLicense, `技能 ${item.id} license 必须为 ${expectedLicense}`)
+      assert.equal(item.owner, expectedOwner, `技能 ${item.id} owner 必须为 ${expectedOwner}`)
       assert.ok(!item.tags.some(t => t.toLowerCase() === 'creatify'), `技能 ${item.id} 标签不得包含原厂词汇`)
       assert.ok(!item.cover.asset.includes('creatify'), `技能 ${item.id} 封面路径必须脱敏`)
     }

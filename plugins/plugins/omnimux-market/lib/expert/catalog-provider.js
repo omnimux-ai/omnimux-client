@@ -162,6 +162,7 @@ export function createCatalogSkillProvider(opts = {}) {
 
       for (const item of catalog.items) {
         if (!item.skill) continue
+        if (item.source?.type === 'plugin') continue
         if (seen.has(item.skill)) continue
         seen.add(item.skill)
 

@@ -58,33 +58,33 @@
       "tab": "connectors"
     },
     {
-      "id": "scene-seeding",
-      "title": "内容种草",
+      "id": "scene-video",
+      "title": "短视频创作",
       "tab": "skills"
     },
     {
-      "id": "scene-brand",
-      "title": "品牌宣传",
+      "id": "scene-replicate",
+      "title": "爆款复刻与再制",
       "tab": "skills"
     },
     {
-      "id": "scene-product",
-      "title": "商品展示",
+      "id": "scene-visual",
+      "title": "商品视觉与海报",
       "tab": "skills"
     },
     {
-      "id": "scene-performance",
-      "title": "效果广告",
+      "id": "scene-research",
+      "title": "选品与社媒洞察",
       "tab": "skills"
     },
     {
-      "id": "scene-repurpose",
-      "title": "内容再制",
+      "id": "scene-growth",
+      "title": "投放与增长运营",
       "tab": "skills"
     },
     {
       "id": "scene-tools",
-      "title": "通用工具",
+      "title": "剪辑与效率工具",
       "tab": "skills"
     }
   ],
@@ -144,7 +144,7 @@
       "license": "MIT",
       "owner": "omnimux-market",
       "installType": "marketplace",
-      "scenario": "scene-repurpose"
+      "scenario": "scene-replicate"
     },
     {
       "id": "sk-omx-create-selling-video",
@@ -191,7 +191,7 @@
       "license": "MIT",
       "owner": "omnimux-market",
       "installType": "marketplace",
-      "scenario": "scene-product"
+      "scenario": "scene-video"
     },
     {
       "id": "sk-omx-video-hook-analysis",
@@ -237,7 +237,7 @@
       "license": "MIT",
       "owner": "omnimux-market",
       "installType": "marketplace",
-      "scenario": "scene-repurpose"
+      "scenario": "scene-replicate"
     },
     {
       "id": "sk-omx-reverse-video-prompt",
@@ -283,7 +283,7 @@
       "license": "MIT",
       "owner": "omnimux-market",
       "installType": "marketplace",
-      "scenario": "scene-repurpose"
+      "scenario": "scene-replicate"
     },
     {
       "id": "sk-omx-replicate-carousel",
@@ -329,192 +329,7 @@
       "license": "MIT",
       "owner": "omnimux-market",
       "installType": "marketplace",
-      "scenario": "scene-repurpose"
-    },
-    {
-      "id": "sk-omx-shoppable-carousel",
-      "tab": "skills",
-      "kind": "skill",
-      "title": "制作商品轮播图",
-      "subtitle": "图片和静态广告",
-      "summary": "按商品图规划逐页轮播文案与生图提示词",
-      "category": "image-static",
-      "tags": [
-        "图片和静态广告",
-        "电商",
-        "新品上市"
-      ],
-      "skill": "shoppable-carousel",
-      "source": {
-        "type": "bundled",
-        "path": "catalog/skills/shoppable-carousel"
-      },
-      "recommended": true,
-      "downloads": 540,
-      "cover": {
-        "asset": "catalog/covers/skills/skill-card-6.webp",
-        "alt": "制作商品轮播图"
-      },
-      "titleZh": "制作商品轮播图",
-      "titleEn": "Shoppable Carousel",
-      "summaryZh": "按商品图规划逐页轮播文案与生图提示词",
-      "summaryEn": "Plan e-commerce product carousels and prompts from product photos and confirmed facts.",
-      "isHot": false,
-      "isNew": true,
-      "coverIndex": 6,
-      "coverFile": "skill-card-6.webp",
-      "badge": "NEW",
-      "installFlow": "session-guide",
-      "sessionPrefill": "/shoppable-carousel\n请运行 制作商品轮播图 (Shoppable Carousel) 技能，为我的商品规划逐页轮播图方案与生图提示词。",
-      "homeCover": {
-        "asset": "catalog/covers/skills/skill-card-6.webp",
-        "alt": "制作商品轮播图"
-      },
-      "author": "OmniMux",
-      "origin": "first-party",
-      "license": "MIT",
-      "owner": "omnimux-market",
-      "installType": "marketplace",
-      "scenario": "scene-product"
-    },
-    {
-      "id": "sk-omx-ecommerce-image",
-      "tab": "skills",
-      "kind": "skill",
-      "title": "生成电商套图",
-      "subtitle": "图片和静态广告",
-      "summary": "保留商品外观，一键生成主图、卖点与场景图",
-      "category": "image-static",
-      "tags": [
-        "图片和静态广告",
-        "电商",
-        "新品上市"
-      ],
-      "skill": "ecommerce-image",
-      "source": {
-        "type": "bundled",
-        "path": "catalog/skills/ecommerce-image"
-      },
-      "recommended": true,
-      "downloads": 510,
-      "cover": {
-        "asset": "catalog/covers/skills/skill-card-7.webp",
-        "alt": "生成电商套图"
-      },
-      "titleZh": "生成电商套图",
-      "titleEn": "E-commerce Product Images",
-      "summaryZh": "保留商品外观，一键生成主图、卖点与场景图",
-      "summaryEn": "Generate platform-compliant hero, white-background, lifestyle, and PDP product image sets from real photos.",
-      "isHot": false,
-      "isNew": true,
-      "coverIndex": 7,
-      "coverFile": "skill-card-7.webp",
-      "badge": "NEW",
-      "installFlow": "session-guide",
-      "sessionPrefill": "/ecommerce-image\n请运行 生成电商套图 (E-commerce Product Images) 技能，基于我的实拍商品图规划平台合规套图。",
-      "homeCover": {
-        "asset": "catalog/covers/skills/skill-card-7.webp",
-        "alt": "生成电商套图"
-      },
-      "author": "OmniMux",
-      "origin": "first-party",
-      "license": "MIT",
-      "owner": "omnimux-market",
-      "installType": "marketplace",
-      "scenario": "scene-product"
-    },
-    {
-      "id": "sk-omx-ad-creative",
-      "tab": "skills",
-      "kind": "skill",
-      "title": "生成广告文案",
-      "subtitle": "视频广告",
-      "summary": "为 Meta、Google 等渠道生成多版本广告文案",
-      "category": "video-ads",
-      "tags": [
-        "视频广告",
-        "商业广告",
-        "新品上市"
-      ],
-      "skill": "ad-creative",
-      "source": {
-        "type": "bundled",
-        "path": "catalog/skills/ad-creative"
-      },
-      "recommended": true,
-      "downloads": 460,
-      "cover": {
-        "asset": "catalog/covers/skills/skill-card-8.webp",
-        "alt": "生成广告文案"
-      },
-      "titleZh": "生成广告文案",
-      "titleEn": "Ad Creative",
-      "summaryZh": "为 Meta、Google 等渠道生成多版本广告文案",
-      "summaryEn": "Generate and iterate angle-organized paid ad copy validated against platform limits across major channels.",
-      "isHot": false,
-      "isNew": true,
-      "coverIndex": 8,
-      "coverFile": "skill-card-8.webp",
-      "badge": "NEW",
-      "installFlow": "session-guide",
-      "sessionPrefill": "/ad-creative\n请运行 生成广告文案 (Ad Creative) 技能，按目标平台规格为我的产品生成多角度投放文案矩阵。",
-      "homeCover": {
-        "asset": "catalog/covers/skills/skill-card-8.webp",
-        "alt": "生成广告文案"
-      },
-      "author": "OmniMux",
-      "origin": "first-party",
-      "license": "MIT",
-      "owner": "omnimux-market",
-      "installType": "marketplace",
-      "scenario": "scene-performance"
-    },
-    {
-      "id": "sk-omx-global-ad-localizer",
-      "tab": "skills",
-      "kind": "skill",
-      "title": "视频多语改编",
-      "subtitle": "视频广告",
-      "summary": "保留商品画面，将视频适配为多国家语言版本",
-      "category": "video-ads",
-      "tags": [
-        "视频广告",
-        "商业广告",
-        "电商",
-        "新品上市"
-      ],
-      "skill": "global-ad-localizer",
-      "source": {
-        "type": "bundled",
-        "path": "catalog/skills/global-ad-localizer"
-      },
-      "recommended": true,
-      "downloads": 430,
-      "cover": {
-        "asset": "catalog/covers/skills/skill-card-9.webp",
-        "alt": "视频多语改编"
-      },
-      "titleZh": "视频多语改编",
-      "titleEn": "Global Ad Localizer",
-      "summaryZh": "保留商品画面，将视频适配为多国家语言版本",
-      "summaryEn": "Scale validated product ads into culturally adapted multilingual video matrices while locking product facts.",
-      "isHot": false,
-      "isNew": true,
-      "coverIndex": 9,
-      "coverFile": "skill-card-9.webp",
-      "badge": "NEW",
-      "installFlow": "session-guide",
-      "sessionPrefill": "/global-ad-localizer\n请运行 视频多语改编 (Global Ad Localizer) 技能，帮我将商品广告本地化适配至目标出海市场。",
-      "homeCover": {
-        "asset": "catalog/covers/skills/skill-card-9.webp",
-        "alt": "视频多语改编"
-      },
-      "author": "OmniMux",
-      "origin": "first-party",
-      "license": "MIT",
-      "owner": "omnimux-market",
-      "installType": "marketplace",
-      "scenario": "scene-performance"
+      "scenario": "scene-replicate"
     },
     {
       "id": "sk-omx-stickman-video-director",
@@ -561,7 +376,99 @@
       "license": "MIT",
       "owner": "omnimux-market",
       "installType": "marketplace",
-      "scenario": "scene-seeding"
+      "scenario": "scene-video"
+    },
+    {
+      "id": "sk-omx-shoppable-carousel",
+      "tab": "skills",
+      "kind": "skill",
+      "title": "制作商品轮播图",
+      "subtitle": "图片和静态广告",
+      "summary": "按商品图规划逐页轮播文案与生图提示词",
+      "category": "image-static",
+      "tags": [
+        "图片和静态广告",
+        "电商",
+        "新品上市"
+      ],
+      "skill": "shoppable-carousel",
+      "source": {
+        "type": "bundled",
+        "path": "catalog/skills/shoppable-carousel"
+      },
+      "recommended": true,
+      "downloads": 540,
+      "cover": {
+        "asset": "catalog/covers/skills/skill-card-6.webp",
+        "alt": "制作商品轮播图"
+      },
+      "titleZh": "制作商品轮播图",
+      "titleEn": "Shoppable Carousel",
+      "summaryZh": "按商品图规划逐页轮播文案与生图提示词",
+      "summaryEn": "Plan e-commerce product carousels and prompts from product photos and confirmed facts.",
+      "isHot": false,
+      "isNew": true,
+      "coverIndex": 6,
+      "coverFile": "skill-card-6.webp",
+      "badge": "NEW",
+      "installFlow": "session-guide",
+      "sessionPrefill": "/shoppable-carousel\n请运行 制作商品轮播图 (Shoppable Carousel) 技能，为我的商品规划逐页轮播图方案与生图提示词。",
+      "homeCover": {
+        "asset": "catalog/covers/skills/skill-card-6.webp",
+        "alt": "制作商品轮播图"
+      },
+      "author": "OmniMux",
+      "origin": "first-party",
+      "license": "MIT",
+      "owner": "omnimux-market",
+      "installType": "marketplace",
+      "scenario": "scene-visual"
+    },
+    {
+      "id": "sk-omx-ecommerce-image",
+      "tab": "skills",
+      "kind": "skill",
+      "title": "生成电商套图",
+      "subtitle": "图片和静态广告",
+      "summary": "保留商品外观，一键生成主图、卖点与场景图",
+      "category": "image-static",
+      "tags": [
+        "图片和静态广告",
+        "电商",
+        "新品上市"
+      ],
+      "skill": "ecommerce-image",
+      "source": {
+        "type": "bundled",
+        "path": "catalog/skills/ecommerce-image"
+      },
+      "recommended": true,
+      "downloads": 510,
+      "cover": {
+        "asset": "catalog/covers/skills/skill-card-7.webp",
+        "alt": "生成电商套图"
+      },
+      "titleZh": "生成电商套图",
+      "titleEn": "E-commerce Product Images",
+      "summaryZh": "保留商品外观，一键生成主图、卖点与场景图",
+      "summaryEn": "Generate platform-compliant hero, white-background, lifestyle, and PDP product image sets from real photos.",
+      "isHot": false,
+      "isNew": true,
+      "coverIndex": 7,
+      "coverFile": "skill-card-7.webp",
+      "badge": "NEW",
+      "installFlow": "session-guide",
+      "sessionPrefill": "/ecommerce-image\n请运行 生成电商套图 (E-commerce Product Images) 技能，基于我的实拍商品图规划平台合规套图。",
+      "homeCover": {
+        "asset": "catalog/covers/skills/skill-card-7.webp",
+        "alt": "生成电商套图"
+      },
+      "author": "OmniMux",
+      "origin": "first-party",
+      "license": "MIT",
+      "owner": "omnimux-market",
+      "installType": "marketplace",
+      "scenario": "scene-visual"
     },
     {
       "id": "sk-omx-dynamic-poster",
@@ -607,7 +514,7 @@
       "license": "MIT",
       "owner": "omnimux-market",
       "installType": "marketplace",
-      "scenario": "scene-brand"
+      "scenario": "scene-visual"
     },
     {
       "id": "sk-omx-character-scene-storyboard",
@@ -653,7 +560,7 @@
       "license": "MIT",
       "owner": "omnimux-market",
       "installType": "marketplace",
-      "scenario": "scene-brand"
+      "scenario": "scene-video"
     },
     {
       "id": "sk-omx-cinematic-motion-language",
@@ -698,7 +605,98 @@
       "license": "MIT",
       "owner": "omnimux-market",
       "installType": "marketplace",
-      "scenario": "scene-brand"
+      "scenario": "scene-video"
+    },
+    {
+      "id": "sk-omx-ad-creative",
+      "tab": "skills",
+      "kind": "skill",
+      "title": "生成广告文案",
+      "subtitle": "视频广告",
+      "summary": "为 Meta、Google 等渠道生成多版本广告文案",
+      "category": "video-ads",
+      "tags": [
+        "视频广告",
+        "商业广告"
+      ],
+      "skill": "ad-creative",
+      "source": {
+        "type": "bundled",
+        "path": "catalog/skills/ad-creative"
+      },
+      "recommended": true,
+      "downloads": 460,
+      "cover": {
+        "asset": "catalog/covers/skills/skill-card-8.webp",
+        "alt": "生成广告文案"
+      },
+      "titleZh": "生成广告文案",
+      "titleEn": "Ad Creative",
+      "summaryZh": "为 Meta、Google 等渠道生成多版本广告文案",
+      "summaryEn": "Generate and iterate angle-organized paid ad copy validated against platform limits across major channels.",
+      "isHot": false,
+      "isNew": false,
+      "coverIndex": 8,
+      "coverFile": "skill-card-8.webp",
+      "badge": "",
+      "installFlow": "session-guide",
+      "sessionPrefill": "/ad-creative\n请运行 生成广告文案 (Ad Creative) 技能，按目标平台规格为我的产品生成多角度投放文案矩阵。",
+      "homeCover": {
+        "asset": "catalog/covers/skills/skill-card-8.webp",
+        "alt": "生成广告文案"
+      },
+      "author": "OmniMux",
+      "origin": "first-party",
+      "license": "MIT",
+      "owner": "omnimux-market",
+      "installType": "marketplace",
+      "scenario": "scene-growth"
+    },
+    {
+      "id": "sk-omx-global-ad-localizer",
+      "tab": "skills",
+      "kind": "skill",
+      "title": "视频多语改编",
+      "subtitle": "视频广告",
+      "summary": "保留商品画面，将视频适配为多国家语言版本",
+      "category": "video-ads",
+      "tags": [
+        "视频广告",
+        "商业广告",
+        "电商"
+      ],
+      "skill": "global-ad-localizer",
+      "source": {
+        "type": "bundled",
+        "path": "catalog/skills/global-ad-localizer"
+      },
+      "recommended": true,
+      "downloads": 430,
+      "cover": {
+        "asset": "catalog/covers/skills/skill-card-9.webp",
+        "alt": "视频多语改编"
+      },
+      "titleZh": "视频多语改编",
+      "titleEn": "Global Ad Localizer",
+      "summaryZh": "保留商品画面，将视频适配为多国家语言版本",
+      "summaryEn": "Scale validated product ads into culturally adapted multilingual video matrices while locking product facts.",
+      "isHot": false,
+      "isNew": false,
+      "coverIndex": 9,
+      "coverFile": "skill-card-9.webp",
+      "badge": "",
+      "installFlow": "session-guide",
+      "sessionPrefill": "/global-ad-localizer\n请运行 视频多语改编 (Global Ad Localizer) 技能，帮我将商品广告本地化适配至目标出海市场。",
+      "homeCover": {
+        "asset": "catalog/covers/skills/skill-card-9.webp",
+        "alt": "视频多语改编"
+      },
+      "author": "OmniMux",
+      "origin": "first-party",
+      "license": "MIT",
+      "owner": "omnimux-market",
+      "installType": "marketplace",
+      "scenario": "scene-growth"
     },
     {
       "id": "sk-omx-content-strategy",
@@ -743,7 +741,7 @@
       "license": "MIT",
       "owner": "omnimux-market",
       "installType": "marketplace",
-      "scenario": "scene-seeding"
+      "scenario": "scene-growth"
     },
     {
       "id": "sk-omx-social-caption",
@@ -788,7 +786,7 @@
       "license": "MIT",
       "owner": "omnimux-market",
       "installType": "marketplace",
-      "scenario": "scene-seeding"
+      "scenario": "scene-growth"
     },
     {
       "id": "sk-omx-clip-export",
@@ -833,6 +831,944 @@
       "license": "MIT",
       "owner": "omnimux-market",
       "installType": "marketplace",
+      "scenario": "scene-tools"
+    },
+    {
+      "id": "sk-omx-skill-creator",
+      "tab": "skills",
+      "kind": "skill",
+      "title": "创建自定义技能",
+      "subtitle": "剪辑与效率工具",
+      "summary": "零门槛设计并验证可复用的双语标准工作流技能包",
+      "category": "other",
+      "tags": [
+        "剪辑与效率工具",
+        "平台工具"
+      ],
+      "skill": "skill-creator",
+      "source": {
+        "type": "bundled",
+        "path": "catalog/skills/skill-creator"
+      },
+      "recommended": true,
+      "downloads": 410,
+      "cover": {
+        "asset": "catalog/covers/skills/skill-card-15.webp",
+        "alt": "创建自定义技能"
+      },
+      "titleZh": "创建自定义技能",
+      "titleEn": "Skill Creator",
+      "summaryZh": "零门槛设计并验证可复用的双语标准工作流技能包",
+      "summaryEn": "Design, scaffold, and validate reusable bilingual OmniMux Skills with 0-Token defaults.",
+      "isHot": false,
+      "isNew": false,
+      "coverIndex": 15,
+      "coverFile": "skill-card-15.webp",
+      "badge": "",
+      "installFlow": "session-guide",
+      "sessionPrefill": "/skill-creator\n请运行 创建自定义 Skill (Skill Creator) 技能，协助完成当前任务。",
+      "homeCover": {
+        "asset": "catalog/covers/skills/skill-card-15.webp",
+        "alt": "创建自定义技能"
+      },
+      "author": "OmniMux",
+      "origin": "first-party",
+      "license": "MIT",
+      "owner": "omnimux-market",
+      "installType": "marketplace",
+      "scenario": "scene-tools"
+    },
+    {
+      "id": "sk-omx-skill-finder",
+      "tab": "skills",
+      "kind": "skill",
+      "title": "智能发现技能",
+      "subtitle": "剪辑与效率工具",
+      "summary": "按创作或营销目标检索已装与官方精品技能并推荐组合",
+      "category": "other",
+      "tags": [
+        "剪辑与效率工具",
+        "平台工具"
+      ],
+      "skill": "skill-finder",
+      "source": {
+        "type": "bundled",
+        "path": "catalog/skills/skill-finder"
+      },
+      "recommended": true,
+      "downloads": 390,
+      "cover": {
+        "asset": "catalog/covers/skills/skill-card-16.webp",
+        "alt": "智能发现技能"
+      },
+      "titleZh": "智能发现技能",
+      "titleEn": "Skill Finder",
+      "summaryZh": "按创作或营销目标检索已装与官方精品技能并推荐组合",
+      "summaryEn": "Discover installed and official OmniMux vertical skills tailored to your content or growth goal.",
+      "isHot": false,
+      "isNew": false,
+      "coverIndex": 16,
+      "coverFile": "skill-card-16.webp",
+      "badge": "",
+      "installFlow": "session-guide",
+      "sessionPrefill": "/skill-finder\n请运行 智能发现技能 (Skill Finder) 技能，协助完成当前任务。",
+      "homeCover": {
+        "asset": "catalog/covers/skills/skill-card-16.webp",
+        "alt": "智能发现技能"
+      },
+      "author": "OmniMux",
+      "origin": "first-party",
+      "license": "MIT",
+      "owner": "omnimux-market",
+      "installType": "marketplace",
+      "scenario": "scene-tools"
+    },
+    {
+      "id": "sk-omx-ecom-video-script",
+      "tab": "skills",
+      "kind": "skill",
+      "title": "写带货脚本",
+      "subtitle": "短视频创作",
+      "summary": "提炼商品卖点，生成 3 秒钩子分镜与口播时长脚本",
+      "category": "video-ads",
+      "tags": [
+        "短视频创作",
+        "电商"
+      ],
+      "skill": "omnimux-ecom-video-script",
+      "source": {
+        "type": "plugin",
+        "plugin": "omnimux-market",
+        "path": "skills/omnimux-ecom-video-script"
+      },
+      "recommended": true,
+      "downloads": 480,
+      "cover": {
+        "asset": "catalog/covers/skills/skill-card-1.webp",
+        "alt": "写带货脚本"
+      },
+      "titleZh": "写带货脚本",
+      "titleEn": "E-commerce Video Script",
+      "summaryZh": "提炼商品卖点，生成 3 秒钩子分镜与口播时长脚本",
+      "summaryEn": "Turn verified product selling points into 3-second hook storyboards and duration-checked video scripts.",
+      "isHot": false,
+      "isNew": false,
+      "coverIndex": 1,
+      "coverFile": "skill-card-1.webp",
+      "badge": "",
+      "installFlow": "session-guide",
+      "sessionPrefill": "/omnimux-ecom-video-script\n请运行 写带货脚本 (E-commerce Video Script) 技能，协助完成当前任务。",
+      "homeCover": {
+        "asset": "catalog/covers/skills/skill-card-1.webp",
+        "alt": "写带货脚本"
+      },
+      "author": "OmniMux",
+      "origin": "first-party",
+      "license": "MIT",
+      "owner": "omnimux-market",
+      "preinstalled": true,
+      "installType": "pre-installed",
+      "scenario": "scene-video"
+    },
+    {
+      "id": "sk-omx-content-repurposing",
+      "tab": "skills",
+      "kind": "skill",
+      "title": "跨平台改写",
+      "subtitle": "爆款复刻与再制",
+      "summary": "将视频或长帖拆解改写为短视频脚本与多平台原生图文",
+      "category": "video-ads",
+      "tags": [
+        "爆款复刻与再制",
+        "电商"
+      ],
+      "skill": "omnimux-content-repurposing",
+      "source": {
+        "type": "plugin",
+        "plugin": "omnimux-market",
+        "path": "skills/omnimux-content-repurposing"
+      },
+      "recommended": true,
+      "downloads": 480,
+      "cover": {
+        "asset": "catalog/covers/skills/skill-card-2.webp",
+        "alt": "跨平台改写"
+      },
+      "titleZh": "跨平台改写",
+      "titleEn": "Content Repurposing",
+      "summaryZh": "将视频或长帖拆解改写为短视频脚本与多平台原生图文",
+      "summaryEn": "Repurpose video transcripts and long-form posts into short-video scripts and native multi-platform formats.",
+      "isHot": false,
+      "isNew": false,
+      "coverIndex": 2,
+      "coverFile": "skill-card-2.webp",
+      "badge": "",
+      "installFlow": "session-guide",
+      "sessionPrefill": "/omnimux-content-repurposing\n请运行 跨平台改写 (Content Repurposing) 技能，协助完成当前任务。",
+      "homeCover": {
+        "asset": "catalog/covers/skills/skill-card-2.webp",
+        "alt": "跨平台改写"
+      },
+      "author": "OmniMux",
+      "origin": "first-party",
+      "license": "MIT",
+      "owner": "omnimux-market",
+      "preinstalled": true,
+      "installType": "pre-installed",
+      "scenario": "scene-replicate"
+    },
+    {
+      "id": "sk-omx-transcript-intelligence",
+      "tab": "skills",
+      "kind": "skill",
+      "title": "拆解视频口播",
+      "subtitle": "爆款复刻与再制",
+      "summary": "分析视频口播转写，提取开头钩子、金句与卖点转换结构",
+      "category": "storytelling-script",
+      "tags": [
+        "爆款复刻与再制",
+        "AIGC 创作"
+      ],
+      "skill": "omnimux-transcript-intelligence",
+      "source": {
+        "type": "plugin",
+        "plugin": "omnimux-market",
+        "path": "skills/omnimux-transcript-intelligence"
+      },
+      "recommended": true,
+      "downloads": 480,
+      "cover": {
+        "asset": "catalog/covers/skills/skill-card-3.webp",
+        "alt": "拆解视频口播"
+      },
+      "titleZh": "拆解视频口播",
+      "titleEn": "Transcript Intelligence",
+      "summaryZh": "分析视频口播转写，提取开头钩子、金句与卖点转换结构",
+      "summaryEn": "Analyze spoken video transcripts to extract hooks, claims, evidence, and reusable conversion patterns.",
+      "isHot": false,
+      "isNew": false,
+      "coverIndex": 3,
+      "coverFile": "skill-card-3.webp",
+      "badge": "",
+      "installFlow": "session-guide",
+      "sessionPrefill": "/omnimux-transcript-intelligence\n请运行 拆解视频口播 (Transcript Intelligence) 技能，协助完成当前任务。",
+      "homeCover": {
+        "asset": "catalog/covers/skills/skill-card-3.webp",
+        "alt": "拆解视频口播"
+      },
+      "author": "OmniMux",
+      "origin": "first-party",
+      "license": "MIT",
+      "owner": "omnimux-market",
+      "preinstalled": true,
+      "installType": "pre-installed",
+      "scenario": "scene-replicate"
+    },
+    {
+      "id": "sk-omx-ecom-visual-qa",
+      "tab": "skills",
+      "kind": "skill",
+      "title": "商详九图质检",
+      "subtitle": "商品视觉与海报",
+      "summary": "规划 9 张商详矩阵主图并执行白底占比与像素级合规质检",
+      "category": "image-static",
+      "tags": [
+        "商品视觉与海报",
+        "电商"
+      ],
+      "skill": "omnimux-ecom-visual-qa",
+      "source": {
+        "type": "plugin",
+        "plugin": "omnimux-market",
+        "path": "skills/omnimux-ecom-visual-qa"
+      },
+      "recommended": true,
+      "downloads": 480,
+      "cover": {
+        "asset": "catalog/covers/skills/skill-card-4.webp",
+        "alt": "商详九图质检"
+      },
+      "titleZh": "商详九图质检",
+      "titleEn": "9-Image Visual QA",
+      "summaryZh": "规划 9 张商详矩阵主图并执行白底占比与像素级合规质检",
+      "summaryEn": "Plan 9-image product visual matrices and run automated white-background, ratio, and resolution QA.",
+      "isHot": false,
+      "isNew": false,
+      "coverIndex": 4,
+      "coverFile": "skill-card-4.webp",
+      "badge": "",
+      "installFlow": "session-guide",
+      "sessionPrefill": "/omnimux-ecom-visual-qa\n请运行 商详9图质检 (9-Image Visual QA) 技能，协助完成当前任务。",
+      "homeCover": {
+        "asset": "catalog/covers/skills/skill-card-4.webp",
+        "alt": "商详九图质检"
+      },
+      "author": "OmniMux",
+      "origin": "first-party",
+      "license": "MIT",
+      "owner": "omnimux-market",
+      "preinstalled": true,
+      "installType": "pre-installed",
+      "scenario": "scene-visual"
+    },
+    {
+      "id": "sk-omx-ecom-brand-curator",
+      "tab": "skills",
+      "kind": "skill",
+      "title": "品牌视觉建档",
+      "subtitle": "商品视觉与海报",
+      "summary": "整理商品四级参数真源、品牌色板、实拍锚点与禁用词档案",
+      "category": "product-showcase",
+      "tags": [
+        "商品视觉与海报",
+        "电商"
+      ],
+      "skill": "omnimux-ecom-brand-curator",
+      "source": {
+        "type": "plugin",
+        "plugin": "omnimux-market",
+        "path": "skills/omnimux-ecom-brand-curator"
+      },
+      "recommended": true,
+      "downloads": 480,
+      "cover": {
+        "asset": "catalog/covers/skills/skill-card-5.webp",
+        "alt": "品牌视觉建档"
+      },
+      "titleZh": "品牌视觉建档",
+      "titleEn": "Brand & Product Curator",
+      "summaryZh": "整理商品四级参数真源、品牌色板、实拍锚点与禁用词档案",
+      "summaryEn": "Build a grounded brand kit with product spec tables, palette anchors, and market forbidden-word lists.",
+      "isHot": false,
+      "isNew": false,
+      "coverIndex": 5,
+      "coverFile": "skill-card-5.webp",
+      "badge": "",
+      "installFlow": "session-guide",
+      "sessionPrefill": "/omnimux-ecom-brand-curator\n请运行 品牌视觉建档 (Brand & Product Curator) 技能，协助完成当前任务。",
+      "homeCover": {
+        "asset": "catalog/covers/skills/skill-card-5.webp",
+        "alt": "品牌视觉建档"
+      },
+      "author": "OmniMux",
+      "origin": "first-party",
+      "license": "MIT",
+      "owner": "omnimux-market",
+      "preinstalled": true,
+      "installType": "pre-installed",
+      "scenario": "scene-visual"
+    },
+    {
+      "id": "sk-omx-ecom-market-research",
+      "tab": "skills",
+      "kind": "skill",
+      "title": "分析类目市场",
+      "subtitle": "选品与社媒洞察",
+      "summary": "解析类目导出表，测算市场容量、CR10 集中度与价格带机会",
+      "category": "product-showcase",
+      "tags": [
+        "选品与社媒洞察",
+        "电商",
+        "新品上市"
+      ],
+      "skill": "omnimux-ecom-market-research",
+      "source": {
+        "type": "plugin",
+        "plugin": "omnimux-market",
+        "path": "skills/omnimux-ecom-market-research"
+      },
+      "recommended": true,
+      "downloads": 480,
+      "cover": {
+        "asset": "catalog/covers/skills/skill-card-6.webp",
+        "alt": "分析类目市场"
+      },
+      "titleZh": "分析类目市场",
+      "titleEn": "E-commerce Market Research",
+      "summaryZh": "解析类目导出表，测算市场容量、CR10 集中度与价格带机会",
+      "summaryEn": "Analyze category exports for monthly capacity, CR3/CR10/HHI concentration, and price-band opportunities.",
+      "isHot": false,
+      "isNew": true,
+      "coverIndex": 6,
+      "coverFile": "skill-card-6.webp",
+      "badge": "NEW",
+      "installFlow": "session-guide",
+      "sessionPrefill": "/omnimux-ecom-market-research\n请运行 分析类目市场 (E-commerce Market Research) 技能，协助完成当前任务。",
+      "homeCover": {
+        "asset": "catalog/covers/skills/skill-card-6.webp",
+        "alt": "分析类目市场"
+      },
+      "author": "OmniMux",
+      "origin": "first-party",
+      "license": "MIT",
+      "owner": "omnimux-market",
+      "preinstalled": true,
+      "installType": "pre-installed",
+      "scenario": "scene-research"
+    },
+    {
+      "id": "sk-omx-product-demand",
+      "tab": "skills",
+      "kind": "skill",
+      "title": "验证选品需求",
+      "subtitle": "选品与社媒洞察",
+      "summary": "从真实社媒讨论与购买求助中挖掘细分痛点与需求证据",
+      "category": "product-showcase",
+      "tags": [
+        "选品与社媒洞察",
+        "电商"
+      ],
+      "skill": "omnimux-product-demand",
+      "source": {
+        "type": "plugin",
+        "plugin": "omnimux-market",
+        "path": "skills/omnimux-product-demand"
+      },
+      "recommended": true,
+      "downloads": 480,
+      "cover": {
+        "asset": "catalog/covers/skills/skill-card-7.webp",
+        "alt": "验证选品需求"
+      },
+      "titleZh": "验证选品需求",
+      "titleEn": "Social Product Demand",
+      "summaryZh": "从真实社媒讨论与购买求助中挖掘细分痛点与需求证据",
+      "summaryEn": "Validate product demand and buyer objections from real social discussions and shop feedback.",
+      "isHot": false,
+      "isNew": false,
+      "coverIndex": 7,
+      "coverFile": "skill-card-7.webp",
+      "badge": "",
+      "installFlow": "session-guide",
+      "sessionPrefill": "/omnimux-product-demand\n请运行 验证选品需求 (Social Product Demand) 技能，协助完成当前任务。",
+      "homeCover": {
+        "asset": "catalog/covers/skills/skill-card-7.webp",
+        "alt": "验证选品需求"
+      },
+      "author": "OmniMux",
+      "origin": "first-party",
+      "license": "MIT",
+      "owner": "omnimux-market",
+      "preinstalled": true,
+      "installType": "pre-installed",
+      "scenario": "scene-research"
+    },
+    {
+      "id": "sk-omx-ecom-review-voc",
+      "tab": "skills",
+      "kind": "skill",
+      "title": "分析商品评论",
+      "subtitle": "选品与社媒洞察",
+      "summary": "统计差评 8 类归因占比并提炼好评卖点与合规售后话术",
+      "category": "ugc-testimonial",
+      "tags": [
+        "选品与社媒洞察",
+        "电商"
+      ],
+      "skill": "omnimux-ecom-review-voc",
+      "source": {
+        "type": "plugin",
+        "plugin": "omnimux-market",
+        "path": "skills/omnimux-ecom-review-voc"
+      },
+      "recommended": true,
+      "downloads": 480,
+      "cover": {
+        "asset": "catalog/covers/skills/skill-card-8.webp",
+        "alt": "分析商品评论"
+      },
+      "titleZh": "分析商品评论",
+      "titleEn": "Review VOC Analysis",
+      "summaryZh": "统计差评 8 类归因占比并提炼好评卖点与合规售后话术",
+      "summaryEn": "Classify negative reviews across 8 root causes, quantify fixable confusion, and draft compliant responses.",
+      "isHot": false,
+      "isNew": false,
+      "coverIndex": 8,
+      "coverFile": "skill-card-8.webp",
+      "badge": "",
+      "installFlow": "session-guide",
+      "sessionPrefill": "/omnimux-ecom-review-voc\n请运行 分析商品评论 (Review VOC Analysis) 技能，协助完成当前任务。",
+      "homeCover": {
+        "asset": "catalog/covers/skills/skill-card-8.webp",
+        "alt": "分析商品评论"
+      },
+      "author": "OmniMux",
+      "origin": "first-party",
+      "license": "MIT",
+      "owner": "omnimux-market",
+      "preinstalled": true,
+      "installType": "pre-installed",
+      "scenario": "scene-research"
+    },
+    {
+      "id": "sk-omx-trend-discovery",
+      "tab": "skills",
+      "kind": "skill",
+      "title": "挖掘赛道趋势",
+      "subtitle": "选品与社媒洞察",
+      "summary": "按关键词追踪热门社媒趋势，提炼正在起量的选题与钩子",
+      "category": "video-ads",
+      "tags": [
+        "选品与社媒洞察",
+        "电商"
+      ],
+      "skill": "omnimux-trend-discovery",
+      "source": {
+        "type": "plugin",
+        "plugin": "omnimux-market",
+        "path": "skills/omnimux-trend-discovery"
+      },
+      "recommended": true,
+      "downloads": 480,
+      "cover": {
+        "asset": "catalog/covers/skills/skill-card-9.webp",
+        "alt": "挖掘赛道趋势"
+      },
+      "titleZh": "挖掘赛道趋势",
+      "titleEn": "Trend Discovery",
+      "summaryZh": "按关键词追踪热门社媒趋势，提炼正在起量的选题与钩子",
+      "summaryEn": "Surface rising formats, topics, and hooks across social channels from recent high-engagement signals.",
+      "isHot": false,
+      "isNew": false,
+      "coverIndex": 9,
+      "coverFile": "skill-card-9.webp",
+      "badge": "",
+      "installFlow": "session-guide",
+      "sessionPrefill": "/omnimux-trend-discovery\n请运行 挖掘赛道趋势 (Trend Discovery) 技能，协助完成当前任务。",
+      "homeCover": {
+        "asset": "catalog/covers/skills/skill-card-9.webp",
+        "alt": "挖掘赛道趋势"
+      },
+      "author": "OmniMux",
+      "origin": "first-party",
+      "license": "MIT",
+      "owner": "omnimux-market",
+      "preinstalled": true,
+      "installType": "pre-installed",
+      "scenario": "scene-research"
+    },
+    {
+      "id": "sk-omx-outlier-post-finder",
+      "tab": "skills",
+      "kind": "skill",
+      "title": "找账号爆款帖",
+      "subtitle": "选品与社媒洞察",
+      "summary": "定位远超账号自身均值的离群爆款内容，提炼可复制模板",
+      "category": "video-ads",
+      "tags": [
+        "选品与社媒洞察",
+        "商业广告"
+      ],
+      "skill": "omnimux-outlier-post-finder",
+      "source": {
+        "type": "plugin",
+        "plugin": "omnimux-market",
+        "path": "skills/omnimux-outlier-post-finder"
+      },
+      "recommended": true,
+      "downloads": 480,
+      "cover": {
+        "asset": "catalog/covers/skills/skill-card-10.webp",
+        "alt": "找账号爆款帖"
+      },
+      "titleZh": "找账号爆款帖",
+      "titleEn": "Outlier Post Finder",
+      "summaryZh": "定位远超账号自身均值的离群爆款内容，提炼可复制模板",
+      "summaryEn": "Identify outlier posts that beat an account baseline and extract repeatable hook templates.",
+      "isHot": false,
+      "isNew": false,
+      "coverIndex": 10,
+      "coverFile": "skill-card-10.webp",
+      "badge": "",
+      "installFlow": "session-guide",
+      "sessionPrefill": "/omnimux-outlier-post-finder\n请运行 找账号爆款帖 (Outlier Post Finder) 技能，协助完成当前任务。",
+      "homeCover": {
+        "asset": "catalog/covers/skills/skill-card-10.webp",
+        "alt": "找账号爆款帖"
+      },
+      "author": "OmniMux",
+      "origin": "first-party",
+      "license": "MIT",
+      "owner": "omnimux-market",
+      "preinstalled": true,
+      "installType": "pre-installed",
+      "scenario": "scene-research"
+    },
+    {
+      "id": "sk-omx-creator-teardown",
+      "tab": "skills",
+      "kind": "skill",
+      "title": "分析达人主页",
+      "subtitle": "选品与社媒洞察",
+      "summary": "拆解博主或品牌账号定位、内容支柱与可借鉴转化打法",
+      "category": "ugc-testimonial",
+      "tags": [
+        "选品与社媒洞察",
+        "商业广告"
+      ],
+      "skill": "omnimux-creator-teardown",
+      "source": {
+        "type": "plugin",
+        "plugin": "omnimux-market",
+        "path": "skills/omnimux-creator-teardown"
+      },
+      "recommended": true,
+      "downloads": 480,
+      "cover": {
+        "asset": "catalog/covers/skills/skill-card-11.webp",
+        "alt": "分析达人主页"
+      },
+      "titleZh": "分析达人主页",
+      "titleEn": "Creator Teardown",
+      "summaryZh": "拆解博主或品牌账号定位、内容支柱与可借鉴转化打法",
+      "summaryEn": "Audit a creator or brand profile to map content pillars, winning hooks, and testing recommendations.",
+      "isHot": false,
+      "isNew": false,
+      "coverIndex": 11,
+      "coverFile": "skill-card-11.webp",
+      "badge": "",
+      "installFlow": "session-guide",
+      "sessionPrefill": "/omnimux-creator-teardown\n请运行 分析达人主页 (Creator Teardown) 技能，协助完成当前任务。",
+      "homeCover": {
+        "asset": "catalog/covers/skills/skill-card-11.webp",
+        "alt": "分析达人主页"
+      },
+      "author": "OmniMux",
+      "origin": "first-party",
+      "license": "MIT",
+      "owner": "omnimux-market",
+      "preinstalled": true,
+      "installType": "pre-installed",
+      "scenario": "scene-research"
+    },
+    {
+      "id": "sk-omx-competitor-research",
+      "tab": "skills",
+      "kind": "skill",
+      "title": "对比竞品账号",
+      "subtitle": "选品与社媒洞察",
+      "summary": "横向对比 2 至 5 个竞品账号策略，识别内容差异与机会点",
+      "category": "ugc-testimonial",
+      "tags": [
+        "选品与社媒洞察",
+        "商业广告"
+      ],
+      "skill": "omnimux-competitor-research",
+      "source": {
+        "type": "plugin",
+        "plugin": "omnimux-market",
+        "path": "skills/omnimux-competitor-research"
+      },
+      "recommended": true,
+      "downloads": 480,
+      "cover": {
+        "asset": "catalog/covers/skills/skill-card-12.webp",
+        "alt": "对比竞品账号"
+      },
+      "titleZh": "对比竞品账号",
+      "titleEn": "Competitor Research",
+      "summaryZh": "横向对比 2 至 5 个竞品账号策略，识别内容差异与机会点",
+      "summaryEn": "Benchmark 2 to 5 competitor social accounts side by side to uncover positioning gaps and winning plays.",
+      "isHot": false,
+      "isNew": false,
+      "coverIndex": 12,
+      "coverFile": "skill-card-12.webp",
+      "badge": "",
+      "installFlow": "session-guide",
+      "sessionPrefill": "/omnimux-competitor-research\n请运行 对比竞品账号 (Competitor Research) 技能，协助完成当前任务。",
+      "homeCover": {
+        "asset": "catalog/covers/skills/skill-card-12.webp",
+        "alt": "对比竞品账号"
+      },
+      "author": "OmniMux",
+      "origin": "first-party",
+      "license": "MIT",
+      "owner": "omnimux-market",
+      "preinstalled": true,
+      "installType": "pre-installed",
+      "scenario": "scene-research"
+    },
+    {
+      "id": "sk-omx-social-listening",
+      "tab": "skills",
+      "kind": "skill",
+      "title": "分析品牌口碑",
+      "subtitle": "选品与社媒洞察",
+      "summary": "汇总品牌或话题全网讨论声音，梳理用户偏好与舆情倾向",
+      "category": "ugc-testimonial",
+      "tags": [
+        "选品与社媒洞察",
+        "商业广告"
+      ],
+      "skill": "omnimux-social-listening",
+      "source": {
+        "type": "plugin",
+        "plugin": "omnimux-market",
+        "path": "skills/omnimux-social-listening"
+      },
+      "recommended": true,
+      "downloads": 480,
+      "cover": {
+        "asset": "catalog/covers/skills/skill-card-13.webp",
+        "alt": "分析品牌口碑"
+      },
+      "titleZh": "分析品牌口碑",
+      "titleEn": "Social Listening",
+      "summaryZh": "汇总品牌或话题全网讨论声音，梳理用户偏好与舆情倾向",
+      "summaryEn": "Track public social conversations around a brand or topic, clustering sentiment, themes, and citations.",
+      "isHot": false,
+      "isNew": false,
+      "coverIndex": 13,
+      "coverFile": "skill-card-13.webp",
+      "badge": "",
+      "installFlow": "session-guide",
+      "sessionPrefill": "/omnimux-social-listening\n请运行 分析品牌口碑 (Social Listening) 技能，协助完成当前任务。",
+      "homeCover": {
+        "asset": "catalog/covers/skills/skill-card-13.webp",
+        "alt": "分析品牌口碑"
+      },
+      "author": "OmniMux",
+      "origin": "first-party",
+      "license": "MIT",
+      "owner": "omnimux-market",
+      "preinstalled": true,
+      "installType": "pre-installed",
+      "scenario": "scene-research"
+    },
+    {
+      "id": "sk-omx-ecom-ads-diagnosis",
+      "tab": "skills",
+      "kind": "skill",
+      "title": "诊断广告投放",
+      "subtitle": "投放与增长运营",
+      "summary": "核算保本 ROAS 与 CPC 上限，按五层漏斗定位投放瓶颈",
+      "category": "video-ads",
+      "tags": [
+        "投放与增长运营",
+        "商业广告",
+        "电商"
+      ],
+      "skill": "omnimux-ecom-ads-diagnosis",
+      "source": {
+        "type": "plugin",
+        "plugin": "omnimux-market",
+        "path": "skills/omnimux-ecom-ads-diagnosis"
+      },
+      "recommended": true,
+      "downloads": 480,
+      "cover": {
+        "asset": "catalog/covers/skills/skill-card-14.webp",
+        "alt": "诊断广告投放"
+      },
+      "titleZh": "诊断广告投放",
+      "titleEn": "Ads Funnel Diagnosis",
+      "summaryZh": "核算保本 ROAS 与 CPC 上限，按五层漏斗定位投放瓶颈",
+      "summaryEn": "Calculate break-even ROAS and max CPC, isolating five-layer funnel bottlenecks before changing creatives.",
+      "isHot": false,
+      "isNew": false,
+      "coverIndex": 14,
+      "coverFile": "skill-card-14.webp",
+      "badge": "",
+      "installFlow": "session-guide",
+      "sessionPrefill": "/omnimux-ecom-ads-diagnosis\n请运行 诊断广告投放 (Ads Funnel Diagnosis) 技能，协助完成当前任务。",
+      "homeCover": {
+        "asset": "catalog/covers/skills/skill-card-14.webp",
+        "alt": "诊断广告投放"
+      },
+      "author": "OmniMux",
+      "origin": "first-party",
+      "license": "MIT",
+      "owner": "omnimux-market",
+      "preinstalled": true,
+      "installType": "pre-installed",
+      "scenario": "scene-growth"
+    },
+    {
+      "id": "sk-omx-ecom-listing-copy",
+      "tab": "skills",
+      "kind": "skill",
+      "title": "生成商详文案",
+      "subtitle": "投放与增长运营",
+      "summary": "依据商品参数真源生成多语言标题、五点卖点与合规详情文案",
+      "category": "product-showcase",
+      "tags": [
+        "投放与增长运营",
+        "电商"
+      ],
+      "skill": "omnimux-ecom-listing-copy",
+      "source": {
+        "type": "plugin",
+        "plugin": "omnimux-market",
+        "path": "skills/omnimux-ecom-listing-copy"
+      },
+      "recommended": true,
+      "downloads": 480,
+      "cover": {
+        "asset": "catalog/covers/skills/skill-card-15.webp",
+        "alt": "生成商详文案"
+      },
+      "titleZh": "生成商详文案",
+      "titleEn": "Multilingual Listing Copy",
+      "summaryZh": "依据商品参数真源生成多语言标题、五点卖点与合规详情文案",
+      "summaryEn": "Draft native multilingual titles and seven-part listings validated for length limits and spec fidelity.",
+      "isHot": false,
+      "isNew": false,
+      "coverIndex": 15,
+      "coverFile": "skill-card-15.webp",
+      "badge": "",
+      "installFlow": "session-guide",
+      "sessionPrefill": "/omnimux-ecom-listing-copy\n请运行 生成商详文案 (Multilingual Listing Copy) 技能，协助完成当前任务。",
+      "homeCover": {
+        "asset": "catalog/covers/skills/skill-card-15.webp",
+        "alt": "生成商详文案"
+      },
+      "author": "OmniMux",
+      "origin": "first-party",
+      "license": "MIT",
+      "owner": "omnimux-market",
+      "preinstalled": true,
+      "installType": "pre-installed",
+      "scenario": "scene-growth"
+    },
+    {
+      "id": "sk-omx-ecom-pricing-strategy",
+      "tab": "skills",
+      "kind": "skill",
+      "title": "测算定价利润",
+      "subtitle": "投放与增长运营",
+      "summary": "精算佣金、物流与广告占比下的净利率、保本价与优惠余量",
+      "category": "product-showcase",
+      "tags": [
+        "投放与增长运营",
+        "电商"
+      ],
+      "skill": "omnimux-ecom-pricing-strategy",
+      "source": {
+        "type": "plugin",
+        "plugin": "omnimux-market",
+        "path": "skills/omnimux-ecom-pricing-strategy"
+      },
+      "recommended": true,
+      "downloads": 480,
+      "cover": {
+        "asset": "catalog/covers/skills/skill-card-16.webp",
+        "alt": "测算定价利润"
+      },
+      "titleZh": "测算定价利润",
+      "titleEn": "Pricing & Unit Economics",
+      "summaryZh": "精算佣金、物流与广告占比下的净利率、保本价与优惠余量",
+      "summaryEn": "Model commissions, fulfillment, taxes, and ad spend to determine break-even price and promo headroom.",
+      "isHot": false,
+      "isNew": false,
+      "coverIndex": 16,
+      "coverFile": "skill-card-16.webp",
+      "badge": "",
+      "installFlow": "session-guide",
+      "sessionPrefill": "/omnimux-ecom-pricing-strategy\n请运行 测算定价利润 (Pricing & Unit Economics) 技能，协助完成当前任务。",
+      "homeCover": {
+        "asset": "catalog/covers/skills/skill-card-16.webp",
+        "alt": "测算定价利润"
+      },
+      "author": "OmniMux",
+      "origin": "first-party",
+      "license": "MIT",
+      "owner": "omnimux-market",
+      "preinstalled": true,
+      "installType": "pre-installed",
+      "scenario": "scene-growth"
+    },
+    {
+      "id": "sk-omx-tiktok-growth",
+      "tab": "skills",
+      "kind": "skill",
+      "title": "海外短视频增长指南",
+      "subtitle": "投放与增长运营",
+      "summary": "结合 TikTok 节奏、界面安全区与橱窗规范规划矩阵增长内容",
+      "category": "video-ads",
+      "tags": [
+        "投放与增长运营",
+        "电商"
+      ],
+      "skill": "tiktok-growth",
+      "source": {
+        "type": "plugin",
+        "plugin": "omnimux-market",
+        "path": "skills/tiktok-growth"
+      },
+      "recommended": true,
+      "downloads": 480,
+      "cover": {
+        "asset": "catalog/covers/skills/skill-card-1.webp",
+        "alt": "海外短视频增长指南"
+      },
+      "titleZh": "海外短视频增长指南",
+      "titleEn": "TikTok Growth Playbook",
+      "summaryZh": "结合 TikTok 节奏、界面安全区与橱窗规范规划矩阵增长内容",
+      "summaryEn": "Apply TikTok pacing, 9:16 safe-zone rules, and storefront compliance to grow organic and shop video.",
+      "isHot": false,
+      "isNew": false,
+      "coverIndex": 1,
+      "coverFile": "skill-card-1.webp",
+      "badge": "",
+      "installFlow": "session-guide",
+      "sessionPrefill": "/tiktok-growth\n请运行 TikTok 增长指南 (TikTok Growth Playbook) 技能，协助完成当前任务。",
+      "homeCover": {
+        "asset": "catalog/covers/skills/skill-card-1.webp",
+        "alt": "海外短视频增长指南"
+      },
+      "author": "OmniMux",
+      "origin": "first-party",
+      "license": "MIT",
+      "owner": "omnimux-market",
+      "preinstalled": true,
+      "installType": "pre-installed",
+      "scenario": "scene-growth"
+    },
+    {
+      "id": "sk-omx-clip-craft",
+      "tab": "skills",
+      "kind": "skill",
+      "title": "智能视频剪辑",
+      "subtitle": "剪辑与效率工具",
+      "summary": "修整视频时间轴、自动切片、添加字幕花字与成片导出",
+      "category": "other",
+      "tags": [
+        "剪辑与效率工具",
+        "平台工具"
+      ],
+      "skill": "clip-craft",
+      "source": {
+        "type": "plugin",
+        "plugin": "omnimux-clip",
+        "path": "skills/clip-craft"
+      },
+      "recommended": true,
+      "downloads": 480,
+      "cover": {
+        "asset": "catalog/covers/skills/skill-card-2.webp",
+        "alt": "智能视频剪辑"
+      },
+      "titleZh": "智能视频剪辑",
+      "titleEn": "Clip Craft Editor",
+      "summaryZh": "修整视频时间轴、自动切片、添加字幕花字与成片导出",
+      "summaryEn": "Trim timelines, remove black frames, align captions, and export polished edits in OmniMux Clip.",
+      "isHot": false,
+      "isNew": false,
+      "coverIndex": 2,
+      "coverFile": "skill-card-2.webp",
+      "badge": "",
+      "installFlow": "session-guide",
+      "sessionPrefill": "/clip-craft\n请运行 智能视频剪辑 (Clip Craft Editor) 技能，协助完成当前任务。",
+      "homeCover": {
+        "asset": "catalog/covers/skills/skill-card-2.webp",
+        "alt": "智能视频剪辑"
+      },
+      "author": "OmniMux",
+      "origin": "first-party",
+      "license": "SEE LICENSE IN LICENSE",
+      "owner": "omnimux-clip",
+      "preinstalled": true,
+      "installType": "pre-installed",
       "scenario": "scene-tools"
     },
     {
@@ -4872,90 +5808,78 @@
       "titleEn": "All"
     },
     {
-      "id": "scene-seeding",
-      "title": "内容种草",
-      "titleZh": "内容种草",
-      "titleEn": "Content Seeding"
+      "id": "scene-video",
+      "title": "短视频创作",
+      "titleZh": "短视频创作",
+      "titleEn": "Video Creation"
     },
     {
-      "id": "scene-brand",
-      "title": "品牌宣传",
-      "titleZh": "品牌宣传",
-      "titleEn": "Brand Story"
+      "id": "scene-replicate",
+      "title": "爆款复刻与再制",
+      "titleZh": "爆款复刻与再制",
+      "titleEn": "Viral Replication"
     },
     {
-      "id": "scene-product",
-      "title": "商品展示",
-      "titleZh": "商品展示",
-      "titleEn": "Product Showcase"
+      "id": "scene-visual",
+      "title": "商品视觉与海报",
+      "titleZh": "商品视觉与海报",
+      "titleEn": "Visual & Product"
     },
     {
-      "id": "scene-performance",
-      "title": "效果广告",
-      "titleZh": "效果广告",
-      "titleEn": "Performance Ads"
+      "id": "scene-research",
+      "title": "选品与社媒洞察",
+      "titleZh": "选品与社媒洞察",
+      "titleEn": "Market & Social Research"
     },
     {
-      "id": "scene-app",
-      "title": "应用推广",
-      "titleZh": "应用推广",
-      "titleEn": "App Promotion"
-    },
-    {
-      "id": "scene-local",
-      "title": "本地生活",
-      "titleZh": "本地生活",
-      "titleEn": "Local Services"
-    },
-    {
-      "id": "scene-repurpose",
-      "title": "内容再制",
-      "titleZh": "内容再制",
-      "titleEn": "Content Repurposing"
+      "id": "scene-growth",
+      "title": "投放与增长运营",
+      "titleZh": "投放与增长运营",
+      "titleEn": "Ads & Growth Ops"
     },
     {
       "id": "scene-tools",
-      "title": "通用工具",
-      "titleZh": "通用工具",
-      "titleEn": "General Tools"
+      "title": "剪辑与效率工具",
+      "titleZh": "剪辑与效率工具",
+      "titleEn": "Editing & Tools"
     }
   ],
   "skillScenarios": [
     {
-      "id": "scene-seeding",
-      "title": "内容种草",
-      "titleZh": "内容种草",
-      "titleEn": "Content Seeding"
+      "id": "scene-video",
+      "title": "短视频创作",
+      "titleZh": "短视频创作",
+      "titleEn": "Video Creation"
     },
     {
-      "id": "scene-brand",
-      "title": "品牌宣传",
-      "titleZh": "品牌宣传",
-      "titleEn": "Brand Story"
+      "id": "scene-replicate",
+      "title": "爆款复刻与再制",
+      "titleZh": "爆款复刻与再制",
+      "titleEn": "Viral Replication"
     },
     {
-      "id": "scene-product",
-      "title": "商品展示",
-      "titleZh": "商品展示",
-      "titleEn": "Product Showcase"
+      "id": "scene-visual",
+      "title": "商品视觉与海报",
+      "titleZh": "商品视觉与海报",
+      "titleEn": "Visual & Product"
     },
     {
-      "id": "scene-performance",
-      "title": "效果广告",
-      "titleZh": "效果广告",
-      "titleEn": "Performance Ads"
+      "id": "scene-research",
+      "title": "选品与社媒洞察",
+      "titleZh": "选品与社媒洞察",
+      "titleEn": "Market & Social Research"
     },
     {
-      "id": "scene-repurpose",
-      "title": "内容再制",
-      "titleZh": "内容再制",
-      "titleEn": "Content Repurposing"
+      "id": "scene-growth",
+      "title": "投放与增长运营",
+      "titleZh": "投放与增长运营",
+      "titleEn": "Ads & Growth Ops"
     },
     {
       "id": "scene-tools",
-      "title": "通用工具",
-      "titleZh": "通用工具",
-      "titleEn": "General Tools"
+      "title": "剪辑与效率工具",
+      "titleZh": "剪辑与效率工具",
+      "titleEn": "Editing & Tools"
     }
   ]
 }

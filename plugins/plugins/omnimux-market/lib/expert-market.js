@@ -257,7 +257,7 @@ export const DEFAULT_MARKET_EXPERTS = [
         initialStatus: 'available',
         order: 17,
         stage: 'production',
-        skills: ['omnimux-ecom-global-localizer', 'omnimux-ecom-platform-rules', 'clip-craft'],
+        skills: ['global-ad-localizer', 'omnimux-ecom-platform-rules', 'clip-craft'],
         toolDomains: ['products', 'assets', 'inspiration', 'workflow', 'clip', 'media_gen', 'social_data', 'viewer', 'market', 'workbench'],
         starters: [
             {
@@ -450,7 +450,7 @@ const EXPERT_PERSONA_DETAILS = {
         '你是 OmniMux「本土专家」，负责跨国多语种带货视频与广告素材本地化裂变（全球锁定外观参数、本地适配族裔数字人/语境/配音/字幕）。',
         '',
         '【首选 Skill 与工作流】',
-        '- 优先加载 `omnimux-ecom-global-localizer`、`omnimux-ecom-platform-rules` 与 `clip-craft`：先从商品库锁定实拍图与 `spec_table`，输出目标市场四栏本地化方案（全球锁定 / 本地适配 / 本地待审 / 禁用红线）。',
+        '- 优先加载 `global-ad-localizer`、`omnimux-ecom-platform-rules` 与 `clip-craft`：先从商品库锁定实拍图与 `spec_table`，输出目标市场四栏本地化方案（全球锁定 / 本地适配 / 本地待审 / 禁用红线）。',
         '- 调用任何付费生视频/配音工具前，必须运行 `scripts/check_localization_matrix.py` 确定性校核跨语种口播时长膨胀率（防止西/葡/德语等撑爆原镜时长与对口型）、全量数字参数零漂移与目标国违禁词。',
         '- 严格遵守「先单市场小样、后多国批量」：挑选云地资产库（`assets_*`）匹配目标国的数字人与音色，在画布（`workflow_*`）先跑 1 条核心镜头小样确认后，再扩量并在剪辑工坊（`clip_*`）完成多语字幕叠层与 `clip_diagnostics` 核验。',
     ].join('\n'),

@@ -2,6 +2,7 @@ import { clamp, collectQueries, searchSkills as searchSkillsRemote } from './api
 import { categoryLabel, parseCategory } from './categories.js'
 import { parseAggregateChannels, sanitizeSortBy } from './config-store.js'
 import { loadCatalog as loadCatalogDefault } from './expert/catalog.js'
+import { packageRoot, resolvePluginSkillFile } from './expert/paths.js'
 import { checkSkillBilingual } from './skill-bilingual.js'
 import type { CatalogDoc, CatalogSkillItem, PluginConfig, SearchResult, SkillCard, SkillChannel, SortBy } from './types.js'
 export type { CatalogDoc, CatalogSkillItem } from './types.js'
@@ -30,6 +31,7 @@ export interface AggregateSkillSearchOptions {
   offset?: number
   installed?: Set<string>
   installedSkills?: Array<{ slug: string; name: string; description: string; version?: string; path?: string }>
+  includeInstalledInBrowse?: boolean
   signal?: AbortSignal
   channels?: unknown
   catalog?: CatalogDoc
@@ -76,7 +78,7 @@ export async function aggregateSkillSearch(
     items: [...(rawCatalog.items || [])],
   }
 
-  if (Array.isArray(opts.installedSkills) && opts.installedSkills.length) {
+  if ((!browsing || opts.includeInstalledInBrowse === true) && Array.isArray(opts.installedSkills) && opts.installedSkills.length) {
     const existing = new Set(catalog.items.map((it) => String(it.skill || it.id).toLowerCase()))
     for (const inst of opts.installedSkills) {
       const slug = String(inst.slug || '').trim().toLowerCase()
@@ -306,7 +308,11 @@ export function catalogItemToCard(
 ): SkillCard {
   const slug = catalogSkillSlug(item)
   const category = String(item.category || '')
+  const scenario = typeof item.scenario === 'string' && item.scenario.trim() ? item.scenario.trim() : ''
   const avatar = typeof item.avatar === 'string' ? item.avatar : ''
+  const pluginPreinstalled = item.source?.type === 'plugin'
+    && Boolean(resolvePluginSkillFile(item.source, packageRoot()))
+  const isPreinstalled = item.preinstalled === true || pluginPreinstalled
   const card: SkillCard = {
     id: String(item.id || slug),
     slug,
@@ -314,13 +320,15 @@ export function catalogItemToCard(
     description: String(item.summary || ''),
     category,
     categoryLabel: categoryLabel(category) || category,
+    ...(scenario ? { scenario } : {}),
     version: '',
     downloads: typeof item.downloads === 'number' && Number.isSafeInteger(item.downloads) && item.downloads >= 0 ? item.downloads : 0,
     stars: 0,
     installs: 0,
     pageUrl: `${cfg.webBase.replace(/\/$/, '')}/skills/${encodeURIComponent(slug)}`,
     owner: channel === 'custom' ? 'omnimux' : 'workbuddy',
-    installed: installed?.has(slug) || false,
+    installed: Boolean(installed?.has(slug) || pluginPreinstalled),
+    ...(isPreinstalled ? { preinstalled: true } : {}),
     channel,
     catalogId: String(item.id || ''),
     installBackend: 'catalog',

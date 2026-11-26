@@ -2,7 +2,7 @@ import { spawnSync } from 'node:child_process'
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { invalidateCatalogMemos, isInstalled } from './catalog.js'
-import { MCP_BEGIN, MCP_END, mcpRowPattern, mcpRowId, skillDir } from './paths.js'
+import { MCP_BEGIN, MCP_END, mcpRowPattern, mcpRowId, resolvePluginSkillFile, skillDir } from './paths.js'
 
 let connectorChain = Promise.resolve()
 let connectorBusy = 0
@@ -47,7 +47,11 @@ export function installItem(opts) {
   const item = findItem(opts.catalog, opts.id)
   if (!item) throw new Error(`unknown item ${opts.id}`)
   const roots = { home: opts.home, profileDir: opts.profileDir, packageRoot: opts.packageRoot }
-  if (isInstalled(item, roots)) return { id: item.id, installed: true, already: true }
+  if (isInstalled(item, roots)) {
+    return item.source?.type === 'plugin'
+      ? { id: item.id, installed: true, kind: item.kind, skill: item.skill, source: 'plugin', already: true }
+      : { id: item.id, installed: true, already: true }
+  }
   try {
     if (item.kind === 'connector') {
       writeMcpRow(opts.profileDir, item)
@@ -57,6 +61,9 @@ export function installItem(opts) {
     if (item.source.type === 'bundled') {
       installBundledPack(opts.home, item, opts.packageRoot)
       return { id: item.id, installed: true, kind: item.kind, skill: item.skill, source: 'bundled' }
+    }
+    if (item.source.type === 'plugin') {
+      throw new Error(`plugin skill missing: ${item.source.plugin}/${item.source.path}`)
     }
     if (item.source.type === 'git') {
       installGitBundle(opts.home, item)
@@ -189,6 +196,10 @@ export function readCatalogSkillMarkdown(item, roots) {
         return existsSync(md) ? readFileSync(md, 'utf8') : ''
       }
       return readFileSync(from, 'utf8')
+    }
+    if (item.source.type === 'plugin') {
+      const md = resolvePluginSkillFile(item.source, roots.packageRoot)
+      return md ? readFileSync(md, 'utf8') : ''
     }
     if (item.source.type === 'git') {
       const from = fetchGitTree(roots.home, item)

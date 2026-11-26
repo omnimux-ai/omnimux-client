@@ -142,6 +142,39 @@ export function loadBundledMarketSkills(pkgRoot = packageRoot()) {
     return loaded;
 }
 /**
+ * Load one bundled skill from `<packageRoot>/catalog/skills/<slug>` so hired
+ * expert presets can promote unified catalog skills alongside `skills/*`.
+ */
+export function loadCatalogSkillBySlug(slug, pkgRoot = packageRoot()) {
+    const safeSlug = String(slug || '').trim();
+    if (!safeSlug || safeSlug.includes('/') || safeSlug.includes('\\') || safeSlug.includes('..'))
+        return undefined;
+    const catalogRoot = resolvePhysicalDir(resolve(pkgRoot, 'catalog', 'skills'));
+    const dir = resolvePhysicalDir(resolve(catalogRoot, safeSlug));
+    if (!dir.startsWith(catalogRoot + '/') && !dir.startsWith(catalogRoot + '\\'))
+        return undefined;
+    const file = join(dir, 'SKILL.md');
+    if (!existsSync(file))
+        return undefined;
+    const raw = readFileSync(file, 'utf8');
+    const { metadata, body } = parseSkillFrontmatter(raw);
+    if (!body)
+        return undefined;
+    const name = typeof metadata.name === 'string' && metadata.name.trim() ? metadata.name.trim() : safeSlug;
+    const description = typeof metadata.description === 'string' && metadata.description.trim() ? metadata.description.trim() : name;
+    const whenToUse = typeof metadata.whenToUse === 'string' && metadata.whenToUse.trim() ? metadata.whenToUse.trim() : undefined;
+    return {
+        name,
+        description,
+        ...(whenToUse ? { whenToUse } : {}),
+        invocation: parseInvocationPolicy(metadata),
+        content: body,
+        path: file,
+        source: 'bundled',
+        resourceBase: { kind: 'directory', path: dir },
+    };
+}
+/**
  * Build a DSH SkillProvider from a list of bundled skills.
  */
 export function createBundledSkillProvider(skills, providerName, invocationOverride) {

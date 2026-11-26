@@ -131,3 +131,60 @@ test('mcpInstalled matches rows exactly, not by id prefix', () => {
   // patch 文件不存在时一律未装
   assert.equal(mcpInstalled(join(home, 'profiles', 'none'), 'cn-tencent-docs'), false)
 })
+
+test('source.type = plugin parses valid references, rejects bad plugin/path, and detects installed via plugin root', () => {
+  const valid = parseCatalog({
+    schema: 1,
+    generated_at: 'fixture',
+    items: [{
+      id: 'sk-plug-clip',
+      tab: 'skills',
+      kind: 'skill',
+      title: 'Clip',
+      summary: 'Clip summary',
+      category: 'scene-tools',
+      skill: 'clip-craft',
+      source: { type: 'plugin', plugin: 'omnimux-clip', path: 'skills/clip-craft' },
+    }],
+  })
+  assert.deepEqual(valid.items[0].source, { type: 'plugin', plugin: 'omnimux-clip', path: 'skills/clip-craft' })
+
+  assert.throws(() => parseCatalog({
+    schema: 1,
+    generated_at: 'fixture',
+    items: [{
+      id: 'bad-plugin',
+      tab: 'skills',
+      kind: 'skill',
+      title: 'Bad',
+      summary: 'Bad',
+      category: 'scene-tools',
+      skill: 'clip-craft',
+      source: { type: 'plugin', plugin: '../escape', path: 'skills/clip-craft' },
+    }],
+  }), /bad plugin name/)
+
+  assert.throws(() => parseCatalog({
+    schema: 1,
+    generated_at: 'fixture',
+    items: [{
+      id: 'bad-path',
+      tab: 'skills',
+      kind: 'skill',
+      title: 'Bad',
+      summary: 'Bad',
+      category: 'scene-tools',
+      skill: 'clip-craft',
+      source: { type: 'plugin', plugin: 'omnimux-clip', path: '../secrets/clip-craft' },
+    }],
+  }), /bad plugin path/)
+
+  const home = mkdtempSync(join(tmpdir(), 'omx-cat-plugin-'))
+  mkdirSync(join(home, 'profiles', 'omnimux'), { recursive: true })
+  const decorated = decorateCatalog(valid, {
+    home,
+    profileDir: join(home, 'profiles', 'omnimux'),
+    packageRoot: PACKAGE_ROOT,
+  })
+  assert.equal(decorated.items[0].installed, true)
+})

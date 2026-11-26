@@ -4,11 +4,11 @@ import { fetchOpts, parseSlug } from './api.js'
 import { dshHome } from './config-store.js'
 import { loadCatalog } from './expert/catalog.js'
 import { installItem, resolveLocalBundledSkillDir } from './expert/install.js'
-import { packageRoot, profileDir } from './expert/paths.js'
+import { packageRoot, profileDir, resolvePluginSkillFile } from './expert/paths.js'
 import { fetchBytes } from './http.js'
 import { catalogSkillSlug, findCatalogSkill } from './skill-aggregate.js'
 import { unzipToFiles } from './unzip.js'
-import type { InstalledSkill, InstallResult, PluginConfig } from './types.js'
+import type { CatalogSkillItem, InstalledSkill, InstallResult, PluginConfig } from './types.js'
 
 export interface InstallDeps {
   fetchBytes: typeof fetchBytes
@@ -108,16 +108,37 @@ async function installFromLocalDir(slug: string, sourceDir: string, cfg: PluginC
   }
 }
 
-async function installFromCatalog(item: { id: string; title?: string; skill?: string }, cfg: PluginConfig): Promise<InstallResult> {
+async function installFromCatalog(item: CatalogSkillItem, cfg: PluginConfig): Promise<InstallResult> {
   const home = dshHome()
   const slug = catalogSkillSlug(item)
+  const pkgRoot = packageRoot()
   installItem({
     catalog: loadCatalog(),
     id: item.id,
     home,
     profileDir: profileDir(home),
-    packageRoot: packageRoot(),
+    packageRoot: pkgRoot,
   })
+  const pluginSkillMd = item.source?.type === 'plugin'
+    ? resolvePluginSkillFile(item.source, pkgRoot)
+    : ''
+  if (pluginSkillMd) {
+    const skillRoot = dirname(pluginSkillMd)
+    let skillMd = ''
+    try {
+      skillMd = await readFile(pluginSkillMd, 'utf8')
+    } catch {
+      throw new Error(`技能 ${slug} 缺少 SKILL.md`)
+    }
+    const meta = parseFrontmatter(skillMd)
+    return {
+      slug,
+      name: meta.name || item.title || slug,
+      version: meta.version || '',
+      path: skillRoot,
+      files: await countFiles(skillRoot),
+    }
+  }
   const catalogDest = join(home, 'skills', slug)
   const target = skillDir(cfg.skillsDir, slug)
   if (resolve(catalogDest) !== resolve(target)) {

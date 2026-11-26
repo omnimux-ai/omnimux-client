@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0.0",
-  "updatedAt": "2026-11-26T04:42:59.066Z",
+  "updatedAt": "2026-11-26T12:31:18.607Z",
   "topology": {
     "tiers": [
       {
@@ -822,8 +822,7 @@
         "skills/omnimux-ecom-video-script/SKILL.md",
         "skills/omnimux-ecom-ads-diagnosis/SKILL.md",
         "skills/omnimux-ecom-review-voc/SKILL.md",
-        "skills/omnimux-ecom-brand-curator/SKILL.md",
-        "skills/omnimux-ecom-global-localizer/SKILL.md"
+        "skills/omnimux-ecom-brand-curator/SKILL.md"
       ],
       "dependencies": {
         "requiredPlugins": [
@@ -923,11 +922,6 @@
           "owner": "omnimux-market"
         },
         "omnimux-ecom-brand-curator": {
-          "origin": "first-party",
-          "license": "MIT",
-          "owner": "omnimux-market"
-        },
-        "omnimux-ecom-global-localizer": {
           "origin": "first-party",
           "license": "MIT",
           "owner": "omnimux-market"

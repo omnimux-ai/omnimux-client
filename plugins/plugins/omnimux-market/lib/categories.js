@@ -24,3 +24,11 @@ export function parseCategory(raw) {
         return undefined;
     return CATEGORY_KEYS.includes(key) ? key : undefined;
 }
+export const VERTICAL_SCENARIOS = Object.freeze([
+    { id: 'scene-video', titleZh: '短视频创作', titleEn: 'Video Creation' },
+    { id: 'scene-replicate', titleZh: '爆款复刻与再制', titleEn: 'Viral Replication' },
+    { id: 'scene-visual', titleZh: '商品视觉与海报', titleEn: 'Visual & Product' },
+    { id: 'scene-research', titleZh: '选品与社媒洞察', titleEn: 'Market & Social Research' },
+    { id: 'scene-growth', titleZh: '投放与增长运营', titleEn: 'Ads & Growth Ops' },
+    { id: 'scene-tools', titleZh: '剪辑与效率工具', titleEn: 'Editing & Tools' },
+]);

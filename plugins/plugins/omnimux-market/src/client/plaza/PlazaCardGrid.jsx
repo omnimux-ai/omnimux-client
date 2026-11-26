@@ -93,7 +93,7 @@ export function renderRegularSection(opts) {
       h('div', { className: 'regular-header' },
         h('div', { className: 'regular-title-row' },
           h('span', null, tr(titleKey) || '搜索结果'),
-          h('span', { className: 'regular-title-count' }, ' · ' + regularItems.length),
+          h('span', { className: 'regular-title-count' }, String(regularItems.length)),
         ),
       ),
       statusNode,
@@ -120,8 +120,15 @@ export function renderRegularSection(opts) {
   // 默认「全部」分类状态：按用户要求置顶「热门精选」、「新品上市」（各保持 5 个），其余展示在「探索更多」
   if (isAllCategory) {
     const hotPicks = regularItems.filter((i) => i.isHot || i.tags?.includes('热门精选')).slice(0, 5);
-    const newArrivals = regularItems.filter((i) => i.isNew || i.tags?.includes('新品上市')).slice(0, 5);
-    const exploreMore = regularItems.filter((i) => !hotPicks.some((h) => (h.id || h.slug) === (i.id || i.slug)) && !newArrivals.some((n) => (n.id || n.slug) === (i.id || i.slug)));
+    const hotIds = new Set(hotPicks.map((item) => item.id || item.slug));
+    const newArrivals = regularItems
+      .filter((i) => (i.isNew || i.tags?.includes('新品上市')) && !hotIds.has(i.id || i.slug))
+      .slice(0, 5);
+    const newIds = new Set(newArrivals.map((item) => item.id || item.slug));
+    const exploreMore = regularItems.filter((i) => {
+      const key = i.id || i.slug;
+      return !hotIds.has(key) && !newIds.has(key);
+    });
 
     return h('div', { className: 'omnimux-creatify-sections-wrap', style: { display: 'flex', flexDirection: 'column', gap: '28px', width: '100%' } },
       statusNode,
@@ -143,7 +150,19 @@ export function renderRegularSection(opts) {
             type: 'button',
             className: 'see-all-btn',
             style: { background: 'transparent', border: 'none', color: 'var(--dsw-alias-label-caption, rgba(255,255,255,0.45))', cursor: 'pointer', fontSize: '12px' },
-            onClick: () => { setOpen && setOpen(newArrivals[0]); },
+            onClick: () => {
+              if (typeof document !== 'undefined') {
+                const target = document.querySelector('[data-omx-section="explore-more"]');
+                if (!target) return;
+                const scroller = target.closest('.omx-stage-scroll, .sh-plaza-body');
+                if (scroller && typeof scroller.scrollTo === 'function') {
+                  const targetTop = target.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop - 116;
+                  scroller.scrollTo({ top: Math.max(0, targetTop), behavior: 'smooth' });
+                } else {
+                  target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }
+              }
+            },
           }, viewAllText),
         ),
         h('div', { className: 'featured-grid cards-grid' },
@@ -152,11 +171,11 @@ export function renderRegularSection(opts) {
       ) : null,
 
       // 3. 探索更多
-      h('section', { className: 'regular-section', 'aria-label': exploreMoreTitle },
+      h('section', { className: 'regular-section', 'aria-label': exploreMoreTitle, 'data-omx-section': 'explore-more' },
         h('div', { className: 'regular-header', style: { marginBottom: '14px' } },
           h('div', { className: 'regular-title-row' },
             h('span', { style: { fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: '700', color: 'var(--dsw-alias-label-caption, rgba(255,255,255,0.45))' } }, exploreMoreTitle),
-            h('span', { className: 'regular-title-count' }, ' · ' + (exploreMore.length || regularItems.length)),
+            h('span', { className: 'regular-title-count' }, String(exploreMore.length || regularItems.length)),
           ),
         ),
         h('div', { className: 'featured-grid cards-grid' },
@@ -172,7 +191,7 @@ export function renderRegularSection(opts) {
     h('div', { className: 'regular-header', style: { marginBottom: '14px' } },
       h('div', { className: 'regular-title-row' },
         h('span', { style: { fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: '700', color: 'var(--dsw-alias-label-caption, rgba(255,255,255,0.45))' } }, singleCategoryTitle),
-        h('span', { className: 'regular-title-count' }, ' · ' + regularItems.length),
+        h('span', { className: 'regular-title-count' }, String(regularItems.length)),
       ),
     ),
     statusNode,

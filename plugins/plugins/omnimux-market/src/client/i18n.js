@@ -80,6 +80,12 @@
       "cat.product-showcase": "产品展示",
       "cat.meme-native": "模因与原生",
       "cat.other": "其它营销分类",
+      "cat.scene-video": "短视频创作",
+      "cat.scene-replicate": "爆款复刻与再制",
+      "cat.scene-visual": "商品视觉与海报",
+      "cat.scene-research": "选品与社媒洞察",
+      "cat.scene-growth": "投放与增长运营",
+      "cat.scene-tools": "剪辑与效率工具",
       "cat.scene-seeding": "内容种草",
       "cat.scene-brand": "品牌宣传",
       "cat.scene-product": "商品展示",
@@ -87,7 +93,6 @@
       "cat.scene-app": "应用推广",
       "cat.scene-local": "本地生活",
       "cat.scene-repurpose": "内容再制",
-      "cat.scene-tools": "通用工具",
       "mkt.searchPlaceholder": "输入关键词搜索",
       "mkt.search": "搜索",
       "mkt.repos": "发现 GitHub MIT 开源的共 {n} 个插件扩展",
@@ -650,6 +655,12 @@
       "cat.product-showcase": "Product Showcase",
       "cat.meme-native": "Meme & Native",
       "cat.other": "Other",
+      "cat.scene-video": "Video Creation",
+      "cat.scene-replicate": "Viral Replication",
+      "cat.scene-visual": "Visual & Product",
+      "cat.scene-research": "Market & Social Research",
+      "cat.scene-growth": "Ads & Growth Ops",
+      "cat.scene-tools": "Editing & Tools",
       "cat.scene-seeding": "Content Seeding",
       "cat.scene-brand": "Brand Story",
       "cat.scene-product": "Product Showcase",
@@ -657,7 +668,6 @@
       "cat.scene-app": "App Promotion",
       "cat.scene-local": "Local Services",
       "cat.scene-repurpose": "Content Repurposing",
-      "cat.scene-tools": "General Tools",
       "mkt.searchPlaceholder": "Enter keywords",
       "mkt.search": "Search",
       "mkt.repos": "Found {n} MIT-licensed open-source plugins on GitHub",
@@ -1174,10 +1184,11 @@
     }
 
     function catLabel(item, tr) {
-      const key = item && item.category ? "cat." + item.category : "";
+      const cat = (item && (item.scenario || item.category)) || "";
+      const key = cat ? "cat." + cat : "";
       const label = key ? tr(key) : "";
       if (label && label !== key) return label;
-      return (item && (item.categoryLabel || item.category)) || "";
+      return (item && (item.categoryLabel || item.scenario || item.category)) || "";
     }
     function skillTitle(item, tr) {
       if (!item) return "";
