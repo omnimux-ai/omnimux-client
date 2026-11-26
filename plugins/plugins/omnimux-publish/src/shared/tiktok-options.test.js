@@ -232,6 +232,27 @@ describe('TikTok structured error classification', () => {
     assert.equal(text.category, 'publish_restricted')
     assert.equal(text.code, SOCIAL_TIKTOK_CODES.PUBLISH_RESTRICTED)
   })
+
+  it('does not misclassify non-TikTok quota errors carrying an arbitrary upstream_code', () => {
+    const quota = classifyTikTokError({
+      code: 'insufficient_user_quota',
+      upstream_code: 'billing_cap_reached',
+      message: 'insufficient_user_quota: top up required',
+    })
+    assert.equal(quota.matchedSocial, false)
+    assert.equal(quota.code, 'insufficient_user_quota')
+    assert.equal(quota.upstream_code, 'billing_cap_reached')
+
+    const unknownWithSocialCode = classifyTikTokError({
+      code: SOCIAL_TIKTOK_CODES.UPSTREAM_ERROR,
+      upstream_code: 'future_tiktok_err',
+      upstream_log_id: 'log-11',
+      message: 'TikTok rejected request',
+    })
+    assert.equal(unknownWithSocialCode.matchedSocial, true)
+    assert.equal(unknownWithSocialCode.code, SOCIAL_TIKTOK_CODES.UPSTREAM_ERROR)
+    assert.equal(unknownWithSocialCode.upstream_code, 'future_tiktok_err')
+  })
 })
 
 describe('aggregateCreatorInfo', () => {
