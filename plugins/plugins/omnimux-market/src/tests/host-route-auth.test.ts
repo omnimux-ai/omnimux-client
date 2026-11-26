@@ -60,4 +60,18 @@ test('omnimux-market enforces connection.requestRejection on /omnimux-market and
     await noConn.get(path)!.handler({ method: 'GET', url: path, headers: {} } as IncomingMessage, res as unknown as ServerResponse)
     assert.equal(res.statusCode, 503)
   }
+
+  const throwing = mountHost({ requestRejection: () => { throw new Error('connection unavailable') } })
+  for (const path of ['/omnimux-market', '/omnimux-market/icon']) {
+    const res = mockRes()
+    await throwing.get(path)!.handler({ method: 'GET', url: path, headers: {} } as IncomingMessage, res as unknown as ServerResponse)
+    assert.equal(res.statusCode, 503)
+  }
+
+  const nullRejection = mountHost({ requestRejection: () => null })
+  const wsRoute = nullRejection.get('/omnimux-market/workshop/workshopCapabilities')
+  assert.ok(wsRoute, 'expected workshop route')
+  const wsRes = mockRes()
+  await wsRoute.handler({ method: 'POST', url: '/omnimux-market/workshop/workshopCapabilities', headers: {} } as IncomingMessage, wsRes as unknown as ServerResponse)
+  assert.equal(wsRes.statusCode, 403)
 })

@@ -265,16 +265,21 @@ export function apply(ctx, config) {
         const hostRequestRejection = (req, peer) => {
             if (peer !== undefined && peer !== null && typeof peer === 'object')
                 return undefined;
-            const service = c.get('connection');
-            if (typeof service?.requestRejection !== 'function')
+            try {
+                const service = c.get('connection');
+                if (typeof service?.requestRejection !== 'function')
+                    return 503;
+                const raw = service.requestRejection(req);
+                if (raw === undefined)
+                    return undefined;
+                const status = typeof raw === 'number' ? raw : raw?.status;
+                return typeof status === 'number' && Number.isInteger(status) && status >= 400 && status <= 599 ? status : 403;
+            }
+            catch {
                 return 503;
-            const raw = service.requestRejection(req);
-            if (raw === undefined)
-                return undefined;
-            const status = typeof raw === 'number' ? raw : raw?.status;
-            return typeof status === 'number' && Number.isInteger(status) && status >= 400 && status <= 599 ? status : 403;
+            }
         };
-        const guardRoute = (handler) => (req, res, peer) => {
+        const guardRoute = (handler) => async (req, res, peer) => {
             const rejection = hostRequestRejection(req, peer);
             if (rejection !== undefined) {
                 res.statusCode = rejection;
@@ -283,20 +288,32 @@ export function apply(ctx, config) {
                 res.end(JSON.stringify({ ok: false, error: 'request-denied' }));
                 return;
             }
-            return handler(req, res);
+            await handler(req, res);
         };
         server.register({ kind: 'exact', path: '/omnimux-market', auth: 'required', handler: guardRoute((req, res) => handleApi(req, res, cfg)) });
         server.register({ kind: 'exact', path: '/omnimux-market/icon', auth: 'required', handler: guardRoute((req, res) => handleIcon(req, res, cfg)) });
         const connection = {
             requestRejection(req) {
-                const service = c.get('connection');
-                if (typeof service?.requestRejection === 'function') {
+                try {
+                    const service = c.get('connection');
+                    if (typeof service?.requestRejection !== 'function')
+                        return { status: 503 };
                     const raw = service.requestRejection(req);
                     if (raw === undefined)
                         return undefined;
-                    return typeof raw === 'number' ? { status: raw } : raw;
+                    if (typeof raw === 'number') {
+                        return { status: Number.isInteger(raw) && raw >= 400 && raw <= 599 ? raw : 403 };
+                    }
+                    if (raw !== null && typeof raw === 'object') {
+                        const status = raw.status;
+                        const normalized = typeof status === 'number' && Number.isInteger(status) && status >= 400 && status <= 599 ? status : 403;
+                        return { ...raw, status: normalized };
+                    }
+                    return { status: 403 };
                 }
-                return { status: 401 };
+                catch {
+                    return { status: 503 };
+                }
             },
         };
         // cfg.skillsDir alone does not prove all effective provider roots or read authorization.

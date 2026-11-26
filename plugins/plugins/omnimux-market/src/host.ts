@@ -316,17 +316,21 @@ export function apply(ctx: Context, config: Config): void {
     const server = (c as unknown as { webServer: { register: (route: { kind: string; path: string; auth?: 'anonymous' | 'required' | 'deny'; handler: (req: IncomingMessage, res: ServerResponse, peer?: unknown) => void | Promise<void> }) => void } }).webServer
     const hostRequestRejection = (req: IncomingMessage, peer?: unknown): number | undefined => {
       if (peer !== undefined && peer !== null && typeof peer === 'object') return undefined
-      const service = (c as unknown as { get(name: string): unknown }).get('connection') as {
-        requestRejection?: (r: IncomingMessage) => number | { status: number } | undefined
-      } | undefined
-      if (typeof service?.requestRejection !== 'function') return 503
-      const raw = service.requestRejection(req)
-      if (raw === undefined) return undefined
-      const status = typeof raw === 'number' ? raw : raw?.status
-      return typeof status === 'number' && Number.isInteger(status) && status >= 400 && status <= 599 ? status : 403
+      try {
+        const service = (c as unknown as { get(name: string): unknown }).get('connection') as {
+          requestRejection?: (r: IncomingMessage) => number | { status: number } | undefined
+        } | undefined
+        if (typeof service?.requestRejection !== 'function') return 503
+        const raw = service.requestRejection(req)
+        if (raw === undefined) return undefined
+        const status = typeof raw === 'number' ? raw : raw?.status
+        return typeof status === 'number' && Number.isInteger(status) && status >= 400 && status <= 599 ? status : 403
+      } catch {
+        return 503
+      }
     }
     const guardRoute = (handler: (req: IncomingMessage, res: ServerResponse) => void | Promise<void>) =>
-      (req: IncomingMessage, res: ServerResponse, peer?: unknown) => {
+      async (req: IncomingMessage, res: ServerResponse, peer?: unknown) => {
         const rejection = hostRequestRejection(req, peer)
         if (rejection !== undefined) {
           res.statusCode = rejection
@@ -335,21 +339,31 @@ export function apply(ctx: Context, config: Config): void {
           res.end(JSON.stringify({ ok: false, error: 'request-denied' }))
           return
         }
-        return handler(req, res)
+        await handler(req, res)
       }
     server.register({ kind: 'exact', path: '/omnimux-market', auth: 'required', handler: guardRoute((req, res) => handleApi(req, res, cfg)) })
     server.register({ kind: 'exact', path: '/omnimux-market/icon', auth: 'required', handler: guardRoute((req, res) => handleIcon(req, res, cfg)) })
     const connection: WorkshopConnection = {
       requestRejection(req) {
-        const service = (c as unknown as { get(name: string): unknown }).get('connection') as {
-          requestRejection?: (r: IncomingMessage) => number | { status: number; error?: string } | undefined
-        } | undefined
-        if (typeof service?.requestRejection === 'function') {
+        try {
+          const service = (c as unknown as { get(name: string): unknown }).get('connection') as {
+            requestRejection?: (r: IncomingMessage) => number | { status: number; error?: string } | undefined
+          } | undefined
+          if (typeof service?.requestRejection !== 'function') return { status: 503 }
           const raw = service.requestRejection(req)
           if (raw === undefined) return undefined
-          return typeof raw === 'number' ? { status: raw } : raw
+          if (typeof raw === 'number') {
+            return { status: Number.isInteger(raw) && raw >= 400 && raw <= 599 ? raw : 403 }
+          }
+          if (raw !== null && typeof raw === 'object') {
+            const status = (raw as { status?: unknown }).status
+            const normalized = typeof status === 'number' && Number.isInteger(status) && status >= 400 && status <= 599 ? status : 403
+            return { ...raw, status: normalized }
+          }
+          return { status: 403 }
+        } catch {
+          return { status: 503 }
         }
-        return { status: 401 }
       },
     }
     // cfg.skillsDir alone does not prove all effective provider roots or read authorization.

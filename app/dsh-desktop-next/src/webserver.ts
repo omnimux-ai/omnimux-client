@@ -15,7 +15,8 @@ type RouteAuthMode = 'anonymous' | 'required' | 'deny'
 
 function routeAuthMode(route: object): RouteAuthMode | undefined {
   const auth = (route as { readonly auth?: unknown }).auth
-  return auth === 'anonymous' || auth === 'required' || auth === 'deny' ? auth : undefined
+  if (auth === undefined) return undefined
+  return auth === 'anonymous' || auth === 'required' || auth === 'deny' ? auth : 'deny'
 }
 
 function upgradeRejectionResponse(status: number): string {
@@ -50,8 +51,15 @@ export default class NextWebServer extends WebServer {
   }
 
   private authRejection(request: { readonly headers: IncomingHttpHeaders }): number | undefined {
-    const connection = this.ctx.get('connection')
-    return connection === undefined ? 503 : connection.requestRejection(request)
+    try {
+      const connection = this.ctx.get('connection')
+      if (typeof connection?.requestRejection !== 'function') return 503
+      const rejection = connection.requestRejection(request)
+      if (rejection === undefined) return undefined
+      return Number.isInteger(rejection) && rejection >= 400 && rejection <= 599 ? rejection : 403
+    } catch {
+      return 503
+    }
   }
 
   override register(route: WebRegistration): () => void {

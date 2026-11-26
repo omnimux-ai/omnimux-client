@@ -174,4 +174,26 @@ describe('NextWebServer route.auth enforcement', () => {
     const authedWs = await requestUpgrade(server.port!, '/omnimux/ws', { Cookie: 'dsh=valid' })
     expect(authedWs).toMatch(/^HTTP\/1\.1 101 Switching Protocols/u)
   })
+
+  it('fails closed on unrecognized route.auth values and clamps invalid rejection codes', async () => {
+    const server = await startNextWebServer({
+      ordinaryBrowserEnabled: true,
+      requestRejection: () => 200 as never,
+    })
+    server.register({
+      kind: 'exact',
+      path: '/omnimux/typo-auth',
+      auth: 'require',
+      handler: (_req: unknown, res: { end: (body: string) => void }) => { res.end('should-not-run') },
+    } as unknown as WebRegistration)
+    server.register({
+      kind: 'exact',
+      path: '/omnimux/invalid-code',
+      auth: 'required',
+      handler: (_req, res) => { res.end('should-not-run') },
+    } as WebRegistration)
+
+    expect((await fetch(`http://127.0.0.1:${String(server.port)}/omnimux/typo-auth`)).status).toBe(403)
+    expect((await fetch(`http://127.0.0.1:${String(server.port)}/omnimux/invalid-code`)).status).toBe(403)
+  })
 })

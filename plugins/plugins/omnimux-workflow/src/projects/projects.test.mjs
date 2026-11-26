@@ -238,7 +238,7 @@ test('T2 routes：GET library + 无 cwd list/create + 跨源写拒绝', async ()
   };
   const harness = tmpDir('omnimux-route-');
   host.mountWorkflowHost(
-    { webServer },
+    { webServer, get: (name) => (name === 'connection' ? { requestRejection: () => undefined } : undefined) },
     {
       paths: { root: harness, workspacesDir: join(harness, 'w'), executionsDir: join(harness, 'e'), mediaDir: join(harness, 'm') },
       libraryRoot: join(videosRoot, 'OmniMux', 'Projects'),
