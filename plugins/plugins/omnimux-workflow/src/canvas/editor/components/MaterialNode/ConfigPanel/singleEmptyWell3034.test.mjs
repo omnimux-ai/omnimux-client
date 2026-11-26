@@ -143,9 +143,11 @@ test('new image: a bound prompt slot only renders the upstream text chip', () =>
     [inputEdge('e-text', 'text1')],
   );
   assert.equal(totalEmptyWells(html), 0);
-  assert.match(html, /data-testid="wf-prompt-references"[\s\S]*data-slot-edge="e-text" data-slot-state="ready"/);
-  assert.equal((html.match(/class="wf-prompt-reference nodrag"/g) ?? []).length, 1);
-  assert.doesNotMatch(html, /class="wf-effective-text wf-effective-text--slot"/);
+  assert.doesNotMatch(html, /data-testid="wf-prompt-references"/);
+  assert.match(html, /data-testid="wf-slot-wells"[\s\S]*data-slot="prompt" data-slot-role="prompt" data-slot-edge="e-text" data-slot-state="ready"/);
+  assert.match(html, /class="wf-slot-well__tile wf-slot-well__tile--text"[\s\S]*class="wf-slot-well__tile-name">正文<\/span>/);
+  assert.doesNotMatch(html, /class="wf-prompt-reference nodrag"/);
+  assert.doesNotMatch(html, /wf-effective-text--slot/);
   assert.match(html, /aria-disabled="false" class="wf-generate-btn__send"/);
 });
 

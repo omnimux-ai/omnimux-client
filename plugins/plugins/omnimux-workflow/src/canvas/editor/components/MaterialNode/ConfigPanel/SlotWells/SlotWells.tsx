@@ -19,10 +19,20 @@ import { ArrowLeftRight, FileJson, FileText, Image as ImageIcon, Loader2, Music,
 import type { MaterialType } from '../../../../../../shared/canvasTypes.ts';
 import { remainingSlotCapacity } from '../../../../../../shared/graph/feedSlot/autoFillSlots.ts';
 import type { SlotOccupant, SlotSpec } from '../../../../../../shared/graph/feedSlot/index.ts';
-import { isOrderedImageReferenceSlot, isVisualGeneration } from '../../../../../../shared/validation/compatKernel.ts';
+import { isOrderedImageReferenceSlot, isPromptInput, isVisualGeneration } from '../../../../../../shared/validation/compatKernel.ts';
 import { useT } from '../../../../../i18n';
 import type { UpstreamMediaItem } from '../../../../hooks/useUpstreamMedia.ts';
 import type { SlotPickRequest, SlotWellsProps } from './types.ts';
+
+const isPromptReferenceSlot = (spec: SlotSpec): boolean => isPromptInput(spec) || Boolean(spec.composition);
+
+const isTextLikeMaterial = (materialType: string): boolean => materialType === 'text' || materialType === 'table';
+
+function isNamedAssetTile(model: WellModel): boolean {
+  const { occupant, upstream } = model;
+  if (!occupant || !upstream || upstream.availability !== 'ready' || !upstream.hasMedia) return false;
+  return isTextLikeMaterial(upstream.materialType) || upstream.materialType === 'audio';
+}
 
 /** labelKey 未入典时回退到 slot 原名，绝不渲染裸 key。 */
 function useSlotLabel() {
@@ -88,13 +98,21 @@ function WellThumb({ model }: { model: WellModel }) {
       </span>
     );
   }
-  if (upstream.materialType === 'text') {
-    return <span className="wf-slot-well__text"><FileText size={16} aria-hidden="true" /><span>{upstream.textContent}</span></span>;
+  if (isTextLikeMaterial(upstream.materialType)) {
+    const displayName = upstream.label || upstream.nodeId;
+    return (
+      <span className="wf-slot-well__tile wf-slot-well__tile--text">
+        <FileText size={16} strokeWidth={1.85} aria-hidden="true" />
+        <span className="wf-slot-well__tile-name">{displayName}</span>
+      </span>
+    );
   }
   if (upstream.materialType === 'audio') {
+    const displayName = upstream.label || upstream.nodeId;
     return (
-      <span className="wf-slot-well__placeholder wf-slot-well__placeholder--audio">
-        <Music size={18} aria-hidden="true" />
+      <span className="wf-slot-well__tile wf-slot-well__tile--audio">
+        <Music size={16} strokeWidth={1.85} aria-hidden="true" />
+        <span className="wf-slot-well__tile-name">{displayName}</span>
       </span>
     );
   }
@@ -145,7 +163,7 @@ const SlotWells: React.FC<SlotWellsProps> = (props) => {
 
   const renderWell = (model: WellModel, index: number) => {
     const { spec, occupant } = model;
-    const promptReference = props.presentation === 'prompt';
+    const isPromptSlot = isPromptReferenceSlot(spec);
     const label = model.positionLabel ?? slotLabel(spec);
     const conflicted = occupant ? conflictedEdges.has(occupant.edgeId) : false;
     const className = [
@@ -180,7 +198,7 @@ const SlotWells: React.FC<SlotWellsProps> = (props) => {
     return (
       <div
         key={`${spec.slot}:${occupant?.edgeId ?? `empty-${index}`}`}
-        className={promptReference ? 'wf-prompt-reference nodrag' : className}
+        className={className}
         role="button"
         tabIndex={0}
         data-slot={spec.slot}
@@ -204,18 +222,17 @@ const SlotWells: React.FC<SlotWellsProps> = (props) => {
           }
         }}
       >
-        {promptReference ? <>
-          <FileText size={13} aria-hidden="true" />
-          <span>{model.upstream?.label ?? label}</span>
-        </> : <WellThumb model={model} />}
-        {model.positionLabel ? <span className="wf-slot-well__position">{model.positionLabel}</span> : null}
+        <WellThumb model={model} />
+        {model.positionLabel && !isNamedAssetTile(model)
+          ? <span className="wf-slot-well__position">{model.positionLabel}</span>
+          : null}
         {hover?.anchor.dataset.slot === spec.slot && hover.model.occupant?.edgeId === occupant?.edgeId && occupant ? (
           <SlotHoverPreview anchor={hover.anchor} upstream={model.upstream} state={model.state} reasonCode={model.reasonCode}
             onReturnFocus={returnPreviewFocus} onReplace={pickerEnabled ? () => onPickSlot({
               ...pickRequest(spec, hover.anchor), replaceEdgeId: occupant.edgeId, onReturnFocus: returnPreviewFocus,
             }) : undefined}
             onUseAsStart={model.onUseAsStart}
-            onClear={(model.positionLabel || promptReference) && !props.onSetUse ? () => onClearOccupant(spec.slot, occupant.edgeId) : undefined}
+            onClear={(model.positionLabel || isPromptSlot) && !props.onSetUse ? () => onClearOccupant(spec.slot, occupant.edgeId) : undefined}
             use={model.state === 'inactive' ? 'inactive' : 'active'} onSetUse={props.onSetUse ? use => props.onSetUse!(spec.slot, occupant.edgeId, use) : undefined} onClose={closeHover} />
         ) : null}
         {occupant && !props.records ? (
@@ -253,6 +270,12 @@ const SlotWells: React.FC<SlotWellsProps> = (props) => {
   const slotModels = slots.map(slot => ({ ...slot, remaining: remainingSlotCapacity(
     layout, slot.spec, slot.occupied, occupiedByType.get(slot.spec.type) ?? 0,
   ) }));
+  const mediaSlotModels = slotModels.filter(({ spec }) => !isPromptReferenceSlot(spec));
+  const promptWellModels = slotModels
+    .filter(({ spec }) => isPromptReferenceSlot(spec))
+    .flatMap(({ models }) => models);
+
+  if (mediaSlotModels.length === 0 && promptWellModels.length === 0) return null;
 
   const renderNamedSlot = ({ spec, models, occupied, remaining }: typeof slotModels[number]) => {
     const positionLabel = slotLabel(spec);
@@ -264,18 +287,8 @@ const SlotWells: React.FC<SlotWellsProps> = (props) => {
     ];
   };
 
-  if (props.presentation === 'prompt') {
-    const references = slotModels.flatMap(({ models }) => models.map(renderWell));
-    if (references.length === 0) return null;
-    return (
-      <div className="wf-config-panel__prompt-references" data-testid="wf-prompt-references">
-        {references}
-      </div>
-    );
-  }
-
-  const [firstSlot, lastSlot] = slotModels;
-  if (layout.preset === 'pair' && slotModels.length === 2 && firstSlot && lastSlot) {
+  const [firstSlot, lastSlot] = mediaSlotModels;
+  if (layout.preset === 'pair' && mediaSlotModels.length === 2 && firstSlot && lastSlot) {
     return (
       <div className="wf-slot-wells wf-slot-wells--pair" data-testid="wf-slot-wells" data-preset="pair">
         {renderNamedSlot(firstSlot)}
@@ -294,27 +307,29 @@ const SlotWells: React.FC<SlotWellsProps> = (props) => {
           <ArrowLeftRight size={14} aria-hidden="true" />
         </button>
         {renderNamedSlot(lastSlot)}
+        {promptWellModels.map(renderWell)}
       </div>
     );
   }
 
-  if (layout.preset === 'named' || layout.preset === 'pair') {
+  if ((layout.preset === 'named' || layout.preset === 'pair') && mediaSlotModels.length > 0) {
     return (
       <div className="wf-slot-wells wf-slot-wells--named" data-testid="wf-slot-wells" data-preset="named">
-        {slotModels.flatMap(renderNamedSlot)}
+        {mediaSlotModels.flatMap(renderNamedSlot)}
+        {promptWellModels.map(renderWell)}
       </div>
     );
   }
 
-  const references = slotModels.filter(({ spec }) => spec.role === 'reference' && spec.type !== 'text');
-  const named = slotModels.filter(slot => !references.includes(slot));
+  const references = mediaSlotModels.filter(({ spec }) => spec.role === 'reference' && spec.type !== 'text');
+  const named = mediaSlotModels.filter(slot => !references.includes(slot));
   const available = layout.addButton && pickerEnabled ? references.filter(({ remaining }) => remaining > 0) : [];
   const distinguishSlots = references.length > 1;
   const displayOrder = new Map(props.records?.map(({ slot, occupant }, index) => [slot.slot + ':' + occupant.edgeId, index]));
   const upstreamOrder = new Map(props.upstreams.map(({ edgeId }, index) => [edgeId, index]));
   const orderOf = ({ spec, occupant }: WellModel) => displayOrder.get(spec.slot + ':' + occupant?.edgeId)
     ?? occupant?.ordinal ?? upstreamOrder.get(occupant?.edgeId) ?? 0;
-  const referenceCards = references.flatMap(({ spec, models }) => {
+  const mediaReferenceCards = references.flatMap(({ spec, models }) => {
     if (!isOrderedImageReferenceSlot(spec)) return models;
     const first = models[0];
     return models.map((model, index) => ({
@@ -324,7 +339,9 @@ const SlotWells: React.FC<SlotWellsProps> = (props) => {
         ? () => props.onSwapOrderedSlot?.(spec.slot, first.occupant!.edgeId, model.occupant!.edgeId)
         : undefined,
     }));
-  }).sort((first, second) => orderOf(first) - orderOf(second));
+  });
+  const referenceCards = [...mediaReferenceCards, ...promptWellModels]
+    .sort((first, second) => orderOf(first) - orderOf(second));
   return (
     <div className="wf-slot-wells wf-slot-wells--strip" data-testid="wf-slot-wells" data-preset="strip">
       {referenceCards.map(renderWell)}

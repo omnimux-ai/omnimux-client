@@ -44,12 +44,13 @@ async function mountFixture(run, canvasBundle, themeCss) {
   ];
   const reference = (max, resolution, duration) => ({ id: 'video_multi_ref', modeKind: 'image_reference', executable: true, inputs: [prompt, media('reference_images', 'reference', max)], parameters: params(resolution, duration), output: { type: 'video' }, gateway_protocol: protocol });
   const frames = (resolution, duration) => ({ id: 'first_last_frame', modeKind: 'first_last_frame', executable: true, inputs: [prompt, media('first_frame', 'first_frame'), media('last_frame', 'last_frame')], parameters: params(resolution, duration), output: { type: 'video' }, gateway_protocol: protocol });
+  const textToVideo = (resolution, duration) => ({ id: 'text_to_video', modeKind: 'text_to_video', executable: true, inputs: [prompt], parameters: params(resolution, duration), output: { type: 'video' }, gateway_protocol: protocol });
 
-  const groups = { studio: [reference(6, '1080p', 10), frames('1080p', 10)], economy: [reference(2, '720p', 5), frames('720p', 5)], unavailable: [] };
+  const groups = { studio: [reference(6, '1080p', 10), frames('1080p', 10), textToVideo('1080p', 10)], economy: [reference(2, '720p', 5), frames('720p', 5), textToVideo('720p', 5)], unavailable: [] };
   const raw = { success: true, usable_group: { studio: '高价多图', economy: '低价少图', unavailable: '不可用组' }, group_ratio: { studio: 1, economy: 0.5, unavailable: 0.1 }, data: [{
     model_name: modelId, display_name: 'Synthetic Canvas Video', enable_groups: Object.keys(groups), model_price: 0.5, quota_type: 1,
     contract: { model_id: modelId, schemaVersion: '2.0', contractVersion: 'synthetic-1', execution_status: 'live', family: 'video', status: 'documented', gateway_protocol: protocol,
-      operation_ids: ['video_multi_ref', 'first_last_frame'], operations: groups.studio },
+      operation_ids: ['video_multi_ref', 'first_last_frame', 'text_to_video'], operations: groups.studio },
     effective_video: { version: edition, groups },
   }] };
   const { snapshot, issues } = normalizePricingPayload(raw, { generatedAt: new Date().toISOString() });
@@ -200,7 +201,9 @@ async function mountFixture(run, canvasBundle, themeCss) {
   } }));
   const mentionEdge = { id: 'script-edge', source: 'script', target: 'mention-target', sourceHandle: 'out', targetHandle: 'in', type: 'animated' };
   const mentionTarget = { ...target, id: 'mention-target', position: { x: 430, y: 128 }, data: {
-    ...target.data, label: '提示词验收目标', slotBindings: { prompt: [{ edgeId: mentionEdge.id, sourceNodeId: 'script', role: 'prompt', pinned: true, use: 'active' }] },
+    ...target.data, label: '提示词验收目标',
+    params: { ...target.data.params, operation: 'text_to_video' },
+    slotBindings: { prompt: [{ edgeId: mentionEdge.id, sourceNodeId: 'script', role: 'prompt', pinned: true, use: 'active' }] },
   } };
   await request(`/api/workspaces/${mentionWorkspaceId}`, 'PUT', { expectedVersion: 0,
     nodes: [...mentionTexts, mentionTarget, { ...refs[0], position: { x: 820, y: 270 } }], edges: [mentionEdge],
@@ -504,8 +507,8 @@ async function checkVideoModes(page, config, observations, assert) {
 async function checkPromptMentions(page, config, observations, assert) {
   const node = '.react-flow__node[data-id="mention-target"]';
   const editor = node + ' .wf-prompt-token-editor';
-  const row = node + ' [data-testid="wf-prompt-references"]';
-  const chip = row + ' [data-slot-edge]';
+  const row = node + ' [data-testid="wf-slot-wells"]';
+  const chip = row + ' [data-slot="prompt"][data-slot-edge]';
   const preview = '.wf-slot-hover-preview';
   const picker = '.wf-picker-modal';
   const main = '.wf-mention-popover:not(.wf-mention-submenu)';
@@ -559,6 +562,7 @@ async function checkPromptMentions(page, config, observations, assert) {
     await page.goto(url + `&theme=${theme}&platform=darwin`);
     await page.click('loc=css:' + node + ' .wf-node-header', { label: 'Open prompt target' });
     await page.waitForSelector('loc=css:' + chip);
+    assert.equal(await page.evaluate(selector => document.querySelectorAll(selector + ' [data-testid="wf-prompt-references"]').length, node), 0);
     assert.equal(await page.evaluate(selector => document.querySelector(selector).children.length, row), 1);
     await page.hover('loc=css:' + chip, { label: 'Preview upstream text' });
     await page.waitForSelector('loc=css:' + preview);
@@ -687,8 +691,14 @@ async function runBrowser(config) {
 async function loadVendoredTheme() {
   const pin = JSON.parse(await readFile(join(root, 'dsh-version.json'), 'utf8')).dsh;
   const archive = join(root, 'app', dirname(pin.runtimeSource), `deepseek-ai-dsh-client-ui-theme-${pin.runtimePackageVersion}.tgz`);
-  const bundle = execFileSync('tar', ['-xOzf', archive, 'package/lib/client.js'], { encoding: 'utf8', maxBuffer: 12 * 1024 * 1024 });
-  const css = bundle.match(/var design_platform_css_default\s*=\s*("(?:[^"\\]|\\.)*")/)?.[1];
+  let css = null;
+  try {
+    const direct = execFileSync('tar', ['-xOzf', archive, 'package/src/styles/design-platform.css'], { encoding: 'utf8', maxBuffer: 12 * 1024 * 1024 });
+    if (direct.includes('--dsw-')) css = JSON.stringify(direct);
+  } catch {
+    const bundle = execFileSync('tar', ['-xOzf', archive, 'package/lib/client.js'], { encoding: 'utf8', maxBuffer: 12 * 1024 * 1024 });
+    css = bundle.match(/var design_platform_css_default\s*=\s*("(?:[^"\\]|\\.)*")/)?.[1] ?? null;
+  }
   assert.ok(css, 'The pinned DSH theme archive must carry the browser design platform CSS');
   return JSON.parse(css);
 }

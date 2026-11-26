@@ -20,6 +20,8 @@ import {
   Minimize2,
   FileText,
   FileJson,
+  Image as ImageIcon,
+  Loader2,
   X,
   AlertTriangle,
   AudioLines,
@@ -209,7 +211,15 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
   }, []);
 
   const [textPreview, setTextPreview] = useState<{ anchor: HTMLElement; sourceId: string } | null>(null);
+  const suppressTextPreviewFocus = useRef<HTMLElement | null>(null);
   const closeTextPreview = useCallback(() => setTextPreview(null), []);
+  const returnTextPreviewFocus = useCallback((anchor: HTMLElement) => {
+    suppressTextPreviewFocus.current = anchor;
+    anchor.focus();
+    setTimeout(() => {
+      if (suppressTextPreviewFocus.current === anchor) suppressTextPreviewFocus.current = null;
+    }, 300);
+  }, []);
   const upstreams = useUpstreamMedia(nodeId);
   const upstreamSnapshots = useMemo(() => toUpstreamSnapshots(upstreams), [upstreams]);
   const activeCatalog = catalog ?? getCachedCatalog();
@@ -315,8 +325,10 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
   const textSources = useMemo(() => selectGenerationTextSources(assignment.assigned), [assignment]);
   const isPromptReferenceSlot = (spec: SlotSpec) => isPromptInput(spec) || Boolean(spec.composition);
   const promptSlots = displayedSlotLayout.slots.filter(isPromptReferenceSlot);
-  const promptRecords = assignment.records.filter(({ slot }) => promptSlots.some(spec => spec.slot === slot.slot));
-  const mediaLayout = { ...displayedSlotLayout, slots: displayedSlotLayout.slots.filter(spec => !isPromptReferenceSlot(spec)) };
+  const hideInactivePrompt = isVisualGeneration(displayedSlotLayout.outputType);
+  const promptRecords = assignment.records.filter(({ slot, state }) =>
+    promptSlots.some(spec => spec.slot === slot.slot) && (state !== 'inactive' || !hideInactivePrompt));
+  const mediaSlotCount = displayedSlotLayout.slots.length - promptSlots.length;
   const textSlotEdgeIds = useMemo(() => new Set(assignment.records
     .filter(record => record.slot.type === 'text').map(record => record.occupant.edgeId)), [assignment]);
   const textOnlySources = useMemo(() => textSources.filter(source => source.type !== 'document'
@@ -792,7 +804,7 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
     },
     [t],
   );
-  const hasSlots = mediaLayout.slots.length > 0;
+  const hasSlots = mediaSlotCount > 0 || promptRecords.length > 0;
 
   const placeholder = useMemo(() => {
     if (currentInputs) {
@@ -940,10 +952,11 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
       ) : null}
 
       {textPreview && <SlotHoverPreview anchor={textPreview.anchor}
-        upstream={upstreams.find((source) => source.nodeId === textPreview.sourceId)} onClose={closeTextPreview} />}
+        upstream={upstreams.find((source) => source.nodeId === textPreview.sourceId)}
+        onReturnFocus={returnTextPreviewFocus} onClose={closeTextPreview} />}
       {/* 2. Prompt 输入区容器 */}
       <div className="wf-config-panel__prompt-container">
-        <div className={`wf-config-panel__prompt-header${!hasSlots && !textSources.length ? ' wf-config-panel__prompt-header--empty-slots' : ''}`}>
+        <div className={`wf-config-panel__prompt-header${!hasSlots && !textOnlySources.length && !documentSources.length ? ' wf-config-panel__prompt-header--empty-slots' : ''}`}>
           {documentSources.length > 0 && (
             <div className="wf-slot-wells wf-slot-wells--strip" data-testid="wf-document-inputs">
               {documentSources.map(({ source, parsed }) => {
@@ -996,34 +1009,64 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
           )}
           {textOnlySources.length > 0 && (
             <div className="wf-slot-wells wf-slot-wells--strip" data-testid="wf-text-inputs">
-              {textOnlySources.map((source) => (
-                <div key={source.sourceNodeId} className="wf-effective-text wf-effective-text--slot" data-source-node-id={source.sourceNodeId}
-                  data-input-state={source.availability} title={source.sourceLabel} role="button" tabIndex={0}
-                  onClick={(event) => setTextPreview({ anchor: event.currentTarget, sourceId: source.sourceNodeId })}
-                  onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setTextPreview({ anchor: event.currentTarget, sourceId: source.sourceNodeId }); } }}>
-                  <FileText size={18} aria-hidden="true" />
-                  <span><strong>{source.sourceLabel || source.sourceNodeId}</strong>
-                    <span>{source.availability === 'ready' && source.textContent?.trim()
-                      ? source.textContent : t(source.availability === 'unavailable' ? 'mention.unavailable' : 'mention.waiting')}</span>
-                  </span>
-                  <button
-                    type="button"
-                    className="wf-effective-text__remove nodrag"
-                    title={t('mention.unbind')}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleClearTextSource(source.sourceNodeId);
+              {textOnlySources.map((source) => {
+                const displayName = source.sourceLabel || source.sourceNodeId;
+                return (
+                  <div
+                    key={source.sourceNodeId}
+                    className="wf-slot-well wf-slot-well--filled wf-effective-text wf-effective-text--slot nodrag"
+                    data-source-node-id={source.sourceNodeId}
+                    data-input-state={source.availability}
+                    aria-label={displayName}
+                    role="button"
+                    tabIndex={0}
+                    onMouseEnter={(event) => setTextPreview({ anchor: event.currentTarget, sourceId: source.sourceNodeId })}
+                    onFocus={(event) => {
+                      if (suppressTextPreviewFocus.current === event.currentTarget) return;
+                      if (event.target === event.currentTarget) setTextPreview({ anchor: event.currentTarget, sourceId: source.sourceNodeId });
+                    }}
+                    onClick={(event) => setTextPreview({ anchor: event.currentTarget, sourceId: source.sourceNodeId })}
+                    onKeyDown={(event) => {
+                      if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) {
+                        event.preventDefault();
+                        setTextPreview({ anchor: event.currentTarget, sourceId: source.sourceNodeId });
+                      }
                     }}
                   >
-                    <X size={12} aria-hidden="true" />
-                  </button>
-                </div>
-              ))}
+                    {source.availability === 'unavailable' ? (
+                      <span className="wf-slot-well__placeholder wf-slot-well__placeholder--broken">
+                        <ImageIcon size={18} aria-hidden="true" />
+                      </span>
+                    ) : source.availability === 'waiting' ? (
+                      <span className="wf-slot-well__placeholder wf-slot-well__placeholder--loading">
+                        <Loader2 size={18} className="wf-slot-well__spin" aria-hidden="true" />
+                      </span>
+                    ) : (
+                      <span className="wf-slot-well__tile wf-slot-well__tile--text">
+                        <FileText size={16} strokeWidth={1.85} aria-hidden="true" />
+                        <span className="wf-slot-well__tile-name">{displayName}</span>
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      className="wf-slot-well__clear nodrag"
+                      title={t('mention.unbind')}
+                      aria-label={t('mention.unbind')}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleClearTextSource(source.sourceNodeId);
+                      }}
+                    >
+                      <X size={10} aria-hidden="true" />
+                    </button>
+                  </div>
+                );
+              })}
             </div>
           )}
           {hasSlots && (
             <SlotWells
-              layout={mediaLayout}
+              layout={displayedSlotLayout}
               bindings={slotBindings}
               records={assignment.records}
               onSetUse={currentInputs ? handleSetUse : undefined}
@@ -1075,19 +1118,6 @@ const GenerationConfigPanel: React.FC<ConfigPanelProps> = ({
             aria-hidden="true"
           />
         </PromptTokenEditor>
-        {promptRecords.length > 0 && (
-          <SlotWells
-            presentation="prompt"
-            layout={{ ...displayedSlotLayout, slots: promptSlots }}
-            bindings={slotBindings}
-            records={promptRecords}
-            conflicts={slotConflicts}
-            upstreams={upstreams}
-            onPickSlot={handlePickSlot}
-            onSetUse={currentInputs ? handleSetUse : undefined}
-            onClearOccupant={handleClearOccupant}
-          />
-        )}
       </div>
 
       {/* 3. 底部参数与操作底栏 */}
