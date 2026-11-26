@@ -86,9 +86,11 @@ export function RecordDetail({ t, recordId, onBack, onChanged }) {
   if (!record) {
     return (
       <div>
-        <Button variant="ghost" size="sm" leadingIcon={<IconChevronLeftOutline14 size={14} />} onClick={onBack}>
-          {t('detail.back')}
-        </Button>
+        <div className="omnimux-publish-detail-head">
+          <Button variant="ghost" size="sm" leadingIcon={<IconChevronLeftOutline14 size={14} />} onClick={onBack}>
+            {t('detail.back')}
+          </Button>
+        </div>
         <div className="omnimux-publish-muted">{error || t('loading')}</div>
       </div>
     )

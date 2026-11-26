@@ -14,7 +14,7 @@ export function PublishOverlays({
 }) {
   if (view.name === 'composer') {
     return (
-      <div className="omnimux-publish-subscreen">
+      <div className="omnimux-publish-subscreen" data-window-drag-exclude>
         <Composer
           t={t}
           draftId={view.draftId}
@@ -28,7 +28,7 @@ export function PublishOverlays({
   }
   if (view.name === 'detail') {
     return (
-      <div className="omnimux-publish-subscreen">
+      <div className="omnimux-publish-subscreen" data-window-drag-exclude>
         <RecordDetail
           key={`${view.recordId}:${detailTick}`}
           t={t}
