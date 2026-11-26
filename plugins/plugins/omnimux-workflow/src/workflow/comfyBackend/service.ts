@@ -40,6 +40,7 @@ import { launchArgs, runPreflight } from './preflight.ts';
 import { checkDriver, type DriverProbe } from './driver.ts';
 import {
   EMPTY_SETTINGS,
+  isPathWithinDir,
   modelsConfigYaml,
   parseSettings,
   resolveInstallRoot,
@@ -195,14 +196,40 @@ export function createComfyBackendService(options: ComfyBackendServiceOptions): 
   const dataRootReal = tryRealpath(dataRoot) ?? dataRoot;
   const defaultRoot = join(dataRoot, 'comfyui-backend');
 
+  const tryStatIsDirectory = (targetPath: string): boolean => {
+    try {
+      return statSync(targetPath).isDirectory();
+    } catch {
+      return false;
+    }
+  };
+
+  /**
+   * Walk from `targetPath` up to `dataRoot` so nonexistent leaves under a symlinked
+   * ancestor (or broken symlinks / non-directory ancestors) cannot escape `dataRoot`.
+   */
+  const hasEscapingAncestorOrSelf = (targetPath: string): boolean => {
+    const resolvedTarget = resolve(targetPath);
+    if (!isPathWithinDir(dataRoot, resolvedTarget)) return true;
+    let cursor = resolvedTarget;
+    while (true) {
+      const info = tryLstat(cursor);
+      if (info) {
+        if (info.isSymbolicLink() || !info.isDirectory()) return true;
+        const real = tryRealpath(cursor);
+        if (!real || !isContainedRealPath(dataRootReal, real)) return true;
+      }
+      if (cursor === dataRoot) break;
+      const parent = dirname(cursor);
+      if (parent === cursor) return true;
+      cursor = parent;
+    }
+    return false;
+  };
+
   const resolveManagedInstallRoot = (current: ComfyBackendSettings): string => {
     const candidate = resolveInstallRoot(dataRoot, current);
-    const stat = tryLstat(candidate);
-    if (stat) {
-      if (stat.isSymbolicLink() || !stat.isDirectory()) return defaultRoot;
-      const candidateReal = tryRealpath(candidate);
-      if (!candidateReal || !isContainedRealPath(dataRootReal, candidateReal)) return defaultRoot;
-    }
+    if (hasEscapingAncestorOrSelf(candidate)) return defaultRoot;
     return candidate;
   };
 
@@ -603,6 +630,9 @@ export function createComfyBackendService(options: ComfyBackendServiceOptions): 
       return;
     }
     try {
+      if (hasEscapingAncestorOrSelf(paths.root)) {
+        throw new Error('安装目录越过托管根目录或包含符号链接');
+      }
       assertValidSha256(target.python.sha256, target.python.asset);
       assertHttpsDownloadUrl(target.python.url);
       assertValidSha256(target.comfyui.sha256, `comfyui-${target.comfyui.commit}.tar.gz`);
@@ -733,6 +763,17 @@ export function createComfyBackendService(options: ComfyBackendServiceOptions): 
 
   const install = async (): Promise<ComfyBackendStatus> => {
     if (installing) return readState();
+    if (hasEscapingAncestorOrSelf(paths.root)) {
+      log(`安装前边界校验失败：安装目录越过托管根目录或包含符号链接 (${paths.root})`);
+      return writeState({
+        state: 'failed',
+        failure: 'install-failed',
+        error: 'install-failed',
+        message: '安装目录越过托管根目录或包含符号链接',
+        stage: null,
+        percent: 0,
+      });
+    }
     if (!target && targetProblem) {
       const mapped = targetFailure(targetProblem);
       return writeState({
@@ -896,17 +937,11 @@ export function createComfyBackendService(options: ComfyBackendServiceOptions): 
       const lstatInfo = tryLstat(trimmedPath);
       const exists = lstatInfo !== null;
       const isSymlink = lstatInfo ? lstatInfo.isSymbolicLink() : false;
-      let escapesManagedRoot = false;
-      if (check.field === 'installRoot' && exists) {
-        const realCandidate = tryRealpath(trimmedPath);
-        if (!realCandidate || !isContainedRealPath(dataRootReal, realCandidate)) {
-          escapesManagedRoot = true;
-        }
-      }
+      const escapesManagedRoot = check.field === 'installRoot' ? hasEscapingAncestorOrSelf(trimmedPath) : false;
       const verdict = validateDirectory({
         path: check.path,
         exists,
-        isDirectory: exists && !isSymlink ? lstatInfo.isDirectory() : exists ? statSync(trimmedPath).isDirectory() : false,
+        isDirectory: exists && !isSymlink ? lstatInfo.isDirectory() : exists ? tryStatIsDirectory(trimmedPath) : false,
         writable: isWritableDir(trimmedPath),
         installRoot: check.field === 'modelsPath' ? paths.root : undefined,
         managedRoot: check.field === 'installRoot' ? dataRoot : undefined,

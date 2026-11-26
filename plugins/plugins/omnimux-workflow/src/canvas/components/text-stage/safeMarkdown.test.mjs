@@ -43,6 +43,27 @@ test('MarkdownPreview security: sanitizeMarkdownHtml removes disallowed tags and
   assert.ok(clean.includes('rel="noopener noreferrer"'), clean);
 });
 
+test('MarkdownPreview security: blocks nested/split tag reconstruction and preserves multi-param URLs', () => {
+  for (const smuggled of [
+    '<<x>script>xss(1)<</x>/script>',
+    '<<x>img src=x onerror=xss(1)>',
+    '<<img>img src=x onerror=xss(1)>',
+    '<<<x>x>script>xss(1)<<</x>/x>/script>',
+    '<script>unclosed()',
+  ]) {
+    const out = sanitizeMarkdownHtml(smuggled);
+    assert.equal(/<script\b/i.test(out), false, out);
+    assert.equal(/<img\b/i.test(out), false, out);
+    assert.equal(/\bonerror\s*=/i.test(out), false, out);
+  }
+
+  const md = '[click](https://example.com/a?x=1&y=2 "a & b") and ![alt & "q"](https://example.com/i.png?w=100&h=200 "t & \'s\'")';
+  const html = renderSafeMarkdownHtml(md);
+  assert.ok(html.includes('href="https://example.com/a?x=1&amp;y=2"'), html);
+  assert.ok(html.includes('src="https://example.com/i.png?w=100&amp;h=200"'), html);
+  assert.equal(html.includes('&amp;amp;'), false, html);
+});
+
 test('MarkdownPreview security: preserves safe Markdown formatting, links, images, and fenced code', () => {
   const md = [
     '## Summary',

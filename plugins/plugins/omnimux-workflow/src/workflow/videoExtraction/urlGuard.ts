@@ -135,8 +135,13 @@ function isBlockedIpv6(ip: string): boolean {
     const embedded = `${(w6 >> 8) & 0xff}.${w6 & 0xff}.${(w7 >> 8) & 0xff}.${w7 & 0xff}`;
     return isBlockedIpv4(embedded);
   }
-  // 64:ff9b::/96 (NAT64 well-known prefix)
-  if (w0 === 0x0064 && w1 === 0xff9b && w2 === 0 && w3 === 0 && w4 === 0 && w5 === 0) return true;
+  // ::ffff:0:0:0/96 (RFC 2765 IPv4-translated)
+  if (w0 === 0 && w1 === 0 && w2 === 0 && w3 === 0 && w4 === 0xffff && w5 === 0) {
+    const embedded = `${(w6 >> 8) & 0xff}.${w6 & 0xff}.${(w7 >> 8) & 0xff}.${w7 & 0xff}`;
+    return isBlockedIpv4(embedded);
+  }
+  // 64:ff9b::/96 (NAT64 well-known prefix) and 64:ff9b:1::/48 (RFC 8215 local-use NAT64)
+  if (w0 === 0x0064 && w1 === 0xff9b && ((w2 === 0 && w3 === 0 && w4 === 0 && w5 === 0) || w2 === 0x0001)) return true;
   // 100::/64 (discard-only)
   if (w0 === 0x0100 && w1 === 0 && w2 === 0 && w3 === 0) return true;
   // 2001:db8::/32 (documentation)

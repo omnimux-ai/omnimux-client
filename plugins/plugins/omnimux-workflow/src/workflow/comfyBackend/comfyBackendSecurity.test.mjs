@@ -150,6 +150,49 @@ test('comfyBackend security: tampered settings.json installRoot outside dataRoot
   }
 });
 
+test('comfyBackend security: nonexistent child under symlink ancestor and broken symlink are rejected', async () => {
+  const dataRoot = mkdtempSync(join(tmpdir(), 'comfy-sec-anc-'));
+  const outsideDir = mkdtempSync(join(tmpdir(), 'comfy-sec-anc-out-'));
+  try {
+    const defaultRoot = join(dataRoot, 'comfyui-backend');
+    mkdirSync(defaultRoot, { recursive: true });
+    const escapeLink = join(dataRoot, 'escape-link');
+    symlinkSync(outsideDir, escapeLink);
+    const escapedChild = join(escapeLink, 'new-subdir');
+    writeFileSync(join(defaultRoot, 'settings.json'), JSON.stringify({ installRoot: escapedChild, modelsPath: '', variant: '' }));
+
+    const service = createComfyBackendService({ dataRoot, target: DARWIN });
+    assert.equal(service.paths.root, defaultRoot);
+    assert.equal(existsSync(join(outsideDir, 'new-subdir')), false);
+
+    // Broken/dangling symlink must return outside-managed-root without throwing ENOENT.
+    const danglingLink = join(dataRoot, 'dangling-link');
+    symlinkSync(join(outsideDir, 'does-not-exist'), danglingLink);
+    const danglingResult = service.updateSettings({ installRoot: danglingLink });
+    assert.equal(danglingResult.ok, false);
+    assert.equal(danglingResult.code, 'outside-managed-root');
+
+    // Nonexistent child under symlink ancestor via updateSettings must also be rejected.
+    const nestedEscapeResult = service.updateSettings({ installRoot: escapedChild });
+    assert.equal(nestedEscapeResult.ok, false);
+    assert.equal(nestedEscapeResult.code, 'outside-managed-root');
+
+    // Swapping an accepted installRoot with a symlink before install() must fail closed.
+    const subDir = join(dataRoot, 'swappable');
+    mkdirSync(subDir, { recursive: true });
+    assert.equal(service.updateSettings({ installRoot: subDir }).ok, true);
+    rmSync(subDir, { recursive: true, force: true });
+    symlinkSync(outsideDir, subDir);
+    const installResult = await service.install();
+    assert.equal(installResult.state, 'failed');
+    assert.equal(installResult.failure, 'install-failed');
+    service.dispose();
+  } finally {
+    rmSync(dataRoot, { recursive: true, force: true });
+    rmSync(outsideDir, { recursive: true, force: true });
+  }
+});
+
 test('comfyBackend security: start refuses symlinked main.py or venv python escaping installRoot', async () => {
   const dataRoot = mkdtempSync(join(tmpdir(), 'comfy-sec-boundary-'));
   const outsideDir = mkdtempSync(join(tmpdir(), 'comfy-sec-evil-'));

@@ -36,9 +36,11 @@ const SAFE_TAG_SET = new Set([
   'div',
 ]);
 
-const STRIP_CONTENT_TAGS_RE = /<\s*(script|style|iframe|object|embed|svg|math|form|template|noscript)\b[^>]*>[\s\S]*?<\s*\/\s*\1\s*>/gi;
-const STRIP_SELF_CLOSING_DANGEROUS_RE = /<\s*(script|style|iframe|object|embed|svg|math|form|meta|link|base|template|noscript)\b[^>]*\/?>/gi;
+const STRIP_CONTENT_TAGS_RE = /<\s*(script|style|iframe|object|embed|svg|math|form|template|noscript)\b[^<>]*>[\s\S]*?<\s*\/\s*\1\s*>/gi;
+const STRIP_UNCLOSED_CONTENT_TAGS_RE = /<\s*(script|style|iframe|object|embed|svg|math|form|template|noscript)\b[^<>]*>[\s\S]*$/gi;
+const STRIP_SELF_CLOSING_DANGEROUS_RE = /<\s*\/?\s*(script|style|iframe|object|embed|svg|math|form|meta|link|base|template|noscript)\b[^<>]*\/?>/gi;
 const HTML_COMMENT_RE = /<!--[\s\S]*?-->/g;
+const MAX_SANITIZE_PASSES = 16;
 
 export function escapeHtml(raw: string): string {
   return String(raw)
@@ -47,6 +49,15 @@ export function escapeHtml(raw: string): string {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
+}
+
+function decodeStandardHtmlEntities(raw: string): string {
+  return raw
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;|&#x27;|&apos;/gi, "'")
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&amp;/gi, '&');
 }
 
 function decodeHtmlEntities(raw: string): string {
@@ -59,10 +70,14 @@ function decodeHtmlEntities(raw: string): string {
       const code = parseInt(dec, 10);
       return Number.isFinite(code) && code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : '';
     })
-    .replace(/&amp;/gi, '&')
     .replace(/&colon;/gi, ':')
     .replace(/&tab;/gi, '\t')
-    .replace(/&newline;/gi, '\n');
+    .replace(/&newline;/gi, '\n')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'")
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&amp;/gi, '&');
 }
 
 export function sanitizeLinkHref(rawHref: string | null | undefined): string | null {
@@ -108,7 +123,8 @@ function parseAttributes(rawAttrs: string): Array<{ name: string; value: string 
   let match: RegExpExecArray | null;
   while ((match = attrRe.exec(rawAttrs)) !== null) {
     const name = match[1]?.toLowerCase() ?? '';
-    const value = match[2] ?? match[3] ?? match[4] ?? '';
+    const rawValue = match[2] ?? match[3] ?? match[4] ?? '';
+    const value = decodeStandardHtmlEntities(rawValue);
     if (name) attrs.push({ name, value });
   }
   return attrs;
@@ -164,17 +180,21 @@ function sanitizeSafeTagAttributes(tag: string, rawAttrs: string): string {
   return kept.length > 0 ? ` ${kept.join(' ')}` : '';
 }
 
-/**
- * Defense-in-depth allowlist HTML sanitizer for Markdown preview output.
- */
-export function sanitizeMarkdownHtml(html: string): string {
-  const stripped = html
+function sanitizeTagPass(input: string): string {
+  const stripped = input
     .replace(HTML_COMMENT_RE, '')
     .replace(STRIP_CONTENT_TAGS_RE, '')
+    .replace(STRIP_UNCLOSED_CONTENT_TAGS_RE, '')
     .replace(STRIP_SELF_CLOSING_DANGEROUS_RE, '');
 
-  return stripped.replace(/<\s*(\/?)\s*([a-zA-Z0-9-]+)([^>]*)>/g, (_full, closingSlash: string, rawTag: string, rawAttrs: string) => {
-    const tag = rawTag.toLowerCase();
+  return stripped.replace(/<([^<>]*)>/g, (_full, inner: string) => {
+    const parsed = /^\s*(\/?)\s*([a-zA-Z0-9-]+)([\s\S]*)$/.exec(inner);
+    if (!parsed) {
+      return '';
+    }
+    const closingSlash = parsed[1] ?? '';
+    const tag = (parsed[2] ?? '').toLowerCase();
+    const rawAttrs = parsed[3] ?? '';
     if (!SAFE_TAG_SET.has(tag)) {
       return '';
     }
@@ -194,6 +214,46 @@ export function sanitizeMarkdownHtml(html: string): string {
     }
     return `<${tag}${cleanAttrs}>`;
   });
+}
+
+function escapeStrayAngleBrackets(html: string): string {
+  const canonicalTagRe = /<(\/?)([a-z0-9-]+)([^<>]*)>/g;
+  let result = '';
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = canonicalTagRe.exec(html)) !== null) {
+    const textChunk = html.slice(lastIndex, match.index);
+    result += textChunk.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const tag = (match[2] ?? '').toLowerCase();
+    if (SAFE_TAG_SET.has(tag)) {
+      result += match[0];
+    }
+    lastIndex = match.index + match[0].length;
+  }
+  const tail = html.slice(lastIndex);
+  result += tail.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return result;
+}
+
+/**
+ * Defense-in-depth allowlist HTML sanitizer for Markdown preview output.
+ * Runs to a fixed point so stripped tags can never stitch adjacent characters into active tags.
+ */
+export function sanitizeMarkdownHtml(html: string): string {
+  let current = String(html);
+  let converged = false;
+  for (let i = 0; i < MAX_SANITIZE_PASSES; i += 1) {
+    const next = sanitizeTagPass(current);
+    if (next === current) {
+      converged = true;
+      break;
+    }
+    current = next;
+  }
+  if (!converged) {
+    return escapeHtml(current);
+  }
+  return escapeStrayAngleBrackets(current);
 }
 
 function createSafeMarkedInstance(): Marked {
