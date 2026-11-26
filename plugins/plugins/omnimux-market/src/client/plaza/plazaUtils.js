@@ -332,11 +332,15 @@ export const DEFAULT_MARKET_EXPERTS = [
 
 export function buildExpertStartersLookup(items = DEFAULT_MARKET_EXPERTS) {
   const map = new Map();
-  for (const item of Array.isArray(items) ? items : []) {
-    if (item && typeof item.id === 'string' && Array.isArray(item.starters) && item.starters.length > 0) {
-      map.set(item.id, item.starters);
+  const applyItems = (list) => {
+    map.clear();
+    for (const item of Array.isArray(list) ? list : []) {
+      if (item && typeof item.id === 'string' && Array.isArray(item.starters) && item.starters.length > 0) {
+        map.set(item.id, item.starters);
+      }
     }
-  }
+  };
+  applyItems(items);
   return {
     resolveStarters(presetId) {
       const key = typeof presetId === 'string' ? presetId.trim() : '';
@@ -346,6 +350,9 @@ export function buildExpertStartersLookup(items = DEFAULT_MARKET_EXPERTS) {
     },
     listExpertIds() {
       return [...map.keys()];
+    },
+    update(nextItems) {
+      applyItems(nextItems);
     },
   };
 }

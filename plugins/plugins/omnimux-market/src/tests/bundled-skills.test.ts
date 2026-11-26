@@ -16,7 +16,7 @@ import { DEFAULT_MARKET_EXPERTS } from '../expert-market.js'
 import { buildMarketExpertPresetDefinition } from '../expert-runtime.js'
 import { packageRoot } from '../expert/paths.js'
 
-test('loadBundledMarketSkills loads all 19 manifest-declared skills with layered invocation policy', () => {
+test('loadBundledMarketSkills loads all 20 manifest-declared skills with layered invocation policy', () => {
   const pkgRoot = packageRoot()
   const manifest = JSON.parse(readFileSync(join(pkgRoot, 'dsh.manifest.json'), 'utf8'))
   const expectedSlugs = manifest.skills

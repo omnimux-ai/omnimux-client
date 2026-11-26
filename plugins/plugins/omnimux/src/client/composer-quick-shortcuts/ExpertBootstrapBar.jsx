@@ -11,9 +11,12 @@ import { isTikTokAgentPreset, subscribeActivePreset } from './isTikTokAgentPrese
 import { resolveActivePresetId, resolveExpertBootstrapStarters } from './expertBootstrapCatalog.js'
 
 function detectLang(props) {
+  const loc = typeof window !== 'undefined' ? window.__omnimuxLocale : null
   const candidates = [
     props?.locale,
-    typeof window !== 'undefined' ? window.__omnimuxLocale?.snapshot?.active : null,
+    loc?.active,
+    typeof loc?.getLocale === 'function' ? loc.getLocale()?.active : null,
+    loc?.snapshot?.active,
     typeof document !== 'undefined' ? document.documentElement?.lang : null,
   ]
   for (const cand of candidates) {
@@ -23,14 +26,41 @@ function detectLang(props) {
   }
   if (typeof props?.t === 'function') {
     const sample = props.t('quickShortcuts.group')
-    if (typeof sample === 'string' && sample.toLowerCase() === 'shortcuts') return 'en'
+    if (typeof sample === 'string' && sample.trim()) {
+      const normalized = sample.trim().toLowerCase()
+      if (normalized === 'quick start' || normalized === 'shortcuts') return 'en'
+      if (normalized !== 'quickshortcuts.group' && !/[\u4e00-\u9fff]/.test(sample) && /[a-z]/i.test(sample)) {
+        return 'en'
+      }
+    }
   }
   return 'zh'
+}
+
+function subscribeLocaleChange(callback) {
+  if (typeof window === 'undefined') return () => {}
+  const loc = window.__omnimuxLocale
+  if (loc && typeof loc.subscribe === 'function') {
+    try {
+      const unsub = loc.subscribe(callback)
+      return typeof unsub === 'function' ? unsub : () => {}
+    } catch {
+      return () => {}
+    }
+  }
+  return () => {}
 }
 
 export function useActivePresetId(session, props) {
   const subscribe = useCallback((onStoreChange) => subscribeActivePreset(onStoreChange), [])
   const getSnapshot = useCallback(() => resolveActivePresetId(session, props), [session, props])
+  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
+}
+
+function useBootstrapLang(props) {
+  const localeObj = typeof window !== 'undefined' ? window.__omnimuxLocale : null
+  const subscribe = useCallback((onStoreChange) => subscribeLocaleChange(onStoreChange), [localeObj])
+  const getSnapshot = useCallback(() => detectLang(props), [props?.locale, props?.t, localeObj])
   return useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
 }
 
@@ -69,7 +99,7 @@ export function ExpertBootstrapBar(props) {
 
   const presetId = useActivePresetId(currentSession, props)
   const isTikTok = isTikTokAgentPreset(currentSession, props)
-  const lang = detectLang(props)
+  const lang = useBootstrapLang(props)
 
   const [activeId, setActiveId] = useState(null)
   useEffect(() => {

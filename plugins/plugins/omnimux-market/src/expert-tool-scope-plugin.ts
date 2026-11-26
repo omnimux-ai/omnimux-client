@@ -73,7 +73,6 @@ export function apply(ctx: unknown, config: ExpertToolScopePluginConfig = {}): (
 
   let disposed = false
   let reconciling = false
-  let pendingReconcile = false
   let appliedKey = ''
   let releaseRestriction: (() => void) | null = null
 
@@ -91,42 +90,33 @@ export function apply(ctx: unknown, config: ExpertToolScopePluginConfig = {}): (
   }
 
   const reconcile = () => {
-    if (disposed) return
-    if (reconciling) {
-      pendingReconcile = true
-      return
-    }
+    if (disposed || reconciling) return
     reconciling = true
     try {
-      let iterations = 0
-      do {
-        pendingReconcile = false
-        iterations += 1
-        // Calling definitions() with no scope returns the global (Host-plane)
-        // tool definitions only, matching `restrictableNames` for this preset scope.
-        const globalDefs = tools!.definitions!()
-        const globalNames = Array.isArray(globalDefs)
-          ? globalDefs.map((def) => (def && typeof def.name === 'string' ? def.name : '')).filter(Boolean)
-          : []
-        const deny = computeDeniedTools(globalNames, allowedDomains)
-        const nextKey = deny.join('\0')
-        if (nextKey === appliedKey) continue
+      // Calling definitions() with no scope returns the global (Host-plane)
+      // tool definitions only, matching `restrictableNames` for this preset scope.
+      const globalDefs = tools!.definitions!()
+      const globalNames = Array.isArray(globalDefs)
+        ? globalDefs.map((def) => (def && typeof def.name === 'string' ? def.name : '')).filter(Boolean)
+        : []
+      const deny = computeDeniedTools(globalNames, allowedDomains)
+      const nextKey = deny.join('\0')
+      if (nextKey === appliedKey) return
 
-        clearRestriction()
-        if (deny.length === 0) continue
+      clearRestriction()
+      if (deny.length === 0) return
 
-        try {
-          releaseRestriction = tools!.restrict!({ deny })
-          appliedKey = nextKey
-        } catch (err) {
-          console.warn(
-            `[omnimux-market] expert-tool-scope(${config.presetId || 'preset'}) restrict failed:`,
-            err instanceof Error ? err.message : String(err),
-          )
-          releaseRestriction = null
-          appliedKey = ''
-        }
-      } while (pendingReconcile && !disposed && iterations < 4)
+      try {
+        releaseRestriction = tools!.restrict!({ deny })
+        appliedKey = nextKey
+      } catch (err) {
+        console.warn(
+          `[omnimux-market] expert-tool-scope(${config.presetId || 'preset'}) restrict failed:`,
+          err instanceof Error ? err.message : String(err),
+        )
+        releaseRestriction = null
+        appliedKey = ''
+      }
     } finally {
       reconciling = false
     }

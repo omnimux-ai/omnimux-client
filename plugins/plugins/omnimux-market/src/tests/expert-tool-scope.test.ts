@@ -55,18 +55,47 @@ async function createRealToolsHarness() {
   }
 }
 
-test('resolveManagedToolDomain and computeDeniedTools classify managed OmniMux tools and pass through third-party MCP tools', () => {
+test('resolveManagedToolDomain and computeDeniedTools classify all managed OmniMux domains, keep Hub core utilities unmanaged, and pass through third-party plugins & MCP tools', () => {
   assert.equal(resolveManagedToolDomain('tiktok_selection_create_task'), 'tiktok_selection')
   assert.equal(resolveManagedToolDomain('products_list'), 'products')
   assert.equal(resolveManagedToolDomain('clip_export'), 'clip')
   assert.equal(resolveManagedToolDomain('workflow_run'), 'workflow')
-  assert.equal(resolveManagedToolDomain('publish_create_task'), 'publish_accounts')
+  assert.equal(resolveManagedToolDomain('publish_submit'), 'publish_accounts')
+  assert.equal(resolveManagedToolDomain('omnimux_accounts_list'), 'publish_accounts')
+  assert.equal(resolveManagedToolDomain('analytics_query_metrics'), 'analytics')
+  assert.equal(resolveManagedToolDomain('browser_open_tab'), 'browser')
   assert.equal(resolveManagedToolDomain('mcp__pibrowse__navigate'), 'pibrowse')
   assert.equal(resolveManagedToolDomain('display_file'), 'viewer')
   assert.equal(resolveManagedToolDomain('skillhub_search'), 'market')
-  assert.equal(resolveManagedToolDomain('omnimux_social_data'), 'social_data')
-  assert.equal(resolveManagedToolDomain('mcp__user_erp__query_inventory'), null)
-  assert.equal(resolveManagedToolDomain('custom_third_party_tool'), null)
+  assert.equal(resolveManagedToolDomain('omnimux_creative_templates_search'), 'inspiration')
+
+  // All 16 direct social-data tools + omnimux_social_data belong to social_data
+  for (const socialTool of [
+    'omnimux_social_data',
+    'omnimux_tiktok_video',
+    'omnimux_tiktok_shop_search',
+    'omnimux_instagram_post',
+    'omnimux_x_tweet',
+    'omnimux_youtube_video',
+  ]) {
+    assert.equal(resolveManagedToolDomain(socialTool), 'social_data', `${socialTool} must map to social_data`)
+  }
+
+  // Hub shared core utilities stay unmanaged (never denied even when social_data is excluded)
+  for (const coreTool of ['omnimux_text_complete', 'omnimux_page_fetch', 'omnimux_jev_decision', 'omnimux_speech_to_text']) {
+    assert.equal(resolveManagedToolDomain(coreTool), null, `${coreTool} must remain unmanaged shared core`)
+  }
+
+  // Third-party MCP tools and third-party non-MCP Cordis tools with generic prefixes stay unmanaged
+  for (const externalTool of [
+    'mcp__user_erp__query_inventory',
+    'custom_third_party_tool',
+    'browser_playwright_eval',
+    'video_ffmpeg_trim',
+    'analytics_ga4_report',
+  ]) {
+    assert.equal(resolveManagedToolDomain(externalTool), null, `${externalTool} must not hit false-positive managed domain`)
+  }
 
   const denied = computeDeniedTools(
     [
@@ -74,33 +103,39 @@ test('resolveManagedToolDomain and computeDeniedTools classify managed OmniMux t
       'tiktok_selection_create_task',
       'clip_export',
       'workflow_run',
-      'publish_create_task',
+      'publish_submit',
+      'omnimux_tiktok_video',
+      'omnimux_text_complete',
+      'browser_playwright_eval',
       'mcp__user_erp__query_inventory',
-      'custom_third_party_tool',
     ],
     ['products', 'tiktok_selection'],
   )
-  assert.deepEqual(denied, ['clip_export', 'publish_create_task', 'workflow_run'])
+  assert.deepEqual(denied, ['clip_export', 'omnimux_tiktok_video', 'publish_submit', 'workflow_run'])
   assert.ok(ALL_EXPERT_TOOL_DOMAINS.includes('tiktok_selection'))
 })
 
-test('real Cordis + dsh-tools: expert-tool-scope hides out-of-domain Host tools while keeping allowed domains, Agent own-scope tools, and external MCP tools', async (t) => {
+test('real Cordis + dsh-tools: expert-tool-scope hides out-of-domain Host tools while keeping allowed domains, Hub core utilities, Agent own-scope tools, and external plugins/MCP tools', async (t) => {
   const harness = await createRealToolsHarness()
   const { root } = harness
   t.after(async () => { await harness.dispose() })
 
   const hostTools = [
     'products_list',
-    'tiktok_selection_list_tasks',
-    'tiktok_selection_create_task',
-    'clip_export',
-    'workflow_canvas_run',
     'assets_list',
+    'workflow_run',
+    'omnimux_image_submit',
+    'omnimux_text_complete',
+    'tiktok_selection_list_tasks',
+    'omnimux_tiktok_video',
+    'omnimux_instagram_post',
+    'clip_export',
     'publish_submit',
-    'analytics_query',
-    'browser_open',
+    'analytics_query_metrics',
+    'browser_open_tab',
     'mcp__pibrowse__click',
     'display_file',
+    'browser_playwright_eval',
     'mcp__user_erp__query_inventory',
     'custom_notion_search',
   ]
@@ -108,12 +143,12 @@ test('real Cordis + dsh-tools: expert-tool-scope hides out-of-domain Host tools 
     root.tools.register(makeTool(name))
   }
 
-  // Preset scope mirrors `agentPresets.register()`: scoped child context where preset plugins mount
-  const presetKey = { scope: 'preset:ecom-market-research' }
+  // Visual Designer excludes social_data, tiktok_selection, clip, publish_accounts, analytics, browser, pibrowse
+  const presetKey = { scope: 'preset:ecom-visual-studio' }
   const presetScope = createScope(root, presetKey)
   const fiber = presetScope.ctx.plugin(expertToolScopePlugin, {
-    presetId: 'ecom-market-research',
-    allowedDomains: ['products', 'tiktok_selection', 'viewer'],
+    presetId: 'ecom-visual-studio',
+    allowedDomains: ['products', 'assets', 'inspiration', 'workflow', 'media_gen', 'viewer', 'market', 'workbench'],
   })
   await fiber
 
@@ -134,28 +169,42 @@ test('real Cordis + dsh-tools: expert-tool-scope hides out-of-domain Host tools 
 
   // Allowed OmniMux domains remain visible
   assert.equal(visibleNames.has('products_list'), true)
-  assert.equal(visibleNames.has('tiktok_selection_list_tasks'), true)
-  assert.equal(visibleNames.has('tiktok_selection_create_task'), true)
+  assert.equal(visibleNames.has('assets_list'), true)
+  assert.equal(visibleNames.has('workflow_run'), true)
+  assert.equal(visibleNames.has('omnimux_image_submit'), true)
   assert.equal(visibleNames.has('display_file'), true)
+
+  // Shared Hub core multimodal fallback stays visible even without social_data
+  assert.equal(visibleNames.has('omnimux_text_complete'), true)
 
   // Own-scope Agent core tools are untouched
   assert.equal(visibleNames.has('read'), true)
   assert.equal(visibleNames.has('bash'), true)
   assert.equal(visibleNames.has('skill'), true)
 
-  // External / user-installed third-party MCP tools are untouched
+  // External MCP tools and third-party non-MCP plugins are untouched
   assert.equal(visibleNames.has('mcp__user_erp__query_inventory'), true)
   assert.equal(visibleNames.has('custom_notion_search'), true)
+  assert.equal(visibleNames.has('browser_playwright_eval'), true)
 
-  // Out-of-domain OmniMux managed tools are hidden from schemas() and get()
-  for (const hidden of ['clip_export', 'workflow_canvas_run', 'assets_list', 'publish_submit', 'analytics_query', 'browser_open', 'mcp__pibrowse__click']) {
-    assert.equal(visibleNames.has(hidden), false, `${hidden} must be hidden for ecom-market-research`)
+  // Out-of-domain OmniMux managed tools (including direct social tools) are hidden
+  for (const hidden of [
+    'tiktok_selection_list_tasks',
+    'omnimux_tiktok_video',
+    'omnimux_instagram_post',
+    'clip_export',
+    'publish_submit',
+    'analytics_query_metrics',
+    'browser_open_tab',
+    'mcp__pibrowse__click',
+  ]) {
+    assert.equal(visibleNames.has(hidden), false, `${hidden} must be hidden for ecom-visual-studio`)
     assert.equal(root.tools.get(hidden, agentKey), undefined, `${hidden} get() must return undefined`)
   }
 
   // Global (unscoped) Host view remains completely unaffected (e.g. for omni-agent)
   assert.ok(root.tools.get('clip_export'), 'global clip_export stays visible outside scoped expert')
-  assert.ok(root.tools.get('publish_submit'), 'global publish_submit stays visible outside scoped expert')
+  assert.ok(root.tools.get('omnimux_tiktok_video'), 'global omnimux_tiktok_video stays visible outside scoped expert')
 
   // Disposing the preset plugin lifts the restriction cleanly
   await fiber.dispose()
@@ -164,7 +213,7 @@ test('real Cordis + dsh-tools: expert-tool-scope hides out-of-domain Host tools 
   await presetScope.dispose()
 })
 
-test('real Cordis + dsh-tools: empty deny set is a clean no-op and late-registered Host tools reconcile dynamically without recursion', async (t) => {
+test('real Cordis + dsh-tools: empty deny set is a clean no-op, late-registered tools reconcile dynamically, and unregistering back to empty deny lifts restriction cleanly', async (t) => {
   const harness = await createRealToolsHarness()
   const { root } = harness
   t.after(async () => { await harness.dispose() })
@@ -191,13 +240,18 @@ test('real Cordis + dsh-tools: empty deny set is a clean no-op and late-register
 
   // Late-loading Host plugin registers out-of-domain clip tool + another external MCP tool
   const beforeLate = changeCount
-  root.tools.register(makeTool('clip_timeline_cut'))
+  const unregisterClip = root.tools.register(makeTool('clip_edit'))
   root.tools.register(makeTool('mcp__user_jira__search'))
 
   // Reconciled dynamically: out-of-domain managed tool hidden, external MCP tool visible, zero infinite loop
-  assert.equal(root.tools.get('clip_timeline_cut', agentKey), undefined)
+  assert.equal(root.tools.get('clip_edit', agentKey), undefined)
   assert.ok(root.tools.get('mcp__user_jira__search', agentKey))
   assert.ok(changeCount - beforeLate <= 6, `tools/change must not loop recursively (observed ${changeCount - beforeLate})`)
+
+  // Unregistering the only denied tool brings deny set back to empty cleanly without throwing
+  assert.doesNotThrow(() => unregisterClip())
+  assert.ok(root.tools.get('products_list', agentKey))
+  assert.ok(root.tools.get('mcp__user_jira__search', agentKey))
 
   await agentScope.dispose()
   await presetScope.dispose()

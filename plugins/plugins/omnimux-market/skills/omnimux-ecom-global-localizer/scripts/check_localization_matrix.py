@@ -21,7 +21,6 @@ import argparse
 import json
 import math
 import re
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -57,15 +56,34 @@ CHAR_BASED_CPS: dict[str, float] = {
 WORD_RE = re.compile(r"[A-Za-zÀ-ÖØ-öø-ÿ0-9]+(?:['’-][A-Za-zÀ-ÖØ-öø-ÿ0-9]+)*")
 NON_SPACE_CHAR_RE = re.compile(r"[^\s\.,!?;:，。！？；：、\"'()（）\[\]【】\-—]")
 MEASURED_NUM_RE = re.compile(
-    r"\b(\d+(?:[.,]\d+)?)\s*(mm|cm|m|ml|l|g|kg|oz|lb|w|v|mah|wh|h|hr|hrs|hours?|min|mins?|days?|pcs|pack|%)\b",
+    r"(?<![A-Za-z0-9_])(\d+(?:[.,]\d+)?)\s*(?:(%)|(mm|cm|m|ml|l|g|kg|oz|lb|w|v|mah|wh|h|hr|hrs|hours?|min|mins?|days?|pcs|pack)(?![A-Za-z0-9_]))",
     re.IGNORECASE,
 )
+UNIT_ALIASES: dict[str, str] = {
+    "hr": "h",
+    "hrs": "h",
+    "hour": "h",
+    "hours": "h",
+    "mins": "min",
+    "days": "day",
+}
 BANNED_CLAIMS_RE = re.compile(
     r"(100%\s*(?:effective|guaranteed|cure|safe)|miracle\s+cure|clinically\s+proven\s+cure|"
     r"garantido\s+100%|cura\s+definitiva|garantizado\s+100%|100%\s*wirksam|"
     r"绝对有效|根治|全网第一|百分百防封|永久有效)",
     re.IGNORECASE,
 )
+
+
+def canonicalize_measured(raw_num: str, raw_unit: str) -> str:
+    num = raw_num.replace(",", ".")
+    try:
+        parsed = float(num)
+        num_str = str(int(parsed)) if parsed.is_integer() else f"{parsed:g}"
+    except ValueError:
+        num_str = num
+    unit = UNIT_ALIASES.get(raw_unit.lower(), raw_unit.lower())
+    return f"{num_str}{unit}"
 
 
 def estimate_speech_seconds(text: str, lang: str) -> tuple[float, int, str]:
@@ -83,12 +101,13 @@ def estimate_speech_seconds(text: str, lang: str) -> tuple[float, int, str]:
 def extract_spec_tokens(spec_table: dict[str, Any]) -> set[str]:
     tokens: set[str] = set()
     for val in spec_table.values():
+        if val is None:
+            continue
         s = str(val)
         for m in MEASURED_NUM_RE.finditer(s):
-            num = m.group(1).replace(",", ".")
-            unit = m.group(2).lower()
-            tokens.add(f"{num}{unit}")
-            tokens.add(num)
+            unit = m.group(2) or m.group(3)
+            if unit:
+                tokens.add(canonicalize_measured(m.group(1), unit))
     return tokens
 
 
@@ -98,15 +117,25 @@ def check_localization_matrix(data: dict[str, Any]) -> dict[str, Any]:
     market_reports: list[dict[str, Any]] = []
 
     spec_table = data.get("spec_table") if isinstance(data.get("spec_table"), dict) else {}
-    allowed_nums = extract_spec_tokens(spec_table)
-    # Allow explicit benign non-spec numbers (e.g., "3s hook" or "2 steps") if caller declares them
+    allowed_specs = extract_spec_tokens(spec_table)
+    # Allow explicit benign non-spec numbers (e.g., "3s" or "100%") if caller declares them
     extra_allowed = data.get("allowed_numeric_claims")
     if isinstance(extra_allowed, list):
         for item in extra_allowed:
-            allowed_nums.add(str(item).strip().lower().replace(",", "."))
+            if item is None:
+                continue
+            s = str(item).strip()
+            matched = False
+            for m in MEASURED_NUM_RE.finditer(s):
+                unit = m.group(2) or m.group(3)
+                if unit:
+                    allowed_specs.add(canonicalize_measured(m.group(1), unit))
+                    matched = True
+            if not matched and s:
+                allowed_specs.add(s.lower().replace(",", "."))
 
     forbidden_words = [
-        str(w).strip() for w in (data.get("forbidden_words") or []) if str(w).strip()
+        str(w).strip() for w in (data.get("forbidden_words") or []) if w is not None and str(w).strip()
     ]
 
     markets = data.get("markets")
@@ -128,24 +157,27 @@ def check_localization_matrix(data: dict[str, Any]) -> dict[str, Any]:
         total_est = 0.0
         shot_reports: list[dict[str, Any]] = []
         market_forbidden = forbidden_words + [
-            str(w).strip() for w in (market.get("local_forbidden_words") or []) if str(w).strip()
+            str(w).strip() for w in (market.get("local_forbidden_words") or []) if w is not None and str(w).strip()
         ]
 
         for idx, shot in enumerate(shots, start=1):
             if not isinstance(shot, dict):
                 continue
             shot_id = str(shot.get("shot_id") or f"S{idx}")
-            budget = float(shot.get("duration_sec") or 0)
+            try:
+                budget = float(shot.get("duration_sec") or 0)
+            except (TypeError, ValueError):
+                budget = 0.0
             voiceover = str(shot.get("voiceover") or "").strip()
             subtitle = str(shot.get("subtitle") or "").strip()
             combined_text = f"{voiceover} {subtitle}".strip()
 
-            if budget <= 0:
+            if not math.isfinite(budget) or budget <= 0:
                 issues.append({
                     "code": "invalid_shot_duration",
                     "market": code,
                     "shot_id": shot_id,
-                    "message": f"{code}/{shot_id} 镜头预算时长必须大于 0",
+                    "message": f"{code}/{shot_id} 镜头预算时长必须大于 0 且为有限数值",
                 })
                 continue
 
@@ -189,10 +221,11 @@ def check_localization_matrix(data: dict[str, Any]) -> dict[str, Any]:
 
             if spec_table:
                 for m in MEASURED_NUM_RE.finditer(combined_text):
-                    num = m.group(1).replace(",", ".")
-                    unit = m.group(2).lower()
-                    # Ignore generic short time durations like 3s or 2 min unless explicitly mismatched
-                    if f"{num}{unit}" not in allowed_nums and num not in allowed_nums:
+                    unit = m.group(2) or m.group(3)
+                    if not unit:
+                        continue
+                    token = canonicalize_measured(m.group(1), unit)
+                    if token not in allowed_specs:
                         issues.append({
                             "code": "unverified_numeric_spec",
                             "market": code,

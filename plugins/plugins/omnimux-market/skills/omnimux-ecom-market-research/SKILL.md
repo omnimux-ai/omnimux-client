@@ -17,10 +17,10 @@ description: "跨境电商类目市场分析与竞品选品调研：清洗巴西
 
 ## Data Sources & OmniMux Tools
 - **Track A 类目导出表**：本地 CSV / JSON（经 `scripts/analyze_market.py` 确定性处理，不心算）。
-- **Track B TikTok 三闸跟爆工作台（`omnimux-tiktok-selection`）**：
+- **Track B TikTok 三闸跟爆工作台（`omnimux-tiktok-selection` 全部 18 工具）**：
   - 发现与导入：`tiktok_selection_query_rank`、`tiktok_selection_search_products`、`tiktok_selection_import_snapshot`、`tiktok_selection_get_product_detail`；
   - 三闸试拉与任务控制：先调用 `tiktok_selection_gate_dry_run` 预估命中规模与页数截断提示，获用户确认后再调用 `tiktok_selection_create_task` / `tiktok_selection_list_tasks` / `tiktok_selection_get_task` / `tiktok_selection_control_task`；
-  - 选品库与同步商品库：`tiktok_selection_list_library`、`tiktok_selection_update_status`、`tiktok_selection_ingest_products`（删除类操作必须传 `confirm: true`），选定商品通过 `products_create` 沉淀进 OmniMux 商品库；
+  - 选品库与同步商品库：`tiktok_selection_list_library`、`tiktok_selection_ingest_products`（写入本地选品库）、`tiktok_selection_update_status`、`tiktok_selection_remove_products`（删除类操作必须传 `confirm: true`），经用户确认后用 `tiktok_selection_generate_assets`（`kind: "sync_omnimux_products"`）或 `products_create` 沉淀进 OmniMux 商品库；
   - 定时巡检与风控词库：`tiktok_selection_manage_schedule`、`tiktok_selection_list_runs`、`tiktok_selection_manage_risk_words`、`tiktok_selection_manage_settings`；
   - 当实时数据源缺少 G2 渠道占比时，按任务策略显式标出 `G2_CHANNEL_DATA_MISSING`，绝不伪造占比；G3 风险审核异常时严格 fail-closed 记为未完成，不静默放行。
 - **社媒需求与竞品补充**：按需加载 `omnimux-product-demand` / `omnimux-competitor-research`，调用 `omnimux_tiktok_shop_search`、`omnimux_social_data`、`inspiration_rival_*`（仅限公开数据，无数据缺口须如实声明）。

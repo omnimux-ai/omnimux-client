@@ -373,8 +373,12 @@
         const onListSuccess = (d) => {
           if (d && Array.isArray(d.items)) {
             state.setExpertMarketItems(d.items);
-            if (typeof window !== "undefined" && typeof buildExpertStartersLookup === "function") {
-              window.__omnimuxExpertStarters = buildExpertStartersLookup(d.items);
+            if (typeof window !== "undefined") {
+              if (window.__omnimuxExpertStarters && typeof window.__omnimuxExpertStarters.update === "function") {
+                window.__omnimuxExpertStarters.update(d.items);
+              } else if (typeof buildExpertStartersLookup === "function") {
+                window.__omnimuxExpertStarters = buildExpertStartersLookup(d.items);
+              }
             }
             if (typeof state.setExpertMarketError === "function") state.setExpertMarketError("");
           }

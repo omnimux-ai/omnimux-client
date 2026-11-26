@@ -339,15 +339,38 @@ test('script 08: validate_brand_kit.py validates complete kit (pass), missing an
   assert.ok(badCodes.has('missing_target_markets'))
   assert.ok(badCodes.has('insufficient_specs'))
   assert.ok(badCodes.has('invalid_palette_hex'))
+
+  // Regression: JSON null values must NEVER coerce to "None" and 100% must count as measured unit
+  const nullSpecsPath = join(dir, 'null-specs.json')
+  writeFileSync(nullSpecsPath, JSON.stringify({
+    product_name: 'Cotton Tee',
+    category: 'Apparel',
+    core_selling_point: 'Breathable 100% combed cotton daily tee',
+    target_markets: ['US', null],
+    spec_table: { cotton: '100%', lining: null, trim: null },
+    brand_palette: ['#112233'],
+    forbidden_words: ['BrandX', null],
+    anchor_assets: { hero_photo: 'assets/hero.png', angle_photos: [null] },
+  }), 'utf8')
+  const nullSpecsRes = runPy('omnimux-ecom-brand-curator/scripts/validate_brand_kit.py', ['--input', nullSpecsPath, '--format', 'json'])
+  assert.equal(nullSpecsRes.status, 2)
+  const nullSpecsOut = JSON.parse(nullSpecsRes.stdout)
+  assert.equal(nullSpecsOut.status, 'fail')
+  assert.equal(nullSpecsOut.metrics.spec_count, 1)
+  assert.equal(nullSpecsOut.metrics.measured_spec_count, 1, '100% must match NUMERIC_UNIT_RE')
+  assert.deepEqual(nullSpecsOut.normalized_kit.spec_table, { cotton: '100%' })
+  assert.deepEqual(nullSpecsOut.normalized_kit.target_markets, ['US'])
+  assert.deepEqual(nullSpecsOut.normalized_kit.forbidden_words, ['BrandX'])
+  assert.ok(nullSpecsOut.issues.some((i) => i.code === 'insufficient_specs'))
 })
 
-test('script 09: check_localization_matrix.py passes valid multilingual shots and blocks voiceover overflow, spec drift, and banned claims', (t) => {
+test('script 09: check_localization_matrix.py passes valid multilingual shots and blocks voiceover overflow, spec drift (including CJK/%/unit drift), and banned claims', (t) => {
   const dir = mkdtempSync(join(tmpdir(), 'omx-ecom-loc-'))
   t.after(() => rmSync(dir, { recursive: true, force: true }))
 
   const goodPath = join(dir, 'good.json')
   writeFileSync(goodPath, JSON.stringify({
-    spec_table: { capacity: '500ml', retention: '12h' },
+    spec_table: { capacity: '500ml', retention: '12 hours', uv_block: '98%' },
     forbidden_words: ['BrandX'],
     markets: [
       {
@@ -355,7 +378,7 @@ test('script 09: check_localization_matrix.py passes valid multilingual shots an
         lang: 'en-US',
         shots: [
           { shot_id: 'S1', duration_sec: 4, voiceover: 'Still drinking warm water at work?', subtitle: 'Warm water again?' },
-          { shot_id: 'S2', duration_sec: 6, voiceover: 'This 500ml bottle keeps ice cold for 12h straight.', subtitle: '500ml 12h cold' },
+          { shot_id: 'S2', duration_sec: 6, voiceover: 'This 500ml bottle keeps ice cold for 12h straight with 98% UV shield.', subtitle: '500ml 12h cold 98%' },
         ],
       },
       {
@@ -402,4 +425,36 @@ test('script 09: check_localization_matrix.py passes valid multilingual shots an
   assert.ok(badCodes.has('banned_compliance_term'))
   assert.ok(badCodes.has('forbidden_word_hit'))
   assert.ok(badCodes.has('unverified_numeric_spec'))
+
+  // Regression: CJK adjacent numbers, unit mistranslation (500ml -> 500L, 12h -> 12 days), and % drift MUST fail
+  const driftPath = join(dir, 'drift.json')
+  writeFileSync(driftPath, JSON.stringify({
+    spec_table: { capacity: '500ml', retention: '12h' },
+    markets: [
+      {
+        market: 'JP',
+        lang: 'ja',
+        shots: [
+          { shot_id: 'S_JP', duration_sec: 5, voiceover: '999mlで99hしっかり保冷。', subtitle: '这款999ml保温杯' },
+        ],
+      },
+      {
+        market: 'US',
+        lang: 'en-US',
+        shots: [
+          { shot_id: 'S_UNIT', duration_sec: 6, voiceover: 'This 500L tank runs 12 days.', subtitle: 'Blocks 99% UV rays.' },
+        ],
+      },
+    ],
+  }), 'utf8')
+  const driftRes = runPy('omnimux-ecom-global-localizer/scripts/check_localization_matrix.py', ['--input', driftPath, '--format', 'json'])
+  assert.equal(driftRes.status, 2)
+  const driftOut = JSON.parse(driftRes.stdout)
+  assert.equal(driftOut.passed, false)
+  const driftMsgs = driftOut.issues.filter((i) => i.code === 'unverified_numeric_spec').map((i) => i.message).join('\n')
+  assert.match(driftMsgs, /999ml/, 'must catch CJK-adjacent ml drift')
+  assert.match(driftMsgs, /99h/, 'must catch CJK-adjacent h drift')
+  assert.match(driftMsgs, /500L/, 'must catch unit drift from 500ml to 500L')
+  assert.match(driftMsgs, /12 days/, 'must catch unit drift from 12h to 12 days')
+  assert.match(driftMsgs, /99%/, 'must catch unverified percentage drift')
 })

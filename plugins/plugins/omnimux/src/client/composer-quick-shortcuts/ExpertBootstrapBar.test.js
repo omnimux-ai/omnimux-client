@@ -182,4 +182,52 @@ describe('ExpertBootstrapBar blank-session guidance & strict role mutual exclusi
     assert.equal(enBtns.length, 1)
     assert.equal(enBtns[0].textContent, 'Custom brand kit')
   })
+
+  it('detects English under real Host injection (no locale prop) via window.__omnimuxLocale.active and injected t("quickShortcuts.group")', async (t) => {
+    const { ExpertBootstrapBar } = loadExpertBootstrapBar()
+    const { container, root } = setupDom(t)
+    const blankSession = { id: 'sess-locale', blank: true, running: false }
+
+    // 1. Real Host injects only { t, mutatePrompt } with no locale prop; document lang is empty
+    globalThis.document.documentElement.lang = ''
+    delete globalThis.window.__omnimuxLocale
+    await React.act(async () => {
+      root.render(React.createElement(ExpertBootstrapBar, {
+        agentPreset: 'ecom-brand-curator',
+        sessionId: 'sess-locale',
+        useSession: (sel) => sel(blankSession),
+        t: (key) => (key === 'quickShortcuts.group' ? 'Quick start' : key),
+      }))
+    })
+    let btns = Array.from(container.querySelectorAll('button[data-omx-expert-starter]'))
+    assert.equal(btns.length, 3)
+    assert.equal(btns[0].textContent, 'Onboard from Product URL')
+
+    // 2. Real Host publishes window.__omnimuxLocale.active + subscribe()
+    let listener = null
+    globalThis.window.__omnimuxLocale = {
+      active: 'en-US',
+      subscribe(fn) {
+        listener = fn
+        return () => { listener = null }
+      },
+    }
+    await React.act(async () => {
+      root.render(React.createElement(ExpertBootstrapBar, {
+        agentPreset: 'ecom-global-localizer',
+        sessionId: 'sess-locale',
+        useSession: (sel) => sel(blankSession),
+      }))
+    })
+    btns = Array.from(container.querySelectorAll('button[data-omx-expert-starter]'))
+    assert.equal(btns[0].textContent, 'Build 4-Column Plan')
+
+    // Live locale switch en-US -> zh-CN updates rendered starter labels reactively
+    globalThis.window.__omnimuxLocale.active = 'zh-CN'
+    await React.act(async () => {
+      listener?.()
+    })
+    btns = Array.from(container.querySelectorAll('button[data-omx-expert-starter]'))
+    assert.equal(btns[0].textContent, '拆解四栏跨国本地化方案')
+  })
 })

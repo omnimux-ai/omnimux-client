@@ -128,16 +128,16 @@ export function getPresetFallbackCopy(presetId, locale = 'zh') {
     return {
       name: lang === 'en' ? 'Market Analyst' : '选品专家',
       description: lang === 'en'
-        ? 'Live TikTok 3-gate trending discovery & creator cross-checks plus CSV category sizing, CR10, and price-band gap analysis.'
-        : '联动 TikTok 实时选品与三闸跟爆验证、CSV 类目容量/CR10/价格带波谷测算与竞品拆解，输出可验证选品结论。',
+        ? 'Runs TikTok 3-gate discovery tasks and CSV category scripts for velocity screening, risk audits, CR10, and price-band gaps.'
+        : '接管 TikTok 三闸跟爆工作台与类目表脚本，覆盖销量加速初筛、渠道占比核验、品牌词风控及价格带波谷测算。',
     }
   }
   if (presetId === 'ecom-brand-curator') {
     return {
       name: lang === 'en' ? 'Brand Curator' : '品牌管家',
       description: lang === 'en'
-        ? 'Builds verified product fact sheets, brand tone, color palettes, forbidden words, and Hero shot packs synced to Products.'
-        : '冷启动构建商品参数真源、品牌调性、主辅色规范、禁用词表与 Hero 实拍资产包，沉淀商品库供全链路复用。',
+        ? 'Bootstraps structured product profiles, validated spec tables, and reusable brand visual anchors from URLs and raw photos.'
+        : '从商品页链接与实拍素材冷启动建档，确定性校验参数真源与色值规范，一次性沉淀可复用的商品库与品牌资产锚点。',
     }
   }
   if (presetId === 'ecom-product-strategy') {
@@ -176,8 +176,8 @@ export function getPresetFallbackCopy(presetId, locale = 'zh') {
     return {
       name: lang === 'en' ? 'Global Localizer' : '本土专家',
       description: lang === 'en'
-        ? 'Adapts winning scripts into native US/SEA/LATAM/JP/DE creative matrices with localized hooks, avatars, voices, and compliance checks.'
-        : '将母版爆款脚本适配美/东南亚/拉美/日/德多国市场，完成本土化口播、数字人音色配对、语速合规质检与画布矩阵裂变。',
+        ? 'Locks verified product specs and localizes proven video ads across countries and languages with duration expansion & compliance checks.'
+        : '锁定商品实拍与参数真源，将验证过的带货视频与套图按四栏矩阵安全裂变至多国多语种，脚本校核口播时长膨胀与本地红线。',
     }
   }
   if (presetId === 'ecom-ads-optimizer') {

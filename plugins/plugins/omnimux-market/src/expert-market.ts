@@ -446,7 +446,7 @@ const EXPERT_PERSONA_DETAILS: Record<string, string> = {
     '',
     '【首选 Skill 与双轨工作流】',
     '- **Track A（类目导出表分析）**：收到 Shopee / Amazon / Mercado Livre / TikTok Shop 导出 CSV/JSON 时，优先加载 `omnimux-ecom-market-research` 与 `omnimux-ecom-platform-rules`，运行 `scripts/analyze_market.py` 清洗巴西/美式/中文万单位数字并计算月容量、CR3/CR10/HHI 与不平滑价格带波谷。',
-    '- **Track B（TikTok Shop 三闸跟爆工作台）**：收到热榜/关键词实时跟爆或定时巡检需求时，直接调用 `tiktok_selection_query_rank` / `tiktok_selection_search_products` / `tiktok_selection_import_snapshot` 发现商品，先经 `tiktok_selection_gate_dry_run` 预估命中规模并获用户确认，再调用 `tiktok_selection_create_task` 跑通 G1 销量加速初筛 → G2 商品卡/视频占比核验（缺失渠道数据时严格标出 `G2_CHANNEL_DATA_MISSING` 不伪造）→ G3 品牌与敏感词风控（fail-closed）；通过商品经确认后用 `tiktok_selection_ingest_products` / `products_create` 沉淀进商品库。',
+    '- **Track B（TikTok Shop 三闸跟爆工作台）**：收到热榜/关键词实时跟爆或定时巡检需求时，直接调用 `tiktok_selection_query_rank` / `tiktok_selection_search_products` / `tiktok_selection_import_snapshot` 发现商品，先经 `tiktok_selection_gate_dry_run` 预估命中规模并获用户确认，再调用 `tiktok_selection_create_task` 跑通 G1 销量加速初筛 → G2 商品卡/视频占比核验（缺失渠道数据时严格标出 `G2_CHANNEL_DATA_MISSING` 不伪造）→ G3 品牌与敏感词风控（fail-closed）；筛选结果先经 `tiktok_selection_ingest_products` 入选品库（删除使用 `tiktok_selection_remove_products` 且必须传 `confirm: true`），经用户确认后用 `tiktok_selection_generate_assets`（`kind: "sync_omnimux_products"`）或 `products_create` 沉淀进商品库。',
     '- 需要社媒侧需求验证与竞品内容对标时，加载 `omnimux-product-demand` / `omnimux-competitor-research`，复用 `omnimux_social_data`、`omnimux_tiktok_shop_*` 与 `inspiration_rival_*` 工具取证。',
     '- 交付必须包含：市场可进入性结论（建议进入/谨慎验证/不建议）、量化指标表或三闸漏斗明细、目标价格带与空白机会，以及直接传给「定价专家」的下游契约摘要。',
   ].join('\n'),
@@ -734,7 +734,7 @@ export function reconcileMarketExperts(
   const disabledSet = new Set(ledger.disabled)
   const itemsMap = new Map<string, MarketExpertItem>()
 
-  // 1. Built-in 8 SOP experts (status strictly verified against live officialPresets)
+  // 1. Built-in 10 SOP experts (status strictly verified against live officialPresets)
   for (const exp of DEFAULT_MARKET_EXPERTS) {
     const live = liveById.get(exp.id)
     let status: ExpertStatus

@@ -12,7 +12,6 @@ from __future__ import annotations
 import argparse
 import json
 import re
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -22,7 +21,10 @@ BANNED_CLAIMS_RE = re.compile(
     r"绝对有效|全网第一|顶级唯一|根治|永不失效|百分百防封|garantido\s+100%|cura\s+definitiva)",
     re.IGNORECASE,
 )
-NUMERIC_UNIT_RE = re.compile(r"\d+(?:[.,]\d+)?\s*(?:mm|cm|m|ml|l|g|kg|oz|lb|w|v|mah|wh|h|hr|hrs|min|s|pcs|pack|%|°c|°f|hz|db|lm|k)\b", re.IGNORECASE)
+NUMERIC_UNIT_RE = re.compile(
+    r"(?<![A-Za-z0-9_])(\d+(?:[.,]\d+)?)\s*(?:(%)|(?:mm|cm|m|ml|l|g|kg|oz|lb|w|v|mah|wh|h|hr|hrs|min|s|pcs|pack|°c|°f|hz|db|lm|k)(?![A-Za-z0-9_]))",
+    re.IGNORECASE,
+)
 
 
 def normalize_hex(color: str) -> str | None:
@@ -57,7 +59,11 @@ def validate_brand_kit(data: dict[str, Any]) -> dict[str, Any]:
         issues.append({"code": "banned_claim_in_usp", "severity": "error", "message": "核心卖点包含违禁绝对化或医疗/保证类表述"})
 
     raw_markets = data.get("target_markets")
-    target_markets = [str(m).strip().upper() for m in raw_markets if str(m).strip()] if isinstance(raw_markets, list) else []
+    target_markets = [
+        str(m).strip().upper()
+        for m in raw_markets
+        if m is not None and str(m).strip()
+    ] if isinstance(raw_markets, list) else []
     if not target_markets:
         missing_fields.append("target_markets")
         issues.append({"code": "missing_target_markets", "severity": "error", "message": "缺少目标国家/站点（target_markets）"})
@@ -66,6 +72,8 @@ def validate_brand_kit(data: dict[str, Any]) -> dict[str, Any]:
     spec_table: dict[str, str] = {}
     if isinstance(raw_specs, dict):
         for k, v in raw_specs.items():
+            if k is None or v is None:
+                continue
             key = str(k).strip()
             val = str(v).strip()
             if not key or not val:
@@ -111,6 +119,8 @@ def validate_brand_kit(data: dict[str, Any]) -> dict[str, Any]:
     if isinstance(raw_forbidden, list):
         seen_fw: set[str] = set()
         for w in raw_forbidden:
+            if w is None:
+                continue
             cleaned = str(w).strip()
             if cleaned and cleaned.lower() not in seen_fw:
                 seen_fw.add(cleaned.lower())
@@ -121,7 +131,11 @@ def validate_brand_kit(data: dict[str, Any]) -> dict[str, Any]:
     raw_anchors = data.get("anchor_assets")
     anchors = raw_anchors if isinstance(raw_anchors, dict) else {}
     hero_photo = str(anchors.get("hero_photo") or "").strip()
-    angle_photos = [str(p).strip() for p in anchors.get("angle_photos", []) if str(p).strip()] if isinstance(anchors.get("angle_photos"), list) else []
+    angle_photos = [
+        str(p).strip()
+        for p in anchors.get("angle_photos", [])
+        if p is not None and str(p).strip()
+    ] if isinstance(anchors.get("angle_photos"), list) else []
     if not hero_photo:
         missing_fields.append("anchor_assets.hero_photo")
         warnings.append({"code": "missing_hero_photo", "severity": "warning", "message": "缺少商品主锚点实拍图（anchor_assets.hero_photo），下游视觉/视频将无法锁定外观"})

@@ -10,8 +10,12 @@
  * - Tools registered in the Agent's own scope (`read`, `write`, `bash`, `skill`,
  *   `subagent`, `ask_user_question`, `web_fetch`, etc.) are automatically exempt
  *   by `@deepseek-ai/dsh-tools`.
- * - External / user-installed third-party MCP tools that do not match any OmniMux
- *   managed domain rule below are passed through untouched (never accidentally hidden).
+ * - Shared Hub core utilities (`omnimux_text_complete`, `omnimux_page_fetch`,
+ *   `omnimux_jev_decision`, `omnimux_speech_to_text`) are intentionally unmanaged
+ *   so every expert retains multimodal inspection, web reading, and transcription.
+ * - External / user-installed third-party MCP tools (`mcp__*` other than
+ *   `mcp__pibrowse__*`) and third-party Cordis plugins are passed through untouched;
+ *   generic non-`omnimux_*` domains use explicit exact tool lists to avoid false positives.
  */
 
 export type ExpertToolDomain =
@@ -55,29 +59,156 @@ export const ALL_EXPERT_TOOL_DOMAINS: readonly ExpertToolDomain[] = Object.freez
 ])
 
 export const MANAGED_DOMAIN_RULES: Readonly<Record<ExpertToolDomain, ManagedDomainRule>> = Object.freeze({
-  products: Object.freeze({ prefixes: Object.freeze(['products_']) }),
-  assets: Object.freeze({ prefixes: Object.freeze(['assets_', 'avatar_']) }),
-  inspiration: Object.freeze({ prefixes: Object.freeze(['inspiration_', 'omnimux_inspiration_']) }),
-  workflow: Object.freeze({ prefixes: Object.freeze(['workflow_', 'canvas_']) }),
-  clip: Object.freeze({ prefixes: Object.freeze(['clip_']) }),
-  media_gen: Object.freeze({ prefixes: Object.freeze(['omnimux_image_', 'omnimux_video_', 'omnimux_audio_', 'video_']) }),
-  tiktok_selection: Object.freeze({ prefixes: Object.freeze(['tiktok_selection_']) }),
-  social_data: Object.freeze({
-    prefixes: Object.freeze(['omnimux_tiktok_shop_']),
-    exact: Object.freeze(['omnimux_social_data', 'omnimux_page_fetch', 'omnimux_text_complete', 'omnimux_jev_decision']),
+  products: Object.freeze({
+    exact: Object.freeze([
+      'products_list',
+      'products_search',
+      'products_get',
+      'products_read_media',
+      'products_create',
+      'products_update',
+      'products_delete',
+    ]),
   }),
-  publish_accounts: Object.freeze({ prefixes: Object.freeze(['publish_', 'accounts_', 'omnimux_publish_', 'omnimux_accounts_']) }),
-  analytics: Object.freeze({ prefixes: Object.freeze(['analytics_', 'omnimux_analytics_']) }),
-  browser: Object.freeze({ prefixes: Object.freeze(['browser_']) }),
-  pibrowse: Object.freeze({ prefixes: Object.freeze(['pibrowse_', 'mcp__pibrowse__']) }),
-  viewer: Object.freeze({ exact: Object.freeze(['display_file']) }),
-  market: Object.freeze({ prefixes: Object.freeze(['skillhub_', 'plaza_', 'plugin_', 'connector_']) }),
-  workbench: Object.freeze({ prefixes: Object.freeze(['workbench_']) }),
+  assets: Object.freeze({
+    exact: Object.freeze([
+      'assets_list',
+      'assets_search',
+      'assets_cloud_save',
+      'assets_get',
+      'assets_create',
+      'assets_update',
+      'assets_delete',
+      'assets_upload',
+    ]),
+  }),
+  inspiration: Object.freeze({
+    prefixes: Object.freeze(['inspiration_', 'omnimux_inspiration_']),
+    exact: Object.freeze([
+      'omnimux_creative_templates_search',
+      'omnimux_creative_template_get',
+      'omnimux_marketing_presets_search',
+    ]),
+  }),
+  workflow: Object.freeze({
+    exact: Object.freeze([
+      'workflow_connect',
+      'workflow_disconnect',
+      'workflow_execution_control',
+      'workflow_list',
+      'workflow_run',
+      'workflow_snapshot',
+      'workflow_create',
+      'workflow_node_add',
+      'workflow_node_update',
+      'workflow_node_remove',
+      'workflow_director',
+      'canvas_write_table_node',
+      'canvas_get_table_node',
+    ]),
+  }),
+  clip: Object.freeze({
+    exact: Object.freeze([
+      'clip_list',
+      'clip_create',
+      'clip_open',
+      'clip_get',
+      'clip_edit',
+      'clip_view',
+      'clip_snapshot',
+      'clip_diagnostics',
+      'clip_export',
+    ]),
+  }),
+  media_gen: Object.freeze({
+    prefixes: Object.freeze(['omnimux_image_', 'omnimux_video_', 'omnimux_audio_']),
+    exact: Object.freeze([
+      'video_process',
+      'video_depth',
+      'video_analyze',
+      'video_reverse_prompt',
+    ]),
+  }),
+  tiktok_selection: Object.freeze({
+    prefixes: Object.freeze(['tiktok_selection_']),
+  }),
+  social_data: Object.freeze({
+    prefixes: Object.freeze(['omnimux_tiktok_', 'omnimux_instagram_', 'omnimux_x_', 'omnimux_youtube_']),
+    exact: Object.freeze(['omnimux_social_data']),
+  }),
+  publish_accounts: Object.freeze({
+    prefixes: Object.freeze(['omnimux_publish_', 'omnimux_accounts_']),
+    exact: Object.freeze([
+      'accounts_list',
+      'accounts_update_group',
+      'publish_list_records',
+      'publish_create_draft',
+      'publish_update_draft',
+      'publish_delete_draft',
+      'publish_list_accounts',
+      'publish_assign_accounts',
+      'publish_submit',
+      'publish_get_record',
+      'publish_retry_task',
+    ]),
+  }),
+  analytics: Object.freeze({
+    prefixes: Object.freeze(['omnimux_analytics_']),
+    exact: Object.freeze([
+      'analytics_query_metrics',
+      'analytics_get_summary',
+    ]),
+  }),
+  browser: Object.freeze({
+    exact: Object.freeze([
+      'browser_snapshot',
+      'browser_click',
+      'browser_type',
+      'browser_press',
+      'browser_scroll',
+      'browser_navigate',
+      'browser_open_tab',
+      'browser_list_tabs',
+      'browser_get_text',
+      'browser_wait',
+      'browser_follow_tab',
+      'browser_close_tab',
+      'browser_back',
+      'browser_forward',
+      'browser_reload',
+    ]),
+  }),
+  pibrowse: Object.freeze({
+    prefixes: Object.freeze(['pibrowse_', 'mcp__pibrowse__']),
+  }),
+  viewer: Object.freeze({
+    exact: Object.freeze(['display_file']),
+  }),
+  market: Object.freeze({
+    prefixes: Object.freeze(['skillhub_', 'plaza_']),
+    exact: Object.freeze([
+      'plugin_search',
+      'plugin_install',
+      'plugin_uninstall',
+      'plugin_list',
+      'connector_search',
+      'connector_install',
+      'connector_uninstall',
+      'connector_list',
+    ]),
+  }),
+  workbench: Object.freeze({
+    exact: Object.freeze([
+      'workbench_get_active_view',
+      'workbench_open_tab',
+    ]),
+  }),
 })
 
 /**
  * Resolve which OmniMux managed Host domain owns `toolName`, or `null` when
- * `toolName` belongs to an external/third-party plugin or MCP server.
+ * `toolName` is a shared Hub core utility or belongs to an external/third-party
+ * plugin or MCP server.
  */
 export function resolveManagedToolDomain(toolName: string): ExpertToolDomain | null {
   if (typeof toolName !== 'string' || !toolName) return null
