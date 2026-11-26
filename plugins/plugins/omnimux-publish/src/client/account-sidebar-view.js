@@ -1,4 +1,5 @@
 import { isPublishingAccount } from '../account-policy.js'
+import { accountPublishMode } from '../shared/tiktok-capabilities.js'
 /**
  * TikTok 账号侧栏视图的纯函数逻辑（无 DOM / 无 React，可 node --test 直测）。
  * 数据真源：hub `GET /omnimux/accounts?platform=tiktok`（ViewRow 合并），
@@ -79,6 +80,20 @@ export function accountStatusTone(row) {
   if (status === 'expired' || status === 'refreshing' || status === 'pending') return 'warn'
   if (status === 'error' || status === 'failed' || status === 'revoked') return 'error'
   return 'muted'
+}
+
+/**
+ * 账号发布能力徽标（与 Composer 渠道面板同源，用于 Accounts 列表与渠道选择器一致区分）。
+ * @param {(key: string, vars?: Record<string, unknown>) => string} t
+ * @param {Record<string, unknown>} row
+ * @returns {{ label: string, tone: 'draft' | 'direct' | 'warn' } | null}
+ */
+export function accountCapabilityBadge(t, row) {
+  const mode = accountPublishMode(row)
+  if (mode === 'draft_only') return { label: t('accounts.cap.draft'), tone: 'draft' }
+  if (mode === 'direct') return { label: t('accounts.cap.direct'), tone: 'direct' }
+  if (mode === 'no_publish_scope') return { label: t('accounts.cap.noScope'), tone: 'warn' }
+  return null
 }
 
 /**

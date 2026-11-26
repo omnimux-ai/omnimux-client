@@ -73,7 +73,7 @@
       "version": "0.1.2",
       "path": "plugins/plugins/omnimux-publish",
       "spec": "link:../../plugins/plugins/omnimux-publish",
-      "contentHash": "sha256:5e1b307e32505c1667379aee0821431a64ac4b57dff7f880ebd0560a64ceb4ad"
+      "contentHash": "sha256:ed4b5db6dbb7634388c6e5244a3d7c3c928462049c727f312cb3100da134ef73"
     },
     {
       "name": "omnimux-video",

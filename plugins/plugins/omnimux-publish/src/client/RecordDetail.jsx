@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Button, IconChevronLeftOutline14, IconRefreshOutline16 } from 'dsh-ui-kit'
-import { errorText, recordDetail, refreshRecord, retryTask } from './api.js'
+import { errorText, listHubAccounts, recordDetail, refreshRecord, retryTask } from './api.js'
 import { isPublishingAccount, isRetryablePublishingTask } from '../account-policy.js'
+import { accountDisplayName, extractAccounts } from './account-sidebar-view.js'
 import { showsDirectProcessingNotice, showsInboxDraftNotice, showsPrivateNotice } from './detail-notice.js'
 
 /**
@@ -16,6 +17,7 @@ import { showsDirectProcessingNotice, showsInboxDraftNotice, showsPrivateNotice 
  */
 export function RecordDetail({ t, recordId, onBack, onChanged }) {
   const [record, setRecord] = useState(null)
+  const [accountNames, setAccountNames] = useState(() => new Map())
   const [error, setError] = useState('')
   const [busy, setBusy] = useState('')
 
@@ -38,6 +40,28 @@ export function RecordDetail({ t, recordId, onBack, onChanged }) {
   }, [recordId])
 
   useEffect(() => { void load() }, [load])
+
+  const hasOfficialSubtask = Array.isArray(record?.subtasks) && record.subtasks.some(isPublishingAccount)
+  useEffect(() => {
+    if (!hasOfficialSubtask) return undefined
+    let active = true
+    listHubAccounts().then((result) => {
+      if (!active) return
+      if (!result.ok) {
+        setAccountNames(new Map())
+        return
+      }
+      const map = new Map()
+      for (const row of extractAccounts(result.body)) {
+        const display = accountDisplayName(row)
+        if (display !== '') map.set(String(row.id), display)
+      }
+      setAccountNames(map)
+    }).catch(() => {
+      if (active) setAccountNames(new Map())
+    })
+    return () => { active = false }
+  }, [hasOfficialSubtask])
 
   /** 手动刷新：现拉 hub 平台状态再返回本地账本（与 publish_get_record refresh:true 同源）。 */
   const refresh = useCallback(() => {
@@ -145,7 +169,14 @@ export function RecordDetail({ t, recordId, onBack, onChanged }) {
       <div className="omnimux-publish-section">{t('detail.subtasks')}</div>
       <div className="omnimux-publish-tasks">
         {tasks.map((task) => (
-          <SubtaskRow key={String(task.id)} t={t} task={task} busy={busy} onRetry={retry} />
+          <SubtaskRow
+            key={String(task.id)}
+            t={t}
+            task={task}
+            accountName={isPublishingAccount(task) ? (accountNames.get(String(task.account_id)) || '') : ''}
+            busy={busy}
+            onRetry={retry}
+          />
         ))}
         {tasks.length === 0 ? <div className="omnimux-publish-hint">—</div> : null}
       </div>
@@ -157,20 +188,21 @@ export function RecordDetail({ t, recordId, onBack, onChanged }) {
  * @param {{
  *   t: (key: string, vars?: Record<string, unknown>) => string,
  *   task: Record<string, unknown>,
+ *   accountName?: string,
  *   busy: string,
  *   onRetry: (taskId: string) => void,
  * }} props
  */
-function SubtaskRow({ t, task, busy, onRetry }) {
+function SubtaskRow({ t, task, accountName = '', busy, onRetry }) {
   const status = String(task.status || '')
   const platformKey = `platform.${String(task.platform || '')}`
   const platformLabel = t(platformKey) !== platformKey ? t(platformKey) : String(task.platform || '')
+  const accountLabel = accountName || String(task.account_id)
   return (
     <div className="omnimux-publish-task">
       <div className="omnimux-publish-task-row">
         <span>{platformLabel}</span>
-        <span className="omnimux-publish-dot">·</span>
-        <span>{String(task.account_id)}</span>
+        <span>{accountLabel}</span>
         <span className="omnimux-publish-task-status" data-status={status}>{t(`task.${status}`)}</span>
       </div>
       {task.post_id ? (

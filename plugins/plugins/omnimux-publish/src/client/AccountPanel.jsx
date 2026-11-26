@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Button } from 'dsh-ui-kit'
 import { listHubAccounts } from './api.js'
 import { groupAccountsByPlatform } from './capabilities.js'
-import { accountPublishMode } from '../shared/tiktok-capabilities.js'
+import { accountCapabilityBadge } from './account-sidebar-view.js'
 
 /**
  * M5 账号选择面板：平台 → 账号两级勾选（发布页左侧）。
@@ -174,29 +174,12 @@ export function AccountPanel({ t, selectedIds, onManageAccounts, onRowsLoaded, o
   )
 }
 
-function capabilityBadge(t, account) {
-  const mode = accountPublishMode(account)
-  if (mode === 'draft_only') return { label: t('accounts.cap.draft'), tone: 'draft' }
-  if (mode === 'direct') return { label: t('accounts.cap.direct'), tone: 'direct' }
-  if (mode === 'no_publish_scope') return { label: t('accounts.cap.noScope'), tone: 'warn' }
-  return null
-}
-
-/**
- * @param {{
- *   t: (key: string, vars?: Record<string, unknown>) => string,
- *   account: Record<string, unknown> & { usable: boolean, unusableReason: 'expired' | 'error' | 'agentOff' | 'noPublishScope' | '' },
- *   checked: boolean,
- *   onManageAccounts?: () => void,
- *   onToggle: (checked: boolean) => void,
- * }} props
- */
 function AccountRow({ t, account, checked, onManageAccounts, onToggle }) {
   const name = String(account.display_name || account.username || account.name || account.id)
   const rowClass = account.usable
     ? 'omnimux-publish-accounts-row'
     : 'omnimux-publish-accounts-row is-disabled'
-  const cap = capabilityBadge(t, account)
+  const cap = accountCapabilityBadge(t, account)
   const isNoScope = !account.usable && account.unusableReason === 'noPublishScope'
   return (
     <div className="omnimux-publish-accounts-row-wrap">
