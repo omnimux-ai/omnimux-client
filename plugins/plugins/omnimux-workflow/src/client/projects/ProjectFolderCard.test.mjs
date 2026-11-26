@@ -41,4 +41,7 @@ test('folder glass has unique clips, one cover per card and unchanged actions', 
   assert.equal((html.match(/omnimux-folder-sheet--rear/g) || []).length, 3)
   assert.equal((html.match(/omnimux-folder-sheet--front/g) || []).length, 3)
   assert.equal((html.match(/aria-haspopup="menu"/g) || []).length, 3)
+  assert.equal(html.includes('omnimux-folder-glass-image'), false, 'must not render duplicate blurred glass <img>')
+  assert.equal(html.includes('·'), false, 'card copy must not use middle dot separator')
+  assert.equal((html.match(/omnimux-folder-pages/g) || []).length, 3, 'card must show page count metadata')
 })

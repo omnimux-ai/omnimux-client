@@ -1,0 +1,79 @@
+{
+  "feature": "project-library-perf-ux",
+  "issue": 326,
+  "verifiedAt": "2026-11-26T05:15:13.923Z",
+  "checks": {
+    "darkLibrary1440": {
+      "cardCount": 20,
+      "loadedCoverImgCount": 16,
+      "headerHeight": 56,
+      "hasActionRowInHeader": true,
+      "toolbarSortClippedRight": false,
+      "toolbarRightInsetPx": 20,
+      "glassImageCount": 0,
+      "loadingDotsCount": 0,
+      "audioSvgPathCount": 1,
+      "hasMiddleDot": false,
+      "bgColor": "rgb(35, 35, 36)",
+      "overflowX": false,
+      "stickyHeight": 48
+    },
+    "twoPhaseNetwork": {
+      "hasCoversNone": true,
+      "hasCoversBatchPost": true
+    },
+    "stickyFilterBar": {
+      "ok": true,
+      "scrolled": 76,
+      "stickyTopAfter": 0,
+      "scrollTopBefore": 0
+    },
+    "cardMenuOpen": {
+      "open": true,
+      "cardZIndex": "10",
+      "menuBg": "rgba(48, 49, 54, 0.94)",
+      "menuVisibleInViewport": true
+    },
+    "lightThemeAndFilters": {
+      "lightBg": "rgb(255, 255, 255)",
+      "options": [
+        "全部",
+        "关联工作区",
+        "独立项目"
+      ],
+      "firstOptionIsExactAll": true,
+      "independentCount": 8,
+      "firstSortedTitle": "春季户外短片调色与分镜",
+      "hasSearchEmpty": true,
+      "hasClearBtn": true
+    },
+    "narrowViewport680": {
+      "viewportWidth": 680,
+      "scrollWidth": 675,
+      "clientWidth": 675,
+      "overflowX": false,
+      "sortBtnInsideViewport": true
+    },
+    "detailLazyAssetsAndSubdir": {
+      "hasFakeDate1": false,
+      "hasFakeDate2": false,
+      "hasMiddleDot": false,
+      "semanticBreadcrumbButton": true,
+      "filesFetchedOnPagesTab": false,
+      "filesFetchedAfterAssetsTab": true,
+      "subdirFetched": true,
+      "hasSubdirFile": true,
+      "hasFakeDates": false,
+      "deadMoreButtonsCount": 0,
+      "returnedCardCount": 20
+    }
+  },
+  "screenshots": [
+    "01-dark-library-1440.png",
+    "02-dark-card-menu-open.png",
+    "03-light-dropdown-open.png",
+    "04-light-search-empty.png",
+    "05-dark-narrow-680.png",
+    "06-dark-detail-assets-subdir.png"
+  ]
+}

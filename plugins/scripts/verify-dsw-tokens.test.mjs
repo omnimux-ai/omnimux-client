@@ -363,7 +363,7 @@ test('the real files hit by the previous regex/template over-strip keep their co
   const cases = [
     ['plugins/plugins/omnimux-viewer/src/media-viewer/MediaSlotGroup.jsx', /accept=\{slot\.allowedMimes\.length > 0.*`\$\{slot\.type\}\/\*`\}/s],
     ['plugins/plugins/omnimux/src/client/ProfileSection.jsx', /\/\^https\?:\\\/\\\/\//],
-    ['plugins/plugins/omnimux-workflow/src/client/projects/ProjectAssetsTab.jsx', /\.replace\(\/\\\/\/g, '\.'\)/],
+    ['plugins/plugins/omnimux-workflow/src/client/projects/ProjectFolderCard.jsx', /\.replace\(\/\[\\\\\/\]\+\$\/, ''\)/],
   ]
   for (const [file, pattern] of cases) {
     const source = readFileSync(join(REPO_ROOT, file), 'utf8')
@@ -371,6 +371,8 @@ test('the real files hit by the previous regex/template over-strip keep their co
     assert.equal(stripped.split('\n').length, source.split('\n').length)
     assert.match(stripped, pattern)
   }
+  const slashReplace = "const d = raw.replace(/\\//g, '.'); const bad = 'var(--dsw-made-up-after-slash-regex)'"
+  assert.deepEqual(extractTokenReferences(slashReplace, 'x.jsx'), [{ token: '--dsw-made-up-after-slash-regex', hasFallback: false }])
 })
 
 test('the real repository state passes the gate', () => {

@@ -102,6 +102,14 @@ export const STAGE_PAGES = [
       'plugins/omnimux-pibrowse/src/client/PibrowseStage.jsx',
     ],
   },
+  {
+    plugin: 'omnimux-workflow',
+    label: '创作画布',
+    styles: 'plugins/omnimux-workflow/src/client/styles.js',
+    pages: [
+      'plugins/omnimux-workflow/src/client/projects/ProjectLibraryPage.jsx',
+    ],
+  },
 ]
 
 /**

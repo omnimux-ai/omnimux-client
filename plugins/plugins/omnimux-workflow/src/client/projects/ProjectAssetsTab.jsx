@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import { Button, IconButton, IconLoadingOutline16, IconRefreshOutline16, SearchField } from 'dsh-ui-kit'
 
 function SvgIcon({ d, size = 16, className = '' }) {
   return (
@@ -114,39 +115,21 @@ const FileText = ({ size = 16, className = '' }) => (
   />
 )
 
-const RefreshCw = ({ size = 16, className = '' }) => (
-  <SvgIcon
-    size={size}
-    className={className}
-    d={
-      <>
-        <polyline points="23 4 23 10 17 10" />
-        <polyline points="1 20 1 14 7 14" />
-        <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
-      </>
-    }
-  />
-)
-
-const MoreVertical = ({ size = 16, className = '' }) => (
-  <SvgIcon
-    size={size}
-    className={className}
-    d={
-      <>
-        <circle cx="12" cy="12" r="1" />
-        <circle cx="12" cy="5" r="1" />
-        <circle cx="12" cy="19" r="1" />
-      </>
-    }
-  />
-)
-
 function formatBytes(bytes) {
   if (!bytes || typeof bytes !== 'number') return '-'
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function formatAssetDate(value) {
+  if (!value) return '-'
+  const date = new Date(value)
+  if (!Number.isFinite(date.getTime())) return '-'
+  const y = date.getFullYear()
+  const m = String(date.getMonth() + 1).padStart(2, '0')
+  const d = String(date.getDate()).padStart(2, '0')
+  return `${y}.${m}.${d}`
 }
 
 function FileTypeIcon({ type, isFolder }) {
@@ -159,6 +142,8 @@ function FileTypeIcon({ type, isFolder }) {
 
 export function ProjectAssetsTab({
   assetsDoc,
+  subpath = '',
+  onNavigateSubpath,
   onCreateFolder,
   onUploadFile,
   onRefresh,
@@ -166,161 +151,209 @@ export function ProjectAssetsTab({
   t,
 }) {
   const [query, setQuery] = useState('')
-  const [currentFolderId, setCurrentFolderId] = useState(null)
+  const [virtualFolderId, setVirtualFolderId] = useState(null)
 
   const folders = assetsDoc?.folders ?? []
   const items = assetsDoc?.items ?? []
+  const isPhysicalMode = typeof onNavigateSubpath === 'function' && assetsDoc?.mode === 'physical'
 
-  // 当前层级的文件夹与文件
-  const visibleFolders = folders.filter((f) => (f.parentId ?? null) === currentFolderId)
-  const visibleItems = items.filter((item) => (item.folderId ?? null) === currentFolderId)
+  const visibleFolders = isPhysicalMode
+    ? folders
+    : folders.filter((f) => (f.parentId ?? null) === virtualFolderId)
+  const visibleItems = isPhysicalMode
+    ? items
+    : items.filter((item) => (item.folderId ?? null) === virtualFolderId)
 
-  // 搜索过滤
-  const filteredFolders = visibleFolders.filter((f) =>
-    !query.trim() || f.name.toLowerCase().includes(query.trim().toLowerCase()),
-  )
-  const filteredItems = visibleItems.filter((item) =>
-    !query.trim() || item.name.toLowerCase().includes(query.trim().toLowerCase()),
-  )
+  const q = query.trim().toLowerCase()
+  const filteredFolders = visibleFolders.filter((f) => !q || f.name.toLowerCase().includes(q))
+  const filteredItems = visibleItems.filter((item) => !q || item.name.toLowerCase().includes(q))
 
-  const currentFolder = folders.find((f) => f.id === currentFolderId)
+  const virtualFolder = !isPhysicalMode ? folders.find((f) => f.id === virtualFolderId) : null
+  const physicalSegments = isPhysicalMode && subpath ? subpath.split('/').filter(Boolean) : []
+
+  const openFolder = (folder) => {
+    setQuery('')
+    if (isPhysicalMode) {
+      onNavigateSubpath(folder.id)
+    } else {
+      setVirtualFolderId(folder.id)
+    }
+  }
+
+  const navigateRoot = () => {
+    setQuery('')
+    if (isPhysicalMode) {
+      onNavigateSubpath('')
+    } else {
+      setVirtualFolderId(null)
+    }
+  }
 
   return (
     <div className="omnimux-assets-tab">
-      {/* 顶部两张大操作卡片 (对应截图 3 顶部) */}
       <div className="omnimux-assets-action-row">
-        {/* 卡片 1：新建文件夹 */}
-        <div
+        <Button
+          variant="ghost"
           className="omnimux-assets-action-card"
           onClick={onCreateFolder}
           title="在当前目录下新建文件夹"
         >
-          <div className="omnimux-assets-card-icon-box">
+          <span className="omnimux-assets-card-icon-box" aria-hidden="true">
             <FolderPlus size={20} />
-          </div>
-          <div className="omnimux-assets-card-text">
+          </span>
+          <span className="omnimux-assets-card-text">
             <span className="omnimux-assets-card-title">新建文件夹</span>
             <span className="omnimux-assets-card-subtitle">在当前目录下新建</span>
-          </div>
-        </div>
+          </span>
+        </Button>
 
-        {/* 卡片 2：上传文件 */}
-        <div
+        <Button
+          variant="ghost"
           className="omnimux-assets-action-card"
           onClick={onUploadFile}
           title="上传文件到工作区目录 (支持批量上传)"
         >
-          <div className="omnimux-assets-card-icon-box">
+          <span className="omnimux-assets-card-icon-box" aria-hidden="true">
             <Upload size={20} />
-          </div>
-          <div className="omnimux-assets-card-text">
+          </span>
+          <span className="omnimux-assets-card-text">
             <span className="omnimux-assets-card-title">上传文件</span>
             <span className="omnimux-assets-card-subtitle">支持批量上传</span>
-          </div>
-        </div>
+          </span>
+        </Button>
       </div>
 
-      {/* 资产浏览器与文件表格 */}
       <div className="omnimux-assets-browser">
         <div className="omnimux-assets-filter-line">
-          {/* 路径与当前目录 */}
           <div className="omnimux-project-breadcrumbs">
-            <span
-              className={currentFolderId ? 'omnimux-project-crumb-link' : 'omnimux-project-crumb-current'}
-              onClick={() => setCurrentFolderId(null)}
-            >
-              全部文件
-            </span>
-            {currentFolder && (
+            {physicalSegments.length > 0 || virtualFolder ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="omnimux-project-crumb-link"
+                onClick={navigateRoot}
+              >
+                {t?.('projects.assetsAllFiles') || '全部文件'}
+              </Button>
+            ) : (
+              <span className="omnimux-project-crumb-current">
+                {t?.('projects.assetsAllFiles') || '全部文件'}
+              </span>
+            )}
+            {physicalSegments.map((segment, index) => {
+              const target = physicalSegments.slice(0, index + 1).join('/')
+              const isLast = index === physicalSegments.length - 1
+              return (
+                <React.Fragment key={target}>
+                  <span className="omnimux-project-crumb-sep" aria-hidden="true">/</span>
+                  {isLast ? (
+                    <span className="omnimux-project-crumb-current">{segment}</span>
+                  ) : (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="omnimux-project-crumb-link"
+                      onClick={() => onNavigateSubpath(target)}
+                    >
+                      {segment}
+                    </Button>
+                  )}
+                </React.Fragment>
+              )
+            })}
+            {virtualFolder && (
               <>
-                <span className="omnimux-project-crumb-sep">/</span>
-                <span className="omnimux-project-crumb-current">{currentFolder.name}</span>
+                <span className="omnimux-project-crumb-sep" aria-hidden="true">/</span>
+                <span className="omnimux-project-crumb-current">{virtualFolder.name}</span>
               </>
             )}
           </div>
 
-          {/* 搜索框与刷新 */}
           <div className="omnimux-assets-search-cluster">
-            <div className="omnimux-workflow-search-wrap">
-              <input
-                type="text"
-                className="omnimux-workflow-search-input"
-                placeholder="搜索文件名"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-              />
-            </div>
+            <SearchField
+              value={query}
+              placeholder={t?.('projects.assetsSearchPlaceholder') || '搜索文件名'}
+              onValueChange={setQuery}
+              onClear={() => setQuery('')}
+            />
             {onRefresh && (
-              <button /* exempt-ui01: 资产刷新按钮 */
-                type="button"
-                className="omnimux-header-action-btn"
+              <IconButton
+                variant="ghost"
+                size="sm"
+                aria-label={t?.('projects.refresh') || '刷新'}
                 title="刷新资产列表"
                 onClick={onRefresh}
                 disabled={loading}
               >
-                <RefreshCw size={14} className={loading ? 'omnimux-spin' : ''} />
-              </button>
+                {loading ? <IconLoadingOutline16 /> : <IconRefreshOutline16 />}
+              </IconButton>
             )}
           </div>
         </div>
 
-        {/* 文件表格 (对应截图 3) */}
         <table className="omnimux-assets-table">
           <thead>
             <tr>
               <th className="omnimux-col-name">名称</th>
               <th className="omnimux-col-size">大小</th>
               <th className="omnimux-col-time">更新时间</th>
-              <th className="omnimux-col-action"></th>
             </tr>
           </thead>
           <tbody>
-            {/* 文件夹列表 */}
-            {filteredFolders.map((f) => (
-              <tr key={f.id} onClick={() => setCurrentFolderId(f.id)}>
-                <td>
-                  <div className="omnimux-file-name-cell">
-                    <FileTypeIcon isFolder />
-                    <span className="omnimux-file-folder-name">{f.name}</span>
-                  </div>
-                </td>
-                <td>-</td>
-                <td>-</td>
-                <td>
-                  <MoreVertical size={14} className="omnimux-file-more-btn" />
-                </td>
-              </tr>
-            ))}
-
-            {/* 文件列表 */}
-            {filteredItems.map((item) => {
-              const dateStr = item.updatedAt
-                ? new Date(item.updatedAt).toLocaleDateString().replace(/\//g, '.')
-                : '2026.8.28'
-
-              return (
-                <tr key={item.id}>
-                  <td>
-                    <div className="omnimux-file-name-cell">
-                      <FileTypeIcon type={item.type} />
-                      <span>{item.name}</span>
-                    </div>
-                  </td>
-                  <td>{formatBytes(item.size)}</td>
-                  <td>{dateStr}</td>
-                  <td>
-                    <MoreVertical size={14} className="omnimux-file-more-btn" />
-                  </td>
+            {loading && !assetsDoc ? (
+              Array.from({ length: 4 }, (_, index) => (
+                <tr key={`skel-${index}`} aria-hidden="true">
+                  <td><div className="omnimux-skeleton-line omnimux-skeleton-line--title" /></td>
+                  <td><div className="omnimux-skeleton-line omnimux-skeleton-line--short" /></td>
+                  <td><div className="omnimux-skeleton-line omnimux-skeleton-line--short" /></td>
                 </tr>
-              )
-            })}
+              ))
+            ) : (
+              <>
+                {filteredFolders.map((f) => (
+                  <tr key={f.id} className="omnimux-assets-folder-row" onClick={() => openFolder(f)}>
+                    <td>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="omnimux-file-folder-btn"
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          openFolder(f)
+                        }}
+                      >
+                        <FileTypeIcon isFolder />
+                        <span className="omnimux-file-folder-name">{f.name}</span>
+                      </Button>
+                    </td>
+                    <td className="omnimux-assets-num-cell">-</td>
+                    <td className="omnimux-assets-num-cell">{formatAssetDate(f.updatedAt)}</td>
+                  </tr>
+                ))}
 
-            {filteredFolders.length === 0 && filteredItems.length === 0 && (
-              <tr>
-                <td colSpan={4} className="omnimux-assets-empty-cell">
-                  暂无文件。点击上方「新建文件夹」或「上传文件」开始添加资产。
-                </td>
-              </tr>
+                {filteredItems.map((item) => (
+                  <tr key={item.id}>
+                    <td>
+                      <div className="omnimux-file-name-cell">
+                        <FileTypeIcon type={item.type} />
+                        <span>{item.name}</span>
+                      </div>
+                    </td>
+                    <td className="omnimux-assets-num-cell">{formatBytes(item.size)}</td>
+                    <td className="omnimux-assets-num-cell">{formatAssetDate(item.updatedAt)}</td>
+                  </tr>
+                ))}
+
+                {filteredFolders.length === 0 && filteredItems.length === 0 && (
+                  <tr>
+                    <td colSpan={3} className="omnimux-assets-empty-cell">
+                      {q
+                        ? (t?.('projects.assetsEmptySearch') || '没有匹配的文件')
+                        : (t?.('projects.assetsEmpty') || '暂无文件，点击上方新建文件夹或上传文件')}
+                    </td>
+                  </tr>
+                )}
+              </>
             )}
           </tbody>
         </table>

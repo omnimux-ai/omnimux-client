@@ -5,7 +5,7 @@
 
 /**
  * @param {string} path
- * @param {{ method?: string, body?: unknown }} [opts]
+ * @param {{ method?: string, body?: unknown, signal?: AbortSignal }} [opts]
  * @returns {Promise<{ ok: boolean, status: number, body: any }>}
  */
 export async function workflowRequest(path, opts = {}) {
@@ -13,6 +13,7 @@ export async function workflowRequest(path, opts = {}) {
     method: opts.method ?? 'GET',
     headers: opts.body === undefined ? undefined : { 'Content-Type': 'application/json' },
     body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
+    ...(opts.signal ? { signal: opts.signal } : {}),
   })
   let json = {}
   try {
@@ -51,9 +52,26 @@ export function fetchProjectLibrary() {
   return workflowRequest('/omnimux-workflow/api/projects/library')
 }
 
-/** 扫描默认库下一层含合法 project.json 的文件夹。 */
-export function listProjects() {
-  return workflowRequest('/omnimux-workflow/api/projects')
+/**
+ * 扫描默认库下一层含合法 project.json 的文件夹。
+ * @param {{ covers?: 'none' | 'all', signal?: AbortSignal }} [opts]
+ */
+export function listProjects(opts = {}) {
+  const query = opts?.covers === 'none' ? '?covers=none' : ''
+  return workflowRequest(`/omnimux-workflow/api/projects${query}`, opts?.signal ? { signal: opts.signal } : undefined)
+}
+
+/**
+ * 批量获取指定项目的封面摘要（配合 listProjects({ covers: 'none' }) 渐进回填）。
+ * @param {string[]} ids
+ * @param {{ signal?: AbortSignal }} [opts]
+ */
+export function fetchProjectCovers(ids = [], opts = {}) {
+  return workflowRequest('/omnimux-workflow/api/projects/covers', {
+    method: 'POST',
+    body: { ids },
+    ...(opts?.signal ? { signal: opts.signal } : {}),
+  })
 }
 
 /**

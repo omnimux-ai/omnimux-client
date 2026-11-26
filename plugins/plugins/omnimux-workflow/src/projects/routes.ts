@@ -12,9 +12,10 @@
  * 项目库作用域 = 默认库，不再接收 cwd。写操作先过 assertLocalWrite。
  */
 import { randomUUID } from 'node:crypto';
-import { copyFileSync, existsSync, mkdirSync, readdirSync, statSync } from 'node:fs';
-import { mkdir } from 'node:fs/promises';
+import { copyFileSync, existsSync, mkdirSync } from 'node:fs';
+import { lstat, mkdir, readdir, stat } from 'node:fs/promises';
 import { basename, isAbsolute, join, relative, resolve } from 'node:path';
+import { mapConcurrent } from './asyncFiles.ts';
 import {
   MAX_JSON_BODY_BYTES,
   sendJson,
@@ -25,7 +26,7 @@ import {
   jsonBodyProblem,
 } from '../http/helpers';
 import { defaultProjectLibrary, displayHomePath, ensureLibraryRoot, resolveVideosDir } from './library';
-import { ProjectPathError } from './paths';
+import { ProjectPathError, resolveProjectRelPath, resolveSafeProjectPath, toProjectRelativePath } from './paths';
 import { createProjectStore, ProjectStoreError, validateTitle, type ProjectStore } from './ProjectStore';
 import { isEnsureProjectError, type EnsureProjectMode } from './ensureProject';
 import { ensureWorkspaceProjectBound } from './workspaceProjectBinding';
@@ -133,6 +134,7 @@ export function createProjectDispatcher(opts: {
   const libraryRe = new RegExp(`^${PROJECT_LIBRARY_PATH}$`);
   const sessionBindingRe = new RegExp(`^${PROJECT_ROUTE_PREFIX}/session-binding$`);
   const preflightRe = new RegExp(`^${PROJECT_ROUTE_PREFIX}/preflight$`);
+  const coversRe = new RegExp(`^${PROJECT_ROUTE_PREFIX}/covers$`);
   const itemRe = new RegExp(`^${PROJECT_ROUTE_PREFIX}/([^/]+)$`);
   const pagesRe = new RegExp(`^${PROJECT_ROUTE_PREFIX}/([^/]+)/pages$`);
   const pageItemRe = new RegExp(`^${PROJECT_ROUTE_PREFIX}/([^/]+)/pages/([^/]+)$`);
@@ -284,6 +286,10 @@ export function createProjectDispatcher(opts: {
           await mkdir(libraryRoot, { recursive: true });
           const { entries, owners } = await store.listForRead(req.signal);
           const summaries = entries.map(({ project, bound }) => ({ ...project, bound, workspaceDir: bound ? project.path : null }));
+          const coversMode = (url.searchParams.get('covers') ?? '').trim().toLowerCase();
+          if (coversMode === 'none') {
+            return { status: 200, body: { projects: summaries, coversIncluded: false } };
+          }
           if (!listCoverService) return { status: 200, body: { projects: summaries } };
           const projects = await listCoverService(summaries, id => owners.get(id)?.path, async id => {
             const owner = owners.get(id) ?? null;
@@ -414,49 +420,92 @@ export function createProjectDispatcher(opts: {
         return { status: 404, body: { error: 'not-found', message: 'unknown route' } };
       }
 
-      // 物理工作区文件列表 GET /api/projects/:id/files
+      // 物理工作区文件列表 GET /api/projects/:id/files（全异步 I/O，不阻塞 Host 主线程）
       const filesMatch = filesRe.exec(path);
       if (filesMatch) {
         if (method !== 'GET') return { status: 404, body: { error: 'not-found', message: 'unknown route' } };
         const projectId = filesMatch[1] ?? '';
-        const { store } = scopedStore();
-        const project = store.get(projectId);
-        const subpath = url.searchParams.get('subpath') || '';
-        const targetDir = resolve(project.path, subpath);
-        const rel = relative(project.path, targetDir);
-        if (rel.startsWith('..') || isAbsolute(rel)) {
-          return { status: 403, body: { error: 'path-denied', message: 'access denied outside project directory' } };
+        if (!/^[A-Za-z0-9_-]{1,64}$/.test(projectId)) {
+          throw new ProjectStoreError('invalid-id', `invalid project id ${projectId}`);
         }
-        if (!existsSync(targetDir)) {
-          return { status: 200, body: { items: [], currentSubpath: subpath } };
+        req.signal?.throwIfAborted();
+        await mkdir(libraryRoot, { recursive: true });
+        const { entries: projectEntries } = await store.listForRead(req.signal);
+        const project = projectEntries.find((row) => row.project.id === projectId)?.project;
+        if (!project) {
+          throw new ProjectStoreError('project-not-found', `project ${projectId} not found`);
         }
-        const entries = readdirSync(targetDir, { withFileTypes: true });
-        const items = [];
-        for (const entry of entries) {
-          if (entry.name.startsWith('.')) continue;
+        const projectRoot = resolve(project.path);
+        const rawSubpath = url.searchParams.get('subpath') || '';
+        let candidateDir = projectRoot;
+        if (rawSubpath !== '' && rawSubpath !== '.') {
+          candidateDir = resolveProjectRelPath(projectRoot, rawSubpath);
+        }
+        const targetDir = await resolveSafeProjectPath(candidateDir, projectRoot, req.signal);
+        const currentSubpath = toProjectRelativePath(projectRoot, candidateDir);
+        let dirEntries;
+        try {
+          dirEntries = await readdir(targetDir, { withFileTypes: true });
+        } catch (error) {
+          req.signal?.throwIfAborted();
+          const code = (error as NodeJS.ErrnoException)?.code;
+          if (code === 'ENOENT' || code === 'ENOTDIR') {
+            return { status: 200, body: { items: [], currentSubpath } };
+          }
+          throw error;
+        }
+        const visibleEntries = dirEntries.filter((entry) => !entry.name.startsWith('.'));
+        const resolvedItems = await mapConcurrent(visibleEntries, 8, async (entry) => {
           const full = join(targetDir, entry.name);
-          const isFolder = entry.isDirectory();
+          let isFolder = entry.isDirectory();
           let size = 0;
-          let updatedAt = new Date().toISOString();
+          let updatedAt = '';
           try {
-            const st = statSync(full);
-            size = isFolder ? 0 : st.size;
-            updatedAt = st.mtime.toISOString();
-          } catch {}
-          items.push({
-            id: `${subpath ? subpath + '/' : ''}${entry.name}`,
+            if (entry.isSymbolicLink()) {
+              // Symlinks must resolve inside projectRoot; escaping or dangling links are omitted.
+              const safeTarget = await resolveSafeProjectPath(full, projectRoot, req.signal);
+              const st = await stat(safeTarget);
+              isFolder = st.isDirectory();
+              size = isFolder ? 0 : st.size;
+              updatedAt = st.mtime.toISOString();
+            } else {
+              const st = await lstat(full);
+              if (st.isSymbolicLink()) {
+                const safeTarget = await resolveSafeProjectPath(full, projectRoot, req.signal);
+                const targetStat = await stat(safeTarget);
+                isFolder = targetStat.isDirectory();
+                size = isFolder ? 0 : targetStat.size;
+                updatedAt = targetStat.mtime.toISOString();
+              } else {
+                isFolder = st.isDirectory();
+                size = isFolder ? 0 : st.size;
+                updatedAt = st.mtime.toISOString();
+              }
+            }
+          } catch (error) {
+            req.signal?.throwIfAborted();
+            if (error instanceof ProjectPathError) {
+              return null;
+            }
+            if ((error as NodeJS.ErrnoException)?.code !== 'ENOENT') {
+              updatedAt = '';
+            }
+          }
+          return {
+            id: currentSubpath ? `${currentSubpath}/${entry.name}` : entry.name,
             name: entry.name,
             isFolder,
             size,
             updatedAt,
             type: inferMediaType(entry.name),
-          });
-        }
+          };
+        }, req.signal);
+        const items = resolvedItems.filter((item): item is NonNullable<typeof item> => item !== null);
         items.sort((a, b) => {
           if (a.isFolder !== b.isFolder) return a.isFolder ? -1 : 1;
           return a.name.localeCompare(b.name);
         });
-        return { status: 200, body: { items, currentSubpath: subpath } };
+        return { status: 200, body: { items, currentSubpath } };
       }
 
       // 物理工作区新建文件夹 POST /api/projects/:id/mkdir
@@ -505,6 +554,57 @@ export function createProjectDispatcher(opts: {
           }
         }
         return { status: 200, body: { ok: true } };
+      }
+
+      if (coversRe.exec(path)) {
+        if (method !== 'POST') {
+          return { status: 404, body: { error: 'not-found', message: 'unknown route' } };
+        }
+        const problem = jsonBodyProblem(req.body);
+        if (problem) return problem;
+        const body = req.body as { ids?: unknown };
+        if (!Array.isArray(body.ids)) {
+          return { status: 400, body: { error: 'invalid-json', message: 'ids must be an array' } };
+        }
+        const requestedIds = new Set(
+          body.ids
+            .filter((item): item is string => typeof item === 'string' && item.trim() !== '')
+            .map((item) => item.trim())
+            .slice(0, 64),
+        );
+        if (requestedIds.size === 0) {
+          return { status: 200, body: { covers: {} } };
+        }
+        req.signal?.throwIfAborted();
+        await mkdir(libraryRoot, { recursive: true });
+        const { entries, owners } = await store.listForRead(req.signal);
+        const targetSummaries = entries
+          .filter(({ project }) => requestedIds.has(project.id))
+          .map(({ project, bound }) => ({ ...project, bound, workspaceDir: bound ? project.path : null }));
+        if (targetSummaries.length === 0) {
+          return { status: 200, body: { covers: {} } };
+        }
+        const enriched = listCoverService
+          ? await listCoverService(targetSummaries, id => owners.get(id)?.path, async id => {
+              const owner = owners.get(id) ?? null;
+              if (!opts.resolveAssetsRoot) return owner?.path;
+              return store.withCanvasProject(id, owner, () => opts.resolveAssetsRoot?.(id)?.path);
+            }, req.signal)
+          : targetSummaries.map((project) => ({
+              ...project,
+              cover: { kind: 'empty' as const },
+              pages: project.pages.map((page) => ({ ...page, cover: { kind: 'empty' as const } })),
+            }));
+        const covers = Object.fromEntries(
+          enriched.map((project) => [
+            project.id,
+            {
+              cover: project.cover,
+              pages: project.pages.map((page) => ({ id: page.id, cover: 'cover' in page ? page.cover : undefined })),
+            },
+          ]),
+        );
+        return { status: 200, body: { covers } };
       }
 
       if (preflightRe.exec(path)) {

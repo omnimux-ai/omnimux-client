@@ -476,6 +476,7 @@ export function registerWorkflowRoutes(
             await serveFile(res, result.file, {
               range, signal: lifetime.signal, head: method === 'HEAD',
               name: result.name, canonical: result.canonical, mediaDigest: result.mediaDigest,
+              ifNoneMatch: header(req, 'if-none-match'),
             });
           }
           return;
