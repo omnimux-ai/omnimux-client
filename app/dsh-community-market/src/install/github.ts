@@ -58,6 +58,8 @@ function assertSource(source: NormalizedGitHubInstallSource): void {
     source.kind !== 'github'
     || !OWNER_PATTERN.test(source.owner)
     || !REPOSITORY_PATTERN.test(source.repo)
+    || source.repo === '.'
+    || source.repo === '..'
     || !COMMIT_PATTERN.test(source.commit)
     || (source.subdirectory !== undefined && !safeSubdirectory(source.subdirectory))
   ) fail('source identity is invalid')
@@ -76,7 +78,7 @@ export function githubPackageManifestUrl(source: NormalizedGitHubInstallSource):
     : `${source.subdirectory.split('/').map(segment => encodeURIComponent(segment)).join('/')}/`
   const url = `${RAW_GITHUB_ORIGIN}/${encodeURIComponent(source.owner)}/${encodeURIComponent(source.repo)}/${source.commit}/${subdirectory}package.json`
   const parsed = new URL(url)
-  if (parsed.origin !== RAW_GITHUB_ORIGIN || parsed.search !== '' || parsed.hash !== '') {
+  if (parsed.origin !== RAW_GITHUB_ORIGIN || parsed.search !== '' || parsed.hash !== '' || parsed.href !== url) {
     fail('source manifest URL is invalid')
   }
   return url

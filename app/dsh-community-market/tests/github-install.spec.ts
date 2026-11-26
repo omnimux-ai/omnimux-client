@@ -27,9 +27,14 @@ describe('GitHub package verification', () => {
     )
   })
 
-  it('rejects unsafe subdirectory characters in target and manifest URL (issue #359)', () => {
-    for (const badSubdir of ['packages/a b', 'packages/a&b', 'packages/a;id', 'packages/a?x=1', 'packages/a#frag', 'packages/..', 'packages/%2e%2e']) {
+  it('rejects unsafe subdirectory characters and dot repos in target and manifest URL (issue #359)', () => {
+    for (const badSubdir of ['packages/a b', 'packages/a&b', 'packages/a;id', "packages/a'b", 'packages/a"b', 'packages/a\nb', 'packages/a\0b', 'packages/a?x=1', 'packages/a#frag', 'packages/.', 'packages/..', 'packages/%2e%2e', 'a'.repeat(241)]) {
       const bad = { ...source, subdirectory: badSubdir }
+      expect(() => githubPackageTarget(bad)).toThrow(/GitHub package verification failed/u)
+      expect(() => githubPackageManifestUrl(bad)).toThrow(/GitHub package verification failed/u)
+    }
+    for (const badRepo of ['.', '..']) {
+      const bad = { ...source, repo: badRepo }
       expect(() => githubPackageTarget(bad)).toThrow(/GitHub package verification failed/u)
       expect(() => githubPackageManifestUrl(bad)).toThrow(/GitHub package verification failed/u)
     }
@@ -94,11 +99,17 @@ describe('manual install hints', () => {
     })
   })
 
-  it('rejects unsafe subdirectory characters in manual install hints (issue #359)', () => {
-    for (const badSubdir of ['packages/a;id', 'packages/a b', 'packages/a&b', 'packages/a$(id)']) {
+  it('rejects unsafe subdirectory characters and malformed owner/repo in manual install hints (issue #359)', () => {
+    for (const badSubdir of ['packages/a;id', 'packages/a b', 'packages/a&b', 'packages/a$(id)', "packages/a'b", 'packages/a"b', 'packages/a\nb', 'a'.repeat(241)]) {
       expect(manualInstallHint({
         ...manualBase,
         repository: { url: 'https://github.com/example/plugin', subdirectory: badSubdir },
+      })).toBeUndefined()
+    }
+    for (const badUrl of ['https://github.com/evil;id/plugin', "https://github.com/evil'id/plugin", 'https://github.com/example/..']) {
+      expect(manualInstallHint({
+        ...manualBase,
+        repository: { url: badUrl, subdirectory: 'packages/plugin' },
       })).toBeUndefined()
     }
   })
@@ -207,26 +218,28 @@ describe('Market GitHub install target', () => {
     }
   })
 
-  it('rejects execution when verified GitHub source differs from candidate source (issue #359)', async () => {
-    const official = manager(spec => ({
-      changed: true, application: 'applied', stage: 'enable', target: spec, bundle: 'dsh-plugin-git', version: '1.2.3',
-    }))
-    const service = new MarketInstallService(profile, official, {
-      verify: vi.fn(async candidate => ({
-        packageName: 'dsh-plugin-git',
-        version: '1.2.3',
-        source: { ...candidate.source!, commit: 'fedcba9876543210fedcba9876543210fedcba98' },
-      })),
-    })
-    try {
-      service.observeCatalog(snapshot())
-      const preview = await service.previewInstall('source-1', 'example/plugin', new AbortController().signal)
-      await expect(service.executePreview(preview.intent, new AbortController().signal)).rejects.toMatchObject({
-        code: 'verification-failed',
+  it('rejects execution when verified GitHub source differs or is missing (issue #359)', async () => {
+    for (const badVerification of [
+      { packageName: 'dsh-plugin-git', version: '1.2.3' },
+      { packageName: 'dsh-plugin-git', version: '1.2.3', source: { ...source, commit: 'fedcba9876543210fedcba9876543210fedcba98' } },
+      { packageName: 'dsh-plugin-git', version: '1.2.3', source: { ...source, subdirectory: 'packages/other' } },
+    ]) {
+      const official = manager(spec => ({
+        changed: true, application: 'applied', stage: 'enable', target: spec, bundle: 'dsh-plugin-git', version: '1.2.3',
+      }))
+      const service = new MarketInstallService(profile, official, {
+        verify: vi.fn(async () => badVerification),
       })
-      expect(official.installBundle).not.toHaveBeenCalled()
-    } finally {
-      service.dispose()
+      try {
+        service.observeCatalog(snapshot())
+        const preview = await service.previewInstall('source-1', 'example/plugin', new AbortController().signal)
+        await expect(service.executePreview(preview.intent, new AbortController().signal)).rejects.toMatchObject({
+          code: 'verification-failed',
+        })
+        expect(official.installBundle).not.toHaveBeenCalled()
+      } finally {
+        service.dispose()
+      }
     }
   })
 })

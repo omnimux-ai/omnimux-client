@@ -238,7 +238,25 @@ describe('catalog identity and local source records', () => {
       url: 'https://github.com/example/plugin',
       subdirectory: 'packages//market',
     })).toThrow(CatalogContractError)
-    for (const badSubdir of ['packages/a b', 'packages/a;id', 'packages/a&b', 'packages/a?q=1', 'packages/a#b', 'packages/%2e%2e']) {
+    for (const badSubdir of [
+      'packages/a b',
+      'packages/a;id',
+      'packages/a&b',
+      'packages/a?q=1',
+      'packages/a#b',
+      'packages/%2e%2e',
+      "packages/a'b",
+      'packages/a"b',
+      'packages/a\nb',
+      'packages/a\rb',
+      'packages/a\tb',
+      'packages/a\0b',
+      '.',
+      '..',
+      'packages/.',
+      'packages/..',
+      'a'.repeat(241),
+    ]) {
       expect(() => normalizeRepositoryIdentity({
         url: 'https://github.com/example/plugin',
         subdirectory: badSubdir,
@@ -247,6 +265,14 @@ describe('catalog identity and local source records', () => {
       page.items[0]!.repository = { url: 'https://github.com/example/plugin', subdirectory: badSubdir }
       expect(() => parseCatalogProviderPage(page)).toThrow(CatalogContractError)
     }
+    expect(() => normalizeGitHubInstallSource(
+      { url: 'https://github.com/evil;id/plugin' },
+      { kind: 'github', commit: '0123456789abcdef0123456789abcdef01234567' },
+    )).toThrow(CatalogContractError)
+    expect(() => normalizeGitHubInstallSource(
+      { url: 'https://github.com/example/..' },
+      { kind: 'github', commit: '0123456789abcdef0123456789abcdef01234567' },
+    )).toThrow(CatalogContractError)
     expect(() => normalizeRepositoryIdentity({ url: 'https://github.com/example/plugin/issues' }))
       .toThrow(/exactly owner and repository/u)
   })

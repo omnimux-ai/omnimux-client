@@ -687,9 +687,10 @@ export class MarketInstallService {
         throw new MarketInstallError('not-available', 'The catalog source changed before installation.')
       }
       operationSignal.throwIfAborted()
-      if (candidate.source !== undefined && verification.source !== undefined) {
+      if (candidate.source !== undefined) {
         if (
-          verification.source.kind !== candidate.source.kind
+          verification.source === undefined
+          || verification.source.kind !== candidate.source.kind
           || verification.source.owner !== candidate.source.owner
           || verification.source.repo !== candidate.source.repo
           || verification.source.commit !== candidate.source.commit
@@ -697,6 +698,8 @@ export class MarketInstallService {
         ) {
           throw new MarketInstallError('verification-failed', 'The verified GitHub source does not match the catalog candidate.')
         }
+      } else if (verification.source !== undefined) {
+        throw new MarketInstallError('verification-failed', 'Unexpected GitHub verification source for an npm package candidate.')
       }
       let target: string
       try {
