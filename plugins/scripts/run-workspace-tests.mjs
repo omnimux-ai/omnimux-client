@@ -3,9 +3,12 @@
  * Runs every workspace package's `test` script the same way locally and in CI, and fails on
  * anything short of a clean pass.
  *
- * A package passes only when its test command exits 0, reports at least one test, and its TAP
- * output contains no `not ok` line and no cancelled test. The `not ok` scan matters because a
- * suite that throws while collecting can print `not ok` while node:test still exits 0.
+ * A package passes only when its test command exits 0, reports at least one test, its TAP
+ * output contains no `not ok` line and no cancelled test, and every skip is accounted for.
+ * The `not ok` scan matters because a suite that throws while collecting can print `not ok`
+ * while node:test still exits 0. Environment skips are explicit-marker only; design skips
+ * remain allowed but are printed in the package status line. Vitest's default reporter is
+ * not TAP, so its summary is parsed separately and any vitest skip is fail-closed.
  *
  * Packages run without proxy variables so a test that silently depends on a reachable proxy
  * fails locally the same way it fails on a clean CI runner. HOME is left alone: headless Chrome
@@ -63,10 +66,20 @@ export function selectShard(packages, shard) {
   return packages.filter((pkg) => TEST_SHARDS[shard].includes(pkg.name))
 }
 /** @typedef {{ location: string, name: string, error: string }} TestFailure */
+/** @typedef {{ name: string, reason: string }} SkippedCase */
+/**
+ * Vitest's default (non-TAP) reporter prints a human-readable summary such as
+ * `Tests  1 passed | 1 skipped (2)` instead of node:test's `# tests` counters.
+ * @typedef {{
+ *   found: boolean, passed: number, failed: number, expectedFail: number,
+ *   skipped: number, pending: number, total: number, malformed: string[],
+ * }} VitestSummary
+ */
 /**
  * @typedef {{
  *   tests: number, pass: number, fail: number, cancelled: number, skipped: number,
- *   notOk: number, failures: TestFailure[],
+ *   notOk: number, failures: TestFailure[], skippedCases: SkippedCase[],
+ *   skippedSuites: SkippedCase[], vitest: VitestSummary,
  * }} TapSummary
  */
 
@@ -95,6 +108,60 @@ function sumCounter(text, key) {
   return total
 }
 
+function stripAnsi(text) {
+  // Vitest colors counts when it thinks it is on a TTY; strip escapes so the
+  // summary parses the same locally and on a piped CI runner.
+  return String(text || '').replace(/\u001b\[[0-9;]*m/g, '')
+}
+
+/**
+ * Parses Vitest's default reporter summary. `omnimux-browser` runs
+ * `vitest run` before a node:test command, and Vitest does not honor
+ * `NODE_OPTIONS=--test-reporter=tap`, so without this its skipped tests are
+ * invisible to the TAP parser and could pass silently. Several summaries may
+ * be concatenated (vitest + extension vitest), so counts are summed.
+ * @param {string} text
+ * @returns {VitestSummary}
+ */
+export function parseVitestSummary(text) {
+  const result = { found: false, passed: 0, failed: 0, expectedFail: 0, skipped: 0, pending: 0, total: 0, malformed: [] }
+  for (const raw of stripAnsi(text).split('\n')) {
+    // Vitest right-aligns the label, e.g. `      Tests  1 passed | 1 skipped (2)`.
+    const match = /^\s*Tests\s{2,}(.+)$/.exec(raw.trimEnd())
+    if (!match) continue
+    result.found = true
+    const body = match[1].trim()
+    if (/^no tests$/i.test(body)) continue
+    const declared = /\((\d+)\)\s*$/.exec(body)
+    const statuses = declared ? body.slice(0, declared.index).trim() : body
+    const parsed = { passed: 0, failed: 0, expectedFail: 0, skipped: 0, pending: 0 }
+    let segments = 0
+    let counted = 0
+    for (const part of statuses.split('|')) {
+      const segment = part.trim()
+      if (!segment) continue
+      const counts = /^(\d+)\s+(passed|failed|expected fail|skipped|todo)$/i.exec(segment)
+      if (!counts) {
+        segments = -1
+        break
+      }
+      segments += 1
+      const count = Number(counts[1])
+      counted += count
+      const kind = counts[2].toLowerCase().replace(' ', '')
+      parsed[kind === 'expectedfail' ? 'expectedFail' : kind === 'todo' ? 'pending' : kind] += count
+    }
+    if (segments <= 0) {
+      result.malformed.push(body)
+      continue
+    }
+    for (const [kind, count] of Object.entries(parsed)) result[kind] += count
+    if (!declared || Number(declared[1]) !== counted) result.malformed.push(body)
+  }
+  result.total = result.passed + result.failed + result.expectedFail + result.skipped + result.pending
+  return result
+}
+
 /**
  * Parses node:test TAP output. Several runs may be concatenated (one per spawned test command),
  * so counters are summed. Only leaf failures are listed; parents that failed because a subtest
@@ -106,7 +173,39 @@ export function parseTap(text) {
   const lines = text.split('\n')
   /** @type {TestFailure[]} */
   const failures = []
+  /** @type {SkippedCase[]} */
+  const skippedCases = []
+  /** @type {SkippedCase[]} */
+  const skippedSuites = []
   let notOk = 0
+  for (let i = 0; i < lines.length; i++) {
+    // node:test emits skipped tests as `ok N - name # SKIP reason`. Keep the
+    // reason intact: it is the only thing judge() may use to distinguish an
+    // explicit environment skip from a design/by-design skip.
+    //
+    // A `describe.skip` suite prints the same `ok … # SKIP` line but tags its
+    // YAML block `type: 'suite'`. Node's `# tests` / `# skipped` counters count
+    // only leaf tests, so a suite-level skip must be tracked apart from
+    // `skippedCases`: otherwise it looks like an unaccounted skip (mismatch)
+    // and a package whose tests all live in skipped suites looks like it
+    // reported no tests.
+    const skipped = /^\s*ok \d+ - (.*?)\s+#\s*SKIP(?:\s+(.*))?$/i.exec(lines[i])
+    if (!skipped) continue
+    let type = 'test'
+    for (let j = i + 1; j < lines.length; j++) {
+      if (/^\s*\.\.\.\s*$/.test(lines[j])) break
+      // The TAP YAML block is indented; the first flush-left line ends it.
+      if (!/^\s/.test(lines[j])) break
+      const hit = /^\s*type:\s*'?([^'\s]+)'?\s*$/.exec(lines[j])
+      if (hit) {
+        type = hit[1]
+        break
+      }
+    }
+    const entry = { name: skipped[1], reason: (skipped[2] ?? '').trim() }
+    if (type === 'suite') skippedSuites.push(entry)
+    else skippedCases.push(entry)
+  }
   for (let i = 0; i < lines.length; i++) {
     const head = /^\s*not ok \d+ - (.*)$/.exec(lines[i])
     if (!head) continue
@@ -132,20 +231,92 @@ export function parseTap(text) {
     skipped: sumCounter(text, 'skipped'),
     notOk,
     failures,
+    skippedCases,
+    skippedSuites,
+    vitest: parseVitestSummary(text),
   }
 }
 
+/** @param {{ total: number, environment: number, byDesign: number, vitestUnclassified?: number }} skip */
+export function formatSkipSummary(skip) {
+  const extra = skip.vitestUnclassified > 0 ? `, vitest-unclassified=${skip.vitestUnclassified}` : ''
+  return `skip=${skip.total} (environment=${skip.environment}, by-design=${skip.byDesign}${extra})`
+}
+
+/** Render the package status line; skips are always visible and never a bare `ok`. */
+export function formatPackageLine(result) {
+  const status = result.reasons.length ? `FAIL (${result.reasons.join(', ')})` : 'ok'
+  const skipSummary = result.judgement.skipSummary.total > 0 || result.judgement.skipSummary.parsed > 0
+    ? ` ${formatSkipSummary(result.judgement.skipSummary)}`
+    : ''
+  return `${result.name.padEnd(26)} tests=${String(result.tap.tests).padStart(5)} pass=${String(result.tap.pass).padStart(5)} fail=${result.tap.fail} cancelled=${result.tap.cancelled} ${status}${skipSummary} ${result.seconds}s`
+}
+
 /**
+ * Classifies skip lines by explicit marker only. A skipped test without
+ * `[environment-unavailable]` is by-design: free-text matching would turn
+ * legitimate optional-dependency/platform skips into false red packages.
+ *
+ * Vitest's default reporter carries no per-case reason, so its skipped/todo
+ * counts cannot be classified. They are fail-closed: an unlabelled Vitest skip
+ * can never be shown as a passing package, because that is exactly the silent
+ * hole this runner exists to close.
  * @param {{ exitCode: number | null, tap: TapSummary }} run
- * @returns {string[]} reasons the package did not pass; empty means it passed
+ * @returns {{
+ *   passed: boolean,
+ *   reasons: string[],
+ *   counts: { passed: number, failed: number, skippedEnvironment: number, skippedByDesign: number },
+ *   skipSummary: { total: number, parsed: number, environment: number, byDesign: number, mismatch: boolean, vitestUnclassified: number },
+ * }}
  */
 export function judge({ exitCode, tap }) {
+  const skippedCases = Array.isArray(tap.skippedCases) ? tap.skippedCases : []
+  const skippedSuites = Array.isArray(tap.skippedSuites) ? tap.skippedSuites : []
+  const allSkipped = [...skippedCases, ...skippedSuites]
+  const skippedEnvironment = allSkipped.filter((item) => String(item.reason || '').includes('[environment-unavailable]')).length
+  const skippedByDesign = allSkipped.length - skippedEnvironment
+  const vitest = tap.vitest && tap.vitest.found ? tap.vitest : null
+  const vitestUnclassified = vitest ? (Number(vitest.skipped) || 0) + (Number(vitest.pending) || 0) : 0
+  const vitestFailed = vitest ? (Number(vitest.failed) || 0) : 0
+  const vitestTests = vitest
+    ? (Number(vitest.passed) || 0) + vitestFailed + (Number(vitest.expectedFail) || 0) + vitestUnclassified
+    : 0
+  // `# skipped` only counts leaf tests; suite-level skips are not part of it.
+  const skippedMismatch = tap.skipped !== skippedCases.length
   const reasons = []
   if (exitCode !== 0) reasons.push(`exit code ${exitCode}`)
-  if (tap.tests === 0) reasons.push('no tests reported')
+  // A package whose only test points are skipped suites or Vitest-only runs has
+  // `# tests 0` but did report tests; it must not read as "no tests".
+  if (tap.tests === 0 && allSkipped.length === 0 && vitestTests === 0) reasons.push('no tests reported')
   if (tap.notOk > 0) reasons.push(`${tap.notOk} not ok line(s)`)
   if (tap.cancelled > 0) reasons.push(`${tap.cancelled} cancelled`)
-  return reasons
+  if (skippedEnvironment > 0) reasons.push(`${skippedEnvironment} environment-unavailable skip(s)`)
+  // Vitest default output has no explicit environment marker, so every Vitest
+  // skip/todo is treated as unclassified and fails the package (fail-closed).
+  if (vitestUnclassified > 0) reasons.push(`${vitestUnclassified} unclassified vitest skip(s) (default reporter carries no reason)`)
+  if (vitestFailed > 0) reasons.push(`${vitestFailed} vitest failure(s) not represented in TAP counters`)
+  if (vitest && Array.isArray(vitest.malformed) && vitest.malformed.length > 0) {
+    reasons.push(`vitest summary unreadable: ${vitest.malformed[0]}`)
+  }
+  if (skippedMismatch) reasons.push(`skip count mismatch: summary=${tap.skipped} parsed=${skippedCases.length}`)
+  return {
+    passed: reasons.length === 0,
+    reasons,
+    counts: {
+      passed: tap.pass,
+      failed: tap.fail,
+      skippedEnvironment,
+      skippedByDesign,
+    },
+    skipSummary: {
+      total: (Number(tap.skipped) || 0) + skippedSuites.length + vitestUnclassified,
+      parsed: allSkipped.length + vitestUnclassified,
+      environment: skippedEnvironment,
+      byDesign: skippedByDesign,
+      mismatch: skippedMismatch,
+      vitestUnclassified,
+    },
+  }
 }
 
 /** Environment for one package run: TAP reporter, repo-local bins first, no proxy, isolated DSH_HOME. */
@@ -197,7 +368,8 @@ function runPackage(pkg, logsDir) {
     rmSync(dshHome, { recursive: true, force: true })
   }
   if (logsDir) writeFileSync(join(logsDir, `${pkg.name.replaceAll('/', '__')}.log`), output)
-  return { name: pkg.name, exitCode, seconds: Math.round((Date.now() - started) / 1000), tap, reasons: judge({ exitCode, tap }) }
+  const judgement = judge({ exitCode, tap })
+  return { name: pkg.name, exitCode, seconds: Math.round((Date.now() - started) / 1000), tap, reasons: judgement.reasons, judgement }
 }
 
 function parseArgs(argv, env) {
@@ -246,8 +418,7 @@ export function main(argv = process.argv.slice(2), env = process.env) {
   for (const pkg of packages) {
     const result = runPackage(pkg, options.logs)
     results.push(result)
-    const status = result.reasons.length ? `FAIL (${result.reasons.join(', ')})` : 'ok'
-    console.log(`${result.name.padEnd(26)} tests=${String(result.tap.tests).padStart(5)} fail=${result.tap.fail} cancelled=${result.tap.cancelled} ${result.seconds}s ${status}`)
+    console.log(formatPackageLine(result))
     for (const failure of result.tap.failures.slice(0, 50)) {
       const kind = classifyFailure(failure.error)
       console.log(`    ✖ [${kind}] ${failure.location || '(no location)'} — ${failure.name}${failure.error ? ` — ${failure.error.slice(0, 200)}` : ''}`)
