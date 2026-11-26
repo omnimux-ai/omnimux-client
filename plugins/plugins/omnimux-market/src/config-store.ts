@@ -1,11 +1,166 @@
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { assertSafeIconUrlSyntax } from './icon-guard.js'
 import type { PluginConfig, SkillChannel, SortBy } from './types.js'
 
 const SORTS: SortBy[] = ['score', 'downloads', 'stars', 'installs', 'updated_at']
 const CHANNELS: SkillChannel[] = ['custom', 'workbuddy', 'skillhub']
 const DEFAULT_CHANNELS: SkillChannel[] = ['custom', 'workbuddy', 'skillhub']
+
+function realpathNativeOrFallback(target: string): string {
+  const nativeFn = (realpathSync as typeof realpathSync & { native?: typeof realpathSync }).native
+  return typeof nativeFn === 'function' ? nativeFn(target) : realpathSync(target)
+}
+
+function isContainedDir(rootReal: string, candidateReal: string): boolean {
+  const rel = relative(rootReal, candidateReal)
+  return rel === '' || (rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel))
+}
+
+/**
+ * Validate a remote market base URL (`apiBase` / `webBase`).
+ * Requires canonical public HTTPS URL without credentials, non-443 ports,
+ * loopback/private/metadata IPs, single-label hostnames, whitespace/control
+ * characters, or query/fragment delimiters.
+ */
+export function sanitizeSafeMarketBaseUrl(raw: unknown): string | undefined {
+  if (typeof raw !== 'string') return undefined
+  const trimmed = raw.trim().replace(/\/+$/, '')
+  if (!trimmed || /[?#@\\\s\u0000-\u001f]/.test(trimmed)) return undefined
+  try {
+    const parsed = assertSafeIconUrlSyntax(trimmed)
+    if (parsed.search || parsed.hash) return undefined
+    if (!parsed.hostname.includes('.')) return undefined
+    const cleanPath = parsed.pathname.replace(/\/+$/, '')
+    return `${parsed.origin}${cleanPath}`
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * Resolve a directory path to its canonical realpath when it exists, or resolve
+ * its nearest existing ancestor's realpath plus the remaining lexical segments
+ * when the directory has not been created yet (fresh install / clean CI runner).
+ */
+function resolveCanonicalRoot(dirPath: string): { canonical: string; exists: boolean } | null {
+  const resolved = resolve(dirPath)
+  try {
+    const st = lstatSync(resolved)
+    if (st.isSymbolicLink() || !st.isDirectory()) return null
+    return { canonical: realpathNativeOrFallback(resolved), exists: true }
+  } catch (err: unknown) {
+    if ((err as NodeJS.ErrnoException)?.code !== 'ENOENT') return null
+  }
+  const missingSegments: string[] = []
+  let probe = resolved
+  while (true) {
+    const parent = dirname(probe)
+    if (parent === probe) return null
+    missingSegments.unshift(relative(parent, probe))
+    probe = parent
+    try {
+      const st = lstatSync(probe)
+      if (!st.isDirectory()) return null
+      const baseReal = realpathNativeOrFallback(probe)
+      return { canonical: join(baseReal, ...missingSegments), exists: false }
+    } catch (err: unknown) {
+      if ((err as NodeJS.ErrnoException)?.code !== 'ENOENT') return null
+    }
+  }
+}
+
+/**
+ * Validate `skillsDir`: must resolve inside `dshHome()` without symlinks
+ * (including intermediate symlinked segments), traversal, UNC paths, or null bytes.
+ */
+export function sanitizeSafeSkillsDir(raw: unknown, home: string = dshHome()): string | undefined {
+  if (typeof raw !== 'string') return undefined
+  const trimmed = raw.trim()
+  if (!trimmed || trimmed.includes('\0') || /^(?:\\\\|\/\/)/.test(trimmed)) return undefined
+  const expanded = trimmed === '~'
+    ? homedir()
+    : (trimmed.startsWith('~/') || trimmed.startsWith('~\\') ? join(homedir(), trimmed.slice(2)) : trimmed)
+  if (!isAbsolute(expanded)) return undefined
+
+  const resolvedHome = resolve(home)
+  const homeInfo = resolveCanonicalRoot(resolvedHome)
+  if (!homeInfo) return undefined
+
+  const resolvedCandidate = resolve(expanded)
+  // Compute relative segments under `resolvedHome` (or canonical `homeInfo.canonical`,
+  // handling macOS `/var` -> `/private/var` aliasing).
+  let matchedResolvedHome = true
+  let rel = relative(resolvedHome, resolvedCandidate)
+  if (rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
+    matchedResolvedHome = false
+    rel = relative(homeInfo.canonical, resolvedCandidate)
+    if (rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
+      return undefined
+    }
+  }
+
+  const segments = rel ? rel.split(sep).filter(Boolean) : []
+  if (segments.some((seg) => seg === '.' || seg === '..')) return undefined
+
+  // Walk top-down from `homeInfo.canonical` through every segment so intermediate
+  // symlinks (e.g. `DSH_HOME/link/sub`) are always caught and rejected.
+  const baseOut = matchedResolvedHome ? resolvedHome : homeInfo.canonical
+  let current = homeInfo.canonical
+  if (homeInfo.exists) {
+    for (let i = 0; i < segments.length; i += 1) {
+      const seg = segments[i]!
+      current = join(current, seg)
+      try {
+        const st = lstatSync(current)
+        if (st.isSymbolicLink() || !st.isDirectory()) return undefined
+        const real = realpathNativeOrFallback(current)
+        if (!isContainedDir(homeInfo.canonical, real)) return undefined
+        current = real
+      } catch (err: unknown) {
+        if ((err as NodeJS.ErrnoException)?.code !== 'ENOENT') return undefined
+        // First non-existent component inside `homeInfo.canonical`; remaining segments
+        // are already validated non-traversal segments.
+        const rest = segments.slice(i + 1)
+        const canonicalFinal = rest.length ? join(current, ...rest) : current
+        if (!isContainedDir(homeInfo.canonical, canonicalFinal)) return undefined
+        return segments.length ? join(baseOut, ...segments) : baseOut
+      }
+    }
+    if (!isContainedDir(homeInfo.canonical, current)) return undefined
+    return segments.length ? join(baseOut, ...segments) : baseOut
+  }
+
+  // `dshHome()` does not exist yet: no symlink can exist inside it; verify
+  // lexical containment and return the normalized target path.
+  const canonicalFinal = segments.length ? join(homeInfo.canonical, ...segments) : homeInfo.canonical
+  if (!isContainedDir(homeInfo.canonical, canonicalFinal)) return undefined
+  return segments.length ? join(baseOut, ...segments) : baseOut
+}
+
+/**
+ * Validate explicit user-supplied config save fields (`apiBase`, `webBase`, `skillsDir`)
+ * and return an error message when any provided field violates security bounds.
+ */
+export function validateConfigPatchInput(raw: Record<string, unknown>, home: string = dshHome()): string | null {
+  if (raw.apiBase !== undefined && raw.apiBase !== '') {
+    if (!sanitizeSafeMarketBaseUrl(raw.apiBase)) {
+      return 'apiBase 必须为合法的公网 HTTPS 地址'
+    }
+  }
+  if (raw.webBase !== undefined && raw.webBase !== '') {
+    if (!sanitizeSafeMarketBaseUrl(raw.webBase)) {
+      return 'webBase 必须为合法的公网 HTTPS 地址'
+    }
+  }
+  if (raw.skillsDir !== undefined && raw.skillsDir !== '') {
+    if (!sanitizeSafeSkillsDir(raw.skillsDir, home)) {
+      return 'skillsDir 必须位于受管 DSH 主目录内且不得包含符号链接'
+    }
+  }
+  return null
+}
 
 export function dshHome(): string {
   return process.env.DSH_HOME || join(homedir(), '.dsh')
@@ -60,9 +215,12 @@ export function writeOverlay(cfg: PluginConfig): void {
 
 export function sanitizePatch(raw: Record<string, unknown>): Partial<PluginConfig> {
   const out: Partial<PluginConfig> = {}
-  if (typeof raw.apiBase === 'string' && /^https?:\/\//i.test(raw.apiBase.trim())) out.apiBase = raw.apiBase.trim().replace(/\/$/, '')
-  if (typeof raw.webBase === 'string' && /^https?:\/\//i.test(raw.webBase.trim())) out.webBase = raw.webBase.trim().replace(/\/$/, '')
-  if (typeof raw.skillsDir === 'string' && raw.skillsDir.trim()) out.skillsDir = raw.skillsDir.trim()
+  const safeApiBase = sanitizeSafeMarketBaseUrl(raw.apiBase)
+  if (safeApiBase) out.apiBase = safeApiBase
+  const safeWebBase = sanitizeSafeMarketBaseUrl(raw.webBase)
+  if (safeWebBase) out.webBase = safeWebBase
+  const safeSkillsDir = sanitizeSafeSkillsDir(raw.skillsDir)
+  if (safeSkillsDir) out.skillsDir = safeSkillsDir
   if (typeof raw.userAgent === 'string' && raw.userAgent.trim()) out.userAgent = raw.userAgent.trim()
   const timeout = Number(raw.timeoutMs)
   if (Number.isFinite(timeout) && timeout >= 3000) out.timeoutMs = Math.min(timeout, 120000)
