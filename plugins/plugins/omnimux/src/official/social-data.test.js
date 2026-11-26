@@ -4,6 +4,7 @@ import { OmnimuxError } from '../media/errors.js'
 import { createOfficialClient } from './client.js'
 import {
   SOCIAL_DATA_CATALOG,
+  SOCIAL_DATA_GROUP,
   extractTweetId,
   extractTikTokShopProductId,
   extractYouTubeVideoId,
@@ -38,7 +39,7 @@ describe('social data catalog', () => {
     assert.equal(resolveSocialDataModel({ platform: 'x', capability: 'search', query: '@sample_name' }).value, '@sample_name')
   })
 
-  it('binds only the four account collection capabilities to their dedicated group per request', async () => {
+  it('routes every cloud social data capability with the dedicated social-data-tikhub group per request without sticky leakage', async () => {
     const requests = []
     const client = createOfficialClient({
       siteBaseUrl: 'https://site.example', apiBaseUrl: 'https://api.example',
@@ -49,11 +50,10 @@ describe('social data catalog', () => {
       },
     })
     const signal = new AbortController().signal
-    const targetModels = ['x-user', 'x-posts', 'tiktok-user', 'tiktok-posts']
     const pairs = Object.entries(SOCIAL_DATA_CATALOG).flatMap(([platform, capabilities]) =>
       Object.entries(capabilities).map(([capability, model]) => ({ platform, capability, model })))
-    // Follow grouped requests with every unrelated capability to catch a sticky client-wide group.
-    pairs.sort((a, b) => Number(targetModels.includes(b.model)) - Number(targetModels.includes(a.model)))
+    assert.equal(SOCIAL_DATA_GROUP, 'social-data-tikhub')
+    assert.equal(pairs.length, 38)
     for (const { platform, capability, model } of pairs) {
       await fetchSocialData(client, { platform, capability, id: '12345678' }, { signal, allowPublicTweet: false })
       const { url, init } = requests.at(-1)
@@ -61,9 +61,42 @@ describe('social data catalog', () => {
       assert.equal(JSON.parse(init.body).model, model)
       assert.equal(init.headers.authorization, 'Bearer fixture-key')
       assert.equal(init.signal, signal)
-      assert.equal(init.headers['X-Omnimux-Group'], targetModels.includes(model) ? 'social-data-tikhub' : undefined, model)
+      assert.equal(init.headers['X-Omnimux-Group'], SOCIAL_DATA_GROUP, model)
     }
-    assert.equal(requests.length, pairs.length)
+    // Verify non-social calls on the same shared client never inherit X-Omnimux-Group.
+    await client.withSk('/v1/models')
+    assert.equal(requests.at(-1).url, 'https://api.example/v1/models')
+    assert.equal(requests.at(-1).init.headers['X-Omnimux-Group'], undefined)
+    assert.equal(requests.length, pairs.length + 1)
+  })
+
+  it('sends X-Omnimux-Group social-data-tikhub for TikTok Shop search, product detail, reviews, and creator videos', async () => {
+    const requests = []
+    const client = createOfficialClient({
+      siteBaseUrl: 'https://site.example', apiBaseUrl: 'https://api.example',
+      resolveApiKey: () => 'fixture-key', resolveAccess: async () => ({ token: '' }),
+      fetcher: async (url, init) => {
+        requests.push({ url, headers: init.headers, body: JSON.parse(init.body) })
+        return { ok: true, status: 200, json: async () => ({ code: 200, data: { products: [] } }) }
+      },
+    })
+    await fetchSocialData(client, { platform: 'tiktok', capability: 'shop_search_v2', query: 'serum', region: 'US' })
+    await fetchSocialData(client, { platform: 'tiktok', capability: 'shop_product', id: '1732604036473983816', region: 'US' })
+    await fetchSocialData(client, { platform: 'tiktok', capability: 'shop_reviews_v2', id: '1732604036473983816', region: 'US' })
+    await fetchSocialData(client, { platform: 'tiktok', capability: 'creator_search_videos', query: 'serum', region: 'US' })
+    assert.equal(requests.length, 4)
+    for (const req of requests) {
+      assert.equal(req.headers['X-Omnimux-Group'], 'social-data-tikhub')
+    }
+    assert.equal(requests[0].body.model, 'tiktok-shop-search-v2')
+    assert.equal(requests[0].body.search_word, 'serum')
+    assert.equal(requests[0].body.region, 'US')
+    assert.equal(requests[1].body.model, 'tiktok-shop-product-v3')
+    assert.equal(requests[1].body.product_id, '1732604036473983816')
+    assert.equal(requests[2].body.model, 'tiktok-shop-reviews-v2')
+    assert.equal(requests[2].body.product_id, '1732604036473983816')
+    assert.equal(requests[3].body.model, 'tiktok-creator-search-videos')
+    assert.equal(requests[3].body.keyword, 'serum')
   })
 
   it('keeps account collection cancellation before and during a grouped request', async () => {

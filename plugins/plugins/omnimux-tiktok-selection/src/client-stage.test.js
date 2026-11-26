@@ -205,6 +205,12 @@ test('registerMoreMenuEntry retries until window.__omnimuxSidebar becomes ready 
 test('built lib/client.js wraps omnimux-tiktok-selection factory and registers More menu entry', () => {
   const bundle = readFileSync(join(PKG_ROOT, 'lib', 'client.js'), 'utf8')
   assert.ok(bundle.includes('id: "omnimux-tiktok-selection"'))
+  assert.ok(
+    bundle.includes('商品评价') || bundle.includes('\\u5546\\u54C1\\u8BC4\\u4EF7'),
+    'built lib/client.js must render detail reviews section'
+  )
+  const discoverySource = readFileSync(join(PKG_ROOT, 'src', 'client', 'DiscoveryPanel.jsx'), 'utf8')
+  assert.equal(discoverySource.includes('·'), false, 'DiscoveryPanel copy must not contain middle dot separators')
 
   const dom = new JSDOM('<!doctype html><html><body></body></html>', {
     runScripts: 'dangerously',

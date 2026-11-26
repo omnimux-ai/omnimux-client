@@ -293,4 +293,236 @@ describe('DataSourceAdapter CSV/JSON snapshot parsing & live socialData', () => 
       cleanup()
     }
   })
+
+  it('normalizes real TikHub Shop search object prices, V3 product_data, creator video_list, and product_reviews envelopes', async () => {
+    const { store, cleanup } = makeTempStore()
+    try {
+      const fakeSocialData = {
+        fetch: async (req) => {
+          if (req.capability === 'shop_search_v2') {
+            return {
+              code: 0,
+              data: {
+                has_more: true,
+                products: [
+                  {
+                    product_id: '1731128793906516409',
+                    title: 'Vitamin C Brightening Facial Serum',
+                    price: {
+                      sale_price: '19.99',
+                      max_price: '24.99',
+                      currency: '$',
+                    },
+                    sales: 1250,
+                    rating: 4.7,
+                    cover_url: 'https://p16-oec.example/serum.jpg',
+                    product_url: 'https://www.tiktok.com/view/product/1731128793906516409',
+                  },
+                ],
+              },
+            }
+          }
+          if (req.capability === 'shop_product') {
+            return {
+              product_data: {
+                page_config: {
+                  components_map: [
+                    {
+                      component_data: {
+                        product_info: {
+                          product_model: {
+                            name: 'Vitamin C Brightening Facial Serum 30ml',
+                            product_id: '1731128793906516409',
+                            category_name: 'Beauty & Personal Care',
+                            images: [{ url_list: ['https://p16-oec.example/v3-serum.webp'] }],
+                          },
+                          seller_model: {
+                            shop_name: 'GlowLab Official US',
+                            seller_id: 'seller_881',
+                          },
+                          promotion_model: {
+                            promotion_product_price: {
+                              min_price: {
+                                sale_price_format: '18.50',
+                                currency_symbol: '$',
+                              },
+                            },
+                          },
+                          review_model: {
+                            product_rating: 4.8,
+                            review_count: 340,
+                          },
+                          sold_count: 1380,
+                        },
+                      },
+                    },
+                  ],
+                },
+              },
+            }
+          }
+          if (req.capability === 'creator_search_videos') {
+            return {
+              status_code: 0,
+              has_more: 1,
+              video_list: [
+                {
+                  aweme_id: '7350810998023949599',
+                  desc: 'Glow serum 7 day glass skin demo',
+                  create_time: 1711305600,
+                  author: { unique_id: 'skincare_creator' },
+                  statistics: { play_count: 450000, digg_count: 32000, collect_count: 1900 },
+                },
+              ],
+            }
+          }
+          if (req.capability === 'shop_reviews_v2') {
+            return {
+              code: 0,
+              data: {
+                has_more: true,
+                total_reviews: '100',
+                product_reviews: [
+                  {
+                    review_id: '9001',
+                    review_rating: 5,
+                    review_time: '2026-10-01',
+                    review_text: 'Great texture and fast shipping!',
+                    reviewer_name: 'J*** D.',
+                  },
+                ],
+              },
+            }
+          }
+          return {}
+        },
+      }
+      const adapter = createDataSourceAdapter({
+        store,
+        getService: (name) => (name === 'socialData' ? fakeSocialData : null),
+      })
+
+      const searchRes = await adapter.searchProducts({ keyword: 'serum', region: 'US' })
+      assert.equal(searchRes.items.length, 1)
+      assert.equal(searchRes.items[0].productId, '1731128793906516409')
+      assert.equal(searchRes.items[0].priceMin, 19.99)
+      assert.equal(searchRes.items[0].priceMax, 24.99)
+      assert.equal(searchRes.items[0].priceDisplay, '$19.99 - $24.99')
+      assert.equal(searchRes.items[0].totalSales, 1250)
+      assert.equal(searchRes.items[0].rating, 4.7)
+      assert.equal(searchRes.items[0].coverUrl, 'https://p16-oec.example/serum.jpg')
+
+      const detailRes = await adapter.getProductDetail({
+        productId: '1731128793906516409',
+        region: 'US',
+        loadVideos: true,
+        loadReviews: true,
+        productHint: searchRes.items[0],
+      })
+      assert.equal(detailRes.product.shopName, 'GlowLab Official US')
+      assert.equal(detailRes.product.priceMin, 18.5)
+      assert.equal(detailRes.product.rating, 4.8)
+      assert.equal(detailRes.product.reviewCount, 340)
+      assert.equal(detailRes.product.totalSales, 1380)
+      assert.equal(detailRes.referenceVideos.length, 1)
+      assert.equal(detailRes.referenceVideos[0].videoId, '7350810998023949599')
+      assert.equal(detailRes.referenceVideos[0].playCount, 450000)
+      assert.equal(detailRes.referenceVideos[0].likeCount, 32000)
+      assert.equal(detailRes.reviews.length, 1)
+      assert.equal(detailRes.reviews[0].rating, 5)
+      assert.equal(detailRes.reviews[0].text, 'Great texture and fast shipping!')
+      assert.equal(detailRes.reviews[0].createdAt, '2026-10-01')
+      assert.equal(detailRes.reviews[0].reviewer, 'J*** D.')
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('guards malformed TikHub items (object cover, null entries, non-numeric timestamps, missing/NaN review ratings)', async () => {
+    const { store, cleanup } = makeTempStore()
+    try {
+      const fakeSocialData = {
+        fetch: async (req) => {
+          if (req.capability === 'shop_search_v2') {
+            return {
+              data: {
+                products: [
+                  {
+                    product_id: '777',
+                    title: 'Safe Fallback Product',
+                    images: [{ url_list: [] }, 'https://cdn.example/ignored.jpg'],
+                    main_image: 'https://cdn.example/main-cover.jpg',
+                    price: { unknown_key: true },
+                  },
+                ],
+              },
+            }
+          }
+          if (req.capability === 'creator_search_videos') {
+            return {
+              data: {
+                video_list: [
+                  null,
+                  {
+                    aweme_id: '888',
+                    desc: 'Date formatted video',
+                    create_time: '2026-10-01',
+                    author: { nickname: 'CreatorA' },
+                  },
+                ],
+              },
+            }
+          }
+          if (req.capability === 'shop_reviews_v2') {
+            return {
+              data: {
+                product_reviews: [
+                  null,
+                  {
+                    review_rating: null,
+                    review_text: 'No stars provided',
+                    author: { nickname: 'Alice' },
+                    review_time: '2026-10-02',
+                  },
+                  {
+                    rating: 'N/A',
+                    text: 'Non-numeric rating',
+                    reviewer_name: 'Bob',
+                  },
+                ],
+              },
+            }
+          }
+          return {}
+        },
+      }
+      const adapter = createDataSourceAdapter({
+        store,
+        getService: (name) => (name === 'socialData' ? fakeSocialData : null),
+      })
+
+      const search = await adapter.searchProducts({ keyword: 'Safe', region: 'US' })
+      assert.equal(search.items.length, 1)
+      assert.equal(search.items[0].coverUrl, 'https://cdn.example/main-cover.jpg')
+      assert.equal(search.items[0].priceMin, null)
+      assert.equal(search.items[0].priceDisplay, '—')
+
+      const detail = await adapter.getProductDetail({
+        productId: '777',
+        region: 'US',
+        loadVideos: true,
+        loadReviews: true,
+        productHint: search.items[0],
+      })
+      assert.equal(detail.referenceVideos.length, 1)
+      assert.equal(detail.referenceVideos[0].publishedAt, '2026-10-01')
+      assert.equal(detail.reviews.length, 2)
+      assert.equal(detail.reviews[0].rating, null)
+      assert.equal(detail.reviews[0].reviewer, 'Alice')
+      assert.equal(detail.reviews[1].rating, null)
+      assert.equal(detail.reviews[1].text, 'Non-numeric rating')
+    } finally {
+      cleanup()
+    }
+  })
 })
