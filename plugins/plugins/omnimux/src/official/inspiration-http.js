@@ -1,4 +1,5 @@
 import { sendJson, readJsonBody } from '../auth/http-routes.js'
+import { requestRejection } from '../host/request-authorization.js'
 import { DEFAULT_SITE, resolveSiteBaseUrl } from '../auth/omnimux-auth.js'
 import { assertLocalWrite } from '../apps/origin.js'
 import { OmnimuxError } from '../media/errors.js'
@@ -292,17 +293,22 @@ export function createInspirationDispatcher(deps = {}) {
  * @param {{ register: (route: { kind: string, path: string, handler: Function }) => () => void }} webServer
  * @param {ReturnType<typeof createInspirationDispatcher>} dispatcher
  */
-export function registerInspirationRoutes(webServer, dispatcher) {
+export function registerInspirationRoutes(webServer, dispatcher, deps = {}) {
   const dispose = webServer.register({
     kind: 'prefix',
     path: PREFIX,
     auth: 'required',
-    async handler(req, res) {
+    async handler(req, res, peer) {
       const method = (req.method || 'GET').toUpperCase()
       const sendResponse = sendJson
       try {
         if (method === 'OPTIONS') {
           sendJson(res, 204, {})
+          return
+        }
+        const rejection = requestRejection(req, deps.getConnection, peer)
+        if (rejection !== undefined) {
+          sendJson(res, rejection, { error: rejection === 403 ? 'not-local' : 'request-denied' })
           return
         }
         const url = new URL(req.url || PREFIX, 'http://127.0.0.1')

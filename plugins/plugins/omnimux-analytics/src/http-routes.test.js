@@ -129,3 +129,27 @@ test('routes register on a plugin-owned path, never on the hub dashboard prefix'
   assert.equal(ANALYTICS_INGEST_PATH.startsWith('/omnimux/analytics'), false)
   assert.equal(typeof dispose, 'function')
 })
+
+test('registerAnalyticsRoutes enforces connection.requestRejection fail-closed (issue #355)', async () => {
+  let route = null
+  let dispatched = 0
+  registerAnalyticsRoutes(
+    { register: (r) => { route = r; return () => {} } },
+    async () => { dispatched += 1 },
+    { getConnection: () => ({ requestRejection: () => 401 }) },
+  )
+  const res401 = { status: 0, writeHead(s) { this.status = s }, end() {} }
+  await route.handler({ method: 'POST', url: ANALYTICS_INGEST_PATH, headers: {} }, res401)
+  assert.equal(res401.status, 401)
+  assert.equal(dispatched, 0)
+
+  let routeMissing = null
+  registerAnalyticsRoutes(
+    { register: (r) => { routeMissing = r; return () => {} } },
+    async () => { dispatched += 1 },
+  )
+  const res503 = { status: 0, writeHead(s) { this.status = s }, end() {} }
+  await routeMissing.handler({ method: 'POST', url: ANALYTICS_INGEST_PATH, headers: {} }, res503)
+  assert.equal(res503.status, 503)
+  assert.equal(dispatched, 0)
+})

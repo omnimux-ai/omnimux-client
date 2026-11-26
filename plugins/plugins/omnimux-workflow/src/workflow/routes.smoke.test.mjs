@@ -67,7 +67,7 @@ function makeHarness() {
     },
   };
   const dispose = host.mountWorkflowHost(
-    { webServer },
+    { webServer, get: (name) => (name === 'connection' ? { requestRejection: () => undefined } : undefined) },
     {
       paths: {
         root: dir,

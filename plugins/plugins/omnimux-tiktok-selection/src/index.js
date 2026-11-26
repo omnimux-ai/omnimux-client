@@ -83,7 +83,9 @@ export function apply(ctx, config = {}) {
   const mountHttp = (httpCtx) => {
     const webServer = httpCtx.webServer ?? httpCtx.get?.('webServer')
     if (!webServer || typeof webServer.register !== 'function') return
-    const mount = () => registerSelectionRoutes(webServer, dispatcher, ctx.logger)
+    const mount = () => registerSelectionRoutes(webServer, dispatcher, ctx.logger, {
+      getConnection: () => httpCtx.get?.('connection') ?? ctx.get?.('connection'),
+    })
     if (typeof httpCtx.effect === 'function') httpCtx.effect(mount, 'omnimux-tiktok-selection: http routes')
     else mount()
   }

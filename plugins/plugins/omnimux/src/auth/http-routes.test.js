@@ -438,7 +438,7 @@ describe('auth http dispatcher', () => {
       writeHead(status) { seen.status = status },
       end(chunk) { seen.chunks.push(String(chunk)) },
     }
-    await composerRoute.handler(req, res)
+    await composerRoute.handler(req, res, { principal: { kind: 'owner' } })
     assert.equal(seen.status, 200)
     assert.deepEqual(JSON.parse(seen.chunks.join('')), { results: [] })
     assert.deepEqual(observedSessionIds, ['sess-522'])

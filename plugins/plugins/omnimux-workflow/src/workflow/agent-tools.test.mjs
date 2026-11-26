@@ -87,6 +87,7 @@ function makeHarness({ gatewayLatency = { minLatencyMs: 10, maxLatencyMs: 30 }, 
   const ctx = {
     webServer,
     get(name) {
+      if (name === 'connection') return { requestRejection: () => undefined };
       return name === 'modelCatalog' && catalog ? { list: () => catalog } : undefined;
     },
     tools: {

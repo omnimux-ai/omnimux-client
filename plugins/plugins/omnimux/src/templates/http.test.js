@@ -118,7 +118,9 @@ test('注册处理器写入响应头与 JSON 体，卸载后路由注销', async
       return () => handlers.delete(route.path);
     },
   };
-  const stop = registerTemplatesRoutes(webServer, dispatcher);
+  const stop = registerTemplatesRoutes(webServer, dispatcher, {
+    getConnection: () => ({ requestRejection: () => undefined }),
+  });
   assert.equal(handlers.size, 1);
 
   const fakeRes = () => {
@@ -190,7 +192,9 @@ test('经真实 Node HTTP 服务响应且注册/注销生效', async () => {
       return () => this.routes.delete(route.path);
     },
   };
-  const stop = registerTemplatesRoutes(webServer, dispatcher);
+  const stop = registerTemplatesRoutes(webServer, dispatcher, {
+    getConnection: () => ({ requestRejection: () => undefined }),
+  });
 
   const server = createServer((req, res) => {
     const route = webServer.routes.get('/omnimux/templates');

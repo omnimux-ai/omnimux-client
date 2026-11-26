@@ -269,10 +269,8 @@ export function registerAuthRoutes(webServer, dispatcher, deps = {}) {
     auth: 'required',
     async handler(req, res, peer) {
       try {
-        if ((req.method !== 'GET' && req.method !== 'HEAD') || path === '/omnimux/auth/model-keys') {
-          const rejection = requestRejection(req, deps.getConnection, peer)
-          if (rejection !== undefined) return sendJson(res, rejection, { error: 'request-denied' })
-        }
+        const rejection = requestRejection(req, deps.getConnection, peer)
+        if (rejection !== undefined) return sendJson(res, rejection, { error: 'request-denied' })
         const body = req.method === 'POST' ? await readJsonBody(req) : undefined
         if (req.method === 'POST' && body === null) {
           sendJson(res, 400, { error: 'invalid json' })

@@ -111,16 +111,36 @@ export function createAnalyticsIngestDispatcher(deps) {
   }
 }
 
+function hostRequestRejection(req, getConnection, peer) {
+  if (peer !== undefined && peer !== null && typeof peer === 'object') return undefined
+  try {
+    const connection = getConnection?.()
+    if (typeof connection?.requestRejection !== 'function') return 503
+    const rejection = connection.requestRejection(req)
+    return rejection === undefined ? undefined : (Number.isInteger(rejection) && rejection >= 400 && rejection <= 599 ? rejection : 403)
+  } catch {
+    return 503
+  }
+}
+
 /**
  * @param {{ register: (route: { kind: string, path: string, handler: Function }) => () => void }} webServer
  * @param {(req: any, res: any) => Promise<void>} dispatcher
+ * @param {{ getConnection?: () => { requestRejection?: Function } | undefined }} [deps]
  * @returns {() => void}
  */
-export function registerAnalyticsRoutes(webServer, dispatcher) {
+export function registerAnalyticsRoutes(webServer, dispatcher, deps = {}) {
   return webServer.register({
     kind: 'exact',
     path: ANALYTICS_INGEST_PATH,
     auth: 'required',
-    handler: dispatcher,
+    handler(req, res, peer) {
+      const rejection = hostRequestRejection(req, deps.getConnection, peer)
+      if (rejection !== undefined) {
+        sendJson(res, rejection, { error: 'request-denied' })
+        return
+      }
+      return dispatcher(req, res)
+    },
   })
 }

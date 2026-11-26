@@ -54,6 +54,7 @@ function routesDouble(settings, credentials) {
   const network = []
   registerByokRoutes({ register(route) { handlers.set(route.path, route.handler); return () => handlers.delete(route.path) } }, {
     settings, credentials,
+    getConnection: () => ({ requestRejection: () => undefined }),
     onCredentialUpdated: (callback) => credentials.subscribe(callback),
     fetcher: async (url) => { network.push(url); return { ok: true, status: 200 } },
   })

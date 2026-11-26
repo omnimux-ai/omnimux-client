@@ -436,10 +436,12 @@ export function registerByokRoutes(webServer, deps) {
 
   const stopConfig = webServer.register({
     kind: 'exact', path: '/omnimux/byok/config', auth: 'required',
-    async handler(req, res) {
+    async handler(req, res, peer) {
       const method = (req.method || 'GET').toUpperCase()
       if (method === 'OPTIONS') return sendJson(res, 204, {})
       try {
+        const rejection = requestRejection(req, deps.getConnection, peer)
+        if (rejection !== undefined) return sendJson(res, rejection, { error: 'request-denied' })
         if (method === 'GET') return sendJson(res, 200, await exclusive(() => configView(getSettings(), getCredentials())))
         if (method === 'PUT' || method === 'DELETE') {
           if (!assertLocal(req, res)) return
@@ -470,10 +472,10 @@ export function registerByokRoutes(webServer, deps) {
       const method = (req.method || 'GET').toUpperCase()
       if (method === 'OPTIONS') return sendJson(res, 204, {})
       try {
-        if (method === 'GET') return sendJson(res, 200, await exclusive(() => analysisView(getSettings())))
-        if (method !== 'PUT') return sendJson(res, 405, { error: 'method-not-allowed' })
         const rejection = requestRejection(req, deps.getConnection, peer)
         if (rejection !== undefined) return sendJson(res, rejection, { error: 'request-denied' })
+        if (method === 'GET') return sendJson(res, 200, await exclusive(() => analysisView(getSettings())))
+        if (method !== 'PUT') return sendJson(res, 405, { error: 'method-not-allowed' })
         const input = object(await readJsonBody(req, 4096))
         if (input.channel !== 'official') fail(400, '请选择 OmniMux 分析服务')
         const result = await exclusive(async () => {
@@ -492,11 +494,13 @@ export function registerByokRoutes(webServer, deps) {
   // Legacy explicit mode endpoint remains separate; provider save/check never invokes it.
   const stopMode = webServer.register({
     kind: 'exact', path: '/omnimux/runtime/mode', auth: 'required',
-    async handler(req, res) {
+    async handler(req, res, peer) {
       const method = (req.method || 'GET').toUpperCase()
       if (method === 'OPTIONS') return sendJson(res, 204, {})
       if (method !== 'PUT') return sendJson(res, 404, { error: 'not found' })
       try {
+        const rejection = requestRejection(req, deps.getConnection, peer)
+        if (rejection !== undefined) return sendJson(res, rejection, { error: 'request-denied' })
         if (!assertLocal(req, res)) return
         const body = object(await readJsonBody(req))
         const mode = str(body.mode)
@@ -514,11 +518,13 @@ export function registerByokRoutes(webServer, deps) {
 
   const stopTest = webServer.register({
     kind: 'exact', path: '/omnimux/byok/test', auth: 'required',
-    async handler(req, res) {
+    async handler(req, res, peer) {
       const method = (req.method || 'GET').toUpperCase()
       if (method === 'OPTIONS') return sendJson(res, 204, {})
       if (method !== 'POST') return sendJson(res, 404, { error: 'not found' })
       try {
+        const rejection = requestRejection(req, deps.getConnection, peer)
+        if (rejection !== undefined) return sendJson(res, rejection, { error: 'request-denied' })
         if (!assertLocal(req, res)) return
         const input = object(await readJsonBody(req))
         const response = await exclusive(async () => {

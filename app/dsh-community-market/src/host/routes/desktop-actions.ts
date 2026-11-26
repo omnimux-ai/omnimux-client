@@ -4,7 +4,7 @@ import { ROUTE_OPEN_TERMINAL } from '../route-paths.js'
 import { mutationAllowed } from '../request-authority.js'
 import { abortOnDisconnect, readOperationJson, sendInstallError, sendJson } from '../http.js'
 import { asEmptyDesktopAction } from '../request-validation.js'
-import type { MarketRouteContext, MarketDesktopActionsProvider } from './context.js'
+import { registerAuthenticatedMarketRoute, type MarketRouteContext, type MarketDesktopActionsProvider } from './context.js'
 
 /**
  * Register desktop action routes, registered only when the embedding Desktop offers them.
@@ -15,7 +15,7 @@ import type { MarketRouteContext, MarketDesktopActionsProvider } from './context
 export function registerDesktopActionRoutes(context: MarketRouteContext, desktopActionsProvider: MarketDesktopActionsProvider): (() => void)[] {
   const { ctx, expectedPort, generationController } = context
   return [
-    ctx.webServer.register({ kind: 'exact', path: ROUTE_OPEN_TERMINAL, handler: async (req, res) => {
+    registerAuthenticatedMarketRoute(ctx, ROUTE_OPEN_TERMINAL, async (req, res) => {
       if (req.method !== 'POST' || !mutationAllowed(req, expectedPort)) {
         sendJson(res, 405, { error: 'opening DSH Terminal requires a local same-origin POST' })
         return
@@ -38,6 +38,6 @@ export function registerDesktopActionRoutes(context: MarketRouteContext, desktop
       } finally {
         stopWatching()
       }
-    }}),
+    }),
   ]
 }

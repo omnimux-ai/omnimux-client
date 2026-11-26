@@ -47,7 +47,10 @@ function fakeCredentials(stored = '') {
 }
 function register(deps) {
   const handlers = new Map()
-  registerByokRoutes({ register(route) { handlers.set(route.path, route.handler); return () => handlers.delete(route.path) } }, deps)
+  const merged = Object.hasOwn(deps, 'getConnection')
+    ? deps
+    : { getConnection: () => ({ requestRejection: () => undefined }), ...deps }
+  registerByokRoutes({ register(route) { handlers.set(route.path, route.handler); return () => handlers.delete(route.path) } }, merged)
   return handlers
 }
 function savedRecord() {

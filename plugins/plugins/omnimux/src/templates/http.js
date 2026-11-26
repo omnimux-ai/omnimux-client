@@ -1,4 +1,5 @@
 import { sendJson } from '../auth/http-routes.js'
+import { requestRejection } from '../host/request-authorization.js'
 import { getCreativeTemplatesSnapshot, TemplatesDataUnavailableError } from './snapshot.js'
 
 const TEMPLATES_ROUTE_PREFIX = '/omnimux/templates'
@@ -49,13 +50,18 @@ export function createTemplatesDispatcher(deps = {}) {
  * @param {{ register: (route: { kind: string, path: string, handler: Function }) => () => void }} webServer
  * @param {ReturnType<typeof createTemplatesDispatcher>} dispatcher
  */
-export function registerTemplatesRoutes(webServer, dispatcher) {
+export function registerTemplatesRoutes(webServer, dispatcher, deps = {}) {
   const dispose = webServer.register({
     kind: 'prefix',
     path: TEMPLATES_ROUTE_PREFIX,
     auth: 'required',
-    async handler(req, res) {
+    async handler(req, res, peer) {
       try {
+        const rejection = requestRejection(req, deps.getConnection, peer)
+        if (rejection !== undefined) {
+          sendJson(res, rejection, { error: 'request-denied' })
+          return
+        }
         const result = dispatcher.dispatch({
           method: req.method || 'GET',
           url: req.url || SNAPSHOT_PATH,

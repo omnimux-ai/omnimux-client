@@ -79,7 +79,7 @@ export function mountHubHttp(httpCtx, deps) {
       appsView: shelfApps,
       tabsRemove: (id) => { deps.tabsStore.remove(id) },
       bundledDir: deps.hub.apps.bundledDir || process.env.OMNIMUX_APPS_BUNDLED_DIR || '',
-    }))
+    }), { getConnection: deps.getConnection })
     const stopApps = registerAppsRoutes(webServer, createAppsDispatcher({
       homeDir: deps.homeDir,
       profile: deps.profile,
@@ -87,7 +87,7 @@ export function mountHubHttp(httpCtx, deps) {
       siteBaseUrl: deps.siteBaseUrl,
       store: deps.appsStore,
       tabsStore: deps.tabsStore,
-    }))
+    }), { getConnection: deps.getConnection })
     const officialDeps = {
       official: deps.hub.official,
       identity: deps.identity,
@@ -99,16 +99,17 @@ export function mountHubHttp(httpCtx, deps) {
       metaStore: deps.accountMetaStore,
       avatarStore: deps.accountAvatarStore,
     }), { getConnection: deps.getConnection })
-    const stopInspiration = registerInspirationRoutes(webServer, createInspirationDispatcher(officialDeps))
+    const stopInspiration = registerInspirationRoutes(webServer, createInspirationDispatcher(officialDeps), { getConnection: deps.getConnection })
     const stopAvatar = registerAvatarRoutes(webServer, createAvatarDispatcher({
       store: deps.avatarStore,
       identity: deps.identity,
-    }))
+    }), { getConnection: deps.getConnection })
     const stopComposerAttachments = registerComposerAttachmentRoutes(
       webServer,
       createComposerAttachmentsDispatcher({
         getSessionQuery: () => deps.sessionQuery ?? null,
       }),
+      { getConnection: deps.getConnection },
     )
     const stopTextComplete = registerTextCompleteRoutes(webServer, {
       getConnection: deps.getConnection,
@@ -141,10 +142,11 @@ export function mountHubHttp(httpCtx, deps) {
       getAuthorization: () => deps.getAuthorization?.() ?? httpCtx.get?.('authorization'),
       getLlm: () => deps.getLlm?.() ?? httpCtx.get?.('llm'),
       getAgentDefaultModel: () => deps.getAgentDefaultModel?.() ?? httpCtx.get?.('agentDefaultModel'),
+      getConnection: deps.getConnection,
       refreshLiveLlmSnapshot: deps.refreshLiveLlmSnapshot,
       hubEvents: deps.hubEvents,
     })
-    const stopTemplates = registerTemplatesRoutes(webServer, createTemplatesDispatcher())
+    const stopTemplates = registerTemplatesRoutes(webServer, createTemplatesDispatcher(), { getConnection: deps.getConnection })
     return () => {
       stopAuth()
       stopCatalog()

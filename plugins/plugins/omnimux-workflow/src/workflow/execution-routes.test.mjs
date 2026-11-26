@@ -65,7 +65,7 @@ function makeHarness({ dir, gatewayLatency = { minLatencyMs: 10, maxLatencyMs: 3
   const libraryRoot = join(root, 'library');
   mkdirSync(libraryRoot, { recursive: true });
   const dispose = host.mountWorkflowHost(
-    { webServer },
+    { webServer, get: (name) => (name === 'connection' ? { requestRejection: () => undefined } : undefined) },
     {
       paths: {
         root,

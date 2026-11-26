@@ -34,7 +34,10 @@ function fakeSettings(initial = {}) {
 }
 function register(deps) {
   const handlers = new Map()
-  registerAgentRoutes({ register(route) { handlers.set(route.path, route.handler); return () => handlers.delete(route.path) } }, Object.assign({ authProbe: async () => ({ state: 'unknown', method: 'none' }) }, deps))
+  registerAgentRoutes({ register(route) { handlers.set(route.path, route.handler); return () => handlers.delete(route.path) } }, Object.assign({
+    authProbe: async () => ({ state: 'unknown', method: 'none' }),
+    getConnection: () => ({ requestRejection: () => undefined }),
+  }, deps))
   return handlers
 }
 

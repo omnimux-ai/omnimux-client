@@ -199,6 +199,7 @@ test('mountWorkflowHost keeps an injected harness library out of the shared proj
   const expectedLibrary = join(root, 'library');
   const registered = [];
   const dispose = mountWorkflowHost({
+    get: (name) => (name === 'connection' ? { requestRejection: () => undefined } : undefined),
     webServer: {
       register(route) {
         registered.push({ path: route.path, handler: route.handler });

@@ -93,6 +93,7 @@ test('both project file URLs use the injected asset store even when an asset roo
   } };
   const dispatcher = host.createWorkflowDispatcher({ store: f.store, projectStore: f.projectStore, assetsStore,
     resolveAssetsRoot() { rootChecks++; return { path: project.path }; },
+    getSeam: (name) => (name === 'connection' ? { requestRejection: () => undefined } : undefined),
     libraryRoot: join(f.root, 'library'), mediaDir: join(f.root, 'media'), gateway: {}, executionManager: {} });
   let handler;
   const unregister = host.registerWorkflowRoutes({ register(route) {

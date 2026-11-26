@@ -201,7 +201,7 @@ async function startRealHost(rootDir) {
   let registered
   const dispose = registerAssetsRoutes({
     register(route) { registered = route; return () => { registered = null } },
-  }, dispatcher)
+  }, dispatcher, { getConnection: () => ({ requestRejection: () => undefined }) })
 
   const server = createServer((req, res) => { void registered.handler(req, res) })
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
