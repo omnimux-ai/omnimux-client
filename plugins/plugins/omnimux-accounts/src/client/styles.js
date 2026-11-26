@@ -460,7 +460,7 @@ export const STYLES = `
 }
 .omnimux-accounts-chip--solid {
   background: var(--dsw-alias-bg-module-platform);
-  color: var(--dsw-alias-label-primary-foreground, var(--dsw-alias-label-primary-inverted));
+  color: var(--dsw-alias-label-primary);
 }
 .omnimux-accounts-chip--accent {
   background: color-mix(in srgb, var(--dsw-accounts-platform-color, rgba(128,128,128,1)) 16%, transparent);
@@ -1015,24 +1015,24 @@ export const STYLES = `
 .omnimux-accounts-brand-icon--tiktok {
   background: var(--dsw-platform-tiktok, #000000);
   border: 1px solid var(--dsw-alias-border-l2, rgba(255,255,255,0.14));
-  color: var(--dsw-alias-label-primary-foreground, #ffffff);
+  color: var(--dsw-alias-label-on-color, #ffffff);
 }
 .omnimux-accounts-brand-icon--instagram {
   background: radial-gradient(circle at 30% 107%, #fdf497 0%, #fdf497 5%, #fd5949 45%, #d6249f 60%, #285aeb 90%); /* exempt-ui03 官方品牌渐变色 */
-  color: var(--dsw-alias-label-primary-foreground, #ffffff);
+  color: var(--dsw-alias-label-on-color, #ffffff);
 }
 .omnimux-accounts-brand-icon--youtube {
   background: var(--dsw-platform-youtube, #ff0000);
-  color: var(--dsw-alias-label-primary-foreground, #ffffff);
+  color: var(--dsw-alias-label-on-color, #ffffff);
 }
 .omnimux-accounts-brand-icon--x {
   background: var(--dsw-platform-x, #111111);
   border: 1px solid var(--dsw-alias-border-l2, rgba(255,255,255,0.14));
-  color: var(--dsw-alias-label-primary-foreground, #ffffff);
+  color: var(--dsw-alias-label-on-color, #ffffff);
 }
 .omnimux-accounts-brand-icon--facebook {
   background: var(--dsw-platform-facebook, #1877f2);
-  color: var(--dsw-alias-label-primary-foreground, #ffffff);
+  color: var(--dsw-alias-label-on-color, #ffffff);
 }
 .omnimux-accounts-platform-info {
   flex: 1 1 auto;

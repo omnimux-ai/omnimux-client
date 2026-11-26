@@ -57,6 +57,13 @@ describe('publish asset card layout E2E (Issue #3961)', () => {
     assert.equal(recordsTable.includes(OLD_MUSIC_EMOJI), false)
   })
 
+  it('tiktok platform badge uses TikTok brand silhouette and --dsw-alias-label-on-color', () => {
+    assert.match(icons, /viewBox:\s*'-0\.7 -1\.5 27 27'/)
+    assert.match(icons, /fill:\s*'currentColor'/)
+    assert.match(icons, /M12\.525\.02/)
+    assert.match(styles, /\.omnimux-publish-plat-tag\s*\{[^}]*color:\s*var\(--dsw-alias-label-on-color\b/)
+  })
+
   it('cards are equal height: title reserves two lines and thumbnails cover the 112px box', () => {
     assert.match(styles, /\.omnimux-publish-card-thumb-img \{[^}]*object-fit: cover/s)
     assert.match(styles, /\.omnimux-publish-card-title \{[^}]*min-height: 2\.8em/s)
