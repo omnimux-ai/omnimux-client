@@ -1400,6 +1400,13 @@ th[style*="--pub-min-w"] { min-width: var(--pub-min-w); }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.omnimux-publish-accounts-item-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
 .omnimux-publish-accounts-item-handle {
   font-size: 12px;
   line-height: 16px;

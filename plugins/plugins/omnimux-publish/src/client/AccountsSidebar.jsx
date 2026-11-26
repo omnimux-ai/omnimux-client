@@ -8,6 +8,7 @@ import {
 } from './api.js'
 import {
   ACCOUNT_PLATFORM,
+  accountCapabilityBadge,
   accountDisplayName,
   accountHandle,
   accountStatusTone,
@@ -52,6 +53,7 @@ function AccountItem({ t, row, onDisconnect }) {
   const tone = row.agent_usable === false ? 'muted' : accountStatusTone(row)
   const name = accountDisplayName(row)
   const handle = accountHandle(row)
+  const cap = accountCapabilityBadge(t, row)
   const accountId = String(row.id ?? '')
 
   const handleMenuToggle = (event) => {
@@ -86,8 +88,15 @@ function AccountItem({ t, row, onDisconnect }) {
       </span>
       <span className="omnimux-publish-accounts-item-main">
         <span className="omnimux-publish-accounts-item-name">{name}</span>
-        {handle !== '' ? (
-          <span className="omnimux-publish-accounts-item-handle">{handle}</span>
+        {handle !== '' || cap !== null ? (
+          <span className="omnimux-publish-accounts-item-meta">
+            {handle !== '' ? (
+              <span className="omnimux-publish-accounts-item-handle">{handle}</span>
+            ) : null}
+            {cap !== null ? (
+              <span className={`omnimux-publish-cap-badge ${cap.tone}`}>{cap.label}</span>
+            ) : null}
+          </span>
         ) : null}
       </span>
       <span className={`omnimux-publish-accounts-item-status ${tone}`}>
