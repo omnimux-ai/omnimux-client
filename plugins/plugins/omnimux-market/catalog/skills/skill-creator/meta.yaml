@@ -1,0 +1,20 @@
+display-name-zh: 创建自定义 Skill
+version: 1.0.0
+tag-en: "Editing & Tools / Workflow Builder"
+tag-cn: "剪辑与效率工具 / 技能构建"
+complete-tags-en:
+  - "Editing & Tools"
+  - "Skill Authoring"
+complete-tags-cn:
+  - "剪辑与效率工具"
+  - "技能构建"
+summary-en: "Design, scaffold, and validate reusable bilingual OmniMux Skills with structured SOP steps and 0-Token defaults."
+summary-cn: "零门槛设计双语标准 SOP Skill，规范前端元信息与触发条件并快速复用。"
+desc-en: "Interactive guide for planning, authoring, packaging, and testing custom reusable OmniMux Skills. Enforces bilingual clarity, strict input validation, zero hardcoded secrets, and 0-Token on-demand activation."
+desc-cn: "面向创作者与运营团队的 OmniMux 自定义技能构建向导，协助梳理任务输入输出、合规红线与执行步骤，生成标准双语 SKILL.md 并完成本机试跑验收。"
+cover: ""
+author-en: "OmniMux Team"
+author-cn: "OmniMux 团队"
+origin: first-party
+license: MIT
+owner: omnimux-market

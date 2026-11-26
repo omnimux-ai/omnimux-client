@@ -13,11 +13,13 @@ export interface CatalogSkillItem {
   subtitle?: string
   summary?: string
   category?: string
+  scenario?: string
   tags?: string[]
   skill?: string
   avatar?: string
-  source?: { type?: string; repo?: string; path?: string }
+  source?: { type?: string; plugin?: string; repo?: string; path?: string }
   recommended?: boolean
+  preinstalled?: boolean
   cover?: { asset: string; alt: string }
   downloads?: number | null
   updatedAt?: string | null
@@ -230,6 +232,7 @@ export interface SkillCard extends BilingualSkillFields {
   description: string
   category: string
   categoryLabel: string
+  scenario?: string
   version: string
   downloads: number
   stars: number
@@ -238,6 +241,7 @@ export interface SkillCard extends BilingualSkillFields {
   pageUrl: string
   owner?: string
   installed?: boolean
+  preinstalled?: boolean
   rating?: number
   verified?: boolean
   publisherName?: string

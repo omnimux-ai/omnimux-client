@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
-import { packageRoot, mcpRowId, mcpRowPattern, skillDir } from './paths.js'
+import { packageRoot, mcpRowId, mcpRowPattern, resolvePluginSkillFile, skillDir } from './paths.js'
 
 const TABS = new Set(['experts', 'skills', 'connectors'])
 const KINDS = new Set(['expert', 'team', 'skill', 'connector', 'suite'])
@@ -289,6 +289,17 @@ function parseSource(raw, id) {
     }
     return { type: 'bundled', path }
   }
+  if (type === 'plugin') {
+    const plugin = String(row.plugin || '').trim()
+    const path = String(row.path || '').trim().replace(/\\/g, '/').replace(/\/+$/, '')
+    if (!/^[a-z0-9][a-z0-9-]*$/.test(plugin)) {
+      throw new Error(`catalog: item ${id} bad plugin name`)
+    }
+    if (!/^skills\/[a-z0-9][a-z0-9_-]*(?:\/SKILL\.md)?$/.test(path) || path.includes('..')) {
+      throw new Error(`catalog: item ${id} bad plugin path`)
+    }
+    return { type: 'plugin', plugin, path }
+  }
   if (type === 'git') {
     const repo = String(row.repo || '')
     const path = String(row.path || '')
@@ -353,6 +364,10 @@ export function isInstalled(item, roots) {
     return true
   }
   if (!item.skill) return false
+  if (item.source?.type === 'plugin') {
+    const md = resolvePluginSkillFile(item.source, roots.packageRoot)
+    if (md) return true
+  }
   const path = join(skillDir(roots.home, item.skill), 'SKILL.md')
   if (skillInstalledMemo.has(path)) return skillInstalledMemo.get(path) === true
   const ok = existsSync(path)

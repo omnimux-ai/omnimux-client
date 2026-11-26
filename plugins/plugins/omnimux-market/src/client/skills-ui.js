@@ -340,7 +340,8 @@
             setView((cur) => ({
               ...cur,
               ...card,
-              installed: d.installed ?? cur.installed,
+              installed: d.installed ?? card.installed ?? cur.installed,
+              preinstalled: d.preinstalled ?? card.preinstalled ?? cur.preinstalled,
               version: d.version || card.version || cur.version,
               description: card.description || cur.description,
               source: d.source || cur.source,
@@ -457,7 +458,8 @@
       if (Array.isArray(view.tags) && view.tags.length) {
         for (const t of view.tags) {
           if (t === "精选") continue;
-          badges.push(String(t).includes("/") ? String(t) : (category + " / " + String(t)));
+          const tagText = String(t);
+          badges.push(tagText.includes("/") || tagText === category ? tagText : (category + " / " + tagText));
         }
       }
       if (!badges.length && category) {
@@ -682,7 +684,7 @@
                       setMoreMenuOpen(false);
                     },
                   }, "复制标识"),
-                  isInstalled ? (
+                  isInstalled && !view.preinstalled ? (
                     h("button", {
                       type: "button",
                       className: "ws-more-item danger",

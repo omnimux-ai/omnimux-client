@@ -80,6 +80,12 @@ function renderFireSvg() {
 // 分类图标
 function renderCatIcon(category) {
   const alias = {
+    'scene-video': 'video',
+    'scene-replicate': 'story',
+    'scene-visual': 'image',
+    'scene-research': 'product',
+    'scene-growth': 'ugc',
+    'scene-tools': 'meme',
     'scene-seeding': 'ugc',
     'scene-brand': 'story',
     'scene-product': 'product',
@@ -87,7 +93,6 @@ function renderCatIcon(category) {
     'scene-app': 'image',
     'scene-local': 'product',
     'scene-repurpose': 'story',
-    'scene-tools': 'meme',
   };
   const cat = alias[String(category || '').toLowerCase()] || String(category || '').toLowerCase();
   if (cat.includes('ugc')) {
@@ -136,6 +141,12 @@ const CATEGORY_NAMES_ZH = {
   'product-showcase': '产品展示',
   'meme-native': '模因与原生',
   'other': '其它营销分类',
+  'scene-video': '短视频创作',
+  'scene-replicate': '爆款复刻与再制',
+  'scene-visual': '商品视觉与海报',
+  'scene-research': '选品与社媒洞察',
+  'scene-growth': '投放与增长运营',
+  'scene-tools': '剪辑与效率工具',
   'scene-seeding': '内容种草',
   'scene-brand': '品牌宣传',
   'scene-product': '商品展示',
@@ -143,7 +154,6 @@ const CATEGORY_NAMES_ZH = {
   'scene-app': '应用推广',
   'scene-local': '本地生活',
   'scene-repurpose': '内容再制',
-  'scene-tools': '通用工具',
 };
 
 const CATEGORY_NAMES_EN = {
@@ -154,6 +164,12 @@ const CATEGORY_NAMES_EN = {
   'product-showcase': 'Product Showcase',
   'meme-native': 'Meme & Native',
   'other': 'Other',
+  'scene-video': 'Video Creation',
+  'scene-replicate': 'Viral Replication',
+  'scene-visual': 'Visual & Product',
+  'scene-research': 'Market & Social Research',
+  'scene-growth': 'Ads & Growth Ops',
+  'scene-tools': 'Editing & Tools',
   'scene-seeding': 'Content Seeding',
   'scene-brand': 'Brand Story',
   'scene-product': 'Product Showcase',
@@ -161,7 +177,6 @@ const CATEGORY_NAMES_EN = {
   'scene-app': 'App Promotion',
   'scene-local': 'Local Services',
   'scene-repurpose': 'Content Repurposing',
-  'scene-tools': 'General Tools',
 };
 
 function resolveCategoryLabel(category, isEn, tr) {

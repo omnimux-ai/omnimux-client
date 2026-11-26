@@ -18,7 +18,6 @@ const ECOM_SOP_SKILLS = [
   'omnimux-ecom-listing-copy',
   'omnimux-ecom-visual-qa',
   'omnimux-ecom-video-script',
-  'omnimux-ecom-global-localizer',
   'omnimux-ecom-ads-diagnosis',
   'omnimux-ecom-review-voc',
 ]
@@ -37,7 +36,7 @@ function runPy(scriptRel, args) {
   return res
 }
 
-test('all 10 cross-border SOP skills are declared in dsh.manifest.json with valid frontmatter and zero dead tools', () => {
+test('all 9 plugin SOP skills + unified global-ad-localizer are declared with valid frontmatter and zero dead tools', () => {
   const manifest = JSON.parse(readFileSync(join(PACKAGE_ROOT, 'dsh.manifest.json'), 'utf8'))
   assert.ok(Array.isArray(manifest.skills))
 
@@ -57,6 +56,15 @@ test('all 10 cross-border SOP skills are declared in dsh.manifest.json with vali
     assert.doesNotMatch(text, /topview/i, `${relPath} must not leak Topview brand`)
     assert.doesNotMatch(text, /\/Users\/|\/home\//, `${relPath} must not leak host-local paths`)
   }
+
+  const unifiedPath = join(PACKAGE_ROOT, 'catalog', 'skills', 'global-ad-localizer', 'SKILL.md')
+  assert.equal(existsSync(unifiedPath), true, 'unified global-ad-localizer SKILL.md must exist')
+  const unifiedText = readFileSync(unifiedPath, 'utf8')
+  const unifiedFm = parseFrontmatter(unifiedText, 'catalog/skills/global-ad-localizer/SKILL.md')
+  assert.equal(unifiedFm.name, 'global-ad-localizer')
+  assert.equal(unifiedFm['disable-model-invocation'], true)
+  assert.match(unifiedFm.description, /触发[：:]/)
+  assert.equal(existsSync(join(SKILLS_DIR, 'omnimux-ecom-global-localizer')), false, 'duplicate localizer dir removed')
 })
 
 test('script 01: analyze_market.py parses BR/US/CN numbers, CR3/CR10/HHI, and detects unsmoothed price troughs', (t) => {
@@ -391,7 +399,7 @@ test('script 09: check_localization_matrix.py passes valid multilingual shots an
       },
     ],
   }), 'utf8')
-  const goodRes = runPy('omnimux-ecom-global-localizer/scripts/check_localization_matrix.py', ['--input', goodPath, '--format', 'json'])
+  const goodRes = runPy('../catalog/skills/global-ad-localizer/scripts/check_localization_matrix.py', ['--input', goodPath, '--format', 'json'])
   assert.equal(goodRes.status, 0, goodRes.stdout + goodRes.stderr)
   const goodOut = JSON.parse(goodRes.stdout)
   assert.equal(goodOut.passed, true)
@@ -416,7 +424,7 @@ test('script 09: check_localization_matrix.py passes valid multilingual shots an
       },
     ],
   }), 'utf8')
-  const badRes = runPy('omnimux-ecom-global-localizer/scripts/check_localization_matrix.py', ['--input', badPath, '--format', 'json'])
+  const badRes = runPy('../catalog/skills/global-ad-localizer/scripts/check_localization_matrix.py', ['--input', badPath, '--format', 'json'])
   assert.equal(badRes.status, 2)
   const badOut = JSON.parse(badRes.stdout)
   assert.equal(badOut.passed, false)
@@ -447,7 +455,7 @@ test('script 09: check_localization_matrix.py passes valid multilingual shots an
       },
     ],
   }), 'utf8')
-  const driftRes = runPy('omnimux-ecom-global-localizer/scripts/check_localization_matrix.py', ['--input', driftPath, '--format', 'json'])
+  const driftRes = runPy('../catalog/skills/global-ad-localizer/scripts/check_localization_matrix.py', ['--input', driftPath, '--format', 'json'])
   assert.equal(driftRes.status, 2)
   const driftOut = JSON.parse(driftRes.stdout)
   assert.equal(driftOut.passed, false)

@@ -47,7 +47,7 @@ function normalizeSlugSet(input) {
  */
 export const BUNDLED_SKILL_SLUGS = Object.freeze(new Set([
   ...(Array.isArray(catalog && catalog.items) ? catalog.items : [])
-    .filter((item) => item && item.kind === 'skill' && (!item.source || item.source.type === 'bundled') && item.skill)
+    .filter((item) => item && item.kind === 'skill' && (!item.source || item.source.type === 'bundled' || item.source.type === 'plugin') && item.skill)
     .map((item) => String(item.skill).trim()),
   ...(Array.isArray(bundledSkillsManifest && bundledSkillsManifest.skills) ? bundledSkillsManifest.skills : [])
     .map((item) => String((item && item.slug) || '').trim())
@@ -507,24 +507,44 @@ export function plazaDiscoverySections(items = [], { category = '', query = '', 
       const current = live.get(item.id)
       const local = installed.get(key(item))
       const inProvider = providerSet.has(key(item))
+      const isPluginSource = Boolean(item.preinstalled === true || (item.source && item.source.type === 'plugin'))
       return { ...item, ...(!category && item.homeCover ? { cover: item.homeCover } : {}),
         ...(current ? { rating: current.rating, installed: current.installed, enabled: current.enabled } : {}),
-        ...(local ? { installed: true, enabled: local.enabled !== false } : (inProvider ? { installed: true } : {})) }
+        ...(local ? { installed: true, enabled: local.enabled !== false } : (inProvider || isPluginSource ? { installed: true } : {})),
+        ...(isPluginSource ? { preinstalled: true } : {}) }
     }).filter(matches).filter(available)
   const featured = isPresetCategory && presetFeatured.length > 0 ? presetFeatured : unique([...presetFeatured, ...baseFeatured])
   const featuredKeys = new Set(featured.map(key))
   const catalogFeatured = new Set(entries.filter(item => item.kind === 'skill' && item.recommended === true).map(item => item.skill))
   // 本地目录卡片：技能与套件同为货架条目；套件只落「套件」分类（见 matchesDomainTag）。
-  const localCards = hasQuery ? [] : entries.filter(item => item.kind === 'skill' || item.kind === 'suite').map(item => ({
-    ...item, catalogId: item.id, slug: item.skill, name: item.title, description: item.summary,
-    installBackend: 'catalog', installed: installed.has(item.skill) || providerSet.has(item.skill),
-  }))
+  const includeSuites = category === SUITE_SHELF_TAG
+  const localCards = hasQuery
+    ? []
+    : entries
+      .filter(item => (includeSuites ? item.kind === 'suite' : item.kind === 'skill'))
+      .map(item => {
+        const isPluginSource = Boolean(item.preinstalled === true || (item.source && item.source.type === 'plugin'))
+        return {
+          ...item,
+          catalogId: item.id,
+          slug: item.skill,
+          name: item.title,
+          description: item.summary,
+          installBackend: 'catalog',
+          installed: installed.has(item.skill) || providerSet.has(item.skill) || isPluginSource,
+          ...(isPluginSource ? { preinstalled: true } : {}),
+        }
+      })
   const presetCards = presetBinding && Array.isArray(presetBinding.skills)
     ? filterPresetSkills(presetBinding.skills, category, query).map(item => hydratePresetSkill(item, availability))
     : []
   // 预设分类内，目录同 slug 条目只贡献展示元数据；可用态与归属一律按真实随包/已装真源重推。
+  // 广场浏览（!hasQuery 且非预设私域）只允许官方目录/本地随包池进入，禁止未入库 $DSH_HOME/远端条目污染计数。
   const presetScoped = presetCategoryIds.size > 0 && presetCategoryIds.has(category)
-  const regular = unique([...presetCards, ...localCards, ...items])
+  const localKeys = new Set(localCards.map(key))
+  const scopedPresetCards = presetScoped ? presetCards : []
+  const scopedItems = hasQuery ? items : items.filter(item => localKeys.has(key(item)))
+  const regular = unique([...scopedPresetCards, ...localCards, ...scopedItems])
     .map(item => presetScoped && presetCategoryOf.has(key(item))
       ? hydratePresetSkill({ ...item, category: presetCategoryOf.get(key(item)) }, availability)
       : item)
@@ -619,24 +639,29 @@ export const SKILL_SCENARIOS = Object.freeze(
 export const SKILL_SCENARIO_TAGS = Object.freeze(SKILL_SCENARIOS.map((row) => row.id))
 
 const LEGACY_CATEGORY_SCENARIO = Object.freeze({
-  'ugc-testimonial': 'scene-seeding',
-  'storytelling-script': 'scene-brand',
-  'image-static': 'scene-performance',
-  'video-ads': 'scene-performance',
-  'product-showcase': 'scene-product',
-  'meme-native': 'scene-seeding',
+  'ugc-testimonial': 'scene-growth',
+  'storytelling-script': 'scene-video',
+  'image-static': 'scene-visual',
+  'video-ads': 'scene-video',
+  'product-showcase': 'scene-visual',
+  'meme-native': 'scene-replicate',
   other: 'scene-tools',
+  'scene-seeding': 'scene-growth',
+  'scene-brand': 'scene-video',
+  'scene-product': 'scene-visual',
+  'scene-performance': 'scene-growth',
+  'scene-app': 'scene-growth',
+  'scene-local': 'scene-growth',
+  'scene-repurpose': 'scene-replicate',
 })
 
 const SCENARIO_KEYWORDS = Object.freeze({
-  'scene-seeding': Object.freeze(['ugc', '种草', '测评', '开箱', '口碑', '真人', '自述', '采访', '试用', '晒单', '穿搭']),
-  'scene-brand': Object.freeze(['品牌', '形象片', '宣传片', '企业', 'b2b', '大片', '品牌故事', 'brand']),
-  'scene-product': Object.freeze(['商品', '产品', '主图', '详情页', '商详', '影棚', 'product']),
-  'scene-performance': Object.freeze(['广告', '投放', '信息流', '轮播', '海报', '落地页', 'cta', '促销', 'ad']),
-  'scene-app': Object.freeze(['app', '应用', '软件', 'saas', 'ui', '界面', '录屏', '商店']),
-  'scene-local': Object.freeze(['本地', '门店', '家政', '房产', '餐饮', '同城', '诊所']),
-  'scene-repurpose': Object.freeze(['复刻', '切片', '转短', '改编', '多画幅', '再制', 'repurpose']),
-  'scene-tools': Object.freeze(['音频', '配音', '脚本转', '分镜', '色彩', '工具', '流程']),
+  'scene-video': Object.freeze(['短视频', '带货', '分镜', '运镜', '脚本', '口播', '火柴人', 'storyboard', 'video']),
+  'scene-replicate': Object.freeze(['复刻', '拆解', '提示词', '转写', '改写', '切片', '再制', 'replicate', 'repurpose']),
+  'scene-visual': Object.freeze(['主图', '轮播图', '套图', '海报', '9图', '视觉', '品牌资产', '商详', 'image', 'visual']),
+  'scene-research': Object.freeze(['选品', '调研', '洞察', '趋势', '爆款帖', '达人', '竞品', '评论', 'voc', 'cr10', '聆听', 'research']),
+  'scene-growth': Object.freeze(['广告', '投放', 'roas', 'listing', '定价', '利润', '本地化', '多语', '文案', '配文', 'tiktok', 'growth']),
+  'scene-tools': Object.freeze(['剪辑', '草稿', '剪映', '创建', '发现', '工具', 'clip', 'creator', 'finder']),
 })
 
 export function isScenarioTag(tag) {

@@ -1,6 +1,7 @@
 import {
   createBundledSkillProvider,
   loadBundledMarketSkills,
+  loadCatalogSkillBySlug,
   type BundledMarketSkill,
 } from './bundled-skills.js'
 
@@ -35,7 +36,7 @@ export function apply(ctx: unknown, config: ExpertSkillsPluginConfig = {}): () =
   const allBundled = loadBundledMarketSkills(config.packageRoot)
   const byName = new Map<string, BundledMarketSkill>(allBundled.map((entry) => [entry.name, entry]))
   const matched = requested
-    .map((slug) => byName.get(slug))
+    .map((slug) => byName.get(slug) ?? (slug === 'clip-craft' ? undefined : loadCatalogSkillBySlug(slug, config.packageRoot)))
     .filter((entry): entry is BundledMarketSkill => entry !== undefined)
   if (!matched.length) return () => {}
 

@@ -1,9 +1,15 @@
 import assert from 'node:assert/strict'
+import { mkdtempSync, readdirSync, rmSync } from 'node:fs'
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import test from 'node:test'
 import { withDefaults } from '../config-store.js'
+import { loadCatalog } from '../expert/catalog.js'
 import { clearHttpJsonCache, configureHttpJsonCache } from '../http.js'
+import { installSkill } from '../install.js'
 import { handleApi } from '../local-api.js'
+import { catalogItemToCard } from '../skill-aggregate.js'
 import { clearEvalScoreMemo } from '../skill-detail.js'
 
 function mockRes(): ServerResponse & { _status: number, _body: string } {
@@ -167,6 +173,45 @@ test('skillTab method returns requested tab payload', async () => {
     assert.ok(Array.isArray(body.versions))
   } finally {
     globalThis.fetch = orig
+  }
+})
+
+test('plugin-sourced skills resolve skillContent/exploreFile, install without copying to skillsDir, and project preinstalled card state', async () => {
+  const emptySkillsDir = mkdtempSync(join(tmpdir(), 'omx-plugin-skill-test-'))
+  try {
+    const cfg = withDefaults({ skillsDir: emptySkillsDir, timeoutMs: 5000, userAgent: 't' })
+
+    for (const method of ['skillContent', 'exploreFile']) {
+      const req = {
+        method: 'POST',
+        url: '/omnimux-market',
+        [Symbol.asyncIterator]: async function* () {
+          yield Buffer.from(JSON.stringify({ method, slug: 'clip-craft' }))
+        },
+      } as unknown as IncomingMessage
+      const res = mockRes()
+      await handleApi(req, res, cfg)
+      assert.equal(res._status, 200)
+      const body = JSON.parse(res._body)
+      assert.equal(body.ok, true)
+      assert.equal(body.found, true)
+      assert.ok(Array.isArray(body.tree) && body.tree.some((f: { name: string }) => f.name === 'SKILL.md'))
+      assert.ok(typeof body.skillMd === 'string' && body.skillMd.includes('clip-craft'))
+    }
+
+    const catalog = loadCatalog()
+    const pluginItem = catalog.items.find((item) => item.skill === 'clip-craft' && item.source?.type === 'plugin')
+    assert.ok(pluginItem, 'clip-craft should exist with source.type = plugin')
+    const card = catalogItemToCard(pluginItem, 'custom', cfg, new Set())
+    assert.equal(card.installed, true)
+    assert.equal(card.preinstalled, true)
+
+    const installed = await installSkill('clip-craft', cfg)
+    assert.equal(installed.slug, 'clip-craft')
+    assert.ok(installed.path.includes('omnimux-clip'))
+    assert.deepEqual(readdirSync(emptySkillsDir), [], 'zero-copy plugin skill must not copy files into cfg.skillsDir')
+  } finally {
+    rmSync(emptySkillsDir, { recursive: true, force: true })
   }
 })
 

@@ -18,7 +18,7 @@ import {
   resolveLocalBundledSkillDir,
   withConnectorPatchLock,
 } from './expert/install.js'
-import { packageRoot, profileDir } from './expert/paths.js'
+import { packageRoot, profileDir, resolvePluginSkillFile } from './expert/paths.js'
 import { summonItem } from './expert/summon.js'
 import {
   installSuite,
@@ -539,7 +539,7 @@ async function handleSkillDetail(ctx: ApiContext): Promise<void> {
   const catalogItem = findCatalogSkill(slug, catalogId)
   if (catalogItem) {
     const local = catalogItemToCard(catalogItem, 'custom', cfg, installed)
-    card = card ? { ...card, ...local, installed: installed.has(local.slug) || card.installed } : local
+    card = card ? { ...card, ...local, installed: Boolean(local.installed || installed.has(local.slug) || card.installed) } : local
   }
   const tab = String(body.tab || url.searchParams.get('tab') || 'readme')
   const content = await fetchSkillTab(slug, tab, cfg)
@@ -548,11 +548,16 @@ async function handleSkillDetail(ctx: ApiContext): Promise<void> {
 
 function resolveExploreDirectory(slug: string, skillsDir: string): string {
   const pkgRoot = packageRoot()
+  const catalogItem = findCatalogSkill(slug)
+  const pluginSkillMd = catalogItem?.source?.type === 'plugin'
+    ? resolvePluginSkillFile(catalogItem.source, pkgRoot)
+    : ''
   const candidates = [
     join(skillsDir, slug),
     join(dshHome(), 'skills', slug),
     join(process.env.HOME || '', '.dsh/skills', slug),
     resolveLocalBundledSkillDir(slug, pkgRoot),
+    pluginSkillMd ? dirname(pluginSkillMd) : '',
     join(pkgRoot, 'catalog/experts', slug),
   ].filter(Boolean)
   for (const c of candidates) {
