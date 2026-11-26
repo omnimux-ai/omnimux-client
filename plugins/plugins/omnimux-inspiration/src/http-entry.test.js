@@ -20,11 +20,12 @@
 import assert from 'node:assert/strict'
 import { PassThrough, Readable } from 'node:stream'
 import { after, afterEach, before, beforeEach, describe, it } from 'node:test'
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, truncateSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, truncateSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { apply } from './index.js'
 import { LOCAL_PREFIX } from './http-routes.js'
+import { createLocalStore } from './local-store.js'
 import { resolveInspirationPaths } from './paths.js'
 import { createRivalAccountsStore } from './rival/rival-accounts-store.js'
 import { resolveRivalPaths } from './rival/rival-paths.js'
@@ -377,7 +378,20 @@ function writeMediaFile(world, name, bytes) {
   mkdirSync(dirname(path), { recursive: true })
   writeFileSync(path, '')
   truncateSync(path, bytes)
-  return path
+  return realpathSync(path)
+}
+
+/**
+ * Seed a local inspiration row with server-managed `local_paths` directly in the
+ * sandbox store (HTTP `POST /local` strips client-supplied `local_paths`).
+ * @param {{ root: string }} world
+ * @param {Record<string, unknown>} record
+ * @returns {string} the new row's id
+ */
+function seedLocalItemWithMedia(world, record) {
+  const paths = resolveInspirationPaths({ homeDir: world.root })
+  const store = createLocalStore({ paths })
+  return store.add(record).id
 }
 
 /**
@@ -574,8 +588,8 @@ describe('HTTP entry: the existing inspiration endpoints are unchanged', () => {
       },
     }
     const world = bootPlugin({ capability })
-    const mediaPath = writeMediaFile(world, 'clip.mp4', 2048)
-    const id = await createLocalItem(world, {
+    const mediaPath = writeMediaFile(world, 'videos/clip.mp4', 2048)
+    const id = seedLocalItemWithMedia(world, {
       title: '测试分享素材',
       content: '把产品放在晨光里拍',
       local_paths: { video: mediaPath },
@@ -620,8 +634,8 @@ describe('HTTP entry: the existing inspiration endpoints are unchanged', () => {
       },
     }
     const world = bootPlugin({ capability })
-    const mediaPath = writeMediaFile(world, 'staged.mp4', 4096)
-    const id = await createLocalItem(world, {
+    const mediaPath = writeMediaFile(world, 'videos/staged.mp4', 4096)
+    const id = seedLocalItemWithMedia(world, {
       title: '分阶段校验',
       content: '分阶段校验提示词',
       local_paths: { video: mediaPath },
@@ -643,8 +657,8 @@ describe('HTTP entry: the existing inspiration endpoints are unchanged', () => {
       },
     }
     const world = bootPlugin({ capability })
-    const mediaPath = writeMediaFile(world, 'nokey.mp4', 1024)
-    const id = await createLocalItem(world, {
+    const mediaPath = writeMediaFile(world, 'videos/nokey.mp4', 1024)
+    const id = seedLocalItemWithMedia(world, {
       title: '凭证缺失',
       content: '凭证缺失提示词',
       local_paths: { video: mediaPath },
@@ -666,26 +680,27 @@ describe('HTTP entry: the existing inspiration endpoints are unchanged', () => {
     assert.equal(missing.status, 400)
     assert.match(missing.body.error, /没有可上传的素材/)
 
-    const gone = await createLocalItem(world, {
+    const paths = resolveInspirationPaths({ homeDir: world.root })
+    const gone = seedLocalItemWithMedia(world, {
       title: '文件丢了',
       content: '有提示词',
-      local_paths: { video: join(world.root, 'never-written.mp4') },
+      local_paths: { video: join(paths.videosDir, 'never-written.mp4') },
     })
     const absent = await httpCall(world.route, { method: 'POST', url: `${LOCAL_PREFIX}/${gone}/share` })
     assert.equal(absent.status, 400)
     assert.match(absent.body.error, /素材文件不存在/)
 
-    const big = await createLocalItem(world, {
+    const big = seedLocalItemWithMedia(world, {
       title: '超大素材',
       content: '有提示词',
-      local_paths: { video: writeMediaFile(world, 'big.mp4', 101 * 1024 * 1024) },
+      local_paths: { video: writeMediaFile(world, 'videos/big.mp4', 101 * 1024 * 1024) },
     })
     const oversized = await httpCall(world.route, { method: 'POST', url: `${LOCAL_PREFIX}/${big}/share` })
     assert.equal(oversized.status, 400)
     assert.match(oversized.body.error, /100MB/)
 
-    const silentPath = writeMediaFile(world, 'silent.mp4', 1024)
-    const silent = await createLocalItem(world, {
+    const silentPath = writeMediaFile(world, 'videos/silent.mp4', 1024)
+    const silent = seedLocalItemWithMedia(world, {
       title: '待清空标题',
       content: '',
       local_paths: { video: silentPath },
@@ -696,8 +711,8 @@ describe('HTTP entry: the existing inspiration endpoints are unchanged', () => {
     assert.equal(untitled.status, 400)
     assert.match(untitled.body.error, /标题为空/)
 
-    const promptlessPath = writeMediaFile(world, 'promptless.mp4', 1024)
-    const emptyPrompt = await createLocalItem(world, {
+    const promptlessPath = writeMediaFile(world, 'videos/promptless.mp4', 1024)
+    const emptyPrompt = seedLocalItemWithMedia(world, {
       title: '有标题没提示词',
       local_paths: { video: promptlessPath },
     })
@@ -708,8 +723,8 @@ describe('HTTP entry: the existing inspiration endpoints are unchanged', () => {
 
   it('says so when the hub exposes no share capability, instead of faking a link', async () => {
     const world = bootPlugin()
-    const mediaPath = writeMediaFile(world, 'nocap.mp4', 1024)
-    const id = await createLocalItem(world, {
+    const mediaPath = writeMediaFile(world, 'videos/nocap.mp4', 1024)
+    const id = seedLocalItemWithMedia(world, {
       title: '中枢缺席',
       content: '提示词',
       local_paths: { video: mediaPath },
@@ -746,11 +761,18 @@ describe('HTTP entry: assembly completeness and teardown', () => {
 
   it('answers OPTIONS preflight with 204 and full CORS headers so cross-origin pages can POST', async () => {
     const world = bootPlugin()
-    const res = await httpCall(world.route, { method: 'OPTIONS', url: `${LOCAL_PREFIX}/import-url` })
-    assert.equal(res.status, 204)
-    assert.equal(res.headers['access-control-allow-origin'], '*')
-    assert.equal(res.headers['access-control-allow-headers'], '*')
-    assert.match(String(res.headers['access-control-allow-methods']), /POST/)
+    const anonymous = await httpCall(world.route, { method: 'OPTIONS', url: `${LOCAL_PREFIX}/import-url` })
+    assert.equal(anonymous.status, 204)
+    assert.equal(anonymous.headers['access-control-allow-origin'], undefined)
+
+    const sameOrigin = await httpCall(world.route, {
+      method: 'OPTIONS',
+      url: `${LOCAL_PREFIX}/import-url`,
+      headers: { origin: 'http://127.0.0.1', host: '127.0.0.1' },
+    })
+    assert.equal(sameOrigin.status, 204)
+    assert.equal(sameOrigin.headers['access-control-allow-origin'], 'http://127.0.0.1')
+    assert.match(String(sameOrigin.headers['access-control-allow-methods']), /POST/)
   })
 
   it('answers through the injected cloud seam, never through a real client', async () => {

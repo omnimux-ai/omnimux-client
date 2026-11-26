@@ -5,8 +5,8 @@
  * 也保证未登录可建草稿（媒体不能在拾取时就上云，presign 需要登录态）。
  */
 import { createHash } from 'node:crypto'
-import { copyFileSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
-import { basename, dirname, extname, join } from 'node:path'
+import { copyFileSync, lstatSync, mkdirSync, readFileSync, realpathSync, renameSync, statSync, writeFileSync } from 'node:fs'
+import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { PublishError } from './publish-error.js'
 import { isObject } from './shared/values.js'
 import { isMediaRecord } from './media-types.js'
@@ -14,9 +14,114 @@ import { probeVideoDurationSec } from './media-duration.js'
 /** @typedef {import('./media-types.js').MediaRecord} MediaRecord */
 /** @typedef {{ schema: number, revision: number, media: MediaRecord[] }} MediaState */
 
-/** @typedef {Pick<typeof import('node:fs'), 'copyFileSync' | 'mkdirSync' | 'readFileSync' | 'renameSync' | 'statSync' | 'writeFileSync'>} MediaFs */
+/** @typedef {Pick<typeof import('node:fs'), 'copyFileSync' | 'lstatSync' | 'mkdirSync' | 'readFileSync' | 'realpathSync' | 'renameSync' | 'statSync' | 'writeFileSync'>} MediaFs */
 /** @type {MediaFs} */
-const DEFAULT_FS = { copyFileSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync }
+const DEFAULT_FS = { copyFileSync, lstatSync, mkdirSync, readFileSync, realpathSync, renameSync, statSync, writeFileSync }
+
+const BLOCKED_IMPORT_EXTENSIONS = new Set([
+  '.svg', '.svgz', '.html', '.htm', '.xhtml', '.xml', '.js', '.mjs', '.cjs', '.ts',
+  '.sh', '.bash', '.zsh', '.plist', '.pem', '.key', '.p12', '.pfx', '.env', '.sqlite', '.db',
+])
+
+const BLOCKED_PATH_SEGMENTS = new Set([
+  '.ssh', '.gnupg', '.aws', '.kube', '.docker', '.npm', '.pypirc', 'keychains',
+])
+
+const BLOCKED_BASENAMES = new Set([
+  '.env', '.npmrc', '.netrc', '.git-credentials', 'id_rsa', 'id_ed25519', 'id_ecdsa',
+  'ext-bridge-token', 'credentials', 'credentials.json', 'secrets.json', 'auth.json', 'passwd', 'shadow',
+])
+
+const BLOCKED_SYSTEM_PREFIXES = ['/etc', '/private/etc', '/proc', '/sys', '/var/run', '/private/var/run']
+const WINDOWS_SYSTEM_PREFIX_RE = /^[a-z]:\/(?:windows|programdata|system volume information)(?:\/|$)/i
+const UNC_OR_DEVICE_PATH_RE = /^(?:\\\\|\/\/)/
+const MANAGED_DSH_SUBTREES = [
+  'omnimux/assets/',
+  'omnimux/inspirations/media/',
+  'omnimux/publish/media/',
+  'publish/media/',
+]
+
+const ACTIVE_DOCUMENT_PREFIX_RE = /^\s*(?:<\?xml\b|<!doctype\s+html\b|<html\b|<svg\b|<script\b|<iframe\b|<object\b|<embed\b)/i
+
+/**
+ * Resolve canonical filesystem casing when available (`realpathSync.native` on macOS/Windows),
+ * falling back cleanly to `fs.realpathSync` (including injected test doubles).
+ * @param {MediaFs} fs
+ * @param {string} targetPath
+ * @returns {string}
+ */
+function resolveRealPath(fs, targetPath) {
+  const realpathFn = /** @type {typeof realpathSync & { native?: typeof realpathSync }} */ (fs.realpathSync)
+  if (typeof realpathFn?.native === 'function') return realpathFn.native(targetPath)
+  if (typeof realpathFn === 'function') return realpathFn(targetPath)
+  return targetPath
+}
+
+/**
+ * @param {string} rootReal
+ * @param {string} candidateReal
+ */
+function isContainedPath(rootReal, candidateReal) {
+  const normalizeCase = process.platform === 'darwin' || process.platform === 'win32'
+  const rootCmp = normalizeCase ? rootReal.toLowerCase() : rootReal
+  const candidateCmp = normalizeCase ? candidateReal.toLowerCase() : candidateReal
+  const rel = relative(rootCmp, candidateCmp)
+  return rel === '' || (rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel))
+}
+
+/**
+ * @param {string} relSlashLower
+ */
+function isAllowedManagedDshSubtree(relSlashLower) {
+  return MANAGED_DSH_SUBTREES.some((prefix) => relSlashLower.startsWith(prefix))
+}
+
+/**
+ * @param {string} realPath
+ * @param {string} mediaDirReal
+ * @param {string} [dshHomeReal]
+ */
+function isSensitiveSystemOrCredentialPath(realPath, mediaDirReal, dshHomeReal = '') {
+  const normalized = realPath.replace(/\\/g, '/')
+  const lower = normalized.toLowerCase()
+  if (UNC_OR_DEVICE_PATH_RE.test(realPath) || WINDOWS_SYSTEM_PREFIX_RE.test(lower)) return true
+  for (const prefix of BLOCKED_SYSTEM_PREFIXES) {
+    if (lower === prefix || lower.startsWith(`${prefix}/`)) return true
+  }
+  if (dshHomeReal && isContainedPath(dshHomeReal, realPath)) {
+    if (!(mediaDirReal && isContainedPath(mediaDirReal, realPath))) {
+      const relLower = relative(
+        (process.platform === 'darwin' || process.platform === 'win32') ? dshHomeReal.toLowerCase() : dshHomeReal,
+        (process.platform === 'darwin' || process.platform === 'win32') ? realPath.toLowerCase() : realPath,
+      ).replace(/\\/g, '/')
+      if (!isAllowedManagedDshSubtree(relLower)) return true
+    }
+  }
+  const segments = lower.split('/').filter(Boolean)
+  for (let i = 0; i < segments.length; i += 1) {
+    const seg = segments[i]
+    if (BLOCKED_PATH_SEGMENTS.has(seg)) return true
+    if (seg === '.config' && segments[i + 1] === 'gh') return true
+    if (seg === '.dsh' || seg === '.ds-bot' || seg === '.omnimux' || seg.startsWith('.omnimux-')) {
+      // Allow managed media/assets subdirectories inside DSH home; block auth/token/config files.
+      if (mediaDirReal && isContainedPath(mediaDirReal, realPath)) continue
+      const rest = segments.slice(i + 1).join('/')
+      if (!isAllowedManagedDshSubtree(rest)) return true
+    }
+  }
+  const name = basename(realPath).toLowerCase()
+  if (BLOCKED_BASENAMES.has(name) || name.startsWith('.env.')) return true
+  return false
+}
+
+/**
+ * @param {Buffer} buffer
+ */
+function looksLikeActiveDocument(buffer) {
+  const sample = buffer.subarray(0, 512).toString('utf8').replace(/^\uFEFF/, '')
+  return ACTIVE_DOCUMENT_PREFIX_RE.test(sample)
+}
 
 /** @type {Record<string, string>} */
 const MIME_BY_EXT = {
@@ -144,13 +249,16 @@ function atomicWrite(io, file, text) {
 }
 
 /**
- * @param {{ paths?: { mediaIndexFile: string, mediaDir: string }, fs?: Partial<typeof DEFAULT_FS>, maxBytes?: number, createHash?: typeof createHash, now?: () => string }} [opts]
+ * @param {{ paths?: { mediaIndexFile: string, mediaDir: string }, fs?: Partial<typeof DEFAULT_FS>, maxBytes?: number, allowedRoots?: string[], createHash?: typeof createHash, now?: () => string }} [opts]
  */
 export function createMediaStore(opts = {}) {
   const fs = { ...DEFAULT_FS, ...(opts.fs ?? {}) }
   if (!opts.paths) throw new PublishError('invalid-arguments', 'mediaIndexFile and mediaDir are required')
   const paths = opts.paths
   const maxBytes = typeof opts.maxBytes === 'number' && opts.maxBytes > 0 ? opts.maxBytes : 512 * 1024 * 1024
+  const allowedRoots = Array.isArray(opts.allowedRoots)
+    ? opts.allowedRoots.filter((entry) => typeof entry === 'string' && entry.trim() !== '').map((entry) => resolve(entry.trim()))
+    : []
   const hashOf = opts.createHash ?? createHash
   const now = typeof opts.now === 'function' ? opts.now : () => new Date().toISOString()
 
@@ -254,21 +362,73 @@ export function createMediaStore(opts = {}) {
    * @param {{ filename?: string, content_type?: string }} [meta]
    */
   function importPath(filePath, meta = {}) {
-    const path = typeof filePath === 'string' ? filePath.trim() : ''
-    if (!path) throw new PublishError('path-not-found', 'media path is required')
+    const rawPath = typeof filePath === 'string' ? filePath.trim() : ''
+    if (!rawPath) throw new PublishError('path-not-found', 'media path is required')
+    if (rawPath.includes('\0') || UNC_OR_DEVICE_PATH_RE.test(rawPath) || !isAbsolute(rawPath)) {
+      throw new PublishError('path-not-allowed', 'media path must be a clean absolute path')
+    }
+    const normalizedPath = resolve(rawPath)
     let info
     try {
-      info = fs.statSync(path)
+      info = typeof fs.lstatSync === 'function' ? fs.lstatSync(normalizedPath) : fs.statSync(normalizedPath)
     } catch {
-      throw new PublishError('path-not-found', `media path does not exist: ${path}`)
+      throw new PublishError('path-not-found', `media path does not exist: ${rawPath}`)
     }
-    if (!info.isFile()) throw new PublishError('path-not-found', `media path is not a file: ${path}`)
+    if (typeof info.isSymbolicLink === 'function' && info.isSymbolicLink()) {
+      throw new PublishError('path-not-allowed', 'symbolic links cannot be imported as media')
+    }
+    if (!info.isFile()) throw new PublishError('path-not-found', `media path is not a file: ${rawPath}`)
+    let realPath = normalizedPath
+    try {
+      realPath = resolveRealPath(fs, normalizedPath)
+    } catch {
+      throw new PublishError('path-not-found', `media path does not exist: ${rawPath}`)
+    }
+    let mediaDirReal = ''
+    try {
+      mediaDirReal = resolveRealPath(fs, paths.mediaDir)
+    } catch {
+      mediaDirReal = resolve(paths.mediaDir)
+    }
+    let dshHomeReal = ''
+    const rawDshHome = typeof process.env.DSH_HOME === 'string' ? process.env.DSH_HOME.trim() : ''
+    if (rawDshHome) {
+      try {
+        dshHomeReal = resolveRealPath(fs, rawDshHome)
+      } catch {
+        dshHomeReal = resolve(rawDshHome)
+      }
+    }
+    if (isSensitiveSystemOrCredentialPath(realPath, mediaDirReal, dshHomeReal)) {
+      throw new PublishError('path-not-allowed', 'importing system or credential files is not allowed')
+    }
+    if (allowedRoots.length > 0) {
+      const permitted = allowedRoots.some((root) => {
+        let rootReal = root
+        try {
+          rootReal = resolveRealPath(fs, root)
+        } catch {
+          return false
+        }
+        return isContainedPath(rootReal, realPath)
+      })
+      if (!permitted) {
+        throw new PublishError('path-not-allowed', 'media path is outside allowed directories')
+      }
+    }
+    const ext = extname(realPath).toLowerCase()
+    if (BLOCKED_IMPORT_EXTENSIONS.has(ext)) {
+      throw new PublishError('unsupported-media-type', `unsupported media file extension: ${ext}`)
+    }
     if (info.size > maxBytes) {
       throw new PublishError('media-too-large', `media exceeds the ${Math.round(maxBytes / 1024 / 1024)}MB limit (${info.size} bytes)`)
     }
-    const buffer = fs.readFileSync(path)
+    const buffer = fs.readFileSync(realPath)
+    if (looksLikeActiveDocument(buffer)) {
+      throw new PublishError('unsupported-media-type', 'active document files cannot be imported as media')
+    }
     return importBuffer(buffer, {
-      filename: meta.filename || basename(path),
+      filename: meta.filename || basename(realPath),
       content_type: meta.content_type,
     })
   }

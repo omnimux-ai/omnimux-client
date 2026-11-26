@@ -21,8 +21,8 @@
  * @typedef {{ category?: string, title?: string, description?: string, prompt?: string, model?: string, mediaType?: string }} ShareMeta
  */
 
-import { stat as statFileOnDisk } from 'node:fs/promises'
-import { extname } from 'node:path'
+import { lstat as lstatFileOnDisk, realpath as realpathOnDisk, stat as statFileOnDisk } from 'node:fs/promises'
+import { extname, isAbsolute, relative, resolve, sep } from 'node:path'
 import { OmnimuxError } from '../media/errors.js'
 import { uploadMediaToGateway } from '../media/gateway-upload.js'
 import { postInspirationShare, publishInspirationShare, toShareResult } from './inspiration.js'
@@ -245,10 +245,38 @@ export function createInspirationShareApi(deps) {
    * Upload one asset and return its public URL.
    * @param {ShareAsset} asset
    * @param {string} apiKey
+   * @param {string} [allowedRoot]
    */
-  async function uploadAsset(asset, apiKey) {
-    const path = String(asset.path || '')
+  async function uploadAsset(asset, apiKey, allowedRoot) {
+    const rawPath = String(asset.path || '')
+    let path = rawPath
     const fileName = String(asset.fileName || path.split('/').pop() || path)
+    if (!deps.statFile || allowedRoot) {
+      let info
+      try {
+        info = await lstatFileOnDisk(rawPath)
+      } catch {
+        throw new OmnimuxError('omnimux-share-asset-missing', `素材文件不存在或不可读：${rawPath}`)
+      }
+      if (info.isSymbolicLink() || !info.isFile()) {
+        throw new OmnimuxError('omnimux-share-asset-outside-root', '素材路径包含符号链接或非普通文件，已拒绝上传')
+      }
+      if (allowedRoot) {
+        let rootReal
+        let fileReal
+        try {
+          rootReal = await realpathOnDisk(resolve(allowedRoot))
+          fileReal = await realpathOnDisk(rawPath)
+        } catch {
+          throw new OmnimuxError('omnimux-share-asset-outside-root', '素材路径无法解析到受管媒体目录，已拒绝上传')
+        }
+        const rel = relative(rootReal, fileReal)
+        if (!rel || rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
+          throw new OmnimuxError('omnimux-share-asset-outside-root', '素材路径超出受管媒体目录，已拒绝上传')
+        }
+        path = fileReal
+      }
+    }
     let size = 0
     try {
       size = Number((await statFile(path))?.size) || 0
@@ -310,8 +338,8 @@ export function createInspirationShareApi(deps) {
         safeReport(() => args.onStage?.(SHARE_STAGES.UPLOADING))
         // Upload cover and media in parallel to cut wait time.
         const [coverUrl, mediaUrl] = await Promise.all([
-          cover ? uploadAsset(cover, apiKey) : Promise.resolve(''),
-          media ? uploadAsset(media, apiKey) : Promise.resolve(''),
+          cover ? uploadAsset(cover, apiKey, args.allowedRoot) : Promise.resolve(''),
+          media ? uploadAsset(media, apiKey, args.allowedRoot) : Promise.resolve(''),
         ])
 
         safeReport(() => args.onStage?.(SHARE_STAGES.PUBLISHING))

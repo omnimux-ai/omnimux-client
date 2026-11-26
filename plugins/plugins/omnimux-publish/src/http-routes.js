@@ -181,11 +181,14 @@ export function registerPublishRoutes(webServer, dispatcher, deps = {}) {
       if (method === 'POST' && subPath === '/drafts') {
         sendJson(res, 200, await dispatcher.createDraft({
           type: json.type, payload: json.payload, account_ids: Array.isArray(json.account_ids) ? json.account_ids : undefined,
-        }))
+        }, { allowLocalPath: false }))
         return
       }
       if (method === 'POST' && subPath === '/drafts/update') {
-        sendJson(res, 200, await dispatcher.updateDraft({ draft_id: String(json.draft_id || json.id || ''), patch: json.patch }))
+        sendJson(res, 200, await dispatcher.updateDraft(
+          { draft_id: String(json.draft_id || json.id || ''), patch: json.patch },
+          { allowLocalPath: false },
+        ))
         return
       }
       if (method === 'POST' && subPath === '/drafts/delete') {

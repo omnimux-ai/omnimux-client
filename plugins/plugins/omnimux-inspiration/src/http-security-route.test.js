@@ -89,16 +89,40 @@ describe('inspiration route-level security boundary', () => {
     }
   })
 
-  it('allows an exact browser-extension origin', async () => {
+  it('rejects unallowlisted browser-extension origins and allows explicitly allowlisted ones', async () => {
     const world = bootPlugin()
     try {
-      const res = await httpCall(world.route, {
+      const deniedPreflight = await httpCall(world.route, {
         method: 'OPTIONS',
         url: `${LOCAL_PREFIX}/import-url`,
         headers: { origin: 'chrome-extension://abcdefghijklmnop' },
       })
-      assert.equal(res.status, 204)
-      assert.equal(res.headers['Access-Control-Allow-Origin'], 'chrome-extension://abcdefghijklmnop')
+      assert.equal(deniedPreflight.status, 204)
+      assert.equal(deniedPreflight.headers['Access-Control-Allow-Origin'], undefined)
+
+      const deniedWrite = await httpCall(world.route, {
+        method: 'POST',
+        url: LOCAL_PREFIX,
+        headers: { origin: 'chrome-extension://abcdefghijklmnop' },
+        body: { title: 'untrusted extension write' },
+      })
+      assert.equal(deniedWrite.status, 403)
+      assert.deepEqual(deniedWrite.body, { error: 'not-local' })
+
+      const prevAllowed = process.env.OMNIMUX_ALLOWED_EXTENSION_ORIGINS
+      process.env.OMNIMUX_ALLOWED_EXTENSION_ORIGINS = 'chrome-extension://abcdefghijklmnop'
+      try {
+        const allowedPreflight = await httpCall(world.route, {
+          method: 'OPTIONS',
+          url: `${LOCAL_PREFIX}/import-url`,
+          headers: { origin: 'chrome-extension://abcdefghijklmnop' },
+        })
+        assert.equal(allowedPreflight.status, 204)
+        assert.equal(allowedPreflight.headers['Access-Control-Allow-Origin'], 'chrome-extension://abcdefghijklmnop')
+      } finally {
+        if (prevAllowed === undefined) delete process.env.OMNIMUX_ALLOWED_EXTENSION_ORIGINS
+        else process.env.OMNIMUX_ALLOWED_EXTENSION_ORIGINS = prevAllowed
+      }
     } finally {
       world.dispose()
     }
