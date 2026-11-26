@@ -1,3 +1,14 @@
+    import { SkillShelf, createWorkbenchSidebarEntry, h } from "./boot.js";
+    import { ensureCss } from "./css.js";
+    import { EN, ZH, lookup } from "./i18n.js";
+    import { marketRuntime } from "./runtime-state.js";
+    import { PlazaSearchToolView, SearchToolView } from "./tool-views.js";
+    import { ListToolView } from "./list-view.js";
+    import { ConfigCard } from "./settings.js";
+    import { DEFAULT_MARKET_EXPERTS, buildExpertStartersLookup, renderPlazaIcon } from "./skill-plaza.js";
+    import { SkillPickerButton } from "./skill-picker.js";
+    import { PLAZA_TAB_ID, PlazaView } from "./plaza-shell.js";
+
     const inject = ["slots", "sessions"];
     // rc.6 list slots require `id`; rc.7+ keyed slots require `key`. Pass both.
     function registerSlot(slots, options, component) {
@@ -9,11 +20,11 @@
     function apply(ctx) {
       const slots = ctx.slots;
       const sessions = ctx.sessions;
-      plazaSessions = sessions;
+      marketRuntime.plazaSessions = sessions;
       try {
         // 不直接读 ctx.uiWorkspace：Cordis 客户端 Proxy 对未 inject 的服务会 throw。
         // uiWorkspace 是可选能力，懒取不到就保留 null，由 createReadySkillSession 回落 sessions.open。
-        plazaUiWorkspace = (typeof ctx.get === "function" ? ctx.get("uiWorkspace") : null) ?? plazaUiWorkspace;
+        marketRuntime.plazaUiWorkspace = (typeof ctx.get === "function" ? ctx.get("uiWorkspace") : null) ?? marketRuntime.plazaUiWorkspace;
       } catch {
         // 老壳没有 uiWorkspace：保留 null，由 createReadySkillSession 回落 sessions.open。
       }
@@ -21,17 +32,17 @@
         // 可选服务只能 ctx.inject 懒挂：写进顶层 inject 会让老壳整个插件停在 waiting for activation。
         ctx.inject(["uiWorkspace"], (c) => {
           try {
-            plazaUiWorkspace = c.uiWorkspace ?? c.get?.("uiWorkspace") ?? plazaUiWorkspace;
+            marketRuntime.plazaUiWorkspace = c.uiWorkspace ?? c.get?.("uiWorkspace") ?? marketRuntime.plazaUiWorkspace;
           } catch {}
         });
         ctx.inject(["remote"], (c) => {
           try {
-            plazaRemote = c.remote ?? c.get?.("remote") ?? plazaRemote;
+            marketRuntime.plazaRemote = c.remote ?? c.get?.("remote") ?? marketRuntime.plazaRemote;
           } catch {}
         });
         ctx.inject(["workspaces"], (c) => {
           try {
-            plazaWorkspaces = c.workspaces ?? c.get?.("workspaces");
+            marketRuntime.plazaWorkspaces = c.workspaces ?? c.get?.("workspaces");
           } catch {}
         });
       }
@@ -189,6 +200,4 @@
       }
     }
 
-    if (typeof module !== "undefined" && module.exports) {
-      module.exports = { inject, apply };
-    }
+    export { inject, apply };

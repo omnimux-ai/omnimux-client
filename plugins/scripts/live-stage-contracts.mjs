@@ -253,11 +253,10 @@ export async function captureStageContract(root, stage) {
       assert.equal(sidebarRows.length, 0, 'Market must dispose its coordinator registration')
       assert.equal(win.document.querySelectorAll(`[${datasetKey}]`).length, 0)
       assert.equal(tabs.has(tabId), false, 'Market must dispose its registered Tab')
-      const i18n = readFileSync(join(root, 'plugins', plugin, 'src/client/i18n.js'), 'utf8')
-      const allowedStatusTexts = evaluate(`module.exports = (() => {
-        const React = require('react'); ${i18n}
-        return [ZH, EN].flatMap(dict => [dict['mkt.empty'], dict['search.empty'], dict['expert.empty']]);
-      })()`)
+      const i18nMod = evaluate(await compile(`plugins/${plugin}/src/client/i18n.js`))
+      const allowedStatusTexts = [i18nMod.ZH, i18nMod.EN].flatMap(
+        (dict) => [dict['mkt.empty'], dict['search.empty'], dict['expert.empty']],
+      )
       assert.ok(allowedStatusTexts.length === 6 && allowedStatusTexts.every((text) => typeof text === 'string' && text.trim()), 'Market empty-state translations are missing')
       return {
         stage, plugin, selector: `[${datasetKey}]`, tabId, content: STAGE_CONTENT[stage],

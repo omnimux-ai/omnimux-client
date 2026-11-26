@@ -1,12 +1,8 @@
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
-import { createRequire } from 'node:module'
 import { test } from 'node:test'
-import { runInNewContext } from 'node:vm'
 import * as SkillShelf from './skill-picker-logic.js'
+import { loadClientModule } from '../../tests/helpers/client-esm-loader.mjs'
 
-const req = createRequire(import.meta.url)
-const source = readFileSync(new URL('./skill-plaza.js', import.meta.url), 'utf8')
 const h = (type, props, ...children) => ({ type, props: props || {}, children: children.flat(Infinity) })
 const walk = (node, predicate) => {
   if (!node || typeof node !== 'object') return null
@@ -22,16 +18,27 @@ function renderWorkshop() {
   const calls = []
   const stateWrites = []
   let index = 0
-  const context = {
-    require: req,
-    h, fmt: value => String(value), iconSrc: value => value, useTr: () => (key) => key,
-    useState: (initial) => { const key = index++; return [initial, (value) => stateWrites.push([key, value])] },
-    useCallback: (fn) => fn, useEffect: () => {},
-    SkillShelf,
-    createSkillSession: (options) => calls.push(options),
-    Drawer: 'Drawer', lookup: (key) => key,
-  }
-  const render = runInNewContext(`${source}\nSkillPlaza`, context)
+  const { SkillPlaza: render } = loadClientModule('./skill-plaza.js', {
+    modules: {
+      './boot.js': {
+        h,
+        SkillShelf,
+        useState: (initial) => { const key = index++; return [initial, (value) => stateWrites.push([key, value])] },
+        useCallback: (fn) => fn,
+        useEffect: () => {},
+        useRef: (init) => ({ current: init }),
+        Button: 'Button',
+        SearchField: undefined,
+        Tabs: undefined,
+      },
+      './skills-ui.js': { Drawer: 'Drawer', Overlay: 'Overlay' },
+      './api.js': { api: async () => ({}), apiCache: new Map(), apiCacheKey: (a, p) => JSON.stringify([a, p]), API_CACHE_TTL_MS: 1000 },
+      './session-create.js': { createSkillSession: (options) => calls.push(options) },
+      './plugins-column.js': { PluginsColumnTab: 'PluginsColumnTab' },
+      './runtime-state.js': { marketRuntime: { plazaSessions: null, plazaWorkspaces: null } },
+      './i18n.js': { useTr: () => (key) => key, lookup: (key) => key },
+    },
+  })
   return { tree: render({}), calls, stateWrites }
 }
 
@@ -68,11 +75,23 @@ test('failed installation retains dialog and reports error without installed cal
   let state = 0
   let installed = false
   let closed = false
-  const render = runInNewContext(`${source}\nInstallModal`, {
-    require: req,
-    h, useState: (value) => [state++ === 0 ? { name: 'example.zip' } : value, (next) => writes.push(next)],
-    useRef: () => ({ current: null }), Overlay: 'Overlay', lookup: (key) => key,
-    api: async () => { throw new Error('installation-rejected') },
+  const { InstallModal: render } = loadClientModule('./skill-plaza.js', {
+    modules: {
+      './boot.js': {
+        h,
+        SkillShelf,
+        useState: (value) => [state++ === 0 ? { name: 'example.zip' } : value, (next) => writes.push(next)],
+        useRef: () => ({ current: null }),
+        useCallback: (fn) => fn,
+        useEffect: () => {},
+      },
+      './skills-ui.js': { Drawer: 'Drawer', Overlay: 'Overlay' },
+      './api.js': { api: async () => { throw new Error('installation-rejected') }, apiCache: new Map(), apiCacheKey: () => '', API_CACHE_TTL_MS: 1000 },
+      './session-create.js': { createSkillSession: () => {} },
+      './plugins-column.js': { PluginsColumnTab: 'PluginsColumnTab' },
+      './runtime-state.js': { marketRuntime: { plazaSessions: null, plazaWorkspaces: null } },
+      './i18n.js': { useTr: () => (key) => key, lookup: (key) => key },
+    },
   })
   const tree = render({ open: true, onClose: () => { closed = true }, onInstalled: () => { installed = true } })
   await walk(tree, (node) => node.props.className?.startsWith('btn-modal-install')).props.onClick()
@@ -82,7 +101,6 @@ test('failed installation retains dialog and reports error without installed cal
 })
 
 test('Drawer safely renders with Overlay defined in skills-ui', () => {
-  const skillsUiSource = readFileSync(new URL('./skills-ui.js', import.meta.url), 'utf8')
   const ReactMock = {
     useContext: () => (k) => k,
     useState: (init) => [init, () => {}],
@@ -90,24 +108,26 @@ test('Drawer safely renders with Overlay defined in skills-ui', () => {
     useRef: () => ({ current: null }),
     createContext: () => ({ Provider: 'Provider' }),
   }
-  const context = {
-    h,
-    React: ReactMock,
-    useState: ReactMock.useState,
-    useEffect: ReactMock.useEffect,
-    useRef: ReactMock.useRef,
-    createPortal: (node) => node,
-    fallbackPortal: null,
-    document: { body: { style: {} } },
-    window: { addEventListener: () => {}, removeEventListener: () => {} },
-    useTr: () => (k) => k,
-    lookup: (k) => k,
-    catLabel: () => '通用',
-    api: async () => ({ ok: true }),
-    Button: 'Button',
-    Toast: 'Toast',
-  }
-  const renderDrawer = runInNewContext(`${skillsUiSource}\nDrawer`, context)
+  const { Drawer: renderDrawer } = loadClientModule('./skills-ui.js', {
+    globals: {
+      document: { body: { style: {} } },
+      window: { addEventListener: () => {}, removeEventListener: () => {} },
+    },
+    modules: {
+      './boot.js': {
+        h,
+        React: ReactMock,
+        useState: ReactMock.useState,
+        useEffect: ReactMock.useEffect,
+        Button: 'Button',
+        IconButton: 'IconButton',
+      },
+      './portal.js': { createPortal: (node) => node, fallbackPortal: null },
+      './i18n.js': { useTr: () => (k) => k, lookup: (k) => k, catLabel: () => '通用', skillDesc: (x) => x?.description || '', skillTitle: (x) => x?.name || '' },
+      './api.js': { api: async () => ({ ok: true }) },
+      './session-create.js': { trySkillInSession: async () => ({ ok: true }) },
+    },
+  })
   const node = renderDrawer({ item: { slug: 'test-skill', name: '测试技能' }, onClose: () => {} })
   assert.ok(node)
   assert.equal(node.type.name, 'Overlay')

@@ -1,9 +1,7 @@
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
-import { runInNewContext } from 'node:vm'
 import { test } from 'node:test'
+import { loadClientModule } from '../../tests/helpers/client-esm-loader.mjs'
 
-const source = readFileSync(new URL('./session-create.js', import.meta.url), 'utf8')
 function deferred() {
   let resolve, reject
   const promise = new Promise((yes, no) => { resolve = yes; reject = no })
@@ -24,26 +22,40 @@ function setup({ install, create, attach, draft = '', protectedInput = false, re
     open: id => { calls.push(['open', id]); move(id) },
   }
   const ui = uiWorkspace ? { openSession: id => { uiCalls.push(['openSession', id]); if (uiSwitches) move(id) } } : null
-  const context = { plazaSessions: sessions, plazaUiWorkspace: ui, setTimeout, console, window: { __omnimuxWorkbench: {
-    getSnapshot: () => ({ sessionId: current }),
-    open: async payload => {
-      wbCalls.push(['open', payload, current])
-      await duringWorkbenchOpen?.(move)
-      if (openDelay) {
-        await new Promise(resolve => setTimeout(resolve, openDelay))
-        wbCalls.push(['open-done', payload.sessionId])
-      }
+  const win = {
+    __omnimuxWorkbench: {
+      getSnapshot: () => ({ sessionId: current }),
+      open: async payload => {
+        wbCalls.push(['open', payload, current])
+        await duringWorkbenchOpen?.(move)
+        if (openDelay) {
+          await new Promise(resolve => setTimeout(resolve, openDelay))
+          wbCalls.push(['open-done', payload.sessionId])
+        }
+      },
+      setFocus: mode => { wbCalls.push(['setFocus', mode]) },
+      setConversationCollapsed: (value, opts) => { wbCalls.push(['setConversationCollapsed', value, opts]) },
     },
-    setFocus: mode => { wbCalls.push(['setFocus', mode]) },
-    setConversationCollapsed: (value, opts) => { wbCalls.push(['setConversationCollapsed', value, opts]) },
-  }, addEventListener: () => {} }, api: async (method, body) => {
-    calls.push([method, body.sessionId || body.slug])
-    if (method === 'install') return install ? install() : { ok: true }
-    if (method === 'tryAttach') return attach ? attach(body) : { attached: true, hasBody: true, sessionId: body.sessionId, slug: body.slug }
-    throw Error('unexpected API')
-  } }
-  if (composerActions) context.window.__omnimuxComposerActions = composerActions
-  const exports = runInNewContext(source + '\n({createSkillSession,skillCreationInputs})', context)
+    addEventListener: () => {},
+  }
+  if (composerActions) win.__omnimuxComposerActions = composerActions
+  const exports = loadClientModule('./session-create.js', {
+    globals: { setTimeout, console, window: win },
+    modules: {
+      './runtime-state.js': {
+        marketRuntime: { plazaSessions: sessions, plazaUiWorkspace: ui, plazaRemote: null, plazaWorkspaces: null },
+      },
+      './i18n.js': { lookup: (k) => k },
+      './api.js': {
+        api: async (method, body) => {
+          calls.push([method, body.sessionId || body.slug])
+          if (method === 'install') return install ? install() : { ok: true }
+          if (method === 'tryAttach') return attach ? attach(body) : { attached: true, hasBody: true, sessionId: body.sessionId, slug: body.slug }
+          throw Error('unexpected API')
+        },
+      },
+    },
+  })
   for (const [id, input] of state) {
     if (id === 'b' && !mount) continue
     exports.skillCreationInputs.set(id, {

@@ -26,15 +26,16 @@ const here = dirname(fileURLToPath(import.meta.url))
 const bootSrc = readFileSync(join(here, 'boot.js'), 'utf8')
 const pickerSrc = readFileSync(join(here, 'skill-picker.js'), 'utf8')
 const plazaSrc = readFileSync(join(here, 'skill-plaza.js'), 'utf8')
+const usePlazaFilterSrc = readFileSync(join(here, 'plaza/usePlazaFilter.js'), 'utf8')
 
 /** 九标签字面量数组（任意片段内出现即视为副本）。 */
 const SHELF_ARRAY_LITERAL = /\[\s*"电商",\s*"商业广告",\s*"短剧漫剧"/
 
 describe('skill shelf single source of truth', () => {
   it('boot.js injects the logic module as a single namespace binding', () => {
-    assert.match(bootSrc, /const SkillShelf = require\("\.\/skill-picker-logic\.js"\)/)
-    // 严禁顶层解构（与后续 fragment 的 const 冲突）
-    assert.doesNotMatch(bootSrc, /const \{[^}]*\} = require\("\.\/skill-picker-logic\.js"\)/)
+    assert.match(bootSrc, /import \* as SkillShelf from "\.\/skill-picker-logic\.js"/)
+    // 统一通过 SkillShelf 命名空间消费，避免顶层零散解构漂移
+    assert.doesNotMatch(bootSrc, /import \{[^}]*\} from "\.\/skill-picker-logic\.js"/)
   })
 
   it('picker and plaza declare no hardcoded shelf tag arrays', () => {
@@ -69,12 +70,13 @@ describe('skill shelf single source of truth', () => {
     ]) {
       assert.ok(pickerSrc.includes(needle), `skill-picker.js must consume ${needle}`)
     }
+    assert.ok(plazaSrc.includes('SkillShelf.plazaDiscoverySections'), 'skill-plaza.js must consume SkillShelf.plazaDiscoverySections')
+    assert.match(plazaSrc, /from "\.\/plaza\/usePlazaFilter\.js"/)
     for (const needle of [
-      'SkillShelf.SKILL_SHELF_TAXONOMY',
-      'SkillShelf.plazaDiscoverySections',
-      'SkillShelf.buildPlazaSearchPayload',
+      'SKILL_SHELF_TAXONOMY',
+      'buildPlazaSearchPayload',
     ]) {
-      assert.ok(plazaSrc.includes(needle), `skill-plaza.js must consume ${needle}`)
+      assert.ok(usePlazaFilterSrc.includes(needle), `plaza/usePlazaFilter.js must consume ${needle}`)
     }
   })
 
@@ -116,11 +118,9 @@ describe('skill shelf single source of truth', () => {
   })
 
   it('plaza domain contract comment matches both classification sources', () => {
-    const match = plazaSrc.match(/\/\/ 领域契约：(.+)/)
-    assert.ok(match, 'skill-plaza.js must declare the domain contract line')
-    const declared = match[1].split(',').map((id) => id.trim()).filter(Boolean)
-    assert.deepEqual(declared, [...WORKSHOP_DOMAIN_ORDER])
-    assert.deepEqual([...declared].sort(), SKILL_SHELF_TAXONOMY.map((row) => row.id).sort())
+    assert.match(plazaSrc, /import \* as plazaUtils from "\.\/plaza\/plazaUtils\.js"/)
+    assert.match(plazaSrc, /\bWORKSHOP_DOMAIN_ORDER\b/)
+    assert.deepEqual([...WORKSHOP_DOMAIN_ORDER].sort(), SKILL_SHELF_TAXONOMY.map((row) => row.id).sort())
   })
 })
 

@@ -11,6 +11,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node
 import http from 'node:http';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { transformSync } from 'esbuild';
 import { findChromePath } from './worktree-web-qa.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -36,6 +37,12 @@ function extractCssString(src) {
 }
 
 const rawCss = extractCssString(cssSource);
+const skillsUiCjs = transformSync(skillsUiSource, {
+  loader: 'js',
+  format: 'cjs',
+  target: 'es2020',
+  sourcefile: 'skills-ui.js',
+}).code;
 
 const HARNESS_HTML = `<!DOCTYPE html>
 <html lang="zh-CN">
@@ -181,6 +188,8 @@ const HARNESS_HTML = `<!DOCTYPE html>
       );
     };
 
+    const skillTitle = (item) => item?.name || item?.slug || "";
+    const skillDesc = (item) => item?.summary || item?.description || "";
     const TRACE = [
       ["t", "T", "目标达成", "5", "#3b82f6"],
       ["r", "R", "响应速度", "5", "#10b981"],
@@ -195,7 +204,29 @@ const HARNESS_HTML = `<!DOCTYPE html>
     const fmt = (n) => String(n);
     const fmtTime = () => "";
 
-    ${skillsUiSource}
+    const __skillsUiMod = { exports: {} };
+    const __skillsUiModules = {
+      "./boot.js": { Button, IconButton, React, h, useEffect, useState },
+      "./format.js": { fmt, fmtTime, iconSrc, initials },
+      "./i18n.js": { catLabel, lookup, skillDesc, skillTitle, useTr },
+      "./constants.js": { DETAIL_TABS, TRACE },
+      "./api.js": { api },
+      "./session-create.js": { trySkillInSession },
+      "./portal.js": { createPortal, fallbackPortal },
+    };
+    (function (require, module, exports) {
+${skillsUiCjs}
+    })(
+      (id) => {
+        if (!Object.prototype.hasOwnProperty.call(__skillsUiModules, id)) {
+          throw new Error("Unexpected require in skills-ui harness: " + id);
+        }
+        return __skillsUiModules[id];
+      },
+      __skillsUiMod,
+      __skillsUiMod.exports,
+    );
+    const { Cards, DetailSwitch, Drawer, Overlay, Toast } = __skillsUiMod.exports;
 
     function App() {
       return h(Drawer, {

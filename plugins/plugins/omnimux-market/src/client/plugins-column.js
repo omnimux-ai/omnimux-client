@@ -4,6 +4,9 @@
      * 100% 遵循 design.md 视觉规范与 UI04 零 Unicode/Emoji 门禁。
      */
 
+    import { h, useState } from "./boot.js";
+    import { DetailSwitch } from "./skills-ui.js";
+
     const OMNIMUX_PLUGINS_STORAGE_KEY = "omnimux:plugins-enabled-state";
 
     const OMNIMUX_PLUGIN_CATEGORIES = [
@@ -522,3 +525,5 @@
     function renderPluginsColumnTab(opts) {
       return PluginsColumnTab(opts);
     }
+
+    export { PluginsColumnTab };

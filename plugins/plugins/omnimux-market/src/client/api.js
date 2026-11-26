@@ -1,3 +1,5 @@
+    import { pluginUrl } from "./format.js";
+
     /** Client L1 soft cache: method+payload → last ok body. Soft TTL ~90s. */
     const apiCache = new Map();
     const API_CACHE_TTL_MS = 90_000;
@@ -40,3 +42,5 @@
       }
       return body;
     }
+
+    export { API_CACHE_TTL_MS, api, apiCache, apiCacheKey };

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
 import { test } from 'node:test'
-import { runInNewContext } from 'node:vm'
+import { loadClientModule } from '../../tests/helpers/client-esm-loader.mjs'
 import { readFileSync } from 'node:fs'
 import * as esbuild from 'esbuild'
 import React from 'react'
@@ -442,22 +442,25 @@ test('resolveProjectDir：会话 cwd 优先，回落工作区目录，缺失返�
 })
 
 test('A3 分派：renderPlazaModals 按 kind === suite 走套件详情，其他条目仍走 Drawer', () => {
-  const source = readFileSync(new URL('./skill-plaza.js', import.meta.url), 'utf8')
-  const context = {
-    require: req,
-    h,
-    fmt: (value) => String(value),
-    iconSrc: (value) => value,
-    useTr: () => (key) => key,
-    useState: (init) => [init, () => {}],
-    useCallback: (fn) => fn,
-    useEffect: () => {},
-    SkillShelf,
-    createSkillSession: () => {},
-    Drawer: 'Drawer',
-    lookup: (key) => key,
-  }
-  const renderModals = runInNewContext(`${source}\nrenderPlazaModals`, context)
+  const { renderPlazaModals: renderModals } = loadClientModule('./skill-plaza.js', {
+    modules: {
+      './boot.js': {
+        h,
+        SkillShelf,
+        useState: (init) => [init, () => {}],
+        useCallback: (fn) => fn,
+        useEffect: () => {},
+        useRef: () => ({ current: null }),
+        Button: 'Button',
+      },
+      './skills-ui.js': { Drawer: 'Drawer', Overlay: 'Overlay' },
+      './api.js': { api: async () => ({}), apiCache: new Map(), apiCacheKey: () => '', API_CACHE_TTL_MS: 1000 },
+      './session-create.js': { createSkillSession: () => {} },
+      './plugins-column.js': { PluginsColumnTab: 'PluginsColumnTab' },
+      './runtime-state.js': { marketRuntime: { plazaSessions: null, plazaWorkspaces: null } },
+      './i18n.js': { useTr: () => (key) => key, lookup: (key) => key },
+    },
+  })
   const state = {
     open: null,
     setOpen: () => {},

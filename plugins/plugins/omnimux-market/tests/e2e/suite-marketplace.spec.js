@@ -8,35 +8,32 @@
  *   从 SkillPlaza 整棵树出发，用真实点击（卡片 onClick / 安装按钮 onClick）推进旅程。
  */
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
-import { createRequire } from 'node:module'
 import { test } from 'node:test'
-import { runInNewContext } from 'node:vm'
 import catalog from '../../catalog/index.json' with { type: 'json' }
 import * as SkillShelf from '../../src/client/skill-picker-logic.js'
 import * as plazaUtils from '../../src/client/plaza/plazaUtils.js'
-
-const clientDir = new URL('../../src/client/', import.meta.url)
-const readClient = (name) => readFileSync(new URL(name, clientDir), 'utf8')
-// require 锚定在 src/client/：skill-plaza.js 内的相对 require（./plaza/*.jsx）才能解析。
-const clientRequire = createRequire(new URL('skill-plaza.js', clientDir))
+import { loadClientModule } from '../helpers/client-esm-loader.mjs'
 
 const SUITES = catalog.items.filter((item) => item.kind === 'suite')
 const SOCIAL = SUITES.find((item) => item.id === 'suite-social-content-team')
 const AMAZON = SUITES.find((item) => item.id === 'suite-amazon-skills')
 const TIKTOK = SUITES.find((item) => item.id === 'suite-tiktok-agent')
 
-// 真实词典：直接从 i18n 片段求值取 lookup，断言用户可见中文。
-const i18n = runInNewContext(`${readClient('i18n.js')}\n({ lookup })`, {
-  React: {
-    createContext: () => ({}),
-    useContext: () => null,
-    useState: (value) => [value, () => {}],
-    useEffect: () => {},
-    useCallback: (fn) => fn,
+// 真实词典：通过 ESM 测试加载器加载 i18n 模块取 lookup，断言用户可见中文。
+const { lookup } = loadClientModule('./i18n.js', {
+  modules: {
+    './boot.js': {
+      React: {
+        createContext: () => ({}),
+        useContext: () => null,
+        useState: (value) => [value, () => {}],
+        useEffect: () => {},
+        useCallback: (fn) => fn,
+      },
+      h: () => null,
+    },
   },
 })
-const lookup = i18n.lookup
 
 const h = (type, props, ...children) => ({
   type,
@@ -111,30 +108,37 @@ function createPlaza(opts = {}) {
     return [cells[index], (next) => { cells[index] = typeof next === 'function' ? next(cells[index]) : next }]
   }
 
-  const render = runInNewContext(`${readClient('skill-plaza.js')}\nSkillPlaza`, {
-    require: clientRequire,
-    h,
-    SkillShelf,
-    fmt: (value) => String(value),
-    Button: 'Button',
-    Overlay: 'Overlay',
-    Drawer: 'Drawer',
-    iconSrc: (value) => value,
-    useTr: () => lookup,
-    lookup,
-    useState,
-    useCallback: (fn) => fn,
-    useEffect: (fn) => { effects.push(fn) },
-    apiCacheKey: (action, payload) => JSON.stringify([action, payload]),
-    apiCache: new Map(),
-    API_CACHE_TTL_MS: 1000,
-    api: async (action, payload) => {
-      calls.push({ action, payload })
-      return (opts.respond || defaultRespond)(action, payload)
+  const { SkillPlaza: render } = loadClientModule('./skill-plaza.js', {
+    modules: {
+      './boot.js': {
+        h,
+        SkillShelf,
+        Button: 'Button',
+        useState,
+        useCallback: (fn) => fn,
+        useEffect: (fn) => { effects.push(fn) },
+        useRef: () => ({ current: null }),
+      },
+      './skills-ui.js': { Overlay: 'Overlay', Drawer: 'Drawer' },
+      './i18n.js': { useTr: () => lookup, lookup },
+      './api.js': {
+        apiCacheKey: (action, payload) => JSON.stringify([action, payload]),
+        apiCache: new Map(),
+        API_CACHE_TTL_MS: 1000,
+        api: async (action, payload) => {
+          calls.push({ action, payload })
+          return (opts.respond || defaultRespond)(action, payload)
+        },
+      },
+      './session-create.js': { createSkillSession: () => {} },
+      './plugins-column.js': { PluginsColumnTab: 'PluginsColumnTab' },
+      './runtime-state.js': {
+        marketRuntime: {
+          plazaSessions: opts.sessions === undefined ? OK_SESSIONS : opts.sessions,
+          plazaWorkspaces: opts.workspaces === undefined ? { list: { getSnapshot: () => ({ items: [] }) } } : opts.workspaces,
+        },
+      },
     },
-    createSkillSession: () => {},
-    plazaSessions: opts.sessions === undefined ? OK_SESSIONS : opts.sessions,
-    plazaWorkspaces: opts.workspaces === undefined ? { list: { getSnapshot: () => ({ items: [] }) } } : opts.workspaces,
   })
 
   const draw = () => {

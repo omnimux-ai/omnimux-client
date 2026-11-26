@@ -1,3 +1,11 @@
+    import { useTr } from "./i18n.js";
+    import { Button, h, useEffect, useState } from "./boot.js";
+    import { API_CACHE_TTL_MS, api, apiCache, apiCacheKey } from "./api.js";
+    import { clickPreset, findComposer, insertGesture, isBlankSession } from "./composer.js";
+    import { currentSessionId } from "./tool-views.js";
+    import { marketRuntime } from "./runtime-state.js";
+    import { Cards } from "./skills-ui.js";
+
     /** 专家 tab：全量拉取本地目录（105 条）+ 客户端过滤，点卡片即召唤。 */
     function ExpertPanel({ query = "", onClose }) {
       const tr = useTr();
@@ -50,7 +58,7 @@
         setFeedback("");
         try {
           const blank = isBlankSession();
-          const sessionId = currentSessionId(plazaSessions);
+          const sessionId = currentSessionId(marketRuntime.plazaSessions);
           const result = await api("catalogSummon", { id: item.id, sessionState: blank ? "blank" : "locked", sessionId });
           const field = findComposer();
           const wrote = field instanceof HTMLTextAreaElement || field instanceof HTMLInputElement
@@ -93,3 +101,5 @@
         filtered.length ? h(Cards, { items: filtered, onOpen: summon }) : null,
       );
     }
+
+    export { ExpertPanel };

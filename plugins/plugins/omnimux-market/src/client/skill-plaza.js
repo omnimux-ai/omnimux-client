@@ -1,33 +1,33 @@
-    // 规则真源：SkillShelf（boot.js 注入 skill-picker-logic.js），禁止内联副本。
-    // 货架真源：SkillShelf.SKILL_SHELF_TAXONOMY 与 SkillShelf.buildPlazaSearchPayload 统一消费。
-    // 结构契约：function InstallModal, drop-zone, req-section, btn-modal-install, function ConfirmInstallModal,
-    //          function SuiteDetailModal, ws-suite-block, ws-suite-install-dialog, ws-suite-target-option
-    // 样式契约：featured-cover-wrap, coverSrc ?, featured-hover-actions, hover-btn-detail, hover-btn-try, expert-market-grid, expert-card, expert-pill-btn, expertMarket.disabled
-    // 领域契约：套件, AIGC 创作, 短剧漫剧, 专业影视, 动画, 商业广告, 电商, 教育, 创意实验, 音频音乐, 平台工具
-
-    const plazaUtils = require("./plaza/plazaUtils.js");
-    const { InstallModal: PlazaInstallModal } = require("./plaza/InstallModal.jsx");
-    const { ConfirmInstallModal: PlazaConfirmInstallModal } = require("./plaza/ConfirmInstallModal.jsx");
-    const { SuiteDetailModal: PlazaSuiteDetailModal } = require("./plaza/SuiteDetailModal.jsx");
-    const { renderExpertCard, ExpertCard } = require("./plaza/ExpertCard.jsx");
-    const { renderFeaturedCard, FeaturedCard } = require("./plaza/FeaturedCard.jsx");
-    const {
+    import { Button, SearchField, SkillShelf, Tabs, h, useCallback, useEffect, useRef, useState } from "./boot.js";
+    import { Drawer, Overlay } from "./skills-ui.js";
+    import { API_CACHE_TTL_MS, api, apiCache, apiCacheKey } from "./api.js";
+    import { createSkillSession } from "./session-create.js";
+    import { PluginsColumnTab } from "./plugins-column.js";
+    import { marketRuntime } from "./runtime-state.js";
+    import { useTr } from "./i18n.js";
+    import * as plazaUtils from "./plaza/plazaUtils.js";
+    import { InstallModal as PlazaInstallModal } from "./plaza/InstallModal.jsx";
+    import { ConfirmInstallModal as PlazaConfirmInstallModal } from "./plaza/ConfirmInstallModal.jsx";
+    import { SuiteDetailModal as PlazaSuiteDetailModal } from "./plaza/SuiteDetailModal.jsx";
+    import { renderExpertCard, ExpertCard } from "./plaza/ExpertCard.jsx";
+    import { renderFeaturedCard, FeaturedCard } from "./plaza/FeaturedCard.jsx";
+    import {
       renderRegularCard,
       renderMineCard,
       MineToolbar,
-      renderMineToolbar: plazaRenderMineToolbar,
-      renderFeaturedSection: plazaRenderFeaturedSection,
-      renderRegularSection: plazaRenderRegularSection,
+      renderMineToolbar as plazaRenderMineToolbar,
+      renderFeaturedSection as plazaRenderFeaturedSection,
+      renderRegularSection as plazaRenderRegularSection,
       PlazaCardGrid,
-    } = require("./plaza/PlazaCardGrid.jsx");
-    const {
+    } from "./plaza/PlazaCardGrid.jsx";
+    import {
       updateInstalledItemsList,
       filterMineItems,
       filterDisplayedExperts,
       buildWorkshopCategories,
       usePlazaSearchEffect,
       usePlazaState,
-    } = require("./plaza/usePlazaFilter.js");
+    } from "./plaza/usePlazaFilter.js";
 
     const {
       resolvePlazaIconSize,
@@ -315,7 +315,7 @@
 
     function resolvePlazaSectionsData(opts) {
       const { state, tr, onToggleSwitch, onToggleExp } = opts;
-      const sessions = typeof plazaSessions !== "undefined" ? plazaSessions : null;
+      const sessions = marketRuntime.plazaSessions ?? null;
       const activePreset = SkillShelf.resolveActivePreset({ sessions });
       const presetBinding = SkillShelf.getPresetSkillBinding(activePreset, undefined, {
         installedSlugs: state.installedItems,
@@ -466,8 +466,8 @@
       const onConfirm = () => handleConfirmInstall(state.confirmInstallItem, state, mark, apiFn);
       const sections = resolvePlazaSectionsData({ state, tr, onToggleSwitch, onToggleExp, apiFn });
       const onCloseModal = () => { if (!state.confirmInstalling) { state.setConfirmInstallItem(null); state.setConfirmInstallError(""); } };
-      const workspaces = typeof plazaWorkspaces !== "undefined" ? plazaWorkspaces : null;
-      const projectDir = resolveProjectDir(typeof plazaSessions !== "undefined" ? plazaSessions : null, workspaces);
+      const workspaces = marketRuntime.plazaWorkspaces ?? null;
+      const projectDir = resolveProjectDir(marketRuntime.plazaSessions ?? null, workspaces);
       const [drawerNode, installNode, confirmNode] = renderPlazaModals({ state, mark, loadInstalled, onCloseModal, onConfirm, tr, projectDir });
 
       // 滚动归属（骨架契约 §二·补）：整页滚动，标题/动作行随页面滚走，一级/二级 Tab 到顶吸附。
@@ -495,3 +495,14 @@
         confirmNode,
       );
     }
+
+    export {
+      ConfirmInstallModal,
+      DEFAULT_MARKET_EXPERTS,
+      InstallModal,
+      SkillPlaza,
+      SuiteDetailModal,
+      buildExpertStartersLookup,
+      renderPlazaIcon,
+      renderPlazaModals,
+    };

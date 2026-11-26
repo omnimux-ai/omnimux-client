@@ -1,6 +1,8 @@
+    import { api } from "./api.js";
+    import { lookup } from "./i18n.js";
+    import { marketRuntime } from "./runtime-state.js";
+
     var inflightSessionCreation = null;
-    var plazaWorkspaces = null;
-    var plazaRemote = null;
     const skillCreationInputs = new Map();
 
     // Only mounted official input slots may write a session's creation guide.
@@ -42,7 +44,7 @@
         const catalogId = opts.catalogId || "sk-omx-skill-creator";
         await api("install", { slug, catalogId });
         if (!checkCurrent()) return stopped();
-        const workspaceId = resolveFallbackWorkspaceId(sessions, plazaWorkspaces);
+        const workspaceId = resolveFallbackWorkspaceId(sessions, marketRuntime.plazaWorkspaces);
         const sessionId = await sessions.create(workspaceId ? { workspaceId } : {});
         if (!checkCurrent()) return stopped();
         if (!sessionId || sessionId === origin) throw new Error("create-session-failed");
@@ -51,12 +53,12 @@
         if (attached?.attached !== true || attached?.hasBody !== true || attached.sessionId !== sessionId || attached.slug !== slug) {
           throw new Error("skill-body-unavailable");
         }
-        const hasUiWorkspaceOpen = typeof plazaUiWorkspace?.openSession === "function";
+        const hasUiWorkspaceOpen = typeof marketRuntime.plazaUiWorkspace?.openSession === "function";
         if (!hasUiWorkspaceOpen && typeof sessions.open !== "function") throw new Error("sessions-open-unavailable");
         opts.onTarget?.(sessionId);
         // Next/rc.3 壳里 sessions.open 不切主会话；真正的导航接缝是 uiWorkspace.openSession。
         target = sessionId;
-        if (hasUiWorkspaceOpen) plazaUiWorkspace.openSession(sessionId);
+        if (hasUiWorkspaceOpen) marketRuntime.plazaUiWorkspace.openSession(sessionId);
         else sessions.open(sessionId);
         const sessionFailure = await waitForTarget();
         if (sessionFailure) return sessionFailure;
@@ -344,7 +346,7 @@
      */
     async function clickOfficialNewSession(opts = {}) {
       const doc = resolveDoc(opts.document);
-      const sessions = opts.sessions || plazaSessions || (typeof window !== "undefined" ? window.__omnimuxSessions : undefined);
+      const sessions = opts.sessions || marketRuntime.plazaSessions || (typeof window !== "undefined" ? window.__omnimuxSessions : undefined);
       if (!doc) return { ok: false, error: "no-document" };
       const list = sessions?.list;
       if (!list || typeof list.getSnapshot !== "function") {
@@ -457,7 +459,7 @@
           return String(currentSession.workspaceId);
         }
 
-        const wsService = workspaces || plazaWorkspaces || (typeof window !== "undefined" ? window.__omnimuxWorkspaces : undefined);
+        const wsService = workspaces || marketRuntime.plazaWorkspaces || (typeof window !== "undefined" ? window.__omnimuxWorkspaces : undefined);
         const wsSnapshot = wsService?.list?.getSnapshot?.();
 
         // 2. 从 workspaces 快照看当前会话是否归属某工作区
@@ -580,7 +582,7 @@
 
       const promise = (async () => {
         try {
-          const sessions = plazaSessions || (typeof window !== "undefined" ? window.__omnimuxSessions : undefined);
+          const sessions = marketRuntime.plazaSessions || (typeof window !== "undefined" ? window.__omnimuxSessions : undefined);
           if (!sessions || typeof sessions.create !== "function") {
             throw new Error("sessions-unavailable");
           }
@@ -617,7 +619,7 @@
 
           // 兜底逻辑：若未能通过点击官方按钮获得会话，则继承合法工作区 ID 并调用 sessions.create
           if (!sessionBId) {
-            const workspaceId = resolveFallbackWorkspaceId(sessions, plazaWorkspaces);
+            const workspaceId = resolveFallbackWorkspaceId(sessions, marketRuntime.plazaWorkspaces);
             const createOpts = workspaceId ? { workspaceId } : {};
             sessionBId = await sessions.create(createOpts);
             if (!sessionBId || sessionBId === sessionAId) {
@@ -634,7 +636,7 @@
           if (opts.preset) {
             const targetPreset = opts.preset;
             try {
-              const remote = plazaRemote || (typeof window !== "undefined" ? (window.__dshRemote || window.__omnimuxRemote) : null);
+              const remote = marketRuntime.plazaRemote || (typeof window !== "undefined" ? (window.__dshRemote || window.__omnimuxRemote) : null);
               if (remote?.agentPresets?.select) {
                 await remote.agentPresets.select(sessionBId, targetPreset);
               }
@@ -870,3 +872,14 @@
     if (typeof window !== "undefined") {
       window.trySkillInSession = trySkillInSession;
     }
+
+    export {
+      activateSharedToolSkill,
+      clickOfficialNewSession,
+      createSkillSession,
+      currentPlazaSessionId,
+      findComposer,
+      resolveFallbackWorkspaceId,
+      skillCreationInputs,
+      trySkillInSession,
+    };

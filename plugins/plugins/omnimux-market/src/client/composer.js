@@ -62,3 +62,5 @@
       chip.click();
       return false;
     }
+
+    export { clickPreset, findComposer, insertGesture, isBlankSession };

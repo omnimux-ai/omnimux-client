@@ -1,10 +1,8 @@
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
-import { runInNewContext } from 'node:vm'
 import { test } from 'node:test'
 import * as SkillShelf from './skill-picker-logic.js'
+import { loadClientModule } from '../../tests/helpers/client-esm-loader.mjs'
 
-const source = readFileSync(new URL('./skill-picker.js', import.meta.url), 'utf8')
 const h = (type, props, ...children) => ({ type, props: props || {}, children: children.flat(Infinity) })
 function walk(node, predicate) {
   if (!node || typeof node !== 'object') return null
@@ -101,38 +99,54 @@ function harness({ draft = '', activeSkill = null, occurrences = [], withCompose
       },
     }
   }
-  const context = {
-    h, SkillShelf, lookup: (key) => key, api: async (name, payload) => { apiCalls.push({ name, payload }); return { ok: true } },
-    createSkillSession: async () => ({ ok: true, prefilled: true, sessionId: 's1' }),
-    I18nProvider: 'I18nProvider', skillCreationInputs: new Map(), currentPlazaSessionId: () => 's1', CustomEvent: window.CustomEvent,
-    activateSharedToolSkill: (value) => apiCalls.push({ name: 'activate', value }),
-    useInput: (selector) => selector(input), inputActions,
-    useState: (initial) => {
-      const [state, index] = slot(() => (typeof initial === 'function' ? initial() : initial))
-      return [state[index], (value) => {
-        state[index] = typeof value === 'function' ? value(state[index]) : value
-        writes.push(state[index])
-      }]
-    },
-    useRef: (initial) => {
-      const [state, index] = slot(() => ({ current: initial }))
-      return state[index]
-    },
-    useEffect: (callback, deps) => {
-      const key = `${owner}:${effectCursor++}`
-      const previous = effects.get(key)
-      if (previous && sameDeps(previous.deps, deps)) return
-      try { previous?.cleanup?.() } catch {}
-      const cleanup = callback()
-      effects.set(key, { deps, cleanup })
-    },
-    useLayoutEffect: () => {},
-    useCallback: (fn) => fn,
-    SearchField: 'SearchField', createPortal: (node) => node, document, window,
-    setTimeout: (fn, ms) => setTimeout(fn, ms), clearTimeout,
+  const useInput = (selector) => selector(input)
+  const globals = {
+    CustomEvent: window.CustomEvent,
+    document,
+    window,
+    setTimeout: (fn, ms) => setTimeout(fn, ms),
+    clearTimeout,
   }
-  const { SkillPickerButton, SkillPickerPanel } = runInNewContext(`${source}\n({SkillPickerButton,SkillPickerPanel})`, context)
-  const buttonProps = { sessionId: 's1', inputActions, useInput: context.useInput }
+  const modules = {
+    './boot.js': {
+      h,
+      SkillShelf,
+      SearchField: 'SearchField',
+      useState: (initial) => {
+        const [state, index] = slot(() => (typeof initial === 'function' ? initial() : initial))
+        return [state[index], (value) => {
+          state[index] = typeof value === 'function' ? value(state[index]) : value
+          writes.push(state[index])
+        }]
+      },
+      useRef: (initial) => {
+        const [state, index] = slot(() => ({ current: initial }))
+        return state[index]
+      },
+      useEffect: (callback, deps) => {
+        const key = `${owner}:${effectCursor++}`
+        const previous = effects.get(key)
+        if (previous && sameDeps(previous.deps, deps)) return
+        try { previous?.cleanup?.() } catch {}
+        const cleanup = callback()
+        effects.set(key, { deps, cleanup })
+      },
+      useLayoutEffect: () => {},
+      useCallback: (fn) => fn,
+    },
+    './api.js': { api: async (name, payload) => { apiCalls.push({ name, payload }); return { ok: true } } },
+    './i18n.js': { I18nProvider: 'I18nProvider', lookup: (key) => key },
+    './portal.js': { createPortal: (node) => node },
+    './session-create.js': {
+      activateSharedToolSkill: (value) => apiCalls.push({ name: 'activate', value }),
+      createSkillSession: async () => ({ ok: true, prefilled: true, sessionId: 's1' }),
+      currentPlazaSessionId: () => 's1',
+      skillCreationInputs: new Map(),
+    },
+    './runtime-state.js': { marketRuntime: { plazaSessions: null } },
+  }
+  const { SkillPickerButton, SkillPickerPanel } = loadClientModule('./skill-picker.js', { globals, modules })
+  const buttonProps = { sessionId: 's1', inputActions, useInput }
   let button = render('button', SkillPickerButton, buttonProps)
   const renderButton = () => {
     button = render('button', SkillPickerButton, buttonProps)

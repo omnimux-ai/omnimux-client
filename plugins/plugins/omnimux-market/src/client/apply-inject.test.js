@@ -1,23 +1,40 @@
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
-import { runInNewContext } from 'node:vm'
 import { test } from 'node:test'
-
-const source = readFileSync(new URL('./apply.js', import.meta.url), 'utf8')
+import { loadClientModule } from '../../tests/helpers/client-esm-loader.mjs'
 
 function loadApply(extraContext = {}) {
-  const sandbox = {
+  const runtime = {
+    plazaKeepAlive: true,
     plazaSessions: null,
     plazaUiWorkspace: null,
     plazaWorkspaces: null,
     plazaRemote: null,
-    setTimeout,
-    clearInterval,
-    console,
-    ...extraContext,
   }
-  const mod = runInNewContext(`${source}\n({ inject, apply })`, sandbox)
-  return { ...mod, sandbox }
+  const mod = loadClientModule('./apply.js', {
+    globals: {
+      setTimeout,
+      clearInterval,
+      console,
+      ...extraContext,
+    },
+    modules: {
+      './boot.js': {
+        SkillShelf: { findPresetSkill: () => null },
+        createWorkbenchSidebarEntry: () => () => {},
+        h: () => null,
+      },
+      './css.js': { ensureCss: () => () => {} },
+      './i18n.js': { EN: {}, ZH: {}, lookup: (k) => k },
+      './runtime-state.js': { marketRuntime: runtime },
+      './tool-views.js': { PlazaSearchToolView: () => null, SearchToolView: () => null },
+      './list-view.js': { ListToolView: () => null },
+      './settings.js': { ConfigCard: () => null },
+      './skill-plaza.js': { DEFAULT_MARKET_EXPERTS: [], buildExpertStartersLookup: () => null, renderPlazaIcon: () => null },
+      './skill-picker.js': { SkillPickerButton: () => null },
+      './plaza-shell.js': { PLAZA_TAB_ID: 'omnimux-market:plaza', PlazaView: () => null },
+    },
+  })
+  return { ...mod, runtime }
 }
 
 function makeContext({ services = {} } = {}) {
@@ -58,5 +75,5 @@ test('uiWorkspace 服务可用时懒挂到 plazaUiWorkspace', () => {
   const { ctx } = makeContext({ services: { uiWorkspace: ui } })
   const mod = loadApply()
   assert.doesNotThrow(() => mod.apply(ctx))
-  assert.equal(mod.sandbox.plazaUiWorkspace, ui)
+  assert.equal(mod.runtime.plazaUiWorkspace, ui)
 })

@@ -1,8 +1,7 @@
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
-import { runInNewContext } from 'node:vm'
 import { test } from 'node:test'
 import * as SkillShelf from './skill-picker-logic.js'
+import { loadClientModule } from '../../tests/helpers/client-esm-loader.mjs'
 
 const fixture = {
   tabs: [{ id: 'all' }, { id: '动画' }, { id: '教育' }],
@@ -68,29 +67,45 @@ function panelHarness(presetBinding = fixture) {
       effects.push(() => { slots[index].cleanup?.(); slots[index].cleanup = fn() })
     }
   }
-  const context = {
-    h, SkillShelf: { ...SkillShelf, filterPickerItems(...args) {
-      filterCalls.push(args)
-      return filterPickerItems(...args)
-    } },
-    api: async () => ({ items: [] }), lookup: key => key, SearchField: 'SearchField',
-    useState(initial) {
-      const index = cursor++
-      if (!(index in slots)) slots[index] = typeof initial === 'function' ? initial() : initial
-      return [slots[index], value => {
-        const next = typeof value === 'function' ? value(slots[index]) : value
-        if (!Object.is(next, slots[index])) { slots[index] = next; dirty = true }
-      }]
-    },
-    useRef(initial) { const index = cursor++; return slots[index] ||= { current: initial } },
-    useEffect: effect, useLayoutEffect: effect,
+  const globals = {
     window: { addEventListener() {}, removeEventListener() {} },
     document: { addEventListener() {}, removeEventListener() {} },
     setTimeout(fn) { const id = ++timerId; timers.set(id, fn); return id },
     clearTimeout(id) { timers.delete(id) },
   }
-  const source = readFileSync(new URL('./skill-picker.js', import.meta.url), 'utf8')
-  const renderPanel = runInNewContext(source + '\nSkillPickerPanel', context, { filename: 'skill-picker.js' })
+  const modules = {
+    './boot.js': {
+      h,
+      SkillShelf: { ...SkillShelf, filterPickerItems(...args) {
+        filterCalls.push(args)
+        return filterPickerItems(...args)
+      } },
+      SearchField: 'SearchField',
+      useState(initial) {
+        const index = cursor++
+        if (!(index in slots)) slots[index] = typeof initial === 'function' ? initial() : initial
+        return [slots[index], value => {
+          const next = typeof value === 'function' ? value(slots[index]) : value
+          if (!Object.is(next, slots[index])) { slots[index] = next; dirty = true }
+        }]
+      },
+      useRef(initial) { const index = cursor++; return slots[index] ||= { current: initial } },
+      useEffect: effect,
+      useLayoutEffect: effect,
+      useCallback: fn => fn,
+    },
+    './api.js': { api: async () => ({ items: [] }) },
+    './i18n.js': { I18nProvider: 'I18nProvider', lookup: key => key },
+    './portal.js': { createPortal: node => node },
+    './session-create.js': {
+      activateSharedToolSkill: () => {},
+      createSkillSession: async () => ({ ok: true }),
+      currentPlazaSessionId: () => '',
+      skillCreationInputs: new Map(),
+    },
+    './runtime-state.js': { marketRuntime: { plazaSessions: null } },
+  }
+  const { SkillPickerPanel: renderPanel } = loadClientModule('./skill-picker.js', { globals, modules })
   const props = { open: true, anchorRef: { current: null }, presetBinding, onClose() {}, onPick: () => true }
   const render = () => {
     for (let attempt = 0; attempt < 20; attempt++) {

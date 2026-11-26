@@ -1,2 +1,9 @@
-    /** Module-level keep-alive flag; refreshed from config on plaza open. Default true. */
-    let plazaKeepAlive = true;
+import { marketRuntime } from "./runtime-state.js";
+
+export function getPlazaKeepAlive() {
+  return marketRuntime.plazaKeepAlive;
+}
+
+export function setPlazaKeepAlive(value) {
+  if (typeof value === "boolean") marketRuntime.plazaKeepAlive = value;
+}

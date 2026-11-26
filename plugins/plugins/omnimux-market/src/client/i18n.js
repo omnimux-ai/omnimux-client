@@ -1,3 +1,5 @@
+    import { React, h } from "./boot.js";
+
     const ZH = {
       locale: "zh",
       "cfg.desc": "搜索 API、安装目录与结果数量。",
@@ -1208,4 +1210,6 @@
       if (!isEn && (item.descriptionZh || item.summaryZh)) return item.descriptionZh || item.summaryZh;
       return item.description || item.summary || "";
     }
+
+    export { EN, I18nProvider, ZH, catLabel, lookup, skillDesc, skillTitle, useTr };
 

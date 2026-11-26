@@ -3,11 +3,14 @@ import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { describe, it } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { runInNewContext } from 'node:vm'
+import { WORKSHOP_DOMAIN_ORDER } from './plaza/plazaUtils.js'
+import { loadClientModule } from '../../tests/helpers/client-esm-loader.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const sessionCreateSrc = readFileSync(join(here, 'session-create.js'), 'utf8')
 const skillPlazaSrc = readFileSync(join(here, 'skill-plaza.js'), 'utf8')
+const featuredCardSrc = readFileSync(join(here, 'plaza/FeaturedCard.jsx'), 'utf8')
+const installModalSrc = readFileSync(join(here, 'plaza/InstallModal.jsx'), 'utf8')
 const applySrc = readFileSync(join(here, 'apply.js'), 'utf8')
 const cssSrc = readFileSync(join(here, 'css.js'), 'utf8')
 const kitSidebarEntrySrc = readFileSync(join(here, '../../../../packages/dsh-ui-kit/src/stage/createSidebarEntry.ts'), 'utf8')
@@ -100,10 +103,14 @@ describe('Skill Workshop UI & Session Contract (Issue #773 / #776)', () => {
       querySelector: (sel) => (sel === 'button' ? mockButton : null),
     }
 
-    const { clickOfficialNewSession } = runInNewContext(
-      `${sessionCreateSrc}\n({ clickOfficialNewSession })`,
-      { setTimeout, clearTimeout, Date, window: { __omnimuxWorkbench: { getSnapshot: () => ({ sessionId: 'session-a' }) }, addEventListener: () => {} } },
-    )
+    const { clickOfficialNewSession } = loadClientModule('./session-create.js', {
+      globals: { setTimeout, clearTimeout, Date, window: { __omnimuxWorkbench: { getSnapshot: () => ({ sessionId: 'session-a' }) }, addEventListener: () => {} } },
+      modules: {
+        './api.js': { api: async () => ({ ok: true }) },
+        './i18n.js': { lookup: () => 'Skills' },
+        './runtime-state.js': { marketRuntime: { plazaSessions: null, plazaUiWorkspace: null, plazaRemote: null, plazaWorkspaces: null } },
+      },
+    })
     const res = await clickOfficialNewSession({ document: mockDoc, sessions: mockSessions, timeoutMs: 200 })
     assert.equal(clicked, true)
     assert.equal(res.ok, true)
@@ -113,10 +120,14 @@ describe('Skill Workshop UI & Session Contract (Issue #773 / #776)', () => {
   it('session create inherits workspaceId from current session, workspaces service, or session list fallback', () => {
     assert.match(sessionCreateSrc, /function resolveFallbackWorkspaceId/)
 
-    const { resolveFallbackWorkspaceId } = runInNewContext(
-      `${sessionCreateSrc}\n({ resolveFallbackWorkspaceId })`,
-      { console },
-    )
+    const { resolveFallbackWorkspaceId } = loadClientModule('./session-create.js', {
+      globals: { console },
+      modules: {
+        './api.js': { api: async () => ({ ok: true }) },
+        './i18n.js': { lookup: () => 'Skills' },
+        './runtime-state.js': { marketRuntime: { plazaSessions: null, plazaUiWorkspace: null, plazaRemote: null, plazaWorkspaces: null } },
+      },
+    })
 
     // 1. 从当前会话继承
     const s1 = {
@@ -220,9 +231,8 @@ describe('Skill Workshop UI & Session Contract (Issue #773 / #776)', () => {
       dispatchEvent: () => {},
     }
 
-    const { createSkillSession } = runInNewContext(
-      `${sessionCreateSrc}\n({ createSkillSession })`,
-      {
+    const { createSkillSession } = loadClientModule('./session-create.js', {
+      globals: {
         setTimeout,
         clearTimeout,
         Date,
@@ -237,16 +247,24 @@ describe('Skill Workshop UI & Session Contract (Issue #773 / #776)', () => {
           querySelector: (sel) => (sel.includes('textarea') ? fakeComposer : null),
           querySelectorAll: (sel) => (sel.includes('textarea') ? [fakeComposer] : []),
         },
-        lookup: () => 'Skills',
-        api: async () => ({ ok: true }),
-        plazaSessions: fakeSessions,
-        plazaWorkspaces: {
-          list: {
-            getSnapshot: () => ({ recentWorkspaceId: 'ws-inherited', items: [{ workspaceId: 'ws-inherited' }] }),
+      },
+      modules: {
+        './i18n.js': { lookup: () => 'Skills' },
+        './api.js': { api: async () => ({ ok: true }) },
+        './runtime-state.js': {
+          marketRuntime: {
+            plazaSessions: fakeSessions,
+            plazaUiWorkspace: null,
+            plazaRemote: null,
+            plazaWorkspaces: {
+              list: {
+                getSnapshot: () => ({ recentWorkspaceId: 'ws-inherited', items: [{ workspaceId: 'ws-inherited' }] }),
+              },
+            },
           },
         },
       },
-    )
+    })
 
     const result = await createSkillSession()
     assert.equal(result.ok, true)
@@ -260,15 +278,19 @@ describe('Skill Workshop UI & Session Contract (Issue #773 / #776)', () => {
   })
 
   it('findComposer skips disabled textarea when workspace is unselected', () => {
-    const { findComposer } = runInNewContext(
-      `${sessionCreateSrc}\n({ findComposer })`,
-      {
+    const { findComposer } = loadClientModule('./session-create.js', {
+      globals: {
         document: {
           querySelector: () => ({ disabled: true, value: '' }),
           querySelectorAll: () => [{ disabled: true, value: '' }],
         },
       },
-    )
+      modules: {
+        './api.js': { api: async () => ({ ok: true }) },
+        './i18n.js': { lookup: () => 'Skills' },
+        './runtime-state.js': { marketRuntime: { plazaSessions: null, plazaUiWorkspace: null, plazaRemote: null, plazaWorkspaces: null } },
+      },
+    })
     assert.equal(findComposer(), null)
   })
 
@@ -294,16 +316,18 @@ describe('Skill Workshop UI & Session Contract (Issue #773 / #776)', () => {
       '平台工具',
     ]
     for (const domain of expected) {
-      assert.ok(skillPlazaSrc.includes(domain), `missing domain ${domain}`)
+      assert.ok(WORKSHOP_DOMAIN_ORDER.includes(domain), `missing domain ${domain}`)
     }
   })
 
   it('featured section renders 4-column 16:9 cards and hides completely when 0 items', () => {
     assert.match(skillPlazaSrc, /featuredItems\.length\s*>\s*0/)
-    assert.match(skillPlazaSrc, /featured-cover-wrap/)
-    assert.match(skillPlazaSrc, /featured-hover-actions/)
-    assert.match(skillPlazaSrc, /hover-btn-detail/)
-    assert.match(skillPlazaSrc, /hover-btn-try/)
+    assert.match(skillPlazaSrc, /from "\.\/plaza\/FeaturedCard\.jsx"/)
+    assert.match(cssSrc, /\.featured-cover-wrap/)
+    assert.match(featuredCardSrc, /omnimux-creatify-card/)
+    assert.match(featuredCardSrc, /featured-hover-actions/)
+    assert.match(featuredCardSrc, /hover-btn-detail/)
+    assert.match(featuredCardSrc, /hover-btn-try/)
   })
 
   it('category featured hides regular section only without a submitted search', () => {
@@ -312,9 +336,10 @@ describe('Skill Workshop UI & Session Contract (Issue #773 / #776)', () => {
 
   it('install modal provides drag & drop and requirements notice', () => {
     assert.match(skillPlazaSrc, /function InstallModal/)
-    assert.match(skillPlazaSrc, /drop-zone/)
-    assert.match(skillPlazaSrc, /req-section/)
-    assert.match(skillPlazaSrc, /btn-modal-install/)
+    assert.match(skillPlazaSrc, /from "\.\/plaza\/InstallModal\.jsx"/)
+    assert.match(installModalSrc, /drop-zone/)
+    assert.match(installModalSrc, /req-section/)
+    assert.match(installModalSrc, /btn-modal-install/)
   })
 
   it('switch toggle prompts installation confirmation for uninstalled skills', () => {
@@ -342,7 +367,8 @@ describe('Skill Workshop UI & Session Contract (Issue #773 / #776)', () => {
     assert.match(cssSrc, /\.tab-info-icon/)
     // 官方精选卡片支持真实图片封面，彻底移除 MiniMax Design、冗余底栏以及 H3 角标
     assert.ok(!skillPlazaSrc.includes('className: "h3-badge"'), 'h3-badge should be removed')
-    assert.match(skillPlazaSrc, /coverSrc\s*\?/)
+    assert.match(featuredCardSrc, /resolveSkillAuroraStyle/)
+    assert.match(featuredCardSrc, /item\.homeCover/)
     assert.ok(!skillPlazaSrc.includes('MiniMax Design'), 'MiniMax Design should be removed')
     assert.ok(!skillPlazaSrc.includes('className: "featured-card-footer"'), 'featured-card-footer should be removed')
     assert.ok(!cssSrc.includes('.h3-badge'), '.h3-badge CSS should be removed')
