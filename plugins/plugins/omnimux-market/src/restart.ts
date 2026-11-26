@@ -2,8 +2,9 @@
  * Self-restart: relaunch the DSH invocation that booted this host so a
  * freshly installed plugin loads without leaving the UI.
  *
- * Safety: same-origin browser request (Origin matches Host or
- * X-Forwarded-Host). Loopback without proxy headers still passes. Reverse
+ * Safety: strict same-origin browser request (normalized `Origin` matches
+ * `Host` with exact effective port; `Sec-Fetch-Site` must be `same-origin`,
+ * `none`, or absent; spoofable `X-Forwarded-Host` is never trusted). Reverse
  * proxies (Tencent Cloud path prefix, LAN HTTPS) set X-Forwarded-For, so
  * those headers must not by themselves reject a same-origin UI click.
  *
@@ -27,6 +28,22 @@ function headerString(raw: string | string[] | undefined): string | undefined {
   return trimmed === '' ? undefined : trimmed.split(',')[0]!.trim()
 }
 
+function parseHostWithDefaultPort(raw: string, protocol: 'http:' | 'https:'): { hostname: string; port: string } | null {
+  const trimmed = raw.trim()
+  if (!trimmed || trimmed.includes('://') || /[\s/@?#\\]/.test(trimmed)) return null
+  try {
+    const parsed = new URL(`${protocol}//${trimmed}`)
+    if (parsed.username || parsed.password || parsed.pathname !== '/' || parsed.search || parsed.hash) return null
+    const defaultPort = protocol === 'https:' ? '443' : '80'
+    return {
+      hostname: parsed.hostname.toLowerCase(),
+      port: parsed.port || defaultPort,
+    }
+  } catch {
+    return null
+  }
+}
+
 function parseHost(raw: string): { hostname: string; port: string } | null {
   try {
     const parsed = new URL(raw.includes('://') ? raw : `http://${raw}`)
@@ -42,13 +59,15 @@ function isLoopbackHost(host: string): boolean {
   return parsed.hostname === '127.0.0.1' || parsed.hostname === 'localhost' || parsed.hostname === '::1'
 }
 
-function hostsMatch(originHost: string, candidate: string): boolean {
-  const a = parseHost(originHost)
-  const b = parseHost(candidate)
-  if (a === null || b === null) return false
-  if (a.hostname !== b.hostname) return false
-  if (a.port !== '' && b.port !== '' && a.port !== b.port) return false
-  return true
+function hostsMatch(originUrl: URL, hostHeader: string): boolean {
+  const protocol = originUrl.protocol
+  if (protocol !== 'http:' && protocol !== 'https:') return false
+  const defaultPort = protocol === 'https:' ? '443' : '80'
+  const originHostname = originUrl.hostname.toLowerCase()
+  const originPort = originUrl.port || defaultPort
+  const candidate = parseHostWithDefaultPort(hostHeader, protocol)
+  if (candidate === null) return false
+  return originHostname === candidate.hostname && originPort === candidate.port
 }
 
 export function servingPort(request: Pick<IncomingMessage, 'headers'>): number | null {
@@ -60,24 +79,63 @@ export function servingPort(request: Pick<IncomingMessage, 'headers'>): number |
   return Number.isInteger(port) && port > 0 && port < 65536 ? port : null
 }
 
-export function trustedRestartRequest(request: Pick<IncomingMessage, 'headers' | 'socket'>): boolean {
-  const fetchSite = headerString(request.headers['sec-fetch-site'])
-  if (fetchSite === 'cross-site') return false
+function hasDuplicateRawHeader(rawHeaders: readonly string[] | undefined, targetLower: string): boolean {
+  if (!Array.isArray(rawHeaders)) return false
+  let count = 0
+  for (let i = 0; i < rawHeaders.length; i += 2) {
+    if (String(rawHeaders[i] || '').toLowerCase() === targetLower) {
+      count += 1
+      if (count > 1) return true
+    }
+  }
+  return false
+}
 
-  const origin = headerString(request.headers.origin)
-  if (origin === undefined) return false
-  let from: string
+function exactSingleHeader(
+  headers: IncomingMessage['headers'],
+  rawHeaders: readonly string[] | undefined,
+  name: string,
+): { ok: true; value: string | undefined } | { ok: false } {
+  if (hasDuplicateRawHeader(rawHeaders, name)) return { ok: false }
+  const raw = headers[name]
+  if (raw === undefined) return { ok: true, value: undefined }
+  if (Array.isArray(raw)) {
+    if (raw.length !== 1) return { ok: false }
+    return { ok: true, value: String(raw[0] ?? '') }
+  }
+  return { ok: true, value: String(raw) }
+}
+
+export function trustedRestartRequest(request: Pick<IncomingMessage, 'headers' | 'socket'> & { rawHeaders?: string[] }): boolean {
+  const siteHeader = exactSingleHeader(request.headers, request.rawHeaders, 'sec-fetch-site')
+  if (!siteHeader.ok) return false
+  if (siteHeader.value !== undefined) {
+    const fetchSite = siteHeader.value.trim().toLowerCase()
+    if (fetchSite !== '' && fetchSite !== 'same-origin' && fetchSite !== 'none') return false
+  }
+
+  const originHeader = exactSingleHeader(request.headers, request.rawHeaders, 'origin')
+  if (!originHeader.ok || originHeader.value === undefined) return false
+  const origin = originHeader.value.trim()
+  if (!origin || origin === 'null') return false
+  if (/[\s\u0000-\u001f\\@?#]/.test(origin) || /:$/.test(origin)) return false
+  let parsed: URL
   try {
-    const parsed = new URL(origin)
-    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false
-    from = parsed.host
+    parsed = new URL(origin)
   } catch {
     return false
   }
-  const host = headerString(request.headers.host)
-  const forwardedHost = headerString(request.headers['x-forwarded-host'])
-  const candidates = [host, forwardedHost].filter((value): value is string => value !== undefined)
-  return candidates.some((candidate) => hostsMatch(from, candidate))
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false
+  if (parsed.username || parsed.password) return false
+  if (parsed.pathname !== '/' || parsed.search || parsed.hash) return false
+  // Reject any path/trailing-slash suffix after `scheme://` while allowing explicit default ports (`https://host:443`).
+  if (origin.indexOf('/', parsed.protocol.length + 2) !== -1) return false
+
+  const hostHeader = exactSingleHeader(request.headers, request.rawHeaders, 'host')
+  if (!hostHeader.ok || hostHeader.value === undefined) return false
+  const host = hostHeader.value.trim()
+  if (!host || /[\s\u0000-\u001f\\@?#/]/.test(host) || /:$/.test(host)) return false
+  return hostsMatch(parsed, host)
 }
 
 export function restartLaunch(): { file: string; args: string[]; cwd: string; viaShell: boolean } {

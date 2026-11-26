@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
 import { assignConfig, dshHome, overlayPath, publicConfig, readOverlay, sanitizePatch, sanitizeSortBy, withDefaults, writeOverlay } from '../config-store.js'
@@ -37,22 +37,28 @@ test('plazaKeepAlive and plazaCacheTtlSec sanitize + assign', () => {
 })
 
 test('sanitizePatch ignores leftover cosBase and invalid urls', () => {
-  const patch = sanitizePatch({
-    apiBase: 'https://api.example.com/',
-    cosBase: 'https://cos.example',
-    webBase: 'not-a-url',
-    skillsDir: ' ~/.dsh/skills ',
-    timeoutMs: 100,
-    maxResults: 99,
-    sortBy: 'downloads',
-  })
-  assert.equal(patch.apiBase, 'https://api.example.com')
-  assert.equal(patch.webBase, undefined)
-  assert.equal(patch.skillsDir, '~/.dsh/skills')
-  assert.equal(patch.timeoutMs, undefined)
-  assert.equal(patch.maxResults, 80)
-  assert.equal(patch.sortBy, 'downloads')
-  assert.equal('cosBase' in patch, false)
+  const prev = process.env.DSH_HOME
+  delete process.env.DSH_HOME
+  try {
+    const patch = sanitizePatch({
+      apiBase: 'https://api.example.com/',
+      cosBase: 'https://cos.example',
+      webBase: 'not-a-url',
+      skillsDir: ' ~/.dsh/skills ',
+      timeoutMs: 100,
+      maxResults: 99,
+      sortBy: 'downloads',
+    })
+    assert.equal(patch.apiBase, 'https://api.example.com')
+    assert.equal(patch.webBase, undefined)
+    assert.equal(patch.skillsDir, join(homedir(), '.dsh', 'skills'))
+    assert.equal(patch.timeoutMs, undefined)
+    assert.equal(patch.maxResults, 80)
+    assert.equal(patch.sortBy, 'downloads')
+    assert.equal('cosBase' in patch, false)
+  } finally {
+    if (prev !== undefined) process.env.DSH_HOME = prev
+  }
 })
 
 test('publicConfig omits userAgent', () => {

@@ -2,8 +2,9 @@
  * Self-restart: relaunch the DSH invocation that booted this host so a
  * freshly installed plugin loads without leaving the UI.
  *
- * Safety: same-origin browser request (Origin matches Host or
- * X-Forwarded-Host). Loopback without proxy headers still passes. Reverse
+ * Safety: strict same-origin browser request (normalized `Origin` matches
+ * `Host` with exact effective port; `Sec-Fetch-Site` must be `same-origin`,
+ * `none`, or absent; spoofable `X-Forwarded-Host` is never trusted). Reverse
  * proxies (Tencent Cloud path prefix, LAN HTTPS) set X-Forwarded-For, so
  * those headers must not by themselves reject a same-origin UI click.
  *
@@ -24,6 +25,24 @@ function headerString(raw) {
     const trimmed = String(value || '').trim();
     return trimmed === '' ? undefined : trimmed.split(',')[0].trim();
 }
+function parseHostWithDefaultPort(raw, protocol) {
+    const trimmed = raw.trim();
+    if (!trimmed || trimmed.includes('://') || /[\s/@?#\\]/.test(trimmed))
+        return null;
+    try {
+        const parsed = new URL(`${protocol}//${trimmed}`);
+        if (parsed.username || parsed.password || parsed.pathname !== '/' || parsed.search || parsed.hash)
+            return null;
+        const defaultPort = protocol === 'https:' ? '443' : '80';
+        return {
+            hostname: parsed.hostname.toLowerCase(),
+            port: parsed.port || defaultPort,
+        };
+    }
+    catch {
+        return null;
+    }
+}
 function parseHost(raw) {
     try {
         const parsed = new URL(raw.includes('://') ? raw : `http://${raw}`);
@@ -39,16 +58,17 @@ function isLoopbackHost(host) {
         return false;
     return parsed.hostname === '127.0.0.1' || parsed.hostname === 'localhost' || parsed.hostname === '::1';
 }
-function hostsMatch(originHost, candidate) {
-    const a = parseHost(originHost);
-    const b = parseHost(candidate);
-    if (a === null || b === null)
+function hostsMatch(originUrl, hostHeader) {
+    const protocol = originUrl.protocol;
+    if (protocol !== 'http:' && protocol !== 'https:')
         return false;
-    if (a.hostname !== b.hostname)
+    const defaultPort = protocol === 'https:' ? '443' : '80';
+    const originHostname = originUrl.hostname.toLowerCase();
+    const originPort = originUrl.port || defaultPort;
+    const candidate = parseHostWithDefaultPort(hostHeader, protocol);
+    if (candidate === null)
         return false;
-    if (a.port !== '' && b.port !== '' && a.port !== b.port)
-        return false;
-    return true;
+    return originHostname === candidate.hostname && originPort === candidate.port;
 }
 export function servingPort(request) {
     const host = headerString(request.headers.host);
@@ -60,27 +80,72 @@ export function servingPort(request) {
     const port = Number(match[1]);
     return Number.isInteger(port) && port > 0 && port < 65536 ? port : null;
 }
+function hasDuplicateRawHeader(rawHeaders, targetLower) {
+    if (!Array.isArray(rawHeaders))
+        return false;
+    let count = 0;
+    for (let i = 0; i < rawHeaders.length; i += 2) {
+        if (String(rawHeaders[i] || '').toLowerCase() === targetLower) {
+            count += 1;
+            if (count > 1)
+                return true;
+        }
+    }
+    return false;
+}
+function exactSingleHeader(headers, rawHeaders, name) {
+    if (hasDuplicateRawHeader(rawHeaders, name))
+        return { ok: false };
+    const raw = headers[name];
+    if (raw === undefined)
+        return { ok: true, value: undefined };
+    if (Array.isArray(raw)) {
+        if (raw.length !== 1)
+            return { ok: false };
+        return { ok: true, value: String(raw[0] ?? '') };
+    }
+    return { ok: true, value: String(raw) };
+}
 export function trustedRestartRequest(request) {
-    const fetchSite = headerString(request.headers['sec-fetch-site']);
-    if (fetchSite === 'cross-site')
+    const siteHeader = exactSingleHeader(request.headers, request.rawHeaders, 'sec-fetch-site');
+    if (!siteHeader.ok)
         return false;
-    const origin = headerString(request.headers.origin);
-    if (origin === undefined)
-        return false;
-    let from;
-    try {
-        const parsed = new URL(origin);
-        if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:')
+    if (siteHeader.value !== undefined) {
+        const fetchSite = siteHeader.value.trim().toLowerCase();
+        if (fetchSite !== '' && fetchSite !== 'same-origin' && fetchSite !== 'none')
             return false;
-        from = parsed.host;
+    }
+    const originHeader = exactSingleHeader(request.headers, request.rawHeaders, 'origin');
+    if (!originHeader.ok || originHeader.value === undefined)
+        return false;
+    const origin = originHeader.value.trim();
+    if (!origin || origin === 'null')
+        return false;
+    if (/[\s\u0000-\u001f\\@?#]/.test(origin) || /:$/.test(origin))
+        return false;
+    let parsed;
+    try {
+        parsed = new URL(origin);
     }
     catch {
         return false;
     }
-    const host = headerString(request.headers.host);
-    const forwardedHost = headerString(request.headers['x-forwarded-host']);
-    const candidates = [host, forwardedHost].filter((value) => value !== undefined);
-    return candidates.some((candidate) => hostsMatch(from, candidate));
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:')
+        return false;
+    if (parsed.username || parsed.password)
+        return false;
+    if (parsed.pathname !== '/' || parsed.search || parsed.hash)
+        return false;
+    // Reject any path/trailing-slash suffix after `scheme://` while allowing explicit default ports (`https://host:443`).
+    if (origin.indexOf('/', parsed.protocol.length + 2) !== -1)
+        return false;
+    const hostHeader = exactSingleHeader(request.headers, request.rawHeaders, 'host');
+    if (!hostHeader.ok || hostHeader.value === undefined)
+        return false;
+    const host = hostHeader.value.trim();
+    if (!host || /[\s\u0000-\u001f\\@?#/]/.test(host) || /:$/.test(host))
+        return false;
+    return hostsMatch(parsed, host);
 }
 export function restartLaunch() {
     const launch = dshArgv();

@@ -37,7 +37,7 @@ test('trustedRestartRequest accepts same-origin UI clicks, including reverse pro
     origin: 'https://43.160.246.58:34073',
     'x-forwarded-host': '43.160.246.58:34073',
     'x-forwarded-for': '1.2.3.4',
-  }, '10.0.0.2')), true)
+  }, '10.0.0.2')), false)
   assert.equal(trustedRestartRequest(req({
     host: '43.160.246.58:34073',
     origin: 'https://43.160.246.58:34073',
@@ -47,7 +47,7 @@ test('trustedRestartRequest accepts same-origin UI clicks, including reverse pro
     host: '127.0.0.1:3080',
     origin: 'https://43.160.246.58:34073',
     'x-forwarded-host': '43.160.246.58',
-  })), true)
+  })), false)
   assert.equal(trustedRestartRequest(req({ host: '127.0.0.1:3080' })), false)
   assert.equal(trustedRestartRequest(req({ ...ok, origin: 'http://evil.example' })), false)
   assert.equal(trustedRestartRequest(req({ ...ok, origin: 'not a url' })), false)

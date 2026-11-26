@@ -4,7 +4,7 @@ import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { clamp, fetchSkillCard, parseSlug } from './api.js';
 import { parseCategory } from './categories.js';
-import { assignConfig, dshHome, publicConfig, sanitizePatch, sanitizeSortBy, writeOverlay } from './config-store.js';
+import { assignConfig, dshHome, publicConfig, sanitizePatch, sanitizeSortBy, validateConfigPatchInput, writeOverlay } from './config-store.js';
 import { HttpError, configureHttpJsonCache } from './http.js';
 import { ICON_SECURITY_HEADERS, MAX_ICON_BYTES, assertSafeIconUrlSyntax, fetchSafeIconBytes, normalizeSafeRasterMime, pruneAvatarDiskCache, sniffSafeRasterImageMime, } from './icon-guard.js';
 import { BOOT_ID, progress, publicInstallStatus } from './dsh-cli.js';
@@ -315,6 +315,10 @@ async function handleConfigRoute(ctx) {
     if (body.save) {
         if (!trustedRestartRequest(req)) {
             return sendJson(res, 403, { ok: false, error: 'config save is limited to same-origin requests' });
+        }
+        const validationError = validateConfigPatchInput(body);
+        if (validationError) {
+            return sendJson(res, 400, { ok: false, error: validationError });
         }
         assignConfig(cfg, sanitizePatch(body));
         writeOverlay(cfg);
@@ -744,7 +748,8 @@ async function handleSuiteInstall(ctx) {
         return sendJson(res, 200, { ok: true, ...result });
     }
     catch (err) {
-        return sendJson(res, 500, { ok: false, error: err instanceof Error ? err.message : String(err) });
+        const status = err instanceof HttpError && err.status && err.status >= 400 && err.status < 600 ? err.status : 500;
+        return sendJson(res, status, { ok: false, error: err instanceof Error ? err.message : String(err) });
     }
 }
 /** 套件卸载：摘托管段、删 preset、技能按既有卸载语义删除；三者都幂等。 */
@@ -773,7 +778,8 @@ async function handleSuiteUninstall(ctx) {
         return sendJson(res, 200, { ok: true, ...result });
     }
     catch (err) {
-        return sendJson(res, 500, { ok: false, error: err instanceof Error ? err.message : String(err) });
+        const status = err instanceof HttpError && err.status && err.status >= 400 && err.status < 600 ? err.status : 500;
+        return sendJson(res, status, { ok: false, error: err instanceof Error ? err.message : String(err) });
     }
 }
 const API_ROUTE_TABLE = {
@@ -822,14 +828,15 @@ export async function handleApi(req, res, cfg) {
                 return sendJson(res, 403, { ok: false, error: 'Forbidden: mutating operations are limited to same-origin requests' });
             }
         }
-        const handler = API_ROUTE_TABLE[method];
+        const handler = Object.prototype.hasOwnProperty.call(API_ROUTE_TABLE, method) ? API_ROUTE_TABLE[method] : undefined;
         if (handler) {
             return await handler({ req, res, cfg, url, body, method });
         }
         return sendJson(res, 400, { ok: false, error: 'unknown method' });
     }
     catch (err) {
-        return sendJson(res, 500, { ok: false, error: err instanceof Error ? err.message : String(err) });
+        const status = err instanceof HttpError && err.status && err.status >= 400 && err.status < 600 ? err.status : 500;
+        return sendJson(res, status, { ok: false, error: err instanceof Error ? err.message : String(err) });
     }
 }
 function detectImageContentType(fileName) {
@@ -1087,19 +1094,39 @@ function catalogCard(item, categoryTitle) {
         gesture: item.skill ? `/${item.skill}` : '',
     };
 }
-async function readBody(req) {
+export const MAX_API_BODY_BYTES = 1024 * 1024;
+async function readBody(req, maxBytes = MAX_API_BODY_BYTES) {
+    const contentLengthHeader = req.headers?.['content-length'];
+    const declared = typeof contentLengthHeader === 'string' && /^\d+$/.test(contentLengthHeader.trim())
+        ? Number(contentLengthHeader.trim())
+        : 0;
+    if (declared > maxBytes) {
+        throw new HttpError(`request body exceeds ${maxBytes} bytes`, 413);
+    }
     const chunks = [];
-    for await (const c of req)
-        chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c));
-    const raw = Buffer.concat(chunks).toString('utf8').trim();
+    let totalBytes = 0;
+    for await (const c of req) {
+        const chunk = Buffer.isBuffer(c) ? c : Buffer.from(c);
+        totalBytes += chunk.length;
+        if (totalBytes > maxBytes) {
+            throw new HttpError(`request body exceeds ${maxBytes} bytes`, 413);
+        }
+        chunks.push(chunk);
+    }
+    const raw = Buffer.concat(chunks, totalBytes).toString('utf8').trim();
     if (!raw)
         return {};
+    let parsed;
     try {
-        return JSON.parse(raw);
+        parsed = JSON.parse(raw);
     }
     catch {
-        return {};
+        throw new HttpError('invalid JSON request body', 400);
     }
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        throw new HttpError('request body must be a JSON object', 400);
+    }
+    return parsed;
 }
 function sendJson(res, code, body) {
     res.statusCode = code;
