@@ -15,7 +15,7 @@ description: "跨境品牌资产与商品冷启动建档：从商品页链接与
 - 在进入文案、9 图视觉、短视频与多语种本地化之前，需要先把品牌与商品真源钉死。
 
 ## Data Sources & OmniMux Tools
-- **网页采集**：优先调用 `omnimux_page_fetch` 提取干净 Markdown；若站点受反爬或需登录，回落至 `web_fetch` 或请用户粘贴图文，绝不编造参数。
+- **网页采集**：优先调用内置 `web_fetch` 读取商品页公开正文；若页面为动态渲染或需交互，优先通过 `browser_navigate` / `browser_get_text` 获取可见内容，受阻或需登录时请用户粘贴图文，绝不编造参数。
 - **商品库真源**：`products_list` / `products_get` / `products_create` / `products_update` / `products_read_media`。
 - **品牌资产锚点**：`assets_list` / `assets_search` / `assets_create` / `assets_update` / `assets_upload`；如需生成品牌专属模特三视图或场景锚点，经用户确认后再调用画布（`workflow_*`）。
 
