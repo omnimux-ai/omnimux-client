@@ -21,10 +21,15 @@ describe('hub chrome optional inject', () => {
   it('binds workbench services through ctx.inject, never ctx.layout at apply time', () => {
     assert.match(chromeSource, /installWorkbenchGlobal/)
     assert.match(chromeSource, /ctx\.inject\(\['layout', 'sessions'\]/)
+    assert.match(chromeSource, /ctx\.inject\(\['workspaces'\]/)
+    assert.match(chromeSource, /ctx\.inject\(\['uiWorkspace'\]/)
+    assert.match(chromeSource, /ctx\.get\('uiWorkspace'\)/)
     assert.match(chromeSource, /ctx\.inject\(\['betterSidebar'\]/)
     assert.doesNotMatch(chromeSource, /ctx\.layout/)
     assert.doesNotMatch(chromeSource, /ctx\.sessions/)
     assert.doesNotMatch(chromeSource, /ctx\.betterSidebar/)
+    assert.doesNotMatch(chromeSource, /ctx\.workspaces/)
+    assert.doesNotMatch(chromeSource, /ctx\.uiWorkspace/)
   })
 
   it('installs the left-rail observer so gui width tracks expand/collapse', () => {

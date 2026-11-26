@@ -6,20 +6,26 @@
 
 import {
   currentSessionId,
-  ensureSessionId,
-  isSeedFilesTab,
   getAttachedStore,
   getWorkbenchLayout,
   getWorkbenchService,
   getWorkbenchSessions,
+  getWorkbenchWorkspaces,
+  hasMountedSessionFeed,
   hostDocument,
   hostWindow,
+  isSeedFilesTab,
   listOpenTabs,
   liveSnapshot,
+  mountedSessionId,
+  navigateToWorkbenchSession,
+  resolveTargetSessionForWorkbench,
   tabIsOpen,
   waitForBetterSidebar,
+  waitForMountedSession,
   waitForSidebarSession,
   waitForTab,
+  waitMs,
 } from './host-adapter.js'
 import {
   WORKBENCH_FOCUS,
@@ -29,9 +35,13 @@ import {
   resolveWorkbenchTabTitle,
 } from './focus-state.js'
 import { notifyWorkbenchChange } from './event-bus.js'
-import { isRailRowActive } from './sidebar-activation.js'
+import { isRailRowActive, requestRailActivationSync } from './sidebar-activation.js'
 import { setWorkbenchFocus } from './split-layout.js'
-import { enterHostRightSidebarFullscreen } from './host-fullscreen.js'
+import {
+  enterHostRightSidebarFullscreen,
+  findHostFullscreenEnterButton,
+  isHostRightSidebarFullscreen,
+} from './host-fullscreen.js'
 
 export const WORKBENCH_GLOBAL_KEY = '__omnimuxWorkbench'
 
@@ -45,7 +55,11 @@ export {
 
 const EMPTY_BOX = Object.freeze({ top: 0, left: 0, width: 0, height: 0 })
 const TOAST_ID = 'omnimux-workbench-needs-session'
+const SEAT_UNMOUNTED_RE = /no session surface is mounted/i
+const HOST_SHELL_PROBE_SELECTOR = '[data-sidebar-right-panel], [data-sidebar-right-session], .dshDesktopFrame, [class*="frame"]'
 const CHOOSER_SELECTORS = [
+  'button[aria-label="Add workspace"]',
+  'button[aria-label="添加工作区"]',
   'button[aria-label="Choose workspace"]',
   'button[aria-label="选择工作区"]',
   'input[aria-label="Choose workspace"]',
@@ -130,7 +144,7 @@ function createToastElement(doc) {
   const toast = doc.createElement('div')
   toast.id = TOAST_ID
   toast.setAttribute('role', 'status')
-  toast.textContent = '请先选择工作区并新建会话，再打开此面板'
+  toast.textContent = '请先添加工作区，再打开此面板'
   toast.style.cssText = [
     'position:fixed',
     'left:50%',
@@ -237,6 +251,71 @@ function resolveTabPayload(service, tabId, titleOpt, pathOpt) {
   return payload
 }
 
+let openRequestSeq = 0
+
+/** 测试专用：重置并发打开请求序号与 Toast 定时器。 */
+export function resetSidebarControllerForTests() {
+  openRequestSeq = 0
+  clearToastTimer()
+}
+
+/**
+ * 调用 `service.openTab` 并在 React 尚未完成新会话右侧栏 seat 采纳的瞬态窗口做受限短重试。
+ * 仅对宿主明确的 `no session surface is mounted` 瞬态错重试，其他业务/契约错误原样抛出。
+ */
+async function openTabWithSeatRetry(service, payload, openScope, { timeoutMs = 4000, canRetry = () => true } = {}) {
+  const deadline = Date.now() + Math.max(0, timeoutMs)
+  while (true) {
+    try {
+      return await service.openTab(payload, openScope)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error ?? '')
+      if (!SEAT_UNMOUNTED_RE.test(message)) throw error
+      if (Date.now() >= deadline || !canRetry()) {
+        console.warn('[omnimux-workbench] openTab timed out waiting for mounted session surface', error)
+        return false
+      }
+      await waitMs(50)
+      if (!canRetry()) return false
+    }
+  }
+}
+
+/**
+ * 切回会话后刚展开右栏时，等待宿主全屏按钮完成当前帧渲染；无宿主框架 DOM（如离线单测）时立即返回。
+ */
+async function waitForFullscreenEnterControl(doc, maxWaitMs, isStillCurrent) {
+  if (!doc || typeof doc.querySelector !== 'function' || typeof doc.querySelectorAll !== 'function' || maxWaitMs <= 0) {
+    return false
+  }
+  if (!isStillCurrent()) return false
+  const hasFullscreenOrControl = () => {
+    try {
+      return Boolean(isHostRightSidebarFullscreen(doc) || findHostFullscreenEnterButton(doc))
+    } catch (error) {
+      console.debug('[omnimux-workbench] fullscreen control probe failed', error)
+      return false
+    }
+  }
+  if (hasFullscreenOrControl()) return true
+  let hasHostShell = false
+  try {
+    hasHostShell = Boolean(doc.querySelector(HOST_SHELL_PROBE_SELECTOR))
+  } catch (error) {
+    console.debug('[omnimux-workbench] host shell probe failed', error)
+    return false
+  }
+  if (!hasHostShell) return false
+  const deadline = Date.now() + maxWaitMs
+  while (Date.now() < deadline) {
+    if (!isStillCurrent()) return false
+    await waitMs(30)
+    if (!isStillCurrent()) return false
+    if (hasFullscreenOrControl()) return true
+  }
+  return isStillCurrent() && hasFullscreenOrControl()
+}
+
 /**
  * Open a workbench tab in the right panel. Never claims a product stage.
  * @param {{ tabId?: string, id?: string, title?: string, path?: string,
@@ -247,85 +326,169 @@ function resolveTabPayload(service, tabId, titleOpt, pathOpt) {
 export async function openWorkbench(opts = {}) {
   const tabId = typeof opts.tabId === 'string' ? opts.tabId : ''
   if (!tabId) return false
+  const reqSeq = ++openRequestSeq
   const sessions = getWorkbenchSessions()
   const initialSession = currentSessionId(sessions)
   const stage = hostDocument()?.documentElement?.dataset?.dshProductStage
   const layout = getWorkbenchLayout()
-  const contextIsCurrent = () => getWorkbenchSessions() === sessions
-    && currentSessionId(sessions) === initialSession
-    && getWorkbenchLayout() === layout
-    && hostDocument()?.documentElement?.dataset?.dshProductStage === stage
+  const contextMatches = (expectedSession) => {
+    if (openRequestSeq !== reqSeq) return false
+    if (getWorkbenchSessions() !== sessions) return false
+    if (getWorkbenchLayout() !== layout) return false
+    if (hostDocument()?.documentElement?.dataset?.dshProductStage !== stage) return false
+    if (expectedSession !== undefined) {
+      return currentSessionId(sessions) === expectedSession
+    }
+    return true
+  }
 
   const timeoutMs = typeof opts.timeoutMs === 'number' ? opts.timeoutMs : 4000
   const service = await waitForBetterSidebar(timeoutMs)
   if (!service || typeof service.openTab !== 'function') return false
   if (!await waitForTab(service, tabId, timeoutMs)) return false
 
-  if (!contextIsCurrent() || getWorkbenchService() !== service) return false
-  const sessionId = await ensureSessionId(sessions, opts.sessionId)
+  if (!contextMatches(initialSession) || getWorkbenchService() !== service) return false
+
+  const resolved = await resolveTargetSessionForWorkbench({
+    sessions,
+    workspaces: getWorkbenchWorkspaces(),
+    explicitId: opts.sessionId,
+  })
+  if (!contextMatches(initialSession) || getWorkbenchService() !== service) return false
+
+  const sessionId = resolved.sessionId
   if (!sessionId) {
-    nudgeWorkbenchNeedsSession()
+    if (resolved.source === 'no-workspace') {
+      nudgeWorkbenchNeedsSession()
+    }
     return false
   }
 
-  const ready = await waitForSidebarSession(service, sessionId, timeoutMs)
-  if (!ready || !contextIsCurrent() || getWorkbenchService() !== service) return false
-  const openScope = resolveTabScope(sessionId, opts.cwd, ready)
-  const seedIds = new Set(listOpenTabs(service.getSnapshot?.()?.state)
-    .filter((tab) => isSeedFilesTab(tab) && tab.id).map((tab) => tab.id))
+  // 非会话页异步创建会话期间，若用户已手动切入另一会话，则放弃本次自动切回。
+  const liveBeforeNav = currentSessionId(sessions)
+  if (initialSession === undefined && liveBeforeNav && liveBeforeNav !== sessionId) return false
 
-  const payload = resolveTabPayload(service, tabId, opts.title, opts.path)
-  if (typeof opts.id === 'string' && opts.id) payload.id = opts.id
-  if (opts.meta && typeof opts.meta === 'object') payload.meta = opts.meta
-  if (opts.extra && typeof opts.extra === 'object') payload.extra = opts.extra
-  if (opts.view && typeof opts.view === 'object') {
-    payload.view = opts.view
-    payload.meta = { ...payload.meta, ...opts.view }
+  const win = hostWindow()
+  const reconciler = win?.__omnimuxTabViewport
+  let programmaticActive = false
+  const beginProgrammatic = () => {
+    if (programmaticActive) return
+    programmaticActive = true
+    reconciler?.beginProgrammatic?.()
   }
-  // A provider may have unloaded while session/registration readiness was awaited.
-  if (getWorkbenchService() !== service || !contextIsCurrent()) return false
-  if (await service.openTab(payload, openScope) === false) return false
-  if (getWorkbenchService() !== service || !contextIsCurrent()
-    || service.getSnapshot?.()?.sessionId !== sessionId) return false
+  const endProgrammatic = () => {
+    if (!programmaticActive) return
+    programmaticActive = false
+    reconciler?.endProgrammatic?.()
+  }
 
-  // Commit only after the same provider has opened in the captured session.
-  if (payload.meta && typeof service.updateTab === 'function') {
-    try { service.updateTab(payload.id || tabId, { meta: payload.meta }) } catch {}
-  }
-  const targetWsId = opts.view?.extra?.workspaceId || opts.view?.workspaceId || opts.view?.canvasWorkspaceId || opts.meta?.canvasWorkspaceId
-  if (targetWsId && typeof window !== 'undefined') {
-    try {
-      window.dispatchEvent(new CustomEvent('omnimux:active-canvas-changed', {
-        detail: { workspaceId: targetWsId, sessionId },
-      }))
-    } catch {}
-  }
-  for (const tab of listOpenTabs(service.getSnapshot?.()?.state)) {
-    if (seedIds.has(tab.id) && tab.id !== payload.id && isSeedFilesTab(tab)) {
-      try { service.closeTab?.(tab.id, openScope) } catch { /* ignore */ }
+  try {
+    const needsNavNow = resolved.needsNavigation && (!hasMountedSessionFeed() || mountedSessionId() !== sessionId)
+    if (needsNavNow) {
+      // 切回会话并立即展开面板：标记程序化过渡，避免调和器把回退会话误判为用户点击会话而收起右栏。
+      beginProgrammatic()
+      if (!navigateToWorkbenchSession(sessionId, sessions)) return false
+      const mounted = await waitForMountedSession(sessionId, timeoutMs, {
+        shouldContinue: () => openRequestSeq === reqSeq && getWorkbenchService() === service,
+      })
+      if (!mounted || !contextMatches(hasMountedSessionFeed() ? sessionId : undefined) || getWorkbenchService() !== service) {
+        return false
+      }
     }
-  }
-  closeDetails()
-  releaseCurrentProductStage()
 
-  if (opts.preserveLayout) {
+    const ready = await waitForSidebarSession(service, sessionId, timeoutMs)
+    const expectedAfterReady = resolved.needsNavigation
+      ? (hasMountedSessionFeed() || currentSessionId(sessions) !== undefined ? sessionId : undefined)
+      : (resolved.source === 'current' ? sessionId : initialSession)
+    if (!ready || !contextMatches(expectedAfterReady) || getWorkbenchService() !== service) return false
+
+    const openScope = resolveTabScope(sessionId, opts.cwd, ready)
+    const seedIds = new Set(listOpenTabs(service.getSnapshot?.()?.state)
+      .filter((tab) => isSeedFilesTab(tab) && tab.id).map((tab) => tab.id))
+
+    const payload = resolveTabPayload(service, tabId, opts.title, opts.path)
+    if (typeof opts.id === 'string' && opts.id) payload.id = opts.id
+    if (opts.meta && typeof opts.meta === 'object') payload.meta = opts.meta
+    if (opts.extra && typeof opts.extra === 'object') payload.extra = opts.extra
+    if (opts.view && typeof opts.view === 'object') {
+      payload.view = opts.view
+      payload.meta = { ...payload.meta, ...opts.view }
+    }
+    // A provider may have unloaded while session/registration readiness was awaited.
+    if (getWorkbenchService() !== service || !contextMatches(expectedAfterReady)) return false
+    const opened = await openTabWithSeatRetry(service, payload, openScope, {
+      timeoutMs,
+      canRetry: () => getWorkbenchService() === service && contextMatches(expectedAfterReady),
+    })
+    if (opened === false) return false
+    if (getWorkbenchService() !== service || !contextMatches(expectedAfterReady)
+      || service.getSnapshot?.()?.sessionId !== sessionId) return false
+
+    // Commit only after the same provider has opened in the captured session.
+    if (payload.meta && typeof service.updateTab === 'function') {
+      try {
+        service.updateTab(payload.id || tabId, { meta: payload.meta })
+      } catch (error) {
+        console.debug('[omnimux-workbench] updateTab after open failed', error)
+      }
+    }
+    const targetWsId = opts.view?.extra?.workspaceId || opts.view?.workspaceId || opts.view?.canvasWorkspaceId || opts.meta?.canvasWorkspaceId
+    if (targetWsId && typeof window !== 'undefined') {
+      try {
+        window.dispatchEvent(new CustomEvent('omnimux:active-canvas-changed', {
+          detail: { workspaceId: targetWsId, sessionId },
+        }))
+      } catch (error) {
+        console.debug('[omnimux-workbench] active-canvas-changed dispatch failed', error)
+      }
+    }
+    for (const tab of listOpenTabs(service.getSnapshot?.()?.state)) {
+      if (seedIds.has(tab.id) && tab.id !== payload.id && isSeedFilesTab(tab)) {
+        try {
+          service.closeTab?.(tab.id, openScope)
+        } catch (error) {
+          console.debug('[omnimux-workbench] seed tab close failed', error)
+        }
+      }
+    }
+    closeDetails()
+    releaseCurrentProductStage()
+
+    if (opts.preserveLayout) {
+      requestRailActivationSync()
+      notifyWorkbenchChange()
+      return true
+    }
+
+    const canApplyPostCommitLayout = () => (
+      openRequestSeq === reqSeq
+      && getWorkbenchService() === service
+      && getWorkbenchSessions() === sessions
+      && getWorkbenchLayout() === layout
+      && !hostDocument()?.documentElement?.dataset?.dshProductStage
+      && (expectedAfterReady === undefined || currentSessionId(sessions) === expectedAfterReady)
+    )
+    const targetMode = opts.focus || resolveTargetFocusMode(sessionId, tabId)
+    setWorkbenchFocus(targetMode, getAttachedStore(), {}, tabId, { persistUserIntent: false })
+    if (targetMode === WORKBENCH_FOCUS.gui) {
+      beginProgrammatic()
+      const doc = hostDocument()
+      if (resolved.needsNavigation && timeoutMs > 0) {
+        await waitForFullscreenEnterControl(doc, Math.min(timeoutMs, 1000), canApplyPostCommitLayout)
+        if (!canApplyPostCommitLayout()) return false
+      }
+      try {
+        enterHostRightSidebarFullscreen(doc)
+      } catch (error) {
+        console.debug('[omnimux-workbench] enterHostRightSidebarFullscreen fallback:', error instanceof Error ? error.message : String(error))
+      }
+    }
+    requestRailActivationSync()
     notifyWorkbenchChange()
     return true
+  } finally {
+    endProgrammatic()
   }
-
-  const targetMode = opts.focus || resolveTargetFocusMode(sessionId, tabId)
-  setWorkbenchFocus(targetMode, getAttachedStore(), {}, tabId, { persistUserIntent: false })
-  if (targetMode === WORKBENCH_FOCUS.gui) {
-    const win = hostWindow()
-    const rec = win?.__omnimuxTabViewport
-    rec?.beginProgrammatic?.()
-    try {
-      enterHostRightSidebarFullscreen(hostDocument())
-    } catch { /* host button may be absent in tests */ }
-    rec?.endProgrammatic?.()
-  }
-  notifyWorkbenchChange()
-  return true
 }
 
 export function closeWorkbenchPanel() {

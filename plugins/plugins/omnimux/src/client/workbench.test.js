@@ -831,7 +831,7 @@ test('missing session leaves the old stage and details intact while showing a cu
   assert.equal(await env.api.open({ tabId: 'omnimux-workflow:app', timeoutMs: 0 }), false)
   env.assertPreserved()
   assert.equal(messages.length, 1)
-  assert.match(messages[0], /会话/)
+  assert.match(messages[0], /工作区/)
 })
 
 test('successful open commits old seed cleanup only after confirmation', async () => {
