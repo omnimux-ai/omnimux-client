@@ -53,7 +53,17 @@ export function computeSocketPath(dataDir, opts = {}) {
     }
   }
   const uid = resolveCurrentUid({ platform, uid: opts.uid })
-  const userDirName = `omx-pb-${uid ?? 'user'}`
+  if (uid === null) {
+    throw new PibrowseError('insecure-socket', 'Unable to determine POSIX UID for private IPC socket directory')
+  }
+  const userDirName = `omx-pb-${uid}`
+  const xdgRuntimeDir = platform === 'linux' ? (opts.env ?? process.env).XDG_RUNTIME_DIR : undefined
+  if (typeof xdgRuntimeDir === 'string' && xdgRuntimeDir.trim() && isAbsolute(xdgRuntimeDir.trim())) {
+    const xdgCandidate = join(xdgRuntimeDir.trim(), userDirName, `pb-${hash8}.sock`)
+    if (Buffer.byteLength(xdgCandidate, 'utf8') < 100) {
+      return xdgCandidate
+    }
+  }
   const baseDir = join(tmpdir(), userDirName)
   const candidate = join(baseDir, `pb-${hash8}.sock`)
   if (Buffer.byteLength(candidate, 'utf8') >= 100) {
@@ -69,13 +79,13 @@ export function computeSocketPath(dataDir, opts = {}) {
  * by the current UID without group/world write permissions.
  *
  * @param {string} socketPath
- * @param {{ platform?: NodeJS.Platform, uid?: number | null, lstatImpl?: typeof lstat }} [opts]
- * @returns {Promise<{ exists: boolean, dirMode?: number, socketMode?: number }>}
+ * @param {{ platform?: NodeJS.Platform, uid?: number | null, allowMissingDir?: boolean, lstatImpl?: typeof lstat }} [opts]
+ * @returns {Promise<{ exists: boolean, dirExists?: boolean, dirMode?: number, socketMode?: number }>}
  */
 export async function verifySocketTrust(socketPath, opts = {}) {
   const platform = opts.platform ?? process.platform
   if (platform === 'win32') {
-    return { exists: false }
+    return { exists: false, dirExists: true }
   }
   const lstatFn = opts.lstatImpl ?? lstat
   const expectedUid = resolveCurrentUid({ platform, uid: opts.uid })
@@ -85,10 +95,14 @@ export async function verifySocketTrust(socketPath, opts = {}) {
   try {
     dirStat = await lstatFn(socketDir)
   } catch (err) {
+    const code = err && typeof err === 'object' && 'code' in err ? err.code : undefined
+    if (code === 'ENOENT' && opts.allowMissingDir === true) {
+      return { exists: false, dirExists: false }
+    }
     throw new PibrowseError(
       'insecure-socket',
       `IPC socket directory does not exist or cannot be inspected: ${socketDir}`,
-      { code: err && typeof err === 'object' && 'code' in err ? err.code : undefined },
+      { code },
     )
   }
   if (dirStat.isSymbolicLink() || !dirStat.isDirectory()) {
@@ -113,7 +127,7 @@ export async function verifySocketTrust(socketPath, opts = {}) {
     sockStat = await lstatFn(socketPath)
   } catch (err) {
     if (err && typeof err === 'object' && 'code' in err && err.code === 'ENOENT') {
-      return { exists: false, dirMode }
+      return { exists: false, dirExists: true, dirMode }
     }
     throw new PibrowseError('insecure-socket', `Failed to inspect IPC socket path: ${socketPath}`)
   }
@@ -134,39 +148,95 @@ export async function verifySocketTrust(socketPath, opts = {}) {
       `IPC socket permissions (0${socketMode.toString(8)}) must not allow group or world write access`,
     )
   }
-  return { exists: true, dirMode, socketMode }
+  return { exists: true, dirExists: true, dirMode, socketMode }
 }
 
 /**
- * Create (with `0700` mode) and verify the private socket parent directory on POSIX.
- * Refuses to proceed if a pre-existing directory is a symlink, owned by another user,
- * or accessible to group/world.
+ * Tighten a newly spawned sidecar socket to `0600` after verifying its parent dir
+ * is private `0700` and the socket itself is a non-symlink socket owned by the
+ * current UID (preventing Linux UPG `umask 0002` `0775` sockets from tripping checks).
  *
  * @param {string} socketPath
- * @param {{ platform?: NodeJS.Platform, uid?: number | null, mkdirImpl?: typeof mkdir, lstatImpl?: typeof lstat, chmodImpl?: typeof chmod }} [opts]
+ * @param {{ platform?: NodeJS.Platform, uid?: number | null, lstatImpl?: typeof lstat, chmodImpl?: typeof chmod }} [opts]
+ */
+export async function hardenOwnedSocketPermissions(socketPath, opts = {}) {
+  const platform = opts.platform ?? process.platform
+  if (platform === 'win32') return false
+  const lstatFn = opts.lstatImpl ?? lstat
+  const chmodFn = opts.chmodImpl ?? chmod
+  const expectedUid = resolveCurrentUid({ platform, uid: opts.uid })
+  const socketDir = dirname(socketPath)
+
+  let dirStat
+  try {
+    dirStat = await lstatFn(socketDir)
+  } catch {
+    throw new PibrowseError('insecure-socket', `IPC socket directory cannot be inspected: ${socketDir}`)
+  }
+  if (dirStat.isSymbolicLink() || !dirStat.isDirectory() || (expectedUid !== null && dirStat.uid !== expectedUid) || (dirStat.mode & 0o077) !== 0) {
+    throw new PibrowseError('insecure-socket', `IPC socket directory failed ownership/permission check: ${socketDir}`)
+  }
+
+  let sockStat
+  try {
+    sockStat = await lstatFn(socketPath)
+  } catch (err) {
+    if (err && typeof err === 'object' && 'code' in err && err.code === 'ENOENT') return false
+    throw new PibrowseError('insecure-socket', `Failed to inspect IPC socket path: ${socketPath}`)
+  }
+  if (sockStat.isSymbolicLink() || !sockStat.isSocket()) {
+    throw new PibrowseError('insecure-socket', `IPC socket path must be a non-symlink Unix domain socket: ${socketPath}`)
+  }
+  if (expectedUid !== null && sockStat.uid !== expectedUid) {
+    throw new PibrowseError('insecure-socket', `IPC socket owner UID (${sockStat.uid}) does not match current user (${expectedUid})`)
+  }
+  if ((sockStat.mode & 0o077) !== 0) {
+    await chmodFn(socketPath, 0o600)
+  }
+  return true
+}
+
+/**
+ * Create (atomically with `0700` mode, never blindly chmod-ing an unverified path)
+ * and verify the private socket parent directory on POSIX.
+ *
+ * @param {string} socketPath
+ * @param {{ platform?: NodeJS.Platform, uid?: number | null, mkdirImpl?: typeof mkdir, lstatImpl?: typeof lstat }} [opts]
  */
 export async function ensurePrivateSocketDir(socketPath, opts = {}) {
   const platform = opts.platform ?? process.platform
   if (platform === 'win32') return
   const mkdirFn = opts.mkdirImpl ?? mkdir
   const lstatFn = opts.lstatImpl ?? lstat
-  const chmodFn = opts.chmodImpl ?? chmod
   const socketDir = dirname(socketPath)
   const expectedUid = resolveCurrentUid({ platform, uid: opts.uid })
 
-  let existed = true
   try {
-    await lstatFn(socketDir)
+    await mkdirFn(socketDir, { mode: 0o700 })
   } catch (err) {
-    if (err && typeof err === 'object' && 'code' in err && err.code === 'ENOENT') {
-      existed = false
+    const code = err && typeof err === 'object' && 'code' in err ? err.code : undefined
+    if (code === 'ENOENT') {
+      await mkdirFn(dirname(socketDir), { recursive: true })
+      try {
+        await mkdirFn(socketDir, { mode: 0o700 })
+      } catch (retryErr) {
+        const retryCode = retryErr && typeof retryErr === 'object' && 'code' in retryErr ? retryErr.code : undefined
+        if (retryCode !== 'EEXIST') {
+          throw new PibrowseError('insecure-socket', `Failed to create private IPC socket directory: ${socketDir}`, { code: retryCode })
+        }
+      }
+    } else if (code !== 'EEXIST') {
+      throw new PibrowseError('insecure-socket', `Failed to create private IPC socket directory: ${socketDir}`, { code })
     }
   }
-  if (!existed) {
-    await mkdirFn(socketDir, { recursive: true, mode: 0o700 })
-    await chmodFn(socketDir, 0o700).catch(() => {})
+
+  let dirStat
+  try {
+    dirStat = await lstatFn(socketDir)
+  } catch (err) {
+    const code = err && typeof err === 'object' && 'code' in err ? err.code : undefined
+    throw new PibrowseError('insecure-socket', `Failed to inspect IPC socket directory: ${socketDir}`, { code })
   }
-  const dirStat = await lstatFn(socketDir)
   if (dirStat.isSymbolicLink() || !dirStat.isDirectory()) {
     throw new PibrowseError('insecure-socket', `IPC socket directory must be a non-symlink directory: ${socketDir}`)
   }

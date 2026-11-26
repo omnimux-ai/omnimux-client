@@ -35,6 +35,7 @@ export function createIpcClient(opts) {
       const trust = await verifySocketTrust(opts.socketPath, {
         platform,
         uid: opts.uid,
+        allowMissingDir: true,
         lstatImpl: opts.lstatImpl,
       })
       if (!trust.exists) {

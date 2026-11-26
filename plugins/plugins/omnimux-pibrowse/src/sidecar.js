@@ -1,7 +1,7 @@
 import { spawn as defaultSpawn } from 'node:child_process'
-import { chmod, rm } from 'node:fs/promises'
+import { rm } from 'node:fs/promises'
 import { PibrowseError } from './errors.js'
-import { ensurePibrowseDirs, ensurePrivateSocketDir, verifySocketTrust } from './paths.js'
+import { ensurePibrowseDirs, ensurePrivateSocketDir, hardenOwnedSocketPermissions, verifySocketTrust } from './paths.js'
 import { resolveAgentBinary, resolveCoreExecutable } from './platform.js'
 import { redactLogLine } from './redact.js'
 
@@ -97,7 +97,13 @@ export function createSidecarSupervisor(opts) {
 
   async function removeStaleSocket() {
     if (platform === 'win32') return
-    await verifySocketTrust(opts.paths.socketPath, { platform, uid: opts.uid, lstatImpl: opts.lstatImpl })
+    const trust = await verifySocketTrust(opts.paths.socketPath, {
+      platform,
+      uid: opts.uid,
+      allowMissingDir: true,
+      lstatImpl: opts.lstatImpl,
+    })
+    if (!trust.exists) return
     await rm(opts.paths.socketPath, { force: true }).catch(() => {})
   }
 
@@ -128,9 +134,19 @@ export function createSidecarSupervisor(opts) {
             exitedEarly,
           )
         }
+        if (platform !== 'win32') {
+          await hardenOwnedSocketPermissions(opts.paths.socketPath, {
+            platform,
+            uid: opts.uid,
+            lstatImpl: opts.lstatImpl,
+          })
+        }
         const pingRes = await opts.ipcClient.ping(500)
         if (pingRes.ok) {
           return pingRes.info
+        }
+        if (pingRes.code === 'insecure-socket') {
+          throw new PibrowseError('insecure-socket', pingRes.message || 'IPC socket failed trust verification')
         }
         await sleep(100)
       }
@@ -231,7 +247,16 @@ export function createSidecarSupervisor(opts) {
       try {
         await waitUntilReady(proc)
         if (platform !== 'win32') {
-          await chmod(opts.paths.socketPath, 0o600).catch(() => {})
+          await hardenOwnedSocketPermissions(opts.paths.socketPath, {
+            platform,
+            uid: opts.uid,
+            lstatImpl: opts.lstatImpl,
+          })
+          await verifySocketTrust(opts.paths.socketPath, {
+            platform,
+            uid: opts.uid,
+            lstatImpl: opts.lstatImpl,
+          })
         }
         state = 'running'
         startedAt = new Date().toISOString()

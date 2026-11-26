@@ -124,7 +124,7 @@ test('installer blocks unsupported platforms, detects Gatekeeper SIGKILL, and cl
     })
     await assert.rejects(() => linuxInstaller.installAgent(), (err) => err.code === 'unsupported-platform')
 
-    const binPath = join(tmp, 'blocked-agent')
+    const binPath = join(tmp, 'blocked-fury-agent')
     await writeFile(binPath, '#!/bin/sh\n', { mode: 0o755 })
     const macInstaller = createInstaller({
       paths,

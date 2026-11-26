@@ -6,7 +6,7 @@ import { dirname, join } from 'node:path'
 import { promisify } from 'node:util'
 import { PINNED_UPSTREAM } from './constants.js'
 import { PibrowseError } from './errors.js'
-import { getPlatformInfo, pathAccessible } from './platform.js'
+import { getPlatformInfo, pathAccessible, validateAgentBinaryFile } from './platform.js'
 
 const defaultExecFile = promisify(execFileCb)
 
@@ -153,13 +153,13 @@ export function createInstaller(opts) {
    * @param {string} binaryPath
    */
   async function probeAgentBinary(binaryPath) {
-    const exists = await pathAccessible(binaryPath)
-    if (!exists) {
+    const check = await validateAgentBinaryFile(binaryPath, opts.platform ?? process.platform)
+    if (!check.ok) {
       return {
         ok: false,
         code: 'agent-not-installed',
         gatekeeperBlocked: false,
-        message: `fury-agent binary not found at ${binaryPath}`,
+        message: check.reason || `fury-agent binary invalid at ${binaryPath}`,
       }
     }
     try {
@@ -339,8 +339,9 @@ export function createInstaller(opts) {
 
     coreInFlight = (async () => {
       try {
-        if (!(await pathAccessible(agentBinaryPath))) {
-          throw new PibrowseError('agent-not-installed', 'Install or configure fury-agent before installing Chromium Core')
+        const agentCheck = await validateAgentBinaryFile(agentBinaryPath, opts.platform ?? process.platform)
+        if (!agentCheck.ok) {
+          throw new PibrowseError('agent-not-installed', agentCheck.reason || 'Install or configure fury-agent before installing Chromium Core')
         }
         const verified = await downloadAndVerifyFile({
           url: asset.url,

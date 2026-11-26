@@ -1,3 +1,4 @@
+import { lstat } from 'node:fs/promises'
 import { PINNED_UPSTREAM, UPSTREAM_MCP_TOOL_NAMES } from './constants.js'
 import { PibrowseError, normalizeCoreLaunchError } from './errors.js'
 import { validateUserPath } from './paths.js'
@@ -8,6 +9,7 @@ import {
   resolveAgentBinary,
   resolveCoreExecutable,
   validateAgentBinaryFile,
+  validateCoreExecutableFile,
 } from './platform.js'
 import { redactAny, redactProfile, redactProxy, toLosslessJson } from './redact.js'
 
@@ -494,7 +496,26 @@ export function createPibrowseDispatcher(deps) {
           patch.agentPath = null
         }
       }
-      if ('corePath' in args) patch.corePath = args.corePath
+      if ('corePath' in args) {
+        if (args.corePath !== null && args.corePath !== '') {
+          const normalizedCore = validateUserPath(args.corePath, { label: 'corePath' })
+          const coreStat = await lstat(normalizedCore).catch(() => null)
+          if (coreStat) {
+            if (coreStat.isSymbolicLink()) {
+              throw new PibrowseError('invalid-path', 'corePath must not be a symbolic link')
+            }
+            if (coreStat.isFile()) {
+              const coreCheck = await validateCoreExecutableFile(normalizedCore, deps.platform)
+              if (!coreCheck.ok) {
+                throw new PibrowseError('invalid-path', coreCheck.reason || 'Invalid Chromium Core executable path')
+              }
+            }
+          }
+          patch.corePath = normalizedCore
+        } else {
+          patch.corePath = null
+        }
+      }
       if ('geoipPath' in args) patch.geoipPath = args.geoipPath
       if ('autoStartSidecar' in args) patch.autoStartSidecar = args.autoStartSidecar
       const next = await configStore.update(patch)

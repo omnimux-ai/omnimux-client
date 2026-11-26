@@ -56,6 +56,7 @@ export function apply(ctx, config = {}) {
 
   const ipcClient = createIpcClient({
     socketPath: paths.socketPath,
+    platform: config.platform,
     defaultTimeoutMs: config.ipcTimeoutMs ?? 15_000,
     logger: ctx.logger,
   })
