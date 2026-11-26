@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, it } from 'node:test'
@@ -206,9 +206,8 @@ describe('build-cover-thumbnails: 扩展角色 JPG、大图阈值与无封面视
     assert.equal(capturedArgs[iIdx + 1], 'https://assets.omnimux.ai/elements/hooks/clip.mp4')
   })
 
-  it('enrichIndexRowsWithPageBytes 从 all/page-*.json 回填缺失的 meta.bytes，使 --max-bytes 精准生效', async () => {
+  it('enrichIndexRowsWithPageBytes 从 all/page-*.json 回填缺失的 meta.bytes，使 --max-bytes 精准生效', () => {
     const dir = makeTempDir()
-    const { mkdirSync } = await import('node:fs')
     mkdirSync(join(dir, 'all'), { recursive: true })
     writeFileSync(join(dir, 'all', 'page-0000.json'), JSON.stringify({
       items: [
@@ -226,7 +225,7 @@ describe('build-cover-thumbnails: 扩展角色 JPG、大图阈值与无封面视
     assert.equal(needsThumbnail(enriched[1], { maxBytes: 300 * 1024 }), false)
   })
 
-  it('applyThumbManifest 幂等回填 index.json 与全部 page 分片，保留已有 thumb_url 并拒绝越界 key', async () => {
+  it('applyThumbManifest 幂等回填 index.json 与全部 page 分片，保留已有 thumb_url 并拒绝越界 key', () => {
     assert.throws(() => resolveThumbPublicUrl('../escape.webp'))
     assert.throws(() => resolveThumbPublicUrl('other/a.webp'))
     assert.throws(() => resolveThumbPublicUrl('thumbs/'))
@@ -247,7 +246,6 @@ describe('build-cover-thumbnails: 扩展角色 JPG、大图阈值与无封面视
 
     const dir = makeTempDir()
     const catalogDir = join(dir, 'catalog')
-    const { mkdirSync } = await import('node:fs')
     mkdirSync(join(catalogDir, 'all'), { recursive: true })
     mkdirSync(join(catalogDir, 'material'), { recursive: true })
 
