@@ -1,5 +1,6 @@
 /** Main-process ownership and fixed isolation policy for Sidebar webview guests. */
 import { randomUUID } from 'node:crypto'
+import { isIP } from 'node:net'
 import { app, session, type BrowserWindow, type Session, type WebContents } from 'electron'
 import type { DesktopBrowserLeaseId, DesktopBrowserOpenRequest, DesktopBrowserReservation } from '@deepseek-ai/dsh-client-ui-sidebar-browser/types'
 import { IPC } from './ipc.ts'
@@ -163,11 +164,44 @@ export class DesktopBrowserGuests {
   private isApplicationHost(url: URL): boolean {
     // Next may expose the same Host generation on several origins (loopback plus LAN HTTPS),
     // so every currently published Host origin is withheld from guests, not just one.
+    const targetPort = effectivePort(url)
+    const targetHost = normalizeHostname(url.hostname)
+    const targetLoopback = isLoopbackHostname(targetHost)
     return this.hostOrigins().some((value) => {
       if (!URL.canParse(value)) return false
       const host = new URL(value)
-      return url.port === host.port
-        && (url.hostname === host.hostname || ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname))
+      return targetPort === effectivePort(host)
+        && (targetHost === normalizeHostname(host.hostname) || targetLoopback)
     })
   }
+}
+
+function effectivePort(url: URL): string {
+  if (url.port !== '') return url.port
+  return url.protocol === 'https:' || url.protocol === 'wss:' ? '443' : '80'
+}
+
+function normalizeHostname(hostname: string): string {
+  return hostname.trim().toLowerCase().replace(/\.$/u, '').replace(/^\[|\]$/gu, '')
+}
+
+function isLoopbackIpv4(address: string): boolean {
+  return address === '0.0.0.0' || address.startsWith('127.')
+}
+
+function isLoopbackHostname(bare: string): boolean {
+  if (bare === 'localhost' || bare.endsWith('.localhost')) return true
+  if (bare === '::1' || bare === '::') return true
+  if (isIP(bare) === 4) return isLoopbackIpv4(bare)
+  if (isIP(bare) === 6) {
+    const mappedDotted = /^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/u.exec(bare)
+    if (mappedDotted?.[1] !== undefined) return isLoopbackIpv4(mappedDotted[1])
+    const mappedHex = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/u.exec(bare)
+    if (mappedHex?.[1] !== undefined && mappedHex[2] !== undefined) {
+      const hi = Number.parseInt(mappedHex[1], 16)
+      const lo = Number.parseInt(mappedHex[2], 16)
+      return isLoopbackIpv4(`${hi >> 8}.${hi & 0xff}.${lo >> 8}.${lo & 0xff}`)
+    }
+  }
+  return false
 }

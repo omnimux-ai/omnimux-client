@@ -39,6 +39,9 @@ function fuseWire(overrides: Partial<Record<FuseV1Options, FuseState>> = {}): Fu
   return {
     version: FuseVersion.V1,
     [FuseV1Options.RunAsNode]: FuseState.ENABLE,
+    [FuseV1Options.EnableCookieEncryption]: FuseState.ENABLE,
+    [FuseV1Options.EnableNodeOptionsEnvironmentVariable]: FuseState.DISABLE,
+    [FuseV1Options.EnableNodeCliInspectArguments]: FuseState.DISABLE,
     [FuseV1Options.EnableEmbeddedAsarIntegrityValidation]: FuseState.ENABLE,
     [FuseV1Options.OnlyLoadAppFromAsar]: FuseState.ENABLE,
     ...overrides,
@@ -331,6 +334,18 @@ describe('final Electron fuse verification', () => {
         ...disabled, [option]: FuseState.ENABLE,
       }), false)).rejects.toThrow('invalid required fuses')
     }
+  })
+
+  it('enforces hardened cookie encryption and disables NODE_OPTIONS and CLI inspect fuses (issue #363)', async () => {
+    await expect(verifyElectronExecutableFuses('/build/app', async () => fuseWire({
+      [FuseV1Options.EnableCookieEncryption]: FuseState.DISABLE,
+    }))).rejects.toThrow('EnableCookieEncryption=DISABLE')
+    await expect(verifyElectronExecutableFuses('/build/app', async () => fuseWire({
+      [FuseV1Options.EnableNodeOptionsEnvironmentVariable]: FuseState.ENABLE,
+    }))).rejects.toThrow('EnableNodeOptionsEnvironmentVariable=ENABLE')
+    await expect(verifyElectronExecutableFuses('/build/app', async () => fuseWire({
+      [FuseV1Options.EnableNodeCliInspectArguments]: FuseState.ENABLE,
+    }))).rejects.toThrow('EnableNodeCliInspectArguments=ENABLE')
   })
 
   it('wraps an unreadable final executable with its resolved path', async () => {
