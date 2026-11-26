@@ -1,5 +1,6 @@
-import { createReadStream, existsSync, statSync } from 'node:fs'
-import { join } from 'node:path'
+import { createHash, timingSafeEqual } from 'node:crypto'
+import { createReadStream, existsSync, lstatSync, readFileSync, realpathSync, statSync } from 'node:fs'
+import { isAbsolute, join, relative, resolve, sep } from 'node:path'
 import {
   handleAnalyze,
   handleBatchDelete,
@@ -31,6 +32,12 @@ export const LOCAL_PREFIX = '/omnimux/inspiration/local'
 
 const LOCAL_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]', '::1'])
 const EXTENSION_PROTOCOLS = new Set(['chrome-extension:', 'moz-extension:', 'safari-web-extension:'])
+const EXTENSION_HOST_RE = /^[a-z0-9][a-z0-9._-]{0,127}$/i
+const MEDIA_SECURITY_HEADERS = {
+  'X-Content-Type-Options': 'nosniff',
+  'Content-Security-Policy': "sandbox; default-src 'none'",
+  'Cross-Origin-Resource-Policy': 'same-origin',
+}
 
 const CODE_MESSAGES = {
   'needs-omnimux': '需要登录 OmniMux 账号，请在 设置 → 个人资料 中登录',
@@ -167,37 +174,184 @@ export async function readJsonBody(req, { signal } = {}) {
   })
 }
 
-/** Send JSON HTTP response. Local inspiration data is same-origin only; only the preflight may advertise CORS. */
+/**
+ * Normalize an exact browser extension origin (`chrome-extension://<id>`, etc.).
+ * Rejects wildcards, paths, ports, credentials, or non-extension origins.
+ * @param {unknown} raw
+ * @returns {string}
+ */
+export function normalizeExtensionOrigin(raw) {
+  if (typeof raw !== 'string') return ''
+  const trimmed = raw.trim()
+  if (!trimmed || trimmed === 'null' || trimmed.includes('*')) return ''
+  let parsed
+  try {
+    parsed = new URL(trimmed)
+  } catch {
+    return ''
+  }
+  if (!EXTENSION_PROTOCOLS.has(parsed.protocol)) return ''
+  if (parsed.username || parsed.password || parsed.port) return ''
+  if ((parsed.pathname && parsed.pathname !== '/') || parsed.search || parsed.hash) return ''
+  if (!EXTENSION_HOST_RE.test(parsed.hostname)) return ''
+  return `${parsed.protocol}//${parsed.hostname.toLowerCase()}`
+}
+
+/**
+ * Load explicitly allowlisted browser extension origins from options, env, and `$DSH_HOME/ext-allowed-origins.json`.
+ * @param {{ allowedExtensionOrigins?: Iterable<string>, env?: NodeJS.ProcessEnv, dshHome?: string }} [options]
+ * @returns {Set<string>}
+ */
+export function loadAllowedExtensionOrigins(options = {}) {
+  const allowed = new Set()
+  const addRaw = (value) => {
+    const normalized = normalizeExtensionOrigin(value)
+    if (normalized) allowed.add(normalized)
+  }
+  if (options.allowedExtensionOrigins) {
+    for (const item of options.allowedExtensionOrigins) addRaw(item)
+  }
+  const env = options.env ?? process.env
+  const envRaw = String(env?.OMNIMUX_ALLOWED_EXTENSION_ORIGINS || '').trim()
+  if (envRaw) {
+    for (const item of envRaw.split(',')) addRaw(item)
+  }
+  const home = options.dshHome || env?.DSH_HOME || ''
+  if (home) {
+    const file = join(home, 'ext-allowed-origins.json')
+    try {
+      const stat = lstatSync(file)
+      if (!stat.isSymbolicLink() && stat.isFile() && stat.size <= 64 * 1024) {
+        const parsed = JSON.parse(readFileSync(file, 'utf8'))
+        const list = Array.isArray(parsed) ? parsed : (Array.isArray(parsed?.origins) ? parsed.origins : [])
+        for (const item of list) addRaw(item)
+      }
+    } catch {}
+  }
+  return allowed
+}
+
+/**
+ * Constant-time check for an authenticated paired-extension bridge token (`X-OmniMux-Bridge-Token` or `Authorization: Bearer`).
+ * @param {{ headers?: Record<string, string | string[] | undefined> }} req
+ * @param {{ dshHome?: string, env?: NodeJS.ProcessEnv, bridgeToken?: string }} [options]
+ * @returns {boolean}
+ */
+export function hasValidBridgeToken(req, options = {}) {
+  const headers = req?.headers ?? {}
+  const direct = headers['x-omnimux-bridge-token']
+  const authHeader = headers.authorization
+  let presented = ''
+  if (typeof direct === 'string' && direct.trim()) {
+    presented = direct.trim()
+  } else if (typeof authHeader === 'string') {
+    const match = /^Bearer\s+(\S+)$/i.exec(authHeader.trim())
+    if (match) presented = match[1]
+  }
+  if (presented.length < 16) return false
+
+  let expected = typeof options.bridgeToken === 'string' ? options.bridgeToken.trim() : ''
+  if (!expected) {
+    const env = options.env ?? process.env
+    const home = options.dshHome || env?.DSH_HOME || ''
+    if (home) {
+      const tokenFile = join(home, 'ext-bridge-token')
+      try {
+        const stat = lstatSync(tokenFile)
+        if (!stat.isSymbolicLink() && stat.isFile() && stat.size <= 4096) {
+          expected = readFileSync(tokenFile, 'utf8').trim()
+        }
+      } catch {}
+    }
+  }
+  if (expected.length < 16) return false
+  const a = createHash('sha256').update(presented).digest()
+  const b = createHash('sha256').update(expected).digest()
+  return timingSafeEqual(a, b)
+}
+
+/**
+ * Determine the exact CORS origin allowed for a request, or `''` if denied.
+ * Arbitrary `chrome-extension://*` / `moz-extension://*` origins are NOT reflected unless explicitly allowlisted or carrying a valid paired bridge token.
+ * @param {{ headers?: Record<string, string | string[] | undefined>, socket?: { encrypted?: boolean } }} req
+ * @param {{ allowedExtensionOrigins?: Iterable<string>, env?: NodeJS.ProcessEnv, dshHome?: string, bridgeToken?: string }} [options]
+ * @returns {string}
+ */
+export function corsOriginFor(req, options = {}) {
+  const raw = String(req?.headers?.origin || '').trim()
+  if (!raw || raw === 'null') return ''
+  const extOrigin = normalizeExtensionOrigin(raw)
+  if (extOrigin) {
+    const allowed = loadAllowedExtensionOrigins(options)
+    if (allowed.has(extOrigin) || hasValidBridgeToken(req, options)) return extOrigin
+    return ''
+  }
+  try {
+    const parsed = new URL(raw)
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return ''
+    if (raw !== parsed.origin) return ''
+    if (!LOCAL_HOSTS.has(parsed.hostname)) return ''
+    const host = String(req?.headers?.host || '').trim()
+    if (!host) return ''
+    const expected = new URL(`${req?.socket?.encrypted ? 'https' : 'http'}://${host}`)
+    return parsed.origin === expected.origin ? parsed.origin : ''
+  } catch {
+    return ''
+  }
+}
+
+/** @param {string} corsOrigin */
+function corsHeadersFor(corsOrigin) {
+  /** @type {Record<string, string>} */
+  const headers = {}
+  if (corsOrigin !== '' && corsOrigin !== '*') {
+    headers['Access-Control-Allow-Origin'] = corsOrigin
+    headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-OmniMux-Bridge-Token'
+    headers['Access-Control-Allow-Methods'] = 'GET, POST, PATCH, DELETE, OPTIONS'
+    headers['Vary'] = 'Origin'
+  }
+  return headers
+}
+
+/** Send an empty 204 No Content response (RFC 9110 §8.6 compliant, no Content-Length/body). */
+export function sendNoContent(res, corsOrigin = '') {
+  res.writeHead(204, corsHeadersFor(corsOrigin))
+  res.end()
+}
+
+/** Send JSON HTTP response. Local inspiration data is same-origin or explicitly authorized extension only. */
 export function sendJson(res, status, payload, corsOrigin = '') {
+  if (status === 204) {
+    sendNoContent(res, corsOrigin)
+    return
+  }
   const json = JSON.stringify(payload)
   /** @type {Record<string, string>} */
   const headers = {
     'Content-Type': 'application/json; charset=utf-8',
     'Content-Length': String(Buffer.byteLength(json)),
-  }
-  if (corsOrigin !== '') {
-    headers['Access-Control-Allow-Origin'] = corsOrigin
-    headers['Access-Control-Allow-Headers'] = '*'
-    headers['Access-Control-Allow-Methods'] = 'GET, POST, PATCH, DELETE, OPTIONS'
-    Object.assign(headers, { 'Access-Control-Allow-Private-Network': 'true' })
+    ...corsHeadersFor(corsOrigin),
   }
   res.writeHead(status, headers)
   res.end(json)
 }
 
 /**
- * Reject foreign and same-site write requests before they reach the local
- * library. Missing Origin stays valid for native/curl callers; a browser
- * request from another localhost port carries `Sec-Fetch-Site: same-site` and
- * must not inherit the app's local write permission.
+ * Reject foreign, same-site, and unallowlisted browser-extension requests before they reach the local
+ * library. Missing Origin stays valid for native/curl callers; a browser request from another localhost
+ * port (`Sec-Fetch-Site: same-site`) or an unauthorized browser extension is refused.
  * @param {{ headers?: Record<string, string | string[] | undefined>, socket?: { encrypted?: boolean } }} req
+ * @param {{ allowedExtensionOrigins?: Iterable<string>, env?: NodeJS.ProcessEnv, dshHome?: string, bridgeToken?: string }} [options]
  */
-export function assertLocalWrite(req) {
+export function assertLocalWrite(req, options = {}) {
   const headers = req?.headers ?? {}
   const site = String(headers['sec-fetch-site'] || '').toLowerCase()
-  if (site === 'cross-site' || site === 'same-site') throw new Error('cross-origin write refused')
-  const rawOrigin = headers.origin || headers.referer
-  if (!rawOrigin) return
+  const hasOriginHeader = typeof headers.origin === 'string' && headers.origin.trim() !== ''
+  const rawOrigin = hasOriginHeader ? headers.origin.trim() : (typeof headers.referer === 'string' ? headers.referer.trim() : '')
+  if (!rawOrigin) {
+    if (site === 'cross-site' || site === 'same-site') throw new Error('cross-origin write refused')
+    return
+  }
   if (rawOrigin === 'null') throw new Error('cross-origin write refused')
   let actual
   try {
@@ -205,11 +359,27 @@ export function assertLocalWrite(req) {
   } catch {
     throw new Error('cross-origin write refused')
   }
-  if (EXTENSION_PROTOCOLS.has(actual.protocol)) return
+  if (EXTENSION_PROTOCOLS.has(actual.protocol)) {
+    const extOrigin = hasOriginHeader
+      ? normalizeExtensionOrigin(rawOrigin)
+      : normalizeExtensionOrigin(`${actual.protocol}//${actual.hostname}`)
+    if (!extOrigin) throw new Error('cross-origin write refused')
+    const allowed = loadAllowedExtensionOrigins(options)
+    if (allowed.has(extOrigin) || hasValidBridgeToken(req, options)) return
+    throw new Error('cross-origin write refused')
+  }
+  if (site === 'cross-site' || site === 'same-site') throw new Error('cross-origin write refused')
+  if (actual.protocol !== 'http:' && actual.protocol !== 'https:') throw new Error('cross-origin write refused')
+  if (hasOriginHeader && rawOrigin !== actual.origin) throw new Error('cross-origin write refused')
   if (!LOCAL_HOSTS.has(actual.hostname)) throw new Error('cross-origin write refused')
   const host = headers.host
   if (host) {
-    const expected = new URL(`${req.socket?.encrypted ? 'https' : 'http'}://${host}`)
+    let expected
+    try {
+      expected = new URL(`${req.socket?.encrypted ? 'https' : 'http'}://${host}`)
+    } catch {
+      throw new Error('cross-origin write refused')
+    }
     if (actual.origin !== expected.origin) throw new Error('cross-origin write refused')
   }
 }
@@ -328,17 +498,56 @@ async function streamLocalMedia(paths, req, res) {
     sendJson(res, 404, { error: 'not found' })
     return
   }
-  const subpath = url.pathname.slice(prefix.length)
-  if (!subpath || subpath.includes('..')) {
+  let subpath
+  try {
+    subpath = decodeURIComponent(url.pathname.slice(prefix.length))
+  } catch {
     sendJson(res, 400, { error: 'invalid path' })
     return
   }
-  const filePath = join(paths.mediaDir, subpath)
-  if (!existsSync(filePath)) {
+  if (!subpath || subpath.includes('\0') || subpath.includes('\\') || subpath.startsWith('/') || subpath.split('/').includes('..')) {
+    sendJson(res, 400, { error: 'invalid path' })
+    return
+  }
+  if (!existsSync(paths.mediaDir)) {
     sendJson(res, 404, { error: 'file not found' })
     return
   }
-  pipeMedia(req, res, filePath)
+  const mediaRootReal = realpathSync(paths.mediaDir)
+  const filePath = resolve(paths.mediaDir, subpath)
+  const lexicalRel = relative(resolve(paths.mediaDir), filePath)
+  if (!lexicalRel || lexicalRel === '..' || lexicalRel.startsWith(`..${sep}`) || isAbsolute(lexicalRel)) {
+    sendJson(res, 400, { error: 'invalid path' })
+    return
+  }
+  let stat
+  try {
+    stat = lstatSync(filePath)
+  } catch {
+    sendJson(res, 404, { error: 'file not found' })
+    return
+  }
+  if (stat.isSymbolicLink()) {
+    sendJson(res, 403, { error: 'forbidden path' })
+    return
+  }
+  if (!stat.isFile()) {
+    sendJson(res, 400, { error: 'invalid path' })
+    return
+  }
+  let fileReal
+  try {
+    fileReal = realpathSync(filePath)
+  } catch {
+    sendJson(res, 404, { error: 'file not found' })
+    return
+  }
+  const realRel = relative(mediaRootReal, fileReal)
+  if (!realRel || realRel === '..' || realRel.startsWith(`..${sep}`) || isAbsolute(realRel)) {
+    sendJson(res, 403, { error: 'forbidden path' })
+    return
+  }
+  pipeMedia(req, res, fileReal)
 }
 
 function createStreamer(paths) {
@@ -363,6 +572,7 @@ function pipeMedia(req, res, filePath) {
   const ifNoneMatch = req.headers?.['if-none-match'] || req.headers?.['If-None-Match']
   if (ifNoneMatch && ifNoneMatch === etag) {
     res.writeHead(304, {
+      ...MEDIA_SECURITY_HEADERS,
       ETag: etag,
       'Cache-Control': 'public, max-age=31536000, immutable',
     })
@@ -375,6 +585,7 @@ function pipeMedia(req, res, filePath) {
     return
   }
   res.writeHead(200, {
+    ...MEDIA_SECURITY_HEADERS,
     'Content-Length': fileSize,
     'Content-Type': contentType,
     'Accept-Ranges': 'bytes',
@@ -385,11 +596,22 @@ function pipeMedia(req, res, filePath) {
 }
 
 function pipeRange(opts) {
-  const parts = opts.range.replace(/bytes=/, '').split('-')
-  const start = parseInt(parts[0], 10)
-  const end = parts[1] ? parseInt(parts[1], 10) : opts.fileSize - 1
+  const match = /^bytes=(\d*)-(\d*)$/i.exec(opts.range.trim())
+  if (!match || opts.fileSize <= 0) {
+    opts.res.writeHead(416, { ...MEDIA_SECURITY_HEADERS, 'Content-Range': `bytes */${opts.fileSize}` })
+    opts.res.end()
+    return
+  }
+  const start = match[1] ? parseInt(match[1], 10) : Math.max(0, opts.fileSize - parseInt(match[2] || '0', 10))
+  const end = match[2] && match[1] ? Math.min(parseInt(match[2], 10), opts.fileSize - 1) : opts.fileSize - 1
+  if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || start > end || start >= opts.fileSize) {
+    opts.res.writeHead(416, { ...MEDIA_SECURITY_HEADERS, 'Content-Range': `bytes */${opts.fileSize}` })
+    opts.res.end()
+    return
+  }
   const file = createReadStream(opts.filePath, { start, end })
   const headers = {
+    ...MEDIA_SECURITY_HEADERS,
     'Content-Range': `bytes ${start}-${end}/${opts.fileSize}`,
     'Accept-Ranges': 'bytes',
     'Content-Length': (end - start) + 1,

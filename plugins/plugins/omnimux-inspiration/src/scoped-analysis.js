@@ -1,4 +1,4 @@
-import { realpathSync, statSync } from 'node:fs'
+import { lstatSync, realpathSync, statSync } from 'node:fs'
 import { basename, isAbsolute, relative, sep } from 'node:path'
 import { analysisInputFingerprint, analysisMediaItems, sourceFingerprint } from './analysis-input.js'
 export { analysisInputFingerprint, sourceFingerprint } from './analysis-input.js'
@@ -124,6 +124,8 @@ function resolveSavedReference(media, item, paths) {
   for (const path of Object.values(item.local_paths || {})) {
     if (typeof path !== 'string' || basename(path) !== match[2]) continue
     try {
+      const linkStat = lstatSync(path)
+      if (linkStat.isSymbolicLink() || !linkStat.isFile()) continue
       const canonical = realpathSync(path)
       const rel = relative(realpathSync(root), canonical)
       const stat = statSync(canonical)

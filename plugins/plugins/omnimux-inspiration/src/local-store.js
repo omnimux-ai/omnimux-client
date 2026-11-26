@@ -99,6 +99,13 @@ function rowViews(row) {
   return 0
 }
 
+const SAFE_ITEM_ID_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/
+
+/** @param {unknown} value @returns {boolean} */
+export function isSafeItemId(value) {
+  return typeof value === 'string' && SAFE_ITEM_ID_RE.test(value)
+}
+
 /**
  * Normalize an incoming record into the persisted row shape.
  * @param {Partial<LocalInspirationRecord> & { title?: string }} record
@@ -108,8 +115,10 @@ function rowViews(row) {
 function buildRow(record, identity = {}) {
   const now = new Date().toISOString()
   const canonical = record.source_url ? getCanonicalItemKey(record.source_url) : null
+  const requestedId = identity.id || record.id
+  const safeId = isSafeItemId(requestedId) ? requestedId : `insp_${randomUUID().slice(0, 8)}`
   return {
-    id: identity.id || record.id || `insp_${randomUUID().slice(0, 8)}`,
+    id: safeId,
     title: record.title || 'Untitled',
     type: record.type || 'video',
     source_platform: record.source_platform || canonical?.platform,
@@ -694,7 +703,7 @@ export function createLocalStore(opts = {}) {
      */
     add(record, opts = {}) {
       const items = readAll()
-      if (record.id !== undefined && (typeof record.id !== 'string' || !record.id.trim())) {
+      if (record.id !== undefined && !isSafeItemId(record.id)) {
         throw new InspirationError('item-id-invalid', '灵感标识格式不正确', 400)
       }
       if (record.source_url && !opts.allowDuplicate) {

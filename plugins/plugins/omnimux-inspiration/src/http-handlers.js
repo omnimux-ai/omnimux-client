@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process'
-import { existsSync, statSync, unlinkSync } from 'node:fs'
+import { existsSync, lstatSync, realpathSync, statSync, unlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { basename, join } from 'node:path'
+import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { alignMediaExtension, downloadMedia, isKnownUnrenderableCover } from './downloader.js'
 import { analyzeInspirationVideo } from './analyzer.js'
 import {
@@ -887,30 +887,104 @@ export function sweepStaleImports(store, liveIds = activeJobs) {
   return failed.size > 0 ? failed : null
 }
 
+const SAFE_COVER_SUFFIX_RE = /^[A-Za-z0-9_-]{1,96}$/
+
+/**
+ * @param {string} rootReal
+ * @param {string} targetReal
+ */
+function isStrictlyWithinDir(rootReal, targetReal) {
+  const rel = relative(rootReal, targetReal)
+  return rel !== '' && rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel)
+}
+
+/**
+ * Verify a media path is a regular non-symlink file whose realpath stays strictly inside `mediaDir`.
+ * @param {unknown} rawPath
+ * @param {string | undefined} mediaDir
+ * @returns {{ ok: true, realPath: string, size: number } | { ok: false, reason: 'missing' | 'outside' | 'symlink' | 'not-file' }}
+ */
+export function resolveContainedMediaFile(rawPath, mediaDir) {
+  if (typeof rawPath !== 'string' || !rawPath.trim() || rawPath.includes('\0') || !mediaDir) {
+    return { ok: false, reason: 'outside' }
+  }
+  const candidate = resolve(rawPath.trim())
+  const resolvedRoot = resolve(mediaDir)
+  let rootReal = resolvedRoot
+  try {
+    rootReal = realpathSync(resolvedRoot)
+  } catch {
+    rootReal = resolvedRoot
+  }
+  let stat
+  try {
+    stat = lstatSync(candidate)
+  } catch {
+    if (!isStrictlyWithinDir(resolvedRoot, candidate) && !isStrictlyWithinDir(rootReal, candidate)) {
+      return { ok: false, reason: 'outside' }
+    }
+    return { ok: false, reason: 'missing' }
+  }
+  if (stat.isSymbolicLink()) return { ok: false, reason: 'symlink' }
+  if (!stat.isFile()) return { ok: false, reason: 'not-file' }
+  let realPath
+  try {
+    realPath = realpathSync(candidate)
+  } catch {
+    return { ok: false, reason: 'missing' }
+  }
+  if (!isStrictlyWithinDir(rootReal, realPath)) {
+    return { ok: false, reason: 'outside' }
+  }
+  return { ok: true, realPath, size: stat.size }
+}
+
+/** @param {unknown} itemId @returns {string | null} */
+function safeCoverFilename(itemId) {
+  const suffix = String(itemId || '').replace(/^insp_/, '')
+  if (!SAFE_COVER_SUFFIX_RE.test(suffix)) return null
+  return `cover_${suffix}.jpg`
+}
+
 export function maybeEnsureVideoCover(item, store, paths) {
   if (!item || typeof item !== 'object' || item.type !== 'video') return item
+  const mediaDir = paths?.mediaDir || store?.paths?.mediaDir
+  const coversDir = paths?.coversDir || store?.paths?.coversDir
+  if (!mediaDir || !coversDir) return item
   const existingCover = item.cover_url
   const localCover = item.local_paths?.cover
-  if (existingCover && (!localCover || existsSync(localCover))) return item
-  const videoPath = item.local_paths?.video
-  if (!videoPath || !existsSync(videoPath)) return item
-  const coversDir = paths?.coversDir || store?.paths?.coversDir
-  if (!coversDir) return item
+  if (existingCover && (!localCover || resolveContainedMediaFile(localCover, mediaDir).ok)) return item
+  const videoCheck = resolveContainedMediaFile(item.local_paths?.video, mediaDir)
+  if (!videoCheck.ok) return item
+  const coverName = safeCoverFilename(item.id)
+  if (!coverName) return item
 
   try {
-    const coverName = `cover_${String(item.id).replace(/^insp_/, '')}.jpg`
-    const targetCoverPath = join(coversDir, coverName)
-    if (!existsSync(targetCoverPath)) {
-      spawnSync('ffmpeg', ['-y', '-ss', '00:00:00.500', '-i', videoPath, '-vframes', '1', '-q:v', '2', targetCoverPath], {
+    const mediaDirReal = existsSync(mediaDir) ? realpathSync(mediaDir) : resolve(mediaDir)
+    const coversDirReal = existsSync(coversDir) ? realpathSync(coversDir) : resolve(coversDir)
+    if (coversDirReal !== mediaDirReal && !isStrictlyWithinDir(mediaDirReal, coversDirReal)) return item
+    const targetCoverPath = resolve(coversDirReal, coverName)
+    if (!isStrictlyWithinDir(coversDirReal, targetCoverPath)) return item
+    let existingStat = null
+    try {
+      existingStat = lstatSync(targetCoverPath)
+    } catch (err) {
+      if (err?.code !== 'ENOENT') return item
+    }
+    if (existingStat) {
+      if (existingStat.isSymbolicLink() || !existingStat.isFile()) return item
+    } else {
+      spawnSync('ffmpeg', ['-y', '-ss', '00:00:00.500', '-i', videoCheck.realPath, '-vframes', '1', '-q:v', '2', targetCoverPath], {
         stdio: 'ignore',
         timeout: 2500,
       })
     }
-    if (existsSync(targetCoverPath)) {
+    const coverCheck = resolveContainedMediaFile(targetCoverPath, coversDirReal)
+    if (coverCheck.ok) {
       const coverUrl = `/omnimux/inspiration/local/media/covers/${coverName}`
       const patch = {
         cover_url: coverUrl,
-        local_paths: { ...(item.local_paths || {}), cover: targetCoverPath },
+        local_paths: { ...(item.local_paths || {}), cover: coverCheck.realPath },
       }
       try { store?.update?.(item.id, patch) } catch {}
       return { ...item, ...patch }
@@ -1072,9 +1146,10 @@ async function startLocalShare(ctx, item) {
   const prompt = buildDirectGenerationPrompt(item, mediaType) || sharePromptOf(item)
   if (!prompt) return fail(400, '提示词为空：请先补全灵感内容或完成 AI 解构后再分享')
 
+  const mediaDir = ctx.paths?.mediaDir || store?.paths?.mediaDir
   for (const asset of [cover, media]) {
     if (!asset) continue
-    const problem = inspectShareAsset(asset)
+    const problem = inspectShareAsset(asset, mediaDir)
     if (problem) return fail(400, problem)
   }
 
@@ -1082,7 +1157,15 @@ async function startLocalShare(ctx, item) {
 
   const claimed = store.update(String(id), shareRunningPatch(SHARE_STAGES.PREPARING))
   activeShares.add(String(id))
-  void runShareJob({ store, id: String(id), capability, cover, media, meta: shareMetaOf(item, { title, prompt, mediaType }) })
+  void runShareJob({
+    store,
+    id: String(id),
+    capability,
+    cover,
+    media,
+    allowedRoot: mediaDir,
+    meta: shareMetaOf(item, { title, prompt, mediaType }),
+  })
     .finally(() => activeShares.delete(String(id)))
 
   return { status: 202, body: { data: claimed } }
@@ -1225,19 +1308,22 @@ function assetOf(path) {
 
 /**
  * Readable problem with a local asset, or `''` when it can be uploaded.
+ * Also canonicalizes `asset.path` to its verified realpath inside `mediaDir`.
  * @param {{ path: string }} asset
+ * @param {string | undefined} mediaDir
  * @returns {string}
  */
-function inspectShareAsset(asset) {
-  if (!existsSync(asset.path)) {
-    return `素材文件不存在：${asset.path}（可能已被清理），请重新下载素材后再分享`
+function inspectShareAsset(asset, mediaDir) {
+  const checked = resolveContainedMediaFile(asset.path, mediaDir)
+  if (!checked.ok) {
+    if (checked.reason === 'missing') {
+      return `素材文件不存在：${asset.path}（可能已被清理），请重新下载素材后再分享`
+    }
+    return '素材路径超出受管媒体目录或包含符号链接，已拒绝上传'
   }
-  try {
-    const leaf = asset.path.split('/').pop() || asset.path
-    return shareUploadLimitMessage(leaf, statSync(asset.path).size)
-  } catch {
-    return `素材文件无法读取：${asset.path}，请重新下载素材后再分享`
-  }
+  asset.path = checked.realPath
+  const leaf = checked.realPath.split('/').pop() || checked.realPath
+  return shareUploadLimitMessage(leaf, checked.size)
 }
 
 /**
@@ -1308,6 +1394,7 @@ async function runShareJob(args) {
       cover: args.cover,
       media: args.media,
       meta: args.meta,
+      allowedRoot: args.allowedRoot,
       onStage: (stage) => {
         if (SHARE_STAGE_ORDER.includes(stage)) void safeUpdate(store, id, { share_stage: stage })
       },
@@ -1318,13 +1405,58 @@ async function runShareJob(args) {
   }
 }
 
+const CLIENT_CREATABLE_FIELDS = [
+  'id',
+  'title',
+  'type',
+  'source_platform',
+  'source_url',
+  'cover_url',
+  'media_urls',
+  'media_items',
+  'tags',
+  'is_favorite',
+  'hot_score',
+  'content',
+  'excerpt',
+  'favicon_url',
+  'deconstruction',
+  'stats',
+  'author',
+  'content_shape',
+  'quoted',
+  'thread_items',
+  'poll',
+  'duration',
+  'views',
+  'country_code',
+  'category',
+  'traffic_type',
+  'posted_at',
+  'published_at',
+  'created_at',
+  'auto_analyze',
+]
+
 export function handleCreate({ req, store }) {
   const body = req.body || {}
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return fail(400, 'invalid request body')
+  }
   if (['analysis_results', 'body_translation', 'creation_draft', 'creation_reference'].some((key) => Object.hasOwn(body, key))) {
     return fail(400, '分析结果与创作参考只能通过对应功能保存')
   }
   if (!body.title) return fail(400, 'title is required')
-  const created = store.add(body)
+  /** @type {Record<string, unknown>} */
+  const sanitized = { local_paths: {} }
+  for (const key of CLIENT_CREATABLE_FIELDS) {
+    if (Object.hasOwn(body, key) && body[key] !== undefined) {
+      sanitized[key] = body[key]
+    }
+  }
+  // Never accept client-supplied `local_paths` or server-owned state fields;
+  // any supplied `id` is strictly validated by `store.add` against SAFE_ITEM_ID_RE.
+  const created = store.add(sanitized)
   return { status: 201, body: { data: created } }
 }
 
@@ -2182,8 +2314,15 @@ export async function handleTranslate(ctx) {
 
 async function resolveAnalyzeVideo(args) {
   const existing = args.item.local_paths?.video
-  if (existing) return { path: existing }
-  if (!args.item.source_url || !args.socialFetcher) return { path: existing }
+  const mediaDir = args.paths?.mediaDir || args.store?.paths?.mediaDir
+  if (existing) {
+    const checked = resolveContainedMediaFile(existing, mediaDir)
+    if (checked.ok) return { path: checked.realPath }
+    if (checked.reason === 'outside' || checked.reason === 'symlink' || checked.reason === 'not-file') {
+      return { error: fail(400, '视频路径超出受管媒体目录或包含符号链接') }
+    }
+  }
+  if (!args.item.source_url || !args.socialFetcher) return { path: undefined }
   return downloadAnalyzeVideo(args)
 }
 

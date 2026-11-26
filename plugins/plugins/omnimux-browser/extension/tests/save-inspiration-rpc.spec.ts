@@ -37,8 +37,8 @@ describe('Edge PNA / Loopback Inspiration Save Suite (#3088)', () => {
     expect(bgCode).toContain('appendMediaInspiration')
   })
 
-  it('inspiration server endpoints explicitly allow Private Network Access preflights', () => {
-    expect(routesCode).toContain("'Access-Control-Allow-Private-Network': 'true'")
+  it('inspiration server endpoints refuse wildcard Private Network Access preflights (#357)', () => {
+    expect(routesCode).not.toContain("'Access-Control-Allow-Private-Network'")
   })
 
   it('preserves user feedback on success and failure without throwing uncaught rejections', () => {

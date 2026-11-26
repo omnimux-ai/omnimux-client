@@ -1,6 +1,6 @@
-import { resolveInspirationPaths } from './paths.js'
+import { resolveDshHome, resolveInspirationPaths } from './paths.js'
 import { createLocalStore } from './local-store.js'
-import { LOCAL_PREFIX, assertLocalWrite, createLocalInspirationDispatcher, formatErrorMessage, readJsonBody, sendJson } from './http-routes.js'
+import { LOCAL_PREFIX, assertLocalWrite, corsOriginFor, createLocalInspirationDispatcher, formatErrorMessage, readJsonBody, sendJson, sendNoContent } from './http-routes.js'
 import { capabilityOf, parseSocialMeta } from './http-handlers.js'
 import { fallbackResolveSocial } from './scraper-fallback.js'
 import { zh } from './client/locales.js'
@@ -290,25 +290,7 @@ export function apply(ctx) {
     }, 'omnimux-inspiration-rival-scheduler')
   }
 
-  /**
-   * Browser extensions are first-class local clients; ordinary websites are
-   * never allowed to read or write the local library.
-   * @param {any} req
-   */
-  function corsOriginFor(req) {
-    const raw = String(req.headers?.origin || '').trim()
-    if (!raw || raw === 'null') return ''
-    if (/^(?:chrome-extension|moz-extension|safari-web-extension):\/\//i.test(raw)) return raw
-    try {
-      const parsed = new URL(raw)
-      const host = String(req.headers?.host || '').trim()
-      if (!host) return ''
-      const expected = new URL(`${req.socket?.encrypted ? 'https' : 'http'}://${host}`)
-      return parsed.origin === expected.origin ? raw : ''
-    } catch {
-      return ''
-    }
-  }
+  const localAccessOptions = { dshHome: resolveDshHome() }
 
   /**
    * Serve one request under this plugin's HTTP prefix.
@@ -322,19 +304,18 @@ export function apply(ctx) {
    */
   const callLocalEndpoint = async (req, res) => {
     const cancellation = trackRequestCancellation(req, res)
-    const responseCors = corsOriginFor(req)
+    const responseCors = corsOriginFor(req, localAccessOptions)
     try {
-      // OPTIONS remains a protocol preflight only. Browser extensions may
-      // receive their exact origin; ordinary websites never receive a grant.
+      // OPTIONS remains a protocol preflight only. Only same-origin or explicitly
+      // authorized extension origins receive CORS headers; never emit wildcard `*`.
       if ((req.method || '').toUpperCase() === 'OPTIONS') {
-        const hasBrowserOrigin = Boolean(req.headers?.origin || req.headers?.referer)
-        sendJson(res, 204, {}, responseCors || (hasBrowserOrigin ? '' : '*'))
+        sendNoContent(res, responseCors)
         return
       }
       const method = (req.method || 'GET').toUpperCase()
       if (method !== 'OPTIONS') {
         try {
-          assertLocalWrite(req)
+          assertLocalWrite(req, localAccessOptions)
         } catch {
           sendJson(res, 403, { error: 'not-local' }, responseCors)
           return

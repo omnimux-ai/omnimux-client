@@ -21,18 +21,28 @@ export function createPublishDispatcher(deps) {
   const { store, media, accounts, service, channel, config } = deps
   const creatorInfoCache = deps.creatorInfoCache ?? createCreatorInfoCache({ channel })
 
-  /** @param {{ path?: string, media_id?: string }} ref */
-  function resolveMediaRef(ref) {
+  /**
+   * @param {{ path?: string, media_id?: string }} ref
+   * @param {boolean} [allowLocalPath]
+   */
+  function resolveMediaRef(ref, allowLocalPath = true) {
     if (ref.media_id) {
       const row = media.get(ref.media_id)
       if (!row) throw new PublishError('media-not-found', `media_id ${ref.media_id} 不在媒体仓中`)
       return row.id
     }
+    if (!allowLocalPath) {
+      throw new PublishError('path-not-allowed', 'HTTP 草稿接口只接受通过媒体接口上传的 media_id，禁止直接传入本地文件路径')
+    }
     return media.importPath(ref.path || '').media.id
   }
 
-  /** @param {{ type?: unknown, payload?: unknown, account_ids?: unknown }} input */
-  async function createDraft(input) {
+  /**
+   * @param {{ type?: unknown, payload?: unknown, account_ids?: unknown }} input
+   * @param {{ allowLocalPath?: boolean }} [options]
+   */
+  async function createDraft(input, options = {}) {
+    const allowLocalPath = options?.allowLocalPath !== false
     const parsed = parseDraftPayload(input.payload)
     const type = input.type ?? parsed.type
     if (!type) throw new PublishError('invalid-arguments', 'type is required (video | image)')
@@ -43,8 +53,8 @@ export function createPublishDispatcher(deps) {
       type,
       title: typeof parsed.title === 'string' ? parsed.title : '',
       description: typeof parsed.description === 'string' ? parsed.description : '',
-      topics: parsed.topics, media_ids: (parsed.media || []).map(resolveMediaRef),
-      cover_media_id: parsed.cover ? resolveMediaRef(parsed.cover) : null,
+      topics: parsed.topics, media_ids: (parsed.media || []).map((ref) => resolveMediaRef(ref, allowLocalPath)),
+      cover_media_id: parsed.cover ? resolveMediaRef(parsed.cover, allowLocalPath) : null,
       settings: parsed.settings, account_ids: accountIds,
     })
     return draftResult(record.id)
@@ -77,8 +87,12 @@ export function createPublishDispatcher(deps) {
     return { record: view, media: mediaRows, content_errors: contentErrors }
   }
 
-  /** @param {{ draft_id: string, patch?: unknown }} input */
-  async function updateDraft(input) {
+  /**
+   * @param {{ draft_id: string, patch?: unknown }} input
+   * @param {{ allowLocalPath?: boolean }} [options]
+   */
+  async function updateDraft(input, options = {}) {
+    const allowLocalPath = options?.allowLocalPath !== false
     const parsed = parseDraftPayload(input.patch)
     if (parsed.account_ids && parsed.account_ids.length > 0) await requirePublishingAccounts(accounts, parsed.account_ids)
     /** @type {Record<string, unknown>} */
@@ -87,8 +101,8 @@ export function createPublishDispatcher(deps) {
     if ('title' in parsed && parsed.title !== undefined) patch.title = parsed.title
     if ('description' in parsed && parsed.description !== undefined) patch.description = parsed.description
     if ('topics' in parsed && parsed.topics !== undefined) patch.topics = parsed.topics
-    if (parsed.media !== undefined) patch.media_ids = parsed.media.map(resolveMediaRef)
-    if (parsed.cover !== undefined) patch.cover_media_id = parsed.cover ? resolveMediaRef(parsed.cover) : null
+    if (parsed.media !== undefined) patch.media_ids = parsed.media.map((ref) => resolveMediaRef(ref, allowLocalPath))
+    if (parsed.cover !== undefined) patch.cover_media_id = parsed.cover ? resolveMediaRef(parsed.cover, allowLocalPath) : null
     if ('settings' in parsed && parsed.settings !== undefined) patch.settings = parsed.settings
     store.update(String(input.draft_id || ''), patch)
     const accountIdPatch = parsed.account_ids
