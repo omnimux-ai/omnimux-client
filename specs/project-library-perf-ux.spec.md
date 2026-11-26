@@ -42,3 +42,10 @@
 - **AC-3 文件夹卡片轻量化与视觉打磨**：保留文件夹轮廓与菜单契约，移除双图 `blur` 与 `•••` 徽标，白底图在深色模式下柔化不刺眼，单行标题对齐 + 零补齐等宽日期 + 创作页数（无中点 `·`），悬停轻展与按压反馈（尊重 `prefers-reduced-motion`），展开菜单不被邻卡遮挡。
 - **AC-4 顶栏收敛、整页吸顶与筛选排序**：单行 `PageHeader` 内置「新建项目」（保留 `.omnimux-workflow-library-action-row`）、移除冗余副标题与多余分割线；接入 `.omx-stage-scroll` + `.omx-stage-sticky`；提供来源筛选（首项 `全部`）、排序（最近更新 / 名称 A-Z）、冷启动 12 卡骨架屏、搜索无匹配空态与一键清空筛选、可恢复错误重试按钮。
 - **AC-5 二级详情页硬化**：进入详情先加载创作页，切「项目资产」才按需拉文件且支持子目录浏览；无硬编码假日期、无死操作图标、面包屑与操作卡键盘可达且全量组件走 `dsh-ui-kit`。
+
+## 旧标准变更
+
+- `plugins/plugins/omnimux-workflow/src/client/projects/local-tab-placeholder.test.mjs` :: `ProjectLibraryPage mounts a pressed 本地项目 FilterBar tab`
+  - 原断言：校验 `ProjectLibraryPage.jsx` 顶栏与标签栏之间渲染独立的 `<Divider />` 分隔线。
+  - 变更理由：按 Issue #326 与已确认设计，项目库页收敛为紧凑单行 `PageHeader` + 吸顶 `FilterBar`（自带 `border-bottom` 底线），移除冗余副标题与多余 `<Divider />` 以增加首屏卡片展示面积。
+  - 新期望证据：替换为断言 `<FilterBar ... omnimux-workflow-library-filter` 与 `<Tabs variant="underline"` 共存，并由 `tests/project-library-perf-ux.e2e.test.mjs` 及 `plugins/docs/evidence/project-library-perf-ux/01-dark-library-1440.png` 端到端验证。
