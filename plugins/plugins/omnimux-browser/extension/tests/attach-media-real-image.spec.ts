@@ -169,6 +169,7 @@ describe('lit page media becomes a real attachment', () => {
   })
 
   async function startPanel(): Promise<void> {
+    Object.defineProperty(document, 'referrer', { value: 'https://example.com/page', configurable: true })
     await act(async () => { root.render(createElement(App)) })
     await act(async () => {
       onStatus?.('connected', null)
@@ -184,7 +185,11 @@ describe('lit page media becomes a real attachment', () => {
   /** Publish the page's sensed media into the lit shelf. */
   async function publish(items: SniffedMediaItem[]): Promise<void> {
     await act(async () => {
-      window.dispatchEvent(new MessageEvent('message', { data: { type: 'MEDIA_SNIFFED_RESULT', payload: items } }))
+      window.dispatchEvent(new MessageEvent('message', {
+        source: window.parent,
+        origin: 'https://example.com',
+        data: { type: 'MEDIA_SNIFFED_RESULT', payload: items },
+      }))
     })
     await vi.waitFor(() => {
       const shown = [...document.querySelectorAll('.media-item-chip')].map(chipSrc)

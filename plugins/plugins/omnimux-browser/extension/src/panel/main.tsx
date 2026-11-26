@@ -4,17 +4,18 @@ import { App } from './App.tsx'
 import './styles.css'
 import { getUiLocale } from '../i18n.ts'
 import { PANEL_COPY } from './strings.ts'
+import { resolveCurrentParentOrigin } from './float-message-guard.ts'
 
 function reportErrorToHost(error: unknown) {
   const errStr = error instanceof Error ? `${error.name}: ${error.message}\n${error.stack || ''}` : String(error)
   console.error('[OmniMux-Workstation-Fatal]', errStr)
   try {
-    if (window.parent && window.parent !== window) {
+    const parentOrigin = resolveCurrentParentOrigin()
+    if (window.parent && window.parent !== window && parentOrigin !== null) {
       window.parent.postMessage({
         source: 'omnimux-panel',
         type: 'OMNIMUX_PANEL_ERROR',
-        error: errStr,
-      }, '*')
+      }, parentOrigin)
     }
   } catch {}
 }

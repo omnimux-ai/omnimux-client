@@ -4,6 +4,13 @@
  */
 
 import type { CopilotMenuItem, FeedHotTweet, PerspectiveDef, TwitterContext } from './types.ts'
+import { wrapUntrustedContent } from '../../security/untrusted.ts'
+
+function untrustedTweetMaterial(raw: string, maxChars = 4000): string {
+  const trimmed = raw.trim()
+  if (trimmed === '') return ''
+  return wrapUntrustedContent(trimmed, maxChars)
+}
 
 /** 抓不到作者时整行省略，绝不伪造身份 */
 function authorLine(handle?: string): string {
@@ -23,6 +30,14 @@ function optionalBlock(label: string, value?: string): string {
   return text ? `\n\n${label}${text}` : ''
 }
 
+/** 格式化单条推文（作者 + 正文）并包裹进不可信网页数据边界。 */
+function formatUntrustedTweet(author: string | undefined, text: string | undefined, locale: 'zh' | 'en', prefix = 'Original tweet by '): string {
+  const raw = locale === 'en'
+    ? `${byline(prefix, author ?? '')}${text ?? ''}`
+    : `${authorLine(author ?? '')}${text ? `正文：${text}` : ''}`
+  return untrustedTweetMaterial(raw, 4000)
+}
+
 /** 格式化首页采集到的热门讨论推文，作为“全新写（无草稿）”场景下的事实灵感输入 */
 function formatFeedHotTweets(tweets?: FeedHotTweet[], locale: 'zh' | 'en' = 'zh'): string {
   if (!tweets || tweets.length === 0) return ''
@@ -39,7 +54,7 @@ function formatFeedHotTweets(tweets?: FeedHotTweet[], locale: 'zh' | 'en' = 'zh'
         : `[${label} ${i + 1} · 带评论转发] @${t.author || 'creator'} 的评论：${t.text}${stat}\n  被转发的原帖 —— ${quoted}`
     })
     .join('\n\n')
-  return `${header}${body}`
+  return `${header}${untrustedTweetMaterial(body, 6000)}`
 }
 
 /** 爆款复刻二创任务：先拆爆点，再按爆点结构写全新原创。 */
@@ -260,12 +275,12 @@ export const COPILOT_MENU_ITEMS: CopilotMenuItem[] = [
       if (locale === 'en') {
         return {
           systemPrompt: `Quote retweet with high-value complementary insights, not hollow summaries.${HUMANIZE_EN_RULES}`,
-          userMessage: `${byline('Quoted tweet by ', ctx.quotedAuthor ?? "")}${ctx.quotedTweetText ?? ""}${optionalBlock('My take: ', ctx.draftText)}`,
+          userMessage: `${formatUntrustedTweet(ctx.quotedAuthor, ctx.quotedTweetText, 'en', 'Quoted tweet by ')}${optionalBlock('My take: ', ctx.draftText)}`,
         }
       }
       return {
         systemPrompt: `你在引用转发他人推文。你的目标是提供比原推更有深度的【信息增量】或【实践案例补充】，而不是简单复述。${HUMANIZE_ZH_RULES}`,
-        userMessage: `被引用的原推内容：\n${authorLine(ctx.quotedAuthor ?? "")}正文：${ctx.quotedTweetText ?? ""}${optionalBlock('我的补充思路：', ctx.draftText)}`,
+        userMessage: `被引用的原推内容：\n${formatUntrustedTweet(ctx.quotedAuthor, ctx.quotedTweetText, 'zh')}${optionalBlock('我的补充思路：', ctx.draftText)}`,
       }
     },
   },
@@ -281,12 +296,12 @@ export const COPILOT_MENU_ITEMS: CopilotMenuItem[] = [
       if (locale === 'en') {
         return {
           systemPrompt: `Summarize the quoted tweet in 2 crisp takeaway bullets for your followers.${HUMANIZE_EN_RULES}`,
-          userMessage: `Quoted tweet:\n${ctx.quotedTweetText ?? ""}`,
+          userMessage: `Quoted tweet:\n${untrustedTweetMaterial(ctx.quotedTweetText ?? '')}`,
         }
       }
       return {
         systemPrompt: `你负责将引用的推文快速凝练成 2 条核心见解，帮你的读者用 10 秒钟看透关键信息。${HUMANIZE_ZH_RULES}`,
-        userMessage: `被引用推文：\n${ctx.quotedTweetText ?? ""}`,
+        userMessage: `被引用推文：\n${untrustedTweetMaterial(ctx.quotedTweetText ?? '')}`,
       }
     },
   },
@@ -302,12 +317,12 @@ export const COPILOT_MENU_ITEMS: CopilotMenuItem[] = [
       if (locale === 'en') {
         return {
           systemPrompt: `Respectfully point out a subtle flaw or counter-argument in the quoted tweet.${HUMANIZE_EN_RULES}`,
-          userMessage: `Quoted tweet:\n${ctx.quotedTweetText ?? ""}`,
+          userMessage: `Quoted tweet:\n${untrustedTweetMaterial(ctx.quotedTweetText ?? '')}`,
         }
       }
       return {
         systemPrompt: `你针对原推的论点，礼貌指出其在特定工程或业务边界条件下的局限性，给出另一种合理的解法，引发读者探讨。${HUMANIZE_ZH_RULES}`,
-        userMessage: `原推内容：\n${ctx.quotedTweetText ?? ""}`,
+        userMessage: `原推内容：\n${untrustedTweetMaterial(ctx.quotedTweetText ?? '')}`,
       }
     },
   },
@@ -323,12 +338,12 @@ export const COPILOT_MENU_ITEMS: CopilotMenuItem[] = [
       if (locale === 'en') {
         return {
           systemPrompt: `Write a sincere, authentic endorsement of the creator and their work.${HUMANIZE_EN_RULES}`,
-          userMessage: `${byline('Quoted tweet by ', ctx.quotedAuthor ?? "")}${ctx.quotedTweetText ?? ""}`,
+          userMessage: formatUntrustedTweet(ctx.quotedAuthor, ctx.quotedTweetText, 'en', 'Quoted tweet by '),
         }
       }
       return {
         systemPrompt: `真诚认可并强力推荐原作者的优质分享或新产品，语气诚恳克制、言之有物，不浮夸。${HUMANIZE_ZH_RULES}`,
-        userMessage: `原推内容：\n${authorLine(ctx.quotedAuthor ?? "")}正文：${ctx.quotedTweetText ?? ""}`,
+        userMessage: `原推内容：\n${formatUntrustedTweet(ctx.quotedAuthor, ctx.quotedTweetText, 'zh')}`,
       }
     },
   },
@@ -350,14 +365,14 @@ export const COPILOT_MENU_ITEMS: CopilotMenuItem[] = [
           systemPrompt: `You are a Twitter power-user famous for crafting top-tier, high-upvote replies.
 The Golden Formula: Comment Value = Information Delta × Emotional Resonance × Clarity.
 Share a sharp data point, counter-intuitive insight, or witty observation.${HUMANIZE_EN_RULES}`,
-          userMessage: `${byline('Original tweet by ', ctx.targetAuthor ?? "")}${ctx.targetTweetText ?? ""}\n\n${ctx.draftText ? `My angle: ${ctx.draftText ?? ""}` : ''}`,
+          userMessage: `${formatUntrustedTweet(ctx.targetAuthor, ctx.targetTweetText, 'en', 'Original tweet by ')}\n\n${ctx.draftText ? `My angle: ${ctx.draftText ?? ""}` : ''}`,
         }
       }
       return {
         systemPrompt: `你是推特评论区的“神评制造机”。你的唯一目标是在头部推文下写出一条高赞神评。
 核心公式：评论价值 = 信息增量 × 情绪共鸣 × 表达清晰度。
 要求：给出意料之外但情理之中的补充洞见、幽默类比或大实话，一针见血，让人忍不住点赞。${HUMANIZE_ZH_RULES}`,
-        userMessage: `楼主推文内容：\n${authorLine(ctx.targetAuthor ?? "")}正文：${ctx.targetTweetText ?? ""}\n\n${ctx.draftText ? `我的补充想法：${ctx.draftText ?? ""}` : ''}`,
+        userMessage: `楼主推文内容：\n${formatUntrustedTweet(ctx.targetAuthor, ctx.targetTweetText, 'zh')}\n\n${ctx.draftText ? `我的补充想法：${ctx.draftText ?? ""}` : ''}`,
       }
     },
   },
@@ -373,12 +388,12 @@ Share a sharp data point, counter-intuitive insight, or witty observation.${HUMA
       if (locale === 'en') {
         return {
           systemPrompt: `Join the Twitter technical discussion with thoughtful, grounded engineering insights.${HUMANIZE_EN_RULES}`,
-          userMessage: `${byline('Original tweet by ', ctx.targetAuthor ?? "")}${ctx.targetTweetText ?? ""}`,
+          userMessage: formatUntrustedTweet(ctx.targetAuthor, ctx.targetTweetText, 'en', 'Original tweet by '),
         }
       }
       return {
         systemPrompt: `你是一位严谨资深的技术专家。在回复原推时，从系统架构、落地成本或长期演进维度补充专业见解，塑造专家人设。${HUMANIZE_ZH_RULES}`,
-        userMessage: `原推内容：\n${authorLine(ctx.targetAuthor ?? "")}正文：${ctx.targetTweetText ?? ""}`,
+        userMessage: `原推内容：\n${formatUntrustedTweet(ctx.targetAuthor, ctx.targetTweetText, 'zh')}`,
       }
     },
   },
@@ -394,12 +409,12 @@ Share a sharp data point, counter-intuitive insight, or witty observation.${HUMA
       if (locale === 'en') {
         return {
           systemPrompt: `Connect authentically with a fellow creator in your niche: reference a detail, share a quick shared experience, warm natural tone.${HUMANIZE_EN_RULES}`,
-          userMessage: `${byline('Tweet by ', ctx.targetAuthor ?? "")}${ctx.targetTweetText ?? ""}`,
+          userMessage: formatUntrustedTweet(ctx.targetAuthor, ctx.targetTweetText, 'en', 'Tweet by '),
         }
       }
       return {
         systemPrompt: `你的目标是与同行博主建立真诚联系促成互关。针对原推具体细节展开讨论，分享一句相似体会，礼貌自然。${HUMANIZE_ZH_RULES}`,
-        userMessage: `原推内容：\n${authorLine(ctx.targetAuthor ?? "")}正文：${ctx.targetTweetText ?? ""}`,
+        userMessage: `原推内容：\n${formatUntrustedTweet(ctx.targetAuthor, ctx.targetTweetText, 'zh')}`,
       }
     },
   },
@@ -415,12 +430,12 @@ Share a sharp data point, counter-intuitive insight, or witty observation.${HUMA
       if (locale === 'en') {
         return {
           systemPrompt: `Craft a clever, hilarious, and disarming comeback to a bad take or troll. No vulgarity, pure irony.${HUMANIZE_EN_RULES}`,
-          userMessage: `Tweet:\n${ctx.targetTweetText ?? ""}`,
+          userMessage: `Tweet:\n${untrustedTweetMaterial(ctx.targetTweetText ?? '')}`,
         }
       }
       return {
         systemPrompt: `你是一位幽默但有分寸感的脱口秀演员。面对偏见或荒谬推文，用高级幽默与逻辑反差机智回怼，让围观者会心一笑。${HUMANIZE_ZH_RULES}`,
-        userMessage: `要回应的推文：\n${ctx.targetTweetText ?? ""}`,
+        userMessage: `要回应的推文：\n${untrustedTweetMaterial(ctx.targetTweetText ?? '')}`,
       }
     },
   },
@@ -434,7 +449,7 @@ Share a sharp data point, counter-intuitive insight, or witty observation.${HUMA
     scenes: ['REPLY_DETAIL'],
     generatePrompt: (ctx) => ({
       systemPrompt: `Write a sharp, natural, and engaging comment in native casual English.${HUMANIZE_EN_RULES}`,
-      userMessage: `${byline('Original tweet by ', ctx.targetAuthor ?? "")}${ctx.targetTweetText ?? ""}`,
+      userMessage: formatUntrustedTweet(ctx.targetAuthor, ctx.targetTweetText, 'en', 'Original tweet by '),
     }),
   },
 
@@ -453,12 +468,12 @@ Share a sharp data point, counter-intuitive insight, or witty observation.${HUMA
       if (locale === 'en') {
         return {
           systemPrompt: `Write an ultra-short, friendly one-liner reply like a casual friend.${HUMANIZE_EN_RULES}`,
-          userMessage: `Tweet:\n${ctx.targetTweetText ?? ""}`,
+          userMessage: `Tweet:\n${untrustedTweetMaterial(ctx.targetTweetText ?? '')}`,
         }
       }
       return {
         systemPrompt: `写一条极其短小亲切、一句话（20~40字）的日常推特回复，像真实好友随手互动。${HUMANIZE_ZH_RULES}`,
-        userMessage: `推文正文：\n${ctx.targetTweetText ?? ""}`,
+        userMessage: `推文正文：\n${untrustedTweetMaterial(ctx.targetTweetText ?? '')}`,
       }
     },
   },
@@ -474,12 +489,12 @@ Share a sharp data point, counter-intuitive insight, or witty observation.${HUMA
       if (locale === 'en') {
         return {
           systemPrompt: `Express strong genuine resonance with the tweet in 1-2 sentences.${HUMANIZE_EN_RULES}`,
-          userMessage: `Tweet:\n${ctx.targetTweetText ?? ""}`,
+          userMessage: `Tweet:\n${untrustedTweetMaterial(ctx.targetTweetText ?? '')}`,
         }
       }
       return {
         systemPrompt: `对原推表达深切共鸣与支持，说明自己完全感同身受的一两点原因，真挚温暖。${HUMANIZE_ZH_RULES}`,
-        userMessage: `推文内容：\n${ctx.targetTweetText ?? ""}`,
+        userMessage: `推文内容：\n${untrustedTweetMaterial(ctx.targetTweetText ?? '')}`,
       }
     },
   },
@@ -495,12 +510,12 @@ Share a sharp data point, counter-intuitive insight, or witty observation.${HUMA
       if (locale === 'en') {
         return {
           systemPrompt: `Ask an insightful follow-up question based on the tweet to encourage the author to reply.${HUMANIZE_EN_RULES}`,
-          userMessage: `Tweet:\n${ctx.targetTweetText ?? ""}`,
+          userMessage: `Tweet:\n${untrustedTweetMaterial(ctx.targetTweetText ?? '')}`,
         }
       }
       return {
         systemPrompt: `顺着原推的思路，提出一个具有思考价值、容易引发作者二次回复的高质量小问题。${HUMANIZE_ZH_RULES}`,
-        userMessage: `原推内容：\n${ctx.targetTweetText ?? ""}`,
+        userMessage: `原推内容：\n${untrustedTweetMaterial(ctx.targetTweetText ?? '')}`,
       }
     },
   },
