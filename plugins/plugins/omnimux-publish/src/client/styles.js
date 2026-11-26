@@ -159,6 +159,9 @@ const CSS = `
 .omnimux-publish-view-switcher { display: flex; gap: 2px; }
 
 /* Composer and detail stay inside the workbench stage. */
+.omnimux-publish-stage:has(> .omnimux-publish-subscreen) > .dshUk-PageHeader-pageHeader {
+  -webkit-app-region: no-drag;
+}
 .omnimux-publish-subscreen {
   position: absolute;
   inset: 0;
@@ -166,6 +169,12 @@ const CSS = `
   background: var(--dsw-alias-bg-base, #ffffff);
   display: flex;
   flex-direction: column;
+  pointer-events: auto;
+  -webkit-app-region: no-drag;
+}
+.omnimux-publish-subscreen button,
+.omnimux-publish-subscreen [role="button"] {
+  -webkit-app-region: no-drag;
 }
 
 /* 14-Column Table View */
@@ -615,6 +624,7 @@ th[style*="--pub-min-w"] { min-width: var(--pub-min-w); }
   align-items: center;
   min-height: 32px;
   margin-bottom: 8px;
+  -webkit-app-region: no-drag;
 }
 .omnimux-publish-type-pick {
   flex: 1;
@@ -862,6 +872,7 @@ th[style*="--pub-min-w"] { min-width: var(--pub-min-w); }
   align-items: center;
   gap: 8px;
   min-height: 32px;
+  -webkit-app-region: no-drag;
 }
 .omnimux-publish-editor-title {
   flex: none;
@@ -1200,6 +1211,7 @@ th[style*="--pub-min-w"] { min-width: var(--pub-min-w); }
   gap: 12px;
   padding: 12px 20px;
   border-bottom: 1px solid var(--dsw-alias-border-l1, #e2e8f0);
+  -webkit-app-region: no-drag;
 }
 .omnimux-publish-detail-title {
   flex: 1;

@@ -97,6 +97,36 @@ describe('publish composer type-pick styles (layout regression)', () => {
     assert.ok(subscreen)
     assert.match(subscreen[1], /position:\s*absolute;/)
     assert.match(subscreen[1], /inset:\s*0;/)
+    assert.match(subscreen[1], /pointer-events:\s*auto;/)
+    assert.match(subscreen[1], /-webkit-app-region:\s*no-drag;/)
+
+    assert.match(
+      css,
+      /\.omnimux-publish-stage:has\(>\s*\.omnimux-publish-subscreen\)\s*>\s*\.dshUk-PageHeader-pageHeader\s*\{[^}]*-webkit-app-region:\s*no-drag;/,
+    )
+    assert.match(
+      css,
+      /\.omnimux-publish-subscreen button,\s*\.omnimux-publish-subscreen \[role="button"\]\s*\{[^}]*-webkit-app-region:\s*no-drag;/,
+    )
+    for (const selector of [
+      '.omnimux-publish-type-toolbar',
+      '.omnimux-publish-editor-head',
+      '.omnimux-publish-detail-head',
+    ]) {
+      const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      const block = css.match(new RegExp(`${escaped}\\s*\\{([^}]*)\\}`))
+      assert.ok(block, `missing ${selector} style block`)
+      assert.match(block[1], /-webkit-app-region:\s*no-drag;/, `${selector} must declare -webkit-app-region: no-drag`)
+    }
+
+    const overlaysSrc = readFileSync(join(__dirname, 'views/PublishOverlays.jsx'), 'utf8')
+    const subscreenTagCount = [...overlaysSrc.matchAll(/className="omnimux-publish-subscreen"[^>]*data-window-drag-exclude/g)].length
+    assert.equal(subscreenTagCount, 2, 'composer and detail subscreens must declare data-window-drag-exclude')
+
+    const detailSrc = readFileSync(join(__dirname, 'RecordDetail.jsx'), 'utf8')
+    const loadingBranch = detailSrc.match(/if\s*\(!record\)\s*\{([\s\S]*?)\n  \}/)
+    assert.ok(loadingBranch, 'RecordDetail must handle !record loading/error state')
+    assert.match(loadingBranch[1], /className="omnimux-publish-detail-head"[\s\S]*onClick=\{onBack\}/)
   })
 
   it('uses defined native tokens for readable account-modal errors', () => {
