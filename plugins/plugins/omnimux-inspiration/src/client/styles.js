@@ -2435,6 +2435,250 @@ dialog.omnimux-inspiration-preview-layer::backdrop { background: transparent; ba
     display: none;
   }
 }
+
+/* ── Shared 6-Archetype SocialCard Gallery Chrome & Context Menu ── */
+.omx-inspiration-card {
+  container-type: inline-size;
+  container-name: omx-card;
+}
+.omx-inspiration-card.is-landed {
+  border-color: var(--dsw-alias-brand-primary);
+  box-shadow: 0 0 0 1px var(--dsw-alias-brand-primary);
+}
+.omx-card-cover-media {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.omx-card-media-placeholder {
+  width: 100%;
+  height: 100%;
+  background: var(--dsw-alias-bg-layer-2);
+}
+.omx-card-check,
+.omx-card-check:hover,
+.omx-card-check:active {
+  width: 22px;
+  min-width: 22px;
+  height: 22px;
+  min-height: 22px;
+  padding: 0;
+  border-radius: 6px;
+  border: 1.5px solid var(--dsw-alias-border-l3);
+  background: var(--dsw-alias-bg-mask-1);
+  color: var(--dsw-static-neutral-00);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.omx-card-check[data-selected="true"],
+.omx-card-check[data-selected="true"]:hover {
+  background: var(--dsw-alias-brand-primary);
+  border-color: var(--dsw-alias-brand-primary);
+  color: var(--dsw-static-neutral-00);
+}
+.omnimux-inspiration-grid.selecting [class*="SocialPostCard-topLeft"] {
+  opacity: 1;
+}
+.omx-card-tr-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.omx-card-tr-group .omnimux-inspiration-card-menu {
+  position: static;
+  top: auto;
+  right: auto;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 130ms ease;
+}
+.omx-inspiration-card:hover .omx-card-tr-group .omnimux-inspiration-card-menu,
+.omx-inspiration-card:focus-within .omx-card-tr-group .omnimux-inspiration-card-menu,
+.omx-inspiration-card[data-menu-open="true"] .omx-card-tr-group .omnimux-inspiration-card-menu {
+  opacity: 1;
+  pointer-events: auto;
+}
+.omx-card-fav {
+  width: 26px;
+  min-width: 26px;
+  height: 26px;
+  min-height: 26px;
+  padding: 0;
+  border-radius: 9999px;
+  border: 1px solid var(--dsw-alias-border-l3);
+  background: var(--dsw-static-neutral-900);
+  color: var(--dsw-static-neutral-00);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 130ms ease, color 130ms ease, border-color 130ms ease;
+}
+.omx-card-fav.is-favorited,
+.omx-inspiration-card:hover .omx-card-fav,
+.omx-inspiration-card:focus-within .omx-card-fav,
+.omx-inspiration-card[data-menu-open="true"] .omx-card-fav {
+  opacity: 1;
+  pointer-events: auto;
+}
+.omx-card-fav.is-favorited {
+  color: var(--dsw-static-amber-400);
+  border-color: var(--dsw-static-amber-400);
+}
+.omx-card-failure {
+  width: 24px;
+  height: 24px;
+  border-radius: 9999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--dsw-static-neutral-900);
+  border: 1px solid var(--dsw-alias-border-l3);
+  color: var(--dsw-static-neutral-00);
+  cursor: help;
+}
+.omx-card-failure.is-failed {
+  color: var(--dsw-alias-state-error-primary);
+  border-color: var(--dsw-alias-state-error-primary);
+}
+.omx-card-failure.is-settled {
+  color: var(--dsw-alias-state-warn-primary);
+  border-color: var(--dsw-alias-state-warn-primary);
+}
+.omx-card-more-trigger {
+  width: 26px;
+  min-width: 26px;
+  height: 26px;
+  min-height: 26px;
+  padding: 0;
+  border-radius: 9999px;
+  border: 1px solid var(--dsw-alias-border-l3);
+  background: var(--dsw-static-neutral-900);
+  color: var(--dsw-static-neutral-00);
+}
+.omx-card-hover-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px;
+  border-radius: 10px;
+  background: var(--dsw-static-neutral-900);
+  border: 1px solid var(--dsw-alias-border-l3);
+  box-shadow: 0 6px 18px var(--dsw-alias-bg-mask-1);
+}
+.omx-card-act-btn {
+  height: 26px;
+  min-height: 26px;
+  padding: 0 9px;
+  font-size: 12px;
+  line-height: 16px;
+  border-radius: 6px;
+  white-space: nowrap;
+}
+.omx-card-act-btn.is-secondary {
+  color: var(--dsw-static-neutral-00);
+  background: transparent;
+}
+.omx-card-act-btn.is-secondary:hover {
+  background: var(--dsw-static-neutral-800);
+  color: var(--dsw-static-neutral-00);
+}
+.omx-card-act-btn.is-primary {
+  background: var(--dsw-static-neutral-00);
+  color: var(--dsw-static-neutral-1000);
+}
+.omx-card-importing-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 7;
+  pointer-events: none;
+  overflow: hidden;
+  border-radius: inherit;
+}
+.omx-card-progress {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  bottom: auto;
+  z-index: 8;
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 10px;
+  border-radius: 9999px;
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 500;
+  background: var(--dsw-static-neutral-900);
+  border: 1px solid var(--dsw-alias-border-l3);
+  color: var(--dsw-static-neutral-00);
+}
+.omx-card-context-menu {
+  min-width: 224px;
+  max-width: 268px;
+  background: var(--dsw-alias-card-fill);
+  --dsw-menu-surface-fill: var(--dsw-alias-card-fill);
+  --dsw-menu-backdrop-filter: none;
+  border: 1px solid var(--dsw-alias-border-l3);
+  box-shadow: 0 12px 32px var(--dsw-alias-bg-mask-1);
+  border-radius: 10px;
+}
+body:has([role="menu"].omx-card-context-menu) [role="menu"][style*="--dsh-submenu-parent"] {
+  min-width: 196px;
+  background: var(--dsw-alias-card-fill);
+  --dsw-menu-surface-fill: var(--dsw-alias-card-fill);
+  --dsw-menu-backdrop-filter: none;
+  border: 1px solid var(--dsw-alias-border-l3);
+  box-shadow: 0 12px 32px var(--dsw-alias-bg-mask-1);
+  border-radius: 10px;
+}
+body:not([data-ds-dark-theme]) .omnimux-inspiration-stage {
+  --wf-shimmer-stage-bg: var(--dsw-alias-bg-layer-2);
+  --wf-shimmer-stage-rgb: 245, 246, 247;
+  --wf-shimmer-bg-opacity: 0.72;
+  --wf-shimmer-svg-url: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22600%22%20height%3D%22600%22%20viewBox%3D%220%200%20600%20600%22%20preserveAspectRatio%3D%22none%22%3E%3Cdefs%3E%3ClinearGradient%20id%3D%22wf_shm_g%22%20gradientUnits%3D%22userSpaceOnUse%22%20x1%3D%220%22%20y1%3D%220%22%20x2%3D%22600%22%20y2%3D%22600%22%3E%3Cstop%20offset%3D%220.0000%22%20stop-color%3D%22%23eef0f4%22%20stop-opacity%3D%221%22%2F%3E%3Cstop%20offset%3D%220.3236%22%20stop-color%3D%22%23eef0f4%22%20stop-opacity%3D%221%22%2F%3E%3Cstop%20offset%3D%220.4008%22%20stop-color%3D%22%23eef0f4%22%20stop-opacity%3D%220.75%22%2F%3E%3Cstop%20offset%3D%220.4603%22%20stop-color%3D%22%23eef0f4%22%20stop-opacity%3D%220.3%22%2F%3E%3Cstop%20offset%3D%220.5000%22%20stop-color%3D%22%23eef0f4%22%20stop-opacity%3D%220%22%2F%3E%3Cstop%20offset%3D%220.5397%22%20stop-color%3D%22%23eef0f4%22%20stop-opacity%3D%220.3%22%2F%3E%3Cstop%20offset%3D%220.5992%22%20stop-color%3D%22%23eef0f4%22%20stop-opacity%3D%220.75%22%2F%3E%3Cstop%20offset%3D%220.6764%22%20stop-color%3D%22%23eef0f4%22%20stop-opacity%3D%221%22%2F%3E%3Cstop%20offset%3D%221.0000%22%20stop-color%3D%22%23eef0f4%22%20stop-opacity%3D%221%22%2F%3E%3C%2FlinearGradient%3E%3C%2Fdefs%3E%3Crect%20x%3D%220%22%20y%3D%220%22%20width%3D%22600%22%20height%3D%22600%22%20fill%3D%22url(%23wf_shm_g)%22%2F%3E%3C%2Fsvg%3E");
+}
+@media (max-width: 960px) {
+  .omnimux-inspiration-stage .omnimux-inspiration-toolbar,
+  .omnimux-inspiration-stage .omnimux-inspiration-toolbar [class*="Toolbar-bar"] {
+    height: auto;
+    max-height: none;
+    flex-wrap: wrap;
+    row-gap: 8px;
+    padding-top: 6px;
+    padding-bottom: 6px;
+  }
+  .omnimux-inspiration-stage .omnimux-inspiration-toolbar [class*="Toolbar-left"],
+  .omnimux-inspiration-stage .omnimux-inspiration-toolbar [class*="Toolbar-right"] {
+    flex: 1 1 100%;
+    flex-wrap: wrap;
+    margin-left: 0;
+  }
+}
+@container omx-card (max-width: 210px) {
+  .omx-card-act-label {
+    display: none;
+  }
+  .omx-card-act-btn {
+    width: 26px;
+    padding: 0;
+  }
+}
+@media (hover: none) {
+  .omx-card-tr-group .omnimux-inspiration-card-menu,
+  .omx-card-fav {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .omx-card-tr-group .omnimux-inspiration-card-menu,
+  .omx-card-fav {
+    transition: none;
+  }
+}
 `
 
 /**

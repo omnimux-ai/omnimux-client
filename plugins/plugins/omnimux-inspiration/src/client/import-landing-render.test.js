@@ -379,7 +379,7 @@ async function paste(mounted, url) {
 
 /** First card rendered by the grid, or null. */
 function firstCard(container) {
-  return container.querySelector('.omnimux-inspiration-grid > *') || null
+  return container.querySelector('.omnimux-inspiration-grid [data-inspiration-id], .omnimux-inspiration-grid [data-collection-id]') || null
 }
 
 function cardIds(container) {
@@ -756,19 +756,19 @@ describe('import landing — unchanged behaviour', () => {
       await settle(mounted.container, () => cardIds(mounted.container).includes(id))
       const importing = mounted.container.querySelector(`[data-inspiration-id="${id}"]`)
       assert.ok(importing.querySelector('.wf-organic-shimmer'))
-      assert.ok(importing.querySelector('.omnimux-inspiration-card-check'), 'the actual 202 row has no is_local; its local API origin must still make it selectable')
+      assert.ok(importing.querySelector('.omx-card-check'), 'the actual 202 row has no is_local; its local API origin must still make it selectable')
       assert.equal(mounted.container.querySelector(PREVIEW_MODAL_SELECTOR), null)
 
       await mounted.advancePoll()
       const card = mounted.container.querySelector(`[data-inspiration-id="${id}"]`)
-      assert.equal(card?.getAttribute('data-card-type'), 'text-media')
-      assert.equal(card.querySelector('.omnimux-rival-card-title')?.textContent, completed.content)
-      assert.equal(card.querySelector('.omnimux-inspiration-cover-img')?.getAttribute('src'), images[0])
+      assert.equal(card?.getAttribute('data-archetype'), 'social-post')
+      assert.equal(card.querySelector('[class*="SocialPostCard-socialBodyText"]')?.textContent, completed.content)
+      assert.equal(card.querySelector('.omx-card-cover-media')?.getAttribute('src'), images[0])
       assert.equal(card.querySelector('.omnimux-inspiration-badge-duration'), null, 'corner badges moved into the hover layer')
       assert.equal(card.querySelector('.wf-organic-shimmer'), null, 'the visible pin must receive the completed row even when no list contains its ID')
       assert.equal(mounted.requestsTo(`/omnimux/inspiration/local/${id}`).length, 1)
       assert.equal(mounted.container.querySelector(PREVIEW_MODAL_SELECTOR), null, 'completion must not open detail')
-      await click(card.querySelector('.omnimux-inspiration-card-check'))
+      await click(card.querySelector('.omx-card-check'))
       assert.ok(mounted.container.querySelector('.omnimux-inspiration-selection-bar'))
     } finally {
       await mounted.unmount()
@@ -807,10 +807,10 @@ describe('import landing — unchanged behaviour', () => {
       await mounted.expirePin()
       const card = mounted.container.querySelector(`[data-inspiration-id="${id}"]`)
       assert.ok(card, 'the backend-listed completed item must remain after the reveal pin expires')
-      assert.equal(card.querySelector('.omnimux-rival-card-title')?.textContent, completed.content)
+      assert.equal(card.querySelector('[class*="SocialPostCard-socialBodyText"]')?.textContent, completed.content)
       assert.equal(card.querySelector('.omnimux-inspiration-badge-duration'), null, 'corner badges moved into the hover layer')
       assert.equal(card.querySelector('.wf-organic-shimmer'), null)
-      await click(card.querySelector('.omnimux-inspiration-card-check'))
+      await click(card.querySelector('.omx-card-check'))
       assert.ok(mounted.container.querySelector('.omnimux-inspiration-selection-bar'))
       assert.equal(mounted.container.querySelector(PREVIEW_MODAL_SELECTOR), null)
     } finally {
@@ -857,7 +857,7 @@ describe('import landing — unchanged behaviour', () => {
       assert.equal(cardIds(mounted.container).length, 40, 'a partly refreshed range must not shrink the visible masonry to page one')
       assert.ok(cardIds(mounted.container).includes('paged-old-39'), 'page-two content must remain while its replacement is loading')
       await React.act(async () => { releaseSecondPage(); holdSecondPage = null })
-      await settle(mounted.container, () => mounted.container.querySelector(`[data-inspiration-id="${id}"] .omnimux-rival-card-title`)?.textContent === completed.content)
+      assert.ok(await settle(mounted.container, () => mounted.container.querySelector(`[data-inspiration-id="${id}"] [class*="SocialPostCard-socialBodyText"]`)?.textContent === completed.content))
       assert.deepEqual(mounted.calls.slice(listStart).filter((call) => call.path.startsWith('/omnimux/inspiration/local?')).map((call) => new URL(call.path, 'http://localhost').searchParams.get('page')), ['1', '2'])
       await mounted.expirePin()
       assert.equal(cardIds(mounted.container).length, 40)
@@ -906,7 +906,7 @@ describe('import landing — unchanged behaviour', () => {
       assert.equal(mounted.calls.filter((call) => call.path.startsWith('/omnimux/inspiration/local?')).length, loadsAfterFilter)
       await mounted.advancePoll()
       assert.equal(polls, 3)
-      assert.equal(mounted.container.querySelector(`[data-inspiration-id="${id}"] .omnimux-rival-card-title`)?.textContent, '最终正文')
+      assert.equal(mounted.container.querySelector(`[data-inspiration-id="${id}"] [class*="SocialPostCard-socialBodyText"]`)?.textContent, '最终正文')
       assert.equal(mounted.container.querySelector(PREVIEW_MODAL_SELECTOR), null)
 
       await mounted.expirePin()
@@ -936,7 +936,7 @@ describe('import landing — unchanged behaviour', () => {
       response = jsonResponse(200, { success: true, data: { ...placeholder, import_status: 'failed', import_error: reason } })
       await mounted.advancePoll()
       const pinned = mounted.container.querySelector(`[data-inspiration-id="${id}"]`)
-      const failureIcon = pinned?.querySelector('.omnimux-inspiration-card-failure')
+      const failureIcon = pinned?.querySelector('.omx-card-failure')
       assert.ok(failureIcon, 'the failed pin keeps a collapse icon')
       assert.ok(failureIcon.getAttribute('title').includes(reason), 'the reason stays reachable from the icon')
       assert.ok(mounted.container.querySelector(`${PREVIEW_MODAL_SELECTOR} [role="alert"]`)?.textContent.includes(reason), 'only the already-open matching detail should receive the failed row')
@@ -970,11 +970,11 @@ describe('import landing — unchanged behaviour', () => {
       await settle(mounted.container, () => cardIds(mounted.container).includes(id))
       await click(mounted.container.querySelector(`[data-inspiration-id="${id}"]`))
       await click(button(mounted.container, zh['post.analyzeTarget']))
-      assert.ok(await settle(mounted.container, () => mounted.container.querySelector(`[data-inspiration-id="${id}"] .omnimux-rival-card-title`)?.textContent === updated.title))
+      assert.ok(await settle(mounted.container, () => mounted.container.querySelector(`[data-inspiration-id="${id}"] [class*="SocialPostCard-shortVideoCaption"]`)?.textContent === updated.title))
       const close = mounted.container.querySelector(`${PREVIEW_MODAL_SELECTOR} [aria-label="${zh.close}"]`)
       await click(close)
       assert.equal(mounted.container.querySelector(PREVIEW_MODAL_SELECTOR), null)
-      assert.equal(mounted.container.querySelector(`[data-inspiration-id="${id}"] .omnimux-rival-card-title`)?.textContent, updated.title, 'closing detail must not reveal the original stale pin')
+      assert.equal(mounted.container.querySelector(`[data-inspiration-id="${id}"] [class*="SocialPostCard-shortVideoCaption"]`)?.textContent, updated.title, 'closing detail must not reveal the original stale pin')
     } finally {
       await mounted.unmount()
       mounted.close()

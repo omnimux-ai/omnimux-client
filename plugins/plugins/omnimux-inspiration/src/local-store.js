@@ -38,6 +38,8 @@ import { SHARE_STATUS_IDLE } from './share-status.js'
  * @property {boolean} [is_favorite]
  * @property {number} [hot_score]
  * @property {string} [content]
+ * @property {string} [excerpt] short preview snippet (distinct from main title/body for articles and web links)
+ * @property {string} [favicon_url] site icon URL for web link cards
  * @property {Record<string, unknown> | string} [deconstruction] five-dimension breakdown object or markdown
  * @property {Record<string, unknown>} [stats] likes, comments, shares, etc.
  * @property {Record<string, unknown>} [author] name, handle, avatar, verified
@@ -120,6 +122,8 @@ function buildRow(record, identity = {}) {
     is_favorite: Boolean(record.is_favorite),
     hot_score: typeof record.hot_score === 'number' ? record.hot_score : 0,
     content: record.content || '',
+    excerpt: typeof record.excerpt === 'string' ? record.excerpt.slice(0, 600) : '',
+    favicon_url: typeof record.favicon_url === 'string' ? record.favicon_url : '',
     deconstruction: record.deconstruction && typeof record.deconstruction === 'object'
       ? { ...record.deconstruction, source: record.deconstruction.source || 'legacy_unknown' } : record.deconstruction,
     analysis_results: record.analysis_results || {},

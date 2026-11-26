@@ -66,7 +66,10 @@ function cssModulesPlugin() {
 
 export default defineConfig({
   name: "dsh-ui-kit",
-  entry: { index: "src/index.ts" },
+  entry: {
+    index: "src/index.ts",
+    "social-card": "src/social-card/index.ts",
+  },
   outDir: "lib",
   format: "esm",
   platform: "neutral",

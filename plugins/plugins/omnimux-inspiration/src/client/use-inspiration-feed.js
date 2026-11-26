@@ -580,7 +580,12 @@ export function useInspirationFeed({ active, collectionId = '' }) {
   const handleItemUpdated = useCallback((updatedItem) => {
     setItems((prev) => updateItemInList(prev, updatedItem))
     setLandedItem((prev) => prev && String(prev.id) === String(updatedItem?.id) ? updatedItem : prev)
-    setSelectedItem(updatedItem)
+    setSelectedItem((prev) => {
+      if (!prev || !updatedItem) return prev
+      if (String(prev.id) === String(updatedItem.id)) return updatedItem
+      if (prev.source_url && updatedItem.source_url && prev.source_url === updatedItem.source_url) return updatedItem
+      return prev
+    })
   }, [setItems])
 
   // Track all unique platforms seen in items across fetches

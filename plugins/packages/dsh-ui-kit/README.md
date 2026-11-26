@@ -314,6 +314,20 @@ export function mountSidebarEntry(_stage, t, locale) {
 
 ---
 
+### 12. 社媒 6 原型卡片与自然列流瀑布流（`dsh-ui-kit/social-card`）
+
+按需子路径，未导入时零打包体积开销，供灵感社区画廊与会话搜索工具视图共享：
+
+- `SocialPostCard`：按内容结构呈现 6 类原型（`article`、`social-post`、`short-video`、`photo-feed`、`landscape-video`、`web-link` / `raw-media`），支持 `default` 与 `compact` 密度，提供 `topLeftSlot` / `topRightSlot` / `hoverActions` / `statusOverlay` 业务插槽，颜色 100% 消费官方 `--dsw-alias-*` / `--dsw-static-*` Token，自动适配亮/暗主题。
+- `MasonryGrid`：基于 CSS Flex 纵向列容器与稳定键映射缓存的自然瀑布流，支持 `maxColumns` 约束与增量追加不跳列。
+- `resolveSocialCardArchetype()` / `resolveOutlierBadges()` / `SocialPlatformMark`：原型判定、真实后端离群指标渲染（无数据不伪造）及平台来源标识。
+
+```tsx
+import { MasonryGrid, SocialPostCard, estimateArchetypeWeight } from 'dsh-ui-kit/social-card'
+```
+
+---
+
 ## 本地开发与构建
 
 ```bash

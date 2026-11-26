@@ -404,9 +404,33 @@ function videoUrlFromLayer(layer) {
   ])
 }
 
+function articleFromLayer(layer) {
+  const raw = isPlainObject(layer.article) ? layer.article : null
+  const resultNode = isPlainObject(layer.article_results?.result)
+    ? layer.article_results.result
+    : (raw && isPlainObject(raw.article_results?.result) ? raw.article_results.result : null)
+  const node = resultNode || raw
+  if (!node && layer.content_shape !== 'article') return null
+  const title = firstText([node?.title, raw?.title, layer.title])
+  const excerpt = firstText([node?.preview_text, node?.excerpt, node?.description, raw?.preview_text, layer.excerpt])
+  const cover_url = firstPublicHttpUrl([
+    node?.cover_media?.media_info?.original_img_url,
+    node?.cover_media?.original_img_url,
+    node?.cover_image_url,
+    node?.cover_url,
+    raw?.cover_media?.media_info?.original_img_url,
+    raw?.cover_image_url,
+    raw?.cover_url,
+  ])
+  const text = firstText([node?.plain_text, node?.body, node?.text, raw?.plain_text, raw?.body])
+  return { isArticle: Boolean(node || layer.content_shape === 'article'), title, excerpt, cover_url, text }
+}
+
 function coverUrlFromLayer(layer) {
+  const articleCover = articleFromLayer(layer)?.cover_url || ''
   return firstHttpUrl([
     layer.cover_url,
+    articleCover,
     layer.cover,
     layer.thumbnail_url,
     layer.thumbnail,
@@ -431,22 +455,36 @@ function coverUrlFromLayer(layer) {
 
 function textFromLayer(layer) {
   return firstText([
-    layer.text,
-    layer.display_text,
+    asObject(asObject(asObject(layer.note_tweet).note_tweet_results).result).text,
     layer.full_text,
     asObject(layer.legacy).full_text,
-    asObject(asObject(asObject(layer.note_tweet).note_tweet_results).result).text,
+    layer.text,
+    layer.display_text,
     asObject(layer.caption).text,
     typeof layer.caption === 'string' ? layer.caption : '',
     edgeCaptionText(layer),
     layer.desc,
     layer.description,
     layer.content,
+    articleFromLayer(layer)?.text,
   ])
 }
 
 function titleFromLayer(layer) {
-  return firstText([layer.title, layer.desc, layer.description, layer.name]) || textFromLayer(layer)
+  return firstText([articleFromLayer(layer)?.title, layer.title, layer.desc, layer.description, layer.name]) || textFromLayer(layer)
+}
+
+function excerptFromLayer(layer) {
+  return firstText([articleFromLayer(layer)?.excerpt, layer.excerpt, layer.preview_text, layer.summary]).slice(0, 600)
+}
+
+function contentShapeFromLayer(layer) {
+  if (layer.content_shape === 'article' || articleFromLayer(layer)?.isArticle) return 'article'
+  return asText(layer.content_shape)
+}
+
+function faviconFromLayer(layer) {
+  return firstPublicHttpUrl([layer.favicon_url, layer.favicon, layer.icon])
 }
 
 function authorFromLayer(layer) {
@@ -473,6 +511,7 @@ function authorFromLayer(layer) {
     assignMissing(author, 'avatar', firstHttpUrl([
       candidate.avatar,
       candidate.image,
+      candidate.profile_image_url_https,
       candidate.profile_image_url,
       candidate.profile_pic_url,
       candidate.avatar_url,
@@ -771,6 +810,9 @@ export function parseSocialMeta(data, { platform } = {}) {
   const decode = platform === 'x' || platform === 'twitter' ? decodeXPostText : (text) => text
   const text = decode(pickLayerValue(layers, textFromLayer, isBlankText))
   const title = decode(pickLayerValue(layers, titleFromLayer, isBlankText))
+  const excerpt = decode(pickLayerValue(layers, excerptFromLayer, isBlankText)).slice(0, 600)
+  const content_shape = pickLayerValue(layers, contentShapeFromLayer, isBlankText)
+  const favicon_url = pickLayerValue(layers, faviconFromLayer, isBlankText)
   const cover_url = pickLayerValue(layers, coverUrlFromLayer, isBlankText)
   const { items: media_items, unavailable: unavailable_media } = collectMediaItems(layers)
   const video_url = media_items.find((item) => item.type === 'video')?.url || ''
@@ -795,6 +837,9 @@ export function parseSocialMeta(data, { platform } = {}) {
   )
   return {
     title,
+    excerpt,
+    content_shape,
+    favicon_url,
     text,
     cover_url,
     video_url,
@@ -1810,12 +1855,16 @@ function buildImportRecord(args, meta, media, analysis = {}) {
       : meta.cover_url
   const type = resolveImportType(meta, media)
   const savedImageCount = (media.mediaItems || []).filter((item) => item.type === 'image').length
-  const content_shape = type === 'video' ? 'video'
-    : savedImageCount > 1 ? 'gallery'
-      : type === 'image' ? 'photo' : meta.text ? 'text' : 'link'
+  const content_shape = meta.content_shape === 'article'
+    ? 'article'
+    : type === 'video' ? 'video'
+      : savedImageCount > 1 ? 'gallery'
+        : type === 'image' ? 'photo' : meta.text ? 'text' : 'link'
   const record = {
     title: meta.title || args.rawUrl,
     content: meta.text,
+    excerpt: meta.excerpt || '',
+    favicon_url: meta.favicon_url || '',
     type,
     source_platform: args.platform,
     source_url: args.rawUrl,

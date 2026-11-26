@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { pickCoverSrc } from './api.js'
 import { writeCollection } from './collection-api.js'
 
@@ -115,9 +115,47 @@ export function useInspirationCollections({ feed, collectionId, setCollectionId,
     finally { busyRef.current = false; setBusy(false) }
   }, [notifyMutation])
 
-  return { collections, names, activeCollection, intent, busy, error, selectedSource,
-    requestMerge, selectSource, cancelSelection: () => setSelectedSource(null), open, back, rename, remove, confirm,
-    close: () => { if (!busyRef.current) { setIntent(null); setError('') } } }
+  const addItemToCollection = useCallback(async (collection, item) => {
+    if (busyRef.current || !collection?.id || !item?.is_local || item.id == null) return false
+    busyRef.current = true; setBusy(true); setError('')
+    try {
+      const result = await writeCollection(`/${encodeURIComponent(collection.id)}/items`, { item_ids: [item.id] })
+      current.current.feed.dropLanded([item.id])
+      current.current.feed.clearSelection()
+      if (result.data?.id === current.current.collectionId) setOpened(result.data)
+      await current.current.feed.refreshData()
+      notifyMutation(result, 'collection.added')
+      return true
+    } catch (failure) {
+      current.current.showToast(String(failure?.message || current.current.t('collection.saveFailed')))
+      return false
+    } finally {
+      busyRef.current = false; setBusy(false)
+    }
+  }, [notifyMutation])
+
+  const createWithItem = useCallback((item) => {
+    if (busyRef.current || !item?.is_local) return
+    const { feed, t } = current.current
+    setError('')
+    setSelectedSource(null)
+    feed.clearSelection()
+    setIntent({
+      kind: 'create',
+      collection: null,
+      items: [item],
+      defaultName: suggestCollectionName([item], feed.collectionData.collection_names, t),
+      names: feed.collectionData.collection_names,
+    })
+  }, [])
+
+  const cancelSelection = useCallback(() => setSelectedSource(null), [])
+  const close = useCallback(() => { if (!busyRef.current) { setIntent(null); setError('') } }, [])
+
+  return useMemo(() => ({
+    collections, names, activeCollection, intent, busy, error, selectedSource,
+    requestMerge, addItemToCollection, createWithItem, selectSource, cancelSelection, open, back, rename, remove, confirm, close,
+  }), [collections, names, activeCollection, intent, busy, error, selectedSource, requestMerge, addItemToCollection, createWithItem, selectSource, cancelSelection, open, back, rename, remove, confirm, close])
 }
 
 /** Pointer gesture around the existing flat masonry; inner controls keep their own events. */

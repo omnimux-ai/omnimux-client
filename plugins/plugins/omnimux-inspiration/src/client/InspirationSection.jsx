@@ -1,14 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Button, ConfirmModal, Divider, DropdownSelect, EmptyState, FilterBar, IconButton, SearchField, Tabs } from 'dsh-ui-kit'
+import { MasonryGrid } from 'dsh-ui-kit/social-card'
 import { LayoutGrid, List } from 'lucide-react'
 import { CollectionHeader } from './CollectionHeader.jsx'
 import { InspirationCollectionCard, toCollectionCardRow } from './InspirationCollectionCard.jsx'
 import { InspirationCollectionDialog } from './InspirationCollectionDialog.jsx'
 import { InspirationCollectionMenu } from './InspirationCollectionMenu.jsx'
-import { InspirationCardMenu } from './InspirationCardMenu.jsx'
+import { InspirationCard } from './InspirationCard.jsx'
+import { InspirationContextMenu } from './InspirationContextMenu.jsx'
 import { InspirationDetailSidebar } from './InspirationDetailSidebar.jsx'
 import { InspirationListView } from './InspirationListView.jsx'
-import { buildCardMenuItems } from './card-actions.js'
+import { buildCardMenuEntries, copyCardLink } from './card-actions.js'
+import { patchLocalInspiration } from './api.js'
 import { addCardToSession } from './card-to-chat.js'
 import { addCollectionToSession } from './collection-to-chat.js'
 import { injectCollectionStyles } from './collection-styles.js'
@@ -16,9 +19,7 @@ import { useCollectionDrag, useInspirationCollections } from './use-inspiration-
 import { RivalAccountColumn } from './RivalAccountColumn.jsx'
 import { RivalAccountsPanel, buildRivalPlatformOptions } from './RivalAccountsPanel.jsx'
 import { RivalRefreshButton } from './RivalPoolStatusBar.jsx'
-import { InspirationCoverCard } from './InspirationCoverCard.jsx'
-import { RivalMasonry } from './RivalMasonry.jsx'
-import { toCollectionMemberCard, toInspirationCardRow } from './inspiration-card.js'
+import { estimateInspirationCardWeight, toCollectionMemberCard, toInspirationCardRow } from './inspiration-card.js'
 import { InspirationInlineImportDialog } from './InspirationInlineImportDialog.jsx'
 import { InspirationPreviewModal } from './InspirationPreviewModal.jsx'
 import { buildCategoryFilterOptions, buildPlatformFilterOptions, formatPlatformName } from './feed-helpers.js'
@@ -485,14 +486,48 @@ export function InspirationSection({ t, active }) {
     enabled: tab === 'local' && !collectionId && !selecting && !libraryCollections.busy && !libraryCollections.intent && !selectedItem,
     items: visibleItems, collections: gridCollections, onDrop: libraryCollections.requestMerge, onStart: libraryCollections.cancelSelection, t,
   })
-  const selectItem = item => {
+  const selectItem = (item) => {
     if (libraryCollections.selectedSource && item.is_local) libraryCollections.requestMerge(libraryCollections.selectedSource, item)
-    else setSelectedItem(item)
+    else {
+      setDetailLaunch({ shareOpen: false, tab: '', nonce: 0 })
+      setSelectedItem(item)
+    }
   }
   const selectCollection = collection => {
     if (libraryCollections.selectedSource) libraryCollections.requestMerge(libraryCollections.selectedSource, null, collection)
     else libraryCollections.open(collection)
   }
+
+  const favoritePendingRef = useRef(new Set())
+  const handleToggleFavorite = useCallback(async (row) => {
+    if (!row?.is_local || row.id == null) return
+    const key = String(row.id)
+    if (favoritePendingRef.current.has(key)) return
+    favoritePendingRef.current.add(key)
+    try {
+      const response = await patchLocalInspiration(row.id, { is_favorite: !row.is_favorite })
+      if (response?.ok && response.body?.data) {
+        handleItemUpdated(response.body.data)
+      } else {
+        showToast(response?.body?.error || t('card.favorite.failed'))
+      }
+    } catch (failure) {
+      console.error('[omnimux-inspiration] toggle favorite failed', failure)
+      showToast(t('card.favorite.failed'))
+    } finally {
+      favoritePendingRef.current.delete(key)
+    }
+  }, [handleItemUpdated, showToast, t])
+
+  const handleCopyCardLink = useCallback(async (row) => {
+    const copied = await copyCardLink(row?.source_url || '')
+    showToast(t(copied ? 'card.menu.copied' : 'card.menu.copyFailed'))
+  }, [showToast, t])
+
+  const handleOpenOriginal = useCallback((row) => {
+    const url = String(row?.source_url || '').trim()
+    if (url) openExternalUrl(url)
+  }, [])
 
   // Bring the landed card into view and flash it. The effect owns the highlight;
   // the pin above is what guarantees there is a card to find.
@@ -511,25 +546,122 @@ export function InspirationSection({ t, active }) {
   const workspaceRef = useRef(null)
   const [viewMode, setViewMode] = useState(readSavedViewMode)
   const [expandedModal, setExpandedModal] = useState(false)
+  const [detailLaunch, setDetailLaunch] = useState({ shareOpen: false, tab: '', nonce: 0 })
+  const [contextMenu, setContextMenu] = useState(null)
 
   const handleViewModeChange = useCallback((nextMode) => {
     const normalized = nextMode === 'list' ? 'list' : 'gallery'
     setViewMode(normalized)
+    setContextMenu(null)
     saveViewMode(normalized)
   }, [])
 
-  // 一级分类切换后回到页面顶部并收起宽屏弹层。
+  // 一级分类切换后回到页面顶部并收起宽屏弹层与上下文菜单。
   useEffect(() => {
     const stage = toolbarRef.current?.closest?.('.omx-stage-scroll')
     if (stage) stage.scrollTop = 0
     setExpandedModal(false)
+    setContextMenu(null)
     if (tab === 'rivals') setSelectedItem(null)
   }, [tab, setSelectedItem])
 
-  // 当选中项清空时，重置宽屏弹层开关。
   useEffect(() => {
-    if (!selectedItem) setExpandedModal(false)
+    setContextMenu(null)
+  }, [collectionId])
+
+  // 当选中项清空时，重置宽屏弹层开关与详情直达状态。
+  useEffect(() => {
+    if (!selectedItem) {
+      setExpandedModal(false)
+      setDetailLaunch({ shareOpen: false, tab: '', nonce: 0 })
+    }
   }, [selectedItem])
+
+  const {
+    collections: libraryCollectionList,
+    addItemToCollection: addLibraryItemToCollection,
+    createWithItem: createCollectionWithItem,
+    remove: removeLibraryCollectionItem,
+  } = libraryCollections
+
+  const buildMenuForDescriptor = useCallback((descriptor) => {
+    const row = descriptor?.source_row || descriptor
+    const isLocal = Boolean(row?.is_local)
+    return buildCardMenuEntries({
+      t,
+      local: isLocal,
+      inCollection: Boolean(collectionId),
+      sourceUrl: row?.source_url,
+      isFavorite: Boolean(row?.is_favorite),
+      importing: row?.import_status === 'importing',
+      replicateBusy: Boolean(replicateBusy),
+      itemId: row?.id == null ? '' : String(row.id),
+      collections: libraryCollectionList,
+      onToggleFavorite: isLocal ? () => handleToggleFavorite(row) : undefined,
+      onShare: () => {
+        setSelectedItem(row)
+        setDetailLaunch((prev) => ({ shareOpen: true, tab: '', nonce: prev.nonce + 1 }))
+      },
+      onOpenDetail: () => {
+        setSelectedItem(row)
+        setExpandedModal(true)
+        setDetailLaunch((prev) => ({ shareOpen: false, tab: '', nonce: prev.nonce + 1 }))
+      },
+      onOpenSidebar: () => {
+        setSelectedItem(row)
+        setExpandedModal(false)
+        setDetailLaunch((prev) => ({ shareOpen: false, tab: '', nonce: prev.nonce + 1 }))
+      },
+      onAddToConversation: () => handleAddCardToSession(descriptor),
+      onAiDeconstruct: () => {
+        setSelectedItem(row)
+        setExpandedModal(false)
+        setDetailLaunch((prev) => ({ shareOpen: false, tab: 'deconstruct', nonce: prev.nonce + 1 }))
+      },
+      onOpenOriginal: () => handleOpenOriginal(row),
+      onCopyLink: () => handleCopyCardLink(row),
+      onReplicate: () => handleReplicate(row),
+      onAddToCollection: isLocal ? (col) => addLibraryItemToCollection(col, row) : undefined,
+      onCreateCollection: isLocal ? () => createCollectionWithItem(row) : undefined,
+      onRemoveFromCollection: isLocal && collectionId ? () => removeLibraryCollectionItem(row) : undefined,
+      onDelete: isLocal ? () => setPendingRemove({ ids: [row.id], count: 1 }) : undefined,
+    })
+  }, [
+    t,
+    collectionId,
+    replicateBusy,
+    libraryCollectionList,
+    addLibraryItemToCollection,
+    createCollectionWithItem,
+    removeLibraryCollectionItem,
+    handleToggleFavorite,
+    handleAddCardToSession,
+    handleOpenOriginal,
+    handleCopyCardLink,
+    handleReplicate,
+    setSelectedItem,
+    setPendingRemove,
+  ])
+
+  const getMasonryItemKey = useCallback((descriptor) => (
+    descriptor.card_type === 'collection'
+      ? `collection:${descriptor.collection.id}`
+      : String(descriptor.source_row?.id ?? descriptor.id)
+  ), [])
+
+  const handleOpenCardContextMenu = useCallback((event, descriptor) => {
+    event.preventDefault()
+    event.stopPropagation()
+    setContextMenu({
+      descriptor,
+      point: { x: event.clientX, y: event.clientY },
+    })
+  }, [])
+
+  const activeContextMenu = useMemo(
+    () => (contextMenu?.descriptor ? buildMenuForDescriptor(contextMenu.descriptor) : null),
+    [contextMenu, buildMenuForDescriptor],
+  )
 
   // 同步吸附工具栏、工作区可视顶距与整页滚动容器高度给右侧停靠详情栏，保证在任意滚动位置与窗口尺寸下贴顶吸附不越界。
   useEffect(() => {
@@ -942,51 +1074,62 @@ export function InspirationSection({ t, active }) {
                         onDeleteCard={(row) => setPendingRemove({ ids: [row.id], count: 1 })}
                       />
                     ) : (
-                      <RivalMasonry
+                      <MasonryGrid
                         className={`omnimux-inspiration-grid ${selecting ? 'selecting' : ''}`}
-                        cards={gridCards}
-                        t={t}
-                        renderCard={({ card: descriptor, style, column }) => descriptor.card_type === 'collection' ? (
-                          <InspirationCollectionCard collection={descriptor.collection} t={t} style={style} column={column}
-                            onOpen={selectCollection}
-                            onView={() => libraryCollections.open(descriptor.collection)}
-                            onAddToSession={handleAddCollectionToSession}
-                            addToSessionBusy={addingCollectionId === String(descriptor.collection.id)}
-                            menuNode={<InspirationCollectionMenu t={t} disabled={libraryCollections.busy} onRename={() => libraryCollections.rename(descriptor.collection)} />}
-                          />
-                        ) : (
-                          <InspirationCoverCard
-                            descriptor={descriptor}
-                            style={style}
-                            column={column}
-                            actionsNode={(
-                              <InspirationCardMenu
+                        items={gridCards}
+                        getKey={getMasonryItemKey}
+                        estimateWeight={estimateInspirationCardWeight}
+                        minColumnWidth={236}
+                        minColumns={1}
+                        maxColumns={6}
+                        gap={12}
+                        defaultColumns={4}
+                        resetKey={`${tab}:${collectionId}:${platform}:${type}:${sort}:${favorite}:${country}:${category}:${duration}:${views}:${trafficType}:${dateRange}:${q}`}
+                        ariaLabel={t('feedView.gallery')}
+                        renderItem={(descriptor, { column }) => {
+                          if (descriptor.card_type === 'collection') {
+                            return (
+                              <InspirationCollectionCard
+                                key={`collection:${descriptor.collection.id}`}
+                                collection={descriptor.collection}
                                 t={t}
-                                disabled={libraryCollections.busy}
-                                items={buildCardMenuItems({
-                                  t,
-                                  local: tab === 'local',
-                                  inCollection: Boolean(collectionId),
-                                  onAddToConversation: () => handleAddCardToSession(descriptor),
-                                  onMerge: () => libraryCollections.selectSource(descriptor.source_row),
-                                  onRemove: () => libraryCollections.remove(descriptor.source_row),
-                                  onDelete: () => setPendingRemove({ ids: [descriptor.source_row.id], count: 1 }),
-                                })}
+                                column={column}
+                                onOpen={selectCollection}
+                                onView={() => libraryCollections.open(descriptor.collection)}
+                                onAddToSession={handleAddCollectionToSession}
+                                addToSessionBusy={addingCollectionId === String(descriptor.collection.id)}
+                                menuNode={(
+                                  <InspirationCollectionMenu
+                                    t={t}
+                                    disabled={libraryCollections.busy}
+                                    onRename={() => libraryCollections.rename(descriptor.collection)}
+                                  />
+                                )}
                               />
-                            )}
-                            card={{
-                              row: descriptor.source_row,
-                              t,
-                              selected: selectedIds.has(descriptor.source_row.id),
-                              active: selectedItem != null && String(selectedItem.id) === String(descriptor.source_row.id),
-                              selecting,
-                              replicateBusy,
-                              onToggleSelect: toggleSelect,
-                              onSelect: selectItem,
-                              onReplicate: handleReplicate,
-                            }}
-                          />
-                        )}
+                            )
+                          }
+                          const menu = buildMenuForDescriptor(descriptor)
+                          const row = descriptor.source_row
+                          return (
+                            <InspirationCard
+                              key={String(row?.id ?? descriptor.id)}
+                              descriptor={descriptor}
+                              t={t}
+                              selected={selectedIds.has(row.id)}
+                              active={selectedItem != null && String(selectedItem.id) === String(row.id)}
+                              selecting={selecting}
+                              replicateBusy={replicateBusy}
+                              menuDisabled={libraryCollections.busy}
+                              menuEntries={menu.entries}
+                              onMenuSelect={(id) => menu.run(id)}
+                              onSelect={selectItem}
+                              onToggleSelect={toggleSelect}
+                              onToggleFavorite={tab === 'local' ? handleToggleFavorite : undefined}
+                              onReplicate={handleReplicate}
+                              onOpenContextMenu={handleOpenCardContextMenu}
+                            />
+                          )
+                        }}
                       />
                     )}
                   </div>
@@ -1029,9 +1172,11 @@ export function InspirationSection({ t, active }) {
 
             {selectedItem && !expandedModal ? (
               <InspirationDetailSidebar
-                key={String(selectedItem.source_url || selectedItem.id)}
+                key={`${String(selectedItem.source_url || selectedItem.id)}:${detailLaunch.nonce}`}
                 row={selectedItem}
                 t={t}
+                initialShareOpen={detailLaunch.shareOpen}
+                initialTab={detailLaunch.tab}
                 onClose={() => setSelectedItem(null)}
                 onExpandModal={() => setExpandedModal(true)}
                 onItemUpdated={handleItemUpdated}
@@ -1043,8 +1188,11 @@ export function InspirationSection({ t, active }) {
 
           {selectedItem && expandedModal ? (
             <InspirationPreviewModal
+              key={`${String(selectedItem.source_url || selectedItem.id)}:${detailLaunch.nonce}`}
               row={selectedItem}
               t={t}
+              initialShareOpen={detailLaunch.shareOpen}
+              initialTab={detailLaunch.tab}
               onClose={() => {
                 setExpandedModal(false)
                 setSelectedItem(null)
@@ -1054,6 +1202,14 @@ export function InspirationSection({ t, active }) {
               replicateBusy={replicateBusy}
             />
           ) : null}
+
+          <InspirationContextMenu
+            open={Boolean(contextMenu)}
+            point={contextMenu?.point}
+            entries={activeContextMenu?.entries || []}
+            onSelect={(id) => activeContextMenu?.run(id)}
+            onClose={() => setContextMenu(null)}
+          />
 
           {pendingRemove ? (
             <ConfirmModal

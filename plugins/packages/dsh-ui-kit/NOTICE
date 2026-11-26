@@ -1,0 +1,19 @@
+dsh-ui-kit Notices
+=============================================================================
+
+MIT Licensed Package (see package.json).
+
+Third-Party Platform Trademarks in SocialCard Attribution Marks
+-----------------------------------------------------------------------------
+The generic monochrome 16px and badge outline icons in `src/social-card/PlatformMark.tsx`
+identify external content origins linked by the user (source attribution only, no affiliation
+or endorsement implied). Platform names and trademarks belong to their respective owners:
+
+- X: X Corp.
+- TikTok / Douyin: ByteDance Ltd.
+- Instagram / Threads: Meta Platforms, Inc.
+- YouTube: Google LLC
+- Bilibili: Bilibili Inc.
+- Xiaohongshu (RED): Xingin Information Technology (Shanghai) Co., Ltd.
+- LinkedIn: LinkedIn Corporation
+- Substack: Substack Inc.

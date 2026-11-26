@@ -208,7 +208,7 @@ describe('card reveal shimmer and batch loading UX', () => {
 
   it('delegates card sizing to the shared masonry and keeps loading placeholders below it', () => {
     const sectionSrc = readFileSync(join(here, 'InspirationSection.jsx'), 'utf8')
-    assert.match(sectionSrc, /<RivalMasonry/)
+    assert.match(sectionSrc, /<MasonryGrid/)
     const gridCss = ruleBody(INSPIRATION_CSS, '.omnimux-inspiration-grid')
     assert.doesNotMatch(gridCss, /grid-template-columns|display:\s*grid/)
     const sharedGrid = ruleBody(RIVAL_CSS, '.omnimux-rival-masonry')

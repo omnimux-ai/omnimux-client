@@ -54,8 +54,9 @@ function ReferenceButton({ selected, onClick, t, disabled }) {
 }
 
 /** A post remains mounted while analysis, reference selection and drawers change. */
-export function InspirationPostDetail({ item, t, onItemUpdated, onReplicate, replicateBusy, onClose, notice, mode = 'modal' }) {
+export function InspirationPostDetail({ item, t, onItemUpdated, onReplicate, replicateBusy, onClose, notice, mode = 'modal', initialTab = '' }) {
   const root = useRef(null)
+  const analysisSectionRef = useRef(null)
   const videos = useRef(new Map())
   const mediaNodes = useRef(new Map())
   const clipPlayback = useRef(null)
@@ -93,7 +94,7 @@ export function InspirationPostDetail({ item, t, onItemUpdated, onReplicate, rep
   const [serviceError, setServiceError] = useState('')
   const [savingService, setSavingService] = useState(false)
   const savingServiceRef = useRef(false)
-  const [mobilePane, setMobilePane] = useState('post')
+  const [mobilePane, setMobilePane] = useState(() => (initialTab === 'deconstruct' || initialTab === 'analysis' ? 'analysis' : 'post'))
   const [image, setImage] = useState(null)
   const [zoom, setZoom] = useState(1)
   const [dimensions, setDimensions] = useState({})
@@ -266,6 +267,11 @@ export function InspirationPostDetail({ item, t, onItemUpdated, onReplicate, rep
     requestIdentity.current = postIdentity
     return () => { requestIdentity.current = ''; clipPlayback.current?.() }
   }, [postIdentity])
+  useEffect(() => {
+    if (initialTab !== 'deconstruct' && initialTab !== 'analysis') return
+    setMobilePane('analysis')
+    analysisSectionRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })
+  }, [initialTab, postIdentity])
   useEffect(() => {
     if (!image && !drawer) return
     const cancel = (event) => {
@@ -540,7 +546,7 @@ export function InspirationPostDetail({ item, t, onItemUpdated, onReplicate, rep
           {mediaNode}
         </>}
       </section>
-      <section className={`omnimux-post-analysis omnimux-inspiration-modal-deconstruction-panel ${isSidebar || mobilePane === 'analysis' ? 'is-active' : ''}`} aria-label={copy('analysis')}>
+      <section ref={analysisSectionRef} className={`omnimux-post-analysis omnimux-inspiration-modal-deconstruction-panel ${isSidebar || mobilePane === 'analysis' ? 'is-active' : ''}`} aria-label={copy('analysis')}>
         <div className="omnimux-post-analysis-header"><h3><Sparkles size={17} />{copy('analysis')}</h3></div>
         <div className="omnimux-post-targets" role="group" aria-label={copy('scope')}>
           {[{ scope: 'post' }, ...(body ? [{ scope: 'body' }] : []), ...media.map(asset => ({ scope: 'media', media_index: asset.index }))].map(value => <Button key={analysisTargetKey(value)} size="sm" variant={key === analysisTargetKey(value) ? 'secondary' : 'ghost'} aria-pressed={key === analysisTargetKey(value)} onClick={() => chooseTarget(value)}>{targetLabel(value)}</Button>)}

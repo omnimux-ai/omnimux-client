@@ -31,9 +31,11 @@ export function InspirationDetailSidebar({
   onItemUpdated,
   onReplicate,
   replicateBusy,
+  initialShareOpen = false,
+  initialTab = '',
 }) {
   const [item, setItem] = useState(row)
-  const [showSharePopover, setShowSharePopover] = useState(false)
+  const [showSharePopover, setShowSharePopover] = useState(Boolean(initialShareOpen))
   const [sharing, setSharing] = useState(false)
   const [shareError, setShareError] = useState(null)
   const sidebarRef = useRef(null)
@@ -67,10 +69,10 @@ export function InspirationDetailSidebar({
   }
 
   useEffect(() => {
-    setShowSharePopover(false)
+    setShowSharePopover(Boolean(initialShareOpen))
     setShareError(null)
     setSharing(false)
-  }, [itemKey])
+  }, [itemKey, initialShareOpen])
 
   // Close share popover on Esc / outside click.
   useEffect(() => {
@@ -94,13 +96,14 @@ export function InspirationDetailSidebar({
     }
   }, [showSharePopover])
 
-  // Esc closes the docked inspector when no nested popover or drawer is open.
+  // Esc closes the docked inspector when no nested menu, popover, or drawer is open.
   useEffect(() => {
     if (!row) return undefined
     const onKeyDown = (event) => {
       if (event.key !== 'Escape') return
+      if (event.defaultPrevented) return
       if (showSharePopover) return
-      if (typeof document !== 'undefined' && document.querySelector('.omnimux-post-lightbox, .omnimux-post-creation-drawer')) return
+      if (typeof document !== 'undefined' && document.querySelector('[role="menu"], .omnimux-post-lightbox, .omnimux-post-creation-drawer')) return
       event.preventDefault()
       onClose?.()
     }
@@ -350,6 +353,7 @@ export function InspirationDetailSidebar({
       <InspirationPostDetail
         key={String(item?.source_url || item?.id)}
         mode="sidebar"
+        initialTab={initialTab}
         item={item}
         t={t}
         onClose={onClose}
