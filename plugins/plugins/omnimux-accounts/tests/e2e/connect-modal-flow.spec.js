@@ -52,4 +52,30 @@ describe('ConnectModal E2E & Visual Hierarchy Flow', () => {
       assert.ok(en[`platform.desc.${p}`], `missing en description for ${p}`)
     }
   })
+
+  it('keeps TikTok chromatic layers and dual-theme icon/chip token contrast valid in ConnectModal & styles', () => {
+    const brandBlock = (id) => {
+      const m = STYLES.match(new RegExp(`\\.omnimux-accounts-brand-icon--${id}\\s*\\{([^}]+)\\}`))
+      assert.ok(m, `missing .omnimux-accounts-brand-icon--${id}`)
+      return m[1]
+    }
+    for (const id of [...SUPPORTED_PLATFORMS, ...COMING_PLATFORMS]) {
+      const body = brandBlock(id)
+      const colorMatch = body.match(/color:\s*([^;]+);/)
+      assert.ok(colorMatch, `missing color in .omnimux-accounts-brand-icon--${id}`)
+      assert.match(colorMatch[1].trim(), /^var\(--dsw-alias-label-on-color\b/)
+      assert.doesNotMatch(colorMatch[1], /--dsw-alias-label-primary-foreground/)
+    }
+
+    const solidChipMatch = STYLES.match(/\.omnimux-accounts-chip--solid\s*\{([^}]+)\}/)
+    assert.ok(solidChipMatch, 'missing .omnimux-accounts-chip--solid')
+    assert.match(solidChipMatch[1], /color:\s*var\(--dsw-alias-label-primary\)/)
+    assert.doesNotMatch(solidChipMatch[1], /--dsw-alias-label-primary-foreground/)
+
+    const iconsJsx = readFileSync(join(here, '../../src/client/icons.jsx'), 'utf8')
+    assert.match(iconsJsx, /viewBox="-0\.7 -1\.5 27 27"/)
+    assert.match(iconsJsx, /fill="#25F4EE"/)
+    assert.match(iconsJsx, /fill="#FE2C55"/)
+    assert.match(iconsJsx, /fill="currentColor"/)
+  })
 })

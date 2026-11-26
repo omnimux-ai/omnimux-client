@@ -340,7 +340,7 @@ th[style*="--pub-min-w"] { min-width: var(--pub-min-w); }
   border-radius: 4px;
   font-size: 11px;
   font-weight: 700;
-  color: var(--dsw-alias-label-primary, #ffffff);
+  color: var(--dsw-alias-label-on-color, #ffffff);
 }
 .omnimux-publish-plat-tag.tiktok { background: var(--dsw-alias-platform-tiktok, #000000); }
 .omnimux-publish-plat-tag.xiaohongshu, .omnimux-publish-plat-tag.xhs { background: var(--dsw-alias-platform-xhs, #ff2442); }

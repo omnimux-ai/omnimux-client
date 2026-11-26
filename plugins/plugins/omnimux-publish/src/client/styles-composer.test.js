@@ -169,4 +169,13 @@ describe('publish composer type-pick styles (layout regression)', () => {
     assert.doesNotMatch(composerSrc, /exempt-ui01/)
     assert.doesNotMatch(composerSrc, /<button/)
   })
+
+  it('uses --dsw-alias-label-on-color on fixed-color platform tags so TikTok badge stays readable in light theme', () => {
+    ensureCss()
+    const css = String(stub.appended[0].textContent)
+    const match = css.match(/\.omnimux-publish-plat-tag\s*\{([^}]*)\}/)
+    assert.ok(match, 'missing .omnimux-publish-plat-tag style block')
+    assert.match(match[1], /color:\s*var\(--dsw-alias-label-on-color\b/)
+    assert.doesNotMatch(match[1], /color:\s*var\(--dsw-alias-label-primary\b/)
+  })
 })
