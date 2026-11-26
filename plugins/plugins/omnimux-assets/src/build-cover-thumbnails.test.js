@@ -14,6 +14,7 @@ import {
   validateVideoSourceUrl,
 } from '../scripts/build-cover-thumbnails.mjs'
 import { applyThumbManifest, resolveThumbPublicUrl } from '../scripts/apply-thumb-manifest.mjs'
+import { pruneCatalogRows } from '../scripts/prune-catalog-rows.mjs'
 
 const temps = []
 function makeTempDir() {
@@ -304,5 +305,89 @@ describe('build-cover-thumbnails: 扩展角色 JPG、大图阈值与无封面视
     assert.equal(second.indexAdded, 0)
     assert.equal(second.indexUpdated, 0)
     assert.equal(second.pagesTouched, 0)
+  })
+
+  it('pruneCatalogRows 摘除死链视频并清空失效封面，重算 manifest/index/分片且清理多余尾页', () => {
+    const dir = makeTempDir()
+    const catalogDir = join(dir, 'catalog')
+    mkdirSync(join(catalogDir, 'all'), { recursive: true })
+    mkdirSync(join(catalogDir, 'character'), { recursive: true })
+    mkdirSync(join(catalogDir, 'material', 'hook'), { recursive: true })
+    mkdirSync(join(catalogDir, 'style', 'anime-2d'), { recursive: true })
+
+    const rows = [
+      { id: 'char-1', category: 'character', sub_category: 'digital-human', sub_categories: ['digital-human'], name: 'c1', description: '', media_type: 'video', media_url: 'https://assets.omnimux.ai/a.mp4', cover_url: 'https://assets.omnimux.ai/a.jpg', thumb_url: 'https://assets.omnimux.ai/thumbs/char-1.webp', tags: [], meta: { dims: { gender: 'female' } } },
+      { id: 'mat-dead', category: 'material', sub_category: 'hook', sub_categories: ['hook'], name: 'dead', description: '', media_type: 'video', media_url: 'https://assets.omnimux.ai/dead.mp4', cover_url: '', tags: [] },
+      { id: 'mat-ok-1', category: 'material', sub_category: 'hook', sub_categories: ['hook'], name: 'm1', description: '', media_type: 'video', media_url: 'https://assets.omnimux.ai/1.mp4', cover_url: '', thumb_url: 'https://assets.omnimux.ai/thumbs/mat-ok-1.webp', tags: [], meta: { bytes: 5000 } },
+      { id: 'mat-ok-2', category: 'material', sub_category: 'hook', sub_categories: ['hook'], name: 'm2', description: '', media_type: 'video', media_url: 'https://assets.omnimux.ai/2.mp4', cover_url: '', thumb_url: 'https://assets.omnimux.ai/thumbs/mat-ok-2.webp', tags: [], meta: { bytes: 6000 } },
+      { id: 'style-404', category: 'style', sub_category: 'anime-2d', sub_categories: ['anime-2d'], name: 's1', description: 'anime prompt', media_type: 'other', media_url: '', cover_url: 'https://assets.omnimux.ai/styles/anime-2d/missing.webp', tags: ['生图预设'] },
+    ]
+    const pageSize = 2
+    const manifest = {
+      version: 1,
+      generatedAt: '2026-11-26T00:00:00.000Z',
+      pageSize,
+      totalAssets: rows.length,
+      sourceRoot: '',
+      categories: [
+        { id: 'character', zh: '角色', total: 1, pages: 1, sub_categories: [{ id: 'character_filtered', total: 1, pages: 1 }] },
+        { id: 'material', zh: '素材', total: 3, pages: 2, sub_categories: [{ id: 'hook', total: 3, pages: 2 }] },
+        { id: 'style', zh: '风格', total: 1, pages: 1, sub_categories: [{ id: 'anime-2d', total: 1, pages: 1 }] },
+      ],
+    }
+    const manifestBefore = `${JSON.stringify(manifest)}\n`
+    writeFileSync(join(catalogDir, 'manifest.json'), manifestBefore)
+    writeFileSync(join(catalogDir, 'index.json'), `${JSON.stringify(rows)}\n`)
+    writeFileSync(join(catalogDir, 'character', 'page-0000.json'), `${JSON.stringify({ scope: 'character', page: 0, pageSize, total: 1, totalPages: 1, items: [rows[0]] })}\n`)
+    // Untouched character marker file verifies untouched categories are preserved
+    writeFileSync(join(catalogDir, 'all', 'page-0000.json'), `${JSON.stringify({ scope: 'all', page: 0, pageSize, total: 5, totalPages: 3, items: rows.slice(0, 2) })}\n`)
+    writeFileSync(join(catalogDir, 'all', 'page-0001.json'), `${JSON.stringify({ scope: 'all', page: 1, pageSize, total: 5, totalPages: 3, items: rows.slice(2, 4) })}\n`)
+    writeFileSync(join(catalogDir, 'all', 'page-0002.json'), `${JSON.stringify({ scope: 'all', page: 2, pageSize, total: 5, totalPages: 3, items: rows.slice(4, 5) })}\n`)
+    writeFileSync(join(catalogDir, 'material', 'page-0000.json'), `${JSON.stringify({ scope: 'material', page: 0, pageSize, total: 3, totalPages: 2, items: [rows[1], rows[2]] })}\n`)
+    writeFileSync(join(catalogDir, 'material', 'page-0001.json'), `${JSON.stringify({ scope: 'material', page: 1, pageSize, total: 3, totalPages: 2, items: [rows[3]] })}\n`)
+    writeFileSync(join(catalogDir, 'material', 'hook', 'page-0000.json'), `${JSON.stringify({ scope: 'material/hook', page: 0, pageSize, total: 3, totalPages: 2, items: [rows[1], rows[2]] })}\n`)
+    writeFileSync(join(catalogDir, 'material', 'hook', 'page-0001.json'), `${JSON.stringify({ scope: 'material/hook', page: 1, pageSize, total: 3, totalPages: 2, items: [rows[3]] })}\n`)
+    writeFileSync(join(catalogDir, 'style', 'page-0000.json'), `${JSON.stringify({ scope: 'style', page: 0, pageSize, total: 1, totalPages: 1, items: [rows[4]] })}\n`)
+    writeFileSync(join(catalogDir, 'style', 'anime-2d', 'page-0000.json'), `${JSON.stringify({ scope: 'style/anime-2d', page: 0, pageSize, total: 1, totalPages: 1, items: [rows[4]] })}\n`)
+
+    // dryRun 零写入
+    const dry = pruneCatalogRows({ catalogDir, dropIds: ['mat-dead'], clearCoverIds: ['style-404'], dryRun: true })
+    assert.equal(dry.dropped, 1)
+    assert.equal(dry.coversCleared, 1)
+    assert.equal(dry.orphanPageFilesRemoved, 3)
+    assert.equal(readFileSync(join(catalogDir, 'manifest.json'), 'utf8'), manifestBefore)
+
+    const res = pruneCatalogRows({ catalogDir, dropIds: ['mat-dead'], clearCoverIds: ['style-404'] })
+    assert.equal(res.totalBefore, 5)
+    assert.equal(res.totalAfter, 4)
+    assert.equal(res.dropped, 1)
+    assert.equal(res.coversCleared, 1)
+    assert.equal(res.orphanPageFilesRemoved, 3)
+
+    // Excess tail page-0002 (all) & page-0001 (material, material/hook) are removed
+    assert.equal(existsSync(join(catalogDir, 'all', 'page-0002.json')), false)
+    assert.equal(existsSync(join(catalogDir, 'material', 'page-0001.json')), false)
+    assert.equal(existsSync(join(catalogDir, 'material', 'hook', 'page-0001.json')), false)
+
+    const updatedManifest = JSON.parse(readFileSync(join(catalogDir, 'manifest.json'), 'utf8'))
+    assert.equal(updatedManifest.totalAssets, 4)
+    assert.equal(updatedManifest.categories[1].total, 2)
+    assert.equal(updatedManifest.categories[1].pages, 1)
+    assert.equal(updatedManifest.categories[1].sub_categories[0].total, 2)
+
+    const updatedIndex = JSON.parse(readFileSync(join(catalogDir, 'index.json'), 'utf8'))
+    assert.deepEqual(updatedIndex.map((r) => r.id), ['char-1', 'mat-ok-1', 'mat-ok-2', 'style-404'])
+    // indexEntryOf strips meta.bytes while preserving dims & prompt description
+    assert.equal(updatedIndex.find((r) => r.id === 'mat-ok-1').meta, undefined)
+    assert.deepEqual(updatedIndex.find((r) => r.id === 'char-1').meta, { dims: { gender: 'female' } })
+    const styleIndexRow = updatedIndex.find((r) => r.id === 'style-404')
+    assert.equal(styleIndexRow.cover_url, '')
+    assert.equal(styleIndexRow.description, 'anime prompt')
+
+    // 二次运行完全幂等
+    const secondPrune = pruneCatalogRows({ catalogDir, dropIds: ['mat-dead'], clearCoverIds: ['style-404'] })
+    assert.equal(secondPrune.dropped, 0)
+    assert.equal(secondPrune.coversCleared, 0)
+    assert.equal(secondPrune.pageFilesWritten, 0)
   })
 })
