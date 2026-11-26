@@ -21,9 +21,96 @@ const DEFAULT_FS = { copyFileSync, mkdirSync, readFileSync, renameSync, statSync
 /** @type {Record<string, string>} */
 const MIME_BY_EXT = {
   '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif',
-  '.webp': 'image/webp', '.bmp': 'image/bmp', '.svg': 'image/svg+xml', '.avif': 'image/avif', '.heic': 'image/heic',
+  '.webp': 'image/webp', '.bmp': 'image/bmp', '.avif': 'image/avif', '.heic': 'image/heic',
   '.mp4': 'video/mp4', '.mov': 'video/quicktime', '.avi': 'video/x-msvideo', '.mkv': 'video/x-matroska',
   '.webm': 'video/webm', '.m4v': 'video/mp4', '.flv': 'video/x-flv',
+  '.mp3': 'audio/mpeg', '.m4a': 'audio/mp4', '.wav': 'audio/wav', '.ogg': 'audio/ogg',
+}
+
+/** Safe non-active media MIME types permitted for inline delivery on the Host origin. */
+export const SAFE_INLINE_MEDIA_TYPES = new Set([
+  'image/png',
+  'image/jpeg',
+  'image/gif',
+  'image/webp',
+  'image/bmp',
+  'image/avif',
+  'image/heic',
+  'video/mp4',
+  'video/quicktime',
+  'video/x-msvideo',
+  'video/x-matroska',
+  'video/webm',
+  'video/x-flv',
+  'audio/mpeg',
+  'audio/mp4',
+  'audio/wav',
+  'audio/ogg',
+  'audio/webm',
+])
+
+const ACTIVE_DOCUMENT_TYPES = new Set([
+  'text/html',
+  'application/xhtml+xml',
+  'image/svg+xml',
+  'text/xml',
+  'application/xml',
+  'text/javascript',
+  'application/javascript',
+  'application/ecmascript',
+  'text/css',
+])
+
+const ACTIVE_DOCUMENT_EXTENSIONS = new Set([
+  '.svg',
+  '.svgz',
+  '.html',
+  '.htm',
+  '.xhtml',
+  '.xml',
+  '.js',
+  '.mjs',
+  '.cjs',
+  '.css',
+])
+
+/**
+ * Strip parameters and lowercase a Content-Type header/value.
+ * @param {unknown} raw
+ * @returns {string}
+ */
+export function normalizeMediaContentType(raw) {
+  if (typeof raw !== 'string') return ''
+  return (raw.split(';')[0] || '').trim().toLowerCase()
+}
+
+/**
+ * Whether a media MIME type represents active document/script content that must be rejected.
+ * @param {unknown} raw
+ * @returns {boolean}
+ */
+export function isActiveDocumentContentType(raw) {
+  const mime = normalizeMediaContentType(raw)
+  if (!mime) return false
+  if (ACTIVE_DOCUMENT_TYPES.has(mime)) return true
+  return mime.endsWith('+xml') || mime.includes('html') || mime.includes('script')
+}
+
+/**
+ * Whether an HTTP upload's Content-Type / filename resolves to an allowed safe media type.
+ * @param {string | undefined} rawContentType
+ * @param {string | undefined} filename
+ * @returns {boolean}
+ */
+export function isAllowedHttpUploadMedia(rawContentType, filename) {
+  const normalized = normalizeMediaContentType(rawContentType)
+  if (normalized && isActiveDocumentContentType(normalized)) return false
+  if (normalized && SAFE_INLINE_MEDIA_TYPES.has(normalized)) return true
+  if (!normalized || normalized === 'application/octet-stream') {
+    const inferred = filename ? contentTypeOf(filename) : ''
+    return SAFE_INLINE_MEDIA_TYPES.has(inferred)
+  }
+  return false
 }
 
 /**
@@ -110,9 +197,20 @@ export function createMediaStore(opts = {}) {
     }
     const sha256 = hashOf('sha256').update(buffer).digest('hex')
     const filename = typeof meta.filename === 'string' && meta.filename.trim() !== '' ? meta.filename.trim() : `${sha256.slice(0, 12)}.bin`
-    const contentType = typeof meta.content_type === 'string' && meta.content_type.trim() !== ''
-      ? meta.content_type.trim()
-      : contentTypeOf(filename)
+    const fileExt = extname(filename).toLowerCase()
+    if (ACTIVE_DOCUMENT_EXTENSIONS.has(fileExt)) {
+      throw new PublishError('unsupported-media-type', `unsupported active media extension: ${fileExt}`)
+    }
+    const providedType = typeof meta.content_type === 'string' && meta.content_type.trim() !== ''
+      ? normalizeMediaContentType(meta.content_type)
+      : ''
+    if (isActiveDocumentContentType(providedType)) {
+      throw new PublishError('unsupported-media-type', `unsupported active media content-type: ${providedType}`)
+    }
+    const inferredType = contentTypeOf(filename)
+    const contentType = (!providedType || (providedType === 'application/octet-stream' && SAFE_INLINE_MEDIA_TYPES.has(inferredType)))
+      ? inferredType
+      : providedType
     const kind = mediaKindOf(contentType)
     const durationSec = kind === 'video' ? probeVideoDurationSec(buffer, contentType, filename) : undefined
     const existing = findRow(sha256)

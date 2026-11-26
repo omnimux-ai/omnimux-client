@@ -1,12 +1,23 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { createHash, randomBytes } from 'node:crypto'
+import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { clamp, fetchSkillCard, parseSlug } from './api.js'
 import { parseCategory } from './categories.js'
 import { assignConfig, dshHome, publicConfig, sanitizePatch, sanitizeSortBy, writeOverlay } from './config-store.js'
-import { configureHttpJsonCache } from './http.js'
+import { HttpError, configureHttpJsonCache } from './http.js'
+import {
+  ICON_SECURITY_HEADERS,
+  MAX_ICON_BYTES,
+  assertSafeIconUrlSyntax,
+  fetchSafeIconBytes,
+  normalizeSafeRasterMime,
+  pruneAvatarDiskCache,
+  sniffSafeRasterImageMime,
+  type IconDnsLookup,
+  type IconHttpsRequest,
+} from './icon-guard.js'
 import { BOOT_ID, progress, publicInstallStatus } from './dsh-cli.js'
 import { decorateCatalog, loadCatalog } from './expert/catalog.js'
 import {
@@ -27,7 +38,6 @@ import {
   type SuiteRuleTarget,
 } from './suite-install.js'
 import { clearSessionTrial, loadSkillBody, writeSessionExpert, writeSessionTrial } from './session-attach.js'
-import { fetchBytes } from './http.js'
 import { installSkill, installedSlugs, listInstalled, peekSkillMarkdown, uninstallSkill } from './install.js'
 import { listMarketplaceConnectors, resolveMarketplaceIconFile } from './marketplace-connectors.js'
 import { installMarketPlugin, isPluginInstallBusy, listPluginCategories, listPlugins, withPluginInstallLock } from './plugin-market.js'
@@ -1046,32 +1056,76 @@ function getAvatarCacheDir(): string {
   return dir
 }
 
-function resolveAvatarDiskCache(targetUrl: string): { path: string; contentType: string } | null {
+function applyIconSecurityHeaders(res: ServerResponse): void {
+  res.setHeader('x-content-type-options', ICON_SECURITY_HEADERS['x-content-type-options'])
+  res.setHeader('content-security-policy', ICON_SECURITY_HEADERS['content-security-policy'])
+  res.setHeader('cross-origin-resource-policy', ICON_SECURITY_HEADERS['cross-origin-resource-policy'])
+}
+
+function resolveAvatarDiskCache(targetUrl: string): { path: string; contentType: string; bytes: Buffer } | null {
   try {
     const cacheDir = getAvatarCacheDir()
     const hash = createHash('sha256').update(targetUrl).digest('hex')
     const filePath = join(cacheDir, `${hash}.bin`)
     const metaPath = join(cacheDir, `${hash}.meta.json`)
-    if (existsSync(filePath) && existsSync(metaPath)) {
-      const meta = JSON.parse(readFileSync(metaPath, 'utf8'))
-      return { path: filePath, contentType: meta.contentType || 'image/png' }
-    }
+    if (!existsSync(filePath) || !existsSync(metaPath)) return null
+    const binStat = lstatSync(filePath)
+    const metaStat = lstatSync(metaPath)
+    if (binStat.isSymbolicLink() || !binStat.isFile() || binStat.size <= 0 || binStat.size > MAX_ICON_BYTES) return null
+    if (metaStat.isSymbolicLink() || !metaStat.isFile() || metaStat.size > 16 * 1024) return null
+    const meta = JSON.parse(readFileSync(metaPath, 'utf8')) as { contentType?: unknown }
+    const safeMetaType = normalizeSafeRasterMime(typeof meta.contentType === 'string' ? meta.contentType : '')
+    if (!safeMetaType) return null
+    const bytes = readFileSync(filePath)
+    if (bytes.length > MAX_ICON_BYTES) return null
+    const sniffed = sniffSafeRasterImageMime(bytes)
+    if (!sniffed) return null
+    return { path: filePath, contentType: sniffed, bytes }
   } catch {}
   return null
 }
 
-function saveAvatarDiskCache(targetUrl: string, body: Buffer, contentType: string): void {
+function saveAvatarDiskCache(
+  targetUrl: string,
+  body: Buffer,
+  contentType: string,
+  limits?: { maxEntries?: number; maxBytes?: number },
+): void {
+  if (body.length === 0 || body.length > MAX_ICON_BYTES) return
+  const cacheDir = getAvatarCacheDir()
+  const hash = createHash('sha256').update(targetUrl).digest('hex')
+  const filePath = join(cacheDir, `${hash}.bin`)
+  const metaPath = join(cacheDir, `${hash}.meta.json`)
+  const nonce = `${process.pid}.${Date.now()}.${randomBytes(6).toString('hex')}`
+  const tmpBin = `${filePath}.${nonce}.tmp`
+  const tmpMeta = `${metaPath}.${nonce}.tmp`
   try {
-    const cacheDir = getAvatarCacheDir()
-    const hash = createHash('sha256').update(targetUrl).digest('hex')
-    const filePath = join(cacheDir, `${hash}.bin`)
-    const metaPath = join(cacheDir, `${hash}.meta.json`)
-    writeFileSync(filePath, body)
-    writeFileSync(metaPath, JSON.stringify({ url: targetUrl, contentType, savedAt: Date.now() }))
-  } catch {}
+    writeFileSync(tmpBin, body)
+    renameSync(tmpBin, filePath)
+    writeFileSync(tmpMeta, JSON.stringify({ url: targetUrl, contentType, savedAt: Date.now() }))
+    renameSync(tmpMeta, metaPath)
+    pruneAvatarDiskCache(cacheDir, limits)
+  } catch {
+    try { rmSync(tmpBin, { force: true }) } catch {}
+    try { rmSync(tmpMeta, { force: true }) } catch {}
+  }
 }
 
-export async function handleIcon(req: IncomingMessage, res: ServerResponse, cfg: PluginConfig): Promise<void> {
+export interface HandleIconDeps {
+  lookup?: IconDnsLookup
+  fetchImpl?: typeof fetch
+  requestImpl?: IconHttpsRequest
+  maxBytes?: number
+  cacheMaxEntries?: number
+  cacheMaxBytes?: number
+}
+
+export async function handleIcon(
+  req: IncomingMessage,
+  res: ServerResponse,
+  cfg: PluginConfig,
+  deps?: HandleIconDeps,
+): Promise<void> {
   try {
     const url = new URL(req.url || '/', 'http://127.0.0.1')
     const requested = url.searchParams.get('url') || ''
@@ -1080,10 +1134,11 @@ export async function handleIcon(req: IncomingMessage, res: ServerResponse, cfg:
     const target = requested.startsWith('catalog/') ? (catalogAssetUrl(requested) ?? requested) : requested
 
     if (target.startsWith('marketplace-icon:')) {
-      const id = target.slice('marketplace-icon:'.length)
-      const resolved = resolveMarketplaceIconFile(id)
+      const resolved = resolveMarketplaceIconFile(target)
       if (resolved) {
         const bytes = readFileSync(resolved.path)
+        res.statusCode = 200
+        applyIconSecurityHeaders(res)
         res.setHeader('content-type', resolved.contentType)
         res.setHeader('cache-control', 'public, max-age=86400')
         res.end(bytes)
@@ -1096,40 +1151,55 @@ export async function handleIcon(req: IncomingMessage, res: ServerResponse, cfg:
     if (local) {
       const bytes = readFileSync(local.path)
       res.statusCode = 200
+      applyIconSecurityHeaders(res)
       res.setHeader('content-type', local.contentType)
       res.setHeader('cache-control', 'public, max-age=86400')
       res.end(bytes)
       return
     }
 
-    // 2. 本地持久化磁盘缓存命中，直接从本地磁盘加载，不走云端
+    // 2. 校验远程 URL 语法与安全边界（禁止在读磁盘缓存前绕过 https / 主机 / 端口校验）
+    assertSafeIconUrlSyntax(target)
+
+    // 3. 本地持久化磁盘缓存命中，直接从本地磁盘加载，不走云端
     const cached = resolveAvatarDiskCache(target)
     if (cached) {
-      const bytes = readFileSync(cached.path)
       res.statusCode = 200
+      applyIconSecurityHeaders(res)
       res.setHeader('content-type', cached.contentType)
       res.setHeader('cache-control', 'public, max-age=86400')
-      res.end(bytes)
+      res.end(cached.bytes)
       return
     }
 
-    if (!/^https:\/\//i.test(target)) {
-      res.statusCode = 400
-      res.end('bad url')
-      return
-    }
+    const { body, contentType } = await fetchSafeIconBytes(target, {
+      timeoutMs: Math.min(cfg.timeoutMs, 15000),
+      userAgent: cfg.userAgent,
+      maxBytes: deps?.maxBytes,
+      lookup: deps?.lookup,
+      fetchImpl: deps?.fetchImpl,
+      requestImpl: deps?.requestImpl,
+    })
 
-    const { body, contentType } = await fetchBytes(target, { timeoutMs: Math.min(cfg.timeoutMs, 15000), userAgent: cfg.userAgent })
-    const finalType = contentType.startsWith('image/') ? contentType : 'image/png'
-
-    // 3. 首次拉取后持久化存入本地磁盘缓存，后续请求均本地加载
-    saveAvatarDiskCache(target, body, finalType)
+    // 4. 首次拉取后持久化存入本地磁盘缓存（受条数与总容量配额约束）
+    saveAvatarDiskCache(target, body, contentType, {
+      maxEntries: deps?.cacheMaxEntries,
+      maxBytes: deps?.cacheMaxBytes,
+    })
 
     res.statusCode = 200
-    res.setHeader('content-type', finalType)
+    applyIconSecurityHeaders(res)
+    res.setHeader('content-type', contentType)
     res.setHeader('cache-control', 'public, max-age=86400')
     res.end(body)
   } catch (err) {
+    applyIconSecurityHeaders(res)
+    res.setHeader('content-type', 'text/plain; charset=utf-8')
+    if (err instanceof HttpError && err.status && (err.status === 400 || err.status === 413 || err.status === 415 || err.status === 504)) {
+      res.statusCode = err.status
+      res.end(err.message)
+      return
+    }
     res.statusCode = 502
     res.end(err instanceof Error ? err.message : 'icon failed')
   }

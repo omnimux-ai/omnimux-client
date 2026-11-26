@@ -7,7 +7,7 @@ export const STATUS_BY_CODE = {
   'account-provider-mismatch': 409, 'post-provider-mismatch': 409, 'account-unavailable': 409,
   'invalid-arguments': 400, 'validation-failed': 400, 'confirm-required': 400, 'invalid-json': 400,
   'record-not-found': 404, 'task-not-found': 404, 'media-not-found': 404, 'path-not-found': 400,
-  'media-too-large': 413, 'record-not-draft': 409, 'task-not-retryable': 409, 'not-local': 403,
+  'media-too-large': 413, 'unsupported-media-type': 415, 'record-not-draft': 409, 'task-not-retryable': 409, 'not-local': 403,
   'needs-hub': 503, 'needs-omnimux': 503, 'quota-exceeded': 402, 'hub-tool-error': 502,
   'upload-failed': 502, 'aborted': 500,
   'SOCIAL_TIKTOK_RATE_LIMITED': 429,

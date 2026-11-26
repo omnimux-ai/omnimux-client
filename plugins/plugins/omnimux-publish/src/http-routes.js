@@ -1,8 +1,30 @@
 /** Official webServer routes; domain operations live in the shared dispatcher. */
 import { PublishError } from './publish-error.js'
 import { STATUS_BY_CODE, sendJson, readJsonBody, readRawBody, assertLocalWrite, header, messageOf } from './http-helpers.js'
+import { SAFE_INLINE_MEDIA_TYPES, contentTypeOf, isAllowedHttpUploadMedia, normalizeMediaContentType } from './media.js'
 export { createPublishDispatcher } from './publish-dispatcher.js'
 export { sendJson, readJsonBody, readRawBody, assertLocalWrite } from './http-helpers.js'
+
+const MEDIA_SECURITY_HEADERS = {
+  'X-Content-Type-Options': 'nosniff',
+  'Content-Security-Policy': "sandbox; default-src 'none'",
+  'Cross-Origin-Resource-Policy': 'same-origin',
+}
+
+/**
+ * Build a strictly valid RFC 6266 / RFC 5987 Content-Disposition header value so
+ * non-ASCII or control characters in filenames never trigger Node ERR_INVALID_CHAR.
+ * @param {string | undefined} raw
+ */
+function buildSafeAttachmentDisposition(raw) {
+  const cleaned = String(raw || 'media.bin').replace(/[\u0000-\u001f\u007f"\\/]+/g, '_').trim() || 'media.bin'
+  const ascii = cleaned.replace(/[^A-Za-z0-9._-]+/g, '_').replace(/^[._]+/, '') || 'media.bin'
+  if (ascii === cleaned) {
+    return `attachment; filename="${ascii}"`
+  }
+  const encoded = encodeURIComponent(cleaned).replace(/['()*]/g, (ch) => `%${ch.charCodeAt(0).toString(16).toUpperCase()}`)
+  return `attachment; filename="${ascii}"; filename*=UTF-8''${encoded}`
+}
 
 /**
  * Build a consistent wire error payload for PublishError, surfacing structured
@@ -109,10 +131,19 @@ export function registerPublishRoutes(webServer, dispatcher, deps = {}) {
       if (method === 'GET' && subPath === '/media/content') {
         try {
           const { buffer, meta } = dispatcher.openMedia(url.searchParams.get('id') || '')
-          res.writeHead(200, {
-            'Content-Type': String(meta.content_type || 'application/octet-stream'),
-            'Content-Length': String(buffer.length), 'Cache-Control': 'private, max-age=86400',
-          })
+          const normalizedType = normalizeMediaContentType(meta.content_type)
+          const inlineSafe = SAFE_INLINE_MEDIA_TYPES.has(normalizedType)
+          /** @type {Record<string, string>} */
+          const headers = {
+            ...MEDIA_SECURITY_HEADERS,
+            'Content-Type': inlineSafe ? normalizedType : 'application/octet-stream',
+            'Content-Length': String(buffer.length),
+            'Cache-Control': 'private, max-age=86400',
+          }
+          if (!inlineSafe) {
+            headers['Content-Disposition'] = buildSafeAttachmentDisposition(meta.filename)
+          }
+          res.writeHead(200, headers)
           res.end(buffer)
         } catch (error) {
           if (error instanceof PublishError) sendJson(res, STATUS_BY_CODE[error.code] ?? 404, { error: error.code, message: error.message })
@@ -121,9 +152,19 @@ export function registerPublishRoutes(webServer, dispatcher, deps = {}) {
         return
       }
       if (method === 'POST' && subPath === '/media') {
+        const filename = url.searchParams.get('filename') || undefined
+        const reqContentType = header(req, 'content-type') || undefined
+        if (!isAllowedHttpUploadMedia(reqContentType, filename)) {
+          sendJson(res, 415, { error: 'unsupported-media-type', message: 'only safe image, video, and audio media uploads are allowed' })
+          return
+        }
+        const normalizedReqType = normalizeMediaContentType(reqContentType)
+        const effectiveContentType = (!normalizedReqType || normalizedReqType === 'application/octet-stream') && filename
+          ? contentTypeOf(filename)
+          : (normalizedReqType || undefined)
         const buffer = await readRawBody(req)
         sendJson(res, 200, dispatcher.importMedia(buffer, {
-          filename: url.searchParams.get('filename') || undefined, content_type: header(req, 'content-type') || undefined,
+          filename, content_type: effectiveContentType,
         }))
         return
       }
