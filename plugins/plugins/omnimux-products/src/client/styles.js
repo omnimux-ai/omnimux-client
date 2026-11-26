@@ -360,6 +360,22 @@ export const PRODUCTS_CSS = `
   -webkit-app-region: no-drag;
   animation: omnimux-products-fade-in 160ms cubic-bezier(0.16, 1, 0.3, 1);
 }
+.omnimux-products-subscreen > .dshUk-PageHeader-pageHeader,
+.omnimux-products-subscreen .dshUk-PageHeader-breadcrumb,
+html body .omnimux-products-subscreen,
+html body .omnimux-products-subscreen[data-window-drag-exclude],
+html body .omnimux-products-subscreen[data-window-drag-exclude] > .dshUk-PageHeader-pageHeader,
+html body .omnimux-products-subscreen[data-window-drag-exclude] [class*="PageHeader"],
+html body .omnimux-products-subscreen[data-window-drag-exclude] header,
+html body .omnimux-products-subscreen[data-window-drag-exclude] .dshUk-PageHeader-breadcrumb {
+  -webkit-app-region: no-drag;
+}
+html body .omnimux-products-subscreen[data-window-drag-exclude] button,
+html body .omnimux-products-subscreen[data-window-drag-exclude] [role="button"],
+.omnimux-products-subscreen button,
+.omnimux-products-subscreen [role="button"] {
+  -webkit-app-region: no-drag;
+}
 .omnimux-products-form-view {
   overflow: hidden;
 }
@@ -379,6 +395,7 @@ export const PRODUCTS_CSS = `
   align-items: center;
   gap: 6px;
   min-width: 0;
+  -webkit-app-region: no-drag;
 }
 .omnimux-products-back-sep {
   color: var(--dsw-alias-label-dimmed);

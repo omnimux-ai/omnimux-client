@@ -118,6 +118,11 @@ describe('PRODUCT_STAGE_CHROME', () => {
     )
     assert.match(PRODUCT_STAGE_CHROME, /--dsw-alias-brand-primary|--dsw-alias-interactive-bg-hover-accent|--dsw-alias-label-accent/)
   })
+
+  it('excludes data-window-drag-exclude subscreen headers and PageHeader breadcrumbs from product stage drag', () => {
+    assert.match(PRODUCT_STAGE_CHROME, /header:not\(\[data-window-drag-exclude\]\s*\*\)\{-webkit-app-region:drag!important/)
+    assert.match(PRODUCT_STAGE_CHROME, /header \[class\*="breadcrumb"\]/)
+  })
 })
 
 describe('session-row closer', () => {

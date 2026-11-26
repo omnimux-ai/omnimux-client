@@ -25,6 +25,10 @@ export const ASSETS_CSS = `
   overflow: hidden;
   pointer-events: auto;
 }
+html body .omnimux-assets-stage:has(> .omnimux-products-subscreen) > .dshUk-PageHeader-pageHeader,
+.omnimux-assets-stage:has(> .omnimux-products-subscreen) > .dshUk-PageHeader-pageHeader {
+  -webkit-app-region: no-drag;
+}
 .omnimux-assets-stage[data-visible="false"] {
   display: none !important;
   pointer-events: none;

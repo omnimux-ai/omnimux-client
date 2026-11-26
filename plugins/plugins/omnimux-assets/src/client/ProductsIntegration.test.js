@@ -73,6 +73,10 @@ describe('Product library integration into Assets stage', () => {
     // ProductTab 只上报视图，不自己渲染表单——否则覆盖层会被 main 的内边距缩进。
     assert.doesNotMatch(productTabJsx, /<ProductFormPage\b/)
     assert.match(productTabJsx, /onViewChange\(view\.name === 'form'/)
+    assert.match(
+      ASSETS_CSS,
+      /\.omnimux-assets-stage:has\(>\s*\.omnimux-products-subscreen\)\s*>\s*\.dshUk-PageHeader-pageHeader\s*\{[^}]*-webkit-app-region:\s*no-drag;/,
+    )
   })
 
   it('product category pills come from the assets vocabulary', () => {

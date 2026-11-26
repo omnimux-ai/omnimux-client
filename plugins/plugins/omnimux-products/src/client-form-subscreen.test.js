@@ -65,6 +65,30 @@ describe('OmniMux Products secondary form sub-screen contract', () => {
     assert.ok(root, 'ProductFormPage must root on the sub-screen class pair')
   })
 
+  it('excludes sub-screen header and breadcrumb back controls from macOS drag regions across shells', () => {
+    const block = stylesJs.match(/\.omnimux-products-subscreen \{[\s\S]*?\n\}/)
+    assert.ok(block, 'missing .omnimux-products-subscreen rule')
+    assert.match(block[0], /pointer-events:\s*auto;/)
+    assert.match(block[0], /-webkit-app-region:\s*no-drag;/)
+
+    assert.match(
+      pageJsx,
+      /className="omnimux-products-subscreen omnimux-products-form-view"\s+data-window-drag-exclude/,
+      'ProductFormPage subscreen must declare data-window-drag-exclude',
+    )
+    assert.match(
+      stylesJs,
+      /html body \.omnimux-products-subscreen\[data-window-drag-exclude\]\s+\[class\*="PageHeader"\][\s\S]*?-webkit-app-region:\s*no-drag;/,
+    )
+    assert.match(
+      stylesJs,
+      /html body \.omnimux-products-subscreen\[data-window-drag-exclude\]\s+button,[\s\S]*?\[role="button"\][\s\S]*?-webkit-app-region:\s*no-drag;/,
+    )
+    const backPath = stylesJs.match(/\.omnimux-products-back-path\s*\{([^}]*)\}/)
+    assert.ok(backPath, 'missing .omnimux-products-back-path rule')
+    assert.match(backPath[1], /-webkit-app-region:\s*no-drag;/, '.omnimux-products-back-path must declare -webkit-app-region: no-drag')
+  })
+
   it('the action bar sits in PageHeader actions outside the scroll container so it stays visible', () => {
     const scrollIndex = pageJsx.indexOf('className="omnimux-products-form-scroll"')
     const actionsIndex = pageJsx.indexOf('className="omnimux-products-form-actions"')
