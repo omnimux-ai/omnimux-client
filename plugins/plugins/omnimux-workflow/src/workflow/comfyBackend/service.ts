@@ -16,8 +16,8 @@
  */
 
 import { createHash } from 'node:crypto';
-import { accessSync, closeSync, constants as fsConstants, createWriteStream, existsSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync, rmSync, statfsSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { accessSync, closeSync, constants as fsConstants, createWriteStream, existsSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statfsSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:net';
 import { pipeline } from 'node:stream/promises';
@@ -88,6 +88,51 @@ export interface ComfyBackendService {
 const READY_TIMEOUT_MS = 120_000;
 const PROBE_TIMEOUT_MS = 2_000;
 const MODELS_CONFIG_FILE = 'local-models.yaml';
+const SHA256_HEX_RE = /^[0-9a-f]{64}$/;
+
+function isContainedRealPath(parentReal: string, childReal: string): boolean {
+  const rel = relative(parentReal, childReal);
+  return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
+}
+
+function tryRealpath(targetPath: string): string | null {
+  try {
+    return realpathSync(targetPath);
+  } catch {
+    return null;
+  }
+}
+
+function tryLstat(targetPath: string) {
+  try {
+    return lstatSync(targetPath);
+  } catch {
+    return null;
+  }
+}
+
+function assertHttpsDownloadUrl(rawUrl: string): void {
+  let parsed: URL;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    throw new Error(`无效的下载地址：${rawUrl}`);
+  }
+  if (parsed.protocol !== 'https:') {
+    throw new Error(`仅允许 HTTPS 下载地址：${rawUrl}`);
+  }
+  if (parsed.username || parsed.password) {
+    throw new Error('不允许携带内嵌凭据的下载地址');
+  }
+}
+
+function assertValidSha256(sha256: string, label: string): string {
+  const expected = typeof sha256 === 'string' ? sha256.trim().toLowerCase() : '';
+  if (!SHA256_HEX_RE.test(expected)) {
+    throw new Error(`${label} 缺少有效的 sha256 校验值，已拒绝下载未钉死哈希的归档`);
+  }
+  return expected;
+}
 
 function sha256OfFile(path: string): string {
   const hash = createHash('sha256');
@@ -145,11 +190,26 @@ function portIsFree(port: number): Promise<boolean> {
 }
 
 export function createComfyBackendService(options: ComfyBackendServiceOptions): ComfyBackendService {
-  const dataRoot = options.dataRoot;
+  const dataRoot = resolve(options.dataRoot);
+  mkdirSync(dataRoot, { recursive: true });
+  const dataRootReal = tryRealpath(dataRoot) ?? dataRoot;
+  const defaultRoot = join(dataRoot, 'comfyui-backend');
+
+  const resolveManagedInstallRoot = (current: ComfyBackendSettings): string => {
+    const candidate = resolveInstallRoot(dataRoot, current);
+    const stat = tryLstat(candidate);
+    if (stat) {
+      if (stat.isSymbolicLink() || !stat.isDirectory()) return defaultRoot;
+      const candidateReal = tryRealpath(candidate);
+      if (!candidateReal || !isContainedRealPath(dataRootReal, candidateReal)) return defaultRoot;
+    }
+    return candidate;
+  };
+
   // 设置文件固定在默认根下（它是「用户把根改到哪」的唯一记录，不能跟着根一起搬走）。
-  const settingsPath = join(dataRoot, 'comfyui-backend', 'settings.json');
+  const settingsPath = join(defaultRoot, 'settings.json');
   let settings = parseSettings(readTextOrNull(settingsPath));
-  let root = resolveInstallRoot(dataRoot, settings);
+  let root = resolveManagedInstallRoot(settings);
   const paths = {
     root,
     state: join(root, 'install-state.json'),
@@ -271,8 +331,7 @@ export function createComfyBackendService(options: ComfyBackendServiceOptions): 
     });
 
   /**
-   * 下载并校验：`sha256` 为空表示「只记录、不钉死」（ComfyUI 源码 tarball 用上游
-   * commit 定位，哈希记录进日志，M4 再把它钉进目标表）。
+   * 下载并强制校验 sha256（fail-closed：缺省、空串或非 64 位十六进制哈希一律拒绝）。
    */
   const download = async (
     url: string,
@@ -280,10 +339,15 @@ export function createComfyBackendService(options: ComfyBackendServiceOptions): 
     sha256: string,
     stage: InstallStageId = 'runtime',
   ): Promise<string> => {
+    const expected = assertValidSha256(sha256, destination.split('/').pop() ?? '归档');
+    assertHttpsDownloadUrl(url);
     const part = `${destination}.part`;
     rmSync(part, { force: true });
     const response = await fetchImpl(url, { redirect: 'follow' });
     if (!response.ok || !response.body) throw new Error(`下载失败 ${response.status} ${url}`);
+    if (typeof response.url === 'string' && response.url.length > 0) {
+      assertHttpsDownloadUrl(response.url);
+    }
     const total = Number(response.headers.get('content-length') ?? 0);
     let received = 0;
     const source = Readable.fromWeb(response.body as Parameters<typeof Readable.fromWeb>[0]);
@@ -293,13 +357,112 @@ export function createComfyBackendService(options: ComfyBackendServiceOptions): 
     });
     await pipeline(source, createWriteStream(part));
     const digest = sha256OfFile(part);
-    if (sha256 !== '' && digest !== sha256) {
+    if (digest !== expected) {
       rmSync(part, { force: true });
-      throw new Error(`sha256 不匹配（期望 ${sha256.slice(0, 12)}…，实际 ${digest.slice(0, 12)}…）`);
+      throw new Error(`sha256 不匹配（期望 ${expected.slice(0, 12)}…，实际 ${digest.slice(0, 12)}…）`);
     }
     renameSync(part, destination);
-    log(`校验${sha256 === '' ? '（仅记录）' : ''}通过 ${destination.split('/').pop()} sha256=${digest.slice(0, 12)}…`);
+    log(`校验通过 ${destination.split('/').pop()} sha256=${digest.slice(0, 12)}…`);
     return digest;
+  };
+
+  /** 确保归档已落盘且满足强制 sha256 校验（缓存文件若为符号链接或哈希不匹配则删掉重下）。 */
+  const ensureVerifiedArchive = async (
+    url: string,
+    destination: string,
+    sha256: string,
+    stage: InstallStageId,
+  ): Promise<void> => {
+    const expected = assertValidSha256(sha256, destination.split('/').pop() ?? '归档');
+    const existing = tryLstat(destination);
+    if (existing) {
+      if (!existing.isSymbolicLink() && existing.isFile() && sha256OfFile(destination) === expected) {
+        return;
+      }
+      rmSync(destination, { force: true });
+    }
+    await download(url, destination, expected, stage);
+  };
+
+  /** 校验安装根与就绪态关键文件均位于受管目录内、无符号链接越界。 */
+  const verifyReadyBoundaries = (requireArtifacts: boolean): { ok: true } | { ok: false; reason: string } => {
+    const rootStat = tryLstat(paths.root);
+    if (!rootStat || rootStat.isSymbolicLink() || !rootStat.isDirectory()) {
+      return { ok: false, reason: '安装目录无效或包含符号链接' };
+    }
+    const rootReal = tryRealpath(paths.root);
+    if (!rootReal || !isContainedRealPath(dataRootReal, rootReal)) {
+      return { ok: false, reason: '安装目录超出受管目录边界' };
+    }
+
+    const readyFile = join(paths.root, '.ready');
+    const readyStat = tryLstat(readyFile);
+    if (!readyStat || readyStat.isSymbolicLink() || !readyStat.isFile()) {
+      return { ok: false, reason: '就绪标记文件无效或为符号链接' };
+    }
+    const readyReal = tryRealpath(readyFile);
+    if (!readyReal || !isContainedRealPath(rootReal, readyReal)) {
+      return { ok: false, reason: '就绪标记文件超出安装目录边界' };
+    }
+
+    const userdataStat = tryLstat(paths.userdata);
+    if (userdataStat) {
+      const userdataReal = tryRealpath(paths.userdata);
+      if (userdataStat.isSymbolicLink() || !userdataStat.isDirectory() || !userdataReal || !isContainedRealPath(rootReal, userdataReal)) {
+        return { ok: false, reason: 'userdata 目录超出安装目录边界' };
+      }
+    }
+
+    const comfyStat = tryLstat(paths.comfyui);
+    if (comfyStat) {
+      const comfyReal = tryRealpath(paths.comfyui);
+      if (comfyStat.isSymbolicLink() || !comfyStat.isDirectory() || !comfyReal || !isContainedRealPath(rootReal, comfyReal)) {
+        return { ok: false, reason: 'ComfyUI 目录无效或超出安装目录边界' };
+      }
+      const mainPy = join(paths.comfyui, 'main.py');
+      const mainStat = tryLstat(mainPy);
+      if (mainStat) {
+        const mainReal = tryRealpath(mainPy);
+        if (mainStat.isSymbolicLink() || !mainStat.isFile() || !mainReal || !isContainedRealPath(comfyReal, mainReal)) {
+          return { ok: false, reason: 'ComfyUI/main.py 为符号链接或超出目录边界' };
+        }
+      } else if (requireArtifacts) {
+        return { ok: false, reason: 'ComfyUI/main.py 缺失' };
+      }
+    } else if (requireArtifacts) {
+      return { ok: false, reason: 'ComfyUI 目录缺失' };
+    }
+
+    const venvStat = tryLstat(paths.venv);
+    if (venvStat) {
+      const venvReal = tryRealpath(paths.venv);
+      if (venvStat.isSymbolicLink() || !venvStat.isDirectory() || !venvReal || !isContainedRealPath(rootReal, venvReal)) {
+        return { ok: false, reason: 'venv 目录无效或超出安装目录边界' };
+      }
+      const pyBin = venvPython();
+      const pyDirStat = tryLstat(dirname(pyBin));
+      if (pyDirStat) {
+        const pyDirReal = tryRealpath(dirname(pyBin));
+        if (pyDirStat.isSymbolicLink() || !pyDirStat.isDirectory() || !pyDirReal || !isContainedRealPath(venvReal, pyDirReal)) {
+          return { ok: false, reason: 'venv 可执行目录超出边界' };
+        }
+      }
+      const pyStat = tryLstat(pyBin);
+      if (pyStat) {
+        // Python venv executable may legitimately symlink to the managed runtime inside `<root>/python`.
+        const pyReal = tryRealpath(pyBin);
+        const pyTargetStat = pyReal ? tryLstat(pyReal) : null;
+        if (!pyReal || !pyTargetStat || !pyTargetStat.isFile() || !isContainedRealPath(rootReal, pyReal)) {
+          return { ok: false, reason: 'venv Python 可执行文件超出安装目录边界' };
+        }
+      } else if (requireArtifacts) {
+        return { ok: false, reason: 'venv Python 可执行文件缺失' };
+      }
+    } else if (requireArtifacts) {
+      return { ok: false, reason: 'venv 目录缺失' };
+    }
+
+    return { ok: true };
   };
 
   const extractTarGz = async (archive: string, destination: string) => {
@@ -440,9 +603,18 @@ export function createComfyBackendService(options: ComfyBackendServiceOptions): 
       return;
     }
     try {
+      assertValidSha256(target.python.sha256, target.python.asset);
+      assertHttpsDownloadUrl(target.python.url);
+      assertValidSha256(target.comfyui.sha256, `comfyui-${target.comfyui.commit}.tar.gz`);
+      assertHttpsDownloadUrl(target.comfyui.tarball);
+      for (const wheel of target.torch.wheels) {
+        assertValidSha256(wheel.sha256, wheel.wheel);
+        assertHttpsDownloadUrl(wheel.url);
+      }
+
       progress('runtime', '下载 Python 运行时', 0);
       const runtimeArchive = join(downloads(), target.python.asset);
-      if (!existsSync(runtimeArchive)) await download(target.python.url, runtimeArchive, target.python.sha256);
+      await ensureVerifiedArchive(target.python.url, runtimeArchive, target.python.sha256, 'runtime');
 
       progress('extract', '解压运行时');
       if (!existsSync(pythonBin())) {
@@ -461,15 +633,22 @@ export function createComfyBackendService(options: ComfyBackendServiceOptions): 
 
       progress('source', `下载 ComfyUI ${target.comfyui.tag}`);
       const sourceArchive = join(downloads(), `comfyui-${target.comfyui.commit}.tar.gz`);
-      if (!existsSync(sourceArchive)) await download(target.comfyui.tarball, sourceArchive, '', 'source');
+      await ensureVerifiedArchive(target.comfyui.tarball, sourceArchive, target.comfyui.sha256, 'source');
       if (!existsSync(paths.comfyui)) {
         const staging = join(root, 'source-staging');
         rmSync(staging, { recursive: true, force: true });
         mkdirSync(staging, { recursive: true });
         await extractTarGz(sourceArchive, staging);
         const inner = readdirSyncSafe(staging).find((name) => name.startsWith('ComfyUI-'));
-        if (!inner) throw new Error('源码压缩包结构不符合预期');
-        renameSync(join(staging, inner), paths.comfyui);
+        if (!inner || inner.includes('/') || inner.includes('\\') || inner === '..') {
+          throw new Error('源码压缩包结构不符合预期');
+        }
+        const extractedDir = join(staging, inner);
+        const extractedStat = tryLstat(extractedDir);
+        if (!extractedStat || extractedStat.isSymbolicLink() || !extractedStat.isDirectory()) {
+          throw new Error('源码压缩包目录无效或包含符号链接');
+        }
+        renameSync(extractedDir, paths.comfyui);
         rmSync(staging, { recursive: true, force: true });
       }
 
@@ -509,6 +688,18 @@ export function createComfyBackendService(options: ComfyBackendServiceOptions): 
     if (current.state === 'failed') return current;
     if (!existsSync(join(root, '.ready'))) {
       return current.state === 'not-installed' ? current : writeState({ state: 'not-installed', stage: null, percent: 0, pid: null });
+    }
+    const boundaryCheck = verifyReadyBoundaries(false);
+    if (!boundaryCheck.ok) {
+      log(`就绪态边界校验失败：${boundaryCheck.reason}`);
+      return writeState({
+        state: 'failed',
+        failure: 'install-failed',
+        error: 'install-failed',
+        message: boundaryCheck.reason,
+        stage: null,
+        percent: 0,
+      });
     }
     // 目标解析不出来（选了本平台没有的方案 / 多候选没选）→ 如实报错，不能因为
     // `.ready` 还在就显示成「已装未启动」（实测踩到：界面会说可用，其实用不了）。
@@ -585,6 +776,18 @@ export function createComfyBackendService(options: ComfyBackendServiceOptions): 
       });
     }
     if (!existsSync(join(root, '.ready'))) return writeState({ state: 'not-installed', message: '尚未安装托管后端' });
+    const startBoundary = verifyReadyBoundaries(!options.spawnImpl);
+    if (!startBoundary.ok) {
+      log(`启动前就绪态边界校验失败：${startBoundary.reason}`);
+      return writeState({
+        state: 'failed',
+        failure: 'install-failed',
+        error: 'install-failed',
+        message: startBoundary.reason,
+        stage: null,
+        percent: 0,
+      });
+    }
     // 已装的是旧固定版本时，别把它拉起来冒充可用（M3 实测发现：start 之前不比对版本）。
     if (!versionMatches(readReady(), target)) {
       return writeState({
@@ -689,12 +892,25 @@ export function createComfyBackendService(options: ComfyBackendServiceOptions): 
     if (typeof patch.modelsPath === 'string') checks.push({ field: 'modelsPath', path: patch.modelsPath });
     for (const check of checks) {
       if (check.path.trim() === '') continue;
+      const trimmedPath = check.path.trim();
+      const lstatInfo = tryLstat(trimmedPath);
+      const exists = lstatInfo !== null;
+      const isSymlink = lstatInfo ? lstatInfo.isSymbolicLink() : false;
+      let escapesManagedRoot = false;
+      if (check.field === 'installRoot' && exists) {
+        const realCandidate = tryRealpath(trimmedPath);
+        if (!realCandidate || !isContainedRealPath(dataRootReal, realCandidate)) {
+          escapesManagedRoot = true;
+        }
+      }
       const verdict = validateDirectory({
         path: check.path,
-        exists: existsSync(check.path),
-        isDirectory: existsSync(check.path) ? statSync(check.path).isDirectory() : false,
-        writable: isWritableDir(check.path),
+        exists,
+        isDirectory: exists && !isSymlink ? lstatInfo.isDirectory() : exists ? statSync(trimmedPath).isDirectory() : false,
+        writable: isWritableDir(trimmedPath),
         installRoot: check.field === 'modelsPath' ? paths.root : undefined,
+        managedRoot: check.field === 'installRoot' ? dataRoot : undefined,
+        isSymlink: check.field === 'installRoot' ? (isSymlink || escapesManagedRoot) : undefined,
       });
       if (!verdict.ok) return { ok: false, code: verdict.code, settings: settingsApi() };
       next[check.field] = verdict.path;
@@ -706,7 +922,7 @@ export function createComfyBackendService(options: ComfyBackendServiceOptions): 
       log(`设置写入失败：${error instanceof Error ? error.message : String(error)}`);
       return { ok: false, code: 'settings-write-failed', settings: settingsApi() };
     }
-    applyRoot(resolveInstallRoot(dataRoot, settings));
+    applyRoot(resolveManagedInstallRoot(settings));
     resolveTarget();
     // 用户改了设置（换方案/换目录）说明在回应上一次失败：清掉粘住的失败标记，
     // 让状态按新配置重新判定，否则界面会一直显示旧的失败原因。

@@ -889,6 +889,7 @@ const zh = {
   'comfyPage.backend.settingsCode.notADirectory': '不是目录',
   'comfyPage.backend.settingsCode.notWritable': '目录不可写',
   'comfyPage.backend.settingsCode.sameAsInstallRoot': '不能与安装目录相同',
+  'comfyPage.backend.settingsCode.outsideManagedRoot': '安装目录必须位于插件受管数据目录内',
   'comfyPage.backend.settingsCode.writeFailed': '设置保存失败',
   'comfyPage.backend.settingsCode.unknown': '设置被拒绝',
   'comfyPage.backend.chooseVariant': '选择方案',

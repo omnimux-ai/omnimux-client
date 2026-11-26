@@ -122,6 +122,7 @@ export const COMFY_BACKEND_SETTINGS_CODES = [
   'not-a-directory',
   'not-writable',
   'same-as-install-root',
+  'outside-managed-root',
   'settings-write-failed',
 ] as const;
 
@@ -619,6 +620,7 @@ const SETTINGS_CODE_KEYS: Record<ComfyBackendSettingsCode, string> = {
   'not-a-directory': 'comfyPage.backend.settingsCode.notADirectory',
   'not-writable': 'comfyPage.backend.settingsCode.notWritable',
   'same-as-install-root': 'comfyPage.backend.settingsCode.sameAsInstallRoot',
+  'outside-managed-root': 'comfyPage.backend.settingsCode.outsideManagedRoot',
   'settings-write-failed': 'comfyPage.backend.settingsCode.writeFailed',
 };
 

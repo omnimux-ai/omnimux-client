@@ -864,6 +864,7 @@ const en: Record<DictKey, string> = {
   'comfyPage.backend.settingsCode.notADirectory': 'Not a folder',
   'comfyPage.backend.settingsCode.notWritable': 'Folder is not writable',
   'comfyPage.backend.settingsCode.sameAsInstallRoot': 'Must differ from the install folder',
+  'comfyPage.backend.settingsCode.outsideManagedRoot': 'Install folder must stay inside the managed plugin data folder',
   'comfyPage.backend.settingsCode.writeFailed': 'Could not save settings',
   'comfyPage.backend.settingsCode.unknown': 'Setting rejected',
   'comfyPage.backend.chooseVariant': 'Choose a variant',

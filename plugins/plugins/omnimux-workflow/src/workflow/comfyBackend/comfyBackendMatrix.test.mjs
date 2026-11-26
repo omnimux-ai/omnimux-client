@@ -51,6 +51,8 @@ test('矩阵：六个方案都在，支持度与 pin 完整', () => {
   for (const target of resolved) {
     assert.match(target.python.sha256, /^[0-9a-f]{64}$/, target.id);
     assert.equal(target.python.url.startsWith('https://'), true, target.id);
+    assert.match(target.comfyui.sha256, /^[0-9a-f]{64}$/, `${target.id}/comfyui`);
+    assert.equal(target.comfyui.tarball.startsWith('https://'), true, `${target.id}/comfyui`);
     assert.equal(target.torch.wheels.length > 0, true, target.id);
     for (const wheel of target.torch.wheels) {
       assert.match(wheel.sha256, /^[0-9a-f]{64}$/, `${target.id}/${wheel.wheel}`);

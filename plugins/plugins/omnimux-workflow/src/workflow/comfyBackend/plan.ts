@@ -29,6 +29,7 @@ export const COMFY_BACKEND_READY_PATH = '/system_stats';
 export const COMFYUI_REPO = 'comfyanonymous/ComfyUI';
 export const COMFYUI_TAG = 'v0.42.5';
 export const COMFYUI_COMMIT = '483dae4326356b81de05d27aca3f433dd323cc25';
+export const COMFYUI_TARBALL_SHA256 = 'e790b32b773cc385177a8a476e9c058817217f498d9f01a8b50472a0346a600c';
 export const PYTHON_BUILD_TAG = '20261021';
 export const PYTHON_VERSION = '3.12.15';
 export const TORCH_VERSION = '2.9.1';
@@ -75,7 +76,7 @@ export interface ComfyBackendTarget {
   minDriver: string | null;
   python: { version: string; asset: string; url: string; sha256: string; bytes: number };
   torch: { version: string; wheels: ComfyBackendWheel[] };
-  comfyui: { repo: string; tag: string; commit: string; tarball: string };
+  comfyui: { repo: string; tag: string; commit: string; tarball: string; sha256: string };
   port: number;
   /** 预计下载体积（字节）：Python 运行时 + 全部 wheel + ComfyUI 源码（约 12MB）。 */
   estimatedBytes: number;
@@ -113,6 +114,7 @@ function comfySource() {
     tag: COMFYUI_TAG,
     commit: COMFYUI_COMMIT,
     tarball: `https://codeload.github.com/${COMFYUI_REPO}/tar.gz/${COMFYUI_COMMIT}`,
+    sha256: COMFYUI_TARBALL_SHA256,
   };
 }
 
