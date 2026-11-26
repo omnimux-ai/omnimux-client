@@ -6,6 +6,10 @@ type CatalogItem = CatalogSnapshot['items'][number]
 
 const NPM_PACKAGE_PATTERN = /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/u
 const STABLE_VERSION_PATTERN = /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$/u
+
+function quotePosixShellArg(value: string): string {
+  return `'${value.replace(/'/gu, "'\\''")}'`
+}
 function identity(item: CatalogItem): Pick<MarketManualInstallHint, 'sourceRecordId' | 'providerId' | 'itemId'> {
   return {
     sourceRecordId: item.provenance.sourceRecordId,
@@ -44,7 +48,7 @@ export function manualInstallHint(item: CatalogItem): MarketManualInstallHint | 
         kind: 'github',
         mutable: false,
         desktopVerification: 'not-verified',
-        displayCommand: `dsh plugin add ${target}${subdirectory}`,
+        displayCommand: `dsh plugin add ${quotePosixShellArg(`${target}${subdirectory}`)}`,
       }
     } catch {
       return undefined

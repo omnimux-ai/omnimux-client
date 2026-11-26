@@ -27,6 +27,14 @@ describe('GitHub package verification', () => {
     )
   })
 
+  it('rejects unsafe subdirectory characters in target and manifest URL (issue #359)', () => {
+    for (const badSubdir of ['packages/a b', 'packages/a&b', 'packages/a;id', 'packages/a?x=1', 'packages/a#frag', 'packages/..', 'packages/%2e%2e']) {
+      const bad = { ...source, subdirectory: badSubdir }
+      expect(() => githubPackageTarget(bad)).toThrow(/GitHub package verification failed/u)
+      expect(() => githubPackageManifestUrl(bad)).toThrow(/GitHub package verification failed/u)
+    }
+  })
+
   it('verifies package identity, stable version, and DSH bundle metadata', async () => {
     const url = githubPackageManifestUrl(source)
     const http = {
@@ -82,8 +90,17 @@ describe('manual install hints', () => {
       kind: 'github',
       mutable: false,
       desktopVerification: 'not-verified',
-      displayCommand: 'dsh plugin add github:example/plugin#0123456789abcdef0123456789abcdef01234567&path:/packages/plugin',
+      displayCommand: "dsh plugin add 'github:example/plugin#0123456789abcdef0123456789abcdef01234567&path:/packages/plugin'",
     })
+  })
+
+  it('rejects unsafe subdirectory characters in manual install hints (issue #359)', () => {
+    for (const badSubdir of ['packages/a;id', 'packages/a b', 'packages/a&b', 'packages/a$(id)']) {
+      expect(manualInstallHint({
+        ...manualBase,
+        repository: { url: 'https://github.com/example/plugin', subdirectory: badSubdir },
+      })).toBeUndefined()
+    }
   })
 
   it('does not expose malformed pinned sources', () => {
@@ -185,6 +202,29 @@ describe('Market GitHub install target', () => {
         code: 'operation-failed',
         details: 'expected dsh-plugin-git, installed dsh-plugin-impostor',
       })
+    } finally {
+      service.dispose()
+    }
+  })
+
+  it('rejects execution when verified GitHub source differs from candidate source (issue #359)', async () => {
+    const official = manager(spec => ({
+      changed: true, application: 'applied', stage: 'enable', target: spec, bundle: 'dsh-plugin-git', version: '1.2.3',
+    }))
+    const service = new MarketInstallService(profile, official, {
+      verify: vi.fn(async candidate => ({
+        packageName: 'dsh-plugin-git',
+        version: '1.2.3',
+        source: { ...candidate.source!, commit: 'fedcba9876543210fedcba9876543210fedcba98' },
+      })),
+    })
+    try {
+      service.observeCatalog(snapshot())
+      const preview = await service.previewInstall('source-1', 'example/plugin', new AbortController().signal)
+      await expect(service.executePreview(preview.intent, new AbortController().signal)).rejects.toMatchObject({
+        code: 'verification-failed',
+      })
+      expect(official.installBundle).not.toHaveBeenCalled()
     } finally {
       service.dispose()
     }

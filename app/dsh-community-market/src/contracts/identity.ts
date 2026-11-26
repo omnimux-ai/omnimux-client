@@ -12,6 +12,7 @@ type RepositoryIdentity = NonNullable<CatalogItem['repository']>
 type PackageIdentity = NonNullable<CatalogItem['package']>
 type InstallSourceIdentity = NonNullable<CatalogItem['installSource']>
 const GITHUB_COMMIT_PATTERN = /^[0-9a-f]{40}$/u
+const SUBDIRECTORY_SEGMENT_PATTERN = /^[A-Za-z0-9._-]+$/u
 
 function normalizeSubdirectory(value: string): string {
   if (value.startsWith('/') || value.endsWith('/') || value.includes('\\')) {
@@ -24,6 +25,11 @@ function normalizeSubdirectory(value: string): string {
   if (segments.some(segment => !segment || segment === '.' || segment === '..')) {
     throw new CatalogContractError('identity', [
       semanticIssue('/repository/subdirectory', 'must not contain empty, dot, or parent segments'),
+    ])
+  }
+  if (segments.some(segment => !SUBDIRECTORY_SEGMENT_PATTERN.test(segment))) {
+    throw new CatalogContractError('identity', [
+      semanticIssue('/repository/subdirectory', 'segments may contain only ASCII letters, digits, dots, hyphens, and underscores'),
     ])
   }
   for (const segment of segments) {
