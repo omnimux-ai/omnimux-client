@@ -1,4 +1,5 @@
 import { sendJson, readJsonBody } from '../auth/http-routes.js'
+import { requestRejection } from '../host/request-authorization.js'
 import { resolveDshHome } from '../auth/store.js'
 import { DEFAULT_SITE, resolveSiteBaseUrl } from '../auth/omnimux-auth.js'
 import { parseAppsConfig } from './config.js'
@@ -143,13 +144,18 @@ export function createAppsDispatcher(deps = {}) {
  * @param {{ register: (route: { kind: string, path: string, handler: Function }) => () => void }} webServer
  * @param {ReturnType<typeof createAppsDispatcher>} dispatcher
  */
-export function registerAppsRoutes(webServer, dispatcher) {
+export function registerAppsRoutes(webServer, dispatcher, deps = {}) {
   const dispose = webServer.register({
     kind: 'prefix',
     path: '/omnimux/apps',
     auth: 'required',
-    async handler(req, res) {
+    async handler(req, res, peer) {
       try {
+        const rejection = requestRejection(req, deps.getConnection, peer)
+        if (rejection !== undefined) {
+          sendJson(res, rejection, { error: 'request-denied' })
+          return
+        }
         let body
         if (req.method === 'POST' || req.method === 'PATCH') {
           body = await readJsonBody(req)

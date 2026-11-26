@@ -19,10 +19,13 @@ async function fixture(t) {
     root, workspacesDir: join(root, 'workspaces'), executionsDir: join(root, 'executions'), mediaDir: join(root, 'media'),
   };
   let handler;
-  const dispose = mountWorkflowHost({ webServer: { register(route) {
-    if (route.path === prefix) handler = route.handler;
-    return () => {};
-  } } }, { paths, libraryRoot: join(root, 'library') });
+  const dispose = mountWorkflowHost({
+    get: (name) => (name === 'connection' ? { requestRejection: () => undefined } : undefined),
+    webServer: { register(route) {
+      if (route.path === prefix) handler = route.handler;
+      return () => {};
+    } },
+  }, { paths, libraryRoot: join(root, 'library') });
   let disconnect;
   const server = createServer((req, res) => {
     const done = handler(req, res);

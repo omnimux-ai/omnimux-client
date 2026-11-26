@@ -98,7 +98,9 @@ describe('TikTok Direct Post compliance E2E (Issue #186)', () => {
           return () => {}
         },
       }
-      registerPublishRoutes(webServer, dispatcher)
+      registerPublishRoutes(webServer, dispatcher, {
+        getConnection: () => ({ requestRejection: () => undefined }),
+      })
 
       // 1. First GET /creator-info hits hub
       const first = mockReqRes({ method: 'GET', url: '/omnimux/publish/creator-info?id=d1' })

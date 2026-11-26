@@ -5,11 +5,11 @@ import { SESSION_MODEL_ROUTE, registerSessionModelRoutes } from './http.js'
 import { createSessionModelPreference } from './model-preference.js'
 
 /** Capture the registered route so the test can drive its handler directly. */
-function fixture() {
+function fixture(getConnection = () => ({ requestRejection: () => undefined })) {
   let route = null
   const webServer = { register: (definition) => { route = definition; return () => { route = null } } }
   const preference = createSessionModelPreference()
-  registerSessionModelRoutes(webServer, { preference })
+  registerSessionModelRoutes(webServer, { preference, getConnection })
   return { route, preference }
 }
 

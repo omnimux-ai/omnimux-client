@@ -1,3 +1,5 @@
+import { requestRejection } from '../host/request-authorization.js'
+
 export const SESSION_MODEL_ROUTE = '/omnimux/session-model'
 
 /**
@@ -22,8 +24,13 @@ export function registerSessionModelRoutes(webServer, deps) {
     kind: 'exact',
     path: SESSION_MODEL_ROUTE,
     auth: 'required',
-    async handler(req, res) {
+    async handler(req, res, peer) {
       const { readJsonBody, sendJson } = await import('../auth/http-routes.js')
+      const rejection = requestRejection(req, deps.getConnection, peer)
+      if (rejection !== undefined) {
+        sendJson(res, rejection, { ok: false, error: 'request-denied' })
+        return
+      }
       const method = (req.method || 'GET').toUpperCase()
 
       if (method === 'GET') {

@@ -1,7 +1,32 @@
 /** Which requests may read the market and which may change it: loopback peers on the Host's own origin. */
 
-import type { IncomingMessage } from 'node:http'
+import type { IncomingHttpHeaders, IncomingMessage } from 'node:http'
 import { BlockList, isIP } from 'node:net'
+
+interface HostConnectionService {
+  requestRejection?(request: { readonly headers: IncomingHttpHeaders }): number | undefined
+}
+
+interface HostConnectionContext {
+  get?(name: string): unknown
+}
+
+/**
+ * Enforce Host session authentication directly inside Community Market routes so
+ * mounting outside `dsh-desktop-next` remains protected fail-closed.
+ */
+export function connectionRejection(
+  ctx: HostConnectionContext,
+  req: { readonly headers: IncomingHttpHeaders },
+  peer?: unknown,
+): number | undefined {
+  if (peer !== undefined && peer !== null && typeof peer === 'object') return undefined
+  const connection = typeof ctx.get === 'function' ? ctx.get('connection') as HostConnectionService | undefined : undefined
+  if (typeof connection?.requestRejection !== 'function') return 503
+  const rejection = connection.requestRejection(req)
+  if (rejection === undefined) return undefined
+  return Number.isInteger(rejection) && rejection >= 400 && rejection <= 599 ? rejection : 403
+}
 
 const loopbackAddresses = new BlockList()
 loopbackAddresses.addSubnet('127.0.0.0', 8, 'ipv4')

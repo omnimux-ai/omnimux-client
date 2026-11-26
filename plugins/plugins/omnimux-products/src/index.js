@@ -122,7 +122,9 @@ export function apply(ctx) {
   const mountHttp = (httpCtx) => {
     const webServer = httpCtx.webServer ?? httpCtx.get?.('webServer')
     if (!webServer || typeof webServer.register !== 'function') return
-    const mount = () => registerProductsRoutes(webServer, dispatcher)
+    const mount = () => registerProductsRoutes(webServer, dispatcher, {
+      getConnection: () => httpCtx.get?.('connection') ?? ctx.get?.('connection'),
+    })
     if (typeof httpCtx.effect === 'function') httpCtx.effect(mount, 'omnimux-products: http routes')
     else mount()
   }

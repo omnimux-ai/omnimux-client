@@ -143,6 +143,7 @@ async function requestMarketCatalog(
         return vi.fn()
       }),
     },
+    get: (name: string) => name === 'connection' ? { requestRejection: () => undefined } : undefined,
   }
   const state: MarketStateStore = {
     getSources: () => records,
@@ -1796,6 +1797,7 @@ describe('source mutation boundary', () => {
           return routeDispose
         }),
       },
+      get: (name: string) => name === 'connection' ? { requestRejection: () => undefined } : undefined,
     }
     const setSources = vi.fn(async () => {})
     const state: MarketStateStore = {

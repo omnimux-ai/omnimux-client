@@ -121,6 +121,7 @@ async function startMarketServer(
   initialSources: readonly LocalSourceRecord[],
   sharedState?: MarketStateStore,
   setCatalogCacheOverride?: MarketStateStore['setCatalogCache'],
+  connectionService: { requestRejection?: (req: IncomingMessage) => number | undefined } | null = { requestRejection: () => undefined },
 ): Promise<MarketServer> {
   const routes = new Map<string, RouteHandler>()
   const backing = sharedState ?? new MemoryMarketStateStore({ sources: initialSources })
@@ -159,6 +160,7 @@ async function startMarketServer(
         return () => { routes.delete(route.path) }
       },
     },
+    get: (name: string) => name === 'connection' ? (connectionService ?? undefined) : undefined,
     logger,
   } as unknown as Context
   const disposeRoutes = registerMarketRoutes(ctx, state)
@@ -659,6 +661,7 @@ async function startAssetServer(): Promise<TestAssetServer> {
         return () => { handlers.delete(route.path) }
       },
     },
+    get: (name: string) => name === 'connection' ? { requestRejection: () => undefined } : undefined,
     logger: { error: vi.fn() },
   }
   const disposeRoutes = registerMarketRoutes(context as never, scope as never)
@@ -786,6 +789,7 @@ function createHarness() {
 
   const context = {
     logger: { error: vi.fn(), warn: vi.fn() },
+    get: (name: string) => name === 'connection' ? { requestRejection: () => undefined } : undefined,
     webServer: {
       port: 43_120,
       register: vi.fn((route: { path: string; handler: Handler }) => {
@@ -921,5 +925,35 @@ describe('community market Host capability lifecycle', () => {
     await expect(harness.request(marketRoutes.installations)).resolves.toMatchObject({ status: 503 })
 
     harness.dispose()
+  })
+
+  it('enforces Host connection.requestRejection fail-closed inside market routes even outside dsh-desktop-next', async () => {
+    const unauthServer = await startMarketServer(
+      [builtInSource()],
+      undefined,
+      undefined,
+      { requestRejection: req => req.headers.cookie === 'dsh=valid' ? undefined : 401 },
+    )
+    try {
+      const deniedRead = await readRoute(unauthServer, marketRoutes.state)
+      expect(deniedRead.status).toBe(401)
+      const deniedWrite = await mutateSource(unauthServer, { action: 'select', sourceRecordId: builtInSource().sourceRecordId })
+      expect(deniedWrite.status).toBe(401)
+
+      const allowedRead = await fetch(`${unauthServer.baseUrl}${marketRoutes.state}`, {
+        headers: { ...localHeaders(unauthServer), cookie: 'dsh=valid' },
+      })
+      expect(allowedRead.status).toBe(200)
+    } finally {
+      await unauthServer.close()
+    }
+
+    const noConnectionServer = await startMarketServer([builtInSource()], undefined, undefined, null)
+    try {
+      const unavailable = await readRoute(noConnectionServer, marketRoutes.state)
+      expect(unavailable.status).toBe(503)
+    } finally {
+      await noConnectionServer.close()
+    }
   })
 })

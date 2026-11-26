@@ -120,6 +120,7 @@ describe('community market and official plugin manager integration', () => {
       }),
     }
     try {
+      ctx.provide('connection', { requestRejection: () => undefined } as never)
       ctx.provide('webServer', webServer.service as never)
       // The Market needs only what every dsh Host supplies: the official manager and the profile it manages.
       ctx.provide('profileContext', { name: 'web', dir: profileDir } as never)

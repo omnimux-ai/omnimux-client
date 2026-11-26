@@ -234,6 +234,7 @@ describe('HubPublishChannel with real DSH 0.2.2-rc.5 ToolRuntime + executeToolBa
     const routeHandlers = new Map()
     await ctx.plugin({
       apply(c) {
+        c.provide('connection', { requestRejection: () => undefined })
         c.provide('webServer', {
           register(route) {
             routeHandlers.set(route.path, route.handler)

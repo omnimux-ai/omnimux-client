@@ -6,7 +6,7 @@ import { abortOnDisconnect, readJson, sendJson } from '../http.js'
 import type { MarketStateResponse } from '../../api-types.js'
 import { viewBuiltIns } from '../source-mutations.js'
 import { asMutation } from '../request-validation.js'
-import type { MarketRouteContext } from './context.js'
+import { registerAuthenticatedMarketRoute, type MarketRouteContext } from './context.js'
 
 /**
  * Register source routes: the market state and changes to the configured catalog sources.
@@ -16,7 +16,7 @@ import type { MarketRouteContext } from './context.js'
 export function registerSourceRoutes(context: MarketRouteContext): (() => void)[] {
   const { ctx, expectedPort, generationController, service, mutateSource, desktopActionsProvider } = context
   return [
-    ctx.webServer.register({ kind: 'exact', path: ROUTE_STATE, handler: async (_req, res) => {
+    registerAuthenticatedMarketRoute(ctx, ROUTE_STATE, async (_req, res) => {
       if (generationController.signal.aborted) return
       if (!requestAllowed(_req, expectedPort)) {
         sendJson(res, 403, { error: 'market request authority rejected' })
@@ -35,8 +35,8 @@ export function registerSourceRoutes(context: MarketRouteContext): (() => void)[
       } catch {
         if (!generationController.signal.aborted && !res.destroyed) sendJson(res, 500, { error: 'market state unavailable' })
       }
-    }}),
-    ctx.webServer.register({ kind: 'exact', path: ROUTE_SOURCES, handler: async (req, res) => {
+    }),
+    registerAuthenticatedMarketRoute(ctx, ROUTE_SOURCES, async (req, res) => {
       if (req.method !== 'POST' || !mutationAllowed(req, expectedPort)) {
         sendJson(res, 405, { error: 'source changes require a local same-origin POST' })
         return
@@ -55,6 +55,6 @@ export function registerSourceRoutes(context: MarketRouteContext): (() => void)[
       } finally {
         stopWatching()
       }
-    }}),
+    }),
   ]
 }

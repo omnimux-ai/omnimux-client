@@ -848,6 +848,7 @@ describe('market Profile inventory routes', () => {
           return vi.fn()
         }),
       },
+      get: (name: string) => name === 'connection' ? { requestRejection: () => undefined } : undefined,
     }
     const official = manager([
       bundle('@deepseek-ai/dsh-base', { availability: 'installation', installed: false, removable: false, readOnlyReason: 'management-required' }),
@@ -912,6 +913,7 @@ describe('market Profile inventory routes', () => {
           return vi.fn()
         }),
       },
+      get: (name: string) => name === 'connection' ? { requestRejection: () => undefined } : undefined,
     }
     const official = versioned([bundle('dsh-other-market', { version: '1.0.0', updatable: true })], listed('1.0.0', [published('1.1.0')]))
     const install = new MarketInstallService(profile, official, { verify: vi.fn() })

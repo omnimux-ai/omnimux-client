@@ -9,7 +9,7 @@ import { isDsh1024StoreAdapterId } from '../../adapters/dsh-1024store.js'
 import type { MarketCatalogResponse, MarketCatalogSourceResult } from '../../api-types.js'
 import { cachedCatalogResponse, catalogManualInstall } from '../catalog-responses.js'
 import { MARKET_MEDIA_ASSET_REF_PATTERN } from '../../media/ref.js'
-import type { MarketRouteContext } from './context.js'
+import { registerAuthenticatedMarketRoute, type MarketRouteContext } from './context.js'
 
 /**
  * Register catalog routes: catalog queries across enabled sources and their media assets.
@@ -19,7 +19,7 @@ import type { MarketRouteContext } from './context.js'
 export function registerCatalogRoutes(context: MarketRouteContext): (() => void)[] {
   const { ctx, state, expectedPort, generationController, media, service, servedCatalogPreviews, catalogPreviewKey, buildCatalogResponse, persistCatalogResponse } = context
   return [
-    ctx.webServer.register({ kind: 'exact', path: ROUTE_CATALOG, handler: async (req, res) => {
+    registerAuthenticatedMarketRoute(ctx, ROUTE_CATALOG, async (req, res) => {
       if (!requestAllowed(req, expectedPort)) {
         sendJson(res, 403, { error: 'market request authority rejected' })
         return
@@ -146,8 +146,8 @@ export function registerCatalogRoutes(context: MarketRouteContext): (() => void)
       } finally {
         stopWatching()
       }
-    }}),
-    ctx.webServer.register({ kind: 'exact', path: ROUTE_ASSETS, handler: async (req, res) => {
+    }),
+    registerAuthenticatedMarketRoute(ctx, ROUTE_ASSETS, async (req, res) => {
       if (!requestAllowed(req, expectedPort)) {
         sendJson(res, 403, { error: 'market request authority rejected' })
         return
@@ -195,6 +195,6 @@ export function registerCatalogRoutes(context: MarketRouteContext): (() => void)
       } finally {
         stopWatching()
       }
-    }}),
+    }),
   ]
 }

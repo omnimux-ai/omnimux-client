@@ -181,7 +181,7 @@ test('mountWorkflowHost declares auth: required on both canonical and legacy pre
 
   const canonical = registered.find((r) => r.path === '/omnimux-workflow');
 
-  // 1. Legacy mode without connection seam -> fail closed (503) on account-scoped /api/capabilities.
+  // 1. Legacy mode without connection seam -> fail closed (503) on account-scoped /api/capabilities and general workflow API routes.
   {
     const req = makeStreamReq({
       method: 'GET',
@@ -193,6 +193,18 @@ test('mountWorkflowHost declares auth: required on both canonical and legacy pre
     await canonical.handler(req, res);
     assert.equal(res.status, 503);
     assert.equal(res.json().error, 'unauthorized');
+  }
+  {
+    const req = makeStreamReq({
+      method: 'GET',
+      url: '/omnimux-workflow/api/workspaces',
+      payload: null,
+      headers: { 'content-type': undefined },
+    });
+    const res = new FakeRes();
+    await canonical.handler(req, res);
+    assert.equal(res.status, 503);
+    assert.equal(res.json().error, 'auth-unavailable');
   }
 
   // 2. Non-object peer falls back to legacy connection check (still 503 when connection is absent).

@@ -1,4 +1,4 @@
-import { createServer, Server } from 'node:http'
+import { createServer, Server, type IncomingMessage, type ServerResponse } from 'node:http'
 import { connect } from 'node:net'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
@@ -261,4 +261,43 @@ it('traces HTTP status and duration without query, headers or bodies', async () 
     configureDeveloperLogging({ developerLogging: false, logLevel: 'info' })
     initializeDeveloperLogging(() => {})
   }
+})
+
+describe('Desktop WebServer route auth enforcement', () => {
+  it('enforces connection.requestRejection on /api/community-market and auth: required routes when browser access is enabled', async () => {
+    const context = new Context()
+    contexts.push(context)
+    context.provide('desktopBrowserAccess', createDesktopBrowserAccess(true, Buffer.alloc(32, 6).toString('base64url')))
+    context.provide('connection', {
+      requestRejection: (req: { readonly headers: Record<string, unknown> }) => req.headers.cookie === 'dsh=ok' ? undefined : 401,
+    } as never)
+    await context.plugin(DesktopWebServer, { host: '127.0.0.1', port: 0 })
+    const server = context.get('webServer') as DesktopWebServer
+    server.register({ kind: 'exact', path: '/api/community-market/state', handler: (_req, res) => { res.end('market-ok') } })
+    server.register({ kind: 'exact', path: '/omnimux/protected', auth: 'required', handler: (_req: IncomingMessage, res: ServerResponse) => { res.end('plugin-ok') } } as never)
+    server.register({ kind: 'exact', path: '/omnimux/denied', auth: 'deny', handler: (_req: IncomingMessage, res: ServerResponse) => { res.end('never') } } as never)
+
+    const root = `http://127.0.0.1:${String(server.port)}`
+    expect((await fetch(`${root}/api/community-market/state`)).status).toBe(401)
+    expect((await fetch(`${root}/omnimux/protected`, { method: 'POST' })).status).toBe(401)
+    expect((await fetch(`${root}/omnimux/denied`, { headers: { cookie: 'dsh=ok' } })).status).toBe(403)
+
+    const marketOk = await fetch(`${root}/api/community-market/state`, { headers: { cookie: 'dsh=ok' } })
+    expect(marketOk.status).toBe(200)
+    await expect(marketOk.text()).resolves.toBe('market-ok')
+
+    const pluginOk = await fetch(`${root}/omnimux/protected`, { method: 'POST', headers: { cookie: 'dsh=ok' } })
+    expect(pluginOk.status).toBe(200)
+    await expect(pluginOk.text()).resolves.toBe('plugin-ok')
+  })
+
+  it('fails closed with 503 on auth: required and market routes when connection is absent', async () => {
+    const server = await startWebServer(createDesktopBrowserAccess(true, Buffer.alloc(32, 8).toString('base64url')))
+    server.register({ kind: 'exact', path: '/api/community-market/state', handler: (_req, res) => { res.end('never') } })
+    server.register({ kind: 'exact', path: '/omnimux/protected', auth: 'required', handler: (_req: IncomingMessage, res: ServerResponse) => { res.end('never') } } as never)
+
+    const root = `http://127.0.0.1:${String(server.port)}`
+    expect((await fetch(`${root}/api/community-market/state`)).status).toBe(503)
+    expect((await fetch(`${root}/omnimux/protected`)).status).toBe(503)
+  })
 })

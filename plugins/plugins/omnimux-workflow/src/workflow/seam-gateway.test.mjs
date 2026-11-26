@@ -213,9 +213,8 @@ function makeHarness({ seamHub = null, gatewayMode, seamConcurrency, env } = {})
     tools.set(tool.name, tool);
     return () => tools.delete(tool.name);
   } } };
-  if (seamHub) {
-    ctx.get = (name) => seamHub.seams[name];
-  }
+  const defaultConnection = { requestRejection: () => undefined };
+  ctx.get = (name) => (seamHub ? seamHub.seams[name] : undefined) ?? (name === 'connection' ? defaultConnection : undefined);
   const opts = {
     paths: {
       root,
@@ -1173,7 +1172,7 @@ test('auto 晚绑定：mount 时无 seam，hub 出现后目录升级为 omnimux'
   const libraryRoot = join(root, 'library');
   mkdirSync(libraryRoot, { recursive: true });
   const dispose = host.mountWorkflowHost(
-    { webServer, get: (name) => holder.seams?.[name] },
+    { webServer, get: (name) => (name === 'connection' ? { requestRejection: () => undefined } : holder.seams?.[name]) },
     {
       paths: {
         root,

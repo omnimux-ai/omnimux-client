@@ -95,7 +95,9 @@ async function openRegisteredRoutes(dispatcher) {
       return () => { registered = undefined }
     },
   }
-  const dispose = registerAssetsRoutes(webServer, dispatcher)
+  const dispose = registerAssetsRoutes(webServer, dispatcher, {
+    getConnection: () => ({ requestRejection: () => undefined }),
+  })
   const server = createServer((req, res) => {
     void registered.handler(req, res)
   })

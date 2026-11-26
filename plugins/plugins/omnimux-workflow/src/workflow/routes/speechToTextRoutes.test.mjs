@@ -138,7 +138,7 @@ test('mounted workflow Host registers the route and resolves ctx.get speechToTex
   const calls = [];
   const dispose = mountWorkflowHost({
     webServer: { register: (route) => { handlers.set(route.path, route.handler); return () => {}; } },
-    get: (name) => name === 'speechToText' ? seam : undefined,
+    get: (name) => (name === 'speechToText' ? seam : name === 'connection' ? { requestRejection: () => undefined } : undefined),
   }, {
     paths: { root, workspacesDir: join(root, 'workspaces'), executionsDir: join(root, 'executions'), mediaDir: join(root, 'media') },
     libraryRoot: join(root, 'library'), gateway: { capabilities: async () => ({}) },

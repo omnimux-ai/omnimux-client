@@ -412,6 +412,12 @@ export function registerWorkflowRoutes(
         let authenticatedDirectorSession: import('../director/directorSession.ts').DirectorSessionContext | undefined;
         const requestUrl = new URL(req.url || '/', 'http://127.0.0.1');
         const requestPath = decodeURIComponent(requestUrl.pathname);
+        const isCapabilities = req.method === 'GET' && /^\/(?:omnimux-workflow|dsh-workflow)\/api\/capabilities$/.test(requestPath);
+        const routeRejection = dispatcher.authorizeHostRequest(req, peer);
+        if (routeRejection !== undefined) {
+          sendJson(res, routeRejection, { error: isCapabilities ? 'unauthorized' : (routeRejection === 503 ? 'auth-unavailable' : 'unauthorized') });
+          return;
+        }
         if (req.method === 'GET' && /^\/(?:omnimux-workflow|dsh-workflow)\/api\/capabilities$/.test(requestPath) && dispatcher.accountCatalogScoped()) {
           const rejection = dispatcher.authorizeHostRequest(req, peer);
           if (rejection !== undefined) { sendJson(res, rejection, { error: 'unauthorized' }); return; }

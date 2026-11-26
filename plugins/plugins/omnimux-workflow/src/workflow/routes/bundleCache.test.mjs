@@ -72,6 +72,7 @@ function harness(t) {
   let handler = null;
   const dispose = mountWorkflowHost(
     {
+      get: (name) => (name === 'connection' ? { requestRejection: () => undefined } : undefined),
       webServer: {
         register(route) {
           if (route.path === '/omnimux-workflow') handler = route.handler;

@@ -31,15 +31,39 @@ function extractSubPath(pathname) {
 }
 
 /**
+ * @param {import('node:http').IncomingMessage} req
+ * @param {(() => { requestRejection?: (req: import('node:http').IncomingMessage) => number | undefined } | null | undefined) | undefined} getConnection
+ * @param {unknown} peer
+ * @returns {number | undefined}
+ */
+function hostRequestRejection(req, getConnection, peer) {
+  if (peer !== undefined && peer !== null && typeof peer === 'object') return undefined
+  try {
+    const connection = getConnection?.()
+    if (typeof connection?.requestRejection !== 'function') return 503
+    const rejection = connection.requestRejection(req)
+    return rejection === undefined ? undefined : (Number.isInteger(rejection) && rejection >= 400 && rejection <= 599 ? rejection : 403)
+  } catch {
+    return 503
+  }
+}
+
+/**
  * Mount primary and existing legacy prefixes on the official webServer seat.
  * @param {import('./http-helpers.js').WebServer} webServer
  * @param {ReturnType<typeof import('./publish-dispatcher.js').createPublishDispatcher>} dispatcher
+ * @param {{ getConnection?: () => { requestRejection?: (req: import('node:http').IncomingMessage) => number | undefined } | null | undefined }} [deps]
  * @returns {() => void}
  */
-export function registerPublishRoutes(webServer, dispatcher) {
+export function registerPublishRoutes(webServer, dispatcher, deps = {}) {
   /** @type {import('./http-helpers.js').RouteHandler} */
-  const handler = async (req, res) => {
+  const handler = async (req, res, peer) => {
     try {
+      const rejection = hostRequestRejection(req, deps.getConnection, peer)
+      if (rejection !== undefined) {
+        sendJson(res, rejection, { error: 'request-denied', message: 'Host authentication required' })
+        return
+      }
       const method = (req.method || 'GET').toUpperCase()
       const url = new URL(req.url || '/omnimux/publish/state', 'http://127.0.0.1')
       const subPath = extractSubPath(url.pathname)

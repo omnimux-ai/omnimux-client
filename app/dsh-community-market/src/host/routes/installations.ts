@@ -15,7 +15,7 @@ import { isDsh1024StoreAdapterId } from '../../adapters/dsh-1024store.js'
 import type { MarketCatalogMetadata, MarketCatalogSourceResult } from '../../api-types.js'
 import { catalogMetadata } from '../catalog-responses.js'
 import { asInstallationToggle, asUpdateCheckPackage } from '../request-validation.js'
-import type { MarketRouteContext, MarketInstallServiceProvider } from './context.js'
+import { registerAuthenticatedMarketRoute, type MarketRouteContext, type MarketInstallServiceProvider } from './context.js'
 
 /**
  * Register installation routes: what the market can install, what is installed, update checks and switches.
@@ -26,7 +26,7 @@ import type { MarketRouteContext, MarketInstallServiceProvider } from './context
 export function registerInstallationRoutes(context: MarketRouteContext, installProvider: MarketInstallServiceProvider): (() => void)[] {
   const { ctx, expectedPort, generationController, service } = context
   return [
-    ctx.webServer.register({ kind: 'exact', path: ROUTE_INSTALLABLE, handler: async (req, res) => {
+    registerAuthenticatedMarketRoute(ctx, ROUTE_INSTALLABLE, async (req, res) => {
       if (req.method !== 'GET' || !requestAllowed(req, expectedPort)) {
         sendJson(res, 405, { error: 'market installable catalog requires a local GET' })
         return
@@ -108,8 +108,8 @@ export function registerInstallationRoutes(context: MarketRouteContext, installP
       } finally {
         stopWatching()
       }
-    }}),
-    ctx.webServer.register({ kind: 'exact', path: ROUTE_INSTALLATIONS, handler: async (req, res) => {
+    }),
+    registerAuthenticatedMarketRoute(ctx, ROUTE_INSTALLATIONS, async (req, res) => {
       if (req.method !== 'GET' || !requestAllowed(req, expectedPort)) {
         sendJson(res, 405, { error: 'market installations require a local GET' })
         return
@@ -130,8 +130,8 @@ export function registerInstallationRoutes(context: MarketRouteContext, installP
       } finally {
         stopWatching()
       }
-    }}),
-    ctx.webServer.register({ kind: 'exact', path: ROUTE_INSTALLATION_UPDATE, handler: async (req, res) => {
+    }),
+    registerAuthenticatedMarketRoute(ctx, ROUTE_INSTALLATION_UPDATE, async (req, res) => {
       if (req.method !== 'GET' || !requestAllowed(req, expectedPort)) {
         sendJson(res, 405, { error: 'market update checks require a local GET' })
         return
@@ -153,8 +153,8 @@ export function registerInstallationRoutes(context: MarketRouteContext, installP
       } finally {
         stopWatching()
       }
-    }}),
-    ctx.webServer.register({ kind: 'exact', path: ROUTE_INSTALLATION_ENABLED, handler: async (req, res) => {
+    }),
+    registerAuthenticatedMarketRoute(ctx, ROUTE_INSTALLATION_ENABLED, async (req, res) => {
       if (req.method !== 'POST' || !mutationAllowed(req, expectedPort)) {
         sendJson(res, 405, { error: 'market plugin toggles require a local same-origin POST' })
         return
@@ -176,6 +176,6 @@ export function registerInstallationRoutes(context: MarketRouteContext, installP
       } finally {
         stopWatching()
       }
-    }}),
+    }),
   ]
 }
