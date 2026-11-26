@@ -82,7 +82,6 @@ const L = {
   echoContent: zh['add.echoContent'],
   importedToast: zh['add.importedToast'],
   unrecognized: zh['rivalAccounts.import.unrecognized'],
-  autoAnalyze: zh['add.autoAnalyze'],
 }
 
 /**
@@ -418,9 +417,9 @@ describe('import landing — account profile URL', () => {
       assert.equal(echo.getAttribute('data-kind'), 'account')
 
       assert.equal(
-        mounted.container.querySelector(`[aria-label="${L.autoAnalyze}"]`),
+        mounted.container.querySelector('[role="switch"]'),
         null,
-        'an account is monitored, not deconstructed: the AI switch has nothing to switch',
+        'the import dialog must not render any auto-analyze switch',
       )
 
       await click(button(mounted.container, L.submit))
