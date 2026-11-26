@@ -45,6 +45,7 @@ import { createGenerationProducts } from '../catalog/generation-products.js'
 import { createGenerationMapping } from '../media/generation-mapping.js'
 import { listSessionModels } from '../catalog/session-models.js'
 import { createComposerListSync, PI_AI_NAMESPACE } from '../catalog/composer-sync.js'
+import { reconcileSubscriptionRoutes } from '../agents/llm-route-sync.js'
 import { SettingsConfig } from '../settings/schema.js'
 import { readScenarioSettings } from '../settings/runtime-mode.js'
 import { mountHubHttp } from './http.js'
@@ -170,6 +171,41 @@ export function apply(ctx, config = {}) {
     getActiveView: (sessionId) => mailbox.getActiveView(sessionId),
   })
 
+  // Live snapshot of registered ctx.llm models so catalog-backed routes without
+  // an explicit `models` array in settings (e.g. openai-codex, anthropic) also
+  // surface in the synchronous `listCatalog().tools` picker.
+  /** @type {Array<{ providerId: string, providerName: string, models: Array<{ id: string, name?: string, inputModalities?: string[] }> }>} */
+  let liveLlmModelSnapshot = []
+  let liveLlmSnapshotGen = 0
+  const refreshLiveLlmSnapshot = async () => {
+    const llm = typeof ctx.get === 'function' ? ctx.get('llm') : undefined
+    if (!llm || typeof llm.listProviders !== 'function' || typeof llm.listModels !== 'function') return
+    const gen = ++liveLlmSnapshotGen
+    try {
+      const providers = llm.listProviders()
+      const groups = await Promise.all((Array.isArray(providers) ? providers : []).map(async (entry) => {
+        if (!entry || typeof entry.id !== 'string' || !entry.id.trim()) return null
+        try {
+          const models = await llm.listModels(entry.id)
+          if (!Array.isArray(models) || models.length === 0) return null
+          return {
+            providerId: entry.id,
+            providerName: typeof entry.name === 'string' && entry.name.trim() ? entry.name.trim() : entry.id,
+            models,
+          }
+        } catch (error) {
+          console.warn('[omnimux] live llm listModels failed:', entry.id, error instanceof Error ? error.message : String(error))
+          return null
+        }
+      }))
+      if (gen === liveLlmSnapshotGen) {
+        liveLlmModelSnapshot = groups.filter(Boolean)
+      }
+    } catch (error) {
+      console.warn('[omnimux] live llm snapshot refresh failed:', error instanceof Error ? error.message : String(error))
+    }
+  }
+
   const listCatalog = () => {
     const currentCatalogView = accountCatalog.resolve()
     const settingsService = typeof ctx.get === 'function' ? ctx.get('settings') : undefined
@@ -190,7 +226,7 @@ export function apply(ctx, config = {}) {
         snapshotDigest: currentCatalogView.digest,
       }),
       // Session-reachable provider:model pairs for the tool-model picker.
-      tools: listSessionModels(settingsService),
+      tools: listSessionModels(settingsService, liveLlmModelSnapshot),
     }
   }
 
@@ -231,6 +267,11 @@ export function apply(ctx, config = {}) {
     sessionQuery: null,
     getWorkspaceRegistry: () => ctx.get?.('workspaceRegistry'),
     getConnection: () => ctx.get?.('connection'),
+    getConfigEditor: () => ctx.get?.('configEditor') ?? ctx.get?.('settings')?.ownerContext?.configEditor,
+    getAuthorization: () => ctx.get?.('authorization'),
+    getLlm: () => ctx.get?.('llm'),
+    getAgentDefaultModel: () => ctx.get?.('agentDefaultModel'),
+    refreshLiveLlmSnapshot,
     settings: ctx.get?.('settings'),
     readReferenceStorageConfig,
     credentials: ctx.get?.('credentials'),
@@ -404,18 +445,66 @@ export function apply(ctx, config = {}) {
           void syncComposerList(0)
         })
         ctx.on('settings/document-updated', (ns) => {
-          if (ns === 'omnimux' || ns === PI_AI_NAMESPACE) void syncComposerList(0)
+          if (ns === 'omnimux' || ns === PI_AI_NAMESPACE) {
+            void syncComposerList(0)
+          }
         })
       }
 
       void syncComposerList(0)
   }
 
+  // Subscription route lifecycle & live ctx.llm model snapshot work across both
+  // legacy settings.register hosts and DSH 0.2.2-rc.5 schema-backed hosts.
+  const runSubscriptionReconcile = () => {
+    const credentials = typeof ctx.get === 'function' ? ctx.get('credentials') : undefined
+    const settingsService = typeof ctx.get === 'function' ? ctx.get('settings') : undefined
+    const editor = (typeof ctx.get === 'function' ? ctx.get('configEditor') : undefined)
+      ?? settingsService?.ownerContext?.configEditor
+    if (!credentials || (!settingsService && !editor)) return
+    void reconcileSubscriptionRoutes({
+      settings: settingsService,
+      configEditor: editor,
+      credentials,
+    }).then((removed) => {
+      if (removed.length > 0) {
+        hubEvents.emit({ type: 'omnimux:model-catalog-updated' })
+        ctx.emit?.('omnimux/model-catalog-updated')
+      }
+    }).catch((error) => {
+      console.warn('[omnimux] subscription route reconcile failed:', error instanceof Error ? error.message : String(error))
+    })
+  }
+  if (typeof ctx.on === 'function') {
+    ctx.on('llm/adapters-updated', () => {
+      void refreshLiveLlmSnapshot()
+    })
+    ctx.on('llm/models-updated', () => {
+      void refreshLiveLlmSnapshot()
+    })
+    ctx.on('credentials/record-updated', () => {
+      runSubscriptionReconcile()
+      void refreshLiveLlmSnapshot().then(() => {
+        hubEvents.emit({ type: 'omnimux:model-catalog-updated' })
+        ctx.emit?.('omnimux/model-catalog-updated')
+      })
+    })
+    ctx.on('settings/document-updated', (ns) => {
+      if (ns === 'omnimux' || ns === PI_AI_NAMESPACE) {
+        void refreshLiveLlmSnapshot()
+      }
+    })
+  }
+  void refreshLiveLlmSnapshot()
+  runSubscriptionReconcile()
+
   // The settings service may not be available at apply time in the desktop
   // host. The official config editor is a separate service; use it directly so
   // the composer still converges to the gateway text directory.
   if (typeof ctx.inject === 'function') {
     ctx.inject(['configEditor'], (editorCtx) => {
+      runSubscriptionReconcile()
+      void refreshLiveLlmSnapshot()
       const editor = editorCtx.configEditor ?? editorCtx.get?.('configEditor')
       if (!editor) return
       const logComposerSync = (event, detail) => {

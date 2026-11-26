@@ -406,6 +406,12 @@ describe('auth http dispatcher', () => {
       // #3178: sign-in state, account sign-in and version/upgrade routes
       'exact:/omnimux/agents/updates',
       'exact:/omnimux/agents/login',
+      'exact:/omnimux/agents/import-auth',
+      'exact:/omnimux/agents/oauth/start',
+      'exact:/omnimux/agents/oauth/status',
+      'exact:/omnimux/agents/oauth/submit',
+      'exact:/omnimux/agents/oauth/cancel',
+      'exact:/omnimux/agents/disconnect',
       'exact:/omnimux/agents/update',
       'exact:/omnimux/agents/select',
       'prefix:/omnimux/templates',

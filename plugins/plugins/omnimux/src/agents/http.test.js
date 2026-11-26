@@ -328,4 +328,259 @@ describe('agent routes · same-origin protection on the new routes', () => {
     assert.equal(res.status, 403)
     assert.equal(res.body().error, 'not-local')
   })
+  it('all Route 1 + Route 2 subscription endpoints refuse cross-origin requests with not-local', async () => {
+    const handlers = register({ settings: fakeSettings() })
+    for (const [method, routePath] of [
+      ['POST', '/omnimux/agents/import-auth'],
+      ['POST', '/omnimux/agents/oauth/start'],
+      ['GET', '/omnimux/agents/oauth/status'],
+      ['POST', '/omnimux/agents/oauth/submit'],
+      ['POST', '/omnimux/agents/oauth/cancel'],
+      ['POST', '/omnimux/agents/disconnect'],
+    ]) {
+      const res = fakeRes()
+      const req = withUrl(fakeReq(method, method === 'POST' ? { id: 'codex' } : undefined, CROSS_ORIGIN), routePath)
+      await handlers.get(routePath)(req, res)
+      assert.equal(res.status, 403, routePath)
+      assert.equal(res.body().error, 'not-local', routePath)
+    }
+  })
+})
+
+function createFusionHarness({ initialPiAi = {}, initialCreds = [], authImpl = null, liveModelsByProvider = {} } = {}) {
+  let omnimuxValue = parseSettingsSection({})
+  let omnimuxRev = 1
+  let piAiRev = 1
+  const piAiMap = new Map(Object.entries(structuredClone(initialPiAi)))
+  const liveModelsMap = new Map(Object.entries(liveModelsByProvider))
+  const credRecords = new Map(initialCreds)
+  const defaultSelections = []
+  const hubEvents = []
+  const snapshotPiAi = () => Object.fromEntries(Array.from(piAiMap.entries(), ([k, v]) => [k, structuredClone(v)]))
+
+  const settings = {
+    get omnimuxValue() { return structuredClone(omnimuxValue) },
+    get piAiUser() { return snapshotPiAi() },
+    get: async (ns) => (ns === 'omnimux' ? structuredClone(omnimuxValue) : { providers: snapshotPiAi() }),
+    describe: () => [
+      { ns: 'omnimux', revision: omnimuxRev, value: structuredClone(omnimuxValue) },
+      { ns: 'llm-pi-ai', revision: piAiRev, base: { providers: { omnimux: { apiKeyEnv: 'OMNIMUX_API_KEY' } } }, user: { providers: snapshotPiAi() }, value: { providers: { omnimux: { apiKeyEnv: 'OMNIMUX_API_KEY' }, ...snapshotPiAi() } } },
+    ],
+    update: async (ns, patch, expectedRev) => {
+      if (ns === 'omnimux') {
+        assert.equal(expectedRev, omnimuxRev)
+        omnimuxValue = parseSettingsSection(Object.assign({}, omnimuxValue, patch))
+        omnimuxRev += 1
+        return
+      }
+      assert.equal(ns, 'llm-pi-ai')
+      assert.equal(expectedRev, piAiRev)
+      for (const [k, v] of Object.entries(patch.providers || {})) {
+        piAiMap.set(k, structuredClone(v))
+      }
+      piAiRev += 1
+    },
+    mutate: async (ns, ops, expectedRev) => {
+      assert.equal(ns, 'llm-pi-ai')
+      assert.equal(expectedRev, piAiRev)
+      for (const op of ops) {
+        const [, key] = op.path
+        if (op.op === 'set') piAiMap.set(key, structuredClone(op.value))
+        else if (op.op === 'unset') piAiMap.delete(key)
+      }
+      piAiRev += 1
+    },
+  }
+  const credentials = {
+    records: credRecords,
+    describeRecord: async (key) => ({ configured: credRecords.has(key) }),
+    readRecord: async (key) => credRecords.get(key),
+    modifyRecord: async (key, mutator) => {
+      const next = await mutator(credRecords.get(key))
+      if (next === undefined) credRecords.delete(key)
+      else credRecords.set(key, next)
+    },
+    deleteRecord: async (key) => { credRecords.delete(key) },
+  }
+  const llm = {
+    listModels: async (providerId) => liveModelsMap.get(providerId) || [],
+  }
+  const agentDefaultModel = {
+    selections: defaultSelections,
+    saveSelection: async (sel) => { defaultSelections.push(sel) },
+  }
+  const authorization = authImpl || {
+    describe: () => ({ methods: [{ id: 'oauth' }] }),
+    begin: async () => ({ status: 'authorized' }),
+    cancel: () => {},
+  }
+  return { settings, credentials, llm, agentDefaultModel, authorization, hubEvents: { list: hubEvents, emit: (ev) => hubEvents.push(ev) } }
+}
+
+describe('agent routes · Route 1 + Route 2 subscription fusion', () => {
+  it('POST /omnimux/agents/import-auth imports Codex grant, sets transport=sse, binds default model, and never leaks tokens', async () => {
+    const SENTINEL = 'SENTINEL-CODEX-TOKEN-88412'
+    const harness = createFusionHarness({
+      liveModelsByProvider: { 'openai-codex': [{ id: 'gpt-6.1-sol', name: 'GPT-6.1 Sol' }] },
+    })
+    const handlers = register({
+      ...harness,
+      scan: async () => [agentRow({ id: 'codex', name: 'Codex' })],
+      inspectCliCredential: () => ({ supported: true, importable: true, source: 'file', reason: 'file' }),
+      readCliGrant: () => ({
+        ok: true,
+        source: 'file',
+        expiresAt: 1_900_000_000_000,
+        grant: {
+          kind: 'grant',
+          payload: { type: 'oauth', access: SENTINEL, refresh: `${SENTINEL}-rt`, expires: 1_900_000_000_000, accountId: 'acct-1' },
+        },
+      }),
+    })
+
+    const res = fakeRes()
+    await handlers.get('/omnimux/agents/import-auth')(fakeReq('POST', { id: 'codex' }), res)
+    assert.equal(res.status, 200)
+    const body = res.body()
+    assert.equal(body.ok, true)
+    assert.equal(body.connected, true)
+    assert.equal(body.source, 'cli-import')
+    assert.equal(body.providerId, 'openai-codex')
+    assert.deepEqual(body.models, ['gpt-6.1-sol'])
+    assert.equal(body.defaultModel, 'gpt-6.1-sol')
+    assert.equal(res.text.includes(SENTINEL), false)
+    assert.equal(harness.credentials.records.get('llm-pi-ai/openai-codex').payload.access, SENTINEL)
+    assert.deepEqual(harness.settings.piAiUser['openai-codex'], { displayName: 'Codex', transport: 'sse' })
+    assert.deepEqual(harness.agentDefaultModel.selections, [{ provider: 'openai-codex', model: 'gpt-6.1-sol' }])
+    assert.equal(harness.settings.omnimuxValue.runtimeAgentId, 'codex')
+
+    // GET /omnimux/agents now reports connected + live models
+    const scanRes = fakeRes()
+    await handlers.get('/omnimux/agents')(fakeReq('GET'), scanRes)
+    const codex = scanRes.body().agents[0]
+    assert.equal(codex.subscription.connected, true)
+    assert.deepEqual(codex.models, ['gpt-6.1-sol'])
+    assert.equal(codex.modelsSource, 'live')
+
+    // Disconnect removes credential + keyless route
+    const discRes = fakeRes()
+    await handlers.get('/omnimux/agents/disconnect')(fakeReq('POST', { id: 'codex' }), discRes)
+    assert.equal(discRes.status, 200)
+    assert.equal(discRes.body().ok, true)
+    assert.equal(discRes.body().connected, false)
+    assert.equal(discRes.body().routeRemoved, true)
+    assert.equal(harness.credentials.records.has('llm-pi-ai/openai-codex'), false)
+    assert.equal('openai-codex' in harness.settings.piAiUser, false)
+  })
+
+  it('POST /omnimux/agents/import-auth returns 409 when an explicit apiKeyEnv route already exists and fallbackOAuth for keyring', async () => {
+    const conflictHarness = createFusionHarness({
+      initialPiAi: { anthropic: { displayName: 'Anthropic API', apiKeyEnv: 'ANTHROPIC_API_KEY' } },
+    })
+    const conflictHandlers = register({
+      ...conflictHarness,
+      readCliGrant: () => ({ ok: true, source: 'file', expiresAt: 0, grant: { kind: 'grant', payload: { type: 'oauth' } } }),
+    })
+    const conflictRes = fakeRes()
+    await conflictHandlers.get('/omnimux/agents/import-auth')(fakeReq('POST', { id: 'claude' }), conflictRes)
+    assert.equal(conflictRes.status, 409)
+    assert.equal(conflictRes.body().error, 'api-key-route-exists')
+
+    const keyringHarness = createFusionHarness()
+    const keyringHandlers = register({
+      ...keyringHarness,
+      readCliGrant: () => ({ ok: false, reason: 'keyring-or-external' }),
+    })
+    const keyringRes = fakeRes()
+    await keyringHandlers.get('/omnimux/agents/import-auth')(fakeReq('POST', { id: 'claude' }), keyringRes)
+    assert.equal(keyringRes.status, 200)
+    assert.equal(keyringRes.body().ok, false)
+    assert.equal(keyringRes.body().error, 'keyring-or-external')
+    assert.equal(keyringRes.body().fallbackOAuth, true)
+  })
+
+  it('Route 1 OAuth HTTP endpoints drive start -> status -> manual submit -> authorized route activation', async () => {
+    let capturedCode = ''
+    const harness = createFusionHarness({
+      liveModelsByProvider: { anthropic: [{ id: 'claude-sonnet-4-6', name: 'Claude Sonnet 4.6' }] },
+      authImpl: {
+        describe: () => ({ methods: [{ id: 'oauth' }] }),
+        begin: async ({ interaction }) => {
+          interaction.notify({ message: 'Authorize', url: 'https://claude.ai/oauth/authorize?x=1' })
+          capturedCode = await interaction.prompt({ kind: 'text', message: 'Paste code' })
+          harness.credentials.records.set('llm-pi-ai/anthropic', { kind: 'grant', payload: { type: 'oauth' } })
+          return { status: 'authorized' }
+        },
+        cancel: () => {},
+      },
+    })
+    const handlers = register({ ...harness })
+
+    const startRes = fakeRes()
+    await handlers.get('/omnimux/agents/oauth/start')(fakeReq('POST', { id: 'claude', mode: 'copy_code' }), startRes)
+    assert.equal(startRes.status, 200)
+    const started = startRes.body()
+    assert.equal(started.ok, true)
+    assert.equal(started.status, 'awaiting_user')
+    assert.ok(started.pendingPrompt?.promptId)
+
+    const submitRes = fakeRes()
+    await handlers.get('/omnimux/agents/oauth/submit')(fakeReq('POST', {
+      attemptId: started.attemptId,
+      promptId: started.pendingPrompt.promptId,
+      value: 'my-auth-code',
+    }), submitRes)
+    assert.equal(submitRes.status, 200)
+    await new Promise((resolve) => setTimeout(resolve, 25))
+    assert.equal(capturedCode, 'my-auth-code')
+
+    const statusRes = fakeRes()
+    await handlers.get('/omnimux/agents/oauth/status')(withUrl(fakeReq('GET'), `/omnimux/agents/oauth/status?attemptId=${started.attemptId}`), statusRes)
+    assert.equal(statusRes.status, 200)
+    assert.equal(statusRes.body().attempt.status, 'authorized')
+    assert.equal(statusRes.body().attempt.connected, true)
+    assert.deepEqual(harness.settings.piAiUser.anthropic, { displayName: 'Claude' })
+  })
+
+  it('POST /omnimux/agents/select succeeds without local binary when subscription credential is already stored', async () => {
+    const harness = createFusionHarness({
+      initialCreds: [['llm-pi-ai/openai-codex', { kind: 'grant', payload: { type: 'oauth' } }]],
+      liveModelsByProvider: { 'openai-codex': [{ id: 'gpt-6.1-sol', name: 'GPT-6.1 Sol' }] },
+    })
+    const handlers = register({
+      ...harness,
+      probe: async () => ({ installed: false, version: '' }),
+    })
+    const res = fakeRes()
+    await handlers.get('/omnimux/agents/select')(fakeReq('POST', { id: 'codex' }), res)
+    assert.equal(res.status, 200)
+    assert.equal(res.body().ok, true)
+    assert.equal(res.body().checkType, 'subscription-oauth')
+    assert.equal(res.body().composerConnected, true)
+    assert.equal(res.body().providerId, 'openai-codex')
+    assert.deepEqual(harness.settings.piAiUser['openai-codex'], { displayName: 'Codex', transport: 'sse' })
+  })
+
+  it('POST /omnimux/agents/import-auth rejects a stale cross-agent model id and persists the validated defaultModel', async () => {
+    const harness = createFusionHarness({
+      liveModelsByProvider: { anthropic: [{ id: 'claude-sonnet-4-6', name: 'Claude Sonnet 4.6' }] },
+    })
+    const handlers = register({
+      ...harness,
+      scan: async () => [agentRow({ id: 'claude', name: 'Claude Code' })],
+      readCliGrant: () => ({
+        ok: true,
+        source: 'file',
+        expiresAt: 1_900_000_000_000,
+        grant: { kind: 'grant', payload: { type: 'oauth', access: 'tok', refresh: 'ref', expires: 1_900_000_000_000 } },
+      }),
+    })
+    const res = fakeRes()
+    await handlers.get('/omnimux/agents/import-auth')(fakeReq('POST', { id: 'claude', model: 'gpt-6.1-sol' }), res)
+    assert.equal(res.status, 200)
+    assert.equal(res.body().ok, true)
+    assert.equal(res.body().defaultModel, 'claude-sonnet-4-6')
+    assert.equal(harness.settings.omnimuxValue.runtimeAgentId, 'claude')
+    assert.equal(harness.settings.omnimuxValue.runtimeAgentModel, 'claude-sonnet-4-6')
+  })
 })

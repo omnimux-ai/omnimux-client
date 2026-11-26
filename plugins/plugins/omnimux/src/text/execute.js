@@ -16,6 +16,13 @@ import { resolveScenarioChoice, readScenarioSettings, assertScenarioRequestInten
 import { parseModelAndGroup, resolveRequestChannelIntent } from '../catalog/serving/channel-groups.js'
 import { ROUTING_STRATEGIES } from '../catalog/serving/id-universe.js'
 import { runAgentText } from '../agents/local.js'
+import { subscriptionSpecFor } from '../agents/cli-credential-import.js'
+import {
+  hasStoredSubscriptionRecord,
+  listLiveProviderModels,
+  pickSubscriptionModel,
+  readPiAiProviderProfile,
+} from '../agents/llm-route-sync.js'
 import { buildModelCatalog } from '../catalog/list.js'
 import { findDescriptor, PI_AI_NAMESPACE } from '../catalog/composer-sync.js'
 import { getGatewayTextRows, getRuntimeContractIndex } from '../catalog/runtime-index.js'
@@ -754,17 +761,57 @@ export async function executeOmnimuxText(input) {
   const isOfficialRequest = choice.channel === 'official'
   if (isOfficialRequest && !input.env) input = { ...input, env: process.env }
 
-  // Local agent: text goes to the selected CLI and back. Media references are
-  // out of scope for the agent path in this version — only plain text rides it.
+  // Local agent / subscription route: prefer an active authenticated DSH
+  // llm-pi-ai subscription route (Codex / Claude / Kimi) when available so
+  // Route 1 OAuth works without requiring a local CLI binary; otherwise fall
+  // back to the local CLI subprocess (`runAgentText`).
   if (useAgent) {
     if (references.length > 0) {
       throw new OmnimuxError('omnimux-invalid-request', '本机助手目前只承接纯文字任务')
     }
+    const agentId = String(runtimeSettings?.runtimeAgentId ?? '').trim()
+    const agentModel = inputModelId || String(runtimeSettings?.runtimeAgentModel ?? '').trim()
+    const subscriptionSpec = subscriptionSpecFor(agentId)
+    if (subscriptionSpec && input.llm && typeof input.llm.stream === 'function') {
+      const routeProfile = readPiAiProviderProfile(input.settings, input.configEditor, subscriptionSpec.providerId)
+      const hasExplicitApiKey = Boolean(
+        routeProfile && typeof routeProfile.apiKeyEnv === 'string' && routeProfile.apiKeyEnv.trim(),
+      )
+      const credentialReady = !hasExplicitApiKey && (
+        input.credentials
+          ? await hasStoredSubscriptionRecord(input.credentials, subscriptionSpec.recordKey)
+          : true
+      )
+      const liveModels = credentialReady
+        ? await listLiveProviderModels(input.llm, subscriptionSpec.providerId)
+        : []
+      const subscriptionModel = pickSubscriptionModel(subscriptionSpec, liveModels, agentModel)
+      if (subscriptionModel) {
+        const system = typeof input.system === 'string' ? input.system.trim() : ''
+        const maxTokens = typeof input.maxTokens === 'number' && Number.isFinite(input.maxTokens) && input.maxTokens > 0
+          ? input.maxTokens
+          : text.maxTokens
+        const streamed = await streamTextReply(input.llm, {
+          provider: subscriptionSpec.providerId,
+          model: subscriptionModel,
+          prompt,
+          system,
+          maxTokens,
+          content: [{ type: 'text', text: prompt }],
+          signal: input.signal,
+          sessionId: input.sessionId,
+          reasoningPolicy: reasoning,
+        })
+        return {
+          ...streamed,
+          model: `${subscriptionSpec.providerId}:${subscriptionModel}`,
+        }
+      }
+    }
     try {
       const agentRun = typeof input.agentRun === 'function' ? input.agentRun : runAgentText
-      const agentModel = inputModelId || String(runtimeSettings?.runtimeAgentModel ?? '').trim()
       const text2 = await agentRun({
-        id: String(runtimeSettings?.runtimeAgentId ?? ''),
+        id: agentId,
         prompt,
         model: agentModel,
       })

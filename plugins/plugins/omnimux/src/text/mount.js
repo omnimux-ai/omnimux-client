@@ -41,6 +41,7 @@ export function mountTextComplete(ctx, hub, jsonOut, onError, deps = {}) {
         attachments: ctx.get?.('attachments'),
         credentials: ctx.get?.('credentials'),
         settings: ctx.get?.('settings'),
+        configEditor: ctx.get?.('configEditor') ?? ctx.get?.('settings')?.ownerContext?.configEditor,
         agents: finalReq.agents ?? ctx.get?.('agents'),
         agentDefaultModel: finalReq.agentDefaultModel ?? ctx.get?.('agentDefaultModel'),
         resolveOfficialApiKey: deps.resolveOfficialApiKey,

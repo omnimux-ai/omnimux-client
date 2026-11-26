@@ -151,6 +151,28 @@ function extraBinDirs(home, fsImpl) {
 }
 
 /**
+ * Build a PATH string widened with common user binary locations (nvm, Homebrew,
+ * Volta, bun, etc.) so GUI launches find CLIs consistently across scan, auth
+ * probing, and fallback execution.
+ * @param {string} [binPath]
+ * @param {{ home?: string, env?: Record<string, string|undefined>, fsImpl?: typeof fs, platform?: string }} [options]
+ */
+export function buildAugmentedPath(binPath = '', options = {}) {
+  const env = options.env || process.env
+  const fsImpl = options.fsImpl || fs
+  const platform = options.platform || process.platform
+  const home = options.home || env.HOME || os.homedir()
+  const delimiter = platform === 'win32' ? ';' : ':'
+  const current = String(env.PATH || '').split(delimiter).filter(Boolean)
+  const parts = [
+    binPath && (binPath.includes('/') || binPath.includes('\\')) ? path.dirname(binPath) : '',
+    ...current,
+    ...extraBinDirs(home, fsImpl),
+  ].filter(Boolean)
+  return [...new Set(parts)].join(delimiter)
+}
+
+/**
  * Resolve an executable name to the absolute path PATH would pick. A missing
  * name is an empty string, never a guess; an explicit path is resolved as-is.
  * @param {string} bin

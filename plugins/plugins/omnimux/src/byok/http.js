@@ -6,6 +6,7 @@ import { RUNTIME_MODES, BYOK_PROVIDERS } from '../settings/runtime-mode.js'
 import { parseSettingsSection } from '../settings/schema.js'
 import { requestRejection } from '../host/request-authorization.js'
 import { readScenarioSettings, resolveScenarioBindings, resolveScenarioChoice } from '../settings/runtime-mode.js'
+import { syncByokTextRoute, removeByokTextRoute } from '../agents/llm-route-sync.js'
 
 /** Legacy reference is read-only here; new provider saves never write it. */
 export const BYOK_KEY_REF = 'OMNIMUX_BYOK_API_KEY'
@@ -227,7 +228,10 @@ function expectRevision(input, snapshot) {
 async function writeConfirmed(settings, patch, revision) {
   if (typeof settings?.update !== 'function') fail(503, 'settings unavailable')
   const normalized = parseSettingsSection(patch)
-  const matchesPatch = (value) => Object.keys(patch).every((key) => isDeepStrictEqual(value[key], normalized[key]))
+  const matchesPatch = (value) => {
+    const normalizedValue = parseSettingsSection(value)
+    return Object.keys(patch).every((key) => isDeepStrictEqual(normalizedValue[key], normalized[key]))
+  }
   try {
     await settings.update(NAMESPACE, patch, revision)
   } catch (error) {
@@ -252,6 +256,8 @@ async function writeConfirmed(settings, patch, revision) {
 export function registerByokRoutes(webServer, deps) {
   const getSettings = () => typeof deps.getSettings === 'function' ? deps.getSettings() : deps.settings
   const getCredentials = () => typeof deps.getCredentials === 'function' ? deps.getCredentials() : deps.credentials
+  const getConfigEditor = () => typeof deps.getConfigEditor === 'function' ? deps.getConfigEditor() : deps.configEditor
+  const getAgentDefaultModel = () => typeof deps.getAgentDefaultModel === 'function' ? deps.getAgentDefaultModel() : deps.agentDefaultModel
   // Namespace writes share a revision; serialize the entire save, including readback.
   const credentialGenerations = new Map()
   const credentialVersion = (provider) => credentialGenerations.get(provider) || 0
@@ -385,7 +391,33 @@ export function registerByokRoutes(webServer, deps) {
       }
       const confirmed = await configView(settings, credentials)
       if (confirmed.revision !== snapshot.revision || credentialVersion(provider) !== confirmedCredentialVersion) fail(409, '保存后配置或密钥已变化，请重新读取')
-      return { ...confirmed, saved: true, provider, providerRevision, credential }
+      // Mirror BYOK text models into a collision-free `byok-<provider>` llm-pi-ai
+      // route so the main chat composer exposes the provider immediately.
+      let composerRoute = null
+      if (deleting) {
+        composerRoute = await removeByokTextRoute({ settings, configEditor: getConfigEditor(), provider })
+      } else if (parsed.capabilities.includes('text') && parsed.models.text) {
+        composerRoute = await syncByokTextRoute({
+          settings,
+          configEditor: getConfigEditor(),
+          agentDefaultModel: getAgentDefaultModel(),
+          provider,
+          endpoint: parsed.endpoint,
+          model: parsed.models.text,
+          credentialRef: ref,
+          bindAsDefault: bindings.text?.channel === 'byok' && bindings.text?.provider === provider,
+        })
+      } else if (previous?.capabilities?.includes('text')) {
+        composerRoute = await removeByokTextRoute({ settings, configEditor: getConfigEditor(), provider })
+      }
+      return {
+        ...confirmed,
+        saved: true,
+        provider,
+        providerRevision,
+        credential,
+        ...(composerRoute && composerRoute.ok ? { composerRouteId: composerRoute.routeId } : {}),
+      }
     } catch (error) {
       fail(error?.status || 503, '保存未完成，请读取配置后确认', {
         partial: true, needsConfirmation: true, stage, provider,
