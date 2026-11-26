@@ -7,7 +7,7 @@ import { createRequire } from 'node:module'
 import { afterEach, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { resolveTarget, runLiveQa } from './live-qa.mjs'
-import { captureStageContract, captureStageContracts, selectStages, STAGE_STATUS } from './live-stage-contracts.mjs'
+import { captureStageContract, captureStageContracts, selectStages, STAGE_CONTENT, STAGE_STATUS } from './live-stage-contracts.mjs'
 import { assertStageState, readStageState, runStageProbe, PROBE_ASSERTIONS, STAGE_ASSERTIONS } from './live-stage-probe.mjs'
 
 const repo = fileURLToPath(new URL('..', import.meta.url))
@@ -44,9 +44,19 @@ test('stage selection and actual runtime discovery reject empty or unknown targe
   assert.throws(() => selectStages('typo'), /Unknown stage/)
   assert.throws(() => selectStages(''), /Unknown stage/)
   await assert.rejects(captureStageContracts(repo, []), /Zero stage/)
+  assert.deepEqual(selectStages('all'), Object.keys(STAGE_CONTENT), 'selectStages("all") must follow the stage contract')
   const targets = await captureStageContracts(repo)
-  assert.equal(targets.length, 8)
-  assert.equal(targets.filter((target) => target.adapter === 'six-methods-and-disposer').length, 7)
+  const expectedStages = Object.keys(STAGE_CONTENT).sort()
+  assert.equal(targets.length, expectedStages.length, 'stage targets must cover every declared stage')
+  assert.deepEqual(targets.map((target) => target.stage).sort(), expectedStages, 'stage targets must exactly match STAGE_CONTENT')
+  assert.equal(new Set(targets.map((target) => target.stage)).size, targets.length, 'stage targets must not repeat a stage')
+  const expectedTargets = Object.entries(STAGE_CONTENT)
+    .map(([stage, content]) => ({ stage, content, adapter: stage === 'market' ? 'sidebar-coordinator' : 'six-methods-and-disposer' }))
+    .sort((a, b) => a.stage.localeCompare(b.stage))
+  const actualTargets = targets
+    .map(({ stage, content, adapter }) => ({ stage, content, adapter }))
+    .sort((a, b) => a.stage.localeCompare(b.stage))
+  assert.deepEqual(actualTargets, expectedTargets, 'stage content and adapter mapping must match STAGE_CONTENT')
   // workbench-split.md Primary-entry intents (#2516): untouched Tabs open fullscreen.
   assert.ok(targets.every((target) => target.defaultFocus === 'gui'))
   assert.ok(targets.every((target) => target.activationModel === 'official-right-tab-with-session-precedence'))
