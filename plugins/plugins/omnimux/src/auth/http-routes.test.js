@@ -395,7 +395,6 @@ describe('auth http dispatcher', () => {
       'prefix:/omnimux/analytics',
       'prefix:/omnimux/inspiration',
       'exact:/omnimux/avatar',
-      'prefix:/omnimux/forms/attachments',
       'prefix:/omnimux/composer/attachments',
       'exact:/omnimux/text/complete',
       'exact:/omnimux/byok/config',

@@ -8,7 +8,7 @@
 
 **OmniMux 是属于你的本地 AI 内容电商团队——面向内容电商与品牌增长的一站式桌面 Agent 工作台，让商品卖点与视觉资产贯穿每一次出片。** 本目录（`plugins/`）是 `omnimux-client` 仓库中的产品插件工作区。
 
-围绕「商品与资产 → 灵感拆解 → 画布编排与多模态生成 → 时间轴剪辑 → 复盘」工作流，本目录包含执行中枢（`omnimux`），以及商品库（`omnimux-products`）、创作资产库（`omnimux-assets`）、灵感库（`omnimux-inspiration`）、无限画布（`omnimux-workflow`）、视频剪辑工坊（`omnimux-clip`）、浏览器伴侣（`omnimux-browser`）、技能与插件市场（`omnimux-market`）、表单辅助（`omnimux-forms`），以及持续演进中的账号/发布/复盘与视频辅助插件（`omnimux-accounts`、`omnimux-publish`、`omnimux-analytics`、`omnimux-video`）。
+围绕「商品与资产 → 灵感拆解 → 画布编排与多模态生成 → 时间轴剪辑 → 复盘」工作流，本目录包含执行中枢（`omnimux`），以及商品库（`omnimux-products`）、创作资产库（`omnimux-assets`）、灵感库（`omnimux-inspiration`）、无限画布（`omnimux-workflow`）、视频剪辑工坊（`omnimux-clip`）、浏览器伴侣（`omnimux-browser`）、技能与插件市场（`omnimux-market`），以及持续演进中的账号/发布/复盘与视频辅助插件（`omnimux-accounts`、`omnimux-publish`、`omnimux-analytics`、`omnimux-video`）。
 
 各插件当前发布档位以 [`app/config/plugin-tiers.json`](../app/config/plugin-tiers.json) 和 [插件生命周期清单](plugins/omnimux/src/plugin-lifecycle.json) 为准。不承诺保证爆款、保证销量、防封号或尚未实现的国内平台（抖音/小红书/视频号/快手/B站）自动分发。
 

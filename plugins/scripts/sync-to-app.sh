@@ -321,7 +321,7 @@ if [ "${#TARGET_PROFILES[@]}" -gt 0 ]; then
   python3 "$SCRIPT_ROOT/managed-tarball-archive.py" pending "${TARGET_PROFILES[@]}" || exit 7
 fi
 
-DEFAULT_PLUGINS=(omnimux omnimux-accounts omnimux-analytics omnimux-assets omnimux-clip omnimux-forms omnimux-inspiration omnimux-market omnimux-products omnimux-publish omnimux-video omnimux-workflow)
+DEFAULT_PLUGINS=(omnimux omnimux-accounts omnimux-analytics omnimux-assets omnimux-clip omnimux-inspiration omnimux-market omnimux-products omnimux-publish omnimux-video omnimux-workflow)
 if [ ${#PLUGINS[@]} -eq 0 ]; then
   PLUGINS=("${DEFAULT_PLUGINS[@]}")
 fi

@@ -109,7 +109,7 @@ test('bash hook uses workdir without weakening source and delivery gates', () =>
 test('isBusinessSourceFile identifies business source vs exemptions', () => {
   const root = '/repo'
   assert.equal(isBusinessSourceFile('/repo/plugins/omnimux/src/client/x.js', root), true)
-  assert.equal(isBusinessSourceFile('/repo/packages/form-contract/src/index.js', root), true)
+  assert.equal(isBusinessSourceFile('/repo/packages/generation-capabilities/src/index.ts', root), true)
   assert.equal(isBusinessSourceFile('/repo/specs/a.spec.md', root), false)
   assert.equal(isBusinessSourceFile('/repo/scripts/a.mjs', root), false)
   assert.equal(isBusinessSourceFile('/repo/plugins/omnimux/tests/a.test.js', root), false)

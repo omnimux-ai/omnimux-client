@@ -193,7 +193,7 @@ if [ "${#PROFILES[@]}" -gt 0 ]; then
 fi
 
 # 产品树垂直（含产品库 / 插件市场 / 剪辑）+ omnimux-video + omnimux-analytics（埋点）+ omnimux-publish（发布中心）
-ALL_PLUGINS=(omnimux omnimux-accounts omnimux-analytics omnimux-assets omnimux-clip omnimux-forms omnimux-inspiration omnimux-market omnimux-products omnimux-publish omnimux-video omnimux-workflow)
+ALL_PLUGINS=(omnimux omnimux-accounts omnimux-analytics omnimux-assets omnimux-clip omnimux-inspiration omnimux-market omnimux-products omnimux-publish omnimux-video omnimux-workflow)
 
 if [ ${#PLUGINS[@]} -gt 0 ]; then
   TARGET_PLUGINS=("${PLUGINS[@]}")

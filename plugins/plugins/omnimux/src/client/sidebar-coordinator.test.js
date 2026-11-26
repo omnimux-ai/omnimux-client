@@ -333,7 +333,7 @@ test('开发版：Alpha 内测项不挂 DOM，核心常驻项挂回侧栏', asyn
   installSidebarGlobal()
   const api = SIDEBAR_GLOBAL()
   let clicks = 0
-  const rows = ['accounts', 'workflow', 'publish', 'analytics', 'forms', 'inspiration', 'automation'].map((name, rank) => {
+  const rows = ['accounts', 'workflow', 'publish', 'analytics', 'inspiration', 'automation'].map((name, rank) => {
     const element = document.createElement('button')
     element.innerHTML = `<span class="omnimux-sidebar-nav-entry-label">${name}</span>`
     element.setAttribute('aria-label', name)
@@ -365,7 +365,7 @@ test('开发版：Alpha 内测项不挂 DOM，核心常驻项挂回侧栏', asyn
 test('发布渠道过滤：开发版保留全部入口，正式版只过滤 Alpha 测试版', () => {
   const dev = filterExploreItemsForChannel(EXPLORE_MENU_ITEMS, 'development')
   assert.deepEqual(dev.map((item) => item.label), [
-    '应用', '图像生成', '视频剪辑', '发布', '账号', '手机管理', '数据分析', '任务表单', '社交采收',
+    '应用', '图像生成', '视频剪辑', '发布', '账号', '手机管理', '数据分析',
   ])
   const prod = filterExploreItemsForChannel(EXPLORE_MENU_ITEMS, 'production')
   assert.deepEqual(prod.map((item) => item.label), ['应用', '图像生成', '视频剪辑'])
@@ -386,7 +386,7 @@ test('正式版渠道：Alpha 行注册不创建元素、不进收敛集合，�
       return document.createElement('button')
     },
   })
-  const alphaNames = ['accounts', 'publish', 'analytics', 'forms', 'device', 'social-harvest', 'avatar']
+  const alphaNames = ['accounts', 'publish', 'analytics', 'device', 'avatar']
   const alphaDisposers = alphaNames.map(makeRow)
   let clipCreated = 0
   const disposeClip = api.register({
@@ -418,8 +418,8 @@ test('侧栏全局 seam 暴露 Alpha 判定与统一说明，供插件自注册�
   assert.equal(api.isAlphaEntry('omnimux-accounts-entry'), true, 'accounts 已在 lifecycle 列为 Alpha')
   assert.equal(api.isAlphaEntry('omnimux-device'), true, '手机管理（omnimux-device）已列为 Alpha')
   assert.equal(api.isAlphaEntry('omnimux-device-entry'), true, '手机管理入口 id 已列为 Alpha')
-  assert.equal(api.isAlphaEntry('omnimux-social-harvest'), true, '社交采收（omnimux-social-harvest）已列为 Alpha')
-  assert.equal(api.isAlphaEntry('omnimux-social-harvest-entry'), true, '社交采收入口 id 已列为 Alpha')
+  assert.equal(api.isAlphaEntry('omnimux-social-harvest'), false, '社交采收（omnimux-social-harvest）已下线移除')
+  assert.equal(api.isAlphaEntry('omnimux-forms'), false, '任务表单（omnimux-forms）已下线移除')
   assert.equal(api.isAlphaEntry('omnimux-avatar'), true, 'AI 网红工作室（omnimux-avatar）已列为 Alpha')
   assert.equal(api.isAlphaEntry('omnimux-avatar-entry'), true, 'AI 网红工作室入口 id 已列为 Alpha')
   assert.equal(api.isAlphaEntry('omnimux-workflow-entry'), false, '非 Alpha 项必须返回 false')
@@ -538,7 +538,7 @@ test('核心常驻行按 rank 挂载在侧栏，探索行不再出现', async ()
   }
 })
 
-test('非核心插件（video, products 旧入口, device, clip, social-harvest, apps 等）收敛，不渲染独立行', async () => {
+test('非核心插件（video, products 旧入口, device, clip, apps 等）收敛，不渲染独立行', async () => {
   setup()
   const { installSidebarGlobal, SIDEBAR_GLOBAL } = await import('./sidebar-coordinator.js')
   installSidebarGlobal()
@@ -550,7 +550,6 @@ test('非核心插件（video, products 旧入口, device, clip, social-harvest,
     { id: 'omnimux-products-entry', rank: 8 },
     { id: 'omnimux-device-entry', rank: 3.5 },
     { id: 'omnimux-clip-entry', rank: 8.2 },
-    { id: 'omnimux-social-harvest-entry', rank: 19 },
     { id: 'omnimux-apps-entry', rank: 1 },
   ]
 

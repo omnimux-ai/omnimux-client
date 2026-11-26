@@ -10,7 +10,6 @@
       "omnimux-assets",
       "omnimux-browser",
       "omnimux-clip",
-      "omnimux-forms",
       "omnimux-inspiration",
       "omnimux-market",
       "omnimux-products",
@@ -24,7 +23,9 @@
       "omnimux-video"
     ],
     "retired": [
-      "omnimux-automation"
+      "omnimux-automation",
+      "omnimux-forms",
+      "omnimux-social-harvest"
     ]
   }
 }

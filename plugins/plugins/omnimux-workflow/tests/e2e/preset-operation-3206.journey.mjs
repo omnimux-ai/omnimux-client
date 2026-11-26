@@ -19,7 +19,7 @@ import assert from 'node:assert/strict';
 /** 内置应用的界面标题（与 catalog/presets/app-creatify-app-demo.workflow.json 的 name 一致）。 */
 const BUILTIN_APP_TITLE = '手机与网页交互实机演示';
 /** 「AI应用」面板当前渲染的一级应用清单（对照真值，用于确认面板已就绪）。 */
-const FIRST_LEVEL_APPS = ['视频剪辑', 'Google Vids', '产品库', '发布', '账号', '手机管理', '数据分析', '自动化', '任务表单', '社交采收', '快讯中枢'];
+const FIRST_LEVEL_APPS = ['视频剪辑', 'Google Vids', '产品库', '发布', '账号', '手机管理', '数据分析', '自动化', '快讯中枢'];
 
 /** 把一次强断言收敛成一条旅程断言记录：断言失败即 pass:false 并保留真实判据。 */
 function check(assertions, name, fn) {

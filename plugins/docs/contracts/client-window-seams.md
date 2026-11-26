@@ -12,7 +12,7 @@ updated: "2026-11-26"
 
 OmniMux 客户端插件分别独立打包为单文件 `lib/client.js`（由宿主 `window.__ModuleLoader__.load` 加载）。垂直插件不得通过相对路径跨包导入 Hub 内部模块（由 `plugins/scripts/verify-plugin-boundaries.mjs` 门禁约束），因此跨插件协作统一通过窄接口挂载到浏览器 `window.__omnimux*`（或经 `dsh-ui-kit` 封装消费）。
 
-本文档是全仓生产态 `window.__omnimux*` 全局接缝的**唯一权威索引**（覆盖全部 43 个运行态标识），标明每个接缝的唯一生产者、消费方、契约形态与生命周期状态。
+本文档是全仓生产态 `window.__omnimux*` 全局接缝的**唯一权威索引**（覆盖全部 42 个运行态标识），标明每个接缝的唯一生产者、消费方、契约形态与生命周期状态。
 
 ## 治理硬约束
 
@@ -62,10 +62,10 @@ OmniMux 客户端插件分别独立打包为单文件 `lib/client.js`（由宿�
 | `__omnimuxExpertStarters` | `plugins/plugins/omnimux-market/src/client/apply.js`（由 `skill-plaza.js` 经 `.update()` 原地刷新） | `omnimux` (`expertBootstrapCatalog.js`、`ExpertBootstrapBar.jsx`) | 专家市场 SOP 专家空白会话起手式只读通道：`{ resolveStarters(presetId), listExpertIds(), update(items) }`，卸载时由 `apply.js` 按对象身份清理 | `active` |
 | `__omnimuxInstalledSkills` | 宿主/运行态按需注入（未注入时安全降级） | `omnimux` (`composer-commands-i18n.js`) | 已安装技能列表只读快照，供斜杠命令补全过滤 | `legacy-compat` |
 | `__omnimuxPresetAvatars` | 宿主可选注入（`PRESET_AVATAR_HOST_KEY`） | `omnimux` (`agent-preset-enhancer.js`) | 预设头像覆盖映射表（缺失时回落确定性生成头像） | `active` |
-| `__omnimuxSessionPrefill` | `plugins/plugins/omnimux/src/client/forms/mount.js` | `omnimux-inspiration` (`session-prefill.js`) | 新建或跳转会话时的一次性预填文本通道 | `active` |
+| `__omnimuxSessionPrefill` | `plugins/plugins/omnimux/src/client/session-prefill/mount.js` | `omnimux-inspiration` (`session-prefill.js`) | 新建或跳转会话时的一次性预填文本通道 | `active` |
 | `__omnimuxLocale` | `plugins/plugins/omnimux-market/src/client/apply.js` | `omnimux` (`promptFenceGenerate.ts`、`focus-state.js`、`ExpertBootstrapBar.jsx`)、`omnimux-market` (`i18n.js`) | 当前宿主 `locale` 服务引用缓存 | `legacy-compat` |
 
-## 三、垂直插件与工作流桥接接缝（11 项）
+## 三、垂直插件与工作流桥接接缝（10 项）
 
 | 全局标识 | 生产者（单一真源） | 主要消费者 | 接口形态与职责 | 状态 |
 |---|---|---|---|---|
@@ -74,7 +74,6 @@ OmniMux 客户端插件分别独立打包为单文件 `lib/client.js`（由宿�
 | `__omnimuxWorkflowDirector` | `plugins/plugins/omnimux-workflow/scripts/build-director.mjs` (`globalName`) | `omnimux-workflow` (`directorLoader.ts`，负责消费与卸载清理) | 导演编排独立产物按需加载挂载点 | `active` |
 | `__omnimuxClipReady` | `plugins/plugins/omnimux-clip/src/client/CanvasBridge.js` | `omnimux-workflow` (`src/canvas/App.tsx`) | 剪辑插件就绪布尔信号（`true`）；画布→剪辑交接本身通过 `OMNIMUX_CLIP_OPEN` `CustomEvent` 触发 | `active` |
 | `__omnimuxClipStageStore` | `plugins/plugins/omnimux-clip/src/client/stage-store.js` | `omnimux-clip` (`stage-store.js`) | 剪辑器 StageStore 单例挂载点（防模块重复加载导致双份状态） | `internal-guard` |
-| `__omnimuxForms` | `plugins/plugins/omnimux/src/client/forms/mount.js` | `omnimux-forms` (`FormsPage.jsx`) | Hub 表单运行态与草稿恢复桥接对象 | `active` |
 | `__omnimuxInspirationPreview` | `plugins/plugins/omnimux-inspiration/src/client/preview-service.jsx` | `omnimux` (`TrendingDetailModal.jsx`)、`omnimux-inspiration` | 灵感详情预览弹窗跨插件调用入口 | `active` |
 | `__omnimuxAssetHubNavStore` | `plugins/plugins/omnimux/src/client/workbench/asset-hub-store.js` | `omnimux` 与 `omnimux-assets`（通过 `asset-hub-store.js`） | 资产中心导航状态跨包单例，避免 `omnimux` 与 `omnimux-assets` 双份打包后状态分裂 | `deprecation-candidate` |
 | `__omnimuxProductsIntent` | 历史外部/旧跳转方写入（当前仓内无活跃写入方） | `omnimux-assets` (`AssetsStage.jsx` 读取后一次性删除) | 商品库并入资产库后的历史一次性页签跳转意图兼容读取点 | `legacy-compat` |

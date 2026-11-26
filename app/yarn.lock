@@ -18652,7 +18652,6 @@ __metadata:
     omnimux-assets: "link:../../plugins/plugins/omnimux-assets"
     omnimux-browser: "link:../../plugins/plugins/omnimux-browser"
     omnimux-clip: "link:../../plugins/plugins/omnimux-clip"
-    omnimux-forms: "link:../../plugins/plugins/omnimux-forms"
     omnimux-inspiration: "link:../../plugins/plugins/omnimux-inspiration"
     omnimux-market: "link:../../plugins/plugins/omnimux-market"
     omnimux-products: "link:../../plugins/plugins/omnimux-products"
@@ -22804,12 +22803,6 @@ __metadata:
 "omnimux-clip@link:../../plugins/plugins/omnimux-clip::locator=dsh-desktop-next%40workspace%3Adsh-desktop-next":
   version: 0.0.0-use.local
   resolution: "omnimux-clip@link:../../plugins/plugins/omnimux-clip::locator=dsh-desktop-next%40workspace%3Adsh-desktop-next"
-  languageName: node
-  linkType: soft
-
-"omnimux-forms@link:../../plugins/plugins/omnimux-forms::locator=dsh-desktop-next%40workspace%3Adsh-desktop-next":
-  version: 0.0.0-use.local
-  resolution: "omnimux-forms@link:../../plugins/plugins/omnimux-forms::locator=dsh-desktop-next%40workspace%3Adsh-desktop-next"
   languageName: node
   linkType: soft
 

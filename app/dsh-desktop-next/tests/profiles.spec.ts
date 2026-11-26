@@ -836,3 +836,62 @@ it('retires unshipped optional official bundles from upgraded profiles unless pr
   manager.ensure('desktop', packagedAnchor)
   expect(JSON.parse(readFileSync(file, 'utf8')).dsh.profile.bundles).toContain(voiceBundle)
 })
+
+it('retires retired-tier OmniMux plugins from upgraded profiles unless profile-installed', () => {
+  const manager = profiles()
+  const dir = manager.ensure('desktop')
+  const file = join(dir, 'package.json')
+  const manifest = JSON.parse(readFileSync(file, 'utf8')) as {
+    dependencies?: Record<string, string>
+    dsh: { profile: { bundles: string[] } }
+  }
+  manifest.dsh.profile.bundles.push('omnimux-forms', 'omnimux-social-harvest', 'third-party-plugin')
+  writeFileSync(file, JSON.stringify(manifest, null, 2) + '\n')
+
+  const recoveryDir = join(manager.home, 'recovery')
+  const backupCountBefore = existsSync(recoveryDir) ? readdirSync(recoveryDir).length : 0
+
+  manager.ensure('desktop')
+  const migrated = JSON.parse(readFileSync(file, 'utf8'))
+  expect(migrated.dsh.profile.bundles).not.toContain('omnimux-forms')
+  expect(migrated.dsh.profile.bundles).not.toContain('omnimux-social-harvest')
+  expect(migrated.dsh.profile.bundles).toContain('third-party-plugin')
+  expect(readdirSync(recoveryDir).length).toBe(backupCountBefore + 1)
+
+  const after = readFileSync(file, 'utf8')
+  manager.ensure('desktop')
+  expect(readFileSync(file, 'utf8')).toBe(after)
+
+  migrated.dependencies = { ...(migrated.dependencies ?? {}), 'omnimux-forms': '0.1.2' }
+  migrated.dsh.profile.bundles.push('omnimux-forms')
+  writeFileSync(file, JSON.stringify(migrated, null, 2) + '\n')
+  manager.ensure('desktop')
+  expect(JSON.parse(readFileSync(file, 'utf8')).dsh.profile.bundles).toContain('omnimux-forms')
+})
+
+it('retires managed snapshot dependencies of retired-tier plugins when adopting legacy profiles', () => {
+  const manager = profiles()
+  const legacyDir = join(manager.home, 'profiles', 'omnimux')
+  mkdirSync(legacyDir, { recursive: true })
+  const legacyManifest = {
+    name: 'dsh-profile-omnimux',
+    private: true,
+    dependencies: {
+      'omnimux': 'file:.materialize-snapshots/plugins/omnimux',
+      'omnimux-forms': 'file:.materialize-snapshots/plugins/omnimux-forms',
+    },
+    dsh: {
+      profile: {
+        bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', 'omnimux', 'omnimux-forms'],
+      },
+    },
+  }
+  const file = join(legacyDir, 'package.json')
+  writeFileSync(file, JSON.stringify(legacyManifest, null, 2) + '\n')
+
+  manager.ensure('omnimux')
+  const updated = JSON.parse(readFileSync(file, 'utf8')) as typeof legacyManifest
+  expect(updated.dsh.profile.bundles).not.toContain('omnimux-forms')
+  expect(Object.hasOwn(updated.dependencies, 'omnimux-forms')).toBe(false)
+  expect(Object.hasOwn(updated.dependencies, 'omnimux')).toBe(true)
+})

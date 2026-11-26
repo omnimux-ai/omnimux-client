@@ -1,10 +1,26 @@
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'tsdown'
 
+function readBakedRetiredTiersJson(): string {
+  const tiersPath = fileURLToPath(new URL('../config/plugin-tiers.json', import.meta.url))
+  const parsed = JSON.parse(readFileSync(tiersPath, 'utf8')) as { tiers?: { retired?: unknown } }
+  const retired = parsed.tiers?.retired
+  if (!Array.isArray(retired) || retired.some(name => typeof name !== 'string' || name === '')) {
+    throw new Error(`tsdown config: invalid tiers.retired in ${tiersPath}`)
+  }
+  return JSON.stringify({ tiers: { retired } })
+}
+
 const PACKAGE_NAME = 'dsh-plugin-desktop'
+const BAKED_RETIRED_TIERS_JSON = readBakedRetiredTiersJson()
 
 export default defineConfig([
   {
     name: PACKAGE_NAME,
+    define: {
+      'process.env.OMNIMUX_BAKED_RETIRED_TIERS_JSON': JSON.stringify(BAKED_RETIRED_TIERS_JSON),
+    },
     entry: {
       index: 'src/index.ts',
       'module-resolution': 'src/module-resolution.ts',

@@ -234,11 +234,28 @@ export class NextProfiles {
         if (!Object.hasOwn(profileDeps, bundle) && !installationDeps.has(bundle)) retired.add(bundle)
       }
     }
+    const desktopManagedRetiredDeps: string[] = []
+    for (const bundle of TIERS.tiers.retired) {
+      if (installationDeps?.has(bundle)) continue
+      const depSpec = profileDeps[bundle]
+      if (typeof depSpec === 'string' && depSpec.startsWith('file:.materialize-snapshots/')) {
+        // Legacy dsh-plugin-desktop seeded product plugins into profile.dependencies as
+        // managed snapshot paths; retire those alongside bundles so stale snapshots cannot boot.
+        retired.add(bundle)
+        desktopManagedRetiredDeps.push(bundle)
+      } else if (!Object.hasOwn(profileDeps, bundle)) {
+        retired.add(bundle)
+      }
+    }
     if (retired.size === 0) return
     const bundles = manifest.dsh.profile.bundles.filter(bundle => !retired.has(bundle))
-    if (bundles.length === manifest.dsh.profile.bundles.length) return
+    const prunedDeps = desktopManagedRetiredDeps.filter(bundle => Object.hasOwn(profileDeps, bundle))
+    if (bundles.length === manifest.dsh.profile.bundles.length && prunedDeps.length === 0) return
     new NextRecovery(this).backup(name, 'before-upstream-bundle-retirement')
     manifest.dsh.profile.bundles = bundles
+    if (prunedDeps.length > 0 && isRecord(manifest.dependencies)) {
+      for (const bundle of prunedDeps) delete manifest.dependencies[bundle]
+    }
     atomicJson(join(this.directory(name), 'package.json'), manifest)
   }
   features(name: string): Features {
