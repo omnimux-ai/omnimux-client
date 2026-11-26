@@ -18,14 +18,14 @@ OMNIMUX_PRIMARY_ALLOWED_UNTRACKED_RE='^(specs|docs|ui-demo|tmp|\.tmp|\.workbuddy
 omnimux_primary_tracked_changes() {
   local root="${1:-}"
   [ -n "$root" ] || return 2
-  git -C "$root" status --porcelain --untracked-files=no --ignore-submodules=all 2>/dev/null
+  git -C "$root" -c core.quotepath=false status --porcelain --untracked-files=no --ignore-submodules=all 2>/dev/null
 }
 
 # 会进入物化产物的未跟踪文件（每行一个路径）。失败返回非零。
 omnimux_primary_blocking_untracked() {
   local root="${1:-}" untracked
   [ -n "$root" ] || return 2
-  untracked=$(git -C "$root" ls-files --others --exclude-standard 2>/dev/null) || return 2
+  untracked=$(git -C "$root" -c core.quotepath=false ls-files --others --exclude-standard 2>/dev/null) || return 2
   [ -n "$untracked" ] || return 0
   local status=0
   printf '%s\n' "$untracked" | grep -Ev "$OMNIMUX_PRIMARY_ALLOWED_UNTRACKED_RE" || status=$?

@@ -3360,6 +3360,7 @@ function parseShellInvocation(words) {
       readStdin: false,
       inlineScript: '',
       scriptFile: isProcSub ? '' : arg,
+      scriptIdx: isProcSub || !arg ? -1 : i,
       procSubCmd: isProcSub ? arg.slice(2, -1).trim() : '',
     }
   }
@@ -3442,6 +3443,7 @@ function parseShellInvocation(words) {
     readStdin,
     inlineScript: hasC ? arg : '',
     scriptFile: hasC || readStdin || isProcSub ? '' : arg,
+    scriptIdx: hasC || readStdin || isProcSub || !arg ? -1 : i,
     procSubCmd: isProcSub ? arg.slice(2, -1).trim() : '',
   }
 }
@@ -5829,18 +5831,103 @@ export function decideSearchTarget({ toolName, toolInput = {}, homeDir = homedir
   }
 }
 
-const PRIMARY_RESCUE_SCRIPT_RE = /(?:^|\/)worktree\.sh$/
+const PRIMARY_RESCUE_SCRIPT_RE = /(?:^|\/)worktree\.sh$/i
 const PRIMARY_RESCUE_ALLOWED_REL_PATHS = new Set(['plugins/scripts/worktree.sh', 'scripts/worktree.sh'])
 const PRIMARY_RESCUE_TASK_RE = /^[a-z0-9][a-z0-9-]*$/
 const PRIMARY_RESCUE_RESERVED_TASKS = new Set([
   'main', 'master', 'omnimux', 'origin', 'fork', 'upstream',
   'feat', 'fix', 'chore', 'agent', 'codex', 'merge', '.git', '.worktrees',
 ])
+const PRIMARY_RESCUE_FORBIDDEN_ENV_RE = /^(?:GIT_|DYLD_|LD_|WORKTREE_REMOTE$|WORKTREE_DEFAULT_BRANCH$|OMNIMUX_PRIMARY_ALLOWED_UNTRACKED_RE$|BASH_ENV$|ENV$|NODE_OPTIONS$|PATH$)/
 
-function validatePrimaryRescueInvocation(scriptRaw, rescueArgs, effectiveCwd, rawStage) {
+function resolvePrimaryRepoRootFromDir(dir) {
+  if (!dir) return ''
+  try {
+    const startDir = existingDirectory(canonicalTarget(dir))
+    const common = git(['rev-parse', '--git-common-dir'], startDir)
+    if (common.error || common.status !== 0) return ''
+    const rawCommon = String(common.stdout || '').trim()
+    if (!rawCommon) return ''
+    const absCommon = isAbsolute(rawCommon) ? rawCommon : resolve(startDir, rawCommon)
+    return canonicalTarget(dirname(absCommon))
+  } catch {
+    return ''
+  }
+}
+
+function collectForbiddenRescueEnv(words, armedForbiddenEnv) {
+  if (!words || words.length === 0) return
+  if (words[0] === 'export') {
+    for (const token of words.slice(1)) {
+      if (token.startsWith('-')) continue
+      const key = token.split('=')[0]
+      if (PRIMARY_RESCUE_FORBIDDEN_ENV_RE.test(key)) armedForbiddenEnv.add(key)
+    }
+    return
+  }
+  if (words[0] === 'unset') {
+    for (const token of words.slice(1)) {
+      if (!token.startsWith('-')) armedForbiddenEnv.delete(token)
+    }
+    return
+  }
+  // Standalone shell variable assignment without command (e.g. `GIT_DIR=/tmp/x; ...`)
+  if (words.every((w) => /^[A-Za-z_][A-Za-z0-9_]*=/.test(w))) {
+    for (const token of words) {
+      const key = token.split('=')[0]
+      if (PRIMARY_RESCUE_FORBIDDEN_ENV_RE.test(key)) armedForbiddenEnv.add(key)
+    }
+  }
+}
+
+function findForbiddenRescueEnv(envVars, armedForbiddenEnv) {
+  for (const key of envVars || []) {
+    if (PRIMARY_RESCUE_FORBIDDEN_ENV_RE.test(key)) return key
+  }
+  for (const key of armedForbiddenEnv || []) {
+    if (PRIMARY_RESCUE_FORBIDDEN_ENV_RE.test(key)) return key
+  }
+  return ''
+}
+
+function validatePrimaryRescueInvocation(scriptRaw, rescueArgs, effectiveCwd, rawStage, expectedPrimaryRoot, forbiddenEnvKey = '') {
+  if (forbiddenEnvKey) {
+    return {
+      decision: 'deny',
+      reason: 'forbidden-invalid-primary-rescue',
+      flag: `env:${forbiddenEnvKey}`,
+      segment: rawStage,
+    }
+  }
+  const rawAbs = toFullPath(scriptRaw, effectiveCwd)
+  if (!rawAbs) {
+    return {
+      decision: 'deny',
+      reason: 'forbidden-untrusted-primary-rescue-script',
+      script: scriptRaw,
+      segment: rawStage,
+    }
+  }
   let resolvedScript = ''
   try {
-    resolvedScript = canonicalTarget(toFullPath(scriptRaw, effectiveCwd))
+    // Reject symlinked script file or symlinked parent directory (blocks SCRIPT_DIR hijacking).
+    if (lstatSync(rawAbs).isSymbolicLink()) {
+      return {
+        decision: 'deny',
+        reason: 'forbidden-untrusted-primary-rescue-script',
+        script: rawAbs,
+        segment: rawStage,
+      }
+    }
+    resolvedScript = canonicalTarget(rawAbs)
+    if (canonicalTarget(dirname(rawAbs)) !== dirname(resolvedScript)) {
+      return {
+        decision: 'deny',
+        reason: 'forbidden-untrusted-primary-rescue-script',
+        script: rawAbs,
+        segment: rawStage,
+      }
+    }
   } catch {
     return {
       decision: 'deny',
@@ -5877,8 +5964,29 @@ function validatePrimaryRescueInvocation(scriptRaw, rescueArgs, effectiveCwd, ra
       segment: rawStage,
     }
   }
-  const relPath = relative(canonicalTarget(repoRoot), resolvedScript).split(sep).join('/')
+  const canonicalRepoRoot = canonicalTarget(repoRoot)
+  // Cross-repo forgery check: script must belong to the active repository's primary checkout.
+  if (!expectedPrimaryRoot || canonicalRepoRoot !== expectedPrimaryRoot) {
+    return {
+      decision: 'deny',
+      reason: 'forbidden-untrusted-primary-rescue-script',
+      script: resolvedScript,
+      segment: rawStage,
+    }
+  }
+  const relPath = relative(canonicalRepoRoot, resolvedScript).split(sep).join('/')
   if (!PRIMARY_RESCUE_ALLOWED_REL_PATHS.has(relPath)) {
+    return {
+      decision: 'deny',
+      reason: 'forbidden-untrusted-primary-rescue-script',
+      script: resolvedScript,
+      segment: rawStage,
+    }
+  }
+  // Defense-in-depth: refuse running rescue-primary if primary worktree.sh itself was tampered locally.
+  const wtDiff = git(['diff', '--quiet', 'HEAD', '--', relPath], canonicalRepoRoot)
+  const cachedDiff = git(['diff', '--cached', '--quiet', 'HEAD', '--', relPath], canonicalRepoRoot)
+  if (wtDiff.error || wtDiff.status !== 0 || cachedDiff.error || cachedDiff.status !== 0) {
     return {
       decision: 'deny',
       reason: 'forbidden-untrusted-primary-rescue-script',
@@ -5917,76 +6025,247 @@ function validatePrimaryRescueInvocation(scriptRaw, rescueArgs, effectiveCwd, ra
   return undefined
 }
 
-export function decidePrimaryRescueCommand(command, cwd, depth = 0) {
-  if (!command || typeof command !== 'string' || depth > 4) return { decision: 'allow' }
+export function decidePrimaryRescueCommand(command, cwd, options = {}, depth = 0) {
+  if (!command || typeof command !== 'string') return { decision: 'allow' }
+  const normalizedOpts = typeof options === 'number' ? {} : (options || {})
+  const effectiveDepth = typeof options === 'number' ? options : depth
+  if (effectiveDepth > 4) {
+    if (/\brescue-primary\b|worktree\.sh/i.test(command)) {
+      return {
+        decision: 'deny',
+        reason: 'forbidden-invalid-primary-rescue',
+        flag: 'nested-depth-limit',
+        segment: command,
+      }
+    }
+    return { decision: 'allow' }
+  }
+
   const sessionCwd = resolve(cwd || process.cwd())
+  let expectedPrimaryRoot = ''
+  if (normalizedOpts.ownerRoot) {
+    try {
+      expectedPrimaryRoot = canonicalTarget(normalizedOpts.ownerRoot)
+    } catch {
+      expectedPrimaryRoot = ''
+    }
+  } else {
+    expectedPrimaryRoot = resolvePrimaryRepoRootFromDir(sessionCwd)
+  }
+
   let upstreamStdinText = ''
+  let upstreamWorktreeScript = ''
+  let sawStdinShellInStmt = false
+  let sawSetPositionalRescue = false
+  const armedForbiddenEnv = new Set(normalizedOpts.inheritedForbiddenEnv || [])
+
   const denied = walkShellCommands(command, sessionCwd, {
     onStatementStart() {
       upstreamStdinText = ''
+      upstreamWorktreeScript = ''
+      sawStdinShellInStmt = false
+    },
+    onCloserTail({ tail }) {
+      const redirectedScript = extractInputRedirectionTargets(tail).find((t) => PRIMARY_RESCUE_SCRIPT_RE.test(t))
+      if (redirectedScript && sawStdinShellInStmt) {
+        return {
+          decision: 'deny',
+          reason: 'forbidden-untrusted-primary-rescue-script',
+          script: redirectedScript,
+          segment: tail,
+        }
+      }
+      return undefined
     },
     onStage({ rawStage, currentCwd, isPipeline, heredocs }) {
+      const inputRedirects = extractInputRedirectionTargets(rawStage)
       const words = tokenizeCommandLine(stripShellRedirection(rawStage))
       if (words.length === 0) return undefined
+      if (!isPipeline) {
+        collectForbiddenRescueEnv(words, armedForbiddenEnv)
+        if (words[0] === 'set' && words.some((w) => w === 'rescue-primary')) {
+          sawSetPositionalRescue = true
+        }
+      }
       if (isPipeline) {
         const stdinText = extractUpstreamStdinScript(words, heredocs)
         if (stdinText) upstreamStdinText = stdinText
+        const maybeScript =
+          words.find((w) => PRIMARY_RESCUE_SCRIPT_RE.test(w)) ||
+          inputRedirects.find((t) => PRIMARY_RESCUE_SCRIPT_RE.test(t))
+        if (maybeScript && !upstreamWorktreeScript) {
+          upstreamWorktreeScript = maybeScript
+        }
       }
-      const { words: effectiveWords, targetDir: wrapperDir } = unwrapExecutionWrapperWithMeta(words)
+      const { words: effectiveWords, envVars, targetDir: wrapperDir } = unwrapExecutionWrapperWithMeta(words)
       if (effectiveWords.length === 0) return undefined
       const effectiveCwd = wrapperDir ? resolve(currentCwd, wrapperDir) : currentCwd
       const verb = commandBasename(effectiveWords[0])
+      const forbiddenEnvKey = findForbiddenRescueEnv(envVars, armedForbiddenEnv)
 
       if (READONLY_INSPECTION_VERBS.has(verb)) return undefined
       if (verb === 'sed' && !hasInPlaceFlag(effectiveWords.slice(1), new Set(['-e', '--expression', '-f', '--file']))) {
         return undefined
       }
 
+      // Direct execution: ./plugins/scripts/worktree.sh rescue-primary ...
       if (PRIMARY_RESCUE_SCRIPT_RE.test(effectiveWords[0]) && effectiveWords[1] === 'rescue-primary') {
-        return validatePrimaryRescueInvocation(effectiveWords[0], effectiveWords.slice(2), effectiveCwd, rawStage)
+        return validatePrimaryRescueInvocation(
+          effectiveWords[0],
+          effectiveWords.slice(2),
+          effectiveCwd,
+          rawStage,
+          expectedPrimaryRoot,
+          forbiddenEnvKey,
+        )
+      }
+
+      // Package manager wrapper: pnpm [--dir ...] wt [--] rescue-primary ...
+      if (['pnpm', 'npm', 'yarn', 'bun'].includes(verb)) {
+        const parsed = parsePackageManagerScript(effectiveWords)
+        if (parsed && parsed.script === 'wt') {
+          const rawArgs = Array.isArray(parsed.scriptArgs) ? parsed.scriptArgs : []
+          const cleanedArgs = rawArgs[0] === '--' ? rawArgs.slice(1) : rawArgs
+          if (cleanedArgs[0] === 'rescue-primary') {
+            const pmCwd = parsed.targetDir ? resolve(effectiveCwd, parsed.targetDir) : effectiveCwd
+            return validatePrimaryRescueInvocation(
+              resolve(pmCwd, 'scripts/worktree.sh'),
+              cleanedArgs.slice(1),
+              pmCwd,
+              rawStage,
+              expectedPrimaryRoot,
+              forbiddenEnvKey,
+            )
+          }
+        }
+      }
+
+      // Indirect launchers (xargs / find -exec) invoking worktree.sh with rescue-primary
+      const hadXargs = words.some((w) => commandBasename(w) === 'xargs')
+      if (hadXargs || verb === 'find') {
+        const mentionsWorktree =
+          words.some((w) => PRIMARY_RESCUE_SCRIPT_RE.test(w)) ||
+          effectiveWords.some((w) => PRIMARY_RESCUE_SCRIPT_RE.test(w)) ||
+          Boolean(upstreamWorktreeScript)
+        const mentionsRescue =
+          words.some((w) => w === 'rescue-primary') ||
+          effectiveWords.some((w) => w === 'rescue-primary') ||
+          /\brescue-primary\b/.test(upstreamStdinText)
+        if (mentionsWorktree && mentionsRescue) {
+          return {
+            decision: 'deny',
+            reason: 'forbidden-untrusted-primary-rescue-script',
+            script: `${hadXargs ? 'xargs' : verb} indirect worktree.sh rescue-primary`,
+            segment: rawStage,
+          }
+        }
       }
 
       if (['bash', 'sh', 'zsh', 'dash', 'ksh', 'source', '.'].includes(verb)) {
         const shellMeta = parseShellInvocation(effectiveWords)
         if (!shellMeta || shellMeta.syntaxCheckOnly) return undefined
+        const childOpts = {
+          ...normalizedOpts,
+          inheritedForbiddenEnv: new Set([...armedForbiddenEnv, ...(envVars || [])]),
+        }
+
+        // Block sourcing worktree.sh directly when rescue-primary is passed or armed via `set --`.
+        if ((verb === 'source' || verb === '.') && shellMeta.scriptFile && PRIMARY_RESCUE_SCRIPT_RE.test(shellMeta.scriptFile)) {
+          const scriptArgs = shellMeta.scriptIdx >= 0 ? effectiveWords.slice(shellMeta.scriptIdx + 1) : []
+          if (scriptArgs[0] === 'rescue-primary' || sawSetPositionalRescue) {
+            return {
+              decision: 'deny',
+              reason: 'forbidden-untrusted-primary-rescue-script',
+              script: `${verb} ${shellMeta.scriptFile}`,
+              segment: rawStage,
+            }
+          }
+        }
+
         if (shellMeta.inlineScript) {
-          const nested = decidePrimaryRescueCommand(resolveEvalScript(shellMeta.inlineScript), effectiveCwd, depth + 1)
+          const nested = decidePrimaryRescueCommand(
+            resolveEvalScript(shellMeta.inlineScript),
+            effectiveCwd,
+            childOpts,
+            effectiveDepth + 1,
+          )
           if (nested.decision === 'deny') return nested
           return undefined
         }
+
         if (shellMeta.procSubCmd) {
-          for (const body of extractProducerScriptsFromProcessSub(shellMeta.procSubCmd)) {
-            const nested = decidePrimaryRescueCommand(body, effectiveCwd, depth + 1)
+          const procInfo = extractProcessSubInfo(shellMeta.procSubCmd)
+          const procMentionsWorktree = PRIMARY_RESCUE_SCRIPT_RE.test(shellMeta.procSubCmd) ||
+            tokenizeCommandLine(shellMeta.procSubCmd).some((w) => PRIMARY_RESCUE_SCRIPT_RE.test(w))
+          const stageMentionsRescue = effectiveWords.some((w) => w === 'rescue-primary')
+          if (procMentionsWorktree && stageMentionsRescue) {
+            return {
+              decision: 'deny',
+              reason: 'forbidden-untrusted-primary-rescue-script',
+              script: `process-substitution (${shellMeta.procSubCmd})`,
+              segment: rawStage,
+            }
+          }
+          for (const body of procInfo.scripts) {
+            const nested = decidePrimaryRescueCommand(body, effectiveCwd, childOpts, effectiveDepth + 1)
             if (nested.decision === 'deny') return nested
           }
           return undefined
         }
+
         if (shellMeta.scriptFile && PRIMARY_RESCUE_SCRIPT_RE.test(shellMeta.scriptFile)) {
-          const scriptIdx = effectiveWords.indexOf(shellMeta.scriptFile)
-          const scriptArgs = scriptIdx >= 0 ? effectiveWords.slice(scriptIdx + 1) : []
+          const scriptArgs = shellMeta.scriptIdx >= 0 ? effectiveWords.slice(shellMeta.scriptIdx + 1) : []
           if (scriptArgs[0] === 'rescue-primary') {
-            return validatePrimaryRescueInvocation(shellMeta.scriptFile, scriptArgs.slice(1), effectiveCwd, rawStage)
+            return validatePrimaryRescueInvocation(
+              shellMeta.scriptFile,
+              scriptArgs.slice(1),
+              effectiveCwd,
+              rawStage,
+              expectedPrimaryRoot,
+              forbiddenEnvKey,
+            )
           }
           return undefined
         }
+
         if (!shellMeta.scriptFile) {
+          sawStdinShellInStmt = true
+          // Block stdin-fed execution of worktree.sh via `<`, pipe, or process substitution.
+          const redirectedWorktree = inputRedirects.find((t) => PRIMARY_RESCUE_SCRIPT_RE.test(t))
+          if (redirectedWorktree && effectiveWords.some((w) => w === 'rescue-primary')) {
+            return {
+              decision: 'deny',
+              reason: 'forbidden-untrusted-primary-rescue-script',
+              script: redirectedWorktree,
+              segment: rawStage,
+            }
+          }
+          if (upstreamWorktreeScript && effectiveWords.some((w) => w === 'rescue-primary')) {
+            return {
+              decision: 'deny',
+              reason: 'forbidden-untrusted-primary-rescue-script',
+              script: upstreamWorktreeScript,
+              segment: rawStage,
+            }
+          }
+          const procSubInfo = extractProcessSubstitutionPayloads(rawStage)
           for (const body of heredocs) {
-            const nested = decidePrimaryRescueCommand(body, effectiveCwd, depth + 1)
+            const nested = decidePrimaryRescueCommand(body, effectiveCwd, childOpts, effectiveDepth + 1)
             if (nested.decision === 'deny') return nested
           }
-          for (const body of extractProcessSubstitutionPayloads(rawStage).scripts) {
-            const nested = decidePrimaryRescueCommand(body, effectiveCwd, depth + 1)
+          for (const body of procSubInfo.scripts) {
+            const nested = decidePrimaryRescueCommand(body, effectiveCwd, childOpts, effectiveDepth + 1)
             if (nested.decision === 'deny') return nested
           }
           if (isPipeline && upstreamStdinText) {
-            const nested = decidePrimaryRescueCommand(upstreamStdinText, effectiveCwd, depth + 1)
+            const nested = decidePrimaryRescueCommand(upstreamStdinText, effectiveCwd, childOpts, effectiveDepth + 1)
             if (nested.decision === 'deny') return nested
           }
         }
       }
       return undefined
     },
-  }, depth)
+  }, effectiveDepth)
   return denied || { decision: 'allow' }
 }
 
@@ -6043,7 +6322,7 @@ export function decideBashCommand({ command, cwd, ownerRoot }) {
   }
 
   // 3.8. 检查受控主检出疏通入口 rescue-primary（仅放行主检出权威脚本与白名单参数）
-  const rescueDecision = decidePrimaryRescueCommand(command, cwd)
+  const rescueDecision = decidePrimaryRescueCommand(command, cwd, { ownerRoot })
   if (rescueDecision.decision === 'deny') {
     return rescueDecision
   }

@@ -71,13 +71,24 @@ function createFixture(t, { withContract = true, scriptLayout = 'plugins/scripts
     copyFileSync(join(root, 'scripts/sync-main.sh'), join(scriptsDir, 'sync-main.sh'))
   }
   writeFileSync(join(scriptsDir, 'sync-to-app.sh'), '#!/bin/sh\necho "SYNC_CALLED: $*" >> sync_receipt.txt\n', { mode: 0o755 })
-  writeFileSync(join(repo, '.gitignore'), '.worktrees/\n')
+  writeFileSync(join(repo, '.gitignore'), '.worktrees/\nignored.log\n')
   writeFileSync(join(repo, 'AGENTS.md'), '# Rules\nline-1\nline-2\n')
   writeFileSync(join(repo, 'keep.txt'), 'original-keep\n')
   writeFileSync(join(repo, 'to-delete.txt'), 'delete-me\n')
   writeFileSync(join(repo, 'to-rename.txt'), 'rename-me\n')
   writeFileSync(join(repo, 'cached-rm.txt'), 'cached-rm-body\n')
   writeFileSync(join(repo, 'exec.sh'), '#!/bin/sh\necho v1\n', { mode: 0o644 })
+  mkdirSync(join(repo, 'docs'), { recursive: true })
+  writeFileSync(join(repo, 'docs/tracked-doc.md'), '# tracked doc\n')
+  writeFileSync(join(repo, 'chain-a.txt'), 'content-a\n')
+  writeFileSync(join(repo, 'chain-b.txt'), 'content-b\n')
+  mkdirSync(join(repo, 'swap-dir'), { recursive: true })
+  writeFileSync(join(repo, 'swap-dir/sub.txt'), 'inside-dir\n')
+  writeFileSync(join(repo, 'swap-file'), 'was-a-file\n')
+  mkdirSync(join(repo, 'src/[id]'), { recursive: true })
+  writeFileSync(join(repo, 'src/[id]/page.js'), 'export const id = 1\n')
+  mkdirSync(join(repo, 'src/i'), { recursive: true })
+  writeFileSync(join(repo, 'src/i/page.js'), 'export const i = 1\n')
 
   git('add', '.')
   git('-c', 'commit.gpgsign=false', 'commit', '-m', 'seed')
@@ -102,8 +113,8 @@ function createFixture(t, { withContract = true, scriptLayout = 'plugins/scripts
     return head
   }
 
-  const rescue = (args = [], { bashPath = 'bash', cwd = repo } = {}) =>
-    spawnSync(bashPath, [join(repo, scriptLayout, 'worktree.sh'), 'rescue-primary', ...args], {
+  const rescue = (args = [], { bashPath = 'bash', cwd = repo, extraEnv = {}, scriptPath = null } = {}) =>
+    spawnSync(bashPath, [scriptPath || join(repo, scriptLayout, 'worktree.sh'), 'rescue-primary', ...args], {
       cwd,
       encoding: 'utf8',
       env: {
@@ -111,6 +122,7 @@ function createFixture(t, { withContract = true, scriptLayout = 'plugins/scripts
         PATH: `${bin}:${process.env.PATH}`,
         OMNIMUX_DEV_SNAPSHOT: join(fixture, 'absent-dev'),
         OMNIMUX_SAG_INDEX: '0',
+        ...extraEnv,
       },
     })
 
@@ -351,4 +363,224 @@ test('rescue-primary works with macOS /bin/bash 3.2 and bare worktree.sh copy wi
     readFileSync(join(f.repo, '.worktrees/rescue-unblock/AGENTS.md'), 'utf8'),
     '# Rules\nunexpected-primary-edit\n',
   )
+})
+
+test('rescue-primary tolerates non-ASCII allowed drafts and submodule drift without misclassifying or deleting them', (t) => {
+  const f = createFixture(t)
+  const subsrc = join(f.fixture, 'subsrc')
+  mkdirSync(subsrc, { recursive: true })
+  f.gitAt(subsrc, 'init', '-b', 'main')
+  f.gitAt(subsrc, 'config', 'user.name', 'sub')
+  f.gitAt(subsrc, 'config', 'user.email', 'sub@example.test')
+  writeFileSync(join(subsrc, 'README.md'), 'v1\n')
+  f.gitAt(subsrc, 'add', '.')
+  f.gitAt(subsrc, '-c', 'commit.gpgsign=false', 'commit', '-m', 'sub v1')
+  f.git('-c', 'protocol.file.allow=always', 'submodule', 'add', subsrc, 'app/deepseek-harness')
+  f.git('-c', 'commit.gpgsign=false', 'commit', '-m', 'add submodule')
+  f.git('push', 'origin', 'main')
+
+  // Create submodule pointer drift + non-ASCII allowed drafts
+  const subdir = join(f.repo, 'app/deepseek-harness')
+  f.gitAt(subdir, 'config', 'user.name', 'sub')
+  f.gitAt(subdir, 'config', 'user.email', 'sub@example.test')
+  writeFileSync(join(subdir, 'README.md'), 'v2\n')
+  f.gitAt(subdir, 'add', 'README.md')
+  f.gitAt(subdir, '-c', 'commit.gpgsign=false', 'commit', '-m', 'sub v2')
+
+  mkdirSync(join(f.repo, 'specs'), { recursive: true })
+  writeFileSync(join(f.repo, 'specs/中文草稿.md'), '# 中文草稿\n')
+  mkdirSync(join(f.repo, 'plugins/docs/evidence'), { recursive: true })
+  writeFileSync(join(f.repo, 'plugins/docs/evidence/中文证据.json'), '{"ok":true}\n')
+
+  // Case 1: Only non-ASCII allowed drafts + submodule drift -> already-clean
+  const cleanRes = f.rescue(['--no-sync'])
+  assert.equal(cleanRes.status, 0, `${cleanRes.stdout}\n${cleanRes.stderr}`)
+  assert.equal(parseKv(cleanRes.stdout).RESCUE_STATUS, 'already-clean')
+
+  // Case 2: Add real dirty tracked edit alongside non-ASCII drafts + submodule drift -> rescues cleanly
+  writeFileSync(join(f.repo, 'AGENTS.md'), '# Rules\nwith-cjk-draft\n')
+  const res = f.rescue(['--task', 'rescue-cjk-draft', '--no-sync'])
+  assert.equal(res.status, 0, `${res.stdout}\n${res.stderr}`)
+  assert.equal(parseKv(res.stdout).RESCUE_STATUS, 'rescued')
+  assert.equal(readFileSync(join(f.repo, 'specs/中文草稿.md'), 'utf8'), '# 中文草稿\n')
+  assert.equal(readFileSync(join(f.repo, 'plugins/docs/evidence/中文证据.json'), 'utf8'), '{"ok":true}\n')
+})
+
+test('rescue-primary preserves git rm --cached on allowed draft dir and never mislabels multi-commit rescues as type-0', (t) => {
+  // 1. git rm --cached on docs/tracked-doc.md alongside another staged edit
+  {
+    const f = createFixture(t)
+    f.git('rm', '--cached', 'docs/tracked-doc.md')
+    writeFileSync(join(f.repo, 'AGENTS.md'), '# Rules\nstaged-rule\n')
+    f.git('add', 'AGENTS.md')
+
+    const res = f.rescue(['--task', 'rescue-cached-draft', '--no-sync'])
+    assert.equal(res.status, 0, `${res.stdout}\n${res.stderr}`)
+    const kv = parseKv(res.stdout)
+    assert.equal(kv.RESCUE_STATUS, 'rescued')
+    assert.equal(kv.RESCUE_COMMITS, '2')
+    assert.equal(kv.TRIAGE_HINT, 'inspect-required')
+
+    const wt = join(f.repo, '.worktrees/rescue-cached-draft')
+    // Commit 1 (HEAD~1) preserved the staged deletion of docs/tracked-doc.md
+    assert.throws(() => f.gitAt(wt, 'cat-file', '-e', 'HEAD~1:docs/tracked-doc.md'))
+    // Commit 2 (HEAD) preserved the on-disk copy of docs/tracked-doc.md
+    assert.equal(readFileSync(join(wt, 'docs/tracked-doc.md'), 'utf8'), '# tracked doc\n')
+  }
+
+  // 2. Partial staging reverted in working tree to match origin/main -> must NOT emit type-0-identical-to-origin-main
+  {
+    const f = createFixture(t)
+    writeFileSync(join(f.repo, 'keep.txt'), 'valuable-staged-work\n')
+    f.git('add', 'keep.txt')
+    writeFileSync(join(f.repo, 'keep.txt'), 'original-keep\n')
+
+    const res = f.rescue(['--task', 'rescue-staged-revert'])
+    assert.equal(res.status, 0, `${res.stdout}\n${res.stderr}`)
+    const kv = parseKv(res.stdout)
+    assert.equal(kv.RESCUE_STATUS, 'rescued')
+    assert.equal(kv.RESCUE_COMMITS, '2')
+    assert.equal(kv.TRIAGE_HINT, 'inspect-required')
+    assert.equal(f.gitAt(join(f.repo, '.worktrees/rescue-staged-revert'), 'show', 'HEAD~1:keep.txt'), 'valuable-staged-work')
+  }
+})
+
+test('rescue-primary handles chained renames, file<->dir swaps, glob metachar paths, force-staged ignored files, and blocking pre-commit hooks', (t) => {
+  const f = createFixture(t)
+
+  // Install a hostile pre-commit hook that would otherwise block rescue commits
+  const preCommit = join(f.repo, '.git/hooks/pre-commit')
+  writeFileSync(preCommit, '#!/bin/sh\necho "blocked by local pre-commit" >&2\nexit 1\n', { mode: 0o755 })
+
+  // Chained staged rename: chain-b -> chain-c, chain-a -> chain-b
+  f.git('mv', 'chain-b.txt', 'chain-c.txt')
+  f.git('mv', 'chain-a.txt', 'chain-b.txt')
+
+  // Directory -> file swap AND file -> directory swap
+  rmSync(join(f.repo, 'swap-dir'), { recursive: true, force: true })
+  writeFileSync(join(f.repo, 'swap-dir'), 'now-a-regular-file\n')
+  rmSync(join(f.repo, 'swap-file'))
+  mkdirSync(join(f.repo, 'swap-file'), { recursive: true })
+  writeFileSync(join(f.repo, 'swap-file/child.txt'), 'now-inside-dir\n')
+
+  // Glob metacharacter path: edit src/[id]/page.js while src/i/page.js stays untouched
+  writeFileSync(join(f.repo, 'src/[id]/page.js'), 'export const id = 999\n')
+
+  // Force-staged gitignored file
+  writeFileSync(join(f.repo, 'ignored.log'), 'force-staged-secret-trace\n')
+  f.git('add', '-f', 'ignored.log')
+
+  const res = f.rescue(['--task', 'rescue-hard-edges', '--no-sync'])
+  assert.equal(res.status, 0, `${res.stdout}\n${res.stderr}`)
+  assert.equal(parseKv(res.stdout).RESCUE_STATUS, 'rescued')
+
+  // Primary checkout fully restored
+  assert.equal(f.git('status', '--porcelain'), '')
+  assert.equal(readFileSync(join(f.repo, 'chain-a.txt'), 'utf8'), 'content-a\n')
+  assert.equal(readFileSync(join(f.repo, 'chain-b.txt'), 'utf8'), 'content-b\n')
+  assert.equal(existsSync(join(f.repo, 'chain-c.txt')), false)
+  assert.equal(readFileSync(join(f.repo, 'swap-dir/sub.txt'), 'utf8'), 'inside-dir\n')
+  assert.equal(readFileSync(join(f.repo, 'swap-file'), 'utf8'), 'was-a-file\n')
+  assert.equal(readFileSync(join(f.repo, 'src/[id]/page.js'), 'utf8'), 'export const id = 1\n')
+  assert.equal(readFileSync(join(f.repo, 'src/i/page.js'), 'utf8'), 'export const i = 1\n')
+  assert.equal(existsSync(join(f.repo, 'ignored.log')), false)
+
+  // Rescued worktree faithfully captured everything
+  const wt = join(f.repo, '.worktrees/rescue-hard-edges')
+  assert.equal(f.gitAt(wt, 'status', '--porcelain'), '')
+  assert.equal(existsSync(join(wt, 'chain-a.txt')), false)
+  assert.equal(readFileSync(join(wt, 'chain-b.txt'), 'utf8'), 'content-a\n')
+  assert.equal(readFileSync(join(wt, 'chain-c.txt'), 'utf8'), 'content-b\n')
+  assert.equal(readFileSync(join(wt, 'swap-dir'), 'utf8'), 'now-a-regular-file\n')
+  assert.equal(readFileSync(join(wt, 'swap-file/child.txt'), 'utf8'), 'now-inside-dir\n')
+  assert.equal(readFileSync(join(wt, 'src/[id]/page.js'), 'utf8'), 'export const id = 999\n')
+  assert.equal(readFileSync(join(wt, 'src/i/page.js'), 'utf8'), 'export const i = 1\n')
+  assert.equal(readFileSync(join(wt, 'ignored.log'), 'utf8'), 'force-staged-secret-trace\n')
+})
+
+test('rescue-primary rejects real unmerged conflicts (ls-files -u) and nested untracked git repos with empty-shell cleanup', (t) => {
+  // 1. Real unmerged index conflict (ls-files -u)
+  {
+    const f = createFixture(t)
+    f.git('checkout', '-b', 'conflict-branch')
+    writeFileSync(join(f.repo, 'AGENTS.md'), 'branch-version\n')
+    f.git('add', 'AGENTS.md')
+    f.git('-c', 'commit.gpgsign=false', 'commit', '-m', 'branch edit')
+    f.git('checkout', 'main')
+    writeFileSync(join(f.repo, 'AGENTS.md'), 'main-version\n')
+    f.git('add', 'AGENTS.md')
+    f.git('-c', 'commit.gpgsign=false', 'commit', '-m', 'main edit')
+    spawnSync('git', ['merge', 'conflict-branch'], { cwd: f.repo, stdio: 'ignore' })
+    rmSync(join(f.repo, '.git/MERGE_HEAD'), { force: true }) // test ls-files -u independently of MERGE_HEAD
+
+    const res = f.rescue(['--no-sync'])
+    assert.notEqual(res.status, 0)
+    assert.match(res.stderr, /unmerged conflict entries/)
+  }
+
+  // 2. Nested untracked git repo directory rejected and empty rescue worktree cleaned up
+  {
+    const f = createFixture(t)
+    const nested = join(f.repo, 'nested-repo')
+    mkdirSync(nested, { recursive: true })
+    f.gitAt(nested, 'init', '-b', 'main')
+    writeFileSync(join(nested, 'README.md'), 'nested\n')
+
+    const res = f.rescue(['--task', 'rescue-nested', '--no-sync'])
+    assert.notEqual(res.status, 0)
+    assert.match(res.stderr, /refusing to rescue directory entry|cleaned empty shell worktree/)
+    assert.equal(existsSync(join(f.repo, '.worktrees/rescue-nested')), false)
+    assert.equal(existsSync(join(nested, 'README.md')), true)
+  }
+})
+
+test('rescue-primary ignores forged env overrides, resolves symlink SCRIPT_DIR physically, and reports rescued metadata even when trailing ff-sync fails', (t) => {
+  // 1. Forged WORKTREE_REMOTE / WORKTREE_DEFAULT_BRANCH cannot bypass ahead-commit check
+  {
+    const f = createFixture(t)
+    writeFileSync(join(f.repo, 'ahead.txt'), 'unpushed\n')
+    f.git('add', 'ahead.txt')
+    f.git('-c', 'commit.gpgsign=false', 'commit', '-m', 'ahead')
+    writeFileSync(join(f.repo, 'AGENTS.md'), 'dirty\n')
+
+    const res = f.rescue([], {
+      extraEnv: { WORKTREE_REMOTE: 'nonexistent', WORKTREE_DEFAULT_BRANCH: 'other' },
+    })
+    assert.notEqual(res.status, 0)
+    assert.match(res.stderr, /unpushed local commit/)
+  }
+
+  // 2. Symlink invocation resolves physical SCRIPT_DIR and does NOT source hostile sibling sync-main.sh
+  {
+    const f = createFixture(t)
+    const evilDir = join(f.fixture, 'evil-symlink-dir')
+    mkdirSync(evilDir, { recursive: true })
+    const pwnMarker = join(evilDir, 'pwned.txt')
+    writeFileSync(join(evilDir, 'sync-main.sh'), `echo pwned > "${pwnMarker}"\n`)
+    const linkPath = join(evilDir, 'worktree.sh')
+    symlinkSync(join(f.repo, f.scriptLayout, 'worktree.sh'), linkPath)
+    writeFileSync(join(f.repo, 'AGENTS.md'), 'symlink-test\n')
+
+    const res = f.rescue(['--task', 'rescue-symlink-safe', '--no-sync'], { scriptPath: linkPath })
+    assert.equal(res.status, 0, `${res.stdout}\n${res.stderr}`)
+    assert.equal(existsSync(pwnMarker), false, 'worktree.sh must resolve physical SCRIPT_DIR and never source sibling sync-main.sh')
+  }
+
+  // 3. Trailing ff-only collision with allowed untracked draft still prints rescued worktree metadata
+  {
+    const f = createFixture(t)
+    f.pushRemoteCommit({ 'specs/collide.md': 'upstream-spec\n' }, 'docs: add specs/collide.md')
+    mkdirSync(join(f.repo, 'specs'), { recursive: true })
+    writeFileSync(join(f.repo, 'specs/collide.md'), 'local-untracked-draft\n')
+    writeFileSync(join(f.repo, 'AGENTS.md'), 'local-rule-edit\n')
+
+    const res = f.rescue(['--task', 'rescue-ff-collide'])
+    assert.notEqual(res.status, 0)
+    const kv = parseKv(res.stdout)
+    assert.equal(kv.RESCUE_STATUS, 'rescued-sync-failed')
+    assert.equal(kv.RESCUE_WORKTREE, '.worktrees/rescue-ff-collide')
+    assert.ok(kv.RESCUE_COMMIT)
+    assert.equal(readFileSync(join(f.repo, '.worktrees/rescue-ff-collide/AGENTS.md'), 'utf8'), 'local-rule-edit\n')
+    assert.equal(readFileSync(join(f.repo, 'specs/collide.md'), 'utf8'), 'local-untracked-draft\n')
+  }
 })
