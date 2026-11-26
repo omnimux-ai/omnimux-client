@@ -17,21 +17,21 @@
       "version": "0.1.3",
       "path": "plugins/plugins/omnimux-accounts",
       "spec": "link:../../plugins/plugins/omnimux-accounts",
-      "contentHash": "sha256:3e25e7a300c1e8e79a87afa913b5b43942572d499048aaa7f2896061bfe2f88a"
+      "contentHash": "sha256:fb46033d7de946085497e4bae930903eac9ef949c264e643ef3cd7b5d99dff55"
     },
     {
       "name": "omnimux-analytics",
       "version": "0.2.2",
       "path": "plugins/plugins/omnimux-analytics",
       "spec": "link:../../plugins/plugins/omnimux-analytics",
-      "contentHash": "sha256:3524e6f894abe04f01d06e7601a55a30ae3f5878980b09eb874b230189b7c1b9"
+      "contentHash": "sha256:775c6a12d6f530930ee6b927fea2ce7555a457c6f7164a139dfb42e149cd69dc"
     },
     {
       "name": "omnimux-assets",
       "version": "0.2.2",
       "path": "plugins/plugins/omnimux-assets",
       "spec": "link:../../plugins/plugins/omnimux-assets",
-      "contentHash": "sha256:7441e796ff99273a2273d1a434852db6ab1afff6733eb28f9a454fa5cd553b26"
+      "contentHash": "sha256:ac64852372b00cc9ffaf0113d0e5fd9fc9b67273d7217ad2ab3bc93c1095b61f"
     },
     {
       "name": "omnimux-browser",
@@ -45,28 +45,28 @@
       "version": "0.1.2",
       "path": "plugins/plugins/omnimux-clip",
       "spec": "link:../../plugins/plugins/omnimux-clip",
-      "contentHash": "sha256:0bebaedc72561188dd7ae7b3fd78820cafab3ea5f2289cb9bdf743cb6e7f71cf"
+      "contentHash": "sha256:146928e596bca17e1f0ba37582fa078f10de4ff8bd06cc92bf2f3b0cd5b50134"
     },
     {
       "name": "omnimux-forms",
       "version": "0.1.2",
       "path": "plugins/plugins/omnimux-forms",
       "spec": "link:../../plugins/plugins/omnimux-forms",
-      "contentHash": "sha256:69585109d1b5339f1fa01fe2125f12c937a1d88a70a93288de01c150ac3419ab"
+      "contentHash": "sha256:32affad768c2759ea68fd71396c95eb1d91aa8d829733f29e8448fb19efba46b"
     },
     {
       "name": "omnimux-inspiration",
       "version": "0.1.2",
       "path": "plugins/plugins/omnimux-inspiration",
       "spec": "link:../../plugins/plugins/omnimux-inspiration",
-      "contentHash": "sha256:90dbcaeba0f4f6669b95182011cb1c5fbe1335b0f04db676a88a3792bb094950"
+      "contentHash": "sha256:ab03c2aad0fbde10ccf32de30aaa56ca610ff91ad67610735c4056074e5fa008"
     },
     {
       "name": "omnimux-market",
       "version": "0.2.13-omni.2",
       "path": "plugins/plugins/omnimux-market",
       "spec": "link:../../plugins/plugins/omnimux-market",
-      "contentHash": "sha256:0f41b57bb0b52245fa0260f8287258e57e17a5fd32485ff7c25258e642e4a563"
+      "contentHash": "sha256:a3743582cade4a7e2344f162079ed10302df99425e8ae6f0dfcfbaa76cea8ac1"
     },
     {
       "name": "omnimux-products",
@@ -80,7 +80,7 @@
       "version": "0.1.2",
       "path": "plugins/plugins/omnimux-publish",
       "spec": "link:../../plugins/plugins/omnimux-publish",
-      "contentHash": "sha256:fed105008da0e6301f122f80d47dda25c4c1074763b296a1bf780bc12537e232"
+      "contentHash": "sha256:b720e2f93796cba73eadee9c230dd748084e9d3e259ea8d4114713840982863c"
     },
     {
       "name": "omnimux-video",
@@ -101,7 +101,7 @@
       "version": "1.0.0-rc.3",
       "path": "plugins/plugins/omnimux-workflow",
       "spec": "link:../../plugins/plugins/omnimux-workflow",
-      "contentHash": "sha256:09585dd4def5f4e12d6d57d0113bf7a5124d00f56a7b510d0bf25394a09eb540"
+      "contentHash": "sha256:c8ac98dd3a50aab2dcec66c44b50c46d6cd6b6975bbae22596cc322c9cb84548"
     }
   ]
 }

@@ -210,6 +210,10 @@ export const EmptyState = ({ icon, title, description, action, children }) => h(
 
 export const createSidebarEntry = () => ({})
 
+export const createWorkbenchSidebarEntry = () => (() => {})
+
+export const createWorkbenchStageStore = () => ({})
+
 export const createStageStore = () => ({})
 
 // The plugin owns the open/close state; production Drawer supplies focus trapping.

@@ -22,6 +22,10 @@
       "types": "./src/model-brands.d.ts",
       "default": "./src/model-brands.js"
     },
+    "./workbench-stage-store": {
+      "types": "./src/workbench-stage-store.d.ts",
+      "default": "./src/workbench-stage-store.js"
+    },
     "./package.json": "./package.json"
   },
   "files": [

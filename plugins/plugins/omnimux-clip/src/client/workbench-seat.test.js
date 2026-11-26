@@ -12,7 +12,7 @@ describe('clip workbench seat (sidebar must not claim overlay)', () => {
     assert.match(source, /createClipWorkbenchStore/)
     assert.match(source, /stageStore: createClipWorkbenchStore\(t\)/)
     const storeSource = readFileSync(join(here, 'workbench-store.js'), 'utf8')
-    assert.match(storeSource, /createSidebarStore/)
+    assert.match(storeSource, /createWorkbenchStageStore/)
     assert.doesNotMatch(storeSource, /closePanel/)
     assert.doesNotMatch(source, /stageStore: stage/)
     assert.doesNotMatch(source, /claimProductStage/)

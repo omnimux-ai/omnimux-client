@@ -14,13 +14,44 @@
  *    Contract: docs/contracts/headless-skill-execution.md
  */
 
-import { readFileSync, readdirSync, existsSync } from 'node:fs'
+import { readFileSync, readdirSync, existsSync, writeFileSync } from 'node:fs'
 import { resolve, join, dirname, relative, extname, basename } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const repoRoot = resolve(here, '..')
 const pluginsDir = resolve(repoRoot, 'plugins')
+
+export const DEFAULT_CROSS_PLUGIN_BASELINE_PATH = resolve(here, 'plugin-boundaries-baseline.json')
+
+const CROSS_PLUGIN_RELATIVE_RE = /(?:^|\/)\.\.\/(?:packages\/)?(omnimux(?:-[^/]+)?|dsh-[^/]+)\/(?:src|lib)\//
+const CROSS_PLUGIN_PACKAGE_INTERNAL_RE = /^(?:@omnimux\/([^/]+)\/(?:internal|src|lib)(?:\/|$)|(omnimux(?:-[^/]+)?|dsh-[^/]+)\/(?:src|lib)\/)/
+
+/**
+ * Load the ratchet allowlist of pre-existing cross-plugin private imports.
+ * Only removals are allowed; any new file or specifier fails CI immediately.
+ * @param {string} [baselinePath]
+ * @returns {Map<string, Set<string>>}
+ */
+export function loadCrossPluginBaseline(baselinePath = DEFAULT_CROSS_PLUGIN_BASELINE_PATH) {
+  const map = new Map()
+  if (!existsSync(baselinePath)) return map
+  const parsed = JSON.parse(readFileSync(baselinePath, 'utf8'))
+  const entries = parsed?.entries && typeof parsed.entries === 'object' ? parsed.entries : {}
+  for (const [rel, specs] of Object.entries(entries)) {
+    if (!Array.isArray(specs)) continue
+    map.set(rel.replace(/\\/g, '/'), new Set(specs.map((item) => String(item))))
+  }
+  return map
+}
+
+let cachedDefaultBaseline = null
+function getDefaultBaseline() {
+  if (!cachedDefaultBaseline) {
+    cachedDefaultBaseline = loadCrossPluginBaseline(DEFAULT_CROSS_PLUGIN_BASELINE_PATH)
+  }
+  return cachedDefaultBaseline
+}
 
 /**
  * Explicit read-only exceptions where a non-Hub plugin reads DSH model catalog metadata
@@ -120,9 +151,11 @@ function isTestOrVendorFile(rel) {
   return (
     posix.includes('.test.')
     || posix.includes('.spec.')
+    || posix.includes('.fixture.')
     || posix.includes('/tests/')
     || posix.includes('/test/')
     || posix.includes('/__tests__/')
+    || posix.includes('/test-support/')
     || posix.includes('/e2e/')
     || posix.includes('/openreel/')
   )
@@ -132,6 +165,53 @@ function stripComments(source) {
   return source
     .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/(^|[^:])\/\/.*$/gm, '$1')
+}
+
+/**
+ * Extract module specifiers from static `import`, `export ... from`,
+ * CommonJS `require(...)`, and dynamic `import(...)` on comment-stripped source.
+ * @param {string} codeOnly source with comments removed
+ * @returns {string[]}
+ */
+export function extractModuleSpecifiers(codeOnly) {
+  const specifiers = []
+  const patterns = [
+    /(?:^|[\n;{}])\s*import\s+['"]([^'"\n]+)['"]/g,
+    /(?:^|[\n;{}])\s*(?:import|export)\b[^;'"`=]*?\bfrom\s*['"]([^'"\n]+)['"]/g,
+    /\brequire\s*\(\s*['"]([^'"\n]+)['"]\s*\)/g,
+    /\bimport\s*\(\s*['"]([^'"\n]+)['"]\s*\)/g,
+  ]
+  for (const pattern of patterns) {
+    let match
+    while ((match = pattern.exec(codeOnly)) !== null) {
+      if (match[1]) specifiers.push(match[1])
+    }
+  }
+  return specifiers
+}
+
+/**
+ * Resolve whether a specifier is a forbidden cross-plugin private import.
+ * @param {{ specifier: string, plugin: string, isTestOrVendor: boolean }} input
+ * @returns {boolean}
+ */
+function isCrossPluginPrivateImport({ specifier, plugin, isTestOrVendor }) {
+  const relMatch = CROSS_PLUGIN_RELATIVE_RE.exec(specifier)
+  if (relMatch) {
+    const targetPlugin = relMatch[1]
+    if (targetPlugin === plugin) return false
+    // Test files may import Hub modules directly to verify against real contracts (LESSONS.md).
+    if (targetPlugin === 'omnimux' && isTestOrVendor) return false
+    return true
+  }
+  const pkgMatch = CROSS_PLUGIN_PACKAGE_INTERNAL_RE.exec(specifier)
+  if (pkgMatch) {
+    const targetPlugin = pkgMatch[2] || (pkgMatch[1] === 'hub' ? 'omnimux' : pkgMatch[1])
+    if (targetPlugin === plugin) return false
+    if (targetPlugin === 'omnimux' && isTestOrVendor) return false
+    return true
+  }
+  return false
 }
 
 const NODE_NATIVE_MODULES = new Set([
@@ -166,23 +246,39 @@ function findSourceFiles(dir) {
   return files
 }
 
-export function checkSourceFileBoundaries({ rel, plugin, content, file = rel }) {
+export function checkSourceFileBoundaries({
+  rel,
+  plugin,
+  content,
+  file = rel,
+  baseline = getDefaultBaseline(),
+  collectCrossPluginHits = null,
+}) {
   const posixRel = rel.replace(/\\/g, '/')
   const fileErrors = []
   const isClient = posixRel.includes('/src/client/') || posixRel.includes('/client/')
+  const isTestOrVendor = isTestOrVendorFile(posixRel)
+  const codeOnly = stripComments(content)
+  const seenCrossPlugin = new Set()
 
-  // Extract import/require statements
-  const importRegex = /(?:import\s+(?:[\s\S]*?from\s+)?['"]([^'"]+)['"]|require\s*\(\s*['"]([^'"]+)['"]\s*\))/g
-  let match
-
-  while ((match = importRegex.exec(content)) !== null) {
-    const specifier = match[1] || match[2]
-    if (!specifier) continue
-
-    // 1. Check for cross-plugin private imports
-    if (specifier.includes('../omnimux-') || specifier.includes('../../omnimux-') || specifier.includes('../dsh-') || specifier.includes('../../dsh-')) {
-      if (specifier.includes('/src/') || specifier.includes('/lib/')) {
-        fileErrors.push(`boundary violation in ${posixRel}: cross-plugin private import "${specifier}" is forbidden. Consume through public API or host seams.`)
+  for (const specifier of extractModuleSpecifiers(codeOnly)) {
+    // 1. Check for cross-plugin private imports (including `../omnimux/src/`, `export ... from`,
+    //    dynamic `import()`, and package-internal paths) with a ratchet allowlist for legacy debt.
+    if (isCrossPluginPrivateImport({ specifier, plugin, isTestOrVendor })) {
+      if (!seenCrossPlugin.has(specifier)) {
+        seenCrossPlugin.add(specifier)
+        if (collectCrossPluginHits) {
+          let fileSet = collectCrossPluginHits.get(posixRel)
+          if (!fileSet) {
+            fileSet = new Set()
+            collectCrossPluginHits.set(posixRel, fileSet)
+          }
+          fileSet.add(specifier)
+        }
+        const allowedSpecs = baseline instanceof Map ? baseline.get(posixRel) : undefined
+        if (!allowedSpecs || !allowedSpecs.has(specifier)) {
+          fileErrors.push(`boundary violation in ${posixRel}: cross-plugin private import "${specifier}" is forbidden. Consume through public API or host seams.`)
+        }
       }
     }
 
@@ -201,8 +297,7 @@ export function checkSourceFileBoundaries({ rel, plugin, content, file = rel }) 
   }
 
   // 4. Non-Hub runtime files must not call DSH ctx.llm / llm.stream directly.
-  if (plugin !== 'omnimux' && !isTestOrVendorFile(posixRel)) {
-    const codeOnly = stripComments(content)
+  if (plugin !== 'omnimux' && !isTestOrVendor) {
     if (DIRECT_LLM_STREAM_RE.test(codeOnly)) {
       fileErrors.push(`headless execution boundary violation in ${posixRel}: non-Hub plugins must not call llm.stream directly. Use Hub ctx.get('headlessSkill') per docs/contracts/headless-skill-execution.md.`)
     } else if (!DIRECT_LLM_ACCESS_ALLOWLIST.has(posixRel) && DIRECT_LLM_ACCESS_RE.test(codeOnly)) {
@@ -219,7 +314,26 @@ export function checkSourceFileBoundaries({ rel, plugin, content, file = rel }) 
   return fileErrors
 }
 
+function serializeBaseline(hitsMap) {
+  const entries = {}
+  for (const rel of [...hitsMap.keys()].sort()) {
+    entries[rel] = [...hitsMap.get(rel)].sort()
+  }
+  return JSON.stringify(
+    {
+      schemaVersion: 1,
+      description: 'Ratchet allowlist for pre-existing cross-plugin private imports (../omnimux/(src|lib)/ and re-exported cross-plugin private paths). Only removals are permitted; any new file or specifier fails verify-plugin-boundaries.',
+      entries,
+    },
+    null,
+    2,
+  ) + '\n'
+}
+
 function main() {
+  const updateBaseline = process.argv.includes('--update-baseline')
+  const baseline = loadCrossPluginBaseline(DEFAULT_CROSS_PLUGIN_BASELINE_PATH)
+  const crossPluginHits = new Map()
   const errors = []
   let scannedFiles = 0
 
@@ -236,13 +350,32 @@ function main() {
         scannedFiles++
         const rel = relative(repoRoot, file)
         const content = readFileSync(file, 'utf8')
-        errors.push(...checkSourceFileBoundaries({ rel, plugin, content, file }))
+        errors.push(...checkSourceFileBoundaries({
+          rel,
+          plugin,
+          content,
+          file,
+          baseline: updateBaseline ? new Map() : baseline,
+          collectCrossPluginHits: crossPluginHits,
+        }))
       }
     }
   }
 
+  if (updateBaseline) {
+    writeFileSync(DEFAULT_CROSS_PLUGIN_BASELINE_PATH, serializeBaseline(crossPluginHits), 'utf8')
+    let totalImports = 0
+    for (const set of crossPluginHits.values()) totalImports += set.size
+    console.log(`📝 verify-plugin-boundaries: updated ratchet baseline (${crossPluginHits.size} files, ${totalImports} imports) at ${relative(repoRoot, DEFAULT_CROSS_PLUGIN_BASELINE_PATH)}`)
+    process.exit(0)
+  }
+
   if (errors.length === 0) {
-    console.log(`✅ verify-plugin-boundaries: ${scannedFiles} source file(s) across plugins verified for dependency and runtime boundaries.`)
+    let activeRatchet = 0
+    for (const set of crossPluginHits.values()) activeRatchet += set.size
+    let baselineTotal = 0
+    for (const set of baseline.values()) baselineTotal += set.size
+    console.log(`✅ verify-plugin-boundaries: ${scannedFiles} source file(s) across plugins verified for dependency and runtime boundaries (ratcheted legacy cross-plugin imports: ${activeRatchet}/${baselineTotal}).`)
     process.exit(0)
   }
 

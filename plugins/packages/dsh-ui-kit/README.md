@@ -288,10 +288,36 @@ import { GenWaveCard } from 'dsh-ui-kit'
 
 ---
 
+### 11. Workbench 侧栏入口（`createWorkbenchSidebarEntry` / `createWorkbenchStageStore`）
+
+所有挂载在左侧栏“新会话”下方的 Workbench Tab 一级入口统一复用 `createWorkbenchSidebarEntry`，无需在各插件内复制 `window.__omnimuxWorkbench` 轮询垫片（完整全局接缝清单见 [client-window-seams.md](../../docs/contracts/client-window-seams.md)）。
+
+```js
+import { createWorkbenchSidebarEntry } from 'dsh-ui-kit'
+
+export function mountSidebarEntry(_stage, t, locale) {
+  return createWorkbenchSidebarEntry({
+    id: 'omnimux-assets',
+    rank: 6,
+    tabId: 'omnimux-assets:library',
+    label: () => t('nav'),
+    iconSvg: ICON,
+    locale,
+    access: 'offline',
+    customClassName: 'omnimux-assets-entry',
+    datasetKey: 'data-omnimux-assets-entry',
+  })
+}
+```
+
+需要单独复用 6 方法 `StageStore` 适配器（如 `omnimux-clip` 传递自定义 `path` 或需在无 DOM 的 Node 单测中直接导入）时，直接从零依赖子路径 `dsh-ui-kit/workbench-stage-store` 调用 `createWorkbenchStageStore({ tabId, title, path })`。
+
+---
+
 ## 本地开发与构建
 
 ```bash
-cd packages/dsh-ui-kit   # 从本仓根目录出发
+cd plugins/packages/dsh-ui-kit   # 从本仓根目录出发
 pnpm typecheck
 pnpm build
 node --test src/kit-export.test.js

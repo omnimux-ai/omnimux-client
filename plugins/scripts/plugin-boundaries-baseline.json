@@ -1,0 +1,174 @@
+{
+  "schemaVersion": 1,
+  "description": "Ratchet allowlist for pre-existing cross-plugin private imports (../omnimux/(src|lib)/ and re-exported cross-plugin private paths). Only removals are permitted; any new file or specifier fails verify-plugin-boundaries.",
+  "entries": {
+    "plugins/omnimux-assets/src/asset-hub/AssetHubCard.jsx": [
+      "../../../omnimux/src/client/components/library-flow/UniversalLibraryCard.jsx"
+    ],
+    "plugins/omnimux-assets/src/asset-hub/AssetHubGrid.jsx": [
+      "../../../omnimux/src/client/components/library-flow/UnifiedLibraryGrid.jsx",
+      "../../../omnimux/src/client/workbench/asset-hub-store.js"
+    ],
+    "plugins/omnimux-assets/src/asset-hub/AssetHubHeader.jsx": [
+      "../../../omnimux/src/client/shared/asset-hub-tabs/SharedPrimaryTabs.jsx",
+      "../../../omnimux/src/client/shared/asset-hub-tabs/SharedTabIcons.jsx",
+      "../../../omnimux/src/client/workbench/asset-hub-store.js"
+    ],
+    "plugins/omnimux-assets/src/asset-hub/AssetHubPanel.jsx": [
+      "../../../omnimux/src/client/attachments/store.ts",
+      "../../../omnimux/src/client/components/asset-picker/AssetPickerCard.jsx",
+      "../../../omnimux/src/client/components/inspiration-picker/InspirationPickerCard.jsx",
+      "../../../omnimux/src/client/components/library-flow/UnifiedLibraryGrid.jsx",
+      "../../../omnimux/src/client/components/product-picker/ProductPickerCard.jsx",
+      "../../../omnimux/src/client/composer-add/library-stage-model.js",
+      "../../../omnimux/src/client/workbench/asset-hub-data.js",
+      "../../../omnimux/src/client/workbench/asset-hub-store.js",
+      "../../../omnimux/src/client/workbench/host-adapter.js",
+      "../../../omnimux/src/client/workbench/host-fullscreen.js"
+    ],
+    "plugins/omnimux-assets/src/asset-hub/AssetHubToolbar.jsx": [
+      "../../../omnimux/src/client/shared/asset-hub-tabs/SharedSubTabs.jsx",
+      "../../../omnimux/src/client/shared/asset-hub-tabs/SharedTabIcons.jsx",
+      "../../../omnimux/src/client/workbench/asset-hub-store.js"
+    ],
+    "plugins/omnimux-assets/src/client/index.js": [
+      "../../../omnimux/src/client/workbench/geometry.js"
+    ],
+    "plugins/omnimux-assets/src/client/masonry.js": [
+      "../../../omnimux/src/client/components/library-flow/masonry-layout.js"
+    ],
+    "plugins/omnimux-inspiration/src/client/rival-masonry.js": [
+      "../../../omnimux/src/client/components/library-flow/masonry-layout.js"
+    ],
+    "plugins/omnimux-inspiration/src/explore/BulkCreateAdsModal.jsx": [
+      "../../../omnimux/src/client/components/SplitModalDialog.jsx",
+      "../../../omnimux/src/client/session-guide/catalog.js"
+    ],
+    "plugins/omnimux-inspiration/src/explore/LibraryBrowser.jsx": [
+      "../../../omnimux/src/client/components/asset-picker/AssetPickerCard.jsx",
+      "../../../omnimux/src/client/components/inspiration-picker/InspirationPickerCard.jsx",
+      "../../../omnimux/src/client/components/library-flow/UnifiedLibraryGrid.jsx",
+      "../../../omnimux/src/client/components/library-flow/UniversalLibraryCard.jsx",
+      "../../../omnimux/src/client/components/product-picker/ProductPickerCard.jsx",
+      "../../../omnimux/src/client/composer-add/library-stage-model.js",
+      "../../../omnimux/src/client/session-guide/trending/TrendingVideoCard.jsx"
+    ],
+    "plugins/omnimux-inspiration/src/explore/MarketingInsightModal.jsx": [
+      "../../../omnimux/src/client/components/SplitModalDialog.jsx",
+      "../../../omnimux/src/client/session-guide/catalog.js"
+    ],
+    "plugins/omnimux-inspiration/src/explore/RecreateViralAdsModal.jsx": [
+      "../../../omnimux/src/client/components/SplitModalDialog.jsx",
+      "../../../omnimux/src/client/session-guide/catalog.js"
+    ],
+    "plugins/omnimux-inspiration/src/explore/SessionGuide.jsx": [
+      "../../../omnimux/src/client/attachments/focusEditorElement.ts",
+      "../../../omnimux/src/client/composer-add/library-stage-model.js",
+      "../../../omnimux/src/client/composer-add/skill-event.ts",
+      "../../../omnimux/src/client/presets/CreativePresetsModal.jsx",
+      "../../../omnimux/src/client/session-guide/catalog.js",
+      "../../../omnimux/src/client/session-guide/state.js",
+      "../../../omnimux/src/client/split-compact-layout.js"
+    ],
+    "plugins/omnimux-inspiration/src/explore/UrlToVideoModal.jsx": [
+      "../../../omnimux/src/client/components/SplitModalDialog.jsx",
+      "../../../omnimux/src/client/session-guide/catalog.js"
+    ],
+    "plugins/omnimux-inspiration/src/explore/mount.js": [
+      "../../../omnimux/src/client/session-guide/catalog.js",
+      "../../../omnimux/src/client/session-guide/state.js",
+      "../../../omnimux/src/client/session-guide/styles.js",
+      "../../../omnimux/src/client/session-guide/templates/creative-templates-client.js"
+    ],
+    "plugins/omnimux-inspiration/src/explore/templates/ExploreTemplatesSection.jsx": [
+      "../../../../omnimux/src/client/components/asset-picker/AssetPickerCard.jsx",
+      "../../../../omnimux/src/client/components/inspiration-picker/InspirationPickerCard.jsx",
+      "../../../../omnimux/src/client/components/library-flow/UnifiedLibraryGrid.jsx",
+      "../../../../omnimux/src/client/components/product-picker/ProductPickerCard.jsx",
+      "../../../../omnimux/src/client/composer-add/library-stage-model.js",
+      "../../../../omnimux/src/client/session-guide/skills/featured-skills.json",
+      "../../../../omnimux/src/client/session-guide/templates/creative-templates-client.js",
+      "../../../../omnimux/src/client/session-guide/templates/template-locale.js",
+      "../../../../omnimux/src/client/session-guide/templates/templates-data.js",
+      "../../../../omnimux/src/client/shared/asset-hub-tabs/SharedTabIcons.jsx",
+      "../../../../omnimux/src/client/workbench/asset-hub-data.js"
+    ],
+    "plugins/omnimux-inspiration/src/explore/templates/TemplateCardItem.jsx": [
+      "../../../../omnimux/src/client/session-guide/skills/SkillCard.jsx",
+      "../../../../omnimux/src/client/session-guide/styles.js",
+      "../../../../omnimux/src/client/session-guide/templates/template-locale.js"
+    ],
+    "plugins/omnimux-inspiration/src/explore/templates/TemplateDetailDrawer.jsx": [
+      "../../../../omnimux/src/client/session-guide/templates/template-locale.js"
+    ],
+    "plugins/omnimux-inspiration/src/explore/templates/featured-apps-data.js": [
+      "../../../../omnimux/src/templates/featured-apps-data.js"
+    ],
+    "plugins/omnimux-inspiration/src/explore/templates/use-template-locale.js": [
+      "../../../../omnimux/src/client/session-guide/templates/template-locale.js"
+    ],
+    "plugins/omnimux-inspiration/src/explore/trending/TrendingCarousel.jsx": [
+      "../../../../omnimux/src/client/session-guide/trending/TrendingVideoCard.jsx"
+    ],
+    "plugins/omnimux-inspiration/src/explore/trending/TrendingFilterBar.jsx": [
+      "../../../../omnimux/src/client/session-guide/trending/trending-data.js"
+    ],
+    "plugins/omnimux-inspiration/src/explore/trending/TrendingReplicateSection.jsx": [
+      "../../../../omnimux/src/client/attachments/store.ts",
+      "../../../../omnimux/src/client/composer-add/skill-event.ts",
+      "../../../../omnimux/src/client/session-guide/skills/SkillsPanel.jsx",
+      "../../../../omnimux/src/client/session-guide/skills/featured-skills-data.js",
+      "../../../../omnimux/src/client/session-guide/trending/TrendingVideoCard.jsx",
+      "../../../../omnimux/src/client/session-guide/trending/replicate-linkage.js",
+      "../../../../omnimux/src/client/session-guide/trending/trending-data.js",
+      "../../../../omnimux/src/client/session-guide/trending/trending-source.js"
+    ],
+    "plugins/omnimux-inspiration/src/explore/trending/use-trending-feed.js": [
+      "../../../../omnimux/src/client/session-guide/trending/trending-source.js"
+    ],
+    "plugins/omnimux-inspiration/src/explore/useComposerDocking.js": [
+      "../../../omnimux/src/client/composer-compact.js"
+    ],
+    "plugins/omnimux-market/src/presets/ComposerPresetsTriggers.jsx": [
+      "../../../omnimux/src/client/composer-mode/composer-mode-store.js",
+      "../../../omnimux/src/client/presets/icons.jsx",
+      "../../../omnimux/src/client/presets/presets-store.js",
+      "../../../omnimux/src/client/presets/styles.js"
+    ],
+    "plugins/omnimux-market/src/presets/CreativeDimensionModal.jsx": [
+      "../../../omnimux/src/client/components/ModalCloseButton.jsx",
+      "../../../omnimux/src/client/presets/PresetCard.jsx",
+      "../../../omnimux/src/client/presets/catalog.js",
+      "../../../omnimux/src/client/presets/icons.jsx",
+      "../../../omnimux/src/client/presets/presets-store.js",
+      "../../../omnimux/src/client/presets/styles.js"
+    ],
+    "plugins/omnimux-market/src/presets/index.js": [
+      "../../../omnimux/src/client/presets/CreativePresetsModal.jsx",
+      "../../../omnimux/src/client/presets/PresetCard.jsx",
+      "../../../omnimux/src/client/presets/catalog.js",
+      "../../../omnimux/src/client/presets/compiler.js",
+      "../../../omnimux/src/client/presets/icons.jsx",
+      "../../../omnimux/src/client/presets/media-resolver.js",
+      "../../../omnimux/src/client/presets/presets-store.js",
+      "../../../omnimux/src/client/presets/styles.js"
+    ],
+    "plugins/omnimux-viewer/src/media-viewer/MediaViewerComposer.jsx": [
+      "../../../omnimux/src/client/media-viewer/composer-prefill.js",
+      "../../../omnimux/src/client/media-viewer/media-viewer-store.js"
+    ],
+    "plugins/omnimux-viewer/src/media-viewer/MediaViewerTab.jsx": [
+      "../../../omnimux/src/client/media-viewer/image-canvas-stage.js",
+      "../../../omnimux/src/client/media-viewer/media-viewer-store.js",
+      "../../../omnimux/src/client/media-viewer/styles.js",
+      "../../../omnimux/src/client/workbench/context.js",
+      "../../../omnimux/src/client/workbench/host-adapter.js"
+    ],
+    "plugins/omnimux-viewer/src/media-viewer/prefill-claim.js": [
+      "../../../omnimux/src/client/media-viewer/composer-prefill.js"
+    ],
+    "plugins/omnimux/src/client/session-guide/trending/recommendation-engine.js": [
+      "../../../../../omnimux-inspiration/src/recommendation-engine.js"
+    ]
+  }
+}

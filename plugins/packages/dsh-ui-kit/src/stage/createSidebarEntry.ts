@@ -1,4 +1,9 @@
 import type { StageStore } from './createStageStore.ts'
+import { createWorkbenchStageStore } from '../workbench-stage-store.js'
+import type { WorkbenchStageStoreOptions } from '../workbench-stage-store.d.ts'
+
+export { createWorkbenchStageStore }
+export type { WorkbenchStageStoreOptions }
 
 export interface SidebarCoordinatorApi {
   register: (row: {
@@ -11,7 +16,7 @@ export interface SidebarCoordinatorApi {
   }) => () => void
 }
 
-export type PluginAccess = 'offline' | 'cloud'
+export type PluginAccess = 'offline' | 'cloud' | 'local'
 
 export interface SidebarEntryOptions {
   id: string
@@ -22,15 +27,27 @@ export interface SidebarEntryOptions {
   locale?: { subscribe?: (fn: () => void) => () => void }
   customClassName?: string
   datasetKey?: string
+  /** Optional extra marker attributes (e.g. `data-omnimux-esc-entry`) set with empty value. */
+  extraDatasetKeys?: string[]
+  /** When true, mirrors the resolved label onto `button.title` for native tooltip parity. */
+  titleAttr?: boolean
   /**
    * Access classification (default 'offline'):
-   * - 'offline': always visible, clicks open stage directly without auth gating
+   * - 'offline' / 'local': always visible, clicks open stage directly without auth gating
    * - 'cloud': cloud-dependent; always visible in sidebar, clicks trigger explicit auth gating
    */
   access?: PluginAccess
   /** @deprecated use access instead */
   requireAuth?: boolean
   authReason?: string | (() => string)
+}
+
+export interface WorkbenchSidebarEntryOptions extends Omit<SidebarEntryOptions, 'stageStore'> {
+  tabId: string
+  /** Optional workbench tab title resolver; defaults to `label`. */
+  title?: string | (() => string)
+  /** Optional workbench sentinel path forwarded to `createSidebarStore`. */
+  path?: string
 }
 
 const SIDEBAR_ENTRY_COMMON_STYLES = `
@@ -68,8 +85,11 @@ function resolveLabel(label: string | (() => string)): string {
   return typeof label === 'function' ? label() : label
 }
 
-function paintLabel(entry: HTMLElement, labelText: string) {
+function paintLabel(entry: HTMLElement, labelText: string, titleAttr = false) {
   entry.setAttribute('aria-label', labelText)
+  if (titleAttr) {
+    entry.title = labelText
+  }
   const node = entry.querySelector('.omnimux-sidebar-nav-entry-label')
   if (node) node.textContent = labelText
 }
@@ -113,24 +133,43 @@ export interface OmnimuxAuthGlobal {
  * Uses idempotent activation (stageStore.open()) to guarantee persistent selection.
  */
 export function createSidebarEntry(options: SidebarEntryOptions): () => void {
-  const { id, rank, label, iconSvg, stageStore, locale, customClassName, datasetKey, access = 'offline', requireAuth, authReason } = options
+  const {
+    id,
+    rank,
+    label,
+    iconSvg,
+    stageStore,
+    locale,
+    customClassName,
+    datasetKey,
+    extraDatasetKeys,
+    titleAttr = false,
+    access = 'offline',
+    requireAuth,
+    authReason,
+  } = options
 
   const entry = document.createElement('button')
   entry.type = 'button'
   if (datasetKey) {
     entry.setAttribute(datasetKey, '')
   }
+  if (Array.isArray(extraDatasetKeys)) {
+    for (const key of extraDatasetKeys) {
+      if (key) entry.setAttribute(key, '')
+    }
+  }
   entry.className = `omnimux-sidebar-nav-entry ${customClassName || ''}`.trim()
   entry.innerHTML = `<span class="omnimux-sidebar-nav-entry-icon">${iconSvg}</span><span class="omnimux-sidebar-nav-entry-label"></span>`
 
   const updateLabel = () => {
-    paintLabel(entry, resolveLabel(label))
+    paintLabel(entry, resolveLabel(label), titleAttr)
   }
   updateLabel()
 
   // Idempotent click: always open/claim the stage, never toggle!
   entry.addEventListener('click', () => {
-    // If access is 'cloud' or legacy requireAuth is true, gate with explicit auth; offline default opens stage directly
+    // If access is 'cloud' or legacy requireAuth is true, gate with explicit auth; offline/local opens stage directly
     const needsAuth = access === 'cloud' || (access === 'offline' && requireAuth === true)
     if (needsAuth) {
       const win = typeof window !== 'undefined' ? (window as unknown as { __omnimuxAuth?: OmnimuxAuthGlobal }) : undefined
@@ -176,4 +215,22 @@ export function createSidebarEntry(options: SidebarEntryOptions): () => void {
     unsubscribeStage()
     unsubscribeLocale()
   }
+}
+
+/**
+ * Convenience helper for Workbench Tab sidebar entries.
+ * Wires `createWorkbenchStageStore` directly into `createSidebarEntry` so plugins
+ * do not copy-paste `window.__omnimuxWorkbench` polling boilerplate.
+ */
+export function createWorkbenchSidebarEntry(options: WorkbenchSidebarEntryOptions): () => void {
+  const { tabId, title, path, ...rest } = options
+  const stageStore = createWorkbenchStageStore({
+    tabId,
+    title: title ?? rest.label,
+    ...(path ? { path } : {}),
+  })
+  return createSidebarEntry({
+    ...rest,
+    stageStore,
+  })
 }

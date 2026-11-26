@@ -2333,6 +2333,88 @@ function createStageStore(stageId, getStage = () => typeof window !== "undefined
 		}
 	};
 }
+// src/workbench-stage-store.js
+const EMPTY_STAGE_BOX = Object.freeze({
+	top: 0,
+	left: 0,
+	width: 0,
+	height: 0
+});
+const WORKBENCH_POLL_INTERVAL_MS = 50;
+const WORKBENCH_POLL_TIMEOUT_MS = 8e3;
+function resolveTitle(title) {
+	return typeof title === "function" ? title() : title;
+}
+/**
+* Lazily adapts the Hub `window.__omnimuxWorkbench.createSidebarStore(...)` seam
+* into the six-method `StageStore` interface expected by `createSidebarEntry`.
+* Zero React/CSS/primitives dependencies so Node unit tests can import directly
+* via `dsh-ui-kit/workbench-stage-store`.
+*
+* @param {{ tabId: string, title: string | (() => string), path?: string }} options
+*/
+function createWorkbenchStageStore(options) {
+	const { tabId, title, path } = options;
+	let store = null;
+	const ensure = () => {
+		if (store) return store;
+		const api = typeof window !== "undefined" ? window.__omnimuxWorkbench : void 0;
+		if (!api || typeof api.createSidebarStore !== "function") return null;
+		store = api.createSidebarStore({
+			tabId,
+			title: () => resolveTitle(title),
+			...path ? { path } : {}
+		});
+		return store;
+	};
+	return {
+		getSnapshot() {
+			return Boolean(ensure()?.getSnapshot?.());
+		},
+		subscribe(listener) {
+			if (typeof listener !== "function") return () => {};
+			const ready = ensure();
+			if (ready && typeof ready.subscribe === "function") return ready.subscribe(listener);
+			let unsub = () => {};
+			let disposed = false;
+			const started = Date.now();
+			const timer = setInterval(() => {
+				if (disposed) {
+					clearInterval(timer);
+					return;
+				}
+				const next = ensure();
+				if (next && typeof next.subscribe === "function") {
+					clearInterval(timer);
+					unsub = next.subscribe(listener);
+					listener();
+					return;
+				}
+				if (Date.now() - started > WORKBENCH_POLL_TIMEOUT_MS) clearInterval(timer);
+			}, WORKBENCH_POLL_INTERVAL_MS);
+			return () => {
+				disposed = true;
+				clearInterval(timer);
+				if (typeof unsub === "function") unsub();
+			};
+		},
+		open() {
+			const s = ensure();
+			if (!s || typeof s.open !== "function") return;
+			s.open();
+		},
+		close() {
+			ensure()?.close?.();
+		},
+		set(next) {
+			if (next) this.open();
+			else this.close();
+		},
+		readBox() {
+			return ensure()?.readBox?.() || EMPTY_STAGE_BOX;
+		}
+	};
+}
 // src/stage/createSidebarEntry.ts
 const SIDEBAR_ENTRY_COMMON_STYLES = `
 .omnimux-sidebar-nav-entry {
@@ -2367,8 +2449,9 @@ const SIDEBAR_ENTRY_COMMON_STYLES = `
 function resolveLabel(label) {
 	return typeof label === "function" ? label() : label;
 }
-function paintLabel(entry, labelText) {
+function paintLabel(entry, labelText, titleAttr = false) {
 	entry.setAttribute("aria-label", labelText);
+	if (titleAttr) entry.title = labelText;
 	const node = entry.querySelector(".omnimux-sidebar-nav-entry-label");
 	if (node) node.textContent = labelText;
 }
@@ -2395,14 +2478,17 @@ function registerWhenCoordinatorReady(row) {
 * Uses idempotent activation (stageStore.open()) to guarantee persistent selection.
 */
 function createSidebarEntry(options) {
-	const { id, rank, label, iconSvg, stageStore, locale, customClassName, datasetKey, access = "offline", requireAuth, authReason } = options;
+	const { id, rank, label, iconSvg, stageStore, locale, customClassName, datasetKey, extraDatasetKeys, titleAttr = false, access = "offline", requireAuth, authReason } = options;
 	const entry = document.createElement("button");
 	entry.type = "button";
 	if (datasetKey) entry.setAttribute(datasetKey, "");
+	if (Array.isArray(extraDatasetKeys)) {
+		for (const key of extraDatasetKeys) if (key) entry.setAttribute(key, "");
+	}
 	entry.className = `omnimux-sidebar-nav-entry ${customClassName || ""}`.trim();
 	entry.innerHTML = `<span class="omnimux-sidebar-nav-entry-icon">${iconSvg}</span><span class="omnimux-sidebar-nav-entry-label"></span>`;
 	const updateLabel = () => {
-		paintLabel(entry, resolveLabel(label));
+		paintLabel(entry, resolveLabel(label), titleAttr);
 	};
 	updateLabel();
 	entry.addEventListener("click", () => {
@@ -2442,6 +2528,23 @@ function createSidebarEntry(options) {
 		unsubscribeLocale();
 	};
 }
-export { ActionRow, Badge, Button, CardGrid, ConfirmModal, CopyButton, DataTable, Divider, Drawer, DrawerPortal, DropdownSelect, EmptyState, FilterBar, GenWaveCard, IconButton, IconCheckOutline16, IconChevronDownOutline14, IconChevronLeftOutline14, IconChevronUpOutline14, IconCloseFill14, IconCloseOutline16, IconCopyOutline16, IconDownloadOutline16, IconEditOutline16, IconEllipsisOutline16, IconLoadingOutline16, IconPaperclipOutline16, IconPlayOutline16, IconPlusOutline16, IconRefreshOutline14, IconRefreshOutline16, IconRightUpOutline14, IconSearchOutline16, IconTrashOutline16, InputField, MediaCard, ModalDialog, PageHeader, SearchField, SelectableTile, StageContainer, StageHeader, StatBar, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, Tabs, Toolbar, copyToClipboard, createPortalSafe, createSidebarEntry, createStageStore, focusFirstDescendant, resolvePortalContainer, trapFocus };
+/**
+* Convenience helper for Workbench Tab sidebar entries.
+* Wires `createWorkbenchStageStore` directly into `createSidebarEntry` so plugins
+* do not copy-paste `window.__omnimuxWorkbench` polling boilerplate.
+*/
+function createWorkbenchSidebarEntry(options) {
+	const { tabId, title, path, ...rest } = options;
+	const stageStore = createWorkbenchStageStore({
+		tabId,
+		title: title ?? rest.label,
+		...path ? { path } : {}
+	});
+	return createSidebarEntry({
+		...rest,
+		stageStore
+	});
+}
+export { ActionRow, Badge, Button, CardGrid, ConfirmModal, CopyButton, DataTable, Divider, Drawer, DrawerPortal, DropdownSelect, EmptyState, FilterBar, GenWaveCard, IconButton, IconCheckOutline16, IconChevronDownOutline14, IconChevronLeftOutline14, IconChevronUpOutline14, IconCloseFill14, IconCloseOutline16, IconCopyOutline16, IconDownloadOutline16, IconEditOutline16, IconEllipsisOutline16, IconLoadingOutline16, IconPaperclipOutline16, IconPlayOutline16, IconPlusOutline16, IconRefreshOutline14, IconRefreshOutline16, IconRightUpOutline14, IconSearchOutline16, IconTrashOutline16, InputField, MediaCard, ModalDialog, PageHeader, SearchField, SelectableTile, StageContainer, StageHeader, StatBar, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, Tabs, Toolbar, copyToClipboard, createPortalSafe, createSidebarEntry, createStageStore, createWorkbenchSidebarEntry, createWorkbenchStageStore, focusFirstDescendant, resolvePortalContainer, trapFocus };
 
 //# sourceMappingURL=index.js.map
