@@ -8,6 +8,7 @@ import type { NextDesktopRuntime } from '../src/desktop-runtime.ts'
 import { NEXT_PACKAGE, NextProfiles } from '../src/profiles.ts'
 import { NextRecovery } from '../src/recovery.ts'
 import { installDesktopFileDrag, installFileActions } from '../src/upstream-family.ts'
+import { removeTemporaryDirectory } from './support/temporary-directory.ts'
 
 const originalMonitors = new Set(process.listeners('uncaughtExceptionMonitor'))
 afterEach(() => { for (const listener of process.listeners('uncaughtExceptionMonitor')) if (!originalMonitors.has(listener)) process.off('uncaughtExceptionMonitor', listener) })
@@ -232,9 +233,9 @@ beforeEach(async () => {
   vi.mocked(shell.showItemInFolder).mockClear()
 })
 
-afterEach(() => {
+afterEach(async () => {
   for (const window of fixture.windows) if (!window.destroyed) window.destroy()
-  rmSync(fixture.locationRoot, { recursive: true, force: true })
+  await removeTemporaryDirectory(fixture.locationRoot)
 })
 
 it.each([
@@ -284,7 +285,7 @@ it.each([
     if (systemVersion) Object.defineProperty(process, 'getSystemVersion', systemVersion)
     else Reflect.deleteProperty(process, 'getSystemVersion')
     vi.unstubAllEnvs()
-    rmSync(home, { recursive: true, force: true })
+    await removeTemporaryDirectory(home)
   }
 })
 
@@ -331,7 +332,7 @@ it('repairs a crashed renderer and fences old document reports while preserving 
     expect(() => report({ ...sender, senderFrame: {} }, second.documentId, 'healthy')).toThrow()
     await vi.advanceTimersByTimeAsync(30_000)
     expect(main.loadedUrls).toHaveLength(2)
-  } finally { vi.useRealTimers(); vi.unstubAllEnvs(); rmSync(home, { recursive: true, force: true }) }
+  } finally { vi.useRealTimers(); vi.unstubAllEnvs(); await removeTemporaryDirectory(home) }
 })
 
 it.runIf(installFileActions)('accepts file actions only from the main application frame', async () => {
@@ -355,7 +356,7 @@ it.runIf(installFileActions)('accepts file actions only from the main applicatio
     await expect(read(sender, 'http://localhost:1234/api/private')).rejects.toThrow('Invalid image URL')
     main.webContents.mainFrame.url = 'dsh-app://shell/index.html'
     for (const invoke of [save, read]) await expect(invoke(sender, {})).rejects.toThrow('Rejected')
-  } finally { vi.unstubAllEnvs(); rmSync(home, { recursive: true, force: true }) }
+  } finally { vi.unstubAllEnvs(); await removeTemporaryDirectory(home) }
 })
 
 it.skipIf(installFileActions)('registers no file actions where the followed DSH release has no client for them', async () => {
@@ -366,7 +367,7 @@ it.skipIf(installFileActions)('registers no file actions where the followed DSH 
     await vi.waitFor(() => expect(fixture.windows).toHaveLength(1))
     expect(fixture.handlers.has('dsh-desktop:file-save')).toBe(false)
     expect(fixture.handlers.has('dsh-desktop:clipboard-image-read')).toBe(false)
-  } finally { vi.unstubAllEnvs(); rmSync(home, { recursive: true, force: true }) }
+  } finally { vi.unstubAllEnvs(); await removeTemporaryDirectory(home) }
 })
 
 it.runIf(installDesktopFileDrag)('accepts file drags only from the main application frame, asks the running Host about resources, and stops at quit', async () => {
@@ -394,7 +395,7 @@ it.runIf(installDesktopFileDrag)('accepts file drags only from the main applicat
     const { app } = await import('electron')
     app.quit()
     await vi.waitFor(() => expect(channels.filter(channel => fixture.handlers.has(channel))).toEqual([]))
-  } finally { vi.unstubAllEnvs(); rmSync(home, { recursive: true, force: true }) }
+  } finally { vi.unstubAllEnvs(); await removeTemporaryDirectory(home) }
 })
 
 it.skipIf(installDesktopFileDrag)('registers no file drag where the followed DSH release drags no files natively', async () => {
@@ -404,7 +405,7 @@ it.skipIf(installDesktopFileDrag)('registers no file drag where the followed DSH
     await import('../src/main.ts')
     await vi.waitFor(() => expect(fixture.windows).toHaveLength(1))
     for (const channel of ['prepare', 'cancel', 'start', 'release']) expect(fixture.handlers.has(`dsh-desktop:file-drag-${channel}`)).toBe(false)
-  } finally { vi.unstubAllEnvs(); rmSync(home, { recursive: true, force: true }) }
+  } finally { vi.unstubAllEnvs(); await removeTemporaryDirectory(home) }
 })
 
 it('uses the existing recovery assistant only after exhausting automatic renderer repair', async () => {
@@ -430,7 +431,7 @@ it('uses the existing recovery assistant only after exhausting automatic rendere
     expect(fixture.stop).toHaveBeenCalledOnce()
     expect(main.destroyed).toBe(true)
     expect(fixture.windows[1].loadedUrls[0]).toContain('#recovery')
-  } finally { vi.useRealTimers(); vi.unstubAllEnvs(); rmSync(home, { recursive: true, force: true }) }
+  } finally { vi.useRealTimers(); vi.unstubAllEnvs(); await removeTemporaryDirectory(home) }
 })
 
 it('records who started each main-window document, and reports exhaustion after a mounted interface as a runtime failure', async () => {
@@ -465,7 +466,7 @@ it('records who started each main-window document, and reports exhaustion after 
     }
     main.webContents.emit('render-process-gone', {}, { reason: 'crashed', exitCode: -1073741819 })
     expect(fixture.report).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ message: 'Renderer recovery exhausted: Renderer: crashed' }), 'renderer-runtime')
-  } finally { vi.useRealTimers(); vi.unstubAllEnvs(); rmSync(home, { recursive: true, force: true }) }
+  } finally { vi.useRealTimers(); vi.unstubAllEnvs(); await removeTemporaryDirectory(home) }
 })
 
 it.each(['close', 'quit', 'host-failure'] as const)('cancels pending renderer repair on %s', async action => {
@@ -482,7 +483,7 @@ it.each(['close', 'quit', 'host-failure'] as const)('cancels pending renderer re
     else fixture.runtimeOptions!.onFailure()
     await vi.advanceTimersByTimeAsync(31_000)
     expect(main.loadedUrls).toHaveLength(1)
-  } finally { vi.useRealTimers(); vi.unstubAllEnvs(); rmSync(home, { recursive: true, force: true }) }
+  } finally { vi.useRealTimers(); vi.unstubAllEnvs(); await removeTemporaryDirectory(home) }
 })
 
 it('starts Safe Mode with fresh desktop and Chromium state while preserving normal state and its instance lock', async () => {
@@ -517,7 +518,7 @@ it('starts Safe Mode with fresh desktop and Chromium state while preserving norm
     expect(readFileSync(preferences, 'utf8')).toBe('{broken normal settings')
     expect(readFileSync(join(normalState, 'normal-session'), 'utf8')).toBe('keep normal session')
   } finally {
-    process.argv.splice(0, process.argv.length, ...argv); vi.unstubAllEnvs(); rmSync(home, { recursive: true, force: true })
+    process.argv.splice(0, process.argv.length, ...argv); vi.unstubAllEnvs(); await removeTemporaryDirectory(home)
   }
 })
 
@@ -539,7 +540,7 @@ it.each([false, true])('does not create or reset safe desktop state owned by ano
     expect(fixture.appPaths.get('userData')).toBe(join(home, 'electron-user-data'))
     expect(existsSync(safeState)).toBe(existing)
     if (existing) expect(readFileSync(join(safeState, 'running-session'), 'utf8')).toBe('keep running session')
-  } finally { process.argv.splice(0, process.argv.length, ...argv); vi.unstubAllEnvs(); rmSync(home, { recursive: true, force: true }) }
+  } finally { process.argv.splice(0, process.argv.length, ...argv); vi.unstubAllEnvs(); await removeTemporaryDirectory(home) }
 })
 
 it('preserves safe desktop state and blocks relaunch when final Host shutdown fails', async () => {
@@ -561,7 +562,7 @@ it('preserves safe desktop state and blocks relaunch when final Host shutdown fa
     expect(existsSync(join(home, 'electron-user-data', 'safe-mode'))).toBe(true)
   } finally {
     logError.mockRestore()
-    process.argv.splice(0, process.argv.length, ...argv); vi.unstubAllEnvs(); rmSync(home, { recursive: true, force: true })
+    process.argv.splice(0, process.argv.length, ...argv); vi.unstubAllEnvs(); await removeTemporaryDirectory(home)
   }
 })
 
@@ -591,7 +592,7 @@ it('captures scoped client errors from Electron console-message events without c
     expect(fixture.diagnosticAppend).toHaveBeenCalledWith(expect.objectContaining({ source: 'renderer', event: 'console', message: '[next-ui-diagnostic] aa=false', level: 'warn', developer: true }))
     expect(fixture.diagnosticAppend).toHaveBeenCalledWith(expect.objectContaining({ source: 'renderer', level: 'error', developer: false }))
   } finally {
-    vi.unstubAllEnvs(); rmSync(home, { recursive: true, force: true })
+    vi.unstubAllEnvs(); await removeTemporaryDirectory(home)
   }
 })
 
@@ -631,7 +632,7 @@ it('records client failure reports from the main window\'s current document and 
     main.webContents.emit('console-message', { level: 'error', message: 'Failed to load resource', frame: { parent: null } })
     expect(fixture.diagnosticAppend.mock.calls.map(([record]) => record.message)).toEqual(['Uncaught Error: in an embedded frame', 'Failed to load resource'])
   } finally {
-    vi.unstubAllEnvs(); rmSync(home, { recursive: true, force: true })
+    vi.unstubAllEnvs(); await removeTemporaryDirectory(home)
   }
 })
 
@@ -656,7 +657,7 @@ it('keeps the Windows caption buttons transparent so full-window official surfac
     expect(window.setTitleBarOverlay).toHaveBeenCalledOnce()
   } finally {
     Object.defineProperty(process, 'platform', platform)
-    vi.unstubAllEnvs(); rmSync(home, { recursive: true, force: true })
+    vi.unstubAllEnvs(); await removeTemporaryDirectory(home)
   }
 })
 
@@ -696,7 +697,7 @@ it('pops the official editing context menu with Windows labels in the applicatio
     ]), { window: controls })
   } finally {
     Object.defineProperty(process, 'platform', platform)
-    vi.unstubAllEnvs(); rmSync(home, { recursive: true, force: true })
+    vi.unstubAllEnvs(); await removeTemporaryDirectory(home)
   }
 })
 
@@ -713,7 +714,7 @@ it('exits before claiming the instance when an elevated Windows launch restarted
     expect(fixture.windows).toHaveLength(0)
     expect(fixture.start).not.toHaveBeenCalled()
   } finally {
-    vi.unstubAllEnvs(); rmSync(home, { recursive: true, force: true })
+    vi.unstubAllEnvs(); await removeTemporaryDirectory(home)
   }
 })
 
@@ -733,7 +734,7 @@ async function launchLinuxDshCommand(home: string, check: (execve: ReturnType<ty
     Object.defineProperty(process, 'platform', platform)
     process.argv.splice(0, process.argv.length, ...argv)
     process.execve = original
-    vi.unstubAllEnvs(); rmSync(home, { recursive: true, force: true })
+    vi.unstubAllEnvs(); await removeTemporaryDirectory(home)
   }
 }
 
@@ -815,7 +816,7 @@ it('explains the first Windows GPU launch failure in a native dialog, records it
     expect(app.exit).toHaveBeenCalledWith(1)
   } finally {
     Object.defineProperty(process, 'platform', platform)
-    vi.unstubAllEnvs(); rmSync(home, { recursive: true, force: true })
+    vi.unstubAllEnvs(); await removeTemporaryDirectory(home)
   }
 })
 
@@ -846,7 +847,7 @@ it('starts local-only Crashpad before any window and turns renderer and child fa
     // Quitting ends every child process; that is not memory evidence.
     app.emit('child-process-gone', {}, { type: 'Utility', reason: 'killed', exitCode: 1, serviceName: 'network.mojom.NetworkService' })
     expect(fixture.memory.incident).toHaveBeenCalledTimes(2)
-  } finally { vi.unstubAllEnvs(); rmSync(home, { recursive: true, force: true }) }
+  } finally { vi.unstubAllEnvs(); await removeTemporaryDirectory(home) }
 })
 
 it('explains a Windows renderer launch failure only for the Desktop windows', async () => {
@@ -871,7 +872,7 @@ it('explains a Windows renderer launch failure only for the Desktop windows', as
     expect(app.exit).toHaveBeenCalledWith(1)
   } finally {
     Object.defineProperty(process, 'platform', platform)
-    vi.unstubAllEnvs(); rmSync(home, { recursive: true, force: true })
+    vi.unstubAllEnvs(); await removeTemporaryDirectory(home)
   }
 })
 
@@ -912,7 +913,7 @@ it.each(['normal', '--next-safe-mode'])('stages an explicit update before hiding
     Object.defineProperty(process, 'platform', platform)
     vi.doUnmock('../src/update-installer.ts'); vi.doUnmock('../src/updates.ts')
     process.argv.splice(0, process.argv.length, ...argv)
-    vi.unstubAllEnvs(); rmSync(home, { recursive: true, force: true })
+    vi.unstubAllEnvs(); await removeTemporaryDirectory(home)
   }
 })
 
@@ -968,7 +969,7 @@ it.each(['timeout', 'failure'] as const)('still launches a staged update before 
     Object.defineProperty(process, 'platform', platform)
     vi.useRealTimers()
     vi.doUnmock('../src/update-installer.ts'); vi.doUnmock('../src/updates.ts')
-    vi.unstubAllEnvs(); rmSync(home, { recursive: true, force: true })
+    vi.unstubAllEnvs(); await removeTemporaryDirectory(home)
   }
 })
 
@@ -1028,7 +1029,7 @@ it.each(['timeout', 'unclean'] as const)('gives a locked Host a 22s shutdown bud
     Object.defineProperty(process, 'platform', platform)
     vi.useRealTimers()
     vi.doUnmock('../src/update-installer.ts'); vi.doUnmock('../src/updates.ts')
-    vi.unstubAllEnvs(); rmSync(home, { recursive: true, force: true })
+    vi.unstubAllEnvs(); await removeTemporaryDirectory(home)
   }
 })
 
@@ -1081,7 +1082,7 @@ it('unlocks Host admission on TOCTOU active tasks after lock and on lock failure
   } finally {
     Object.defineProperty(process, 'platform', platform)
     vi.doUnmock('../src/update-installer.ts'); vi.doUnmock('../src/updates.ts')
-    vi.unstubAllEnvs(); rmSync(home, { recursive: true, force: true })
+    vi.unstubAllEnvs(); await removeTemporaryDirectory(home)
   }
 })
 
@@ -1125,7 +1126,7 @@ it('sends an available Linux update to its release page from the tray and Settin
   } finally {
     Object.defineProperty(process, 'platform', platform)
     vi.doUnmock('../src/updates.ts')
-    vi.unstubAllEnvs(); rmSync(home, { recursive: true, force: true })
+    vi.unstubAllEnvs(); await removeTemporaryDirectory(home)
   }
 })
 
@@ -1170,7 +1171,7 @@ it('sends an available update of a portable Windows copy to its release page ins
   } finally {
     Object.defineProperty(process, 'platform', platform)
     vi.doUnmock('../src/updates.ts'); vi.doUnmock('../src/update-portable.ts')
-    vi.unstubAllEnvs(); rmSync(home, { recursive: true, force: true })
+    vi.unstubAllEnvs(); await removeTemporaryDirectory(home)
   }
 })
 
@@ -1231,7 +1232,7 @@ it.each(['darwin', 'win32'] as const)('reopens the main window at its saved boun
   } finally {
     vi.useRealTimers()
     Object.defineProperty(process, 'platform', platform)
-    vi.unstubAllEnvs(); rmSync(home, { recursive: true, force: true })
+    vi.unstubAllEnvs(); await removeTemporaryDirectory(home)
   }
 })
 
@@ -1251,7 +1252,7 @@ it.each([
     expect(window.maximized).toBe(false)
     if (warning) expect(fixture.diagnosticAppend).toHaveBeenCalledWith(...warning)
     else expect(fixture.diagnosticAppend).not.toHaveBeenCalledWith(expect.stringContaining('main-window state'), 'warn')
-  } finally { vi.unstubAllEnvs(); rmSync(home, { recursive: true, force: true }) }
+  } finally { vi.unstubAllEnvs(); await removeTemporaryDirectory(home) }
 })
 
 it('retains the Host when hiding to tray, restores the window, keeps failed-Host controls, validates IPC, and stops on explicit quit', async () => {
@@ -1346,7 +1347,7 @@ it('retains the Host when hiding to tray, restores the window, keeps failed-Host
     expect(fixture.windows.every(window => !window.visible)).toBe(true)
     finishClose()
     await vi.waitFor(() => expect(app.relaunch).toHaveBeenCalledWith({ args: expect.arrayContaining(['--next-recovery']) }))
-  } finally { vi.unstubAllEnvs(); rmSync(home, { recursive: true, force: true }) }
+  } finally { vi.unstubAllEnvs(); await removeTemporaryDirectory(home) }
 })
 
 
@@ -1379,7 +1380,7 @@ it.each(['ready', 'error'] as const)('allows five seconds for native menu teardo
     expect(app.quit).toHaveBeenCalledOnce()
     expect(app.exit).toHaveBeenCalledOnce()
     expect(app.relaunch).not.toHaveBeenCalled()
-  } finally { vi.useRealTimers(); vi.unstubAllEnvs(); rmSync(home, { recursive: true, force: true }) }
+  } finally { vi.useRealTimers(); vi.unstubAllEnvs(); await removeTemporaryDirectory(home) }
 })
 
 it('cancels the forced-exit deadline after graceful menu shutdown', async () => {
@@ -1402,7 +1403,7 @@ it('cancels the forced-exit deadline after graceful menu shutdown', async () => 
     await vi.advanceTimersByTimeAsync(10_000)
     expect(app.exit).not.toHaveBeenCalled()
     expect(app.relaunch).not.toHaveBeenCalled()
-  } finally { vi.useRealTimers(); vi.unstubAllEnvs(); rmSync(home, { recursive: true, force: true }) }
+  } finally { vi.useRealTimers(); vi.unstubAllEnvs(); await removeTemporaryDirectory(home) }
 })
 
 it('boots recovery in the preferred OS language even when the app locale is English, without starting a Host', async () => {
@@ -1426,7 +1427,7 @@ it('boots recovery in the preferred OS language even when the app locale is Engl
     controls.visible = true
     await fixture.handlers.get('dsh-next:command')!(sender, { type: 'quit' })
     await vi.waitFor(() => expect(fixture.close).toHaveBeenCalledOnce())
-  } finally { process.argv.splice(0, process.argv.length, ...argv); vi.unstubAllEnvs(); rmSync(home, { recursive: true, force: true }) }
+  } finally { process.argv.splice(0, process.argv.length, ...argv); vi.unstubAllEnvs(); await removeTemporaryDirectory(home) }
 })
 
 it('retries safe-mode entry after background recovery cleanup failed', async () => {
@@ -1448,7 +1449,7 @@ it('retries safe-mode entry after background recovery cleanup failed', async () 
     const { app } = await import('electron')
     await vi.waitFor(() => expect(app.relaunch).toHaveBeenCalledOnce())
     expect(vi.mocked(app.relaunch).mock.calls[0]![0]!.args).toContain('--next-safe-mode')
-  } finally { vi.unstubAllEnvs(); rmSync(home, { recursive: true, force: true }) }
+  } finally { vi.unstubAllEnvs(); await removeTemporaryDirectory(home) }
 })
 
 it('shares a failed safe-mode request and retries termination before changing modes', async () => {
@@ -1481,7 +1482,7 @@ it('shares a failed safe-mode request and retries termination before changing mo
     expect(fixture.restart).not.toHaveBeenCalled()
     await vi.waitFor(() => expect(app.relaunch).toHaveBeenCalledOnce())
     expect(vi.mocked(app.relaunch).mock.calls[0]![0]!.args).toContain('--next-safe-mode')
-  } finally { process.argv.splice(0, process.argv.length, ...argv); vi.unstubAllEnvs(); rmSync(home, { recursive: true, force: true }) }
+  } finally { process.argv.splice(0, process.argv.length, ...argv); vi.unstubAllEnvs(); await removeTemporaryDirectory(home) }
 })
 
 it('shares pending mode requests and allows a fresh relaunch request after cancellation', async () => {
@@ -1509,7 +1510,7 @@ it('shares pending mode requests and allows a fresh relaunch request after cance
     expect(vi.mocked(app.relaunch).mock.calls[0]![0]!.args).toContain('--next-safe-mode')
     expect(dialog.showMessageBox).toHaveBeenCalledTimes(2)
     expect(fixture.restart).not.toHaveBeenCalled()
-  } finally { process.argv.splice(0, process.argv.length, ...argv); vi.unstubAllEnvs(); rmSync(home, { recursive: true, force: true }) }
+  } finally { process.argv.splice(0, process.argv.length, ...argv); vi.unstubAllEnvs(); await removeTemporaryDirectory(home) }
 })
 
 it('persists a Profile switch and relaunches the app only after hiding windows and closing its Host', async () => {
@@ -1548,7 +1549,7 @@ it('persists a Profile switch and relaunches the app only after hiding windows a
     await vi.waitFor(() => expect(app.relaunch).toHaveBeenCalledWith({ args: expect.any(Array) }))
     expect(vi.mocked(app.relaunch).mock.calls[0]![0]!.args).not.toContain('--next-recovery')
     expect(vi.mocked(app.relaunch).mock.calls[0]![0]!.args).not.toContain('--next-safe-mode')
-  } finally { vi.unstubAllEnvs(); rmSync(home, { recursive: true, force: true }) }
+  } finally { vi.unstubAllEnvs(); await removeTemporaryDirectory(home) }
 })
 
 it.each(['complete', 'official', 'skip'] as const)('opens the setup wizard explicitly and saves before starting the Host on %s', async outcome => {
@@ -1614,7 +1615,7 @@ it.each(['complete', 'official', 'skip'] as const)('opens the setup wizard expli
       },
     })
     await expect(setup(mainSender, { action: 'finish', profile: 'desktop' })).rejects.toThrow('unavailable')
-  } finally { process.argv.splice(0, process.argv.length, ...argv); vi.unstubAllEnvs(); rmSync(home, { recursive: true, force: true }) }
+  } finally { process.argv.splice(0, process.argv.length, ...argv); vi.unstubAllEnvs(); await removeTemporaryDirectory(home) }
 })
 
 it.each(['darwin', 'win32'] as const)('keeps the single OmniMux icon across dark-theme updates and rejects classic icon commands on %s', async target => {
@@ -1659,7 +1660,7 @@ it.each(['darwin', 'win32'] as const)('keeps the single OmniMux icon across dark
       app.emit('browser-window-created', {}, later)
       expect(later.setIcon).toHaveBeenCalledExactlyOnceWith(expect.stringMatching(/[\\/]build[\\/]app-icon\.ico$/))
     }
-  } finally { process.argv.splice(0, process.argv.length, ...argv); Object.defineProperty(process, 'platform', platform); vi.unstubAllEnvs(); rmSync(home, { recursive: true, force: true }) }
+  } finally { process.argv.splice(0, process.argv.length, ...argv); Object.defineProperty(process, 'platform', platform); vi.unstubAllEnvs(); await removeTemporaryDirectory(home) }
 })
 
 it('reopens setup through a confirmed relaunch without resetting the Profile or stopping the Host before hiding windows', async () => {
@@ -1694,7 +1695,7 @@ it('reopens setup through a confirmed relaunch without resetting the Profile or 
     finishClose()
     await vi.waitFor(() => expect(app.relaunch).toHaveBeenCalledWith({ args: expect.arrayContaining(['--next-onboarding']) }))
     expect(fixture.start).toHaveBeenCalledOnce()
-  } finally { vi.unstubAllEnvs(); rmSync(home, { recursive: true, force: true }) }
+  } finally { vi.unstubAllEnvs(); await removeTemporaryDirectory(home) }
 })
 
 it.each(['complete', 'skip', 'close'] as const)('reopens a completed Profile with its saved choices and handles %s', async outcome => {
@@ -1740,7 +1741,7 @@ it.each(['complete', 'skip', 'close'] as const)('reopens a completed Profile wit
       await vi.waitFor(() => expect(app.relaunch).toHaveBeenCalled())
       expect(vi.mocked(app.relaunch).mock.calls[0]![0]!.args).not.toContain('--next-onboarding')
     }
-  } finally { process.argv.splice(0, process.argv.length, ...argv); vi.unstubAllEnvs(); rmSync(home, { recursive: true, force: true }) }
+  } finally { process.argv.splice(0, process.argv.length, ...argv); vi.unstubAllEnvs(); await removeTemporaryDirectory(home) }
 })
 
 it.each(['--next-recovery', '--next-safe-mode'])('keeps %s independent of onboarding and clears its flag when switching Profiles', async mode => {
@@ -1770,7 +1771,7 @@ it.each(['--next-recovery', '--next-safe-mode'])('keeps %s independent of onboar
     expect(vi.mocked(app.relaunch).mock.calls[0]![0]!.args).not.toContain(mode)
     expect(vi.mocked(app.relaunch).mock.calls[0]![0]!.args).not.toContain('--next-onboarding')
     expect(manager.active).toBe('work')
-  } finally { process.argv.splice(0, process.argv.length, ...argv); vi.unstubAllEnvs(); rmSync(home, { recursive: true, force: true }) }
+  } finally { process.argv.splice(0, process.argv.length, ...argv); vi.unstubAllEnvs(); await removeTemporaryDirectory(home) }
 })
 
 it('opens recovery instead of onboarding when a Profile manifest is broken', async () => {
@@ -1783,7 +1784,7 @@ it('opens recovery instead of onboarding when a Profile manifest is broken', asy
     expect(fixture.windows[0].webContents.mainFrame.url).toMatch(/#recovery$/)
     expect(fixture.start).not.toHaveBeenCalled()
     expect(fixture.trays).toHaveLength(1)
-  } finally { vi.unstubAllEnvs(); rmSync(home, { recursive: true, force: true }) }
+  } finally { vi.unstubAllEnvs(); await removeTemporaryDirectory(home) }
 })
 
 it('keeps the wizard record unconfirmed when its window closes', async () => {
@@ -1806,7 +1807,7 @@ it('keeps the wizard record unconfirmed when its window closes', async () => {
     expect(fixture.windows).toHaveLength(2)
     expect(fixture.windows[1].webContents.mainFrame.url).toMatch(/#onboarding$/)
     expect(fixture.start).not.toHaveBeenCalled()
-  } finally { process.argv.splice(0, process.argv.length, ...argv); vi.unstubAllEnvs(); rmSync(home, { recursive: true, force: true }) }
+  } finally { process.argv.splice(0, process.argv.length, ...argv); vi.unstubAllEnvs(); await removeTemporaryDirectory(home) }
 })
 
 
@@ -1836,7 +1837,7 @@ it.each([false, true])('only safe mode permits the main window alongside recover
       expect(fixture.windows[2].webContents.mainFrame.url).toBe('dsh-app://app/')
       expect(fixture.windows[2].loadedUrls).toEqual(['dsh-app://app/'])
     }
-  } finally { process.argv.splice(0, process.argv.length, ...argv); vi.unstubAllEnvs(); rmSync(home, { recursive: true, force: true }) }
+  } finally { process.argv.splice(0, process.argv.length, ...argv); vi.unstubAllEnvs(); await removeTemporaryDirectory(home) }
 })
 
 
@@ -1864,7 +1865,7 @@ it('routes terminal commands by their authenticated window, ignoring a forged so
     const original = fixture.openTerminal.mock.calls.at(-1)![0]
     expect(original).toMatchObject({ homeDir: home, mode: 'recovery' })
     expect(original.stateDir).not.toBe(safe.stateDir)
-  } finally { process.argv.splice(0, process.argv.length, ...argv); vi.unstubAllEnvs(); rmSync(home, { recursive: true, force: true }) }
+  } finally { process.argv.splice(0, process.argv.length, ...argv); vi.unstubAllEnvs(); await removeTemporaryDirectory(home) }
 })
 
 
@@ -1895,7 +1896,7 @@ it.each(['cancelled', 'retired', 'failed'] as const)('handles %s main-window nav
       main.webContents.emit('did-fail-load', {}, -2, 'retired navigation', 'dsh-app://app/', true)
       expect(fixture.report).not.toHaveBeenCalled()
     }
-  } finally { vi.unstubAllEnvs(); rmSync(home, { recursive: true, force: true }) }
+  } finally { vi.unstubAllEnvs(); await removeTemporaryDirectory(home) }
 })
 
 
@@ -1932,7 +1933,7 @@ it.each([
     expect(args.includes('--next-safe-mode')).toBe(type === 'safe-mode')
     expect(args).not.toContain('--next-recovery')
     expect(fixture.report).not.toHaveBeenCalled()
-  } finally { process.argv.splice(0, process.argv.length, ...argv); vi.unstubAllEnvs(); rmSync(home, { recursive: true, force: true }) }
+  } finally { process.argv.splice(0, process.argv.length, ...argv); vi.unstubAllEnvs(); await removeTemporaryDirectory(home) }
 })
 
 
@@ -1956,7 +1957,7 @@ it.each([
     expect(vi.mocked(app.relaunch).mock.calls[0]![0]!.args!.includes('--next-safe-mode')).toBe(remainSafe)
     expect(existsSync(join(home, 'electron-user-data', 'safe-mode'))).toBe(false)
     expect(new NextProfiles(home).selectable('desktop')).toBe(true)
-  } finally { process.argv.splice(0, process.argv.length, ...argv); vi.unstubAllEnvs(); rmSync(home, { recursive: true, force: true }) }
+  } finally { process.argv.splice(0, process.argv.length, ...argv); vi.unstubAllEnvs(); await removeTemporaryDirectory(home) }
 })
 
 it('relaunches into Desktop setup after Profile repair and shows where the previous configuration is', async () => {
@@ -1986,7 +1987,7 @@ it('relaunches into Desktop setup after Profile repair and shows where the previ
     expect(args).not.toContain('--next-safe-mode')
     expect(fixture.restart).not.toHaveBeenCalled()
     expect(fixture.report).not.toHaveBeenCalled()
-  } finally { process.argv.splice(0, process.argv.length, ...argv); vi.unstubAllEnvs(); rmSync(home, { recursive: true, force: true }) }
+  } finally { process.argv.splice(0, process.argv.length, ...argv); vi.unstubAllEnvs(); await removeTemporaryDirectory(home) }
 })
 
 it.each(['--next-safe-mode', '--next-recovery'])('restarts the whole app in normal mode from the recovery footer after %s', async mode => {
@@ -2025,7 +2026,7 @@ it.each(['--next-safe-mode', '--next-recovery'])('restarts the whole app in norm
     expect(args).not.toContain('--next-recovery')
     expect(args).not.toContain('--next-onboarding')
     expect(new NextProfiles(home).active).toBe('desktop')
-  } finally { process.argv.splice(0, process.argv.length, ...argv); vi.unstubAllEnvs(); rmSync(home, { recursive: true, force: true }) }
+  } finally { process.argv.splice(0, process.argv.length, ...argv); vi.unstubAllEnvs(); await removeTemporaryDirectory(home) }
 })
 
 
@@ -2075,7 +2076,7 @@ it.each(['success', 'cancel', 'failure'] as const)('restores a checkpoint with d
     if (outcome === 'success') expect(state().recovery.notice).toMatchObject({ tone: 'success', body: expect.stringContaining('退出并重启') })
     else expect(state().recovery.notice).toBeUndefined()
     expect(fixture.start).not.toHaveBeenCalled()
-  } finally { process.argv.splice(0, process.argv.length, ...argv); vi.unstubAllEnvs(); rmSync(home, { recursive: true, force: true }) }
+  } finally { process.argv.splice(0, process.argv.length, ...argv); vi.unstubAllEnvs(); await removeTemporaryDirectory(home) }
 })
 
 
@@ -2118,7 +2119,7 @@ it('disables and re-enables a Profile bundle from recovery without running the p
     expect(JSON.parse(readFileSync(path, 'utf8')).dsh.profile.bundles).toContain('my-plugin')
     expect(dialog.showMessageBox).not.toHaveBeenCalled()
     expect(fixture.plugin).not.toHaveBeenCalled()
-  } finally { process.argv.splice(0, process.argv.length, ...argv); vi.unstubAllEnvs(); rmSync(home, { recursive: true, force: true }) }
+  } finally { process.argv.splice(0, process.argv.length, ...argv); vi.unstubAllEnvs(); await removeTemporaryDirectory(home) }
 })
 
 it('reveals the saved failure report, explains a missing one, and clears the previous failed action', async () => {
@@ -2149,7 +2150,7 @@ it('reveals the saved failure report, explains a missing one, and clears the pre
     fixture.failureReportFile.mockResolvedValueOnce(report)
     await expect(command(sender, { type: 'recovery-action', action: 'show-failure-report' })).rejects.toThrow(`找不到诊断报告：${report}`)
     expect(shell.showItemInFolder).toHaveBeenCalledOnce()
-  } finally { process.argv.splice(0, process.argv.length, ...argv); vi.unstubAllEnvs(); rmSync(home, { recursive: true, force: true }) }
+  } finally { process.argv.splice(0, process.argv.length, ...argv); vi.unstubAllEnvs(); await removeTemporaryDirectory(home) }
 })
 
 it('saves the Host startup limit from recovery and says how to apply it (#1569)', async () => {
@@ -2175,7 +2176,7 @@ it('saves the Host startup limit from recovery and says how to apply it (#1569)'
       await expect(command(sender, { type: 'recovery-action', action: 'host-startup-timeout', id })).rejects.toThrow('Invalid Host startup limit')
     }
     expect(fixture.saveStartupTimeout).toHaveBeenCalledTimes(2)
-  } finally { process.argv.splice(0, process.argv.length, ...argv); vi.unstubAllEnvs(); rmSync(home, { recursive: true, force: true }) }
+  } finally { process.argv.splice(0, process.argv.length, ...argv); vi.unstubAllEnvs(); await removeTemporaryDirectory(home) }
 })
 
 it('switches a fixed Host port to automatic from recovery and says how to apply it', async () => {
@@ -2194,7 +2195,7 @@ it('switches a fixed Host port to automatic from recovery and says how to apply 
     expect((fixture.preferences as { port?: number }).port).toBe(0)
     expect(fixture.handlers.get('dsh-next:state')!(sender).recovery.notice).toEqual({ tone: 'success', title: '已改用自动端口',
       body: '插件服务下次启动时会选一个空闲端口。请点击“退出并重启”使其生效。' })
-  } finally { process.argv.splice(0, process.argv.length, ...argv); vi.unstubAllEnvs(); rmSync(home, { recursive: true, force: true }) }
+  } finally { process.argv.splice(0, process.argv.length, ...argv); vi.unstubAllEnvs(); await removeTemporaryDirectory(home) }
 })
 
 it('opens the window immediately without blocking on slow shell environment or system proxy probes', async () => {
@@ -2220,7 +2221,7 @@ it('opens the window immediately without blocking on slow shell environment or s
   } finally {
     vi.doUnmock('../src/system-proxy.ts')
     vi.unstubAllEnvs()
-    rmSync(home, { recursive: true, force: true })
+    await removeTemporaryDirectory(home)
   }
 })
 
@@ -2249,7 +2250,7 @@ it('starts reading the login-shell environment before Electron is ready, and rea
   } finally {
     vi.doUnmock('../src/shell-environment.ts')
     vi.unstubAllEnvs()
-    rmSync(home, { recursive: true, force: true })
+    await removeTemporaryDirectory(home)
   }
 })
 
@@ -2262,7 +2263,7 @@ it('registers the application scheme with the V8 code cache', async () => {
       privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true, codeCache: true } }])
   } finally {
     vi.unstubAllEnvs()
-    rmSync(home, { recursive: true, force: true })
+    await removeTemporaryDirectory(home)
   }
 })
 
@@ -2282,7 +2283,7 @@ it('keeps the in-app data directory ahead of DSH_DESKTOP_NEXT_HOME and reports h
     expect(fixture.handlers.get('dsh-next:state')!(sender)).toMatchObject({
       dataDirectory: { source: 'desktop', environmentHome: variable }, recovery: { usingDefaultDirectory: false } })
     expect(recordedHome()).toBe(chosen)
-  } finally { vi.unstubAllEnvs(); rmSync(chosen, { recursive: true, force: true }); rmSync(variable, { recursive: true, force: true }) }
+  } finally { vi.unstubAllEnvs(); await removeTemporaryDirectory(chosen); await removeTemporaryDirectory(variable) }
 })
 
 it.each([{ response: 0, keeps: 'the last directory' }, { response: 1, keeps: 'this directory' }, { response: 2, keeps: 'neither' }] as const)(
@@ -2320,7 +2321,7 @@ it.each([{ response: 0, keeps: 'the last directory' }, { response: 1, keeps: 'th
         expect(existsSync(locationFile())).toBe(false)
         expect(app.relaunch).not.toHaveBeenCalled()
       }
-    } finally { vi.unstubAllEnvs(); rmSync(previous, { recursive: true, force: true }); rmSync(fallback, { recursive: true, force: true }) }
+    } finally { vi.unstubAllEnvs(); await removeTemporaryDirectory(previous); await removeTemporaryDirectory(fallback) }
   })
 
 it('keeps a later launch from opening a window until the data-directory question is answered', async () => {
@@ -2338,7 +2339,7 @@ it('keeps a later launch from opening a window until the data-directory question
     expect(fixture.windows).toHaveLength(0)
     answer.resolve({ response: 1, checkboxChecked: false })
     await vi.waitFor(() => expect(fixture.windows).toHaveLength(1))
-  } finally { vi.unstubAllEnvs(); rmSync(previous, { recursive: true, force: true }); rmSync(fallback, { recursive: true, force: true }) }
+  } finally { vi.unstubAllEnvs(); await removeTemporaryDirectory(previous); await removeTemporaryDirectory(fallback) }
 })
 
 it('changes the data directory from settings through the recovery checks and records it for the next launch', async () => {
@@ -2366,7 +2367,7 @@ it('changes the data directory from settings through the recovery checks and rec
     expect(JSON.parse(readFileSync(locationFile(), 'utf8'))).toEqual({ home: target })
     expect(recordedHome()).toBe(target)
     await vi.waitFor(() => expect(app.relaunch).toHaveBeenCalledOnce())
-  } finally { vi.unstubAllEnvs(); rmSync(home, { recursive: true, force: true }); rmSync(target, { recursive: true, force: true }) }
+  } finally { vi.unstubAllEnvs(); await removeTemporaryDirectory(home); await removeTemporaryDirectory(target) }
 })
 
 it.each([false, true])('restores the default from recovery by forgetting the in-app choice (directory changes: %s)', async changes => {
@@ -2396,7 +2397,7 @@ it.each([false, true])('restores the default from recovery by forgetting the in-
     }
   } finally {
     process.argv.splice(0, process.argv.length, ...argv); vi.unstubAllEnvs()
-    rmSync(chosen, { recursive: true, force: true }); rmSync(variable, { recursive: true, force: true })
+    await removeTemporaryDirectory(chosen); await removeTemporaryDirectory(variable)
   }
 })
 
@@ -2442,7 +2443,7 @@ it('backs up the data directory while the Host is stopped and starts it again, a
     expect(fixture.restart).toHaveBeenCalledTimes(2)
     expect(readdirSync(parent).sort()).toEqual([backup, `${basename(home)}-backup-20261026-173005`].sort())
     expect(fixture.report).not.toHaveBeenCalled()
-  } finally { vi.useRealTimers(); vi.unstubAllEnvs(); rmSync(home, { recursive: true, force: true }); rmSync(parent, { recursive: true, force: true }) }
+  } finally { vi.useRealTimers(); vi.unstubAllEnvs(); await removeTemporaryDirectory(home); await removeTemporaryDirectory(parent) }
 })
 
 it('refuses data-directory changes and backups from Safe Mode', async () => {
@@ -2463,5 +2464,5 @@ it('refuses data-directory changes and backups from Safe Mode', async () => {
     }
     expect(dialog.showOpenDialog).not.toHaveBeenCalled()
     expect(existsSync(join(fixture.locationRoot, 'desktop-next-last-home.json'))).toBe(false)
-  } finally { process.argv.splice(0, process.argv.length, ...argv); vi.unstubAllEnvs(); rmSync(home, { recursive: true, force: true }) }
+  } finally { process.argv.splice(0, process.argv.length, ...argv); vi.unstubAllEnvs(); await removeTemporaryDirectory(home) }
 })
