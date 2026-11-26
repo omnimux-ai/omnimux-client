@@ -497,6 +497,24 @@ async function driveBrowser(config) {
     assert.deepEqual(report.layouts.unbound, { hasEmptyHeader: true, wellsCount: 0 });
 
     // Issue #373: seedance-2-5 (required reference_images min=1 + optional video/audio) & gemini-3.8-flash chat (all optional)
+    await page.goto(`${config.origin}/?scenario=collapse&theme=light`);
+    await page.waitForSelector('loc=css:.react-flow__node[data-id="target-seedance-ref"] .wf-node-header', { timeout: 15000 });
+    await page.click('loc=css:.react-flow__node[data-id="target-seedance-ref"] .wf-node-header', { label: 'Open Seedance 2.5 node (light)' });
+    await page.waitForSelector('loc=css:.react-flow__node[data-id="target-seedance-ref"].selected [data-testid="wf-add-reference"][data-slot="reference_images"]');
+    const sdLightBorders = await page.evaluate(() => [...document.querySelectorAll('.react-flow__node[data-id="target-seedance-ref"].selected [data-testid="wf-add-reference"]')].map((el) => ({
+      slot: el.getAttribute('data-slot'),
+      borderTopColor: getComputedStyle(el).borderTopColor,
+      borderTopStyle: getComputedStyle(el).borderTopStyle,
+    })));
+    assert.equal(sdLightBorders.length, 2);
+    assert.equal(sdLightBorders[0].borderTopStyle, 'dashed');
+    assert.notEqual(
+      sdLightBorders[0].borderTopColor,
+      sdLightBorders[1].borderTopColor,
+      'Light theme required empty well must render distinct warning dashed border vs optional +',
+    );
+    await page.screenshot({ path: join(config.shotDir, 'real-seedance-before-light.png') });
+
     await page.goto(`${config.origin}/?scenario=collapse&theme=dark`);
     await page.waitForSelector('loc=css:.react-flow__node[data-id="target-seedance-ref"] .wf-node-header', { timeout: 15000 });
     await page.click('loc=css:.react-flow__node[data-id="target-seedance-ref"] .wf-node-header', { label: 'Open Seedance 2.5 node' });
@@ -505,11 +523,21 @@ async function driveBrowser(config) {
       slot: el.getAttribute('data-slot'),
       required: el.classList.contains('wf-slot-well--required'),
       label: el.querySelector('.wf-slot-well__position')?.textContent?.trim() ?? null,
+      borderTopColor: getComputedStyle(el).borderTopColor,
+      borderTopStyle: getComputedStyle(el).borderTopStyle,
     })));
-    assert.deepEqual(sdBefore, [
-      { slot: 'reference_images', required: true, label: '参考图' },
-      { slot: null, required: false, label: null },
-    ]);
+    assert.deepEqual(
+      sdBefore.map(({ slot, required, label, borderTopStyle }) => ({ slot, required, label, borderTopStyle })),
+      [
+        { slot: 'reference_images', required: true, label: '参考图', borderTopStyle: 'dashed' },
+        { slot: null, required: false, label: null, borderTopStyle: 'dashed' },
+      ],
+    );
+    assert.notEqual(
+      sdBefore[0].borderTopColor,
+      sdBefore[1].borderTopColor,
+      'Dark theme required empty well must render distinct warning dashed border vs optional +',
+    );
     await page.screenshot({ path: join(config.shotDir, 'real-seedance-before-dark.png') });
     await page.click('loc=css:.react-flow__node[data-id="target-seedance-ref"] [data-testid="wf-add-reference"][data-slot="reference_images"]', { label: 'Pick required Seedance image' });
     await page.waitForSelector('loc=css:.wf-picker-modal .wf-picker-card[aria-label="首帧图.png"]');

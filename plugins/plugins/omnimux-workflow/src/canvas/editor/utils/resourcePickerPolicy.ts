@@ -17,7 +17,7 @@ import { readNodeInputSource, type NodeInputSource } from '../../../shared/graph
 import { deriveSlotLayout } from '../../../shared/graph/feedSlot/deriveSlotLayout.ts';
 import { deriveImageGenerationLayout } from '../../../shared/graph/feedSlot/imageGeneration.ts';
 import { resolveSlotOperation } from '../../../shared/graph/feedSlot/resolveSlotOperation.ts';
-import { acceptsFeedAsset, remainingSlotCapacity } from '../../../shared/graph/feedSlot/autoFillSlots.ts';
+import { acceptsFeedAsset, remainingSlotCapacity, remainingTypeCapacity, totalSlotGroupCapacity } from '../../../shared/graph/feedSlot/autoFillSlots.ts';
 import { resolveSlotOccupantOrdinal, type SlotSelection } from '../../../shared/graph/feedSlot/assembleEffectiveInputs.ts';
 import { effectiveInputDisplay } from '../../../shared/graph/feedSlot/effectiveInputDisplay.ts';
 import { feedFromFingerprint } from '../../../shared/graph/feedSlot/effectiveFingerprint.ts';
@@ -599,12 +599,25 @@ export function resourcePickerReferenceGroup(state: CanvasInputMutationState, ta
       remaining: remainingSlotCapacity(inputs.layout, spec, slotOccupied, occupiedByType.get(spec.type) ?? 0),
     };
   });
-  return { ...inputs, slots, inUse: new Set(active.map(record => record.occupant.sourceNodeId)) };
+  const typeRemaining = new Map<string, number>();
+  for (const spec of eligible) {
+    if (!typeRemaining.has(spec.type)) {
+      typeRemaining.set(spec.type, remainingTypeCapacity(inputs.layout, spec.type, occupiedByType.get(spec.type) ?? 0));
+    }
+  }
+  return {
+    ...inputs,
+    slots,
+    typeRemaining,
+    totalRemaining: totalSlotGroupCapacity(slots, typeRemaining),
+    inUse: new Set(active.map(record => record.occupant.sourceNodeId)),
+  };
 }
 
 /** Resolve a mixed batch without changing existing bindings. Earlier choices keep their slot unless a later choice needs it. */
 export function routePickerReferences(slots: ReferencePickerSlot[], nodes: CanvasNode[], inUse: ReadonlySet<string>,
-  selections: PickerSelections, files: ImportFileDraft[]): { slotNames: string[]; reasonCode?: never } | { reasonCode: string; slotNames?: never } {
+  selections: PickerSelections, files: ImportFileDraft[], typeRemaining?: ReadonlyMap<string, number>):
+  { slotNames: string[]; reasonCode?: never } | { reasonCode: string; slotNames?: never } {
   const seen = new Set(inUse);
   const candidates: ReferencePickerSlot[][] = [];
   for (const selection of selections) {
@@ -620,12 +633,15 @@ export function routePickerReferences(slots: ReferencePickerSlot[], nodes: Canva
   if (candidates.some(options => !options.length)) return { reasonCode: 'role_conflict' };
 
   const occupants = new Map(slots.map(slot => [slot, [] as number[]]));
+  const typeCounts = new Map<string, number>();
   const slotNames: string[] = [];
   const assign = (index: number, visited: Set<ReferencePickerSlot>): boolean => {
     const options = candidates[index]!.filter(slot => !visited.has(slot));
-    const direct = options.find(slot => occupants.get(slot)!.length < slot.remaining);
+    const direct = options.find(slot => occupants.get(slot)!.length < slot.remaining
+      && (typeCounts.get(slot.spec.type) ?? 0) < (typeRemaining?.get(slot.spec.type) ?? Infinity));
     if (direct) {
       occupants.get(direct)!.push(index);
+      typeCounts.set(direct.spec.type, (typeCounts.get(direct.spec.type) ?? 0) + 1);
       slotNames[index] = direct.spec.slot;
       return true;
     }
@@ -746,7 +762,7 @@ export function listCanvasResources(
         targetSlot: selectionTarget?.targetSlot, role: selectionTarget?.role,
       }], replaceEdgeId: selectionTarget?.replaceEdgeId, replaceSlot: selectionTarget?.replaceSlot };
     const referenceRoute = group && !inUse ? routePickerReferences(group.slots, nodes, group.inUse, candidateRequest.selections,
-      selectionTarget?.localFiles ?? []) : undefined;
+      selectionTarget?.localFiles ?? [], group.typeRemaining) : undefined;
     const candidate = !group && picker.qualified
       ? (inUse ? { status: 'allowed', verdict: validateCanvasInputSelection(graph, candidateRequest, context) }
         : planPickerSelectionMutation(graph, candidateRequest, context)) : undefined;
@@ -825,7 +841,7 @@ export function planPickerSelectionMutation(current: CanvasInputMutationState, r
   const target = group?.target ?? current.nodes.find(node => node.id === request.targetNodeId);
   if (!target) return { status: 'rejected', reasonCode: 'missing_node' };
   if (files.length && !group && !local?.targetSlot) return { status: 'rejected', reasonCode: 'role_required' };
-  const routed = group && routePickerReferences(group.slots, current.nodes, group.inUse, selections, files);
+  const routed = group && routePickerReferences(group.slots, current.nodes, group.inUse, selections, files, group.typeRemaining);
   if (routed?.reasonCode) return { status: 'rejected', reasonCode: routed.reasonCode };
   const slotNames = routed?.slotNames;
   const canvasCount = selections.length;

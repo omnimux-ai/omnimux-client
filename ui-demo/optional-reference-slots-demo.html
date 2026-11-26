@@ -16,10 +16,8 @@
       --dsw-alias-label-primary: #f5f5f7;
       --dsw-alias-label-secondary: #b4b4bc;
       --dsw-alias-label-tertiary: #8e8e98;
-      --dsw-alias-label-warning: #f5a524;
+      --dsw-alias-state-warn-primary: #f59e0b;
       --dsw-alias-interactive-bg-hover: rgba(255, 255, 255, 0.1);
-      --dsw-alias-control-primary: #ffffff;
-      --dsw-alias-control-primary-fg: #121214;
     }
     html[data-theme="light"] {
       --dsw-alias-bg-base: #f2f3f7;
@@ -32,10 +30,8 @@
       --dsw-alias-label-primary: #141418;
       --dsw-alias-label-secondary: #52525c;
       --dsw-alias-label-tertiary: #767682;
-      --dsw-alias-label-warning: #d97706;
+      --dsw-alias-state-warn-primary: #d97706;
       --dsw-alias-interactive-bg-hover: rgba(0, 0, 0, 0.06);
-      --dsw-alias-control-primary: #141418;
-      --dsw-alias-control-primary-fg: #ffffff;
     }
     * { box-sizing: border-box; }
     body {
@@ -76,8 +72,8 @@
     }
     .btn:hover { background: var(--dsw-alias-interactive-bg-hover); }
     .btn--primary {
-      background: var(--dsw-alias-control-primary);
-      color: var(--dsw-alias-control-primary-fg);
+      background: var(--dsw-alias-label-primary);
+      color: var(--dsw-alias-bg-base);
       border-color: transparent;
     }
     .grid {
@@ -167,7 +163,7 @@
       background: var(--dsw-alias-interactive-bg-hover);
     }
     .well--required {
-      border-color: var(--dsw-alias-label-warning);
+      border-color: var(--dsw-alias-state-warn-primary);
     }
     .well--empty:has(.well-pos) > svg { transform: translateY(-5px); }
     .well-pos {
@@ -303,8 +299,8 @@
       cursor: pointer;
     }
     .filter-pill.active {
-      background: var(--dsw-alias-control-primary);
-      color: var(--dsw-alias-control-primary-fg);
+      background: var(--dsw-alias-label-primary);
+      color: var(--dsw-alias-bg-base);
       border-color: transparent;
     }
     .asset-grid {
@@ -326,7 +322,7 @@
       font-size: 12px;
     }
     .asset-card.selected {
-      border-color: var(--dsw-alias-control-primary);
+      border-color: var(--dsw-alias-label-primary);
     }
     .asset-meta {
       font-size: 11px;

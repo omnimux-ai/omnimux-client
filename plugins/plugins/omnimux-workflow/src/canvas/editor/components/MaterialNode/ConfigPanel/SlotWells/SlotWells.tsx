@@ -17,7 +17,7 @@ import React, { memo, useCallback, useRef, useState } from 'react';
 import SlotHoverPreview from './SlotHoverPreview.tsx';
 import { ArrowLeftRight, FileJson, FileText, Image as ImageIcon, Loader2, Music, Play, Plus, X } from 'lucide-react';
 import type { MaterialType } from '../../../../../../shared/canvasTypes.ts';
-import { remainingSlotCapacity } from '../../../../../../shared/graph/feedSlot/autoFillSlots.ts';
+import { remainingSlotCapacity, remainingTypeCapacity, totalSlotGroupCapacity } from '../../../../../../shared/graph/feedSlot/autoFillSlots.ts';
 import type { SlotOccupant, SlotSpec } from '../../../../../../shared/graph/feedSlot/index.ts';
 import { isOrderedImageReferenceSlot, isPromptInput, isVisualGeneration } from '../../../../../../shared/validation/compatKernel.ts';
 import { useT } from '../../../../../i18n';
@@ -388,7 +388,13 @@ const SlotWells: React.FC<SlotWellsProps> = (props) => {
             </button>;
           })}
           {optionalAvailable.length > 0 ? (() => {
-            const maximum = available.reduce((sum, { remaining }) => sum + remaining, 0);
+            const typeRemaining = new Map<string, number>();
+            for (const { spec } of available) {
+              if (!typeRemaining.has(spec.type)) {
+                typeRemaining.set(spec.type, remainingTypeCapacity(layout, spec.type, occupiedByType.get(spec.type) ?? 0));
+              }
+            }
+            const maximum = totalSlotGroupCapacity(available, typeRemaining);
             const addLabel = t('panel.slotAddAsset');
             return <button key="wf-add-reference:unified" type="button"
               className="wf-slot-well wf-slot-well--append nodrag"

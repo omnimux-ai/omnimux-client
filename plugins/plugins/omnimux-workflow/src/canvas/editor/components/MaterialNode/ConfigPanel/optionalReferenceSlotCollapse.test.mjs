@@ -27,6 +27,7 @@ import {
   listCanvasResources,
   planPickerSelectionMutation,
   resourcePickerReferenceGroup,
+  routePickerReferences,
 } from '../../../utils/resourcePickerPolicy.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -34,39 +35,43 @@ const root = resolve(here, '../../../../../..');
 const bundledCatalog = buildModelCatalog({ snapshot: structuredClone(readBundledSnapshot().snapshot), env: {} });
 
 const tmp = await mkdtemp(resolve(tmpdir(), 'omnimux-opt-ref-slots-'));
-const output = resolve(tmp, 'slotWells.cjs');
-await build({
-  absWorkingDir: root,
-  stdin: {
-    contents: `import React from 'react';
+let renderSlotWells;
+try {
+  const output = resolve(tmp, 'slotWells.cjs');
+  await build({
+    absWorkingDir: root,
+    stdin: {
+      contents: `import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import SlotWells from ${JSON.stringify(resolve(here, 'SlotWells/SlotWells.tsx'))};
 export { React, SlotWells };
 export function renderSlotWells(props) {
   return renderToStaticMarkup(React.createElement(SlotWells, props));
 }`,
-    resolveDir: root,
-  },
-  bundle: true,
-  jsx: 'automatic',
-  platform: 'node',
-  format: 'cjs',
-  outfile: output,
-  logLevel: 'silent',
-  plugins: [{
-    name: 'opt-ref-i18n',
-    setup(b) {
-      b.onResolve({ filter: /\/i18n$/ }, () => ({ path: 'i18n', namespace: 'opt-ref' }));
-      b.onLoad({ filter: /.*/, namespace: 'opt-ref' }, () => ({
-        contents: `import zh from ${JSON.stringify(resolve(root, 'src/canvas/i18n/dict.zh.ts'))}; export const useT = () => key => zh[key] ?? key;`,
-        loader: 'ts',
-        resolveDir: root,
-      }));
+      resolveDir: root,
     },
-  }],
-});
-const { renderSlotWells } = createRequire(import.meta.url)(output);
-await rm(tmp, { recursive: true, force: true });
+    bundle: true,
+    jsx: 'automatic',
+    platform: 'node',
+    format: 'cjs',
+    outfile: output,
+    logLevel: 'silent',
+    plugins: [{
+      name: 'opt-ref-i18n',
+      setup(b) {
+        b.onResolve({ filter: /\/i18n$/ }, () => ({ path: 'i18n', namespace: 'opt-ref' }));
+        b.onLoad({ filter: /.*/, namespace: 'opt-ref' }, () => ({
+          contents: `import zh from ${JSON.stringify(resolve(root, 'src/canvas/i18n/dict.zh.ts'))}; export const useT = () => key => zh[key] ?? key;`,
+          loader: 'ts',
+          resolveDir: root,
+        }));
+      },
+    }],
+  });
+  ({ renderSlotWells } = createRequire(import.meta.url)(output));
+} finally {
+  await rm(tmp, { recursive: true, force: true });
+}
 
 function parseAddButtons(html) {
   return [...html.matchAll(/<button([^>]*data-testid="wf-add-reference"[^>]*)>([\s\S]*?)<\/button>/g)].map(([, attrs, inner]) => ({
@@ -272,6 +277,32 @@ test('unified + button onClick payload emits all available referenceSlots and ac
       assert.equal(picked[1].targetSlot, undefined);
       assert.deepEqual(picked[1].referenceSlots, ['reference_images', 'reference_videos', 'reference_audios']);
       assert.deepEqual(picked[1].acceptedTypes, ['image', 'video', 'audio']);
+
+      // Aggregate inputMaxByType caps SlotPickRequest.max across sibling same-type slots (1 image + 5 audio = 6, not 1 + 1 + 5 = 7)
+      picked.length = 0;
+      const lineLayout = {
+        preset: 'strip',
+        operationId: 'video_multi_ref',
+        outputType: 'video',
+        addButton: true,
+        swap: false,
+        inputMaxByType: { image: 1 },
+        slots: [
+          { slot: 'reference_images', type: 'image', role: 'reference', labelKey: 'panel.slot.reference_images', min: 0, max: 10 },
+          { slot: 'style_images', type: 'image', role: 'reference', labelKey: 'panel.slot.reference_images', min: 0, max: 5 },
+          { slot: 'reference_audios', type: 'audio', role: 'reference', labelKey: 'panel.slot.reference_audios', min: 0, max: 5 },
+        ],
+      };
+      await React.act(async () => {
+        mountRoot.render(React.createElement(SlotWells, {
+          layout: lineLayout, bindings: {}, records: [], upstreams: [],
+          onPickSlot: (r) => picked.push(r), onClearOccupant: () => {}, onInsertToken: () => {},
+        }));
+      });
+      const lineBtn = document.querySelector('[data-testid="wf-add-reference"]');
+      assert.ok(lineBtn);
+      await React.act(async () => { lineBtn.click(); });
+      assert.equal(picked[0].max, 6, 'unified add button max must cap sibling same-type slots by inputMaxByType');
     } finally {
       await React.act(async () => { mountRoot.unmount(); });
     }
@@ -283,6 +314,83 @@ test('unified + button onClick payload emits all available referenceSlots and ac
       else globalThis[name] = value;
     }
   }
+});
+
+test('multi-slot edge branches: degraded single-available slot and multi-required-only strip', () => {
+  // seedance-2-5 when video and audio slots are completely full -> only reference_images remains
+  const sdLayout = deriveSlotLayout(bundledCatalog, 'seedance-2-5', 'video_multi_ref');
+  const vidSpec = sdLayout.slots.find((s) => s.slot === 'reference_videos');
+  const audSpec = sdLayout.slots.find((s) => s.slot === 'reference_audios');
+  const imgSpec = sdLayout.slots.find((s) => s.slot === 'reference_images');
+  const fullVidAudBindings = {
+    reference_videos: Array.from({ length: vidSpec.max }, (_, i) => ({
+      edgeId: `ev-${i}`, sourceNodeId: `v-${i}`, outputId: `v-${i}`, role: 'reference',
+    })),
+    reference_audios: Array.from({ length: audSpec.max }, (_, i) => ({
+      edgeId: `ea-${i}`, sourceNodeId: `a-${i}`, outputId: `a-${i}`, role: 'reference',
+    })),
+  };
+  const fullVidAudUpstreams = [
+    ...fullVidAudBindings.reference_videos.map((o) => ({
+      edgeId: o.edgeId, nodeId: o.sourceNodeId, label: `${o.sourceNodeId}.mp4`, materialType: 'video',
+      url: `https://fixtures.invalid/${o.sourceNodeId}.mp4`, hasMedia: true, availability: 'ready',
+    })),
+    ...fullVidAudBindings.reference_audios.map((o) => ({
+      edgeId: o.edgeId, nodeId: o.sourceNodeId, label: `${o.sourceNodeId}.wav`, materialType: 'audio',
+      url: `https://fixtures.invalid/${o.sourceNodeId}.wav`, hasMedia: true, availability: 'ready',
+    })),
+  ];
+
+  // 0 images: single remaining slot is unsatisfied required -> labeled required well
+  const degradedEmptyBtns = parseAddButtons(renderSlotWells({
+    layout: sdLayout, bindings: fullVidAudBindings, upstreams: fullVidAudUpstreams, ...noopHandlers,
+  }));
+  assert.equal(degradedEmptyBtns.length, 1);
+  assert.equal(degradedEmptyBtns[0].slot, 'reference_images');
+  assert.equal(degradedEmptyBtns[0].required, true);
+  assert.equal(degradedEmptyBtns[0].positionLabel, '参考图');
+
+  // 1 image (required satisfied, still has remaining capacity): unlabeled single-slot +
+  const degradedFilledBtns = parseAddButtons(renderSlotWells({
+    layout: sdLayout,
+    bindings: {
+      ...fullVidAudBindings,
+      reference_images: [{ edgeId: 'ei-0', sourceNodeId: 'i-0', outputId: 'i-0', role: 'reference' }],
+    },
+    upstreams: [
+      ...fullVidAudUpstreams,
+      { edgeId: 'ei-0', nodeId: 'i-0', label: 'i-0.png', materialType: 'image', url: 'https://fixtures.invalid/i-0.png', hasMedia: true, availability: 'ready' },
+    ],
+    ...noopHandlers,
+  }));
+  assert.equal(degradedFilledBtns.length, 1);
+  assert.equal(degradedFilledBtns[0].slot, imgSpec.slot);
+  assert.equal(degradedFilledBtns[0].required, false);
+  assert.equal(degradedFilledBtns[0].positionLabel, null);
+
+  // Multi-required-only strip (2 required reference slots, 0 optional): renders 2 labeled required wells and 0 generic +
+  const multiReqLayout = {
+    preset: 'strip',
+    operationId: 'dual_required_ref',
+    outputType: 'video',
+    addButton: true,
+    swap: false,
+    slots: [
+      { slot: 'reference_images', type: 'image', role: 'reference', labelKey: 'panel.slot.reference_images', min: 1, max: 5 },
+      { slot: 'reference_audios', type: 'audio', role: 'reference', labelKey: 'panel.slot.reference_audios', min: 1, max: 2 },
+    ],
+  };
+  const multiReqBtns = parseAddButtons(renderSlotWells({
+    layout: multiReqLayout, bindings: {}, records: [], upstreams: [], ...noopHandlers,
+  }));
+  assert.equal(multiReqBtns.length, 2);
+  assert.deepEqual(
+    multiReqBtns.map((b) => ({ slot: b.slot, required: b.required, label: b.positionLabel })),
+    [
+      { slot: 'reference_images', required: true, label: '参考图' },
+      { slot: 'reference_audios', required: true, label: '参考音频' },
+    ],
+  );
 });
 
 test('resourcePickerReferenceGroup routes mixed image+video+audio on wan-3.0 and enforces line inputMaxByType', () => {
@@ -346,6 +454,33 @@ test('resourcePickerReferenceGroup routes mixed image+video+audio on wan-3.0 and
   assert.equal(updated.data.slotBindings.reference_videos[0].sourceNodeId, 'vid-1');
   assert.equal(updated.data.slotBindings.reference_audios[0].sourceNodeId, 'aud-1');
 
+  // Verify seedance-2-5 mixed image+video+audio batch submission routes all three slots cleanly
+  const sdTarget = {
+    ...target,
+    data: {
+      ...target.data,
+      label: 'Seedance 2.5',
+      params: { model: 'seedance-2-5', operation: 'video_multi_ref' },
+    },
+  };
+  const sdGraph = { nodes: [sdTarget, img, vid, aud], edges: [] };
+  const sdPlanned = planPickerSelectionMutation(sdGraph, {
+    targetNodeId: 'target',
+    chosenOperationId: 'video_multi_ref',
+    selections: [
+      { sourceNodeId: 'img-1', outputId: img.data.mediaUrl },
+      { sourceNodeId: 'vid-1', outputId: vid.data.mediaUrl },
+      { sourceNodeId: 'aud-1', outputId: aud.data.mediaUrl },
+    ],
+  }, context, { referenceSlots: wanRefSlots, files: [] });
+  assert.equal(sdPlanned.status, 'allowed', sdPlanned.reasonCode);
+  const sdApplied = planCanvasInputMutation(sdGraph, sdPlanned.mutation, context);
+  assert.equal(sdApplied.status, 'allowed', sdApplied.reasonCode);
+  const sdUpdated = sdApplied.nodes.find((n) => n.id === 'target');
+  assert.equal(sdUpdated.data.slotBindings.reference_images[0].sourceNodeId, 'img-1');
+  assert.equal(sdUpdated.data.slotBindings.reference_videos[0].sourceNodeId, 'vid-1');
+  assert.equal(sdUpdated.data.slotBindings.reference_audios[0].sourceNodeId, 'aud-1');
+
   // Verify line-level aggregate inputMaxByType is enforced across sibling slots of the same type
   const lineConstrainedCatalog = {
     models: [{
@@ -368,21 +503,71 @@ test('resourcePickerReferenceGroup routes mixed image+video+audio on wan-3.0 and
     }],
   };
   const img2 = { ...img, id: 'img-2', data: { ...img.data, mediaUrl: 'https://fixtures.invalid/dog2.png', mediaAssets: [{ type: 'image', url: 'https://fixtures.invalid/dog2.png', mimeType: 'image/png', sizeBytes: 1024 }] } };
-  const narrowTarget = {
+  const narrowSlots = ['reference_images', 'style_images', 'reference_audios'];
+  const narrowCtx = { catalog: lineConstrainedCatalog };
+
+  // Case A: 0 occupied -> totalRemaining is 1 (image) + 5 (audio) = 6 (NOT 1 + 1 + 5 = 7);
+  // selecting 2 images in one batch must fail with slot_capacity (never input_changed), and
+  // listCanvasResources with img-1 selected must mark img-2 unselectable (slot_capacity) while aud-1 stays selectable.
+  const emptyNarrowTarget = {
     ...target,
     data: {
       ...target.data,
       params: { model: 'narrow-model', operation: 'video_multi_ref', routing: { allowedGroups: ['narrow'] } },
+      slotBindings: {},
+    },
+  };
+  const emptyNarrowGraph = { nodes: [emptyNarrowTarget, img, img2, aud], edges: [] };
+  const emptyNarrowGroup = resourcePickerReferenceGroup(emptyNarrowGraph, 'target', narrowCtx, narrowSlots);
+  assert.equal(emptyNarrowGroup.totalRemaining, 6, 'totalRemaining must cap sibling image slots by line inputMaxByType');
+  assert.equal(emptyNarrowGroup.typeRemaining.get('image'), 1);
+
+  const twoImgSelections = [
+    { sourceNodeId: 'img-1', outputId: img.data.mediaUrl },
+    { sourceNodeId: 'img-2', outputId: img2.data.mediaUrl },
+  ];
+  const routedTwoImgs = routePickerReferences(
+    emptyNarrowGroup.slots, emptyNarrowGraph.nodes, emptyNarrowGroup.inUse, twoImgSelections, [], emptyNarrowGroup.typeRemaining,
+  );
+  assert.equal(routedTwoImgs.reasonCode, 'slot_capacity', 'routePickerReferences must reject 2nd image under inputMaxByType.image = 1');
+
+  const plannedTwoImgs = planPickerSelectionMutation(emptyNarrowGraph, {
+    targetNodeId: 'target',
+    chosenOperationId: 'video_multi_ref',
+    selections: twoImgSelections,
+  }, narrowCtx, { referenceSlots: narrowSlots, files: [] });
+  assert.equal(plannedTwoImgs.status, 'rejected');
+  assert.equal(plannedTwoImgs.reasonCode, 'slot_capacity', 'planPickerSelectionMutation must report slot_capacity, not input_changed');
+
+  const listedAfterOneImg = listCanvasResources(emptyNarrowGraph.nodes, emptyNarrowGraph.edges, 'target', narrowCtx, {
+    referenceSlots: narrowSlots,
+    selections: [{ sourceNodeId: 'img-1', outputId: img.data.mediaUrl }],
+  });
+  assert.deepEqual(
+    listedAfterOneImg.map((i) => ({ id: i.nodeId, selectable: i.selectable, reasonCode: i.reasonCode })),
+    [
+      { id: 'img-1', selectable: true, reasonCode: undefined },
+      { id: 'img-2', selectable: false, reasonCode: 'slot_capacity' },
+      { id: 'aud-1', selectable: true, reasonCode: undefined },
+    ],
+  );
+
+  // Case B: 1 image already occupied -> both sibling image slots report remaining = 0
+  const narrowTarget = {
+    ...emptyNarrowTarget,
+    data: {
+      ...emptyNarrowTarget.data,
       slotBindings: { reference_images: [{ edgeId: 'e-1', sourceNodeId: 'img-1', outputId: img.data.mediaUrl, role: 'reference', pinned: true }] },
     },
   };
   const narrowGroup = resourcePickerReferenceGroup(
     { nodes: [narrowTarget, img, img2, aud], edges: [{ id: 'e-1', source: 'img-1', target: 'target' }] },
     'target',
-    { catalog: lineConstrainedCatalog },
-    ['reference_images', 'style_images', 'reference_audios'],
+    narrowCtx,
+    narrowSlots,
   );
   assert.equal(narrowGroup.slots.find((s) => s.spec.slot === 'reference_images').remaining, 0);
   assert.equal(narrowGroup.slots.find((s) => s.spec.slot === 'style_images').remaining, 0, 'sibling image slot must respect aggregate line inputMaxByType');
   assert.equal(narrowGroup.slots.find((s) => s.spec.slot === 'reference_audios').remaining, 5);
+  assert.equal(narrowGroup.totalRemaining, 5);
 });

@@ -25,6 +25,28 @@ export function remainingSlotCapacity(layout: SlotLayout, slot: SlotSpec, occupi
   return Math.max(0, Math.min(slotMax - occupied, typeMax - typeOccupied));
 }
 
+/** Free space in the selected line's aggregate input limit for a material type. */
+export function remainingTypeCapacity(layout: SlotLayout, type: string, typeOccupied: number): number {
+  const typeMax = layout.inputMaxByType?.[type] ?? Infinity;
+  return Math.max(0, typeMax - typeOccupied);
+}
+
+/** Aggregate free space across candidate slots without double-counting shared type limits. */
+export function totalSlotGroupCapacity(
+  slots: readonly { spec: Pick<SlotSpec, 'type'>; remaining: number }[],
+  typeRemaining?: ReadonlyMap<string, number>,
+): number {
+  const perType = new Map<string, number>();
+  for (const { spec, remaining } of slots) {
+    perType.set(spec.type, (perType.get(spec.type) ?? 0) + remaining);
+  }
+  let total = 0;
+  for (const [type, sum] of perType) {
+    total += Math.min(sum, typeRemaining?.get(type) ?? Infinity);
+  }
+  return total;
+}
+
 /** Content eligibility is shared by loading, display and submission. */
 export function isReadyFeedAsset(asset: FeedAsset | undefined): asset is FeedAsset {
   if (asset?.type === 'text') return asset.availability === 'ready' && Boolean(asset.textContent?.trim());

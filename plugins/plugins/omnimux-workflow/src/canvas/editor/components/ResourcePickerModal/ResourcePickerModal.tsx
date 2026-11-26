@@ -63,7 +63,7 @@ const ResourcePickerModal: React.FC<ResourcePickerModalProps> = ({
   const target = nodes.find(node => node.id === nodeId);
   const current = usesQualifiedResourcePicker(target, { catalog });
   const params = target?.data.params as Record<string, unknown> | undefined;
-  const operationId = String(params?.operation ?? '');
+  const operationId = (typeof params?.operation === 'string' && params.operation) ? params.operation : (slotTarget?.operationId ?? '');
   const [tab, setTab] = useState<ResourcePickerTab>(initialTab);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [selectedOutputs, setSelectedOutputs] = useState<Record<string, string>>({});
@@ -93,7 +93,7 @@ const ResourcePickerModal: React.FC<ResourcePickerModalProps> = ({
     ? resourcePickerReferenceGroup({ nodes, edges }, nodeId, { catalog }, slotTarget.referenceSlots) : undefined,
   [nodes, edges, nodeId, catalog, slotTarget, stale, intent]);
   const limit = intent ? available?.accepted ? available.remaining : 0 : slotTarget?.referenceSlots
-    ? (group?.slots.reduce((remaining, item) => remaining + item.remaining, 0) ?? 0)
+    ? (group?.totalRemaining ?? 0)
     : slotTarget?.slot ? Math.min(slot?.remaining ?? 0, slotTarget.max ?? Infinity) : Infinity;
   const localSlots = (group?.slots ?? (slot ? [slot] : [])).filter(item => item.remaining > 0);
   const spec = available?.accepted ? available.spec : undefined;
@@ -333,7 +333,7 @@ const ResourcePickerModal: React.FC<ResourcePickerModalProps> = ({
             if (slotTarget?.referenceSlots) {
               if (!snapshot.group || snapshot.stale) return;
               const drafts = [...snapshot.localFiles, ...incoming];
-              const result = routePickerReferences(snapshot.group.slots, snapshot.nodes, snapshot.group.inUse, snapshot.selections, drafts);
+              const result = routePickerReferences(snapshot.group.slots, snapshot.nodes, snapshot.group.inUse, snapshot.selections, drafts, snapshot.group.typeRemaining);
               if (result.reasonCode) { toast.error(t(pickerReasonKey(result.reasonCode))); return; }
               snapshot.localFiles = drafts;
               setLocalFiles(drafts);

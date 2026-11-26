@@ -25,14 +25,14 @@
 
 1. **高保真演示评审**：在隔离 `ego-browser` 打开 `ui-demo/optional-reference-slots-demo.html`，覆盖亮/暗双主题、宽/窄视口、`wan-3.0` 全能参考前后对照、`seedance-2-5` 填图前后状态收敛、`first_last_frame` / `digital_human` 必填保留、`gemini-3.8-flash` 多模态对话前后对照与统一选择器交互；任一布局出现非必填分类型空槽、文字溢出、对比度不足或必填空槽丢失即判定不通过。
 2. **单元与策略回归测试**：
-   - 更新 `slotInteractionRefinement.test.mjs` 并新增专项单测 `optionalReferenceSlotCollapse.test.mjs`，覆盖 `wan-3.0`、`seedance-2-0`、`minimax-h3-video`、`seedance-2-5`（0 图与 1 图）、`gemini-3.8-flash` `chat`、`first_last_frame`、`digital_human`、`muse-video`、`image_to_image` 以及容量耗尽态。
-   - 在 `resourcePickerPolicy.test.mjs` 新增测试，验证 `resourcePickerReferenceGroup` 严格遵守 `layout.inputMaxByType` 并在真实 `wan-3.0` / `seedance-2-5` 目录上一次提交混合图片+音频/视频到各自目标槽。
+   - 更新 `slotInteractionRefinement.test.mjs` 并新增专项单测 `optionalReferenceSlotCollapse.test.mjs`，覆盖 `wan-3.0`、`seedance-2-0`、`minimax-h3-video`、`seedance-2-5`（0 图、1 图及降级为单可用槽）、`gemini-3.8-flash` `chat`、`first_last_frame`、`digital_human`、`muse-video`、`image_to_image`、多必填无可选参考模式以及容量耗尽态。
+   - 在 `optionalReferenceSlotCollapse.test.mjs` 同步验证 `resourcePickerReferenceGroup` 与 `routePickerReferences` 严格遵守线路级 `layout.inputMaxByType`（包括 0 占用多选同类型时的总上限与 `slot_capacity` 拒绝），并在真实 `wan-3.0` 与 `seedance-2-5` 目录上一次提交混合图片+视频+音频到各自目标槽。
 3. **静态门禁与全量单测**：运行 `typecheck`、`build:all`、`omnimux-workflow` 全量单测、`workspace-check.mjs --check`、`verify-test-standard-declarations.mjs`、`verify:dsw-tokens`、`verify:stages`、`verify:slots`、`guard:popover`、`check:boundaries`、`verify:product-baseline` 全绿。
-4. **真实浏览器端到端验收**：在任务工作树运行 `unified-text-audio-slot-wells.e2e.test.mjs`（含新增的 Issue #373 全能参考单 `+` 点击选图/音入槽、`seedance-2-5` 必填参考图收敛、`gemini-3.8-flash` 单 `+` 验收），结合真实 `dist/index.js` + `lib/canvas.js` + 真实 DSH 主题 + 隔离 `ego-browser` 复核亮/暗主题与窄屏交互。
+4. **真实浏览器端到端验收**：在任务工作树运行 `unified-text-audio-slot-wells.e2e.test.mjs`（含新增的 Issue #373 `wan-3.0` 全能参考单 `+` 打开多类型选择器选图入槽、`seedance-2-5` 必填空槽亮/暗主题警示边框与填图后收敛为单 `+`、`gemini-3.8-flash` 单 `+` 验收），结合真实 `dist/index.js` + `lib/canvas.js` + 真实 DSH 主题验证。
 
 ## 实施边界
 
-- 仅修改 `SlotWells.tsx` 的 `strip` 添加按钮分层收敛逻辑、`resourcePickerPolicy.ts` 的 `resourcePickerReferenceGroup` 余量对齐，以及对应测试、演示与文档 `plugins/docs/contracts/canvas-generation.md`。
+- 仅修改 `SlotWells.tsx` 的 `strip` 添加按钮分层收敛与组上限计算、`autoFillSlots.ts` 的 `remainingTypeCapacity` / `totalSlotGroupCapacity`、`resourcePickerPolicy.ts` 与 `ResourcePickerModal.tsx` / `useResourcePicker.ts` 的多槽余量/路由与操作兜底、`components.css` 的 `.wf-slot-well--required` 真实 DSH 警示边框 Token 与特异性，以及对应测试、演示与文档 `plugins/docs/contracts/canvas-generation.md`。
 - 不改动网关模型目录契约、`min`/`max` 定义、`assignOperationSlots` 自动分配规则或后端提交载荷；不新增冗余提示条或 Toast 播报。
 
 ## 旧标准变更
