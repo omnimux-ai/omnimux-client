@@ -8,22 +8,46 @@ const WORKFLOW_PATH = new URL('../../.github/workflows/publish.yml', import.meta
 const SOURCE = readFileSync(WORKFLOW_PATH, 'utf8')
 const WORKFLOW = YAML.parse(SOURCE)
 
-const checkoutSteps = Object.values(WORKFLOW.jobs)
-  .flatMap(job => job.steps ?? [])
-  .filter(step => step.uses === 'actions/checkout@v4')
+const allSteps = Object.values(WORKFLOW.jobs).flatMap(job => job.steps ?? [])
+const checkoutSteps = allSteps.filter(step => typeof step.uses === 'string' && step.uses.startsWith('actions/checkout@'))
+const usesSteps = allSteps.filter(step => typeof step.uses === 'string')
 const stepText = JSON.stringify(WORKFLOW.jobs)
 
-test('publish workflow keeps the Trusted Publisher identity and only the required permissions', () => {
+test('publish workflow keeps the Trusted Publisher identity and scopes id-token: write to publish job only (issue #361)', () => {
   assert.match(WORKFLOW.name, /Trusted Publishing/)
   assert.match(WORKFLOW_PATH.pathname, /\.github\/workflows\/publish\.yml$/)
-  assert.deepEqual(WORKFLOW.permissions, { contents: 'read', 'id-token': 'write' })
+  assert.deepEqual(WORKFLOW.permissions, { contents: 'read' })
+  assert.equal(WORKFLOW.jobs.plan.permissions, undefined)
+  assert.deepEqual(WORKFLOW.jobs.publish.permissions, { contents: 'read', 'id-token': 'write' })
   assert.equal(WORKFLOW.environment, undefined)
   assert.equal(WORKFLOW.concurrency, undefined)
   for (const job of Object.values(WORKFLOW.jobs)) assert.equal(job.environment, undefined)
   assert.ok(checkoutSteps.length >= 2)
   for (const step of checkoutSteps) assert.equal(step.with?.['persist-credentials'], false)
+  for (const step of usesSteps) {
+    assert.match(step.uses, /^[^@]+@[0-9a-f]{40}$/, `action must be pinned to a full 40-char commit SHA: ${step.uses}`)
+  }
   assert.doesNotMatch(SOURCE, /\bsecrets\./)
   assert.doesNotMatch(SOURCE, /NODE_AUTH_TOKEN|NPM_TOKEN|npm_token/)
+})
+
+test('real publish enforces refs/heads/main in both plan and publish jobs and disables install lifecycle scripts (issue #361)', () => {
+  const planGuard = WORKFLOW.jobs.plan.steps.find(step => step.name === 'Enforce main branch for real publish')
+  assert.ok(planGuard)
+  assert.equal(planGuard.if, '${{ !inputs.dry_run }}')
+  assert.match(planGuard.run, /refs\/heads\/main/)
+  assert.match(planGuard.run, /exit 1/)
+
+  const publishGuard = WORKFLOW.jobs.publish.steps.find(step => step.name === 'Enforce main branch before publish')
+  assert.ok(publishGuard)
+  assert.equal(publishGuard.if, "${{ matrix.action == 'publish' }}")
+  assert.match(publishGuard.run, /refs\/heads\/main/)
+  assert.match(publishGuard.run, /exit 1/)
+
+  assert.match(String(WORKFLOW.env?.NPM_CLI_VERSION ?? ''), /^11\.\d+\.\d+$/)
+  assert.match(stepText, /npm install --global --ignore-scripts \\"npm@\$\{NPM_CLI_VERSION\}\\"/)
+  assert.doesNotMatch(stepText, /npm install --global npm@11\b/)
+  assert.match(stepText, /corepack pnpm install --frozen-lockfile --ignore-scripts/)
 })
 
 test('workflow_dispatch defaults to all packages and dry-run true', () => {
@@ -67,7 +91,7 @@ test('publish job retains preflight, npm version gate, dry-run actions and propa
   assert.match(preflight.run, /release-check\.mjs/)
   assert.match(preflight.run, /--allow-published/)
   assert.match(stepText, /npm >= 11\.5\.1/)
-  assert.match(stepText, /npm install --global npm@11/)
+  assert.match(stepText, /npm install --global --ignore-scripts \\"npm@\$\{NPM_CLI_VERSION\}\\"/)
   assert.match(stepText, /npm publish --access public --tag latest --dry-run/)
   assert.match(stepText, /npm pack --dry-run/)
   assert.match(stepText, /MAX_ATTEMPTS = 60/)

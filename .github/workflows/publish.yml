@@ -26,15 +26,15 @@ on:
         default: true
         type: boolean
 
-# id-token: write 是 OIDC 必需权限；本 workflow 不引用任何 npm token secret。
-# 这里只保留 contents: read + id-token: write，不引入 environment、packages: write
-# 或任何 npm token；Trusted Publisher 四元组保持不变。
+# 顶层只授予最小权限 contents: read；id-token: write 仅下沉到实际执行发布的 publish job。
+# 本 workflow 不引用任何 npm token secret；保持 Trusted Publisher 四元组与 npm 端一致
+# （若未来启用 GitHub Environment 审批闸门，需同步更新 npm 端 Trusted Publisher 配置）。
 permissions:
   contents: read
-  id-token: write
 
 env:
   COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+  NPM_CLI_VERSION: "11.21.3"
 
 # 统一工作区根在仓库根（S1）；各 job 的命令都从仓库根执行，包目录用仓库相对路径。
 
@@ -47,13 +47,24 @@ jobs:
     outputs:
       matrix: ${{ steps.matrix.outputs.matrix }}
     steps:
+      - name: Enforce main branch for real publish
+        if: ${{ !inputs.dry_run }}
+        env:
+          CURRENT_REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          if [ "$CURRENT_REF" != "refs/heads/main" ]; then
+            echo "::error::Real npm publish is restricted to refs/heads/main (got $CURRENT_REF)"
+            exit 1
+          fi
+
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
 
       - name: Setup Node.js 22
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: "22"
 
@@ -83,6 +94,9 @@ jobs:
     needs: plan
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    permissions:
+      contents: read
+      id-token: write
     concurrency:
       group: publish-${{ matrix.package }}
       cancel-in-progress: false
@@ -92,13 +106,24 @@ jobs:
       matrix:
         include: ${{ fromJSON(needs.plan.outputs.matrix) }}
     steps:
+      - name: Enforce main branch before publish
+        if: ${{ matrix.action == 'publish' }}
+        env:
+          CURRENT_REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          if [ "$CURRENT_REF" != "refs/heads/main" ]; then
+            echo "::error::Real npm publish is restricted to refs/heads/main (got $CURRENT_REF)"
+            exit 1
+          fi
+
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
 
       - name: Setup Node.js 22
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: "22"
           registry-url: "https://registry.npmjs.org"
@@ -106,9 +131,9 @@ jobs:
       - name: Enable corepack
         run: corepack enable
 
-      - name: Install npm 11 (Trusted Publishing needs >= 11.5.1)
+      - name: Install pinned npm 11 (Trusted Publishing needs >= 11.5.1)
         run: |
-          npm install --global npm@11
+          npm install --global --ignore-scripts "npm@${NPM_CLI_VERSION}"
           npm --version
           node --input-type=module - <<'JS'
           import { execFileSync } from 'node:child_process'
@@ -155,8 +180,8 @@ jobs:
           echo "::error::$DEPENDENCY is still not published after $((MAX_ATTEMPTS * RETRY_DELAY_SECONDS / 60)) minutes; refusing to publish omnimux-assets"
           exit 1
 
-      - name: Install workspace dependencies
-        run: corepack pnpm install --frozen-lockfile
+      - name: Install workspace dependencies (lifecycle scripts disabled)
+        run: corepack pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Publish or pack without publishing
         env:
