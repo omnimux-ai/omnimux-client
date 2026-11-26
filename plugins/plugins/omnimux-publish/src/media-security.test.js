@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { validateHeaderValue } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, it, beforeEach, afterEach } from 'node:test'
@@ -111,7 +112,44 @@ describe('omnimux-publish media content isolation and MIME allowlist (issue #356
     assert.equal(captured.headers['Content-Type'], 'image/png')
     assert.equal(captured.headers['X-Content-Type-Options'], 'nosniff')
     assert.equal(captured.headers['Content-Security-Policy'], "sandbox; default-src 'none'")
+    assert.equal(captured.headers['Cross-Origin-Resource-Policy'], 'same-origin')
     assert.equal(captured.headers['Content-Disposition'], undefined)
+  })
+
+  it('infers safe MIME on POST /media when Content-Type is application/octet-stream and serves inline', async () => {
+    const { req: upReq, res: upRes, captured: up } = mockReqRes({
+      method: 'POST',
+      url: '/omnimux/publish/media?filename=clip.mkv',
+      headers: { ...LOCAL, 'content-type': 'application/octet-stream' },
+      body: Buffer.from('mkv-fixture-bytes'),
+    })
+    await routeHandler(upReq, upRes)
+    assert.equal(up.status, 200)
+    assert.equal(up.body.media.content_type, 'video/x-matroska')
+    assert.equal(up.body.media.kind, 'video')
+
+    const { req: dlReq, res: dlRes, captured: dl } = mockReqRes({
+      method: 'GET',
+      url: `/omnimux/publish/media/content?id=${encodeURIComponent(up.body.media.id)}`,
+    })
+    await routeHandler(dlReq, dlRes)
+    assert.equal(dl.status, 200)
+    assert.equal(dl.headers['Content-Type'], 'video/x-matroska')
+    assert.equal(dl.headers['Cross-Origin-Resource-Policy'], 'same-origin')
+    assert.equal(dl.headers['Content-Disposition'], undefined)
+  })
+
+  it('rejects active document extensions in importBuffer and importPath even without explicit content_type', () => {
+    assert.throws(
+      () => media.importBuffer(Buffer.from('<svg></svg>'), { filename: 'icon.svg' }),
+      (err) => err instanceof PublishError && err.code === 'unsupported-media-type',
+    )
+    const htmlFile = join(dir, 'page.html')
+    writeFileSync(htmlFile, '<html><script>alert(1)</script></html>')
+    assert.throws(
+      () => media.importPath(htmlFile),
+      (err) => err instanceof PublishError && err.code === 'unsupported-media-type',
+    )
   })
 
   it('forces attachment download and application/octet-stream for legacy non-safe media types on GET /media/content', async () => {
@@ -128,7 +166,7 @@ describe('omnimux-publish media content isolation and MIME allowlist (issue #356
         media: [{
           id: legacyId,
           sha256: legacyId,
-          filename: 'legacy.svg',
+          filename: '测试\r\n"legacy".svg',
           content_type: 'image/svg+xml',
           kind: 'image',
           size: 29,
@@ -157,13 +195,16 @@ describe('omnimux-publish media content isolation and MIME allowlist (issue #356
 
     const { req, res, captured } = mockReqRes({
       method: 'GET',
-      url: `/omnimux/publish/media/content?id=${legacyId}`,
+      url: `/dsh-publish/media/content?id=${legacyId}`,
     })
-    await routes[0].handler(req, res)
+    await routes[1].handler(req, res)
     assert.equal(captured.status, 200)
     assert.equal(captured.headers['Content-Type'], 'application/octet-stream')
     assert.equal(captured.headers['X-Content-Type-Options'], 'nosniff')
     assert.equal(captured.headers['Content-Security-Policy'], "sandbox; default-src 'none'")
-    assert.match(String(captured.headers['Content-Disposition']), /^attachment; filename="legacy\.svg"$/)
+    assert.equal(captured.headers['Cross-Origin-Resource-Policy'], 'same-origin')
+    const disposition = String(captured.headers['Content-Disposition'])
+    assert.doesNotThrow(() => validateHeaderValue('Content-Disposition', disposition))
+    assert.match(disposition, /^attachment; filename="[A-Za-z0-9._-]+"; filename\*=UTF-8''/)
   })
 })

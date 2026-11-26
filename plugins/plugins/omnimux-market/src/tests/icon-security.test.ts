@@ -1,16 +1,19 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, readdirSync, rmSync } from 'node:fs'
-import type { IncomingMessage, ServerResponse } from 'node:http'
+import { createHash } from 'node:crypto'
+import { EventEmitter } from 'node:events'
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import type { ClientRequest, IncomingMessage, ServerResponse } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { PassThrough } from 'node:stream'
 import test from 'node:test'
 import { withDefaults } from '../config-store.js'
 import {
   ICON_SECURITY_HEADERS,
   assertSafePublicHttpsUrl,
   isBlockedIconIp,
-  pruneAvatarDiskCache,
   sniffSafeRasterImageMime,
+  type IconHttpsRequest,
 } from '../icon-guard.js'
 import { handleIcon, type HandleIconDeps } from '../local-api.js'
 
@@ -52,6 +55,12 @@ test('icon proxy blocks non-HTTPS, loopback, private, metadata, and IPv6 reserve
     'https://[::ffff:127.0.0.1]/icon.png',
     'https://[fc00::1]/icon.png',
     'https://[fe80::1]/icon.png',
+    'https://[::ffff:0:127.0.0.1]/icon.png',
+    'https://[64:ff9b:1::127.0.0.1]/icon.png',
+    'https://[2001::1]/icon.png',
+    'https://[3fff::1]/icon.png',
+    'https://[4000::1]/icon.png',
+    'https://example.com:6379/icon.png',
     'https://user:pass@example.com/icon.png',
   ]
   let fetchCalled = 0
@@ -68,8 +77,70 @@ test('icon proxy blocks non-HTTPS, loopback, private, metadata, and IPv6 reserve
   }
   assert.equal(fetchCalled, 0)
   assert.equal(isBlockedIconIp('8.8.8.8'), false)
+  assert.equal(isBlockedIconIp('2606:4700:4700::1111'), false)
   assert.equal(isBlockedIconIp('64:ff9b::1'), true)
+  assert.equal(isBlockedIconIp('64:ff9b:1::127.0.0.1'), true)
+  assert.equal(isBlockedIconIp('::ffff:0:127.0.0.1'), true)
+  assert.equal(isBlockedIconIp('2001::1'), true)
+  assert.equal(isBlockedIconIp('2001:2::1'), true)
+  assert.equal(isBlockedIconIp('3fff::1'), true)
+  assert.equal(isBlockedIconIp('4000::1'), true)
   assert.equal(isBlockedIconIp('fec0::1'), true)
+})
+
+test('icon proxy pins validated DNS IP on socket connect to prevent TOCTOU DNS rebinding', async () => {
+  const tmpHome = mkdtempSync(join(tmpdir(), 'market-icon-pin-'))
+  const prevHome = process.env.DSH_HOME
+  process.env.DSH_HOME = tmpHome
+  try {
+    let lookupCalls = 0
+    let connectedAddress = ''
+    let observedServername = ''
+    let observedAgent: unknown = 'unset'
+    const fakeRequest = ((
+      _url: unknown,
+      opts: { lookup?: (h: string, o: Record<string, unknown>, cb: (err: Error | null, addr: string, fam: number) => void) => void; servername?: string; agent?: unknown },
+      onResponse: (res: IncomingMessage) => void,
+    ) => {
+      observedServername = String(opts.servername || '')
+      observedAgent = opts.agent
+      opts.lookup?.('rebind.example.net', {}, (err, addr) => {
+        assert.equal(err, null)
+        connectedAddress = addr
+      })
+      const req = new EventEmitter() as unknown as ClientRequest
+      ;(req as unknown as { end: () => void }).end = () => {
+        const stream = new PassThrough()
+        const incoming = stream as unknown as IncomingMessage
+        incoming.statusCode = 200
+        incoming.headers = { 'content-type': 'image/png' }
+        onResponse(incoming)
+        stream.end(VALID_PNG)
+      }
+      ;(req as unknown as { destroy: () => void }).destroy = () => {}
+      return req
+    }) as unknown as IconHttpsRequest
+
+    // Simulate a TTL=0 rebinding DNS server that returns a public IP once and 127.0.0.1 if queried again
+    const res = await callIcon('https://rebind.example.net/avatar.png', {
+      lookup: async () => {
+        lookupCalls += 1
+        return lookupCalls === 1
+          ? [{ address: '93.184.216.34', family: 4 }]
+          : [{ address: '127.0.0.1', family: 4 }]
+      },
+      requestImpl: fakeRequest,
+    })
+    assert.equal(res.status, 200)
+    assert.equal(lookupCalls, 1)
+    assert.equal(connectedAddress, '93.184.216.34')
+    assert.equal(observedServername, 'rebind.example.net')
+    assert.equal(observedAgent, false)
+  } finally {
+    if (prevHome === undefined) delete process.env.DSH_HOME
+    else process.env.DSH_HOME = prevHome
+    rmSync(tmpHome, { recursive: true, force: true })
+  }
 })
 
 test('icon proxy blocks DNS rebinding to private IP and rejects non-HTTPS or private redirects', async () => {
@@ -176,7 +247,7 @@ test('icon proxy rejects HTML/SVG/spoofed raster payloads, enforces byte cap, an
     assert.equal(okRes.headers['x-content-type-options'], ICON_SECURITY_HEADERS['x-content-type-options'])
     assert.equal(okRes.headers['content-security-policy'], ICON_SECURITY_HEADERS['content-security-policy'])
 
-    // Subsequent writes beyond cacheMaxEntries prune oldest cached icons
+    // Subsequent writes beyond cacheMaxEntries must be automatically pruned by handleIcon
     for (let i = 1; i <= 3; i += 1) {
       await callIcon(`https://cdn.example.net/avatar-${i}.png`, {
         lookup: publicLookup,
@@ -188,9 +259,50 @@ test('icon proxy rejects HTML/SVG/spoofed raster payloads, enforces byte cap, an
       })
     }
     const cacheDir = join(tmpHome, 'cache', 'market-avatars')
-    pruneAvatarDiskCache(cacheDir, { maxEntries: 2 })
     const binFiles = readdirSync(cacheDir).filter((f) => f.endsWith('.bin'))
-    assert.ok(binFiles.length <= 2, `expected <= 2 cached icons, got ${binFiles.length}`)
+    assert.ok(binFiles.length <= 2, `expected <= 2 cached icons via auto-prune, got ${binFiles.length}`)
+
+    // cacheMaxBytes eviction must also trigger automatically via handleIcon
+    const mediumPng = Buffer.concat([VALID_PNG, Buffer.alloc(60)])
+    for (let i = 1; i <= 3; i += 1) {
+      await callIcon(`https://cdn.example.net/bytes-${i}.png`, {
+        lookup: publicLookup,
+        cacheMaxEntries: 10,
+        cacheMaxBytes: mediumPng.length + 10,
+        fetchImpl: async () => new Response(mediumPng, {
+          status: 200,
+          headers: { 'content-type': 'image/png' },
+        }),
+      })
+    }
+    const afterBytesBin = readdirSync(cacheDir).filter((f) => f.endsWith('.bin'))
+    assert.equal(afterBytesBin.length, 1, `expected 1 cached icon under cacheMaxBytes, got ${afterBytesBin.length}`)
+
+    // Pre-existing disk cache for blocked URLs or symlinked cache files must never be served
+    mkdirSync(cacheDir, { recursive: true })
+    const blockedUrl = 'https://127.0.0.1/cached-evil.png'
+    const blockedHash = createHash('sha256').update(blockedUrl).digest('hex')
+    writeFileSync(join(cacheDir, `${blockedHash}.bin`), VALID_PNG)
+    writeFileSync(join(cacheDir, `${blockedHash}.meta.json`), JSON.stringify({ url: blockedUrl, contentType: 'image/png', savedAt: Date.now() }))
+    const blockedCachedRes = await callIcon(blockedUrl, { lookup: publicLookup })
+    assert.equal(blockedCachedRes.status, 400)
+
+    const symUrl = 'https://cdn.example.net/symlinked-cache.png'
+    const symHash = createHash('sha256').update(symUrl).digest('hex')
+    const outsidePng = join(tmpHome, 'outside.png')
+    writeFileSync(outsidePng, VALID_PNG)
+    symlinkSync(outsidePng, join(cacheDir, `${symHash}.bin`))
+    writeFileSync(join(cacheDir, `${symHash}.meta.json`), JSON.stringify({ url: symUrl, contentType: 'image/png', savedAt: Date.now() }))
+    let fetchedAfterSymlink = 0
+    const symRes = await callIcon(symUrl, {
+      lookup: publicLookup,
+      fetchImpl: async () => {
+        fetchedAfterSymlink += 1
+        return new Response(VALID_PNG, { status: 200, headers: { 'content-type': 'image/png' } })
+      },
+    })
+    assert.equal(symRes.status, 200)
+    assert.equal(fetchedAfterSymlink, 1)
   } finally {
     if (prevHome === undefined) delete process.env.DSH_HOME
     else process.env.DSH_HOME = prevHome

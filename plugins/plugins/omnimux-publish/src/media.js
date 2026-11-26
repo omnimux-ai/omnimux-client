@@ -61,6 +61,19 @@ const ACTIVE_DOCUMENT_TYPES = new Set([
   'text/css',
 ])
 
+const ACTIVE_DOCUMENT_EXTENSIONS = new Set([
+  '.svg',
+  '.svgz',
+  '.html',
+  '.htm',
+  '.xhtml',
+  '.xml',
+  '.js',
+  '.mjs',
+  '.cjs',
+  '.css',
+])
+
 /**
  * Strip parameters and lowercase a Content-Type header/value.
  * @param {unknown} raw
@@ -184,13 +197,20 @@ export function createMediaStore(opts = {}) {
     }
     const sha256 = hashOf('sha256').update(buffer).digest('hex')
     const filename = typeof meta.filename === 'string' && meta.filename.trim() !== '' ? meta.filename.trim() : `${sha256.slice(0, 12)}.bin`
-    const rawContentType = typeof meta.content_type === 'string' && meta.content_type.trim() !== ''
-      ? normalizeMediaContentType(meta.content_type)
-      : contentTypeOf(filename)
-    if (isActiveDocumentContentType(rawContentType)) {
-      throw new PublishError('unsupported-media-type', `unsupported active media content-type: ${rawContentType}`)
+    const fileExt = extname(filename).toLowerCase()
+    if (ACTIVE_DOCUMENT_EXTENSIONS.has(fileExt)) {
+      throw new PublishError('unsupported-media-type', `unsupported active media extension: ${fileExt}`)
     }
-    const contentType = rawContentType || 'application/octet-stream'
+    const providedType = typeof meta.content_type === 'string' && meta.content_type.trim() !== ''
+      ? normalizeMediaContentType(meta.content_type)
+      : ''
+    if (isActiveDocumentContentType(providedType)) {
+      throw new PublishError('unsupported-media-type', `unsupported active media content-type: ${providedType}`)
+    }
+    const inferredType = contentTypeOf(filename)
+    const contentType = (!providedType || (providedType === 'application/octet-stream' && SAFE_INLINE_MEDIA_TYPES.has(inferredType)))
+      ? inferredType
+      : providedType
     const kind = mediaKindOf(contentType)
     const durationSec = kind === 'video' ? probeVideoDurationSec(buffer, contentType, filename) : undefined
     const existing = findRow(sha256)

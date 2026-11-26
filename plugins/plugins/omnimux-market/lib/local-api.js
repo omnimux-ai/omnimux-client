@@ -1,12 +1,12 @@
-import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { createHash, randomBytes } from 'node:crypto';
+import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { clamp, fetchSkillCard, parseSlug } from './api.js';
 import { parseCategory } from './categories.js';
 import { assignConfig, dshHome, publicConfig, sanitizePatch, sanitizeSortBy, writeOverlay } from './config-store.js';
 import { HttpError, configureHttpJsonCache } from './http.js';
-import { ICON_SECURITY_HEADERS, MAX_ICON_BYTES, fetchSafeIconBytes, normalizeSafeRasterMime, pruneAvatarDiskCache, sniffSafeRasterImageMime, } from './icon-guard.js';
+import { ICON_SECURITY_HEADERS, MAX_ICON_BYTES, assertSafeIconUrlSyntax, fetchSafeIconBytes, normalizeSafeRasterMime, pruneAvatarDiskCache, sniffSafeRasterImageMime, } from './icon-guard.js';
 import { BOOT_ID, progress, publicInstallStatus } from './dsh-cli.js';
 import { decorateCatalog, loadCatalog } from './expert/catalog.js';
 import { findItem, installItem, readCatalogSkillMarkdown, readLocalBundledSkillMarkdown, removeMcpRow, resolveLocalBundledSkillDir, withConnectorPatchLock, } from './expert/install.js';
@@ -934,19 +934,25 @@ function resolveAvatarDiskCache(targetUrl) {
         const hash = createHash('sha256').update(targetUrl).digest('hex');
         const filePath = join(cacheDir, `${hash}.bin`);
         const metaPath = join(cacheDir, `${hash}.meta.json`);
-        if (existsSync(filePath) && existsSync(metaPath)) {
-            const meta = JSON.parse(readFileSync(metaPath, 'utf8'));
-            const safeMetaType = normalizeSafeRasterMime(typeof meta.contentType === 'string' ? meta.contentType : '');
-            if (!safeMetaType)
-                return null;
-            const bytes = readFileSync(filePath);
-            if (bytes.length > MAX_ICON_BYTES)
-                return null;
-            const sniffed = sniffSafeRasterImageMime(bytes);
-            if (!sniffed)
-                return null;
-            return { path: filePath, contentType: sniffed, bytes };
-        }
+        if (!existsSync(filePath) || !existsSync(metaPath))
+            return null;
+        const binStat = lstatSync(filePath);
+        const metaStat = lstatSync(metaPath);
+        if (binStat.isSymbolicLink() || !binStat.isFile() || binStat.size <= 0 || binStat.size > MAX_ICON_BYTES)
+            return null;
+        if (metaStat.isSymbolicLink() || !metaStat.isFile() || metaStat.size > 16 * 1024)
+            return null;
+        const meta = JSON.parse(readFileSync(metaPath, 'utf8'));
+        const safeMetaType = normalizeSafeRasterMime(typeof meta.contentType === 'string' ? meta.contentType : '');
+        if (!safeMetaType)
+            return null;
+        const bytes = readFileSync(filePath);
+        if (bytes.length > MAX_ICON_BYTES)
+            return null;
+        const sniffed = sniffSafeRasterImageMime(bytes);
+        if (!sniffed)
+            return null;
+        return { path: filePath, contentType: sniffed, bytes };
     }
     catch { }
     return null;
@@ -954,20 +960,30 @@ function resolveAvatarDiskCache(targetUrl) {
 function saveAvatarDiskCache(targetUrl, body, contentType, limits) {
     if (body.length === 0 || body.length > MAX_ICON_BYTES)
         return;
+    const cacheDir = getAvatarCacheDir();
+    const hash = createHash('sha256').update(targetUrl).digest('hex');
+    const filePath = join(cacheDir, `${hash}.bin`);
+    const metaPath = join(cacheDir, `${hash}.meta.json`);
+    const nonce = `${process.pid}.${Date.now()}.${randomBytes(6).toString('hex')}`;
+    const tmpBin = `${filePath}.${nonce}.tmp`;
+    const tmpMeta = `${metaPath}.${nonce}.tmp`;
     try {
-        const cacheDir = getAvatarCacheDir();
-        const hash = createHash('sha256').update(targetUrl).digest('hex');
-        const filePath = join(cacheDir, `${hash}.bin`);
-        const metaPath = join(cacheDir, `${hash}.meta.json`);
-        const tmpBin = `${filePath}.${process.pid}.${Date.now()}.tmp`;
-        const tmpMeta = `${metaPath}.${process.pid}.${Date.now()}.tmp`;
         writeFileSync(tmpBin, body);
         renameSync(tmpBin, filePath);
         writeFileSync(tmpMeta, JSON.stringify({ url: targetUrl, contentType, savedAt: Date.now() }));
         renameSync(tmpMeta, metaPath);
         pruneAvatarDiskCache(cacheDir, limits);
     }
-    catch { }
+    catch {
+        try {
+            rmSync(tmpBin, { force: true });
+        }
+        catch { }
+        try {
+            rmSync(tmpMeta, { force: true });
+        }
+        catch { }
+    }
 }
 export async function handleIcon(req, res, cfg, deps) {
     try {
@@ -999,7 +1015,9 @@ export async function handleIcon(req, res, cfg, deps) {
             res.end(bytes);
             return;
         }
-        // 2. 本地持久化磁盘缓存命中，直接从本地磁盘加载，不走云端
+        // 2. 校验远程 URL 语法与安全边界（禁止在读磁盘缓存前绕过 https / 主机 / 端口校验）
+        assertSafeIconUrlSyntax(target);
+        // 3. 本地持久化磁盘缓存命中，直接从本地磁盘加载，不走云端
         const cached = resolveAvatarDiskCache(target);
         if (cached) {
             res.statusCode = 200;
@@ -1009,20 +1027,15 @@ export async function handleIcon(req, res, cfg, deps) {
             res.end(cached.bytes);
             return;
         }
-        if (!/^https:\/\//i.test(target)) {
-            res.statusCode = 400;
-            applyIconSecurityHeaders(res);
-            res.end('bad url');
-            return;
-        }
         const { body, contentType } = await fetchSafeIconBytes(target, {
             timeoutMs: Math.min(cfg.timeoutMs, 15000),
             userAgent: cfg.userAgent,
             maxBytes: deps?.maxBytes,
             lookup: deps?.lookup,
             fetchImpl: deps?.fetchImpl,
+            requestImpl: deps?.requestImpl,
         });
-        // 3. 首次拉取后持久化存入本地磁盘缓存（受条数与总容量配额约束）
+        // 4. 首次拉取后持久化存入本地磁盘缓存（受条数与总容量配额约束）
         saveAvatarDiskCache(target, body, contentType, {
             maxEntries: deps?.cacheMaxEntries,
             maxBytes: deps?.cacheMaxBytes,
@@ -1035,7 +1048,8 @@ export async function handleIcon(req, res, cfg, deps) {
     }
     catch (err) {
         applyIconSecurityHeaders(res);
-        if (err instanceof HttpError && err.status && (err.status === 400 || err.status === 413 || err.status === 415)) {
+        res.setHeader('content-type', 'text/plain; charset=utf-8');
+        if (err instanceof HttpError && err.status && (err.status === 400 || err.status === 413 || err.status === 415 || err.status === 504)) {
             res.statusCode = err.status;
             res.end(err.message);
             return;

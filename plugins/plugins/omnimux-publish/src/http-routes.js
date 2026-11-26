@@ -1,7 +1,7 @@
 /** Official webServer routes; domain operations live in the shared dispatcher. */
 import { PublishError } from './publish-error.js'
 import { STATUS_BY_CODE, sendJson, readJsonBody, readRawBody, assertLocalWrite, header, messageOf } from './http-helpers.js'
-import { SAFE_INLINE_MEDIA_TYPES, isAllowedHttpUploadMedia, normalizeMediaContentType } from './media.js'
+import { SAFE_INLINE_MEDIA_TYPES, contentTypeOf, isAllowedHttpUploadMedia, normalizeMediaContentType } from './media.js'
 export { createPublishDispatcher } from './publish-dispatcher.js'
 export { sendJson, readJsonBody, readRawBody, assertLocalWrite } from './http-helpers.js'
 
@@ -11,10 +11,19 @@ const MEDIA_SECURITY_HEADERS = {
   'Cross-Origin-Resource-Policy': 'same-origin',
 }
 
-/** @param {string | undefined} raw */
-function safeAttachmentName(raw) {
-  const base = String(raw || 'media.bin').replace(/[\r\n"\\/]+/g, '_').trim()
-  return base || 'media.bin'
+/**
+ * Build a strictly valid RFC 6266 / RFC 5987 Content-Disposition header value so
+ * non-ASCII or control characters in filenames never trigger Node ERR_INVALID_CHAR.
+ * @param {string | undefined} raw
+ */
+function buildSafeAttachmentDisposition(raw) {
+  const cleaned = String(raw || 'media.bin').replace(/[\u0000-\u001f\u007f"\\/]+/g, '_').trim() || 'media.bin'
+  const ascii = cleaned.replace(/[^A-Za-z0-9._-]+/g, '_').replace(/^[._]+/, '') || 'media.bin'
+  if (ascii === cleaned) {
+    return `attachment; filename="${ascii}"`
+  }
+  const encoded = encodeURIComponent(cleaned).replace(/['()*]/g, (ch) => `%${ch.charCodeAt(0).toString(16).toUpperCase()}`)
+  return `attachment; filename="${ascii}"; filename*=UTF-8''${encoded}`
 }
 
 /**
@@ -132,7 +141,7 @@ export function registerPublishRoutes(webServer, dispatcher, deps = {}) {
             'Cache-Control': 'private, max-age=86400',
           }
           if (!inlineSafe) {
-            headers['Content-Disposition'] = `attachment; filename="${safeAttachmentName(meta.filename)}"`
+            headers['Content-Disposition'] = buildSafeAttachmentDisposition(meta.filename)
           }
           res.writeHead(200, headers)
           res.end(buffer)
@@ -149,9 +158,13 @@ export function registerPublishRoutes(webServer, dispatcher, deps = {}) {
           sendJson(res, 415, { error: 'unsupported-media-type', message: 'only safe image, video, and audio media uploads are allowed' })
           return
         }
+        const normalizedReqType = normalizeMediaContentType(reqContentType)
+        const effectiveContentType = (!normalizedReqType || normalizedReqType === 'application/octet-stream') && filename
+          ? contentTypeOf(filename)
+          : (normalizedReqType || undefined)
         const buffer = await readRawBody(req)
         sendJson(res, 200, dispatcher.importMedia(buffer, {
-          filename, content_type: reqContentType,
+          filename, content_type: effectiveContentType,
         }))
         return
       }

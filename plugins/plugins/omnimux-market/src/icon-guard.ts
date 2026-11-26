@@ -1,10 +1,13 @@
 import { lookup as dnsLookup } from 'node:dns/promises'
-import { existsSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs'
+import { existsSync, lstatSync, readdirSync, readFileSync, rmSync } from 'node:fs'
+import { request as httpsRequest, type RequestOptions as HttpsRequestOptions } from 'node:https'
 import { isIP } from 'node:net'
 import { join } from 'node:path'
+import { Readable } from 'node:stream'
 import { HttpError } from './http.js'
 
 export type IconDnsLookup = (hostname: string) => Promise<Array<{ address: string; family?: number }>>
+export type IconHttpsRequest = typeof httpsRequest
 
 export const MAX_ICON_BYTES = 2 * 1024 * 1024
 export const MAX_ICON_REDIRECTS = 5
@@ -129,22 +132,23 @@ function isBlockedIpv6(ip: string): boolean {
   if (!words) return true
   const [w0, w1, w2, w3, w4, w5, w6, w7] = words as [number, number, number, number, number, number, number, number]
   const zeroPrefix = w0 === 0 && w1 === 0 && w2 === 0 && w3 === 0 && w4 === 0
-  if (zeroPrefix && w5 === 0 && w6 === 0 && (w7 === 0 || w7 === 1)) return true
-  if (zeroPrefix && (w5 === 0xffff || w5 === 0)) {
+  // ::ffff:0:0/96 (IPv4-mapped IPv6) -> check embedded IPv4
+  if (zeroPrefix && w5 === 0xffff) {
     const embedded = `${(w6 >> 8) & 0xff}.${w6 & 0xff}.${(w7 >> 8) & 0xff}.${w7 & 0xff}`
     return isBlockedIpv4(embedded)
   }
-  if (w0 === 0x0064 && w1 === 0xff9b && w2 === 0 && w3 === 0 && w4 === 0 && w5 === 0) return true
-  if (w0 === 0x0100 && w1 === 0 && w2 === 0 && w3 === 0) return true
+  // Fail-closed: only global unicast 2000::/3 is permitted outside IPv4-mapped public addresses.
+  // This blocks ::/128, ::1/128, ::/96, ::ffff:0:0:0/96 (RFC 2765), 64:ff9b::/96, 64:ff9b:1::/48,
+  // 100::/64, fc00::/7, fe80::/10, fec0::/10, ff00::/8, and unallocated ranges (e.g. 4000::/2).
+  if ((w0 & 0xe000) !== 0x2000) return true
+  // 2001::/23 (IETF protocol assignments, including Teredo 2001::/32 and benchmarking 2001:2::/48)
+  if (w0 === 0x2001 && w1 < 0x0200) return true
+  // 2001:db8::/32 (documentation)
   if (w0 === 0x2001 && w1 === 0x0db8) return true
-  if (w0 === 0x2002) {
-    const embedded = `${(w1 >> 8) & 0xff}.${w1 & 0xff}.${(w2 >> 8) & 0xff}.${w2 & 0xff}`
-    return isBlockedIpv4(embedded)
-  }
-  if ((w0 & 0xfe00) === 0xfc00) return true
-  if ((w0 & 0xffc0) === 0xfe80) return true
-  if ((w0 & 0xffc0) === 0xfec0) return true
-  if ((w0 & 0xff00) === 0xff00) return true
+  // 2002::/16 (deprecated 6to4)
+  if (w0 === 0x2002) return true
+  // 3fff::/20 (RFC 9637 documentation)
+  if (w0 === 0x3fff && w1 < 0x1000) return true
   return false
 }
 
@@ -252,10 +256,7 @@ async function defaultLookupWithTimeout(hostname: string): Promise<Array<{ addre
   }
 }
 
-export async function assertSafePublicHttpsUrl(
-  rawUrl: string,
-  lookup?: IconDnsLookup,
-): Promise<URL> {
+export function assertSafeIconUrlSyntax(rawUrl: string): URL {
   let parsed: URL
   try {
     parsed = new URL(rawUrl)
@@ -265,6 +266,9 @@ export async function assertSafePublicHttpsUrl(
   if (parsed.protocol !== 'https:') {
     throw new HttpError('only https icon URLs are allowed', 400)
   }
+  if (parsed.port !== '' && parsed.port !== '443') {
+    throw new HttpError('non-default HTTPS port is not allowed for icon URLs', 400)
+  }
   if (parsed.username || parsed.password) {
     throw new HttpError('credentials in icon URL are not allowed', 400)
   }
@@ -272,25 +276,56 @@ export async function assertSafePublicHttpsUrl(
   if (isBlockedIconHostname(host)) {
     throw new HttpError('blocked private or loopback icon target', 400)
   }
-  const withoutZone = host.split('%')[0] ?? host
-  if (isIP(withoutZone) === 0) {
-    const lookupFn = lookup ?? defaultLookupWithTimeout
-    let addresses: Array<{ address: string; family?: number }>
-    try {
-      addresses = await lookupFn(host)
-    } catch {
-      throw new HttpError('icon host DNS resolution failed', 400)
-    }
-    if (!Array.isArray(addresses) || addresses.length === 0) {
-      throw new HttpError('icon host resolved to no addresses', 400)
-    }
-    for (const entry of addresses) {
-      if (!entry || typeof entry.address !== 'string' || isBlockedIconIp(entry.address)) {
-        throw new HttpError('icon host resolved to blocked IP', 400)
-      }
-    }
-  }
   return parsed
+}
+
+interface ResolvedSafeHttpsTarget {
+  url: URL
+  host: string
+  addresses: Array<{ address: string; family: 4 | 6 }>
+}
+
+async function resolveSafePublicHttpsTarget(
+  rawUrl: string,
+  lookup?: IconDnsLookup,
+): Promise<ResolvedSafeHttpsTarget> {
+  const parsed = assertSafeIconUrlSyntax(rawUrl)
+  const host = normalizeHostname(parsed.hostname)
+  const withoutZone = host.split('%')[0] ?? host
+  const literalFamily = isIP(withoutZone)
+  if (literalFamily === 4 || literalFamily === 6) {
+    return { url: parsed, host, addresses: [{ address: withoutZone, family: literalFamily }] }
+  }
+  const lookupFn = lookup ?? defaultLookupWithTimeout
+  let rawAddresses: Array<{ address: string; family?: number }>
+  try {
+    rawAddresses = await lookupFn(host)
+  } catch {
+    throw new HttpError('icon host DNS resolution failed', 400)
+  }
+  if (!Array.isArray(rawAddresses) || rawAddresses.length === 0) {
+    throw new HttpError('icon host resolved to no addresses', 400)
+  }
+  const validated: Array<{ address: string; family: 4 | 6 }> = []
+  for (const entry of rawAddresses) {
+    if (!entry || typeof entry.address !== 'string' || isBlockedIconIp(entry.address)) {
+      throw new HttpError('icon host resolved to blocked IP', 400)
+    }
+    const family = isIP(entry.address)
+    if (family !== 4 && family !== 6) {
+      throw new HttpError('icon host resolved to invalid IP', 400)
+    }
+    validated.push({ address: entry.address, family })
+  }
+  return { url: parsed, host, addresses: validated }
+}
+
+export async function assertSafePublicHttpsUrl(
+  rawUrl: string,
+  lookup?: IconDnsLookup,
+): Promise<URL> {
+  const resolved = await resolveSafePublicHttpsTarget(rawUrl, lookup)
+  return resolved.url
 }
 
 async function readBoundedResponseBuffer(res: Response, maxBytes: number): Promise<Buffer> {
@@ -335,6 +370,78 @@ export interface SafeIconFetchOptions {
   maxRedirects?: number
   lookup?: IconDnsLookup
   fetchImpl?: typeof fetch
+  requestImpl?: IconHttpsRequest
+}
+
+/**
+ * Single-hop HTTPS transport pinning the exact pre-validated DNS IP on socket connect
+ * so a TTL=0 DNS rebinding response cannot redirect the TCP connection to an internal host.
+ */
+function pinnedHttpsFetch(
+  target: ResolvedSafeHttpsTarget,
+  headers: Record<string, string>,
+  signal: AbortSignal,
+  requestImpl: IconHttpsRequest = httpsRequest,
+): Promise<Response> {
+  return new Promise((resolve, reject) => {
+    const pinnedLookup: NonNullable<HttpsRequestOptions['lookup']> = (_hostname, opts, cb) => {
+      const callback = typeof opts === 'function' ? opts : cb
+      const all = typeof opts === 'object' && opts !== null && opts.all === true
+      if (all) {
+        ;(callback as (err: NodeJS.ErrnoException | null, addresses: Array<{ address: string; family: number }>) => void)(
+          null,
+          target.addresses.map((entry) => ({ address: entry.address, family: entry.family })),
+        )
+      } else {
+        const first = target.addresses[0]!
+        ;(callback as (err: NodeJS.ErrnoException | null, address: string, family: number) => void)(
+          null,
+          first.address,
+          first.family,
+        )
+      }
+    }
+
+    const reqOptions: HttpsRequestOptions = {
+      method: 'GET',
+      headers: { ...headers, 'accept-encoding': 'identity' },
+      signal,
+      agent: false,
+      lookup: pinnedLookup,
+      ...(isIP(target.host) === 0 ? { servername: target.host } : {}),
+    }
+
+    const req = requestImpl(target.url, reqOptions, (incoming) => {
+      try {
+        const status = incoming.statusCode ?? 500
+        if (!Number.isInteger(status) || status < 200 || status > 599) {
+          incoming.destroy()
+          reject(new HttpError('unsupported HTTP status', 502))
+          return
+        }
+        const resHeaders = new Headers()
+        for (const [key, value] of Object.entries(incoming.headers)) {
+          if (value !== undefined) {
+            resHeaders.set(key, Array.isArray(value) ? value.join(', ') : String(value))
+          }
+        }
+        if (status === 204 || status === 205 || status === 304 || (status >= 300 && status < 400)) {
+          incoming.on('error', reject)
+          incoming.resume()
+          resolve(new Response(null, { status, headers: resHeaders }))
+          return
+        }
+        const webStream = Readable.toWeb(incoming) as ReadableStream<Uint8Array>
+        resolve(new Response(webStream, { status, headers: resHeaders }))
+      } catch (error) {
+        incoming.destroy()
+        req.destroy()
+        reject(error)
+      }
+    })
+    req.on('error', reject)
+    req.end()
+  })
 }
 
 export async function fetchSafeIconBytes(
@@ -344,21 +451,27 @@ export async function fetchSafeIconBytes(
 ): Promise<{ body: Buffer; contentType: string }> {
   const maxBytes = options.maxBytes ?? MAX_ICON_BYTES
   const maxRedirects = options.maxRedirects ?? MAX_ICON_REDIRECTS
-  const fetchImpl = options.fetchImpl ?? globalThis.fetch
-  let current = await assertSafePublicHttpsUrl(rawUrl, options.lookup)
+  let current = await resolveSafePublicHttpsTarget(rawUrl, options.lookup)
 
   const ctrl = new AbortController()
   const timer = setTimeout(() => ctrl.abort(), options.timeoutMs)
   const onAbort = () => ctrl.abort()
   signal?.addEventListener('abort', onAbort, { once: true })
 
+  const reqHeaders = {
+    'user-agent': options.userAgent,
+    accept: 'image/png,image/jpeg,image/webp,image/gif,image/x-icon,image/avif,*/*;q=0.1',
+  }
+
   try {
     for (let hop = 0; hop <= maxRedirects; hop += 1) {
-      const res = await fetchImpl(current.href, {
-        signal: ctrl.signal,
-        headers: { 'user-agent': options.userAgent, accept: 'image/png,image/jpeg,image/webp,image/gif,image/x-icon,image/avif,*/*;q=0.1' },
-        redirect: 'manual',
-      })
+      const res = options.fetchImpl
+        ? await options.fetchImpl(current.url.href, {
+            signal: ctrl.signal,
+            headers: reqHeaders,
+            redirect: 'manual',
+          })
+        : await pinnedHttpsFetch(current, reqHeaders, ctrl.signal, options.requestImpl)
       if (res.status === 301 || res.status === 302 || res.status === 303 || res.status === 307 || res.status === 308) {
         await res.body?.cancel?.().catch(() => {})
         const location = res.headers.get('location')
@@ -366,11 +479,11 @@ export async function fetchSafeIconBytes(
         if (hop >= maxRedirects) throw new HttpError('too many icon redirects', 502)
         let nextHref: string
         try {
-          nextHref = new URL(location, current).href
+          nextHref = new URL(location, current.url).href
         } catch {
           throw new HttpError('invalid redirect target', 400)
         }
-        current = await assertSafePublicHttpsUrl(nextHref, options.lookup)
+        current = await resolveSafePublicHttpsTarget(nextHref, options.lookup)
         continue
       }
       if (!res.ok) {
@@ -393,7 +506,7 @@ export async function fetchSafeIconBytes(
   } catch (err) {
     if (err instanceof HttpError) throw err
     const name = err instanceof Error ? err.name : ''
-    if (name === 'AbortError') throw new HttpError(`timeout ${options.timeoutMs}ms`, 504)
+    if (name === 'AbortError' || ctrl.signal.aborted) throw new HttpError(`timeout ${options.timeoutMs}ms`, 504)
     throw new HttpError(err instanceof Error ? err.message : String(err), 502)
   } finally {
     clearTimeout(timer)
@@ -412,19 +525,34 @@ export function pruneAvatarDiskCache(
     const files = readdirSync(cacheDir)
     const entries: Array<{ hash: string; binPath: string; metaPath: string; size: number; savedAt: number }> = []
     let totalBytes = 0
+    const now = Date.now()
     for (const file of files) {
+      if (file.endsWith('.tmp')) {
+        const tmpPath = join(cacheDir, file)
+        try {
+          const st = lstatSync(tmpPath)
+          if (!st.isSymbolicLink() && st.isFile() && now - st.mtimeMs > 60_000) {
+            rmSync(tmpPath, { force: true })
+          }
+        } catch {}
+        continue
+      }
       if (!file.endsWith('.bin')) continue
       const hash = file.slice(0, -'.bin'.length)
       const binPath = join(cacheDir, file)
       const metaPath = join(cacheDir, `${hash}.meta.json`)
       try {
-        const st = statSync(binPath)
+        const st = lstatSync(binPath)
+        if (st.isSymbolicLink() || !st.isFile()) continue
         let savedAt = st.mtimeMs
         if (existsSync(metaPath)) {
           try {
-            const parsed = JSON.parse(readFileSync(metaPath, 'utf8')) as { savedAt?: unknown }
-            if (typeof parsed.savedAt === 'number' && Number.isFinite(parsed.savedAt)) {
-              savedAt = parsed.savedAt
+            const metaSt = lstatSync(metaPath)
+            if (!metaSt.isSymbolicLink() && metaSt.isFile() && metaSt.size <= 16 * 1024) {
+              const parsed = JSON.parse(readFileSync(metaPath, 'utf8')) as { savedAt?: unknown }
+              if (typeof parsed.savedAt === 'number' && Number.isFinite(parsed.savedAt)) {
+                savedAt = parsed.savedAt
+              }
             }
           } catch {}
         }
