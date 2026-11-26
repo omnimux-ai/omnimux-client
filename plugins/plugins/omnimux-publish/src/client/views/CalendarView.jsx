@@ -42,7 +42,7 @@ export function CalendarView({ t, records, onOpen }) {
     <div className="omnimux-publish-cal-wrap">
       <div className="omnimux-publish-cal-top">
         <div className="omnimux-publish-cal-month-label">
-          {year} 年 {month + 1} 月
+          {t('calendar.monthLabel', { year, month: month + 1 })}
         </div>
         <div className="omnimux-publish-cal-controls">
           <div className="omnimux-publish-week-btn-group">
@@ -51,14 +51,14 @@ export function CalendarView({ t, records, onOpen }) {
               size="xs"
               onClick={() => setWeekStart('sun')}
             >
-              周日
+              {t('calendar.weekSun')}
             </Button>
             <Button
               variant={weekStart === 'mon' ? 'secondary' : 'ghost'}
               size="xs"
               onClick={() => setWeekStart('mon')}
             >
-              周一
+              {t('calendar.weekMon')}
             </Button>
           </div>
         </div>
@@ -89,13 +89,13 @@ export function CalendarView({ t, records, onOpen }) {
               <div className="omnimux-publish-cal-tasks">
                 {dayRecords.slice(0, 2).map((rec) => {
                   const status = displayStatus(rec)
-                  const label = statusText(status)
+                  const label = statusText(status, t)
                   const title = String(rec.title || rec.description || rec.id)
                   return (
                     <div
                       key={String(rec.id)}
                       className={`omnimux-publish-cal-pill ${status}`}
-                      title={`${label} · ${title}`}
+                      title={`${label} - ${title}`}
                       onClick={() => onOpen(rec)}
                     >
                       <span className="omnimux-publish-cal-pill-title">{title}</span>
@@ -103,7 +103,7 @@ export function CalendarView({ t, records, onOpen }) {
                   )
                 })}
                 {dayRecords.length > 2 ? (
-                  <span className="omnimux-publish-cal-more">+{dayRecords.length - 2} 更多</span>
+                  <span className="omnimux-publish-cal-more">{t('calendar.more', { count: dayRecords.length - 2 })}</span>
                 ) : null}
               </div>
             </div>

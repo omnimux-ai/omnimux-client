@@ -1,10 +1,19 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import { aggregateStatus, displayStatus, statusText, STATUS_LABEL } from './status-display.js'
+import { en, zh } from './locales.js'
 import {
   aggregateStatus as sharedAggregate,
   displayStatus as sharedDisplay,
 } from '../shared/record-status.js'
+
+function makeT(dict) {
+  return (key, vars = {}) => {
+    const raw = dict[key]
+    if (typeof raw !== 'string') return key
+    return raw.replace(/\{(\w+)\}/g, (_m, k) => (k in vars ? String(vars[k]) : `{${k}}`))
+  }
+}
 
 describe('status-display: 单真源 re-export 与六态中文映射', () => {
   it('算法直接 re-export 共享纯函数（同一函数引用，无本地拷贝）', () => {
@@ -23,6 +32,20 @@ describe('status-display: 单真源 re-export 与六态中文映射', () => {
     assert.equal(statusText('published'), '已发布')
     assert.equal(statusText('sent_to_inbox'), '已送达草稿箱')
     assert.equal(statusText('reviewing'), '审核中')
+  })
+
+  it('statusText 传入 t 时返回对应语言（英文/中文），未匹配时回退 STATUS_LABEL', () => {
+    const tEn = makeT(en)
+    const tZh = makeT(zh)
+    assert.equal(statusText('draft', tEn), 'Draft')
+    assert.equal(statusText('publishing', tEn), 'Publishing')
+    assert.equal(statusText('reviewing', tEn), 'In Review')
+    assert.equal(statusText('sent_to_inbox', tEn), 'Sent to Inbox Draft')
+    assert.equal(statusText('published', tEn), 'Published')
+    assert.equal(statusText('partial_failed', tEn), 'Partial Failure')
+    assert.equal(statusText('failed', tEn), 'Failed')
+    assert.equal(statusText('published', tZh), '已发布')
+    assert.equal(statusText('published', (key) => key), '已发布')
   })
 
   it('aggregateStatus 遵循共享契约：in-flight 优先于失败', () => {

@@ -164,7 +164,11 @@ export function AccountPanel({ t, selectedIds, onManageAccounts, onRowsLoaded, o
         </div>
       )}
       <div className="omnimux-publish-accounts-foot">
-        {t('accounts.selected', { count: validSelectedIds.length })}
+        {(() => {
+          const key = validSelectedIds.length === 1 ? 'accounts.selected.one' : 'accounts.selected'
+          const label = t(key, { count: validSelectedIds.length })
+          return label !== key ? label : t('accounts.selected', { count: validSelectedIds.length })
+        })()}
       </div>
     </aside>
   )

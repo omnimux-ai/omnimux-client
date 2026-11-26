@@ -124,7 +124,7 @@ export function RecordsTable({
             const id = String(record.id)
             const isSelected = selectedIds.has(id)
             const status = displayStatus(record)
-            const statusLabel = statusText(status)
+            const statusLabel = statusText(status, t)
             const isDraft = record.status === 'draft' || status === 'draft'
             const title = String(record.title || record.description || id)
             const isVideo = record.type === 'video'

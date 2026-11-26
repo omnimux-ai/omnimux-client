@@ -22,10 +22,19 @@ export const STATUS_LABEL = {
 }
 
 /**
- * 返回状态的中文文本
+ * 返回状态的本地化文本；传入 `t` 时优先读取 `agg.<status>` 词典，缺省回退中文单真源。
  * @param {string} status
+ * @param {(key: string, vars?: Record<string, unknown>) => string} [t]
  * @returns {string}
  */
-export function statusText(status) {
+export function statusText(status, t) {
+  const normalized = status || 'draft'
+  if (typeof t === 'function') {
+    const key = `agg.${normalized}`
+    const translated = t(key)
+    if (typeof translated === 'string' && translated !== '' && translated !== key) {
+      return translated
+    }
+  }
   return STATUS_LABEL[status] || status || '草稿'
 }
