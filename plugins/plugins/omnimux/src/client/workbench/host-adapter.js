@@ -6,26 +6,67 @@
  * Tab 列表）与服务等待/会话判定也归这里，纯计算归 geometry/focus-state。
  */
 
-/** @type {{ betterSidebar?: object | null, sidebarRight?: object | null, layout?: object | null, sessions?: object | null }} */
+/** @type {{
+ *   betterSidebar?: object | null,
+ *   sidebarRight?: object | null,
+ *   layout?: object | null,
+ *   sessions?: object | null,
+ *   workspaces?: object | null,
+ *   uiWorkspace?: object | null,
+ *   getSessionNavigation?: (() => object | null | undefined) | null,
+ * }} */
 const deps = {
   betterSidebar: null,
   sidebarRight: null,
   layout: null,
   sessions: null,
+  workspaces: null,
+  uiWorkspace: null,
+  getSessionNavigation: null,
 }
+
+/** @type {string | undefined} 最近一次在屏的非空会话 id（内存级缓存，供非会话页切回上下文）。 */
+let lastMountedSessionId = undefined
 
 /** @type {object | null} 当前装配层 attach 的 better-sidebar Tab store。 */
 let attachedStore = null
 
 /** Sessions whose initial sidebar snapshot was classified for default seed cleanup. */
 const classifiedSeedSessions = new Set()
+/** 按 workspaceId 合并并发零会话自动建会话请求，避免连点产生重复空白会话。 */
+const inflightWorkspaceSessionCreates = new Map()
 const SIDEBAR_LAYOUT_STORAGE_PREFIX = 'dsh-sidebar:v1:'
+
+/**
+ * 记录最近一次非空的在屏会话 id。
+ * 进入插件/设置等非会话页时 `mounted` 会变为 `undefined`，此处只收非空字符串，保留原上下文。
+ * @param {unknown} sessionId
+ * @returns {string | undefined}
+ */
+export function recordMountedSessionId(sessionId) {
+  if (typeof sessionId === 'string' && sessionId.trim() !== '') {
+    lastMountedSessionId = sessionId
+  }
+  return lastMountedSessionId
+}
+
+export function getLastMountedSessionId() {
+  return lastMountedSessionId
+}
 
 export function bindWorkbenchDeps(next = {}) {
   if (next.betterSidebar !== undefined) deps.betterSidebar = next.betterSidebar || null
-  if (next.sidebarRight !== undefined) deps.sidebarRight = next.sidebarRight || null
+  if (next.sidebarRight !== undefined) {
+    deps.sidebarRight = next.sidebarRight || null
+    if (deps.sidebarRight) recordMountedSessionId(mountedSessionId(deps.sidebarRight))
+  }
   if (next.layout !== undefined) deps.layout = next.layout || null
   if (next.sessions !== undefined) deps.sessions = next.sessions || null
+  if (next.workspaces !== undefined) deps.workspaces = next.workspaces || null
+  if (next.uiWorkspace !== undefined) deps.uiWorkspace = next.uiWorkspace || null
+  if (next.getSessionNavigation !== undefined) {
+    deps.getSessionNavigation = typeof next.getSessionNavigation === 'function' ? next.getSessionNavigation : null
+  }
 }
 
 export function getWorkbenchService() {
@@ -38,6 +79,18 @@ export function getWorkbenchSidebarRight() {
 
 export function getWorkbenchLayout() {
   return deps.layout || null
+}
+
+export function getWorkbenchWorkspaces() {
+  return deps.workspaces || null
+}
+
+export function getWorkbenchUiWorkspace() {
+  return deps.uiWorkspace || null
+}
+
+export function getWorkbenchSessionNavigation() {
+  return deps.getSessionNavigation || null
 }
 
 /**
@@ -88,8 +141,13 @@ export function resetWorkbenchHostAdapter() {
   deps.sidebarRight = null
   deps.layout = null
   deps.sessions = null
+  deps.workspaces = null
+  deps.uiWorkspace = null
+  deps.getSessionNavigation = null
+  lastMountedSessionId = undefined
   attachedStore = null
   classifiedSeedSessions.clear()
+  inflightWorkspaceSessionCreates.clear()
 }
 
 export function hostWindow() {
@@ -217,6 +275,301 @@ export function currentSessionId(sessions = deps.sessions) {
 export async function ensureSessionId(sessions, explicitId) {
   if (explicitId) return String(explicitId)
   return currentSessionId(sessions)
+}
+
+/**
+ * 当前宿主是否提供 `sidebarRight.mounted` 读面（Next/rc.3+ 为 true，老壳/无此服务测试为 false）。
+ * @param {object | null | undefined} [sidebarRight]
+ * @returns {boolean}
+ */
+export function hasMountedSessionFeed(sidebarRight = deps.sidebarRight) {
+  try {
+    return typeof sidebarRight?.mounted?.getSnapshot === 'function'
+  } catch (error) {
+    console.debug('[omnimux-workbench] sidebarRight.mounted availability check failed', error)
+    return false
+  }
+}
+
+/**
+ * 解析主区会话导航接缝：优先 `uiWorkspace.openSession`（显式注入 → 懒 `ctx.get('uiWorkspace')`），
+ * 老壳回退 `sessions.open`。
+ * @param {object | null | undefined} [sessions]
+ * @returns {{ openSession: (id: string) => unknown } | { open: (id: string) => unknown } | null}
+ */
+export function resolveWorkbenchSessionNavigation(sessions = deps.sessions) {
+  if (deps.uiWorkspace && typeof deps.uiWorkspace.openSession === 'function') {
+    return deps.uiWorkspace
+  }
+  if (typeof deps.getSessionNavigation === 'function') {
+    try {
+      const lazy = deps.getSessionNavigation()
+      if (lazy && typeof lazy.openSession === 'function') return lazy
+    } catch (error) {
+      console.debug('[omnimux-workbench] lazy uiWorkspace lookup failed', error)
+    }
+  }
+  if (sessions && typeof sessions.open === 'function') {
+    return { open: (id) => sessions.open(id) }
+  }
+  return null
+}
+
+/**
+ * 将主区从插件/设置等非会话页切回目标会话视图。
+ * @param {string | undefined} sessionId
+ * @param {object | null | undefined} [sessions]
+ * @returns {boolean}
+ */
+export function navigateToWorkbenchSession(sessionId, sessions = deps.sessions) {
+  const id = typeof sessionId === 'string' ? sessionId.trim() : ''
+  if (!id) return false
+  const navigation = resolveWorkbenchSessionNavigation(sessions)
+  if (!navigation) {
+    console.warn('[omnimux-workbench] session navigation unavailable for', id)
+    return false
+  }
+  try {
+    if (typeof navigation.openSession === 'function') navigation.openSession(id)
+    else navigation.open(id)
+    return true
+  } catch (error) {
+    console.warn('[omnimux-workbench] session navigation failed for', id, error)
+    return false
+  }
+}
+
+/**
+ * 合并读取已归档会话 id：DSH 0.2.x 权威归档集在 `workspaces.list.archivedSessionIds`，
+ * 同时兼容旧契约/测试桩里放在 `sessions.list.archivedSessionIds` 的写法。
+ */
+function readArchivedSessionIds(sessions, workspaces) {
+  const archived = new Set()
+  const collect = (raw) => {
+    if (!Array.isArray(raw)) return
+    for (const id of raw) {
+      if (typeof id === 'string' && id) archived.add(id)
+    }
+  }
+  try {
+    collect(workspaces?.list?.getSnapshot?.()?.archivedSessionIds)
+  } catch (error) {
+    console.debug('[omnimux-workbench] workspaces archivedSessionIds read failed', error)
+  }
+  try {
+    collect(sessions?.list?.getSnapshot?.()?.archivedSessionIds)
+  } catch (error) {
+    console.debug('[omnimux-workbench] sessions archivedSessionIds read failed', error)
+  }
+  return archived
+}
+
+function readSessionListSnapshot(sessions) {
+  try {
+    return sessions?.list?.getSnapshot?.() ?? null
+  } catch (error) {
+    console.debug('[omnimux-workbench] sessions.list snapshot read failed', error)
+    return null
+  }
+}
+
+function readWorkspaceItems(workspaces) {
+  try {
+    const items = workspaces?.list?.getSnapshot?.()?.items
+    return Array.isArray(items) ? items : []
+  } catch (error) {
+    console.debug('[omnimux-workbench] workspaces.list snapshot read failed', error)
+    return []
+  }
+}
+
+function isLiveUnarchivedSession(id, sessionSnap, archived) {
+  if (typeof id !== 'string' || !id || archived.has(id)) return false
+  const byId = sessionSnap?.byId
+  if (!byId || typeof byId !== 'object' || !Object.prototype.hasOwnProperty.call(byId, id) || !byId[id]) {
+    return false
+  }
+  // DSH 0.2.x 中 byId 可能含 detached subagent 回退行；提供 ids 时以宿主列表成员为准。
+  if (Array.isArray(sessionSnap.ids)) {
+    return sessionSnap.ids.includes(id)
+  }
+  return true
+}
+
+/**
+ * 为工作台打开动作解析目标会话（不修改 `currentSessionId()` 的纯读契约）：
+ * 0. 显式 `explicitId` 或当前已有在屏/选中会话；
+ * 1. 最近一次在屏会话 `lastMountedSessionId`（仍存活且未归档）；
+ * 2. `sessions.list.byId` 中未归档会话按 `updatedAt` 降序首项；
+ * 3. 有工作区但零可用会话：自动在首个工作区调用 `sessions.create({ workspaceId })`；
+ * 4. 真正零工作区且零可用会话：返回 `{ sessionId: undefined, source: 'no-workspace', needsNavigation: false }`。
+ *
+ * @param {{ sessions?: object | null, workspaces?: object | null, explicitId?: string }} [options]
+ * @returns {Promise<{ sessionId: string | undefined, source: string, needsNavigation: boolean }>}
+ */
+export async function resolveTargetSessionForWorkbench({
+  sessions = deps.sessions,
+  workspaces = deps.workspaces,
+  explicitId = undefined,
+} = {}) {
+  const mountedFeed = hasMountedSessionFeed()
+  const currentMounted = mountedFeed ? mountedSessionId() : undefined
+
+  if (explicitId) {
+    const id = String(explicitId)
+    return {
+      sessionId: id,
+      source: 'explicit',
+      needsNavigation: mountedFeed ? currentMounted !== id : false,
+    }
+  }
+
+  const current = currentSessionId(sessions)
+  if (current) {
+    return {
+      sessionId: current,
+      source: 'current',
+      needsNavigation: mountedFeed ? currentMounted !== current : false,
+    }
+  }
+
+  const sessionSnap = readSessionListSnapshot(sessions)
+  const archived = readArchivedSessionIds(sessions, workspaces)
+
+  if (isLiveUnarchivedSession(lastMountedSessionId, sessionSnap, archived)) {
+    return {
+      sessionId: lastMountedSessionId,
+      source: 'last-mounted',
+      needsNavigation: true,
+    }
+  }
+
+  const byId = sessionSnap?.byId && typeof sessionSnap.byId === 'object' ? sessionSnap.byId : null
+  if (byId) {
+    const candidateIds = Array.isArray(sessionSnap.ids) ? sessionSnap.ids : Object.keys(byId)
+    const live = candidateIds
+      .filter((id) => isLiveUnarchivedSession(id, sessionSnap, archived) && byId[id]?.origin !== 'subagent')
+      .sort((a, b) => (Number(byId[b]?.updatedAt) || 0) - (Number(byId[a]?.updatedAt) || 0))
+    if (live[0]) {
+      return {
+        sessionId: live[0],
+        source: 'recent-active',
+        needsNavigation: true,
+      }
+    }
+  }
+
+  const workspaceItems = readWorkspaceItems(workspaces)
+  const targetWorkspace = workspaceItems.find(
+    (item) => item && typeof item.workspaceId === 'string' && item.workspaceId.trim() !== '',
+  )
+  if (targetWorkspace) {
+    if (typeof sessions?.create !== 'function') {
+      return { sessionId: undefined, source: 'create-failed', needsNavigation: false }
+    }
+    const workspaceId = targetWorkspace.workspaceId
+    let pending = inflightWorkspaceSessionCreates.get(workspaceId)
+    if (!pending) {
+      pending = Promise.resolve()
+        .then(() => sessions.create({ workspaceId }))
+        .finally(() => {
+          if (inflightWorkspaceSessionCreates.get(workspaceId) === pending) {
+            inflightWorkspaceSessionCreates.delete(workspaceId)
+          }
+        })
+      inflightWorkspaceSessionCreates.set(workspaceId, pending)
+    }
+    try {
+      const created = await pending
+      if (typeof created === 'string' && created.trim() !== '') {
+        return {
+          sessionId: created.trim(),
+          source: 'created',
+          needsNavigation: true,
+        }
+      }
+      console.warn('[omnimux-workbench] sessions.create returned empty session id', created)
+      return { sessionId: undefined, source: 'create-failed', needsNavigation: false }
+    } catch (error) {
+      console.warn('[omnimux-workbench] auto-creating session for workbench failed', error)
+      return { sessionId: undefined, source: 'create-failed', needsNavigation: false }
+    }
+  }
+
+  return { sessionId: undefined, source: 'no-workspace', needsNavigation: false }
+}
+
+/**
+ * 等待官方 `sidebarRight.mounted` 变为目标会话（老壳无此读面时直接放行，交由 `waitForSidebarSession` 校验）。
+ * @param {string} sessionId
+ * @param {number} [timeoutMs]
+ * @param {{ sidebarRight?: object | null, shouldContinue?: () => boolean }} [options]
+ * @returns {Promise<boolean>}
+ */
+export async function waitForMountedSession(sessionId, timeoutMs = 4000, options = {}) {
+  const sidebarRight = options && Object.prototype.hasOwnProperty.call(options, 'sidebarRight')
+    ? options.sidebarRight
+    : deps.sidebarRight
+  const shouldContinue = typeof options?.shouldContinue === 'function' ? options.shouldContinue : () => true
+  if (!sessionId || !shouldContinue()) return false
+  let mounted = null
+  try {
+    mounted = sidebarRight?.mounted ?? null
+  } catch (error) {
+    console.debug('[omnimux-workbench] sidebarRight.mounted read failed', error)
+    return true
+  }
+  if (!mounted || typeof mounted.getSnapshot !== 'function') return true
+  if (mountedSessionId(sidebarRight) === sessionId) return true
+  if (timeoutMs <= 0) return false
+  const started = Date.now()
+  return new Promise((resolve) => {
+    let settled = false
+    let unsubscribe
+    let poll
+    let timer
+    const finish = (value) => {
+      if (settled) return
+      settled = true
+      if (typeof unsubscribe === 'function') {
+        try {
+          unsubscribe()
+        } catch (error) {
+          console.debug('[omnimux-workbench] mounted unsubscribe failed', error)
+        }
+      }
+      if (poll !== undefined) clearInterval(poll)
+      if (timer !== undefined) clearTimeout(timer)
+      resolve(value)
+    }
+    if (typeof mounted.subscribe === 'function') {
+      try {
+        unsubscribe = mounted.subscribe(() => {
+          if (!shouldContinue()) finish(false)
+          else if (mountedSessionId(sidebarRight) === sessionId) finish(true)
+        })
+        if (settled && typeof unsubscribe === 'function') {
+          try {
+            unsubscribe()
+          } catch (error) {
+            console.debug('[omnimux-workbench] sync mounted unsubscribe failed', error)
+          }
+          unsubscribe = undefined
+        }
+      } catch (error) {
+        console.debug('[omnimux-workbench] mounted subscribe failed, falling back to poll', error)
+      }
+    }
+    if (settled) return
+    poll = setInterval(() => {
+      if (!shouldContinue()) finish(false)
+      else if (mountedSessionId(sidebarRight) === sessionId) finish(true)
+      else if (Date.now() - started >= timeoutMs) finish(false)
+    }, 50)
+    timer = setTimeout(() => {
+      finish(shouldContinue() && mountedSessionId(sidebarRight) === sessionId)
+    }, timeoutMs)
+  })
 }
 
 export function waitMs(ms) {

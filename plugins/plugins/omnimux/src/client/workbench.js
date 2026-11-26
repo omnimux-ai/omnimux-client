@@ -75,6 +75,7 @@ import {
   isWorkbenchActive,
   isWorkbenchOpen,
   openWorkbench,
+  resetSidebarControllerForTests,
   sweepRetiredWorkbenchTabs,
   syncWorkbenchGuiWidth,
   uninstallWorkbenchLeftRailObserver,
@@ -334,6 +335,7 @@ export function resetWorkbenchForTests(target = hostWindow()) {
   uninstallWorkbenchLeftRailObserver()
   uninstallSplitConversationMin()
   resetSidebarActivationForTests()
+  resetSidebarControllerForTests()
   resetWorkbenchHostAdapter()
   resetWorkbenchListeners()
   resetWorkbenchWidthMemory()

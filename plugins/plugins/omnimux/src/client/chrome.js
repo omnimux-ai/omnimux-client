@@ -19,7 +19,15 @@ import { installSidebarToggleTopbar, setTopbarGeometryHook } from './sidebar-tog
 import { installSidebarPanelChrome } from './sidebar-panel-chrome.js'
 import { installCollapsedPanelFill } from './rightbar-collapsed-fill.js'
 import { NS, en, zh } from './locales.js'
-import { bindWorkbenchDeps, getWorkbenchService } from './workbench/host-adapter.js'
+import {
+  bindWorkbenchDeps,
+  getWorkbenchService,
+  getWorkbenchSessionNavigation,
+  getWorkbenchUiWorkspace,
+  getWorkbenchWorkspaces,
+  mountedSessionId,
+  recordMountedSessionId,
+} from './workbench/host-adapter.js'
 // x.ai 全壳 overrideTokens 已临时关闭：发送钮在暗色下变成白底白箭头。
 // 恢复时：重新 import applyXaiShellTheme，并把 'theme' 加回 inject + package.json dsh.client.inject。
 // import { applyXaiShellTheme } from './xai-theme.js'
@@ -39,6 +47,25 @@ export function installHubChrome(ctx) {
   installSidebarGlobal()
   installAuthGlobal()
   const workbench = installWorkbenchGlobal()
+  // 会话导航懒解析：DSH 0.1.7+ 用 uiWorkspace.openSession 切主区会话；
+  // 不写入顶层 inject，避免老壳卡在 waiting for activation。
+  const getSessionNavigation = () => {
+    if (typeof ctx.get !== 'function') return undefined
+    try {
+      return ctx.get('uiWorkspace')
+    } catch (error) {
+      console.debug('[omnimux-workbench] lazy uiWorkspace lookup failed', error)
+      return undefined
+    }
+  }
+  ctx.effect(() => {
+    bindWorkbenchDeps({ getSessionNavigation })
+    return () => {
+      if (getWorkbenchSessionNavigation() === getSessionNavigation) {
+        bindWorkbenchDeps({ getSessionNavigation: null })
+      }
+    }
+  }, 'omnimux: session navigation lookup')
   // Optional services: layout/sessions ship with the web client; betterSidebar
   // is a community plugin. Never read them on the top-level inject list.
   if (typeof ctx.inject === 'function') {
@@ -46,6 +73,24 @@ export function installHubChrome(ctx) {
       workbench.bind({ layout: inner.layout, sessions: inner.sessions })
       // layout 异步就绪时立即对齐外壳 panels.rightbar，避免首开与刷新后分隔线把手停在 45% 默认位。
       reconcileRightbarFromRatio(undefined, { doc: document })
+    })
+    ctx.inject(['workspaces'], (inner) => {
+      inner.effect(() => {
+        const workspaces = inner.workspaces ?? inner.get?.('workspaces')
+        workbench.bind({ workspaces })
+        return () => {
+          if (getWorkbenchWorkspaces() === workspaces) workbench.bind({ workspaces: null })
+        }
+      }, 'omnimux: workspaces context')
+    })
+    ctx.inject(['uiWorkspace'], (inner) => {
+      inner.effect(() => {
+        const uiWorkspace = inner.uiWorkspace ?? inner.get?.('uiWorkspace')
+        workbench.bind({ uiWorkspace })
+        return () => {
+          if (getWorkbenchUiWorkspace() === uiWorkspace) workbench.bind({ uiWorkspace: null })
+        }
+      }, 'omnimux: uiWorkspace context')
     })
     ctx.inject(['betterSidebar'], (inner) => {
       inner.effect(() => {
@@ -62,8 +107,10 @@ export function installHubChrome(ctx) {
         // 在屏会话是工作台唯一的会话真源（Issue #3800）：会话切换后必须立刻
         // 让左栏激活位与工作台状态跟上，否则入口点击会继续拿旧/空会话。
         const mounted = inner.sidebarRight?.mounted
+        recordMountedSessionId(mountedSessionId(inner.sidebarRight))
         const unsubscribe = typeof mounted?.subscribe === 'function'
           ? mounted.subscribe(() => {
+              recordMountedSessionId(mountedSessionId(inner.sidebarRight))
               requestRailActivationSync()
               notifyWorkbenchChange()
               reconcileRightbarFromRatio(undefined, { doc: document })

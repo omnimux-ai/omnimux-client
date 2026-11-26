@@ -165,12 +165,15 @@ export function createTabViewportReconciler(deps = {}) {
   /** 上一轮观测时面板是否展开；`null` 表示尚未观测过。 */
   let lastPanelOpen = null
   let isReconciling = false
+  let programmaticDepth = 0
   let unlockTimer = null
 
   function scheduleUnlock() {
     if (unlockTimer) clearTimeout(unlockTimer)
     unlockTimer = setTimeout(() => {
-      isReconciling = false
+      if (programmaticDepth === 0) {
+        isReconciling = false
+      }
       unlockTimer = null
     }, PROGRAMMATIC_LOCK_MS)
   }
@@ -195,12 +198,13 @@ export function createTabViewportReconciler(deps = {}) {
     const sessionId = getSessionId()
 
     // 1. 会话切换：首次只记身份。之后按目标会话钥匙恢复，不得把右侧全屏带过来。
+    // 若正处于工作台程序化切会话打开面板流程（isReconciling），仅同步新会话身份而不误关刚打开的面板。
     if (sessionId && sessionId !== lastSessionId) {
       const isFirstSight = lastSessionId == null
       lastSessionId = sessionId
       lastActiveTabId = currentTab
       lastMode = currentMode
-      if (isFirstSight) return
+      if (isFirstSight || isReconciling) return
       const threeColumn = loadThreeColumn(sessionId)
       isReconciling = true
       try {
@@ -273,6 +277,7 @@ export function createTabViewportReconciler(deps = {}) {
   return {
     sync,
     beginProgrammatic() {
+      programmaticDepth += 1
       isReconciling = true
       if (unlockTimer) {
         clearTimeout(unlockTimer)
@@ -280,6 +285,10 @@ export function createTabViewportReconciler(deps = {}) {
       }
     },
     endProgrammatic() {
+      programmaticDepth = Math.max(0, programmaticDepth - 1)
+      if (programmaticDepth > 0) return
+      const activeSession = getSessionId()
+      if (activeSession) lastSessionId = activeSession
       lastMode = isFullscreen() ? 'fullscreen' : 'push'
       lastActiveTabId = getTabId()
       isReconciling = true
@@ -291,6 +300,7 @@ export function createTabViewportReconciler(deps = {}) {
       lastSessionId = null
       lastPanelOpen = null
       isReconciling = false
+      programmaticDepth = 0
       if (unlockTimer) {
         clearTimeout(unlockTimer)
         unlockTimer = null
