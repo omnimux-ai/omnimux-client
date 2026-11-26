@@ -67,7 +67,7 @@ export function captureJobsSettled() {
 /** Request headers a capture may forward, lowercased. */
 const ALLOWED_CAPTURE_HEADERS = new Set(['referer', 'user-agent', 'cookie'])
 /** Shapes a captured post may declare; anything else is derived. */
-const CONTENT_SHAPES = new Set(['text', 'photo', 'gallery', 'video'])
+const CONTENT_SHAPES = new Set(['text', 'photo', 'gallery', 'video', 'article'])
 /** Number fields a captured post's `stats` may carry. */
 const STAT_KEYS = ['likes', 'comments', 'views', 'shares', 'collects']
 /** Host media URL prefix the library serves local files from. */
@@ -138,6 +138,8 @@ function captureAuthor(value) {
   const author = {}
   if (typeof value.name === 'string') author.name = value.name.trim()
   if (typeof value.handle === 'string') author.handle = value.handle.trim()
+  const avatar = publicHttpUrl(value.avatar || value.avatar_url || value.image)
+  if (avatar) author.avatar = avatar
   return author
 }
 
@@ -197,6 +199,8 @@ function parseCaptureBody(body) {
       requestedPlatform: typeof body.platform === 'string' ? body.platform.trim() : '',
       title: typeof body.title === 'string' ? body.title.trim() : '',
       content: typeof body.content === 'string' ? body.content : '',
+      excerpt: typeof body.excerpt === 'string' ? body.excerpt.trim().slice(0, 600) : '',
+      faviconUrl: publicHttpUrl(body.favicon_url),
       contentShape: CONTENT_SHAPES.has(body.content_shape) ? body.content_shape : '',
       author: captureAuthor(body.author),
       stats: captureStats(body.stats),
@@ -354,6 +358,8 @@ export function buildCaptureRecord(args) {
   return {
     title: parsed.title || parsed.sourceUrl,
     content: parsed.content,
+    excerpt: parsed.excerpt || '',
+    favicon_url: parsed.faviconUrl || '',
     type,
     source_platform: platform,
     source_url: parsed.sourceUrl,

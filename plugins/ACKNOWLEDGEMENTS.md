@@ -121,6 +121,7 @@ OmniMux 的诞生与演进离不开全球开源社区与先锋项目的杰出贡
 
 OmniMux 严格尊重上述所有开源项目的原作者知识产权与开源许可证条款：
 1. 本项目中包含的所有第三方源代码或分发包均保留其原始的版权声明（Copyright Notices）与许可证文本；
-2. OmniMux 自行编写的代码采用 AGPL-3.0；**本项目中所有独立引入的第三方 MIT / Apache 2.0 / MPL-2.0 等组件，其上游原始代码保持原有许可证权利不变**。
+2. OmniMux 自行编写的代码采用 AGPL-3.0；**本项目中所有独立引入的第三方 MIT / Apache 2.0 / MPL-2.0 等组件，其上游原始代码保持原有许可证权利不变**；
+3. `dsh-ui-kit/social-card` 与 `omnimux-inspiration` 中用于标明用户所连接第三方内容来源的单色轮廓标识，其名称与商标所有权分属各自权利人（X Corp.、ByteDance Ltd. / TikTok / 抖音、Meta Platforms, Inc. / Instagram / Threads、Google LLC / YouTube、Bilibili Inc.、小红书科技、LinkedIn Corporation、Substack Inc.），仅作来源标识用途，不代表背书或关联关系（详见 `packages/dsh-ui-kit/NOTICE`）。
 
 *如有任何版权归属疑问或遗漏，欢迎联系 `hello@omnimux.ai`，我们将第一时间核实并更新致谢清单！*

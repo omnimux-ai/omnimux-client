@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import { toInspirationCardRow } from './inspiration-card.js'
+import {
+  estimateInspirationCardWeight,
+  toCollectionMemberCard,
+  toInspirationCardRow,
+  toSocialPostCardItem,
+} from './inspiration-card.js'
 import { rivalCardHeightPx, rivalPlacements } from './rival-masonry.js'
 import { zh } from './locales.js'
 
@@ -84,5 +89,102 @@ describe('inspiration cards — typed post attachments', () => {
     assert.equal(mixed.image_count, 2)
     assert.equal(mixed.card_type, 'text-media')
     assert.equal(mixed.media_kind, 'video')
+  })
+})
+
+describe('inspiration cards — 6-archetype SocialPostCard mapping', () => {
+  const zhEntries = new Map(Object.entries(zh))
+  const t = (key) => zhEntries.get(key) || key
+
+  it('resolves all 6 semantic archetypes from structured row fields without fabricating outlier metrics', () => {
+    const article = toSocialPostCardItem({
+      id: 'a1',
+      source_platform: 'x',
+      type: 'link',
+      content_shape: 'article',
+      title: 'Long-Form Systems Essay',
+      excerpt: 'How composable abstractions beat framework sprawl.',
+      content: 'How composable abstractions beat framework sprawl.',
+      cover_url: 'https://pbs.twimg.com/media/article.jpg',
+      author: { name: 'Dan', handle: 'dan_koe', profile_image_url_https: 'https://pbs.twimg.com/p/dan.jpg' },
+      stats: { likes: 5700, shares: 750 },
+      velocity: { multiplier: 1.46, top_percent: 4 },
+      source_url: 'https://x.com/dan_koe/status/1',
+    }, t)
+    assert.equal(article.archetype, 'article')
+    assert.equal(article.title, 'Long-Form Systems Essay')
+    assert.equal(article.author?.avatarUrl, 'https://pbs.twimg.com/p/dan.jpg')
+    assert.equal(article.outlierBadges?.length, 2)
+
+    const shortVideo = toSocialPostCardItem({
+      id: 'sv1',
+      source_platform: 'tiktok',
+      type: 'video',
+      duration: 28,
+      ratio: 9 / 16,
+      media_urls: ['/omnimux/inspiration/local/media/videos/sv1.mp4'],
+      source_url: 'https://www.tiktok.com/@creator/video/1',
+    }, t)
+    assert.equal(shortVideo.archetype, 'short-video')
+    assert.deepEqual(shortVideo.outlierBadges, [])
+
+    const photoFeed = toSocialPostCardItem({
+      id: 'pf1',
+      source_platform: 'instagram',
+      type: 'image',
+      content_shape: 'gallery',
+      media_urls: ['https://cdn.example/1.jpg', 'https://cdn.example/2.jpg'],
+      source_url: 'https://www.instagram.com/p/abc/',
+    }, t)
+    assert.equal(photoFeed.archetype, 'photo-feed')
+    assert.equal(photoFeed.mediaCount, 2)
+
+    const landscapeVideo = toSocialPostCardItem({
+      id: 'lv1',
+      source_platform: 'youtube',
+      type: 'video',
+      duration: 840,
+      cover_url: 'https://i.ytimg.com/vi/abc/hqdefault.jpg',
+      source_url: 'https://www.youtube.com/watch?v=abc',
+    }, t)
+    assert.equal(landscapeVideo.archetype, 'landscape-video')
+
+    const socialPost = toSocialPostCardItem({
+      id: 'sp1',
+      source_platform: 'x',
+      type: 'link',
+      content: 'Short X post with real stats only',
+      source_url: 'https://x.com/builder/status/2',
+    }, t)
+    assert.equal(socialPost.archetype, 'social-post')
+
+    const webLink = toSocialPostCardItem({
+      id: 'wl1',
+      source_platform: 'web',
+      type: 'link',
+      title: 'Building Effective Agents',
+      favicon_url: 'https://www.anthropic.com/favicon.ico',
+      source_url: 'https://www.anthropic.com/research/building-effective-agents',
+    }, t)
+    assert.equal(webLink.archetype, 'web-link')
+    assert.equal(webLink.hostname, 'anthropic.com')
+    assert.equal(webLink.faviconUrl, 'https://www.anthropic.com/favicon.ico')
+  })
+
+  it('preserves collection membership flag and positive balanced weights', () => {
+    const member = toCollectionMemberCard({
+      id: 'm1',
+      source_platform: 'tiktok',
+      type: 'video',
+      cover_key: 'cover.jpg',
+      source_url: 'https://www.tiktok.com/@a/video/1',
+    }, t)
+    assert.equal(member.in_collection, true)
+    assert.equal(member.archetype, 'short-video')
+    assert.ok(estimateInspirationCardWeight(member) > estimateInspirationCardWeight({
+      card_type: 'web-link',
+      social_item: { id: 'w', platform: 'web', title: 'Site', sourceUrl: 'https://example.com' },
+    }))
+    assert.ok(estimateInspirationCardWeight({ card_type: 'collection' }) > 1)
   })
 })

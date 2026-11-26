@@ -23,9 +23,9 @@ const ICON_CLOSE = (
   </svg>
 )
 
-export function InspirationPreviewModal({ row, t, onClose, onItemUpdated, onReplicate, replicateBusy }) {
+export function InspirationPreviewModal({ row, t, onClose, onItemUpdated, onReplicate, replicateBusy, initialShareOpen = false, initialTab = '' }) {
   const [item, setItem] = useState(row)
-  const [showSharePopover, setShowSharePopover] = useState(false)
+  const [showSharePopover, setShowSharePopover] = useState(Boolean(initialShareOpen))
   const shareTriggerRef = useRef(null)
   const sharePopoverRef = useRef(null)
 
@@ -65,9 +65,9 @@ export function InspirationPreviewModal({ row, t, onClose, onItemUpdated, onRepl
   const itemKey = item?.id == null ? '' : String(item.id)
 
   useEffect(() => {
-    setShowSharePopover(false)
+    setShowSharePopover(Boolean(initialShareOpen))
     setShareError(null)
-  }, [itemKey])
+  }, [itemKey, initialShareOpen])
 
   const applyItemRef = useRef(() => {})
 
@@ -276,7 +276,7 @@ export function InspirationPreviewModal({ row, t, onClose, onItemUpdated, onRepl
           </header>
 
 
-        <InspirationPostDetail key={String(item?.source_url || item?.id)} item={item} t={t} onClose={onClose} onItemUpdated={applyItem} onReplicate={onReplicate} replicateBusy={replicateBusy} notice={<>
+        <InspirationPostDetail key={String(item?.source_url || item?.id)} initialTab={initialTab} item={item} t={t} onClose={onClose} onItemUpdated={applyItem} onReplicate={onReplicate} replicateBusy={replicateBusy} notice={<>
           {importing && <p className="omnimux-inspiration-player-status">{importStageLabel(item, t)}</p>}
           {failed && <p className="omnimux-inspiration-error-text" role="alert">{importErrorText(item, t) || t('add.status.failed')}</p>}
           {!failed && settledNotice && <p className="omnimux-inspiration-player-status" role="status">{settledNotice}</p>}

@@ -13,6 +13,11 @@
       "import": "./lib/index.js",
       "default": "./lib/index.js"
     },
+    "./social-card": {
+      "types": "./lib/social-card.d.ts",
+      "import": "./lib/social-card.js",
+      "default": "./lib/social-card.js"
+    },
     "./quota-request": "./src/quota-request.js",
     "./native-file-picker": {
       "types": "./src/native-file-picker.d.ts",
@@ -31,10 +36,12 @@
   "files": [
     "lib",
     "src",
-    "README.md"
+    "README.md",
+    "NOTICE"
   ],
   "sideEffects": [
-    "./lib/index.js"
+    "./lib/index.js",
+    "./lib/social-card.js"
   ],
   "engines": {
     "node": ">=22.19.0"

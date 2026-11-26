@@ -1,4 +1,15 @@
 import { getCanonicalItemKey } from './url-normalizer.js'
+import {
+  assertDownloadableUrl,
+  isDownloadableHttpUrl,
+  isPublicHttpUrl,
+  isRedirectStatus,
+  resolveRedirectUrl,
+} from './url-policy.js'
+
+const OG_TIMEOUT_MS = 6000
+const OG_MAX_HTML_BYTES = 262_144
+const OG_MAX_REDIRECTS = 3
 
 /**
  * Public no-key fallback resolver for social links.
@@ -218,8 +229,171 @@ async function resolveTweet(url, deadline) {
   }
 }
 
+function decodeHtmlEntities(text) {
+  return String(text || '')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'")
+    .replace(/&nbsp;/gi, ' ')
+    .trim()
+}
+
+function readTagAttrs(tag) {
+  const attrs = {}
+  const re = /([a-zA-Z_:][\w:-]*)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/g
+  for (const m of tag.matchAll(re)) {
+    attrs[m[1].toLowerCase()] = decodeHtmlEntities(m[2] ?? m[3] ?? m[4] ?? '')
+  }
+  return attrs
+}
+
+function resolvePublicAssetUrl(raw, baseUrl) {
+  const trimmed = asText(raw)
+  if (!trimmed) return ''
+  try {
+    const resolved = new URL(trimmed, baseUrl).toString()
+    return isPublicHttpUrl(resolved) ? resolved : ''
+  } catch (err) {
+    console.debug?.('[omnimux-inspiration] resolvePublicAssetUrl invalid url:', err?.message || err)
+    return ''
+  }
+}
+
+async function readBoundedText(response, maxBytes) {
+  if (!response?.body || typeof response.body.getReader !== 'function') {
+    const text = await response.text()
+    return text.slice(0, maxBytes)
+  }
+  const reader = response.body.getReader()
+  const chunks = []
+  let total = 0
+  try {
+    while (total < maxBytes) {
+      const { value, done } = await reader.read()
+      if (done || !value) break
+      const slice = total + value.byteLength > maxBytes ? value.subarray(0, maxBytes - total) : value
+      chunks.push(slice)
+      total += slice.byteLength
+      if (total >= maxBytes) {
+        await reader.cancel().catch((err) => {
+          console.debug?.('[omnimux-inspiration] reader cancel:', err?.message || err)
+        })
+        break
+      }
+    }
+  } finally {
+    reader.releaseLock?.()
+  }
+  return Buffer.concat(chunks.map((c) => Buffer.from(c))).toString('utf8')
+}
+
 /**
- * Fallback direct resolver for social media video links.
+ * Fetch OpenGraph / meta tags from a public HTTP(S) web page with SSRF validation,
+ * bounded HTML read size (256KB), and hop-validated redirects.
+ * @param {string} url
+ * @param {{ signal?: AbortSignal, fetchImpl?: typeof fetch, resolver?: Function, deadline?: number }} [options]
+ * @returns {Promise<Record<string, any> | null>}
+ */
+export async function fetchWebOgMetadata(url, options = {}) {
+  const fetchFn = options.fetchImpl ?? fetch
+  const shouldCheckDns = options.fetchImpl === undefined || typeof options.resolver === 'function'
+  let currentUrl = asText(url)
+  if (!isDownloadableHttpUrl(currentUrl)) return null
+
+  const deadline = options.deadline ?? (Date.now() + OG_TIMEOUT_MS)
+  try {
+    for (let hop = 0; hop <= OG_MAX_REDIRECTS; hop += 1) {
+      if (!isDownloadableHttpUrl(currentUrl)) return null
+      if (shouldCheckDns) {
+        await assertDownloadableUrl(currentUrl, { resolver: options.resolver })
+      }
+      const remaining = Math.min(OG_TIMEOUT_MS, deadline - Date.now())
+      if (remaining <= 0) return null
+      const timeoutSig = AbortSignal.timeout(remaining)
+      const signal = options.signal ? AbortSignal.any([options.signal, timeoutSig]) : timeoutSig
+      const resp = await fetchFn(currentUrl, {
+        headers: { 'User-Agent': BROWSER_UA, accept: 'text/html,application/xhtml+xml' },
+        redirect: 'manual',
+        signal,
+      })
+      if (isRedirectStatus(resp.status)) {
+        const nextUrl = resolveRedirectUrl(resp.headers?.get?.('location'), currentUrl)
+        if (!nextUrl || hop === OG_MAX_REDIRECTS) return null
+        currentUrl = nextUrl
+        continue
+      }
+      if (!resp.ok) return null
+      const ctype = asText(resp.headers?.get?.('content-type')).toLowerCase()
+      if (ctype && !ctype.includes('html') && !ctype.includes('xml')) return null
+      const html = await readBoundedText(resp, OG_MAX_HTML_BYTES)
+
+      const meta = new Map()
+      for (const match of html.matchAll(/<meta\b[^>]*>/gi)) {
+        const attrs = readTagAttrs(match[0])
+        const key = (attrs.property || attrs.name || '').toLowerCase()
+        if (key && attrs.content && !meta.has(key)) meta.set(key, attrs.content)
+      }
+      const titleTagMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)
+      const titleTag = titleTagMatch ? decodeHtmlEntities(titleTagMatch[1].replace(/\s+/g, ' ')) : ''
+
+      let iconUrl = ''
+      for (const match of html.matchAll(/<link\b[^>]*>/gi)) {
+        const attrs = readTagAttrs(match[0])
+        const rel = (attrs.rel || '').toLowerCase()
+        if (rel === 'icon' || rel === 'shortcut icon' || rel === 'apple-touch-icon') {
+          const candidate = resolvePublicAssetUrl(attrs.href, currentUrl)
+          if (candidate) {
+            iconUrl = candidate
+            break
+          }
+        }
+      }
+
+      const title = meta.get('og:title') || meta.get('twitter:title') || titleTag || ''
+      const excerpt = (meta.get('og:description') || meta.get('twitter:description') || meta.get('description') || '').slice(0, 600)
+      const coverUrl = resolvePublicAssetUrl(meta.get('og:image') || meta.get('twitter:image') || '', currentUrl)
+      const siteName = meta.get('og:site_name') || ''
+      if (!title && !excerpt && !coverUrl) return null
+
+      let hostname = ''
+      try {
+        hostname = new URL(currentUrl).hostname.toLowerCase()
+      } catch (err) {
+        console.debug?.('[omnimux-inspiration] fetchWebOgMetadata hostname parse error:', err?.message || err)
+      }
+      const isSubstack = hostname === 'substack.com' || hostname.endsWith('.substack.com')
+      const resolvedPlatform = isSubstack ? 'substack' : 'web'
+      const fallbackIcon = isPublicHttpUrl(currentUrl) && hostname ? `${new URL(currentUrl).origin}/favicon.ico` : ''
+      const favicon_url = iconUrl || fallbackIcon
+
+      return {
+        platform: resolvedPlatform,
+        capability: isSubstack ? 'article' : 'link',
+        data: {
+          title: title || hostname,
+          text: excerpt || title,
+          excerpt,
+          cover_url: coverUrl,
+          favicon_url,
+          url: currentUrl,
+          video_url: '',
+          ...(isSubstack ? { content_shape: 'article' } : {}),
+          author: siteName ? { name: siteName } : {},
+        },
+      }
+    }
+    return null
+  } catch (err) {
+    if (options.signal?.aborted) throw err
+    console.debug?.('[omnimux-inspiration] fetchWebOgMetadata failed:', err?.message || err)
+    return null
+  }
+}
+
+/**
+ * Fallback direct resolver for social media video links and public web articles/links.
  * Provides resilient extraction when the cloud gateway upstream scraper
  * encounters 422 / rate-limits. Every branch is best-effort: a failure
  * resolves to null instead of throwing into the import flow.
@@ -227,22 +401,23 @@ async function resolveTweet(url, deadline) {
  * Instagram, Facebook and Threads expose no public unauthenticated metadata
  * endpoint, so they deliberately return null here and let the caller report
  * an actionable message.
- * @param {{ platform: string, capability?: string, url: string, allowNetwork?: boolean }} params
+ * @param {{ platform: string, capability?: string, url: string, allowNetwork?: boolean, signal?: AbortSignal, fetchImpl?: typeof fetch, resolver?: Function }} params
  * @returns {Promise<Record<string, any> | null>}
  */
-export async function fallbackResolveSocial({ platform, capability = 'video', url, allowNetwork }) {
+export async function fallbackResolveSocial({ platform, capability = 'video', url, allowNetwork, signal, fetchImpl, resolver }) {
   if (!url || typeof url !== 'string') return null
   const networkAllowed = allowNetwork ?? isSocialFallbackEnabled()
   if (!networkAllowed) return null
 
   const resolved = resolvePlatform(platform, url)
-  if (resolved !== 'tiktok' && resolved !== 'youtube' && resolved !== 'x') {
-    // instagram / facebook / threads / unknown: no public unauthenticated endpoint.
+  if (resolved === 'instagram' || resolved === 'facebook' || resolved === 'threads') {
+    // instagram / facebook / threads: no public unauthenticated endpoint.
     return null
   }
 
   const deadline = Date.now() + FALLBACK_BUDGET_MS
   if (resolved === 'tiktok') return resolveTikTok(url, deadline)
   if (resolved === 'youtube') return resolveYouTube(url, deadline)
-  return resolveTweet(url, deadline)
+  if (resolved === 'x') return resolveTweet(url, deadline)
+  return fetchWebOgMetadata(url, { signal, fetchImpl, resolver, deadline })
 }

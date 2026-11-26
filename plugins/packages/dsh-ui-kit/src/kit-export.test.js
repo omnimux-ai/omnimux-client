@@ -8,7 +8,17 @@ const here = dirname(fileURLToPath(import.meta.url))
 const root = join(here, '..')
 const libJsPath = join(root, 'lib/index.js')
 const libDtsPath = join(root, 'lib/index.d.ts')
+const socialLibJsPath = join(root, 'lib/social-card.js')
+const socialLibDtsPath = join(root, 'lib/social-card.d.ts')
 const srcIndexPath = join(root, 'src/index.ts')
+
+const EXPECTED_SOCIAL_EXPORTS = [
+  'SocialPostCard',
+  'MasonryGrid',
+  'SocialPlatformMark',
+  'resolveSocialCardArchetype',
+  'resolveOutlierBadges',
+]
 
 const EXPECTED_EXPORTS = [
   "Button",
@@ -99,6 +109,18 @@ describe('dsh-ui-kit export contract', () => {
         src.includes(name),
         'src/index.ts must export "' + name + '"'
       )
+    }
+  })
+
+  it('verifies that lib/social-card.js and lib/social-card.d.ts export shared social card symbols', () => {
+    assert.ok(existsSync(socialLibJsPath), 'lib/social-card.js must exist (run pnpm build first)')
+    assert.ok(existsSync(socialLibDtsPath), 'lib/social-card.d.ts must exist (run pnpm build first)')
+    const code = readFileSync(socialLibJsPath, 'utf8')
+    const dts = readFileSync(socialLibDtsPath, 'utf8')
+    const exportedSymbols = new Set(extractEsmExports(code))
+    for (const name of EXPECTED_SOCIAL_EXPORTS) {
+      assert.ok(exportedSymbols.has(name), `Missing social-card export "${name}" in lib/social-card.js`)
+      assert.ok(dts.includes(name), `lib/social-card.d.ts must declare "${name}"`)
     }
   })
 

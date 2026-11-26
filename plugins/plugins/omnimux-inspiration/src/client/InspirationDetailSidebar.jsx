@@ -31,9 +31,11 @@ export function InspirationDetailSidebar({
   onItemUpdated,
   onReplicate,
   replicateBusy,
+  initialShareOpen = false,
+  initialTab = '',
 }) {
   const [item, setItem] = useState(row)
-  const [showSharePopover, setShowSharePopover] = useState(false)
+  const [showSharePopover, setShowSharePopover] = useState(Boolean(initialShareOpen))
   const [sharing, setSharing] = useState(false)
   const [shareError, setShareError] = useState(null)
   const sidebarRef = useRef(null)
@@ -67,10 +69,10 @@ export function InspirationDetailSidebar({
   }
 
   useEffect(() => {
-    setShowSharePopover(false)
+    setShowSharePopover(Boolean(initialShareOpen))
     setShareError(null)
     setSharing(false)
-  }, [itemKey])
+  }, [itemKey, initialShareOpen])
 
   // Close share popover on Esc / outside click.
   useEffect(() => {
@@ -350,6 +352,7 @@ export function InspirationDetailSidebar({
       <InspirationPostDetail
         key={String(item?.source_url || item?.id)}
         mode="sidebar"
+        initialTab={initialTab}
         item={item}
         t={t}
         onClose={onClose}

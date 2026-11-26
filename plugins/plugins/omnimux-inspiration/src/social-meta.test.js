@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import { parseSocialMeta, socialPayloadLayers } from './http-handlers.js'
+import { fetchWebOgMetadata } from './scraper-fallback.js'
 
 /** X / Twitter tweet envelope as returned by the OmniMux cloud tool. */
 const X_TWEET_VIDEO = {
@@ -432,5 +433,138 @@ describe('parseSocialMeta — nested extraction layers stay inside the policy (P
     assert.equal(parseSocialMeta({ play_addr: { url_list: [playUrl] } }).video_url, playUrl)
     assert.equal(parseSocialMeta({ video: { play_addr: { url_list: [playUrl] } } }).video_url, playUrl)
     assert.equal(parseSocialMeta({ video_versions: [{ url: scontent }] }).video_url, scontent)
+  })
+
+  it('extracts X article metadata, profile_image_url_https avatar, and favicon_url', () => {
+    const meta = parseSocialMeta({
+      text: '',
+      article: {
+        title: 'The deep work routine that changed my life',
+        preview_text: 'If you can spend 8 hours building someone else’s dream...',
+        cover_url: 'https://pbs.twimg.com/media/article-cover.jpg',
+      },
+      author: {
+        name: 'DAN KOE',
+        handle: 'thedankoe',
+        profile_image_url_https: 'https://pbs.twimg.com/profile_images/dankoe.jpg',
+      },
+      favicon_url: 'https://example.com/favicon.ico',
+    }, { platform: 'x' })
+
+    assert.equal(meta.content_shape, 'article')
+    assert.equal(meta.title, 'The deep work routine that changed my life')
+    assert.match(meta.excerpt, /8 hours/)
+    assert.equal(meta.cover_url, 'https://pbs.twimg.com/media/article-cover.jpg')
+    assert.equal(meta.author.avatar, 'https://pbs.twimg.com/profile_images/dankoe.jpg')
+    assert.equal(meta.favicon_url, 'https://example.com/favicon.ico')
+    assert.equal(meta.has_metadata, true)
+  })
+
+  it('unwraps nested X article_results.result payloads', () => {
+    const meta = parseSocialMeta({
+      data: {
+        article_results: {
+          result: {
+            title: 'Agent Design Patterns',
+            preview_text: 'How composable tools shape workflows.',
+            cover_media: {
+              media_info: { original_img_url: 'https://pbs.twimg.com/media/nested-cover.png' },
+            },
+          },
+        },
+        author: { name: 'Builder', profile_image_url_https: 'https://pbs.twimg.com/p/1.jpg' },
+      },
+    }, { platform: 'x' })
+
+    assert.equal(meta.content_shape, 'article')
+    assert.equal(meta.title, 'Agent Design Patterns')
+    assert.equal(meta.excerpt, 'How composable tools shape workflows.')
+    assert.equal(meta.cover_url, 'https://pbs.twimg.com/media/nested-cover.png')
+    assert.equal(meta.author.avatar, 'https://pbs.twimg.com/p/1.jpg')
+  })
+})
+
+describe('fetchWebOgMetadata', () => {
+  it('parses OpenGraph tags and resolves relative icon links', async () => {
+    const html = `
+      <!doctype html>
+      <html>
+        <head>
+          <meta property="og:title" content="Scaling Prompt Caching" />
+          <meta property="og:description" content="Practical tricks for latency and cost." />
+          <meta property="og:image" content="/assets/og.png" />
+          <meta property="og:site_name" content="Engineering Notes" />
+          <link rel="icon" href="/favicon-32.png" />
+        </head>
+        <body>Hello</body>
+      </html>
+    `
+    const result = await fetchWebOgMetadata('https://notes.example.com/post/1', {
+      resolver: async () => [{ address: '93.184.216.34', family: 4 }],
+      fetchImpl: async () => new Response(html, {
+        status: 200,
+        headers: { 'content-type': 'text/html; charset=utf-8' },
+      }),
+    })
+
+    assert.ok(result)
+    assert.equal(result.platform, 'web')
+    assert.equal(result.capability, 'link')
+    assert.equal(result.data.title, 'Scaling Prompt Caching')
+    assert.equal(result.data.excerpt, 'Practical tricks for latency and cost.')
+    assert.equal(result.data.cover_url, 'https://notes.example.com/assets/og.png')
+    assert.equal(result.data.favicon_url, 'https://notes.example.com/favicon-32.png')
+    assert.equal(result.data.author.name, 'Engineering Notes')
+  })
+
+  it('classifies substack articles as content_shape article', async () => {
+    const html = `
+      <html><head>
+        <meta property="og:title" content="Issue 42" />
+        <meta property="og:description" content="Weekly essay" />
+      </head></html>
+    `
+    const result = await fetchWebOgMetadata('https://writer.substack.com/p/issue-42', {
+      resolver: async () => [{ address: '104.18.10.20', family: 4 }],
+      fetchImpl: async () => new Response(html, {
+        status: 200,
+        headers: { 'content-type': 'text/html' },
+      }),
+    })
+
+    assert.ok(result)
+    assert.equal(result.platform, 'substack')
+    assert.equal(result.capability, 'article')
+    assert.equal(result.data.content_shape, 'article')
+  })
+
+  it('rejects private/loopback SSRF URLs and private DNS/redirects without fetching', async () => {
+    let calls = 0
+    const countingFetch = async () => {
+      calls += 1
+      return new Response('', { status: 200 })
+    }
+
+    assert.equal(await fetchWebOgMetadata('http://127.0.0.1/secret', { fetchImpl: countingFetch }), null)
+    assert.equal(await fetchWebOgMetadata('http://169.254.169.254/latest/meta-data/', { fetchImpl: countingFetch }), null)
+    assert.equal(await fetchWebOgMetadata('https://internal.example.com/a', {
+      resolver: async () => [{ address: '10.0.0.1', family: 4 }],
+      fetchImpl: countingFetch,
+    }), null)
+    assert.equal(calls, 0)
+
+    let redirectCalls = 0
+    const redirectResult = await fetchWebOgMetadata('https://public.example.com/start', {
+      resolver: async () => [{ address: '93.184.216.34', family: 4 }],
+      fetchImpl: async () => {
+        redirectCalls += 1
+        return new Response(null, {
+          status: 302,
+          headers: { location: 'http://127.0.0.1/admin' },
+        })
+      },
+    })
+    assert.equal(redirectResult, null)
+    assert.equal(redirectCalls, 1)
   })
 })

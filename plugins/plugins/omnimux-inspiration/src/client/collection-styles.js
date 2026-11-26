@@ -101,6 +101,13 @@ export const COLLECTION_CSS = `
   box-sizing: border-box;
   min-height: 0;
 }
+.omnimux-inspiration-grid .omnimux-rival-card.omnimux-inspiration-collection-card {
+  position: relative;
+  left: auto;
+  top: auto;
+  width: 100%;
+  transform: none;
+}
 .omnimux-inspiration-collection-card.is-preview {
   position: relative;
   left: auto;

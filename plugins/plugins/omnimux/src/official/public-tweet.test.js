@@ -43,3 +43,38 @@ it('incomplete public media retries the configured cloud instead of declaring su
  await fetchSocialData({withSk:async()=>{calls++;return {data:post}}},{platform:'x',capability:'tweet',id:'12345'},{fetcher:async()=>({ok:true,json:async()=>({...post,mediaDetails:[{type:'video',video_info:{variants:[]}}]})})})
  assert.equal(calls,1)
 })
+
+it('extracts X Article title, preview excerpt, cover_url and avatar even when tweet text is empty', async () => {
+ const articleTweet = {
+  id_str: '987654321',
+  text: '',
+  user: { name: 'DAN KOE', screen_name: 'thedankoe', profile_image_url_https: 'https://pbs.twimg.com/profile_images/dk.jpg' },
+  article: {
+   article_results: {
+    result: {
+     title: 'The deep work routine that changed my life',
+     preview_text: 'If you can spend 8 hours building someone else’s dream...',
+     cover_media: { media_info: { original_img_url: 'https://pbs.twimg.com/media/article-cover.jpg' } },
+    },
+   },
+  },
+ }
+ const data = await fetchPublicTweet('987654321', { fetcher: async () => ({ ok: true, json: async () => articleTweet }) })
+ assert.equal(data.content_shape, 'article')
+ assert.equal(data.title, 'The deep work routine that changed my life')
+ assert.equal(data.excerpt, 'If you can spend 8 hours building someone else’s dream...')
+ assert.equal(data.cover_url, 'https://pbs.twimg.com/media/article-cover.jpg')
+ assert.equal(data.user.profile_image_url_https, 'https://pbs.twimg.com/profile_images/dk.jpg')
+})
+
+it('prefers full note_tweet text over truncated tweet text', async () => {
+ const longBody = 'First paragraph of a long X post. '.repeat(12).trim()
+ const noteTweet = {
+  id_str: '246810',
+  text: 'First paragraph of a long X post...',
+  note_tweet: { note_tweet_results: { result: { text: longBody } } },
+ }
+ const data = await fetchPublicTweet('246810', { fetcher: async () => ({ ok: true, json: async () => noteTweet }) })
+ assert.equal(data.text, longBody)
+ assert.equal(data.full_text, longBody)
+})

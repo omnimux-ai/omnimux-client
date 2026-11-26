@@ -1,3 +1,4 @@
+import { n as cx, r as cssClass, t as injectCss } from "./injectCss-73B9Wi4w.js";
 import * as primitives from "@deepseek-ai/dsh-client-ui-primitives";
 import { Modal, Tooltip } from "@deepseek-ai/dsh-client-ui-primitives";
 import { forwardRef, useCallback, useEffect, useId, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
@@ -37,42 +38,6 @@ const IconRefreshOutline16 = resolve("IconRefreshOutline16", "IconRefreshOutline
 const IconRightUpOutline14 = resolve("IconRightUpOutline14", "IconRightUpOutlineRegular");
 const IconSearchOutline16 = resolve("IconSearchOutline16", "IconSearchOutlineRegular");
 const IconTrashOutline16 = resolve("IconTrashOutline16", "IconTrashOutlineRegular");
-// src/internal/cssClass.ts
-/** CSS Modules values are `string | undefined` under `noUncheckedIndexedAccess`. */
-function cssClass(value, name) {
-	if (!value) throw new Error(`dsh-ui-kit: missing CSS module class "${name}"`);
-	return value;
-}
-// src/internal/cx.ts
-/** Tiny className joiner. Avoids a `clsx` dependency in the kit. */
-function cx(...parts) {
-	const out = [];
-	for (const part of parts) {
-		if (!part) continue;
-		if (typeof part === "string" || typeof part === "number") {
-			out.push(String(part));
-			continue;
-		}
-		for (const [key, on] of Object.entries(part)) if (on) out.push(key);
-	}
-	return out.join(" ");
-}
-// src/internal/injectCss.ts
-/**
-* Insert or update a kit stylesheet in place by id. Reuses existing DOM nodes
-* across HMR reloads and sibling plugin bundles; a no-op in non-DOM environments.
-*/
-function injectCss(id, css) {
-	if (typeof document === "undefined") return;
-	const selector = `style[data-dsh-ui-kit=${JSON.stringify(id)}]`;
-	let style = document.querySelector(selector);
-	if (!style) {
-		style = document.createElement("style");
-		style.setAttribute("data-dsh-ui-kit", id);
-		document.head.appendChild(style);
-	}
-	if (style.textContent !== css) style.textContent = css;
-}
 // \0dsh-ui-kit-css:src/button/Button.module.css.mjs
 injectCss("Button.module.css", ".dshUk-Button-button {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  flex-shrink: 0;\n  gap: 6px;\n  box-sizing: border-box;\n  margin: 0;\n  border: 1px solid transparent;\n  border-radius: 8px;\n  cursor: pointer;\n  font: inherit;\n  font-size: 13px;\n  font-weight: 500;\n  line-height: 18px;\n  letter-spacing: 0;\n  white-space: nowrap;\n  color: var(--dsw-alias-label-primary);\n  background: transparent;\n  padding: 0 12px;\n  height: 32px;\n  vertical-align: middle;\n  user-select: none;\n  transition:\n    background-color 120ms cubic-bezier(0.16, 1, 0.3, 1),\n    border-color 120ms cubic-bezier(0.16, 1, 0.3, 1),\n    color 120ms cubic-bezier(0.16, 1, 0.3, 1),\n    transform 120ms cubic-bezier(0.16, 1, 0.3, 1),\n    box-shadow 120ms cubic-bezier(0.16, 1, 0.3, 1),\n    opacity 120ms cubic-bezier(0.16, 1, 0.3, 1);\n}\n\n.dshUk-Button-button:focus {\n  outline: none;\n}\n\n.dshUk-Button-button:focus-visible {\n  outline: 2px solid var(--dsw-alias-brand-primary);\n  outline-offset: 2px;\n}\n\n.dshUk-Button-button:disabled,\n.dshUk-Button-button[aria-disabled=\"true\"] {\n  cursor: not-allowed;\n  opacity: 0.4;\n}\n\n.dshUk-Button-button:active:not(:disabled):not([aria-disabled=\"true\"]) {\n  transform: scale(0.96);\n}\n\n.dshUk-Button-sm {\n  height: 28px;\n  padding: 0 10px;\n  border-radius: 6px;\n  font-size: 12px;\n  line-height: 16px;\n}\n\n.dshUk-Button-xs {\n  height: 24px;\n  padding: 0 8px;\n  border-radius: 6px;\n  font-size: 12px;\n  line-height: 16px;\n  gap: 4px;\n}\n\n.dshUk-Button-iconOnly {\n  padding: 0;\n  width: 32px;\n}\n\n.dshUk-Button-iconOnly.dshUk-Button-sm {\n  width: 28px;\n}\n\n.dshUk-Button-iconOnly.dshUk-Button-xs {\n  width: 24px;\n}\n\n.dshUk-Button-primary {\n  background: var(--dsw-alias-button-primary-fill);\n  color: var(--dsw-alias-label-primary-foreground);\n}\n\n.dshUk-Button-primary:hover:not(:disabled):not([aria-disabled=\"true\"]) {\n  background: var(--dsw-alias-button-primary-hover);\n}\n\n.dshUk-Button-secondary {\n  background: var(--dsw-alias-bg-layer-1);\n  border-color: var(--dsw-alias-border-l2);\n  color: var(--dsw-alias-label-primary);\n}\n\n.dshUk-Button-secondary:hover:not(:disabled):not([aria-disabled=\"true\"]) {\n  background: var(--dsw-alias-interactive-bg-hover);\n  border-color: var(--dsw-alias-border-l3);\n}\n\n.dshUk-Button-ghost {\n  background: transparent;\n  color: var(--dsw-alias-label-primary);\n}\n\n.dshUk-Button-ghost:hover:not(:disabled):not([aria-disabled=\"true\"]) {\n  background: var(--dsw-alias-interactive-bg-hover);\n}\n\n.dshUk-Button-ghost:active:not(:disabled):not([aria-disabled=\"true\"]) {\n  background: var(--dsw-alias-interactive-bg-active);\n}\n\n.dshUk-Button-outline {\n  background: transparent;\n  border-color: var(--dsw-alias-border-l2);\n  color: var(--dsw-alias-label-primary);\n}\n\n.dshUk-Button-outline:hover:not(:disabled):not([aria-disabled=\"true\"]) {\n  background: var(--dsw-alias-interactive-bg-hover);\n  border-color: var(--dsw-alias-border-l3);\n}\n\n.dshUk-Button-danger {\n  background: var(--dsw-alias-state-error-primary);\n  color: var(--dsw-alias-label-primary-foreground);\n}\n\n.dshUk-Button-danger:hover:not(:disabled):not([aria-disabled=\"true\"]) {\n  background: var(--dsw-alias-state-error-secondary);\n}\n\n.dshUk-Button-ghost[aria-pressed=\"true\"],\n.dshUk-Button-secondary[aria-pressed=\"true\"] {\n  background: var(--dsw-alias-button-ghost-active-fill);\n  box-shadow: inset 0 0 0 1px var(--dsw-alias-button-ghost-active-border);\n}\n\n/* Outline already owns a real 1px border. Keep pressed fill/border as\n * declarations — do not share the ghost/secondary inset box-shadow or the\n * pressed state would double-stroke. */\n.dshUk-Button-outline[aria-pressed=\"true\"] {\n  background: var(--dsw-alias-button-ghost-active-fill);\n  border-color: var(--dsw-alias-button-ghost-active-border);\n  color: var(--dsw-alias-label-primary);\n}\n\n/* Hover specificity defense: `.dshUk-Button-outline:hover` (and ghost/secondary hover)\n * would otherwise wash the pressed fill/border back to the idle hover tokens. */\n.dshUk-Button-ghost[aria-pressed=\"true\"]:hover:not(:disabled):not([aria-disabled=\"true\"]),\n.dshUk-Button-secondary[aria-pressed=\"true\"]:hover:not(:disabled):not([aria-disabled=\"true\"]),\n.dshUk-Button-outline[aria-pressed=\"true\"]:hover:not(:disabled):not([aria-disabled=\"true\"]) {\n  background: var(--dsw-alias-button-ghost-active-hover);\n}\n\n.dshUk-Button-outline[aria-pressed=\"true\"]:hover:not(:disabled):not([aria-disabled=\"true\"]) {\n  border-color: var(--dsw-alias-button-ghost-active-border);\n}\n\n.dshUk-Button-slot {\n  display: inline-flex;\n  width: 16px;\n  height: 16px;\n  align-items: center;\n  justify-content: center;\n  flex: none;\n}\n\n.dshUk-Button-xs .dshUk-Button-slot {\n  width: 14px;\n  height: 14px;\n}\n\n.dshUk-Button-spinner {\n  animation: dshUkSpin 0.7s linear infinite;\n}\n\n.dshUk-Button-label {\n  min-width: 0;\n}\n\n.dshUk-Button-loadingLabel {\n  opacity: 0.84;\n}\n\n@media (prefers-reduced-motion: reduce) {\n  .dshUk-Button-button {\n    transition: none;\n  }\n\n  .dshUk-Button-button:active:not(:disabled):not([aria-disabled=\"true\"]) {\n    transform: none;\n  }\n\n  .dshUk-Button-spinner {\n    animation: none;\n  }\n}\n\n@keyframes dshUkSpin {\n  from {\n    transform: rotate(0deg);\n  }\n  to {\n    transform: rotate(360deg);\n  }\n}\n");
 var Button_module_css_default = {
