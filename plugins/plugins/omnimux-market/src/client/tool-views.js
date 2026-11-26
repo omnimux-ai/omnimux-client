@@ -1,3 +1,10 @@
+    import { h, useEffect, useState } from "./boot.js";
+    import { ensureCss } from "./css.js";
+    import { api } from "./api.js";
+    import { I18nProvider, lookup } from "./i18n.js";
+    import { Cards, Drawer } from "./skills-ui.js";
+    import { findComposer, insertGesture } from "./composer.js";
+
     function parseToolArgs(props) {
       const block = props?.block;
       const raw = (block && "kind" in block ? block.call?.argsRaw : block?.argsRaw) || "";
@@ -86,9 +93,6 @@
         ),
       );
     }
-
-    let plazaSessions = null;
-    let plazaUiWorkspace = null;
 
     function plazaOfferKey(sessionId) {
       return "omnimux-market:plaza:" + String(sessionId || "");
@@ -189,3 +193,5 @@
     function PlazaSearchToolView() {
       return null;
     }
+
+    export { PlazaSearchToolView, SearchToolView, currentSessionId, pickPayload };

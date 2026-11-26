@@ -1,13 +1,10 @@
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
-import { createRequire } from 'node:module'
 import { test } from 'node:test'
-import { runInNewContext } from 'node:vm'
 import catalog from '../../catalog/index.json' with { type: 'json' }
 import config from '../../catalog/skill-recommendations.json' with { type: 'json' }
 import * as SkillShelf from './skill-picker-logic.js'
+import { loadClientModule } from '../../tests/helpers/client-esm-loader.mjs'
 
-const req = createRequire(import.meta.url)
 const entry = (id, extra = {}) => ({ id, kind: 'skill', skill: id, title: id, summary: id, recommended: true, tags: ['动画'], ...extra })
 const entries = [entry('a'), entry('b'), entry('c', { recommended: false }), entry('expert', { kind: 'expert' })]
 const settings = { featuredSkills: ['b', 'a'], homeRecommendations: ['a'] }
@@ -73,7 +70,6 @@ test('only-uninstalled applies consistently to home, featured and regular cards 
   assert.equal(SkillShelf.isRecommendedInstalledSkill({ slug: 'unknown', recommended: true }), false)
 })
 
-const source = readFileSync(new URL('./skill-plaza.js', import.meta.url), 'utf8')
 const h = (type, props, ...children) => ({ type, props: props || {}, children: children.flat(Infinity) })
 const nodes = (node, predicate) => !node || typeof node !== 'object' ? [] : [
   ...(predicate(node) ? [node] : []), ...(node.children || []).flatMap(child => nodes(child, predicate)),
@@ -83,18 +79,33 @@ function workshop(initial = {}, response = { items: [] }) {
   let cursor = 0
   let effects = []
   const calls = []
-  const render = runInNewContext(`${source}\nSkillPlaza`, {
-    require: req,
-    h, SkillShelf, fmt: value => String(value), Button: 'Button', Drawer: 'Drawer', iconSrc: value => value,
-    useTr: () => key => key, lookup: key => key,
-    useState: initialValue => {
-      const index = cursor++
-      if (!state.has(index)) state.set(index, initialValue)
-      return [state.get(index), next => state.set(index, typeof next === 'function' ? next(state.get(index)) : next)]
+  const { SkillPlaza: render } = loadClientModule('./skill-plaza.js', {
+    modules: {
+      './boot.js': {
+        h,
+        SkillShelf,
+        Button: 'Button',
+        useState: initialValue => {
+          const index = cursor++
+          if (!state.has(index)) state.set(index, initialValue)
+          return [state.get(index), next => state.set(index, typeof next === 'function' ? next(state.get(index)) : next)]
+        },
+        useCallback: fn => fn,
+        useEffect: fn => effects.push(fn),
+        useRef: () => ({ current: null }),
+      },
+      './skills-ui.js': { Drawer: 'Drawer', Overlay: 'Overlay' },
+      './api.js': {
+        apiCacheKey: (action, payload) => JSON.stringify([action, payload]),
+        apiCache: new Map(),
+        API_CACHE_TTL_MS: 1000,
+        api: async (action, payload) => { calls.push({ action, payload }); return action === 'search' ? response : {} },
+      },
+      './session-create.js': { createSkillSession: () => {} },
+      './plugins-column.js': { PluginsColumnTab: 'PluginsColumnTab' },
+      './runtime-state.js': { marketRuntime: { plazaSessions: null, plazaWorkspaces: null } },
+      './i18n.js': { useTr: () => key => key, lookup: key => key },
     },
-    useCallback: fn => fn, useEffect: fn => effects.push(fn),
-    apiCacheKey: (action, payload) => JSON.stringify([action, payload]), apiCache: new Map(), API_CACHE_TTL_MS: 1000,
-    api: async (action, payload) => { calls.push({ action, payload }); return action === 'search' ? response : {} },
   })
   return { state, calls, render: () => { cursor = 0; effects = []; return render({}) }, effects: () => effects.forEach(fn => fn()) }
 }

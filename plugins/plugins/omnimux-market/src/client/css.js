@@ -819,3 +819,5 @@ html[data-omnimux-composer-mode='marketing'] .sh-picker-wrap:has([data-omnimux-s
       s.textContent = CSS;
       return () => {};
     }
+
+    export { ensureCss };

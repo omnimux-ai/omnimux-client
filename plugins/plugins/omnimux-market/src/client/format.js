@@ -40,3 +40,5 @@
       const loc = tr && tr("locale") === "en" ? "en-US" : "zh-CN";
       return d.toLocaleDateString(loc, { year: "numeric", month: "short", day: "numeric" });
     }
+
+    export { fmt, fmtTime, iconSrc, initials, pluginUrl };

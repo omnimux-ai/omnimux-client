@@ -65,7 +65,7 @@ node --test lib/tests/*.test.js   # 宿主 + 客户端逻辑
 node --test src/expert/*.test.js  # 专家 / 连接器目录、装卸、召唤
 ```
 
-源码 `src/`，构建产物 `lib/`（由 `prepare` 生成，不进版本库）。客户端拆在 `src/client/*.js`，`npm run build` 用 `scripts/concat-client.mjs` 拼成单个 ModuleLoader 文件 `lib/client.js`（宿主只认这一份）。合入前在隔离 worktree 完成相关自动化/静态检查与独立评审，通过 required CI/MQ；合入后才从 `main` 物化 Dev。Host（`src/*.ts`）变更需重新加载目标 Host，Client 物化后刷新指定页面，再在 45120 使用 ego-browser 与共享探针验收。不存在合入前独立运行环境；详见[插件 QA](../../docs/contracts/plugin-qa.md)。
+源码 `src/`，构建产物 `lib/`（由 `prepare` 生成，不进版本库）。客户端按标准 ES 模块拆分在 `src/client/*.js`（入口 `src/client/apply.js`，跨模块共享可变态集中在 `src/client/runtime-state.js`），`npm run build` 通过 `scripts/concat-client.mjs` 调用 `esbuild` 打包成单个 ModuleLoader 文件 `lib/client.js`（宿主只认这一份）。合入前在隔离 worktree 完成相关自动化/静态检查与独立评审，通过 required CI/MQ；合入后才从 `main` 物化 Dev。Host（`src/*.ts`）变更需重新加载目标 Host，Client 物化后刷新指定页面，再在 45120 使用 ego-browser 与共享探针验收。不存在合入前独立运行环境；详见[插件 QA](../../docs/contracts/plugin-qa.md)。
 
 ## 安全
 

@@ -1,3 +1,11 @@
+    import { Button, FilterBar, SearchField, h, useEffect, useState } from "./boot.js";
+    import { iconSrc } from "./format.js";
+    import { API_CACHE_TTL_MS, api, apiCache, apiCacheKey } from "./api.js";
+    import { ensureCss } from "./css.js";
+    import { I18nProvider, lookup } from "./i18n.js";
+    import { setPlazaKeepAlive } from "./keepalive.js";
+    import { ChevronDown } from "./settings.js";
+
     const MARKET_CAT_EN = {
       "fun-dressup": "Fun dress-up",
       "web-tools": "Web tools",
@@ -157,7 +165,7 @@
         }).catch(() => {});
         api("config", {}).then((d) => {
           if (!live) return;
-          if (typeof d.plazaKeepAlive === "boolean") plazaKeepAlive = d.plazaKeepAlive;
+          if (typeof d.plazaKeepAlive === "boolean") setPlazaKeepAlive(d.plazaKeepAlive);
         }).catch(() => {});
         return () => { live = false; };
       }, []);
@@ -377,3 +385,5 @@
         ),
       );
     }
+
+    export { Marketplace };

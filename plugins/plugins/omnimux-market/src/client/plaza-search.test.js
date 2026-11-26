@@ -2,22 +2,31 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 import { runInNewContext } from 'node:vm'
+import { loadClientModule } from '../../tests/helpers/client-esm-loader.mjs'
 
 const readClient = (name) => readFileSync(new URL(name, import.meta.url), 'utf8')
 const h = (type, props, ...children) => ({ type, props, children })
 const SearchField = Symbol('SearchField')
-const PlazaTopSearch = runInNewContext(
-  `${readClient('plaza-shell.js')}\nPlazaTopSearch`, { h, SearchField },
-)
+const { PlazaTopSearch } = loadClientModule('./plaza-shell.js', {
+  modules: {
+    './boot.js': { h, SearchField, Button: 'Button', IconButton: 'IconButton', IconCloseOutline16: 'IconCloseOutline16', useEffect: () => {}, useState: (v) => [v, () => {}] },
+    './i18n.js': { I18nProvider: 'I18nProvider', lookup: (k) => k },
+    './marketplace.js': { Marketplace: 'Marketplace' },
+    './skill-plaza.js': { SkillPlaza: 'SkillPlaza', renderPlazaIcon: () => null },
+    './experts.js': { ExpertPanel: 'ExpertPanel' },
+    './connectors.js': { ConnectorPanel: 'ConnectorPanel' },
+    './css.js': { ensureCss: () => () => {} },
+  },
+})
 
 test('plaza search placeholders are translated in both languages', () => {
   for (const [lang, labels] of [
     ['zh', ['搜索插件', '搜索技能', '搜索专家', '搜索连接器']],
     ['en', ['Search plugins', 'Search skills', 'Search experts', 'Search connectors']],
   ]) {
-    const lookup = runInNewContext(`${readClient('i18n.js')}\nlookup`, {
-      React: { createContext: () => ({}) },
-      document: { documentElement: { lang } },
+    const { lookup } = loadClientModule('./i18n.js', {
+      globals: { document: { documentElement: { lang } } },
+      modules: { './boot.js': { React: { createContext: () => ({}) }, h } },
     })
     for (const [index, suffix] of ['Plugins', 'Skills', 'Experts', 'Connectors'].entries()) {
       assert.equal(lookup(`plaza.search${suffix}`), labels[index])

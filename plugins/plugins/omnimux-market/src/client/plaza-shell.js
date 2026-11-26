@@ -1,3 +1,11 @@
+    import { Button, IconButton, IconCloseOutline16, SearchField, h, useEffect, useState } from "./boot.js";
+    import { I18nProvider, lookup } from "./i18n.js";
+    import { Marketplace } from "./marketplace.js";
+    import { SkillPlaza, renderPlazaIcon } from "./skill-plaza.js";
+    import { ExpertPanel } from "./experts.js";
+    import { ConnectorPanel } from "./connectors.js";
+    import { ensureCss } from "./css.js";
+
     const PLAZA_TAB_ID = "omnimux-market:plaza";
     const PLAZA_INTENT_KEY = "omnimux-market:plaza-intent";
     // 与 skill-picker-logic.js PLAZA_HIDDEN_TABS / PLAZA_TABS 同步（skill-shelf-parity.test.js 对拍守卫）。
@@ -223,3 +231,5 @@
         ),
       );
     }
+
+    export { PLAZA_TAB_ID, PlazaTopSearch, PlazaView };

@@ -1,10 +1,8 @@
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
-import { runInNewContext } from 'node:vm'
 import { test } from 'node:test'
 import * as SkillShelf from './skill-picker-logic.js'
+import { loadClientModule } from '../../tests/helpers/client-esm-loader.mjs'
 
-const source = readFileSync(new URL('./skill-picker.js', import.meta.url), 'utf8')
 const h = (type, props, ...children) => ({ type, props: props || {}, children: children.flat(Infinity) })
 function walk(node, predicate) {
   if (!node || typeof node !== 'object') return null
@@ -31,25 +29,42 @@ function harness({ api, createSkillSession, document, onCreate = async () => ({ 
     if (!slots.has(name)) slots.set(name, [])
     return component(props)
   }
-  const context = {
-    h, SkillShelf, lookup: key => key, api, createSkillSession, I18nProvider: 'I18nProvider',
-    skillCreationInputs: new Map(), currentPlazaSessionId: () => 'b', activateSharedToolSkill: value => activations.push(value),
-    useState: initial => {
-      const [state, index] = slot(() => typeof initial === 'function' ? initial() : initial)
-      return [state[index], value => {
-        state[index] = typeof value === 'function' ? value(state[index]) : value
-        writes.push(state[index])
-      }]
-    },
-    useRef: initial => { const [state, index] = slot(() => ({ current: initial })); return state[index] },
-    useEffect: (effect, deps) => {
-      if (owner === 'button' && deps?.length === 0 && !unmountButton) unmountButton = effect()
-    },
-    useLayoutEffect: () => {},
-    useCallback: fn => fn, SearchField: 'SearchField', setTimeout: (fn, ms) => { if (ms !== 8000) return setTimeout(fn, ms) }, clearTimeout,
-    document, createPortal: node => node,
+  const globals = {
+    setTimeout: (fn, ms) => { if (ms !== 8000) return setTimeout(fn, ms) },
+    clearTimeout,
+    document,
   }
-  const { SkillPickerButton, SkillPickerPanel } = runInNewContext(source + '\n({SkillPickerButton,SkillPickerPanel})', context)
+  const modules = {
+    './boot.js': {
+      h,
+      SkillShelf,
+      SearchField: 'SearchField',
+      useState: initial => {
+        const [state, index] = slot(() => typeof initial === 'function' ? initial() : initial)
+        return [state[index], value => {
+          state[index] = typeof value === 'function' ? value(state[index]) : value
+          writes.push(state[index])
+        }]
+      },
+      useRef: initial => { const [state, index] = slot(() => ({ current: initial })); return state[index] },
+      useEffect: (effect, deps) => {
+        if (owner === 'button' && deps?.length === 0 && !unmountButton) unmountButton = effect()
+      },
+      useLayoutEffect: () => {},
+      useCallback: fn => fn,
+    },
+    './api.js': { api },
+    './i18n.js': { I18nProvider: 'I18nProvider', lookup: key => key },
+    './portal.js': { createPortal: node => node },
+    './session-create.js': {
+      activateSharedToolSkill: value => activations.push(value),
+      createSkillSession,
+      currentPlazaSessionId: () => 'b',
+      skillCreationInputs: new Map(),
+    },
+    './runtime-state.js': { marketRuntime: { plazaSessions: null } },
+  }
+  const { SkillPickerButton, SkillPickerPanel } = loadClientModule('./skill-picker.js', { globals, modules })
   const button = render('button', SkillPickerButton, { sessionId: 'a' })
   const panelProps = walk(button, node => node.type === SkillPickerPanel).props
   let panel

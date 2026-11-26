@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { readFileSync } from 'node:fs'
-import { runInNewContext } from 'node:vm'
 import { createRequire } from 'node:module'
+import { loadClientModule } from '../helpers/client-esm-loader.mjs'
 
 const req = createRequire(import.meta.url)
 const { SuiteDetailModal } = req('../../src/client/plaza/SuiteDetailModal.jsx')
@@ -34,7 +34,6 @@ const withClass = (tree, className) => walkAll(tree, (node) => {
 })
 
 test('技能详情弹窗 (Drawer) 统一采用外侧右上方圆形关闭按钮，且移除内侧旧按钮', () => {
-  const skillsUiSource = readFileSync(new URL('../../src/client/skills-ui.js', import.meta.url), 'utf8')
   let closed = false
   const onClose = () => { closed = true }
 
@@ -45,25 +44,32 @@ test('技能详情弹窗 (Drawer) 统一采用外侧右上方圆形关闭按钮�
     useRef: () => ({ current: null }),
     createContext: () => ({ Provider: 'Provider' }),
   }
-  const context = {
-    h,
-    React: ReactMock,
-    useState: ReactMock.useState,
-    useEffect: ReactMock.useEffect,
-    useRef: ReactMock.useRef,
-    createPortal: (node) => node,
-    fallbackPortal: null,
-    document: { body: { style: {} } },
-    window: { addEventListener: () => {}, removeEventListener: () => {} },
-    useTr: () => (k) => (k === 'action.close' ? '关闭' : k),
-    lookup: (k) => k,
-    catLabel: () => '通用',
-    api: async () => ({ ok: true }),
-    Button: 'Button',
-    Toast: 'Toast',
-  }
-
-  const renderDrawer = runInNewContext(`${skillsUiSource}\nDrawer`, context)
+  const { Drawer: renderDrawer } = loadClientModule('./skills-ui.js', {
+    globals: {
+      document: { body: { style: {} } },
+      window: { addEventListener: () => {}, removeEventListener: () => {} },
+    },
+    modules: {
+      './boot.js': {
+        h,
+        React: ReactMock,
+        useState: ReactMock.useState,
+        useEffect: ReactMock.useEffect,
+        Button: 'Button',
+        IconButton: 'IconButton',
+      },
+      './portal.js': { createPortal: (node) => node, fallbackPortal: null },
+      './i18n.js': {
+        useTr: () => (k) => (k === 'action.close' ? '关闭' : k),
+        lookup: (k) => k,
+        catLabel: () => '通用',
+        skillDesc: (x) => x?.description || x?.summary || '',
+        skillTitle: (x) => x?.name || '',
+      },
+      './api.js': { api: async () => ({ ok: true }) },
+      './session-create.js': { trySkillInSession: async () => ({ ok: true }) },
+    },
+  })
   const tree = renderDrawer({
     item: { slug: 'hypit-setup', name: 'Hypit 官方能力接入', summary: '官方能力接入引导' },
     onClose,

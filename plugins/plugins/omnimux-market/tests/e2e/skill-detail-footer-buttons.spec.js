@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { runInNewContext } from 'node:vm'
+import { loadClientModule } from '../helpers/client-esm-loader.mjs'
 
 const h = (type, props, ...children) => ({
   type,
@@ -32,8 +32,6 @@ const withClass = (tree, className) => walkAll(tree, (node) => {
 })
 
 test('技能详情弹窗底栏按钮布局契约：分享与安装按钮消费 leadingIcon，严禁将 svg 作为 children 导致断行 (Issue #2418)', () => {
-  const skillsUiSource = readFileSync(new URL('../../src/client/skills-ui.js', import.meta.url), 'utf8')
-
   const ReactMock = {
     useContext: () => (k) => k,
     useState: (init) => [init, () => {}],
@@ -56,26 +54,32 @@ test('技能详情弹窗底栏按钮布局契约：分享与安装按钮消费 l
     )
   }
 
-  const context = {
-    h,
-    React: ReactMock,
-    useState: ReactMock.useState,
-    useEffect: ReactMock.useEffect,
-    useRef: ReactMock.useRef,
-    createPortal: (node) => node,
-    fallbackPortal: null,
-    document: { body: { style: {} } },
-    window: { addEventListener: () => {}, removeEventListener: () => {} },
-    useTr: () => (k) => (k === 'action.install' ? '安装' : k === 'workshop.try' ? '去对话中试试' : k),
-    lookup: (k) => k,
-    catLabel: () => '通用',
-    api: async () => ({ ok: true }),
-    Button: ButtonMock,
-    IconButton: IconButtonMock,
-    Toast: 'Toast',
-  }
-
-  const renderDrawer = runInNewContext(`${skillsUiSource}\nDrawer`, context)
+  const { Drawer: renderDrawer } = loadClientModule('./skills-ui.js', {
+    globals: {
+      document: { body: { style: {} } },
+      window: { addEventListener: () => {}, removeEventListener: () => {} },
+    },
+    modules: {
+      './boot.js': {
+        h,
+        React: ReactMock,
+        useState: ReactMock.useState,
+        useEffect: ReactMock.useEffect,
+        Button: ButtonMock,
+        IconButton: IconButtonMock,
+      },
+      './portal.js': { createPortal: (node) => node, fallbackPortal: null },
+      './i18n.js': {
+        useTr: () => (k) => (k === 'action.install' ? '安装' : k === 'workshop.try' ? '去对话中试试' : k),
+        lookup: (k) => k,
+        catLabel: () => '通用',
+        skillDesc: (x) => x?.description || x?.summary || '',
+        skillTitle: (x) => x?.name || '',
+      },
+      './api.js': { api: async () => ({ ok: true }) },
+      './session-create.js': { trySkillInSession: async () => ({ ok: true }) },
+    },
+  })
   const tree = renderDrawer({
     item: { slug: 'test-skill', name: '测试技能', summary: '测试摘要' },
     onClose: () => {},

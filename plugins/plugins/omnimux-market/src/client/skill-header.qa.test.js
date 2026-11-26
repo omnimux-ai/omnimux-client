@@ -1,39 +1,56 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { createRequire } from 'node:module'
 import { test } from 'node:test'
-import { runInNewContext } from 'node:vm'
 import { listInstalled } from '../../lib/install.js'
 import * as SkillShelf from './skill-picker-logic.js'
+import { loadClientModule } from '../../tests/helpers/client-esm-loader.mjs'
 
-const req = createRequire(import.meta.url)
-const source = readFileSync(new URL('./skill-plaza.js', import.meta.url), 'utf8')
 const h = (type, props, ...children) => ({ type, props: props || {}, children: children.flat(Infinity) })
 function nodes(node, predicate) {
   if (!node || typeof node !== 'object') return []
   return [...(predicate(node) ? [node] : []), ...(node.children || []).flatMap(child => nodes(child, predicate))]
 }
+function loadPlaza(bootOverrides = {}, extraModules = {}) {
+  return loadClientModule('./skill-plaza.js', {
+    modules: {
+      './boot.js': {
+        h,
+        SkillShelf,
+        Button: 'Button',
+        useCallback: fn => fn,
+        useEffect: () => {},
+        useState: value => [value, () => {}],
+        useRef: () => ({ current: null }),
+        ...bootOverrides,
+      },
+      './skills-ui.js': { Drawer: 'Drawer', Overlay: 'Overlay' },
+      './api.js': { api: async () => ({}), apiCache: new Map(), apiCacheKey: (a, p) => JSON.stringify([a, p]), API_CACHE_TTL_MS: 1000 },
+      './session-create.js': { createSkillSession: () => {} },
+      './plugins-column.js': { PluginsColumnTab: 'PluginsColumnTab' },
+      './runtime-state.js': { marketRuntime: { plazaSessions: null, plazaWorkspaces: null } },
+      './i18n.js': { useTr: () => key => key, lookup: key => key },
+      ...extraModules,
+    },
+  })
+}
 function workshop(initial = {}, api = async () => ({})) {
   const state = new Map(Object.entries(initial).map(([key, value]) => [Number(key), value]))
   let cursor = 0
-  const render = runInNewContext(`${source}\nSkillPlaza`, {
-    require: req,
-    h, SkillShelf, api, fmt: value => String(value), iconSrc: value => value, Drawer: 'Drawer', useTr: () => key => key, lookup: key => key,
+  const { SkillPlaza: render } = loadPlaza({
     useState: value => {
       const index = cursor++
       if (!state.has(index)) state.set(index, value)
       return [state.get(index), next => state.set(index, typeof next === 'function' ? next(state.get(index)) : next)]
     },
-    useCallback: fn => fn, useEffect: () => {},
+  }, {
+    './api.js': { api, apiCache: new Map(), apiCacheKey: (a, p) => JSON.stringify([a, p]), API_CACHE_TTL_MS: 1000 },
   })
   return { state, render: () => { cursor = 0; return render({}) } }
 }
 
 test('QA: closed/open/closed installation modal retains identical hook sequence', () => {
   let hooks = []
-  const render = runInNewContext(`${source}\nInstallModal`, {
-    require: req,
-    h, Overlay: 'Overlay', lookup: key => key,
+  const { InstallModal: render } = loadPlaza({
     useState: value => { hooks.push('state'); return [value, () => {}] },
     useRef: () => { hooks.push('ref'); return { current: null } },
   })
@@ -126,7 +143,7 @@ test('regression: confirm installation exposes error, clears it on retry, and on
   await modal().props.onConfirm()
   assert.equal(modal().props.error, 'install-rejected')
   assert.equal(modal().props.installing, false)
-  const renderModal = runInNewContext(`${source}\nConfirmInstallModal`, { require: req, h, Overlay: 'Overlay', Button: 'Button', lookup: key => key })
+  const { ConfirmInstallModal: renderModal } = loadPlaza()
   assert.equal(nodes(renderModal(modal().props), n => n.props.role === 'alert')[0].children[0], 'install-rejected')
   const pending = modal().props.onConfirm()
   assert.equal(modal().props.error, '')

@@ -1,3 +1,8 @@
+    import { useTr } from "./i18n.js";
+    import { Button, h, useEffect, useState } from "./boot.js";
+    import { API_CACHE_TTL_MS, api, apiCache, apiCacheKey } from "./api.js";
+    import { Cards } from "./skills-ui.js";
+
     /** 连接器 tab：P0 读 WorkBuddy 本地市场全量展示；安装下一刀再接。 */
     function ConnectorPanel({ query = "" }) {
       const tr = useTr();
@@ -88,3 +93,5 @@
         filtered.length ? h(Cards, { items: filtered, onOpen: toggle }) : null,
       );
     }
+
+    export { ConnectorPanel };

@@ -1,4 +1,10 @@
-    // 规则真源：SkillShelf（boot.js 注入 skill-picker-logic.js），禁止内联副本。
+    import { SearchField, SkillShelf, h, useCallback, useEffect, useLayoutEffect, useRef, useState } from "./boot.js";
+    import { api } from "./api.js";
+    import { I18nProvider, lookup } from "./i18n.js";
+    import { createPortal } from "./portal.js";
+    import { activateSharedToolSkill, createSkillSession, currentPlazaSessionId, skillCreationInputs } from "./session-create.js";
+    import { marketRuntime } from "./runtime-state.js";
+
     const pickerSearchCache = new Map();
     const pickerSearchInflight = new Map();
 
@@ -465,7 +471,7 @@
         return null;
       });
 
-      const sessions = typeof plazaSessions !== "undefined" ? plazaSessions : null;
+      const sessions = marketRuntime.plazaSessions ?? null;
       const [currentPreset, setCurrentPreset] = useState(() => {
         return SkillShelf.resolveActivePreset({
           props,
@@ -475,7 +481,7 @@
 
       useEffect(() => {
         const updatePreset = () => {
-          const s = typeof plazaSessions !== "undefined" ? plazaSessions : null;
+          const s = marketRuntime.plazaSessions ?? null;
           const next = SkillShelf.resolveActivePreset({
             props,
             sessions: s,
@@ -483,7 +489,7 @@
           setCurrentPreset((prev) => (prev !== next ? next : prev));
         };
         updatePreset();
-        const s = typeof plazaSessions !== "undefined" ? plazaSessions : null;
+        const s = marketRuntime.plazaSessions ?? null;
         if (s && s.list && typeof s.list.subscribe === "function") {
           return s.list.subscribe(updatePreset);
         }
@@ -665,7 +671,7 @@
         }
         // 技能说明挂到当前会话，发送时随上下文带上，不写进输入框。
         try {
-          const sessions = typeof plazaSessions !== "undefined" ? plazaSessions : (typeof window !== "undefined" ? window.__omnimuxSessions : null);
+          const sessions = marketRuntime.plazaSessions ?? (typeof window !== "undefined" ? window.__omnimuxSessions : null);
           const sid = sessions && sessions.list && typeof sessions.list.getSnapshot === "function"
             ? (sessions.list.getSnapshot() || {}).current
             : "";
@@ -819,3 +825,5 @@
         ),
       );
     }
+
+    export { SkillPickerButton, SkillPickerPanel };

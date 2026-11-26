@@ -10,3 +10,5 @@
       ["convention", "C", "Convention", "规范性", "var(--dsw-alias-label-primary, #7c3aed)"],
       ["effectiveness", "E", "Effectiveness", "有效性", "var(--dsw-alias-state-warn-primary, #ea580c)"],
     ];
+
+    export { DETAIL_TABS, TRACE };
