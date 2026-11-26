@@ -121,6 +121,8 @@ export function mountHubHttp(httpCtx, deps) {
       // Services arrive after mount; resolve them per request, never eagerly.
       getSettings: () => deps.settings ?? httpCtx.get?.('settings'),
       getCredentials: () => deps.credentials ?? httpCtx.get?.('credentials'),
+      getConfigEditor: () => deps.getConfigEditor?.() ?? httpCtx.get?.('configEditor'),
+      getAgentDefaultModel: () => deps.getAgentDefaultModel?.() ?? httpCtx.get?.('agentDefaultModel'),
       getConnection: deps.getConnection,
       hubEvents: deps.hubEvents,
       onCredentialUpdated: typeof httpCtx.on === 'function'
@@ -134,6 +136,13 @@ export function mountHubHttp(httpCtx, deps) {
     })
     const stopAgents = registerAgentRoutes(webServer, {
       getSettings: () => deps.settings ?? httpCtx.get?.('settings'),
+      getConfigEditor: () => deps.getConfigEditor?.() ?? httpCtx.get?.('configEditor'),
+      getCredentials: () => deps.credentials ?? httpCtx.get?.('credentials'),
+      getAuthorization: () => deps.getAuthorization?.() ?? httpCtx.get?.('authorization'),
+      getLlm: () => deps.getLlm?.() ?? httpCtx.get?.('llm'),
+      getAgentDefaultModel: () => deps.getAgentDefaultModel?.() ?? httpCtx.get?.('agentDefaultModel'),
+      refreshLiveLlmSnapshot: deps.refreshLiveLlmSnapshot,
+      hubEvents: deps.hubEvents,
     })
     const stopTemplates = registerTemplatesRoutes(webServer, createTemplatesDispatcher())
     return () => {

@@ -313,4 +313,102 @@ describe('byok routes', () => {
     assert.equal(res.status, 403)
     assert.deepEqual(settings.updates, [])
   })
+
+  it('PUT/DELETE with text capability mirrors a collision-free byok-* route into llm-pi-ai and updates agentDefaultModel', async () => {
+    let omnimuxValue = parseSettingsSection({})
+    let omnimuxRev = 1
+    let piAiRev = 1
+    const piAiMap = new Map([['anthropic', { displayName: 'Claude' }]])
+    const snapshotPiAi = () => Object.fromEntries(Array.from(piAiMap.entries(), ([k, v]) => [k, structuredClone(v)]))
+    const defaults = []
+    const settings = {
+      get: async () => structuredClone(omnimuxValue),
+      describe: () => [
+        { ns: 'omnimux', revision: omnimuxRev, value: structuredClone(omnimuxValue) },
+        { ns: 'llm-pi-ai', revision: piAiRev, base: { providers: {} }, user: { providers: snapshotPiAi() }, value: { providers: snapshotPiAi() } },
+      ],
+      update: async (ns, patch, expectedRev) => {
+        assert.equal(ns, 'omnimux')
+        assert.equal(expectedRev, omnimuxRev)
+        omnimuxValue = parseSettingsSection(Object.assign({}, omnimuxValue, patch))
+        omnimuxRev += 1
+      },
+      mutate: async (ns, ops, expectedRev) => {
+        assert.equal(ns, 'llm-pi-ai')
+        assert.equal(expectedRev, piAiRev)
+        for (const op of ops) {
+          const [, key] = op.path
+          if (op.op === 'set') piAiMap.set(key, structuredClone(op.value))
+          else if (op.op === 'unset') piAiMap.delete(key)
+        }
+        piAiRev += 1
+      },
+    }
+    const credentials = fakeCredentials('')
+    const handlers = register({
+      settings,
+      credentials,
+      agentDefaultModel: { saveSelection: async (sel) => defaults.push(sel) },
+    })
+
+    const putRes = fakeRes()
+    await handlers.get('/omnimux/byok/config')(fakeReq('PUT', {
+      provider: 'anthropic',
+      endpoint: 'https://api.anthropic.com',
+      models: { text: 'claude-sonnet-4-6' },
+      apiKey: 'sk-ant-test',
+      capabilities: ['text'],
+      scenarioBindings: { text: { channel: 'byok', provider: 'anthropic' } },
+      expectedRevision: 1,
+    }), putRes)
+    assert.equal(putRes.status, 200)
+    assert.equal(putRes.body().saved, true)
+    assert.equal(putRes.body().composerRouteId, 'byok-anthropic')
+    assert.deepEqual(piAiMap.get('byok-anthropic'), {
+      displayName: 'Anthropic (BYOK)',
+      api: 'anthropic-messages',
+      baseURL: 'https://api.anthropic.com',
+      apiKeyEnv: 'OMNIMUX_MEDIA_KEY_ANTHROPIC',
+      models: [{ id: 'claude-sonnet-4-6' }],
+    })
+    assert.deepEqual(piAiMap.get('anthropic'), { displayName: 'Claude' })
+    assert.deepEqual(defaults, [{ provider: 'byok-anthropic', model: 'claude-sonnet-4-6' }])
+
+    const delRes = fakeRes()
+    await handlers.get('/omnimux/byok/config')(fakeReq('DELETE', {
+      provider: 'anthropic',
+      expectedRevision: putRes.body().revision,
+    }), delRes)
+    assert.equal(delRes.status, 200)
+    assert.equal(piAiMap.has('byok-anthropic'), false)
+    assert.deepEqual(piAiMap.get('anthropic'), { displayName: 'Claude' })
+  })
+
+  it('PUT succeeds when real dsh-settings stores raw z.array(z.any()) byokProviders without stripping empty fields', async () => {
+    let rawOmnimux = parseSettingsSection({})
+    let rev = 1
+    const settings = {
+      get: async () => structuredClone(rawOmnimux),
+      describe: () => [{ ns: 'omnimux', revision: rev, value: structuredClone(rawOmnimux) }],
+      update: async (_ns, patch, expectedRev) => {
+        assert.equal(expectedRev, rev)
+        // Mimic DSH 0.2.2-rc.5 settings store: merges patch verbatim without parseSettingsSection stripping.
+        rawOmnimux = Object.assign({}, rawOmnimux, structuredClone(patch))
+        rev += 1
+      },
+    }
+    const handlers = register({ settings, credentials: fakeCredentials('') })
+    const res = fakeRes()
+    await handlers.get('/omnimux/byok/config')(fakeReq('PUT', {
+      provider: 'anthropic',
+      endpoint: 'https://api.anthropic.com',
+      models: { text: 'claude-sonnet-4-6' },
+      apiKey: 'sk-raw-settings-test',
+      capabilities: ['text'],
+      scenarioBindings: { text: { channel: 'byok', provider: 'anthropic' } },
+      expectedRevision: 1,
+    }), res)
+    assert.equal(res.status, 200)
+    assert.equal(res.body().saved, true)
+  })
 })

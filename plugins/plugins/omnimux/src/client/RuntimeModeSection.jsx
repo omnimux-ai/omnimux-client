@@ -1,18 +1,59 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { Button, DropdownSelect, InputField } from 'dsh-ui-kit'
-import { useOmnimuxAuth } from './use-omnimux-auth.js'
+import { openAuthUrl, useOmnimuxAuth } from './use-omnimux-auth.js'
 import { ScenarioSelection } from './ScenarioSelection.jsx'
 import { ProviderConfigPanel } from './ProviderConfigPanel.jsx'
 import { AgentBrandIcon } from './agent-brand-icons.jsx'
-import { agentModelSource, agentScanUrl, agentStatusText, agentUpdatesUrl, countInstalledAgents, shouldAutoRefresh } from './agent-live-view.js'
+import {
+  agentCardSubtitle,
+  agentConnectionBadge,
+  agentModelSource,
+  agentScanUrl,
+  agentUpdatesUrl,
+  canImportCliAuth,
+  countInstalledAgents,
+  isAgentSelectable,
+  shouldAutoRefresh,
+} from './agent-live-view.js'
+
+const ACTIVE_OAUTH_STATUSES = new Set(['starting', 'awaiting_user', 'exchanging'])
 
 async function api(path, init) {
   const response = await fetch(path, init)
-  const body = await response.json()
+  const body = await response.json().catch(() => ({}))
   if (!response.ok) {
     throw new Error(typeof body.error === 'string' ? body.error : `HTTP ${response.status}`)
   }
   return body
+}
+
+function formatAgentError(t, errorOrCode) {
+  const code = errorOrCode instanceof Error ? errorOrCode.message : String(errorOrCode || '')
+  switch (code) {
+    case 'api-key-route-exists':
+      return t('runtime.apiKeyRouteConflict')
+    case 'keyring-or-external':
+      return t('runtime.cliImportKeyringHint')
+    case 'api-key-mode':
+      return t('runtime.cliImportApiKeyHint')
+    case 'expired':
+      return t('runtime.cliImportExpired')
+    case 'missing':
+      return t('runtime.cliImportMissing')
+    case 'credentials-unavailable':
+      return t('runtime.credentialsUnavailable')
+    case 'authorization-unavailable':
+    case 'oauth-flow-unavailable':
+      return t('runtime.oauthUnavailable')
+    default:
+      return code || t('runtime.error')
+  }
+}
+
+function oauthMethodLabel(t, method, preferAltBrowser) {
+  if (method === 'device_code' || method === 'device') return t('runtime.oauthDeviceCta')
+  if (method === 'copy_code' || method === 'manual_code') return t('runtime.oauthManualCta')
+  return preferAltBrowser ? t('runtime.oauthBrowserAltCta') : t('runtime.oauthBrowserCta')
 }
 
 /**
@@ -53,7 +94,7 @@ export function RuntimeModeSection({ t, scope }) {
 
   let bannerDesc = t('runtime.cloudHint')
   if (cloudLogged) {
-    bannerDesc = cloudUser ? `${cloudUser} · ${t('runtime.cloudLoggedHint')}` : t('runtime.cloudLoggedHint')
+    bannerDesc = cloudUser ? `${cloudUser} - ${t('runtime.cloudLoggedHint')}` : t('runtime.cloudLoggedHint')
   }
 
   const handleCloudAction = useCallback(() => {
@@ -147,36 +188,60 @@ function AgentPanel({ t, scope, value, busy, setBusy, error, setError, notice, s
   const [agentModel, setAgentModel] = useState(initialAgentModel)
   const [testedId, setTestedId] = useState('')
   const [updates, setUpdates] = useState({})
-  const [loggingInId, setLoggingInId] = useState('')
   const [updatingId, setUpdatingId] = useState('')
-  const loginPollRef = useRef(null)
+  const [importingId, setImportingId] = useState('')
+  const [disconnectingId, setDisconnectingId] = useState('')
+  const [oauthAttempt, setOAuthAttempt] = useState(null)
+  const [manualInput, setManualInput] = useState('')
+  const [submittingManual, setSubmittingManual] = useState(false)
+  const [copiedKind, setCopiedKind] = useState('')
   const lastAutoRefreshRef = useRef(0)
+  const oauthPollRef = useRef(null)
+  const openedUrlsRef = useRef(new Set())
+  const aliveRef = useRef(true)
 
-  // 登录轮询：终端完成登录后由服务端登录态收敛，最长 2 分钟
-  const stopLoginPoll = useCallback(() => {
-    if (loginPollRef.current !== null) {
-      clearInterval(loginPollRef.current)
-      loginPollRef.current = null
+  const stopOAuthPoll = useCallback(() => {
+    if (oauthPollRef.current !== null) {
+      clearInterval(oauthPollRef.current)
+      oauthPollRef.current = null
     }
   }, [])
 
-  useEffect(() => () => stopLoginPoll(), [stopLoginPoll])
+  useEffect(() => {
+    aliveRef.current = true
+    return () => {
+      aliveRef.current = false
+      stopOAuthPoll()
+    }
+  }, [stopOAuthPoll])
+
+  const openAttemptUrlOnce = useCallback((attempt) => {
+    const url = attempt?.notice?.url
+    if (!url || !attempt?.attemptId) return
+    const key = `${attempt.attemptId}:${url}`
+    if (openedUrlsRef.current.has(key)) return
+    openedUrlsRef.current.add(key)
+    openAuthUrl(url)
+  }, [])
 
   const refreshAgents = useCallback(async (options = {}) => {
     try {
       const data = await api(agentScanUrl(options.refresh === true))
+      if (!aliveRef.current) return []
       if (Array.isArray(data.agents)) {
         setAgents(data.agents)
+        return data.agents
       }
     } catch {
       // best-effort
     }
+    return []
   }, [])
 
   const refreshUpdates = useCallback(async (options = {}) => {
     try {
       const data = await api(agentUpdatesUrl(options.refresh === true))
-      if (data && data.updates && typeof data.updates === 'object') {
+      if (aliveRef.current && data && data.updates && typeof data.updates === 'object') {
         setUpdates(data.updates)
       }
     } catch {
@@ -220,34 +285,84 @@ function AgentPanel({ t, scope, value, busy, setBusy, error, setError, notice, s
     }
   }, [active, autoRefresh])
 
+  // Hydrate an in-flight OAuth attempt when reopening settings for the selected agent.
+  useEffect(() => {
+    if (!selectedAgent) return
+    const row = agents.find((item) => item && item.id === selectedAgent)
+    const activeAttempt = row?.subscription?.activeOAuth
+    if (activeAttempt && ACTIVE_OAUTH_STATUSES.has(activeAttempt.status)) {
+      setOAuthAttempt((prev) => (prev && prev.attemptId === activeAttempt.attemptId ? prev : activeAttempt))
+    }
+  }, [agents, selectedAgent])
+
+  const settleAuthorized = useCallback(async (agentId) => {
+    if (typeof onVerified === 'function') {
+      // Fire before any readback: saving binds runtimeAgentId and closes onboarding.
+      onVerified(agentId)
+    }
+    if (scope && typeof scope.adoptRevision === 'function') {
+      try {
+        await scope.adoptRevision()
+      } catch (err) {
+        console.warn('[omnimux] adoptRevision failed after subscription auth:', err instanceof Error ? err.message : String(err))
+      }
+    }
+    await refreshAgents({ refresh: true })
+  }, [onVerified, refreshAgents, scope])
+
+  // Poll OAuth status while an authorization attempt is active.
+  useEffect(() => {
+    stopOAuthPoll()
+    if (!oauthAttempt || !oauthAttempt.attemptId || !ACTIVE_OAUTH_STATUSES.has(oauthAttempt.status)) {
+      return undefined
+    }
+    let inFlight = false
+    const attemptId = oauthAttempt.attemptId
+    oauthPollRef.current = setInterval(() => {
+      if (inFlight || !aliveRef.current) return
+      inFlight = true
+      api(`/omnimux/agents/oauth/status?attemptId=${encodeURIComponent(attemptId)}`).then((data) => {
+        inFlight = false
+        if (!aliveRef.current) return
+        const next = data && data.attempt ? data.attempt : null
+        if (!next) {
+          stopOAuthPoll()
+          setOAuthAttempt(null)
+          return
+        }
+        openAttemptUrlOnce(next)
+        if (next.status === 'authorized') {
+          stopOAuthPoll()
+          setOAuthAttempt(null)
+          setManualInput('')
+          setError('')
+          setNotice('')
+          void settleAuthorized(next.agentId)
+          return
+        }
+        if (next.status === 'failed') {
+          stopOAuthPoll()
+          setOAuthAttempt(null)
+          setError(formatAgentError(t, next.error || t('runtime.oauthFailed')))
+          return
+        }
+        if (next.status === 'cancelled') {
+          stopOAuthPoll()
+          setOAuthAttempt(null)
+          return
+        }
+        setOAuthAttempt(next)
+      }).catch((err) => {
+        inFlight = false
+        console.warn('[omnimux] oauth status poll failed:', err instanceof Error ? err.message : String(err))
+      })
+    }, 1200)
+    return () => stopOAuthPoll()
+  }, [oauthAttempt?.attemptId, oauthAttempt?.status, openAttemptUrlOnce, setError, setNotice, settleAuthorized, stopOAuthPoll, t])
+
   const scanNow = useCallback(() => {
     void refreshAgents({ refresh: true }).then(() => refreshUpdates({ refresh: true }))
   }, [refreshAgents, refreshUpdates])
-
-  const startLoginPoll = useCallback((id) => {
-    stopLoginPoll()
-    const deadline = Date.now() + 120000
-    let inFlight = false
-    loginPollRef.current = setInterval(() => {
-      if (Date.now() >= deadline) {
-        stopLoginPoll()
-        return
-      }
-      if (inFlight) return
-      inFlight = true
-      api('/omnimux/agents').then((data) => {
-        inFlight = false
-        const list = Array.isArray(data.agents) ? data.agents : []
-        setAgents(list)
-        const row = list.find((item) => item && item.id === id)
-        if (row && row.auth && row.auth.state === 'signed-in') {
-          stopLoginPoll()
-        }
-      }).catch(() => {
-        inFlight = false
-      })
-    }, 3000)
-  }, [stopLoginPoll])
 
   const waitForSignedIn = async (id) => {
     const deadline = Date.now() + 120000
@@ -266,14 +381,180 @@ function AgentPanel({ t, scope, value, busy, setBusy, error, setError, notice, s
     return false
   }
 
+  const importCliAuth = async (target) => {
+    if (busy || importingId || !target) return
+    setImportingId(target.id)
+    setBusy(true)
+    setError('')
+    setNotice('')
+    try {
+      const res = await api('/omnimux/agents/import-auth', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          id: target.id,
+          ...(agentModel ? { model: agentModel } : {}),
+        }),
+      })
+      if (!res || res.ok !== true) {
+        throw new Error((res && res.error) || t('runtime.cliImportMissing'))
+      }
+      await settleAuthorized(target.id)
+    } catch (err) {
+      console.warn('[omnimux] cli auth import failed:', err instanceof Error ? err.message : String(err))
+      if (aliveRef.current) setError(formatAgentError(t, err))
+    } finally {
+      if (aliveRef.current) {
+        setImportingId('')
+        setBusy(false)
+      }
+    }
+  }
+
+  const startOAuth = async (target, mode) => {
+    if (busy || !target) return
+    setError('')
+    setNotice('')
+    setManualInput('')
+    try {
+      const res = await api('/omnimux/agents/oauth/start', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          id: target.id,
+          ...(mode ? { mode } : {}),
+          ...(agentModel ? { model: agentModel } : {}),
+        }),
+      })
+      if (!res || res.ok !== true) {
+        throw new Error((res && res.error) || t('runtime.oauthFailed'))
+      }
+      openAttemptUrlOnce(res)
+      if (res.status === 'authorized') {
+        setOAuthAttempt(null)
+        await settleAuthorized(target.id)
+        return
+      }
+      if (res.status === 'failed') {
+        setOAuthAttempt(null)
+        setError(formatAgentError(t, res.error || t('runtime.oauthFailed')))
+        return
+      }
+      setOAuthAttempt(res)
+    } catch (err) {
+      console.warn('[omnimux] oauth start failed:', err instanceof Error ? err.message : String(err))
+      if (aliveRef.current) setError(formatAgentError(t, err))
+    }
+  }
+
+  const submitOAuthPrompt = async () => {
+    if (!oauthAttempt?.attemptId || !oauthAttempt?.pendingPrompt?.promptId || submittingManual) return
+    const trimmed = manualInput.trim()
+    if (!trimmed) return
+    setSubmittingManual(true)
+    setError('')
+    try {
+      const res = await api('/omnimux/agents/oauth/submit', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          attemptId: oauthAttempt.attemptId,
+          promptId: oauthAttempt.pendingPrompt.promptId,
+          value: trimmed,
+        }),
+      })
+      if (!res || res.ok !== true) {
+        throw new Error((res && res.error) || t('runtime.oauthFailed'))
+      }
+      setManualInput('')
+      if (res.status === 'authorized') {
+        stopOAuthPoll()
+        setOAuthAttempt(null)
+        await settleAuthorized(res.agentId || oauthAttempt.agentId)
+      } else {
+        setOAuthAttempt(res)
+      }
+    } catch (err) {
+      console.warn('[omnimux] oauth manual submit failed:', err instanceof Error ? err.message : String(err))
+      if (aliveRef.current) setError(formatAgentError(t, err))
+    } finally {
+      if (aliveRef.current) setSubmittingManual(false)
+    }
+  }
+
+  const cancelOAuth = async () => {
+    if (!oauthAttempt) return
+    stopOAuthPoll()
+    const attemptId = oauthAttempt.attemptId
+    const agentId = oauthAttempt.agentId
+    setOAuthAttempt(null)
+    setManualInput('')
+    setError('')
+    try {
+      await api('/omnimux/agents/oauth/cancel', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ attemptId, id: agentId }),
+      })
+    } catch (err) {
+      console.warn('[omnimux] oauth cancel failed:', err instanceof Error ? err.message : String(err))
+    }
+  }
+
+  const disconnectAgent = async (target) => {
+    if (busy || disconnectingId || !target) return
+    setDisconnectingId(target.id)
+    setBusy(true)
+    setError('')
+    setNotice('')
+    try {
+      const res = await api('/omnimux/agents/disconnect', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ id: target.id }),
+      })
+      if (!res || res.ok !== true) {
+        throw new Error((res && res.error) || t('runtime.error'))
+      }
+      if (oauthAttempt && oauthAttempt.agentId === target.id) {
+        stopOAuthPoll()
+        setOAuthAttempt(null)
+      }
+      await refreshAgents({ refresh: true })
+    } catch (err) {
+      console.warn('[omnimux] disconnect failed:', err instanceof Error ? err.message : String(err))
+      if (aliveRef.current) setError(formatAgentError(t, err))
+    } finally {
+      if (aliveRef.current) {
+        setDisconnectingId('')
+        setBusy(false)
+      }
+    }
+  }
+
+  const copyText = async (text, kind) => {
+    if (!text) return
+    try {
+      await navigator?.clipboard?.writeText?.(text)
+      if (!aliveRef.current) return
+      setCopiedKind(kind)
+      setTimeout(() => {
+        if (aliveRef.current) setCopiedKind((prev) => (prev === kind ? '' : prev))
+      }, 1800)
+    } catch (err) {
+      console.warn('[omnimux] clipboard copy failed:', err instanceof Error ? err.message : String(err))
+    }
+  }
+
   const continueWithAgent = async () => {
     const agent = agents.find((item) => item && item.id === selectedAgent)
-    if (busy || !agent || !agent.installed) return
+    const isConnectedSub = Boolean(agent?.subscription?.connected)
+    if (busy || !agent || (!agent.installed && !isConnectedSub)) return
     setBusy(true)
     setError('')
     setNotice(t('runtime.testingConnection'))
     try {
-      if (selectedAuth && selectedAuth.state === 'signed-out' && selectedAuth.loginSupported === true) {
+      if (!isConnectedSub && selectedAuth && selectedAuth.state === 'signed-out' && selectedAuth.loginSupported === true) {
         const login = await api('/omnimux/agents/login', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
@@ -298,7 +579,10 @@ function AgentPanel({ t, scope, value, busy, setBusy, error, setError, notice, s
       const saved = await api('/omnimux/agents/select', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ id: agent.id }),
+        body: JSON.stringify({
+          id: agent.id,
+          ...(agentModel ? { model: agentModel } : {}),
+        }),
       })
       if (!saved || saved.ok !== true) {
         throw new Error((saved && saved.error) || t('runtime.agentFail'))
@@ -313,38 +597,13 @@ function AgentPanel({ t, scope, value, busy, setBusy, error, setError, notice, s
         if (savedModel === false) throw new Error(t('runtime.error'))
       }
       setTestedId(agent.id)
-      setNotice(t('runtime.agentChecked', { name: agent.name }))
+      setNotice(isConnectedSub ? '' : t('runtime.agentChecked', { name: agent.name }))
       if (typeof onVerified === 'function') onVerified(agent.id)
     } catch (err) {
       setTestedId('')
-      setError(err instanceof Error ? err.message : String(err))
+      setError(formatAgentError(t, err))
     } finally {
       setBusy(false)
-    }
-  }
-
-  const loginAgent = async (event, agent) => {
-    event.stopPropagation()
-    if (busy || loggingInId) return
-    setLoggingInId(agent.id)
-    setError('')
-    setNotice('')
-    try {
-      const res = await api('/omnimux/agents/login', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ id: agent.id }),
-      })
-      if (res && res.ok && res.launched) {
-        setNotice(t(res.mode === 'background' ? 'runtime.cliLoginStarted' : 'runtime.cliLoginOpened'))
-        startLoginPoll(agent.id)
-      } else {
-        setError(t('runtime.cliLoginFail'))
-      }
-    } catch {
-      setError(t('runtime.cliLoginFail'))
-    } finally {
-      setLoggingInId('')
     }
   }
 
@@ -384,11 +643,25 @@ function AgentPanel({ t, scope, value, busy, setBusy, error, setError, notice, s
   const selected = agents.find((item) => item && item.id === selectedAgent) || null
   const agent = selected
   const selectedAuth = selected && selected.auth && typeof selected.auth === 'object' ? selected.auth : null
-  const selectedSignedOut = selectedAuth !== null && selectedAuth.state === 'signed-out'
-  const selectedLoginSupported = selectedAuth !== null && selectedAuth.loginSupported === true
+  const selectedSub = selected && selected.subscription && typeof selected.subscription === 'object' ? selected.subscription : null
+  const subSupported = Boolean(selectedSub && selectedSub.supported === true)
+  const subConnected = Boolean(selectedSub && selectedSub.connected === true)
+  const subOAuthMethods = Array.isArray(selectedSub?.oauthMethods) ? selectedSub.oauthMethods : []
+  const subCanImport = canImportCliAuth(selected)
+  const subImportReason = typeof selectedSub?.cliImport?.reason === 'string' ? selectedSub.cliImport.reason : ''
+  const selectedOAuth = oauthAttempt && selected && oauthAttempt.agentId === selected.id && ACTIVE_OAUTH_STATUSES.has(oauthAttempt.status)
+    ? oauthAttempt
+    : null
   const selectedUpdate = selected && updates[selected.id] && typeof updates[selected.id] === 'object' ? updates[selected.id] : null
   const showSelectedUpdate = selectedUpdate !== null && selectedUpdate.state === 'available' && selectedUpdate.supported === true
   const updateVersion = selectedUpdate && typeof selectedUpdate.latest === 'string' ? selectedUpdate.latest : ''
+  const showModelSelector = Boolean(selected && (selected.installed === true || subConnected))
+  const showContinueFooter = Boolean(
+    !selected
+    || !subSupported
+    || subConnected
+    || (subOAuthMethods.length === 0 && !subCanImport && selected.installed === true),
+  )
   const modelOptions = (() => {
     const agentModels = agent && Array.isArray(agent.models)
       ? selected.models.filter((model) => typeof model === 'string' && model.trim())
@@ -431,28 +704,36 @@ function AgentPanel({ t, scope, value, busy, setBusy, error, setError, notice, s
         <p className="omx-agent-empty" role="status">{t('runtime.noAgents')}</p>
       ) : null}
       <div className="omx-agent-grid">
-        {agents.map((agent) => {
-          const isSelected = selectedAgent === agent.id
+        {agents.map((row) => {
+          const selectable = isAgentSelectable(row)
+          const isSelected = selectedAgent === row.id
+          const badge = agentConnectionBadge(t, row)
           return (
             <Button
-              key={agent.id}
+              key={row.id}
               variant="ghost"
-              className={`omx-agent-card ${isSelected ? 'selected' : ''} ${agent.installed ? '' : 'disabled'}`}
-              disabled={!agent.installed}
+              className={`omx-agent-card ${isSelected ? 'selected' : ''} ${selectable ? '' : 'disabled'}`}
+              disabled={!selectable}
               aria-pressed={isSelected ? 'true' : 'false'}
               onClick={() => {
-                if (!agent.installed) return
-                setSelectedAgent(agent.id)
+                if (!selectable) return
+                if (row.id !== selectedAgent) {
+                  setAgentModel(row.id === value.runtimeAgentId ? (value.runtimeAgentModel || '') : '')
+                }
+                setSelectedAgent(row.id)
                 setTestedId('')
                 setError('')
                 setNotice('')
               }}
             >
-              <span className="omx-agent-icon" data-agent-icon={agent.id} aria-hidden="true"><AgentBrandIcon id={agent.id} name={agent.name} /></span>
+              <span className="omx-agent-icon" data-agent-icon={row.id} aria-hidden="true"><AgentBrandIcon id={row.id} name={row.name} /></span>
               <span className="omx-agent-card-copy">
-                <span className="omx-agent-name">{agent.name}</span>
+                <span className="omx-agent-card-head">
+                  <span className="omx-agent-name">{row.name}</span>
+                  {badge ? <span className="omx-agent-badge" data-kind={badge.kind}>{badge.label}</span> : null}
+                </span>
                 <span className="omx-agent-version">
-                  {agentStatusText(t, agent)}
+                  {agentCardSubtitle(t, row)}
                 </span>
               </span>
             </Button>
@@ -462,25 +743,136 @@ function AgentPanel({ t, scope, value, busy, setBusy, error, setError, notice, s
 
       {selected ? (
         <div className="omx-agent-model-section">
-          <div className="omx-agent-model-label">
-            {t('runtime.modelLabel')} · {selected.name}
-            {agentModelSource(selected) ? (
-              <span className="omx-agent-source" data-source={agentModelSource(selected)}>
-                {t(agentModelSource(selected) === 'live' ? 'runtime.modelsLive' : 'runtime.modelsPreset')}
-              </span>
-            ) : null}
-          </div>
-          {agentModelSource(selected) === 'preset' ? (
-            <p className="omx-agent-source-hint">{t('runtime.modelsPresetHint')}</p>
+          {subSupported && !subConnected && !selectedOAuth ? (
+            <>
+              {subImportReason === 'keyring-or-external' ? (
+                <p className="omx-agent-warn" role="status">{t('runtime.cliImportKeyringHint')}</p>
+              ) : null}
+              {subImportReason === 'api-key-mode' ? (
+                <p className="omx-agent-warn" role="status">{t('runtime.cliImportApiKeyHint')}</p>
+              ) : null}
+              <div className="omx-agent-detail-actions">
+                {subCanImport ? (
+                  <Button
+                    variant="primary"
+                    disabled={busy || importingId === selected.id}
+                    onClick={() => { void importCliAuth(selected) }}
+                  >
+                    {importingId === selected.id
+                      ? t('runtime.cliImporting')
+                      : t('runtime.cliImportCta', { name: selected.name })}
+                  </Button>
+                ) : null}
+                {subOAuthMethods.map((method, index) => (
+                  <Button
+                    key={method}
+                    variant={!subCanImport && index === 0 ? 'primary' : 'secondary'}
+                    disabled={busy}
+                    onClick={() => { void startOAuth(selected, method) }}
+                  >
+                    {oauthMethodLabel(t, method, subCanImport && method === 'browser')}
+                  </Button>
+                ))}
+              </div>
+            </>
           ) : null}
-          <DropdownSelect
-            id={`omx-agent-model-${selected.id}`}
-            value={agentModel || ''}
-            options={modelOptions}
-            disabled={busy}
-            onChange={handleModelChange}
-          />
+
+          {selectedOAuth ? (
+            <div className="omx-oauth-box" role="region" aria-live="polite" data-oauth-status={selectedOAuth.status}>
+              <div className="omx-oauth-head">
+                <span className="omx-oauth-status">
+                  {selectedOAuth.status === 'exchanging'
+                    ? t('runtime.oauthExchanging')
+                    : selectedOAuth.notice?.code
+                      ? t('runtime.oauthWaitingDevice')
+                      : selectedOAuth.status === 'awaiting_user'
+                        ? t('runtime.oauthWaitingBrowser')
+                        : t('runtime.oauthStarting')}
+                </span>
+                <Button variant="ghost" onClick={() => { void cancelOAuth() }}>
+                  {t('runtime.oauthCancel')}
+                </Button>
+              </div>
+              {selectedOAuth.notice?.code ? (
+                <div className="omx-device-code-row">
+                  <code className="omx-device-code">{selectedOAuth.notice.code}</code>
+                  <Button variant="secondary" onClick={() => { void copyText(selectedOAuth.notice.code, 'code') }}>
+                    {copiedKind === 'code' ? t('runtime.oauthCopied') : t('runtime.oauthCopyCode')}
+                  </Button>
+                </div>
+              ) : null}
+              {selectedOAuth.notice?.url ? (
+                <div className="omx-oauth-actions">
+                  <Button variant="primary" onClick={() => openAuthUrl(selectedOAuth.notice.url)}>
+                    {t('runtime.oauthOpenPage')}
+                  </Button>
+                  <Button variant="secondary" onClick={() => { void copyText(selectedOAuth.notice.url, 'url') }}>
+                    {copiedKind === 'url' ? t('runtime.oauthCopied') : t('runtime.oauthCopyUrl')}
+                  </Button>
+                </div>
+              ) : null}
+              {selectedOAuth.pendingPrompt ? (
+                <div className="omx-oauth-manual-row">
+                  <InputField
+                    id={`omx-oauth-manual-${selected.id}`}
+                    aria-label={selectedOAuth.pendingPrompt.message || t('runtime.oauthManualPlaceholder')}
+                    type={selectedOAuth.pendingPrompt.kind === 'secret' ? 'password' : 'text'}
+                    value={manualInput}
+                    placeholder={selectedOAuth.pendingPrompt.placeholder || t('runtime.oauthManualPlaceholder')}
+                    disabled={submittingManual}
+                    onChange={(event) => setManualInput(event.target.value)}
+                  />
+                  <Button
+                    variant="secondary"
+                    disabled={submittingManual || !manualInput.trim()}
+                    onClick={() => { void submitOAuthPrompt() }}
+                  >
+                    {t('runtime.oauthManualSubmit')}
+                  </Button>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
+          {showModelSelector ? (
+            <>
+              <div className="omx-agent-model-label">
+                <span>{t('runtime.modelLabel')}</span>
+                <span className="omx-agent-model-target">{selected.name}</span>
+                {agentModelSource(selected) ? (
+                  <span className="omx-agent-source" data-source={agentModelSource(selected)}>
+                    {t(agentModelSource(selected) === 'live' ? 'runtime.modelsLive' : 'runtime.modelsPreset')}
+                  </span>
+                ) : null}
+              </div>
+              {agentModelSource(selected) === 'preset' ? (
+                <p className="omx-agent-source-hint">{t('runtime.modelsPresetHint')}</p>
+              ) : null}
+              <DropdownSelect
+                id={`omx-agent-model-${selected.id}`}
+                value={agentModel || ''}
+                options={modelOptions}
+                disabled={busy}
+                onChange={handleModelChange}
+              />
+            </>
+          ) : null}
+
           <div className="omx-agent-selected-actions">
+            {subConnected && subOAuthMethods.length > 0 && !selectedOAuth ? (
+              <Button variant="secondary" disabled={busy} onClick={() => { void startOAuth(selected, subOAuthMethods[0]) }}>
+                {t('runtime.oauthReauthCta')}
+              </Button>
+            ) : null}
+            {subConnected ? (
+              <Button
+                variant="ghost"
+                disabled={busy || disconnectingId === selected.id}
+                onClick={() => { void disconnectAgent(selected) }}
+              >
+                {disconnectingId === selected.id ? t('runtime.oauthDisconnecting') : t('runtime.oauthDisconnectCta')}
+              </Button>
+            ) : null}
             {showSelectedUpdate ? (
               <Button variant="ghost" disabled={busy || updatingId === selected.id} onClick={(event) => { void updateAgent(event, selected) }}>
                 {updatingId === selected.id ? t('runtime.cliUpdating') : (updateVersion ? t('runtime.cliUpdateTo', { version: updateVersion }) : t('runtime.cliUpdate'))}
@@ -491,15 +883,17 @@ function AgentPanel({ t, scope, value, busy, setBusy, error, setError, notice, s
         </div>
       ) : null}
 
-      <div className="omx-agent-footer">
-        <Button
-          variant="primary"
-          disabled={busy || !selected || !selected.installed}
-          onClick={() => { void continueWithAgent() }}
-        >
-          {t('runtime.continue')}
-        </Button>
-      </div>
+      {showContinueFooter ? (
+        <div className="omx-agent-footer">
+          <Button
+            variant="primary"
+            disabled={busy || !selected || (!selected.installed && !subConnected)}
+            onClick={() => { void continueWithAgent() }}
+          >
+            {t('runtime.continue')}
+          </Button>
+        </div>
+      ) : null}
     </div>
   )
 }

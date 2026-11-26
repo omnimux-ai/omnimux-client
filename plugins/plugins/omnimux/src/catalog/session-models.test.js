@@ -42,9 +42,9 @@ describe('listSessionModels', () => {
 
     const rows = listSessionModels(settings)
     assert.deepEqual(rows, [
-      { id: 'cpa:gpt-6.1-sol', label: 'GPT-6.1 Sol · CPA' },
-      { id: 'cpa:grok-4.6', label: 'Grok 4.6 · CPA' },
-      { id: 'omnimux:gpt-5.6-sol', label: 'GPT 5.6 Sol · OmniMux' },
+      { id: 'cpa:gpt-6.1-sol', label: 'GPT-6.1 Sol (CPA)' },
+      { id: 'cpa:grok-4.6', label: 'Grok 4.6 (CPA)' },
+      { id: 'omnimux:gpt-5.6-sol', label: 'GPT 5.6 Sol (OmniMux)' },
     ])
   })
 
@@ -68,7 +68,26 @@ describe('listSessionModels', () => {
       cpa: { displayName: 'CPA', models: [{ id: 'm1', name: 'M1' }] },
     }))
 
-    assert.deepEqual(listSessionModels(settings), [{ id: 'cpa:m1', label: 'M1 · CPA' }])
+    assert.deepEqual(listSessionModels(settings), [{ id: 'cpa:m1', label: 'M1 (CPA)' }])
+  })
+
+  it('merges live catalog-backed ctx.llm groups when settings omits explicit models', () => {
+    const settings = settingsStub(descriptorWith({
+      'openai-codex': { displayName: 'Codex', transport: 'sse' },
+    }))
+    const rows = listSessionModels(settings, [
+      {
+        providerId: 'openai-codex',
+        providerName: 'Codex',
+        models: [
+          { id: 'gpt-6.1-sol', name: 'GPT-6.1 Sol', inputModalities: ['text', 'image'] },
+          { id: 'voice-only', name: 'Voice', inputModalities: ['audio'] },
+        ],
+      },
+    ])
+    assert.deepEqual(rows, [
+      { id: 'openai-codex:gpt-6.1-sol', label: 'GPT-6.1 Sol (Codex)' },
+    ])
   })
 
   it('returns an empty list when the namespace is missing or describe fails', () => {
@@ -87,7 +106,7 @@ describe('listSessionModels overlay merge', () => {
       { cpa: { apiKeyEnv: 'CPA_API_KEY', baseURL: 'http://127.0.0.1:8317/v1' } },
       { cpa: { displayName: 'CPA', models: [{ id: 'gpt-6.1-sol', name: 'GPT-6.1 Sol' }] } },
     ))
-    assert.deepEqual(listSessionModels(settings), [{ id: 'cpa:gpt-6.1-sol', label: 'GPT-6.1 Sol · CPA' }])
+    assert.deepEqual(listSessionModels(settings), [{ id: 'cpa:gpt-6.1-sol', label: 'GPT-6.1 Sol (CPA)' }])
   })
 
   it('parses a model id that itself contains a colon tag', async () => {
