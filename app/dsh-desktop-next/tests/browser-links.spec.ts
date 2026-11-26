@@ -56,3 +56,19 @@ it('rejects stale, disabled, unready and safe-mode login links', () => {
   phase.mockReturnValue({ phase: 'starting' })
   expect(runtime.browserLinks()).toEqual(hidden)
 })
+
+it('reports loopback plus every active LAN HTTPS origin for browser guest isolation (issue #363)', () => {
+  const { runtime } = fixture()
+  expect(runtime.hostOrigins()).toEqual([
+    'http://127.0.0.1:1234',
+    'https://192.168.1.20:5678',
+    'https://10.0.0.20:5678',
+  ])
+  // Even when browserAccess is disabled, any still-bound LAN edge remains withheld from guests.
+  runtime.preferences.browserAccess = false
+  expect(runtime.hostOrigins()).toEqual([
+    'http://127.0.0.1:1234',
+    'https://192.168.1.20:5678',
+    'https://10.0.0.20:5678',
+  ])
+})

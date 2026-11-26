@@ -367,7 +367,10 @@
     "afterPack": "./scripts/verify-packaged.ts",
     "afterAllArtifactBuild": "./scripts/verify-fuses.ts",
     "electronFuses": {
+      "enableCookieEncryption": true,
       "enableEmbeddedAsarIntegrityValidation": false,
+      "enableNodeCliInspectArguments": false,
+      "enableNodeOptionsEnvironmentVariable": false,
       "onlyLoadAppFromAsar": false,
       "resetAdHocDarwinSignature": true,
       "runAsNode": true

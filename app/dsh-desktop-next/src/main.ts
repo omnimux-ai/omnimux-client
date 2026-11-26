@@ -170,7 +170,7 @@ const CLIENT_REPORTED = /^(?:slot entry crashed in '|slot factory occurrence cra
 let desktopShortcuts: ReturnType<typeof installDesktopShortcuts> | undefined
 /** Removes the native file drag's temporary exports, where the followed DSH release drags files natively. */
 let disposeFileDrag: (() => Promise<void>) | undefined
-const browserGuests = new DesktopBrowserGuests(() => runtime.auth ? [new URL(runtime.auth.url).origin] : [])
+const browserGuests = new DesktopBrowserGuests(() => runtime.hostOrigins())
 let shellWindow: BrowserWindow | undefined
 let recoveryRunner: ReturnType<typeof createPackageRunner> | undefined
 let replacingWindow = false
@@ -336,7 +336,7 @@ const updates = new NextUpdates({
     }
   },
   log: error => runtime.diagnostics.append(String(error), 'warn'),
-  prepare: (path, nextVersion, directory, signal) => updateInstaller.prepare(path, nextVersion, directory, signal),
+  prepare: (path, nextVersion, directory, signal, expectedSha256) => updateInstaller.prepare(path, nextVersion, directory, signal, expectedSha256),
   install: async () => {
     runtime.busy = true; native.refresh()
     let tasksLocked = false

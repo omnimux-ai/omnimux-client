@@ -236,6 +236,7 @@ async function writeParallel(options: {
   readonly concurrency: number
   readonly etag: string | undefined
   readonly url: string
+  readonly allowedHosts: readonly string[]
   readonly request: UpdateArtifactRequest
   readonly idleTimeoutMs: number
   readonly maxChunkRetries: number
@@ -245,7 +246,7 @@ async function writeParallel(options: {
 }): Promise<void> {
   const {
     filename, initialBody, initialAbortAttempt, totalBytes, chunkBytes, concurrency, etag,
-    url, request, idleTimeoutMs, maxChunkRetries, retryBaseDelayMs, signal, onProgress,
+    url, allowedHosts, request, idleTimeoutMs, maxChunkRetries, retryBaseDelayMs, signal, onProgress,
   } = options
   const handle = await open(filename, 'wx', PRIVATE_FILE_MODE)
   const controller = new AbortController()
@@ -288,7 +289,7 @@ async function writeParallel(options: {
     const { response, finalUrl } = attempt
     try {
       try {
-        assertSecureHttpsUrl(finalUrl)
+        assertSecureHttpsUrl(finalUrl, allowedHosts)
       } catch (error) {
         attempt.abortAttempt(error)
         await response.body?.cancel().catch(() => undefined)
@@ -494,7 +495,7 @@ async function validateBinaryArtifact(filename: string, platform: 'darwin' | 'wi
   }
 }
 
-async function assertSha256(filename: string, expectedHex: string): Promise<void> {
+export async function assertFileSha256(filename: string, expectedHex: string): Promise<void> {
   const normalized = expectedHex.trim().toLowerCase()
   if (!/^[0-9a-f]{64}$/u.test(normalized)) {
     throw new OmniMuxUpdateError('MANIFEST_INVALID', 'Expected SHA-256 digest is invalid')
@@ -578,7 +579,7 @@ export async function downloadOmniMuxArtifact(options: DownloadOmniMuxArtifactOp
       throw new OmniMuxUpdateError('HTTP_ERROR', 'Download server returned an empty body')
     }
     try {
-      assertSecureHttpsUrl(finalUrl)
+      assertSecureHttpsUrl(finalUrl, allowedHosts)
     } catch (error) {
       initialAttempt.abortAttempt(error)
       await response.body.cancel().catch(() => undefined)
@@ -617,6 +618,7 @@ export async function downloadOmniMuxArtifact(options: DownloadOmniMuxArtifactOp
         concurrency,
         etag: response.headers.get('etag') ?? undefined,
         url: finalUrl,
+        allowedHosts,
         request: options.request,
         idleTimeoutMs,
         maxChunkRetries,
@@ -643,7 +645,7 @@ export async function downloadOmniMuxArtifact(options: DownloadOmniMuxArtifactOp
 
     throwIfAborted(options.signal)
     await validateBinaryArtifact(temporary, options.platform, options.expectedSize)
-    await assertSha256(temporary, options.expectedSha256)
+    await assertFileSha256(temporary, options.expectedSha256)
     throwIfAborted(options.signal)
     await unlinkIfPresent(destination)
     await rename(temporary, destination)

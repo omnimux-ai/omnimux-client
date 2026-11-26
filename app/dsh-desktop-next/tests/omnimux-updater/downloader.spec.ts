@@ -109,6 +109,24 @@ it('rejects SHA-256 mismatch and removes temporary partial file', async () => {
   expect(existsSync(dest)).toBe(false)
 })
 
+it('rejects redirects to non-allowlisted hosts on initial requests (issue #363)', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'omnimux-dl-redirect-host-')); roots.push(dir)
+  const dmg = buildDmg(2048)
+  const dest = join(dir, 'OmniMux-2.0.26-arm64.dmg')
+  await expect(downloadOmniMuxArtifact({
+    url: 'https://dl.omnimux.ai/releases/v2.0.26/OmniMux-2.0.26-arm64.dmg',
+    platform: 'darwin',
+    destinationPath: dest,
+    expectedSha256: dmg.sha256,
+    expectedSize: dmg.bytes.byteLength,
+    request: async () => ({
+      finalUrl: 'https://evil.example/OmniMux-2.0.26-arm64.dmg',
+      response: new Response(new Uint8Array(dmg.bytes), { status: 200 }),
+    }),
+  })).rejects.toMatchObject({ code: 'MANIFEST_INVALID' })
+  expect(existsSync(dest)).toBe(false)
+})
+
 it('enforces header TTFB timeout and aborts the hung per-attempt request signal', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'omnimux-dl-ttfb-')); roots.push(dir)
   const dest = join(dir, 'OmniMux-2.0.26-arm64.dmg')

@@ -3,13 +3,86 @@
  * The Host bundle imports src/upstream-family.ts, which re-exports this module, so Electron arrives as an argument.
  */
 import { randomUUID } from 'node:crypto'
+import { lookup as dnsLookup } from 'node:dns/promises'
 import { closeSync, mkdirSync, openSync, realpathSync, rmSync } from 'node:fs'
+import { isIP } from 'node:net'
 import { dirname, extname, join } from 'node:path'
 import { Readable } from 'node:stream'
 import type { FileSaveResult } from '@deepseek-ai/dsh-client-ui-file-actions/types'
 import { resolveDragFileName } from '@deepseek-ai/dsh-util-file-drag'
 import type { BrowserWindow, IpcMainInvokeEvent } from 'electron'
 import { FILE_ACTIONS_IPC } from './file-actions-ipc.ts'
+
+const BLOCKED_HOSTNAMES = new Set([
+  'localhost',
+  'localhost.localdomain',
+  'instance-data',
+  'metadata',
+  'metadata.google.internal',
+  'metadata.goog',
+])
+const BLOCKED_HOST_SUFFIXES = ['.localhost', '.local', '.internal', '.home.arpa'] as const
+
+function isPrivateIpv4(address: string): boolean {
+  const parts = address.split('.')
+  if (parts.length !== 4 || !parts.every(part => /^\d{1,3}$/u.test(part))) return false
+  const octets = parts.map(Number)
+  if (octets.some(value => value > 255)) return false
+  const [a, b] = octets as [number, number, number, number]
+  if (a === 0 || a === 10 || a === 127) return true
+  if (a === 100 && b >= 64 && b <= 127) return true
+  if (a === 169 && b === 254) return true
+  if (a === 172 && b >= 16 && b <= 31) return true
+  if (a === 192 && b === 168) return true
+  return a >= 224
+}
+
+function isPrivateIpv6(address: string): boolean {
+  const bare = address.includes('%') ? address.slice(0, address.indexOf('%')) : address
+  if (bare === '::' || bare === '::1') return true
+  const mappedDotted = /^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/u.exec(bare)
+  if (mappedDotted?.[1] !== undefined) return isPrivateIpv4(mappedDotted[1])
+  const mappedHex = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/u.exec(bare)
+  if (mappedHex?.[1] !== undefined && mappedHex[2] !== undefined) {
+    const hi = Number.parseInt(mappedHex[1], 16)
+    const lo = Number.parseInt(mappedHex[2], 16)
+    return isPrivateIpv4(`${hi >> 8}.${hi & 0xff}.${lo >> 8}.${lo & 0xff}`)
+  }
+  const [head] = bare.split('::')
+  const firstPart = head?.split(':').filter(Boolean)[0]
+  if (firstPart === undefined) return true
+  if (!/^[0-9a-f]{1,4}$/u.test(firstPart)) return true
+  const first = Number.parseInt(firstPart, 16)
+  if (first === 0 || first === 0x0064 || first === 0x0100) return true
+  if ((first & 0xfe00) === 0xfc00) return true
+  if ((first & 0xffc0) === 0xfe80) return true
+  if ((first & 0xff00) === 0xff00) return true
+  return false
+}
+
+export function isPrivateIpAddress(address: string): boolean {
+  const normalized = address.trim().toLowerCase().replace(/^\[|\]$/gu, '')
+  const version = isIP(normalized)
+  if (version === 4) return isPrivateIpv4(normalized)
+  if (version === 6) return isPrivateIpv6(normalized)
+  return false
+}
+
+export function isBlockedImageHost(hostname: string): boolean {
+  const bare = hostname.trim().toLowerCase().replace(/\.$/u, '').replace(/^\[|\]$/gu, '')
+  if (!bare) return true
+  if (BLOCKED_HOSTNAMES.has(bare)) return true
+  if (BLOCKED_HOST_SUFFIXES.some(suffix => bare.endsWith(suffix))) return true
+  if (isIP(bare) !== 0) return isPrivateIpAddress(bare)
+  return false
+}
+
+export function isAllowedImageMediaType(contentType: string): boolean {
+  const mime = contentType.split(';')[0]?.trim().toLowerCase() ?? ''
+  if (mime === '') return true
+  if (mime === 'image/svg+xml') return false
+  return /^image\/[a-z0-9.+-]+$/u.test(mime)
+}
 
 /** The Electron main-process modules the file actions use. */
 export type FileActionsElectron = Pick<typeof import('electron'), 'app' | 'ipcMain' | 'net' | 'session'>
@@ -121,8 +194,15 @@ function requestImageHop({ net, session }: FileActionsElectron, url: URL, signal
  * @param assertOwner - rejects shell pages, subframes, and unowned windows.
  * @param hostUrl - current application Host excluded from image reads.
  */
+export type ImageHostResolver = (hostname: string) => Promise<readonly { address: string }[]>
+
+const defaultImageHostResolver: ImageHostResolver = (hostname) => dnsLookup(hostname, { all: true, verbatim: true })
+
 export function installFileActions(
-  electron: FileActionsElectron, assertOwner: (event: IpcMainInvokeEvent) => BrowserWindow, hostUrl: () => string | undefined = () => undefined,
+  electron: FileActionsElectron,
+  assertOwner: (event: IpcMainInvokeEvent) => BrowserWindow,
+  hostUrl: () => string | undefined = () => undefined,
+  resolveHost: ImageHostResolver = defaultImageHostResolver,
 ): void {
   const { app, ipcMain, session } = electron
   const timeoutMs = resolveDurationMs('DSH_DESKTOP_IMAGE_READ_TIMEOUT_MS', 30_000)
@@ -241,18 +321,33 @@ export function installFileActions(
   ipcMain.handle(FILE_ACTIONS_IPC.clipboardImageRead, async (event, value: unknown) => {
     const owner = assertOwner(event)
     if (typeof value !== 'string') throw new Error('Invalid image URL')
-    const checkedUrl = (value: string): URL => {
-      const url = new URL(value)
+    const parseAndCheckLiteralUrl = (rawValue: string): URL => {
+      const url = new URL(rawValue)
       const host = hostUrl()
       const application = host === undefined ? undefined : new URL(host)
       if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password
+        || isBlockedImageHost(url.hostname)
         || application !== undefined && url.port === application.port
         && (url.hostname === application.hostname || ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname))) {
         throw new Error('Invalid image URL')
       }
       return url
     }
-    let url = checkedUrl(value)
+    const verifyResolvedAddress = async (url: URL, signal: AbortSignal): Promise<void> => {
+      const bareHost = url.hostname.trim().toLowerCase().replace(/\.$/u, '').replace(/^\[|\]$/gu, '')
+      if (isIP(bareHost) !== 0) return
+      let resolved: readonly { address: string }[] = []
+      try {
+        resolved = await resolveHost(bareHost)
+      } catch {
+        // Leave NXDOMAIN/offline lookups to Chromium's network stack (which also handles system proxies).
+      }
+      signal.throwIfAborted()
+      if (resolved.some(entry => isPrivateIpAddress(entry.address))) {
+        throw new Error('Invalid image URL')
+      }
+    }
+    let url = parseAndCheckLiteralUrl(value)
     const contents = owner.webContents
     const lifetime = new AbortController()
     const abort = (): void => { lifetime.abort() }
@@ -265,16 +360,22 @@ export function installFileActions(
       const signal = AbortSignal.any([lifetime.signal, AbortSignal.timeout(timeoutMs)])
       let response: Response
       for (let redirects = 0; ; redirects++) {
+        await verifyResolvedAddress(url, signal)
         response = await requestImageHop(electron, url, signal)
         if (![301, 302, 303, 307, 308].includes(response.status)) break
         await response.body?.cancel()
         const location = response.headers.get('location')
         if (redirects >= 20 || location === null) throw new Error('Invalid image redirect')
-        url = checkedUrl(new URL(location, url).href)
+        url = parseAndCheckLiteralUrl(new URL(location, url).href)
       }
       if (!response.ok) {
         await response.body?.cancel()
         throw new Error('Original image unavailable')
+      }
+      const mediaType = response.headers.get('content-type') ?? ''
+      if (!isAllowedImageMediaType(mediaType)) {
+        await response.body?.cancel()
+        throw new Error('Unsupported image media type')
       }
       const reader = response.body?.getReader()
       if (reader === undefined) throw new Error('Original image unavailable')
@@ -291,7 +392,7 @@ export function installFileActions(
       } finally { await reader.cancel(); reader.releaseLock() }
       assertOwner(event)
       lifetime.signal.throwIfAborted()
-      return { bytes: new Uint8Array(Buffer.concat(chunks)), mediaType: response.headers.get('content-type') ?? '' }
+      return { bytes: new Uint8Array(Buffer.concat(chunks)), mediaType }
     } finally {
       owner.removeListener('closed', abort)
       contents.removeListener('did-start-navigation', navigate)

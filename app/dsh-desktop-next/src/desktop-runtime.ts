@@ -426,6 +426,21 @@ export class NextDesktopRuntime {
       lan: this.lan?.snapshot() ?? null, checkpoint }
   }
 
+  /** All active Host origins (loopback plus any bound LAN HTTPS edges) withheld from browser guests. */
+  hostOrigins(): readonly string[] {
+    const origins = new Set<string>()
+    if (this.auth) {
+      origins.add(new URL(this.auth.url).origin)
+    }
+    const edge = this.lan?.snapshot()
+    if (edge?.actualPort) {
+      for (const address of edge.addresses) {
+        origins.add(`https://${address}:${String(edge.actualPort)}`)
+      }
+    }
+    return [...origins]
+  }
+
   browserLinks(): DesktopBrowserLinks {
     if (!this.auth || this.closing || this.recoveryMode || this.backend.state.phase !== 'ready' || !this.preferences.browserAccess || this.safeMode) return { localUrl: null, lanUrls: [] }
     const localUrl = new URL(this.auth.url).href

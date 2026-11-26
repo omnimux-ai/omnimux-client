@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { promisify } from 'node:util'
 import { DESKTOP_APP_ID } from '../product-identity.ts'
+import { assertFileSha256 } from './downloader.ts'
 import { OmniMuxUpdateError } from './manifest.ts'
 
 const execute = promisify(execFile)
@@ -114,21 +115,35 @@ export function assertOmniMuxWindowsInstaller(info: { ProductName?: unknown; Pro
 }
 
 export class OmniMuxUpdateInstaller {
-  private prepared?: { path: string; version: string; directory?: string; bundle?: string; installed?: string }
+  private prepared?: { path: string; version: string; sha256?: string; directory?: string; bundle?: string; installed?: string }
   private nativeReady = false
 
   constructor(private readonly options: { platform: string; executable: string; language?: () => string; log(error: unknown): void }) {}
 
-  async prepare(path: string, version: string, directory: string, signal: AbortSignal): Promise<void> {
+  private async verifyPreparedWindowsInstaller(prepared: { path: string; sha256?: string }): Promise<void> {
+    const stat = await lstat(prepared.path)
+    if (!stat.isFile() || stat.isSymbolicLink()) {
+      throw new OmniMuxUpdateError('INSTALL_FAILED', 'Prepared OmniMux Windows installer must be a regular file')
+    }
+    await access(prepared.path, constants.R_OK)
+    if (prepared.sha256 !== undefined) {
+      await assertFileSha256(prepared.path, prepared.sha256)
+    }
+  }
+
+  async prepare(path: string, version: string, directory: string, signal: AbortSignal, expectedSha256?: string): Promise<void> {
     this.prepared = undefined
     this.nativeReady = false
     if (this.options.platform === 'win32') {
+      if (expectedSha256 !== undefined) {
+        await assertFileSha256(path, expectedSha256)
+      }
       const script = '$ErrorActionPreference="Stop"; (Get-Item -LiteralPath $env:OMNIMUX_UPDATE_INSTALLER).VersionInfo | Select-Object ProductName,ProductVersion | ConvertTo-Json -Compress'
       const info = await execute(join(process.env.SystemRoot ?? 'C:\\Windows', 'System32/WindowsPowerShell/v1.0/powershell.exe'),
         ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')],
         { signal, timeout: 30_000, windowsHide: true, env: { ...process.env, OMNIMUX_UPDATE_INSTALLER: path }, maxBuffer: 16_384 })
       assertOmniMuxWindowsInstaller(JSON.parse(info.stdout.replace(/^\uFEFF/, '')), version)
-      this.prepared = { path, version }
+      this.prepared = { path, version, ...(expectedSha256 === undefined ? {} : { sha256: expectedSha256 }) }
       return
     }
     if (this.options.platform !== 'darwin') {
@@ -182,7 +197,7 @@ export class OmniMuxUpdateInstaller {
     const prepared = this.prepared
     if (!prepared) throw new OmniMuxUpdateError('INSTALL_FAILED', 'No prepared OmniMux update')
     if (this.options.platform === 'win32') {
-      await access(prepared.path, constants.R_OK)
+      await this.verifyPreparedWindowsInstaller(prepared)
       return
     }
     if (this.nativeReady) return
@@ -237,6 +252,7 @@ export class OmniMuxUpdateInstaller {
     if (this.options.platform !== 'win32' || !this.prepared) {
       throw new OmniMuxUpdateError('INSTALL_FAILED', 'No prepared update installer')
     }
+    await this.verifyPreparedWindowsInstaller(this.prepared)
     await new Promise<void>((resolveLaunch, rejectLaunch) => {
       const child = spawn(this.prepared!.path, ['--updated', '--force-run'], {
         detached: true,

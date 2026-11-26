@@ -45,7 +45,7 @@ export interface NextUpdateOptions {
   changed(): void
   available?(version: string): void
   log(error: unknown): void
-  prepare(path: string, version: string, directory: string, signal: AbortSignal): Promise<void>
+  prepare(path: string, version: string, directory: string, signal: AbortSignal, expectedSha256?: string): Promise<void>
   install(): Promise<boolean | void>
 }
 

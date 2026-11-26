@@ -56,7 +56,7 @@ export interface OmniMuxUpdateCoordinatorOptions {
   readonly changed: () => void
   readonly available?: (version: string) => void
   readonly log: (error: unknown) => void
-  readonly prepare: (path: string, version: string, directory: string, signal: AbortSignal) => Promise<void>
+  readonly prepare: (path: string, version: string, directory: string, signal: AbortSignal, expectedSha256?: string) => Promise<void>
   /** Returns false if the user cancelled installation (e.g. active task warning); throws on install failure. */
   readonly install: () => Promise<boolean | void>
 }
@@ -495,7 +495,7 @@ export class OmniMuxUpdateCoordinator {
         })
         stage = 'prepare'
         this.set({ phase: 'preparing' })
-        await this.options.prepare(filePath, result.latestVersion, directory, signal)
+        await this.options.prepare(filePath, result.latestVersion, directory, signal, result.artifact.sha256)
         signal.throwIfAborted()
         if (rev !== this.revision || this.disposed) return
 

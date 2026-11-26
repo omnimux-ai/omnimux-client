@@ -1,5 +1,6 @@
+import { createHash } from 'node:crypto'
 import { EventEmitter } from 'node:events'
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
@@ -93,6 +94,37 @@ it('notices a Windows installer removed from the temporary directory before the 
   await installer.prepare(exe, '2.0.18-next.1', root, new AbortController().signal)
   await rm(exe)
   await expect(installer.stage()).rejects.toThrow()
+  expect(spawnMock).not.toHaveBeenCalled()
+})
+
+it('re-verifies Windows installer SHA-256 right before stage and launch, blocking tampered files and symlinks (issue #363)', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'next-win-update-sha-')); roots.push(root)
+  const exe = join(root, 'OmniMux-2.0.26-x64-Setup.exe')
+  const original = Buffer.from('verified-installer-bytes')
+  const sha256 = createHash('sha256').update(original).digest('hex')
+  await writeFile(exe, original)
+  execFileMock.mockImplementation((_file: string, _args: string[], _opts: unknown, callback: (err: Error | null, stdout: string, stderr: string) => void) => {
+    callback(null, JSON.stringify({ ProductName: 'OmniMux', ProductVersion: '2.0.26' }), '')
+  })
+  mockSpawnSuccess()
+  const installer = new NextUpdateInstaller({
+    platform: 'win32',
+    executable: 'C:\\Users\\user\\AppData\\Local\\Programs\\OmniMux\\OmniMux.exe',
+    log: vi.fn(),
+  })
+  await installer.prepare(exe, '2.0.26', root, new AbortController().signal, sha256)
+  await installer.stage()
+  // Tamper after stage() and before launch(): launch() must reject without spawning.
+  await writeFile(exe, Buffer.from('tampered-installer-bytes'))
+  await expect(installer.launch()).rejects.toMatchObject({ code: 'CHECKSUM_MISMATCH' })
+  expect(spawnMock).not.toHaveBeenCalled()
+
+  // Replace with symlink: stage() must reject.
+  const decoy = join(root, 'decoy.exe')
+  await writeFile(decoy, original)
+  await rm(exe)
+  await symlink(decoy, exe)
+  await expect(installer.stage()).rejects.toMatchObject({ code: 'INSTALL_FAILED' })
   expect(spawnMock).not.toHaveBeenCalled()
 })
 

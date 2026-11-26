@@ -31,7 +31,7 @@ class FakeRequest extends EventEmitter {
   }
 }
 
-function harness(root: string, hostUrl?: () => string | undefined) {
+function harness(root: string, hostUrl?: () => string | undefined, resolveHost?: (hostname: string) => Promise<readonly { address: string }[]>) {
   const owner = Object.assign(new EventEmitter(), {
     webContents: Object.assign(new EventEmitter(), { downloadURL: vi.fn<(url: string) => void>() }), isDestroyed: () => false,
   })
@@ -51,7 +51,7 @@ function harness(root: string, hostUrl?: () => string | undefined) {
     } },
     session: { defaultSession: { on }, fromPartition: (partition: string) => ({ partition }) },
   } as unknown as FileActionsElectron
-  installFileActions(electron, assertOwner, hostUrl)
+  installFileActions(electron, assertOwner, hostUrl, resolveHost)
   const event = {} as IpcMainInvokeEvent
   const invoke = async (channel: string, value: unknown): Promise<unknown> => handlers.get(channel)!(event, value)
   const item = (mime = 'image/gif', url = owner.webContents.downloadURL.mock.lastCall![0]) => {
@@ -391,12 +391,31 @@ it.each([
   ['the Host itself', 'http://127.0.0.1:19321/api/private'],
   ['a localhost alias of the Host', 'http://localhost:19321/api/private'],
   ['an IPv6 alias of the Host', 'http://[::1]:19321/api/private'],
+  ['another loopback port (issue #363)', 'http://127.0.0.1:8080/internal'],
+  ['cloud metadata IPv4 (issue #363)', 'http://169.254.169.254/latest/meta-data/'],
+  ['RFC1918 private network (issue #363)', 'http://10.0.0.1/secret.png'],
+  ['RFC1918 192.168 private network (issue #363)', 'http://192.168.1.1/admin'],
+  ['IPv6 unique-local address (issue #363)', 'http://[fc00::1]/secret'],
+  ['IPv4-mapped loopback IPv6 (issue #363)', 'http://[::ffff:127.0.0.1]/secret'],
+  ['local mDNS hostname (issue #363)', 'http://printer.local/image.png'],
   ['a file URL', 'file:///private/data'],
   ['the application scheme', 'dsh-app://app/api/private'],
   ['embedded credentials', 'https://user:secret@images.example/a'],
 ])('refuses %s without a request', async (_name, url) => {
   const f = harness(await directory(), () => 'http://127.0.0.1:19321')
   await expect(f.invoke(FILE_ACTIONS_IPC.clipboardImageRead, url)).rejects.toThrow('Invalid image URL')
+  expect(f.requests).toEqual([])
+})
+
+it.each(['text/html; charset=utf-8', 'application/json', 'text/plain', 'image/svg+xml'])('rejects non-raster content-type %s (issue #363)', async (contentType) => {
+  const f = harness(await directory())
+  f.reply.current = request => { request.respond(Readable.from([Buffer.from('<html></html>')]), 200, { 'content-type': contentType }) }
+  await expect(f.invoke(FILE_ACTIONS_IPC.clipboardImageRead, 'https://images.example/doc')).rejects.toThrow('Unsupported image media type')
+})
+
+it('refuses hostnames whose DNS resolves to loopback or cloud metadata IPs before connecting (issue #363)', async () => {
+  const f = harness(await directory(), undefined, async () => [{ address: '169.254.169.254' }])
+  await expect(f.invoke(FILE_ACTIONS_IPC.clipboardImageRead, 'https://rebinding.example/img.png')).rejects.toThrow('Invalid image URL')
   expect(f.requests).toEqual([])
 })
 
@@ -461,6 +480,7 @@ it('times out a request that never answers', async () => {
 it('aborts original-image reads on window navigation and releases lifecycle listeners', async () => {
   const f = harness(await directory())
   const reading = f.invoke(FILE_ACTIONS_IPC.clipboardImageRead, 'https://images.example/original.gif')
+  await vi.waitFor(() => { expect(f.requests).toHaveLength(1) })
   f.owner.webContents.emit('did-start-navigation', {}, 'dsh-app://app/', false, true)
   await expect(reading).rejects.toThrow(/abort/iu)
   expect(f.requests[0]!.abort).toHaveBeenCalled()
