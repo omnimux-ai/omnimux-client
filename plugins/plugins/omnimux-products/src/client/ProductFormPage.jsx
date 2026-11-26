@@ -184,7 +184,7 @@ export function ProductFormPage(props) {
   }
 
   return (
-    <div className="omnimux-products-subscreen omnimux-products-form-view">
+    <div className="omnimux-products-subscreen omnimux-products-form-view" data-window-drag-exclude>
       <PageHeader
         title={title}
         subtitle={subtitle}

@@ -104,13 +104,14 @@ html[data-dsh-product-stage]:not([data-dsh-product-stage="omnimux-apps"]):not([d
 html[data-dsh-product-stage]:not([data-dsh-product-stage="omnimux-apps"]):not([data-dsh-product-stage="omnimux-vids"]){--dsh-sidebar-width:0px!important;--dsh-sidebar-height:0px!important;}
 html[data-dsh-product-stage]:not([data-dsh-product-stage="omnimux-apps"]):not([data-dsh-product-stage="omnimux-vids"]) #root{margin-right:0px!important;}
 html[data-dsh-product-stage]:not([data-dsh-product-stage="omnimux-apps"]) #dsh-window-drag{-webkit-app-region:no-drag!important;pointer-events:none!important;}
-html[data-dsh-product-stage]:not([data-dsh-product-stage="omnimux-apps"]) header{-webkit-app-region:drag!important;}
+html[data-dsh-product-stage]:not([data-dsh-product-stage="omnimux-apps"]) header:not([data-window-drag-exclude] *){-webkit-app-region:drag!important;}
 html[data-dsh-product-stage]:not([data-dsh-product-stage="omnimux-apps"]) header button,
 html[data-dsh-product-stage]:not([data-dsh-product-stage="omnimux-apps"]) header input,
 html[data-dsh-product-stage]:not([data-dsh-product-stage="omnimux-apps"]) header a,
 html[data-dsh-product-stage]:not([data-dsh-product-stage="omnimux-apps"]) header select,
 html[data-dsh-product-stage]:not([data-dsh-product-stage="omnimux-apps"]) header [role="button"],
 html[data-dsh-product-stage]:not([data-dsh-product-stage="omnimux-apps"]) header [role="tab"],
+html[data-dsh-product-stage]:not([data-dsh-product-stage="omnimux-apps"]) header [class*="breadcrumb"],
 html[data-dsh-product-stage]:not([data-dsh-product-stage="omnimux-apps"]) header [class*="controls"],
 html[data-dsh-product-stage]:not([data-dsh-product-stage="omnimux-apps"]) header [class*="tabsContainer"]{-webkit-app-region:no-drag!important;}
 html[data-dsh-product-stage]:not([data-dsh-product-stage="omnimux-apps"]) [data-slot="conversation.session.header"],

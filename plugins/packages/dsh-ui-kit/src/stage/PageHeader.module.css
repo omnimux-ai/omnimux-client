@@ -26,6 +26,7 @@
   line-height: 16px;
   color: var(--dsw-alias-label-secondary);
   margin-bottom: 2px;
+  -webkit-app-region: no-drag;
 }
 
 .titleRow {

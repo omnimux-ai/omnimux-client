@@ -518,6 +518,16 @@ describe('StageContainer & StageHeader/PageHeader components', () => {
     assert.match(css, /-webkit-app-region:\s*no-drag/, 'PageHeader must have no-drag')
   })
 
+  it('PageHeader declares no-drag on breadcrumb, tabsContainer and controls', () => {
+    const css = readFileSync(join(here, 'PageHeader.module.css'), 'utf8')
+    for (const slotSelector of ['.breadcrumb', '.tabsContainer', '.controls']) {
+      const escaped = slotSelector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      const block = css.match(new RegExp(`${escaped}\\s*\\{([^}]*)\\}`))
+      assert.ok(block, `PageHeader.module.css missing ${slotSelector} rule`)
+      assert.match(block[1], /-webkit-app-region:\s*no-drag/, `PageHeader ${slotSelector} must have no-drag`)
+    }
+  })
+
   it('StageHeader forwards to PageHeader for backward compatibility', () => {
     const src = readFileSync(join(here, 'StageHeader.tsx'), 'utf8')
     assert.match(src, /PageHeader/, 'StageHeader must forward to PageHeader')
