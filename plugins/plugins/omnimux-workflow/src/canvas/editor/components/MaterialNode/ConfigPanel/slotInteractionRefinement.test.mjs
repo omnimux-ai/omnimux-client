@@ -49,9 +49,18 @@ test('image and audio add controls carry distinct slot identities on both canvas
  const layout = {preset:'strip', operationId:'video_multi_ref', outputType:'video', slots:[images, audio], addButton:true};
  for (const records of [undefined, []]) {
   const html = render({...props, layout, bindings:{}, records});
-  const addButtons = [...html.matchAll(/<button[^>]*data-testid="wf-add-reference" data-slot="([^"]+)" data-slot-role="([^"]+)"[^>]*>/g)];
-  assert.deepEqual(addButtons.map(([, slot, role]) => [slot, role]), [['reference_images', 'reference'], ['reference_audios', 'reference']]);
-  assert.ok(addButtons.every(([button]) => button.includes('aria-label=') && !button.includes('disabled')));
+  const addButtons = [...html.matchAll(/<button[^>]*data-testid="wf-add-reference"[^>]*>/g)].map(([tag]) => tag);
+  assert.equal(addButtons.length, 2, 'unsatisfied required image slot renders alongside one unified add button');
+  assert.match(addButtons[0], /data-slot="reference_images" data-slot-role="reference"/);
+  assert.match(addButtons[0], /wf-slot-well--required/);
+  assert.doesNotMatch(addButtons[1], /data-slot="/);
+  assert.match(addButtons[1], /data-slot-role="reference"/);
+  assert.doesNotMatch(html, /data-slot="reference_audios"/, 'optional audio slot must not render a dedicated empty well');
+  assert.ok(addButtons.every(button => button.includes('aria-label=') && !button.includes('disabled')));
+  const allOptional = render({...props, layout:{...layout, slots:[{...images, min:0}, audio]}, bindings:{}, records});
+  const optionalButtons = [...allOptional.matchAll(/<button[^>]*data-testid="wf-add-reference"[^>]*>/g)].map(([tag]) => tag);
+  assert.equal(optionalButtons.length, 1, 'all-optional multi-type references collapse into a single generic add button');
+  assert.doesNotMatch(allOptional, /wf-slot-well__position/);
   const borrowed = render({...props, layout:{...layout, displayOnlyFromOperation:'video_multi_ref'}, bindings:{}, records});
   assert.doesNotMatch(borrowed, /data-testid="wf-add-reference"/);
   assert.equal(render({...props, layout:{...layout, operationId:'text_to_video', slots:[]}, records}), '');

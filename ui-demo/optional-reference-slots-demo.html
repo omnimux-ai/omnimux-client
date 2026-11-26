@@ -1,0 +1,653 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Issue #373 — 非必填多格式参考槽收拢与必填空槽演示</title>
+  <style>
+    :root {
+      --dsw-alias-bg-base: #121214;
+      --dsw-alias-bg-layer-1: #1c1c1e;
+      --dsw-alias-bg-layer-2: #2c2c2e;
+      --dsw-alias-bg-layer-3: #3a3a3c;
+      --dsw-alias-border-l1: rgba(255, 255, 255, 0.08);
+      --dsw-alias-border-l2: rgba(255, 255, 255, 0.16);
+      --dsw-alias-border-l3: rgba(255, 255, 255, 0.28);
+      --dsw-alias-label-primary: #f5f5f7;
+      --dsw-alias-label-secondary: #b4b4bc;
+      --dsw-alias-label-tertiary: #8e8e98;
+      --dsw-alias-state-warn-primary: #f59e0b;
+      --dsw-alias-interactive-bg-hover: rgba(255, 255, 255, 0.1);
+    }
+    html[data-theme="light"] {
+      --dsw-alias-bg-base: #f2f3f7;
+      --dsw-alias-bg-layer-1: #ffffff;
+      --dsw-alias-bg-layer-2: #f4f5f8;
+      --dsw-alias-bg-layer-3: #e7e9f0;
+      --dsw-alias-border-l1: rgba(0, 0, 0, 0.08);
+      --dsw-alias-border-l2: rgba(0, 0, 0, 0.15);
+      --dsw-alias-border-l3: rgba(0, 0, 0, 0.26);
+      --dsw-alias-label-primary: #141418;
+      --dsw-alias-label-secondary: #52525c;
+      --dsw-alias-label-tertiary: #767682;
+      --dsw-alias-state-warn-primary: #d97706;
+      --dsw-alias-interactive-bg-hover: rgba(0, 0, 0, 0.06);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 20px;
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", sans-serif;
+      background: var(--dsw-alias-bg-base);
+      color: var(--dsw-alias-label-primary);
+    }
+    .toolbar {
+      max-width: 1120px;
+      margin: 0 auto 18px;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+    .toolbar h1 {
+      margin: 0;
+      font-size: 16px;
+      font-weight: 600;
+    }
+    .toolbar-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .btn {
+      height: 30px;
+      padding: 0 12px;
+      border-radius: 8px;
+      border: 1px solid var(--dsw-alias-border-l2);
+      background: var(--dsw-alias-bg-layer-1);
+      color: var(--dsw-alias-label-primary);
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .btn:hover { background: var(--dsw-alias-interactive-bg-hover); }
+    .btn--primary {
+      background: var(--dsw-alias-label-primary);
+      color: var(--dsw-alias-bg-base);
+      border-color: transparent;
+    }
+    .grid {
+      max-width: 1120px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
+    @media (max-width: 780px) {
+      .grid { grid-template-columns: 1fr; }
+    }
+    .case {
+      background: var(--dsw-alias-bg-layer-1);
+      border: 1px solid var(--dsw-alias-border-l1);
+      border-radius: 14px;
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .case-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .case-title {
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .badge {
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      border: 1px solid var(--dsw-alias-border-l2);
+      color: var(--dsw-alias-label-secondary);
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .panel {
+      background: var(--dsw-alias-bg-base);
+      border: 1px solid var(--dsw-alias-border-l2);
+      border-radius: 14px;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      min-height: 44px;
+    }
+    .wells {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .well {
+      width: 44px;
+      height: 44px;
+      border-radius: 10px;
+      border: 1.5px solid var(--dsw-alias-border-l2);
+      background: var(--dsw-alias-bg-layer-2);
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+      cursor: pointer;
+      color: var(--dsw-alias-label-secondary);
+      flex-shrink: 0;
+    }
+    .well--empty, .well--append {
+      border-style: dashed;
+      border-color: var(--dsw-alias-border-l3);
+      background: transparent;
+      color: var(--dsw-alias-label-tertiary);
+    }
+    .well--empty:hover, .well--append:hover {
+      border-color: var(--dsw-alias-label-primary);
+      color: var(--dsw-alias-label-primary);
+      background: var(--dsw-alias-interactive-bg-hover);
+    }
+    .well--required {
+      border-color: var(--dsw-alias-state-warn-primary);
+    }
+    .well--empty:has(.well-pos) > svg { transform: translateY(-5px); }
+    .well-pos {
+      position: absolute;
+      inset: auto 1px 1px;
+      padding: 1px 2px;
+      border-radius: 0 0 7px 7px;
+      background: var(--dsw-alias-bg-layer-2);
+      color: var(--dsw-alias-label-primary);
+      font-size: 9px;
+      line-height: 12px;
+      text-align: center;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      pointer-events: none;
+    }
+    .tile {
+      width: 100%;
+      height: 100%;
+      padding: 4px 3px 3px;
+      border-radius: 9px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 3px;
+      background: var(--dsw-alias-bg-layer-2);
+    }
+    .tile-name {
+      display: block;
+      width: 100%;
+      font-size: 10px;
+      line-height: 12px;
+      font-weight: 500;
+      text-align: center;
+      color: var(--dsw-alias-label-primary);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .thumb {
+      width: 100%;
+      height: 100%;
+      border-radius: 9px;
+      background: linear-gradient(135deg, #4b6cb7, #182848);
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+      padding: 2px;
+      font-size: 9px;
+      color: #fff;
+    }
+    .swap {
+      width: 24px;
+      height: 24px;
+      border-radius: 999px;
+      border: 1px solid var(--dsw-alias-border-l2);
+      background: var(--dsw-alias-bg-layer-2);
+      color: var(--dsw-alias-label-secondary);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+    }
+    .prompt-placeholder {
+      font-size: 13px;
+      color: var(--dsw-alias-label-tertiary);
+      min-height: 36px;
+    }
+    .bottom {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .pill {
+      height: 28px;
+      padding: 0 10px;
+      border-radius: 999px;
+      border: 1px solid var(--dsw-alias-border-l2);
+      background: var(--dsw-alias-bg-layer-1);
+      color: var(--dsw-alias-label-primary);
+      font-size: 12px;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .demo-dialog-mask {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.52);
+      display: none;
+      padding: 72px 16px 16px;
+      overflow-y: auto;
+      z-index: 50;
+    }
+    .demo-dialog-mask.open { display: block; }
+    .demo-dialog-card {
+      width: min(560px, 100%);
+      margin: 0 auto;
+      background: var(--dsw-alias-bg-layer-1);
+      border: 1px solid var(--dsw-alias-border-l2);
+      border-radius: 16px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      box-shadow: 0 18px 48px rgba(0, 0, 0, 0.35);
+    }
+    .modal-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 14px;
+      font-weight: 600;
+    }
+    .filter-row {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .filter-pill {
+      height: 26px;
+      padding: 0 10px;
+      border-radius: 8px;
+      border: 1px solid var(--dsw-alias-border-l2);
+      background: var(--dsw-alias-bg-layer-2);
+      color: var(--dsw-alias-label-secondary);
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .filter-pill.active {
+      background: var(--dsw-alias-label-primary);
+      color: var(--dsw-alias-bg-base);
+      border-color: transparent;
+    }
+    .asset-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+    }
+    .asset-card {
+      padding: 10px;
+      border-radius: 10px;
+      border: 1.5px solid var(--dsw-alias-border-l2);
+      background: var(--dsw-alias-bg-layer-2);
+      color: var(--dsw-alias-label-primary);
+      text-align: left;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      font-size: 12px;
+    }
+    .asset-card.selected {
+      border-color: var(--dsw-alias-label-primary);
+    }
+    .asset-meta {
+      font-size: 11px;
+      color: var(--dsw-alias-label-secondary);
+    }
+    .modal-foot {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+  </style>
+</head>
+<body>
+  <div class="toolbar">
+    <h1>Issue #373 必填空槽独立展示与非必填多格式参考收拢演示</h1>
+    <div class="toolbar-actions">
+      <button type="button" class="btn" id="toggle-theme">切换亮/暗主题</button>
+      <button type="button" class="btn" id="reset-demo">重置交互</button>
+    </div>
+  </div>
+
+  <div class="grid">
+    <section class="case" data-case="wan-before">
+      <div class="case-head">
+        <span class="case-title">修改前：wan-3.0 全能参考（全可选 min=0）</span>
+        <span class="badge">平铺 3 个分类型空槽</span>
+      </div>
+      <div class="panel">
+        <div class="panel-header">
+          <div class="wells">
+            <div class="well" aria-label="核心文案槽位">
+              <span class="tile">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>
+                <span class="tile-name">核心文案槽位</span>
+              </span>
+            </div>
+            <button type="button" class="well well--empty" aria-label="选择参考图">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+              <span class="well-pos">参考图</span>
+            </button>
+            <button type="button" class="well well--empty" aria-label="选择参考视频">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+              <span class="well-pos">参考视频</span>
+            </button>
+            <button type="button" class="well well--empty" aria-label="选择参考音频">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+              <span class="well-pos">参考音频</span>
+            </button>
+          </div>
+        </div>
+        <div class="prompt-placeholder">补充要求（可选）</div>
+        <div class="bottom">
+          <span class="pill">wan-3.0</span>
+          <span class="pill">全能参考 / 1080P / 5s</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="case" data-case="wan-after">
+      <div class="case-head">
+        <span class="case-title">修改后：wan-3.0 全能参考（可点击 + 体验统一选材）</span>
+        <span class="badge">收拢为 1 个通用 +</span>
+      </div>
+      <div class="panel">
+        <div class="panel-header">
+          <div class="wells" id="wan-after-wells"></div>
+        </div>
+        <div class="prompt-placeholder">补充要求（可选）</div>
+        <div class="bottom">
+          <span class="pill">wan-3.0</span>
+          <span class="pill">全能参考 / 1080P / 5s</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="case" data-case="seedance-mixed">
+      <div class="case-head">
+        <span class="case-title">修改后：seedance-2-5 全能参考（参考图必填 min=1，视频/音频可选）</span>
+        <span class="badge" id="seedance-badge">未填必填图</span>
+      </div>
+      <div class="panel">
+        <div class="panel-header">
+          <div class="wells" id="seedance-wells"></div>
+        </div>
+        <div class="prompt-placeholder">补充要求（可选）</div>
+        <div class="bottom">
+          <span class="pill">seedance-2-5</span>
+          <span class="pill">全能参考 / 1080P / 5s</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="case" data-case="required-preserved">
+      <div class="case-head">
+        <span class="case-title">必填模式保持不变：首尾帧 / 对口型</span>
+        <span class="badge">min=1 独立保留</span>
+      </div>
+      <div class="panel">
+        <div class="panel-header">
+          <div class="wells">
+            <button type="button" class="well well--empty well--required" aria-label="首帧">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+              <span class="well-pos">首帧</span>
+            </button>
+            <span class="swap" aria-hidden="true">⇄</span>
+            <button type="button" class="well well--empty well--required" aria-label="尾帧">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+              <span class="well-pos">尾帧</span>
+            </button>
+            <span style="width:12px"></span>
+            <button type="button" class="well well--empty well--required" aria-label="选择角色图">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+              <span class="well-pos">角色图</span>
+            </button>
+            <button type="button" class="well well--empty well--required" aria-label="选择驱动音频">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+              <span class="well-pos">驱动音频</span>
+            </button>
+          </div>
+        </div>
+        <div class="prompt-placeholder">补充要求（可选）</div>
+        <div class="bottom">
+          <span class="pill">首尾帧 + 对口型</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="case" data-case="chat-before">
+      <div class="case-head">
+        <span class="case-title">修改前：gemini-3.8-flash 多模态对话（全可选 min=0）</span>
+        <span class="badge">平铺 4 个空槽</span>
+      </div>
+      <div class="panel">
+        <div class="panel-header">
+          <div class="wells">
+            <button type="button" class="well well--empty" aria-label="选择参考图"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14"/><path d="M12 5v14"/></svg><span class="well-pos">参考图</span></button>
+            <button type="button" class="well well--empty" aria-label="选择参考视频"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14"/><path d="M12 5v14"/></svg><span class="well-pos">参考视频</span></button>
+            <button type="button" class="well well--empty" aria-label="选择参考音频"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14"/><path d="M12 5v14"/></svg><span class="well-pos">参考音频</span></button>
+            <button type="button" class="well well--empty" aria-label="选择文档"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14"/><path d="M12 5v14"/></svg><span class="well-pos">文档</span></button>
+          </div>
+        </div>
+        <div class="prompt-placeholder">描述你想生成、分析或改写的内容</div>
+        <div class="bottom"><span class="pill">gemini-3.8-flash</span></div>
+      </div>
+    </section>
+
+    <section class="case" data-case="chat-after">
+      <div class="case-head">
+        <span class="case-title">修改后：gemini-3.8-flash 多模态对话</span>
+        <span class="badge">收拢为 1 个通用 +</span>
+      </div>
+      <div class="panel">
+        <div class="panel-header">
+          <div class="wells">
+            <button type="button" class="well well--append" id="chat-unified-add" aria-label="添加素材" title="添加素材">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+            </button>
+          </div>
+        </div>
+        <div class="prompt-placeholder">描述你想生成、分析或改写的内容</div>
+        <div class="bottom"><span class="pill">gemini-3.8-flash</span></div>
+      </div>
+    </section>
+  </div>
+
+  <div class="demo-dialog-mask" id="picker-backdrop">
+    <div class="demo-dialog-card" role="dialog" aria-modal="true" aria-label="选择素材">
+      <div class="modal-head">
+        <span id="picker-title">选择素材（按类型自动分槽）</span>
+        <button type="button" class="btn" id="picker-close">关闭</button>
+      </div>
+      <div class="filter-row" id="picker-filters"></div>
+      <div class="asset-grid" id="picker-assets"></div>
+      <div class="modal-foot">
+        <button type="button" class="btn" id="picker-cancel">取消</button>
+        <button type="button" class="btn btn--primary" id="picker-confirm">使用所选素材</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const catalogAssets = [
+      { id: 'img-1', type: 'image', label: '商品主图.png', slot: 'reference_images' },
+      { id: 'vid-1', type: 'video', label: '镜头参考.mp4', slot: 'reference_videos' },
+      { id: 'aud-1', type: 'audio', label: '11月23日口播.wav', slot: 'reference_audios' },
+      { id: 'doc-1', type: 'document', label: '脚本大纲.pdf', slot: 'pdf' },
+    ];
+    const typeLabels = { all: '全部', image: '图片', video: '视频', audio: '音频', document: '文档' };
+
+    const state = {
+      wan: [{ id: 'txt-1', type: 'text', label: '核心文案槽位' }],
+      seedance: [],
+      pickerTarget: null,
+      pickerAllowed: [],
+      pickerFilter: 'all',
+      pickerSelected: new Set(),
+    };
+
+    const plusSvg = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14"/><path d="M12 5v14"/></svg>';
+    const textSvg = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/></svg>';
+    const audioSvg = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>';
+    const videoSvg = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85"><polygon points="6 3 20 12 6 21 6 3"/></svg>';
+
+    function renderTile(item) {
+      const el = document.createElement('div');
+      el.className = 'well';
+      el.setAttribute('aria-label', item.label);
+      if (item.type === 'image') {
+        el.innerHTML = `<span class="thumb">图</span>`;
+      } else if (item.type === 'video') {
+        el.innerHTML = `<span class="tile">${videoSvg}<span class="tile-name">${item.label}</span></span>`;
+      } else if (item.type === 'audio') {
+        el.innerHTML = `<span class="tile">${audioSvg}<span class="tile-name">${item.label}</span></span>`;
+      } else {
+        el.innerHTML = `<span class="tile">${textSvg}<span class="tile-name">${item.label}</span></span>`;
+      }
+      return el;
+    }
+
+    function openPicker(target, allowedTypes, title) {
+      state.pickerTarget = target;
+      state.pickerAllowed = allowedTypes;
+      state.pickerFilter = 'all';
+      state.pickerSelected = new Set();
+      document.getElementById('picker-title').textContent = title;
+      renderPicker();
+      document.getElementById('picker-backdrop').classList.add('open');
+    }
+
+    function closePicker() {
+      document.getElementById('picker-backdrop').classList.remove('open');
+    }
+
+    function renderPicker() {
+      const filters = document.getElementById('picker-filters');
+      filters.innerHTML = '';
+      if (state.pickerAllowed.length > 1) {
+        for (const t of ['all', ...state.pickerAllowed]) {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'filter-pill' + (state.pickerFilter === t ? ' active' : '');
+          btn.textContent = typeLabels[t];
+          btn.onclick = () => { state.pickerFilter = t; renderPicker(); };
+          filters.appendChild(btn);
+        }
+      }
+      const grid = document.getElementById('picker-assets');
+      grid.innerHTML = '';
+      const items = catalogAssets.filter(a => state.pickerAllowed.includes(a.type) && (state.pickerFilter === 'all' || a.type === state.pickerFilter));
+      for (const item of items) {
+        const card = document.createElement('button');
+        card.type = 'button';
+        card.className = 'asset-card' + (state.pickerSelected.has(item.id) ? ' selected' : '');
+        card.innerHTML = `<strong>${item.label}</strong><span class="asset-meta">${typeLabels[item.type]} → ${item.slot}</span>`;
+        card.onclick = () => {
+          if (state.pickerSelected.has(item.id)) state.pickerSelected.delete(item.id);
+          else state.pickerSelected.add(item.id);
+          renderPicker();
+        };
+        grid.appendChild(card);
+      }
+    }
+
+    function renderCases() {
+      const wanEl = document.getElementById('wan-after-wells');
+      wanEl.innerHTML = '';
+      for (const item of state.wan) wanEl.appendChild(renderTile(item));
+      const wanAdd = document.createElement('button');
+      wanAdd.type = 'button';
+      wanAdd.className = 'well well--append';
+      wanAdd.id = 'wan-unified-add';
+      wanAdd.setAttribute('aria-label', '添加素材');
+      wanAdd.innerHTML = plusSvg;
+      wanAdd.onclick = () => openPicker('wan', ['image', 'video', 'audio'], '全能参考统一选择器（图片 / 视频 / 音频）');
+      wanEl.appendChild(wanAdd);
+
+      const sdEl = document.getElementById('seedance-wells');
+      sdEl.innerHTML = '';
+      for (const item of state.seedance) sdEl.appendChild(renderTile(item));
+      const hasRequiredImg = state.seedance.some(i => i.type === 'image');
+      document.getElementById('seedance-badge').textContent = hasRequiredImg ? '已填必填图，收拢为单 +' : '必填图 + 单 +';
+      if (!hasRequiredImg) {
+        const reqBtn = document.createElement('button');
+        reqBtn.type = 'button';
+        reqBtn.id = 'seedance-req-img';
+        reqBtn.className = 'well well--empty well--required';
+        reqBtn.setAttribute('aria-label', '选择参考图');
+        reqBtn.innerHTML = `${plusSvg}<span class="well-pos">参考图</span>`;
+        reqBtn.onclick = () => openPicker('seedance', ['image'], '选择必填参考图');
+        sdEl.appendChild(reqBtn);
+      }
+      const sdAdd = document.createElement('button');
+      sdAdd.type = 'button';
+      sdAdd.id = 'seedance-unified-add';
+      sdAdd.className = 'well well--append';
+      sdAdd.setAttribute('aria-label', '添加素材');
+      sdAdd.innerHTML = plusSvg;
+      sdAdd.onclick = () => openPicker('seedance', ['image', 'video', 'audio'], 'seedance-2-5 统一选择器（图片 / 视频 / 音频）');
+      sdEl.appendChild(sdAdd);
+    }
+
+    document.getElementById('chat-unified-add').onclick = () =>
+      openPicker('chat', ['image', 'video', 'audio', 'document'], '多模态对话统一选择器（图片 / 视频 / 音频 / 文档）');
+    document.getElementById('picker-close').onclick = closePicker;
+    document.getElementById('picker-cancel').onclick = closePicker;
+    document.getElementById('picker-confirm').onclick = () => {
+      const chosen = catalogAssets.filter(a => state.pickerSelected.has(a.id));
+      if (state.pickerTarget === 'wan') {
+        for (const item of chosen) if (!state.wan.some(x => x.id === item.id)) state.wan.push(item);
+      } else if (state.pickerTarget === 'seedance') {
+        for (const item of chosen) if (!state.seedance.some(x => x.id === item.id)) state.seedance.push(item);
+      }
+      closePicker();
+      renderCases();
+    };
+    document.getElementById('toggle-theme').onclick = () => {
+      const html = document.documentElement;
+      html.dataset.theme = html.dataset.theme === 'dark' ? 'light' : 'dark';
+    };
+    document.getElementById('reset-demo').onclick = () => {
+      state.wan = [{ id: 'txt-1', type: 'text', label: '核心文案槽位' }];
+      state.seedance = [];
+      renderCases();
+    };
+    renderCases();
+  </script>
+</body>
+</html>

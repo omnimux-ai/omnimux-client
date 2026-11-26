@@ -211,7 +211,8 @@ export function useResourcePicker(nodeId: string, workspaceId?: string | null): 
         if (!payload.localFiles.length && !payload.selections?.length) return false;
         const prepared = planPickerSelectionMutation({ nodes: state.nodes, edges: state.edges }, {
           targetNodeId: nodeId,
-          chosenOperationId: payload.chosenOperationId ?? String(params?.operation ?? ''),
+          chosenOperationId: payload.chosenOperationId
+            ?? ((typeof params?.operation === 'string' && params.operation) ? params.operation : (slotTarget?.operationId ?? '')),
           chosenRouteId: payload.chosenRouteId,
           selections: payload.selections,
           replaceEdgeId: slotTarget?.replaceEdgeId,

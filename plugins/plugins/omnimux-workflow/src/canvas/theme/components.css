@@ -1710,7 +1710,7 @@ body[data-ds-dark-theme] .wf-canvas-root .wf-gsc__loading-overlay {
 
 /* 必需槽位空缺：虚线 + 警示色，空卡槽自解释"还差素材" */
 .wf-slot-well--required {
-  border-color: var(--dsw-alias-label-warning, var(--wb-border-strong));
+  border-color: var(--dsw-alias-state-warn-primary, var(--wb-border-strong));
 }
 
 .wf-slot-well--conflict {
@@ -5816,6 +5816,12 @@ body[data-ds-dark-theme] .wf-canvas-root .wf-edge-disconnect__button:focus-visib
   color: var(--dsw-alias-label-primary, var(--wb-text-primary));
   background: var(--dsw-alias-interactive-bg-hover, var(--wb-dock-item-hover));
   border-color: var(--dsw-alias-border-l3, var(--wb-border-strong));
+}
+.wf-slot-wells button.wf-slot-well.wf-slot-well--append.wf-slot-well--required,
+.wf-slot-wells .wf-slot-well.wf-slot-well--empty.wf-slot-well--required,
+.wf-slot-wells button.wf-slot-well.wf-slot-well--append.wf-slot-well--required:hover,
+.wf-slot-wells .wf-slot-well.wf-slot-well--empty.wf-slot-well--required:hover {
+  border-color: var(--dsw-alias-state-warn-primary, var(--wb-border-strong));
 }
 .wf-slot-well:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: 2px; }
 @media (max-width: 520px) {

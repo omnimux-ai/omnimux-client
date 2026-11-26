@@ -141,13 +141,14 @@ async function mountServer(run, canvasBundle, themeCss) {
   });
   const mkEdge = (id, source, target) => ({ id, source, target, sourceHandle: 'out', targetHandle: 'in', type: 'animated' });
 
-  // Scenario 1: wan-3.0 video_multi_ref (strip) with image + long text + long audio + replacement text
+  // Scenario 1: wan-3.0 video_multi_ref (strip) with image + long text + long audio + unused extra image & replacement text
   const stripWs = (await request('/api/workspaces', 'POST', { name: '全能参考统一卡槽' })).workspace.id;
   workspaceIds.set('strip', stripWs);
   await request(`/api/workspaces/${stripWs}`, 'PUT', {
     expectedVersion: 0,
     nodes: [
       imgNode('s-img', '首帧小狗.png', 20),
+      imgNode('s-img-extra', '补充参考图.png', 610),
       txtNode('s-txt', '核心文案槽位 (Copywriting)', '雨后的橱窗映着街灯，主角抬头看向镜头。', 170),
       txtNode('s-alt', '备用分镜文案_最终确认版', '镜头缓慢拉远，画面淡出。', 320),
       audNode('s-aud', '11月23日_产品口播配音_最终版.wav', 470),
@@ -238,6 +239,35 @@ async function mountServer(run, canvasBundle, themeCss) {
       mkEdge('e-dh-img', 'l-img1', 'target-dh'),
       mkEdge('e-dh-aud', 'l-aud', 'target-dh'),
     ],
+  });
+
+  // Scenario 3: Issue #373 optional multi-type slot collapse (seedance-2-5 mixed required+optional & gemini-3.8-flash chat)
+  const collapseWs = (await request('/api/workspaces', 'POST', { name: '非必填多格式卡槽收拢' })).workspace.id;
+  workspaceIds.set('collapse', collapseWs);
+  await request(`/api/workspaces/${collapseWs}`, 'PUT', {
+    expectedVersion: 0,
+    nodes: [
+      imgNode('c-img1', '首帧图.png', 100),
+      {
+        id: 'target-seedance-ref', type: 'material', position: { x: 360, y: 100 },
+        data: {
+          label: 'Seedance 2.5 全能参考', materialType: 'video', nodeKind: 'generate', selectedTool: 'video-generation',
+          status: 'empty', prompt: '', inputBindingVersion: 1, autoOperationId: null,
+          params: { model: 'seedance-2-5', operation: 'video_multi_ref' },
+          slotBindings: {},
+        },
+      },
+      {
+        id: 'target-chat', type: 'material', position: { x: 780, y: 100 },
+        data: {
+          label: 'Gemini 多模态对话', materialType: 'text', nodeKind: 'generate', selectedTool: 'text-to-text',
+          status: 'empty', prompt: '', inputBindingVersion: 1, autoOperationId: null,
+          params: { model: 'gemini-3.8-flash', operation: 'chat' },
+          slotBindings: {},
+        },
+      },
+    ],
+    edges: [],
   });
 
   return {
@@ -340,9 +370,15 @@ async function driveBrowser(config) {
             hasPositionOverlay: Boolean(well?.querySelector('.wf-slot-well__position')),
           };
         };
+        const addButtons = [...(wells?.querySelectorAll('[data-testid="wf-add-reference"]') ?? [])].map((el) => ({
+          slot: el.getAttribute('data-slot'),
+          ariaLabel: el.getAttribute('aria-label'),
+          hasPositionLabel: Boolean(el.querySelector('.wf-slot-well__position')),
+        }));
         return {
           legacyPromptRows: panel?.querySelectorAll('[data-testid="wf-prompt-references"]').length ?? -1,
           firstAdd,
+          addButtons,
           textTile: inspect('[data-slot="prompt"][data-slot-edge="e-s-txt"]'),
           audioTile: inspect('[data-slot="reference_audios"][data-slot-edge="e-s-aud"]'),
         };
@@ -350,6 +386,7 @@ async function driveBrowser(config) {
 
       assert.equal(metrics.legacyPromptRows, 0);
       assert.ok(metrics.firstAdd > 0);
+      assert.deepEqual(metrics.addButtons, [{ slot: null, ariaLabel: '添加素材', hasPositionLabel: false }]);
       for (const tile of [metrics.textTile, metrics.audioTile]) {
         assert.equal(tile.width, 44);
         assert.equal(tile.height, 44);
@@ -384,7 +421,12 @@ async function driveBrowser(config) {
       report.strip.push({ theme, width, ...metrics, hasAudioEl });
     }
 
-    // 2. Replace & disable text interaction on strip node
+    // 2. Unified + button picker flow + replace & disable text interaction on strip node
+    await page.click('loc=css:' + stripNode + ' [data-testid="wf-add-reference"]', { label: 'Open unified reference picker' });
+    await page.waitForSelector('loc=css:.wf-picker-modal .wf-picker-card[aria-label="补充参考图.png"]');
+    await page.click('loc=css:.wf-picker-modal .wf-picker-card[aria-label="补充参考图.png"]', { label: 'Pick extra reference image' });
+    await page.click('loc=css:.wf-picker-modal .wf-picker-btn--primary:not(:disabled)', { label: 'Confirm unified reference pick' });
+    await page.waitForFunction((nodeSel) => document.querySelectorAll(nodeSel + ' [data-slot="reference_images"].wf-slot-well--filled').length === 2, stripNode);
     await page.hover('loc=css:' + textTileSel, { label: 'Re-hover text tile before replace' });
     await page.waitForSelector('loc=css:.wf-slot-hover-preview button[aria-label="替换"]');
     await page.click('loc=css:.wf-slot-hover-preview button[aria-label="替换"]', { label: 'Open replace picker' });
@@ -453,6 +495,75 @@ async function driveBrowser(config) {
       };
     });
     assert.deepEqual(report.layouts.unbound, { hasEmptyHeader: true, wellsCount: 0 });
+
+    // Issue #373: seedance-2-5 (required reference_images min=1 + optional video/audio) & gemini-3.8-flash chat (all optional)
+    await page.goto(`${config.origin}/?scenario=collapse&theme=light`);
+    await page.waitForSelector('loc=css:.react-flow__node[data-id="target-seedance-ref"] .wf-node-header', { timeout: 15000 });
+    await page.click('loc=css:.react-flow__node[data-id="target-seedance-ref"] .wf-node-header', { label: 'Open Seedance 2.5 node (light)' });
+    await page.waitForSelector('loc=css:.react-flow__node[data-id="target-seedance-ref"].selected [data-testid="wf-add-reference"][data-slot="reference_images"]');
+    const sdLightBorders = await page.evaluate(() => [...document.querySelectorAll('.react-flow__node[data-id="target-seedance-ref"].selected [data-testid="wf-add-reference"]')].map((el) => ({
+      slot: el.getAttribute('data-slot'),
+      borderTopColor: getComputedStyle(el).borderTopColor,
+      borderTopStyle: getComputedStyle(el).borderTopStyle,
+    })));
+    assert.equal(sdLightBorders.length, 2);
+    assert.equal(sdLightBorders[0].borderTopStyle, 'dashed');
+    assert.notEqual(
+      sdLightBorders[0].borderTopColor,
+      sdLightBorders[1].borderTopColor,
+      'Light theme required empty well must render distinct warning dashed border vs optional +',
+    );
+    await page.screenshot({ path: join(config.shotDir, 'real-seedance-before-light.png') });
+
+    await page.goto(`${config.origin}/?scenario=collapse&theme=dark`);
+    await page.waitForSelector('loc=css:.react-flow__node[data-id="target-seedance-ref"] .wf-node-header', { timeout: 15000 });
+    await page.click('loc=css:.react-flow__node[data-id="target-seedance-ref"] .wf-node-header', { label: 'Open Seedance 2.5 node' });
+    await page.waitForSelector('loc=css:.react-flow__node[data-id="target-seedance-ref"].selected [data-testid="wf-add-reference"][data-slot="reference_images"]');
+    const sdBefore = await page.evaluate(() => [...document.querySelectorAll('.react-flow__node[data-id="target-seedance-ref"].selected [data-testid="wf-add-reference"]')].map((el) => ({
+      slot: el.getAttribute('data-slot'),
+      required: el.classList.contains('wf-slot-well--required'),
+      label: el.querySelector('.wf-slot-well__position')?.textContent?.trim() ?? null,
+      borderTopColor: getComputedStyle(el).borderTopColor,
+      borderTopStyle: getComputedStyle(el).borderTopStyle,
+    })));
+    assert.deepEqual(
+      sdBefore.map(({ slot, required, label, borderTopStyle }) => ({ slot, required, label, borderTopStyle })),
+      [
+        { slot: 'reference_images', required: true, label: '参考图', borderTopStyle: 'dashed' },
+        { slot: null, required: false, label: null, borderTopStyle: 'dashed' },
+      ],
+    );
+    assert.notEqual(
+      sdBefore[0].borderTopColor,
+      sdBefore[1].borderTopColor,
+      'Dark theme required empty well must render distinct warning dashed border vs optional +',
+    );
+    await page.screenshot({ path: join(config.shotDir, 'real-seedance-before-dark.png') });
+    await page.click('loc=css:.react-flow__node[data-id="target-seedance-ref"] [data-testid="wf-add-reference"][data-slot="reference_images"]', { label: 'Pick required Seedance image' });
+    await page.waitForSelector('loc=css:.wf-picker-modal .wf-picker-card[aria-label="首帧图.png"]');
+    await page.click('loc=css:.wf-picker-modal .wf-picker-card[aria-label="首帧图.png"]', { label: 'Select required image' });
+    await page.click('loc=css:.wf-picker-modal .wf-picker-btn--primary:not(:disabled)', { label: 'Confirm required image' });
+    await page.waitForFunction(() => document.querySelectorAll('.react-flow__node[data-id="target-seedance-ref"].selected [data-testid="wf-add-reference"]').length === 1);
+    const sdAfter = await page.evaluate(() => [...document.querySelectorAll('.react-flow__node[data-id="target-seedance-ref"].selected [data-testid="wf-add-reference"]')].map((el) => ({
+      slot: el.getAttribute('data-slot'),
+      required: el.classList.contains('wf-slot-well--required'),
+      label: el.querySelector('.wf-slot-well__position')?.textContent?.trim() ?? null,
+    })));
+    assert.deepEqual(sdAfter, [{ slot: null, required: false, label: null }]);
+    await page.screenshot({ path: join(config.shotDir, 'real-seedance-after-dark.png') });
+    report.layouts.seedance = { before: sdBefore, after: sdAfter };
+
+    await page.keyboard.press('Escape');
+    await page.click('loc=css:.react-flow__node[data-id="target-chat"] .wf-node-header', { label: 'Open Gemini chat node' });
+    await page.waitForSelector('loc=css:.react-flow__node[data-id="target-chat"].selected [data-testid="wf-add-reference"]');
+    const chatAdds = await page.evaluate(() => [...document.querySelectorAll('.react-flow__node[data-id="target-chat"].selected [data-testid="wf-add-reference"]')].map((el) => ({
+      slot: el.getAttribute('data-slot'),
+      ariaLabel: el.getAttribute('aria-label'),
+      label: el.querySelector('.wf-slot-well__position')?.textContent?.trim() ?? null,
+    })));
+    assert.deepEqual(chatAdds, [{ slot: null, ariaLabel: '添加素材', label: null }]);
+    await page.screenshot({ path: join(config.shotDir, 'real-chat-dark.png') });
+    report.layouts.chat = chatAdds;
   } finally {
     await writeFile(join(config.run, 'report.json'), JSON.stringify(report, null, 2));
     await task.finish({ keep: [] });
