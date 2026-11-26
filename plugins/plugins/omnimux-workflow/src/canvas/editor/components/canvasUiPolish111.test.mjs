@@ -89,18 +89,20 @@ describe('Issue #111: P1 / P2 / P3 contract tests', () => {
     );
   });
 
-  it('P3: ConfigPanelShell portals into .wf-canvas-editor, notifies popovers on reposition, and blank dock margin is recognized', () => {
-    assert.match(shellSrc, /createPortal\(/);
-    assert.match(shellSrc, /closest\('\.wf-canvas-editor'\)/);
-    assert.match(shellSrc, /MutationObserver/);
-    assert.match(shellSrc, /ResizeObserver/);
-    assert.match(shellSrc, /CONFIG_PANEL_POSITION_EVENT/);
-    assert.match(popoverShellSrc, /CONFIG_PANEL_POSITION_EVENT/);
-    assert.match(cascadeSrc, /omnimux:config-panel-position/);
-    assert.match(selectSrc, /omnimux:config-panel-position/);
+  it('P3: ConfigPanelShell stays attached below the selected node without portal docking split layout, and blank surface dismiss remains intact', () => {
+    assert.doesNotMatch(shellSrc, /createPortal\(/);
+    assert.doesNotMatch(shellSrc, /configPanelPlacement/);
+    assert.doesNotMatch(shellSrc, /wf-config-dock-reserve/);
+    assert.doesNotMatch(shellSrc, /CONFIG_PANEL_POSITION_EVENT/);
+    assert.match(shellSrc, /top:\s*'calc\(100% \+ 12px\)'/);
+    assert.match(shellSrc, /inverseScaleForZoom\(zoom\)/);
+    assert.doesNotMatch(popoverShellSrc, /CONFIG_PANEL_POSITION_EVENT|omnimux:config-panel-position/);
+    assert.doesNotMatch(cascadeSrc, /omnimux:config-panel-position/);
+    assert.doesNotMatch(selectSrc, /omnimux:config-panel-position/);
     assert.match(canvasEditorSrc, /data-pointer-mode=\{pointerMode\}/);
-    assert.match(componentsCss, /\.wf-canvas-editor\[data-config-panel-placement='dock'\] > \.react-flow/);
-    assert.match(componentsCss, /\.wf-panel-shell\[data-placement='dock'\] \.wf-panel-shell__card/);
+    assert.doesNotMatch(componentsCss, /\.wf-canvas-editor\[data-config-panel-placement='dock'\]/);
+    assert.doesNotMatch(componentsCss, /--wf-config-dock-reserve/);
+    assert.doesNotMatch(componentsCss, /\.wf-panel-shell\[data-placement='dock'\]/);
 
     const fakeEditor = {
       classList: { contains: (cls) => cls === 'wf-canvas-editor' },

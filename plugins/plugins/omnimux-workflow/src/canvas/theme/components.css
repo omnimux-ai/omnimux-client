@@ -1389,38 +1389,9 @@ body[data-ds-dark-theme] .wf-canvas-root .wf-gsc__loading-overlay {
 /* ==================== config panel (W2) ==================== */
 
 /* shell：单层一体化浮层外壳，无多余嵌套边框与内外间隙 */
-.wf-panel-anchor {
-  position: absolute;
-  width: 0;
-  height: 0;
-  pointer-events: none;
-}
-
 .wf-panel-shell {
   position: absolute;
   z-index: 50;
-}
-
-.wf-panel-shell--floating {
-  position: absolute;
-  z-index: 25;
-}
-
-.wf-canvas-editor[data-config-panel-placement='dock'] {
-  background: var(--wb-bg-canvas);
-}
-
-.wf-canvas-editor[data-config-panel-placement='dock'] > .react-flow {
-  height: calc(100% - var(--wf-config-dock-reserve, 0px)) !important;
-}
-
-.wf-canvas-editor[data-config-panel-placement='dock']::after {
-  content: '';
-  position: absolute;
-  top: calc(100% - var(--wf-config-dock-reserve, 0px));
-  inset-inline: 0;
-  border-top: 1px solid var(--wb-border);
-  pointer-events: none;
 }
 
 .wf-panel-shell__card {
@@ -1433,84 +1404,6 @@ body[data-ds-dark-theme] .wf-canvas-root .wf-gsc__loading-overlay {
   box-shadow: 0 10px 32px rgba(0, 0, 0, 0.12);
   /* 8pt 栅格：四周等距内边距，避免 20/12 上下过重、左右偏紧 */
   padding: 12px 14px;
-}
-
-.wf-panel-shell[data-placement='dock'] .wf-panel-shell__card {
-  box-sizing: border-box;
-  max-height: var(--wf-config-panel-limit);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.wf-panel-shell[data-placement='dock'] .wf-config-panel {
-  min-height: 0;
-  flex: 1 1 auto;
-  overflow: hidden;
-}
-
-.wf-panel-shell[data-placement='dock'] .wf-config-panel__prompt-container {
-  min-height: 0;
-  flex: 1 1 auto;
-  overflow-y: auto;
-}
-
-.wf-panel-shell[data-placement='dock'][data-compact-slots] .wf-panel-shell__card {
-  padding-block: 10px;
-}
-
-.wf-panel-shell[data-placement='dock'][data-compact-slots] .wf-config-panel__prompt-container {
-  display: grid;
-  grid-template-columns: minmax(44px, max-content) minmax(0, 1fr);
-  align-items: start;
-  gap: 10px;
-}
-
-.wf-panel-shell[data-placement='dock'][data-compact-slots] .wf-config-panel__prompt-header {
-  position: static;
-  margin: 0;
-  padding-right: 0;
-  align-items: start;
-}
-
-.wf-panel-shell[data-placement='dock'][data-compact-slots] .wf-config-panel__prompt-header-actions {
-  position: absolute;
-  right: 0;
-  top: -5px;
-  z-index: 1;
-}
-
-.wf-panel-shell[data-placement='dock'][data-compact-slots] .wf-prompt-token-editor {
-  padding-right: 98px !important;
-}
-
-.wf-panel-shell[data-placement='dock'][data-compact-slots] .wf-prompt-token-meta-bar {
-  position: absolute;
-  right: 0;
-  bottom: 0;
-}
-
-.wf-panel-shell[data-placement='dock'] .wf-config-panel__prompt-header--empty-slots {
-  position: absolute;
-  top: -5px;
-  right: 0;
-  z-index: 1;
-  min-height: 0;
-  margin: 0;
-}
-
-.wf-panel-shell[data-placement='dock'] .wf-panel-shell__card:has(.wf-config-panel__prompt-header--empty-slots) {
-  padding-block: 10px;
-}
-
-.wf-panel-shell[data-placement='dock'] .wf-config-panel__prompt-header--empty-slots + .wf-prompt-editor-container .wf-prompt-token-editor {
-  padding-right: 98px !important;
-}
-
-.wf-panel-shell[data-placement='dock'] .wf-config-panel__prompt-header--empty-slots + .wf-prompt-editor-container .wf-prompt-token-meta-bar {
-  position: absolute;
-  right: 0;
-  bottom: 0;
 }
 
 /* 内容布局 */
