@@ -29,7 +29,8 @@ export const FOLDER_STYLES = `
 @media (pointer: coarse) { .omnimux-folder .omnimux-folder-more, .omnimux-folder-menu [role=menuitem], .omnimux-page-card-actions button { min-width: 44px; min-height: 44px; } }
 .omnimux-page-card .omnimux-page-open { display: block; width: 100%; height: 100%; padding: 0; border: 0; border-radius: inherit; overflow: hidden; }
 .omnimux-page-open:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: -2px; }
-.omnimux-folder-open:focus-visible, .omnimux-folder-more:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: 2px; }
+.omnimux-folder-open:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: -2px; }
+.omnimux-folder-more:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: 2px; }
 .omnimux-folder:hover .omnimux-folder-back { border-color: var(--dsw-alias-border-l3); }
 .omnimux-page-card { position: relative; }
 .omnimux-page-card .omnimux-page-more { position: absolute; right: 8px; bottom: 8px; width: 32px; height: 32px; border-radius: 50%; border: 1px solid var(--dsw-alias-border-l2); background: var(--dsw-alias-bg-base); color: var(--dsw-alias-label-secondary); opacity: 0; transition: opacity 120ms ease, border-color 120ms ease, color 120ms ease; z-index: 2; }

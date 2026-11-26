@@ -13,7 +13,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { copyFileSync, existsSync, mkdirSync } from 'node:fs';
-import { mkdir, readdir, stat } from 'node:fs/promises';
+import { lstat, mkdir, readdir, stat } from 'node:fs/promises';
 import { basename, isAbsolute, join, relative, resolve } from 'node:path';
 import { mapConcurrent } from './asyncFiles.ts';
 import {
@@ -26,7 +26,7 @@ import {
   jsonBodyProblem,
 } from '../http/helpers';
 import { defaultProjectLibrary, displayHomePath, ensureLibraryRoot, resolveVideosDir } from './library';
-import { ProjectPathError } from './paths';
+import { ProjectPathError, resolveProjectRelPath, resolveSafeProjectPath, toProjectRelativePath } from './paths';
 import { createProjectStore, ProjectStoreError, validateTitle, type ProjectStore } from './ProjectStore';
 import { isEnsureProjectError, type EnsureProjectMode } from './ensureProject';
 import { ensureWorkspaceProjectBound } from './workspaceProjectBinding';
@@ -435,12 +435,14 @@ export function createProjectDispatcher(opts: {
         if (!project) {
           throw new ProjectStoreError('project-not-found', `project ${projectId} not found`);
         }
-        const subpath = url.searchParams.get('subpath') || '';
-        const targetDir = resolve(project.path, subpath);
-        const rel = relative(project.path, targetDir);
-        if (rel.startsWith('..') || isAbsolute(rel)) {
-          return { status: 403, body: { error: 'path-denied', message: 'access denied outside project directory' } };
+        const projectRoot = resolve(project.path);
+        const rawSubpath = url.searchParams.get('subpath') || '';
+        let candidateDir = projectRoot;
+        if (rawSubpath !== '' && rawSubpath !== '.') {
+          candidateDir = resolveProjectRelPath(projectRoot, rawSubpath);
         }
+        const targetDir = await resolveSafeProjectPath(candidateDir, projectRoot, req.signal);
+        const currentSubpath = toProjectRelativePath(projectRoot, candidateDir);
         let dirEntries;
         try {
           dirEntries = await readdir(targetDir, { withFileTypes: true });
@@ -448,28 +450,49 @@ export function createProjectDispatcher(opts: {
           req.signal?.throwIfAborted();
           const code = (error as NodeJS.ErrnoException)?.code;
           if (code === 'ENOENT' || code === 'ENOTDIR') {
-            return { status: 200, body: { items: [], currentSubpath: subpath } };
+            return { status: 200, body: { items: [], currentSubpath } };
           }
           throw error;
         }
         const visibleEntries = dirEntries.filter((entry) => !entry.name.startsWith('.'));
-        const items = await mapConcurrent(visibleEntries, 8, async (entry) => {
+        const resolvedItems = await mapConcurrent(visibleEntries, 8, async (entry) => {
           const full = join(targetDir, entry.name);
-          const isFolder = entry.isDirectory();
+          let isFolder = entry.isDirectory();
           let size = 0;
           let updatedAt = '';
           try {
-            const st = await stat(full);
-            size = isFolder ? 0 : st.size;
-            updatedAt = st.mtime.toISOString();
+            if (entry.isSymbolicLink()) {
+              // Symlinks must resolve inside projectRoot; escaping or dangling links are omitted.
+              const safeTarget = await resolveSafeProjectPath(full, projectRoot, req.signal);
+              const st = await stat(safeTarget);
+              isFolder = st.isDirectory();
+              size = isFolder ? 0 : st.size;
+              updatedAt = st.mtime.toISOString();
+            } else {
+              const st = await lstat(full);
+              if (st.isSymbolicLink()) {
+                const safeTarget = await resolveSafeProjectPath(full, projectRoot, req.signal);
+                const targetStat = await stat(safeTarget);
+                isFolder = targetStat.isDirectory();
+                size = isFolder ? 0 : targetStat.size;
+                updatedAt = targetStat.mtime.toISOString();
+              } else {
+                isFolder = st.isDirectory();
+                size = isFolder ? 0 : st.size;
+                updatedAt = st.mtime.toISOString();
+              }
+            }
           } catch (error) {
             req.signal?.throwIfAborted();
+            if (error instanceof ProjectPathError) {
+              return null;
+            }
             if ((error as NodeJS.ErrnoException)?.code !== 'ENOENT') {
               updatedAt = '';
             }
           }
           return {
-            id: `${subpath ? subpath + '/' : ''}${entry.name}`,
+            id: currentSubpath ? `${currentSubpath}/${entry.name}` : entry.name,
             name: entry.name,
             isFolder,
             size,
@@ -477,11 +500,12 @@ export function createProjectDispatcher(opts: {
             type: inferMediaType(entry.name),
           };
         }, req.signal);
+        const items = resolvedItems.filter((item): item is NonNullable<typeof item> => item !== null);
         items.sort((a, b) => {
           if (a.isFolder !== b.isFolder) return a.isFolder ? -1 : 1;
           return a.name.localeCompare(b.name);
         });
-        return { status: 200, body: { items, currentSubpath: subpath } };
+        return { status: 200, body: { items, currentSubpath } };
       }
 
       // 物理工作区新建文件夹 POST /api/projects/:id/mkdir

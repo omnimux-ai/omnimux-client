@@ -112,24 +112,30 @@ async function mountLibrary(apiOverrides) {
   const root = reactDomClient.createRoot(container)
   const t = (key) => zh[key] || key
 
-  await act(async () => {
-    root.render(React.createElement(ProjectLibraryPage, {
-      t,
-      stage: { set() {} },
-      store: null,
-      visible: true,
-      sessions: { list: { getSnapshot: () => ({ current: null, byId: {}, archivedSessionIds: [] }), subscribe: () => () => {} } },
-      workspaces: { list: { getSnapshot: () => ({ items: [] }), subscribe: () => () => {} } },
-      layout: { closeDetails() {} },
-      betterSidebar: null,
-    }))
-  })
+  const renderPage = async (overrides = {}) => {
+    await act(async () => {
+      root.render(React.createElement(ProjectLibraryPage, {
+        t,
+        stage: { set() {} },
+        store: null,
+        visible: true,
+        sessions: { list: { getSnapshot: () => ({ current: null, byId: {}, archivedSessionIds: [] }), subscribe: () => () => {} } },
+        workspaces: { list: { getSnapshot: () => ({ items: [] }), subscribe: () => () => {} } },
+        layout: { closeDetails() {} },
+        betterSidebar: null,
+        ...overrides,
+      }))
+    })
+  }
+
+  await renderPage()
 
   return {
     dom,
     act,
     container,
     root,
+    renderPage,
     async teardown() {
       await act(async () => root.unmount())
       dom.window.close()
@@ -316,6 +322,75 @@ test('E2E: 冷启动骨架屏、两阶段封面渐进加载、紧凑顶栏、来
       { id: 'p_beta', subpath: '素材目录' },
     ])
     assert.match(page.container.textContent, /intro\.mp4/)
+
+    // 8. 切走页签再切回（visible: true -> false -> true）不得清空当前子目录位置或重扫根目录
+    const callsBeforeToggle = fileCalls.length
+    await page.renderPage({ visible: false })
+    await page.renderPage({ visible: true })
+    await page.act(async () => { await Promise.resolve() })
+    assert.equal(fileCalls.length, callsBeforeToggle + 1, '恢复可见只应按当前子目录刷新一次')
+    assert.deepEqual(fileCalls[fileCalls.length - 1], { id: 'p_beta', subpath: '素材目录' }, '切页返回后必须保留当前子目录路径')
+  } finally {
+    await page.teardown()
+  }
+})
+
+test('E2E: Phase 2 封面批次失败与子目录拉取失败均不留无限 loading 或错位根目录内容', async () => {
+  const sampleProjects = [
+    {
+      id: 'p_fail_cover',
+      title: '封面失败恢复测试',
+      updatedAt: '2026-11-25T10:00:00.000Z',
+      bound: true,
+      workspaceDir: '/ws/fail-cover',
+      path: '/ws/fail-cover',
+      pages: [{ id: 'pg_1', title: '默认页', canvasWorkspaceId: 'ws_fail1' }],
+    },
+  ]
+
+  const page = await mountLibrary({
+    listProjects: async () => ({ ok: true, body: { projects: sampleProjects, coversIncluded: false } }),
+    fetchProjectCovers: async () => ({ ok: false, status: 500, body: { error: 'internal' } }),
+    getProject: async () => ({ ok: true, body: { project: sampleProjects[0] } }),
+    fetchProjectFiles: async (_id, subpath) => {
+      if (subpath === 'broken-dir') {
+        throw new Error('disk-read-failed')
+      }
+      return {
+        ok: true,
+        body: {
+          currentSubpath: '',
+          items: [
+            { id: 'broken-dir', name: 'broken-dir', isFolder: true, size: 0, updatedAt: '', type: 'other' },
+            { id: 'root-only.png', name: 'root-only.png', isFolder: false, size: 512, updatedAt: '', type: 'image' },
+          ],
+        },
+      }
+    },
+  })
+
+  try {
+    await page.act(async () => { await Promise.resolve(); await Promise.resolve() })
+    const coverEl = page.container.querySelector('.omnimux-cover-content')
+    assert.ok(coverEl)
+    assert.notEqual(coverEl.getAttribute('data-cover-state'), 'loading', 'Phase 2 封面失败后卡片必须退出 loading 骨架态')
+    assert.equal(coverEl.getAttribute('data-cover-state'), 'unavailable', 'Phase 2 封面失败后应收敛为不可用降级态')
+
+    // 进入详情 -> 资产 -> 根文件可见 -> 点击异常子目录后不得把根目录文件留在子目录面包屑下
+    const cardOpen = page.container.querySelector('.omnimux-folder-open')
+    await page.act(async () => cardOpen.click())
+    const assetsTab = [...page.container.querySelectorAll('[role="tab"]')].find((el) => el.textContent.trim() === '项目资产')
+    await page.act(async () => assetsTab.click())
+    await page.act(async () => { await Promise.resolve() })
+    assert.match(page.container.textContent, /root-only\.png/)
+
+    const brokenBtn = [...page.container.querySelectorAll('.omnimux-file-folder-btn')].find((el) => el.textContent.includes('broken-dir'))
+    assert.ok(brokenBtn)
+    await page.act(async () => brokenBtn.click())
+    await page.act(async () => { await Promise.resolve() })
+    assert.equal(page.container.textContent.includes('root-only.png'), false, '子目录拉取失败后不得残留上级根目录文件')
+    const alertEl = page.container.querySelector('[role="alert"]')
+    assert.ok(alertEl, '子目录拉取失败必须呈现可恢复错误提示')
   } finally {
     await page.teardown()
   }

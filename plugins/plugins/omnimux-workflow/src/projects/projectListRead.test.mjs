@@ -309,10 +309,21 @@ test('GET /api/projects/:id/files lists subdirectories asynchronously with zero 
 
     const subRes = await dispatcher.dispatch({ method: 'GET', url: `${prefix}/${project.id}/files?subpath=clips` });
     assert.equal(subRes.status, 200);
+    assert.equal(subRes.body.currentSubpath, 'clips');
     assert.deepEqual(subRes.body.items.map(i => i.id), ['clips/scene1.mp4']);
+
+    const trailingSlashRes = await dispatcher.dispatch({ method: 'GET', url: `${prefix}/${project.id}/files?subpath=clips/` });
+    assert.equal(trailingSlashRes.status, 200);
+    assert.equal(trailingSlashRes.body.currentSubpath, 'clips');
+    assert.deepEqual(trailingSlashRes.body.items.map(i => i.id), ['clips/scene1.mp4']);
 
     const escapeRes = await dispatcher.dispatch({ method: 'GET', url: `${prefix}/${project.id}/files?subpath=..` });
     assert.equal(escapeRes.status, 403);
+    assert.equal(escapeRes.body.error, 'path-denied');
+
+    const nulRes = await dispatcher.dispatch({ method: 'GET', url: `${prefix}/${project.id}/files?subpath=clips%00evil` });
+    assert.equal(nulRes.status, 403);
+    assert.equal(nulRes.body.error, 'path-denied');
 
     assert.equal(syncReaddir, 0, 'GET /files must not call readdirSync on Host main thread');
     assert.equal(syncStat, 0, 'GET /files must not call statSync on Host main thread');
@@ -321,4 +332,32 @@ test('GET /api/projects/:id/files lists subdirectories asynchronously with zero 
     p2.mock.restore();
     syncBuiltinESMExports();
   }
+});
+
+test('GET /api/projects/:id/files blocks symlink directory escape and omits external symlink metadata', async t => {
+  const { root, libraryRoot, store } = await fixture(t);
+  const project = store.create('Symlink Guard Project', { canvasWorkspaceIds: ['ws_symlink_guard'] });
+  const outsideDir = join(root, 'outside-secret-dir');
+  await mkdir(outsideDir, { recursive: true });
+  await writeFile(join(outsideDir, 'secret.txt'), 'top-secret-payload');
+  await mkdir(join(project.path, 'inside-real'), { recursive: true });
+  await writeFile(join(project.path, 'inside-real', 'ok.png'), 'ok');
+  await symlink(outsideDir, join(project.path, 'escape-dir'));
+  await symlink(join(outsideDir, 'secret.txt'), join(project.path, 'escape-file.txt'));
+  await symlink(join(project.path, 'inside-real'), join(project.path, 'safe-link-dir'));
+
+  const dispatcher = createProjectDispatcher({ libraryRoot, projectStore: store });
+
+  const escapeDirRes = await dispatcher.dispatch({ method: 'GET', url: `${prefix}/${project.id}/files?subpath=escape-dir` });
+  assert.equal(escapeDirRes.status, 403, 'symlink pointing outside projectRoot must return 403 path-denied');
+  assert.equal(escapeDirRes.body.error, 'path-denied');
+
+  const rootList = await dispatcher.dispatch({ method: 'GET', url: `${prefix}/${project.id}/files` });
+  assert.equal(rootList.status, 200);
+  const names = rootList.body.items.map(i => i.name);
+  assert.equal(names.includes('escape-dir'), false, 'escaping dir symlink must be omitted from root listing');
+  assert.equal(names.includes('escape-file.txt'), false, 'escaping file symlink must be omitted from root listing');
+  assert.equal(names.includes('inside-real'), true);
+  assert.equal(names.includes('safe-link-dir'), true, 'in-project symlink remains visible');
+  assert.equal(rootList.body.items.find(i => i.name === 'safe-link-dir')?.isFolder, true);
 });

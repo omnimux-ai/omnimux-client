@@ -375,10 +375,6 @@ export const WORKFLOW_CSS = `
     height: auto;
     gap: 8px;
   }
-  .omnimux-workflow-library-filter .dshUk-SearchField-root,
-  .omnimux-workflow-library-filter .dshUk-SearchField-stretch {
-    max-width: min(176px, 100%);
-  }
   .omnimux-workflow-grid {
     grid-template-columns: repeat(auto-fill, minmax(min(180px, 100%), 1fr));
     gap: 12px;

@@ -209,6 +209,19 @@ export function ProjectLibraryPage(props) {
 
   const enrichProjectCovers = useCallback(async (ids, generation, signal) => {
     if (!ids.length || typeof fetchProjectCovers !== 'function') return
+    const settlePendingChunk = (chunkIds, fallbackCover) => {
+      const idSet = new Set(chunkIds)
+      setProjects((current) => {
+        let changed = false
+        const next = current.map((item) => {
+          if (!idSet.has(item.id) || item.cover !== undefined) return item
+          changed = true
+          return { ...item, cover: fallbackCover }
+        })
+        if (changed) cachedProjectsSnapshot = next
+        return changed ? next : current
+      })
+    }
     for (let offset = 0; offset < ids.length; offset += COVER_BATCH_SIZE) {
       if (signal?.aborted || reloadGenRef.current !== generation) return
       const chunk = ids.slice(offset, offset + COVER_BATCH_SIZE)
@@ -217,17 +230,26 @@ export function ProjectLibraryPage(props) {
         res = await fetchProjectCovers(chunk, { signal })
       } catch (err) {
         if (err?.name === 'AbortError' || signal?.aborted || reloadGenRef.current !== generation) return
+        settlePendingChunk(chunk, { kind: 'empty', unavailable: true })
         continue
       }
       if (signal?.aborted || reloadGenRef.current !== generation) return
-      if (!res?.ok || !res.body?.covers || typeof res.body.covers !== 'object') continue
+      if (!res?.ok || !res.body?.covers || typeof res.body.covers !== 'object') {
+        settlePendingChunk(chunk, { kind: 'empty', unavailable: true })
+        continue
+      }
       const coverMap = res.body.covers
+      const chunkSet = new Set(chunk)
       setProjects((current) => {
-        const next = current.map((item) => (
-          Object.prototype.hasOwnProperty.call(coverMap, item.id)
-            ? mergeProjectCoverPayload(item, coverMap[item.id])
-            : item
-        ))
+        const next = current.map((item) => {
+          if (Object.prototype.hasOwnProperty.call(coverMap, item.id)) {
+            return mergeProjectCoverPayload(item, coverMap[item.id])
+          }
+          if (chunkSet.has(item.id) && item.cover === undefined) {
+            return { ...item, cover: { kind: 'empty' } }
+          }
+          return item
+        })
         cachedProjectsSnapshot = next
         return next
       })
@@ -335,6 +357,7 @@ export function ProjectLibraryPage(props) {
     const ticket = projectGuard.capture()
     if (!project?.id || !projectGuard.isCurrent(ticket)) return
     setLoadingDetail(true)
+    setError('')
     try {
       const res = await getProject(project.id)
       if (!projectGuard.isCurrent(ticket)) return
@@ -342,7 +365,7 @@ export function ProjectLibraryPage(props) {
         setProjectDetail(res.body.project)
         setProjects((current) => {
           const next = current.map((item) => (
-            item.id === project.id ? { ...item, cover: res.body.project.cover, pages: res.body.project.pages } : item
+            item.id === project.id ? { ...item, cover: res.body.project.cover ?? item.cover, pages: res.body.project.pages } : item
           ))
           cachedProjectsSnapshot = next
           return next
@@ -367,6 +390,7 @@ export function ProjectLibraryPage(props) {
       const filesRes = await fetchProjectFiles(project.id, subpath)
       if (!projectGuard.isCurrent(ticket) || assetsGenRef.current !== generation) return
       if (filesRes.ok && Array.isArray(filesRes.body?.items)) {
+        setError('')
         setAssetsDoc({
           mode: 'physical',
           currentSubpath: filesRes.body.currentSubpath ?? subpath,
@@ -378,33 +402,41 @@ export function ProjectLibraryPage(props) {
         const assetsRes = await getWorkspaceAssets(assetsWorkspaceId)
         if (!projectGuard.isCurrent(ticket) || assetsGenRef.current !== generation) return
         if (assetsRes.ok && assetsRes.body?.assets) {
+          setError('')
           setAssetsDoc({ mode: 'virtual', ...assetsRes.body.assets })
         } else {
           setAssetsDoc({ mode: 'physical', currentSubpath: subpath, folders: [], items: [] })
         }
       }
-    } catch {
+    } catch (err) {
       if (projectGuard.isCurrent(ticket) && assetsGenRef.current === generation) {
-        setAssetsDoc((prev) => prev ?? { mode: 'physical', currentSubpath: subpath, folders: [], items: [] })
+        setError(String(err?.message || t('projects.assetsLoadFailed') || '项目资产加载失败，请重试。'))
+        setAssetsDoc((prev) => (
+          prev?.currentSubpath === subpath
+            ? prev
+            : { mode: 'physical', currentSubpath: subpath, folders: [], items: [] }
+        ))
       }
     } finally {
       if (projectGuard.isCurrent(ticket) && assetsGenRef.current === generation) {
         setLoadingAssets(false)
       }
     }
-  }, [projectGuard])
+  }, [projectGuard, t])
+
+  const selectedProjectId = selectedProject?.id ?? null
 
   useEffect(() => {
-    if (!visible) return
-    if (selectedProject) {
-      setAssetsDoc(null)
-      setAssetsSubpath('')
-      void loadProjectDetail(selectedProject)
-    } else {
+    setAssetsDoc(null)
+    setAssetsSubpath('')
+    if (!selectedProjectId) {
       setProjectDetail(null)
-      setAssetsDoc(null)
-      setAssetsSubpath('')
     }
+  }, [selectedProjectId])
+
+  useEffect(() => {
+    if (!visible || !selectedProject) return
+    void loadProjectDetail(selectedProject)
   }, [selectedProject, loadProjectDetail, visible])
 
   useEffect(() => {
@@ -509,7 +541,9 @@ export function ProjectLibraryPage(props) {
           setProjectDetail(res.body.project)
           setProjects((current) => {
             const next = current.map((item) => (
-              item.id === selectedProject.id ? { ...item, cover: res.body.project.cover, pages: res.body.project.pages } : item
+              item.id === selectedProject.id
+                ? { ...item, cover: res.body.project.cover ?? item.cover, pages: res.body.project.pages }
+                : item
             ))
             cachedProjectsSnapshot = next
             return next
@@ -844,7 +878,15 @@ export function ProjectLibraryPage(props) {
           {error ? (
             <div className="omnimux-workflow-library-error" role="alert">
               <span>{error}</span>
-              <Button variant="ghost" size="sm" onClick={() => void loadProjectDetail(selectedProject)}>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setError('')
+                  if (detailTab === 'assets') void loadProjectAssets(selectedProject, assetsSubpath)
+                  else void loadProjectDetail(selectedProject)
+                }}
+              >
                 {t('projects.retry') || '重试'}
               </Button>
             </div>

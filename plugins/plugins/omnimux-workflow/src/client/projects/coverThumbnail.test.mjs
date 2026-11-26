@@ -161,3 +161,101 @@ test('session LRU ObjectURL cache reuses active URLs and only revokes unreferenc
     URL.revokeObjectURL = originalRevoke;
   }
 });
+
+test('queued pool abort, shared waiter isolation, and immediate post-abort re-request without poisoning', async () => {
+  const originals = {
+    caches: Object.getOwnPropertyDescriptor(globalThis, 'caches'),
+    createImageBitmap: Object.getOwnPropertyDescriptor(globalThis, 'createImageBitmap'),
+    Image: Object.getOwnPropertyDescriptor(globalThis, 'Image'),
+    document: Object.getOwnPropertyDescriptor(globalThis, 'document'),
+  };
+  const startedUrls = [];
+  const pendingLoads = new Map();
+  Object.defineProperty(globalThis, 'caches', { configurable: true, value: undefined });
+  globalThis.createImageBitmap = async () => ({ close() {} });
+  globalThis.Image = class {
+    constructor() { this.naturalWidth = 100; this.naturalHeight = 100; }
+    removeAttribute() {}
+    set src(value) {
+      if (!value) return;
+      startedUrls.push(value);
+      const list = pendingLoads.get(value) || [];
+      list.push(this);
+      pendingLoads.set(value, list);
+    }
+  };
+  globalThis.document = {
+    createElement(tag) {
+      if (tag === 'canvas') {
+        return {
+          getContext: () => ({ drawImage() {} }),
+          toBlob: (cb) => cb(new Blob(['thumb'], { type: 'image/webp' })),
+        };
+      }
+      return {
+        naturalWidth: 100,
+        naturalHeight: 100,
+        removeAttribute() {},
+        set src(value) {
+          if (!value) return;
+          startedUrls.push(value);
+          const list = pendingLoads.get(value) || [];
+          list.push(this);
+          pendingLoads.set(value, list);
+        },
+      };
+    },
+  };
+  const resolveImage = (url) => {
+    const list = pendingLoads.get(url) || [];
+    while (list.length > 0) list.shift().onload?.();
+  };
+  try {
+    // 1. Fill all 4 imagePool slots, enqueue a 5th waiter, abort it while queued -> never starts load.
+    const slotPromises = [0, 1, 2, 3].map((i) =>
+      loadCoverThumbnail({ kind: 'image', mediaUrl: `/slot-${i}.png`, sourceRevision: `slot-${i}` }),
+    );
+    await new Promise((r) => setTimeout(r, 10));
+    const queuedController = new AbortController();
+    const queuedPromise = loadCoverThumbnail(
+      { kind: 'image', mediaUrl: '/queued-abort.png', sourceRevision: 'queued-abort' },
+      { signal: queuedController.signal },
+    );
+    await new Promise((r) => setTimeout(r, 10));
+    queuedController.abort();
+    await assert.rejects(queuedPromise, { name: 'AbortError' });
+    for (let i = 0; i < 4; i += 1) resolveImage(`/slot-${i}.png`);
+    await Promise.all(slotPromises);
+    assert.equal(startedUrls.includes('/queued-abort.png'), false, 'Aborted queued item must never start image load');
+
+    // 2. Shared inflight: aborting 1 of 2 callers must not abort the surviving caller.
+    const sharedCover = { kind: 'image', mediaUrl: '/shared-two.png', sourceRevision: 'shared-two' };
+    const c1 = new AbortController();
+    const c2 = new AbortController();
+    const p1 = loadCoverThumbnail(sharedCover, { signal: c1.signal });
+    const p2 = loadCoverThumbnail(sharedCover, { signal: c2.signal });
+    await new Promise((r) => setTimeout(r, 10));
+    c1.abort();
+    await assert.rejects(p1, { name: 'AbortError' });
+    resolveImage('/shared-two.png');
+    const survivingBlob = await p2;
+    assert.ok(survivingBlob instanceof Blob, 'Surviving shared waiter must still resolve');
+
+    // 3. Sole waiter aborts and a fresh caller requests the exact same cover synchronously (StrictMode remount race).
+    const remountCover = { kind: 'image', mediaUrl: '/remount-race.png', sourceRevision: 'remount-race' };
+    const firstCtrl = new AbortController();
+    const firstReq = loadCoverThumbnail(remountCover, { signal: firstCtrl.signal });
+    firstCtrl.abort();
+    const secondReq = loadCoverThumbnail(remountCover);
+    await assert.rejects(firstReq, { name: 'AbortError' });
+    await new Promise((r) => setTimeout(r, 15));
+    resolveImage('/remount-race.png');
+    const remountBlob = await secondReq;
+    assert.ok(remountBlob instanceof Blob, 'Immediate re-request after sole-waiter abort must not be poisoned');
+  } finally {
+    for (const [key, descriptor] of Object.entries(originals)) {
+      if (descriptor) Object.defineProperty(globalThis, key, descriptor);
+      else delete globalThis[key];
+    }
+  }
+});

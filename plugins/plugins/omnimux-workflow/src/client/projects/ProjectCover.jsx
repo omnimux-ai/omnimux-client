@@ -53,7 +53,8 @@ function AudioCover() {
 export function ProjectCover({ cover, renderFrame }) {
   const pendingMeta = cover === undefined
   const kind = cover?.kind || 'empty'
-  const source = cover?.sourceRevision || cover?.thumbnailUrl || cover?.mediaUrl
+  const mediaSource = cover?.thumbnailUrl || cover?.mediaUrl || ''
+  const revisionKey = cover?.sourceRevision || mediaSource
   const mediaKind = kind === 'image' || kind === 'video'
   const [url, setUrl] = useState(() => (cover ? peekCoverObjectUrl(cover) : null))
   const [failedUrl, setFailedUrl] = useState(null)
@@ -61,7 +62,7 @@ export function ProjectCover({ cover, renderFrame }) {
 
   useEffect(() => {
     injectFolderStyles()
-    if (pendingMeta || !mediaKind || !source) {
+    if (pendingMeta || !mediaKind || !mediaSource) {
       setUrl(null)
       setFailedUrl(null)
       return undefined
@@ -89,24 +90,31 @@ export function ProjectCover({ cover, renderFrame }) {
 
     const load = () => {
       if (!alive) return
-      activeController = new AbortController()
-      loadCoverThumbnail(cover, { signal: activeController.signal })
+      const controller = new AbortController()
+      activeController = controller
+      loadCoverThumbnail(cover, { signal: controller.signal })
         .then((blob) => {
-          if (!alive || !blob) return
+          if (!alive || controller.signal.aborted) return
+          if (!blob) {
+            setFailedUrl(mediaSource)
+            return
+          }
           const objectUrl = acquireCoverObjectUrl(cover, blob)
           if (objectUrl) {
             retained = true
             setUrl(objectUrl)
             setFailedUrl(null)
+          } else {
+            setFailedUrl(mediaSource)
           }
         })
-        .catch((error) => {
-          if (!alive || error?.name === 'AbortError') return
+        .catch(() => {
+          if (!alive || controller.signal.aborted) return
           const fallback = kind === 'image' ? cover?.mediaUrl : cover?.thumbnailUrl
           if (fallback) {
             setUrl(fallback)
           } else {
-            setFailedUrl(source)
+            setFailedUrl(mediaSource)
           }
           if (++attempts < 2) {
             retryTimer = setTimeout(load, 31000)
@@ -138,11 +146,11 @@ export function ProjectCover({ cover, renderFrame }) {
       if (observer) observer.disconnect()
       if (retained) releaseCoverObjectUrl(cover)
     }
-  }, [pendingMeta, source, kind, mediaKind])
+  }, [pendingMeta, mediaSource, revisionKey, kind, mediaKind])
 
   const showImage = Boolean(url && url !== failedUrl && mediaKind)
   const isUnavailable = Boolean(!pendingMeta && (cover?.unavailable || failedUrl))
-  const isLoading = Boolean(pendingMeta || (!showImage && !isUnavailable && mediaKind && source))
+  const isLoading = Boolean(pendingMeta || (!showImage && !isUnavailable && mediaKind && mediaSource))
   const coverState = showImage
     ? 'ready'
     : isLoading

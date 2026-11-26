@@ -348,7 +348,7 @@ export function ProjectAssetsTab({
                   <tr>
                     <td colSpan={3} className="omnimux-assets-empty-cell">
                       {q
-                        ? (t?.('projects.emptySearch') || '没有匹配的项目')
+                        ? (t?.('projects.assetsEmptySearch') || '没有匹配的文件')
                         : (t?.('projects.assetsEmpty') || '暂无文件，点击上方新建文件夹或上传文件')}
                     </td>
                   </tr>

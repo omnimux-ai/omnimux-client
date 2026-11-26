@@ -189,6 +189,10 @@ export async function loadCoverThumbnail(cover, opts = {}) {
   if ((failed.get(key) || 0) > Date.now()) throw new Error('thumbnail-retry-later')
 
   let entry = pending.get(key)
+  if (entry?.controller.signal.aborted) {
+    pending.delete(key)
+    entry = undefined
+  }
   if (!entry) {
     const controller = new AbortController()
     const run = async () => {
@@ -223,13 +227,20 @@ export async function loadCoverThumbnail(cover, opts = {}) {
       const needsVideoDecode = cover.kind === 'video' && !cover.thumbnailUrl
       const pool = needsVideoDecode ? videoPool : imagePool
       const release = await pool.acquire(signal)
+      let released = false
+      const releaseOnce = () => {
+        if (released) return
+        released = true
+        release()
+      }
       let blob
       try {
         try {
           blob = await renderThumbnail(cover, signal)
         } catch (error) {
           if (signal.aborted || cover.kind !== 'video' || !cover.thumbnailUrl || !cover.mediaUrl) throw error
-          // Poster failed; fall back to video frame extraction in the video pool.
+          // Release imagePool slot before waiting for videoPool so 8s video extraction never starves image cards.
+          releaseOnce()
           const releaseVideo = await videoPool.acquire(signal)
           try {
             blob = await renderThumbnail({ ...cover, thumbnailUrl: undefined }, signal)
@@ -238,7 +249,7 @@ export async function loadCoverThumbnail(cover, opts = {}) {
           }
         }
       } finally {
-        release()
+        releaseOnce()
       }
 
       if (cache && request) {
@@ -279,7 +290,10 @@ export async function loadCoverThumbnail(cover, opts = {}) {
     if (detached) return
     detached = true
     shared.waiters = Math.max(0, shared.waiters - 1)
-    if (shared.waiters === 0) shared.controller.abort()
+    if (shared.waiters === 0) {
+      if (pending.get(key) === shared) pending.delete(key)
+      shared.controller.abort()
+    }
   }
 
   try {
