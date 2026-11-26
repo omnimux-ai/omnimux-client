@@ -31,6 +31,8 @@ const EXPECTED_EXPORTS = [
   "Tabs",
   "createStageStore",
   "createSidebarEntry",
+  "createWorkbenchStageStore",
+  "createWorkbenchSidebarEntry",
   // P0 & P1 additions
   "Badge",
   "SelectableTile",

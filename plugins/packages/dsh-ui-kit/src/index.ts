@@ -124,10 +124,17 @@ export type {
   StageStore,
 } from "./stage/createStageStore.ts";
 
-export { createSidebarEntry } from "./stage/createSidebarEntry.ts";
+export {
+  createSidebarEntry,
+  createWorkbenchSidebarEntry,
+  createWorkbenchStageStore,
+} from "./stage/createSidebarEntry.ts";
 export type {
+  PluginAccess,
   SidebarCoordinatorApi,
   SidebarEntryOptions,
+  WorkbenchSidebarEntryOptions,
+  WorkbenchStageStoreOptions,
 } from "./stage/createSidebarEntry.ts";
 
 export { copyToClipboard } from "./internal/clipboard.ts";

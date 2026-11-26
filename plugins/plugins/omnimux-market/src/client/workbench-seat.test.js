@@ -25,7 +25,7 @@ describe('market workbench seat (sidebar must not claim overlay)', () => {
   it('plaza entry is registered to __omnimuxSidebar under projects (rank 4.1), not in footer', () => {
     const source = readFileSync(join(here, 'apply.js'), 'utf8')
     assert.doesNotMatch(source, /slots\.inject\(['"]sidebar\.footer\.action['"]/)
-    assert.match(source, /__omnimuxSidebar/)
+    assert.match(source, /createWorkbenchSidebarEntry/)
     assert.match(source, /rank:\s*4\.1/)
     assert.match(source, /data-omnimux-market-entry/)
     assert.match(source, /PLAZA_TAB_ID/)

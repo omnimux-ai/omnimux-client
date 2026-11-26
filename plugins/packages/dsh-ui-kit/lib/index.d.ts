@@ -601,6 +601,12 @@ interface GenWaveCardProps extends HTMLAttributes<HTMLDivElement> {
  * prefers-reduced-motion 定格参考帧。
  */
 declare const GenWaveCard: import("react").ForwardRefExoticComponent<GenWaveCardProps & import("react").RefAttributes<HTMLDivElement>>;
+interface WorkbenchStageStoreOptions {
+  tabId: string;
+  title: string | (() => string);
+  path?: string;
+}
+declare function createWorkbenchStageStore(options: WorkbenchStageStoreOptions): StageStore;
 interface SidebarCoordinatorApi {
   register: (row: {
     id: string;
@@ -611,7 +617,7 @@ interface SidebarCoordinatorApi {
     create: () => HTMLElement;
   }) => () => void;
 }
-type PluginAccess = 'offline' | 'cloud';
+type PluginAccess = 'offline' | 'cloud' | 'local';
 interface SidebarEntryOptions {
   id: string;
   rank: number;
@@ -623,9 +629,13 @@ interface SidebarEntryOptions {
   };
   customClassName?: string;
   datasetKey?: string;
+  /** Optional extra marker attributes (e.g. `data-omnimux-esc-entry`) set with empty value. */
+  extraDatasetKeys?: string[];
+  /** When true, mirrors the resolved label onto `button.title` for native tooltip parity. */
+  titleAttr?: boolean;
   /**
    * Access classification (default 'offline'):
-   * - 'offline': always visible, clicks open stage directly without auth gating
+   * - 'offline' / 'local': always visible, clicks open stage directly without auth gating
    * - 'cloud': cloud-dependent; always visible in sidebar, clicks trigger explicit auth gating
    */
   access?: PluginAccess;
@@ -633,11 +643,24 @@ interface SidebarEntryOptions {
   requireAuth?: boolean;
   authReason?: string | (() => string);
 }
+interface WorkbenchSidebarEntryOptions extends Omit<SidebarEntryOptions, 'stageStore'> {
+  tabId: string;
+  /** Optional workbench tab title resolver; defaults to `label`. */
+  title?: string | (() => string);
+  /** Optional workbench sentinel path forwarded to `createSidebarStore`. */
+  path?: string;
+}
 /**
  * Creates and mounts a standardized sidebar entry under the 新会话 button.
  * Uses idempotent activation (stageStore.open()) to guarantee persistent selection.
  */
 declare function createSidebarEntry(options: SidebarEntryOptions): () => void;
+/**
+ * Convenience helper for Workbench Tab sidebar entries.
+ * Wires `createWorkbenchStageStore` directly into `createSidebarEntry` so plugins
+ * do not copy-paste `window.__omnimuxWorkbench` polling boilerplate.
+ */
+declare function createWorkbenchSidebarEntry(options: WorkbenchSidebarEntryOptions): () => void;
 /**
  * Robust asynchronous clipboard write with legacy document.execCommand fallback.
  */
@@ -650,5 +673,5 @@ declare function trapFocus(container: HTMLElement, event: KeyboardEvent): void;
  * Attempts to focus the first focusable descendant in a container.
  */
 declare function focusFirstDescendant(container: HTMLElement): boolean;
-export { ActionRow, type ActionRowProps, Badge, type BadgeProps, type BadgeShape, type BadgeSize, type BadgeVariant, Button, type ButtonProps, type ButtonSize, type ButtonVariant, CardGrid, type CardGridProps, type CellContext, type ColumnDef, type CompatIconProps, ConfirmModal, type ConfirmModalProps, CopyButton, type CopyButtonProps, type CopyState, DataTable, type DataTableProps, type DialogSize, Divider, type DividerProps, Drawer, type DrawerPlacement, DrawerPortal, type DrawerPortalProps, type DrawerProps, type DropdownOption, DropdownSelect, type DropdownSelectProps, EmptyState, type EmptyStateProps, FilterBar, type FilterBarProps, GenWaveCard, type GenWaveCardProps, type HeaderContext, IconButton, type IconButtonProps, IconCheckOutline16, IconChevronDownOutline14, IconChevronLeftOutline14, IconChevronUpOutline14, IconCloseFill14, IconCloseOutline16, IconCopyOutline16, IconDownloadOutline16, IconEditOutline16, IconEllipsisOutline16, IconLoadingOutline16, IconPaperclipOutline16, IconPlayOutline16, IconPlusOutline16, IconRefreshOutline14, IconRefreshOutline16, IconRightUpOutline14, IconSearchOutline16, IconTrashOutline16, InputField, type InputFieldProps, type MediaAspectRatio, MediaCard, type MediaCardProps, ModalDialog, type ModalDialogProps, PageHeader, type PageHeaderProps, type PageHeaderTabItem, type PortalContainer, SearchField, type SearchFieldHandle, type SearchFieldProps, SelectableTile, type SelectableTileProps, type SidebarCoordinatorApi, type SidebarEntryOptions, type SortDirection, type StageBox, StageContainer, type StageContainerProps, StageHeader, type StageHeaderProps, type StageHostSingleton, type StageStore, StatBar, type StatBarProps, type StatItem, Table, TableBody, type TableBodyProps, TableCell, type TableCellProps, TableHead, type TableHeadProps, TableHeader, type TableHeaderProps, type TableProps, TableRow, type TableRowProps, Tabs, type TabsProps, type TabsVariant, type TileSelectionMode, Toolbar, type ToolbarProps, copyToClipboard, createPortalSafe, createSidebarEntry, createStageStore, focusFirstDescendant, resolvePortalContainer, trapFocus };
+export { ActionRow, type ActionRowProps, Badge, type BadgeProps, type BadgeShape, type BadgeSize, type BadgeVariant, Button, type ButtonProps, type ButtonSize, type ButtonVariant, CardGrid, type CardGridProps, type CellContext, type ColumnDef, type CompatIconProps, ConfirmModal, type ConfirmModalProps, CopyButton, type CopyButtonProps, type CopyState, DataTable, type DataTableProps, type DialogSize, Divider, type DividerProps, Drawer, type DrawerPlacement, DrawerPortal, type DrawerPortalProps, type DrawerProps, type DropdownOption, DropdownSelect, type DropdownSelectProps, EmptyState, type EmptyStateProps, FilterBar, type FilterBarProps, GenWaveCard, type GenWaveCardProps, type HeaderContext, IconButton, type IconButtonProps, IconCheckOutline16, IconChevronDownOutline14, IconChevronLeftOutline14, IconChevronUpOutline14, IconCloseFill14, IconCloseOutline16, IconCopyOutline16, IconDownloadOutline16, IconEditOutline16, IconEllipsisOutline16, IconLoadingOutline16, IconPaperclipOutline16, IconPlayOutline16, IconPlusOutline16, IconRefreshOutline14, IconRefreshOutline16, IconRightUpOutline14, IconSearchOutline16, IconTrashOutline16, InputField, type InputFieldProps, type MediaAspectRatio, MediaCard, type MediaCardProps, ModalDialog, type ModalDialogProps, PageHeader, type PageHeaderProps, type PageHeaderTabItem, type PluginAccess, type PortalContainer, SearchField, type SearchFieldHandle, type SearchFieldProps, SelectableTile, type SelectableTileProps, type SidebarCoordinatorApi, type SidebarEntryOptions, type SortDirection, type StageBox, StageContainer, type StageContainerProps, StageHeader, type StageHeaderProps, type StageHostSingleton, type StageStore, StatBar, type StatBarProps, type StatItem, Table, TableBody, type TableBodyProps, TableCell, type TableCellProps, TableHead, type TableHeadProps, TableHeader, type TableHeaderProps, type TableProps, TableRow, type TableRowProps, Tabs, type TabsProps, type TabsVariant, type TileSelectionMode, Toolbar, type ToolbarProps, type WorkbenchSidebarEntryOptions, type WorkbenchStageStoreOptions, copyToClipboard, createPortalSafe, createSidebarEntry, createStageStore, createWorkbenchSidebarEntry, createWorkbenchStageStore, focusFirstDescendant, resolvePortalContainer, trapFocus };
 //# sourceMappingURL=index.d.ts.map

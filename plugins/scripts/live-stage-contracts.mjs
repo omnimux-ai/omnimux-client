@@ -124,8 +124,26 @@ export async function captureStageContract(root, stage) {
   } }
   const react = require('react')
   const marketReact = { ...react, useState: (value) => [value, () => {}], useEffect() {}, useLayoutEffect() {} }
+  let kitStage = null
   win.require = (name) => name === 'react' && stage === 'market' ? marketReact : name === 'dsh-ui-kit'
-    ? { createSidebarEntry(options) { entries.push(options); return () => {} } }
+    ? {
+        createSidebarEntry(options) { entries.push(options); return () => {} },
+        createWorkbenchStageStore(options) {
+          assert.ok(kitStage, 'dsh-ui-kit stage module must be loaded before plugin apply')
+          return kitStage.createWorkbenchStageStore(options)
+        },
+        createWorkbenchSidebarEntry(options) {
+          assert.ok(kitStage, 'dsh-ui-kit stage module must be loaded before plugin apply')
+          const { tabId, title, path, ...rest } = options
+          const stageStore = kitStage.createWorkbenchStageStore({
+            tabId,
+            title: title ?? rest.label,
+            ...(path ? { path } : {}),
+          })
+          entries.push({ ...rest, stageStore })
+          return () => {}
+        },
+      }
     : name === '@deepseek-ai/dsh-client-ui-primitives' ? {} : require(name)
   // 资产库的产品库 Tab 在构建期复用产品插件的浏览器安全 UI 源库（`omnimux-products/ui`）。
   // 那是本仓内的 JSX 源码，不是 npm 运行时依赖：`packages: 'external'` 会把它留给 Node
@@ -151,6 +169,7 @@ export async function captureStageContract(root, stage) {
     return win.module.exports
   }
   try {
+    kitStage = evaluate(await compile('packages/dsh-ui-kit/src/stage/createSidebarEntry.ts'))
     const wb = evaluate(await compile('plugins/omnimux/src/client/workbench.js'))
     const api = wb.installWorkbenchGlobal(win)
     api.bind(ctx)

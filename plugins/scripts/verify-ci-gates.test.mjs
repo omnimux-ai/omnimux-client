@@ -61,6 +61,103 @@ test('verify-plugin-boundaries passes on codebase', () => {
   strictEqual(res.status, 0, `boundary verification failed: ${res.stderr}`)
 })
 
+test('verify-plugin-boundaries closes ../omnimux/ and re-export blind spots with ratchet baseline', () => {
+  const emptyBaseline = new Map()
+
+  const hubPrivateImport = checkSourceFileBoundaries({
+    rel: 'plugins/omnimux-assets/src/client/new-leak.js',
+    plugin: 'omnimux-assets',
+    content: "import { getGlobalAttachmentStore } from '../../../omnimux/src/client/attachments/store.ts'\nexport const x = getGlobalAttachmentStore\n",
+    baseline: emptyBaseline,
+  })
+  ok(hubPrivateImport.some((msg) => msg.includes('cross-plugin private import')), 'must block ../omnimux/src/ import')
+
+  const reExportLeak = checkSourceFileBoundaries({
+    rel: 'plugins/omnimux/src/client/new-reexport.js',
+    plugin: 'omnimux',
+    content: "export * from '../../../../../omnimux-inspiration/src/recommendation-engine.js'\n",
+    baseline: emptyBaseline,
+  })
+  ok(reExportLeak.some((msg) => msg.includes('cross-plugin private import')), 'must block cross-plugin export ... from')
+
+  const dynamicImportLeak = checkSourceFileBoundaries({
+    rel: 'plugins/omnimux-publish/src/client/lazy.js',
+    plugin: 'omnimux-publish',
+    content: "export async function load() { return import('../../../omnimux/src/client/workbench.js') }\n",
+    baseline: emptyBaseline,
+  })
+  ok(dynamicImportLeak.some((msg) => msg.includes('cross-plugin private import')), 'must block dynamic import() of ../omnimux/src/')
+
+  const packageInternalLeak = checkSourceFileBoundaries({
+    rel: 'plugins/omnimux-accounts/src/client/pkg-leak.js',
+    plugin: 'omnimux-accounts',
+    content: "import { foo } from 'omnimux/src/client/workbench.js'\nexport const x = foo\n",
+    baseline: emptyBaseline,
+  })
+  ok(packageInternalLeak.some((msg) => msg.includes('cross-plugin private import')), 'must block omnimux/src/ package internal import')
+
+  const relativeKitInternalLeak = checkSourceFileBoundaries({
+    rel: 'plugins/omnimux-accounts/src/client/kit-leak.js',
+    plugin: 'omnimux-accounts',
+    content: "import { createSidebarEntry } from '../../../../packages/dsh-ui-kit/src/stage/createSidebarEntry.ts'\nexport const y = createSidebarEntry\n",
+    baseline: emptyBaseline,
+  })
+  ok(relativeKitInternalLeak.some((msg) => msg.includes('cross-plugin private import')), 'must block relative ../packages/dsh-ui-kit/src/ private import')
+
+  // Ratchet allows exact frozen (rel, specifier) pair but blocks any new specifier in the same file.
+  const ratchet = new Map([
+    ['plugins/omnimux-assets/src/asset-hub/AssetHubCard.jsx', new Set(['../../../omnimux/src/client/components/library-flow/UniversalLibraryCard.jsx'])],
+  ])
+  const ratchetedOk = checkSourceFileBoundaries({
+    rel: 'plugins/omnimux-assets/src/asset-hub/AssetHubCard.jsx',
+    plugin: 'omnimux-assets',
+    content: "import { UniversalLibraryCard } from '../../../omnimux/src/client/components/library-flow/UniversalLibraryCard.jsx'\n",
+    baseline: ratchet,
+  })
+  strictEqual(ratchetedOk.length, 0)
+
+  const ratchetNewSpecBlocked = checkSourceFileBoundaries({
+    rel: 'plugins/omnimux-assets/src/asset-hub/AssetHubCard.jsx',
+    plugin: 'omnimux-assets',
+    content: [
+      "import { UniversalLibraryCard } from '../../../omnimux/src/client/components/library-flow/UniversalLibraryCard.jsx'",
+      "import { somethingNew } from '../../../omnimux/src/client/workbench/geometry.js'",
+    ].join('\n'),
+    baseline: ratchet,
+  })
+  ok(ratchetNewSpecBlocked.some((msg) => msg.includes('geometry.js')), 'must block new cross-plugin specifier even in a ratcheted file')
+
+  // Test files may import Hub modules for real contract tests (LESSONS.md); comments and public packages stay allowed.
+  const testHubContractAllowed = checkSourceFileBoundaries({
+    rel: 'plugins/omnimux-workflow/src/shared/catalog.test.mjs',
+    plugin: 'omnimux-workflow',
+    content: "import { listModels } from '../../../omnimux/src/catalog/list.js'\nexport const fn = listModels\n",
+    baseline: emptyBaseline,
+  })
+  strictEqual(testHubContractAllowed.length, 0)
+
+  const selfPackageAllowed = checkSourceFileBoundaries({
+    rel: 'plugins/omnimux-browser/extension/src/background/rpc.ts',
+    plugin: 'omnimux-browser',
+    content: "import type { RpcMessage } from 'omnimux-browser/src/protocol.ts'\nexport type M = RpcMessage\n",
+    baseline: emptyBaseline,
+  })
+  strictEqual(selfPackageAllowed.length, 0)
+
+  const commentAndPublicAllowed = checkSourceFileBoundaries({
+    rel: 'plugins/omnimux-products/src/client/reference.js',
+    plugin: 'omnimux-products',
+    content: [
+      "/** @returns {import('../../omnimux/src/client/reference/types.ts').UnifiedReference | null} */",
+      "import { createWorkbenchSidebarEntry } from 'dsh-ui-kit'",
+      "export const sample = \"export { x } from '../../../omnimux/src/fake.js'\"",
+      "export const templateText = `copied from 'path'`",
+    ].join('\n'),
+    baseline: emptyBaseline,
+  })
+  strictEqual(commentAndPublicAllowed.length, 0)
+})
+
 test('verify-plugin-boundaries blocks non-Hub direct ctx.llm and llm.stream calls', () => {
   const directStream = checkSourceFileBoundaries({
     rel: 'plugins/omnimux-inspiration/src/private-ai.js',

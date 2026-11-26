@@ -9,7 +9,7 @@ const here = dirname(fileURLToPath(import.meta.url))
 describe('forms workbench seat (hidden from left sidebar)', () => {
   it('sidebar entry uses the workbench store and exports standard selectors', () => {
     const source = readFileSync(join(here, 'sidebar-entry.js'), 'utf8')
-    assert.match(source, /createWorkbenchStageStore/)
+    assert.match(source, /createWorkbenchSidebarEntry/)
     assert.match(source, /FORMS_TAB_ID = 'omnimux-forms:tasks'/)
     assert.match(source, /ENTRY_SELECTOR = '\[data-omnimux-forms-entry\]'/)
   })

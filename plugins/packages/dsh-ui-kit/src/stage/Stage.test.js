@@ -4,7 +4,11 @@ import { dirname, join } from 'node:path'
 import { describe, it } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { createStageStore } from './createStageStore.ts'
-import { createSidebarEntry } from './createSidebarEntry.ts'
+import {
+  createSidebarEntry,
+  createWorkbenchSidebarEntry,
+  createWorkbenchStageStore,
+} from './createSidebarEntry.ts'
 
 const here = dirname(fileURLToPath(import.meta.url))
 
@@ -307,6 +311,178 @@ describe('createSidebarEntry contract', () => {
       assert.equal(opened, false, 'stage must not open when explicit login is not successful')
 
       cleanup()
+    } finally {
+      globalThis.window = origWindow
+      globalThis.document = origDoc
+    }
+  })
+
+  it('createWorkbenchStageStore lazily binds window.__omnimuxWorkbench.createSidebarStore with polling and cleanup', async () => {
+    const origWindow = globalThis.window
+    const opened = []
+    const closed = []
+    let active = false
+    const subscribers = new Set()
+    const notify = () => { for (const fn of subscribers) fn() }
+
+    globalThis.window = {}
+    try {
+      const store = createWorkbenchStageStore({
+        tabId: 'omnimux-test:library',
+        path: 'omnimux-test:sentinel',
+        title: () => '测试页',
+      })
+
+      assert.equal(store.getSnapshot(), false)
+      assert.deepEqual(store.readBox(), { top: 0, left: 0, width: 0, height: 0 })
+      assert.doesNotThrow(() => store.open())
+      assert.doesNotThrow(() => store.close())
+
+      let notifications = 0
+      const unsub = store.subscribe(() => { notifications += 1 })
+
+      globalThis.window.__omnimuxWorkbench = {
+        createSidebarStore(opts) {
+          assert.equal(opts.tabId, 'omnimux-test:library')
+          assert.equal(opts.path, 'omnimux-test:sentinel')
+          assert.equal(opts.title(), '测试页')
+          return {
+            getSnapshot: () => active,
+            subscribe(fn) {
+              subscribers.add(fn)
+              return () => { subscribers.delete(fn) }
+            },
+            open() {
+              active = true
+              opened.push(opts.tabId)
+              notify()
+            },
+            close() {
+              active = false
+              closed.push(opts.tabId)
+              notify()
+            },
+            readBox: () => ({ top: 1, left: 2, width: 300, height: 400 }),
+          }
+        },
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 90))
+      assert.ok(notifications >= 1, 'polling subscribe must attach once workbench global appears')
+
+      store.open()
+      assert.equal(store.getSnapshot(), true)
+      assert.deepEqual(opened, ['omnimux-test:library'])
+      assert.deepEqual(store.readBox(), { top: 1, left: 2, width: 300, height: 400 })
+
+      store.set(false)
+      assert.equal(store.getSnapshot(), false)
+      assert.deepEqual(closed, ['omnimux-test:library'])
+
+      const beforeUnsub = notifications
+      unsub()
+      store.set(true)
+      assert.equal(notifications, beforeUnsub, 'unsubscribed listener must not fire')
+    } finally {
+      globalThis.window = origWindow
+    }
+  })
+
+  it('createWorkbenchSidebarEntry mounts entry with extraDatasetKeys, titleAttr and workbench activation', () => {
+    const origWindow = globalThis.window
+    const origDoc = globalThis.document
+    const attrs = new Map()
+    const listeners = new Map()
+    const labelNode = { textContent: '' }
+    const fakeEntry = {
+      title: '',
+      className: '',
+      innerHTML: '',
+      dataset: {},
+      setAttribute: (k, v) => { attrs.set(k, v) },
+      removeAttribute: (k) => { attrs.delete(k) },
+      querySelector: () => labelNode,
+      addEventListener: (evt, fn) => { listeners.set(evt, fn) },
+    }
+    let registeredRow = null
+    let unregistered = false
+    let openedTab = null
+    let active = false
+    let wbListener = null
+    let localeListener = null
+    let currentLabel = '技能/专家'
+
+    globalThis.document = { createElement: () => fakeEntry }
+    globalThis.window = {
+      __omnimuxSidebar: {
+        register: (row) => {
+          registeredRow = row
+          row.create()
+          return () => { unregistered = true }
+        },
+      },
+      __omnimuxWorkbench: {
+        createSidebarStore: ({ tabId, title }) => ({
+          getSnapshot: () => active,
+          subscribe: (fn) => {
+            wbListener = fn
+            return () => { wbListener = null }
+          },
+          open: () => {
+            openedTab = { tabId, title: title() }
+            active = true
+            wbListener?.()
+          },
+          close: () => {
+            active = false
+            wbListener?.()
+          },
+          readBox: () => ({ top: 0, left: 0, width: 0, height: 0 }),
+        }),
+      },
+    }
+
+    try {
+      const cleanup = createWorkbenchSidebarEntry({
+        id: 'omnimux-market',
+        rank: 4.1,
+        tabId: 'omnimux-market:plaza',
+        label: () => currentLabel,
+        iconSvg: '<svg></svg>',
+        access: 'local',
+        customClassName: 'omnimux-market-entry',
+        datasetKey: 'data-omnimux-market-entry',
+        extraDatasetKeys: ['data-omnimux-esc-entry'],
+        titleAttr: true,
+        locale: {
+          subscribe: (fn) => {
+            localeListener = fn
+            return () => { localeListener = null }
+          },
+        },
+      })
+
+      assert.equal(registeredRow.id, 'omnimux-market-entry')
+      assert.equal(registeredRow.rank, 4.1)
+      assert.equal(attrs.get('data-omnimux-market-entry'), '')
+      assert.equal(attrs.get('data-omnimux-esc-entry'), '')
+      assert.equal(fakeEntry.title, '技能/专家')
+      assert.equal(attrs.get('aria-label'), '技能/专家')
+      assert.equal(labelNode.textContent, '技能/专家')
+
+      currentLabel = 'Skills & Experts'
+      localeListener?.()
+      assert.equal(fakeEntry.title, 'Skills & Experts')
+      assert.equal(attrs.get('aria-label'), 'Skills & Experts')
+
+      listeners.get('click')?.()
+      assert.deepEqual(openedTab, { tabId: 'omnimux-market:plaza', title: 'Skills & Experts' })
+      assert.equal(fakeEntry.dataset.active, 'true')
+
+      cleanup()
+      assert.equal(unregistered, true)
+      assert.equal(wbListener, null)
+      assert.equal(localeListener, null)
     } finally {
       globalThis.window = origWindow
       globalThis.document = origDoc

@@ -10,17 +10,19 @@ const sessionCreateSrc = readFileSync(join(here, 'session-create.js'), 'utf8')
 const skillPlazaSrc = readFileSync(join(here, 'skill-plaza.js'), 'utf8')
 const applySrc = readFileSync(join(here, 'apply.js'), 'utf8')
 const cssSrc = readFileSync(join(here, 'css.js'), 'utf8')
+const kitSidebarEntrySrc = readFileSync(join(here, '../../../../packages/dsh-ui-kit/src/stage/createSidebarEntry.ts'), 'utf8')
 
 describe('Skill Workshop UI & Session Contract (Issue #773 / #776)', () => {
   it('sidebar entry is positioned under projects (rank 4.1) via __omnimuxSidebar and footer action is removed', () => {
     assert.doesNotMatch(applySrc, /slots\.inject\(['"]sidebar\.footer\.action['"]/)
-    assert.match(applySrc, /window\.__omnimuxSidebar/)
+    assert.match(applySrc, /createWorkbenchSidebarEntry/)
     assert.match(applySrc, /rank:\s*4\.1/)
     assert.match(applySrc, /data-omnimux-market-entry/)
     assert.match(applySrc, /data-omnimux-esc-entry/)
-    assert.match(applySrc, /height:\s*32px/)
-    assert.match(applySrc, /font-size:\s*14px/)
-    assert.match(applySrc, /width:\s*14px;\s*height:\s*14px/)
+    assert.match(kitSidebarEntrySrc, /__omnimuxSidebar/)
+    assert.match(kitSidebarEntrySrc, /height:\s*32px/)
+    assert.match(kitSidebarEntrySrc, /font-size:\s*14px/)
+    assert.match(kitSidebarEntrySrc, /width:\s*14px;\s*height:\s*14px/)
   })
 
   it('session create helper creates real session B via sessions.create without modifying session A', () => {
