@@ -115,7 +115,7 @@ export function assertOmniMuxWindowsInstaller(info: { ProductName?: unknown; Pro
 }
 
 export class OmniMuxUpdateInstaller {
-  private prepared?: { path: string; version: string; sha256?: string; directory?: string; bundle?: string; installed?: string }
+  private prepared?: { path: string; version: string; sha256?: string; directory?: string; bundle?: string; installed?: string; team?: string }
   private nativeReady = false
 
   constructor(private readonly options: { platform: string; executable: string; language?: () => string; log(error: unknown): void }) {}
@@ -131,13 +131,27 @@ export class OmniMuxUpdateInstaller {
     }
   }
 
+  private async verifyPreparedMacBundle(prepared: { bundle: string; installed: string; team?: string }): Promise<void> {
+    const stat = await lstat(prepared.bundle)
+    if (!stat.isDirectory() || stat.isSymbolicLink()) {
+      throw new OmniMuxUpdateError('INSTALL_FAILED', 'Prepared OmniMux application bundle is unavailable')
+    }
+    const run = (file: string, args: string[]) => execute(file, args, { timeout: 60_000, maxBuffer: 1024 * 1024 })
+    await run('/usr/bin/codesign', ['--verify', '--deep', '--strict', prepared.bundle])
+    const team = prepared.team
+    if (team) {
+      const candidateSignature = await run('/usr/bin/codesign', ['-dv', '--verbose=4', prepared.bundle])
+      if (!candidateSignature.stderr.split('\n').includes(`TeamIdentifier=${team}`)) {
+        throw new OmniMuxUpdateError('INSTALL_FAILED', 'Prepared OmniMux update signing team does not match the installed application')
+      }
+    }
+  }
+
   async prepare(path: string, version: string, directory: string, signal: AbortSignal, expectedSha256?: string): Promise<void> {
     this.prepared = undefined
     this.nativeReady = false
     if (this.options.platform === 'win32') {
-      if (expectedSha256 !== undefined) {
-        await assertFileSha256(path, expectedSha256)
-      }
+      await this.verifyPreparedWindowsInstaller({ path, ...(expectedSha256 === undefined ? {} : { sha256: expectedSha256 }) })
       const script = '$ErrorActionPreference="Stop"; (Get-Item -LiteralPath $env:OMNIMUX_UPDATE_INSTALLER).VersionInfo | Select-Object ProductName,ProductVersion | ConvertTo-Json -Compress'
       const info = await execute(join(process.env.SystemRoot ?? 'C:\\Windows', 'System32/WindowsPowerShell/v1.0/powershell.exe'),
         ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')],
@@ -148,6 +162,13 @@ export class OmniMuxUpdateInstaller {
     }
     if (this.options.platform !== 'darwin') {
       throw new OmniMuxUpdateError('PREPARE_FAILED', 'Unsupported update platform')
+    }
+    if (expectedSha256 !== undefined) {
+      const dmgStat = await lstat(path)
+      if (!dmgStat.isFile() || dmgStat.isSymbolicLink()) {
+        throw new OmniMuxUpdateError('PREPARE_FAILED', 'Downloaded OmniMux disk image must be a regular file')
+      }
+      await assertFileSha256(path, expectedSha256)
     }
     const mount = join(directory, 'volume')
     await mkdir(mount, { mode: 0o700 })
@@ -183,7 +204,7 @@ export class OmniMuxUpdateInstaller {
       }
       const staged = join(directory, apps[0]!.name)
       await run('/usr/bin/ditto', [bundle, staged])
-      this.prepared = { path, version, directory, bundle: staged, installed }
+      this.prepared = { path, version, directory, bundle: staged, installed, team }
     } finally {
       await execute('/usr/bin/hdiutil', ['detach', mount], { timeout: 30_000 }).catch(async () => {
         try { await execute('/usr/bin/hdiutil', ['detach', '-force', mount], { timeout: 30_000 }) }
@@ -200,14 +221,10 @@ export class OmniMuxUpdateInstaller {
       await this.verifyPreparedWindowsInstaller(prepared)
       return
     }
-    if (this.nativeReady) return
     if (!prepared.bundle || !prepared.installed || !prepared.directory) {
       throw new OmniMuxUpdateError('INSTALL_FAILED', 'No prepared OmniMux update')
     }
-    const stat = await lstat(prepared.bundle)
-    if (!stat.isDirectory() || stat.isSymbolicLink()) {
-      throw new OmniMuxUpdateError('INSTALL_FAILED', 'Prepared OmniMux application bundle is unavailable')
-    }
+    await this.verifyPreparedMacBundle({ bundle: prepared.bundle, installed: prepared.installed, team: prepared.team })
     await access(dirname(prepared.installed), constants.W_OK)
     await access(prepared.installed, constants.W_OK)
     this.nativeReady = true
@@ -220,6 +237,7 @@ export class OmniMuxUpdateInstaller {
       if (!this.nativeReady || !prepared?.bundle || !prepared.installed || !prepared.directory) {
         throw new OmniMuxUpdateError('INSTALL_FAILED', 'No prepared update installer')
       }
+      await this.verifyPreparedMacBundle({ bundle: prepared.bundle, installed: prepared.installed, team: prepared.team })
       const zh = (this.options.language?.() ?? 'en').toLowerCase().startsWith('zh')
       const message = zh ? `正在更新 OmniMux 至 ${prepared.version}，请稍候…` : `Updating OmniMux to ${prepared.version}, please wait…`
       await new Promise<void>((resolveLaunch, rejectLaunch) => {

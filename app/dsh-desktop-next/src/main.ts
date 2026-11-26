@@ -66,7 +66,7 @@ import { manualUpdate, manualUpdateHint, releaseNotesUrl, updateLabel, type Omni
 import { DESKTOP_SHUTDOWN_TIMEOUT_MS } from '../../dsh-plugin-desktop/src/shutdown.ts'
 import { isDesktopRendererStatus, NextRendererRecovery, type DesktopNavigationCause } from './renderer-recovery.ts'
 import { DesktopLaunchAnalytics } from './desktop-launch-analytics.ts'
-import { type DesktopProductIdentity } from './product-identity.ts'
+import { OMNIMUX_ALLOWED_UPDATE_HOSTS, type DesktopProductIdentity } from './product-identity.ts'
 import { resolveDesktopIdentity } from './release-channel.ts'
 import { collectRendererDiagnostics, rendererDiagnosticsFields } from './renderer-diagnostics.ts'
 import { RollingRendererEvidence } from './renderer-evidence.ts'
@@ -326,7 +326,7 @@ const updates = new NextUpdates({
   downloads: updateDownloadDirectory(process.platform),
   arch: process.platform === 'darwin' ? macUpdateArch(process.arch, app.runningUnderARM64Translation) : undefined,
   request: (url, init) => net.fetch(url, { ...init, credentials: 'omit' }),
-  artifactRequest: createArtifactRequest(),
+  artifactRequest: createArtifactRequest({ allowedHosts: OMNIMUX_ALLOWED_UPDATE_HOSTS }),
   changed: () => { if (app.isReady() && !quitting) native.refresh() },
   available: nextVersion => {
     if (app.isReady() && !quitting) {

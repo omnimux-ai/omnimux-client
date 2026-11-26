@@ -196,3 +196,65 @@ it('stages the verified macOS app bundle and launches the detached progress upda
   expect(spawnOptions.env.OMNIMUX_UPDATE_INSTALLED).toBe(installedBundle)
   expect(spawnOptions.env.OMNIMUX_UPDATE_MESSAGE).toContain('2.0.18-next.1')
 })
+
+it('verifies macOS DMG SHA-256 before hdiutil attach and re-verifies staged bundle signature before launch (issue #363)', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'next-mac-update-sec-')); roots.push(root)
+  const applications = join(root, 'Applications')
+  const installedBundle = join(applications, 'OmniMux.app')
+  const installedExecutable = join(installedBundle, 'Contents', 'MacOS', 'OmniMux')
+  await mkdir(join(installedBundle, 'Contents', 'MacOS'), { recursive: true })
+  await writeFile(installedExecutable, 'binary')
+  const staging = join(root, 'staging')
+  await mkdir(staging, { recursive: true })
+  const dmg = join(staging, 'OmniMux-2.0.26-arm64.dmg')
+  const dmgBytes = Buffer.from('verified-dmg-bytes')
+  const dmgSha = createHash('sha256').update(dmgBytes).digest('hex')
+  await writeFile(dmg, dmgBytes)
+
+  const installer = new NextUpdateInstaller({
+    platform: 'darwin',
+    executable: installedExecutable,
+    log: vi.fn(),
+  })
+  // Mismatched DMG SHA-256 fails before hdiutil is ever invoked.
+  await expect(installer.prepare(dmg, '2.0.26', staging, new AbortController().signal, '0'.repeat(64))).rejects.toMatchObject({ code: 'CHECKSUM_MISMATCH' })
+  expect(execFileMock).not.toHaveBeenCalled()
+
+  // Valid prepare + stage, then tamper staged bundle signature before launch(): launch() must reject without spawning.
+  let failStagedCodesign = false
+  execFileMock.mockImplementation((file: string, args: string[], _opts: unknown, callback: (err: Error | null, stdout: string, stderr: string) => void) => {
+    if (file === '/usr/bin/hdiutil' && args[0] === 'attach') {
+      const mountPoint = args[args.indexOf('-mountpoint') + 1]!
+      const mountedBundle = join(mountPoint, 'OmniMux.app')
+      mkdir(join(mountedBundle, 'Contents', 'Resources', 'app'), { recursive: true })
+        .then(() => writeFile(join(mountedBundle, 'Contents', 'Resources', 'app', 'package.json'), JSON.stringify({
+          name: 'dsh-desktop-next',
+          version: '2.0.26',
+        })))
+        .then(() => callback(null, '', ''), err => callback(err as Error, '', ''))
+      return
+    }
+    if (file === '/usr/libexec/PlistBuddy') { callback(null, 'ai.omnimux.desktop\n', ''); return }
+    if (file === '/usr/bin/codesign' && args[0] === '--verify') {
+      if (failStagedCodesign && args.includes(join(staging, 'OmniMux.app'))) {
+        callback(new Error('invalid signature'), '', 'code object is not signed at all')
+        return
+      }
+      callback(null, '', '')
+      return
+    }
+    if (file === '/usr/bin/codesign' && args[0] === '-dv') { callback(null, '', 'TeamIdentifier=742992243H\n'); return }
+    if (file === '/usr/bin/ditto') {
+      mkdir(args[1]!, { recursive: true }).then(() => callback(null, '', ''), err => callback(err as Error, '', ''))
+      return
+    }
+    if (file === '/usr/bin/hdiutil' && args[0] === 'detach') { callback(null, '', ''); return }
+    callback(new Error(`Unexpected execFile: ${file} ${args.join(' ')}`), '', '')
+  })
+
+  await installer.prepare(dmg, '2.0.26', staging, new AbortController().signal, dmgSha)
+  await installer.stage()
+  failStagedCodesign = true
+  await expect(installer.launch()).rejects.toThrow(/invalid signature/)
+  expect(spawnMock).not.toHaveBeenCalled()
+})

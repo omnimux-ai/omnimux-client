@@ -37,26 +37,77 @@ function isPrivateIpv4(address: string): boolean {
   return a >= 224
 }
 
+const ALLOWED_IMAGE_MEDIA_TYPES = new Set([
+  'image/png',
+  'image/jpeg',
+  'image/jpg',
+  'image/gif',
+  'image/webp',
+  'image/avif',
+  'image/bmp',
+  'image/x-icon',
+  'image/vnd.microsoft.icon',
+  'image/tiff',
+  'image/heic',
+  'image/heif',
+  'image/apng',
+])
+
+function expandIpv6Words(bare: string): number[] | null {
+  const halves = bare.split('::')
+  if (halves.length > 2) return null
+  const parsePart = (part: string): number[] | null => {
+    if (part === '') return []
+    const tokens = part.split(':')
+    const words: number[] = []
+    for (let i = 0; i < tokens.length; i++) {
+      const token = tokens[i]!
+      if (token.includes('.')) {
+        if (i !== tokens.length - 1) return null
+        const octets = token.split('.')
+        if (octets.length !== 4 || !octets.every(o => /^\d{1,3}$/u.test(o))) return null
+        const nums = octets.map(Number)
+        if (nums.some(n => n > 255)) return null
+        words.push((nums[0]! << 8) | nums[1]!, (nums[2]! << 8) | nums[3]!)
+      } else {
+        if (!/^[0-9a-f]{1,4}$/u.test(token)) return null
+        words.push(Number.parseInt(token, 16))
+      }
+    }
+    return words
+  }
+  const left = parsePart(halves[0] ?? '')
+  const right = halves.length === 2 ? parsePart(halves[1] ?? '') : []
+  if (left === null || right === null) return null
+  if (halves.length === 1) return left.length === 8 ? left : null
+  const fill = 8 - left.length - right.length
+  if (fill < 1) return null
+  return [...left, ...new Array<number>(fill).fill(0), ...right]
+}
+
 function isPrivateIpv6(address: string): boolean {
   const bare = address.includes('%') ? address.slice(0, address.indexOf('%')) : address
-  if (bare === '::' || bare === '::1') return true
-  const mappedDotted = /^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/u.exec(bare)
-  if (mappedDotted?.[1] !== undefined) return isPrivateIpv4(mappedDotted[1])
-  const mappedHex = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/u.exec(bare)
-  if (mappedHex?.[1] !== undefined && mappedHex[2] !== undefined) {
-    const hi = Number.parseInt(mappedHex[1], 16)
-    const lo = Number.parseInt(mappedHex[2], 16)
-    return isPrivateIpv4(`${hi >> 8}.${hi & 0xff}.${lo >> 8}.${lo & 0xff}`)
+  const words = expandIpv6Words(bare)
+  if (words === null) return true
+  const [w0, w1, w2, w3, w4, w5, w6, w7] = words as [number, number, number, number, number, number, number, number]
+  // Unspecified (::) and loopback (::1)
+  if (w0 === 0 && w1 === 0 && w2 === 0 && w3 === 0 && w4 === 0 && w5 === 0 && w6 === 0 && (w7 === 0 || w7 === 1)) return true
+  // IPv4-mapped (::ffff:0:0/96) and IPv4-compatible (::/96)
+  if (w0 === 0 && w1 === 0 && w2 === 0 && w3 === 0 && w4 === 0 && (w5 === 0xffff || w5 === 0)) {
+    return isPrivateIpv4(`${w6 >> 8}.${w6 & 0xff}.${w7 >> 8}.${w7 & 0xff}`)
   }
-  const [head] = bare.split('::')
-  const firstPart = head?.split(':').filter(Boolean)[0]
-  if (firstPart === undefined) return true
-  if (!/^[0-9a-f]{1,4}$/u.test(firstPart)) return true
-  const first = Number.parseInt(firstPart, 16)
-  if (first === 0 || first === 0x0064 || first === 0x0100) return true
-  if ((first & 0xfe00) === 0xfc00) return true
-  if ((first & 0xffc0) === 0xfe80) return true
-  if ((first & 0xff00) === 0xff00) return true
+  // 6to4 (2002::/16) embedding private IPv4
+  if (w0 === 0x2002) {
+    return isPrivateIpv4(`${w1 >> 8}.${w1 & 0xff}.${w2 >> 8}.${w2 & 0xff}`)
+  }
+  // NAT64 well-known prefix (64:ff9b::/96) and discard-only (100::/64)
+  if (w0 === 0x0064 || w0 === 0x0100) return true
+  // Unique local (fc00::/7)
+  if ((w0 & 0xfe00) === 0xfc00) return true
+  // Link-local (fe80::/10) and deprecated site-local (fec0::/10)
+  if ((w0 & 0xff80) === 0xfe80) return true
+  // Multicast (ff00::/8)
+  if ((w0 & 0xff00) === 0xff00) return true
   return false
 }
 
@@ -78,10 +129,10 @@ export function isBlockedImageHost(hostname: string): boolean {
 }
 
 export function isAllowedImageMediaType(contentType: string): boolean {
-  const mime = contentType.split(';')[0]?.trim().toLowerCase() ?? ''
-  if (mime === '') return true
-  if (mime === 'image/svg+xml') return false
-  return /^image\/[a-z0-9.+-]+$/u.test(mime)
+  const trimmed = contentType.trim()
+  if (trimmed === '') return true
+  const mime = trimmed.split(';')[0]?.trim().toLowerCase() ?? ''
+  return ALLOWED_IMAGE_MEDIA_TYPES.has(mime)
 }
 
 /** The Electron main-process modules the file actions use. */
@@ -336,14 +387,20 @@ export function installFileActions(
     const verifyResolvedAddress = async (url: URL, signal: AbortSignal): Promise<void> => {
       const bareHost = url.hostname.trim().toLowerCase().replace(/\.$/u, '').replace(/^\[|\]$/gu, '')
       if (isIP(bareHost) !== 0) return
-      let resolved: readonly { address: string }[] = []
-      try {
-        resolved = await resolveHost(bareHost)
-      } catch {
-        // Leave NXDOMAIN/offline lookups to Chromium's network stack (which also handles system proxies).
-      }
+      const resolved = await new Promise<readonly { address: string }[]>((resolve, reject) => {
+        if (signal.aborted) { reject(signal.reason); return }
+        const onAbort = (): void => { reject(signal.reason) }
+        signal.addEventListener('abort', onAbort, { once: true })
+        resolveHost(bareHost).then(
+          value => { signal.removeEventListener('abort', onAbort); resolve(value) },
+          error => { signal.removeEventListener('abort', onAbort); reject(error) },
+        )
+      }).catch((error: unknown) => {
+        if (signal.aborted) throw signal.reason
+        throw new Error('Original image unavailable', { cause: error })
+      })
       signal.throwIfAborted()
-      if (resolved.some(entry => isPrivateIpAddress(entry.address))) {
+      if (resolved.length === 0 || resolved.some(entry => isPrivateIpAddress(entry.address))) {
         throw new Error('Invalid image URL')
       }
     }

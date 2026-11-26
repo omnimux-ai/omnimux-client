@@ -145,3 +145,14 @@ it('carries installer traffic on a non-persistent partition instead of applicati
   harness.requests[0]!.emit('response', incoming(200, 'koly'))
   await pending
 })
+
+it('rejects redirects to unallowlisted hosts per hop before opening a connection (issue #363)', async () => {
+  const allowedHosts = ['dl.omnimux.ai']
+  const start = 'https://dl.omnimux.ai/releases/v2.0.26/OmniMux.dmg'
+  const pending = createArtifactRequest({ allowedHosts })(start, {})
+  expect(harness.requests).toHaveLength(1)
+  // Even if evil.example would redirect back to dl.omnimux.ai, the transport must never connect to evil.example.
+  harness.requests[0]!.emit('redirect', 302, 'GET', 'https://evil.example/bounce', {})
+  await expect(pending).rejects.toThrow(/allowlisted host/i)
+  expect(harness.requests).toHaveLength(1)
+})

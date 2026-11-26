@@ -287,3 +287,40 @@ it('fails fast on Content-Length mismatch, validates 206 Content-Range, and retr
   expect(slice0Retried).toBe(true)
   expect(await readFile(dest)).toEqual(dmg.bytes)
 })
+
+it('rejects parallel Range responses redirected to an unallowlisted host (issue #363)', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'omnimux-dl-range-redir-')); roots.push(dir)
+  const dmg = buildDmg(12_288)
+  const dest = join(dir, 'OmniMux-2.0.26-arm64.dmg')
+  const url = 'https://dl.omnimux.ai/releases/v2.0.26/OmniMux-2.0.26-arm64.dmg'
+
+  await expect(downloadOmniMuxArtifact({
+    url,
+    platform: 'darwin',
+    destinationPath: dest,
+    expectedSha256: dmg.sha256,
+    expectedSize: dmg.bytes.byteLength,
+    retryBaseDelayMs: 5,
+    parallel: { concurrency: 3, chunkBytes: 4096, minBytes: 4096 },
+    request: async (reqUrl, init) => {
+      const range = new Headers(init.headers).get('Range')
+      if (range === null) {
+        return {
+          finalUrl: reqUrl,
+          response: new Response(new Uint8Array(dmg.bytes), {
+            status: 200,
+            headers: { 'content-length': String(dmg.bytes.byteLength), 'accept-ranges': 'bytes' },
+          }),
+        }
+      }
+      return {
+        finalUrl: 'https://evil.example/tampered-slice.dmg',
+        response: new Response(new Uint8Array(4096), {
+          status: 206,
+          headers: { 'content-length': '4096', 'content-range': `bytes 4096-8191/${dmg.bytes.byteLength}` },
+        }),
+      }
+    },
+  })).rejects.toMatchObject({ code: 'MANIFEST_INVALID' })
+  expect(existsSync(dest)).toBe(false)
+})

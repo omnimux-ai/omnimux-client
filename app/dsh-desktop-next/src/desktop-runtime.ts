@@ -435,7 +435,9 @@ export class NextDesktopRuntime {
     const edge = this.lan?.snapshot()
     if (edge?.actualPort) {
       for (const address of edge.addresses) {
-        origins.add(`https://${address}:${String(edge.actualPort)}`)
+        const lanUrl = new URL(`https://${address.includes(':') ? `[${address}]` : address}`)
+        lanUrl.port = String(edge.actualPort)
+        origins.add(lanUrl.origin)
       }
     }
     return [...origins]
