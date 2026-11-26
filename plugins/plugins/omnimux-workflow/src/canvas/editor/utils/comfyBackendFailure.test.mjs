@@ -104,6 +104,7 @@ test('设置码覆盖宿主 validateDirectory 会产出的每一个码', () => {
     'not-a-directory',
     'not-writable',
     'same-as-install-root',
+    'outside-managed-root',
   ];
   for (const code of hostCodes) {
     assert.ok(COMFY_BACKEND_SETTINGS_CODES.includes(code), `客户端不认识宿主设置码：${code}`);

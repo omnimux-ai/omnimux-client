@@ -119,7 +119,8 @@ test('设置解析与安装根：坏文件回落默认值，用户值优先', ()
   });
   assert.deepEqual(parseSettings('{"installRoot":123}'), EMPTY_SETTINGS);
   assert.equal(resolveInstallRoot('/root', EMPTY_SETTINGS), '/root/comfyui-backend');
-  assert.equal(resolveInstallRoot('/root', { installRoot: '/custom/backend', modelsPath: '', variant: '' }), '/custom/backend');
+  assert.equal(resolveInstallRoot('/root', { installRoot: '/root/custom/backend', modelsPath: '', variant: '' }), '/root/custom/backend');
+  assert.equal(resolveInstallRoot('/root', { installRoot: '/custom/backend', modelsPath: '', variant: '' }), '/root/comfyui-backend');
 });
 
 test('模型目录 YAML：空目录不给配置，非空只指向用户目录（不复制文件）', () => {

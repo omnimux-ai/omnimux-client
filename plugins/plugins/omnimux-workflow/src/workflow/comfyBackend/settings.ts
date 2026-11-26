@@ -5,7 +5,7 @@
  * 写 `<dataRoot>/comfyui-backend/settings.json`。校验是纯函数，落盘与探测在 service 里接。
  */
 
-import { isAbsolute, join, normalize } from 'node:path';
+import { isAbsolute, join, normalize, relative, resolve } from 'node:path';
 
 export interface ComfyBackendSettings {
   /** 用户选的安装根；空 = 默认（插件数据目录）。 */
@@ -23,7 +23,8 @@ export type SettingsValidationCode =
   | 'not-found'
   | 'not-a-directory'
   | 'not-writable'
-  | 'same-as-install-root';
+  | 'same-as-install-root'
+  | 'outside-managed-root';
 
 export interface SettingsValidation {
   ok: boolean;
@@ -39,14 +40,34 @@ export interface ValidateInput {
   writable: boolean;
   /** 模型目录校验时用于拒绝「模型目录就是安装根」这种无意义配置。 */
   installRoot?: string;
+  /** 安装根校验时的受管父目录（通常为插件 dataRoot）；设置时拒绝越界目录与符号链接。 */
+  managedRoot?: string;
+  /** 目标路径或其解析结果是否为越界符号链接。 */
+  isSymlink?: boolean;
 }
 
-/** 校验用户填的目录：必须绝对路径、存在、是目录、可写。 */
+const CONTROL_CHAR_RE = /[\r\n\0]/;
+
+/** 判断 `candidate` 是否位于 `parent` 内（含相等），仅基于规范化后的词法路径。 */
+export function isPathWithinDir(parent: string, candidate: string): boolean {
+  const base = resolve(parent);
+  const target = resolve(candidate);
+  const rel = relative(base, target);
+  return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
+}
+
+/** 校验用户填的目录：必须绝对路径、无控制字符、存在、是目录、可写，且安装根受限于受管目录。 */
 export function validateDirectory(input: ValidateInput): SettingsValidation {
   const raw = input.path.trim();
   if (raw === '') return { ok: false, code: 'not-found', path: '' };
+  if (CONTROL_CHAR_RE.test(raw)) return { ok: false, code: 'not-a-directory', path: raw };
   if (!isAbsolute(raw)) return { ok: false, code: 'not-absolute', path: raw };
   const path = normalize(raw);
+  if (input.managedRoot) {
+    if (input.isSymlink || !isPathWithinDir(input.managedRoot, path)) {
+      return { ok: false, code: 'outside-managed-root', path };
+    }
+  }
   if (input.installRoot && normalize(input.installRoot) === path) {
     return { ok: false, code: 'same-as-install-root', path };
   }
@@ -71,11 +92,18 @@ export function parseSettings(text: string | null): ComfyBackendSettings {
   }
 }
 
-/** 实际安装根：用户设置优先，否则默认 `<dataRoot>/comfyui-backend`。 */
+/** 实际安装根：用户设置位于受管 `dataRoot` 内时优先，越界/非法则回落默认 `<dataRoot>/comfyui-backend`。 */
 export function resolveInstallRoot(dataRoot: string, settings: ComfyBackendSettings): string {
+  const defaultRoot = join(dataRoot, 'comfyui-backend');
   const custom = settings.installRoot.trim();
-  if (custom === '') return join(dataRoot, 'comfyui-backend');
-  return normalize(custom);
+  if (custom === '' || CONTROL_CHAR_RE.test(custom) || !isAbsolute(custom)) {
+    return defaultRoot;
+  }
+  const normalized = normalize(custom);
+  if (!isPathWithinDir(dataRoot, normalized)) {
+    return defaultRoot;
+  }
+  return normalized;
 }
 
 /**
@@ -84,6 +112,6 @@ export function resolveInstallRoot(dataRoot: string, settings: ComfyBackendSetti
  */
 export function modelsConfigYaml(modelsPath: string): string {
   const path = modelsPath.trim();
-  if (path === '') return '';
-  return `# 由 OmniMux 托管后端生成：复用用户已有的模型目录（不复制、不移动）\nlocal_models:\n    base_path: ${path}\n`;
+  if (path === '' || CONTROL_CHAR_RE.test(path)) return '';
+  return `# 由 OmniMux 托管后端生成：复用用户已有的模型目录（不复制、不移动）\nlocal_models:\n    base_path: ${JSON.stringify(path)}\n`;
 }

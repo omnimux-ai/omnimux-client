@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { marked } from 'marked';
+import { renderSafeMarkdownHtml } from './safeMarkdown';
 
 export interface MarkdownPreviewProps {
   content: string;
@@ -12,20 +12,7 @@ export const MarkdownPreview: React.FC<MarkdownPreviewProps> = ({
   className = '',
   emptyHint = '暂无预览内容，请在左侧编辑器中输入 Markdown 文本',
 }) => {
-  const html = useMemo(() => {
-    if (!content || !content.trim()) {
-      return '';
-    }
-    try {
-      return marked.parse(content, {
-        gfm: true,
-        breaks: true,
-      }) as string;
-    } catch (e) {
-      console.error('Failed to parse markdown:', e);
-      return `<p class="wf-md-error">${content}</p>`;
-    }
-  }, [content]);
+  const html = useMemo(() => renderSafeMarkdownHtml(content), [content]);
 
   if (!content || !content.trim()) {
     return (

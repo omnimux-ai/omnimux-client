@@ -1,8 +1,13 @@
 /** Safe video extraction errors. */
 export class VideoExtractionError extends Error {
-  constructor(readonly code: string, message: string, readonly status: number) {
+  readonly code: string;
+  readonly status: number;
+
+  constructor(code: string, message: string, status: number) {
     super(message);
     this.name = 'VideoExtractionError';
+    this.code = code;
+    this.status = status;
   }
 }
 
@@ -15,6 +20,9 @@ const FAILURES: Record<string, [number, string]> = {
   'omnimux-unconfigured': [503, '视频提取服务尚未配置 OMNIMUX_API_KEY'],
   'capability-disabled': [403, '视频提取能力已被权限门禁禁用'],
   'unsupported-platform': [400, '不支持的社媒平台链接'],
+  'unsafe-url': [400, '拒绝访问不安全或私网/环回视频链接'],
+  'unsafe-content-type': [415, '远程响应不是受支持的视频媒体类型'],
+  'download-too-large': [413, '视频文件超出允许的最大体积限制'],
   'no-video-found': [422, '社媒解析未提取到有效视频直链，请检查链接可访问性'],
   'extract-failed': [502, '社媒视频提取失败，请稍后重试'],
   'download-failed': [502, '视频文件下载落盘失败，请检查网络或存储空间'],
