@@ -2,7 +2,7 @@
 
 - **状态**：实施中
 - **所属包**：`plugins/plugins/omnimux-tiktok-selection`
-- **工作台入口**：侧边栏独立入口「跟爆选品」（Tab ID：`omnimux-tiktok-selection:workbench`）
+- **工作台入口**：左侧栏「更多」菜单注册项「跟爆选品」（`id: tiktok-selection`，Tab ID：`omnimux-tiktok-selection:workbench`），通过 `window.__omnimuxSidebar.registerExploreItem` 注册并保留收敛后的 `createWorkbenchSidebarEntry` 作为独立 DSH 兜底入口
 - **存储域**：`$DSH_HOME/omnimux/tiktok-selection/`
 
 ## 一、目标与核心范围

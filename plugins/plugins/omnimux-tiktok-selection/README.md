@@ -15,6 +15,6 @@ OmniMux 系列 TikTok 跟爆选品插件（Tier-1 独立工作台应用）。
 
 ## 双面交付
 
-- **UI Surface**：侧边栏独立入口「跟爆选品」→ `dsh-better-sidebar` 工作台页签（`omnimux-tiktok-selection:workbench`），消费 `dsh-ui-kit` 与官方 `--dsw-alias-*` Token。
+- **UI Surface**：通过 `window.__omnimuxSidebar.registerExploreItem` 注册到左侧栏「更多」菜单「跟爆选品」（保留收敛后的 `createWorkbenchSidebarEntry` 兜底）→ `dsh-better-sidebar` 工作台页签（`omnimux-tiktok-selection:workbench`），消费 `dsh-ui-kit` 与官方 `--dsw-alias-*` Token。
 - **HTTP Surface**：挂载于 `/omnimux/tiktok-selection/*`，所有写请求校验本机来源（`assertLocalWrite`）并过滤敏感令牌。
 - **Agent Tool Surface**：注册 18 个 `tiktok_selection_*` 工具，与 HTTP 路由共享同一 `Dispatcher` 与本地原子 `Store`（`$DSH_HOME/omnimux/tiktok-selection/`），破坏性操作强制校验 `confirm: true`。
