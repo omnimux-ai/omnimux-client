@@ -49,15 +49,12 @@ export {
   projectSchema,
   projectPageSchema,
   projectSummarySchema,
-  projectIndexSchema,
   parseProject,
-  parseProjectIndex,
 } from './projects/schema';
 export type {
   Project,
   ProjectPage,
   ProjectSummary,
-  ProjectIndex,
 } from './projects/schema';
 export {
   resolveProjectPaths,

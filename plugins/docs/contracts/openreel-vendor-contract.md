@@ -28,7 +28,7 @@ Clip 路由保存在编辑器内部。构建脚本将导入的样式限定在 `.
 
 ## 3. Vendor 根
 
-上游实现位于 `plugins/omnimux-clip/src/client/openreel/`（相对插件工作区）。[插件静态扫描](../../scripts/auto-qa-scan.mjs)识别此目录和退役的 `src/client/engine/openreel/` 路径，用于识别上游渲染颜色。宿主桥、应用入口和宿主 token 映射仍按产品规则检查。
+上游实现位于 `plugins/omnimux-clip/src/client/openreel/`（相对插件工作区）。已清理的旧版 `src/client/engine/openreel/` 目录已从源码树移除，[插件静态扫描](../../scripts/auto-qa-scan.mjs)仍保留对这两条路径的识别规则以向后兼容既有扫描用例。宿主桥、应用入口和宿主 token 映射仍按产品规则检查。
 
 ## 4. 验收
 

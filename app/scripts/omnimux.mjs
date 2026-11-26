@@ -161,7 +161,6 @@ function printHelp() {
 示例:
   yarn omnimux:sync omnimux-workflow          # 默认同步至 Dev 开发版
   yarn omnimux:sync --prod omnimux-workflow   # 人类明确指令下同步至生产正式版
-  yarn omnimux:dev start assets-v2 omnimux-assets
   yarn omnimux:restart dev
   yarn omnimux:profile rebuild --target dev --app /absolute/path/OmniMux.app
   yarn omnimux:stage
@@ -181,9 +180,6 @@ if (!cmd || cmd === '-h' || cmd === '--help') {
 switch (cmd) {
   case 'sync':
     runBash('scripts/sync-to-app.sh', rest)
-    break
-  case 'dev':
-    runBash('scripts/dev-env.sh', rest)
     break
   case 'doctor':
     runBash('scripts/dev-doctor.sh', rest)

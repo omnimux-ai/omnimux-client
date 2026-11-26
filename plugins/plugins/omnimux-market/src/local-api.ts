@@ -120,7 +120,6 @@ export const MUTATING_METHODS = new Set([
   'suiteUninstall',
   'expertMarketInstall',
   'expertMarketDisable',
-  'setModelSelection',
   'tryAttach',
   'tryDetach',
 ])
@@ -892,63 +891,6 @@ async function handleSuiteUninstall(ctx: ApiContext): Promise<void> {
   }
 }
 
-export interface SessionModelChoice {
-  auto: boolean
-  selectedModel: {
-    id: string
-    name: string
-    capsuleName?: string
-    type: 'video' | 'image'
-    icon?: string
-    subtitle?: string
-  } | null
-}
-
-export const sessionModelStore = new Map<string, SessionModelChoice>()
-
-export function getSessionModel(sessionId: string): SessionModelChoice | undefined {
-  return sessionModelStore.get(sessionId)
-}
-
-export function setSessionModel(sessionId: string, choice: SessionModelChoice): void {
-  sessionModelStore.set(sessionId, choice)
-}
-
-let activeModelCatalogResolver: (() => Promise<{ video?: any[]; image?: any[] } | null>) | null = null
-
-export function setModelCatalogResolver(resolver: () => Promise<{ video?: any[]; image?: any[] } | null>): void {
-  activeModelCatalogResolver = resolver
-}
-
-async function handleGetModelCatalog(ctx: ApiContext): Promise<void> {
-  const { res } = ctx
-  try {
-    let catalog: any = null
-    if (activeModelCatalogResolver) {
-      catalog = await activeModelCatalogResolver()
-    }
-    return sendJson(res, 200, { ok: true, catalog })
-  } catch (err) {
-    return sendJson(res, 200, { ok: true, catalog: null })
-  }
-}
-
-async function handleGetModelSelection(ctx: ApiContext): Promise<void> {
-  const { res, url, body } = ctx
-  const sessionId = String(body.sessionId || url.searchParams.get('sessionId') || '').trim() || 'default'
-  const choice = sessionModelStore.get(sessionId) || { auto: true, selectedModel: null }
-  return sendJson(res, 200, { ok: true, sessionId, ...choice })
-}
-
-async function handleSetModelSelection(ctx: ApiContext): Promise<void> {
-  const { res, body } = ctx
-  const sessionId = String(body.sessionId || '').trim() || 'default'
-  const auto = body.auto !== false
-  const selectedModel = auto ? null : ((body.selectedModel as SessionModelChoice['selectedModel']) || null)
-  sessionModelStore.set(sessionId, { auto, selectedModel })
-  return sendJson(res, 200, { ok: true, sessionId, auto, selectedModel })
-}
-
 const API_ROUTE_TABLE: Record<string, ApiMethodHandler> = {
   search: handleSearch,
   ratings: handleRatings,
@@ -978,9 +920,6 @@ const API_ROUTE_TABLE: Record<string, ApiMethodHandler> = {
   catalogUninstall: handleCatalogUninstall,
   suiteInstall: handleSuiteInstall,
   suiteUninstall: handleSuiteUninstall,
-  getModelCatalog: handleGetModelCatalog,
-  getModelSelection: handleGetModelSelection,
-  setModelSelection: handleSetModelSelection,
   tryAttach: handleTryAttach,
   tryDetach: handleTryDetach,
 }

@@ -131,7 +131,7 @@ export async function runSmokeCheck(url, opts = {}) {
     if (res.status === 0) {
       if (!strict) {
         console.log(`[SMOKE SKIP] Host unreachable at ${url} (${res.error || 'Connection refused'}).`)
-        console.log('  · Start the desktop dev app with `pnpm dev` or `yarn omnimux:dev` to run live smoke probe.')
+        console.log('  - Start the desktop dev app (`yarn start` / `yarn omnimux:restart dev`) to run live smoke probe.')
         return { skipped: true, success: true }
       } else {
         console.error(`❌ [Smoke Failure] Server unreachable at ${url}: ${res.error}`)

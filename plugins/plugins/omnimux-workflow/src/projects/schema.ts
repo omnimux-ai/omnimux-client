@@ -53,14 +53,6 @@ export const projectSummarySchema = z.object({
 
 export type ProjectSummary = z.infer<typeof projectSummarySchema>;
 
-/** 历史 index.json（停用主路径）。 */
-export const projectIndexSchema = z.object({
-  schemaVersion: z.literal(PROJECT_SCHEMA_VERSION),
-  projects: z.array(projectSummarySchema),
-});
-
-export type ProjectIndex = z.infer<typeof projectIndexSchema>;
-
 const tolerantPageSchema = z.object({
   id: z.string().min(1),
   title: z.string().min(1).max(MAX_PROJECT_TITLE_LENGTH),
@@ -186,9 +178,4 @@ export function parseProject(raw: unknown): Project | null {
     return tolerantResult.data as unknown as Project;
   }
   return migrateV1Project(raw);
-}
-
-export function parseProjectIndex(raw: unknown): ProjectIndex | null {
-  const result = projectIndexSchema.safeParse(raw);
-  return result.success ? result.data : null;
 }

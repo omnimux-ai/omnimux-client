@@ -224,49 +224,16 @@
         "bare": 0,
         "fallback": 1
       },
-      "src/client/ArtifactNav.jsx": {
-        "count": 1,
-        "tokens": [
-          "--dsw-text-secondary"
-        ],
-        "bare": 0,
-        "fallback": 1
-      },
-      "src/client/DetailPanel.jsx": {
-        "count": 1,
-        "tokens": [
-          "--dsw-text-secondary"
-        ],
-        "bare": 0,
-        "fallback": 1
-      },
-      "src/client/MappingNav.jsx": {
-        "count": 9,
-        "tokens": [
-          "--dsw-alias-bg-elevated",
-          "--dsw-alias-border",
-          "--dsw-alias-label-danger",
-          "--dsw-alias-label-warning",
-          "--dsw-bg",
-          "--dsw-border",
-          "--dsw-text-secondary"
-        ],
-        "bare": 0,
-        "fallback": 9
-      },
       "src/client/styles.js": {
-        "count": 23,
+        "count": 17,
         "tokens": [
-          "--dsw-alias-bg-card",
           "--dsw-alias-bg-elevated",
-          "--dsw-alias-bg-secondary",
           "--dsw-alias-border",
           "--dsw-alias-border-hover",
-          "--dsw-alias-shadow-popover",
           "--dsw-alias-shadow-strong",
           "--dsw-bg"
         ],
-        "bare": 16,
+        "bare": 10,
         "fallback": 7
       }
     },
@@ -562,13 +529,12 @@
         "fallback": 15
       },
       "src/client/projects/folderStyles.js": {
-        "count": 3,
+        "count": 2,
         "tokens": [
-          "--dsw-alias-border-hover",
           "--dsw-specific-ai-accent",
           "--dsw-specific-media-bg"
         ],
-        "bare": 1,
+        "bare": 0,
         "fallback": 2
       },
       "src/client/projects/promptNewProjectName.js": {
@@ -590,8 +556,8 @@
           "--dsw-alias-surface-raised",
           "--dsw-bg"
         ],
-        "bare": 10,
-        "fallback": 1
+        "bare": 9,
+        "fallback": 2
       },
       "src/director/controls.css": {
         "count": 12,

@@ -16,7 +16,6 @@ This plugin (`omnimux-clip`) incorporates and vendorizes components from open-so
   - The web editor plus `@openreel/core`, `@openreel/ui`, `@openreel/agent` and `@openreel/creation-schema`.
   - In-memory editor routes, isolated styles and overlays, and host locale integration.
   - Canvas import and silent video export, positioned MP4 writes, and explicit approval for custom motion expressions.
-  - The retained legacy engine under `src/client/engine/openreel/` is based on `2566c34e0f8ea22992a85f3ff16e048307b49365`.
 
 ## 2. Bundled editor assets
 

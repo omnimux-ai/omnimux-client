@@ -21,7 +21,6 @@
     "lint:refactor": "node scripts/code-refactor-analyzer.mjs --check",
     "test:refactor": "node --test scripts/code-refactor-analyzer.test.mjs",
     "doc:lint": "node scripts/omnimux.mjs doc:lint",
-    "doc:index": "node scripts/omnimux.mjs doc:index",
     "registry": "node scripts/omnimux.mjs registry",
     "registry:build": "node scripts/registry-tool.mjs build",
     "registry:verify": "node scripts/registry-tool.mjs verify",
