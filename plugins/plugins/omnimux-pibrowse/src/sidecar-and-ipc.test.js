@@ -146,6 +146,20 @@ test('sidecar starts real Unix socket IPC, propagates Coded errors, and cleanly 
     assert.equal(boot.hasApiPort, false, 'FURY_API_PORT must never be exposed')
     assert.ok(events.some((e) => e.event === 'rpc' && e.method === 'profile.stop' && e.params?.id === 'pf-active-1'))
     assert.ok(events.some((e) => e.event === 'rpc' && e.method === 'agent.shutdown'))
+
+    // Empty/invalid .app corePath must NOT leak raw directory path into FURY_CORE
+    const emptyApp = join(tmp, 'Empty.app')
+    await mkdir(emptyApp, { recursive: true })
+    await configStore.update({ corePath: emptyApp })
+    await sidecar.start()
+    await sidecar.dispose()
+    const eventsAfter = (await readFile(auditFile, 'utf8'))
+      .trim()
+      .split('\n')
+      .map((l) => JSON.parse(l))
+    const boots = eventsAfter.filter((e) => e.event === 'boot')
+    assert.equal(boots.length, 2)
+    assert.equal(boots[1].furyCore, null, 'unresolved corePath must omit FURY_CORE instead of leaking directory')
   } finally {
     delete process.env.MOCK_AUDIT_FILE
     await rm(tmp, { recursive: true, force: true })

@@ -254,7 +254,7 @@ export async function resolveCoreExecutable(targetPath, platform = process.platf
     if (entries) {
       const leaves = getCoreLeaves(platform)
       for (const entry of entries) {
-        if (!entry.isDirectory() || entry.name.startsWith('.')) continue
+        if ((!entry.isDirectory() && !entry.isSymbolicLink()) || entry.name.startsWith('.')) continue
         for (const rel of leaves) {
           const candidate = join(trimmed, entry.name, rel)
           if (await isAccessibleExecutableFile(candidate, execMode)) {

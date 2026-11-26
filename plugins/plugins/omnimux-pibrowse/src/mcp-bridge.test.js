@@ -114,6 +114,13 @@ test('mcpBridge matches real DSH mcpManager/tools contracts, neutralizes FURY_AP
     await instance.mcpBridge.sync()
     assert.equal(mcpRegistrations.get('pibrowse').env.FURY_CORE, fakeCoreExe)
 
+    // Invalid/empty .app directory must NOT leak into FURY_CORE
+    const emptyApp = join(tmp, 'Empty.app')
+    await mkdir(emptyApp, { recursive: true })
+    await instance.configStore.update({ corePath: emptyApp })
+    await instance.mcpBridge.sync()
+    assert.equal(mcpRegistrations.get('pibrowse').env.FURY_CORE, undefined)
+
     // Real DSH 2-arg mcp-manager/status event: (name, statusObj)
     for (const fn of listeners.get('mcp-manager/status') || []) {
       fn('other-server', { status: 'error', error: 'unrelated' })

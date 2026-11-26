@@ -423,6 +423,9 @@ test('Core missing launch error maps to 503 core-not-installed, configure_paths 
 
     const ipcCalls = []
     let sidecarRestarts = 0
+    let failNextRestart = false
+    let mcpSyncCalls = 0
+    let statusCoreOverride = null
     let resolveDownload = null
     let coreInstallCalledWith = null
 
@@ -435,8 +438,8 @@ test('Core missing launch error maps to 503 core-not-installed, configure_paths 
         if (method === 'status') {
           return {
             version: '0.5.5',
-            core: null,
-            core_problem: 'FURY_CORE missing',
+            core: statusCoreOverride,
+            core_problem: statusCoreOverride ? null : 'FURY_CORE missing',
             core_download: { running: false, downloaded: 0, total: 0, installed: null, error: null },
           }
         }
@@ -458,9 +461,22 @@ test('Core missing launch error maps to 503 core-not-installed, configure_paths 
       stop: async () => ({ running: false, state: 'stopped', pid: null }),
       restart: async () => {
         sidecarRestarts += 1
+        if (failNextRestart) {
+          failNextRestart = false
+          throw new Error('simulated sidecar restart failure')
+        }
         return { running: true, state: 'running', pid: 5555 + sidecarRestarts }
       },
       dispose: async () => {},
+    }
+
+    const baseMcpBridge = createMcpBridge({ paths, configStore, getMcpManager: () => null, platform: 'darwin' })
+    const trackedMcpBridge = {
+      ...baseMcpBridge,
+      async sync(opts) {
+        mcpSyncCalls += 1
+        return baseMcpBridge.sync(opts)
+      },
     }
 
     const installerState = {
@@ -500,7 +516,7 @@ test('Core missing launch error maps to 503 core-not-installed, configure_paths 
       ipcClient: mockIpc,
       installer: mockInstaller,
       sidecar: mockSidecar,
-      mcpBridge: createMcpBridge({ paths, configStore, getMcpManager: () => null, platform: 'darwin' }),
+      mcpBridge: trackedMcpBridge,
       teamClient: createTeamClient({ paths, configStore, ipcClient: mockIpc }),
       platform: 'darwin',
       arch: 'arm64',
@@ -549,6 +565,24 @@ test('Core missing launch error maps to 503 core-not-installed, configure_paths 
     assert.equal(cfgRes.ok, true)
     assert.equal(sidecarRestarts, 1)
     assert.equal(cfgRes.sidecar.pid, 5556)
+
+    // 5. Empty/invalid configured corePath stays installed: false with actionable problem even if sidecar status echoes raw dir
+    const emptyApp = join(tmp, 'Empty.app')
+    await mkdir(emptyApp, { recursive: true })
+    await dispatcher.manageRuntime({ action: 'configure_paths', corePath: emptyApp })
+    statusCoreOverride = emptyApp
+    const ovInvalidCore = await dispatcher.getOverview()
+    assert.equal(ovInvalidCore.core.installed, false)
+    assert.match(ovInvalidCore.core.problem, /FURY_CORE/)
+
+    // 6. If sidecar.restart() throws during configure_paths, mcpBridge.sync() STILL executes in finally
+    const syncBefore = mcpSyncCalls
+    failNextRestart = true
+    await assert.rejects(
+      () => dispatcher.manageRuntime({ action: 'configure_paths', corePath: null }),
+      /simulated sidecar restart failure/,
+    )
+    assert.equal(mcpSyncCalls, syncBefore + 1, 'mcpBridge.sync must still run even when sidecar.restart throws')
   } finally {
     await rm(tmp, { recursive: true, force: true })
   }

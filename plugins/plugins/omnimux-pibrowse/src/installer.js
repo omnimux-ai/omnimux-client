@@ -322,7 +322,7 @@ export function createInstaller(opts) {
    * `fury-agent install-core <archive>` under isolated `FURY_HOME`.
    * @param {{ agentBinaryPath: string }} params
    */
-  function installCore({ agentBinaryPath }) {
+  function installCore({ agentBinaryPath } = {}) {
     if (coreInFlight) return coreInFlight
     const info = getPlatformInfo({ platform: opts.platform, arch: opts.arch })
     if (!info.prebuiltSupported) {

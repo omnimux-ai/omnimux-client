@@ -6,6 +6,7 @@ import {
   probeCoreInstallation,
   probeWidevineCdm,
   resolveAgentBinary,
+  resolveCoreExecutable,
 } from './platform.js'
 import { redactAny, redactProfile, redactProxy, toLosslessJson } from './redact.js'
 
@@ -259,7 +260,11 @@ export function createPibrowseDispatcher(deps) {
       upstreamMcpToolsCount: UPSTREAM_MCP_TOOL_NAMES.length,
     }
 
-    let effectiveCore = { ...core, problem: null }
+    const invalidConfiguredCoreProblem =
+      config.corePath && !core.installed
+        ? `已配置的 FURY_CORE 路径未找到可执行 Chromium 内核：${config.corePath}`
+        : null
+    let effectiveCore = { ...core, problem: invalidConfiguredCoreProblem }
     let ipcCoreDownload = null
 
     if (sidecarStatus.running) {
@@ -295,13 +300,17 @@ export function createPibrowseDispatcher(deps) {
       ])
 
       if (statusRes && typeof statusRes === 'object') {
-        const runtimeCore = typeof statusRes.core === 'string' && statusRes.core.trim() ? statusRes.core.trim() : null
-        const coreProblem =
+        const runtimeCoreRaw = typeof statusRes.core === 'string' && statusRes.core.trim() ? statusRes.core.trim() : null
+        const runtimeCoreExe = runtimeCoreRaw
+          ? await resolveCoreExecutable(runtimeCoreRaw, deps.platform)
+          : null
+        const upstreamProblem =
           typeof statusRes.core_problem === 'string' && statusRes.core_problem.trim()
             ? statusRes.core_problem.trim()
             : null
-        if (!effectiveCore.installed && runtimeCore) {
-          effectiveCore = { installed: true, source: 'sidecar', path: runtimeCore, problem: coreProblem }
+        const coreProblem = invalidConfiguredCoreProblem || upstreamProblem
+        if (!effectiveCore.installed && !config.corePath && runtimeCoreExe) {
+          effectiveCore = { installed: true, source: 'sidecar', path: runtimeCoreExe, problem: coreProblem }
         } else {
           effectiveCore = { ...effectiveCore, problem: coreProblem }
         }
@@ -467,11 +476,17 @@ export function createPibrowseDispatcher(deps) {
       if ('autoStartSidecar' in args) patch.autoStartSidecar = args.autoStartSidecar
       const next = await configStore.update(patch)
       const runtimePathsChanged = prev.agentPath !== next.agentPath || prev.corePath !== next.corePath
+      const scStatus = sidecar.getStatus()
+      const shouldRestart = runtimePathsChanged && (scStatus.running || scStatus.state === 'starting')
       let restartedSidecar = null
-      if (runtimePathsChanged && sidecar.getStatus().running) {
-        restartedSidecar = await sidecar.restart()
+      let mcp = null
+      try {
+        if (shouldRestart) {
+          restartedSidecar = await sidecar.restart()
+        }
+      } finally {
+        mcp = await mcpBridge.sync({ force: true })
       }
-      const mcp = await mcpBridge.sync({ force: true })
       return toLosslessJson({
         ok: true,
         config: next,
@@ -492,11 +507,17 @@ export function createPibrowseDispatcher(deps) {
       }
       const next = await configStore.update({ agentPath: resolved.standaloneCandidate })
       const probe = await installer.probeAgentBinary(resolved.standaloneCandidate)
+      const scStatus = sidecar.getStatus()
+      const shouldRestart = config.agentPath !== next.agentPath && (scStatus.running || scStatus.state === 'starting')
       let restartedSidecar = null
-      if (config.agentPath !== next.agentPath && sidecar.getStatus().running) {
-        restartedSidecar = await sidecar.restart()
+      let mcp = null
+      try {
+        if (shouldRestart) {
+          restartedSidecar = await sidecar.restart()
+        }
+      } finally {
+        mcp = await mcpBridge.sync({ force: true })
       }
-      const mcp = await mcpBridge.sync({ force: true })
       return toLosslessJson({
         ok: true,
         config: next,

@@ -189,8 +189,10 @@ export function createMcpBridge(opts) {
       return getStatus()
     }
 
+    // Only inject FURY_CORE when it resolves to a real executable; never pass a raw
+    // directory or non-executable file into upstream fury-agent.
     const resolvedCorePath = config.corePath
-      ? (await resolveCoreExecutable(config.corePath, opts.platform)) || config.corePath
+      ? await resolveCoreExecutable(config.corePath, opts.platform)
       : null
 
     if (

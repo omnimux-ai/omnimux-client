@@ -93,7 +93,8 @@ export function PibrowseStage({ t, stage, store, visible = true }) {
   const [loadError, setLoadError] = useState(null)
   const [toast, setToast] = useState(null)
   const [everOpened, setEverOpened] = useState(visible)
-  const prevInstallStatesRef = useRef({ agent: null, core: null, ipcError: null })
+  const overviewInFlightRef = useRef(false)
+  const prevInstallErrorsRef = useRef({ agentUpdatedAt: null, coreUpdatedAt: null, ipcError: null })
 
   useEffect(() => {
     if (visible) setEverOpened(true)
@@ -108,11 +109,16 @@ export function PibrowseStage({ t, stage, store, visible = true }) {
   }, [])
 
   const loadOverview = useCallback(async ({ silent = false } = {}) => {
-    if (!silent) setRefreshing(true)
-    setLoadError(null)
+    if (silent && overviewInFlightRef.current) return
+    overviewInFlightRef.current = true
+    if (!silent) {
+      setRefreshing(true)
+      setLoadError(null)
+    }
     try {
       const data = await api.getOverview()
       setOverview(data)
+      setLoadError(null)
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to load PiBrowse overview'
       if (!silent) {
@@ -120,6 +126,7 @@ export function PibrowseStage({ t, stage, store, visible = true }) {
         notify(msg, true)
       }
     } finally {
+      overviewInFlightRef.current = false
       if (!silent) setRefreshing(false)
     }
   }, [notify])
@@ -143,21 +150,39 @@ export function PibrowseStage({ t, stage, store, visible = true }) {
   }, [visible, anyInstallActive, loadOverview])
 
   useEffect(() => {
-    const agentState = overview?.installer?.agent?.status ?? null
-    const coreState = overview?.installer?.core?.status ?? null
+    const agentInstall = overview?.installer?.agent
+    const coreInstall = overview?.installer?.core
     const ipcError = overview?.installer?.ipcCoreDownload?.error ?? null
-    const prev = prevInstallStatesRef.current
+    const prev = prevInstallErrorsRef.current
 
-    if (agentState === 'error' && prev.agent !== 'error' && overview?.installer?.agent?.error) {
-      notify(overview.installer.agent.error, true)
+    const agentNeedsToast =
+      (agentInstall?.status === 'error' || agentInstall?.status === 'needs-authorization') &&
+      Boolean(agentInstall?.error) &&
+      agentInstall?.updatedAt !== prev.agentUpdatedAt
+    if (agentNeedsToast) {
+      notify(agentInstall.error, true)
     }
-    if (coreState === 'error' && prev.core !== 'error' && overview?.installer?.core?.error) {
-      notify(overview.installer.core.error, true)
+
+    const coreNeedsToast =
+      coreInstall?.status === 'error' &&
+      Boolean(coreInstall?.error) &&
+      coreInstall?.updatedAt !== prev.coreUpdatedAt
+    if (coreNeedsToast) {
+      notify(coreInstall.error, true)
     }
+
     if (ipcError && ipcError !== prev.ipcError) {
       notify(String(ipcError), true)
     }
-    prevInstallStatesRef.current = { agent: agentState, core: coreState, ipcError }
+
+    prevInstallErrorsRef.current = {
+      agentUpdatedAt:
+        agentInstall?.status === 'error' || agentInstall?.status === 'needs-authorization'
+          ? agentInstall?.updatedAt ?? null
+          : prev.agentUpdatedAt,
+      coreUpdatedAt: coreInstall?.status === 'error' ? coreInstall?.updatedAt ?? null : prev.coreUpdatedAt,
+      ipcError,
+    }
   }, [overview?.installer, notify])
 
   const handleInstallCore = useCallback(async () => {
@@ -185,14 +210,19 @@ export function PibrowseStage({ t, stage, store, visible = true }) {
     { id: 'env', label: t('tabEnv') },
   ]
 
+  const agentNeedsAuth = Boolean(
+    overview?.installer?.agent?.status === 'needs-authorization' && overview?.installer?.agent?.error,
+  )
   const missingCore = Boolean(overview?.agent?.installed && !overview?.core?.installed)
   const coreProblem = typeof overview?.core?.problem === 'string' && overview.core.problem.trim() ? overview.core.problem.trim() : null
+  const showMissingCoreBanner = missingCore && activeTab !== 'env'
 
   const needsSetupBanner = Boolean(
     overview && (
       (!overview.platform?.prebuiltSupported && !overview.agent?.installed) ||
       !overview.agent?.installed ||
-      missingCore ||
+      agentNeedsAuth ||
+      showMissingCoreBanner ||
       Boolean(coreProblem) ||
       overview.widevine?.available === false
     ),
@@ -204,15 +234,17 @@ export function PibrowseStage({ t, stage, store, visible = true }) {
       ? overview.platform.unsupportedGuidance
       : !overview.agent?.installed
         ? '尚未安装 fury-agent，请前往「环境与运行态」下载校验或手动指定本地二进制路径。'
-        : missingCore
-          ? coreProgress.active
-            ? coreProgress.label
-            : '尚未安装 Chromium 157 内核，启动窗口前需先下载安装 Core 或配置本地 FURY_CORE。'
-          : coreProblem
-            ? coreProblem
-            : overview.widevine?.available === false
-              ? overview.widevine.warning
-              : null
+        : agentNeedsAuth
+          ? overview.installer.agent.error
+          : showMissingCoreBanner
+            ? coreProgress.active
+              ? coreProgress.label
+              : coreProblem || '尚未安装 Chromium 157 内核，启动窗口前需先下载安装 Core 或配置本地 FURY_CORE。'
+            : coreProblem
+              ? coreProblem
+              : overview.widevine?.available === false
+                ? overview.widevine.warning
+                : null
 
   return (
     <div
@@ -252,7 +284,7 @@ export function PibrowseStage({ t, stage, store, visible = true }) {
             <div className="omnimux-pibrowse-notice" role="status">
               <div className="omnimux-pibrowse-notice-col">
                 <span>{bannerMessage}</span>
-                {missingCore && coreProgress.active && coreProgress.percent !== null && (
+                {showMissingCoreBanner && coreProgress.active && coreProgress.percent !== null && (
                   <div
                     className="omnimux-pibrowse-progress-track"
                     role="progressbar"
@@ -268,7 +300,7 @@ export function PibrowseStage({ t, stage, store, visible = true }) {
                 )}
               </div>
               <div className="omnimux-pibrowse-row">
-                {missingCore && overview?.platform?.prebuiltSupported && (
+                {showMissingCoreBanner && overview?.platform?.prebuiltSupported && (
                   <Button
                     variant="primary"
                     size="sm"

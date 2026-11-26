@@ -28,8 +28,11 @@ export function EnvironmentPanel({ overview, t, onNotify, onOverviewChanged }) {
     try {
       await api.runtime({ action, ...payload })
       await onOverviewChanged()
+      return true
     } catch (err) {
       onNotify(err instanceof Error ? err.message : `操作 ${action} 失败`, true)
+      await Promise.resolve(onOverviewChanged({ silent: true })).catch(() => {})
+      return false
     } finally {
       setBusyAction(null)
     }
@@ -57,17 +60,25 @@ export function EnvironmentPanel({ overview, t, onNotify, onOverviewChanged }) {
   let activeProgress = null
   let activeProgressLabel = null
   if (agentInstallActive) {
-    activeProgress = installer.agent.status === 'extracting' ? 100 : installer.agent.progress?.percent ?? 0
+    const prog = installer.agent.progress
+    const hasTotal = Number.isFinite(prog?.totalBytes) && prog.totalBytes > 0
+    activeProgress = installer.agent.status === 'extracting' ? 100 : prog?.percent ?? 0
     activeProgressLabel =
       installer.agent.status === 'extracting'
         ? '正在解压并校验 fury-agent...'
-        : `正在下载 fury-agent ${activeProgress}% (${formatMb(installer.agent.progress?.downloadedBytes)} / ${formatMb(installer.agent.progress?.totalBytes)} MB)`
+        : hasTotal
+          ? `正在下载 fury-agent ${activeProgress}% (${formatMb(prog.downloadedBytes)} / ${formatMb(prog.totalBytes)} MB)`
+          : `正在下载 fury-agent (${formatMb(prog?.downloadedBytes)} MB)`
   } else if (installer.core?.status === 'downloading' || installer.core?.status === 'extracting') {
-    activeProgress = installer.core.status === 'extracting' ? 100 : installer.core.progress?.percent ?? 0
+    const prog = installer.core.progress
+    const hasTotal = Number.isFinite(prog?.totalBytes) && prog.totalBytes > 0
+    activeProgress = installer.core.status === 'extracting' ? 100 : prog?.percent ?? 0
     activeProgressLabel =
       installer.core.status === 'extracting'
         ? '正在解压并校验 Chromium 157 Core...'
-        : `正在下载 Chromium Core ${activeProgress}% (${formatMb(installer.core.progress?.downloadedBytes)} / ${formatMb(installer.core.progress?.totalBytes)} MB)`
+        : hasTotal
+          ? `正在下载 Chromium Core ${activeProgress}% (${formatMb(prog.downloadedBytes)} / ${formatMb(prog.totalBytes)} MB)`
+          : `正在下载 Chromium Core (${formatMb(prog?.downloadedBytes)} MB)`
   } else if (installer.ipcCoreDownload?.running) {
     const dl = installer.ipcCoreDownload
     activeProgress = dl.total > 0 ? Math.min(100, Math.round((dl.downloaded / dl.total) * 100)) : 50
@@ -289,11 +300,11 @@ export function EnvironmentPanel({ overview, t, onNotify, onOverviewChanged }) {
               variant="primary"
               loading={busyAction === 'configure_paths'}
               onClick={async () => {
-                await runRuntime('configure_paths', {
+                const ok = await runRuntime('configure_paths', {
                   agentPath: agentPathInput.trim() || null,
                   corePath: corePathInput.trim() || null,
                 })
-                setPathsOpen(false)
+                if (ok) setPathsOpen(false)
               }}
             >
               {t('save')}
@@ -345,8 +356,8 @@ export function EnvironmentPanel({ overview, t, onNotify, onOverviewChanged }) {
         confirmVariant="danger"
         confirmLoading={busyAction === 'clear_cache'}
         onConfirm={async () => {
-          await runRuntime('clear_cache', { confirm: true })
-          setClearCacheOpen(false)
+          const ok = await runRuntime('clear_cache', { confirm: true })
+          if (ok) setClearCacheOpen(false)
         }}
       />
     </>

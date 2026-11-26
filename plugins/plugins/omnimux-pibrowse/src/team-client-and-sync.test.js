@@ -303,14 +303,17 @@ test('team-client full E2E flow: TOTP login, key handover, ORK rotation, distrib
     assert.equal(launchCall.params.cookie_key.length, 64)
 
     // 7. Launch failure must immediately release lock via /unlock, and missing core maps to core-not-installed
+    const unlockCountBefore = unlockedTokens.length
     failNextLaunch = 'simulated Chromium crash'
     await assert.rejects(() => team.launchTeamProfile({ profileId: 'team-prof-1' }), /simulated Chromium crash/)
     assert.ok(unlockedTokens.includes('lock-tok-001'))
+    assert.equal(unlockedTokens.length, unlockCountBefore + 1)
     failNextLaunch = "no core binary found. Install one with 'fury-agent install-core <file>'"
     await assert.rejects(
       () => team.launchTeamProfile({ profileId: 'team-prof-1' }),
       (err) => err.code === 'core-not-installed',
     )
+    assert.equal(unlockedTokens.length, unlockCountBefore + 2, 'missing-core launch failure must also release lock')
     failNextLaunch = null
 
     // 8. Anti-rollback: server returning older key_generation 1 after seeing 2 must be rejected & unlocked

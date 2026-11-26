@@ -65,9 +65,10 @@ export function createSidecarSupervisor(opts) {
     delete env.FURY_API_TOKEN
     env.FURY_HOME = opts.paths.dataDir
     env.FURY_SOCKET = opts.paths.socketPath
-    const effectiveCore = resolvedCorePath || config.corePath
-    if (effectiveCore) {
-      env.FURY_CORE = effectiveCore
+    // Only inject FURY_CORE when it resolves to a real executable; never pass a raw
+    // directory or non-executable file (upstream Path::exists() treats directories as valid).
+    if (resolvedCorePath) {
+      env.FURY_CORE = resolvedCorePath
     } else {
       delete env.FURY_CORE
     }
