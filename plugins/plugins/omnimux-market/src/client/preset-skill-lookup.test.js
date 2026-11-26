@@ -80,12 +80,12 @@ describe('按 slug 从出厂预设技能库解析技能', () => {
   })
 })
 
-/** 四条快捷方式（Issue #2562 / #235）默认绑定的技能。 */
+/** 四条快捷方式（Issue #2562 / #235 / #337）默认绑定的技能。 */
 const QUICK_SHORTCUT_SKILLS = [
   { slug: 'replicate-viral-video', name: '复刻爆款视频' },
-  { slug: 'video-hook-analysis', name: '视频拆解' },
+  { slug: 'video-hook-analysis', name: '拆解视频' },
   { slug: 'create-selling-video', name: '创作带货视频' },
-  { slug: 'reverse-video-prompt', name: '反推视频提示词' },
+  { slug: 'reverse-video-prompt', name: '视频转提示词' },
 ]
 
 function resolveRealSkillMd(slug) {
@@ -140,25 +140,25 @@ const RESTORED_CATEGORIES = [
   {
     id: '创作视频',
     skills: [
-      { slug: 'replicate-viral-video', name: '复刻爆款视频', titleEn: 'Replicate Viral Video', description: '参考爆款视频结构，为你的产品一键生成同款带货视频。' },
-      { slug: 'create-selling-video', name: '创作带货视频', titleEn: 'Create Selling Video', description: '从商品或参考视频出发，自动编排分析、脚本、提示词与生成全流程。' },
-      { slug: 'video-hook-analysis', name: '视频拆解', titleEn: 'Video Breakdown', description: '拆解短视频叙事结构、黄金Hook与逐镜头分镜脚本。' },
-      { slug: 'reverse-video-prompt', name: '反推视频提示词', titleEn: 'Reverse Video Prompt', description: '上传TK视频链接，自动反推出该视频背后，可用于AI视频生成的高质量提示词。' },
-      { slug: 'omnimux-ecom-video-script', name: '带货短视频脚本', titleEn: 'E-commerce Video Script', description: '结合商品参数真源与 3 秒钩子模型，产出带口播时长与合规校验的跨境带货脚本。' },
-      { slug: 'cinematic-motion-language', name: '电影级运镜语言', titleEn: 'Cinematic Motion Language', description: '将分镜创意转化为精准的推拉摇移、景别与运动物理参数，提升视频生成可控性。' },
-      { slug: 'global-ad-localizer', name: '多语言出海视频广告', titleEn: 'Global Ad Localizer', description: '锁定商品外观与品牌事实真源，将验证过的广告创意扩展为多国家、多语言本地化视频矩阵。' },
-      { slug: 'clip-export', name: '剪辑草稿导出', titleEn: 'Clip Draft Export', description: '将本地多轨素材、字幕与音频装配导出为可编辑的剪映 / CapCut 草稿工程。' },
+      { slug: 'replicate-viral-video', name: '复刻爆款视频', titleEn: 'Replicate Viral Video', description: '参考爆款视频结构，生成同款商品带货视频' },
+      { slug: 'create-selling-video', name: '创作带货视频', titleEn: 'Create Selling Video', description: '从商品或参考视频出发，直接生成带货视频' },
+      { slug: 'video-hook-analysis', name: '拆解视频', titleEn: 'Video Breakdown', description: '提取字幕与脚本，拆解钩子、卖点和分镜' },
+      { slug: 'reverse-video-prompt', name: '视频转提示词', titleEn: 'Reverse Video Prompt', description: '解析参考视频镜头与动作，生成 AI 视频提示词' },
+      { slug: 'omnimux-ecom-video-script', name: '写带货脚本', titleEn: 'E-commerce Video Script', description: '提炼商品卖点，生成分镜、口播与时长脚本' },
+      { slug: 'cinematic-motion-language', name: '生成运镜提示词', titleEn: 'Cinematic Motion Language', description: '将画面创意转为推拉摇移与景别运镜提示词' },
+      { slug: 'global-ad-localizer', name: '视频多语改编', titleEn: 'Global Ad Localizer', description: '保留商品画面，将视频适配为多国家语言版本' },
+      { slug: 'clip-export', name: '导出剪辑草稿', titleEn: 'Clip Draft Export', description: '将素材、字幕与配音打包为剪映/CapCut 草稿' },
     ],
   },
   {
     id: '创作图片',
     skills: [
-      { slug: 'shoppable-carousel', name: '商品轮播图', titleEn: 'Shoppable Carousel', description: '根据商品图片规划逐页轮播图方案与生图提示词。' },
-      { slug: 'replicate-carousel', name: '图文复刻', titleEn: 'Carousel Replication', description: '拆解参考图文结构，为新商品生成原创轮播方案。' },
-      { slug: 'ecommerce-image', name: '电商商品套图', titleEn: 'E-commerce Product Images', description: '基于真实商品图规划、生成并评估主图、卖点图与场景图，严格锁定商品外观。' },
-      { slug: 'omnimux-ecom-visual-qa', name: '9图视觉矩阵与质检', titleEn: '9-Image Visual QA', description: '规划跨境 9 图商详视觉矩阵并执行白底、主体占比与文字合规质检。' },
-      { slug: 'dynamic-poster', name: '动态海报', titleEn: 'Dynamic Poster', description: '围绕产品实拍或品牌主视觉，规划具备电影感构图与微动态演绎的商业动态海报。' },
-      { slug: 'character-scene-storyboard', name: '角色场景分镜板', titleEn: 'Character & Scene Storyboard', description: '由参考图与剧本生成整合角色三视图、主场景概念图与 12 格分镜故事板的前期设定图。' },
+      { slug: 'shoppable-carousel', name: '制作商品轮播图', titleEn: 'Shoppable Carousel', description: '按商品图规划逐页轮播文案与生图提示词' },
+      { slug: 'replicate-carousel', name: '复刻爆款图文', titleEn: 'Carousel Replication', description: '拆解参考图文结构，为商品生成原创轮播图' },
+      { slug: 'ecommerce-image', name: '生成电商套图', titleEn: 'E-commerce Product Images', description: '保留商品外观，一键生成主图、卖点与场景图' },
+      { slug: 'omnimux-ecom-visual-qa', name: '商详9图质检', titleEn: '9-Image Visual QA', description: '规划 9 张商详套图，检查白底、占比与合规' },
+      { slug: 'dynamic-poster', name: '生成动态海报', titleEn: 'Dynamic Poster', description: '基于产品实拍图，制作带微动态效果的海报' },
+      { slug: 'character-scene-storyboard', name: '生成分镜设定图', titleEn: 'Character & Scene Storyboard', description: '根据参考图和剧本，生成三视图与 12 格分镜' },
     ],
   },
 ]

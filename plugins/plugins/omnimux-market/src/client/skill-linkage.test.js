@@ -81,8 +81,8 @@ test('Issue #2609：两款技能同时上架技能货架（catalog/index.json）
   const catalog = JSON.parse(readFileSync(join(here, '../../catalog/index.json'), 'utf8'))
 
   const targets = [
-    { id: 'sk-omx-shoppable-carousel', skill: 'shoppable-carousel', titleZh: '商品轮播图' },
-    { id: 'sk-omx-replicate-carousel', skill: 'replicate-carousel', titleZh: '图文复刻' },
+    { id: 'sk-omx-shoppable-carousel', skill: 'shoppable-carousel', titleZh: '制作商品轮播图' },
+    { id: 'sk-omx-replicate-carousel', skill: 'replicate-carousel', titleZh: '复刻爆款图文' },
   ]
   for (const { id, skill, titleZh } of targets) {
     const item = catalog.items.find((it) => it.id === id)

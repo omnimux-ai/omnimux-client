@@ -321,14 +321,20 @@ export function filterPresetSkills(skills = [], tabId = 'all', query = '') {
       }
     }
     if (q) {
+      const aliases = Array.isArray(item.aliases) ? item.aliases : []
+      const tags = Array.isArray(item.tags) ? item.tags : []
       const hay = [
         item.name,
         item.title,
+        item.titleZh,
+        item.titleEn,
         item.slug,
         item.skill,
         item.description,
         item.summary,
         item.category,
+        ...aliases,
+        ...tags,
       ].map((v) => String(v || '')).join(' ').toLowerCase()
       if (!hay.includes(q)) return false
     }

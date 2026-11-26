@@ -176,6 +176,14 @@
       };
       const [activeIndex, setActiveIndex] = useState(0);
       const [pos, setPos] = useState({ left: 0, top: 0, width: 380 });
+      const [tabsOverflow, setTabsOverflow] = useState(false);
+
+      const pickerTabs = presetBinding && Array.isArray(presetBinding.tabs)
+        ? presetBinding.tabs
+        : SkillShelf.PICKER_TABS;
+      const pickerTabsKey = pickerTabs
+        .map((tab) => `${tab.id}:${(tab.labelKey && tr(tab.labelKey)) || tab.name || tab.id}`)
+        .join("|");
 
       useEffect(() => {
         if (!open) return undefined;
@@ -276,6 +284,49 @@
         return () => window.removeEventListener("resize", place);
       }, [open, items, status, tabId, anchorRef]);
 
+      useLayoutEffect(() => {
+        if (!open) {
+          setTabsOverflow(false);
+          return undefined;
+        }
+        const el = tabsRef.current;
+        if (!el) {
+          setTabsOverflow(false);
+          return undefined;
+        }
+        const measure = () => {
+          const sw = typeof el.scrollWidth === "number" ? el.scrollWidth : 0;
+          const cw = typeof el.clientWidth === "number" ? el.clientWidth : 0;
+          const parent = el.parentElement;
+          let padX = 16;
+          if (parent && typeof window !== "undefined" && typeof window.getComputedStyle === "function") {
+            const cs = window.getComputedStyle(parent);
+            const pl = parseFloat(cs.paddingLeft);
+            const pr = parseFloat(cs.paddingRight);
+            if (Number.isFinite(pl) && Number.isFinite(pr)) padX = pl + pr;
+          }
+          const avail = parent && typeof parent.clientWidth === "number" && parent.clientWidth > padX
+            ? Math.max(cw, parent.clientWidth - padX)
+            : cw;
+          setTabsOverflow(sw > avail + 1);
+        };
+        measure();
+        let ro = null;
+        if (typeof ResizeObserver === "function") {
+          ro = new ResizeObserver(measure);
+          ro.observe(el);
+        }
+        if (typeof window !== "undefined" && typeof window.addEventListener === "function") {
+          window.addEventListener("resize", measure);
+        }
+        return () => {
+          if (ro && typeof ro.disconnect === "function") ro.disconnect();
+          if (typeof window !== "undefined" && typeof window.removeEventListener === "function") {
+            window.removeEventListener("resize", measure);
+          }
+        };
+      }, [open, pickerTabsKey, pos.width]);
+
       useEffect(() => {
         if (!open) return undefined;
         const onDoc = (e) => {
@@ -327,10 +378,6 @@
       const emptyMine = tabId === "mine" && status === "ready" && !visible.length && !debounced.trim();
       const emptySearch = status === "ready" && !visible.length && !emptyMine;
 
-      const pickerTabs = presetBinding && Array.isArray(presetBinding.tabs)
-        ? presetBinding.tabs
-        : SkillShelf.PICKER_TABS;
-
       const node = h("div", {
         ref: panelRef,
         className: "sh-picker",
@@ -366,7 +413,7 @@
               onClick: () => { setTabId(tab.id); setActiveIndex(0); },
             }, (tab.labelKey && tr(tab.labelKey)) || tab.name || tab.id)),
           ),
-          h("button", {
+          tabsOverflow ? h("button", {
             type: "button",
             className: "sh-picker-more",
             "aria-label": tr("picker.scrollCats"),
@@ -374,7 +421,7 @@
               const el = tabsRef.current;
               if (el) el.scrollBy({ left: 120, behavior: "smooth" });
             },
-          }, h(PickerChevronIcon)),
+          }, h(PickerChevronIcon)) : null,
         ),
         remoteDown ? h("p", { className: "sh-picker-banner", role: "status" }, tr("picker.remoteDown")) : null,
         hint ? h("p", { className: "sh-picker-banner", role: "status" }, hint) : null,

@@ -21,7 +21,7 @@ test('kling-global-ad-localizer: catalog entries and bundled files are valid', (
   assert.equal(skillEntry.author, 'OmniMux')
   assert.equal(skillEntry.source?.type, 'bundled')
   assert.equal(skillEntry.source?.path, 'catalog/skills/global-ad-localizer')
-  assert.equal(skillEntry.titleZh, '多语言出海视频广告')
+  assert.equal(skillEntry.titleZh, '视频多语改编')
   assert.equal(skillEntry.titleEn, 'Global Ad Localizer')
   assert.ok(skillEntry.summaryZh, 'must have Chinese summary')
   assert.ok(skillEntry.summaryEn, 'must have English summary')
