@@ -10,9 +10,9 @@ import { runInNewContext } from 'node:vm'
 import { DEFAULT_MARKET_EXPERTS } from '../../lib/expert-market.js'
 import * as plazaUtils from '../../src/client/plaza/plazaUtils.js'
 
-test('E2E 专家市场卡片头像渲染：8 位 SOP 电商专家均以确定性像素小人展示、无 Topview 残留且默认可聘用', () => {
-  assert.equal(DEFAULT_MARKET_EXPERTS.length, 8)
-  assert.equal(plazaUtils.DEFAULT_MARKET_EXPERTS.length, 8)
+test('E2E 专家市场卡片头像渲染：10 位 SOP 电商专家均以确定性像素小人展示、无 Topview 残留且默认可聘用', () => {
+  assert.equal(DEFAULT_MARKET_EXPERTS.length, 10)
+  assert.equal(plazaUtils.DEFAULT_MARKET_EXPERTS.length, 10)
 
   const cardJsxCode = readFileSync(new URL('../../src/client/plaza/ExpertCard.jsx', import.meta.url), 'utf8')
     .replace(/^import React.*$/m, '')

@@ -848,7 +848,9 @@
         "skills/omnimux-ecom-visual-qa/SKILL.md",
         "skills/omnimux-ecom-video-script/SKILL.md",
         "skills/omnimux-ecom-ads-diagnosis/SKILL.md",
-        "skills/omnimux-ecom-review-voc/SKILL.md"
+        "skills/omnimux-ecom-review-voc/SKILL.md",
+        "skills/omnimux-ecom-brand-curator/SKILL.md",
+        "skills/omnimux-ecom-global-localizer/SKILL.md"
       ],
       "dependencies": {
         "requiredPlugins": [
@@ -943,6 +945,16 @@
           "owner": "omnimux-market"
         },
         "omnimux-ecom-review-voc": {
+          "origin": "first-party",
+          "license": "MIT",
+          "owner": "omnimux-market"
+        },
+        "omnimux-ecom-brand-curator": {
+          "origin": "first-party",
+          "license": "MIT",
+          "owner": "omnimux-market"
+        },
+        "omnimux-ecom-global-localizer": {
           "origin": "first-party",
           "license": "MIT",
           "owner": "omnimux-market"

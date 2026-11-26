@@ -41,6 +41,7 @@ import { installCommandsI18n } from './composer-commands-i18n.js'
 import { installExploreMoreMenu } from './explore-more-menu.jsx'
 import { ComposerModeTabs } from './composer-mode/ComposerModeTabs.jsx'
 import { ComposerQuickShortcuts, ComposerQuickShortcutControls } from './composer-quick-shortcuts/ComposerQuickShortcuts.jsx'
+import { ExpertBootstrapBar } from './composer-quick-shortcuts/ExpertBootstrapBar.jsx'
 import { registerLinkTriggerSource } from './attachments/linkTriggerSource.ts'
 import { installUserMessageLinkEnhancer } from './attachments/userMessageLinkEnhancer.ts'
 import { installUserMessageAttachmentsEnhancer } from './attachments/userMessageAttachmentsEnhancer.ts'
@@ -240,6 +241,13 @@ export function apply(ctx) {
   // 输入框**下方**的四条快捷方式：提示语 + 链接胶囊 + 技能一次到位。
   // 只在新对话（空会话）渲染；技能经 `window.__omnimuxSkillLibrary` 通道解析，
   // 解析不到的那条不渲染。
+  const createPromptMutator = (sessionId) => (text, span) => {
+    const scope = sessionId && guideSessions?.scope(sessionId)
+    if (!scope) return false
+    return text
+      ? scope.bail(scope, 'slash/input-insert-text', { text, span }) === true
+      : scope.bail(scope, 'slash/input-consume-token', { guard: { kind: 'span', span } }) === true
+  }
   ctx.slots.inject('conversation.input.dock', () => ctx.slots.register({
     name: 'conversation.input.dock',
     id: 'omnimux-quick-shortcuts',
@@ -247,15 +255,21 @@ export function apply(ctx) {
     locale: NS,
     inject: (sessionId) => ({
       t,
-      mutatePrompt: (text, span) => {
-        const scope = sessionId && guideSessions?.scope(sessionId)
-        if (!scope) return false
-        return text
-          ? scope.bail(scope, 'slash/input-insert-text', { text, span }) === true
-          : scope.bail(scope, 'slash/input-consume-token', { guard: { kind: 'span', span } }) === true
-      },
+      mutatePrompt: createPromptMutator(sessionId),
     }),
   }, ComposerQuickShortcuts))
+  // 已聘用跨境 SOP 专家（ecom-*）在空白会话下的 3 条首轮起手式引导条；
+  // 与 OmniMux 快捷方式和 cordis 创造模式严格互斥（仅在 ecom-* 空白会话渲染）。
+  ctx.slots.inject('conversation.input.dock', () => ctx.slots.register({
+    name: 'conversation.input.dock',
+    id: 'omnimux-expert-bootstrap',
+    order: 106,
+    locale: NS,
+    inject: (sessionId) => ({
+      t,
+      mutatePrompt: createPromptMutator(sessionId),
+    }),
+  }, ExpertBootstrapBar))
   ctx.slots.inject('conversation.input.left', () => ctx.slots.register({
     name: 'conversation.input.left',
     id: 'omnimux-quick-shortcut-controls',

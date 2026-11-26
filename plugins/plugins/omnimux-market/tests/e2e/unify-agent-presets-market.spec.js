@@ -42,24 +42,26 @@ function buildCardRenderer() {
   return sandbox.exports.renderExpertCard
 }
 
-test('E2E 旅程一：跨境电商 SOP 专家库包含 8 位角色，全部默认可聘用且支持按 SOP 阶段筛选', () => {
-  assert.equal(DEFAULT_MARKET_EXPERTS.length, 8)
+test('E2E 旅程一：跨境电商 SOP 专家库包含 10 位角色，全部默认可聘用且支持按 SOP 阶段筛选', () => {
+  assert.equal(DEFAULT_MARKET_EXPERTS.length, 10)
   const ids = DEFAULT_MARKET_EXPERTS.map((e) => e.id)
   assert.deepEqual(ids, [
     'ecom-market-research',
     'ecom-product-strategy',
+    'ecom-brand-curator',
     'ecom-listing-copy',
     'ecom-visual-studio',
     'ecom-video-director',
+    'ecom-global-localizer',
     'ecom-ads-optimizer',
     'ecom-review-voc',
     'ecom-creator-growth',
   ])
 
   const research = filterDisplayedExperts(plazaUtils.DEFAULT_MARKET_EXPERTS, true, '', 'research')
-  assert.equal(research.length, 2)
+  assert.equal(research.length, 3)
   const production = filterDisplayedExperts(plazaUtils.DEFAULT_MARKET_EXPERTS, true, '', 'production')
-  assert.equal(production.length, 3)
+  assert.equal(production.length, 4)
   const growth = filterDisplayedExperts(plazaUtils.DEFAULT_MARKET_EXPERTS, true, '', 'growth')
   assert.equal(growth.length, 3)
 
@@ -79,7 +81,7 @@ test('E2E 旅程二：官方系统预置、已入职市场专家与用户自建 
     ]
 
     const reconciled = reconcileMarketExperts(home, mockOfficialPresets)
-    assert.equal(reconciled.length, 11, '2 系统预置 + 8 市场专家 + 1 用户自建')
+    assert.equal(reconciled.length, 13, '2 系统预置 + 10 市场专家 + 1 用户自建')
 
     const omni = reconciled.find((it) => it.id === 'omni-agent')
     assert.equal(omni?.group, 'system')

@@ -26,13 +26,13 @@ test('loadBundledMarketSkills loads all 19 manifest-declared skills with layered
   const skills = loadBundledMarketSkills(pkgRoot)
   const actualSlugs = skills.map((s) => s.name).sort()
   assert.deepEqual(actualSlugs, expectedSlugs)
-  assert.equal(skills.length, 18)
+  assert.equal(skills.length, 20)
 
   const modelInvocable = skills.filter((s) => s.invocation.modelInvocable).map((s) => s.name)
   assert.deepEqual(
     modelInvocable,
     ['omnimux-social-data'],
-    'only omnimux-social-data stays globally modelInvocable; 17 vertical SOP skills default to 0-Token',
+    'only omnimux-social-data stays globally modelInvocable; 19 vertical SOP skills default to 0-Token',
   )
 
   for (const skill of skills) {
@@ -66,7 +66,7 @@ test('registerBundledMarketSkills registers provider at BUNDLED_SKILL_RANK (600)
   assert.equal(provider.name, MARKET_BUNDLED_PROVIDER_NAME)
 
   const candidates = await provider.list()
-  assert.equal(candidates.length, 18)
+  assert.equal(candidates.length, 20)
   for (const c of candidates) {
     assert.equal(c.rank, BUNDLED_SKILL_RANK)
     assert.equal(c.source, 'bundled')

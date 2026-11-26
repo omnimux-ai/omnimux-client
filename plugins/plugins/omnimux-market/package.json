@@ -14,6 +14,7 @@
     ".": "./lib/host.js",
     "./client": "./lib/client.js",
     "./expert-skills": "./lib/expert-skills-plugin.js",
+    "./expert-tool-scope": "./lib/expert-tool-scope-plugin.js",
     "./cordis.patch.yml": "./cordis.patch.yml",
     "./package.json": "./package.json",
     "./locale/*.json": "./locale/*.json"

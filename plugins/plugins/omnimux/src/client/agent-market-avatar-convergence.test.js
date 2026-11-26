@@ -63,9 +63,11 @@ describe('Agent 输入框与专家市场头像收敛一致性契约', () => {
     const marketHiredExperts = [
       { name: '选品专家', nameEn: 'Market Analyst', legacyName: '市场选品与竞品调研专家', id: 'ecom-market-research' },
       { name: '定价专家', nameEn: 'Pricing Strategist', legacyName: '产品定位与定价策略专家', id: 'ecom-product-strategy' },
+      { name: '品牌管家', nameEn: 'Brand Curator', legacyName: '品牌与商品建档专家', id: 'ecom-brand-curator' },
       { name: '文案专家', nameEn: 'Listing Copywriter', legacyName: '跨境 Listing 与合规文案专家', id: 'ecom-listing-copy' },
       { name: '视觉专家', nameEn: 'Visual Designer', legacyName: '电商主图与商详视觉专家', id: 'ecom-visual-studio' },
       { name: '视频导演', nameEn: 'Video Director', legacyName: '带货短视频与爆款复刻导演', id: 'ecom-video-director' },
+      { name: '本土专家', nameEn: 'Global Localizer', legacyName: '跨国本土化与多语广告专家', id: 'ecom-global-localizer' },
       { name: '广告专家', nameEn: 'Ads Optimizer', legacyName: '跨境广告诊断与买量优化专家', id: 'ecom-ads-optimizer' },
       { name: '评论运营', nameEn: 'Review Analyst', legacyName: '评论 VOC 与售后话术专家', id: 'ecom-review-voc' },
       { name: '达人运营', nameEn: 'Creator Manager', legacyName: '达人建联与社媒增长专家', id: 'ecom-creator-growth' },

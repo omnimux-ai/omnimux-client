@@ -16,9 +16,18 @@ import { join } from 'node:path'
 import { readExpertLedger } from './expert-ledger.js'
 import { writeAgentPreset } from './expert-presets.js'
 import { generatePixelAvatarDataUrl } from './expert/pixel-avatar.js'
+import type { ExpertToolDomain } from './expert-tool-domains.js'
 
 export type ExpertStage = 'research' | 'production' | 'growth' | 'system' | 'custom'
 export type ExpertStatus = 'enabled' | 'available' | 'disabled' | 'system' | 'custom' | 'coming_soon'
+
+export interface ExpertBootstrapStarter {
+  readonly id: string
+  readonly labelZh: string
+  readonly labelEn: string
+  readonly promptZh: string
+  readonly promptEn: string
+}
 
 export interface MarketExpertItem {
   id: string
@@ -31,6 +40,8 @@ export interface MarketExpertItem {
   order: number
   stage: ExpertStage
   skills: string[]
+  toolDomains?: ExpertToolDomain[]
+  starters?: ExpertBootstrapStarter[]
   group?: 'ecommerce' | 'system' | 'custom'
   trust?: 'system' | 'user'
   status?: ExpertStatus
@@ -48,25 +59,50 @@ export interface DiscoveredPresetRef {
 
 const SHARED_EXPERT_GUARDRAILS = [
   '【核心工作原则】',
-  '1. 参数与算术真源：所有数字（市场容量、CR10、毛利率、盈亏价、标题字数、主图占比、口播时长、盈亏线 ROAS、差评分类计数）必须调用配套 Skill 内的 Python 确定性脚本计算与核验，严禁心算或编造数据。',
+  '1. 参数与算术真源：所有数字（市场容量、CR10、毛利率、盈亏价、标题字数、主图占比、口播时长、盈亏线 ROAS、差评分类计数、建档完整度与多语口播时长比）必须调用配套 Skill 内的 Python 确定性脚本计算与核验，严禁心算或编造数据。',
   '2. 事实四级分类：严格区分「工具实测/导出表事实」「用户确认输入」「显式标注假设」「未知项」；缺关键数据时先停下来向用户确认，不伪造材质、尺寸、认证、销量或评论。',
   '3. 合规红线：严禁输出刷单、虚假好评、侵权/未授权品牌词、医疗/夸大功效承诺、绝对化违禁词或保证爆款/防封号承诺；涉及广告调价与卖家后台操作只出分级审批动作清单，不代操作后台。',
-  '4. 能力诚实边界：所有工具调用以当前会话 Tool Registry 实际已注册工具为准，不虚标未上线自动发布或未接入平台能力。',
+  '4. 能力诚实边界：所有工具调用以当前会话 Tool Registry 实际已注册工具为准，不虚标未上线自动发布或未接入平台能力；外部付费批量生成与破坏性删除须先获用户明确确认。',
+  '5. 首启引导协议（Bootstrap）：当用户首轮仅发简短问候、泛化提问或直接丢入裸链接/表格时，先用当前允许域的只读工具（如 `products_list`、`assets_list` 或 `tiktok_selection_list_tasks`）探明工作区现有对象，再用不超过 3 行给出具体的下一步执行选项，不反问冗长问卷。',
 ].join('\n')
 
-/** 跨境电商全链路 SOP 内置专家库（8 位按职能闭环分工的可聘用专家，全部默认可聘用） */
+/** 跨境电商全链路 SOP 内置专家库（10 位按职能闭环分工的可聘用专家，全部默认可聘用） */
 export const DEFAULT_MARKET_EXPERTS: MarketExpertItem[] = [
   {
     id: 'ecom-market-research',
     name: '选品专家',
     nameEn: 'Market Analyst',
-    description: '类目容量/CR10/价格带波谷测算、社媒痛点挖掘与竞品拆解，用脚本计算替代心算，输出可验证选品结论。',
-    descriptionEn: 'Category size, CR10, price-band gaps, social pain-point mining, and competitor teardown powered by deterministic scripts.',
+    description: '接管 TikTok 三闸跟爆工作台与类目表脚本，覆盖销量加速初筛、渠道占比核验、品牌词风控及价格带波谷测算。',
+    descriptionEn: 'Runs TikTok 3-gate discovery tasks and CSV category scripts for velocity screening, risk audits, CR10, and price-band gaps.',
     avatar: generatePixelAvatarDataUrl('ecom-market-research', { size: 96 }),
     initialStatus: 'available',
     order: 11,
     stage: 'research',
     skills: ['omnimux-ecom-market-research', 'omnimux-ecom-platform-rules', 'omnimux-product-demand', 'omnimux-competitor-research'],
+    toolDomains: ['products', 'inspiration', 'tiktok_selection', 'social_data', 'viewer', 'market', 'workbench'],
+    starters: [
+      {
+        id: 'tk-gate',
+        labelZh: 'TikTok 三闸跟爆筛品',
+        labelEn: 'Run TikTok 3-Gate Scout',
+        promptZh: '用跟爆选品三闸工作台帮我试拉并筛选 <目标类目或关键词> 的加速爆品，先给试拉规模预估再创建任务。',
+        promptEn: 'Dry-run the TikTok 3-gate selection workbench for <category/keyword> and preview hit volume before creating a task.',
+      },
+      {
+        id: 'csv-gap',
+        labelZh: '类目表容量与波谷测算',
+        labelEn: 'Analyze Category CSV',
+        promptZh: '我有一份类目导出表 <粘贴路径或上传CSV>，请用脚本计算月容量、CR10 与价格带波谷并给出进入结论。',
+        promptEn: 'Analyze my exported category sheet <path/CSV> with scripts for market size, CR10, and price-band gaps.',
+      },
+      {
+        id: 'risk-check',
+        labelZh: '核查选品库并同步商品库',
+        labelEn: 'Review & Sync Picks',
+        promptZh: '查看当前跟爆选品库待审核商品，核对品牌敏感词风控结果，确认后同步进商品库。',
+        promptEn: 'Review pending picks in the TikTok selection library, inspect risk audit results, and sync approved items to Products.',
+      },
+    ],
     group: 'ecommerce',
   },
   {
@@ -80,6 +116,67 @@ export const DEFAULT_MARKET_EXPERTS: MarketExpertItem[] = [
     order: 12,
     stage: 'research',
     skills: ['omnimux-ecom-pricing-strategy', 'omnimux-ecom-platform-rules'],
+    toolDomains: ['products', 'social_data', 'viewer', 'market', 'workbench'],
+    starters: [
+      {
+        id: 'margin',
+        labelZh: '核算含税毛利与盈亏价',
+        labelEn: 'Calculate Net Margin',
+        promptZh: '帮我核算 @Product/<商品名> 在 <目标平台站点> 的含税净利率、盈亏平衡价与优惠券余量。',
+        promptEn: 'Compute tax-aware net margin, break-even price, and coupon headroom for @Product/<name> on <marketplace>.',
+      },
+      {
+        id: 'usp',
+        labelZh: '收敛唯一核心卖点',
+        labelEn: 'Distill Single Core USP',
+        promptZh: '基于商品参数与竞品痛点，把这款产品收敛成唯一核心卖点与禁用词清单。',
+        promptEn: 'Distill verified specs and competitor pain points into one core USP and forbidden-word list.',
+      },
+      {
+        id: 'sku',
+        labelZh: '规划 SKU 四角色矩阵',
+        labelEn: 'Plan SKU Role Matrix',
+        promptZh: '为这款商品设计引流款、利润款、组合款与形象款 SKU 矩阵并沉淀进商品库。',
+        promptEn: 'Design traffic, profit, bundle, and hero SKU roles and sync the verified spec table to Products.',
+      },
+    ],
+    group: 'ecommerce',
+  },
+  {
+    id: 'ecom-brand-curator',
+    name: '品牌管家',
+    nameEn: 'Brand Curator',
+    description: '从商品页链接与实拍素材冷启动建档，确定性校验参数真源与色值规范，一次性沉淀可复用的商品库与品牌资产锚点。',
+    descriptionEn: 'Bootstraps structured product profiles, validated spec tables, and reusable brand visual anchors from URLs and raw photos.',
+    avatar: generatePixelAvatarDataUrl('ecom-brand-curator', { size: 96 }),
+    initialStatus: 'available',
+    order: 13,
+    stage: 'research',
+    skills: ['omnimux-ecom-brand-curator', 'omnimux-ecom-platform-rules'],
+    toolDomains: ['products', 'assets', 'inspiration', 'workflow', 'media_gen', 'social_data', 'browser', 'viewer', 'market', 'workbench'],
+    starters: [
+      {
+        id: 'url-onboard',
+        labelZh: '从商品链接冷启动建档',
+        labelEn: 'Onboard from Product URL',
+        promptZh: '请抓取这个商品链接 <粘贴链接>，拆出四级事实参数表并用脚本校验缺口，确认后写入商品库。',
+        promptEn: 'Fetch <product URL>, extract a 4-tier verified spec table, validate gaps via script, and save to Products.',
+      },
+      {
+        id: 'asset-anchor',
+        labelZh: '整理实拍图沉淀品牌资产',
+        labelEn: 'Organize Brand Assets',
+        promptZh: '把这批商品实拍图与品牌主色整理成可长期复用的资产库角色、场景与风格锚点。',
+        promptEn: 'Curate these product photos and brand palette into reusable Asset Center characters, scenes, and style packs.',
+      },
+      {
+        id: 'audit-kit',
+        labelZh: '体检商品库与资产缺口',
+        labelEn: 'Audit Workspace Truth',
+        promptZh: '盘点我当前商品库和资产库里缺失的关键参数、禁用词或白底锚点图，给出补齐清单。',
+        promptEn: 'Audit my existing Products and Assets for missing specs, forbidden words, or hero anchor images.',
+      },
+    ],
     group: 'ecommerce',
   },
   {
@@ -90,9 +187,33 @@ export const DEFAULT_MARKET_EXPERTS: MarketExpertItem[] = [
     descriptionEn: 'Turns verified product specs into tiered keywords, native multilingual titles and 7-part listings with length, ban-word & spec checks.',
     avatar: generatePixelAvatarDataUrl('ecom-listing-copy', { size: 96 }),
     initialStatus: 'available',
-    order: 13,
+    order: 14,
     stage: 'production',
     skills: ['omnimux-ecom-listing-copy', 'omnimux-ecom-platform-rules'],
+    toolDomains: ['products', 'assets', 'social_data', 'viewer', 'market', 'workbench'],
+    starters: [
+      {
+        id: 'title-desc',
+        labelZh: '生成母语标题与七段商详',
+        labelEn: 'Draft Native Listing',
+        promptZh: '读取 @Product/<商品名> 真源，生成 <目标平台与语言> 高转化标题与七段式商详，并跑完合规校验。',
+        promptEn: 'Draft a native <marketplace/language> title and 7-part listing from @Product/<name> with validation.',
+      },
+      {
+        id: 'kw',
+        labelZh: '输出关键词分层矩阵',
+        labelEn: 'Build Keyword Tiers',
+        promptZh: '为 @Product/<商品名> 拆出核心词、场景长尾词与痛点词分层表。',
+        promptEn: 'Build tiered core, scenario, and pain-point keywords for @Product/<name>.',
+      },
+      {
+        id: 'lint',
+        labelZh: '校验已有文案合规与参数',
+        labelEn: 'Validate Existing Copy',
+        promptZh: '用校验脚本检查这段 Listing 文案的字节上限、违禁词与数字参数溯源：<粘贴文案>。',
+        promptEn: 'Validate this listing draft for byte limits, banned words, and spec traceability: <paste copy>.',
+      },
+    ],
     group: 'ecommerce',
   },
   {
@@ -103,9 +224,33 @@ export const DEFAULT_MARKET_EXPERTS: MarketExpertItem[] = [
     descriptionEn: 'Plans 9-image visual stacks and A+ layouts locked to real product photos, drives Canvas generation, and runs pixel compliance checks.',
     avatar: generatePixelAvatarDataUrl('ecom-visual-studio', { size: 96 }),
     initialStatus: 'available',
-    order: 14,
+    order: 15,
     stage: 'production',
     skills: ['omnimux-ecom-visual-qa', 'omnimux-ecom-platform-rules'],
+    toolDomains: ['products', 'assets', 'inspiration', 'workflow', 'media_gen', 'viewer', 'market', 'workbench'],
+    starters: [
+      {
+        id: 'nine-grid',
+        labelZh: '规划 9 图视觉矩阵',
+        labelEn: 'Plan 9-Image Stack',
+        promptZh: '锁定 @Product/<商品名> 实拍外观，先输出 9 图视觉矩阵分工表，确认后再进画布出图。',
+        promptEn: 'Lock real product appearance from @Product/<name> and plan a 9-image visual matrix before Canvas generation.',
+      },
+      {
+        id: 'hero-qa',
+        labelZh: '质检白底主图合规像素',
+        labelEn: 'Run Main-Image QA',
+        promptZh: '运行像素质检脚本检查这组主图的分辨率、纯白底与主体占比：<附图片或路径>。',
+        promptEn: 'Run pixel compliance QA on resolution, white background, and subject ratio for <images>.',
+      },
+      {
+        id: 'aplus',
+        labelZh: '设计商详对比与场景图',
+        labelEn: 'Design A+ Visuals',
+        promptZh: '围绕唯一核心卖点设计痛点对比图与场景卖点图，并在创作画布搭建生成节点。',
+        promptEn: 'Plan pain-point comparison and lifestyle feature visuals on the Workflow Canvas.',
+      },
+    ],
     group: 'ecommerce',
   },
   {
@@ -116,9 +261,70 @@ export const DEFAULT_MARKET_EXPERTS: MarketExpertItem[] = [
     descriptionEn: 'Connects 5D inspiration breakdowns, assets/avatars, Canvas storyboards, and Clip timeline with 3s hook, duration & spec checks.',
     avatar: generatePixelAvatarDataUrl('ecom-video-director', { size: 96 }),
     initialStatus: 'available',
-    order: 15,
+    order: 16,
     stage: 'production',
     skills: ['omnimux-ecom-video-script', 'omnimux-ecom-platform-rules', 'clip-craft'],
+    toolDomains: ['products', 'assets', 'inspiration', 'workflow', 'clip', 'media_gen', 'viewer', 'market', 'workbench'],
+    starters: [
+      {
+        id: 'hook-script',
+        labelZh: '策划 3 秒 Hook 带货脚本',
+        labelEn: 'Plan 3s Hook Script',
+        promptZh: '基于 @Product/<商品名> 策划 30 秒竖屏带货脚本，先用脚本校验口播时长与参数再开画布。',
+        promptEn: 'Draft a 30s vertical shoppable video script for @Product/<name> with duration & spec validation.',
+      },
+      {
+        id: 'replicate',
+        labelZh: '5D 拆解参考爆款复刻',
+        labelEn: '5D Viral Replication',
+        promptZh: '结合灵感库这条参考视频 <粘贴链接或编号> 做 5D 拆解，为我的商品搭建复刻分镜画布。',
+        promptEn: 'Break down reference video <link/id> in 5D and wire a replication storyboard on Canvas.',
+      },
+      {
+        id: 'clip-cut',
+        labelZh: '汇总镜头进剪辑工坊精修',
+        labelEn: 'Assemble in Clip Studio',
+        promptZh: '把当前画布生成的片段装配进 Clip 剪辑工程，完成字幕对轨、黑场诊断并输出预览。',
+        promptEn: 'Assemble generated clips in Clip Studio, sync captions, run diagnostics, and prepare review cut.',
+      },
+    ],
+    group: 'ecommerce',
+  },
+  {
+    id: 'ecom-global-localizer',
+    name: '本土专家',
+    nameEn: 'Global Localizer',
+    description: '锁定商品实拍与参数真源，将验证过的带货视频与套图按四栏矩阵安全裂变至多国多语种，脚本校核口播时长膨胀与本地红线。',
+    descriptionEn: 'Locks verified product specs and localizes proven video ads across countries and languages with duration expansion & compliance checks.',
+    avatar: generatePixelAvatarDataUrl('ecom-global-localizer', { size: 96 }),
+    initialStatus: 'available',
+    order: 17,
+    stage: 'production',
+    skills: ['omnimux-ecom-global-localizer', 'omnimux-ecom-platform-rules', 'clip-craft'],
+    toolDomains: ['products', 'assets', 'inspiration', 'workflow', 'clip', 'media_gen', 'social_data', 'viewer', 'market', 'workbench'],
+    starters: [
+      {
+        id: 'four-col',
+        labelZh: '拆解四栏跨国本地化方案',
+        labelEn: 'Build 4-Column Plan',
+        promptZh: '把 @Product/<商品名> 的母版视频拆解为 <美区 EN / 巴西 PT-BR / 拉美 ES> 四栏本地化方案，锁定外观与数字参数。',
+        promptEn: 'Create a 4-column localization matrix for @Product/<name> targeting <US EN / BR PT-BR / LATAM ES>.',
+      },
+      {
+        id: 'dur-check',
+        labelZh: '校验多语口播时长与红线',
+        labelEn: 'Check Voiceover Expansion',
+        promptZh: '用校验脚本核对这套多语翻译脚本的语速膨胀率、参数一致性与目标国违禁词。',
+        promptEn: 'Run the localization check script on voiceover expansion ratio, spec invariance, and market redlines.',
+      },
+      {
+        id: 'pilot',
+        labelZh: '先跑单市场数字人小样',
+        labelEn: 'Run Single-Market Pilot',
+        promptZh: '先在 <目标国家/语言> 选配本地数字人与配音跑 1 条核心镜头小样，我确认后再批量铺开其他市场。',
+        promptEn: 'Run a single pilot shot for <target market> with local avatar and voiceover before scaling to all markets.',
+      },
+    ],
     group: 'ecommerce',
   },
   {
@@ -129,9 +335,33 @@ export const DEFAULT_MARKET_EXPERTS: MarketExpertItem[] = [
     descriptionEn: 'Computes break-even ROAS & max CPC, diagnoses 5-stage ad funnels, outputs P0/P1/P2 action checklists and targeted creative feedback.',
     avatar: generatePixelAvatarDataUrl('ecom-ads-optimizer', { size: 96 }),
     initialStatus: 'available',
-    order: 16,
+    order: 18,
     stage: 'growth',
     skills: ['omnimux-ecom-ads-diagnosis', 'omnimux-ecom-platform-rules'],
+    toolDomains: ['products', 'analytics', 'social_data', 'viewer', 'market', 'workbench'],
+    starters: [
+      {
+        id: 'roas',
+        labelZh: '五层漏斗诊断广告报表',
+        labelEn: 'Diagnose Ad Funnel',
+        promptZh: '帮我用脚本解析这份广告导出表 <路径/CSV>，算出盈亏线 ROAS 与最大 CPC，并按 P0/P1/P2 给出调优动作。',
+        promptEn: 'Diagnose <ad CSV> with scripts for break-even ROAS, max CPC, and P0/P1/P2 action checklists.',
+      },
+      {
+        id: 'feedback',
+        labelZh: '生成定向素材回流工单',
+        labelEn: 'Emit Creative Feedback',
+        promptZh: '根据当前点击率与转化率瓶颈，定位只需重做的具体主图或前 3 秒 Hook。',
+        promptEn: 'Pinpoint exact listing fields, main image slots, or 3s hooks to revise from funnel bottlenecks.',
+      },
+      {
+        id: 'budget',
+        labelZh: '测算新品放量预算护栏',
+        labelEn: 'Set Launch Budget Guard',
+        promptZh: '结合 @Product/<商品名> 毛利率，计算测品期止损线与加预算触发阈值。',
+        promptEn: 'Compute stop-loss and scale-up thresholds from @Product/<name> unit economics.',
+      },
+    ],
     group: 'ecommerce',
   },
   {
@@ -142,9 +372,33 @@ export const DEFAULT_MARKET_EXPERTS: MarketExpertItem[] = [
     descriptionEn: 'Classifies negative reviews across 8 root causes to isolate fixable misunderstandings, emitting listing patches and compliant replies.',
     avatar: generatePixelAvatarDataUrl('ecom-review-voc', { size: 96 }),
     initialStatus: 'available',
-    order: 17,
+    order: 19,
     stage: 'growth',
     skills: ['omnimux-ecom-review-voc', 'omnimux-ecom-platform-rules'],
+    toolDomains: ['products', 'social_data', 'viewer', 'market', 'workbench'],
+    starters: [
+      {
+        id: 'voc-8',
+        labelZh: '差评 8 类归因与防误解补丁',
+        labelEn: 'Classify 8 Review Causes',
+        promptZh: '运行评论脚本分析这份评价表 <路径/CSV>，筛出误解型差评并输出可直接粘贴的商详补丁。',
+        promptEn: 'Analyze <reviews CSV> across 8 root causes and emit copy-paste listing patches for misunderstandings.',
+      },
+      {
+        id: 'reply',
+        labelZh: '生成多语合规售后回复',
+        labelEn: 'Draft Compliant Replies',
+        promptZh: '针对这几条差评生成 <目标语言> 合规客服回复话术，绝不触碰平台删评红线。',
+        promptEn: 'Draft policy-compliant customer care replies in <language> for these negative reviews.',
+      },
+      {
+        id: 'praise',
+        labelZh: '提炼好评高频卖点词',
+        labelEn: 'Mine Praise Phrases',
+        promptZh: '从五星好评里提炼买家原声高频词，反哺下一轮主图与口播钩子。',
+        promptEn: 'Extract recurring buyer phrases from 5-star reviews to feed next-round hooks.',
+      },
+    ],
     group: 'ecommerce',
   },
   {
@@ -155,21 +409,46 @@ export const DEFAULT_MARKET_EXPERTS: MarketExpertItem[] = [
     descriptionEn: 'Evaluates TikTok/YouTube/IG creators & viral outliers from public data, drafting outreach briefs, schedules, and growth recaps.',
     avatar: generatePixelAvatarDataUrl('ecom-creator-growth', { size: 96 }),
     initialStatus: 'available',
-    order: 18,
+    order: 20,
     stage: 'growth',
     skills: ['omnimux-ecom-platform-rules', 'omnimux-creator-teardown', 'omnimux-outlier-post-finder', 'omnimux-trend-discovery'],
+    toolDomains: ['products', 'inspiration', 'social_data', 'analytics', 'viewer', 'market', 'workbench'],
+    starters: [
+      {
+        id: 'eval',
+        labelZh: '评估候选达人带货匹配度',
+        labelEn: 'Evaluate Creator Fit',
+        promptZh: '拉取这批达人公开作品数据 <粘贴账号列表>，按中位数基线计算爆款 lift 并分层。',
+        promptEn: 'Fetch public metrics for <creators>, score median-baseline lift, and tier candidates.',
+      },
+      {
+        id: 'brief',
+        labelZh: '生成多语达人建联 Brief',
+        labelEn: 'Draft Outreach Brief',
+        promptZh: '结合 @Product/<商品名> 核心卖点与禁说红线，写一份 <目标语言> 达人寄样建联 Brief。',
+        promptEn: 'Write a <language> creator brief with core USP, redlines, and gifting terms for @Product/<name>.',
+      },
+      {
+        id: 'outlier',
+        labelZh: '扫描品类近期爆款信号',
+        labelEn: 'Scan Category Outliers',
+        promptZh: '扫描 <品类关键词> 近期在 TikTok 的高 lift 异常爆款视频并整理选题排期。',
+        promptEn: 'Scan recent high-lift TikTok outlier posts for <keyword> and draft a test schedule.',
+      },
+    ],
     group: 'ecommerce',
   },
 ]
 
 const EXPERT_PERSONA_DETAILS: Record<string, string> = {
   'ecom-market-research': [
-    '你是 OmniMux「选品专家」，负责跨境电商 SOP 第 01 环节（市场分析、类目容量、竞争格局、价格带波谷与社媒需求验证）。',
+    '你是 OmniMux「选品专家」，负责跨境电商 SOP 第 01 环节（类目容量/竞争格局/价格带波谷分析 + TikTok Shop 三闸实时跟爆筛品）。',
     '',
-    '【首选 Skill 与工作流】',
-    '- 收到类目导出 CSV/Excel（如 Shopee、Amazon、Mercado Livre、TikTok Shop）时，优先加载 `omnimux-ecom-market-research` 与 `omnimux-ecom-platform-rules`，运行其 `scripts/analyze_market.py` 清洗巴西/美式/中文万单位数字并计算月容量、CR3/CR10/HHI 与不平滑价格带波谷。',
+    '【首选 Skill 与双轨工作流】',
+    '- **Track A（类目导出表分析）**：收到 Shopee / Amazon / Mercado Livre / TikTok Shop 导出 CSV/JSON 时，优先加载 `omnimux-ecom-market-research` 与 `omnimux-ecom-platform-rules`，运行 `scripts/analyze_market.py` 清洗巴西/美式/中文万单位数字并计算月容量、CR3/CR10/HHI 与不平滑价格带波谷。',
+    '- **Track B（TikTok Shop 三闸跟爆工作台）**：收到热榜/关键词实时跟爆或定时巡检需求时，直接调用 `tiktok_selection_query_rank` / `tiktok_selection_search_products` / `tiktok_selection_import_snapshot` 发现商品，先经 `tiktok_selection_gate_dry_run` 预估命中规模并获用户确认，再调用 `tiktok_selection_create_task` 跑通 G1 销量加速初筛 → G2 商品卡/视频占比核验（缺失渠道数据时严格标出 `G2_CHANNEL_DATA_MISSING` 不伪造）→ G3 品牌与敏感词风控（fail-closed）；通过商品经确认后用 `tiktok_selection_ingest_products` / `products_create` 沉淀进商品库。',
     '- 需要社媒侧需求验证与竞品内容对标时，加载 `omnimux-product-demand` / `omnimux-competitor-research`，复用 `omnimux_social_data`、`omnimux_tiktok_shop_*` 与 `inspiration_rival_*` 工具取证。',
-    '- 交付必须包含：市场可进入性结论（建议进入/谨慎验证/不建议）、量化指标表、目标价格带与空白机会、TOP 竞品拆解，以及直接传给「定价专家」的下游契约摘要。',
+    '- 交付必须包含：市场可进入性结论（建议进入/谨慎验证/不建议）、量化指标表或三闸漏斗明细、目标价格带与空白机会，以及直接传给「定价专家」的下游契约摘要。',
   ].join('\n'),
 
   'ecom-product-strategy': [
@@ -179,6 +458,15 @@ const EXPERT_PERSONA_DETAILS: Record<string, string> = {
     '- 优先加载 `omnimux-ecom-pricing-strategy` 与 `omnimux-ecom-platform-rules`，调用 `scripts/calc_pricing.py` 精确计算采购/头程/佣金/免运/税费/广告预留下的含税净利率、盈亏平衡价与优惠券余量。',
     '- 必须把定位收敛为「唯一核心卖点（core_selling_point）」+ 明确的 `forbidden_words`（禁用词清单）+ `spec_table`（已核实数字参数表），严禁大而全卖点堆砌。',
     '- 经用户确认后，主动通过商品库工具（`products_*`）将核实后的产品定位、SKU 结构与 `spec_table` 沉淀进 OmniMux 商品库，供下游 Listing、主图与短视频环节复用，防止参数跨环节漂移。',
+  ].join('\n'),
+
+  'ecom-brand-curator': [
+    '你是 OmniMux「品牌管家」，负责新商品与品牌冷启动建档、四级事实参数提取校验，以及商品库（`products_*`）与创作资产库（`assets_*`）共享锚点沉淀。',
+    '',
+    '【首选 Skill 与工作流】',
+    '- 优先加载 `omnimux-ecom-brand-curator` 与 `omnimux-ecom-platform-rules`：先盘点当前 `products_list` / `assets_list` 避免重复建档，再使用 `omnimux_page_fetch`（受阻时回退 `web_fetch` 或请用户粘贴图文）采集商品页与实拍素材。',
+    '- 落盘前必须运行 `scripts/validate_brand_kit.py` 确定性核验 `spec_table`（至少 3 项已核实规格）、HEX 品牌色值、禁用词与主锚点实拍图完整性，显式列出缺口交用户确认。',
+    '- 获用户确认后写入 `products_create`/`products_update` 与 `assets_create`/`assets_upload`，必要时在画布生成可复用角色三视图与风格锚点，确保下游全链路可直接通过 `@Product` / `@Asset` 零漂移复用。',
   ].join('\n'),
 
   'ecom-listing-copy': [
@@ -206,6 +494,15 @@ const EXPERT_PERSONA_DETAILS: Record<string, string> = {
     '- 优先加载 `omnimux-ecom-video-script`、`omnimux-ecom-platform-rules` 与 `clip-craft`：先从商品库锁定 `core_selling_point` 与 `spec_table`，结合灵感库 5D 拆解（`inspiration_*`）设计前 3 秒强 Hook 与分镜脚本。',
     '- 交付脚本前必须运行 `scripts/validate_video_script.py` 校验口播词数/时长预算、前 3 秒钩子与数字参数溯源，并按需导出 `.srt` 字幕。',
     '- 制作期串联 OmniMux 资产/数字人（`assets_*`、`avatar_*`）→ 创作画布（`workflow_*`）分镜出片 → 视频剪辑工坊（`clip_*`）多轨合成与 `clip_diagnostics` 检查，先交付可编辑工程供审阅再导出成片。',
+  ].join('\n'),
+
+  'ecom-global-localizer': [
+    '你是 OmniMux「本土专家」，负责跨国多语种带货视频与广告素材本地化裂变（全球锁定外观参数、本地适配族裔数字人/语境/配音/字幕）。',
+    '',
+    '【首选 Skill 与工作流】',
+    '- 优先加载 `omnimux-ecom-global-localizer`、`omnimux-ecom-platform-rules` 与 `clip-craft`：先从商品库锁定实拍图与 `spec_table`，输出目标市场四栏本地化方案（全球锁定 / 本地适配 / 本地待审 / 禁用红线）。',
+    '- 调用任何付费生视频/配音工具前，必须运行 `scripts/check_localization_matrix.py` 确定性校核跨语种口播时长膨胀率（防止西/葡/德语等撑爆原镜时长与对口型）、全量数字参数零漂移与目标国违禁词。',
+    '- 严格遵守「先单市场小样、后多国批量」：挑选云地资产库（`assets_*`）匹配目标国的数字人与音色，在画布（`workflow_*`）先跑 1 条核心镜头小样确认后，再扩量并在剪辑工坊（`clip_*`）完成多语字幕叠层与 `clip_diagnostics` 核验。',
   ].join('\n'),
 
   'ecom-ads-optimizer': [

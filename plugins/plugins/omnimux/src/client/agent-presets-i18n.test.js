@@ -80,9 +80,11 @@ test('getPresetFallbackCopy returns localized fallback copy for all presets', ()
   const sopExpected = [
     ['ecom-market-research', '选品专家', 'Market Analyst'],
     ['ecom-product-strategy', '定价专家', 'Pricing Strategist'],
+    ['ecom-brand-curator', '品牌管家', 'Brand Curator'],
     ['ecom-listing-copy', '文案专家', 'Listing Copywriter'],
     ['ecom-visual-studio', '视觉专家', 'Visual Designer'],
     ['ecom-video-director', '视频导演', 'Video Director'],
+    ['ecom-global-localizer', '本土专家', 'Global Localizer'],
     ['ecom-ads-optimizer', '广告专家', 'Ads Optimizer'],
     ['ecom-review-voc', '评论运营', 'Review Analyst'],
     ['ecom-creator-growth', '达人运营', 'Creator Manager'],

@@ -126,6 +126,7 @@ export const MUTATING_METHODS = new Set([
 ])
 
 import {
+  type ExpertBootstrapStarter,
   type MarketExpertItem,
   type DiscoveredPresetRef,
   type ExpertStage,
@@ -141,6 +142,14 @@ import {
   materializeEnabledMarketExperts,
   reconcileMarketExperts,
 } from './expert-market.js'
+
+import {
+  type ExpertToolDomain,
+  ALL_EXPERT_TOOL_DOMAINS,
+  MANAGED_DOMAIN_RULES,
+  computeDeniedTools,
+  resolveManagedToolDomain,
+} from './expert-tool-domains.js'
 
 import {
   type ExpertInstallLedger,
@@ -168,6 +177,8 @@ import {
 } from './expert-presets.js'
 
 export {
+  type ExpertBootstrapStarter,
+  type ExpertToolDomain,
   type MarketExpertItem,
   type DiscoveredPresetRef,
   type ExpertStage,
@@ -176,6 +187,10 @@ export {
   type AgentPresetRegistryLike,
   type DynamicPresetDefinition,
   type DynamicPresetRow,
+  ALL_EXPERT_TOOL_DOMAINS,
+  MANAGED_DOMAIN_RULES,
+  computeDeniedTools,
+  resolveManagedToolDomain,
   DEFAULT_MARKET_EXPERTS,
   SYSTEM_PRESET_METADATA,
   findMarketExpertById,
