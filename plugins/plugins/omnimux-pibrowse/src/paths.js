@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
-import { mkdir } from 'node:fs/promises'
+import { chmod, lstat, mkdir } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
-import { isAbsolute, join, normalize, resolve } from 'node:path'
+import { dirname, isAbsolute, join, normalize, resolve } from 'node:path'
 import { PibrowseError } from './errors.js'
 
 /**
@@ -16,12 +16,28 @@ export function resolveDshHome(opts = {}) {
 }
 
 /**
+ * Resolve the current effective UID on POSIX systems (returns null on Windows).
+ * @param {{ platform?: NodeJS.Platform, uid?: number | null }} [opts]
+ * @returns {number | null}
+ */
+export function resolveCurrentUid(opts = {}) {
+  const platform = opts.platform ?? process.platform
+  if (platform === 'win32') return null
+  if (typeof opts.uid === 'number') return opts.uid
+  if (opts.uid === null) return null
+  if (typeof process.geteuid === 'function') return process.geteuid()
+  if (typeof process.getuid === 'function') return process.getuid()
+  return null
+}
+
+/**
  * Compute deterministic, short-path local IPC socket endpoint for a given dataDir.
- * macOS Unix domain socket sun_path limit is 104 bytes; placing the socket in
- * os.tmpdir() with an 8-hex hash guarantees < 60 bytes regardless of DSH_HOME depth.
+ * macOS Unix domain socket sun_path limit is 104 bytes; placing the socket inside a
+ * per-user 0700 directory (`omx-pb-<uid>`) with an 8-hex hash guarantees < 100 bytes
+ * regardless of DSH_HOME depth while preventing cross-user socket hijacking in shared tmp dirs.
  *
  * @param {string} dataDir
- * @param {{ platform?: NodeJS.Platform, socketDir?: string }} [opts]
+ * @param {{ platform?: NodeJS.Platform, socketDir?: string, uid?: number | null }} [opts]
  * @returns {string}
  */
 export function computeSocketPath(dataDir, opts = {}) {
@@ -30,12 +46,143 @@ export function computeSocketPath(dataDir, opts = {}) {
   if (platform === 'win32') {
     return `\\\\.\\pipe\\omx-pibrowse-${hash8}`
   }
-  const baseDir = opts.socketDir || tmpdir()
-  const candidate = join(baseDir, `omx-pibrowse-${hash8}.sock`)
+  if (opts.socketDir) {
+    const candidate = join(opts.socketDir, `omx-pibrowse-${hash8}.sock`)
+    if (Buffer.byteLength(candidate, 'utf8') < 100) {
+      return candidate
+    }
+  }
+  const uid = resolveCurrentUid({ platform, uid: opts.uid })
+  const userDirName = `omx-pb-${uid ?? 'user'}`
+  const baseDir = join(tmpdir(), userDirName)
+  const candidate = join(baseDir, `pb-${hash8}.sock`)
   if (Buffer.byteLength(candidate, 'utf8') >= 100) {
-    return join('/tmp', `omx-pb-${hash8}.sock`)
+    return join('/tmp', userDirName, `pb-${hash8}.sock`)
   }
   return candidate
+}
+
+/**
+ * Verify that the Unix socket parent directory is a real directory owned by the
+ * current UID with strictly private `0700` permissions (no group/other access),
+ * and if the socket path itself exists, that it is a real non-symlink socket owned
+ * by the current UID without group/world write permissions.
+ *
+ * @param {string} socketPath
+ * @param {{ platform?: NodeJS.Platform, uid?: number | null, lstatImpl?: typeof lstat }} [opts]
+ * @returns {Promise<{ exists: boolean, dirMode?: number, socketMode?: number }>}
+ */
+export async function verifySocketTrust(socketPath, opts = {}) {
+  const platform = opts.platform ?? process.platform
+  if (platform === 'win32') {
+    return { exists: false }
+  }
+  const lstatFn = opts.lstatImpl ?? lstat
+  const expectedUid = resolveCurrentUid({ platform, uid: opts.uid })
+  const socketDir = dirname(socketPath)
+
+  let dirStat
+  try {
+    dirStat = await lstatFn(socketDir)
+  } catch (err) {
+    throw new PibrowseError(
+      'insecure-socket',
+      `IPC socket directory does not exist or cannot be inspected: ${socketDir}`,
+      { code: err && typeof err === 'object' && 'code' in err ? err.code : undefined },
+    )
+  }
+  if (dirStat.isSymbolicLink() || !dirStat.isDirectory()) {
+    throw new PibrowseError('insecure-socket', `IPC socket directory must be a non-symlink directory: ${socketDir}`)
+  }
+  if (expectedUid !== null && dirStat.uid !== expectedUid) {
+    throw new PibrowseError(
+      'insecure-socket',
+      `IPC socket directory owner UID (${dirStat.uid}) does not match current user (${expectedUid})`,
+    )
+  }
+  const dirMode = dirStat.mode & 0o777
+  if ((dirMode & 0o077) !== 0) {
+    throw new PibrowseError(
+      'insecure-socket',
+      `IPC socket directory permissions (0${dirMode.toString(8)}) must not allow group or world access (expected 0700)`,
+    )
+  }
+
+  let sockStat = null
+  try {
+    sockStat = await lstatFn(socketPath)
+  } catch (err) {
+    if (err && typeof err === 'object' && 'code' in err && err.code === 'ENOENT') {
+      return { exists: false, dirMode }
+    }
+    throw new PibrowseError('insecure-socket', `Failed to inspect IPC socket path: ${socketPath}`)
+  }
+
+  if (sockStat.isSymbolicLink() || !sockStat.isSocket()) {
+    throw new PibrowseError('insecure-socket', `IPC socket path must be a non-symlink Unix domain socket: ${socketPath}`)
+  }
+  if (expectedUid !== null && sockStat.uid !== expectedUid) {
+    throw new PibrowseError(
+      'insecure-socket',
+      `IPC socket owner UID (${sockStat.uid}) does not match current user (${expectedUid})`,
+    )
+  }
+  const socketMode = sockStat.mode & 0o777
+  if ((socketMode & 0o022) !== 0) {
+    throw new PibrowseError(
+      'insecure-socket',
+      `IPC socket permissions (0${socketMode.toString(8)}) must not allow group or world write access`,
+    )
+  }
+  return { exists: true, dirMode, socketMode }
+}
+
+/**
+ * Create (with `0700` mode) and verify the private socket parent directory on POSIX.
+ * Refuses to proceed if a pre-existing directory is a symlink, owned by another user,
+ * or accessible to group/world.
+ *
+ * @param {string} socketPath
+ * @param {{ platform?: NodeJS.Platform, uid?: number | null, mkdirImpl?: typeof mkdir, lstatImpl?: typeof lstat, chmodImpl?: typeof chmod }} [opts]
+ */
+export async function ensurePrivateSocketDir(socketPath, opts = {}) {
+  const platform = opts.platform ?? process.platform
+  if (platform === 'win32') return
+  const mkdirFn = opts.mkdirImpl ?? mkdir
+  const lstatFn = opts.lstatImpl ?? lstat
+  const chmodFn = opts.chmodImpl ?? chmod
+  const socketDir = dirname(socketPath)
+  const expectedUid = resolveCurrentUid({ platform, uid: opts.uid })
+
+  let existed = true
+  try {
+    await lstatFn(socketDir)
+  } catch (err) {
+    if (err && typeof err === 'object' && 'code' in err && err.code === 'ENOENT') {
+      existed = false
+    }
+  }
+  if (!existed) {
+    await mkdirFn(socketDir, { recursive: true, mode: 0o700 })
+    await chmodFn(socketDir, 0o700).catch(() => {})
+  }
+  const dirStat = await lstatFn(socketDir)
+  if (dirStat.isSymbolicLink() || !dirStat.isDirectory()) {
+    throw new PibrowseError('insecure-socket', `IPC socket directory must be a non-symlink directory: ${socketDir}`)
+  }
+  if (expectedUid !== null && dirStat.uid !== expectedUid) {
+    throw new PibrowseError(
+      'insecure-socket',
+      `IPC socket directory owner UID (${dirStat.uid}) does not match current user (${expectedUid})`,
+    )
+  }
+  const dirMode = dirStat.mode & 0o777
+  if ((dirMode & 0o077) !== 0) {
+    throw new PibrowseError(
+      'insecure-socket',
+      `IPC socket directory permissions (0${dirMode.toString(8)}) must not allow group or world access (expected 0700)`,
+    )
+  }
 }
 
 /**
@@ -102,11 +249,12 @@ export function resolvePibrowsePaths(opts = {}) {
  * Ensure isolated storage directories exist with restricted permissions.
  * @param {ReturnType<typeof resolvePibrowsePaths>} paths
  */
-export async function ensurePibrowseDirs(paths) {
+export async function ensurePibrowseDirs(paths, opts = {}) {
   await Promise.all([
     mkdir(paths.rootDir, { recursive: true, mode: 0o700 }),
     mkdir(paths.binDir, { recursive: true, mode: 0o700 }),
     mkdir(paths.dataDir, { recursive: true, mode: 0o700 }),
     mkdir(paths.downloadsDir, { recursive: true, mode: 0o700 }),
+    ensurePrivateSocketDir(paths.socketPath, opts),
   ])
 }

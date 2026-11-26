@@ -303,6 +303,7 @@ export function EnvironmentPanel({ overview, t, onNotify, onOverviewChanged }) {
                 const ok = await runRuntime('configure_paths', {
                   agentPath: agentPathInput.trim() || null,
                   corePath: corePathInput.trim() || null,
+                  confirm: true,
                 })
                 if (ok) setPathsOpen(false)
               }}

@@ -7,6 +7,7 @@ import {
   probeWidevineCdm,
   resolveAgentBinary,
   resolveCoreExecutable,
+  validateAgentBinaryFile,
 } from './platform.js'
 import { redactAny, redactProfile, redactProxy, toLosslessJson } from './redact.js'
 
@@ -372,7 +373,7 @@ export function createPibrowseDispatcher(deps) {
 
   // ---- Runtime & Installer ----
 
-  async function manageRuntime(args = {}) {
+  async function manageRuntime(args = {}, runtimeOpts = {}) {
     const action = String(args.action || 'status')
     if (action === 'status') {
       return getOverview()
@@ -468,9 +469,31 @@ export function createPibrowseDispatcher(deps) {
       return toLosslessJson({ ok: true, ipcStatus: null, installer: installer.getStatus() })
     }
     if (action === 'configure_paths') {
+      if (runtimeOpts.caller === 'agent') {
+        throw new PibrowseError(
+          'forbidden',
+          'configure_paths is disabled for agent tools; configure runtime paths directly in the UI settings',
+        )
+      }
+      const touchesExecutablePaths = 'agentPath' in args || 'corePath' in args
+      if (runtimeOpts.caller === 'http' && touchesExecutablePaths) {
+        const blocked = requireConfirm(args.confirm, 'configure_paths')
+        if (blocked) return toLosslessJson(blocked)
+      }
       const prev = await configStore.load()
       const patch = {}
-      if ('agentPath' in args) patch.agentPath = args.agentPath
+      if ('agentPath' in args) {
+        if (args.agentPath !== null && args.agentPath !== '') {
+          const normalized = validateUserPath(args.agentPath, { label: 'agentPath' })
+          const check = await validateAgentBinaryFile(normalized, deps.platform)
+          if (!check.ok) {
+            throw new PibrowseError('invalid-path', check.reason || 'Invalid fury-agent binary path')
+          }
+          patch.agentPath = normalized
+        } else {
+          patch.agentPath = null
+        }
+      }
       if ('corePath' in args) patch.corePath = args.corePath
       if ('geoipPath' in args) patch.geoipPath = args.geoipPath
       if ('autoStartSidecar' in args) patch.autoStartSidecar = args.autoStartSidecar

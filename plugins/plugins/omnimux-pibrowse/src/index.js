@@ -233,7 +233,7 @@ export function apply(ctx, config = {}) {
   ctx.tools.register({
     name: 'pibrowse_manage_runtime',
     description:
-      'Start, stop, or restart the fury-agent sidecar, configure custom binary/Core/GeoIP paths, download Core, probe/restart MCP, or clear cached archives (clear_cache requires confirm: true).',
+      'Start, stop, or restart the fury-agent sidecar, install verified agent/Core binaries, reuse a detected standalone PiBrowse installation, probe/restart MCP, or clear cached archives (clear_cache requires confirm: true). Custom binary path overrides are restricted to direct UI settings.',
     parameters: objectParams({
       action: {
         type: 'string',
@@ -246,7 +246,6 @@ export function apply(ctx, config = {}) {
           'install_agent',
           'install_core',
           'core_download_status',
-          'configure_paths',
           'reuse_standalone',
           'probe_agent',
           'probe_mcp',
@@ -255,14 +254,11 @@ export function apply(ctx, config = {}) {
         ],
         description: 'Runtime lifecycle or installer operation to run',
       },
-      agentPath: { type: 'string', description: 'Absolute path to local fury-agent binary for configure_paths' },
-      corePath: { type: 'string', description: 'Absolute path to local FURY_CORE Chromium bundle for configure_paths' },
-      geoipPath: { type: 'string', description: 'Absolute path to offline MaxMind GeoLite2 .mmdb file' },
       stopProfiles: { type: 'boolean', description: 'Stop running browser profiles when action=stop' },
       confirm: { type: 'boolean', description: 'Must be true when action=clear_cache' },
     }),
     output: jsonOut,
-    execute: (args) => safeTool((a) => dispatcher.manageRuntime(a), args),
+    execute: (args) => safeTool((a) => dispatcher.manageRuntime(a, { caller: 'agent' }), args),
   })
 
   ctx.tools.register({

@@ -1,7 +1,7 @@
 import { spawn as defaultSpawn } from 'node:child_process'
-import { rm } from 'node:fs/promises'
+import { chmod, rm } from 'node:fs/promises'
 import { PibrowseError } from './errors.js'
-import { ensurePibrowseDirs } from './paths.js'
+import { ensurePibrowseDirs, ensurePrivateSocketDir, verifySocketTrust } from './paths.js'
 import { resolveAgentBinary, resolveCoreExecutable } from './platform.js'
 import { redactLogLine } from './redact.js'
 
@@ -97,6 +97,7 @@ export function createSidecarSupervisor(opts) {
 
   async function removeStaleSocket() {
     if (platform === 'win32') return
+    await verifySocketTrust(opts.paths.socketPath, { platform, uid: opts.uid, lstatImpl: opts.lstatImpl })
     await rm(opts.paths.socketPath, { force: true }).catch(() => {})
   }
 
@@ -149,17 +150,23 @@ export function createSidecarSupervisor(opts) {
         if (alive.ok) return getStatus()
       }
 
-      // If an agent on our exact isolated socket is already healthy (e.g. spawned by MCP), adopt status.
-      const existingPing = await opts.ipcClient.ping(600)
-      if (existingPing.ok) {
-        const config = await opts.configStore.load()
-        const resolved = await resolveAgentBinary({ paths: opts.paths, config, platform })
-        binaryPath = resolved.path
-        state = 'running'
-        lastError = null
-        startedAt = startedAt || new Date().toISOString()
-        notifyChange()
-        return getStatus()
+      // Ensure private 0700 socket dir and verify any pre-existing socket owner/mode BEFORE probing or adopting.
+      await ensurePrivateSocketDir(opts.paths.socketPath, { platform, uid: opts.uid, lstatImpl: opts.lstatImpl })
+      const socketState = await verifySocketTrust(opts.paths.socketPath, { platform, uid: opts.uid, lstatImpl: opts.lstatImpl })
+
+      // If an agent on our exact isolated, verified socket is already healthy (e.g. spawned by MCP), adopt status.
+      if (platform === 'win32' || socketState.exists) {
+        const existingPing = await opts.ipcClient.ping(600)
+        if (existingPing.ok) {
+          const config = await opts.configStore.load()
+          const resolved = await resolveAgentBinary({ paths: opts.paths, config, platform })
+          binaryPath = resolved.path
+          state = 'running'
+          lastError = null
+          startedAt = startedAt || new Date().toISOString()
+          notifyChange()
+          return getStatus()
+        }
       }
 
       const config = await opts.configStore.load()
@@ -174,7 +181,7 @@ export function createSidecarSupervisor(opts) {
         )
       }
 
-      await ensurePibrowseDirs(opts.paths)
+      await ensurePibrowseDirs(opts.paths, { platform, uid: opts.uid, lstatImpl: opts.lstatImpl })
       await removeStaleSocket()
 
       state = 'starting'
@@ -223,6 +230,9 @@ export function createSidecarSupervisor(opts) {
 
       try {
         await waitUntilReady(proc)
+        if (platform !== 'win32') {
+          await chmod(opts.paths.socketPath, 0o600).catch(() => {})
+        }
         state = 'running'
         startedAt = new Date().toISOString()
         lastError = null

@@ -1,10 +1,45 @@
-import { access, readdir, readFile, stat } from 'node:fs/promises'
+import { access, lstat, readdir, readFile, stat } from 'node:fs/promises'
 import { constants as fsConstants } from 'node:fs'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { PINNED_UPSTREAM } from './constants.js'
 
 const STANDALONE_MAC_APP_AGENT = '/Applications/PiBrowse.app/Contents/MacOS/fury-agent'
+const ALLOWED_AGENT_BASENAME_RE = /^(?:[A-Za-z0-9._-]+-)?fury-agent(?:\.exe)?$/i
+
+/**
+ * Check whether an agent binary path refers to a real, non-symlink, executable
+ * `fury-agent` binary without group/world write bits on POSIX.
+ * @param {string} targetPath
+ * @param {NodeJS.Platform} [platform]
+ * @returns {Promise<{ ok: boolean, reason?: string }>}
+ */
+export async function validateAgentBinaryFile(targetPath, platform = process.platform) {
+  if (!targetPath || typeof targetPath !== 'string') {
+    return { ok: false, reason: 'agentPath must be a non-empty path' }
+  }
+  const base = basename(targetPath)
+  if (!ALLOWED_AGENT_BASENAME_RE.test(base)) {
+    return { ok: false, reason: `agentPath basename "${base}" must be a fury-agent executable` }
+  }
+  let info
+  try {
+    info = await lstat(targetPath)
+  } catch {
+    return { ok: false, reason: `agentPath does not exist: ${targetPath}` }
+  }
+  if (info.isSymbolicLink() || !info.isFile()) {
+    return { ok: false, reason: 'agentPath must be a regular non-symlink executable file' }
+  }
+  if (platform !== 'win32' && (info.mode & 0o022) !== 0) {
+    return { ok: false, reason: 'agentPath must not be group-writable or world-writable' }
+  }
+  const execMode = platform === 'win32' ? fsConstants.F_OK : fsConstants.X_OK
+  if (!(await pathAccessible(targetPath, execMode))) {
+    return { ok: false, reason: 'agentPath is not executable' }
+  }
+  return { ok: true }
+}
 
 /**
  * Check whether a filesystem path exists (and optionally is executable).
@@ -325,12 +360,13 @@ export async function resolveAgentBinary(opts) {
     : null
 
   if (configured) {
-    const exists = await pathAccessible(configured, execMode)
+    const check = await validateAgentBinaryFile(configured, opts.platform ?? process.platform)
     return {
-      installed: exists,
-      source: exists ? 'custom' : 'missing',
-      path: configured,
+      installed: check.ok,
+      source: check.ok ? 'custom' : 'missing',
+      path: check.ok ? configured : null,
       standaloneCandidate: null,
+      ...(check.ok ? {} : { problem: check.reason }),
     }
   }
 
