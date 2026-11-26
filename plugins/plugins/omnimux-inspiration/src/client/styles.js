@@ -1403,56 +1403,6 @@ export const INSPIRATION_CSS = `
 .omnimux-inspiration-tags-toggle-chevron.is-open {
   transform: rotate(0deg);
 }
-.omnimux-inspiration-switch-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 32px;
-}
-.omnimux-inspiration-switch,
-.omnimux-inspiration-switch:hover,
-.omnimux-inspiration-switch:active {
-  position: relative;
-  width: 36px;
-  min-width: 36px;
-  height: 20px;
-  min-height: 20px;
-  padding: 0;
-  border: none;
-  border-radius: 999px;
-  background: var(--dsw-alias-interactive-bg-hover, rgba(128,128,128,0.30));
-  cursor: pointer;
-  transform: none;
-  transition: background 0.15s ease;
-  overflow: visible;
-}
-.omnimux-inspiration-switch[aria-checked="true"],
-.omnimux-inspiration-switch[aria-checked="true"]:hover {
-  background: var(--dsw-alias-state-success-primary, #4caf7d);
-}
-.omnimux-inspiration-switch:disabled {
-  cursor: default;
-  opacity: 0.5;
-}
-.omnimux-inspiration-switch-knob {
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 16px;
-  height: 16px;
-  border-radius: 999px;
-  background: var(--dsw-alias-label-primary-foreground, var(--dsw-alias-label-primary-inverted, #ffffff));
-  transition: transform 0.15s ease;
-  pointer-events: none;
-}
-.omnimux-inspiration-switch[aria-checked="true"] .omnimux-inspiration-switch-knob {
-  transform: translateX(16px);
-}
-.omnimux-inspiration-switch-label {
-  font-size: 13px;
-  line-height: 20px;
-  color: var(--dsw-alias-label-secondary);
-}
 .omnimux-inspiration-fallback-icon--lg { width: 56px; height: 56px; }
 .omnimux-inspiration-empty-breakdown-title {
   margin: 0 0 6px 0;

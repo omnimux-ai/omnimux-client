@@ -921,6 +921,8 @@ describe('InspirationInlineImportDialog render gate — background import hand-o
       const importCalls = fetchStub.calls.filter((call) => call.path.includes('/import-url'))
       assert.equal(importCalls.length, 1, 'exactly one content import')
       assert.equal(importCalls[0].body.background, true)
+      assert.equal(importCalls[0].body.auto_analyze, false)
+      assert.equal(mounted.container.querySelector('[role="switch"]'), null)
       // The verdict is asked once, before the import: a URL the Host reads as an
       // account must never reach this importer at all.
       assert.equal(fetchStub.calls.filter((call) => call.path.includes('/classify')).length, 1)
