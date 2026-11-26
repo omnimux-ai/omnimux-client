@@ -2,6 +2,7 @@ import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { createPairingRoutes } from '../src/pairing-routes.ts'
+import { pairingPageHtml, pairingRequestAllowed } from '../src/pairing.ts'
 import { isLoopbackAddress } from '../src/server.ts'
 
 const TOKEN = 'test-bridge-token-0123456789abcdef'
@@ -108,7 +109,7 @@ describe('pairing route Host session auth, anti-CSRF, and clickjacking protectio
     })
     expect(crossSite.status).toBe(403)
 
-    // Valid session + same-origin + bound CSRF token succeeds and delivers token once
+    // Valid session + same-origin + bound CSRF token succeeds once
     const approved = await fetch(`${active.base}/ext/pair/approve`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', origin: active.base, cookie: 'dsh=valid' },
@@ -116,10 +117,60 @@ describe('pairing route Host session auth, anti-CSRF, and clickjacking protectio
     })
     expect(approved.status).toBe(200)
 
+    // Single-use CSRF token: replaying cancel/approve after decision must fail and cannot flip state
+    const flipCancel = await fetch(`${active.base}/ext/pair/cancel`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', origin: active.base, cookie: 'dsh=valid' },
+      body: JSON.stringify({ requestId: created.requestId, csrfToken: csrf }),
+    })
+    expect(flipCancel.status).toBe(404)
+
+    // After approval, /ext/pair must no longer re-emit a usable CSRF token
+    const postApprovePage = await fetch(`${active.base}/ext/pair?request=${encodeURIComponent(created.requestId)}`, {
+      headers: { cookie: 'dsh=valid' },
+    })
+    const postApproveHtml = await postApprovePage.text()
+    expect(postApproveHtml).toContain('const csrfToken = "";')
+
+    // Non-GET methods on /ext/pair/status must return 405 without consuming the approved token
+    const headStatus = await fetch(`${active.base}/ext/pair/status?request=${encodeURIComponent(created.requestId)}`, {
+      method: 'HEAD',
+    })
+    expect(headStatus.status).toBe(405)
+
     const status = await (await fetch(`${active.base}/ext/pair/status?request=${encodeURIComponent(created.requestId)}`)).json() as {
       state: string; token?: string
     }
     expect(status).toEqual({ state: 'approved', token: TOKEN })
+  })
+
+  it('escapes inline script breakout characters in pairingPageHtml and rejects Origin: null / cross-site requests', async () => {
+    const html = pairingPageHtml('</script><script>alert(1)</script>', 'A<&>B', 'tok</script>')
+    expect(html).not.toContain('</script><script>')
+    expect(html).toContain('\\u003c/script\\u003e')
+
+    expect(pairingRequestAllowed('127.0.0.1', 'null', isLoopbackAddress)).toBe(false)
+    expect(pairingRequestAllowed('127.0.0.1', 'file://', isLoopbackAddress)).toBe(false)
+    expect(pairingRequestAllowed('127.0.0.1', 'data:text/html,hi', isLoopbackAddress)).toBe(false)
+    expect(pairingRequestAllowed('127.0.0.1', 'chrome-extension://abcdefghijklmnop', isLoopbackAddress)).toBe(true)
+
+    const crossSiteReq = await fetch(`${active.base}/ext/pair/request`, {
+      method: 'POST',
+      headers: { origin: 'null', 'sec-fetch-site': 'cross-site' },
+    })
+    expect(crossSiteReq.status).toBe(403)
+
+    const sameSitePage = await fetch(`${active.base}/ext/pair?request=test`, {
+      headers: { cookie: 'dsh=valid', 'sec-fetch-site': 'same-site' },
+    })
+    expect(sameSitePage.status).toBe(403)
+
+    const headPage = await fetch(`${active.base}/ext/pair?request=test`, {
+      method: 'HEAD',
+      headers: { cookie: 'dsh=valid' },
+    })
+    expect(headPage.status).toBe(200)
+    expect(await headPage.text()).toBe('')
   })
 
   it('fails closed with 503 when Host authorization service is absent or throws', async () => {

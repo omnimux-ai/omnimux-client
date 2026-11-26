@@ -2005,6 +2005,19 @@ chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) =>
     }, { frameId: 0 }).then(sendResponse, () => sendResponse({ ok: false, message: '页面暂时无法填写' }))
     return true
   }
+  if (msg.type === 'FILL_FLOAT_HOST_DOM') {
+    if (!isOwnFloatingPanel(sender, chrome.runtime.id, chrome.runtime.getURL('panel/index.html'))) {
+      sendResponse({ success: false, message: '填写来源无效' })
+      return
+    }
+    const text = typeof (msg.payload as { text?: unknown } | undefined)?.text === 'string'
+      ? (msg.payload as { text: string }).text
+      : ''
+    void chrome.tabs.sendMessage(sender.tab!.id!, {
+      action: 'FILL_HOST_DOM', payload: { text },
+    }, { frameId: 0 }).then(sendResponse, () => sendResponse({ success: false, message: '页面暂时无法填写' }))
+    return true
+  }
   if (msg.type === 'ISSUE_FLOAT_MEDIA_GRANT') {
     sendResponse({ grant: floatingMediaGrants.issue(sender, msg.payload) })
   } else if (msg.type === 'TAKE_FLOAT_MEDIA_GRANT') {

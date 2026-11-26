@@ -9,6 +9,7 @@
  */
 
 import { sanitizeTweetText } from '../twitter-copilot/sanitizer.ts'
+import { wrapUntrustedContent } from '../../security/untrusted.ts'
 
 export type PosterLocale = 'zh' | 'en'
 
@@ -36,15 +37,17 @@ const SYSTEM_EN =
 export function buildOpinionPrompt(input: OpinionInput): OpinionPrompt {
   const author = input.author.trim() === '' ? '' : `@${input.author.trim()}`
   const body = String(input.text || '').trim()
+  const rawMaterial = author === '' ? body : `${author}\n${body}`
+  const untrusted = wrapUntrustedContent(rawMaterial, 4000)
   if (input.locale === 'en') {
     return {
       systemPrompt: SYSTEM_EN,
-      userMessage: `Original post${author === '' ? '' : ` by ${author}`}:\n${body}\n\nWrite your personal opinion.`,
+      userMessage: `Original post:\n${untrusted}\n\nWrite your personal opinion.`,
     }
   }
   return {
     systemPrompt: SYSTEM_ZH,
-    userMessage: `原推${author === '' ? '' : `作者 ${author}`}：\n${body}\n\n请写你的个人观点。`,
+    userMessage: `原推素材：\n${untrusted}\n\n请写你的个人观点。`,
   }
 }
 

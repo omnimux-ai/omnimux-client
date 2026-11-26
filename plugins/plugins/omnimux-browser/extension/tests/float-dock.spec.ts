@@ -3,6 +3,8 @@ import { describe, expect, it, vi } from 'vitest'
 import { dockFloatToNativeSidePanel } from '../src/panel/float-dock.ts'
 
 describe('dockFloatToNativeSidePanel', () => {
+  const hostLocation = { ancestorOrigins: ['https://example.com'] }
+
   it('opens the native side panel and collapses the workstation with unload', () => {
     const open = vi.fn(async () => {})
     const postMessage = vi.fn()
@@ -11,13 +13,13 @@ describe('dockFloatToNativeSidePanel', () => {
         sidePanel: { open },
         windows: { WINDOW_ID_CURRENT: -2 },
       },
-      { parent: { postMessage } },
+      { parent: { postMessage }, location: hostLocation },
       true,
     )
     expect(open).toHaveBeenCalledWith({ windowId: -2 })
     expect(postMessage).toHaveBeenCalledWith(
       { type: 'COLLAPSE_WORKSTATION', unload: true },
-      '*',
+      'https://example.com',
     )
   })
 
@@ -29,22 +31,22 @@ describe('dockFloatToNativeSidePanel', () => {
         sidePanel: { open },
         windows: { WINDOW_ID_CURRENT: 7 },
       },
-      { parent: { postMessage } },
+      { parent: { postMessage }, location: hostLocation },
       false,
     )
     expect(open).toHaveBeenCalledWith({ windowId: 7 })
-    expect(postMessage).toHaveBeenCalledWith({ type: 'COLLAPSE_WORKSTATION' }, '*')
+    expect(postMessage).toHaveBeenCalledWith({ type: 'COLLAPSE_WORKSTATION' }, 'https://example.com')
   })
 
   it('still posts collapse when sidePanel.open is missing', () => {
     const postMessage = vi.fn()
     dockFloatToNativeSidePanel(
       { windows: { WINDOW_ID_CURRENT: 1 } },
-      { parent: { postMessage } },
+      { parent: { postMessage }, location: hostLocation },
     )
     expect(postMessage).toHaveBeenCalledWith(
       { type: 'COLLAPSE_WORKSTATION', unload: true },
-      '*',
+      'https://example.com',
     )
   })
 
@@ -58,8 +60,11 @@ describe('dockFloatToNativeSidePanel', () => {
         sidePanel: { open },
         windows: { WINDOW_ID_CURRENT: 1 },
       },
-      { parent: { postMessage } },
+      { parent: { postMessage }, location: hostLocation },
     )).not.toThrow()
-    expect(postMessage).toHaveBeenCalled()
+    expect(postMessage).toHaveBeenCalledWith(
+      { type: 'COLLAPSE_WORKSTATION', unload: true },
+      'https://example.com',
+    )
   })
 })

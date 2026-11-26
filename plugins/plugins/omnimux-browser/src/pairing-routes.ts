@@ -28,10 +28,10 @@ export interface PairingRouteDeps {
   /** Loopback predicate (injected so tests can drive both sides). */
   isLoopback: (address: string | undefined) => boolean
   /**
-   * Host session admission check (`connection.requestRejection`).
+   * Host session admission check (`connection.requestRejection` or DSH 0.2.3+ admitted peer).
    * Fails closed with 503 when absent or throwing.
    */
-  authorizeHost?: (req: IncomingMessage) => 401 | 403 | 503 | undefined
+  authorizeHost?: (req: IncomingMessage, peer?: unknown) => 401 | 403 | 503 | undefined
 }
 
 const NO_STORE = { 'cache-control': 'no-store' } as const
@@ -74,10 +74,10 @@ function sendText(res: ServerResponse, status: number, body: string): void {
   res.end(body)
 }
 
-function hostRejectionStatus(deps: PairingRouteDeps, req: IncomingMessage): number | undefined {
+function hostRejectionStatus(deps: PairingRouteDeps, req: IncomingMessage, peer?: unknown): number | undefined {
   if (typeof deps.authorizeHost !== 'function') return 503
   try {
-    const raw = deps.authorizeHost(req)
+    const raw = deps.authorizeHost(req, peer)
     if (raw === undefined) return undefined
     return typeof raw === 'number' && Number.isInteger(raw) && raw >= 400 && raw <= 599 ? raw : 403
   } catch {
@@ -85,14 +85,34 @@ function hostRejectionStatus(deps: PairingRouteDeps, req: IncomingMessage): numb
   }
 }
 
-function secFetchSiteAllowed(req: IncomingMessage): boolean {
+function normalizedSecFetchSite(req: IncomingMessage): string | undefined {
   const raw = req.headers['sec-fetch-site']
   const value = (Array.isArray(raw) ? raw[0] : raw)?.trim().toLowerCase()
-  if (value === undefined || value === '') return true
+  return value === undefined || value === '' ? undefined : value
+}
+
+function secFetchSiteAllowed(req: IncomingMessage): boolean {
+  const value = normalizedSecFetchSite(req)
+  if (value === undefined) return true
   return value === 'same-origin' || value === 'none'
 }
 
-export type PairingWebRoute = WebRoute & { auth: 'anonymous' | 'required' }
+function secFetchSiteNotCrossSite(req: IncomingMessage): boolean {
+  const value = normalizedSecFetchSite(req)
+  return value !== 'cross-site'
+}
+
+function hostHeaderAllowed(req: IncomingMessage, port: number): boolean {
+  const raw = req.headers.host
+  const value = (Array.isArray(raw) ? raw[0] : raw)?.trim().toLowerCase()
+  if (value === undefined || value === '') return true
+  return value === `127.0.0.1:${port}` || value === `localhost:${port}` || value === `[::1]:${port}`
+}
+
+export type PairingWebRoute = Omit<WebRoute, 'handler'> & {
+  auth: 'anonymous' | 'required'
+  handler: (req: IncomingMessage, res: ServerResponse, peer?: unknown) => void | Promise<void>
+}
 
 /**
  * Build the pairing routes.
@@ -108,13 +128,13 @@ export function createPairingRoutes(deps: PairingRouteDeps): PairingWebRoute[] {
     kind: 'exact',
     path: BRIDGE_PAIR_PATH,
     auth: 'required',
-    handler: (req, res) => {
-      const rejection = hostRejectionStatus(deps, req)
+    handler: (req, res, peer) => {
+      const rejection = hostRejectionStatus(deps, req, peer)
       if (rejection !== undefined) {
         sendText(res, rejection, rejection === 503 ? 'auth unavailable' : 'unauthorized')
         return
       }
-      if (!pairingRequestAllowed(req.socket.remoteAddress, req.headers.origin, deps.isLoopback)) {
+      if (!secFetchSiteAllowed(req) || !hostHeaderAllowed(req, deps.port()) || !pairingRequestAllowed(req.socket.remoteAddress, req.headers.origin, deps.isLoopback)) {
         sendText(res, 403, 'forbidden')
         return
       }
@@ -122,13 +142,17 @@ export function createPairingRoutes(deps: PairingRouteDeps): PairingWebRoute[] {
         sendText(res, 405, 'method not allowed')
         return
       }
-      const id = new URL(req.url ?? '/', 'http://127.0.0.1').searchParams.get('request') ?? ''
-      // A stale or unknown id still renders the page: the click then fails
-      // closed, and the extension's next poll reports `unknown`.
-      const live = requests.poll(id) === 'pending' || requests.poll(id) === 'approved'
-      const csrfToken = live ? (requests.csrfTokenFor(id) ?? '') : ''
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', ...NO_STORE, ...PAGE_SECURITY_HEADERS })
-      res.end(pairingPageHtml(live ? id : '', live ? shortCode(id) : '——————', csrfToken))
+      if (req.method === 'HEAD') {
+        res.end()
+        return
+      }
+      const id = new URL(req.url ?? '/', 'http://127.0.0.1').searchParams.get('request') ?? ''
+      // Only a pending request receives the bound one-time CSRF token; stale,
+      // cancelled, or already-approved requests render without a usable token.
+      const pending = requests.poll(id) === 'pending'
+      const csrfToken = pending ? (requests.csrfTokenFor(id) ?? '') : ''
+      res.end(pairingPageHtml(pending ? id : '', pending ? shortCode(id) : '——————', csrfToken))
     },
   }
 
@@ -137,7 +161,7 @@ export function createPairingRoutes(deps: PairingRouteDeps): PairingWebRoute[] {
     path: BRIDGE_PAIR_REQUEST_PATH,
     auth: 'anonymous',
     handler: (req, res) => {
-      if (!pairingRequestAllowed(req.socket.remoteAddress, req.headers.origin, deps.isLoopback)) {
+      if (!secFetchSiteNotCrossSite(req) || !hostHeaderAllowed(req, deps.port()) || !pairingRequestAllowed(req.socket.remoteAddress, req.headers.origin, deps.isLoopback)) {
         sendText(res, 403, 'forbidden')
         return
       }
@@ -158,14 +182,14 @@ export function createPairingRoutes(deps: PairingRouteDeps): PairingWebRoute[] {
     kind: 'exact',
     path: BRIDGE_PAIR_APPROVE_PATH,
     auth: 'required',
-    handler: (req, res) => {
-      const rejection = hostRejectionStatus(deps, req)
+    handler: (req, res, peer) => {
+      const rejection = hostRejectionStatus(deps, req, peer)
       if (rejection !== undefined) {
         sendJson(res, rejection, { error: rejection === 503 ? 'auth-unavailable' : 'unauthorized' })
         return
       }
-      // Only the host's own authenticated page may approve: same-origin, loopback, and valid bound CSRF token.
-      if (!secFetchSiteAllowed(req) || !pairingApprovalAllowed(req.socket.remoteAddress, req.headers.origin, deps.port(), deps.isLoopback)) {
+      // Only the host's own authenticated page may approve: same-origin, loopback, Host header, and valid bound CSRF token.
+      if (!secFetchSiteAllowed(req) || !hostHeaderAllowed(req, deps.port()) || !pairingApprovalAllowed(req.socket.remoteAddress, req.headers.origin, deps.port(), deps.isLoopback)) {
         sendText(res, 403, 'forbidden')
         return
       }
@@ -198,13 +222,13 @@ export function createPairingRoutes(deps: PairingRouteDeps): PairingWebRoute[] {
     kind: 'exact',
     path: BRIDGE_PAIR_CANCEL_PATH,
     auth: 'required',
-    handler: (req, res) => {
-      const rejection = hostRejectionStatus(deps, req)
+    handler: (req, res, peer) => {
+      const rejection = hostRejectionStatus(deps, req, peer)
       if (rejection !== undefined) {
         sendJson(res, rejection, { error: rejection === 503 ? 'auth-unavailable' : 'unauthorized' })
         return
       }
-      if (!secFetchSiteAllowed(req) || !pairingApprovalAllowed(req.socket.remoteAddress, req.headers.origin, deps.port(), deps.isLoopback)) {
+      if (!secFetchSiteAllowed(req) || !hostHeaderAllowed(req, deps.port()) || !pairingApprovalAllowed(req.socket.remoteAddress, req.headers.origin, deps.port(), deps.isLoopback)) {
         sendText(res, 403, 'forbidden')
         return
       }
@@ -238,8 +262,12 @@ export function createPairingRoutes(deps: PairingRouteDeps): PairingWebRoute[] {
     path: BRIDGE_PAIR_STATUS_PATH,
     auth: 'anonymous',
     handler: (req, res) => {
-      if (!pairingRequestAllowed(req.socket.remoteAddress, req.headers.origin, deps.isLoopback)) {
+      if (!secFetchSiteNotCrossSite(req) || !hostHeaderAllowed(req, deps.port()) || !pairingRequestAllowed(req.socket.remoteAddress, req.headers.origin, deps.isLoopback)) {
         sendText(res, 403, 'forbidden')
+        return
+      }
+      if (req.method !== 'GET') {
+        sendText(res, 405, 'method not allowed')
         return
       }
       const id = new URL(req.url ?? '/', 'http://127.0.0.1').searchParams.get('request') ?? ''

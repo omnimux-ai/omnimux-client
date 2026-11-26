@@ -13,6 +13,8 @@
  * @module
  */
 
+import { resolveExpectedParentOrigin } from './float-message-guard.ts'
+
 export interface FloatDockChrome {
   sidePanel?: {
     open?: (options: { windowId: number }) => Promise<void> | void
@@ -26,6 +28,12 @@ export interface FloatDockHost {
   parent?: {
     postMessage: (message: unknown, targetOrigin: string) => void
   } | null
+  location?: {
+    ancestorOrigins?: ArrayLike<string>
+  }
+  document?: {
+    referrer?: string
+  }
 }
 
 /**
@@ -48,11 +56,14 @@ export function dockFloatToNativeSidePanel(
     // Side panel APIs are absent on some targets; collapse still helps.
   }
   try {
+    const referrer = host?.document?.referrer ?? (typeof document === 'undefined' ? undefined : document.referrer)
+    const targetOrigin = resolveExpectedParentOrigin(referrer, host?.location?.ancestorOrigins)
+    if (targetOrigin === null) return
     host?.parent?.postMessage(
       unload
         ? { type: 'COLLAPSE_WORKSTATION', unload: true }
         : { type: 'COLLAPSE_WORKSTATION' },
-      '*',
+      targetOrigin,
     )
   } catch {
     // The parent frame may already be gone.

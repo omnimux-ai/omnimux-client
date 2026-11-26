@@ -540,7 +540,8 @@ function mountBridge(
     },
     token: () => tokenRes.token,
     isLoopback: isLoopbackAddress,
-    authorizeHost: (req) => {
+    authorizeHost: (req, peer) => {
+      if (peer !== undefined) return undefined
       const conn = (ctx.connection ?? ctx.get?.('connection')) as {
         requestRejection?: (request: unknown) => number | undefined
       } | undefined
@@ -556,7 +557,7 @@ function mountBridge(
       }
     },
   })) {
-    ctx.effect(() => ctx.webServer.register(route), `bridge-browser: ${route.path} route`)
+    ctx.effect(() => ctx.webServer.register(route as unknown as WebRoute), `bridge-browser: ${route.path} route`)
   }
 
 

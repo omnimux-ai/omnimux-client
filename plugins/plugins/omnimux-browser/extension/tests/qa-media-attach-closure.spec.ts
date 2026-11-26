@@ -164,6 +164,7 @@ describe('QA: the hover capsule pushes media into the conversation', () => {
   })
 
   async function startPanel(): Promise<void> {
+    Object.defineProperty(document, 'referrer', { value: 'https://example.com/page', configurable: true })
     await act(async () => { root.render(createElement(App)) })
     await act(async () => {
       onStatus?.('connected', null)

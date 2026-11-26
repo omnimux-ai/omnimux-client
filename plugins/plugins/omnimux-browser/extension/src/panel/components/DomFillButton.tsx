@@ -1,6 +1,5 @@
 import { memo, useState } from 'react'
 import { EditIcon } from './icons.tsx'
-import { isTrustedParentMessage, resolveExpectedParentOrigin } from '../float-message-guard.ts'
 
 export const DomFillButton = memo(function DomFillButton({
   textToFill,
@@ -24,47 +23,28 @@ export const DomFillButton = memo(function DomFillButton({
       .replace(/\*\*(.*?)\*\*/g, '$1') // Unbold
       .trim()
 
-    // 1. Check if inside float iframe
+    // 1. Float iframe mode: route through the extension background worker (verified via isOwnFloatingPanel)
+    // so draft text never crosses main-world window.parent.postMessage and cannot be spoofed by webpage JS.
     if (window.parent && window.parent !== window) {
-      const requestId = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-        ? crypto.randomUUID()
-        : `fill-${Date.now()}-${Math.random().toString(36).slice(2)}`
-      const parentOrigin = resolveExpectedParentOrigin(document.referrer)
-      window.parent.postMessage({
-        type: 'FILL_HOST_DOM',
-        requestId,
-        text: cleanText
-      }, parentOrigin ?? '*')
-
-      const onMessage = (e: MessageEvent) => {
-        if (!isTrustedParentMessage(e, window.parent, parentOrigin)) return
-        if (e.data?.type === 'FILL_HOST_DOM_RESULT' && e.data?.source === 'omnimux-content-script' && e.data?.requestId === requestId) {
-          window.removeEventListener('message', onMessage)
-          const res = e.data.payload
-          if (res?.success) {
-            setStatus('success')
-            setFeedbackMsg(res.message || (isEn ? 'Filled!' : '已填写'))
-          } else {
-            setStatus('fallback')
-            setFeedbackMsg(res?.message || (isEn ? 'Copied!' : '已复制'))
-          }
-          setTimeout(() => setStatus('idle'), 2500)
+      try {
+        const res = await chrome.runtime.sendMessage({
+          type: 'FILL_FLOAT_HOST_DOM',
+          payload: { text: cleanText },
+        }) as { success?: boolean; message?: string } | undefined
+        if (res?.success) {
+          setStatus('success')
+          setFeedbackMsg(res.message || (isEn ? 'Filled!' : '已填写'))
+        } else {
+          setStatus('fallback')
+          setFeedbackMsg(res?.message || (isEn ? 'Copied!' : '已复制剪贴板'))
+          await navigator.clipboard.writeText(cleanText).catch(() => {})
         }
+      } catch {
+        setStatus('fallback')
+        setFeedbackMsg(isEn ? 'Copied!' : '已复制剪贴板')
+        await navigator.clipboard.writeText(cleanText).catch(() => {})
       }
-      window.addEventListener('message', onMessage)
-      setTimeout(() => {
-        window.removeEventListener('message', onMessage)
-        // The closure captured `status` before React re-rendered, so it can only
-        // ever read the pre-click value. The deadline fires exactly when no host
-        // reply arrived, which is the condition this fallback is for.
-        setStatus((current) => {
-          if (current !== 'filling') return current
-          setFeedbackMsg(isEn ? 'Copied!' : '已复制剪贴板')
-          navigator.clipboard.writeText(cleanText).catch(() => {})
-          setTimeout(() => setStatus('idle'), 2500)
-          return 'fallback'
-        })
-      }, 1500)
+      setTimeout(() => setStatus('idle'), 2500)
       return
     }
 
