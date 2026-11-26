@@ -4,7 +4,7 @@ import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { promisify } from 'node:util';
 import { brotliCompress, constants as zlibConstants, gzip } from 'node:zlib';
-import { SerialFileWork, SharedFileWork, withRegularFile } from '../../projects/asyncFiles.ts';
+import { fileIdentity, SerialFileWork, SharedFileWork, withRegularFile } from '../../projects/asyncFiles.ts';
 import { readMediaIntegrity, verifiedMediaBytes } from '../../projects/mediaRevision.ts';
 import { sendJson } from '../../http/helpers.ts';
 import { detectMimeFromHandle, detectMimeFromHead } from '../../shared/localMedia.ts';
@@ -44,6 +44,7 @@ interface FileOptions {
   name?: string;
   canonical?: boolean;
   mediaDigest?: string;
+  ifNoneMatch?: string;
 }
 
 /** Open, sniff and stream the same file descriptor, including for a Range. */
@@ -71,6 +72,17 @@ export async function serveFile(res: ServerResponse, file: string, response: Fil
     const mime = integrity
       ? integrity.sniffedMime ?? detectMimeFromHead(name, undefined, fallbackMime)
       : await detectMimeFromHandle(handle, name, fallbackMime, signal);
+    const cacheableImage = (mime.split(';')[0] ?? '').trim().toLowerCase().startsWith('image/');
+    const etag = cacheableImage ? `"${integrity ? integrity.digest : fileIdentity(stat)}"` : undefined;
+    if (etag && !range && etagMatches(options.ifNoneMatch, etag)) {
+      res.writeHead(304, {
+        ...securityHeadersFor(mime),
+        ETag: etag,
+        'Cache-Control': 'no-cache',
+      });
+      res.end();
+      return;
+    }
     // Verify the first block before committing HTTP headers. Later changes
     // terminate the transfer without yielding any unverified bytes.
     const first = await verified?.next().catch(() => null);
@@ -85,6 +97,7 @@ export async function serveFile(res: ServerResponse, file: string, response: Fil
       'Content-Length': range ? range.end - range.start + 1 : size,
       ...(range ? { 'Content-Range': `bytes ${range.start}-${range.end}/${size}` } : {}),
       'Accept-Ranges': 'bytes',
+      ...(etag ? { ETag: etag } : {}),
       'Cache-Control': 'no-cache',
     });
     if (head || size === 0) {

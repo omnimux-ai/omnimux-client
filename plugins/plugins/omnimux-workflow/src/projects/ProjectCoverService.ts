@@ -98,17 +98,27 @@ export function createProjectListCoverService(workspacesDir: string, mediaRevisi
 
   async function pageCover(id: string, projectRoot: string | undefined, signal: AbortSignal): Promise<CoverSummary> {
     let previous = memory.get(id);
-    const cacheFile = await resolveSafeProjectPath(join(workspacesDir, id, 'cover-summary.json'), workspacesDir, signal).catch(() => {
-      signal.throwIfAborted();
-      return undefined;
-    });
+    let cacheFileResolved = false;
+    let cacheFile: string | undefined;
+    const resolveCacheFile = async () => {
+      if (cacheFileResolved) return cacheFile;
+      cacheFileResolved = true;
+      cacheFile = await resolveSafeProjectPath(join(workspacesDir, id, 'cover-summary.json'), workspacesDir, signal).catch(() => {
+        signal.throwIfAborted();
+        return undefined;
+      });
+      return cacheFile;
+    };
     try {
-      if (cacheFile && !previous) {
-        try {
-          const raw = await withRegularFile(cacheFile, signal, handle => handle.readFile({ encoding: 'utf8', signal }), true);
-          const saved = entrySchema.safeParse(JSON.parse(raw));
-          if (saved.success) previous = saved.data;
-        } catch { signal.throwIfAborted(); /* Cache misses are rebuilt from the canvas. */ }
+      if (!previous) {
+        const diskCache = await resolveCacheFile();
+        if (diskCache) {
+          try {
+            const raw = await withRegularFile(diskCache, signal, handle => handle.readFile({ encoding: 'utf8', signal }), true);
+            const saved = entrySchema.safeParse(JSON.parse(raw));
+            if (saved.success) previous = saved.data;
+          } catch { signal.throwIfAborted(); /* Cache misses are rebuilt from the canvas. */ }
+        }
       }
       const source = await findCanvasFile(workspacesDir, id, projectRoot, signal);
       if (!source) {
@@ -127,13 +137,14 @@ export function createProjectListCoverService(workspacesDir: string, mediaRevisi
       signal.throwIfAborted();
       memory.set(id, entry);
       if (memory.size > 512) memory.delete(memory.keys().next().value!);
-      if (!cacheFile) return entry.cover;
-      const tmp = `${cacheFile}.tmp-${randomUUID()}`;
+      const targetCacheFile = await resolveCacheFile();
+      if (!targetCacheFile) return entry.cover;
+      const tmp = `${targetCacheFile}.tmp-${randomUUID()}`;
       try {
-        await mkdir(dirname(cacheFile), { recursive: true });
+        await mkdir(dirname(targetCacheFile), { recursive: true });
         await writeFile(tmp, JSON.stringify({ schemaVersion: 1, ...entry }), { flag: 'wx', signal });
         signal.throwIfAborted();
-        await rename(tmp, cacheFile);
+        await rename(tmp, targetCacheFile);
       } catch {
         await rm(tmp, { force: true }).catch(() => undefined);
         signal.throwIfAborted();
@@ -171,7 +182,7 @@ export function createProjectListCoverService(workspacesDir: string, mediaRevisi
       }
       return result;
     }
-    const covers = new Map(await mapConcurrent([...ids], 2, async id => {
+    const covers = new Map(await mapConcurrent([...ids], 8, async id => {
       const root = resolveProject(id);
       const cover = await summaries.run(JSON.stringify([id, root]), signal, readSignal => pageCover(id, root, readSignal));
       return [id, mediaRevision ? withRevision(cover, await revision(cover.mediaUrl), await revision(cover.thumbnailUrl)) : cover] as const;

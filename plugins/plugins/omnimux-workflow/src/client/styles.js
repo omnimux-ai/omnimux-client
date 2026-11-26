@@ -1,6 +1,18 @@
 export const STYLES_ID = 'omnimux-workflow-styles'
 
 export const WORKFLOW_CSS = `
+.omx-stage-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+.omx-stage-sticky {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: var(--dsw-alias-bg-base, var(--dsw-bg, #111215));
+}
 .omnimux-workflow-stage,
 .omnimux-workflow-library-page {
   position: relative;
@@ -12,10 +24,12 @@ export const WORKFLOW_CSS = `
   min-height: 0;
   display: flex;
   flex-direction: column;
-  background: var(--dsw-alias-bg-base, var(--dsw-bg));
+  background: var(--dsw-alias-bg-base);
   color: var(--dsw-alias-label-primary, inherit);
-  overflow: hidden;
   pointer-events: auto;
+}
+.omnimux-workflow-stage {
+  overflow: hidden;
 }
 .omnimux-workflow-library-page .dshUk-PageHeader-pageHeader,
 .omnimux-workflow-library-page .dshUk-PageHeader-heading,
@@ -27,6 +41,21 @@ export const WORKFLOW_CSS = `
 .omnimux-workflow-library-page[data-visible="false"] {
   display: none !important;
   pointer-events: none;
+}
+.omnimux-workflow-count-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 20px;
+  min-width: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 16px;
+  font-variant-numeric: tabular-nums;
 }
 .omnimux-workflow-action-row,
 .omnimux-workflow-library-action-row {
@@ -41,19 +70,60 @@ export const WORKFLOW_CSS = `
   max-width: 100%;
   min-width: 0;
 }
+.dshUk-PageHeader-controls .omnimux-workflow-library-action-row {
+  width: auto;
+  padding: 0;
+}
 .omnimux-workflow-library-filter {
   flex: none;
   box-sizing: border-box;
   width: 100%;
   max-width: 100%;
   min-width: 0;
-  padding: 0 20px 12px;
+  padding: 2px 20px 10px;
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
+}
+.omnimux-workflow-library-filter .dshUk-Toolbar-left {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.omnimux-workflow-library-filter .dshUk-Toolbar-right {
+  flex: 0 1 auto;
+  min-width: 0;
+  gap: 8px;
 }
 .omnimux-workflow-library-filter .dshUk-SearchField-root,
 .omnimux-workflow-library-filter .dshUk-SearchField-stretch {
-  width: 100%;
-  max-width: min(260px, 100%);
-  min-width: 0;
+  flex: 0 1 200px;
+  width: 200px;
+  max-width: 220px;
+  min-width: 120px;
+}
+.omnimux-workflow-filter-tools {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+@media (max-width: 820px) {
+  .omnimux-workflow-library-filter {
+    height: auto;
+    max-height: none;
+    flex-wrap: wrap;
+    row-gap: 8px;
+    padding-top: 6px;
+  }
+  .omnimux-workflow-library-filter .dshUk-Toolbar-right {
+    width: 100%;
+    margin-left: 0;
+    justify-content: space-between;
+  }
+  .omnimux-workflow-library-filter .dshUk-SearchField-root,
+  .omnimux-workflow-library-filter .dshUk-SearchField-stretch {
+    flex: 1 1 160px;
+    width: auto;
+    max-width: none;
+  }
 }
 .omnimux-workflow-stage-toolbar {
   flex: none;
@@ -93,16 +163,19 @@ export const WORKFLOW_CSS = `
 }
 .omnimux-workflow-error,
 .omnimux-workflow-library-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   margin: 0;
-  padding: 6px 20px;
+  padding: 8px 20px;
   font-size: 12px;
   color: var(--dsw-alias-state-error-primary, var(--dsw-alias-label-error));
   box-sizing: border-box;
   width: 100%;
   max-width: 100%;
 }
-.omnimux-workflow-body,
-.omnimux-workflow-library-body {
+.omnimux-workflow-body {
   flex: 1 1 auto;
   min-height: 0;
   min-width: 0;
@@ -112,13 +185,80 @@ export const WORKFLOW_CSS = `
   width: 100%;
   max-width: 100%;
 }
+.omnimux-workflow-library-body {
+  flex: 1 0 auto;
+  min-height: 0;
+  min-width: 0;
+  padding: 16px 20px 28px;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+}
 .omnimux-workflow-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(220px, 100%), 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(min(224px, 100%), 1fr));
+  gap: 16px;
   width: 100%;
   max-width: 100%;
   box-sizing: border-box;
+}
+.omnimux-folder-skeleton {
+  position: relative;
+  aspect-ratio: 516 / 378;
+  border-radius: 9% / 12.3%;
+  background: var(--dsw-alias-bg-layer-1);
+  border: 1px solid var(--dsw-alias-border-l1);
+  padding: 14px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.omnimux-skeleton-block {
+  background: var(--dsw-alias-bg-skeleton);
+  animation: omnimux-skeleton-pulse 1.4s ease-in-out infinite;
+}
+.omnimux-skeleton-line {
+  height: 12px;
+  border-radius: 4px;
+  background: var(--dsw-alias-bg-skeleton);
+  animation: omnimux-skeleton-pulse 1.4s ease-in-out infinite;
+}
+.omnimux-skeleton-line--title { width: 64%; height: 14px; }
+.omnimux-skeleton-line--meta { width: 44%; height: 10px; }
+.omnimux-skeleton-line--short { width: 30%; height: 10px; }
+@keyframes omnimux-skeleton-pulse {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .omnimux-skeleton-block,
+  .omnimux-skeleton-line { animation: none; }
+}
+.omnimux-prompt-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  width: 100%;
+}
+.omnimux-prompt-form {
+  margin: 8px 0;
+}
+.omnimux-prompt-input {
+  width: 100%;
+  height: 32px;
+  box-sizing: border-box;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  outline: none;
+}
+.omnimux-prompt-input:focus-visible {
+  border-color: var(--dsw-alias-brand-primary);
 }
 .omnimux-workflow-empty,
 .omnimux-workflow-library-empty {
@@ -226,9 +366,22 @@ export const WORKFLOW_CSS = `
     padding-left: 12px;
     padding-right: 12px;
   }
+  .dshUk-PageHeader-controls .omnimux-workflow-library-action-row {
+    padding-left: 0;
+    padding-right: 0;
+  }
+  .omnimux-workflow-library-filter {
+    flex-wrap: wrap;
+    height: auto;
+    gap: 8px;
+  }
+  .omnimux-workflow-library-filter .dshUk-SearchField-root,
+  .omnimux-workflow-library-filter .dshUk-SearchField-stretch {
+    max-width: min(176px, 100%);
+  }
   .omnimux-workflow-grid {
     grid-template-columns: repeat(auto-fill, minmax(min(180px, 100%), 1fr));
-    gap: 10px;
+    gap: 12px;
   }
 }
 .omnimux-workflow-form {
@@ -1811,50 +1964,57 @@ export const WORKFLOW_CSS = `
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px 28px;
-  border-bottom: 1px solid var(--dsw-alias-border-l1, rgba(255, 255, 255, 0.08));
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
   box-sizing: border-box;
-  min-height: 52px;
+  min-height: 48px;
+  flex: none;
 }
 
 .omnimux-project-breadcrumbs {
   display: flex;
   align-items: center;
-  gap: 10px;
-  font-size: 15px;
+  gap: 6px;
+  font-size: 14px;
   line-height: 20px;
+  min-width: 0;
 }
 
 .omnimux-project-crumb-link {
-  color: var(--dsw-alias-label-secondary, #8e8e93);
-  cursor: pointer;
+  color: var(--dsw-alias-label-secondary);
   font-weight: 500;
-  transition: color 0.15s ease;
+  padding: 0 6px;
+  height: 28px;
+  transition: color 120ms ease, background-color 120ms ease;
 }
 
 .omnimux-project-crumb-link:hover {
-  color: var(--dsw-alias-label-primary, #ffffff);
+  color: var(--dsw-alias-label-primary);
 }
 
 .omnimux-project-crumb-sep {
-  color: var(--dsw-alias-label-tertiary, #636366);
-  font-size: 14px;
+  color: var(--dsw-alias-label-tertiary);
+  flex: none;
   user-select: none;
 }
 
 .omnimux-project-crumb-current {
-  color: var(--dsw-alias-label-primary, #ffffff);
+  color: var(--dsw-alias-label-primary);
   font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .omnimux-project-detail-tabs-bar {
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
-  padding: 0 28px;
-  border-bottom: 1px solid var(--dsw-alias-border-l1, rgba(255, 255, 255, 0.08));
-  min-height: 48px;
+  padding: 0 20px;
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
+  min-height: 44px;
   box-sizing: border-box;
+  flex: none;
 }
 
 .omnimux-tab-label-wrap {
@@ -1886,32 +2046,53 @@ export const WORKFLOW_CSS = `
 
 .omnimux-pages-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 260px));
-  gap: 24px;
-  padding: 24px 28px;
+  grid-template-columns: repeat(auto-fill, minmax(min(224px, 100%), 1fr));
+  gap: 16px;
+  padding: 20px;
 }
 
 .omnimux-page-card {
   position: relative;
-  background: var(--dsw-alias-bg-layer-1, #18181b);
-  border: 1px solid var(--dsw-alias-border-l1, rgba(255, 255, 255, 0.08));
+  background: var(--dsw-alias-bg-layer-1);
+  border: 1px solid var(--dsw-alias-border-l1);
   border-radius: 16px;
   padding: 10px 10px 14px 10px;
   cursor: pointer;
-  transition: border-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+  transition: border-color 150ms ease, transform 150ms ease, box-shadow 150ms ease;
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
 }
+.omnimux-page-card[data-menu-open="true"] {
+  z-index: 10;
+}
+.omnimux-page-card--skeleton {
+  cursor: default;
+}
+.omnimux-page-card-opening {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border-radius: inherit;
+  background: var(--dsw-alias-bg-mask-1);
+  color: var(--dsw-alias-label-on-color, var(--dsw-alias-label-primary));
+  font-size: 13px;
+  font-weight: 600;
+  cursor: progress;
+}
 
 .omnimux-page-card:hover {
-  border-color: var(--dsw-alias-border-l3, rgba(255, 255, 255, 0.2));
+  border-color: var(--dsw-alias-border-l3);
   transform: translateY(-2px);
-  box-shadow: 0 6px 20px var(--dsw-alias-bg-mask-1, rgba(0, 0, 0, 0.35));
+  box-shadow: 0 6px 20px var(--dsw-alias-bg-mask-1);
 }
 
 .omnimux-page-card--active {
-  border-color: var(--dsw-alias-brand-primary, #6366f1);
+  border-color: var(--dsw-alias-brand-primary);
 }
 
 .omnimux-page-card-cover {
@@ -1919,7 +2100,7 @@ export const WORKFLOW_CSS = `
   aspect-ratio: 16 / 10;
   border-radius: 10px;
   overflow: hidden;
-  background: var(--dsw-alias-bg-layer-2, #232326);
+  background: var(--dsw-alias-bg-layer-2);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1940,8 +2121,8 @@ export const WORKFLOW_CSS = `
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, var(--dsw-alias-bg-layer-2, #222226) 0%, var(--dsw-alias-bg-layer-1, #1a1a1d) 100%);
-  color: var(--dsw-alias-label-tertiary, #636366);
+  background: linear-gradient(135deg, var(--dsw-alias-bg-layer-2) 0%, var(--dsw-alias-bg-layer-1) 100%);
+  color: var(--dsw-alias-label-tertiary);
 }
 
 .omnimux-page-cover-icon {
@@ -1958,9 +2139,9 @@ export const WORKFLOW_CSS = `
 }
 
 .omnimux-page-card-title {
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 600;
-  color: var(--dsw-alias-label-primary, #ffffff);
+  color: var(--dsw-alias-label-primary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1968,18 +2149,19 @@ export const WORKFLOW_CSS = `
 }
 
 .omnimux-page-card-meta {
-  font-size: 13px;
-  color: var(--dsw-alias-label-tertiary, #8e8e93);
+  font-size: 12px;
+  color: var(--dsw-alias-label-tertiary);
   display: flex;
   align-items: center;
   justify-content: space-between;
   line-height: 18px;
-  min-height: 24px;
+  min-height: 20px;
+  font-variant-numeric: tabular-nums;
 }
 
 .omnimux-page-card-date {
-  font-size: 13px;
-  color: var(--dsw-alias-label-tertiary, #8e8e93);
+  font-size: 12px;
+  color: var(--dsw-alias-label-tertiary);
 }
 
 /* 顶层文件夹卡片 */
@@ -1990,7 +2172,7 @@ export const WORKFLOW_CSS = `
   border-radius: 12px;
   overflow: hidden;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: border-color 150ms ease, transform 150ms ease, box-shadow 150ms ease;
   display: flex;
   flex-direction: column;
   min-height: 180px;
@@ -2077,19 +2259,27 @@ export const WORKFLOW_CSS = `
 .omnimux-assets-tab .omnimux-assets-action-card {
   display: flex;
   align-items: center;
+  justify-content: flex-start;
+  text-align: left;
+  width: 100%;
+  height: auto;
   gap: 14px;
-  padding: 16px;
+  padding: 14px 16px;
   background: var(--dsw-alias-bg-layer-1);
   border: 1px solid var(--dsw-alias-border-l1);
   border-radius: 10px;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: background-color 140ms ease, border-color 140ms ease, transform 100ms ease;
   user-select: none;
 }
 
 .omnimux-assets-tab .omnimux-assets-action-card:hover {
   background: var(--dsw-alias-interactive-bg-hover);
   border-color: var(--dsw-alias-border-l2);
+}
+
+.omnimux-assets-tab .omnimux-assets-action-card:active {
+  transform: scale(0.99);
 }
 
 .omnimux-assets-tab .omnimux-assets-card-icon-box {
@@ -2123,7 +2313,7 @@ export const WORKFLOW_CSS = `
 }
 
 .omnimux-assets-tab .omnimux-assets-browser {
-  padding: 0 20px 20px;
+  padding: 0 20px 24px;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -2133,7 +2323,9 @@ export const WORKFLOW_CSS = `
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
   padding: 8px 0;
+  flex-wrap: wrap;
 }
 
 .omnimux-assets-tab .omnimux-assets-table {
@@ -2146,7 +2338,7 @@ export const WORKFLOW_CSS = `
   text-align: left;
   padding: 8px 12px;
   color: var(--dsw-alias-label-tertiary);
-  font-weight: 400;
+  font-weight: 500;
   border-bottom: 1px solid var(--dsw-alias-border-l1);
 }
 
@@ -2161,15 +2353,32 @@ export const WORKFLOW_CSS = `
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
+.omnimux-assets-tab .omnimux-assets-folder-row {
+  cursor: pointer;
+}
+
+.omnimux-assets-tab .omnimux-file-folder-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  padding: 0 4px;
+  height: 26px;
+}
+
 .omnimux-assets-tab .omnimux-file-name-cell {
   display: flex;
   align-items: center;
   gap: 8px;
-  cursor: pointer;
+}
+
+.omnimux-assets-tab .omnimux-assets-num-cell {
+  font-variant-numeric: tabular-nums;
+  color: var(--dsw-alias-label-secondary);
 }
 
 .omnimux-assets-tab .omnimux-file-icon-folder {
-  color: var(--dsw-alias-brand-primary, #8b5cf6);
+  color: var(--dsw-alias-brand-primary);
   flex-shrink: 0;
 }
 
@@ -2185,7 +2394,7 @@ export const WORKFLOW_CSS = `
 }
 
 .omnimux-assets-tab .omnimux-col-name {
-  width: 55%;
+  width: 60%;
 }
 
 .omnimux-assets-tab .omnimux-col-size {
@@ -2196,17 +2405,8 @@ export const WORKFLOW_CSS = `
   width: 20%;
 }
 
-.omnimux-assets-tab .omnimux-col-action {
-  width: 5%;
-}
-
 .omnimux-assets-tab .omnimux-file-folder-name {
   font-weight: 500;
-}
-
-.omnimux-assets-tab .omnimux-file-more-btn {
-  opacity: 0.5;
-  cursor: pointer;
 }
 
 .omnimux-assets-tab .omnimux-assets-empty-cell {

@@ -567,7 +567,7 @@ export function createProjectStore(opts: {
         return [];
       });
       const seen = new Set<string>();
-      const localRows = await mapConcurrent(entries.filter(entry => entry.isDirectory()), 3, async (entry) => {
+      const localRows = await mapConcurrent(entries.filter(entry => entry.isDirectory()), 8, async (entry) => {
         seen.add(join(realRoot, entry.name));
         return readProjectForScan(join(root, entry.name), false, scanSignal);
       }, scanSignal);
@@ -577,43 +577,58 @@ export function createProjectStore(opts: {
       else clearRegistryIssue();
       const registered = directoryList(registry.value);
       const discovered: string[] = [];
-      const readExternal = async (candidate: string, inRegistry: boolean) => {
+      type ExternalProbe =
+        | { status: 'realpath-error'; lexical: string; inRegistry: boolean; issue: ProjectReadIssue | null }
+        | { status: 'local-seen'; lexical: string; inRegistry: boolean }
+        | { status: 'probed'; lexical: string; physical: string; dir: string; bound: boolean; inRegistry: boolean; read: ProjectScanRead };
+      const probeExternal = async (candidate: string, inRegistry: boolean): Promise<ExternalProbe> => {
         scanSignal.throwIfAborted();
         const lexical = resolve(candidate);
         let physical: string;
         try {
           physical = await realpath(lexical);
         } catch (error) {
-          const issue = issueFromError(error);
-          if (inRegistry && issue) reportExternalIssue(lexical, issue);
-          else if (inRegistry) clearExternalIssue(lexical);
-          return;
+          return { status: 'realpath-error', lexical, inRegistry, issue: issueFromError(error) };
         }
         if (seen.has(physical)) {
-          if (inRegistry) clearExternalIssue(lexical);
-          return;
+          return { status: 'local-seen', lexical, inRegistry };
         }
-        seen.add(physical);
         const dir = inRegistry ? lexical : physical;
         const bound = !isInsideDir(dir, root) && !isInsideDir(physical, realRoot);
         const read = await readProjectForScan(dir, bound, scanSignal);
-        if (read.status === 'issue') {
-          if (inRegistry) reportExternalIssue(dir, read.issue);
-          return;
-        }
-        if (read.status === 'missing') {
-          if (inRegistry) clearExternalIssue(dir);
-          return;
-        }
-        if (inRegistry) clearExternalIssue(dir);
-        rows.push(read.row);
-        if (!inRegistry && bound) discovered.push(dir);
+        return { status: 'probed', lexical, physical, dir, bound, inRegistry, read };
       };
-      // Walk potentially slow mounts after the local library, one at a time.
+      // Walk external mounts with bounded concurrency while keeping deterministic scan order.
       if (registered.length || opts.workspaceDirs) {
         await externalScans.run(scanSignal, async () => {
-          for (const dir of new Set(registered)) await readExternal(dir, true);
-          for (const dir of new Set(workspaceDirs())) await readExternal(dir, false);
+          const candidates: Array<{ candidate: string; inRegistry: boolean }> = [
+            ...[...new Set(registered)].map(candidate => ({ candidate, inRegistry: true })),
+            ...[...new Set(workspaceDirs())].map(candidate => ({ candidate, inRegistry: false })),
+          ];
+          const results = await mapConcurrent(candidates, 4, ({ candidate, inRegistry }) => probeExternal(candidate, inRegistry), scanSignal);
+          for (const result of results) {
+            if (result.status === 'realpath-error') {
+              if (result.inRegistry && result.issue) reportExternalIssue(result.lexical, result.issue);
+              else if (result.inRegistry) clearExternalIssue(result.lexical);
+              continue;
+            }
+            if (result.status === 'local-seen' || seen.has(result.physical)) {
+              if (result.inRegistry) clearExternalIssue(result.lexical);
+              continue;
+            }
+            seen.add(result.physical);
+            if (result.read.status === 'issue') {
+              if (result.inRegistry) reportExternalIssue(result.dir, result.read.issue);
+              continue;
+            }
+            if (result.read.status === 'missing') {
+              if (result.inRegistry) clearExternalIssue(result.dir);
+              continue;
+            }
+            if (result.inRegistry) clearExternalIssue(result.dir);
+            rows.push(result.read.row);
+            if (!result.inRegistry && result.bound) discovered.push(result.dir);
+          }
         });
       }
       pruneExternalIssues(registered);

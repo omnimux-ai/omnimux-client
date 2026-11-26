@@ -89,6 +89,19 @@ test('HTTP media returns exact ranges, HEAD and SVG security headers', { timeout
   assert.equal(head.status, 200);
   assert.equal(head.body.length, 0);
   assert.equal(head.headers['content-length'], String(bytes.length));
+  assert.ok(full.headers.etag, 'media response must emit a strong ETag');
+  const notModified = await send(url, { headers: { 'if-none-match': full.headers.etag } });
+  assert.equal(notModified.status, 304);
+  assert.equal(notModified.body.length, 0);
+  assert.equal(notModified.headers.etag, full.headers.etag);
+  const rangedWithEtag = await send(url, { headers: { 'if-none-match': full.headers.etag, range: 'bytes=0-3' } });
+  assert.equal(rangedWithEtag.status, 206, 'Range request must not return 304');
+  const updatedBytes = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><rect/></svg>');
+  await writeFile(join(paths.mediaDir, 'still.svg'), updatedBytes);
+  const refreshed = await send(url, { headers: { 'if-none-match': full.headers.etag } });
+  assert.equal(refreshed.status, 200);
+  assert.notEqual(refreshed.headers.etag, full.headers.etag);
+  assert.deepEqual(refreshed.body, updatedBytes);
 });
 
 test('built-in free canvas media checks canvas existence once with async stat per URL', { timeout: 10000 }, async t => {
