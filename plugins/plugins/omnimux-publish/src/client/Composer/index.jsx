@@ -935,7 +935,9 @@ function ComposerPreview({ t, type, title, description, topics, images, videos, 
             ) : null}
           </div>
         ) : (
-          <div className="omnimux-publish-preview-empty">{t('form.preview.emptyMedia')}</div>
+          <div className="omnimux-publish-preview-empty">
+            {t(type === 'video' ? 'form.preview.emptyVideo' : 'form.preview.emptyMedia')}
+          </div>
         )}
         <div className="omnimux-publish-preview-caption">
           {title ? <strong>{title}</strong> : null}

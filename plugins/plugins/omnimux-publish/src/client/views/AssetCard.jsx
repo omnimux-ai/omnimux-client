@@ -34,7 +34,7 @@ export function AssetCard({
 }) {
   const id = String(record.id)
   const status = displayStatus(record)
-  const statusLabel = statusText(status)
+  const statusLabel = statusText(status, t)
   const isDraft = record.status === 'draft' || status === 'draft'
   const isVideo = record.type === 'video'
   const title = String(record.title || record.description || id)
@@ -114,7 +114,11 @@ export function AssetCard({
 
         <div className="omnimux-publish-card-meta">
           <span>{dateStr.slice(0, 10)}</span>
-          <span>{subtasks.length > 0 ? `${subtasks.length} 渠道` : ''}</span>
+          <span>
+            {subtasks.length > 0
+              ? t(subtasks.length === 1 ? 'records.channels.one' : 'records.channels', { count: subtasks.length })
+              : ''}
+          </span>
         </div>
 
         {/* 底部平台与状态 Pill */}
