@@ -7,6 +7,7 @@ import { JSDOM } from 'jsdom'
 import React, { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { en, zh } from './locales.js'
+import { statusText } from './status-display.js'
 
 function makeTranslator(dict) {
   return (key, vars = {}) => {
@@ -279,6 +280,21 @@ describe('Issue #340: English locale renders zero hardcoded Chinese in Publish v
       globalThis.fetch = originalFetch
       restore()
     }
+  })
+
+  it('statusText(status, t) returns localized labels in English and Chinese with safe fallback', () => {
+    const tEn = makeTranslator(en)
+    const tZh = makeTranslator(zh)
+    assert.equal(statusText('draft', tEn), 'Draft')
+    assert.equal(statusText('publishing', tEn), 'Publishing')
+    assert.equal(statusText('reviewing', tEn), 'In Review')
+    assert.equal(statusText('sent_to_inbox', tEn), 'Sent to Inbox Draft')
+    assert.equal(statusText('published', tEn), 'Published')
+    assert.equal(statusText('partial_failed', tEn), 'Partial Failure')
+    assert.equal(statusText('failed', tEn), 'Failed')
+    assert.equal(statusText('published', tZh), '已发布')
+    assert.equal(statusText('published', (key) => key), '已发布')
+    assert.equal(statusText('published'), '已发布')
   })
 
   it('locales expose symmetric zh/en keys for video preview empty state and channels', () => {
