@@ -17,7 +17,7 @@ import { readNodeInputSource, type NodeInputSource } from '../../../shared/graph
 import { deriveSlotLayout } from '../../../shared/graph/feedSlot/deriveSlotLayout.ts';
 import { deriveImageGenerationLayout } from '../../../shared/graph/feedSlot/imageGeneration.ts';
 import { resolveSlotOperation } from '../../../shared/graph/feedSlot/resolveSlotOperation.ts';
-import { acceptsFeedAsset } from '../../../shared/graph/feedSlot/autoFillSlots.ts';
+import { acceptsFeedAsset, remainingSlotCapacity } from '../../../shared/graph/feedSlot/autoFillSlots.ts';
 import { resolveSlotOccupantOrdinal, type SlotSelection } from '../../../shared/graph/feedSlot/assembleEffectiveInputs.ts';
 import { effectiveInputDisplay } from '../../../shared/graph/feedSlot/effectiveInputDisplay.ts';
 import { feedFromFingerprint } from '../../../shared/graph/feedSlot/effectiveFingerprint.ts';
@@ -586,10 +586,19 @@ export function resourcePickerReferenceGroup(state: CanvasInputMutationState, ta
   if (!inputs) return undefined;
   const eligible = inputs.layout.slots.filter(spec => spec.role === 'reference' && isMediaInputType(spec.type)
     && referenceSlots.includes(spec.slot));
-  const active = inputs.display.records.filter(record => occupiesPickerSlot(record)
-    && eligible.some(spec => spec.slot === record.slot.slot));
-  const slots = eligible.map(spec => ({ spec, remaining: Math.max(0, (spec.max ?? Infinity)
-    - active.filter(record => record.slot.slot === spec.slot).length) }));
+  const occupiedRecords = inputs.display.records.filter(occupiesPickerSlot);
+  const occupiedByType = new Map<string, number>();
+  for (const record of occupiedRecords) {
+    occupiedByType.set(record.slot.type, (occupiedByType.get(record.slot.type) ?? 0) + 1);
+  }
+  const active = occupiedRecords.filter(record => eligible.some(spec => spec.slot === record.slot.slot));
+  const slots = eligible.map(spec => {
+    const slotOccupied = active.filter(record => record.slot.slot === spec.slot).length;
+    return {
+      spec,
+      remaining: remainingSlotCapacity(inputs.layout, spec, slotOccupied, occupiedByType.get(spec.type) ?? 0),
+    };
+  });
   return { ...inputs, slots, inUse: new Set(active.map(record => record.occupant.sourceNodeId)) };
 }
 
