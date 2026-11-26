@@ -54,8 +54,8 @@ shift 2
 case "$*" in
   'rev-parse --show-toplevel') printf '%s\\n' ${JSON.stringify(root)} ;;
   'symbolic-ref --quiet --short HEAD') echo main ;;
-  'status --porcelain --untracked-files=no --ignore-submodules=all') ;;
-  'ls-files --others --exclude-standard') ;;
+  '-c core.quotepath=false status --porcelain --untracked-files=no --ignore-submodules=all'|'status --porcelain --untracked-files=no --ignore-submodules=all') ;;
+  '-c core.quotepath=false ls-files --others --exclude-standard'|'ls-files --others --exclude-standard') ;;
   'remote') echo origin ;;
   'fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main') ;;
   'rev-parse --verify HEAD^{commit}'|'rev-parse --verify refs/remotes/origin/main^{commit}') echo 1111111111111111111111111111111111111111 ;;
