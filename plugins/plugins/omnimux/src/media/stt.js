@@ -137,7 +137,9 @@ export async function transcribeSpeechToTextRequest(input) {
     // Known URL-first models do not need a local download or a redundant upload.
     if (!audioUrl || !URL_FIRST_MODELS.has(effectiveModel)) {
       audio ??= await loadAudioBytes(input.audio, {
-        fetcher, apiKey: input.apiKey, signal: input.signal,
+        ...(input.fetcher ? { fetcher: input.fetcher } : {}),
+        apiKey: input.apiKey,
+        signal: input.signal,
       })
       form.append('file', new Blob([audio.bytes], { type: audio.contentType }), audio.filename)
     }

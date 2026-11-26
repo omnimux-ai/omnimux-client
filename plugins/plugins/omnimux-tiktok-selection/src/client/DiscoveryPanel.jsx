@@ -9,6 +9,7 @@ import {
   ModalDialog,
 } from 'dsh-ui-kit'
 import { api } from './api.js'
+import { safeExternalHref } from './safe-href.js'
 
 const DEFAULT_COLS = {
   rank: true,
@@ -630,9 +631,11 @@ export function DiscoveryPanel({ overview, t, onNotify, onLibraryChanged, onSnap
                       {v.gmv !== null && <Badge variant="success">GMV {fmtMoney(v.gmv)}</Badge>}
                       <Badge>播放 {fmtNum(v.playCount)}</Badge>
                       <Badge>收藏 {fmtNum(v.collectCount)}</Badge>
-                      <a href={v.url} target="_blank" rel="noreferrer">
-                        打开视频
-                      </a>
+                      {safeExternalHref(v.url) && (
+                        <a href={safeExternalHref(v.url)} target="_blank" rel="noopener noreferrer">
+                          打开视频
+                        </a>
+                      )}
                     </div>
                   </div>
                 ))}

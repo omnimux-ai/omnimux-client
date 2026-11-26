@@ -1,11 +1,17 @@
+import { lookup as dnsLookup } from 'node:dns/promises'
+import { readFileSync } from 'node:fs'
+import { request as httpRequest } from 'node:http'
+import { request as httpsRequest } from 'node:https'
+import { basename } from 'node:path'
+import { BlockList, isIP } from 'node:net'
+import { Readable } from 'node:stream'
 import { readBoundedBody } from './read-bounded-body.js'
+import { OmnimuxError } from './errors.js'
 
 // Remote audio shares the 200 MiB media-probe transport ceiling.
 export const MAX_REMOTE_AUDIO_BYTES = 200 * 1024 * 1024
-import { readFileSync } from 'node:fs'
-import { basename } from 'node:path'
-import { BlockList, isIP } from 'node:net'
-import { OmnimuxError } from './errors.js'
+const MAX_AUDIO_REDIRECTS = 5
+const AUDIO_REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308])
 
 const AUDIO_EXT_BY_MIME = Object.freeze({
   'audio/mpeg': '.mp3',
@@ -23,11 +29,53 @@ const AUDIO_EXT_BY_MIME = Object.freeze({
 const LOCAL_AUDIO_ADDRESSES = new BlockList()
 for (const [address, prefix] of [
   ['0.0.0.0', 8], ['10.0.0.0', 8], ['100.64.0.0', 10], ['127.0.0.0', 8],
-  ['169.254.0.0', 16], ['172.16.0.0', 12], ['192.168.0.0', 16], ['224.0.0.0', 3],
+  ['169.254.0.0', 16], ['172.16.0.0', 12], ['192.0.0.0', 24], ['192.0.2.0', 24],
+  ['192.88.99.0', 24], ['192.168.0.0', 16], ['198.18.0.0', 15], ['198.51.100.0', 24],
+  ['203.0.113.0', 24], ['224.0.0.0', 3],
 ]) LOCAL_AUDIO_ADDRESSES.addSubnet(address, prefix, 'ipv4')
 for (const [address, prefix] of [
-  ['::', 128], ['::1', 128], ['fc00::', 7], ['fe80::', 10], ['ff00::', 8],
+  ['::', 128], ['::1', 128], ['::', 96], ['::ffff:0:0:0', 96],
+  ['64:ff9b::', 96], ['64:ff9b:1::', 48], ['100::', 64],
+  ['2001::', 23], ['2001:db8::', 32], ['2002::', 16], ['3fff::', 20],
+  ['fc00::', 7], ['fe80::', 10], ['fec0::', 10], ['ff00::', 8],
 ]) LOCAL_AUDIO_ADDRESSES.addSubnet(address, prefix, 'ipv6')
+
+const BLOCKED_AUDIO_HOSTNAMES = new Set([
+  'localhost', 'localhost.localdomain', 'ip6-localhost', 'ip6-loopback',
+  'instance-data', 'metadata', 'metadata.google.internal', 'metadata.goog', '0.0.0.0',
+])
+const BLOCKED_AUDIO_SUFFIXES = ['.localhost', '.local', '.localdomain', '.internal', '.home.arpa']
+
+function isBlockedAudioIp(rawIp) {
+  const host = String(rawIp || '').trim().toLowerCase().replace(/^\[|\]$/g, '').split('%')[0]
+  const ipVersion = isIP(host)
+  if (ipVersion === 4) return LOCAL_AUDIO_ADDRESSES.check(host, 'ipv4')
+  if (ipVersion === 6) {
+    const mapped = /^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/i.exec(host)
+    if (mapped) return LOCAL_AUDIO_ADDRESSES.check(mapped[1], 'ipv4')
+    if (LOCAL_AUDIO_ADDRESSES.check(host, 'ipv6')) return true
+    // Fail-closed: outside IPv4-mapped public addresses, only global unicast 2000::/3 is permitted.
+    const first = Number.parseInt(host.split(':')[0] || '0', 16)
+    return !Number.isFinite(first) || (first & 0xe000) !== 0x2000
+  }
+  return true
+}
+
+function isAlternativeNumericIpv4(host) {
+  if (/^\d+$/.test(host) || /^0x[0-9a-f]+$/i.test(host)) return true
+  const parts = host.split('.')
+  if (parts.length >= 2 && parts.length <= 4 && parts.every((p) => /^(0x[0-9a-f]+|0[0-7]*|[1-9]\d*)$/i.test(p))) {
+    const canonical = parts.length === 4 && parts.every((p) => /^\d{1,3}$/.test(p) && !/^0\d/.test(p))
+    return !canonical
+  }
+  return false
+}
+
+function isOfficialHttpsAudioUrl(parsed) {
+  if (parsed.protocol !== 'https:') return false
+  const host = parsed.hostname.toLowerCase().replace(/\.$/, '')
+  return host === 'omnimux.ai' || host.endsWith('.omnimux.ai')
+}
 
 /**
  * Classify URL-first candidates without DNS or network probes. Remote reachability
@@ -39,20 +87,105 @@ export function isPublicAudioUrl(audio) {
   if (typeof audio !== 'string' || !/^https?:\/\//i.test(audio.trim())) return false
   try {
     const url = new URL(audio.trim())
-    const host = url.hostname.toLowerCase().replace(/\.$/, '').replace(/^\[|\]$/g, '')
-    if (url.username || url.password || host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local')) return false
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return false
+    const rawHost = url.hostname.toLowerCase()
+    if (rawHost.includes('..')) return false
+    const host = rawHost.replace(/\.+$/, '').replace(/^\[|\]$/g, '').split('%')[0]
+    if (!host || url.username || url.password) return false
+    if (BLOCKED_AUDIO_HOSTNAMES.has(host) || BLOCKED_AUDIO_SUFFIXES.some((s) => host.endsWith(s))) return false
+    if (isAlternativeNumericIpv4(host)) return false
     const ipVersion = isIP(host)
-    if (ipVersion) return !LOCAL_AUDIO_ADDRESSES.check(host, ipVersion === 4 ? 'ipv4' : 'ipv6')
+    if (ipVersion) return !isBlockedAudioIp(host)
     return host.includes('.')
   } catch {
     return false
   }
 }
 
+async function resolveSafeAudioTarget(rawUrl, lookup = dnsLookup) {
+  if (!isPublicAudioUrl(rawUrl)) {
+    throw new OmnimuxError('omnimux-invalid-request', `audio URL target is not a public http(s) host: ${rawUrl}`)
+  }
+  const parsed = new URL(rawUrl)
+  const host = parsed.hostname.toLowerCase().replace(/\.+$/, '').replace(/^\[|\]$/g, '').split('%')[0]
+  const ipVersion = isIP(host)
+  if (ipVersion === 4 || ipVersion === 6) {
+    return { url: parsed, host, addresses: [{ address: host, family: ipVersion }] }
+  }
+  let answers
+  try {
+    answers = await lookup(host, { all: true, verbatim: true })
+  } catch {
+    throw new OmnimuxError('omnimux-download-failed', `audio host DNS resolution failed: ${host}`)
+  }
+  if (!Array.isArray(answers) || answers.length === 0) {
+    throw new OmnimuxError('omnimux-download-failed', `audio host resolved to no addresses: ${host}`)
+  }
+  const addresses = []
+  for (const entry of answers) {
+    const addr = typeof entry === 'string' ? entry : entry?.address
+    if (!addr || isBlockedAudioIp(addr)) {
+      throw new OmnimuxError('omnimux-invalid-request', `audio host resolved to non-public IP: ${host}`)
+    }
+    const family = isIP(addr)
+    if (family !== 4 && family !== 6) {
+      throw new OmnimuxError('omnimux-invalid-request', `audio host resolved to invalid IP: ${host}`)
+    }
+    addresses.push({ address: addr, family })
+  }
+  return { url: parsed, host, addresses }
+}
+
+function pinnedAudioFetch(target, headers, signal, requestImpl) {
+  const request = requestImpl ?? (target.url.protocol === 'https:' ? httpsRequest : httpRequest)
+  return new Promise((resolve, reject) => {
+    const pinnedLookup = (_hostname, opts, cb) => {
+      const callback = typeof opts === 'function' ? opts : cb
+      const all = typeof opts === 'object' && opts !== null && opts.all === true
+      if (all) callback(null, target.addresses.map((e) => ({ address: e.address, family: e.family })))
+      else callback(null, target.addresses[0].address, target.addresses[0].family)
+    }
+    const req = request(target.url, {
+      method: 'GET',
+      headers: { ...headers, 'accept-encoding': 'identity' },
+      signal,
+      agent: false,
+      lookup: pinnedLookup,
+      ...(target.url.protocol === 'https:' && isIP(target.host) === 0 ? { servername: target.host } : {}),
+    }, (incoming) => {
+      try {
+        const status = incoming.statusCode ?? 500
+        if (status < 200 || status > 599) {
+          incoming.resume()
+          reject(new OmnimuxError('omnimux-download-failed', `audio server returned invalid HTTP status: ${status}`))
+          return
+        }
+        const resHeaders = new Headers()
+        for (const [k, v] of Object.entries(incoming.headers)) {
+          if (v !== undefined) resHeaders.set(k, Array.isArray(v) ? v.join(', ') : String(v))
+        }
+        if ([204, 205, 304].includes(status) || AUDIO_REDIRECT_STATUSES.has(status)) {
+          incoming.on('error', reject)
+          incoming.resume()
+          resolve(new Response(null, { status, headers: resHeaders }))
+          return
+        }
+        resolve(new Response(Readable.toWeb(incoming), { status, headers: resHeaders }))
+      } catch (err) {
+        incoming.destroy()
+        req.destroy()
+        reject(err)
+      }
+    })
+    req.on('error', reject)
+    req.end()
+  })
+}
+
 /**
  * Resolve an absolute path, http(s) URL or data URI into uploadable audio.
  * @param {string} audio
- * @param {{ fetcher?: typeof fetch, apiKey?: string, signal?: AbortSignal }} [deps]
+ * @param {{ fetcher?: typeof fetch, lookup?: typeof dnsLookup, requestImpl?: typeof httpsRequest, apiKey?: string, signal?: AbortSignal }} [deps]
  * @returns {Promise<{ bytes: Buffer, filename: string, contentType: string }>}
  */
 export async function loadAudioBytes(audio, deps = {}) {
@@ -73,20 +206,57 @@ export async function loadAudioBytes(audio, deps = {}) {
   }
 
   if (/^https?:\/\//i.test(value)) {
-    const fetcher = deps.fetcher ?? fetch
-    /** @type {Record<string, string>} */
-    const headers = {}
-    const host = new URL(value).hostname.toLowerCase()
-    if (deps.apiKey?.trim() && (host === 'omnimux.ai' || host.endsWith('.omnimux.ai'))) {
-      headers.authorization = `Bearer ${deps.apiKey.trim()}`
+    let current = value
+    let response = null
+    for (let hop = 0; hop <= MAX_AUDIO_REDIRECTS; hop += 1) {
+      // When a unit test injects a stub `fetcher` (never globalThis.fetch) without
+      // `lookup`, only run literal host validation so offline tests with mock domains
+      // keep passing; production always runs full DNS resolution + pinned socket connect.
+      const useInjectedFetcher = typeof deps.fetcher === 'function' && deps.fetcher !== globalThis.fetch
+      let target
+      if (useInjectedFetcher && !deps.lookup) {
+        if (!isPublicAudioUrl(current)) {
+          throw new OmnimuxError('omnimux-invalid-request', `audio URL target is not a public http(s) host: ${current}`)
+        }
+        const parsed = new URL(current)
+        target = { url: parsed, host: parsed.hostname, addresses: [] }
+      } else {
+        target = await resolveSafeAudioTarget(current, deps.lookup)
+      }
+      /** @type {Record<string, string>} */
+      const headers = {}
+      if (deps.apiKey?.trim() && isOfficialHttpsAudioUrl(target.url)) {
+        headers.authorization = `Bearer ${deps.apiKey.trim()}`
+      }
+      const res = useInjectedFetcher
+        ? await deps.fetcher(target.url.href, {
+            headers,
+            redirect: 'manual',
+            ...(deps.signal ? { signal: deps.signal } : {}),
+          })
+        : await pinnedAudioFetch(target, headers, deps.signal, deps.requestImpl)
+      if (AUDIO_REDIRECT_STATUSES.has(res.status)) {
+        await res.body?.cancel?.().catch(() => {})
+        const location = res.headers?.get?.('location')
+        if (!location) {
+          throw new OmnimuxError('omnimux-download-failed', 'audio redirect missing location')
+        }
+        if (hop >= MAX_AUDIO_REDIRECTS) {
+          throw new OmnimuxError('omnimux-download-failed', 'audio download exceeded redirect limit')
+        }
+        try {
+          current = new URL(location, target.url).href
+        } catch {
+          throw new OmnimuxError('omnimux-invalid-request', 'audio redirect target is invalid')
+        }
+        continue
+      }
+      response = res
+      break
     }
-    const response = await fetcher(value, {
-      headers,
-      ...(deps.signal ? { signal: deps.signal } : {}),
-    })
-    if (!response.ok) {
-      await response.body?.cancel().catch(() => {})
-      throw new OmnimuxError('omnimux-download-failed', `audio download failed: ${response.status}`, { status: response.status })
+    if (!response || !response.ok) {
+      await response?.body?.cancel?.().catch(() => {})
+      throw new OmnimuxError('omnimux-download-failed', `audio download failed: ${response?.status ?? 0}`, { status: response?.status ?? 0 })
     }
     let bytes
     try {
@@ -94,7 +264,7 @@ export async function loadAudioBytes(audio, deps = {}) {
     } catch (error) {
       throw new OmnimuxError('omnimux-download-failed', error instanceof Error ? error.message : String(error))
     }
-    const filename = basename(new URL(value).pathname) || 'audio'
+    const filename = basename(new URL(current).pathname) || 'audio'
     const headerType = typeof response.headers?.get === 'function'
       ? String(response.headers.get('content-type') ?? '').split(';')[0].trim()
       : ''

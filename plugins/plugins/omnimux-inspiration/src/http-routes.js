@@ -649,7 +649,7 @@ function pipeRange(opts) {
 export function createLocalInspirationDispatcher(deps) {
   const store = deps.localStore
   const paths = store.paths
-  const fetcher = deps.fetcher ?? fetch
+  const fetcher = deps.fetcher
   const ctx = {
     store,
     paths,
