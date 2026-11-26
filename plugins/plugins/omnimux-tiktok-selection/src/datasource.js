@@ -235,18 +235,192 @@ export function parseSnapshotPayload({ content, format, region = 'US', name = ''
   return { format: detectedFormat, items: normalized }
 }
 
+function pickScalar(val) {
+  if (typeof val === 'number' && Number.isFinite(val)) return val
+  if (typeof val === 'string' && val.trim() !== '') return val.trim()
+  return null
+}
+
+function extractPriceValue(raw, kind = 'min') {
+  const priceObj = raw.price && typeof raw.price === 'object' ? raw.price : null
+  const priceInfo =
+    raw.price_info && typeof raw.price_info === 'object'
+      ? raw.price_info
+      : raw.product_price_info && typeof raw.product_price_info === 'object'
+        ? raw.product_price_info
+        : null
+  const candidates =
+    kind === 'max'
+      ? [
+          priceObj?.max_price,
+          priceObj?.origin_price,
+          priceObj?.origin_price_format,
+          priceInfo?.max_price,
+          raw.max_price,
+          raw.price_max,
+          extractPriceValue(raw, 'min'),
+        ]
+      : [
+          priceObj?.real_price,
+          priceObj?.sale_price,
+          priceObj?.min_price,
+          priceObj?.sale_price_format,
+          priceObj?.price_format,
+          priceInfo?.sale_price_decimal,
+          priceInfo?.sale_price,
+          priceInfo?.min_price,
+          raw.sale_price,
+          raw.min_price,
+          raw.price_min,
+          priceObj ? null : raw.price,
+        ]
+  for (const val of candidates) {
+    const scalar = pickScalar(val)
+    if (scalar !== null) return scalar
+  }
+  return null
+}
+
+function findProductInfoNode(root, seen = new Set(), depth = 0) {
+  if (!root || typeof root !== 'object' || depth > 8 || seen.has(root)) return null
+  seen.add(root)
+  if (Array.isArray(root)) {
+    for (let i = 0; i < Math.min(root.length, 40); i += 1) {
+      const hit = findProductInfoNode(root[i], seen, depth + 1)
+      if (hit) return hit
+    }
+    return null
+  }
+  if (root.product_info && typeof root.product_info === 'object') {
+    return root.product_info
+  }
+  for (const val of Object.values(root)) {
+    const hit = findProductInfoNode(val, seen, depth + 1)
+    if (hit) return hit
+  }
+  return null
+}
+
+function pickImageUrl(candidate) {
+  if (typeof candidate === 'string') return candidate.trim()
+  if (candidate && typeof candidate === 'object') {
+    return (
+      pickScalar(candidate.url_list?.[0]) ??
+      pickScalar(candidate.thumb_url_list?.[0]) ??
+      pickScalar(candidate.url) ??
+      ''
+    )
+  }
+  return ''
+}
+
+function firstImageUrl(candidates) {
+  for (const candidate of candidates) {
+    const resolved = pickImageUrl(candidate)
+    if (resolved) return String(resolved)
+  }
+  return ''
+}
+
+function normalizeHubReviews(rRes) {
+  const rawReviews =
+    rRes?.product_reviews ||
+    rRes?.reviews ||
+    rRes?.data?.product_reviews ||
+    rRes?.data?.reviews ||
+    rRes?.data?.items ||
+    rRes?.data?.data?.product_reviews ||
+    rRes?.data?.data?.reviews ||
+    rRes?.data?.data?.items ||
+    []
+  if (!Array.isArray(rawReviews)) return []
+  return rawReviews
+    .filter((r) => r && typeof r === 'object')
+    .slice(0, 10)
+    .map((r) => {
+      const rawRating = r.review_rating ?? r.rating ?? r.score
+      const numericRating =
+        rawRating !== null && rawRating !== undefined && String(rawRating).trim() !== ''
+          ? Number(rawRating)
+          : NaN
+      const rating = Number.isFinite(numericRating) ? numericRating : null
+      const textCandidate = pickScalar(r.review_text) ?? pickScalar(r.text) ?? pickScalar(r.content) ?? pickScalar(r.review_text?.text)
+      const text = textCandidate !== null ? String(textCandidate) : ''
+      const timeCandidate = pickScalar(r.review_time) ?? pickScalar(r.created_at) ?? pickScalar(r.create_time)
+      const createdAt = timeCandidate !== null ? String(timeCandidate) : ''
+      const authorObj = r.author && typeof r.author === 'object' ? r.author : null
+      const reviewerCandidate =
+        pickScalar(r.reviewer_name) ??
+        pickScalar(r.user_name) ??
+        (authorObj ? pickScalar(authorObj.nickname) ?? pickScalar(authorObj.unique_id) ?? pickScalar(authorObj.name) : pickScalar(r.author))
+      const reviewer = reviewerCandidate !== null ? String(reviewerCandidate) : ''
+      return { rating, text, createdAt, reviewer }
+    })
+    .filter((r) => r.rating !== null || r.text !== '' || r.reviewer !== '' || r.createdAt !== '')
+}
+
+function extractHubProductDetail(res) {
+  const candidates = [res?.product, res?.data?.product, res?.data?.data, res?.data, res]
+  for (const candidate of candidates) {
+    if (candidate && typeof candidate === 'object' && (candidate.title || candidate.product_name || candidate.name)) {
+      return candidate
+    }
+  }
+  const pinfo = findProductInfoNode(res)
+  if (!pinfo || typeof pinfo !== 'object') return null
+  const pm = pinfo.product_model && typeof pinfo.product_model === 'object' ? pinfo.product_model : pinfo
+  const title = String(pm.name ?? pm.title ?? pm.product_name ?? pinfo.title ?? '').trim()
+  if (!title) return null
+  const seller = pinfo.seller_model && typeof pinfo.seller_model === 'object' ? pinfo.seller_model : pinfo.seller || {}
+  const minPrice =
+    pinfo.promotion_model?.promotion_product_price?.min_price &&
+    typeof pinfo.promotion_model.promotion_product_price.min_price === 'object'
+      ? pinfo.promotion_model.promotion_product_price.min_price
+      : {}
+  const maxPrice =
+    pinfo.promotion_model?.promotion_product_price?.max_price &&
+    typeof pinfo.promotion_model.promotion_product_price.max_price === 'object'
+      ? pinfo.promotion_model.promotion_product_price.max_price
+      : {}
+  const reviewModel = pinfo.review_model && typeof pinfo.review_model === 'object' ? pinfo.review_model : {}
+  const firstImg = Array.isArray(pm.images) ? pm.images[0] : null
+  const coverUrl = pickImageUrl(firstImg)
+
+  return {
+    product_id: pm.product_id ?? pm.id ?? pinfo.product_id,
+    title,
+    cover_url: coverUrl,
+    price: {
+      sale_price: minPrice.sale_price_format ?? minPrice.single_product_price_format ?? minPrice.sale_price,
+      max_price: maxPrice.sale_price_format ?? maxPrice.origin_price_format ?? maxPrice.sale_price,
+      currency: minPrice.currency_symbol || minPrice.currency_name,
+    },
+    sold_count: pinfo.sold_count ?? pm.sold_count ?? pinfo.sales ?? null,
+    product_rating: reviewModel.product_rating ?? reviewModel.overall_score ?? pinfo.product_rating ?? null,
+    review_count: reviewModel.review_count ?? pinfo.review_count ?? null,
+    seller_name: seller.shop_name || seller.name || seller.seller_name || '',
+    seller_id: seller.seller_id || seller.id || '',
+    category_name: pm.category_name || pinfo.category_name || '',
+  }
+}
+
 function extractItemsFromHubResponse(res) {
   if (!res || typeof res !== 'object') return []
   const candidates = [
     res.products,
     res.items,
     res.list,
+    res.search_result,
     res.data?.products,
     res.data?.items,
     res.data?.list,
     res.data?.product_list,
+    res.data?.search_result,
     res.data?.data?.products,
     res.data?.data?.items,
+    res.data?.data?.list,
+    res.data?.data?.product_list,
+    res.data?.data?.search_result,
     res.result?.products,
     res.result?.items,
   ]
@@ -256,36 +430,44 @@ function extractItemsFromHubResponse(res) {
   return []
 }
 
-function normalizeHubShopItem(raw, idx, region, source, sourceDetail) {
+function normalizeHubShopItem(rawInput, idx, region, source, sourceDetail) {
+  const raw =
+    rawInput && typeof rawInput === 'object'
+      ? rawInput.title || rawInput.product_name || rawInput.name || rawInput.seo_title
+        ? rawInput
+        : (rawInput.product_info && typeof rawInput.product_info === 'object'
+            ? rawInput.product_info
+            : rawInput.product_base && typeof rawInput.product_base === 'object'
+              ? rawInput.product_base
+              : rawInput)
+      : {}
   const productId = String(
     raw.product_id ?? raw.productId ?? raw.id ?? raw.item_id ?? raw.spu_id ?? `tt_${idx + 1}`
   ).trim()
   const title = String(raw.title ?? raw.product_name ?? raw.name ?? raw.seo_title ?? '').trim()
   if (!title) return null
 
-  const priceRaw =
-    raw.price?.real_price ??
-    raw.price?.min_price ??
-    raw.sale_price ??
-    raw.min_price ??
-    raw.price_min ??
-    raw.price
-  const priceMaxRaw = raw.price?.max_price ?? raw.max_price ?? raw.price_max ?? priceRaw
-  const coverUrl =
-    raw.cover_url ??
-    raw.cover ??
-    raw.image_url ??
-    raw.images?.[0]?.url_list?.[0] ??
-    raw.images?.[0] ??
-    raw.main_image ??
-    ''
-  const salesTotal = raw.sold_count ?? raw.total_sales ?? raw.sale_count ?? raw.sales ?? null
+  const priceRaw = extractPriceValue(raw, 'min')
+  const priceMaxRaw = extractPriceValue(raw, 'max')
+  const coverUrl = firstImageUrl([
+    raw.cover_url,
+    raw.cover,
+    raw.image_url,
+    raw.image,
+    raw.img,
+    raw.product_img,
+    raw.product_image,
+    Array.isArray(raw.images) ? raw.images[0] : null,
+    raw.main_image,
+  ])
+  const salesTotal =
+    raw.sold_count ?? raw.sold_info?.sold_count ?? raw.product_sales ?? raw.sales_count ?? raw.total_sales ?? raw.sale_count ?? raw.sales ?? raw.sold ?? null
   const sales7d = raw.sales_7d ?? raw.sold_7d ?? raw.period_sales ?? null
   const sales28d = raw.sales_28d ?? raw.sold_28d ?? null
-  const rating = raw.product_rating ?? raw.rating ?? raw.review_rating ?? raw.score ?? null
-  const reviewCount = raw.review_count ?? raw.reviews_count ?? raw.comment_count ?? null
-  const shopName = raw.seller?.name ?? raw.shop?.name ?? raw.shop_name ?? raw.seller_name ?? ''
-  const shopId = raw.seller?.seller_id ?? raw.shop?.id ?? raw.shop_id ?? raw.seller_id ?? ''
+  const rating = raw.product_rating ?? raw.rate_info?.score ?? raw.review_info?.rating ?? raw.rating ?? raw.review_rating ?? raw.score ?? null
+  const reviewCount = raw.review_count ?? raw.rate_info?.review_count ?? raw.review_info?.review_count ?? raw.reviews_count ?? raw.comment_count ?? null
+  const shopName = raw.seller?.name ?? raw.seller?.shop_name ?? raw.shop?.name ?? raw.shop?.shop_name ?? raw.shop_name ?? raw.seller_name ?? ''
+  const shopId = raw.seller?.seller_id ?? raw.seller?.id ?? raw.shop?.id ?? raw.shop_id ?? raw.seller_id ?? ''
   const category = raw.category_name ?? raw.category ?? raw.category_path ?? ''
   const commissionRate = raw.commission_rate ?? raw.affiliate_commission ?? null
 
@@ -295,7 +477,7 @@ function normalizeHubShopItem(raw, idx, region, source, sourceDetail) {
       region,
       title,
       coverUrl,
-      currency: raw.currency || raw.price?.currency || currencyForRegion(region),
+      currency: pickScalar(raw.currency) || pickScalar(raw.price?.currency) || pickScalar(raw.price?.currency_symbol) || currencyForRegion(region),
       priceMin: priceRaw,
       priceMax: priceMaxRaw,
       totalSales: salesTotal,
@@ -324,16 +506,23 @@ function normalizeHubShopItem(raw, idx, region, source, sourceDetail) {
 
 function normalizeHubVideos(res) {
   const list =
+    res?.video_list ||
     res?.videos ||
     res?.aweme_list ||
     res?.items ||
+    res?.data?.video_list ||
     res?.data?.videos ||
     res?.data?.aweme_list ||
     res?.data?.items ||
+    res?.data?.data?.video_list ||
+    res?.data?.data?.aweme_list ||
+    res?.data?.data?.videos ||
+    res?.data?.data?.items ||
     res?.data?.data ||
     []
   if (!Array.isArray(list)) return []
   return list
+    .filter((v) => v && typeof v === 'object')
     .map((v, i) => {
       const id = String(v.aweme_id ?? v.video_id ?? v.id ?? `vid_${i + 1}`)
       const author = v.author?.unique_id || v.author?.nickname || v.creator_handle || v.author_name || ''
@@ -347,9 +536,17 @@ function normalizeHubVideos(res) {
         v.share_url ||
         v.url ||
         (author ? `https://www.tiktok.com/@${encodeURIComponent(author)}/video/${encodeURIComponent(id)}` : `https://www.tiktok.com/video/${encodeURIComponent(id)}`)
-      const publishedAt = v.create_time
-        ? new Date(Number(v.create_time) * (Number(v.create_time) > 1e12 ? 1 : 1000)).toISOString()
-        : String(v.publishedAt || '')
+      const rawTs = v.create_time
+      let publishedAt = ''
+      if (rawTs !== null && rawTs !== undefined && String(rawTs).trim() !== '') {
+        const tsNum = Number(rawTs)
+        publishedAt =
+          Number.isFinite(tsNum) && tsNum > 0
+            ? new Date(tsNum * (tsNum > 1e12 ? 1 : 1000)).toISOString()
+            : String(rawTs).trim()
+      } else {
+        publishedAt = String(v.publishedAt || '')
+      }
       return {
         videoId: id,
         author,
@@ -613,7 +810,7 @@ export function createDataSourceAdapter({ store, getService, logger }) {
           id: pid,
           region: reg,
         })
-        const rawObj = res?.product || res?.data?.product || res?.data || res
+        const rawObj = extractHubProductDetail(res)
         if (rawObj && typeof rawObj === 'object' && (rawObj.title || rawObj.product_name || rawObj.name)) {
           const liveNormalized = normalizeHubShopItem(rawObj, 0, reg, product?.source || 'detail', product?.sourceDetail || '')
           if (liveNormalized) {
@@ -621,6 +818,13 @@ export function createDataSourceAdapter({ store, getService, logger }) {
               ? {
                   ...liveNormalized,
                   ...product,
+                  priceMin: liveNormalized.priceMin ?? product.priceMin,
+                  priceMax: liveNormalized.priceMax ?? product.priceMax,
+                  currency: liveNormalized.priceMin !== null ? liveNormalized.currency : product.currency,
+                  priceDisplay: liveNormalized.priceMin !== null ? liveNormalized.priceDisplay : product.priceDisplay,
+                  shopName: liveNormalized.shopName || product.shopName,
+                  shopId: liveNormalized.shopId || product.shopId,
+                  category: product.category || liveNormalized.category,
                   rating: liveNormalized.rating ?? product.rating,
                   reviewCount: liveNormalized.reviewCount ?? product.reviewCount,
                   totalSales: liveNormalized.totalSales ?? product.totalSales,
@@ -678,14 +882,7 @@ export function createDataSourceAdapter({ store, getService, logger }) {
             id: pid,
             region: reg,
           })
-          const rawReviews = rRes?.reviews || rRes?.data?.reviews || rRes?.data?.items || []
-          if (Array.isArray(rawReviews)) {
-            reviews = rawReviews.slice(0, 10).map((r) => ({
-              rating: Number(r.rating ?? r.score ?? 5),
-              text: String(r.text ?? r.content ?? r.review_text ?? '').trim(),
-              createdAt: String(r.created_at ?? r.create_time ?? ''),
-            }))
-          }
+          reviews = normalizeHubReviews(rRes)
         } catch (err) {
           reviewsWarning = err?.message || 'Failed to load product reviews'
           logger?.warn?.('omnimux-tiktok-selection: reviews lookup failed', { productId: pid, error: reviewsWarning })

@@ -117,6 +117,7 @@ export const SOCIAL_DATA_EXTRA_FIELDS = Object.freeze({
 })
 
 const DEFAULT_SHOP_REGION = 'SG'
+export const SOCIAL_DATA_GROUP = 'social-data-tikhub'
 
 /**
  * @param {{ platform?: string, capability?: string, id?: string, url?: string, query?: string, region?: string }} args
@@ -387,10 +388,9 @@ export async function fetchSocialData(client, args, options = {}) {
     }
   }
   options.signal?.throwIfAborted()
-  const accountCollection = (platform === 'x' || platform === 'tiktok') && (capability === 'user' || capability === 'posts')
   const raw = await client.withSk('/v1/chat/completions', {
     method: 'POST',
-    ...(accountCollection ? { headers: { 'X-Omnimux-Group': 'social-data-tikhub' } } : {}),
+    headers: { 'X-Omnimux-Group': SOCIAL_DATA_GROUP },
     ...(options.signal ? { signal: options.signal } : {}),
     body: {
       model,

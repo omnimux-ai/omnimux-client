@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import {
   Badge,
   Button,
@@ -87,6 +87,7 @@ export function DiscoveryPanel({ overview, t, onNotify, onLibraryChanged, onSnap
   const [detailOpen, setDetailOpen] = useState(false)
   const [detailData, setDetailData] = useState(null)
   const [detailLoading, setDetailLoading] = useState(false)
+  const detailReqSeqRef = useRef(0)
 
   const [importOpen, setImportOpen] = useState(false)
   const [importName, setImportName] = useState('')
@@ -214,21 +215,52 @@ export function DiscoveryPanel({ overview, t, onNotify, onLibraryChanged, onSnap
   }
 
   async function openDetail(product, loadVideos = false, loadReviews = false) {
+    const reqSeq = detailReqSeqRef.current + 1
+    detailReqSeqRef.current = reqSeq
+    const targetRegion = product.region || region
+    const sameProduct =
+      detailData?.product?.productId === product.productId &&
+      (detailData?.product?.region || region) === targetRegion
+    if (!sameProduct) {
+      setDetailData(null)
+    }
     setDetailOpen(true)
     setDetailLoading(true)
     try {
       const res = await api.getProductDetail({
         productId: product.productId,
-        region: product.region || region,
+        region: targetRegion,
         loadVideos,
         loadReviews,
         productHint: product,
       })
-      setDetailData(res)
+      if (detailReqSeqRef.current !== reqSeq) return
+      setDetailData((prev) => {
+        const isSame =
+          prev?.product?.productId === res?.product?.productId &&
+          (prev?.product?.region || region) === (res?.product?.region || targetRegion)
+        const prevVideos = isSame && Array.isArray(prev?.referenceVideos) ? prev.referenceVideos : []
+        const prevReviews = isSame && Array.isArray(prev?.reviews) ? prev.reviews : []
+        const nextVideos = res.referenceVideos?.length > 0 ? res.referenceVideos : prevVideos
+        const hasSoftFailure = Array.isArray(res.warnings) && res.warnings.length > 0
+        const nextReviews = loadReviews
+          ? res.reviews?.length > 0 || !hasSoftFailure
+            ? res.reviews
+            : prevReviews
+          : prevReviews
+        return {
+          ...res,
+          referenceVideos: nextVideos,
+          reviews: nextReviews,
+        }
+      })
     } catch (err) {
+      if (detailReqSeqRef.current !== reqSeq) return
       onNotify(err?.message || '读取详情失败', true)
     } finally {
-      setDetailLoading(false)
+      if (detailReqSeqRef.current === reqSeq) {
+        setDetailLoading(false)
+      }
     }
   }
 
@@ -602,6 +634,24 @@ export function DiscoveryPanel({ overview, t, onNotify, onLibraryChanged, onSnap
                         打开视频
                       </a>
                     </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {Array.isArray(detailData.reviews) && detailData.reviews.length > 0 && (
+              <div className="omnimux-ttsel-video-list">
+                <strong>商品评价（{detailData.reviews.length} 条）</strong>
+                {detailData.reviews.map((r, idx) => (
+                  <div key={`${idx}-${r.createdAt || ''}`} className="omnimux-ttsel-video-item">
+                    <div className="omnimux-ttsel-row">
+                      {r.rating !== null && Number.isFinite(r.rating) && (
+                        <Badge variant={r.rating >= 4 ? 'success' : 'neutral'}>{r.rating} 星</Badge>
+                      )}
+                      {r.reviewer && <span className="omnimux-ttsel-label">{r.reviewer}</span>}
+                      {r.createdAt && <span className="omnimux-ttsel-label">{r.createdAt}</span>}
+                    </div>
+                    <div>{r.text || (r.rating !== null ? '仅评分' : '')}</div>
                   </div>
                 ))}
               </div>
