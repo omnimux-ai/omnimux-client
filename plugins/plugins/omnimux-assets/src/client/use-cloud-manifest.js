@@ -94,12 +94,16 @@ export function useCloudManifest(options = {}) {
   const loadedRef = useRef(false)
 
   const load = useCallback(async (force = false) => {
-    if (!force && loadedRef.current) return
-    // 缓存命中直接落状态，不发请求、也不再进加载态。
+    if (!force && loadedRef.current) {
+      setLoading(false)
+      return
+    }
+    // 缓存命中直接落状态，并显式结束冷启动首帧的 loading=true，避免预热在首帧与 effect 之间落盘时卡骨架。
     if (!force && manifestCache !== null) {
       loadedRef.current = true
       setError('')
       setManifest(manifestCache.value)
+      setLoading(false)
       return
     }
     setLoading(true)

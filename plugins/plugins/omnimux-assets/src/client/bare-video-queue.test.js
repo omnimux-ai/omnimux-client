@@ -64,6 +64,22 @@ describe('bare-video-queue: 无封面视频首帧加载并发门控', () => {
       r3()
       assert.deepEqual(queue.stats(), { active: 0, queued: 0, maxConcurrent: 2 })
       assert.equal(warnings.length, 2)
+
+      // 3. 排队项的 onGrant 同步调用自身 release 后再抛错，不得二次扣减 active 影响其他在途任务。
+      const keepA = queue.acquire(() => {})
+      const keepB = queue.acquire(() => {})
+      let selfRelease = () => {}
+      selfRelease = queue.acquire(() => {
+        selfRelease()
+        throw new Error('throw-after-self-release')
+      })
+      const keepC = queue.acquire(() => granted.push('ok-after-reentrant'))
+      keepA()
+      assert.equal(granted.at(-1), 'ok-after-reentrant')
+      assert.deepEqual(queue.stats(), { active: 2, queued: 0, maxConcurrent: 2 })
+      keepB()
+      keepC()
+      assert.deepEqual(queue.stats(), { active: 0, queued: 0, maxConcurrent: 2 })
     } finally {
       console.warn = origWarn
     }

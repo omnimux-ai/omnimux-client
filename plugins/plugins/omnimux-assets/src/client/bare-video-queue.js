@@ -25,8 +25,10 @@ export function createBareVideoQueue(maxConcurrent = DEFAULT_MAX_CONCURRENT_BARE
       entry.onGrant()
       return true
     } catch (error) {
-      active = Math.max(0, active - 1)
-      entry.granted = false
+      if (entry.granted) {
+        entry.granted = false
+        active = Math.max(0, active - 1)
+      }
       entry.cancelled = true
       console.warn('[omnimux-assets] bare video queue grant failed:', error?.message || error)
       return false
@@ -68,6 +70,7 @@ export function createBareVideoQueue(maxConcurrent = DEFAULT_MAX_CONCURRENT_BARE
       released = true
       entry.cancelled = true
       if (entry.granted) {
+        entry.granted = false
         active = Math.max(0, active - 1)
         drain()
       } else {

@@ -528,7 +528,10 @@ export function useCloudAssetsFeed(options) {
           items: rowsOf(result.body),
         })
       } catch (caught) {
-        if (!cancelled) setPageError(errText(caught))
+        if (!cancelled) {
+          setPageError(errText(caught))
+          setSearchResult({ total: 0, items: [] })
+        }
       } finally {
         if (!cancelled) setSearching(false)
       }
@@ -623,7 +626,10 @@ export function useCloudAssetsFeed(options) {
     }
   }, [reloadManifest, loadPage, isRowLayoutScope])
 
-  const searchPending = query.trim() !== '' && (searching || query.trim() !== queryApplied || searchResult === null)
+  const searchPending = query.trim() !== ''
+    && pageError === ''
+    && manifestError === ''
+    && (searching || query.trim() !== queryApplied || searchResult === null)
 
   return {
     manifest,

@@ -527,6 +527,77 @@ test('useCloudManifest 冷启动首帧 loading=true、force 走 cache:no-cache �
   await React.act(async () => { root.unmount() })
 })
 
+test('useCloudManifest 预热在首帧与 effect 之间命中缓存时仍正确退出 loading，且 cloudSearch 抛错不卡无限骨架', async () => {
+  const observerCtrl = createMockObserverController()
+  const { window } = installDom(observerCtrl)
+  const React = pluginRequire('react')
+  const { createRoot } = pluginRequire('react-dom/client')
+  const manifestMod = await bundleModule('use-cloud-manifest.js')
+  const { clearCloudManifestCache, fetchCloudManifestCached, useCloudManifest } = manifestMod
+
+  // 1. 冷启动首帧（loading=true）期间后台预热恰好填满缓存，随后 effect 命中缓存早返回时必须将 loading 置回 false。
+  clearCloudManifestCache()
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({ version: 4, categories: [{ id: 'character', zh: '角色', en: 'Characters', total: 1, pages: 1, sub_categories: [] }] }),
+  })
+  const snapshots = []
+  let filledBetweenRenderAndEffect = false
+  function RaceProbe() {
+    const state = useCloudManifest({ enabled: true })
+    snapshots.push({ loading: state.loading, hasManifest: state.manifest !== null })
+    if (!filledBetweenRenderAndEffect) {
+      filledBetweenRenderAndEffect = true
+      void fetchCloudManifestCached({ force: false })
+    }
+    return null
+  }
+  const container = window.document.getElementById('root')
+  const root = createRoot(container)
+  await React.act(async () => {
+    root.render(React.createElement(RaceProbe))
+  })
+  await React.act(async () => {
+    await new Promise((r) => setTimeout(r, 20))
+  })
+  assert.equal(snapshots[0].loading, true, '首帧在缓存未落盘时应为 loading=true')
+  assert.equal(snapshots.at(-1).hasManifest, true, '命中预热缓存后应拿到 manifest')
+  assert.equal(snapshots.at(-1).loading, false, '命中缓存早返回也必须把 loading 置回 false，不能永久卡骨架')
+  await React.act(async () => { root.unmount() })
+
+  // 2. cloudSearch 网络抛错时必须展示错误态并退出 loading，绝不留无限骨架。
+  const viewMod = await bundleModule('CloudAssetsView.jsx')
+  const { CloudAssetsView } = viewMod
+  const manifest = buildManifestFixture()
+  globalThis.fetch = async (url) => {
+    const str = String(url)
+    if (str.endsWith('/manifest.json')) {
+      return { ok: true, status: 200, json: async () => manifest }
+    }
+    if (str.includes('/cloud/search')) {
+      throw new Error('simulated network failure')
+    }
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({ scope: 'character', page: 0, pageSize: 24, total: 24, totalPages: 1, items: buildPageItems('character', 0) }),
+    }
+  }
+  const t = (key) => key
+  const root2 = createRoot(container)
+  await React.act(async () => {
+    root2.render(React.createElement(CloudAssetsView, { t, open: true, query: 'boom' }))
+  })
+  assert.ok(container.querySelector('[data-skeleton="true"]'), '搜索防抖期间应先展示骨架')
+  await React.act(async () => {
+    await new Promise((r) => setTimeout(r, 340))
+  })
+  assert.equal(container.querySelector('[data-skeleton="true"]'), null, 'cloudSearch 抛错后不得留在无限骨架 loading 态')
+  assert.match(container.querySelector('.omnimux-assets-error')?.textContent ?? '', /simulated network failure/)
+  await React.act(async () => { root2.unmount() })
+})
+
 test('ensureCloudPreconnect 幂等注入 preconnect 与 dns-prefetch', async () => {
   const observerCtrl = createMockObserverController()
   const { window } = installDom(observerCtrl)
