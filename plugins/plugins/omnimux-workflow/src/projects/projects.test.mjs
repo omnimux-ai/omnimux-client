@@ -119,7 +119,6 @@ test('T0 schema：冻结版本 + title 边界 + 高版本拒绝', () => {
   assert.ok(good, '合法 project.json 解析成功');
   assert.equal(host.parseProject({ ...good, schemaVersion: 3 }), null);
   assert.equal(host.parseProject({ ...good, title: 'x'.repeat(201) }), null);
-  assert.equal(host.parseProjectIndex({ schemaVersion: 2, projects: 'nope' }), null);
 });
 
 test('T0 paths：libraryRoot / projectRoot 必须绝对路径 + 越界断言', () => {

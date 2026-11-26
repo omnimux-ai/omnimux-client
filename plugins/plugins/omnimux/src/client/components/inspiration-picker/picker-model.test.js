@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import {
   INSPIRATION_TABS,
@@ -13,7 +13,7 @@ import {
 
 const pickerSource = readFileSync(new URL('./InspirationPicker.jsx', import.meta.url), 'utf8')
 const cardSource = readFileSync(new URL('./InspirationPickerCard.jsx', import.meta.url), 'utf8')
-const modalSource = readFileSync(new URL('../../composer-add/InspirationPickerModal.jsx', import.meta.url), 'utf8')
+const modalUrl = new URL('../../composer-add/InspirationPickerModal.jsx', import.meta.url)
 const installSource = readFileSync(new URL('../../composer-add/install.js', import.meta.url), 'utf8')
 
 test('inspiration tabs start with 全部 and exclude rival accounts', () => {
@@ -50,8 +50,7 @@ test('picker cards follow the cover ratio and hide idle chrome', () => {
 })
 
 test('InspirationPickerModal remains a thin reusable adapter while composer-add opens the page browser', () => {
-  assert.match(modalSource, /InspirationPicker/)
-  assert.match(modalSource, /omnimux-inspiration:library/)
+  assert.equal(existsSync(modalUrl), false)
   assert.match(installSource, /LibraryBrowser/)
   assert.doesNotMatch(installSource, /InspirationPickerModal/)
 })

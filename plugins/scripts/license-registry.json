@@ -58,7 +58,6 @@
           "textFile": "LICENSE.openreel.txt",
           "paths": [
             "src/client/openreel/",
-            "src/client/engine/openreel/",
             "tailwind.openreel.config.js"
           ]
         }

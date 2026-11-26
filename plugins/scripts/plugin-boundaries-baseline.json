@@ -44,15 +44,6 @@
       "../../../omnimux/src/client/components/SplitModalDialog.jsx",
       "../../../omnimux/src/client/session-guide/catalog.js"
     ],
-    "plugins/omnimux-inspiration/src/explore/LibraryBrowser.jsx": [
-      "../../../omnimux/src/client/components/asset-picker/AssetPickerCard.jsx",
-      "../../../omnimux/src/client/components/inspiration-picker/InspirationPickerCard.jsx",
-      "../../../omnimux/src/client/components/library-flow/UnifiedLibraryGrid.jsx",
-      "../../../omnimux/src/client/components/library-flow/UniversalLibraryCard.jsx",
-      "../../../omnimux/src/client/components/product-picker/ProductPickerCard.jsx",
-      "../../../omnimux/src/client/composer-add/library-stage-model.js",
-      "../../../omnimux/src/client/session-guide/trending/TrendingVideoCard.jsx"
-    ],
     "plugins/omnimux-inspiration/src/explore/MarketingInsightModal.jsx": [
       "../../../omnimux/src/client/components/SplitModalDialog.jsx",
       "../../../omnimux/src/client/session-guide/catalog.js"
@@ -128,30 +119,6 @@
     ],
     "plugins/omnimux-inspiration/src/explore/useComposerDocking.js": [
       "../../../omnimux/src/client/composer-compact.js"
-    ],
-    "plugins/omnimux-market/src/presets/ComposerPresetsTriggers.jsx": [
-      "../../../omnimux/src/client/composer-mode/composer-mode-store.js",
-      "../../../omnimux/src/client/presets/icons.jsx",
-      "../../../omnimux/src/client/presets/presets-store.js",
-      "../../../omnimux/src/client/presets/styles.js"
-    ],
-    "plugins/omnimux-market/src/presets/CreativeDimensionModal.jsx": [
-      "../../../omnimux/src/client/components/ModalCloseButton.jsx",
-      "../../../omnimux/src/client/presets/PresetCard.jsx",
-      "../../../omnimux/src/client/presets/catalog.js",
-      "../../../omnimux/src/client/presets/icons.jsx",
-      "../../../omnimux/src/client/presets/presets-store.js",
-      "../../../omnimux/src/client/presets/styles.js"
-    ],
-    "plugins/omnimux-market/src/presets/index.js": [
-      "../../../omnimux/src/client/presets/CreativePresetsModal.jsx",
-      "../../../omnimux/src/client/presets/PresetCard.jsx",
-      "../../../omnimux/src/client/presets/catalog.js",
-      "../../../omnimux/src/client/presets/compiler.js",
-      "../../../omnimux/src/client/presets/icons.jsx",
-      "../../../omnimux/src/client/presets/media-resolver.js",
-      "../../../omnimux/src/client/presets/presets-store.js",
-      "../../../omnimux/src/client/presets/styles.js"
     ],
     "plugins/omnimux-viewer/src/media-viewer/MediaViewerComposer.jsx": [
       "../../../omnimux/src/client/media-viewer/composer-prefill.js",

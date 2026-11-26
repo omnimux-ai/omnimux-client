@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DOCK_STYLES } from './dockStyles.ts';
+import { LINK_POPOVER_STYLES } from './linkPopoverStyles.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const chipsSource = readFileSync(join(here, 'PromptSlotChips.tsx'), 'utf8');
@@ -37,4 +38,17 @@ test('usePromptSlotEnhancer: selectSlotInEditor selects inner text only and pres
   assert.match(enhancerSource, /startOffset\s*=\s*hasBrackets\s*\?\s*idx\s*\+\s*1\s*:\s*idx/, 'starts selection after [');
   assert.match(enhancerSource, /endOffset\s*=\s*hasBrackets\s*\?\s*idx\s*\+\s*slot\.raw\.length\s*-\s*1/, 'ends selection before ]');
   assert.ok(enhancerSource.includes('replaceSlotTextInEditor'), 'exports replaceSlotTextInEditor');
+});
+
+test('LINK_POPOVER_STYLES: ensures popover card has solid background and semantic styling', () => {
+  assert.ok(LINK_POPOVER_STYLES.includes('background: var(--dsw-alias-bg-layer-3);'));
+  assert.ok(LINK_POPOVER_STYLES.includes('border: 1px solid var(--dsw-alias-border-l2);'));
+  assert.ok(LINK_POPOVER_STYLES.includes('border-radius: 12px;'));
+});
+
+test('DOCK_STYLES: provides brand purple link icon mask for composer chip', () => {
+  assert.ok(DOCK_STYLES.includes('[data-composer-chip="link"]'));
+  assert.ok(DOCK_STYLES.includes('-webkit-mask: url('));
+  assert.ok(DOCK_STYLES.includes('padding: 0 6px !important;'));
+  assert.ok(DOCK_STYLES.includes('margin: 0 2px !important;'));
 });

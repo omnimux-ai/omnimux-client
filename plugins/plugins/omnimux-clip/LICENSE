@@ -12,7 +12,6 @@ The following paths are vendorized from openreel-video
 
   - src/client/openreel/ — v1.0.0, commit c8f33f212c8d39ff9cfabb3302a44423d8dad83d
   - tailwind.openreel.config.js — adapted from v1.0.0
-  - src/client/engine/openreel/ — original vendoring at 2566c34e0f8ea22992a85f3ff16e048307b49365
 
 The complete upstream MIT license text is distributed in this package as
 LICENSE.openreel.txt. Its copyright notice reads:

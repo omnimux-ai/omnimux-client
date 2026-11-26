@@ -40,7 +40,6 @@
     "omnimux-clip:clip:ops",
     "omnimux-market:plaza:attached-expert",
     "omnimux-market:plaza:trial-skill",
-    "omnimux-market:session:selected-model",
     "omnimux-market:tool:connectors",
     "omnimux-market:tool:plaza-experts",
     "omnimux-market:tool:plugins",

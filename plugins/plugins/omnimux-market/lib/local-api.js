@@ -91,7 +91,6 @@ export const MUTATING_METHODS = new Set([
     'suiteUninstall',
     'expertMarketInstall',
     'expertMarketDisable',
-    'setModelSelection',
     'tryAttach',
     'tryDetach',
 ]);
@@ -772,44 +771,6 @@ async function handleSuiteUninstall(ctx) {
         return sendJson(res, 500, { ok: false, error: err instanceof Error ? err.message : String(err) });
     }
 }
-export const sessionModelStore = new Map();
-export function getSessionModel(sessionId) {
-    return sessionModelStore.get(sessionId);
-}
-export function setSessionModel(sessionId, choice) {
-    sessionModelStore.set(sessionId, choice);
-}
-let activeModelCatalogResolver = null;
-export function setModelCatalogResolver(resolver) {
-    activeModelCatalogResolver = resolver;
-}
-async function handleGetModelCatalog(ctx) {
-    const { res } = ctx;
-    try {
-        let catalog = null;
-        if (activeModelCatalogResolver) {
-            catalog = await activeModelCatalogResolver();
-        }
-        return sendJson(res, 200, { ok: true, catalog });
-    }
-    catch (err) {
-        return sendJson(res, 200, { ok: true, catalog: null });
-    }
-}
-async function handleGetModelSelection(ctx) {
-    const { res, url, body } = ctx;
-    const sessionId = String(body.sessionId || url.searchParams.get('sessionId') || '').trim() || 'default';
-    const choice = sessionModelStore.get(sessionId) || { auto: true, selectedModel: null };
-    return sendJson(res, 200, { ok: true, sessionId, ...choice });
-}
-async function handleSetModelSelection(ctx) {
-    const { res, body } = ctx;
-    const sessionId = String(body.sessionId || '').trim() || 'default';
-    const auto = body.auto !== false;
-    const selectedModel = auto ? null : (body.selectedModel || null);
-    sessionModelStore.set(sessionId, { auto, selectedModel });
-    return sendJson(res, 200, { ok: true, sessionId, auto, selectedModel });
-}
 const API_ROUTE_TABLE = {
     search: handleSearch,
     ratings: handleRatings,
@@ -839,9 +800,6 @@ const API_ROUTE_TABLE = {
     catalogUninstall: handleCatalogUninstall,
     suiteInstall: handleSuiteInstall,
     suiteUninstall: handleSuiteUninstall,
-    getModelCatalog: handleGetModelCatalog,
-    getModelSelection: handleGetModelSelection,
-    setModelSelection: handleSetModelSelection,
     tryAttach: handleTryAttach,
     tryDetach: handleTryDetach,
 };

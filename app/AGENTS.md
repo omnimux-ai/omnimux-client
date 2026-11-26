@@ -27,8 +27,6 @@ This fork is the **main ops entry** for OmniMux plugin develop / browser QA / sy
 
 | Command | Purpose |
 | --- | --- |
-| `yarn omnimux:dev start <task> <plugin>` | L2: isolated Host + link one in-progress plugin + unified watch (official HMR) |
-| `yarn omnimux:dev watch <task> <plugin>` | Switch which plugin the watch targets (Host stays up) |
 | `yarn omnimux:sync [plugin…]` | Build then materialize into `~/.omnimux-dev/profiles/omnimux` (`--prod` targets `~/.omnimux`) (**does not restart App**) |
 | `yarn omnimux:restart dev` | Reload the Dev app after syncing the merged build |
 | `yarn omnimux:profile upgrade-dev --app <app> --recovery-dir <batch>` | Rebuild the shared macOS Dev Profile and install a frozen Dev App with NAS recovery |

@@ -57,7 +57,6 @@ async function bundleClientModule(relPath) {
 
 const { AssetCard } = await bundleClientModule('./views/AssetCard.jsx')
 const { RecordsTable } = await bundleClientModule('./views/RecordsTable.jsx')
-const { CalendarView } = await bundleClientModule('./views/CalendarView.jsx')
 const { AccountPanel } = await bundleClientModule('./AccountPanel.jsx')
 const { Composer } = await bundleClientModule('./Composer/index.jsx')
 
@@ -180,32 +179,6 @@ describe('Issue #340: English locale renders zero hardcoded Chinese in Publish v
       assert.ok(text.includes('Published'))
       assert.ok(text.includes('Publishing'))
       assert.ok(text.includes('Failed'))
-    } finally {
-      await act(async () => { root.unmount() })
-      restore()
-    }
-  })
-
-  it('CalendarView renders English month, week controls, status tooltip and overflow without CJK', async () => {
-    const { container, restore } = setupDom()
-    const root = createRoot(container)
-    const tEn = makeTranslator(en)
-    try {
-      await act(async () => {
-        root.render(React.createElement(CalendarView, {
-          t: tEn,
-          records: REAL_RECORDS,
-          onOpen: noop,
-        }))
-      })
-      const text = container.textContent || ''
-      assert.doesNotMatch(text, /[\u4e00-\u9fff]/, `English CalendarView must not leak CJK: ${text}`)
-      assert.ok(text.includes('Sun') && text.includes('Mon'))
-      assert.ok(text.includes('+1 more'))
-      const pills = [...container.querySelectorAll('.omnimux-publish-cal-pill')]
-      assert.ok(pills.length > 0)
-      assert.doesNotMatch(pills[0].getAttribute('title') || '', /[\u4e00-\u9fff]/)
-      assert.ok((pills[0].getAttribute('title') || '').includes('Published'))
     } finally {
       await act(async () => { root.unmount() })
       restore()

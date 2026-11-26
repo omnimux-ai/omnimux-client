@@ -1540,7 +1540,6 @@
     "omnimux:help": "node scripts/omnimux.mjs --help",
     "omnimux:sync": "node scripts/omnimux.mjs sync",
     "omnimux:restart": "node scripts/omnimux.mjs restart",
-    "omnimux:dev": "node scripts/omnimux.mjs dev",
     "omnimux:doctor": "node scripts/omnimux.mjs doctor",
     "omnimux:profile": "node scripts/omnimux.mjs profile",
     "omnimux:stage": "node scripts/omnimux.mjs stage",
