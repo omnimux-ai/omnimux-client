@@ -54,6 +54,7 @@ test('real repository passes verifySkillHygiene with zero violations', () => {
   assert.deepEqual(result.issues, [], `unexpected hygiene issues: ${JSON.stringify(result.issues, null, 2)}`)
   assert.equal(result.ok, true)
   assert.equal(result.stats.catalogDirCount, result.stats.indexedCount + result.stats.bundledCount)
+  assert.equal(result.stats.pluginRefCount, 18)
   assert.ok(result.stats.catalogItemCount >= 140)
   assert.ok(result.stats.pluginSkillCount > 0)
   assert.equal(result.stats.manifestMetadataCount, result.stats.pluginSkillCount)
@@ -463,4 +464,112 @@ test('rejects missing provenance, Official author, manifest skillMetadata drift,
   ]) {
     assert.equal(codes.has(expectedCode), true, `expected issue code ${expectedCode}, got [${[...codes].join(', ')}]`)
   }
+})
+
+test('validates source.type = plugin references cleanly and rejects bad paths, undeclared entries, dangling files, and provenance mismatch', (t) => {
+  const root = makeFixtureRoot(t)
+  const clipDir = join(root, 'plugins', 'omnimux-clip')
+  mkdirSync(join(clipDir, 'skills', 'clip-craft'), { recursive: true })
+  writeFileSync(join(clipDir, 'skills', 'clip-craft', 'SKILL.md'), '---\nname: clip-craft\ndescription: Clip Craft\n---\n# Clip Craft\n')
+  writeFileSync(join(clipDir, 'package.json'), JSON.stringify({ name: 'omnimux-clip', license: 'SEE LICENSE IN LICENSE' }))
+  writeFileSync(
+    join(clipDir, 'dsh.manifest.json'),
+    JSON.stringify({
+      id: 'omnimux-clip',
+      skills: ['skills/clip-craft/SKILL.md'],
+      skillMetadata: {
+        'clip-craft': { origin: 'first-party', license: 'SEE LICENSE IN LICENSE', owner: 'omnimux-clip' },
+      },
+    }),
+  )
+  writeFileSync(
+    join(root, 'plugins', 'omnimux-market', 'catalog', 'index.json'),
+    JSON.stringify({
+      items: [
+        {
+          id: 'sk-alpha',
+          tab: 'skills',
+          kind: 'skill',
+          skill: 'alpha-skill',
+          origin: 'first-party',
+          license: 'MIT',
+          owner: 'omnimux-market',
+          author: 'OmniMux',
+          source: { type: 'bundled', path: 'catalog/skills/alpha-skill' },
+        },
+        {
+          id: 'sk-clip-craft',
+          tab: 'skills',
+          kind: 'skill',
+          skill: 'clip-craft',
+          origin: 'first-party',
+          license: 'SEE LICENSE IN LICENSE',
+          owner: 'omnimux-clip',
+          author: 'OmniMux',
+          source: { type: 'plugin', plugin: 'omnimux-clip', path: 'skills/clip-craft' },
+        },
+      ],
+    }),
+  )
+  const passRes = verifySkillHygiene(root)
+  assert.deepEqual(passRes.issues, [])
+  assert.equal(passRes.stats.catalogDirCount, passRes.stats.indexedCount + passRes.stats.bundledCount)
+  assert.equal(passRes.stats.pluginRefCount, 1)
+
+  // Negative cases: bad plugin path, undeclared/dangling plugin skill, license/owner mismatch
+  writeFileSync(
+    join(root, 'plugins', 'omnimux-market', 'catalog', 'index.json'),
+    JSON.stringify({
+      items: [
+        {
+          id: 'sk-alpha',
+          tab: 'skills',
+          kind: 'skill',
+          skill: 'alpha-skill',
+          origin: 'first-party',
+          license: 'MIT',
+          owner: 'omnimux-market',
+          author: 'OmniMux',
+          source: { type: 'bundled', path: 'catalog/skills/alpha-skill' },
+        },
+        {
+          id: 'sk-bad-path',
+          tab: 'skills',
+          kind: 'skill',
+          skill: 'bad-path',
+          origin: 'first-party',
+          license: 'MIT',
+          owner: 'omnimux-clip',
+          source: { type: 'plugin', plugin: 'omnimux-clip', path: '../escape/bad-path' },
+        },
+        {
+          id: 'sk-clip-mismatch',
+          tab: 'skills',
+          kind: 'skill',
+          skill: 'clip-craft',
+          origin: 'first-party',
+          license: 'MIT',
+          owner: 'omnimux-market',
+          source: { type: 'plugin', plugin: 'omnimux-clip', path: 'skills/clip-craft' },
+        },
+        {
+          id: 'sk-ghost-plugin',
+          tab: 'skills',
+          kind: 'skill',
+          skill: 'ghost-skill',
+          origin: 'first-party',
+          license: 'MIT',
+          owner: 'omnimux-clip',
+          source: { type: 'plugin', plugin: 'omnimux-clip', path: 'skills/ghost-skill' },
+        },
+      ],
+    }),
+  )
+  const failRes = verifySkillHygiene(root)
+  assert.equal(failRes.ok, false)
+  const codes = new Set(failRes.issues.map((i) => i.code))
+  assert.ok(codes.has('invalid-plugin-source-path'))
+  assert.ok(codes.has('plugin-indexed-metadata-mismatch'))
+  assert.ok(codes.has('undeclared-plugin-indexed-entry'))
+  assert.ok(codes.has('dangling-plugin-indexed-entry'))
 })

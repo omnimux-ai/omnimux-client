@@ -256,6 +256,32 @@ test('aggregateSkillSearch discovers local installed skills that are not in cata
   assert.equal(result.items[0].installed, true)
 })
 
+test('aggregateSkillSearch excludes unindexed installedSkills during empty-query Plaza browse', async () => {
+  const unindexed = Array.from({ length: 10 }, (_, idx) => ({
+    slug: `personal-dsh-skill-${idx + 1}`,
+    name: `Personal Skill ${idx + 1}`,
+    description: 'Only installed in $DSH_HOME/skills',
+    path: `/fake/personal-${idx + 1}`,
+  }))
+  const browse = await aggregateSkillSearch('', {
+    cfg: cfg(),
+    catalog: FAKE_CATALOG as never,
+    installed: new Set(unindexed.map((s) => s.slug)),
+    installedSkills: unindexed,
+    channels: ['custom'],
+  })
+  assert.equal(browse.items.some((it) => it.slug.startsWith('personal-dsh-skill-')), false)
+
+  const searched = await aggregateSkillSearch('personal-dsh-skill-3', {
+    cfg: cfg(),
+    catalog: FAKE_CATALOG as never,
+    installed: new Set(unindexed.map((s) => s.slug)),
+    installedSkills: unindexed,
+    channels: ['custom'],
+  })
+  assert.equal(searched.items.some((it) => it.slug === 'personal-dsh-skill-3'), true)
+})
+
 test('legacy Agent search retains popular fallback and its existing return fields', async () => {
   const result = await aggregateSkillSearch('unmatched', {
     cfg: cfg(), catalog: { items: [] },

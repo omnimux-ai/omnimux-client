@@ -90,15 +90,15 @@ export function InspirationContextMenu({ open, point, entries, onSelect, onClose
   const hydrated = useMemo(() => hydrateCardMenuEntries(entries), [entries])
   const visible = Boolean(open && point && hydrated.length > 0)
 
-  if (!visible) return null
-
   return (
     <Menu
+      className="omx-card-context-menu-root"
       open={visible}
       contextual
       portal
+      autoFocus
       anchor={null}
-      anchorPoint={point}
+      anchorPoint={point || undefined}
       items={hydrated}
       listClassName="omx-card-context-menu"
       onSelect={(id) => {

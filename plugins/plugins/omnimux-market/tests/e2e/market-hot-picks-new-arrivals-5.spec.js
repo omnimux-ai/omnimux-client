@@ -41,9 +41,17 @@ test('E2E-2 渲染组件契约：hotPicks 和 newArrivals 各截取前 5 个排�
   assert.match(gridSrc, /newArrivals[^;]*slice\(0,\s*5\)/);
 });
 
-test('E2E-3 新品上市专区严格限制为前 5 个技能，杜绝第 6 个落单', () => {
+test('E2E-3 新品上市专区严格限制为 5 个技能且不与热门精选重叠，总数严格守恒 36', () => {
   const catalog = JSON.parse(catalogSrc);
-  const items = catalog.items || [];
+  const items = (catalog.items || []).filter((i) => i.tab === 'skills' && i.kind === 'skill');
+  const hotItems = items.filter((i) => i.isHot || i.tags?.includes('热门精选'));
   const newItems = items.filter((i) => i.isNew || i.tags?.includes('新品上市'));
-  assert.ok(newItems.length > 0, '新品上市数据项必须非零');
+  assert.equal(items.length, 36, '全部精品 Skill 必须恰好 36 款');
+  assert.equal(hotItems.length, 5, '热门精选必须恰好为 5 款');
+  assert.equal(newItems.length, 5, '新品上市必须恰好为 5 款');
+  assert.equal(newItems.some((i) => i.isHot), false, '新品上市与热门精选不得重叠');
+  assert.equal(items.length - hotItems.length - newItems.length, 26, '探索更多剩余数必须为 26');
+  assert.equal(gridSrc.includes("' · '"), false, 'PlazaCardGrid 不得包含中点 · 分隔符');
+  assert.equal(gridSrc.includes('setOpen(newArrivals[0])'), false, '查看全部 > 不得误开单个详情弹窗');
+  assert.match(gridSrc, /data-omx-section.*explore-more/, '查看全部 > 必须定位至探索更多分区');
 });

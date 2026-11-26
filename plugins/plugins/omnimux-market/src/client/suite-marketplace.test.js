@@ -146,8 +146,8 @@ const suiteCard = (item) => ({
   installed: false,
 })
 
-test('A1 分类栏：按场景收敛为「全部」+ 8 个场景', () => {
-  const SCENARIOS = ['', 'scene-seeding', 'scene-brand', 'scene-product', 'scene-performance', 'scene-repurpose', 'scene-tools']
+test('A1 分类栏：按场景收敛为「全部」+ 6 个垂直场景', () => {
+  const SCENARIOS = ['', 'scene-video', 'scene-replicate', 'scene-visual', 'scene-research', 'scene-growth', 'scene-tools']
   const categories = buildWorkshopCategories(null, tr)
   assert.equal(categories.length, 7)
   assert.deepEqual(categories.map((c) => c.id), SCENARIOS)
@@ -159,10 +159,9 @@ test('A1 分类栏：按场景收敛为「全部」+ 8 个场景', () => {
   assert.equal(taxonomy.labelKey, 'picker.tab.suite')
 })
 
-test('A1 列表：套件只落「套件」分类，其他分类不混入套件', () => {
+test('A1 列表：套件只落「套件」分类，其他分类与全部均不混入套件', () => {
   const all = SkillShelf.plazaDiscoverySections()
-  const suiteIds = SUITES.map((item) => item.id).sort()
-  assert.deepEqual(all.regular.filter((item) => item.kind === 'suite').map((item) => item.id).sort(), suiteIds)
+  assert.equal(all.regular.filter((item) => item.kind === 'suite').length, 0)
 
   const suites = SkillShelf.plazaDiscoverySections([], { category: '套件' })
   assert.equal(suites.regular.length, SUITES.length)
@@ -526,4 +525,26 @@ test('A1 套件分类跳过远端检索，只渲染本地卡片', async () => {
   animation.run()
   assert.equal(animation.calls.length, 1)
   assert.equal(animation.calls[0].payload.query, '动画')
+})
+
+test('plazaDiscoverySections 预装与 plugin 来源条目在未等待 list/search 时即标记 installed 与 preinstalled (#350)', () => {
+  const recommendedIds = catalog.items.filter((i) => i.recommended === true).map((i) => i.id)
+  const sections = SkillShelf.plazaDiscoverySections([], {
+    entries: catalog.items,
+    config: {
+      homeRecommendations: recommendedIds.slice(0, 3),
+      featuredSkills: recommendedIds,
+    },
+    installedItems: [],
+    providerSlugs: [],
+    category: '',
+    query: '',
+  })
+  const allShown = [...sections.featured, ...sections.regular]
+  const pluginShown = allShown.filter((item) => item.source?.type === 'plugin')
+  assert.equal(pluginShown.length, 18, 'all 18 plugin-sourced skills must appear in offline discovery')
+  for (const item of pluginShown) {
+    assert.equal(item.installed, true, `${item.slug} plugin skill must start installed: true`)
+    assert.equal(item.preinstalled, true, `${item.slug} plugin skill must carry preinstalled: true`)
+  }
 })

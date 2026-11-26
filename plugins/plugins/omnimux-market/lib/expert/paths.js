@@ -1,5 +1,6 @@
+import { existsSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { basename, dirname, join } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 export const MCP_BEGIN = '# --- omnimux-market managed ---'
@@ -66,4 +67,39 @@ export function mcpRowPattern(rowId) {
  */
 export function expertModePresent(home) {
   return join(home, '.agent-presets', 'expert-mode', 'agent.cordis.yml')
+}
+
+const PLUGIN_NAME_RE = /^[a-z0-9][a-z0-9-]*$/
+const PLUGIN_SKILL_PATH_RE = /^skills\/[a-z0-9][a-z0-9_-]*(?:\/SKILL\.md)?$/
+
+/**
+ * Resolve the physical SKILL.md path for a `source.type === 'plugin'` catalog entry
+ * without copying files into $DSH_HOME/skills. Supports both repo workspace layouts
+ * (`plugins/plugins/<plugin>`) and installed node_modules / app.asar.unpacked layouts.
+ *
+ * @param {{ type?: string; plugin?: string; path?: string } | null | undefined} source
+ * @param {string | undefined} pkgRoot
+ * @returns {string}
+ */
+export function resolvePluginSkillFile(source, pkgRoot) {
+  if (!source || source.type !== 'plugin' || !pkgRoot) return ''
+  const plugin = String(source.plugin || '').trim()
+  const rawPath = String(source.path || '').trim().replace(/\\/g, '/').replace(/\/+$/, '')
+  if (!PLUGIN_NAME_RE.test(plugin) || !PLUGIN_SKILL_PATH_RE.test(rawPath) || rawPath.includes('..')) {
+    return ''
+  }
+  const relFile = rawPath.endsWith('/SKILL.md') ? rawPath : `${rawPath}/SKILL.md`
+  const bases = plugin === 'omnimux-market'
+    ? [resolve(pkgRoot), resolve(dirname(pkgRoot), plugin)]
+    : [resolve(dirname(pkgRoot), plugin)]
+  for (const base of bases) {
+    const candidate = join(base, relFile)
+    const unpacked = candidate.replace(/(^|[\\/])([^\\/]*\.asar)(?=[\\/]|$)/iu, '$1$2.unpacked')
+    for (const target of unpacked !== candidate ? [unpacked, candidate] : [candidate]) {
+      try {
+        if (existsSync(target) && statSync(target).isFile()) return target
+      } catch {}
+    }
+  }
+  return ''
 }

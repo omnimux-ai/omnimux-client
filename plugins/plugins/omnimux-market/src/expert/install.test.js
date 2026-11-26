@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { loadCatalog, parseCatalog } from './catalog.js'
-import { formatMcpRow, installItem, removeMcpRow, spliceManaged, withConnectorPatchLock } from './install.js'
+import { formatMcpRow, installItem, readCatalogSkillMarkdown, removeMcpRow, spliceManaged, withConnectorPatchLock } from './install.js'
 
 const PACKAGE_ROOT = join(import.meta.dirname, '..', '..')
 
@@ -354,4 +354,61 @@ test('removeMcpRow is a no-op without a patch file or without the managed block'
   writeFileSync(join(env.profileDir, 'cordis.patch.yml'), userOnly)
   removeMcpRow(env.profileDir, { id: 'cn-tencent-docs' })
   assert.equal(readFileSync(join(env.profileDir, 'cordis.patch.yml'), 'utf8'), userOnly)
+})
+
+test('plugin-source skills read SKILL.md from owning plugin without copying into $DSH_HOME/skills, and missing plugin fails explicitly', () => {
+  const env = roots()
+  const catalog = parseCatalog({
+    schema: 1,
+    generated_at: 'fixture',
+    items: [
+      {
+        id: 'sk-plug-market',
+        tab: 'skills',
+        kind: 'skill',
+        title: 'Market SOP',
+        summary: 'SOP',
+        category: 'scene-research',
+        skill: 'omnimux-ecom-market-research',
+        source: { type: 'plugin', plugin: 'omnimux-market', path: 'skills/omnimux-ecom-market-research' },
+      },
+      {
+        id: 'sk-plug-clip',
+        tab: 'skills',
+        kind: 'skill',
+        title: 'Clip Craft',
+        summary: 'Clip',
+        category: 'scene-tools',
+        skill: 'clip-craft',
+        source: { type: 'plugin', plugin: 'omnimux-clip', path: 'skills/clip-craft' },
+      },
+      {
+        id: 'sk-plug-missing',
+        tab: 'skills',
+        kind: 'skill',
+        title: 'Missing',
+        summary: 'Missing',
+        category: 'scene-tools',
+        skill: 'ghost-skill',
+        source: { type: 'plugin', plugin: 'omnimux-clip', path: 'skills/ghost-skill' },
+      },
+    ],
+  })
+
+  const resMarket = installItem({ catalog, id: 'sk-plug-market', ...env })
+  assert.equal(resMarket.installed, true)
+  assert.equal(resMarket.source, 'plugin')
+  assert.equal(existsSync(join(env.home, 'skills', 'omnimux-ecom-market-research', 'SKILL.md')), false)
+
+  const mdMarket = readCatalogSkillMarkdown(catalog.items[0], env)
+  assert.match(mdMarket, /analyze_market\.py/)
+
+  const resClip = installItem({ catalog, id: 'sk-plug-clip', ...env })
+  assert.equal(resClip.installed, true)
+  assert.equal(resClip.source, 'plugin')
+  const mdClip = readCatalogSkillMarkdown(catalog.items[1], env)
+  assert.match(mdClip, /clip-craft/)
+
+  assert.throws(() => installItem({ catalog, id: 'sk-plug-missing', ...env }), /plugin skill missing/)
+  assert.equal(readCatalogSkillMarkdown(catalog.items[2], env), '')
 })

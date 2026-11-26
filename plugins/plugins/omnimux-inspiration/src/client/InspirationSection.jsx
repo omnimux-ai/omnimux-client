@@ -577,9 +577,16 @@ export function InspirationSection({ t, active }) {
     }
   }, [selectedItem])
 
+  const {
+    collections: libraryCollectionList,
+    addItemToCollection: addLibraryItemToCollection,
+    createWithItem: createCollectionWithItem,
+    remove: removeLibraryCollectionItem,
+  } = libraryCollections
+
   const buildMenuForDescriptor = useCallback((descriptor) => {
     const row = descriptor?.source_row || descriptor
-    const isLocal = tab === 'local' && row?.is_local !== false
+    const isLocal = Boolean(row?.is_local)
     return buildCardMenuEntries({
       t,
       local: isLocal,
@@ -587,8 +594,9 @@ export function InspirationSection({ t, active }) {
       sourceUrl: row?.source_url,
       isFavorite: Boolean(row?.is_favorite),
       importing: row?.import_status === 'importing',
+      replicateBusy: Boolean(replicateBusy),
       itemId: row?.id == null ? '' : String(row.id),
-      collections: libraryCollections.collections,
+      collections: libraryCollectionList,
       onToggleFavorite: isLocal ? () => handleToggleFavorite(row) : undefined,
       onShare: () => {
         setSelectedItem(row)
@@ -613,16 +621,19 @@ export function InspirationSection({ t, active }) {
       onOpenOriginal: () => handleOpenOriginal(row),
       onCopyLink: () => handleCopyCardLink(row),
       onReplicate: () => handleReplicate(row),
-      onAddToCollection: isLocal ? (col) => libraryCollections.addItemToCollection(col, row) : undefined,
-      onCreateCollection: isLocal ? () => libraryCollections.createWithItem(row) : undefined,
-      onRemoveFromCollection: isLocal && collectionId ? () => libraryCollections.remove(row) : undefined,
+      onAddToCollection: isLocal ? (col) => addLibraryItemToCollection(col, row) : undefined,
+      onCreateCollection: isLocal ? () => createCollectionWithItem(row) : undefined,
+      onRemoveFromCollection: isLocal && collectionId ? () => removeLibraryCollectionItem(row) : undefined,
       onDelete: isLocal ? () => setPendingRemove({ ids: [row.id], count: 1 }) : undefined,
     })
   }, [
-    tab,
     t,
     collectionId,
-    libraryCollections,
+    replicateBusy,
+    libraryCollectionList,
+    addLibraryItemToCollection,
+    createCollectionWithItem,
+    removeLibraryCollectionItem,
     handleToggleFavorite,
     handleAddCardToSession,
     handleOpenOriginal,
@@ -631,6 +642,12 @@ export function InspirationSection({ t, active }) {
     setSelectedItem,
     setPendingRemove,
   ])
+
+  const getMasonryItemKey = useCallback((descriptor) => (
+    descriptor.card_type === 'collection'
+      ? `collection:${descriptor.collection.id}`
+      : String(descriptor.source_row?.id ?? descriptor.id)
+  ), [])
 
   const handleOpenCardContextMenu = useCallback((event, descriptor) => {
     event.preventDefault()
@@ -1060,18 +1077,14 @@ export function InspirationSection({ t, active }) {
                       <MasonryGrid
                         className={`omnimux-inspiration-grid ${selecting ? 'selecting' : ''}`}
                         items={gridCards}
-                        getKey={(descriptor) => (
-                          descriptor.card_type === 'collection'
-                            ? `collection:${descriptor.collection.id}`
-                            : String(descriptor.source_row?.id ?? descriptor.id)
-                        )}
+                        getKey={getMasonryItemKey}
                         estimateWeight={estimateInspirationCardWeight}
                         minColumnWidth={236}
                         minColumns={1}
                         maxColumns={6}
                         gap={12}
                         defaultColumns={4}
-                        resetKey={`${tab}:${collectionId}:${platform}:${type}:${sort}:${favorite}:${q}`}
+                        resetKey={`${tab}:${collectionId}:${platform}:${type}:${sort}:${favorite}:${country}:${category}:${duration}:${views}:${trafficType}:${dateRange}:${q}`}
                         ariaLabel={t('feedView.gallery')}
                         renderItem={(descriptor, { column }) => {
                           if (descriptor.card_type === 'collection') {

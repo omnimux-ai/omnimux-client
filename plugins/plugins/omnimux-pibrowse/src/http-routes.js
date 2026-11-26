@@ -93,7 +93,7 @@ export function createHttpHandler(dispatcher, logger) {
         return { status: 200, body: await dispatcher.getOverview() }
       }
       if (method === 'POST' && pathname === '/runtime') {
-        const res = await dispatcher.manageRuntime(body)
+        const res = await dispatcher.manageRuntime(body, { caller: 'http' })
         return { status: res?.ok === false && res?.error === 'confirmation-required' ? 400 : 200, body: res }
       }
 

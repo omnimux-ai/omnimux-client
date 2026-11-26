@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { describe, it } from 'node:test'
 import {
   computeMasonryColumnCount,
@@ -164,5 +165,16 @@ describe('dsh-ui-kit/social-card MasonryGrid column stability', () => {
       assert.equal(second.assignments.get(id), col, `item ${id} must stay in column ${col} after append`)
     }
     assert.equal(second.columns.flat().length, appendedItems.length)
+  })
+})
+
+describe('dsh-ui-kit/social-card pinnedClearance multi-badge & coverless rules', () => {
+  it('supports single and multi top-right pinned badge clearance plus coverless article clearance', () => {
+    const cssText = readFileSync(new URL('./SocialPostCard.module.css', import.meta.url), 'utf8')
+    assert.match(cssText, /\.card\[data-pinned-tr="true"\]\s+\.pinnedClearance\s*\{[^}]*padding-right:\s*36px/)
+    assert.match(cssText, /\.card\[data-pinned-tr-multi="true"\]\s+\.pinnedClearance\s*\{[^}]*padding-right:\s*64px/)
+    const tsxText = readFileSync(new URL('./SocialPostCard.tsx', import.meta.url), 'utf8')
+    assert.match(tsxText, /data-pinned-tr-multi=\{hasPinnedTopRight && \(pinnedTopRightCount \?\? 1\) > 1 \? "true" : undefined\}/)
+    assert.match(tsxText, /className=\{cx\(c\("articleTitle"\),\s*!hasCover && c\("pinnedClearance"\)\)\}/)
   })
 })

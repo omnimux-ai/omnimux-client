@@ -4817,7 +4817,7 @@ const READONLY_INSPECTION_VERBS = new Set([
   'test', '[', '[[', 'bat', 'nl',
 ])
 
-const MATERIALIZATION_SCRIPT_RE = /(?:^|\/)(?:sync-to-app|sync-stable|materialize-with-rollback|sync-main)\.sh$/
+const MATERIALIZATION_SCRIPT_RE = /(?:^|\/)(?:sync-to-app|sync-stable|sync-main)\.sh$/
 
 function classifyMaterializationSegment(words, inputRedirects = [], currentCwd = process.cwd(), depth = 0) {
   if (!words || words.length === 0 || depth > 4) return null

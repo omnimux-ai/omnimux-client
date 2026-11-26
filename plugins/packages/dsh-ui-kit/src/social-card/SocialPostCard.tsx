@@ -245,13 +245,15 @@ function ArticleBody({ item, platform, coverNode, hideMedia }: {
   const titleText = String(item.title || item.body || "").trim();
   const excerptText = String(item.excerpt || (item.title && item.body && item.body !== item.title ? item.body : "")).trim();
 
+  const hasCover = !hideMedia && Boolean(item.coverUrl || coverNode);
+
   return (
     <>
-      {!hideMedia && (item.coverUrl || coverNode) ? (
+      {hasCover ? (
         <CoverMedia item={item} platform={platform} aspectClass={c("articleCover")} coverNode={coverNode} />
       ) : null}
       <div className={c("articleBody")}>
-        {titleText ? <h3 className={c("articleTitle")}>{titleText}</h3> : null}
+        {titleText ? <h3 className={cx(c("articleTitle"), !hasCover && c("pinnedClearance"))}>{titleText}</h3> : null}
         {excerptText ? <p className={c("articleExcerpt")}>{excerptText}</p> : null}
         <AuthorRow item={item} avatarSize="sm" />
       </div>
@@ -456,7 +458,7 @@ function WebLinkBody({ item, platform, coverNode, hideMedia }: {
         <CoverMedia item={item} platform={platform} aspectClass={c("webLinkCover")} coverNode={coverNode} />
       ) : null}
       <div className={c("webLinkBody")}>
-        {titleText ? <h3 className={c("webLinkTitle")}>{titleText}</h3> : null}
+        {titleText ? <h3 className={cx(c("webLinkTitle"), hideMedia && c("pinnedClearance"))}>{titleText}</h3> : null}
         <div className={c("webLinkHostRow")}>
           {item.faviconUrl && !favFailed ? (
             <img
@@ -504,6 +506,7 @@ export const SocialPostCard = forwardRef<HTMLElement, SocialPostCardProps>(funct
     loading = false,
     menuOpen = false,
     hasPinnedTopRight = false,
+    pinnedTopRightCount,
     topLeftSlot,
     topRightSlot,
     hoverActions,
@@ -554,6 +557,7 @@ export const SocialPostCard = forwardRef<HTMLElement, SocialPostCardProps>(funct
       data-loading={loading ? "true" : undefined}
       data-menu-open={menuOpen ? "true" : undefined}
       data-pinned-tr={hasPinnedTopRight ? "true" : undefined}
+      data-pinned-tr-multi={hasPinnedTopRight && (pinnedTopRightCount ?? 1) > 1 ? "true" : undefined}
       className={cx(c("card"), className)}
       onClick={onClick}
       onContextMenu={onContextMenu}

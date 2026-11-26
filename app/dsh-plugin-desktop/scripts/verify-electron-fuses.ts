@@ -73,6 +73,12 @@ const REQUIRED_ELECTRON_FUSES = [
   },
 ] as const
 
+const HARDENED_ELECTRON_FUSES = [
+  { option: FuseV1Options.EnableCookieEncryption, name: 'EnableCookieEncryption', expected: FuseState.ENABLE },
+  { option: FuseV1Options.EnableNodeOptionsEnvironmentVariable, name: 'EnableNodeOptionsEnvironmentVariable', expected: FuseState.DISABLE },
+  { option: FuseV1Options.EnableNodeCliInspectArguments, name: 'EnableNodeCliInspectArguments', expected: FuseState.DISABLE },
+] as const
+
 const ASAR_ONLY_ELECTRON_FUSE = {
   option: FuseV1Options.OnlyLoadAppFromAsar,
   name: 'OnlyLoadAppFromAsar',
@@ -97,12 +103,18 @@ export async function verifyElectronExecutableFuses(
     })
   }
   const requiredFuses = [...REQUIRED_ELECTRON_FUSES, ASAR_ONLY_ELECTRON_FUSE]
-  const invalid = requiredFuses.flatMap(({ option, name }) => {
-    const state = wire[option]
-    const expected = option === FuseV1Options.RunAsNode || requiresAsar
-      ? FuseState.ENABLE : FuseState.DISABLE
-    return state === expected ? [] : [`${name}=${fuseStateName(state)}`]
-  })
+  const invalid = [
+    ...requiredFuses.flatMap(({ option, name }) => {
+      const state = wire[option]
+      const expected = option === FuseV1Options.RunAsNode || requiresAsar
+        ? FuseState.ENABLE : FuseState.DISABLE
+      return state === expected ? [] : [`${name}=${fuseStateName(state)}`]
+    }),
+    ...HARDENED_ELECTRON_FUSES.flatMap(({ option, name, expected }) => {
+      const state = wire[option]
+      return state === expected ? [] : [`${name}=${fuseStateName(state)}`]
+    }),
+  ]
   if (invalid.length > 0) {
     throw new Error(
       `dsh-plugin-desktop: final Electron executable at ${executable} has invalid required fuses: ${invalid.join(', ')}`,

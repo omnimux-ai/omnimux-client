@@ -268,6 +268,8 @@ export function InspirationCard({
     </div>
   ) : null
 
+  const pinnedTopRightCount = (failureReason ? 1 : 0) + (isLocal && isFavorite ? 1 : 0)
+
   return (
     <SocialPostCard
       item={effectiveItem}
@@ -277,6 +279,7 @@ export function InspirationCard({
       loading={importing}
       menuOpen={menuOpen}
       hasPinnedTopRight={hasPinnedTopRight}
+      pinnedTopRightCount={pinnedTopRightCount}
       topLeftSlot={topLeftSlot}
       topRightSlot={topRightSlot}
       hoverActions={hoverActions}

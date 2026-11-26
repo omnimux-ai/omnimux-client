@@ -18,8 +18,9 @@ test('shipped configuration covers every recommended skill and validates clean',
   assert.ok(config.homeRecommendations.length > 0)
   const home = SkillShelf.plazaDiscoverySections()
   assert.deepEqual(ids(home.featured), config.homeRecommendations)
-  // 货架本地卡片 = 全部技能 + 全部套件，再扣掉首页精选。
-  assert.equal(home.regular.length, catalog.items.filter(item => item.kind === 'skill' || item.kind === 'suite').length - config.homeRecommendations.length)
+  // 货架本地卡片 = 全部 36 款 Skill（套件仅归属「套件」分类），再扣掉首页精选。
+  assert.equal(config.featuredSkills.length, 36)
+  assert.equal(home.regular.length, catalog.items.filter(item => item.kind === 'skill').length - config.homeRecommendations.length)
   // 全部 home 推荐都是 featuredSkills 的子集
   for (const id of config.homeRecommendations) assert.ok(config.featuredSkills.includes(id), `${id} must be in featuredSkills`)
 })
@@ -114,10 +115,10 @@ test('real workshop renders shelf sections and every recommended skill on Featur
   const ui = workshop({ 14: 'ready' })
   const sections = nodes(ui.render(), node => node.props.className === 'featured-section').length
   assert.ok(sections >= 1, 'home must render at least one featured section')
-  // 货架卡总量 = 技能 + 套件 - 首页精选（home 推荐位并入 regular 行）
+  // 「全部」严格守恒展示全量 36 款垂直精品 Skill（5 热门 + 5 新品 + 26 探索更多）
   assert.equal(
     nodes(ui.render(), node => String(node.props.className || '').includes('featured-card')).length,
-    catalog.items.filter(item => item.kind === 'skill' || item.kind === 'suite').length - config.homeRecommendations.length)
+    catalog.items.filter(item => item.kind === 'skill').length)
   // featured 页签自 013fcb898 起移除：切到该状态不再渲染精选区
   ui.state.set(1, 'featured')
   assert.equal(nodes(ui.render(), node => node.props.className === 'featured-card').length, 0)

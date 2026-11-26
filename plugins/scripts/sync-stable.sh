@@ -31,17 +31,8 @@ ORIGINAL_ARGS=("$@")
 for arg in "$@"; do
   case "$arg" in
     --managed-tarball*|--expect-*|--recover-managed-tarball*)
-      request="$(node "$SCRIPT_ROOT/managed-tarball.mjs" request "$@")" || { printf '%s\n' "$request"; exit 2; }
-      profile="$(printf '%s' "$request" | node -e 'let s="";process.stdin.on("data",c=>s+=c).on("end",()=>process.stdout.write(JSON.parse(s).profile))')"
-      lock_status=0
-      python3 "$SCRIPT_ROOT/managed-tarball-archive.py" check-locks "$profile" || lock_status=$?
-      if [ "$lock_status" -eq 10 ]; then
-        exec python3 "$SCRIPT_ROOT/managed-tarball-archive.py" lock "$profile" -- bash "$0" "$@"
-      elif [ "$lock_status" -ne 0 ]; then
-        exit 4
-      fi
-      node "$SCRIPT_ROOT/managed-tarball.mjs" run "$@"
-      exit $?
+      echo '❌ sync-stable: --managed-tarball / --expect-* / --recover-managed-tarball 已退役；请使用常规物化流程。' >&2
+      exit 2
       ;;
   esac
 done
@@ -183,13 +174,12 @@ done
 
 if [ "${#PROFILES[@]}" -gt 0 ]; then
   lock_status=0
-  python3 "$SCRIPT_ROOT/managed-tarball-archive.py" check-locks "${PROFILES[@]}" || lock_status=$?
+  python3 "$SCRIPT_ROOT/profile-lock-archive.py" check-locks "${PROFILES[@]}" || lock_status=$?
   if [ "$lock_status" -eq 10 ]; then
-    exec python3 "$SCRIPT_ROOT/managed-tarball-archive.py" lock "${PROFILES[@]}" -- bash "$0" ${ORIGINAL_ARGS[@]+"${ORIGINAL_ARGS[@]}"}
+    exec python3 "$SCRIPT_ROOT/profile-lock-archive.py" lock "${PROFILES[@]}" -- bash "$0" ${ORIGINAL_ARGS[@]+"${ORIGINAL_ARGS[@]}"}
   elif [ "$lock_status" -ne 0 ]; then
     exit 4
   fi
-  python3 "$SCRIPT_ROOT/managed-tarball-archive.py" pending "${PROFILES[@]}" || exit 7
 fi
 
 # 产品树垂直（含产品库 / 插件市场 / 剪辑）+ omnimux-video + omnimux-analytics（埋点）+ omnimux-publish（发布中心）

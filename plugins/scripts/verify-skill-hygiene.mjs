@@ -246,10 +246,13 @@ export function verifySkillHygiene(pluginsWorkspaceRoot = PLUGINS_WORKSPACE_ROOT
 
   /** @type {Map<string, string>} slug -> declaring plugin name */
   const pluginSkillOwners = new Map()
+  /** @type {Map<string, { pluginName: string; origin: string; license: string; owner: string }>} */
+  const pluginSkillMeta = new Map()
   /** @type {Array<{ slug: string; relDir: string; absDir: string; upstream: string; noticeRef: string; sourcePath: string }>} */
   const bundledThirdPartySkills = []
   let manifestMetadataCount = 0
   let catalogItemCount = 0
+  let pluginRefCount = 0
 
   // 1. 产品插件：禁止与上游重名、禁止软链、校验 manifest ↔ skills/ 双向一致与跨插件去重
   if (existsSync(pluginsDir)) {
@@ -415,6 +418,7 @@ export function verifySkillHygiene(pluginsWorkspaceRoot = PLUGINS_WORKSPACE_ROOT
                   message: `${pluginName}/dsh.manifest.json 技能 ${slug} 缺少 owner 字段`,
                 })
               }
+              pluginSkillMeta.set(slug, { pluginName, origin, license, owner })
               if (origin === 'third-party') {
                 bundledThirdPartySkills.push({
                   slug,
@@ -491,7 +495,7 @@ export function verifySkillHygiene(pluginsWorkspaceRoot = PLUGINS_WORKSPACE_ROOT
       }
 
       const sourceType = item.source && typeof item.source === 'object' ? item.source.type : undefined
-      const isBundledItem = sourceType === 'bundled' || (item.tab === 'skills' && item.kind === 'skill' && sourceType === undefined)
+      const isBundledItem = sourceType === 'bundled' || sourceType === 'plugin' || (item.tab === 'skills' && item.kind === 'skill' && sourceType === undefined)
       if (isBundledItem && license && FORBIDDEN_BUNDLED_LICENSES.has(license.toUpperCase())) {
         issues.push({
           code: 'non-concrete-bundled-license',
@@ -535,6 +539,58 @@ export function verifySkillHygiene(pluginsWorkspaceRoot = PLUGINS_WORKSPACE_ROOT
               code: 'invalid-indexed-source-path',
               path: 'plugins/omnimux-market/catalog/index.json',
               message: `catalog/index.json 技能 ${slug} 的 source.path (${item.source.path}) 与目录 ${expectedDir} 不一致`,
+            })
+          }
+        }
+      } else if (sourceType === 'plugin') {
+        pluginRefCount += 1
+        const pluginName = String(item.source?.plugin || '').trim()
+        const rawPath = String(item.source?.path || '').trim()
+        const normalizedPath = rawPath.replace(/\\/g, '/').replace(/\/+$/, '')
+        const expectedDir = `skills/${slug}`
+        const expectedFile = `${expectedDir}/SKILL.md`
+        const validPluginName = /^[a-z0-9][a-z0-9-]*$/.test(pluginName)
+        if (!validPluginName || (normalizedPath !== expectedDir && normalizedPath !== expectedFile) || normalizedPath.includes('..')) {
+          issues.push({
+            code: 'invalid-plugin-source-path',
+            path: 'plugins/omnimux-market/catalog/index.json',
+            message: `catalog/index.json 插件直引技能 ${slug} 的 source (${pluginName || '(empty)'}:${rawPath || '(empty)'}) 与 ${expectedDir} 不一致或非法`,
+          })
+        } else {
+          if (pluginSkillOwners.get(slug) !== pluginName) {
+            issues.push({
+              code: 'undeclared-plugin-indexed-entry',
+              path: 'plugins/omnimux-market/catalog/index.json',
+              message: `catalog/index.json 插件直引技能 ${slug} 未在 plugins/${pluginName}/dsh.manifest.json 中声明`,
+            })
+          }
+          const pluginMdPath = join(pluginsDir, pluginName, 'skills', slug, 'SKILL.md')
+          let mdStat = null
+          try {
+            mdStat = lstatSync(pluginMdPath)
+          } catch {
+            mdStat = null
+          }
+          if (!mdStat || mdStat.isSymbolicLink() || !isNonEmptyRegularFile(pluginMdPath)) {
+            issues.push({
+              code: 'dangling-plugin-indexed-entry',
+              path: 'plugins/omnimux-market/catalog/index.json',
+              message: `catalog/index.json 插件直引技能 ${slug} 缺少真实非空物理文件: plugins/${pluginName}/skills/${slug}/SKILL.md`,
+            })
+          }
+          const manifestMeta = pluginSkillMeta.get(slug)
+          if (
+            owner !== pluginName ||
+            (manifestMeta && manifestMeta.pluginName === pluginName && (
+              manifestMeta.origin !== origin ||
+              manifestMeta.license !== license ||
+              manifestMeta.owner !== owner
+            ))
+          ) {
+            issues.push({
+              code: 'plugin-indexed-metadata-mismatch',
+              path: 'plugins/omnimux-market/catalog/index.json',
+              message: `catalog/index.json 插件直引技能 ${slug} 的 provenance 与 ${pluginName}/dsh.manifest.json 不一致`,
             })
           }
         }
@@ -1041,6 +1097,7 @@ export function verifySkillHygiene(pluginsWorkspaceRoot = PLUGINS_WORKSPACE_ROOT
       bundledCount: bundledSlugs.size,
       catalogDirCount: realDirs.size,
       catalogItemCount,
+      pluginRefCount,
       pluginSkillCount: pluginSkillOwners.size,
       manifestMetadataCount,
       bundledThirdPartyCount: bundledThirdPartySkills.length,

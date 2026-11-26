@@ -1,11 +1,9 @@
 #!/usr/bin/env python3
 """Bounded, non-executing archive inspection and cooperative profile locks."""
+import contextlib
 import fcntl
 import gzip
 import hashlib
-import contextlib
-import re
-import tempfile
 import json
 import os
 import pathlib
@@ -13,6 +11,7 @@ import stat
 import subprocess
 import sys
 import tarfile
+import tempfile
 import unicodedata
 
 LIMITS = {"compressed": 128 << 20, "decoded": 544 << 20,
@@ -57,6 +56,7 @@ def safe_path(path: str, missing: bool = False) -> pathlib.Path:
 
 
 def identity(info: os.stat_result) -> list:
+    """Return a JSON-serializable file/directory identity tuple."""
     return [str(v) for v in (info.st_dev, info.st_ino, info.st_size,
                             info.st_mtime_ns, info.st_ctime_ns)]
 
@@ -100,10 +100,6 @@ class DirectoryAnchor:
         self.close()
 
 
-def preparation_checkpoint(stage: str) -> None:
-    """In-process deterministic test seam; not selectable through JSON or env."""
-
-
 @contextlib.contextmanager
 def child_anchor(parent: DirectoryAnchor, name: str, create: bool = False):
     """Extend a held ancestor chain without reopening an absolute path."""
@@ -145,7 +141,6 @@ def copy_entry(source: DirectoryAnchor, name: str, target: DirectoryAnchor, dest
             os.mkdir(destination, 0o700, dir_fd=target.fd)
             with child_anchor(target, destination) as b:
                 inventory = sorted(os.listdir(a.fd))
-                preparation_checkpoint('copy-directory')
                 a.verify()
                 b.verify()
                 for member in inventory:
@@ -163,7 +158,6 @@ def copy_entry(source: DirectoryAnchor, name: str, target: DirectoryAnchor, dest
             output = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
                              0o600, dir_fd=target.fd)
             with os.fdopen(output, 'wb') as writer:
-                preparation_checkpoint('copy-file')
                 source.verify()
                 target.verify()
                 length = 0
@@ -197,7 +191,6 @@ def sync_anchor(anchor: DirectoryAnchor) -> None:
         before = os.stat(name, dir_fd=anchor.fd, follow_symlinks=False)
         if stat.S_ISDIR(before.st_mode):
             with child_anchor(anchor, name) as child:
-                preparation_checkpoint('sync-directory')
                 sync_anchor(child)
         elif stat.S_ISREG(before.st_mode):
             fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=anchor.fd)
@@ -231,7 +224,6 @@ def prepare_files(request: dict) -> dict:
         safe_path(str(source))
         safe_path(str(destination), missing=True)
         with DirectoryAnchor(str(source.parent)) as a, DirectoryAnchor(str(destination.parent)) as b:
-            preparation_checkpoint('opened')
             a.verify()
             b.verify()
             copy_entry(a, source.name, b, destination.name)
@@ -243,7 +235,6 @@ def prepare_files(request: dict) -> dict:
             target = target.parent
         with contextlib.ExitStack() as stack:
             anchor = stack.enter_context(DirectoryAnchor(str(target)))
-            preparation_checkpoint('opened')
             anchor.verify()
             for name in missing:
                 anchor = stack.enter_context(child_anchor(anchor, name, create=True))
@@ -254,7 +245,6 @@ def prepare_files(request: dict) -> dict:
         if len(text) > 16 << 20:
             raise ValueError('preparation text limit')
         with DirectoryAnchor(str(target.parent)) as anchor:
-            preparation_checkpoint('opened')
             anchor.verify()
             if request.get('emptyOnly'):
                 try:
@@ -294,7 +284,6 @@ def prepare_files(request: dict) -> dict:
                     pass
     elif operation == 'sync':
         with DirectoryAnchor(request['path']) as anchor:
-            preparation_checkpoint('opened')
             anchor.verify()
             sync_anchor(anchor)
     elif operation == 'identities':
@@ -418,9 +407,6 @@ class ArchiveGuard:
         payload = 0
         package = None
         with contextlib.ExitStack() as stack:
-            # TemporaryFile() is read-write, and Python 3.14+ infers write mode from that file
-            # object for GzipFile, so an explicit read mode is required to keep every supported
-            # interpreter able to inspect a frozen archive.
             compressed = stack.enter_context(gzip.GzipFile(fileobj=self.frozen, mode='rb'))
             decoded = BoundedReader(compressed, self.limits['decoded'])
             archive = stack.enter_context(tarfile.open(fileobj=decoded, mode='r|',
@@ -504,8 +490,6 @@ class ArchiveGuard:
                 entries[rel] = record
                 if rel == 'package.json':
                     package = strict_json(data)
-            # Drain through tarfile's buffered stream so hidden trailing bytes and
-            # gzip CRC/EOF are checked even when the tar end marker arrives early.
             while chunk := archive.fileobj.read(1 << 16):
                 if any(chunk):
                     raise ValueError('nonzero tar trailing data')
@@ -687,152 +671,8 @@ class ArchiveGuard:
         return subprocess.call(command, env=env, pass_fds=tuple(locks.values()))
 
 
-def read_at(parent: DirectoryAnchor, name: str, limit: int = 64 << 20) -> object:
-    """Read a bounded journal through an anchored no-follow descriptor."""
-    fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=parent.fd)
-    with os.fdopen(fd, 'rb') as stream:
-        if not stat.S_ISREG(os.fstat(fd).st_mode):
-            raise ValueError('journal is not regular')
-        raw = stream.read(limit + 1)
-        if len(raw) > limit:
-            raise ValueError('journal limit')
-    parent.verify()
-    return strict_json(raw)
-
-
-def allowed_moves(txn_id: str, name: str, transition: bool = False) -> list:
-    if not re.fullmatch(r'[0-9a-f-]{36}', txn_id) or not re.fullmatch(r'(?:@[a-z0-9][a-z0-9._-]*/)?[a-z0-9][a-z0-9._-]*', name):
-        raise ValueError('journal identity invalid')
-    prefix = f'.materialize-transactions/{txn_id}'
-    pairs = []
-    for item in ('node_modules', 'package.json', 'pnpm-lock.yaml'):
-        pairs.extend([(item, f'{prefix}/old-generation/{item}'),
-                      (f'{prefix}/candidate/{item}', item)])
-    source = f'.materialize-snapshots/plugins/{name}'
-    pairs.append((f'{prefix}/candidate/{source}', source))
-    if transition:
-        pairs.append((source, f'{prefix}/old-generation/{source}'))
-    return pairs
-
-
-def validate_journal(value: object, profile: str, txn_id: str) -> list:
-    if not isinstance(value, dict) or value.get('schemaVersion') not in (1, 2) or value.get('id') != txn_id or value.get('profile') != profile:
-        raise ValueError('journal identity mismatch')
-    if value.get('phase') not in ('PREPARING', 'PREPARED', 'COMMITTING', 'RECOVERING', 'COMMITTED', 'ROLLED_BACK', 'REJECTED'):
-        raise ValueError('journal phase invalid')
-    transition = value.get('transition')
-    if value['schemaVersion'] == 2:
-        if not isinstance(transition, dict):
-            raise ValueError('transition journal missing identity')
-        for side in ('before', 'after'):
-            item = transition.get(side)
-            if not isinstance(item, dict) or not isinstance(item.get('version'), str):
-                raise ValueError('transition identity invalid')
-            for key in ('sha256', 'payloadDigest'):
-                if not re.fullmatch(r'[a-f0-9]{64}', item.get(key, '')):
-                    raise ValueError('transition digest invalid')
-            if item.get('sourceSpec') != f"file:.materialize-snapshots/plugins/{value.get('name')}":
-                raise ValueError('transition source invalid')
-    elif transition is not None:
-        raise ValueError('legacy journal cannot authorize transition')
-    pairs = allowed_moves(txn_id, value.get('name', ''), value['schemaVersion'] == 2)
-    moves = value.get('moves', [])
-    if not isinstance(moves, list) or any(not isinstance(m, dict) or (m.get('from'), m.get('to')) not in pairs for m in moves):
-        raise ValueError('journal move outside exact write set')
-    if value['phase'] not in ('COMMITTED', 'ROLLED_BACK', 'REJECTED') and 'moves' not in value:
-        raise ValueError('active journal missing moves')
-    return pairs
-
-
-def named_identity(parent: DirectoryAnchor, name: str):
-    try:
-        info = os.stat(name, dir_fd=parent.fd, follow_symlinks=False)
-    except FileNotFoundError:
-        return None
-    if not (stat.S_ISREG(info.st_mode) or stat.S_ISDIR(info.st_mode)):
-        raise ValueError('unsafe move leaf')
-    return identity(info)
-
-
-def safeMove(profile: str, txn_id: str, source: str, destination: str, expected: dict) -> dict:
-    """Rename a journal-authorized item with held ancestor descriptors."""
-    safe_path(profile)
-    transaction = f'{profile}/.materialize-transactions/{txn_id}'
-    with DirectoryAnchor(transaction) as journal_parent:
-        journal = read_at(journal_parent, 'journal.json')
-        pairs = validate_journal(journal, profile, txn_id)
-        if (source, destination) not in pairs and (destination, source) not in pairs:
-            raise ValueError('move outside four-item whitelist')
-        if not any((m['from'], m['to']) in ((source, destination), (destination, source)) for m in journal['moves']):
-            raise ValueError('durable move intent missing')
-        if journal['phase'] not in ('COMMITTING', 'RECOVERING'):
-            raise ValueError('journal is not publishing or recovering')
-        src = pathlib.Path(profile, source)
-        dst = pathlib.Path(profile, destination)
-        with DirectoryAnchor(str(src.parent)) as a, DirectoryAnchor(str(dst.parent)) as b:
-            before = {'from': named_identity(a, src.name), 'to': named_identity(b, dst.name)}
-            if before != expected or before['from'] is None or before['to'] is not None:
-                raise ValueError('move identity drift or occupied destination')
-            if os.fstat(a.fd).st_dev != os.fstat(b.fd).st_dev:
-                raise ValueError('cross-filesystem move')
-            a.verify()
-            b.verify()
-            journal_parent.verify()
-            os.rename(src.name, dst.name, src_dir_fd=a.fd, dst_dir_fd=b.fd)
-            os.fsync(a.fd)
-            os.fsync(b.fd)
-            a.verify()
-            b.verify()
-            after = {'from': named_identity(a, src.name), 'to': named_identity(b, dst.name)}
-            if after['from'] is not None or after['to'][:2] != before['from'][:2]:
-                raise ValueError('post-move identity drift')
-            return {'before': before, 'after': after}
-
-
-def probeRecovery(paths: list) -> dict:
-    """Probe same-device roundtrip rename/fsync only in transaction scratch."""
-    if not paths or not all(isinstance(p, str) for p in paths):
-        raise ValueError('recovery paths required')
-    with contextlib.ExitStack() as stack:
-        anchors = [stack.enter_context(DirectoryAnchor(p)) for p in paths]
-        devices = {os.fstat(a.fd).st_dev for a in anchors}
-        if len(devices) != 1:
-            raise ValueError('recovery paths span filesystems')
-        owned = [a for p, a in zip(paths, anchors)
-                 if re.search(r'/\.materialize-transactions/[0-9a-f-]{36}/(?:candidate|old-generation)(?:/|$)', p)]
-        if len(owned) < 2:
-            raise ValueError('two owned recovery probe directories required')
-        name = '.recovery-probe-' + os.urandom(12).hex()
-        a, b = owned[0], owned[1]
-        current = a
-        fd = os.open(name, os.O_RDWR | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=a.fd)
-        try:
-            os.write(fd, b'probe')
-            os.fsync(fd)
-            for anchor in anchors:
-                anchor.verify()
-                os.fsync(anchor.fd)
-            os.rename(name, name, src_dir_fd=a.fd, dst_dir_fd=b.fd)
-            current = b
-            os.fsync(a.fd)
-            os.fsync(b.fd)
-            os.rename(name, name, src_dir_fd=b.fd, dst_dir_fd=a.fd)
-            current = a
-            os.fsync(a.fd)
-            os.fsync(b.fd)
-            for anchor in anchors:
-                anchor.verify()
-        finally:
-            os.close(fd)
-            os.unlink(name, dir_fd=current.fd)
-            os.fsync(current.fd)
-        info = os.fstatvfs(a.fd)
-        return {'verified': True, 'device': str(next(iter(devices))),
-                'availableBytes': str(info.f_bavail * info.f_frsize),
-                'identities': [identity(os.fstat(anchor.fd)) for anchor in anchors]}
-
-
 def main() -> int:
+    """CLI entry for cooperative profile locks, anchored file ops, strict JSON, and archives."""
     if sys.version_info < (3, 12):
         raise ValueError("Python >=3.12 required")
     action = sys.argv[1]
@@ -860,20 +700,6 @@ def main() -> int:
                 os.close(probe)
             fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         return 0
-    if action == "pending":
-        for profile in sys.argv[2:]:
-            root = safe_path(os.path.realpath(profile)) / ".materialize-transactions"
-            if not root.exists():
-                continue
-            safe_path(str(root))
-            for transaction in root.iterdir():
-                safe_path(str(transaction))
-                with DirectoryAnchor(str(transaction)) as parent:
-                    value = read_at(parent, 'journal.json')
-                    validate_journal(value, str(root.parent), transaction.name)
-                    if value['phase'] not in ('COMMITTED', 'ROLLED_BACK', 'REJECTED'):
-                        raise ValueError('managed transaction requires explicit recovery')
-        return 0
     if action == "lock":
         split = sys.argv.index("--")
         return ArchiveGuard.withProfileLocks(sys.argv[2:split], sys.argv[split + 1:])
@@ -881,15 +707,8 @@ def main() -> int:
     if action == "json":
         print(json.dumps(strict_json(pathlib.Path(request["path"]).read_bytes())))
         return 0
-    if action == 'prepareFiles':
+    if action == "prepareFiles":
         print(json.dumps(prepare_files(request)))
-        return 0
-    if action == 'safeMove':
-        print(json.dumps(safeMove(request['profile'], request['txnId'], request['from'],
-                                  request['to'], request['expected'])))
-        return 0
-    if action == 'probeRecovery':
-        print(json.dumps(probeRecovery(request['paths'])))
         return 0
     guard = ArchiveGuard()
     manifest = guard.freeze(request, request.get('destination') if action == 'freeze' else None)
@@ -906,6 +725,5 @@ if __name__ == "__main__":
         sys.exit(main())
     except (ValueError, OSError, tarfile.TarError, EOFError, KeyError, TypeError) as error:
         action = sys.argv[1] if len(sys.argv) > 1 else ''
-        code = 7 if action in ('pending', 'safeMove') else 5 if action == 'probeRecovery' else 3
-        print(json.dumps({'error': str(error), 'phase': action, 'code': code}), file=sys.stderr)
-        sys.exit(code)
+        print(json.dumps({'error': str(error), 'phase': action, 'code': 3}), file=sys.stderr)
+        sys.exit(3)

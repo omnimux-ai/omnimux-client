@@ -325,12 +325,11 @@
       const { featured: featuredItems, regular: regularItems } = SkillShelf.plazaDiscoverySections(state.items, {
         category: state.category, query: state.submitted, uninstalledOnly: state.uninstalledOnly, installedItems: state.installedItems, providerSlugs: state.providerSlugs, presetBinding, customOrder: state.customOrder,
       });
-      // 013fcb898 后 renderFeaturedSection 恒返回 null，单分类页（非「全部」/非「精选」）
-      // 唯一卡片区是 renderRegularSection：把本分类的 featured 成员合回展示集合，
-      // 否则推荐项占主体的营销分类整页「没有结果」。featured/regular 逻辑划分不动，
-      // 仅并展示集，featuredKeys 契约不变。
-      const isSingleCategory = Boolean(state.category) && state.category !== 'featured' && !hasQuery;
-      const displayedRegular = isSingleCategory
+      // 013fcb898 后 renderFeaturedSection 恒返回 null，唯一卡片区是 renderRegularSection：
+      // 浏览「全部」与各单场景（非「精选」与非「套件」）时都将 featuredItems 合并回展示集，
+      // 保证 36 款公式严格守恒（全部 36 === 热门 5 + 新品 5 + 探索更多 26），featuredKeys 契约不变。
+      const mergeFeaturedToRegular = state.category !== 'featured' && state.category !== '套件' && !hasQuery;
+      const displayedRegular = mergeFeaturedToRegular
         ? [...new Map([...featuredItems, ...regularItems].map((it) => [(it.slug || it.skill || it.catalogId || it.id), it])).values()]
         : regularItems;
       const isEn = tr("locale") === "en";

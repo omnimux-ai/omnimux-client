@@ -6,6 +6,8 @@ const PACKAGE_NAME_PATTERN = /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$
 const OWNER_PATTERN = /^[a-z0-9][a-z0-9-]{0,99}$/iu
 const REPOSITORY_PATTERN = /^[a-z0-9._-]{1,100}$/iu
 const COMMIT_PATTERN = /^[0-9a-f]{40}$/u
+const SUBDIRECTORY_SEGMENT_PATTERN = /^[A-Za-z0-9._-]+$/u
+const MAX_SUBDIRECTORY_LENGTH = 240
 const MAX_MANIFEST_BYTES = 1024 * 1024
 const BLOCKED_PACKAGES = new Set([
   'dsh-plugin-desktop',
@@ -44,12 +46,22 @@ function packageName(value: unknown): value is string {
   return typeof value === 'string' && PACKAGE_NAME_PATTERN.test(value) && !BLOCKED_PACKAGES.has(value)
 }
 
+function safeSubdirectory(value: string): boolean {
+  if (value.length === 0 || value.length > MAX_SUBDIRECTORY_LENGTH || value.startsWith('/') || value.endsWith('/') || value.includes('\\')) {
+    return false
+  }
+  return value.split('/').every(segment => segment.length > 0 && segment !== '.' && segment !== '..' && SUBDIRECTORY_SEGMENT_PATTERN.test(segment))
+}
+
 function assertSource(source: NormalizedGitHubInstallSource): void {
   if (
     source.kind !== 'github'
     || !OWNER_PATTERN.test(source.owner)
     || !REPOSITORY_PATTERN.test(source.repo)
+    || source.repo === '.'
+    || source.repo === '..'
     || !COMMIT_PATTERN.test(source.commit)
+    || (source.subdirectory !== undefined && !safeSubdirectory(source.subdirectory))
   ) fail('source identity is invalid')
 }
 
@@ -61,8 +73,15 @@ export function githubPackageTarget(source: NormalizedGitHubInstallSource): stri
 
 export function githubPackageManifestUrl(source: NormalizedGitHubInstallSource): string {
   assertSource(source)
-  const subdirectory = source.subdirectory === undefined ? '' : `${source.subdirectory}/`
-  return `${RAW_GITHUB_ORIGIN}/${source.owner}/${source.repo}/${source.commit}/${subdirectory}package.json`
+  const subdirectory = source.subdirectory === undefined
+    ? ''
+    : `${source.subdirectory.split('/').map(segment => encodeURIComponent(segment)).join('/')}/`
+  const url = `${RAW_GITHUB_ORIGIN}/${encodeURIComponent(source.owner)}/${encodeURIComponent(source.repo)}/${source.commit}/${subdirectory}package.json`
+  const parsed = new URL(url)
+  if (parsed.origin !== RAW_GITHUB_ORIGIN || parsed.search !== '' || parsed.hash !== '' || parsed.href !== url) {
+    fail('source manifest URL is invalid')
+  }
+  return url
 }
 
 function readManifest(value: unknown): Record<string, unknown> {

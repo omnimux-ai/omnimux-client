@@ -25,7 +25,9 @@ async function loadBundle() {
     stdin: {
       contents: `
         export { InspirationCard } from './src/client/InspirationCard.jsx'
+        export { InspirationCardMenu } from './src/client/InspirationCardMenu.jsx'
         export { InspirationContextMenu } from './src/client/InspirationContextMenu.jsx'
+        export { InspirationDetailSidebar } from './src/client/InspirationDetailSidebar.jsx'
       `,
       resolveDir: join(here, '../..'),
       loader: 'jsx',
@@ -189,12 +191,199 @@ describe('InspirationCard & InspirationContextMenu DOM contract', () => {
       const failArticle = doc.querySelector('article')
       assert.equal(failArticle?.getAttribute('data-archetype'), 'social-post')
       assert.ok(doc.querySelector('.omx-card-failure.is-failed'))
+
+      // Pinned favorite + failure badge sets multi-badge top-right clearance attribute
+      await act(async () => {
+        root.render(React.createElement(InspirationCard, {
+          descriptor: toInspirationCardRow({ ...failedRow, is_favorite: true }, t),
+          t,
+          menuEntries: [],
+          onToggleFavorite() {},
+        }))
+      })
+      const multiPinned = doc.querySelector('article')
+      assert.equal(multiPinned?.getAttribute('data-pinned-tr'), 'true')
+      assert.equal(multiPinned?.getAttribute('data-pinned-tr-multi'), 'true')
     } finally {
       await act(async () => root.unmount())
       globalThis.window = prevWin
       globalThis.document = prevDoc
       globalThis.IS_REACT_ACT_ENVIRONMENT = prevAct
       for (const k of DOM_GLOBALS) globalThis[k] = prevGlobals[k]
+      dom.window.close()
+    }
+  })
+
+  it('builds replicate menu disabled when replicateBusy is true', () => {
+    const busyMenu = buildCardMenuEntries({
+      t,
+      local: true,
+      replicateBusy: true,
+      onReplicate() {},
+    })
+    const repEntry = busyMenu.entries.find((e) => e.id === 'replicate')
+    assert.equal(repEntry?.disabled, true)
+  })
+
+  it('keeps ContextMenu mounted with autoFocus and keeps overflow menu keyboard nav unblocked + Escape sidebar-safe', async () => {
+    const { InspirationCardMenu, InspirationContextMenu, InspirationDetailSidebar } = await loadBundle()
+    const dom = new JSDOM('<!doctype html><html><body><div id="host"></div></body></html>', {
+      url: 'http://localhost:3000',
+      pretendToBeVisual: true,
+    })
+    const prevGlobals = {
+      HTMLButtonElement: globalThis.HTMLButtonElement,
+      HTMLElement: globalThis.HTMLElement,
+      Element: globalThis.Element,
+      Node: globalThis.Node,
+      HTMLIFrameElement: globalThis.HTMLIFrameElement,
+      MutationObserver: globalThis.MutationObserver,
+      window: globalThis.window,
+      document: globalThis.document,
+      IS_REACT_ACT_ENVIRONMENT: globalThis.IS_REACT_ACT_ENVIRONMENT,
+      fetch: globalThis.fetch,
+    }
+    globalThis.window = dom.window
+    globalThis.document = dom.window.document
+    globalThis.IS_REACT_ACT_ENVIRONMENT = true
+    globalThis.HTMLButtonElement = dom.window.HTMLButtonElement
+    globalThis.HTMLElement = dom.window.HTMLElement
+    globalThis.Element = dom.window.Element
+    globalThis.Node = dom.window.Node
+    globalThis.HTMLIFrameElement = dom.window.HTMLIFrameElement
+    globalThis.MutationObserver = dom.window.MutationObserver
+    globalThis.fetch = async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ success: true, data: { id: 'side_1', is_local: true, content: 'demo' } }),
+    })
+
+    const root = createRoot(dom.window.document.getElementById('host'))
+    const doc = dom.window.document
+    let sidebarCloses = 0
+    let parentKeyDownCount = 0
+
+    const sampleMenu = buildCardMenuEntries({
+      t,
+      local: true,
+      onOpenDetail() {},
+      onReplicate() {},
+    })
+
+    function KeyboardHarness({ disabled = false, ctxOpen = false }) {
+      return React.createElement(
+        'div',
+        {
+          onKeyDown: (e) => {
+            if (e.key === 'ArrowDown' || e.key === 'Escape') parentKeyDownCount += 1
+          },
+        },
+        React.createElement(InspirationCardMenu, {
+          t,
+          disabled,
+          entries: sampleMenu.entries,
+          onSelect: () => {},
+        }),
+        React.createElement(InspirationContextMenu, {
+          open: ctxOpen,
+          point: { x: 80, y: 80 },
+          entries: sampleMenu.entries,
+          onSelect: () => {},
+          onClose: () => {},
+        }),
+        React.createElement(InspirationDetailSidebar, {
+          row: {
+            id: 'side_1',
+            is_local: true,
+            source_platform: 'x',
+            type: 'link',
+            content: 'Sidebar escape test post',
+            source_url: 'https://x.com/test/status/1',
+          },
+          t,
+          onClose: () => { sidebarCloses += 1 },
+        }),
+      )
+    }
+
+    try {
+      // 1) ContextMenu closed initially keeps Menu root span mounted
+      await act(async () => {
+        root.render(React.createElement(KeyboardHarness, { disabled: false, ctxOpen: false }))
+      })
+      assert.ok(doc.querySelector('.omx-card-context-menu-root'), 'closed ContextMenu should keep Menu mounted for cleanup/focus')
+
+      // 2) Open overflow menu -> ArrowDown & Escape propagate through wrapper; Escape dismisses menu WITHOUT closing sidebar
+      const trigger = doc.querySelector('.omx-card-more-trigger')
+      assert.ok(trigger)
+      await act(async () => {
+        trigger.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }))
+      })
+      assert.equal(trigger.getAttribute('aria-expanded'), 'true')
+      const openMenu = doc.querySelector('.omx-card-context-menu')
+      assert.ok(openMenu)
+
+      // Pressing Escape while [role="menu"] is open must NOT close InspirationDetailSidebar
+      await act(async () => {
+        doc.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+      })
+      assert.equal(sidebarCloses, 0, 'Escape while [role="menu"] is open must not close docked sidebar')
+
+      // Opening context menu applies autoFocus inside menu
+      await act(async () => {
+        root.render(React.createElement(KeyboardHarness, { disabled: false, ctxOpen: true }))
+      })
+      await new Promise((r) => setTimeout(r, 20))
+      const menuItems = [...doc.querySelectorAll('.omx-card-context-menu [role="menuitem"]')]
+      assert.ok(menuItems.length > 0)
+      assert.equal(doc.activeElement, menuItems[0], 'autoFocus on ContextMenu should focus the first menu item')
+
+      // ArrowDown inside portaled Menu (triggered by overflow trigger) must reach document without wrapper stopPropagation
+      const overflowTrigger = doc.querySelector('.omx-card-more-trigger')
+      await act(async () => {
+        root.render(React.createElement(KeyboardHarness, { disabled: false, ctxOpen: false }))
+      })
+      await act(async () => {
+        overflowTrigger.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }))
+      })
+      const overflowFirstItem = doc.querySelector('.omx-card-context-menu [role="menuitem"]')
+      assert.ok(overflowFirstItem)
+      const countBefore = parentKeyDownCount
+      await act(async () => {
+        overflowFirstItem.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true }))
+      })
+      assert.equal(parentKeyDownCount, countBefore + 1, 'InspirationCardMenu wrapper must not stop ArrowDown propagation')
+
+      // Flipping disabled=true resets expanded state cleanly
+      await act(async () => {
+        root.render(React.createElement(KeyboardHarness, { disabled: true, ctxOpen: false }))
+      })
+      assert.equal(trigger.getAttribute('aria-expanded'), 'false')
+      assert.equal(doc.querySelector('.omx-card-context-menu'), null)
+
+      // When no [role="menu"] is open: prevented Escape is ignored, normal Escape closes docked sidebar
+      const preventedEsc = new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
+      preventedEsc.preventDefault()
+      await act(async () => {
+        dom.window.dispatchEvent(preventedEsc)
+      })
+      assert.equal(sidebarCloses, 0)
+      await act(async () => {
+        dom.window.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+      })
+      assert.equal(sidebarCloses, 1)
+    } finally {
+      await act(async () => root.unmount())
+      globalThis.window = prevGlobals.window
+      globalThis.document = prevGlobals.document
+      globalThis.IS_REACT_ACT_ENVIRONMENT = prevGlobals.IS_REACT_ACT_ENVIRONMENT
+      globalThis.HTMLButtonElement = prevGlobals.HTMLButtonElement
+      globalThis.HTMLElement = prevGlobals.HTMLElement
+      globalThis.Element = prevGlobals.Element
+      globalThis.Node = prevGlobals.Node
+      globalThis.HTMLIFrameElement = prevGlobals.HTMLIFrameElement
+      globalThis.MutationObserver = prevGlobals.MutationObserver
+      globalThis.fetch = prevGlobals.fetch
       dom.window.close()
     }
   })

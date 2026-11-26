@@ -63,6 +63,7 @@ export async function copyCardLink(url) {
  *   sourceUrl?: string,
  *   isFavorite?: boolean,
  *   importing?: boolean,
+ *   replicateBusy?: boolean,
  *   itemId?: string,
  *   collections?: Array<{ id: string | number, title?: string, item_ids?: Array<string | number> }>,
  *   onToggleFavorite?: () => void,
@@ -135,7 +136,7 @@ export function buildCardMenuEntries(io = {}) {
   )
   addItem(
     group2,
-    { id: 'replicate', label: translate('card.cta.try'), iconKey: 'replicate', disabled: importing },
+    { id: 'replicate', label: translate('card.cta.try'), iconKey: 'replicate', disabled: importing || Boolean(io.replicateBusy) },
     io.onReplicate,
   )
   if (group2.length) groups.push(group2)

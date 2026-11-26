@@ -1,16 +1,5 @@
-import { useCallback, useState } from 'react'
+import { useState } from 'react'
 import { Button, InputField } from 'dsh-ui-kit'
-import {
-  AUTO_ANALYZE_STORAGE_KEY,
-  readAutoAnalyzePreference,
-  writeAutoAnalyzePreference,
-} from './import-dialog-prefs.js'
-
-export {
-  AUTO_ANALYZE_STORAGE_KEY,
-  readAutoAnalyzePreference,
-  writeAutoAnalyzePreference,
-}
 
 /**
  * Collapsible custom-tags field. Collapsed by default; trigger toggles the InputField.
@@ -52,43 +41,6 @@ export function CollapsibleTagsField({ t, value, disabled = false, onChange }) {
           onChange={(e) => { onChange(e.target.value) }}
         />
       ) : null}
-    </div>
-  )
-}
-
-/**
- * AI auto-analyze switch with localStorage persistence.
- * Defaults to true when no preference is stored.
- * @param {{
- *   t: (key: string) => string,
- *   checked: boolean,
- *   disabled?: boolean,
- *   onChange: (next: boolean) => void,
- * }} props
- */
-export function AutoAnalyzeSwitch({ t, checked, disabled = false, onChange }) {
-  const handleToggle = useCallback(() => {
-    if (disabled) return
-    const next = !checked
-    writeAutoAnalyzePreference(next)
-    onChange(next)
-  }, [checked, disabled, onChange])
-
-  return (
-    <div className="omnimux-inspiration-switch-row">
-      <Button
-        type="button"
-        variant="ghost"
-        role="switch"
-        className="omnimux-inspiration-switch"
-        aria-checked={String(checked)}
-        aria-label={t('add.autoAnalyze')}
-        disabled={disabled}
-        onClick={handleToggle}
-      >
-        <span className="omnimux-inspiration-switch-knob" />
-      </Button>
-      <span className="omnimux-inspiration-switch-label">{t('add.autoAnalyze')}</span>
     </div>
   )
 }

@@ -6,6 +6,11 @@ import { filterSkillsByCategory } from './featured-skills-data.js'
 // 分类矢量图标
 function CategoryTabIcon({ id }) {
   const alias = {
+    'scene-video': 'video',
+    'scene-replicate': 'story',
+    'scene-visual': 'image',
+    'scene-research': 'product',
+    'scene-growth': 'ugc',
     'scene-seeding': 'ugc',
     'scene-brand': 'story',
     'scene-product': 'product',
@@ -193,7 +198,11 @@ export function SkillsPanel({
                 <button /* exempt-ui01: 查看全部 */
                   type="button"
                   className="omnimux-creatify-see-all-btn"
-                  onClick={() => selectCategory('')}
+                  onClick={() => {
+                    if (typeof document !== 'undefined') {
+                      document.querySelector('[data-omnimux-section="explore-more"]')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                    }
+                  }}
                 >
                   <span>{t('skills.section.seeAll', '查看全部')}</span>
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
@@ -219,7 +228,7 @@ export function SkillsPanel({
 
           {/* 3. 探索更多 */}
           {exploreMore.length > 0 ? (
-            <section className="omnimux-creatify-section" aria-label="探索更多">
+            <section className="omnimux-creatify-section" aria-label="探索更多" data-omnimux-section="explore-more">
               <div className="omnimux-creatify-section-header">
                 <span className="omnimux-creatify-section-title">
                   {t('skills.section.exploreMore', '探索更多')} ({exploreMore.length})

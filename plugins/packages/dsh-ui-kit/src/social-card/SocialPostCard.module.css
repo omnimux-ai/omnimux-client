@@ -101,9 +101,13 @@
   }
 }
 
-/* Pin-clearance when top-right carries a persistent indicator (favorite star / error badge) */
+/* Pin-clearance when top-right carries persistent indicator(s) (favorite star / error badge) */
 .card[data-pinned-tr="true"] .pinnedClearance {
-  padding-right: 34px;
+  padding-right: 36px;
+}
+
+.card[data-pinned-tr-multi="true"] .pinnedClearance {
+  padding-right: 64px;
 }
 
 /* Shared sub-elements */

@@ -82,7 +82,6 @@ const L = {
   echoContent: zh['add.echoContent'],
   importedToast: zh['add.importedToast'],
   unrecognized: zh['rivalAccounts.import.unrecognized'],
-  autoAnalyze: zh['add.autoAnalyze'],
 }
 
 /**
@@ -418,9 +417,9 @@ describe('import landing — account profile URL', () => {
       assert.equal(echo.getAttribute('data-kind'), 'account')
 
       assert.equal(
-        mounted.container.querySelector(`[aria-label="${L.autoAnalyze}"]`),
+        mounted.container.querySelector('[role="switch"]'),
         null,
-        'an account is monitored, not deconstructed: the AI switch has nothing to switch',
+        'the import dialog must not render any auto-analyze switch',
       )
 
       await click(button(mounted.container, L.submit))
@@ -858,7 +857,7 @@ describe('import landing — unchanged behaviour', () => {
       assert.equal(cardIds(mounted.container).length, 40, 'a partly refreshed range must not shrink the visible masonry to page one')
       assert.ok(cardIds(mounted.container).includes('paged-old-39'), 'page-two content must remain while its replacement is loading')
       await React.act(async () => { releaseSecondPage(); holdSecondPage = null })
-      await settle(mounted.container, () => mounted.container.querySelector(`[data-inspiration-id="${id}"] .omnimux-rival-card-title`)?.textContent === completed.content)
+      assert.ok(await settle(mounted.container, () => mounted.container.querySelector(`[data-inspiration-id="${id}"] [class*="SocialPostCard-socialBodyText"]`)?.textContent === completed.content))
       assert.deepEqual(mounted.calls.slice(listStart).filter((call) => call.path.startsWith('/omnimux/inspiration/local?')).map((call) => new URL(call.path, 'http://localhost').searchParams.get('page')), ['1', '2'])
       await mounted.expirePin()
       assert.equal(cardIds(mounted.container).length, 40)

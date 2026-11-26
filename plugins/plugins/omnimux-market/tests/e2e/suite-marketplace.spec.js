@@ -237,16 +237,16 @@ test('E2E 旅程一：套件分类只列真实套件，8 张卡与目录一致',
   }
 })
 
-test('E2E 旅程一（边界）：全部含套件、技能领域分类不含套件、选择器页签不含套件', async () => {
+test('E2E 旅程一（边界）：全部仅列精品 Skill 不含套件、技能领域分类不含套件、选择器页签不含套件', async () => {
   const { ui, tree } = await browseSuiteCategory()
 
   ui.setCategory('')
   const all = ui.draw()
   await ui.runEffects()
   const allTitles = texts(byClass(all, 'omnimux-creatify-center-title'))
-  for (const suite of SUITES) assert.ok(allTitles.includes(suite.title), `${suite.id} must appear under 全部`)
+  for (const suite of SUITES) assert.equal(allTitles.includes(suite.title), false, `${suite.id} must not pollute 全部 Skill Plaza`)
 
-  // 数据层：技能领域分类的套件成员数为 0（不含「全部」时套件仍完整）
+  // 数据层：技能领域分类的套件成员数为 0（切换「套件」时仍完整列出）
   const domain = SkillShelf.plazaDiscoverySections([], { category: '视频广告' })
   assert.equal(domain.regular.filter((item) => item.kind === 'suite').length, 0, '技能领域分类不得混入套件')
   assert.equal(byClass(tree, 'featured-card').length, SUITES.length)

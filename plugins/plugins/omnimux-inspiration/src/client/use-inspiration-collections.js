@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { pickCoverSrc } from './api.js'
 import { writeCollection } from './collection-api.js'
 
@@ -149,9 +149,13 @@ export function useInspirationCollections({ feed, collectionId, setCollectionId,
     })
   }, [])
 
-  return { collections, names, activeCollection, intent, busy, error, selectedSource,
-    requestMerge, addItemToCollection, createWithItem, selectSource, cancelSelection: () => setSelectedSource(null), open, back, rename, remove, confirm,
-    close: () => { if (!busyRef.current) { setIntent(null); setError('') } } }
+  const cancelSelection = useCallback(() => setSelectedSource(null), [])
+  const close = useCallback(() => { if (!busyRef.current) { setIntent(null); setError('') } }, [])
+
+  return useMemo(() => ({
+    collections, names, activeCollection, intent, busy, error, selectedSource,
+    requestMerge, addItemToCollection, createWithItem, selectSource, cancelSelection, open, back, rename, remove, confirm, close,
+  }), [collections, names, activeCollection, intent, busy, error, selectedSource, requestMerge, addItemToCollection, createWithItem, selectSource, cancelSelection, open, back, rename, remove, confirm, close])
 }
 
 /** Pointer gesture around the existing flat masonry; inner controls keep their own events. */

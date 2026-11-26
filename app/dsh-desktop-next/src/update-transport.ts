@@ -23,11 +23,12 @@ const NULL_BODY_STATUSES = new Set([204, 205, 304])
  * `redirect` event so every hop passes through HTTPS validation and only Range /
  * If-Range headers are forwarded to redirect targets.
  */
-export function createArtifactRequest(): UpdateArtifactRequest {
-  return (url, init) => requestArtifact(url, init)
+export function createArtifactRequest(options?: { readonly allowedHosts?: readonly string[] }): UpdateArtifactRequest {
+  const allowedHosts = options?.allowedHosts
+  return (url, init) => requestArtifact(url, init, allowedHosts)
 }
 
-function requestArtifact(url: string, init: RequestInit): Promise<UpdateArtifactResponse> {
+function requestArtifact(url: string, init: RequestInit, allowedHosts?: readonly string[]): Promise<UpdateArtifactResponse> {
   return new Promise<UpdateArtifactResponse>((resolve, reject) => {
     const signal = init.signal ?? undefined
     let current: Electron.ClientRequest | undefined
@@ -59,7 +60,7 @@ function requestArtifact(url: string, init: RequestInit): Promise<UpdateArtifact
     const open = (target: string): void => {
       if (settled) return
       let secure: URL
-      try { secure = assertSecureHttpsUrl(target) } catch { fail(new Error('Update downloads must settle on HTTPS without credentials')); return }
+      try { secure = assertSecureHttpsUrl(target, allowedHosts) } catch { fail(new Error(allowedHosts ? 'Update downloads must settle on HTTPS on an allowlisted host without credentials' : 'Update downloads must settle on HTTPS without credentials')); return }
       if (hops >= MAX_REDIRECTS) { fail(new Error('Too many update redirects')); return }
       hops += 1
 

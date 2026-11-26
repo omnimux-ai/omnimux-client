@@ -1,4 +1,4 @@
-import { createBundledSkillProvider, loadBundledMarketSkills, } from './bundled-skills.js';
+import { createBundledSkillProvider, loadBundledMarketSkills, loadCatalogSkillBySlug, } from './bundled-skills.js';
 export const name = 'omnimux-market-expert-skills';
 export const inject = ['skills'];
 /**
@@ -23,7 +23,7 @@ export function apply(ctx, config = {}) {
     const allBundled = loadBundledMarketSkills(config.packageRoot);
     const byName = new Map(allBundled.map((entry) => [entry.name, entry]));
     const matched = requested
-        .map((slug) => byName.get(slug))
+        .map((slug) => byName.get(slug) ?? (slug === 'clip-craft' ? undefined : loadCatalogSkillBySlug(slug, config.packageRoot)))
         .filter((entry) => entry !== undefined);
     if (!matched.length)
         return () => { };

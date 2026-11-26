@@ -320,13 +320,26 @@ export async function fetchWebOgMetadata(url, options = {}) {
       })
       if (isRedirectStatus(resp.status)) {
         const nextUrl = resolveRedirectUrl(resp.headers?.get?.('location'), currentUrl)
+        await resp.body?.cancel?.().catch((err) => {
+          console.debug?.('[omnimux-inspiration] redirect body cancel:', err?.message || err)
+        })
         if (!nextUrl || hop === OG_MAX_REDIRECTS) return null
         currentUrl = nextUrl
         continue
       }
-      if (!resp.ok) return null
+      if (!resp.ok) {
+        await resp.body?.cancel?.().catch((err) => {
+          console.debug?.('[omnimux-inspiration] error body cancel:', err?.message || err)
+        })
+        return null
+      }
       const ctype = asText(resp.headers?.get?.('content-type')).toLowerCase()
-      if (ctype && !ctype.includes('html') && !ctype.includes('xml')) return null
+      if (ctype && !ctype.includes('html') && !ctype.includes('xml')) {
+        await resp.body?.cancel?.().catch((err) => {
+          console.debug?.('[omnimux-inspiration] non-html body cancel:', err?.message || err)
+        })
+        return null
+      }
       const html = await readBoundedText(resp, OG_MAX_HTML_BYTES)
 
       const meta = new Map()

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Menu } from '@deepseek-ai/dsh-client-ui-primitives'
 import { IconButton } from 'dsh-ui-kit'
 import { Ellipsis } from 'lucide-react'
@@ -21,6 +21,12 @@ export function InspirationCardMenu({ t, items, entries, onSelect, onOpenChange,
     })
   }
 
+  useEffect(() => {
+    if (disabled && open) {
+      setMenuOpen(false)
+    }
+  }, [disabled, open])
+
   const unifiedEntries = useMemo(() => (
     Array.isArray(entries) && entries.length > 0 ? hydrateCardMenuEntries(entries) : null
   ), [entries])
@@ -34,15 +40,16 @@ export function InspirationCardMenu({ t, items, entries, onSelect, onOpenChange,
   const menuItems = unifiedEntries || legacyActions.map(({ id, label }) => ({ id, label }))
   if (menuItems.length === 0) return null
 
+  const effectiveOpen = open && !disabled
+
   return (
     <div
       className="omnimux-inspiration-card-menu omx-card-more-wrap"
       onPointerDown={(event) => event.stopPropagation()}
-      onKeyDown={(event) => event.stopPropagation()}
       onClick={(event) => event.stopPropagation()}
     >
       <Menu
-        open={open && !disabled}
+        open={effectiveOpen}
         portal
         compact
         align="end"
@@ -64,8 +71,13 @@ export function InspirationCardMenu({ t, items, entries, onSelect, onOpenChange,
             className="omnimux-inspiration-card-menu-trigger omx-card-more-trigger"
             aria-label={t('card.menu.more')}
             aria-haspopup="menu"
-            aria-expanded={open}
+            aria-expanded={effectiveOpen}
             disabled={disabled}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.stopPropagation()
+              }
+            }}
             onClick={() => setMenuOpen((value) => !value)}
           >
             <Ellipsis size={16} aria-hidden="true" />

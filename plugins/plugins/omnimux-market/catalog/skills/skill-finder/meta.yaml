@@ -1,0 +1,20 @@
+display-name-zh: 智能发现技能
+version: 1.0.0
+tag-en: "Editing & Tools / Discovery"
+tag-cn: "剪辑与效率工具 / 技能检索"
+complete-tags-en:
+  - "Editing & Tools"
+  - "Skill Discovery"
+complete-tags-cn:
+  - "剪辑与效率工具"
+  - "技能发现"
+summary-en: "Search installed and official OmniMux vertical skills by task goal, compare fit, and guide setup."
+summary-cn: "按创作与运营目标检索 OmniMux 已装与可装精品技能，推荐最佳组合方案。"
+desc-en: "Matches user goals in short video creation, viral replication, visual commerce, market research, and growth operations against OmniMux installed skills and catalog entries, comparing capabilities and guiding installation."
+desc-cn: "结合内容创作与电商增长场景，检索本机已装与 OmniMux 官方精品目录中的真实 Skill，按匹配度输出组合建议与斜杠触发指引。"
+cover: ""
+author-en: "OmniMux Team"
+author-cn: "OmniMux 团队"
+origin: first-party
+license: MIT
+owner: omnimux-market

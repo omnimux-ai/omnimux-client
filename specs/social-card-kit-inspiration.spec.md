@@ -71,3 +71,6 @@
 - `plugins/plugins/omnimux-inspiration/src/client/styles.test.js` :: `delegates card sizing to the shared masonry and keeps loading placeholders below it`
   - 原断言：`assert.match(sectionSrc, /<RivalMasonry/)`
   - 变更理由：主画廊（`InspirationSection.jsx`）已从旧绝对定位 `<RivalMasonry>` 升级为自然列流 `<MasonryGrid>`（保留独立测试 `<RivalMasonry>` 的既有行为测试不变），故断言更新为 `assert.match(sectionSrc, /<MasonryGrid/)`。
+- `plugins/plugins/omnimux-inspiration/src/client/import-landing-render.test.js` :: `refreshes both loaded pages after completion and keeps the next request on page three`
+  - 原断言：`.omnimux-rival-card-title`（且原 `settle` 返回值未包裹 `assert.ok`）
+  - 变更理由：同上，替换为 `[class*="SocialPostCard-socialBodyText"]` 并以 `assert.ok(await settle(...))` 强制校验两页刷新后新卡片正文已真实渲染。

@@ -129,9 +129,7 @@ export function materializeAndCleanup(wt, plugin, topic, issueId, pr, options) {
   if (statusPorcelain(repoRoot)) throw new PipelineError('主仓存在既有脏文件，拒绝 pull/物化/清理以保护现场')
   runCommand('git', ['-C', repoRoot, 'pull', '--ff-only', 'origin', BASE_BRANCH], { cwd: repoRoot })
   if (options.materialize && plugin && plugin !== 'common') {
-    const wrapper = join(repoRoot, 'scripts', 'materialize-with-rollback.sh')
-    const script = existsSync(wrapper) ? wrapper : join(repoRoot, 'scripts', 'sync-to-app.sh')
-    runCommand('bash', [script, plugin], { cwd: repoRoot, env: { OMNIMUX_MERGE_CONFIRMED: '1' } })
+    runCommand('bash', [join(repoRoot, 'scripts', 'sync-to-app.sh'), plugin], { cwd: repoRoot, env: { OMNIMUX_MERGE_CONFIRMED: '1' } })
   }
   runCommand('bash', [join(repoRoot, 'scripts', 'worktree.sh'), 'remove', basename(wt.wtDir), '--pr', String(pr.number)], {
     cwd: repoRoot, env: { OMNIMUX_MERGE_CONFIRMED: '1' },

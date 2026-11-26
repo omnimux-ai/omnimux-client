@@ -4,7 +4,7 @@
  * 按 deriveSlotLayout 的 preset 渲染：
  *   - none  → 不渲染（文生视频等纯文本输入不占高度）；
  *   - pair  → [首帧] ⇆ [尾帧]，ArrowLeftRight 对调（swapNamedSlots，保持边不变）；
- *   - strip → 已填缩略图顺序排列，同用途的参考素材共用一个添加入口；
+ *   - strip → 已填缩略图顺序排列，未满足的必填参考槽保留独立空槽，其余多格式参考共用一个通用添加入口；
  *   - named → 各具名卡槽并列（角色图 / 音频驱动等）。
  *
  * 视觉规格（对齐图 2）：
@@ -17,7 +17,7 @@ import React, { memo, useCallback, useRef, useState } from 'react';
 import SlotHoverPreview from './SlotHoverPreview.tsx';
 import { ArrowLeftRight, FileJson, FileText, Image as ImageIcon, Loader2, Music, Play, Plus, X } from 'lucide-react';
 import type { MaterialType } from '../../../../../../shared/canvasTypes.ts';
-import { remainingSlotCapacity } from '../../../../../../shared/graph/feedSlot/autoFillSlots.ts';
+import { remainingSlotCapacity, remainingTypeCapacity, totalSlotGroupCapacity } from '../../../../../../shared/graph/feedSlot/autoFillSlots.ts';
 import type { SlotOccupant, SlotSpec } from '../../../../../../shared/graph/feedSlot/index.ts';
 import { isOrderedImageReferenceSlot, isPromptInput, isVisualGeneration } from '../../../../../../shared/validation/compatKernel.ts';
 import { useT } from '../../../../../i18n';
@@ -324,7 +324,8 @@ const SlotWells: React.FC<SlotWellsProps> = (props) => {
   const references = mediaSlotModels.filter(({ spec }) => spec.role === 'reference' && spec.type !== 'text');
   const named = mediaSlotModels.filter(slot => !references.includes(slot));
   const available = layout.addButton && pickerEnabled ? references.filter(({ remaining }) => remaining > 0) : [];
-  const distinguishSlots = references.length > 1;
+  const requiredAvailable = available.filter(({ spec, occupied }) => spec.min > 0 && occupied < spec.min);
+  const optionalAvailable = available.filter(({ spec, occupied }) => !(spec.min > 0 && occupied < spec.min));
   const displayOrder = new Map(props.records?.map(({ slot, occupant }, index) => [slot.slot + ':' + occupant.edgeId, index]));
   const upstreamOrder = new Map(props.upstreams.map(({ edgeId }, index) => [edgeId, index]));
   const orderOf = ({ spec, occupant }: WellModel) => displayOrder.get(spec.slot + ':' + occupant?.edgeId)
@@ -358,18 +359,59 @@ const SlotWells: React.FC<SlotWellsProps> = (props) => {
         </button>;
       })}
       {named.flatMap(renderNamedSlot)}
-      {available.map(({ spec }) => {
+      {available.length === 1 ? (() => {
+        const { spec, occupied } = available[0]!;
+        const isRequiredEmpty = spec.min > 0 && occupied < spec.min;
+        const showLabel = references.length > 1 && isRequiredEmpty;
         const label = slotLabel(spec);
-        const addLabel = distinguishSlots ? t('panel.slotPick').replace('{slot}', label) : t('panel.slotAddAsset');
+        const addLabel = showLabel ? t('panel.slotPick').replace('{slot}', label) : t('panel.slotAddAsset');
         return <button key={spec.slot} type="button"
-          className={`wf-slot-well wf-slot-well--append nodrag${distinguishSlots ? ' wf-slot-well--empty' : ''}`}
+          className={`wf-slot-well wf-slot-well--append nodrag${showLabel ? ' wf-slot-well--empty' : ''}${isRequiredEmpty ? ' wf-slot-well--required' : ''}`}
           data-testid="wf-add-reference" data-slot={spec.slot} data-slot-role={spec.role}
           aria-label={addLabel} title={addLabel}
           onClick={event => onPickSlot(pickRequest(spec, event.currentTarget))}>
           <Plus size={20} aria-hidden="true" />
-          {distinguishSlots ? <span className="wf-slot-well__position">{label}</span> : null}
+          {showLabel ? <span className="wf-slot-well__position">{label}</span> : null}
         </button>;
-      })}
+      })() : (
+        <>
+          {requiredAvailable.map(({ spec }) => {
+            const label = slotLabel(spec);
+            const addLabel = t('panel.slotPick').replace('{slot}', label);
+            return <button key={spec.slot} type="button"
+              className="wf-slot-well wf-slot-well--append wf-slot-well--empty wf-slot-well--required nodrag"
+              data-testid="wf-add-reference" data-slot={spec.slot} data-slot-role={spec.role}
+              aria-label={addLabel} title={addLabel}
+              onClick={event => onPickSlot(pickRequest(spec, event.currentTarget))}>
+              <Plus size={20} aria-hidden="true" />
+              <span className="wf-slot-well__position">{label}</span>
+            </button>;
+          })}
+          {optionalAvailable.length > 0 ? (() => {
+            const typeRemaining = new Map<string, number>();
+            for (const { spec } of available) {
+              if (!typeRemaining.has(spec.type)) {
+                typeRemaining.set(spec.type, remainingTypeCapacity(layout, spec.type, occupiedByType.get(spec.type) ?? 0));
+              }
+            }
+            const maximum = totalSlotGroupCapacity(available, typeRemaining);
+            const addLabel = t('panel.slotAddAsset');
+            return <button key="wf-add-reference:unified" type="button"
+              className="wf-slot-well wf-slot-well--append nodrag"
+              data-testid="wf-add-reference" data-slot-role="reference"
+              aria-label={addLabel} title={addLabel}
+              onClick={event => onPickSlot({
+                operationId: layout.operationId,
+                referenceSlots: available.map(({ spec }) => spec.slot),
+                acceptedTypes: [...new Set(available.map(({ spec }) => spec.type))],
+                max: Number.isFinite(maximum) ? maximum : null,
+                openerAnchor: event.currentTarget,
+              })}>
+              <Plus size={20} aria-hidden="true" />
+            </button>;
+          })() : null}
+        </>
+      )}
     </div>
   );
 };

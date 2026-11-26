@@ -16,17 +16,12 @@
 import { useState } from 'react'
 import { Button, InputField, ModalDialog } from 'dsh-ui-kit'
 import { classifyRivalInput, importRivalAccount } from './rival-api.js'
-import {
-  AutoAnalyzeSwitch,
-  CollapsibleTagsField,
-} from './import-dialog-controls.jsx'
-import { readAutoAnalyzePreference } from './import-dialog-prefs.js'
+import { CollapsibleTagsField } from './import-dialog-controls.jsx'
 import { importLocalInspiration } from './api.js'
 
 export function RivalImportDialog({ open, t, onClose, onImported, onAccountImported }) {
   const [url, setUrl] = useState('')
   const [tags, setTags] = useState('')
-  const [autoAnalyze, setAutoAnalyze] = useState(() => readAutoAnalyzePreference())
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [classified, setClassified] = useState(null)
@@ -85,7 +80,7 @@ export function RivalImportDialog({ open, t, onClose, onImported, onAccountImpor
         const res = await importLocalInspiration({
           url: value,
           tags: tagList(),
-          auto_analyze: autoAnalyze,
+          auto_analyze: false,
           background: true,
         })
         if (res?.ok && res.body?.data) {
@@ -156,12 +151,6 @@ export function RivalImportDialog({ open, t, onClose, onImported, onAccountImpor
           value={tags}
           disabled={loading}
           onChange={setTags}
-        />
-        <AutoAnalyzeSwitch
-          t={t}
-          checked={autoAnalyze}
-          disabled={loading}
-          onChange={setAutoAnalyze}
         />
       </form>
     </ModalDialog>

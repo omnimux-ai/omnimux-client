@@ -1,5 +1,6 @@
 import { createConnection } from 'node:net'
 import { PibrowseError } from './errors.js'
+import { verifySocketTrust } from './paths.js'
 import { redactLogLine } from './redact.js'
 
 let nextRequestId = 1
@@ -25,15 +26,31 @@ export function createIpcClient(opts) {
    * @param {{ timeoutMs?: number }} [callOpts]
    * @returns {Promise<any>}
    */
-  function call(method, params = {}, callOpts = {}) {
+  async function call(method, params = {}, callOpts = {}) {
     if (typeof method !== 'string' || !method.trim()) {
-      return Promise.reject(new PibrowseError('invalid-input', 'IPC method name is required'))
+      throw new PibrowseError('invalid-input', 'IPC method name is required')
+    }
+    const platform = opts.platform ?? process.platform
+    if (platform !== 'win32') {
+      const trust = await verifySocketTrust(opts.socketPath, {
+        platform,
+        uid: opts.uid,
+        allowMissingDir: true,
+        lstatImpl: opts.lstatImpl,
+      })
+      if (!trust.exists) {
+        throw new PibrowseError('sidecar-offline', 'fury-agent sidecar is not running', {
+          method,
+          errno: 'ENOENT',
+          socketPath: opts.socketPath,
+        })
+      }
     }
     const timeoutMs = callOpts.timeoutMs ?? defaultTimeoutMs
     const id = nextRequestId++
     const payload = `${JSON.stringify({ id, method, params: params ?? {} })}\n`
 
-    return new Promise((resolve, reject) => {
+    return await new Promise((resolve, reject) => {
       let settled = false
       let buffer = ''
 

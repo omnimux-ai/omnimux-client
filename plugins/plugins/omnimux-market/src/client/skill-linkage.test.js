@@ -92,7 +92,7 @@ test('Issue #2609：两款技能同时上架技能货架（catalog/index.json）
     assert.equal(item.skill, skill)
     assert.equal(item.titleZh, titleZh)
     assert.equal(item.category, 'image-static')
-    assert.equal(item.scenario, id === 'sk-omx-shoppable-carousel' ? 'scene-product' : 'scene-repurpose')
+    assert.equal(item.scenario, id === 'sk-omx-shoppable-carousel' ? 'scene-visual' : 'scene-replicate')
     assert.ok(Array.isArray(item.tags) && item.tags.includes('图片和静态广告'))
     assert.equal(item.source?.type, 'bundled')
     const skillPath = join(here, '../../', item.source.path, 'SKILL.md')

@@ -52,9 +52,14 @@ test('E2E 目录数据：每个场景分类都真实拥有技能成员', () => {
   assert.deepEqual(orphans, [], 'skills must belong to a declared scenario')
 })
 
-test('E2E 安装源：场景技能全部为内置 bundled 源', () => {
+test('E2E 安装源：场景技能全部为内置 bundled 或 plugin 源且物理目录存在', () => {
   for (const item of skills) {
-    assert.equal(item.source?.type, 'bundled', `${item.id} must be bundled`)
-    assert.ok(String(item.source.path || '').startsWith('catalog/skills/'), `${item.id} bad bundled path`)
+    assert.ok(item.source?.type === 'bundled' || item.source?.type === 'plugin', `${item.id} must be bundled or plugin`)
+    if (item.source.type === 'bundled') {
+      assert.ok(String(item.source.path || '').startsWith('catalog/skills/'), `${item.id} bad bundled path`)
+    } else {
+      assert.ok(/^[a-z0-9][a-z0-9-]*$/.test(String(item.source.plugin || '')), `${item.id} bad plugin name`)
+      assert.ok(String(item.source.path || '').startsWith('skills/'), `${item.id} bad plugin path`)
+    }
   }
 })

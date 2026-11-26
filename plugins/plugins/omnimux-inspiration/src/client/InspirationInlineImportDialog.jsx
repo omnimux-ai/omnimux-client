@@ -1,11 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { Button, InputField, ModalDialog } from 'dsh-ui-kit'
 import { importLocalInspiration } from './api.js'
-import {
-  AutoAnalyzeSwitch,
-  CollapsibleTagsField,
-} from './import-dialog-controls.jsx'
-import { readAutoAnalyzePreference } from './import-dialog-prefs.js'
+import { CollapsibleTagsField } from './import-dialog-controls.jsx'
 import { classifyRivalInput, importRivalAccount } from './rival-api.js'
 
 /**
@@ -30,7 +26,6 @@ import { classifyRivalInput, importRivalAccount } from './rival-api.js'
 export function InspirationInlineImportDialog({ open, t, onClose, onImported, onAccountImported }) {
   const [url, setUrl] = useState('')
   const [tags, setTags] = useState('')
-  const [autoAnalyze, setAutoAnalyze] = useState(() => readAutoAnalyzePreference())
   const [loading, setLoading] = useState(false)
   const [classifying, setClassifying] = useState(false)
   const [error, setError] = useState(null)
@@ -192,7 +187,7 @@ export function InspirationInlineImportDialog({ open, t, onClose, onImported, on
       const res = await importLocalInspiration({
         url: value,
         tags: tagList(),
-        auto_analyze: autoAnalyze,
+        auto_analyze: false,
         // Opt in to the background job: the request answers 202 with a
         // placeholder row instead of holding the dialog open for the download and
         // the AI breakdown. The grid then polls that row to completion.
@@ -340,16 +335,6 @@ export function InspirationInlineImportDialog({ open, t, onClose, onImported, on
           disabled={inputsDisabled}
           onChange={setTags}
         />
-        {/* The AI breakdown only exists for content: an account is monitored, not
-            deconstructed, so the switch would be a promise the import cannot keep. */}
-        {kind === 'account' ? null : (
-          <AutoAnalyzeSwitch
-            t={t}
-            checked={autoAnalyze}
-            disabled={inputsDisabled}
-            onChange={setAutoAnalyze}
-          />
-        )}
       </form>
     </ModalDialog>
   )

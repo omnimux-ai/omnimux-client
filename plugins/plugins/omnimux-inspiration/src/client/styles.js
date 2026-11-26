@@ -1403,56 +1403,6 @@ export const INSPIRATION_CSS = `
 .omnimux-inspiration-tags-toggle-chevron.is-open {
   transform: rotate(0deg);
 }
-.omnimux-inspiration-switch-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 32px;
-}
-.omnimux-inspiration-switch,
-.omnimux-inspiration-switch:hover,
-.omnimux-inspiration-switch:active {
-  position: relative;
-  width: 36px;
-  min-width: 36px;
-  height: 20px;
-  min-height: 20px;
-  padding: 0;
-  border: none;
-  border-radius: 999px;
-  background: var(--dsw-alias-interactive-bg-hover, rgba(128,128,128,0.30));
-  cursor: pointer;
-  transform: none;
-  transition: background 0.15s ease;
-  overflow: visible;
-}
-.omnimux-inspiration-switch[aria-checked="true"],
-.omnimux-inspiration-switch[aria-checked="true"]:hover {
-  background: var(--dsw-alias-state-success-primary, #4caf7d);
-}
-.omnimux-inspiration-switch:disabled {
-  cursor: default;
-  opacity: 0.5;
-}
-.omnimux-inspiration-switch-knob {
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 16px;
-  height: 16px;
-  border-radius: 999px;
-  background: var(--dsw-alias-label-primary-foreground, var(--dsw-alias-label-primary-inverted, #ffffff));
-  transition: transform 0.15s ease;
-  pointer-events: none;
-}
-.omnimux-inspiration-switch[aria-checked="true"] .omnimux-inspiration-switch-knob {
-  transform: translateX(16px);
-}
-.omnimux-inspiration-switch-label {
-  font-size: 13px;
-  line-height: 20px;
-  color: var(--dsw-alias-label-secondary);
-}
 .omnimux-inspiration-fallback-icon--lg { width: 56px; height: 56px; }
 .omnimux-inspiration-empty-breakdown-title {
   margin: 0 0 6px 0;
@@ -2560,7 +2510,7 @@ dialog.omnimux-inspiration-preview-layer::backdrop { background: transparent; ba
   padding: 0;
   border-radius: 9999px;
   border: 1px solid var(--dsw-alias-border-l3);
-  background: var(--dsw-alias-bg-mask-1);
+  background: var(--dsw-static-neutral-900);
   color: var(--dsw-static-neutral-00);
   opacity: 0;
   pointer-events: none;
@@ -2584,7 +2534,7 @@ dialog.omnimux-inspiration-preview-layer::backdrop { background: transparent; ba
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: var(--dsw-alias-bg-mask-1);
+  background: var(--dsw-static-neutral-900);
   border: 1px solid var(--dsw-alias-border-l3);
   color: var(--dsw-static-neutral-00);
   cursor: help;
@@ -2605,7 +2555,7 @@ dialog.omnimux-inspiration-preview-layer::backdrop { background: transparent; ba
   padding: 0;
   border-radius: 9999px;
   border: 1px solid var(--dsw-alias-border-l3);
-  background: var(--dsw-alias-bg-mask-1);
+  background: var(--dsw-static-neutral-900);
   color: var(--dsw-static-neutral-00);
 }
 .omx-card-hover-cta {
@@ -2669,9 +2619,43 @@ dialog.omnimux-inspiration-preview-layer::backdrop { background: transparent; ba
   min-width: 224px;
   max-width: 268px;
   background: var(--dsw-alias-card-fill);
+  --dsw-menu-surface-fill: var(--dsw-alias-card-fill);
+  --dsw-menu-backdrop-filter: none;
   border: 1px solid var(--dsw-alias-border-l3);
   box-shadow: 0 12px 32px var(--dsw-alias-bg-mask-1);
   border-radius: 10px;
+}
+body:has([role="menu"].omx-card-context-menu) [role="menu"][style*="--dsh-submenu-parent"] {
+  min-width: 196px;
+  background: var(--dsw-alias-card-fill);
+  --dsw-menu-surface-fill: var(--dsw-alias-card-fill);
+  --dsw-menu-backdrop-filter: none;
+  border: 1px solid var(--dsw-alias-border-l3);
+  box-shadow: 0 12px 32px var(--dsw-alias-bg-mask-1);
+  border-radius: 10px;
+}
+body:not([data-ds-dark-theme]) .omnimux-inspiration-stage {
+  --wf-shimmer-stage-bg: var(--dsw-alias-bg-layer-2);
+  --wf-shimmer-stage-rgb: 245, 246, 247;
+  --wf-shimmer-bg-opacity: 0.72;
+  --wf-shimmer-svg-url: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22600%22%20height%3D%22600%22%20viewBox%3D%220%200%20600%20600%22%20preserveAspectRatio%3D%22none%22%3E%3Cdefs%3E%3ClinearGradient%20id%3D%22wf_shm_g%22%20gradientUnits%3D%22userSpaceOnUse%22%20x1%3D%220%22%20y1%3D%220%22%20x2%3D%22600%22%20y2%3D%22600%22%3E%3Cstop%20offset%3D%220.0000%22%20stop-color%3D%22%23eef0f4%22%20stop-opacity%3D%221%22%2F%3E%3Cstop%20offset%3D%220.3236%22%20stop-color%3D%22%23eef0f4%22%20stop-opacity%3D%221%22%2F%3E%3Cstop%20offset%3D%220.4008%22%20stop-color%3D%22%23eef0f4%22%20stop-opacity%3D%220.75%22%2F%3E%3Cstop%20offset%3D%220.4603%22%20stop-color%3D%22%23eef0f4%22%20stop-opacity%3D%220.3%22%2F%3E%3Cstop%20offset%3D%220.5000%22%20stop-color%3D%22%23eef0f4%22%20stop-opacity%3D%220%22%2F%3E%3Cstop%20offset%3D%220.5397%22%20stop-color%3D%22%23eef0f4%22%20stop-opacity%3D%220.3%22%2F%3E%3Cstop%20offset%3D%220.5992%22%20stop-color%3D%22%23eef0f4%22%20stop-opacity%3D%220.75%22%2F%3E%3Cstop%20offset%3D%220.6764%22%20stop-color%3D%22%23eef0f4%22%20stop-opacity%3D%221%22%2F%3E%3Cstop%20offset%3D%221.0000%22%20stop-color%3D%22%23eef0f4%22%20stop-opacity%3D%221%22%2F%3E%3C%2FlinearGradient%3E%3C%2Fdefs%3E%3Crect%20x%3D%220%22%20y%3D%220%22%20width%3D%22600%22%20height%3D%22600%22%20fill%3D%22url(%23wf_shm_g)%22%2F%3E%3C%2Fsvg%3E");
+}
+@media (max-width: 960px) {
+  .omnimux-inspiration-stage .omnimux-inspiration-toolbar,
+  .omnimux-inspiration-stage .omnimux-inspiration-toolbar [class*="Toolbar-bar"] {
+    height: auto;
+    max-height: none;
+    flex-wrap: wrap;
+    row-gap: 8px;
+    padding-top: 6px;
+    padding-bottom: 6px;
+  }
+  .omnimux-inspiration-stage .omnimux-inspiration-toolbar [class*="Toolbar-left"],
+  .omnimux-inspiration-stage .omnimux-inspiration-toolbar [class*="Toolbar-right"] {
+    flex: 1 1 100%;
+    flex-wrap: wrap;
+    margin-left: 0;
+  }
 }
 @container omx-card (max-width: 210px) {
   .omx-card-act-label {

@@ -96,13 +96,14 @@ export function InspirationDetailSidebar({
     }
   }, [showSharePopover])
 
-  // Esc closes the docked inspector when no nested popover or drawer is open.
+  // Esc closes the docked inspector when no nested menu, popover, or drawer is open.
   useEffect(() => {
     if (!row) return undefined
     const onKeyDown = (event) => {
       if (event.key !== 'Escape') return
+      if (event.defaultPrevented) return
       if (showSharePopover) return
-      if (typeof document !== 'undefined' && document.querySelector('.omnimux-post-lightbox, .omnimux-post-creation-drawer')) return
+      if (typeof document !== 'undefined' && document.querySelector('[role="menu"], .omnimux-post-lightbox, .omnimux-post-creation-drawer')) return
       event.preventDefault()
       onClose?.()
     }

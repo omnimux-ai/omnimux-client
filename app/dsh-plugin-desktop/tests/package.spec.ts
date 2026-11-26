@@ -856,7 +856,10 @@ describe('published package surface', () => {
       expect(manifest.build?.[platform]).not.toHaveProperty('asarUnpack')
     }
     expect(manifest.build?.electronFuses).toEqual({
+      enableCookieEncryption: true,
       enableEmbeddedAsarIntegrityValidation: false,
+      enableNodeCliInspectArguments: false,
+      enableNodeOptionsEnvironmentVariable: false,
       onlyLoadAppFromAsar: false,
       resetAdHocDarwinSignature: true,
       runAsNode: true,

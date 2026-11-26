@@ -35,14 +35,15 @@ describe('E2E: Creatify 技能卡片 1:1 视觉复刻、一行三列与流光渐
     }
   });
 
-  it('buildWorkshopCategories() 返回 8 个场景分类，默认全部', () => {
+  it('buildWorkshopCategories() 返回 6 个垂直场景分类，默认全部', () => {
     const cats = buildWorkshopCategories(null);
-    assert.equal(cats.length, 7, '应包含 1 个全部 + 6 个活跃场景分类');
+    assert.equal(cats.length, 7, '应包含 1 个全部 + 6 个垂直场景分类');
     assert.equal(cats[0].id, '');
     assert.equal(cats[0].label, '全部');
-    assert.equal(cats[1].id, 'scene-seeding');
-    assert.equal(cats[3].id, 'scene-product');
-    assert.equal(cats[4].id, 'scene-performance');
+    assert.equal(cats[0].count, 36);
+    assert.equal(cats[1].id, 'scene-video');
+    assert.equal(cats[3].id, 'scene-visual');
+    assert.equal(cats[4].id, 'scene-research');
     assert.ok(cats.every((c) => c.id === '' || c.count > 0), '场景数量必须为正');
   });
 
@@ -131,8 +132,8 @@ describe('E2E: Creatify 技能卡片 1:1 视觉复刻、一行三列与流光渐
       'workshop.viewAll': '查看全部 >',
       'workshop.badgeNew': '新',
       'workshop.bookmark': '收藏',
-      'cat.scene-seeding': '内容种草',
-      'cat.scene-product': '商品展示',
+      'cat.scene-video': '短视频创作',
+      'cat.scene-visual': '商品视觉与海报',
     };
 
     const enDict = {
@@ -143,8 +144,8 @@ describe('E2E: Creatify 技能卡片 1:1 视觉复刻、一行三列与流光渐
       'workshop.viewAll': 'View All >',
       'workshop.badgeNew': 'NEW',
       'workshop.bookmark': 'Bookmark',
-      'cat.scene-seeding': 'Content Seeding',
-      'cat.scene-product': 'Product Showcase',
+      'cat.scene-video': 'Video Creation',
+      'cat.scene-visual': 'Visual & Product',
     };
 
     const trZh = (k) => zhDict[k] || k;
@@ -194,10 +195,10 @@ describe('E2E: Creatify 技能卡片 1:1 视觉复刻、一行三列与流光渐
     // 3. 分类栏 buildWorkshopCategories 双语对齐
     const catsZh = buildWorkshopCategories(null, trZh);
     const catsEn = buildWorkshopCategories(null, trEn);
-    assert.equal(catsZh[1].label, '内容种草');
-    assert.equal(catsEn[1].label, 'Content Seeding');
-    assert.equal(catsZh[3].label, '商品展示');
-    assert.equal(catsEn[3].label, 'Product Showcase');
+    assert.equal(catsZh[1].label, '短视频创作');
+    assert.equal(catsEn[1].label, 'Video Creation');
+    assert.equal(catsZh[3].label, '商品视觉与海报');
+    assert.equal(catsEn[3].label, 'Visual & Product');
   });
 
   it('技能卡片极简重构：彻底移除分类胶囊 (.omnimux-creatify-pill-cat) 与收藏星标 (.omnimux-creatify-star-btn)', () => {

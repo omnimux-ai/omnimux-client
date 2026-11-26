@@ -12,7 +12,7 @@
       "summaryZh": "参考爆款视频结构，生成同款商品带货视频",
       "summaryEn": "Deconstruct a viral reference video and produce a high-converting equivalent for your product.",
       "category": "video-ads",
-      "scenario": "scene-repurpose",
+      "scenario": "scene-replicate",
       "tags": [
         "视频广告",
         "AIGC 创作",
@@ -42,7 +42,7 @@
       "summaryZh": "从商品或参考视频出发，直接生成带货视频",
       "summaryEn": "Orchestrate product facts, script, storyboard generation, and timeline assembly into a selling video.",
       "category": "product-showcase",
-      "scenario": "scene-product",
+      "scenario": "scene-video",
       "tags": [
         "产品展示",
         "电商",
@@ -72,7 +72,7 @@
       "summaryZh": "提取字幕与脚本，拆解钩子、卖点和分镜",
       "summaryEn": "Break down short-video narrative pacing, 3-second hooks, and shot-by-shot reusable templates.",
       "category": "storytelling-script",
-      "scenario": "scene-repurpose",
+      "scenario": "scene-replicate",
       "tags": [
         "故事讲述和脚本",
         "电商",
@@ -101,7 +101,7 @@
       "summaryZh": "解析参考视频镜头与动作，生成 AI 视频提示词",
       "summaryEn": "Reverse-engineer a reference short video into structured motion, camera, and pacing prompts for I2V models.",
       "category": "storytelling-script",
-      "scenario": "scene-repurpose",
+      "scenario": "scene-replicate",
       "tags": [
         "故事讲述和脚本",
         "AIGC 创作",
@@ -130,7 +130,7 @@
       "summaryZh": "拆解参考图文结构，为商品生成原创轮播图",
       "summaryEn": "Deconstruct a reference carousel and rebuild an original one for a new product.",
       "category": "image-static",
-      "scenario": "scene-repurpose",
+      "scenario": "scene-replicate",
       "tags": [
         "图片和静态广告",
         "电商",
@@ -151,6 +151,36 @@
       }
     },
     {
+      "id": "sk-omx-stickman-video-director",
+      "title": "火柴人视频导演",
+      "titleZh": "火柴人视频导演",
+      "titleEn": "Stickman Video Director",
+      "summary": "将文案或主题改编为一分钟火柴人动画解说短片，输出六幕导演提案与跨幕锁定提示词。",
+      "summaryZh": "将文案或主题改编为一分钟火柴人动画解说短片，输出六幕导演提案与跨幕锁定提示词。",
+      "summaryEn": "Turn copy into a one-minute stick-figure explainer with a six-scene proposal and locked video prompts.",
+      "category": "storytelling-script",
+      "scenario": "scene-video",
+      "tags": [
+        "故事讲述和脚本",
+        "动画",
+        "AIGC 创作",
+        "新品上市"
+      ],
+      "cover": "catalog/covers/skills/skill-card-10.webp",
+      "avatar": "",
+      "badge": "NEW",
+      "skill": "stickman-video-director",
+      "isHot": false,
+      "isNew": true,
+      "coverIndex": 10,
+      "coverFile": "skill-card-10.webp",
+      "downloads": 390,
+      "sourceRef": {
+        "repo": "",
+        "path": "catalog/skills/stickman-video-director"
+      }
+    },
+    {
       "id": "sk-omx-shoppable-carousel",
       "title": "制作商品轮播图",
       "titleZh": "制作商品轮播图",
@@ -159,7 +189,7 @@
       "summaryZh": "按商品图规划逐页轮播文案与生图提示词",
       "summaryEn": "Plan e-commerce product carousels and prompts from product photos and confirmed facts.",
       "category": "image-static",
-      "scenario": "scene-product",
+      "scenario": "scene-visual",
       "tags": [
         "图片和静态广告",
         "电商",
@@ -188,7 +218,7 @@
       "summaryZh": "保留商品外观，一键生成主图、卖点与场景图",
       "summaryEn": "Generate platform-compliant hero, white-background, lifestyle, and PDP product image sets from real photos.",
       "category": "image-static",
-      "scenario": "scene-product",
+      "scenario": "scene-visual",
       "tags": [
         "图片和静态广告",
         "电商",
@@ -209,95 +239,6 @@
       }
     },
     {
-      "id": "sk-omx-ad-creative",
-      "title": "生成广告文案",
-      "titleZh": "生成广告文案",
-      "titleEn": "Ad Creative",
-      "summary": "为 Meta、Google 等渠道生成多版本广告文案",
-      "summaryZh": "为 Meta、Google 等渠道生成多版本广告文案",
-      "summaryEn": "Generate and iterate angle-organized paid ad copy validated against platform limits across major channels.",
-      "category": "video-ads",
-      "scenario": "scene-performance",
-      "tags": [
-        "视频广告",
-        "商业广告",
-        "新品上市"
-      ],
-      "cover": "catalog/covers/skills/skill-card-8.webp",
-      "avatar": "",
-      "badge": "NEW",
-      "skill": "ad-creative",
-      "isHot": false,
-      "isNew": true,
-      "coverIndex": 8,
-      "coverFile": "skill-card-8.webp",
-      "downloads": 460,
-      "sourceRef": {
-        "repo": "",
-        "path": "catalog/skills/ad-creative"
-      }
-    },
-    {
-      "id": "sk-omx-global-ad-localizer",
-      "title": "视频多语改编",
-      "titleZh": "视频多语改编",
-      "titleEn": "Global Ad Localizer",
-      "summary": "保留商品画面，将视频适配为多国家语言版本",
-      "summaryZh": "保留商品画面，将视频适配为多国家语言版本",
-      "summaryEn": "Scale validated product ads into culturally adapted multilingual video matrices while locking product facts.",
-      "category": "video-ads",
-      "scenario": "scene-performance",
-      "tags": [
-        "视频广告",
-        "商业广告",
-        "电商",
-        "新品上市"
-      ],
-      "cover": "catalog/covers/skills/skill-card-9.webp",
-      "avatar": "",
-      "badge": "NEW",
-      "skill": "global-ad-localizer",
-      "isHot": false,
-      "isNew": true,
-      "coverIndex": 9,
-      "coverFile": "skill-card-9.webp",
-      "downloads": 430,
-      "sourceRef": {
-        "repo": "",
-        "path": "catalog/skills/global-ad-localizer"
-      }
-    },
-    {
-      "id": "sk-omx-stickman-video-director",
-      "title": "火柴人视频导演",
-      "titleZh": "火柴人视频导演",
-      "titleEn": "Stickman Video Director",
-      "summary": "将文案或主题改编为一分钟火柴人动画解说短片，输出六幕导演提案与跨幕锁定提示词。",
-      "summaryZh": "将文案或主题改编为一分钟火柴人动画解说短片，输出六幕导演提案与跨幕锁定提示词。",
-      "summaryEn": "Turn copy into a one-minute stick-figure explainer with a six-scene proposal and locked video prompts.",
-      "category": "storytelling-script",
-      "scenario": "scene-seeding",
-      "tags": [
-        "故事讲述和脚本",
-        "动画",
-        "AIGC 创作",
-        "新品上市"
-      ],
-      "cover": "catalog/covers/skills/skill-card-10.webp",
-      "avatar": "",
-      "badge": "NEW",
-      "skill": "stickman-video-director",
-      "isHot": false,
-      "isNew": true,
-      "coverIndex": 10,
-      "coverFile": "skill-card-10.webp",
-      "downloads": 390,
-      "sourceRef": {
-        "repo": "",
-        "path": "catalog/skills/stickman-video-director"
-      }
-    },
-    {
       "id": "sk-omx-dynamic-poster",
       "title": "生成动态海报",
       "titleZh": "生成动态海报",
@@ -306,7 +247,7 @@
       "summaryZh": "基于产品实拍图，制作带微动态效果的海报",
       "summaryEn": "Design surreal, motion-ready commercial dynamic posters from product artwork and visual briefs.",
       "category": "image-static",
-      "scenario": "scene-brand",
+      "scenario": "scene-visual",
       "tags": [
         "图片和静态广告",
         "商业广告",
@@ -327,6 +268,64 @@
       }
     },
     {
+      "id": "sk-omx-ecom-market-research",
+      "title": "分析类目市场",
+      "titleZh": "分析类目市场",
+      "titleEn": "E-commerce Market Research",
+      "summary": "解析类目导出表，测算市场容量、CR10 集中度与价格带机会",
+      "summaryZh": "解析类目导出表，测算市场容量、CR10 集中度与价格带机会",
+      "summaryEn": "Analyze category exports for monthly capacity, CR3/CR10/HHI concentration, and price-band opportunities.",
+      "category": "product-showcase",
+      "scenario": "scene-research",
+      "tags": [
+        "选品与社媒洞察",
+        "电商",
+        "新品上市"
+      ],
+      "cover": "catalog/covers/skills/skill-card-6.webp",
+      "avatar": "",
+      "badge": "NEW",
+      "skill": "omnimux-ecom-market-research",
+      "isHot": false,
+      "isNew": true,
+      "coverIndex": 6,
+      "coverFile": "skill-card-6.webp",
+      "downloads": 480,
+      "sourceRef": {
+        "plugin": "omnimux-market",
+        "repo": "",
+        "path": "skills/omnimux-ecom-market-research"
+      }
+    },
+    {
+      "id": "sk-omx-ad-creative",
+      "title": "生成广告文案",
+      "titleZh": "生成广告文案",
+      "titleEn": "Ad Creative",
+      "summary": "为 Meta、Google 等渠道生成多版本广告文案",
+      "summaryZh": "为 Meta、Google 等渠道生成多版本广告文案",
+      "summaryEn": "Generate and iterate angle-organized paid ad copy validated against platform limits across major channels.",
+      "category": "video-ads",
+      "scenario": "scene-growth",
+      "tags": [
+        "视频广告",
+        "商业广告"
+      ],
+      "cover": "catalog/covers/skills/skill-card-8.webp",
+      "avatar": "",
+      "badge": "",
+      "skill": "ad-creative",
+      "isHot": false,
+      "isNew": false,
+      "coverIndex": 8,
+      "coverFile": "skill-card-8.webp",
+      "downloads": 460,
+      "sourceRef": {
+        "repo": "",
+        "path": "catalog/skills/ad-creative"
+      }
+    },
+    {
       "id": "sk-omx-character-scene-storyboard",
       "title": "生成分镜设定图",
       "titleZh": "生成分镜设定图",
@@ -335,7 +334,7 @@
       "summaryZh": "根据参考图和剧本，生成三视图与 12 格分镜",
       "summaryEn": "Build pre-production design sheets combining character turnarounds, scene art, and a 12-panel storyboard.",
       "category": "storytelling-script",
-      "scenario": "scene-brand",
+      "scenario": "scene-video",
       "tags": [
         "故事讲述和脚本",
         "短剧漫剧",
@@ -364,7 +363,7 @@
       "summaryZh": "将画面创意转为推拉摇移与景别运镜提示词",
       "summaryEn": "Translate cinematic briefs into precise camera contracts, motion physics, spatial zoning, and lens cues.",
       "category": "video-ads",
-      "scenario": "scene-brand",
+      "scenario": "scene-video",
       "tags": [
         "视频广告",
         "专业影视"
@@ -381,6 +380,35 @@
       "sourceRef": {
         "repo": "",
         "path": "catalog/skills/cinematic-motion-language"
+      }
+    },
+    {
+      "id": "sk-omx-clip-craft",
+      "title": "智能视频剪辑",
+      "titleZh": "智能视频剪辑",
+      "titleEn": "Clip Craft Editor",
+      "summary": "修整视频时间轴、自动切片、添加字幕花字与成片导出",
+      "summaryZh": "修整视频时间轴、自动切片、添加字幕花字与成片导出",
+      "summaryEn": "Trim timelines, remove black frames, align captions, and export polished edits in OmniMux Clip.",
+      "category": "other",
+      "scenario": "scene-tools",
+      "tags": [
+        "剪辑与效率工具",
+        "平台工具"
+      ],
+      "cover": "catalog/covers/skills/skill-card-2.webp",
+      "avatar": "",
+      "badge": "",
+      "skill": "clip-craft",
+      "isHot": false,
+      "isNew": false,
+      "coverIndex": 2,
+      "coverFile": "skill-card-2.webp",
+      "downloads": 480,
+      "sourceRef": {
+        "plugin": "omnimux-clip",
+        "repo": "",
+        "path": "skills/clip-craft"
       }
     },
     {
@@ -412,6 +440,64 @@
       }
     },
     {
+      "id": "sk-omx-competitor-research",
+      "title": "对比竞品账号",
+      "titleZh": "对比竞品账号",
+      "titleEn": "Competitor Research",
+      "summary": "横向对比 2 至 5 个竞品账号策略，识别内容差异与机会点",
+      "summaryZh": "横向对比 2 至 5 个竞品账号策略，识别内容差异与机会点",
+      "summaryEn": "Benchmark 2 to 5 competitor social accounts side by side to uncover positioning gaps and winning plays.",
+      "category": "ugc-testimonial",
+      "scenario": "scene-research",
+      "tags": [
+        "选品与社媒洞察",
+        "商业广告"
+      ],
+      "cover": "catalog/covers/skills/skill-card-12.webp",
+      "avatar": "",
+      "badge": "",
+      "skill": "omnimux-competitor-research",
+      "isHot": false,
+      "isNew": false,
+      "coverIndex": 12,
+      "coverFile": "skill-card-12.webp",
+      "downloads": 480,
+      "sourceRef": {
+        "plugin": "omnimux-market",
+        "repo": "",
+        "path": "skills/omnimux-competitor-research"
+      }
+    },
+    {
+      "id": "sk-omx-content-repurposing",
+      "title": "跨平台改写",
+      "titleZh": "跨平台改写",
+      "titleEn": "Content Repurposing",
+      "summary": "将视频或长帖拆解改写为短视频脚本与多平台原生图文",
+      "summaryZh": "将视频或长帖拆解改写为短视频脚本与多平台原生图文",
+      "summaryEn": "Repurpose video transcripts and long-form posts into short-video scripts and native multi-platform formats.",
+      "category": "video-ads",
+      "scenario": "scene-replicate",
+      "tags": [
+        "爆款复刻与再制",
+        "电商"
+      ],
+      "cover": "catalog/covers/skills/skill-card-2.webp",
+      "avatar": "",
+      "badge": "",
+      "skill": "omnimux-content-repurposing",
+      "isHot": false,
+      "isNew": false,
+      "coverIndex": 2,
+      "coverFile": "skill-card-2.webp",
+      "downloads": 480,
+      "sourceRef": {
+        "plugin": "omnimux-market",
+        "repo": "",
+        "path": "skills/omnimux-content-repurposing"
+      }
+    },
+    {
       "id": "sk-omx-content-strategy",
       "title": "规划内容策略",
       "titleZh": "规划内容策略",
@@ -420,7 +506,7 @@
       "summaryZh": "规划跨平台内容方向、发布日历与选题排期",
       "summaryEn": "Turn business and customer evidence into prioritized content pillars, buyer-stage topics, and clusters.",
       "category": "ugc-testimonial",
-      "scenario": "scene-seeding",
+      "scenario": "scene-growth",
       "tags": [
         "UGC 和用户评价",
         "商业广告"
@@ -440,6 +526,382 @@
       }
     },
     {
+      "id": "sk-omx-creator-teardown",
+      "title": "分析达人主页",
+      "titleZh": "分析达人主页",
+      "titleEn": "Creator Teardown",
+      "summary": "拆解博主或品牌账号定位、内容支柱与可借鉴转化打法",
+      "summaryZh": "拆解博主或品牌账号定位、内容支柱与可借鉴转化打法",
+      "summaryEn": "Audit a creator or brand profile to map content pillars, winning hooks, and testing recommendations.",
+      "category": "ugc-testimonial",
+      "scenario": "scene-research",
+      "tags": [
+        "选品与社媒洞察",
+        "商业广告"
+      ],
+      "cover": "catalog/covers/skills/skill-card-11.webp",
+      "avatar": "",
+      "badge": "",
+      "skill": "omnimux-creator-teardown",
+      "isHot": false,
+      "isNew": false,
+      "coverIndex": 11,
+      "coverFile": "skill-card-11.webp",
+      "downloads": 480,
+      "sourceRef": {
+        "plugin": "omnimux-market",
+        "repo": "",
+        "path": "skills/omnimux-creator-teardown"
+      }
+    },
+    {
+      "id": "sk-omx-ecom-ads-diagnosis",
+      "title": "诊断广告投放",
+      "titleZh": "诊断广告投放",
+      "titleEn": "Ads Funnel Diagnosis",
+      "summary": "核算保本 ROAS 与 CPC 上限，按五层漏斗定位投放瓶颈",
+      "summaryZh": "核算保本 ROAS 与 CPC 上限，按五层漏斗定位投放瓶颈",
+      "summaryEn": "Calculate break-even ROAS and max CPC, isolating five-layer funnel bottlenecks before changing creatives.",
+      "category": "video-ads",
+      "scenario": "scene-growth",
+      "tags": [
+        "投放与增长运营",
+        "商业广告",
+        "电商"
+      ],
+      "cover": "catalog/covers/skills/skill-card-14.webp",
+      "avatar": "",
+      "badge": "",
+      "skill": "omnimux-ecom-ads-diagnosis",
+      "isHot": false,
+      "isNew": false,
+      "coverIndex": 14,
+      "coverFile": "skill-card-14.webp",
+      "downloads": 480,
+      "sourceRef": {
+        "plugin": "omnimux-market",
+        "repo": "",
+        "path": "skills/omnimux-ecom-ads-diagnosis"
+      }
+    },
+    {
+      "id": "sk-omx-ecom-brand-curator",
+      "title": "品牌视觉建档",
+      "titleZh": "品牌视觉建档",
+      "titleEn": "Brand & Product Curator",
+      "summary": "整理商品四级参数真源、品牌色板、实拍锚点与禁用词档案",
+      "summaryZh": "整理商品四级参数真源、品牌色板、实拍锚点与禁用词档案",
+      "summaryEn": "Build a grounded brand kit with product spec tables, palette anchors, and market forbidden-word lists.",
+      "category": "product-showcase",
+      "scenario": "scene-visual",
+      "tags": [
+        "商品视觉与海报",
+        "电商"
+      ],
+      "cover": "catalog/covers/skills/skill-card-5.webp",
+      "avatar": "",
+      "badge": "",
+      "skill": "omnimux-ecom-brand-curator",
+      "isHot": false,
+      "isNew": false,
+      "coverIndex": 5,
+      "coverFile": "skill-card-5.webp",
+      "downloads": 480,
+      "sourceRef": {
+        "plugin": "omnimux-market",
+        "repo": "",
+        "path": "skills/omnimux-ecom-brand-curator"
+      }
+    },
+    {
+      "id": "sk-omx-ecom-listing-copy",
+      "title": "生成商详文案",
+      "titleZh": "生成商详文案",
+      "titleEn": "Multilingual Listing Copy",
+      "summary": "依据商品参数真源生成多语言标题、五点卖点与合规详情文案",
+      "summaryZh": "依据商品参数真源生成多语言标题、五点卖点与合规详情文案",
+      "summaryEn": "Draft native multilingual titles and seven-part listings validated for length limits and spec fidelity.",
+      "category": "product-showcase",
+      "scenario": "scene-growth",
+      "tags": [
+        "投放与增长运营",
+        "电商"
+      ],
+      "cover": "catalog/covers/skills/skill-card-15.webp",
+      "avatar": "",
+      "badge": "",
+      "skill": "omnimux-ecom-listing-copy",
+      "isHot": false,
+      "isNew": false,
+      "coverIndex": 15,
+      "coverFile": "skill-card-15.webp",
+      "downloads": 480,
+      "sourceRef": {
+        "plugin": "omnimux-market",
+        "repo": "",
+        "path": "skills/omnimux-ecom-listing-copy"
+      }
+    },
+    {
+      "id": "sk-omx-ecom-pricing-strategy",
+      "title": "测算定价利润",
+      "titleZh": "测算定价利润",
+      "titleEn": "Pricing & Unit Economics",
+      "summary": "精算佣金、物流与广告占比下的净利率、保本价与优惠余量",
+      "summaryZh": "精算佣金、物流与广告占比下的净利率、保本价与优惠余量",
+      "summaryEn": "Model commissions, fulfillment, taxes, and ad spend to determine break-even price and promo headroom.",
+      "category": "product-showcase",
+      "scenario": "scene-growth",
+      "tags": [
+        "投放与增长运营",
+        "电商"
+      ],
+      "cover": "catalog/covers/skills/skill-card-16.webp",
+      "avatar": "",
+      "badge": "",
+      "skill": "omnimux-ecom-pricing-strategy",
+      "isHot": false,
+      "isNew": false,
+      "coverIndex": 16,
+      "coverFile": "skill-card-16.webp",
+      "downloads": 480,
+      "sourceRef": {
+        "plugin": "omnimux-market",
+        "repo": "",
+        "path": "skills/omnimux-ecom-pricing-strategy"
+      }
+    },
+    {
+      "id": "sk-omx-ecom-review-voc",
+      "title": "分析商品评论",
+      "titleZh": "分析商品评论",
+      "titleEn": "Review VOC Analysis",
+      "summary": "统计差评 8 类归因占比并提炼好评卖点与合规售后话术",
+      "summaryZh": "统计差评 8 类归因占比并提炼好评卖点与合规售后话术",
+      "summaryEn": "Classify negative reviews across 8 root causes, quantify fixable confusion, and draft compliant responses.",
+      "category": "ugc-testimonial",
+      "scenario": "scene-research",
+      "tags": [
+        "选品与社媒洞察",
+        "电商"
+      ],
+      "cover": "catalog/covers/skills/skill-card-8.webp",
+      "avatar": "",
+      "badge": "",
+      "skill": "omnimux-ecom-review-voc",
+      "isHot": false,
+      "isNew": false,
+      "coverIndex": 8,
+      "coverFile": "skill-card-8.webp",
+      "downloads": 480,
+      "sourceRef": {
+        "plugin": "omnimux-market",
+        "repo": "",
+        "path": "skills/omnimux-ecom-review-voc"
+      }
+    },
+    {
+      "id": "sk-omx-ecom-video-script",
+      "title": "写带货脚本",
+      "titleZh": "写带货脚本",
+      "titleEn": "E-commerce Video Script",
+      "summary": "提炼商品卖点，生成 3 秒钩子分镜与口播时长脚本",
+      "summaryZh": "提炼商品卖点，生成 3 秒钩子分镜与口播时长脚本",
+      "summaryEn": "Turn verified product selling points into 3-second hook storyboards and duration-checked video scripts.",
+      "category": "video-ads",
+      "scenario": "scene-video",
+      "tags": [
+        "短视频创作",
+        "电商"
+      ],
+      "cover": "catalog/covers/skills/skill-card-1.webp",
+      "avatar": "",
+      "badge": "",
+      "skill": "omnimux-ecom-video-script",
+      "isHot": false,
+      "isNew": false,
+      "coverIndex": 1,
+      "coverFile": "skill-card-1.webp",
+      "downloads": 480,
+      "sourceRef": {
+        "plugin": "omnimux-market",
+        "repo": "",
+        "path": "skills/omnimux-ecom-video-script"
+      }
+    },
+    {
+      "id": "sk-omx-ecom-visual-qa",
+      "title": "商详九图质检",
+      "titleZh": "商详九图质检",
+      "titleEn": "9-Image Visual QA",
+      "summary": "规划 9 张商详矩阵主图并执行白底占比与像素级合规质检",
+      "summaryZh": "规划 9 张商详矩阵主图并执行白底占比与像素级合规质检",
+      "summaryEn": "Plan 9-image product visual matrices and run automated white-background, ratio, and resolution QA.",
+      "category": "image-static",
+      "scenario": "scene-visual",
+      "tags": [
+        "商品视觉与海报",
+        "电商"
+      ],
+      "cover": "catalog/covers/skills/skill-card-4.webp",
+      "avatar": "",
+      "badge": "",
+      "skill": "omnimux-ecom-visual-qa",
+      "isHot": false,
+      "isNew": false,
+      "coverIndex": 4,
+      "coverFile": "skill-card-4.webp",
+      "downloads": 480,
+      "sourceRef": {
+        "plugin": "omnimux-market",
+        "repo": "",
+        "path": "skills/omnimux-ecom-visual-qa"
+      }
+    },
+    {
+      "id": "sk-omx-global-ad-localizer",
+      "title": "视频多语改编",
+      "titleZh": "视频多语改编",
+      "titleEn": "Global Ad Localizer",
+      "summary": "保留商品画面，将视频适配为多国家语言版本",
+      "summaryZh": "保留商品画面，将视频适配为多国家语言版本",
+      "summaryEn": "Scale validated product ads into culturally adapted multilingual video matrices while locking product facts.",
+      "category": "video-ads",
+      "scenario": "scene-growth",
+      "tags": [
+        "视频广告",
+        "商业广告",
+        "电商"
+      ],
+      "cover": "catalog/covers/skills/skill-card-9.webp",
+      "avatar": "",
+      "badge": "",
+      "skill": "global-ad-localizer",
+      "isHot": false,
+      "isNew": false,
+      "coverIndex": 9,
+      "coverFile": "skill-card-9.webp",
+      "downloads": 430,
+      "sourceRef": {
+        "repo": "",
+        "path": "catalog/skills/global-ad-localizer"
+      }
+    },
+    {
+      "id": "sk-omx-outlier-post-finder",
+      "title": "找账号爆款帖",
+      "titleZh": "找账号爆款帖",
+      "titleEn": "Outlier Post Finder",
+      "summary": "定位远超账号自身均值的离群爆款内容，提炼可复制模板",
+      "summaryZh": "定位远超账号自身均值的离群爆款内容，提炼可复制模板",
+      "summaryEn": "Identify outlier posts that beat an account baseline and extract repeatable hook templates.",
+      "category": "video-ads",
+      "scenario": "scene-research",
+      "tags": [
+        "选品与社媒洞察",
+        "商业广告"
+      ],
+      "cover": "catalog/covers/skills/skill-card-10.webp",
+      "avatar": "",
+      "badge": "",
+      "skill": "omnimux-outlier-post-finder",
+      "isHot": false,
+      "isNew": false,
+      "coverIndex": 10,
+      "coverFile": "skill-card-10.webp",
+      "downloads": 480,
+      "sourceRef": {
+        "plugin": "omnimux-market",
+        "repo": "",
+        "path": "skills/omnimux-outlier-post-finder"
+      }
+    },
+    {
+      "id": "sk-omx-product-demand",
+      "title": "验证选品需求",
+      "titleZh": "验证选品需求",
+      "titleEn": "Social Product Demand",
+      "summary": "从真实社媒讨论与购买求助中挖掘细分痛点与需求证据",
+      "summaryZh": "从真实社媒讨论与购买求助中挖掘细分痛点与需求证据",
+      "summaryEn": "Validate product demand and buyer objections from real social discussions and shop feedback.",
+      "category": "product-showcase",
+      "scenario": "scene-research",
+      "tags": [
+        "选品与社媒洞察",
+        "电商"
+      ],
+      "cover": "catalog/covers/skills/skill-card-7.webp",
+      "avatar": "",
+      "badge": "",
+      "skill": "omnimux-product-demand",
+      "isHot": false,
+      "isNew": false,
+      "coverIndex": 7,
+      "coverFile": "skill-card-7.webp",
+      "downloads": 480,
+      "sourceRef": {
+        "plugin": "omnimux-market",
+        "repo": "",
+        "path": "skills/omnimux-product-demand"
+      }
+    },
+    {
+      "id": "sk-omx-skill-creator",
+      "title": "创建自定义技能",
+      "titleZh": "创建自定义技能",
+      "titleEn": "Skill Creator",
+      "summary": "零门槛设计并验证可复用的双语标准工作流技能包",
+      "summaryZh": "零门槛设计并验证可复用的双语标准工作流技能包",
+      "summaryEn": "Design, scaffold, and validate reusable bilingual OmniMux Skills with 0-Token defaults.",
+      "category": "other",
+      "scenario": "scene-tools",
+      "tags": [
+        "剪辑与效率工具",
+        "平台工具"
+      ],
+      "cover": "catalog/covers/skills/skill-card-15.webp",
+      "avatar": "",
+      "badge": "",
+      "skill": "skill-creator",
+      "isHot": false,
+      "isNew": false,
+      "coverIndex": 15,
+      "coverFile": "skill-card-15.webp",
+      "downloads": 410,
+      "sourceRef": {
+        "repo": "",
+        "path": "catalog/skills/skill-creator"
+      }
+    },
+    {
+      "id": "sk-omx-skill-finder",
+      "title": "智能发现技能",
+      "titleZh": "智能发现技能",
+      "titleEn": "Skill Finder",
+      "summary": "按创作或营销目标检索已装与官方精品技能并推荐组合",
+      "summaryZh": "按创作或营销目标检索已装与官方精品技能并推荐组合",
+      "summaryEn": "Discover installed and official OmniMux vertical skills tailored to your content or growth goal.",
+      "category": "other",
+      "scenario": "scene-tools",
+      "tags": [
+        "剪辑与效率工具",
+        "平台工具"
+      ],
+      "cover": "catalog/covers/skills/skill-card-16.webp",
+      "avatar": "",
+      "badge": "",
+      "skill": "skill-finder",
+      "isHot": false,
+      "isNew": false,
+      "coverIndex": 16,
+      "coverFile": "skill-card-16.webp",
+      "downloads": 390,
+      "sourceRef": {
+        "repo": "",
+        "path": "catalog/skills/skill-finder"
+      }
+    },
+    {
       "id": "sk-omx-social-caption",
       "title": "生成社媒配文",
       "titleZh": "生成社媒配文",
@@ -448,7 +910,7 @@
       "summaryZh": "一键生成适配各平台调性的高互动正文与标签",
       "summaryEn": "Write platform-native social captions with hook, payoff, CTA, and hashtag specs for visual posts.",
       "category": "ugc-testimonial",
-      "scenario": "scene-seeding",
+      "scenario": "scene-growth",
       "tags": [
         "UGC 和用户评价",
         "平台工具"
@@ -466,38 +928,154 @@
         "repo": "",
         "path": "catalog/skills/social-caption"
       }
+    },
+    {
+      "id": "sk-omx-social-listening",
+      "title": "分析品牌口碑",
+      "titleZh": "分析品牌口碑",
+      "titleEn": "Social Listening",
+      "summary": "汇总品牌或话题全网讨论声音，梳理用户偏好与舆情倾向",
+      "summaryZh": "汇总品牌或话题全网讨论声音，梳理用户偏好与舆情倾向",
+      "summaryEn": "Track public social conversations around a brand or topic, clustering sentiment, themes, and citations.",
+      "category": "ugc-testimonial",
+      "scenario": "scene-research",
+      "tags": [
+        "选品与社媒洞察",
+        "商业广告"
+      ],
+      "cover": "catalog/covers/skills/skill-card-13.webp",
+      "avatar": "",
+      "badge": "",
+      "skill": "omnimux-social-listening",
+      "isHot": false,
+      "isNew": false,
+      "coverIndex": 13,
+      "coverFile": "skill-card-13.webp",
+      "downloads": 480,
+      "sourceRef": {
+        "plugin": "omnimux-market",
+        "repo": "",
+        "path": "skills/omnimux-social-listening"
+      }
+    },
+    {
+      "id": "sk-omx-tiktok-growth",
+      "title": "海外短视频增长指南",
+      "titleZh": "海外短视频增长指南",
+      "titleEn": "TikTok Growth Playbook",
+      "summary": "结合 TikTok 节奏、界面安全区与橱窗规范规划矩阵增长内容",
+      "summaryZh": "结合 TikTok 节奏、界面安全区与橱窗规范规划矩阵增长内容",
+      "summaryEn": "Apply TikTok pacing, 9:16 safe-zone rules, and storefront compliance to grow organic and shop video.",
+      "category": "video-ads",
+      "scenario": "scene-growth",
+      "tags": [
+        "投放与增长运营",
+        "电商"
+      ],
+      "cover": "catalog/covers/skills/skill-card-1.webp",
+      "avatar": "",
+      "badge": "",
+      "skill": "tiktok-growth",
+      "isHot": false,
+      "isNew": false,
+      "coverIndex": 1,
+      "coverFile": "skill-card-1.webp",
+      "downloads": 480,
+      "sourceRef": {
+        "plugin": "omnimux-market",
+        "repo": "",
+        "path": "skills/tiktok-growth"
+      }
+    },
+    {
+      "id": "sk-omx-transcript-intelligence",
+      "title": "拆解视频口播",
+      "titleZh": "拆解视频口播",
+      "titleEn": "Transcript Intelligence",
+      "summary": "分析视频口播转写，提取开头钩子、金句与卖点转换结构",
+      "summaryZh": "分析视频口播转写，提取开头钩子、金句与卖点转换结构",
+      "summaryEn": "Analyze spoken video transcripts to extract hooks, claims, evidence, and reusable conversion patterns.",
+      "category": "storytelling-script",
+      "scenario": "scene-replicate",
+      "tags": [
+        "爆款复刻与再制",
+        "AIGC 创作"
+      ],
+      "cover": "catalog/covers/skills/skill-card-3.webp",
+      "avatar": "",
+      "badge": "",
+      "skill": "omnimux-transcript-intelligence",
+      "isHot": false,
+      "isNew": false,
+      "coverIndex": 3,
+      "coverFile": "skill-card-3.webp",
+      "downloads": 480,
+      "sourceRef": {
+        "plugin": "omnimux-market",
+        "repo": "",
+        "path": "skills/omnimux-transcript-intelligence"
+      }
+    },
+    {
+      "id": "sk-omx-trend-discovery",
+      "title": "挖掘赛道趋势",
+      "titleZh": "挖掘赛道趋势",
+      "titleEn": "Trend Discovery",
+      "summary": "按关键词追踪热门社媒趋势，提炼正在起量的选题与钩子",
+      "summaryZh": "按关键词追踪热门社媒趋势，提炼正在起量的选题与钩子",
+      "summaryEn": "Surface rising formats, topics, and hooks across social channels from recent high-engagement signals.",
+      "category": "video-ads",
+      "scenario": "scene-research",
+      "tags": [
+        "选品与社媒洞察",
+        "电商"
+      ],
+      "cover": "catalog/covers/skills/skill-card-9.webp",
+      "avatar": "",
+      "badge": "",
+      "skill": "omnimux-trend-discovery",
+      "isHot": false,
+      "isNew": false,
+      "coverIndex": 9,
+      "coverFile": "skill-card-9.webp",
+      "downloads": 480,
+      "sourceRef": {
+        "plugin": "omnimux-market",
+        "repo": "",
+        "path": "skills/omnimux-trend-discovery"
+      }
     }
   ],
   "categories": [
     {
-      "id": "scene-seeding",
-      "title": "内容种草",
-      "count": 3
+      "id": "scene-video",
+      "title": "短视频创作",
+      "count": 5
     },
     {
-      "id": "scene-brand",
-      "title": "品牌宣传",
-      "count": 3
+      "id": "scene-replicate",
+      "title": "爆款复刻与再制",
+      "count": 6
     },
     {
-      "id": "scene-product",
-      "title": "商品展示",
-      "count": 3
+      "id": "scene-visual",
+      "title": "商品视觉与海报",
+      "count": 5
     },
     {
-      "id": "scene-performance",
-      "title": "效果广告",
-      "count": 2
+      "id": "scene-research",
+      "title": "选品与社媒洞察",
+      "count": 8
     },
     {
-      "id": "scene-repurpose",
-      "title": "内容再制",
-      "count": 4
+      "id": "scene-growth",
+      "title": "投放与增长运营",
+      "count": 8
     },
     {
       "id": "scene-tools",
-      "title": "通用工具",
-      "count": 1
+      "title": "剪辑与效率工具",
+      "count": 4
     }
   ]
 }

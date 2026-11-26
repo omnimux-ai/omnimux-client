@@ -87,6 +87,7 @@ export interface SocialPostCardProps
   loading?: boolean | undefined;
   menuOpen?: boolean | undefined;
   hasPinnedTopRight?: boolean | undefined;
+  pinnedTopRightCount?: number | undefined;
   topLeftSlot?: ReactNode | undefined;
   topRightSlot?: ReactNode | undefined;
   hoverActions?: ReactNode | undefined;

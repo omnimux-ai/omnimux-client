@@ -60,7 +60,7 @@ test('install action opens existing modal and category row precedes content', ()
   // 按场景分类：「场景分类」标签 +「全部」+ 6 个活跃场景，顺序由 SKILL_SCENARIOS 固定。
   assert.deepEqual(
     categoryButtons.slice(0, 5).map((node) => node.props.key),
-    ['', 'scene-seeding', 'scene-brand', 'scene-product', 'scene-performance'],
+    ['', 'scene-video', 'scene-replicate', 'scene-visual', 'scene-research'],
   )
   // 骨架契约 §二·补：标题/动作行随页面滚走，一级/二级 Tab 行吸附在顶部。
   assert.equal(tree.children[0].props.className, 'workshop-intro')

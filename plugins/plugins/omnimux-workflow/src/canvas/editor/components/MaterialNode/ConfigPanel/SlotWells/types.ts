@@ -18,12 +18,12 @@ export type { SlotBindings, SlotConflict, SlotLayout };
 
 /** 唤起 ResourcePicker 的目标卡槽请求。 */
 export interface SlotPickRequest {
-  /** 目标 slot 名（内核 SlotSpec.slot）。 */
-  targetSlot: string;
+  /** 目标 slot 名（单槽具名入口必填，多格式通用添加入口留空并传 referenceSlots）。 */
+  targetSlot?: string;
   /** 画布提交前用最新契约核对这个入口。 */
   operationId: string;
-  slotRole: string;
-  /** Legacy callers may still forward this field. Named wells never set it. */
+  slotRole?: string;
+  /** 多格式参考槽共用通用添加入口时列出所有有余量的参考槽位名。 */
   referenceSlots?: string[];
   /** 该 slot 接受的素材类型（SlotSpec.type 展开）。 */
   acceptedTypes: string[];
