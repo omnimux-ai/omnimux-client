@@ -1,9 +1,10 @@
 /** Desktop-owned WebServer wrapper with bounded bind-conflict retry. */
 
 import { diagnosticOperation } from './developer-logging.ts'
-import type { ServerResponse } from 'node:http'
+import type { IncomingHttpHeaders, ServerResponse } from 'node:http'
 import type { Duplex } from 'node:stream'
 import { Service } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/dsh-client-connection'
 import WebServer, {
   type Config,
   type WebRoute,
@@ -11,6 +12,16 @@ import WebServer, {
 } from '@deepseek-ai/dsh-host-webserver'
 import { decideDesktopBrowserAccess } from './desktop-browser-access.ts'
 import { DESKTOP_WEB_PORT_RETRY_LIMIT } from './desktop-port.ts'
+
+const MARKET_ROUTE = '/api/community-market'
+const isMarketRoute = (path: string): boolean => path === MARKET_ROUTE || path.startsWith(`${MARKET_ROUTE}/`)
+
+type RouteAuthMode = 'anonymous' | 'required' | 'deny'
+
+function routeAuthMode(route: object): RouteAuthMode | undefined {
+  const auth = (route as { readonly auth?: unknown }).auth
+  return auth === 'anonymous' || auth === 'required' || auth === 'deny' ? auth : undefined
+}
 
 /**
  * Bind failures that mean "this port is unavailable", not "binding is broken".
@@ -33,23 +44,32 @@ function closeFailedServer(instance: unknown): void {
   }
 }
 
-function rejectBrowserRequest(res: ServerResponse): void {
-  res.statusCode = 403
+function rejectStatusRequest(res: ServerResponse, status: number, body: string): void {
+  res.statusCode = status
   res.setHeader('cache-control', 'no-store')
   res.setHeader('content-type', 'text/plain; charset=utf-8')
   res.setHeader('x-content-type-options', 'nosniff')
-  res.end('forbidden')
+  res.end(body)
+}
+
+function rejectStatusUpgrade(socket: Duplex, status: number, body: string): void {
+  const reason = status === 401 ? 'Unauthorized' : status === 503 ? 'Service Unavailable' : 'Forbidden'
+  socket.end([
+    `HTTP/1.1 ${String(status)} ${reason}`,
+    'Connection: close',
+    'Content-Type: text/plain; charset=utf-8',
+    `Content-Length: ${String(Buffer.byteLength(body))}`,
+    '',
+    body,
+  ].join('\r\n'))
+}
+
+function rejectBrowserRequest(res: ServerResponse): void {
+  rejectStatusRequest(res, 403, 'forbidden')
 }
 
 function rejectBrowserUpgrade(socket: Duplex): void {
-  socket.end([
-    'HTTP/1.1 403 Forbidden',
-    'Connection: close',
-    'Content-Type: text/plain; charset=utf-8',
-    'Content-Length: 9',
-    '',
-    'forbidden',
-  ].join('\r\n'))
+  rejectStatusUpgrade(socket, 403, 'forbidden')
 }
 
 /** Reuse the upstream WebServer while retrying only real bind collisions. */
@@ -84,11 +104,26 @@ export class DesktopWebServer extends WebServer {
     }
   }
 
+  private authRejection(request: { readonly headers: IncomingHttpHeaders }): number | undefined {
+    const connection = this.ctx.get('connection')
+    return connection === undefined ? 503 : connection.requestRejection(request)
+  }
+
   override register(route: WebRoute): () => void {
+    const auth = routeAuthMode(route)
+    const market = isMarketRoute(route.path)
+    const requiresAuth = market || auth === 'required'
     return super.register({
       ...route,
       handler: this.traceHttp(String(route.path), async (req, res) => {
         if (!this.permits(req)) return rejectBrowserRequest(res)
+        if (auth === 'deny') return rejectStatusRequest(res, 403, 'forbidden')
+        if (requiresAuth) {
+          const rejection = this.authRejection(req)
+          if (rejection !== undefined) {
+            return rejectStatusRequest(res, rejection, market ? 'Market request authentication required' : 'Request authentication required')
+          }
+        }
         await route.handler(req, res)
       }),
     })
@@ -102,10 +137,16 @@ export class DesktopWebServer extends WebServer {
   }
 
   override registerUpgrade(route: WebUpgradeRoute): () => void {
+    const auth = routeAuthMode(route)
     return super.registerUpgrade({
       ...route,
       handler: (req, socket, head) => {
         if (!this.permits(req)) return rejectBrowserUpgrade(socket)
+        if (auth === 'deny') return rejectStatusUpgrade(socket, 403, 'forbidden')
+        if (auth === 'required') {
+          const rejection = this.authRejection(req)
+          if (rejection !== undefined) return rejectStatusUpgrade(socket, rejection, 'authentication required')
+        }
         return route.handler(req, socket, head)
       },
     })

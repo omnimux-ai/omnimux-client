@@ -33,7 +33,10 @@ function register(deps) {
       handlers.set(route.path, route.handler)
       return () => handlers.delete(route.path)
     },
-  }, Object.assign({ authProbe: async () => ({ state: 'unknown', method: 'none' }) }, deps))
+  }, Object.assign({
+    authProbe: async () => ({ state: 'unknown', method: 'none' }),
+    getConnection: () => ({ requestRejection: () => undefined }),
+  }, deps))
   return handlers
 }
 

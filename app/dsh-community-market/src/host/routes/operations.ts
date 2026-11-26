@@ -5,7 +5,7 @@ import { mutationAllowed } from '../request-authority.js'
 import { abortOnDisconnect, readOperationJson, sendInstallError, sendJson } from '../http.js'
 import { asOperationExecute, asOperationPreview } from '../request-validation.js'
 import { MarketInstallError } from '../../install/service.js'
-import type { MarketRouteContext, MarketInstallServiceProvider } from './context.js'
+import { registerAuthenticatedMarketRoute, type MarketRouteContext, type MarketInstallServiceProvider } from './context.js'
 
 /**
  * Register operation routes: previewing and executing an install, update or uninstall.
@@ -16,7 +16,7 @@ import type { MarketRouteContext, MarketInstallServiceProvider } from './context
 export function registerOperationRoutes(context: MarketRouteContext, installProvider: MarketInstallServiceProvider): (() => void)[] {
   const { ctx, expectedPort, generationController } = context
   return [
-    ctx.webServer.register({ kind: 'exact', path: ROUTE_OPERATION_PREVIEW, handler: async (req, res) => {
+    registerAuthenticatedMarketRoute(ctx, ROUTE_OPERATION_PREVIEW, async (req, res) => {
       if (req.method !== 'POST' || !mutationAllowed(req, expectedPort)) {
         sendJson(res, 405, { error: 'market package previews require a local same-origin POST' })
         return
@@ -42,8 +42,8 @@ export function registerOperationRoutes(context: MarketRouteContext, installProv
       } finally {
         stopWatching()
       }
-    }}),
-    ctx.webServer.register({ kind: 'exact', path: ROUTE_OPERATION_EXECUTE, handler: async (req, res) => {
+    }),
+    registerAuthenticatedMarketRoute(ctx, ROUTE_OPERATION_EXECUTE, async (req, res) => {
       if (req.method !== 'POST' || !mutationAllowed(req, expectedPort)) {
         sendJson(res, 405, { error: 'market package execution requires a local same-origin POST' })
         return
@@ -66,6 +66,6 @@ export function registerOperationRoutes(context: MarketRouteContext, installProv
       } finally {
         stopWatching()
       }
-    }}),
+    }),
   ]
 }

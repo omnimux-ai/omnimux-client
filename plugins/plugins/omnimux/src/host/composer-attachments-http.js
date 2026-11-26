@@ -1,5 +1,6 @@
 import { assertLocalWrite, readOriginHeaders } from '../apps/origin.js'
 import { readJsonBody, sendJson } from '../auth/http-routes.js'
+import { requestRejection } from './request-authorization.js'
 import {
   ComposerAttachmentError,
   instantiateAssets,
@@ -91,13 +92,18 @@ export function createComposerAttachmentsDispatcher(deps = {}) {
  * @param {{ register: (route: { kind: string, path: string, handler: Function }) => () => void }} webServer
  * @param {ReturnType<typeof createComposerAttachmentsDispatcher>} dispatcher
  */
-export function registerComposerAttachmentRoutes(webServer, dispatcher) {
+export function registerComposerAttachmentRoutes(webServer, dispatcher, deps = {}) {
   return webServer.register({
     kind: 'prefix',
     path: '/omnimux/composer/attachments',
     auth: 'required',
-    async handler(req, res) {
+    async handler(req, res, peer) {
       try {
+        const rejection = requestRejection(req, deps.getConnection, peer)
+        if (rejection !== undefined) {
+          sendJson(res, rejection, { error: 'request-denied' })
+          return
+        }
         const body = req.method === 'POST' ? await readJsonBody(req) : undefined
         if (req.method === 'POST' && body === null) {
           sendJson(res, 400, { error: 'invalid-json', message: 'invalid json' })

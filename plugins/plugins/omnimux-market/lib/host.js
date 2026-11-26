@@ -262,13 +262,40 @@ export function apply(ctx, config) {
     });
     ctx.inject(['webServer'], (c) => {
         const server = c.webServer;
-        server.register({ kind: 'exact', path: '/omnimux-market', auth: 'required', handler: (req, res) => handleApi(req, res, cfg) });
-        server.register({ kind: 'exact', path: '/omnimux-market/icon', auth: 'required', handler: (req, res) => handleIcon(req, res, cfg) });
+        const hostRequestRejection = (req, peer) => {
+            if (peer !== undefined && peer !== null && typeof peer === 'object')
+                return undefined;
+            const service = c.get('connection');
+            if (typeof service?.requestRejection !== 'function')
+                return 503;
+            const raw = service.requestRejection(req);
+            if (raw === undefined)
+                return undefined;
+            const status = typeof raw === 'number' ? raw : raw?.status;
+            return typeof status === 'number' && Number.isInteger(status) && status >= 400 && status <= 599 ? status : 403;
+        };
+        const guardRoute = (handler) => (req, res, peer) => {
+            const rejection = hostRequestRejection(req, peer);
+            if (rejection !== undefined) {
+                res.statusCode = rejection;
+                res.setHeader('content-type', 'application/json; charset=utf-8');
+                res.setHeader('cache-control', 'no-store');
+                res.end(JSON.stringify({ ok: false, error: 'request-denied' }));
+                return;
+            }
+            return handler(req, res);
+        };
+        server.register({ kind: 'exact', path: '/omnimux-market', auth: 'required', handler: guardRoute((req, res) => handleApi(req, res, cfg)) });
+        server.register({ kind: 'exact', path: '/omnimux-market/icon', auth: 'required', handler: guardRoute((req, res) => handleIcon(req, res, cfg)) });
         const connection = {
             requestRejection(req) {
                 const service = c.get('connection');
-                if (typeof service?.requestRejection === 'function')
-                    return service.requestRejection(req);
+                if (typeof service?.requestRejection === 'function') {
+                    const raw = service.requestRejection(req);
+                    if (raw === undefined)
+                        return undefined;
+                    return typeof raw === 'number' ? { status: raw } : raw;
+                }
                 return { status: 401 };
             },
         };

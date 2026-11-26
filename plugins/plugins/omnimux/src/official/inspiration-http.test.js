@@ -407,6 +407,8 @@ describe('registerInspirationRoutes', () => {
     }
   }
 
+  const allowAuth = { getConnection: () => ({ requestRejection: () => undefined }) }
+
   it('rejects a foreign-origin GET before dispatch', async () => {
     let handler = null
     registerInspirationRoutes({
@@ -414,7 +416,7 @@ describe('registerInspirationRoutes', () => {
         handler = route.handler
         return () => {}
       },
-    }, createInspirationDispatcher({ official: { mount: true }, client: clientWith(async () => ({ data: { items: [], total: 0 } })) }))
+    }, createInspirationDispatcher({ official: { mount: true }, client: clientWith(async () => ({ data: { items: [], total: 0 } })) }), allowAuth)
     const res = mockRes()
     await handler({
       method: 'GET',
@@ -436,7 +438,7 @@ describe('registerInspirationRoutes', () => {
     }, {
       async dispatch() { return { status: 200 } },
       async streamMedia() { streamed = true },
-    })
+    }, allowAuth)
     const res = mockRes()
     await handler({
       method: 'GET',
@@ -455,12 +457,24 @@ describe('registerInspirationRoutes', () => {
         handler = route.handler
         return () => {}
       },
-    }, createInspirationDispatcher({ official: { mount: true }, client: clientWith(async () => ({ data: { items: [], total: 0 } })) }))
+    }, createInspirationDispatcher({ official: { mount: true }, client: clientWith(async () => ({ data: { items: [], total: 0 } })) }), allowAuth)
     const res = mockRes()
     await handler({ method: 'GET', url: '/omnimux/inspiration?page=1' }, res)
     assert.equal(res.headers['Access-Control-Allow-Origin'], undefined)
     assert.equal(res.headers['Access-Control-Allow-Headers'], undefined)
     assert.equal(res.headers['Access-Control-Allow-Methods'], undefined)
+  })
+
+  it('rejects unauthenticated requests fail-closed when Host connection rejects or is absent', async () => {
+    let handler = null
+    registerInspirationRoutes({
+      register(route) { handler = route.handler; return () => {} },
+    }, createInspirationDispatcher({ official: { mount: true }, client: clientWith(async () => ({ data: { items: [], total: 0 } })) }), {
+      getConnection: () => ({ requestRejection: () => 401 }),
+    })
+    const res = mockRes()
+    await handler({ method: 'GET', url: '/omnimux/inspiration?page=1' }, res)
+    assert.equal(res.status, 401)
   })
 
   it('answers OPTIONS preflight with 204 and CORS headers', async () => {

@@ -136,7 +136,9 @@ export function apply(ctx, config) {
     const webServer = httpCtx.webServer ?? httpCtx.get?.('webServer')
     if (!webServer || typeof webServer.register !== 'function') return
     const dispatcher = createAnalyticsIngestDispatcher({ ingest, log: console })
-    const mount = () => registerAnalyticsRoutes(webServer, dispatcher)
+    const mount = () => registerAnalyticsRoutes(webServer, dispatcher, {
+      getConnection: () => httpCtx.get?.('connection') ?? ctx.get?.('connection'),
+    })
     if (typeof httpCtx.effect === 'function') httpCtx.effect(mount, 'omnimux-analytics: ingest route')
     else mount()
   }

@@ -41,13 +41,15 @@ function makeCtx(routes) {
   /** @type {Record<string, Function>} */
   const handlers = {}
   const webServer = { register: (route) => { routes.push(route); return () => {} } }
+  const connection = { requestRejection: () => undefined }
   return {
     handlers,
     ctx: {
+      get(name) { return name === 'connection' ? connection : undefined },
       on(event, listener) { handlers[event] = listener; return listener },
       effect(fn) { return fn },
       inject(deps, callback) {
-        if (deps.includes('webServer')) callback({ webServer })
+        if (deps.includes('webServer')) callback({ webServer, get: (name) => (name === 'connection' ? connection : undefined) })
         return () => {}
       },
       tools: { register() {}, get() { return undefined } },

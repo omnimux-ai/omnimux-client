@@ -219,14 +219,31 @@ function headerOf(req, name) {
   return Array.isArray(val) ? val[0] : val
 }
 
-export function registerPibrowseRoutes(webServer, dispatcher, logger) {
+function hostRequestRejection(req, getConnection, peer) {
+  if (peer !== undefined && peer !== null && typeof peer === 'object') return undefined
+  try {
+    const connection = getConnection?.()
+    if (typeof connection?.requestRejection !== 'function') return 503
+    const rejection = connection.requestRejection(req)
+    return rejection === undefined ? undefined : (Number.isInteger(rejection) && rejection >= 400 && rejection <= 599 ? rejection : 403)
+  } catch {
+    return 503
+  }
+}
+
+export function registerPibrowseRoutes(webServer, dispatcher, logger, deps = {}) {
   const handler = createHttpHandler(dispatcher, logger)
   const dispose = webServer.register({
     kind: 'prefix',
     path: ROUTE_PREFIX,
     auth: 'required',
-    async handler(req, res) {
+    async handler(req, res, peer) {
       try {
+        const rejection = hostRequestRejection(req, deps.getConnection, peer)
+        if (rejection !== undefined) {
+          sendJson(res, rejection, { ok: false, error: 'request-denied', message: 'Host authentication required' })
+          return
+        }
         const method = String(req.method || 'GET').toUpperCase()
         const body = method === 'POST' || method === 'PUT' || method === 'DELETE' ? await readJsonBody(req) : undefined
         const result = await handler.dispatch({

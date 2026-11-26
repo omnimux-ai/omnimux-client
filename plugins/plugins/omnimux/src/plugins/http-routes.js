@@ -1,5 +1,6 @@
 import { sendJson, readJsonBody } from '../auth/http-routes.js'
 import { assertLocalWrite } from '../apps/origin.js'
+import { requestRejection } from '../host/request-authorization.js'
 import {
   assertNpmSpec,
   assertRemovable,
@@ -139,14 +140,19 @@ export function createPluginDispatcher(deps = {}) {
  * @param {{ register: (route: { kind: string, path: string, handler: Function }) => () => void }} webServer
  * @param {ReturnType<typeof createPluginDispatcher>} dispatcher
  */
-export function registerPluginRoutes(webServer, dispatcher) {
+export function registerPluginRoutes(webServer, dispatcher, deps = {}) {
   const disposers = [
     webServer.register({
     kind: 'prefix',
     path: '/omnimux/plugins',
     auth: 'required',
-    async handler(req, res) {
+    async handler(req, res, peer) {
       try {
+        const rejection = requestRejection(req, deps.getConnection, peer)
+        if (rejection !== undefined) {
+          sendJson(res, rejection, { error: 'request-denied' })
+          return
+        }
         const body = req.method === 'POST' ? await readJsonBody(req, 1024 * 1024) : undefined
         if (req.method === 'POST' && body === null) {
           sendJson(res, 400, { error: 'invalid json' })

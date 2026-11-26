@@ -1,5 +1,6 @@
 import { sendJson, readJsonBody } from '../auth/http-routes.js'
 import { assertLocalWrite, readOriginHeaders } from '../apps/origin.js'
+import { requestRejection } from '../host/request-authorization.js'
 import { findDescriptor } from '../catalog/composer-sync.js'
 import { resolveScenarioBindings } from '../settings/runtime-mode.js'
 import { KNOWN_AGENTS, scanLocalAgents, probeAgentBin, resolveBinPath } from './local.js'
@@ -277,14 +278,24 @@ export function registerAgentRoutes(webServer, deps = {}) {
     }))
   }
 
+  const authorize = (req, res, peer) => {
+    if (!assertLocal(req, res)) return false
+    const rejection = requestRejection(req, deps.getConnection, peer)
+    if (rejection !== undefined) {
+      sendJson(res, rejection, { ok: false, error: rejection === 403 ? 'not-local' : 'request-denied' })
+      return false
+    }
+    return true
+  }
+
   const stopScan = webServer.register({
     kind: 'exact',
     path: '/omnimux/agents',
     auth: 'required',
-    async handler(req, res) {
+    async handler(req, res, peer) {
       if (methodNotAllowed(req, res, 'GET')) return
-      // A scan reveals what lives on this machine; same-origin only.
-      if (!assertLocal(req, res)) return
+      // A scan reveals what lives on this machine; same-origin + Host auth only.
+      if (!authorize(req, res, peer)) return
       try {
         const url = new URL(req.url || '/', 'http://localhost')
         const refresh = url.searchParams.get('refresh') === '1'
@@ -300,9 +311,9 @@ export function registerAgentRoutes(webServer, deps = {}) {
     kind: 'exact',
     path: '/omnimux/agents/updates',
     auth: 'required',
-    async handler(req, res) {
+    async handler(req, res, peer) {
       if (methodNotAllowed(req, res, 'GET')) return
-      if (!assertLocal(req, res)) return
+      if (!authorize(req, res, peer)) return
       try {
         const url = new URL(req.url || '/', 'http://localhost')
         const refresh = url.searchParams.get('refresh') === '1'
@@ -322,10 +333,10 @@ export function registerAgentRoutes(webServer, deps = {}) {
     kind: 'exact',
     path: '/omnimux/agents/login',
     auth: 'required',
-    async handler(req, res) {
+    async handler(req, res, peer) {
       if (methodNotAllowed(req, res, 'POST')) return
       try {
-        if (!assertLocal(req, res)) return
+        if (!authorize(req, res, peer)) return
         const id = await readId(req)
         const agent = findAgent(id)
         if (!agent) {
@@ -350,10 +361,10 @@ export function registerAgentRoutes(webServer, deps = {}) {
     kind: 'exact',
     path: '/omnimux/agents/import-auth',
     auth: 'required',
-    async handler(req, res) {
+    async handler(req, res, peer) {
       if (methodNotAllowed(req, res, 'POST')) return
       try {
-        if (!assertLocal(req, res)) return
+        if (!authorize(req, res, peer)) return
         const body = await readJsonBody(req)
         const id = typeof body?.id === 'string' ? body.id.trim() : ''
         const model = typeof body?.model === 'string' ? body.model.trim() : ''
@@ -444,10 +455,10 @@ export function registerAgentRoutes(webServer, deps = {}) {
     kind: 'exact',
     path: '/omnimux/agents/oauth/start',
     auth: 'required',
-    async handler(req, res) {
+    async handler(req, res, peer) {
       if (methodNotAllowed(req, res, 'POST')) return
       try {
-        if (!assertLocal(req, res)) return
+        if (!authorize(req, res, peer)) return
         const body = await readJsonBody(req)
         const id = typeof body?.id === 'string' ? body.id.trim() : ''
         const agent = findAgent(id)
@@ -485,9 +496,9 @@ export function registerAgentRoutes(webServer, deps = {}) {
     kind: 'exact',
     path: '/omnimux/agents/oauth/status',
     auth: 'required',
-    async handler(req, res) {
+    async handler(req, res, peer) {
       if (methodNotAllowed(req, res, 'GET')) return
-      if (!assertLocal(req, res)) return
+      if (!authorize(req, res, peer)) return
       try {
         const url = new URL(req.url || '/', 'http://localhost')
         const attemptId = url.searchParams.get('attemptId') || ''
@@ -504,10 +515,10 @@ export function registerAgentRoutes(webServer, deps = {}) {
     kind: 'exact',
     path: '/omnimux/agents/oauth/submit',
     auth: 'required',
-    async handler(req, res) {
+    async handler(req, res, peer) {
       if (methodNotAllowed(req, res, 'POST')) return
       try {
-        if (!assertLocal(req, res)) return
+        if (!authorize(req, res, peer)) return
         const body = await readJsonBody(req)
         const result = oauthManager.submit({
           attemptId: typeof body?.attemptId === 'string' ? body.attemptId : '',
@@ -527,10 +538,10 @@ export function registerAgentRoutes(webServer, deps = {}) {
     kind: 'exact',
     path: '/omnimux/agents/oauth/cancel',
     auth: 'required',
-    async handler(req, res) {
+    async handler(req, res, peer) {
       if (methodNotAllowed(req, res, 'POST')) return
       try {
-        if (!assertLocal(req, res)) return
+        if (!authorize(req, res, peer)) return
         const body = await readJsonBody(req)
         const result = await oauthManager.cancel({
           attemptId: typeof body?.attemptId === 'string' ? body.attemptId : '',
@@ -549,10 +560,10 @@ export function registerAgentRoutes(webServer, deps = {}) {
     kind: 'exact',
     path: '/omnimux/agents/disconnect',
     auth: 'required',
-    async handler(req, res) {
+    async handler(req, res, peer) {
       if (methodNotAllowed(req, res, 'POST')) return
       try {
-        if (!assertLocal(req, res)) return
+        if (!authorize(req, res, peer)) return
         const id = await readId(req)
         const agent = findAgent(id)
         if (!agent) {
@@ -593,10 +604,10 @@ export function registerAgentRoutes(webServer, deps = {}) {
     kind: 'exact',
     path: '/omnimux/agents/update',
     auth: 'required',
-    async handler(req, res) {
+    async handler(req, res, peer) {
       if (methodNotAllowed(req, res, 'POST')) return
       try {
-        if (!assertLocal(req, res)) return
+        if (!authorize(req, res, peer)) return
         const id = await readId(req)
         const agent = findAgent(id)
         if (!agent) {
@@ -631,7 +642,7 @@ export function registerAgentRoutes(webServer, deps = {}) {
     kind: 'exact',
     path: '/omnimux/agents/select',
     auth: 'required',
-    async handler(req, res) {
+    async handler(req, res, peer) {
       const method = (req.method || 'GET').toUpperCase()
       if (method === 'OPTIONS') {
         sendJson(res, 204, {})
@@ -642,7 +653,7 @@ export function registerAgentRoutes(webServer, deps = {}) {
         return
       }
       try {
-        if (!assertLocal(req, res)) return
+        if (!authorize(req, res, peer)) return
         const body = await readJsonBody(req)
         const id = typeof body?.id === 'string' ? body.id.trim() : ''
         const model = typeof body?.model === 'string' ? body.model.trim() : ''

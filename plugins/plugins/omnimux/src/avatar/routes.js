@@ -1,6 +1,7 @@
 /** HTTP surface for the profile avatar: read the current avatar, change overrides. */
 
 import { readJsonBody } from '../auth/http-routes.js'
+import { requestRejection } from '../host/request-authorization.js'
 
 /**
  * Avatar payloads carry data URIs. The auth sender refuses any `sk-` substring,
@@ -121,13 +122,18 @@ export function createAvatarDispatcher(deps) {
  * @param {{ register: (route: { kind: string, path: string, handler: Function }) => () => void }} webServer
  * @param {ReturnType<typeof createAvatarDispatcher>} dispatcher
  */
-export function registerAvatarRoutes(webServer, dispatcher) {
+export function registerAvatarRoutes(webServer, dispatcher, deps = {}) {
   return webServer.register({
     kind: 'exact',
     path: '/omnimux/avatar',
     auth: 'required',
-    async handler(req, res) {
+    async handler(req, res, peer) {
       try {
+        const rejection = requestRejection(req, deps.getConnection, peer)
+        if (rejection !== undefined) {
+          sendAvatarJson(res, rejection, { error: 'request-denied' })
+          return
+        }
         const body = req.method === 'PATCH' ? await readJsonBody(req) : undefined
         if (req.method === 'PATCH' && body === null) {
           sendAvatarJson(res, 400, { error: 'invalid json' })

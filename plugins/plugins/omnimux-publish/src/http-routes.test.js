@@ -138,7 +138,9 @@ describe('registerPublishRoutes: 前缀路由全家', () => {
     freshDispatcher()
     const routes = []
     const webServer = { register: (route) => { routes.push(route); return () => {} } }
-    registerPublishRoutes(webServer, dispatcher)
+    registerPublishRoutes(webServer, dispatcher, {
+      getConnection: () => ({ requestRejection: () => undefined }),
+    })
     const { req, res, captured } = mockReqRes({ method, url, headers, body })
     const matched = routes.find((r) => url.startsWith(r.path)) || routes[0]
     await matched.handler(req, res)
@@ -217,7 +219,9 @@ describe('registerPublishRoutes: 前缀路由全家', () => {
       freshDispatcher()
       const routes = []
       const webServer = { register: (route) => { routes.push(route); return () => {} } }
-      registerPublishRoutes(webServer, dispatcher)
+      registerPublishRoutes(webServer, dispatcher, {
+      getConnection: () => ({ requestRejection: () => undefined }),
+    })
       const { req, res, captured: cap } = mockReqRes({
         method: 'POST',
         url: '/dsh-publish/drafts',
@@ -279,7 +283,9 @@ describe('registerPublishRoutes: 前缀路由全家', () => {
     store.create({ type: 'image', title: 'T', media_ids: [row.id], account_ids: ['acc-1'] })
     const routes = []
     const webServer = { register: (route) => { routes.push(route); return () => {} } }
-    registerPublishRoutes(webServer, dispatcher)
+    registerPublishRoutes(webServer, dispatcher, {
+      getConnection: () => ({ requestRejection: () => undefined }),
+    })
     const { req, res, captured } = mockReqRes({
       method: 'POST',
       url: '/dsh-publish/records/submit',
@@ -306,7 +312,9 @@ describe('registerPublishRoutes: 前缀路由全家', () => {
     })
     const routes = []
     const webServer = { register: (route) => { routes.push(route); return () => {} } }
-    registerPublishRoutes(webServer, dispatcher)
+    registerPublishRoutes(webServer, dispatcher, {
+      getConnection: () => ({ requestRejection: () => undefined }),
+    })
     const { req, res, captured } = mockReqRes({
       method: 'GET',
       url: '/omnimux/publish/creator-info?id=acc-1',
@@ -330,6 +338,25 @@ describe('registerPublishRoutes: 前缀路由全家', () => {
     })
     assert.equal(result.status, 404)
     assert.equal(result.body.error, 'record-not-found')
+  })
+
+  it('rejects unauthenticated requests with 401 and missing connection with 503 (issue #355)', async () => {
+    freshDispatcher()
+    const deniedRoutes = []
+    registerPublishRoutes(
+      { register: (route) => { deniedRoutes.push(route); return () => {} } },
+      dispatcher,
+      { getConnection: () => ({ requestRejection: () => 401 }) },
+    )
+    const { req: req1, res: res1, captured: cap1 } = mockReqRes({ method: 'GET', url: '/omnimux/publish/state' })
+    await deniedRoutes[0].handler(req1, res1)
+    assert.equal(cap1.status, 401)
+
+    const missingRoutes = []
+    registerPublishRoutes({ register: (route) => { missingRoutes.push(route); return () => {} } }, dispatcher)
+    const { req: req2, res: res2, captured: cap2 } = mockReqRes({ method: 'GET', url: '/omnimux/publish/state' })
+    await missingRoutes[0].handler(req2, res2)
+    assert.equal(cap2.status, 503)
   })
 })
 

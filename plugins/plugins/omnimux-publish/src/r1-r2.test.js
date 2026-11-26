@@ -129,7 +129,9 @@ function makeHandler(handlerOverrides = {}, serviceOverride) {
   dispatcher = createPublishDispatcher({ store, media, accounts, service, config })
   const routes = []
   const webServer = { register: (route) => { routes.push(route); return () => {} } }
-  registerPublishRoutes(webServer, dispatcher)
+  registerPublishRoutes(webServer, dispatcher, {
+    getConnection: () => ({ requestRejection: () => undefined }),
+  })
   return routes[0].handler
 }
 

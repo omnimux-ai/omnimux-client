@@ -526,13 +526,30 @@ export function createProductsDispatcher(deps) {
  * @param {{ dispatch: (req: object) => Promise<{ status: number, body?: unknown, stream?: unknown }> }} dispatcher
  * @returns {() => void} disposer
  */
-export function registerProductsRoutes(webServer, dispatcher) {
+function hostRequestRejection(req, getConnection, peer) {
+  if (peer !== undefined && peer !== null && typeof peer === 'object') return undefined
+  try {
+    const connection = getConnection?.()
+    if (typeof connection?.requestRejection !== 'function') return 503
+    const rejection = connection.requestRejection(req)
+    return rejection === undefined ? undefined : (Number.isInteger(rejection) && rejection >= 400 && rejection <= 599 ? rejection : 403)
+  } catch {
+    return 503
+  }
+}
+
+export function registerProductsRoutes(webServer, dispatcher, deps = {}) {
   const dispose = webServer.register({
     kind: 'prefix',
     path: PREFIX,
     auth: 'required',
-    async handler(req, res) {
+    async handler(req, res, peer) {
       try {
+        const rejection = hostRequestRejection(req, deps.getConnection, peer)
+        if (rejection !== undefined) {
+          sendJson(res, rejection, { error: 'request-denied', message: 'Host authentication required' })
+          return
+        }
         const method = (req.method || 'GET').toUpperCase()
         const body = method === 'POST' || method === 'PUT' ? await readJsonBody(req) : undefined
         const result = await dispatcher.dispatch({
