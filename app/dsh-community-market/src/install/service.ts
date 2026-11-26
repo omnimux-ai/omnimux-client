@@ -687,9 +687,31 @@ export class MarketInstallService {
         throw new MarketInstallError('not-available', 'The catalog source changed before installation.')
       }
       operationSignal.throwIfAborted()
-      const target = candidate.source === undefined
-        ? `${packageName}@${verification.version}`
-        : githubPackageTarget(candidate.source)
+      if (candidate.source !== undefined) {
+        if (
+          verification.source === undefined
+          || verification.source.kind !== candidate.source.kind
+          || verification.source.owner !== candidate.source.owner
+          || verification.source.repo !== candidate.source.repo
+          || verification.source.commit !== candidate.source.commit
+          || verification.source.subdirectory !== candidate.source.subdirectory
+        ) {
+          throw new MarketInstallError('verification-failed', 'The verified GitHub source does not match the catalog candidate.')
+        }
+      } else if (verification.source !== undefined) {
+        throw new MarketInstallError('verification-failed', 'Unexpected GitHub verification source for an npm package candidate.')
+      }
+      let target: string
+      try {
+        target = candidate.source === undefined
+          ? `${packageName}@${verification.version}`
+          : githubPackageTarget(candidate.source)
+      } catch (cause) {
+        throw new MarketInstallError(
+          'verification-failed',
+          cause instanceof Error ? cause.message : 'The plugin install target is invalid.',
+        )
+      }
       // The official manager validates the bundle, restores the profile files on
       // failure, selects the bundle, and applies it live where HMR is mounted. A
       // bundle it installed and selected but judged before its rows activated is

@@ -12,8 +12,17 @@ type RepositoryIdentity = NonNullable<CatalogItem['repository']>
 type PackageIdentity = NonNullable<CatalogItem['package']>
 type InstallSourceIdentity = NonNullable<CatalogItem['installSource']>
 const GITHUB_COMMIT_PATTERN = /^[0-9a-f]{40}$/u
+const GITHUB_OWNER_PATTERN = /^[a-z0-9][a-z0-9-]{0,99}$/iu
+const GITHUB_REPOSITORY_PATTERN = /^[a-z0-9._-]{1,100}$/iu
+const SUBDIRECTORY_SEGMENT_PATTERN = /^[A-Za-z0-9._-]+$/u
+const MAX_SUBDIRECTORY_LENGTH = 240
 
 function normalizeSubdirectory(value: string): string {
+  if (value.length === 0 || value.length > MAX_SUBDIRECTORY_LENGTH) {
+    throw new CatalogContractError('identity', [
+      semanticIssue('/repository/subdirectory', `must be between 1 and ${String(MAX_SUBDIRECTORY_LENGTH)} characters`),
+    ])
+  }
   if (value.startsWith('/') || value.endsWith('/') || value.includes('\\')) {
     throw new CatalogContractError('identity', [
       semanticIssue('/repository/subdirectory', 'must be a relative POSIX path'),
@@ -24,6 +33,11 @@ function normalizeSubdirectory(value: string): string {
   if (segments.some(segment => !segment || segment === '.' || segment === '..')) {
     throw new CatalogContractError('identity', [
       semanticIssue('/repository/subdirectory', 'must not contain empty, dot, or parent segments'),
+    ])
+  }
+  if (segments.some(segment => !SUBDIRECTORY_SEGMENT_PATTERN.test(segment))) {
+    throw new CatalogContractError('identity', [
+      semanticIssue('/repository/subdirectory', 'segments may contain only ASCII letters, digits, dots, hyphens, and underscores'),
     ])
   }
   for (const segment of segments) {
@@ -111,9 +125,16 @@ export function normalizeGitHubInstallSource(
     ])
   }
   const [owner, repo] = url.pathname.split('/').filter(Boolean)
-  if (owner === undefined || repo === undefined) {
+  if (
+    owner === undefined
+    || repo === undefined
+    || !GITHUB_OWNER_PATTERN.test(owner)
+    || !GITHUB_REPOSITORY_PATTERN.test(repo)
+    || repo === '.'
+    || repo === '..'
+  ) {
     throw new CatalogContractError('identity', [
-      semanticIssue('/repository/url', 'must identify a GitHub owner and repository'),
+      semanticIssue('/repository/url', 'must identify a valid GitHub owner and repository'),
     ])
   }
   return {

@@ -1,11 +1,16 @@
 import type { MarketManualInstallHint } from '../api-types.js'
 import { normalizeGitHubInstallSource } from '../contracts/index.js'
 import type { CatalogSnapshot } from '../contracts/index.js'
+import { githubPackageTarget } from './github.js'
 
 type CatalogItem = CatalogSnapshot['items'][number]
 
 const NPM_PACKAGE_PATTERN = /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/u
 const STABLE_VERSION_PATTERN = /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$/u
+
+function quotePosixShellArg(value: string): string {
+  return `'${value.replace(/'/gu, "'\\''")}'`
+}
 function identity(item: CatalogItem): Pick<MarketManualInstallHint, 'sourceRecordId' | 'providerId' | 'itemId'> {
   return {
     sourceRecordId: item.provenance.sourceRecordId,
@@ -37,14 +42,13 @@ export function manualInstallHint(item: CatalogItem): MarketManualInstallHint | 
   if (item.installSource !== undefined) {
     try {
       const source = normalizeGitHubInstallSource(item.repository, item.installSource)
-      const target = `github:${source.owner}/${source.repo}#${source.commit}`
-      const subdirectory = source.subdirectory === undefined ? '' : `&path:/${source.subdirectory}`
+      const target = githubPackageTarget(source)
       return {
         ...identity(item),
         kind: 'github',
         mutable: false,
         desktopVerification: 'not-verified',
-        displayCommand: `dsh plugin add ${target}${subdirectory}`,
+        displayCommand: `dsh plugin add ${quotePosixShellArg(target)}`,
       }
     } catch {
       return undefined
