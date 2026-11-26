@@ -238,3 +238,177 @@ test('HTTP routes & dispatcher scrub proxy passwords, block cross-site writes, a
     await rm(tmp, { recursive: true, force: true })
   }
 })
+
+test('dispatcher normalizes upstream v0.5.5 Profile/Proxy/Extension/Reseed IPC payloads strictly', async () => {
+  const tmp = await mkdtemp(join(tmpdir(), 'pb-ipc-schema-'))
+  try {
+    const paths = resolvePibrowsePaths({ rootDir: tmp, socketDir: tmp })
+    const configStore = createConfigStore({ configFile: paths.configFile })
+    const calls = []
+    const storedProfiles = new Map()
+    const storedProxies = new Map()
+
+    // Strict mirror of upstream v0.5.5 Rust serde required fields in agent/src/store.rs
+    function assertRustProfileStruct(p, { allowEmptyPersona = false } = {}) {
+      for (const field of ['id', 'name', 'notes', 'tags', 'persona_id', 'fp_seed', 'start_urls']) {
+        assert.ok(field in p, `missing field \`${field}\``)
+      }
+      assert.equal(typeof p.id, 'string')
+      assert.equal(typeof p.name, 'string')
+      assert.equal(typeof p.notes, 'string')
+      assert.ok(Array.isArray(p.tags))
+      assert.equal(typeof p.persona_id, 'string')
+      if (!allowEmptyPersona) assert.ok(p.persona_id.length > 0, 'persona_id must be non-empty for profiles.upsert')
+      assert.equal(typeof p.fp_seed, 'number')
+      assert.ok(Array.isArray(p.start_urls))
+      assert.equal(p.proxy, null, 'profiles.upsert must use proxy_id and keep proxy null on write')
+    }
+
+    function assertRustProxyStruct(px) {
+      for (const field of ['id', 'name', 'kind', 'host', 'port', 'username', 'password', 'last_country', 'last_ip', 'last_location']) {
+        assert.ok(field in px, `missing field \`${field}\``)
+      }
+      assert.equal(typeof px.id, 'string')
+      assert.equal(typeof px.kind, 'string')
+      assert.equal(typeof px.port, 'number')
+    }
+
+    const mockIpc = {
+      async ping() {
+        return { ok: true, info: { version: '0.5.5' } }
+      },
+      async call(method, params) {
+        calls.push({ method, params })
+        if (method === 'personas.list') {
+          return [
+            { id: 'win11-iris-xe-1920x1080', os: 'Windows 11', screen: '1920x1080' },
+            { id: 'macos-m3-1512x982', os: 'macOS 15', screen: '1512x982' },
+          ]
+        }
+        if (method === 'profiles.list') {
+          return [...storedProfiles.values()]
+        }
+        if (method === 'profiles.upsert') {
+          assertRustProfileStruct(params)
+          const id = params.id || `prof-${storedProfiles.size + 1}`
+          const saved = { ...params, id, fp_seed: params.fp_seed || 424242 }
+          storedProfiles.set(id, saved)
+          return { id }
+        }
+        if (method === 'profiles.createMany') {
+          assert.equal(typeof params.count, 'number')
+          assert.ok(params.name_pattern.includes('{n}'))
+          assertRustProfileStruct(params.template, { allowEmptyPersona: true })
+          return { created: ['batch-1', 'batch-2'], failed: [] }
+        }
+        if (method === 'profiles.reseed') {
+          assert.ok(params.id)
+          return { id: params.id, fp_seed: 999999 }
+        }
+        if (method === 'profiles.randomize') {
+          throw new Error('unknown method "profiles.randomize"')
+        }
+        if (method === 'proxies.list') {
+          return [...storedProxies.values()]
+        }
+        if (method === 'proxies.upsert') {
+          assertRustProxyStruct(params)
+          const id = params.id || `px-${storedProxies.size + 1}`
+          storedProxies.set(id, { ...params, id })
+          return { id }
+        }
+        if (method === 'proxies.check') {
+          return { ip: '1.2.3.4', country: 'US', url_checked: params.url }
+        }
+        if (method === 'extensions.list_all') {
+          return [{ id: 'a'.repeat(32), name: 'TestExt', profiles: [{ id: 'prof-1' }] }]
+        }
+        if (method === 'extensions.remove') {
+          assert.ok(params.profile_id, 'extensions.remove requires profile_id')
+          assert.equal(params.id, 'a'.repeat(32))
+          return { removed: true }
+        }
+        return []
+      },
+    }
+    const mockSidecar = {
+      getStatus: () => ({ running: true, state: 'running', pid: 4321, recentLogs: [] }),
+      start: async () => ({ running: true, state: 'running', pid: 4321 }),
+      stop: async () => ({ running: false, state: 'stopped', pid: null }),
+      restart: async () => ({ running: true, state: 'running', pid: 4321 }),
+      dispose: async () => {},
+    }
+    const dispatcher = createPibrowseDispatcher({
+      paths,
+      configStore,
+      ipcClient: mockIpc,
+      installer: createInstaller({ paths, configStore }),
+      sidecar: mockSidecar,
+      mcpBridge: createMcpBridge({ paths, configStore, getMcpManager: () => null }),
+      teamClient: createTeamClient({ paths, configStore, ipcClient: mockIpc }),
+      platform: 'darwin',
+    })
+
+    // 1. Minimal UI payload `{ name: 'TikTok01' }` creates valid Rust Profile with host-OS persona & allow_no_proxy
+    const created = await dispatcher.upsertProfile({ name: 'TikTok01', start_url: 'https://tiktok.com' })
+    assert.equal(created.ok, true)
+    assert.equal(created.id, 'prof-1')
+    assert.equal(created.profile.persona_id, 'macos-m3-1512x982')
+    assert.equal(created.profile.allow_no_proxy, true)
+    assert.deepEqual(created.profile.start_urls, ['https://tiktok.com'])
+
+    // 2. Binding blocklists preserves existing full Profile fields rather than sending partial `{ id, blocklists }`
+    const bound = await dispatcher.manageBlocklists({ action: 'bind', profileId: 'prof-1', blocklists: ['ads'] })
+    assert.equal(bound.ok, true)
+    assert.deepEqual(storedProfiles.get('prof-1').blocklists, ['ads'])
+    assert.equal(storedProfiles.get('prof-1').name, 'TikTok01')
+
+    // 3. Batch creation uses upstream profiles.createMany with full template
+    const batch = await dispatcher.batchCreateProfiles({ prefix: 'Shop', count: 2 })
+    assert.equal(batch.ok, true)
+    assert.equal(batch.count, 2)
+
+    // 4. rerandomize calls upstream profiles.reseed (not non-existent profiles.randomize)
+    const reseeded = await dispatcher.manageProfiles({ action: 'rerandomize', profileId: 'prof-1' })
+    assert.equal(reseeded.ok, true)
+    assert.equal(calls.some((c) => c.method === 'profiles.reseed'), true)
+
+    // 5. Proxy upsert maps scheme -> kind, preserves password when undefined, and checkProxy passes id + socks5 kind + checker_url
+    const px = await dispatcher.upsertProxy({
+      scheme: 'socks5',
+      host: '10.0.0.2',
+      port: 1080,
+      name: 'S5',
+      password: 'keep-me-secret',
+      checker_url: 'https://custom-checker.example/json',
+    })
+    assert.equal(px.ok, true)
+    await dispatcher.upsertProxy({ id: 'px-1', name: 'S5-Renamed', password: undefined })
+    assert.equal(storedProxies.get('px-1').password, 'keep-me-secret', 'undefined password must preserve stored secret')
+
+    const check = await dispatcher.checkProxy({ proxyId: 'px-1', action: 'check' })
+    assert.equal(check.ok, true)
+    const checkCall = calls.find((c) => c.method === 'proxies.check')
+    assert.equal(checkCall.params.id, 'px-1', 'proxies.check must pass id so fury-agent persists exit IP/country/timezone')
+    assert.equal(checkCall.params.checker_url, 'https://custom-checker.example/json')
+    assert.ok(checkCall.params.url.startsWith('socks5://'))
+
+    // 6. Extension remove resolves profile_id via extensions.list_all when omitted, and unsupported folder source fails clearly
+    const rmExt = await dispatcher.manageExtensionsAndMirror({
+      action: 'remove_extension',
+      extensionId: 'a'.repeat(32),
+      confirm: true,
+    })
+    assert.equal(rmExt.ok, true)
+    await assert.rejects(
+      () =>
+        dispatcher.manageExtensionsAndMirror({
+          action: 'install_extension',
+          source: '/tmp/unpacked-ext',
+        }),
+      (err) => err.code === 'invalid-input',
+    )
+  } finally {
+    await rm(tmp, { recursive: true, force: true })
+  }
+})

@@ -234,10 +234,12 @@ export function ProxiesPanel({ overview, t, onNotify, onOverviewChanged }) {
                 <tr key={px.id}>
                   <td><strong>{px.name || px.id}</strong></td>
                   <td className="omnimux-pibrowse-mono">
-                    {px.url || `${px.scheme || px.protocol || 'http'}://${px.host || ''}:${px.port || ''}`}
+                    {px.url || `${px.kind || px.scheme || px.protocol || 'http'}://${px.host || ''}:${px.port || ''}`}
                   </td>
                   <td className="omnimux-pibrowse-mono">
-                    {px.exit_ip || px.ip || '未检测'} {px.country ? `(${px.country})` : ''} {px.timezone || ''}
+                    {px.last_ip || px.exit_ip || px.ip || '未检测'}{' '}
+                    {(px.last_country || px.country) ? `(${px.last_country || px.country})` : ''}{' '}
+                    {px.last_timezone || px.timezone || ''}
                   </td>
                   <td>
                     <div className="omnimux-pibrowse-row">

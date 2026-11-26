@@ -2,7 +2,7 @@
 
 - **状态**：已实现（Phase 1–3 核心能力；Windows / Intel Mac / Linux 预编译内核分发仍为规划中）
 - **所属包**：`plugins/plugins/omnimux-pibrowse`
-- **工作台入口**：侧边栏独立入口「指纹浏览器」（Tab ID：`omnimux-pibrowse:workbench`）
+- **工作台入口**：侧边栏官方「更多」菜单入口「指纹浏览器」（通过 `window.__omnimuxSidebar.registerExploreItem` 运行时注册，Tab ID：`omnimux-pibrowse:workbench`）
 - **存储域**：`$DSH_HOME/omnimux/pibrowse/`（配置元数据、Sidecar 运行状态、隔离数据目录与按需下载的 Agent / Chromium Core 缓存）
 - **上游基线**：[aronhy/pibrowse](https://github.com/aronhy/pibrowse) `v0.5.5`（commit `c72bc3654e7c70d6d5b654c30ee105e99cd60cba`，Chromium `157.0.8103.39`，基于 [furyteamtop/fury-antidetect-browser](https://github.com/furyteamtop/fury-antidetect-browser)）
 
@@ -18,12 +18,12 @@
    - 通过宿主原生 `@deepseek-ai/dsh-mcp-manager`（`ctx.mcpManager.register('pibrowse', ...)`）注册 `fury-agent mcp`（stdio 模式，注入隔离的 `FURY_HOME`/`FURY_SOCKET` 且清空 `FURY_API_PORT`/`FURY_API_TOKEN`），自动向 DSH Agent 暴露 `v0.5.5` 实测的 19 个 `mcp__pibrowse__fury_*` 工具（覆盖配置列表、启停、导航、页面快照、点击/输入与账号预热）。
    - 通过 `ctx.tools` 补齐 8 个不重叠的 `pibrowse_*` 管理面与守卫工具（运行环境状态/启停/安装、配置维护与回收站、代理出口校验/诊断/轮换、域名规则、扩展与多窗镜像、自托管 Team Sync），所有破坏性操作强制要求显式 `confirm: true`。
    - 保持凭据边界：代理账号密码、移动代理轮换链接、Team 会话令牌与组织根密钥（ORK）仅驻留宿主与本地 Agent 进程内，不向大模型上下文、前端页面或日志暴露明文凭据。
-3. **侧边栏工作台 UI 注册（当前已实现）**：
-   - 通过 `dsh-ui-kit` 的 `createSidebarEntry` 与 `window.__omnimuxWorkbench` 注册侧边栏一级入口（同时列入 `omnimux` 的 `PINNED_ENTRY_PREFIXES`），点击后在主工作台打开指纹浏览器管理页面，兼容 DSH Desktop 与 `dsh web` 模式。
+3. **侧边栏「更多」菜单工作台 UI 注册（当前已实现）**：
+   - 通过 `window.__omnimuxSidebar.registerExploreItem` 将「指纹浏览器」入口注册至官方侧边栏「更多」菜单（`omnimux` 的 `sidebar-coordinator.js` 将 `omnimux-pibrowse` 收敛进 `CONVERGED_ROWS` 而非固定在主侧栏），并保留 `createSidebarEntry` 维持 `CONVERGED_ROWS` 与 `verify:stages` 契约一致；点击后在主工作台打开指纹浏览器管理页面，兼容 DSH Desktop 与 `dsh web` 模式。
    - UI 页面涵盖四大核心视图：
      - **配置文件（Profile）工作区**：列表展示、分组/状态筛选、新建/批量创建/克隆、绑定 Persona 指纹模板（32 套真实设备配置）与代理、启动/停止窗口、启动指纹探测页（`detect-suite`）、回收站恢复/永久清除与多窗口同步开关。
      - **代理池与域名规则**：批量导入代理、经代理校验出口 IP/国家/时区（支持离线 MaxMind `.mmdb` GeoIP）、分段诊断、移动代理轮换链接触发、按配置文件配置域名黑/白名单（`@allow-only`）。
-     - **扩展与团队同步**：`.crx` / 解压目录 / 商店 ID 扩展管理；自托管 Team Server 登录（含 TOTP）、邀请注册、管理员 8 位公钥核验码交接、组织根密钥（ORK）轮换、分布式锁加锁启动与审计日志查看。
+     - **扩展与团队同步**：`.crx` 扩展包 / 32 位商店 ID 扩展管理；自托管 Team Server 登录（含 TOTP）、邀请注册、管理员 8 位公钥核验码交接、组织根密钥（ORK）轮换、分布式锁加锁启动与审计日志查看。
      - **环境与运行状态**：检测平台兼容性、本地 `fury-agent` 二进制、Chromium `157.0.8103.39` Core、本机 Chrome（Widevine CDM 复用检测）与 MCP 连接状态，提供按需下载、SHA-256 校验、自定义路径配置、复用独立安装与 Sidecar / MCP 启停控制。
 
 ## 二、系统架构与集成方案
@@ -114,9 +114,14 @@ Cordis 插件宿主 (plugins/plugins/omnimux-pibrowse/src/index.js)
 - `plugins/plugins.registry.json`：已登记 `omnimux-pibrowse` 插件条目、许可类别与归属信息。
 - `plugins/scripts/license-registry.json` 与 `plugins/scripts/verify-license-consistency.test.mjs`：已同步更新全仓插件总数与许可快照。
 - `plugins/docs/contracts/plugin-agent-tools-inventory.md`：已登记 8 个 `pibrowse_*` 静态 `ctx.tools` 工具并说明动态注册的 `mcp__pibrowse__fury_*` MCP 命名空间。
-- `plugins/plugins/omnimux/src/client/sidebar-coordinator.js` 与 `focus-state.js`：已将 `omnimux-pibrowse` 加入侧边栏固定入口前缀与回退标题映射。
+- `plugins/plugins/omnimux/src/client/sidebar-coordinator.js` 与 `focus-state.js`：已将 `omnimux-pibrowse` 从常驻侧栏前缀收敛至官方「更多」菜单（由 `omnimux-pibrowse` 经 `registerExploreItem` 运行时挂载）并保留工作台回退标题映射。
 
 ## 旧标准变更
+
+- `plugins/plugins/omnimux/src/client/sidebar-coordinator.test.js` :: `omnimux-pibrowse 在常驻侧栏白名单内，作为独立行挂入侧栏而不被收敛`
+  - **原断言**：要求 `omnimux-pibrowse` 位于 `PINNED_ENTRY_PREFIXES` 白名单并作为独立行直接挂入侧栏。
+  - **必须变更的理由**：用户明确要求将「指纹浏览器」收归至官方侧边栏「更多」菜单，不再占用主侧栏常驻位；改为将其从 `PINNED_ENTRY_PREFIXES` 移除，由插件自身经 `window.__omnimuxSidebar.registerExploreItem` 动态注册到「更多」菜单。
+  - **新期望证据**：`plugins/plugins/omnimux/src/client/sidebar-coordinator.test.js` 更新为断言 `omnimux-pibrowse-entry` 进入收敛集合且 `registerExploreItem` 注册的 `pibrowse` 项出现在 `resolveExploreMenuItems()`；`plugins/plugins/omnimux-pibrowse/src/client-stage.test.js` 校验 `registerMoreMenuEntry` 注册与注销闭环。
 
 - `plugins/scripts/verify-license-consistency.test.mjs` :: `真实仓库：15 个插件全部登记且通过`
   - **原断言**：用例名与断言固定要求真实仓库 `plugins/plugins/` 共 15 个插件且按分类计数为 `{ original: 10, fork: 3, vendor: 2 }`。

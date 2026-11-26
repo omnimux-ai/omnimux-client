@@ -104,7 +104,8 @@ export function ProfilesPanel({ overview, t, onNotify, onOverviewChanged, onOpen
     for (const p of personas) {
       const id = String(p?.id ?? p?.name ?? '')
       if (!id) continue
-      items.push({ value: id, label: String(p?.label || p?.name || id) })
+      const detail = p?.os && p?.screen ? `${p.id} (${p.os} ${p.screen})` : String(p?.label || p?.name || id)
+      items.push({ value: id, label: detail })
     }
     return items
   }, [personas, t])
@@ -160,11 +161,12 @@ export function ProfilesPanel({ overview, t, onNotify, onOverviewChanged, onOpen
       return
     }
     await runAction('create', async () => {
+      const startUrl = formStartUrl.trim()
       await api.upsertProfile({
         name: formName.trim(),
-        ...(formPersona !== 'all' ? { persona: formPersona } : {}),
-        ...(formProxyId !== 'all' ? { proxy_id: formProxyId } : {}),
-        ...(formStartUrl.trim() ? { start_url: formStartUrl.trim() } : {}),
+        ...(formPersona !== 'all' ? { persona_id: formPersona } : {}),
+        ...(formProxyId !== 'all' ? { proxy_id: formProxyId, allow_no_proxy: false } : { allow_no_proxy: true }),
+        ...(startUrl ? { start_urls: [startUrl] } : {}),
       })
       setCreateOpen(false)
       setFormName('')

@@ -1,4 +1,4 @@
-import { access, readdir, stat } from 'node:fs/promises'
+import { access, readdir, readFile, stat } from 'node:fs/promises'
 import { constants as fsConstants } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
@@ -79,8 +79,10 @@ export async function probeWidevineCdm(opts = {}) {
     ? opts.candidateRoots
     : platform === 'darwin'
       ? [
-          join(home, 'Library', 'Application Support', 'Google', 'Chrome', 'WidevineCdm'),
+          // Prefer Chrome's read-only app bundle framework first to avoid triggering
+          // macOS Sequoia/Tahoe TCC "App Data" prompts against ~/Library/Application Support/Google/Chrome.
           '/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Libraries/WidevineCdm',
+          '/Applications/Google Chrome Canary.app/Contents/Frameworks/Google Chrome Framework.framework/Libraries/WidevineCdm',
         ]
       : platform === 'win32'
         ? [
@@ -99,11 +101,23 @@ export async function probeWidevineCdm(opts = {}) {
   for (const root of roots) {
     if (!(await isDirectory(root))) continue
     // Either direct manifest.json or versioned subdirectory containing manifest.json
-    if (await pathAccessible(join(root, 'manifest.json'))) {
+    const manifestPath = join(root, 'manifest.json')
+    if (await pathAccessible(manifestPath)) {
+      let version = null
+      try {
+        const parsed = JSON.parse(await readFile(manifestPath, 'utf8'))
+        if (typeof parsed?.version === 'string' && parsed.version.trim()) {
+          version = parsed.version.trim()
+        }
+      } catch (err) {
+        opts.logger?.warn?.('omnimux-pibrowse: failed reading Widevine manifest.json version', {
+          error: err instanceof Error ? err.message : String(err),
+        })
+      }
       return {
         available: true,
         sourcePath: root,
-        version: null,
+        version,
         warning: null,
       }
     }

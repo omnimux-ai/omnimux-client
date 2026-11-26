@@ -1,12 +1,12 @@
 import { createElement } from 'react'
 import { NS, en, zh } from './locales.js'
-import { mountSidebarEntry, PIBROWSE_TAB_ID } from './sidebar-entry.js'
+import { EXPLORE_ITEM_ID, mountSidebarEntry, PIBROWSE_TAB_ID, registerMoreMenuEntry } from './sidebar-entry.js'
 import { PibrowseStage } from './PibrowseStage.jsx'
 
 export const name = 'omnimux-pibrowse'
 export const inject = ['slots', 'locale']
 
-export { PIBROWSE_TAB_ID }
+export { EXPLORE_ITEM_ID, PIBROWSE_TAB_ID, registerMoreMenuEntry }
 
 function renderPibrowseIcon(size = 16) {
   return createElement(
@@ -14,20 +14,19 @@ function renderPibrowseIcon(size = 16) {
     {
       width: size,
       height: size,
-      viewBox: '0 0 24 24',
+      viewBox: '0 0 16 16',
       fill: 'none',
       stroke: 'currentColor',
-      strokeWidth: '1.8',
+      strokeWidth: '1.3',
       strokeLinecap: 'round',
       strokeLinejoin: 'round',
       xmlns: 'http://www.w3.org/2000/svg',
     },
     [
-      createElement('path', { key: 'p1', d: 'M12 2a10 10 0 1 0 10 10' }),
-      createElement('path', { key: 'p2', d: 'M12 6a6 6 0 1 0 6 6' }),
-      createElement('path', { key: 'p3', d: 'M12 10a2 2 0 1 0 2 2' }),
-      createElement('path', { key: 'p4', d: 'M17 3l4 4' }),
-      createElement('path', { key: 'p5', d: 'M21 3l-4 4' }),
+      createElement('circle', { key: 'c1', cx: '8', cy: '8', r: '6' }),
+      createElement('path', { key: 'p1', d: 'M5.2 8a2.8 2.8 0 0 1 5.6 0' }),
+      createElement('path', { key: 'p2', d: 'M6.8 8a1.2 1.2 0 1 1 2.4 0c0 1.4-.4 2.6-1.2 3.6' }),
+      createElement('path', { key: 'p3', d: 'M4.2 10.6c.4-1 .6-1.8.6-2.6' }),
     ],
   )
 }

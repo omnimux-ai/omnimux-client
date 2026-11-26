@@ -2,9 +2,10 @@ import { createSidebarEntry } from 'dsh-ui-kit'
 
 export const ENTRY_SELECTOR = '[data-omnimux-pibrowse-entry]'
 export const PIBROWSE_TAB_ID = 'omnimux-pibrowse:workbench'
+export const EXPLORE_ITEM_ID = 'pibrowse'
 
-const ICON =
-  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" role="presentation" aria-hidden="true"><path d="M12 2a10 10 0 1 0 10 10"/><path d="M12 6a6 6 0 1 0 6 6"/><path d="M12 10a2 2 0 1 0 2 2"/><path d="M17 3l4 4"/><path d="M21 3l-4 4"/></svg>'
+export const PIBROWSE_ICON_SVG =
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="6"/><path d="M5.2 8a2.8 2.8 0 0 1 5.6 0"/><path d="M6.8 8a1.2 1.2 0 1 1 2.4 0c0 1.4-.4 2.6-1.2 3.6"/><path d="M4.2 10.6c.4-1 .6-1.8.6-2.6"/></svg>'
 
 function resolveWorkbenchTitle(t) {
   if (typeof t === 'function') {
@@ -69,16 +70,69 @@ function createWorkbenchStageStore(t, tabId) {
   }
 }
 
+/**
+ * Register the Fingerprint Browser entry into the official sidebar "More" menu
+ * via OmniMux's `window.__omnimuxSidebar.registerExploreItem` seam.
+ * Retries briefly when `omnimux-pibrowse` loads ahead of the `omnimux` hub client.
+ */
+export function registerMoreMenuEntry(t) {
+  if (typeof window === 'undefined') return () => {}
+  let unregister = null
+  let disposed = false
+  let timer = null
+
+  const tryRegister = () => {
+    if (disposed || unregister) return true
+    const sidebar = window.__omnimuxSidebar
+    if (!sidebar || typeof sidebar.registerExploreItem !== 'function') return false
+    const off = sidebar.registerExploreItem({
+      id: EXPLORE_ITEM_ID,
+      label: resolveWorkbenchTitle(t),
+      iconSvg: PIBROWSE_ICON_SVG,
+      tabId: PIBROWSE_TAB_ID,
+    })
+    unregister = typeof off === 'function' ? off : () => {}
+    return true
+  }
+
+  if (!tryRegister()) {
+    const started = Date.now()
+    timer = setInterval(() => {
+      if (tryRegister() || Date.now() - started > 8000) {
+        clearInterval(timer)
+        timer = null
+      }
+    }, 50)
+  }
+
+  return () => {
+    disposed = true
+    if (timer) {
+      clearInterval(timer)
+      timer = null
+    }
+    if (unregister) {
+      unregister()
+      unregister = null
+    }
+  }
+}
+
 export function mountSidebarEntry(_stage, t, locale) {
-  return createSidebarEntry({
+  const disposeMore = registerMoreMenuEntry(t)
+  const disposeConverged = createSidebarEntry({
     id: 'omnimux-pibrowse',
     rank: 6.5,
     label: () => resolveWorkbenchTitle(t),
-    iconSvg: ICON,
+    iconSvg: PIBROWSE_ICON_SVG,
     stageStore: createWorkbenchStageStore(t, PIBROWSE_TAB_ID),
     locale,
     access: 'local',
     customClassName: 'omnimux-pibrowse-entry',
     datasetKey: 'data-omnimux-pibrowse-entry',
   })
+  return () => {
+    disposeMore?.()
+    disposeConverged?.()
+  }
 }
