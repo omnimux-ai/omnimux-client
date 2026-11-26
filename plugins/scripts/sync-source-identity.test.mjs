@@ -149,10 +149,12 @@ test('fetch admits current detached tip even when cached tracking ref is older',
   assert.equal(f.git(f.linked, 'rev-parse', 'origin/main'), latest)
 })
 
-test('managed arguments retain independent dispatch before ordinary source gate', t => {
+test('retired managed arguments fail loudly before ordinary source gate', t => {
   const f = fixture(t)
   writeFileSync(join(f.linked, 'tracked'), 'dirty ordinary source\n')
-  f.check(f.run(f.linked, {}, ['--managed-tarball=fixture.tgz']), true)
+  const result = f.run(f.linked, {}, ['--managed-tarball=fixture.tgz'])
+  assert.equal(result.status, 2)
+  assert.match(result.stderr, /已退役/)
 })
 
 test('legacy and target-boundary refusals remain before downstream', t => {

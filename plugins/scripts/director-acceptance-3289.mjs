@@ -832,7 +832,7 @@ async function main() {
     const major = Number(match[1]), minor = Number(match[2]);
     if (major === 3 && minor >= 12 && minor < 15) { python3 = { path: candidate, version: `${major}.${minor}` }; break; }
   }
-  if (!python3) throw new Error('PRECONDITION_MISSING: a Python 3.12-3.14 interpreter is required by scripts/managed-tarball-archive.py');
+  if (!python3) throw new Error('PRECONDITION_MISSING: a Python 3.12-3.14 interpreter is required by scripts/profile-lock-archive.py');
   process.env.PATH = `${dirname(python3.path)}:${process.env.PATH}`;
   log(`using python ${python3.version} (${python3.path}) for task-source archive inspection`);
   fs.mkdirSync(reportRoot, { recursive: true });

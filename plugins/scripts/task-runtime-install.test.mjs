@@ -5,9 +5,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { assertPreparedTaskArchives, assertSidebarSupportIdentity, assertTaskPeerSearchBoundary, applySupportPeerExemptions, exemptionKey, isReviewFresh, matchesTaskPeerVersion, preparePrivateTaskPackages, readHostRuntimeVersion, readSidebarSupportIdentity, readSupportPeerExemptions, SUPPORT_EXEMPTION_REVIEW_WINDOW_DAYS, supportPeerExemptionDecision, taskPackagePayload, unmetHostRequirements } from './task-runtime-install.mjs';
-import { runPnpm } from './managed-tarball.mjs';
-import { privatePnpmEnvironment } from './materialize-cache.mjs';
-import { hashFile } from './materialize-graph.mjs';
+import { runPnpm, privatePnpmEnvironment, hashFile } from './isolated-pnpm.mjs';
 import { spawnSync } from 'node:child_process';
 
 function fixture(t) {

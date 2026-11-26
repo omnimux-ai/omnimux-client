@@ -9,9 +9,7 @@ import { parseDocument } from 'yaml';
 import { readDevDeepSeekCredential, readDevCredentialsBundle } from './test-env-credentials.mjs';
 import { stopOwnedChild } from './lib/child-lifecycle.mjs';
 import { captureCandidate } from './evidence-contract.mjs';
-import { runPnpm } from './managed-tarball.mjs';
-import { privatePnpmEnvironment } from './materialize-cache.mjs';
-import { prepareFiles, payloadManifest, hashFile, readJson, stable } from './materialize-graph.mjs';
+import { runPnpm, privatePnpmEnvironment, prepareFiles, payloadManifest, hashFile, readJson, stable } from './isolated-pnpm.mjs';
 import { createTaskPnpmTool, installTaskRuntime } from './task-runtime-install.mjs';
 import { resolveHostRuntimeLayout, defaultHostLayout, composeAgentPresetRows, hasShippedPresetRoot, stringifyStructuredFile, readAsarTree, archiveResolvable, resolveUnpackedPath } from './host-runtime-layout.mjs';
 
@@ -258,7 +256,7 @@ function parseLogin(line) {
 // must carry that source too; only explicitly selected plugins become installed bundles.
 const PREPARATION_PACKAGES = ['plugins/omnimux', 'plugins/omnimux-inspiration', 'packages/dsh-ui-kit', 'packages/generation-capabilities'];
 const PREPARATION_CONFIG = ['package.json', 'pnpm-workspace.yaml', 'pnpm-lock.yaml'];
-const ARCHIVE_SCRIPT = fileURLToPath(new URL('./managed-tarball-archive.py', import.meta.url));
+const ARCHIVE_SCRIPT = fileURLToPath(new URL('./profile-lock-archive.py', import.meta.url));
 const SHA_RE = /^[0-9a-f]{40}$/;
 const PACKER_INCLUDED = { LICENSE: 'LICENSE' };
 // The packer silently omits whitelist entries that do not exist, so a build that produced nothing

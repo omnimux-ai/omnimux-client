@@ -69,9 +69,10 @@ if [ "$ISOLATED_REQUESTED" -eq 1 ] && [ "${OMNIMUX_SYNC_ISOLATED_ACTIVE:-0}" = "
   exit 1
 fi
 
-# Managed mode is mutually exclusive and branches before build, kit or preset writes.
+# Managed tarball mode is retired; fail loudly before build, kit or preset writes.
 if [ "$MANAGED_REQUESTED" -eq 1 ]; then
-  exec bash "$SCRIPT_ROOT/sync-stable.sh" "$@"
+  echo '❌ sync: --managed-tarball / --expect-* / --recover-managed-tarball 已退役；请使用常规物化流程。' >&2
+  exit 2
 fi
 
 if [ "$ISOLATED_REQUESTED" -eq 1 ]; then
@@ -312,13 +313,12 @@ done
 
 if [ "${#TARGET_PROFILES[@]}" -gt 0 ]; then
   lock_status=0
-  python3 "$SCRIPT_ROOT/managed-tarball-archive.py" check-locks "${TARGET_PROFILES[@]}" || lock_status=$?
+  python3 "$SCRIPT_ROOT/profile-lock-archive.py" check-locks "${TARGET_PROFILES[@]}" || lock_status=$?
   if [ "$lock_status" -eq 10 ]; then
-    exec python3 "$SCRIPT_ROOT/managed-tarball-archive.py" lock "${TARGET_PROFILES[@]}" -- bash "$0" ${ORIGINAL_ARGS[@]+"${ORIGINAL_ARGS[@]}"}
+    exec python3 "$SCRIPT_ROOT/profile-lock-archive.py" lock "${TARGET_PROFILES[@]}" -- bash "$0" ${ORIGINAL_ARGS[@]+"${ORIGINAL_ARGS[@]}"}
   elif [ "$lock_status" -ne 0 ]; then
     exit 4
   fi
-  python3 "$SCRIPT_ROOT/managed-tarball-archive.py" pending "${TARGET_PROFILES[@]}" || exit 7
 fi
 
 DEFAULT_PLUGINS=(omnimux omnimux-accounts omnimux-analytics omnimux-assets omnimux-clip omnimux-inspiration omnimux-market omnimux-products omnimux-publish omnimux-video omnimux-workflow)
