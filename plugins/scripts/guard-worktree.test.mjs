@@ -2712,4 +2712,154 @@ describe('adversarial hardening regressions (materialization / wrapper / frozen-
     const manifest = readFileSync(join(scriptsDir, 'governance-manifest.json'), 'utf8')
     assert.equal(manifest.includes('recover-media-build-3288'), false)
   })
+
+  it('rescue-primary only allows tracked primary worktree.sh with whitelisted flags and blocks forged/destructive/env/wrapper variants', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'guard-primary-rescue-'))
+    try {
+      const repo = join(tmp, 'repo')
+      mkdirSync(join(repo, 'plugins/scripts'), { recursive: true })
+      mkdirSync(join(repo, 'fake'), { recursive: true })
+      gitCommand(repo, 'init', '-b', 'main')
+      gitCommand(repo, 'config', 'user.name', 'guard-test')
+      gitCommand(repo, 'config', 'user.email', 'guard@example.test')
+      writeFileSync(join(repo, 'plugins/scripts/worktree.sh'), '#!/usr/bin/env bash\nexit 0\n', { mode: 0o755 })
+      writeFileSync(join(repo, 'fake/worktree.sh'), '#!/usr/bin/env bash\nexit 0\n', { mode: 0o755 })
+      writeFileSync(join(repo, 'AGENTS.md'), '# rules\n')
+      gitCommand(repo, 'add', 'plugins/scripts/worktree.sh', 'fake/worktree.sh', 'AGENTS.md')
+      gitCommand(repo, '-c', 'commit.gpgsign=false', 'commit', '-m', 'seed')
+
+      const wt = join(repo, '.worktrees/task-a')
+      gitCommand(repo, 'worktree', 'add', '-b', 'feat/task-a', wt, 'HEAD')
+
+      const externalScript = join(tmp, 'worktree.sh')
+      writeFileSync(externalScript, '#!/usr/bin/env bash\nexit 0\n', { mode: 0o755 })
+
+      // Symlinked directory hijack target pointing at primary worktree.sh
+      const evilLinkDir = join(tmp, 'evil-link')
+      mkdirSync(evilLinkDir, { recursive: true })
+      writeFileSync(join(evilLinkDir, 'sync-main.sh'), 'echo pwned\n')
+      const symlinkedWorktree = join(evilLinkDir, 'worktree.sh')
+      symlinkSync(join(repo, 'plugins/scripts/worktree.sh'), symlinkedWorktree)
+
+      // Separate forged git repository containing a tracked plugins/scripts/worktree.sh
+      const evilRepo = join(tmp, 'evil-repo')
+      mkdirSync(join(evilRepo, 'plugins/scripts'), { recursive: true })
+      gitCommand(evilRepo, 'init', '-b', 'main')
+      gitCommand(evilRepo, 'config', 'user.name', 'evil')
+      gitCommand(evilRepo, 'config', 'user.email', 'evil@example.test')
+      writeFileSync(join(evilRepo, 'plugins/scripts/worktree.sh'), '#!/usr/bin/env bash\nexit 0\n', { mode: 0o755 })
+      gitCommand(evilRepo, 'add', 'plugins/scripts/worktree.sh')
+      gitCommand(evilRepo, '-c', 'commit.gpgsign=false', 'commit', '-m', 'evil')
+
+      // Allowed: canonical tracked primary worktree.sh with whitelisted flags & readonly inspection
+      for (const command of [
+        'bash plugins/scripts/worktree.sh rescue-primary',
+        './plugins/scripts/worktree.sh rescue-primary --task rescue-clean --no-sync',
+        'sh plugins/scripts/worktree.sh rescue-primary --task=rescue-20261126',
+        `bash "${join(repo, 'plugins/scripts/worktree.sh')}" rescue-primary`,
+        'pnpm --dir plugins wt rescue-primary --task rescue-pm',
+        'grep rescue-primary plugins/scripts/worktree.sh',
+        `echo "bash ${externalScript} rescue-primary --discard"`,
+      ]) {
+        const res = decideBashCommand({ command, cwd: repo, ownerRoot: repo })
+        assert.equal(res.decision, 'allow', `Expected allow for: ${command} (got ${res.reason || ''})`)
+      }
+
+      // Allowed from linked worktree when pointing back to primary worktree.sh
+      {
+        const res = decideBashCommand({
+          command: 'bash ../../plugins/scripts/worktree.sh rescue-primary',
+          cwd: wt,
+          ownerRoot: repo,
+        })
+        assert.equal(res.decision, 'allow', `Expected allow from worktree targeting primary (got ${res.reason || ''})`)
+      }
+
+      // Denied: untrusted script path (worktree copy, external, wrong tracked dir, symlink hijack,
+      // cross-repo forgery, case-insensitive bypass, --rcfile shift, stdin/pipe/procsub, xargs/find/source)
+      for (const command of [
+        'bash .worktrees/task-a/plugins/scripts/worktree.sh rescue-primary',
+        `bash "${join(wt, 'plugins/scripts/worktree.sh')}" rescue-primary`,
+        `bash "${join(wt, 'plugins/scripts/WORKTREE.SH')}" rescue-primary`,
+        'bash plugins/scripts/Worktree.sh rescue-primary',
+        'bash plugins/scripts/Worktree.sh rescue-primary --discard',
+        `bash --rcfile "${join(wt, 'plugins/scripts/worktree.sh')}" "${join(wt, 'plugins/scripts/worktree.sh')}" rescue-primary`,
+        `bash "${externalScript}" rescue-primary`,
+        `bash "${symlinkedWorktree}" rescue-primary`,
+        `bash "${join(evilRepo, 'plugins/scripts/worktree.sh')}" rescue-primary`,
+        'bash fake/worktree.sh rescue-primary',
+        `bash -c 'bash "${externalScript}" rescue-primary'`,
+        `bash -s rescue-primary --discard < "${join(wt, 'plugins/scripts/worktree.sh')}"`,
+        `cat "${join(wt, 'plugins/scripts/worktree.sh')}" | bash -s rescue-primary --discard`,
+        `bash <(cat "${join(wt, 'plugins/scripts/worktree.sh')}") rescue-primary --discard`,
+        `bash -s rescue-primary < <(cat "${join(wt, 'plugins/scripts/worktree.sh')}")`,
+        'bash -s rescue-primary --discard < <(cat plugins/scripts/worktree.sh)',
+        `{ bash -s rescue-primary; } < "${join(wt, 'plugins/scripts/worktree.sh')}"`,
+        '{ bash -s rescue-primary --discard; } < plugins/scripts/worktree.sh',
+        `{ bash -s rescue-primary; } < <(cat "${join(wt, 'plugins/scripts/worktree.sh')}")`,
+        `pnpm --dir "${join(wt, 'plugins')}" wt rescue-primary`,
+        `set -- rescue-primary --discard; source "${join(wt, 'plugins/scripts/worktree.sh')}"`,
+        `echo rescue-primary | xargs bash "${join(wt, 'plugins/scripts/worktree.sh')}"`,
+        `find "${join(wt, 'plugins/scripts')}" -name worktree.sh -exec bash {} rescue-primary \\;`,
+      ]) {
+        const res = decideBashCommand({ command, cwd: repo, ownerRoot: repo })
+        assert.equal(res.decision, 'deny', `Expected deny for untrusted script/wrapper: ${command}`)
+        assert.equal(res.reason, 'forbidden-untrusted-primary-rescue-script', `Wrong reason for: ${command} (got ${res.reason})`)
+      }
+
+      // Denied: destructive, package-manager destructive flag, env-injection, or over-nested variants
+      let deepNestedRescue = 'bash plugins/scripts/worktree.sh rescue-primary --discard'
+      for (let i = 0; i < 6; i += 1) deepNestedRescue = `bash -c ${JSON.stringify(deepNestedRescue)}`
+      for (const command of [
+        'bash plugins/scripts/worktree.sh rescue-primary --discard',
+        'bash plugins/scripts/worktree.sh rescue-primary --force',
+        'bash plugins/scripts/worktree.sh rescue-primary --abandon',
+        'bash plugins/scripts/worktree.sh rescue-primary --task main',
+        'bash plugins/scripts/worktree.sh rescue-primary --task Bad_Name',
+        'bash plugins/scripts/worktree.sh rescue-primary --unknown',
+        'pnpm --dir plugins wt rescue-primary --discard',
+        'pnpm --dir plugins wt -- rescue-primary --discard',
+        `bash -c 'bash plugins/scripts/worktree.sh rescue-primary --discard'`,
+        'WORKTREE_REMOTE=nonexistent bash plugins/scripts/worktree.sh rescue-primary',
+        'WORKTREE_DEFAULT_BRANCH=feat/x bash plugins/scripts/worktree.sh rescue-primary',
+        'GIT_DIR=/tmp/x bash plugins/scripts/worktree.sh rescue-primary',
+        'BASH_ENV=/tmp/pwn.sh bash plugins/scripts/worktree.sh rescue-primary',
+        'NODE_OPTIONS=--require=/tmp/pwn.js bash plugins/scripts/worktree.sh rescue-primary',
+        'export GIT_INDEX_FILE=/tmp/idx; bash plugins/scripts/worktree.sh rescue-primary',
+        'export WORKTREE_REMOTE=fake; bash -c "bash plugins/scripts/worktree.sh rescue-primary"',
+        'declare -x BASH_ENV=/tmp/pwn.sh; bash plugins/scripts/worktree.sh rescue-primary',
+        'declare -x NODE_OPTIONS=--require=/tmp/pwn.js; bash plugins/scripts/worktree.sh rescue-primary',
+        'typeset -x BASH_ENV=/tmp/pwn.sh; bash plugins/scripts/worktree.sh rescue-primary',
+        deepNestedRescue,
+      ]) {
+        const res = decideBashCommand({ command, cwd: repo, ownerRoot: repo })
+        assert.equal(res.decision, 'deny', `Expected deny for invalid flag/env: ${command}`)
+        assert.equal(res.reason, 'forbidden-invalid-primary-rescue', `Wrong reason for: ${command} (got ${res.reason})`)
+      }
+
+      // Denied: locally tampered primary worktree.sh
+      writeFileSync(join(repo, 'plugins/scripts/worktree.sh'), '#!/usr/bin/env bash\necho tampered\n', { mode: 0o755 })
+      {
+        const res = decideBashCommand({
+          command: 'bash plugins/scripts/worktree.sh rescue-primary',
+          cwd: repo,
+          ownerRoot: repo,
+        })
+        assert.equal(res.decision, 'deny')
+        assert.equal(res.reason, 'forbidden-untrusted-primary-rescue-script')
+      }
+      gitCommand(repo, 'checkout', '--', 'plugins/scripts/worktree.sh')
+
+      // Denied: chaining legitimate rescue-primary with forbidden primary mutation
+      const chained = decideBashCommand({
+        command: 'bash plugins/scripts/worktree.sh rescue-primary && git checkout -- AGENTS.md',
+        cwd: repo,
+        ownerRoot: repo,
+      })
+      assert.equal(chained.decision, 'deny')
+      assert.equal(chained.reason, 'forbidden-main-checkout-git-mutation')
+    } finally {
+      rmSync(tmp, { recursive: true, force: true })
+    }
+  })
 })
