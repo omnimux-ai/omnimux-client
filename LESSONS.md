@@ -1,4 +1,4 @@
-<!-- reviewed-through: ba51fda433df5483345c3dc3f48beb7dd0d279ce (2026-11-24) -->
+<!-- reviewed-through: 07ebba0626c64682b9a337def272dea1305d91d0 (2026-11-25) -->
 # Lessons from merged work
 
 改动源码或评审 PR 前先读本页活跃条目。本页只留可公开的工程反模式与正反例，**严禁写入密钥、内部地址、本机绝对路径或未公开信息**。
@@ -29,6 +29,26 @@
   - 为什么：测试或冒烟脚本每次运行就弄脏已跟踪文件或未忽略目录，会持续阻断 `sync-main` 净室物化门禁。
   - 反例：#247 之前 `chat-media-gallery-rail-height.e2e.test.js` 原地覆写已跟踪的 `plugins/.agent-reports/gallery-rail-height-2101/e2e-evidence.json`，且 `dev-smoke.mjs` 落盘到未忽略目录。
   - 正例：#247 `39a96534`（单测证据默认写入 `os.tmpdir()` 并于用例结束清理，冒烟产物统一落 `.gitignore` 已忽略的 `.workbuddy/evidence/dev-smoke/`）。
+
+- **测试汇总必须把 skip 当作独立判定维度：环境性 skip 必须显式标记并判非通过，设计性 skip 只能显示类别；非 TAP runner（Vitest）必须单独解析，任何未分类 skip 都按 fail-closed 处理**（`seen 1` · 最近 `2026-11-25`）
+  - 为什么：`judge()` 只统计 `fail`/`cancelled` 时，探针缺失或 Vitest skip 会以 `ok` 收场，直接违反「环境不可用不得伪装成 pass」；只用自由文本猜原因又会误伤合法平台跳过。
+  - 反例：#284 `4002111a` 合入时 `run-workspace-tests.mjs` 仍不把 `tap.skipped` 计为失败，`omnimux-analytics` 的 `{ skip: probe.skipped === true }` 在无 Chrome 时被汇总为通过；#286 由此另立，#298 `0c54711f` 补齐 `[environment-unavailable]` 标记、`skippedSuites` 与 Vitest summary 解析（评审 PASS，待合入）。
+  - 正例：#298 的 `parseTap()` 将 `describe.skip` 的 `type:'suite'` 单独计数，`parseVitestSummary()` 对 `Tests ... skipped/todo` fail-closed；真实无 Chrome 运行 `omnimux-analytics` 为 `skip=3 (environment=3, by-design=0)` exit 1，真实 Chrome 为 136/136 exit 0。
+
+- **脚本/物化夹具必须复现生产目录布局与最低运行时（含 macOS bash 3.2），不能只用扁平夹具或 CI 默认 bash 版本**（`seen 1` · 最近 `2026-11-25`）
+  - 为什么：扁平 `plugins/<name>` 夹具会把真实单仓 `plugins/plugins/<name>` 的解析错误藏到运行时；CI bash 5 也会掩盖 `set -u` 空数组在 bash 3.2 的崩溃。
+  - 反例：#269 `121cb7bc` 合入 #268 后触发 `materialize=failed`；#272 `22bc22e1` 在 0.4h 内修 B1 混合改动漏装、B2 bash 3.2 空数组、B3 `plugins/.agents` 等目录误判，旧 worktree.sh 在新增 3 条用例上 8 pass / 3 fail。
+  - 正例：#272 使用真实 `plugins/plugins/<name>` 路径、`/bin/bash` 3.2 与混合改动用例，`worktree-primary-cleanliness 12/12`、`worktree-delivery + cleanup 62/62`。
+
+- **独立评审必须在 PR 入队前完成；合并后再评审会以 follow-up 承担整批契约/正确性回归**（`seen 1` · 最近 `2026-11-25`）
+  - 为什么：合后评审只能靠追加 PR 修复，且会把问题与正常演进混在同一提交窗口，增加回归和审计成本。
+  - 反例：#271 `6ef9fd6e`（04:25 合入）后独立评审提出 13 项缺陷，#274 `928f9785`（04:51，0.4h）修复其中影响正确性、契约一致性与门禁覆盖面的部分；两 PR 改同一 `omnimux-analytics` / `omnimux/src/text` / `verify-plugin-boundaries` 面。
+  - 正例：#277 `abfc670a`、#281 `d3144835`、#284 `2f46824e` 均在入队前完成独立评审（前者 PASS / 后者两轮 PASS）；#298 `0c54711f` 本轮也已在入队前完成净室复审。
+
+- **公开仓每个合并 PR 必须绑定可追踪 Issue（`Closes/Fixes #...`）或在正文记录明确豁免；完整新插件、发布链与大范围改动不得以无 Issue 状态进入合并队列**（`seen 1` · 最近 `2026-11-25`）
+  - 为什么：无 Issue 时无法回溯需求、验收边界、责任与回滚决定；本区间 36 个业务/文档 PR 中 29 个正文没有 closing Issue，包含 #299 的 56 文件新插件。
+  - 反例：#299 `a6482ddb`（PiBrowse 完整插件，正文仅引用 `specs/pibrowse-plugin.spec.md`，无 closing issue）、#291 `ff3c77d1`（只新增 spec）、#288/#292/#304 更新器与发布链、#294/#295/#306 资产改版均无 closing Issue。
+  - 正例：#266（#264）、#267（#237）、#270（#199）、#273（#186）、#277（#275）、#281（#279）、#284（#280）均绑定 closing Issue。
 
 - **主干动过锁文件或插件包后，合并/变基禁止沿用自动合并的 `bundle.lock.json`，须取主干版本并在构建后重算**（`seen 2` · 最近 `2026-11-25`）
   - 为什么：`bundle.lock.json` 按包记录 `contentHash`，自动三方合并只按文本行拼装；主干与本分支各改不同槽位时文本不冲突，但「合并结果里每个哈希是否对应真实内容」只能靠按当前树重算来证明，沿用合并结果会让 `workspace-check` 与后续安装拿到的清单同实际产物脱节。
