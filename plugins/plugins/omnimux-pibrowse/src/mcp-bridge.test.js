@@ -104,6 +104,16 @@ test('mcpBridge matches real DSH mcpManager/tools contracts, neutralizes FURY_AP
     assert.equal(regCfg.env.FURY_API_PORT, '')
     assert.equal(regCfg.env.FURY_API_TOKEN, '')
 
+    // Configuring a macOS .app bundle as corePath normalizes FURY_CORE to the inner executable
+    const fakeApp = join(tmp, 'Fury.app')
+    const fakeCoreExe = join(fakeApp, 'Contents', 'MacOS', 'Fury')
+    await mkdir(join(fakeApp, 'Contents', 'MacOS'), { recursive: true })
+    await writeFile(fakeCoreExe, '#!/bin/sh\necho ok\n')
+    await chmod(fakeCoreExe, 0o755)
+    await instance.configStore.update({ corePath: fakeApp })
+    await instance.mcpBridge.sync()
+    assert.equal(mcpRegistrations.get('pibrowse').env.FURY_CORE, fakeCoreExe)
+
     // Real DSH 2-arg mcp-manager/status event: (name, statusObj)
     for (const fn of listeners.get('mcp-manager/status') || []) {
       fn('other-server', { status: 'error', error: 'unrelated' })

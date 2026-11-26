@@ -63,3 +63,20 @@ export function httpStatusForError(err) {
   }
   return 500
 }
+
+/**
+ * Translate upstream `fury-agent` missing-core IPC errors into a structured
+ * `core-not-installed` (HTTP 503) domain error with actionable guidance.
+ * @param {unknown} err
+ */
+export function normalizeCoreLaunchError(err) {
+  const msg = err instanceof Error ? err.message : String(err ?? '')
+  if (/no core binary/i.test(msg)) {
+    return new PibrowseError(
+      'core-not-installed',
+      '尚未安装 Chromium 157 内核，请先下载并安装 Core 或在「环境与运行态」配置本地 FURY_CORE 路径。',
+      { upstreamMessage: msg },
+    )
+  }
+  return err
+}

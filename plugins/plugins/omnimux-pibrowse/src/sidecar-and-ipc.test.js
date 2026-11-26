@@ -30,6 +30,7 @@ record({
   event: 'boot',
   furyHome: process.env.FURY_HOME || null,
   furySocket: socketPath || null,
+  furyCore: process.env.FURY_CORE || null,
   hasApiPort: Boolean(process.env.FURY_API_PORT),
 })
 
@@ -88,11 +89,19 @@ test('sidecar starts real Unix socket IPC, propagates Coded errors, and cleanly 
     await chmod(paths.managedAgentPath, 0o755)
 
     const configStore = createConfigStore({ configFile: paths.configFile })
+    // Verify macOS .app corePath is normalized to the inner executable before spawning fury-agent
+    const fakeApp = join(tmp, 'Fury.app')
+    const fakeCoreExe = join(fakeApp, 'Contents', 'MacOS', 'Fury')
+    await mkdir(join(fakeApp, 'Contents', 'MacOS'), { recursive: true })
+    await writeFile(fakeCoreExe, '#!/bin/sh\necho ok\n', { mode: 0o755 })
+    await configStore.update({ corePath: fakeApp })
+
     const ipcClient = createIpcClient({ socketPath: paths.socketPath, defaultTimeoutMs: 5000 })
     const sidecar = createSidecarSupervisor({
       paths,
       configStore,
       ipcClient,
+      platform: 'darwin',
       startupTimeoutMs: 5000,
       shutdownTimeoutMs: 2000,
     })
@@ -133,6 +142,7 @@ test('sidecar starts real Unix socket IPC, propagates Coded errors, and cleanly 
     const boot = events.find((e) => e.event === 'boot')
     assert.equal(boot.furyHome, paths.dataDir)
     assert.equal(boot.furySocket, paths.socketPath)
+    assert.equal(boot.furyCore, fakeCoreExe, 'sidecar must pass resolved inner Core executable as FURY_CORE')
     assert.equal(boot.hasApiPort, false, 'FURY_API_PORT must never be exposed')
     assert.ok(events.some((e) => e.event === 'rpc' && e.method === 'profile.stop' && e.params?.id === 'pf-active-1'))
     assert.ok(events.some((e) => e.event === 'rpc' && e.method === 'agent.shutdown'))

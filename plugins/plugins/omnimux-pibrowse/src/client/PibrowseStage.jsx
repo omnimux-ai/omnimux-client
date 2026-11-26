@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Badge, Button, PageHeader, Tabs } from 'dsh-ui-kit'
 import { api } from './api.js'
 import { EnvironmentPanel } from './EnvironmentPanel.jsx'
@@ -7,6 +7,48 @@ import { ProfilesPanel } from './ProfilesPanel.jsx'
 import { ProxiesPanel } from './ProxiesPanel.jsx'
 import { PIBROWSE_TAB_ID } from './sidebar-entry.js'
 import { injectPibrowseStyles } from './styles.js'
+
+function formatMb(bytes) {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0.0'
+  return (bytes / (1024 * 1024)).toFixed(1)
+}
+
+function getCoreProgressMeta(installer) {
+  const coreState = installer?.core
+  if (coreState?.status === 'downloading') {
+    const pct = coreState.progress?.percent ?? 0
+    const dl = formatMb(coreState.progress?.downloadedBytes ?? 0)
+    const tot = coreState.progress?.totalBytes ? formatMb(coreState.progress.totalBytes) : null
+    return {
+      active: true,
+      percent: pct,
+      label: tot
+        ? `正在下载 Chromium 157 内核（${pct}%，${dl} / ${tot} MB）`
+        : `正在下载 Chromium 157 内核（${dl} MB）`,
+    }
+  }
+  if (coreState?.status === 'extracting') {
+    return {
+      active: true,
+      percent: 100,
+      label: '正在解压并校验 Chromium 157 内核...',
+    }
+  }
+  const ipcDl = installer?.ipcCoreDownload
+  if (ipcDl?.running) {
+    const pct = ipcDl.total > 0 ? Math.min(100, Math.round((ipcDl.downloaded / ipcDl.total) * 100)) : 50
+    const dl = formatMb(ipcDl.downloaded || 0)
+    const tot = ipcDl.total > 0 ? formatMb(ipcDl.total) : null
+    return {
+      active: true,
+      percent: pct,
+      label: tot
+        ? `正在下载 Chromium 157 内核（${pct}%，${dl} / ${tot} MB）`
+        : `正在下载 Chromium 157 内核（${dl} MB）`,
+    }
+  }
+  return { active: false, percent: null, label: null }
+}
 
 function resolveHeaderBadge(overview, t) {
   if (!overview) {
@@ -47,9 +89,11 @@ export function PibrowseStage({ t, stage, store, visible = true }) {
   const [activeTab, setActiveTab] = useState('profiles')
   const [overview, setOverview] = useState(null)
   const [refreshing, setRefreshing] = useState(false)
+  const [installingCore, setInstallingCore] = useState(false)
   const [loadError, setLoadError] = useState(null)
   const [toast, setToast] = useState(null)
   const [everOpened, setEverOpened] = useState(visible)
+  const prevInstallStatesRef = useRef({ agent: null, core: null, ipcError: null })
 
   useEffect(() => {
     if (visible) setEverOpened(true)
@@ -60,27 +104,73 @@ export function PibrowseStage({ t, stage, store, visible = true }) {
     setToast({ message, isError })
     setTimeout(() => {
       setToast((cur) => (cur?.message === message ? null : cur))
-    }, 3200)
+    }, 4000)
   }, [])
 
-  const loadOverview = useCallback(async () => {
-    setRefreshing(true)
+  const loadOverview = useCallback(async ({ silent = false } = {}) => {
+    if (!silent) setRefreshing(true)
     setLoadError(null)
     try {
       const data = await api.getOverview()
       setOverview(data)
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to load PiBrowse overview'
-      setLoadError(msg)
-      notify(msg, true)
+      if (!silent) {
+        setLoadError(msg)
+        notify(msg, true)
+      }
     } finally {
-      setRefreshing(false)
+      if (!silent) setRefreshing(false)
     }
   }, [notify])
 
   useEffect(() => {
     if (visible) void loadOverview()
   }, [visible, loadOverview])
+
+  const agentInstallActive =
+    overview?.installer?.agent?.status === 'downloading' ||
+    overview?.installer?.agent?.status === 'extracting'
+  const coreProgress = getCoreProgressMeta(overview?.installer)
+  const anyInstallActive = agentInstallActive || coreProgress.active
+
+  useEffect(() => {
+    if (!visible || !anyInstallActive) return undefined
+    const timer = setInterval(() => {
+      void loadOverview({ silent: true })
+    }, 1000)
+    return () => clearInterval(timer)
+  }, [visible, anyInstallActive, loadOverview])
+
+  useEffect(() => {
+    const agentState = overview?.installer?.agent?.status ?? null
+    const coreState = overview?.installer?.core?.status ?? null
+    const ipcError = overview?.installer?.ipcCoreDownload?.error ?? null
+    const prev = prevInstallStatesRef.current
+
+    if (agentState === 'error' && prev.agent !== 'error' && overview?.installer?.agent?.error) {
+      notify(overview.installer.agent.error, true)
+    }
+    if (coreState === 'error' && prev.core !== 'error' && overview?.installer?.core?.error) {
+      notify(overview.installer.core.error, true)
+    }
+    if (ipcError && ipcError !== prev.ipcError) {
+      notify(String(ipcError), true)
+    }
+    prevInstallStatesRef.current = { agent: agentState, core: coreState, ipcError }
+  }, [overview?.installer, notify])
+
+  const handleInstallCore = useCallback(async () => {
+    setInstallingCore(true)
+    try {
+      await api.runtime({ action: 'install_core', background: true })
+      await loadOverview({ silent: true })
+    } catch (err) {
+      notify(err instanceof Error ? err.message : '下载 Chromium Core 失败', true)
+    } finally {
+      setInstallingCore(false)
+    }
+  }, [loadOverview, notify])
 
   const handleClose = () => {
     const wb = typeof window !== 'undefined' ? window.__omnimuxWorkbench : undefined
@@ -95,10 +185,15 @@ export function PibrowseStage({ t, stage, store, visible = true }) {
     { id: 'env', label: t('tabEnv') },
   ]
 
+  const missingCore = Boolean(overview?.agent?.installed && !overview?.core?.installed)
+  const coreProblem = typeof overview?.core?.problem === 'string' && overview.core.problem.trim() ? overview.core.problem.trim() : null
+
   const needsSetupBanner = Boolean(
     overview && (
       (!overview.platform?.prebuiltSupported && !overview.agent?.installed) ||
       !overview.agent?.installed ||
+      missingCore ||
+      Boolean(coreProblem) ||
       overview.widevine?.available === false
     ),
   )
@@ -109,9 +204,15 @@ export function PibrowseStage({ t, stage, store, visible = true }) {
       ? overview.platform.unsupportedGuidance
       : !overview.agent?.installed
         ? '尚未安装 fury-agent，请前往「环境与运行态」下载校验或手动指定本地二进制路径。'
-        : overview.widevine?.available === false
-          ? overview.widevine.warning
-          : null
+        : missingCore
+          ? coreProgress.active
+            ? coreProgress.label
+            : '尚未安装 Chromium 157 内核，启动窗口前需先下载安装 Core 或配置本地 FURY_CORE。'
+          : coreProblem
+            ? coreProblem
+            : overview.widevine?.available === false
+              ? overview.widevine.warning
+              : null
 
   return (
     <div
@@ -126,7 +227,7 @@ export function PibrowseStage({ t, stage, store, visible = true }) {
         <PageHeader
           title={t('title')}
           badge={resolveHeaderBadge(overview, t)}
-          onRefresh={loadOverview}
+          onRefresh={() => loadOverview()}
           refreshing={refreshing}
           refreshTitle={t('refresh')}
           onClose={handleClose}
@@ -141,7 +242,7 @@ export function PibrowseStage({ t, stage, store, visible = true }) {
           {loadError && (
             <div className="omnimux-pibrowse-notice" data-tone="error" role="alert">
               <span>{loadError}</span>
-              <Button variant="secondary" size="sm" onClick={loadOverview}>
+              <Button variant="secondary" size="sm" onClick={() => loadOverview()}>
                 {t('refresh')}
               </Button>
             </div>
@@ -149,12 +250,41 @@ export function PibrowseStage({ t, stage, store, visible = true }) {
 
           {!loadError && needsSetupBanner && bannerMessage && (
             <div className="omnimux-pibrowse-notice" role="status">
-              <span>{bannerMessage}</span>
-              {activeTab !== 'env' && (
-                <Button variant="secondary" size="sm" onClick={() => setActiveTab('env')}>
-                  {t('goEnv')}
-                </Button>
-              )}
+              <div className="omnimux-pibrowse-notice-col">
+                <span>{bannerMessage}</span>
+                {missingCore && coreProgress.active && coreProgress.percent !== null && (
+                  <div
+                    className="omnimux-pibrowse-progress-track"
+                    role="progressbar"
+                    aria-valuenow={coreProgress.percent}
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                  >
+                    <div
+                      className="omnimux-pibrowse-progress-fill"
+                      style={{ '--pb-progress': `${coreProgress.percent}%` }}
+                    />
+                  </div>
+                )}
+              </div>
+              <div className="omnimux-pibrowse-row">
+                {missingCore && overview?.platform?.prebuiltSupported && (
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    disabled={coreProgress.active}
+                    loading={installingCore || coreProgress.active}
+                    onClick={handleInstallCore}
+                  >
+                    {t('downloadCore')}
+                  </Button>
+                )}
+                {activeTab !== 'env' && (
+                  <Button variant="secondary" size="sm" onClick={() => setActiveTab('env')}>
+                    {t('goEnv')}
+                  </Button>
+                )}
+              </div>
             </div>
           )}
 

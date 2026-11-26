@@ -1,5 +1,5 @@
 import { PINNED_UPSTREAM, UPSTREAM_MCP_TOOL_NAMES } from './constants.js'
-import { PibrowseError } from './errors.js'
+import { PibrowseError, normalizeCoreLaunchError } from './errors.js'
 import { validateUserPath } from './paths.js'
 import {
   getPlatformInfo,
@@ -259,8 +259,15 @@ export function createPibrowseDispatcher(deps) {
       upstreamMcpToolsCount: UPSTREAM_MCP_TOOL_NAMES.length,
     }
 
+    let effectiveCore = { ...core, problem: null }
+    let ipcCoreDownload = null
+
     if (sidecarStatus.running) {
-      const [profilesRes, trashRes, proxiesRes, blRes, extRes, mirrorRes] = await Promise.all([
+      const [statusRes, profilesRes, trashRes, proxiesRes, blRes, extRes, mirrorRes] = await Promise.all([
+        ipcClient.call('status', {}, { timeoutMs: 2500 }).catch((err) => {
+          logger?.warn?.('omnimux-pibrowse: overview status failed', { error: err?.message })
+          return null
+        }),
         ipcClient.call('profiles.list', {}, { timeoutMs: 2500 }).catch((err) => {
           logger?.warn?.('omnimux-pibrowse: overview profiles.list failed', { error: err?.message })
           return []
@@ -286,6 +293,22 @@ export function createPibrowseDispatcher(deps) {
           return { active: false }
         }),
       ])
+
+      if (statusRes && typeof statusRes === 'object') {
+        const runtimeCore = typeof statusRes.core === 'string' && statusRes.core.trim() ? statusRes.core.trim() : null
+        const coreProblem =
+          typeof statusRes.core_problem === 'string' && statusRes.core_problem.trim()
+            ? statusRes.core_problem.trim()
+            : null
+        if (!effectiveCore.installed && runtimeCore) {
+          effectiveCore = { installed: true, source: 'sidecar', path: runtimeCore, problem: coreProblem }
+        } else {
+          effectiveCore = { ...effectiveCore, problem: coreProblem }
+        }
+        if (statusRes.core_download && typeof statusRes.core_download === 'object') {
+          ipcCoreDownload = redactAny(statusRes.core_download)
+        }
+      }
 
       const profileArr = asArray(profilesRes, 'profiles')
       const runningCount = profileArr.filter((p) => p && p.running === true).length
@@ -325,10 +348,13 @@ export function createPibrowseDispatcher(deps) {
         autoStartSidecar: config.autoStartSidecar,
       },
       agent,
-      core,
+      core: effectiveCore,
       widevine,
       sidecar: sidecarStatus,
-      installer: installStatus,
+      installer: {
+        ...installStatus,
+        ...(ipcCoreDownload ? { ipcCoreDownload } : {}),
+      },
       mcp: mcpStatus,
       team: teamStatus,
       stats,
@@ -357,6 +383,26 @@ export function createPibrowseDispatcher(deps) {
       return toLosslessJson({ ok: true, sidecar: status, mcp })
     }
     if (action === 'install_agent') {
+      if (args.background === true) {
+        const info = getPlatformInfo({ platform: deps.platform, arch: deps.arch })
+        if (!info.prebuiltSupported) {
+          throw new PibrowseError('unsupported-platform', info.unsupportedGuidance)
+        }
+        installer
+          .installAgent()
+          .then(() => mcpBridge.sync({ force: true }))
+          .catch((err) => {
+            logger?.warn?.('omnimux-pibrowse: background agent install failed', {
+              error: err instanceof Error ? err.message : String(err),
+            })
+          })
+        return toLosslessJson({
+          ok: true,
+          started: true,
+          mode: 'verified-installer',
+          installer: installer.getStatus(),
+        })
+      }
       const res = await installer.installAgent()
       const mcp = await mcpBridge.sync({ force: true })
       return toLosslessJson({ ...res, mcp })
@@ -372,7 +418,7 @@ export function createPibrowseDispatcher(deps) {
       if (!agent.installed || !agent.path) {
         throw new PibrowseError('agent-not-installed', 'Install or configure fury-agent before downloading Core')
       }
-      if (sidecar.getStatus().running && args.useIpc !== false) {
+      if (args.useIpc === true && sidecar.getStatus().running) {
         try {
           const ipcRes = await ipcClient.call('core.download', {}, { timeoutMs: 10_000 })
           return toLosslessJson({ ok: true, mode: 'ipc', download: redactAny(ipcRes) })
@@ -381,6 +427,23 @@ export function createPibrowseDispatcher(deps) {
             error: err instanceof Error ? err.message : String(err),
           })
         }
+      }
+      if (args.background === true) {
+        const info = getPlatformInfo({ platform: deps.platform, arch: deps.arch })
+        if (!info.prebuiltSupported) {
+          throw new PibrowseError('unsupported-platform', info.unsupportedGuidance)
+        }
+        installer.installCore({ agentBinaryPath: agent.path }).catch((err) => {
+          logger?.warn?.('omnimux-pibrowse: background core install failed', {
+            error: err instanceof Error ? err.message : String(err),
+          })
+        })
+        return toLosslessJson({
+          ok: true,
+          started: true,
+          mode: 'verified-installer',
+          installer: installer.getStatus(),
+        })
       }
       const res = await installer.installCore({ agentBinaryPath: agent.path })
       return toLosslessJson(res)
@@ -396,14 +459,25 @@ export function createPibrowseDispatcher(deps) {
       return toLosslessJson({ ok: true, ipcStatus: null, installer: installer.getStatus() })
     }
     if (action === 'configure_paths') {
+      const prev = await configStore.load()
       const patch = {}
       if ('agentPath' in args) patch.agentPath = args.agentPath
       if ('corePath' in args) patch.corePath = args.corePath
       if ('geoipPath' in args) patch.geoipPath = args.geoipPath
       if ('autoStartSidecar' in args) patch.autoStartSidecar = args.autoStartSidecar
       const next = await configStore.update(patch)
+      const runtimePathsChanged = prev.agentPath !== next.agentPath || prev.corePath !== next.corePath
+      let restartedSidecar = null
+      if (runtimePathsChanged && sidecar.getStatus().running) {
+        restartedSidecar = await sidecar.restart()
+      }
       const mcp = await mcpBridge.sync({ force: true })
-      return toLosslessJson({ ok: true, config: next, mcp })
+      return toLosslessJson({
+        ok: true,
+        config: next,
+        ...(restartedSidecar ? { sidecar: restartedSidecar } : {}),
+        mcp,
+      })
     }
     if (action === 'reuse_standalone') {
       const config = await configStore.load()
@@ -418,8 +492,18 @@ export function createPibrowseDispatcher(deps) {
       }
       const next = await configStore.update({ agentPath: resolved.standaloneCandidate })
       const probe = await installer.probeAgentBinary(resolved.standaloneCandidate)
+      let restartedSidecar = null
+      if (config.agentPath !== next.agentPath && sidecar.getStatus().running) {
+        restartedSidecar = await sidecar.restart()
+      }
       const mcp = await mcpBridge.sync({ force: true })
-      return toLosslessJson({ ok: true, config: next, probe, mcp })
+      return toLosslessJson({
+        ok: true,
+        config: next,
+        probe,
+        ...(restartedSidecar ? { sidecar: restartedSidecar } : {}),
+        mcp,
+      })
     }
     if (action === 'probe_agent') {
       const config = await configStore.load()
@@ -565,12 +649,17 @@ export function createPibrowseDispatcher(deps) {
   async function launchProfile({ id, url, cdp = false, background = false }) {
     if (!id) throw new PibrowseError('invalid-input', 'Profile id is required')
     await ensureSidecarRunning()
-    const res = await ipcClient.call('profile.launch', {
-      id,
-      ...(url ? { url } : {}),
-      cdp: Boolean(cdp),
-      background: Boolean(background),
-    })
+    let res
+    try {
+      res = await ipcClient.call('profile.launch', {
+        id,
+        ...(url ? { url } : {}),
+        cdp: Boolean(cdp),
+        background: Boolean(background),
+      })
+    } catch (err) {
+      throw normalizeCoreLaunchError(err)
+    }
     return toLosslessJson({ ok: true, id, launch: redactAny(res) })
   }
 
@@ -642,11 +731,16 @@ export function createPibrowseDispatcher(deps) {
       return toLosslessJson({ ok: true, restored: args.profileId, profile: redactProfile(res) })
     }
     if (action === 'detect_suite') {
-      const res = await ipcClient.call('profile.launch', {
-        id: args.profileId,
-        cdp: true,
-        background: false,
-      })
+      let res
+      try {
+        res = await ipcClient.call('profile.launch', {
+          id: args.profileId,
+          cdp: true,
+          background: false,
+        })
+      } catch (err) {
+        throw normalizeCoreLaunchError(err)
+      }
       const targetUrl = args.detectUrl || res?.probe_url || 'https://browserleaks.com/'
       if (targetUrl) {
         await ipcClient.call('page.navigate', { id: args.profileId, url: targetUrl }).catch((err) => {

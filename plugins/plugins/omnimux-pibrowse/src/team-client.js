@@ -1,6 +1,6 @@
 import { readFile, rm } from 'node:fs/promises'
 import { hostname } from 'node:os'
-import { PibrowseError } from './errors.js'
+import { PibrowseError, normalizeCoreLaunchError } from './errors.js'
 import { writeJsonAtomic } from './config-store.js'
 import { redactAny, redactLogLine, redactUrlCredentials } from './redact.js'
 import {
@@ -735,7 +735,7 @@ export function createTeamClient(opts) {
           error: unlockErr instanceof Error ? unlockErr.message : String(unlockErr),
         })
       })
-      throw err
+      throw normalizeCoreLaunchError(err)
     }
   }
 

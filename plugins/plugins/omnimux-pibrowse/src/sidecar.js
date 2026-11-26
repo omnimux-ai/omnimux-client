@@ -2,7 +2,7 @@ import { spawn as defaultSpawn } from 'node:child_process'
 import { rm } from 'node:fs/promises'
 import { PibrowseError } from './errors.js'
 import { ensurePibrowseDirs } from './paths.js'
-import { resolveAgentBinary } from './platform.js'
+import { resolveAgentBinary, resolveCoreExecutable } from './platform.js'
 import { redactLogLine } from './redact.js'
 
 const MAX_LOG_LINES = 60
@@ -59,14 +59,15 @@ export function createSidecarSupervisor(opts) {
     }
   }
 
-  function buildSpawnEnv(config) {
+  function buildSpawnEnv(config, resolvedCorePath) {
     const env = { ...process.env }
     delete env.FURY_API_PORT
     delete env.FURY_API_TOKEN
     env.FURY_HOME = opts.paths.dataDir
     env.FURY_SOCKET = opts.paths.socketPath
-    if (config.corePath) {
-      env.FURY_CORE = config.corePath
+    const effectiveCore = resolvedCorePath || config.corePath
+    if (effectiveCore) {
+      env.FURY_CORE = effectiveCore
     } else {
       delete env.FURY_CORE
     }
@@ -182,7 +183,10 @@ export function createSidecarSupervisor(opts) {
       binaryPath = resolved.path
       notifyChange()
 
-      const env = buildSpawnEnv(config)
+      const resolvedCorePath = config.corePath
+        ? await resolveCoreExecutable(config.corePath, platform)
+        : null
+      const env = buildSpawnEnv(config, resolvedCorePath)
       const proc = spawn(resolved.path, ['serve'], {
         env,
         stdio: ['ignore', 'pipe', 'pipe'],
