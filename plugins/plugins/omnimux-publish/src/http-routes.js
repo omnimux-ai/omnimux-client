@@ -1,8 +1,21 @@
 /** Official webServer routes; domain operations live in the shared dispatcher. */
 import { PublishError } from './publish-error.js'
 import { STATUS_BY_CODE, sendJson, readJsonBody, readRawBody, assertLocalWrite, header, messageOf } from './http-helpers.js'
+import { SAFE_INLINE_MEDIA_TYPES, isAllowedHttpUploadMedia, normalizeMediaContentType } from './media.js'
 export { createPublishDispatcher } from './publish-dispatcher.js'
 export { sendJson, readJsonBody, readRawBody, assertLocalWrite } from './http-helpers.js'
+
+const MEDIA_SECURITY_HEADERS = {
+  'X-Content-Type-Options': 'nosniff',
+  'Content-Security-Policy': "sandbox; default-src 'none'",
+  'Cross-Origin-Resource-Policy': 'same-origin',
+}
+
+/** @param {string | undefined} raw */
+function safeAttachmentName(raw) {
+  const base = String(raw || 'media.bin').replace(/[\r\n"\\/]+/g, '_').trim()
+  return base || 'media.bin'
+}
 
 /**
  * Build a consistent wire error payload for PublishError, surfacing structured
@@ -109,10 +122,19 @@ export function registerPublishRoutes(webServer, dispatcher, deps = {}) {
       if (method === 'GET' && subPath === '/media/content') {
         try {
           const { buffer, meta } = dispatcher.openMedia(url.searchParams.get('id') || '')
-          res.writeHead(200, {
-            'Content-Type': String(meta.content_type || 'application/octet-stream'),
-            'Content-Length': String(buffer.length), 'Cache-Control': 'private, max-age=86400',
-          })
+          const normalizedType = normalizeMediaContentType(meta.content_type)
+          const inlineSafe = SAFE_INLINE_MEDIA_TYPES.has(normalizedType)
+          /** @type {Record<string, string>} */
+          const headers = {
+            ...MEDIA_SECURITY_HEADERS,
+            'Content-Type': inlineSafe ? normalizedType : 'application/octet-stream',
+            'Content-Length': String(buffer.length),
+            'Cache-Control': 'private, max-age=86400',
+          }
+          if (!inlineSafe) {
+            headers['Content-Disposition'] = `attachment; filename="${safeAttachmentName(meta.filename)}"`
+          }
+          res.writeHead(200, headers)
           res.end(buffer)
         } catch (error) {
           if (error instanceof PublishError) sendJson(res, STATUS_BY_CODE[error.code] ?? 404, { error: error.code, message: error.message })
@@ -121,9 +143,15 @@ export function registerPublishRoutes(webServer, dispatcher, deps = {}) {
         return
       }
       if (method === 'POST' && subPath === '/media') {
+        const filename = url.searchParams.get('filename') || undefined
+        const reqContentType = header(req, 'content-type') || undefined
+        if (!isAllowedHttpUploadMedia(reqContentType, filename)) {
+          sendJson(res, 415, { error: 'unsupported-media-type', message: 'only safe image, video, and audio media uploads are allowed' })
+          return
+        }
         const buffer = await readRawBody(req)
         sendJson(res, 200, dispatcher.importMedia(buffer, {
-          filename: url.searchParams.get('filename') || undefined, content_type: header(req, 'content-type') || undefined,
+          filename, content_type: reqContentType,
         }))
         return
       }

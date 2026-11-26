@@ -79,9 +79,24 @@ export async function fetchJsonUncached<T>(url: string, options: FetchOptions, s
   return res.json() as Promise<T>
 }
 
-export async function fetchBytes(url: string, options: FetchOptions, signal?: AbortSignal): Promise<{ body: Buffer; contentType: string }> {
+const DEFAULT_MAX_BYTES = 50 * 1024 * 1024
+
+export async function fetchBytes(
+  url: string,
+  options: FetchOptions & { maxBytes?: number },
+  signal?: AbortSignal,
+): Promise<{ body: Buffer; contentType: string }> {
+  const maxBytes = typeof options.maxBytes === 'number' && options.maxBytes > 0 ? options.maxBytes : DEFAULT_MAX_BYTES
   const res = await request(url, options, signal)
+  const declared = Number(res.headers.get('content-length') ?? 0)
+  if (Number.isFinite(declared) && declared > maxBytes) {
+    await res.body?.cancel?.().catch(() => {})
+    throw new HttpError(`response exceeds ${maxBytes} byte limit`, 413)
+  }
   const buf = Buffer.from(await res.arrayBuffer())
+  if (buf.length > maxBytes) {
+    throw new HttpError(`response exceeds ${maxBytes} byte limit`, 413)
+  }
   return { body: buf, contentType: res.headers.get('content-type') || 'application/octet-stream' }
 }
 

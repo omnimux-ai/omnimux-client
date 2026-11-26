@@ -59,7 +59,7 @@
       "version": "0.2.13-omni.2",
       "path": "plugins/plugins/omnimux-market",
       "spec": "link:../../plugins/plugins/omnimux-market",
-      "contentHash": "sha256:ce62f24d3f3d1f636dfe245c73782507acbd5bb0bb7e4b62ff084d9cabb21aee"
+      "contentHash": "sha256:d38475e404fcde191dd2c88dbccf29385627137fba0f90326a6d0d3e02f3176f"
     },
     {
       "name": "omnimux-products",
@@ -73,7 +73,7 @@
       "version": "0.1.2",
       "path": "plugins/plugins/omnimux-publish",
       "spec": "link:../../plugins/plugins/omnimux-publish",
-      "contentHash": "sha256:942a2f7fa9510ad01177b55e91b6787f818515f3a86f77704fb62de98dbd48fa"
+      "contentHash": "sha256:6916e7ea23160765ddb96333d74e48b14b597d58c8cea1c62b000142ef993ba6"
     },
     {
       "name": "omnimux-video",
