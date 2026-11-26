@@ -93,6 +93,12 @@ import {
   type SaveTarget,
 } from './save-target-copy.ts'
 import { dockFloatToNativeSidePanel } from './float-dock.ts'
+import {
+  isTrustedParentMessage,
+  resolveExpectedParentOrigin,
+  sanitizePageScenePayload,
+  sanitizeSniffedMediaList,
+} from './float-message-guard.ts'
 import { AssistantStreamView } from './assistant-stream.ts'
 import {
   canAcceptImageSelection,
@@ -795,7 +801,7 @@ function defaultPanelSettings(targetPort: number): PanelSettings {
     bridgeUrl: `ws://127.0.0.1:${targetPort}/ext/bridge`,
     token: '',
     sharePageContent: 'auto',
-    unrestrictedBrowserAccess: true,
+    unrestrictedBrowserAccess: false,
     trustedActionOrigins: [],
     approvalNotifications: true,
     autoResumeSession: true,
@@ -1287,15 +1293,19 @@ export function App(): React.JSX.Element {
 
   useEffect(() => {
     if (isFloatMode) {
+      const parentOrigin = resolveExpectedParentOrigin(document.referrer)
       const handleMessage = (e: MessageEvent) => {
+        if (!isTrustedParentMessage(e, window.parent, parentOrigin)) return
         if (!e.data || typeof e.data !== 'object') return
         if (e.data.type === 'PAGE_CONTEXT_UPDATE') {
-          setPageScene(e.data.payload)
-          if (e.data.payload?.media) {
-            setDetectedMedia(e.data.payload.media)
+          const sanitized = sanitizePageScenePayload(e.data.payload)
+          if (sanitized === null) return
+          setPageScene(sanitized)
+          if (sanitized.media) {
+            setDetectedMedia(sanitized.media)
           }
         } else if (e.data.type === 'MEDIA_SNIFFED_RESULT') {
-          setDetectedMedia(e.data.payload || [])
+          setDetectedMedia(sanitizeSniffedMediaList(e.data.payload))
         } else if (e.data.type === 'MEDIA_ATTACH_REQUEST') {
           // The runtime owns the user-selected URL; page messages carry no payload authority.
           if (typeof e.data.grant !== 'string') return
@@ -1306,8 +1316,9 @@ export function App(): React.JSX.Element {
         }
       }
       window.addEventListener('message', handleMessage)
+      const postTarget = parentOrigin ?? '*'
       try {
-        window.parent?.postMessage({ type: 'GET_PAGE_CONTEXT' }, '*')
+        window.parent?.postMessage({ type: 'GET_PAGE_CONTEXT' }, postTarget)
       } catch {
         // Ignore
       }
@@ -1315,7 +1326,7 @@ export function App(): React.JSX.Element {
       // 浮动模式初态重试：应对单页应用(SPA)异步渲染推文与媒体，初次挂载后前 6 秒内轻量重查
       const floatPollTimer = setInterval(() => {
         try {
-          window.parent?.postMessage({ type: 'GET_PAGE_CONTEXT' }, '*')
+          window.parent?.postMessage({ type: 'GET_PAGE_CONTEXT' }, postTarget)
         } catch {
           // Ignore
         }
@@ -1906,7 +1917,7 @@ export function App(): React.JSX.Element {
           bridgeUrl: raw?.bridgeUrl || `ws://127.0.0.1:${p}/ext/bridge`,
           token: raw?.token ?? '',
           sharePageContent: raw?.sharePageContent ?? 'auto',
-          unrestrictedBrowserAccess: raw?.unrestrictedBrowserAccess ?? true,
+          unrestrictedBrowserAccess: raw?.unrestrictedBrowserAccess ?? false,
           trustedActionOrigins: raw?.trustedActionOrigins ?? [],
           approvalNotifications: raw?.approvalNotifications ?? true,
           autoResumeSession: raw?.autoResumeSession ?? true,

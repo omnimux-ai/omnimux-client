@@ -182,6 +182,8 @@ describe('QA: the hover capsule pushes media into the conversation', () => {
   async function pushHoveredMedia(): Promise<void> {
     await act(async () => {
       window.dispatchEvent(new MessageEvent('message', {
+        source: window.parent,
+        origin: 'https://example.com',
         data: { type: 'MEDIA_ATTACH_REQUEST', grant },
       }))
     })

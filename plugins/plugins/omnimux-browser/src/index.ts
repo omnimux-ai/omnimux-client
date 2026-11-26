@@ -540,6 +540,21 @@ function mountBridge(
     },
     token: () => tokenRes.token,
     isLoopback: isLoopbackAddress,
+    authorizeHost: (req) => {
+      const conn = (ctx.connection ?? ctx.get?.('connection')) as {
+        requestRejection?: (request: unknown) => number | undefined
+      } | undefined
+      if (typeof conn?.requestRejection !== 'function') return 503
+      try {
+        const rejection = conn.requestRejection(req)
+        if (rejection === undefined) return undefined
+        return typeof rejection === 'number' && Number.isInteger(rejection) && rejection >= 400 && rejection <= 599
+          ? (rejection as 401 | 403 | 503)
+          : 403
+      } catch {
+        return 503
+      }
+    },
   })) {
     ctx.effect(() => ctx.webServer.register(route), `bridge-browser: ${route.path} route`)
   }

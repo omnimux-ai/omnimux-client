@@ -11,7 +11,7 @@
  * @module
  */
 
-import { randomUUID, timingSafeEqual } from 'node:crypto'
+import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
 
 /** How long one pending request stays approvable. */
 export const PAIRING_TTL_MS = 120_000
@@ -19,6 +19,7 @@ export const PAIRING_TTL_MS = 120_000
 /** One pending authorization. */
 export interface PairingRequest {
   readonly id: string
+  readonly csrfToken: string
   readonly expiresAt: number
   approved: boolean
   cancelled: boolean
@@ -32,6 +33,7 @@ export type PairingPoll = 'pending' | 'approved' | 'cancelled' | 'expired' | 'un
 export interface PairingDeps {
   now?: () => number
   mintId?: () => string
+  mintCsrfToken?: () => string
 }
 
 /** Constant-time id comparison; ids are equal-length UUIDs. */
@@ -53,16 +55,19 @@ export class PairingRequests {
   private current: PairingRequest | null = null
   private readonly now: () => number
   private readonly mintId: () => string
+  private readonly mintCsrfToken: () => string
 
   constructor(deps: PairingDeps = {}) {
     this.now = deps.now ?? (() => Date.now())
     this.mintId = deps.mintId ?? (() => randomUUID())
+    this.mintCsrfToken = deps.mintCsrfToken ?? (() => randomBytes(24).toString('base64url'))
   }
 
   /** Open a fresh request, invalidating any previous one. */
   create(): PairingRequest {
     this.current = {
       id: this.mintId(),
+      csrfToken: this.mintCsrfToken(),
       expiresAt: this.now() + PAIRING_TTL_MS,
       approved: false,
       cancelled: false,
@@ -80,30 +85,63 @@ export class PairingRequests {
     return request
   }
 
+  /** Read the anti-CSRF token bound to a live request, for embedding in the Host approval page. */
+  csrfTokenFor(id: string): string | null {
+    return this.live(id)?.csrfToken ?? null
+  }
+
   /**
    * Approve one request, as the host's own page does.
    *
    * @param id - the request id the page was opened with.
+   * @param csrfToken - optional per-request anti-CSRF token; validated in constant time when provided.
    * @returns true when a live request was approved.
    */
-  approve(id: string): boolean {
+  approve(id: string, csrfToken?: string): boolean {
     const request = this.live(id)
     if (request === null) return false
+    if (csrfToken !== undefined && !sameId(request.csrfToken, csrfToken)) return false
     request.approved = true
     return true
+  }
+
+  /**
+   * Approve a live request only when the bound one-time CSRF token matches.
+   * @returns `'ok'` on approval, `'invalid-csrf'` on token mismatch, or `'unknown'` when stale/missing.
+   */
+  approveWithCsrf(id: string, csrfToken: string): 'ok' | 'invalid-csrf' | 'unknown' {
+    const request = this.live(id)
+    if (request === null) return 'unknown'
+    if (csrfToken === '' || !sameId(request.csrfToken, csrfToken)) return 'invalid-csrf'
+    request.approved = true
+    return 'ok'
   }
 
   /**
    * Cancel one request, as the host's own page does.
    *
    * @param id - the request id the page was opened with.
+   * @param csrfToken - optional per-request anti-CSRF token; validated in constant time when provided.
    * @returns true when a live request was cancelled.
    */
-  cancel(id: string): boolean {
+  cancel(id: string, csrfToken?: string): boolean {
     const request = this.live(id)
     if (request === null) return false
+    if (csrfToken !== undefined && !sameId(request.csrfToken, csrfToken)) return false
     request.cancelled = true
     return true
+  }
+
+  /**
+   * Cancel a live request only when the bound one-time CSRF token matches.
+   * @returns `'ok'` on cancellation, `'invalid-csrf'` on token mismatch, or `'unknown'` when stale/missing.
+   */
+  cancelWithCsrf(id: string, csrfToken: string): 'ok' | 'invalid-csrf' | 'unknown' {
+    const request = this.live(id)
+    if (request === null) return 'unknown'
+    if (csrfToken === '' || !sameId(request.csrfToken, csrfToken)) return 'invalid-csrf'
+    request.cancelled = true
+    return 'ok'
   }
 
   /** Read the state the extension polls for. */
@@ -194,9 +232,10 @@ export function pairingApprovalAllowed(
  * @param code - the short code the extension is showing.
  * @returns a complete HTML document.
  */
-export function pairingPageHtml(requestId: string, code: string): string {
+export function pairingPageHtml(requestId: string, code: string = shortCode(requestId), csrfToken: string = ''): string {
   const id = JSON.stringify(requestId)
   const shown = JSON.stringify(code)
+  const csrf = JSON.stringify(csrfToken)
   return `<!DOCTYPE html>
 <html lang="zh-CN"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -231,13 +270,14 @@ export function pairingPageHtml(requestId: string, code: string): string {
 </div>
 <script>
   const requestId = ${id};
+  const csrfToken = ${csrf};
   document.getElementById('code').textContent = ${shown};
   async function send(action, done) {
     try {
       await fetch('/ext/pair/' + action, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ requestId: requestId })
+        body: JSON.stringify({ requestId: requestId, csrfToken: csrfToken })
       });
     } catch (error) { /* the extension still learns the outcome from its poll */ }
     document.getElementById('action').hidden = true;

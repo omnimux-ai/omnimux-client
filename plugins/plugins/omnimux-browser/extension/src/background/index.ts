@@ -3084,7 +3084,7 @@ if (import.meta.env.EXT_TARGET === 'firefox') {
   void chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {})
 }
 
-// Open welcome onboarding page on install and ensure unrestrictedBrowserAccess defaults to true
+// Open welcome onboarding page on install while keeping unrestrictedBrowserAccess opt-in (false by default).
 chrome.runtime.onInstalled?.addListener((details) => {
   if (details.reason === 'install') {
     void chrome.storage.local.get('dshSettings').then((stored) => {
@@ -3093,7 +3093,7 @@ chrome.runtime.onInstalled?.addListener((details) => {
         void chrome.storage.local.set({
           dshSettings: {
             ...existing,
-            unrestrictedBrowserAccess: true,
+            unrestrictedBrowserAccess: false,
           },
         }).catch(() => {})
       }

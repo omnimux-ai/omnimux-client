@@ -53,7 +53,7 @@ describe.skipIf(!runnable)('pairing page revision (#2116)', () => {
     const context = await instance.newContext({ viewport: { width: 520, height: 420 } })
     newPage = () => context.newPage()
 
-    const routes = createPairingRoutes({ port: () => port, token: () => TOKEN, isLoopback: isLoopbackAddress })
+    const routes = createPairingRoutes({ port: () => port, token: () => TOKEN, isLoopback: isLoopbackAddress, authorizeHost: () => undefined })
     server = createServer((req, res) => {
       const url = new URL(req.url ?? '/', 'http://127.0.0.1')
       const route = routes.find((candidate) => candidate.kind === 'exact' && candidate.path === url.pathname)
@@ -104,10 +104,12 @@ describe.skipIf(!runnable)('pairing page revision (#2116)', () => {
     })
     expect(foreign.status).toBe(403)
 
+    const pageHtml1 = await (await fetch(`${base}/ext/pair?request=${encodeURIComponent(first.requestId)}`)).text()
+    const csrf1 = /const csrfToken = "([^"]+)";/.exec(pageHtml1)?.[1] ?? ''
     const approvedFromOwnPage = await fetch(`${base}/ext/pair/approve`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', origin: `http://127.0.0.1:${port}` },
-      body: JSON.stringify({ requestId: first.requestId }),
+      body: JSON.stringify({ requestId: first.requestId, csrfToken: csrf1 }),
     })
     expect(approvedFromOwnPage.status).toBe(200)
     const status = await (await fetch(`${base}/ext/pair/status?request=${encodeURIComponent(first.requestId)}`)).json() as { state: string; token?: string }
@@ -117,10 +119,12 @@ describe.skipIf(!runnable)('pairing page revision (#2116)', () => {
     expect(repeat.state).toBe('unknown')
 
     const second = await (await fetch(`${base}/ext/pair/request`, { method: 'POST' })).json() as { requestId: string }
+    const pageHtml2 = await (await fetch(`${base}/ext/pair?request=${encodeURIComponent(second.requestId)}`)).text()
+    const csrf2 = /const csrfToken = "([^"]+)";/.exec(pageHtml2)?.[1] ?? ''
     const cancelled = await fetch(`${base}/ext/pair/cancel`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', origin: `http://127.0.0.1:${port}` },
-      body: JSON.stringify({ requestId: second.requestId }),
+      body: JSON.stringify({ requestId: second.requestId, csrfToken: csrf2 }),
     })
     expect(cancelled.status).toBe(200)
     const after = await (await fetch(`${base}/ext/pair/status?request=${encodeURIComponent(second.requestId)}`)).json() as { state: string; token?: string }

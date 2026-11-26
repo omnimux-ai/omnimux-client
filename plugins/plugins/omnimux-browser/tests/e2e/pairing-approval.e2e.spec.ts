@@ -85,7 +85,7 @@ describe.skipIf(!runnable)('one-click pairing (#2110)', () => {
       purgeSession: async () => {},
     setModelMode: () => {},
     })
-    const routes = createPairingRoutes({ port: () => port, token: () => TOKEN, isLoopback: isLoopbackAddress })
+    const routes = createPairingRoutes({ port: () => port, token: () => TOKEN, isLoopback: isLoopbackAddress, authorizeHost: () => undefined })
     server = createServer((req, res) => {
       const url = new URL(req.url ?? '/', 'http://127.0.0.1')
       const route = routes.find((candidate) => candidate.kind === 'exact' && candidate.path === url.pathname)

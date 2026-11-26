@@ -1,5 +1,6 @@
 import { memo, useState } from 'react'
 import { EditIcon } from './icons.tsx'
+import { isTrustedParentMessage, resolveExpectedParentOrigin } from '../float-message-guard.ts'
 
 export const DomFillButton = memo(function DomFillButton({
   textToFill,
@@ -25,13 +26,19 @@ export const DomFillButton = memo(function DomFillButton({
 
     // 1. Check if inside float iframe
     if (window.parent && window.parent !== window) {
+      const requestId = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : `fill-${Date.now()}-${Math.random().toString(36).slice(2)}`
+      const parentOrigin = resolveExpectedParentOrigin(document.referrer)
       window.parent.postMessage({
         type: 'FILL_HOST_DOM',
+        requestId,
         text: cleanText
-      }, '*')
+      }, parentOrigin ?? '*')
 
       const onMessage = (e: MessageEvent) => {
-        if (e.data?.type === 'FILL_HOST_DOM_RESULT') {
+        if (!isTrustedParentMessage(e, window.parent, parentOrigin)) return
+        if (e.data?.type === 'FILL_HOST_DOM_RESULT' && e.data?.source === 'omnimux-content-script' && e.data?.requestId === requestId) {
           window.removeEventListener('message', onMessage)
           const res = e.data.payload
           if (res?.success) {
