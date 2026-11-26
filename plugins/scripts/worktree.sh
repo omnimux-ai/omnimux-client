@@ -817,7 +817,7 @@ cmd_ship() {
   fi
   if [ "${primary_state}" -ne 0 ]; then
     { omnimux_primary_tracked_changes "${ROOT}"; omnimux_primary_blocking_untracked "${ROOT}"; } | sed 's/^/    /' >&2 || true
-    die "primary checkout is not clean for materialization (paths above); commit, stash, or move them before shipping"
+    die "primary checkout is not clean for materialization (paths above); commit, stash, or move them (or run: worktree.sh rescue-primary) before shipping"
   fi
 
   say "verifying GitHub PR #${pr_number} merge state and task revision..."
@@ -952,7 +952,7 @@ cmd_remove() {
     if [ "${primary_state}" -eq 2 ]; then
       say "ℹ️ 无法读取主检出状态，跳过自动物化；请手动运行: plugins/scripts/sync-to-app.sh"
     elif [ "${primary_state}" -ne 0 ]; then
-      say "ℹ️ 主检出存在未提交改动或未跟踪产物，跳过自动物化；清理后请手动运行: plugins/scripts/sync-to-app.sh"
+      say "ℹ️ 主检出存在未提交改动或未跟踪产物，跳过自动物化；可运行 worktree.sh rescue-primary 迁出并疏通后，再运行: plugins/scripts/sync-to-app.sh"
       { omnimux_primary_tracked_changes "${ROOT}"; omnimux_primary_blocking_untracked "${ROOT}"; } | sed 's/^/    /' >&2 || true
     fi
   fi
@@ -1090,6 +1090,524 @@ clean_one() {
   sag_forget_worktree "${wt}"
 }
 
+cmd_rescue_primary() {
+  local task="" do_sync=1
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --task)
+        shift
+        [ $# -gt 0 ] || die "missing argument for --task"
+        task="$1"
+        ;;
+      --task=*)
+        task="${1#--task=}"
+        [ -n "${task}" ] || die "missing argument for --task"
+        ;;
+      --no-sync)
+        do_sync=0
+        ;;
+      --discard | --force | --abandon)
+        die "rescue-primary never drops changes; refusing destructive flag: $1"
+        ;;
+      *)
+        die "unknown flag for rescue-primary: $1"
+        ;;
+    esac
+    shift
+  done
+
+  command -v node >/dev/null 2>&1 || die "node is required for rescue-primary"
+
+  local primary_branch
+  primary_branch="$(git -C "${PRIMARY_ROOT}" symbolic-ref --short HEAD 2>/dev/null || true)"
+  if [ "${primary_branch}" != "${DEFAULT_BRANCH}" ]; then
+    die "primary checkout must be on default branch (${DEFAULT_BRANCH}) for rescue-primary; got: ${primary_branch:-detached}"
+  fi
+
+  local primary_git_dir
+  primary_git_dir="$(git -C "${PRIMARY_ROOT}" rev-parse --git-dir 2>/dev/null || true)"
+  [ -n "${primary_git_dir}" ] || die "cannot resolve primary .git directory"
+  case "${primary_git_dir}" in
+    /*) : ;;
+    *) primary_git_dir="${PRIMARY_ROOT}/${primary_git_dir}" ;;
+  esac
+
+  local sentinel
+  for sentinel in MERGE_HEAD REBASE_HEAD CHERRY_PICK_HEAD REVERT_HEAD BISECT_LOG rebase-merge rebase-apply; do
+    if [ -e "${primary_git_dir}/${sentinel}" ]; then
+      die "primary checkout has an in-progress git operation (${sentinel}); resolve manually before rescuing"
+    fi
+  done
+
+  if [ -n "$(git -C "${PRIMARY_ROOT}" ls-files -u 2>/dev/null || true)" ]; then
+    die "primary checkout has unmerged conflict entries; resolve manually before rescuing"
+  fi
+
+  local has_remote=0
+  if git -C "${PRIMARY_ROOT}" remote 2>/dev/null | grep -qx "${REMOTE}"; then
+    has_remote=1
+    if ! git -C "${PRIMARY_ROOT}" fetch --no-tags "${REMOTE}" "${DEFAULT_BRANCH}" 2>/dev/null; then
+      if [ "${do_sync}" -eq 1 ]; then
+        die "cannot fetch ${REMOTE}/${DEFAULT_BRANCH}; refusing to rescue and sync primary checkout"
+      fi
+      say "warning: git fetch ${REMOTE} ${DEFAULT_BRANCH} failed; continuing with --no-sync"
+    fi
+  fi
+
+  if [ "${has_remote}" -eq 1 ] && git -C "${PRIMARY_ROOT}" rev-parse --verify --quiet "refs/remotes/${REMOTE}/${DEFAULT_BRANCH}^{commit}" >/dev/null 2>&1; then
+    local ahead_count
+    ahead_count="$(git -C "${PRIMARY_ROOT}" rev-list --count "refs/remotes/${REMOTE}/${DEFAULT_BRANCH}..HEAD" 2>/dev/null || echo "")"
+    if [ -z "${ahead_count}" ]; then
+      die "cannot determine ahead commit count against ${REMOTE}/${DEFAULT_BRANCH}; refusing to touch primary"
+    fi
+    if [ "${ahead_count}" -gt 0 ]; then
+      die "primary checkout has ${ahead_count} unpushed local commit(s) ahead of ${REMOTE}/${DEFAULT_BRANCH}; refusing to rescue"
+    fi
+  fi
+
+  local primary_state=0
+  omnimux_primary_is_clean "${PRIMARY_ROOT}" || primary_state=$?
+  if [ "${primary_state}" -eq 2 ]; then
+    die "cannot read primary checkout status; refusing to rescue"
+  fi
+  if [ "${primary_state}" -eq 0 ]; then
+    if [ "${do_sync}" -eq 1 ] && [ "${has_remote}" -eq 1 ] && git -C "${PRIMARY_ROOT}" rev-parse --verify --quiet "refs/remotes/${REMOTE}/${DEFAULT_BRANCH}^{commit}" >/dev/null 2>&1; then
+      git -C "${PRIMARY_ROOT}" pull --ff-only "${REMOTE}" "${DEFAULT_BRANCH}"
+    fi
+    local clean_head
+    clean_head="$(git -C "${PRIMARY_ROOT}" rev-parse HEAD)"
+    say "primary checkout is already clean (no blocking dirty changes to rescue)."
+    echo "RESCUE_STATUS=already-clean"
+    echo "PRIMARY_HEAD=${clean_head}"
+    return 0
+  fi
+
+  if [ -z "${task}" ]; then
+    local stamp suffix=0 candidate
+    stamp="rescue-primary-$(date +%Y%m%d-%H%M%S)"
+    candidate="${stamp}"
+    while [ -e "${PRIMARY_WT_DIR}/${candidate}" ] || git -C "${PRIMARY_ROOT}" show-ref --verify --quiet "refs/heads/chore/${candidate}"; do
+      suffix=$((suffix + 1))
+      candidate="${stamp}-${suffix}"
+      [ "${suffix}" -lt 100 ] || die "cannot allocate unique rescue task name for ${stamp}"
+    done
+    task="${candidate}"
+  fi
+  validate_task "${task}"
+
+  local branch="chore/${task}"
+  local wt="${PRIMARY_WT_DIR}/${task}"
+  [ -e "${wt}" ] && die "rescue worktree already exists: ${wt#${PRIMARY_ROOT}/}"
+  if git -C "${PRIMARY_ROOT}" show-ref --verify --quiet "refs/heads/${branch}"; then
+    die "rescue branch already exists: ${branch}"
+  fi
+
+  local primary_head
+  primary_head="$(git -C "${PRIMARY_ROOT}" rev-parse HEAD)"
+  mkdir -p "${PRIMARY_WT_DIR}"
+
+  say "creating isolated rescue worktree .worktrees/${task} from primary HEAD (${primary_head:0:8})"
+  git -C "${PRIMARY_ROOT}" worktree add -b "${branch}" "${wt}" "${primary_head}" || die "git worktree add failed for rescue-primary"
+
+  local rescue_meta=""
+  if ! rescue_meta="$(OMNIMUX_PRIMARY_ALLOWED_UNTRACKED_RE="${OMNIMUX_PRIMARY_ALLOWED_UNTRACKED_RE}" node -e '
+    const { execFileSync } = require("node:child_process")
+    const { createHash } = require("node:crypto")
+    const {
+      copyFileSync,
+      existsSync,
+      lstatSync,
+      mkdirSync,
+      readdirSync,
+      readFileSync,
+      readlinkSync,
+      rmdirSync,
+      symlinkSync,
+      unlinkSync,
+      writeFileSync,
+      chmodSync,
+    } = require("node:fs")
+    const { dirname, join, resolve } = require("node:path")
+
+    const [primaryRoot, wtRoot, primaryHead] = process.argv.slice(1)
+    const allowedUntrackedRe = new RegExp(process.env.OMNIMUX_PRIMARY_ALLOWED_UNTRACKED_RE || "^$")
+
+    function git(cwd, args, opts = {}) {
+      return execFileSync("git", ["-C", cwd, ...args], {
+        encoding: opts.buffer ? undefined : "utf8",
+        maxBuffer: 64 * 1024 * 1024,
+        stdio: ["ignore", "pipe", "pipe"],
+        env: opts.env || process.env,
+      })
+    }
+
+    function gitOk(cwd, args) {
+      try {
+        execFileSync("git", ["-C", cwd, ...args], { stdio: "ignore" })
+        return true
+      } catch {
+        return false
+      }
+    }
+
+    function collectDirtyState() {
+      const statusRaw = git(primaryRoot, [
+        "-c", "core.quotepath=false",
+        "status", "--porcelain=v1", "-z",
+        "--untracked-files=no",
+        "--ignore-submodules=all",
+      ], { buffer: true })
+
+      const entries = statusRaw.toString("utf8").split("\0")
+      const trackedSet = new Set()
+      const stagedEntries = []
+      let hasStaged = false
+      let hasUnstaged = false
+
+      for (let i = 0; i < entries.length; i += 1) {
+        const rec = entries[i]
+        if (!rec) continue
+        const x = rec[0] || " "
+        const y = rec[1] || " "
+        const p1 = rec.slice(3)
+        if (!p1) continue
+        if (x === "U" || y === "U" || (x === "A" && y === "A") || (x === "D" && y === "D")) {
+          throw new Error(`unmerged conflict entry detected: ${p1}`)
+        }
+        let p2 = null
+        if (x === "R" || x === "C" || y === "R" || y === "C") {
+          p2 = entries[i + 1] || ""
+          i += 1
+        }
+        trackedSet.add(p1)
+        if (p2) trackedSet.add(p2)
+        if (x !== " " && x !== "?") {
+          hasStaged = true
+          stagedEntries.push({ x, y, p1, p2 })
+        }
+        if (y !== " " && y !== "?") {
+          hasUnstaged = true
+        }
+      }
+
+      const untrackedRaw = git(primaryRoot, [
+        "-c", "core.quotepath=false",
+        "ls-files", "--others", "--exclude-standard", "-z",
+      ], { buffer: true })
+      const blockingUntrackedSet = new Set()
+      for (const rel of untrackedRaw.toString("utf8").split("\0")) {
+        if (!rel) continue
+        if (allowedUntrackedRe.test(rel)) continue
+        blockingUntrackedSet.add(rel)
+      }
+
+      const allPaths = Array.from(new Set([...trackedSet, ...blockingUntrackedSet])).sort()
+      return {
+        trackedPaths: Array.from(trackedSet).sort(),
+        blockingUntrackedPaths: Array.from(blockingUntrackedSet).sort(),
+        allPaths,
+        stagedEntries,
+        hasStaged,
+        hasUnstaged,
+      }
+    }
+
+    function fingerprintPath(baseDir, relPath) {
+      const abs = join(baseDir, relPath)
+      let st
+      try {
+        st = lstatSync(abs)
+      } catch (err) {
+        if (err && err.code === "ENOENT") return { kind: "absent" }
+        throw err
+      }
+      if (st.isSymbolicLink()) {
+        return { kind: "symlink", target: readlinkSync(abs) }
+      }
+      if (st.isDirectory()) {
+        throw new Error(`refusing to rescue directory entry directly (possible nested repo): ${relPath}`)
+      }
+      if (!st.isFile()) {
+        throw new Error(`unsupported special file type at: ${relPath}`)
+      }
+      const data = readFileSync(abs)
+      const sha256 = createHash("sha256").update(data).digest("hex")
+      const execBit = (st.mode & 0o111) !== 0 ? 1 : 0
+      return { kind: "file", execBit, sha256 }
+    }
+
+    function snapshotPaths(baseDir, paths) {
+      const map = {}
+      for (const rel of paths) {
+        map[rel] = fingerprintPath(baseDir, rel)
+      }
+      return map
+    }
+
+    function snapshotsEqual(a, b, paths) {
+      for (const rel of paths) {
+        const fa = a[rel]
+        const fb = b[rel]
+        if (!fa || !fb || fa.kind !== fb.kind) return false
+        if (fa.kind === "symlink" && fa.target !== fb.target) return false
+        if (fa.kind === "file" && (fa.execBit !== fb.execBit || fa.sha256 !== fb.sha256)) return false
+      }
+      return true
+    }
+
+    function removeFileAndEmptyParents(baseDir, relPath) {
+      const abs = join(baseDir, relPath)
+      const rootAbs = resolve(baseDir)
+      try {
+        lstatSync(abs)
+        unlinkSync(abs)
+      } catch (err) {
+        if (!err || err.code !== "ENOENT") throw err
+      }
+      let dir = dirname(abs)
+      while (dir !== rootAbs && dir.startsWith(rootAbs + "/")) {
+        try {
+          if (readdirSync(dir).length === 0) {
+            rmdirSync(dir)
+            dir = dirname(dir)
+          } else {
+            break
+          }
+        } catch {
+          break
+        }
+      }
+    }
+
+    function applyFileFromPrimary(relPath) {
+      const src = join(primaryRoot, relPath)
+      const dst = join(wtRoot, relPath)
+      let st
+      try {
+        st = lstatSync(src)
+      } catch (err) {
+        if (err && err.code === "ENOENT") {
+          removeFileAndEmptyParents(wtRoot, relPath)
+          return
+        }
+        throw err
+      }
+      mkdirSync(dirname(dst), { recursive: true })
+      try {
+        lstatSync(dst)
+        unlinkSync(dst)
+      } catch (err) {
+        if (!err || err.code !== "ENOENT") throw err
+      }
+      if (st.isSymbolicLink()) {
+        symlinkSync(readlinkSync(src), dst)
+      } else {
+        copyFileSync(src, dst)
+        chmodSync(dst, (st.mode & 0o111) !== 0 ? 0o755 : 0o644)
+      }
+    }
+
+    function commitEnvFor(cwd) {
+      const env = { ...process.env }
+      const hasName = gitOk(cwd, ["config", "--get", "user.name"])
+      const hasEmail = gitOk(cwd, ["config", "--get", "user.email"])
+      if (!hasName) {
+        env.GIT_AUTHOR_NAME = env.GIT_AUTHOR_NAME || "omnimux-rescue"
+        env.GIT_COMMITTER_NAME = env.GIT_COMMITTER_NAME || "omnimux-rescue"
+      }
+      if (!hasEmail) {
+        env.GIT_AUTHOR_EMAIL = env.GIT_AUTHOR_EMAIL || "rescue@omnimux.local"
+        env.GIT_COMMITTER_EMAIL = env.GIT_COMMITTER_EMAIL || "rescue@omnimux.local"
+      }
+      return env
+    }
+
+    function stageAndCommitIfNeeded(paths, message) {
+      if (paths.length === 0) return false
+      const actionPaths = paths.filter((rel) => {
+        try {
+          lstatSync(join(wtRoot, rel))
+          return true
+        } catch {
+          return gitOk(wtRoot, ["ls-files", "--error-unmatch", "--", rel])
+        }
+      })
+      if (actionPaths.length === 0) return false
+      git(wtRoot, ["add", "-A", "--", ...actionPaths])
+      const hasCached = !gitOk(wtRoot, ["diff", "--cached", "--quiet", "--ignore-submodules=all"])
+      if (!hasCached) return false
+      git(wtRoot, ["-c", "commit.gpgsign=false", "commit", "-m", message], { env: commitEnvFor(wtRoot) })
+      return true
+    }
+
+    const initial = collectDirtyState()
+    if (initial.allPaths.length === 0) {
+      throw new Error("no blocking dirty paths found during rescue snapshot")
+    }
+    const snap1 = snapshotPaths(primaryRoot, initial.allPaths)
+
+    let commitCount = 0
+    // If both staged and unstaged/untracked changes exist (e.g. partial staging), preserve
+    // the staged index state first as its own commit so zero index work is lost.
+    if (initial.hasStaged && (initial.hasUnstaged || initial.blockingUntrackedPaths.length > 0)) {
+      const stagedPaths = new Set()
+      for (const entry of initial.stagedEntries) {
+        if (entry.p2) {
+          stagedPaths.add(entry.p2)
+          if (entry.x === "R") {
+            removeFileAndEmptyParents(wtRoot, entry.p2)
+          }
+        }
+        stagedPaths.add(entry.p1)
+        if (entry.x === "D") {
+          removeFileAndEmptyParents(wtRoot, entry.p1)
+        } else {
+          const lsOut = git(primaryRoot, ["ls-files", "--stage", "--", entry.p1]).trim()
+          const mode = lsOut.split(/\s+/)[0] || "100644"
+          const blob = git(primaryRoot, ["show", `:0:${entry.p1}`], { buffer: true })
+          const dst = join(wtRoot, entry.p1)
+          mkdirSync(dirname(dst), { recursive: true })
+          try {
+            lstatSync(dst)
+            unlinkSync(dst)
+          } catch (err) {
+            if (!err || err.code !== "ENOENT") throw err
+          }
+          if (mode === "120000") {
+            symlinkSync(blob.toString("utf8"), dst)
+          } else {
+            writeFileSync(dst, blob)
+            chmodSync(dst, mode === "100755" ? 0o755 : 0o644)
+          }
+        }
+      }
+      if (stageAndCommitIfNeeded(Array.from(stagedPaths).sort(), "chore(rescue): capture staged primary checkout changes")) {
+        commitCount += 1
+      }
+    }
+
+    for (const rel of initial.allPaths) {
+      applyFileFromPrimary(rel)
+    }
+    if (stageAndCommitIfNeeded(initial.allPaths, commitCount > 0
+      ? "chore(rescue): capture working-tree primary checkout changes"
+      : "chore(rescue): capture uncommitted primary checkout changes")) {
+      commitCount += 1
+    }
+
+    if (commitCount === 0) {
+      throw new Error("rescue worktree produced zero commits; refusing to clean primary checkout")
+    }
+
+    // Verification 1: rescued worktree matches Snapshot 1 byte-for-byte (including mode & symlink)
+    const wtSnap = snapshotPaths(wtRoot, initial.allPaths)
+    if (!snapshotsEqual(snap1, wtSnap, initial.allPaths)) {
+      throw new Error("post-copy checksum mismatch between primary snapshot and rescue worktree; aborting cleanup")
+    }
+
+    // Verification 2: rescued worktree has zero uncommitted/untracked remnants
+    const wtStatus = git(wtRoot, ["status", "--porcelain", "--untracked-files=all", "--ignore-submodules=all"]).trim()
+    if (wtStatus) {
+      throw new Error(`rescue worktree is not clean after commit (${wtStatus}); aborting cleanup`)
+    }
+
+    // Verification 3: primary checkout had zero concurrent edits during rescue (Snapshot 2 == Snapshot 1)
+    const after = collectDirtyState()
+    if (
+      after.allPaths.length !== initial.allPaths.length ||
+      after.allPaths.some((p, idx) => p !== initial.allPaths[idx])
+    ) {
+      throw new Error("primary checkout dirty file set changed concurrently during rescue; aborting cleanup")
+    }
+    const snap2 = snapshotPaths(primaryRoot, initial.allPaths)
+    if (!snapshotsEqual(snap1, snap2, initial.allPaths)) {
+      throw new Error("primary checkout file contents changed concurrently during rescue; aborting cleanup")
+    }
+
+    // Cleanup primary checkout strictly for the verified rescued paths
+    const trackedPathSet = new Set(initial.trackedPaths)
+    if (initial.trackedPaths.length > 0) {
+      git(primaryRoot, ["reset", "-q", "HEAD", "--", ...initial.trackedPaths])
+      const inHead = []
+      const notInHead = []
+      for (const rel of initial.trackedPaths) {
+        if (gitOk(primaryRoot, ["cat-file", "-e", `${primaryHead}:${rel}`])) {
+          inHead.push(rel)
+        } else {
+          notInHead.push(rel)
+        }
+      }
+      if (inHead.length > 0) {
+        git(primaryRoot, ["checkout", "-q", "HEAD", "--", ...inHead])
+      }
+      for (const rel of notInHead) {
+        removeFileAndEmptyParents(primaryRoot, rel)
+      }
+    }
+    for (const rel of initial.blockingUntrackedPaths) {
+      if (trackedPathSet.has(rel)) continue
+      removeFileAndEmptyParents(primaryRoot, rel)
+    }
+
+    const rescueCommit = git(wtRoot, ["rev-parse", "HEAD"]).trim()
+    process.stdout.write(JSON.stringify({
+      rescueCommit,
+      commitCount,
+      files: initial.allPaths,
+    }))
+  ' "${PRIMARY_ROOT}" "${wt}" "${primary_head}")"; then
+    die "rescue-primary aborted before cleaning primary checkout; inspect preserved worktree at ${wt#${PRIMARY_ROOT}/}"
+  fi
+
+  local post_state=0
+  omnimux_primary_is_clean "${PRIMARY_ROOT}" || post_state=$?
+  if [ "${post_state}" -ne 0 ]; then
+    die "primary checkout is still not clean after rescue-primary cleanup; inspect ${PRIMARY_ROOT} and ${wt#${PRIMARY_ROOT}/}"
+  fi
+
+  if [ "${do_sync}" -eq 1 ] && [ "${has_remote}" -eq 1 ] && git -C "${PRIMARY_ROOT}" rev-parse --verify --quiet "refs/remotes/${REMOTE}/${DEFAULT_BRANCH}^{commit}" >/dev/null 2>&1; then
+    say "fast-forwarding primary ${DEFAULT_BRANCH} to ${REMOTE}/${DEFAULT_BRANCH}..."
+    git -C "${PRIMARY_ROOT}" pull --ff-only "${REMOTE}" "${DEFAULT_BRANCH}"
+  fi
+
+  local new_primary_head
+  new_primary_head="$(git -C "${PRIMARY_ROOT}" rev-parse HEAD)"
+
+  local summary
+  summary="$(node -e '
+    const { execFileSync } = require("node:child_process")
+    const [primaryRoot, remoteRef, metaJson] = process.argv.slice(1)
+    const meta = JSON.parse(metaJson)
+    let triageHint = "inspect-required"
+    if (remoteRef) {
+      try {
+        execFileSync("git", ["-C", primaryRoot, "rev-parse", "--verify", "--quiet", `${remoteRef}^{commit}`], { stdio: "ignore" })
+        try {
+          execFileSync("git", ["-C", primaryRoot, "diff", "--quiet", meta.rescueCommit, remoteRef, "--", ...meta.files], { stdio: "ignore" })
+          triageHint = "type-0-identical-to-origin-main"
+        } catch {
+          triageHint = "inspect-required"
+        }
+      } catch {
+        triageHint = "inspect-required"
+      }
+    }
+    console.log(`RESCUE_COMMIT=${meta.rescueCommit}`)
+    console.log(`RESCUE_COMMITS=${meta.commitCount}`)
+    console.log(`RESCUE_FILES=${meta.files.length}`)
+    console.log(`TRIAGE_HINT=${triageHint}`)
+    for (const f of meta.files) console.log(`RESCUE_FILE=${f}`)
+  ' "${PRIMARY_ROOT}" "$([ "${has_remote}" -eq 1 ] && echo "refs/remotes/${REMOTE}/${DEFAULT_BRANCH}" || echo "")" "${rescue_meta}")"
+
+  say "✅ 主检出阻断性脏改动已原子迁出并校验一致，主目录已清理并恢复干净。"
+  echo "RESCUE_STATUS=rescued"
+  echo "RESCUE_WORKTREE=.worktrees/${task}"
+  echo "RESCUE_BRANCH=${branch}"
+  echo "RESCUE_BASE=${primary_head}"
+  echo "PRIMARY_HEAD=${new_primary_head}"
+  printf '%s\n' "${summary}"
+}
+
 usage() {
   cat <<EOF
 worktree.sh — Universal Git worktree lifecycle management.
@@ -1104,11 +1622,16 @@ Usage:
   worktree.sh auto-new <issue_id>            fetch GitHub Issue and create worktree automatically
   worktree.sh list                           show active worktrees and dirty counts
   worktree.sh audit                          list merged worktrees safe to clean (read-only)
+  worktree.sh rescue-primary [--task <name>] [--no-sync] atomically move blocking primary dirty changes into an isolated worktree, verify, clean primary, and ff-only sync
   worktree.sh ship <task> --pr <num> [--keep-worktree] verify matching PR MERGED, sync ${DEFAULT_BRANCH}, materialize Dev, and clean worktree
   worktree.sh remove <task> [flags]          safely remove worktree (--discard, --abandon, --pr <num>)
   worktree.sh prune                          drop stale worktree records & list safe-to-delete branches
   worktree.sh clean                          batch clean merged & clean worktrees
   worktree.sh help
+
+Flags (rescue-primary):
+  --task <name>    explicit ASCII kebab-case task name for .worktrees/<name>
+  --no-sync        skip trailing git pull --ff-only after rescuing and cleaning primary
 
 Flags (ship):
   --keep-worktree  preserve worktree directory and branch after successful merge and materialization
@@ -1128,17 +1651,18 @@ EOF
 cmd="${1:-}"
 shift || true
 case "${cmd}" in
-  init)     cmd_init ;;
-  new)      [ "$#" -ge 1 ] || die "usage: worktree.sh new <task> [base] [--type feat|fix|chore|agent] [--issue <id>]"; cmd_new "$@" ;;
-  auto-new) [ "$#" -ge 1 ] || die "usage: worktree.sh auto-new <issue_id>"; cmd_auto_new "$@" ;;
-  list)     cmd_list ;;
-  audit)    audit_worktrees ;;
-  ship)     [ "$#" -ge 1 ] || die "usage: worktree.sh ship <task> --pr <num> [--keep-worktree]"; cmd_ship "$@" ;;
-  finish)   [ "$#" -ge 1 ] || die "usage: worktree.sh ship <task> --pr <num> [--keep-worktree]"; cmd_ship "$@" ;;
-  remove)   [ "$#" -ge 1 ] || die "usage: worktree.sh remove <task> [--discard] [--abandon] [--pr <num>]"; cmd_remove "$@" ;;
-  prune)    cmd_prune ;;
-  clean)    cmd_clean "$@" ;;
+  init)           cmd_init ;;
+  new)            [ "$#" -ge 1 ] || die "usage: worktree.sh new <task> [base] [--type feat|fix|chore|agent] [--issue <id>]"; cmd_new "$@" ;;
+  auto-new)       [ "$#" -ge 1 ] || die "usage: worktree.sh auto-new <issue_id>"; cmd_auto_new "$@" ;;
+  list)           cmd_list ;;
+  audit)          audit_worktrees ;;
+  rescue-primary) cmd_rescue_primary "$@" ;;
+  ship)           [ "$#" -ge 1 ] || die "usage: worktree.sh ship <task> --pr <num> [--keep-worktree]"; cmd_ship "$@" ;;
+  finish)         [ "$#" -ge 1 ] || die "usage: worktree.sh ship <task> --pr <num> [--keep-worktree]"; cmd_ship "$@" ;;
+  remove)         [ "$#" -ge 1 ] || die "usage: worktree.sh remove <task> [--discard] [--abandon] [--pr <num>]"; cmd_remove "$@" ;;
+  prune)          cmd_prune ;;
+  clean)          cmd_clean "$@" ;;
   help | -h | --help) usage ;;
-  "")       usage; exit 1 ;;
-  *)        die "unknown command: ${cmd} (see: worktree.sh help)" ;;
+  "")             usage; exit 1 ;;
+  *)              die "unknown command: ${cmd} (see: worktree.sh help)" ;;
 esac

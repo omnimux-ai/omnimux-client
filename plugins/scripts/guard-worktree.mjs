@@ -5829,6 +5829,167 @@ export function decideSearchTarget({ toolName, toolInput = {}, homeDir = homedir
   }
 }
 
+const PRIMARY_RESCUE_SCRIPT_RE = /(?:^|\/)worktree\.sh$/
+const PRIMARY_RESCUE_ALLOWED_REL_PATHS = new Set(['plugins/scripts/worktree.sh', 'scripts/worktree.sh'])
+const PRIMARY_RESCUE_TASK_RE = /^[a-z0-9][a-z0-9-]*$/
+const PRIMARY_RESCUE_RESERVED_TASKS = new Set([
+  'main', 'master', 'omnimux', 'origin', 'fork', 'upstream',
+  'feat', 'fix', 'chore', 'agent', 'codex', 'merge', '.git', '.worktrees',
+])
+
+function validatePrimaryRescueInvocation(scriptRaw, rescueArgs, effectiveCwd, rawStage) {
+  let resolvedScript = ''
+  try {
+    resolvedScript = canonicalTarget(toFullPath(scriptRaw, effectiveCwd))
+  } catch {
+    return {
+      decision: 'deny',
+      reason: 'forbidden-untrusted-primary-rescue-script',
+      script: scriptRaw,
+      segment: rawStage,
+    }
+  }
+  if (!resolvedScript || isWorktreePath(resolvedScript)) {
+    return {
+      decision: 'deny',
+      reason: 'forbidden-untrusted-primary-rescue-script',
+      script: resolvedScript || scriptRaw,
+      segment: rawStage,
+    }
+  }
+  let scriptDir = ''
+  try {
+    scriptDir = existingDirectory(resolvedScript)
+  } catch {
+    return {
+      decision: 'deny',
+      reason: 'forbidden-untrusted-primary-rescue-script',
+      script: resolvedScript,
+      segment: rawStage,
+    }
+  }
+  const repoRoot = gitRoot(scriptDir)
+  if (!repoRoot || isWorktreePath(repoRoot) || gitFileState(resolvedScript, scriptDir) !== 'tracked-file') {
+    return {
+      decision: 'deny',
+      reason: 'forbidden-untrusted-primary-rescue-script',
+      script: resolvedScript,
+      segment: rawStage,
+    }
+  }
+  const relPath = relative(canonicalTarget(repoRoot), resolvedScript).split(sep).join('/')
+  if (!PRIMARY_RESCUE_ALLOWED_REL_PATHS.has(relPath)) {
+    return {
+      decision: 'deny',
+      reason: 'forbidden-untrusted-primary-rescue-script',
+      script: resolvedScript,
+      segment: rawStage,
+    }
+  }
+
+  for (let i = 0; i < rescueArgs.length; i += 1) {
+    const arg = rescueArgs[i]
+    if (arg === '--no-sync') continue
+    if (arg === '--task' || arg.startsWith('--task=')) {
+      const val = arg === '--task' ? rescueArgs[++i] : arg.slice('--task='.length)
+      if (
+        !val ||
+        val.length > 60 ||
+        !PRIMARY_RESCUE_TASK_RE.test(val) ||
+        PRIMARY_RESCUE_RESERVED_TASKS.has(val)
+      ) {
+        return {
+          decision: 'deny',
+          reason: 'forbidden-invalid-primary-rescue',
+          flag: val ? `--task ${val}` : '--task',
+          segment: rawStage,
+        }
+      }
+      continue
+    }
+    return {
+      decision: 'deny',
+      reason: 'forbidden-invalid-primary-rescue',
+      flag: arg,
+      segment: rawStage,
+    }
+  }
+  return undefined
+}
+
+export function decidePrimaryRescueCommand(command, cwd, depth = 0) {
+  if (!command || typeof command !== 'string' || depth > 4) return { decision: 'allow' }
+  const sessionCwd = resolve(cwd || process.cwd())
+  let upstreamStdinText = ''
+  const denied = walkShellCommands(command, sessionCwd, {
+    onStatementStart() {
+      upstreamStdinText = ''
+    },
+    onStage({ rawStage, currentCwd, isPipeline, heredocs }) {
+      const words = tokenizeCommandLine(stripShellRedirection(rawStage))
+      if (words.length === 0) return undefined
+      if (isPipeline) {
+        const stdinText = extractUpstreamStdinScript(words, heredocs)
+        if (stdinText) upstreamStdinText = stdinText
+      }
+      const { words: effectiveWords, targetDir: wrapperDir } = unwrapExecutionWrapperWithMeta(words)
+      if (effectiveWords.length === 0) return undefined
+      const effectiveCwd = wrapperDir ? resolve(currentCwd, wrapperDir) : currentCwd
+      const verb = commandBasename(effectiveWords[0])
+
+      if (READONLY_INSPECTION_VERBS.has(verb)) return undefined
+      if (verb === 'sed' && !hasInPlaceFlag(effectiveWords.slice(1), new Set(['-e', '--expression', '-f', '--file']))) {
+        return undefined
+      }
+
+      if (PRIMARY_RESCUE_SCRIPT_RE.test(effectiveWords[0]) && effectiveWords[1] === 'rescue-primary') {
+        return validatePrimaryRescueInvocation(effectiveWords[0], effectiveWords.slice(2), effectiveCwd, rawStage)
+      }
+
+      if (['bash', 'sh', 'zsh', 'dash', 'ksh', 'source', '.'].includes(verb)) {
+        const shellMeta = parseShellInvocation(effectiveWords)
+        if (!shellMeta || shellMeta.syntaxCheckOnly) return undefined
+        if (shellMeta.inlineScript) {
+          const nested = decidePrimaryRescueCommand(resolveEvalScript(shellMeta.inlineScript), effectiveCwd, depth + 1)
+          if (nested.decision === 'deny') return nested
+          return undefined
+        }
+        if (shellMeta.procSubCmd) {
+          for (const body of extractProducerScriptsFromProcessSub(shellMeta.procSubCmd)) {
+            const nested = decidePrimaryRescueCommand(body, effectiveCwd, depth + 1)
+            if (nested.decision === 'deny') return nested
+          }
+          return undefined
+        }
+        if (shellMeta.scriptFile && PRIMARY_RESCUE_SCRIPT_RE.test(shellMeta.scriptFile)) {
+          const scriptIdx = effectiveWords.indexOf(shellMeta.scriptFile)
+          const scriptArgs = scriptIdx >= 0 ? effectiveWords.slice(scriptIdx + 1) : []
+          if (scriptArgs[0] === 'rescue-primary') {
+            return validatePrimaryRescueInvocation(shellMeta.scriptFile, scriptArgs.slice(1), effectiveCwd, rawStage)
+          }
+          return undefined
+        }
+        if (!shellMeta.scriptFile) {
+          for (const body of heredocs) {
+            const nested = decidePrimaryRescueCommand(body, effectiveCwd, depth + 1)
+            if (nested.decision === 'deny') return nested
+          }
+          for (const body of extractProcessSubstitutionPayloads(rawStage).scripts) {
+            const nested = decidePrimaryRescueCommand(body, effectiveCwd, depth + 1)
+            if (nested.decision === 'deny') return nested
+          }
+          if (isPipeline && upstreamStdinText) {
+            const nested = decidePrimaryRescueCommand(upstreamStdinText, effectiveCwd, depth + 1)
+            if (nested.decision === 'deny') return nested
+          }
+        }
+      }
+      return undefined
+    },
+  }, depth)
+  return denied || { decision: 'allow' }
+}
+
 export function decideBashCommand({ command, cwd, ownerRoot }) {
   if (!command || typeof command !== 'string') return { decision: 'allow' }
 
@@ -5879,6 +6040,12 @@ export function decideBashCommand({ command, cwd, ownerRoot }) {
   const gitMutation = decideGitWorkingTreeMutation(command, cwd)
   if (gitMutation.decision === 'deny') {
     return gitMutation
+  }
+
+  // 3.8. 检查受控主检出疏通入口 rescue-primary（仅放行主检出权威脚本与白名单参数）
+  const rescueDecision = decidePrimaryRescueCommand(command, cwd)
+  if (rescueDecision.decision === 'deny') {
+    return rescueDecision
   }
 
   // 4. 检查在主仓本地 main 分支上执行 git merge 或 git commit
@@ -6024,6 +6191,19 @@ function decisionJson(hookEventName, decision, reason, extra = {}) {
         '🚫【OmniMux 仓库 Hook】严禁在主 checkout 通过 git 变异子命令改写工作树！',
         `📌 被拦截操作：${extra.mutation || 'git mutation'}`,
         '👉 强制流程：请暂停当前动作，向用户汇报当前阻断并等待指示切入专属 Worktree；严禁私自绕行。',
+      ].join('\n')
+    } else if (reason === 'forbidden-untrusted-primary-rescue-script') {
+      output.permissionDecisionReason = [
+        '🚫【OmniMux 仓库 Hook】rescue-primary 仅允许执行主检出中受版本管理的权威 worktree.sh！',
+        `🎯 被拦截脚本：${extra.script || '未知脚本'}`,
+        '📌 核心防线原则：严禁从 linked worktree 或外部临时路径执行篡改/伪造的 worktree.sh 清理主检出。',
+        '👉 正确流程：请在主检出直接运行 bash plugins/scripts/worktree.sh rescue-primary。',
+      ].join('\n')
+    } else if (reason === 'forbidden-invalid-primary-rescue') {
+      output.permissionDecisionReason = [
+        '🚫【OmniMux 仓库 Hook】rescue-primary 拒绝非白名单或破坏性参数！',
+        `🎯 被拦截参数：${extra.flag || '未知参数'}`,
+        '📌 核心防线原则：rescue-primary 仅允许先原子迁出并校验后再清理主检出，仅支持 --task <kebab-case> 与 --no-sync，严禁传入 --discard/--force/--abandon。',
       ].join('\n')
     } else if (reason === 'forbidden-main-branch-merge') {
       output.permissionDecisionReason = [
