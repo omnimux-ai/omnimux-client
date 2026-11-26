@@ -38,8 +38,6 @@ export interface SlotPickRequest {
 }
 
 export interface SlotWellsProps {
-  /** Text sources are shown beside the prompt field. */
-  presentation?: 'prompt';
   /** deriveSlotLayout 派生的布局预设与槽位定义。 */
   layout: SlotLayout;
   records?: import('../../../../../../shared/graph/feedSlot/assembleEffectiveInputs.ts').SlotSelection[];

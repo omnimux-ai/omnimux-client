@@ -87,10 +87,11 @@ test('a composed text binding with a role conflict remains available for replace
   composition:{kind:'content_with_instruction', localRole:'instruction'}};
  const occupant = {edgeId:'replaced', sourceNodeId:'source'};
  const html = render({
-  ...props, presentation:'prompt', layout:{preset:'strip', outputType:'text', slots:[prompt], addButton:false},
+  ...props, layout:{preset:'strip', outputType:'text', slots:[prompt], addButton:false},
   records:[{slot:prompt, occupant, state:'invalid', reasonCode:'role_conflict'}],
  });
- assert.match(html, /role="button" tabindex="0" data-slot="prompt" data-slot-role="prompt" data-slot-edge="replaced" data-slot-state="invalid"/);
+ assert.match(html, /class="wf-slot-well wf-slot-well--filled" role="button" tabindex="0" data-slot="prompt" data-slot-role="prompt" data-slot-edge="replaced" data-slot-state="invalid"/);
+ assert.doesNotMatch(html, /wf-prompt-references|wf-prompt-reference/);
 });
 test('任何槽位状态都不再渲染卡槽下方常驻文案（Issue #4048）',()=>{
  const imageSpec = {slot:'reference_images',type:'image',role:'reference',min:0,max:1,labelKey:'panel.slot.reference_image'};

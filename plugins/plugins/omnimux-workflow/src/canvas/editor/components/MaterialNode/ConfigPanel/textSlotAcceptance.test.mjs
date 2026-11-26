@@ -348,7 +348,7 @@ describe('场景 2 验收：纯文本模型卡槽不展示（none 预设），�
     // 验证类名拼接逻辑
     assert.match(
       configPanelSrc,
-      /className=\{\`wf-config-panel__prompt-header\$\{!hasSlots && !textSources\.length \? ' wf-config-panel__prompt-header--empty-slots' : ''\}\`\}/,
+      /className=\{\`wf-config-panel__prompt-header\$\{!hasSlots && !textOnlySources\.length && !documentSources\.length \? ' wf-config-panel__prompt-header--empty-slots' : ''\}\`\}/,
     );
     // 验证当 !hasSlots 时不渲染 SlotWells，且不再渲染旧版的多余 <span /> 标签
     assert.match(configPanelSrc, /\{hasSlots\s*&&\s*\(\s*<SlotWells/);

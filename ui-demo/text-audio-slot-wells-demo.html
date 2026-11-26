@@ -1,0 +1,800 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>画布上游文本与音频输入卡槽统一（Issue #339）修改前后演示</title>
+<style>
+  :root {
+    --dsw-alias-bg-base: #eef0f3;
+    --dsw-alias-bg-layer-1: #ffffff;
+    --dsw-alias-bg-layer-2: #f3f4f6;
+    --dsw-alias-bg-layer-3: #e8eaee;
+    --dsw-alias-bg-mask-1: rgba(31, 35, 41, 0.14);
+    --dsw-alias-border-l1: #e3e5e9;
+    --dsw-alias-border-l2: #d4d8df;
+    --dsw-alias-border-l3: #b8bec8;
+    --dsw-alias-interactive-bg-hover: #e9ecf1;
+    --dsw-alias-label-primary: #1f2329;
+    --dsw-alias-label-secondary: #5f6672;
+    --dsw-alias-label-tertiary: #8c93a0;
+    --dsw-alias-brand-primary: #4176e6;
+    --dsw-alias-state-error-primary: #e03e3e;
+    --dsw-alias-state-warn-primary: #b8860b;
+    --dsw-specific-menu: rgba(255, 255, 255, 0.94);
+    --demo-canvas-bg: #e7eaef;
+    --demo-canvas-dot: rgba(31, 35, 41, 0.11);
+    --demo-panel-bg: #ffffff;
+    --demo-panel-shadow: 0 12px 32px rgba(15, 20, 32, 0.10), 0 0 0 1px rgba(15, 20, 32, 0.06);
+  }
+  body[data-theme="dark"] {
+    --dsw-alias-bg-base: #121316;
+    --dsw-alias-bg-layer-1: #1c1d21;
+    --dsw-alias-bg-layer-2: #282a2f;
+    --dsw-alias-bg-layer-3: #32353c;
+    --dsw-alias-bg-mask-1: rgba(0, 0, 0, 0.45);
+    --dsw-alias-border-l1: #2b2e35;
+    --dsw-alias-border-l2: #3a3e47;
+    --dsw-alias-border-l3: #505663;
+    --dsw-alias-interactive-bg-hover: #353841;
+    --dsw-alias-label-primary: #f1f3f5;
+    --dsw-alias-label-secondary: #adb2bc;
+    --dsw-alias-label-tertiary: #79808d;
+    --dsw-alias-brand-primary: #679efe;
+    --dsw-alias-state-error-primary: #ff6b66;
+    --dsw-alias-state-warn-primary: #e5b546;
+    --dsw-specific-menu: rgba(31, 33, 38, 0.94);
+    --demo-canvas-bg: #0f1013;
+    --demo-canvas-dot: rgba(255, 255, 255, 0.09);
+    --demo-panel-bg: #1c1d21;
+    --demo-panel-shadow: 0 16px 40px rgba(0, 0, 0, 0.50), 0 0 0 1px rgba(255, 255, 255, 0.08);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", Arial, sans-serif;
+    color: var(--dsw-alias-label-primary);
+    background: var(--dsw-alias-bg-base);
+    -webkit-font-smoothing: antialiased;
+    transition: background-color 180ms ease, color 180ms ease;
+  }
+  button { font: inherit; color: inherit; }
+
+  .topbar {
+    position: sticky; top: 0; z-index: 40;
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    padding: 12px 24px;
+    background: var(--dsw-alias-bg-layer-1);
+    border-bottom: 1px solid var(--dsw-alias-border-l1);
+  }
+  .topbar h1 { font-size: 15px; margin: 0; font-weight: 600; }
+  .topbar .spacer { flex: 1; }
+  .pill-group {
+    display: inline-flex; gap: 2px; padding: 3px;
+    background: var(--dsw-alias-bg-layer-2);
+    border: 1px solid var(--dsw-alias-border-l1);
+    border-radius: 999px;
+  }
+  .pill-group button {
+    border: 0; cursor: pointer; font-size: 12px; padding: 5px 12px;
+    border-radius: 999px; background: transparent;
+    color: var(--dsw-alias-label-secondary);
+    transition: background-color 120ms ease, color 120ms ease;
+  }
+  .pill-group button.active {
+    background: var(--dsw-alias-bg-layer-1);
+    color: var(--dsw-alias-label-primary);
+    font-weight: 600;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.14);
+  }
+
+  .page { max-width: 1240px; margin: 0 auto; padding: 24px 24px 80px; }
+  .section { margin-bottom: 32px; }
+  .section-head {
+    display: flex; align-items: baseline; justify-content: space-between;
+    gap: 12px; flex-wrap: wrap; margin-bottom: 12px;
+  }
+  .section-head h2 { margin: 0; font-size: 15px; font-weight: 600; }
+  .section-head .controls { display: flex; gap: 8px; flex-wrap: wrap; }
+  .action-btn {
+    border: 1px solid var(--dsw-alias-border-l2);
+    background: var(--dsw-alias-bg-layer-1);
+    color: var(--dsw-alias-label-primary);
+    border-radius: 8px; padding: 4px 10px; font-size: 12px; cursor: pointer;
+    transition: background-color 120ms ease, border-color 120ms ease;
+  }
+  .action-btn:hover { background: var(--dsw-alias-interactive-bg-hover); border-color: var(--dsw-alias-border-l3); }
+
+  .compare-grid {
+    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px; align-items: start;
+  }
+  body[data-width="narrow"] .compare-grid {
+    grid-template-columns: minmax(0, 440px);
+    justify-content: center;
+  }
+  @media (max-width: 860px) {
+    .compare-grid { grid-template-columns: minmax(0, 1fr); }
+  }
+
+  .stage-card {
+    background: var(--demo-canvas-bg);
+    background-image: radial-gradient(var(--demo-canvas-dot) 1px, transparent 1px);
+    background-size: 16px 16px;
+    border: 1px solid var(--dsw-alias-border-l1);
+    border-radius: 14px;
+    padding: 16px;
+  }
+  .stage-tag {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 999px;
+    margin-bottom: 12px;
+    background: var(--dsw-alias-bg-layer-1);
+    border: 1px solid var(--dsw-alias-border-l2);
+    color: var(--dsw-alias-label-secondary);
+  }
+  .stage-tag--after {
+    border-color: var(--dsw-alias-brand-primary);
+    color: var(--dsw-alias-brand-primary);
+  }
+
+  /* ==================== ConfigPanel 真实结构复刻 ==================== */
+  .wf-config-panel {
+    width: 100%;
+    max-width: 520px;
+    border-radius: 18px;
+    background: var(--demo-panel-bg);
+    box-shadow: var(--demo-panel-shadow);
+    padding: 14px 16px 12px;
+  }
+  .wf-config-panel__prompt-container {
+    display: flex; flex-direction: column;
+  }
+  .wf-config-panel__prompt-header {
+    display: flex; align-items: center; justify-content: flex-start;
+    flex-wrap: wrap; gap: 8px;
+    margin-bottom: 8px;
+    min-height: 44px;
+  }
+  .wf-config-panel__prompt-header--empty-slots {
+    min-height: 24px;
+    margin-bottom: 4px;
+    justify-content: flex-end;
+  }
+  .wf-config-panel__prompt-header-actions {
+    margin-left: auto;
+    display: inline-flex; align-items: center;
+  }
+  .wf-config-panel__expand-btn {
+    width: 24px; height: 24px; border: 0; border-radius: 6px;
+    background: transparent; color: var(--dsw-alias-label-secondary);
+    display: inline-flex; align-items: center; justify-content: center; cursor: pointer;
+  }
+  .wf-config-panel__expand-btn:hover { background: var(--dsw-alias-interactive-bg-hover); }
+
+  /* 顶部卡槽区 */
+  .wf-slot-wells {
+    display: flex; align-items: center; flex-wrap: wrap; gap: 8px; max-width: 100%;
+  }
+
+  /* 44x44 统一素材卡槽 */
+  .wf-slot-well {
+    box-sizing: border-box;
+    width: 44px; height: 44px;
+    border-radius: 10px;
+    border: 1.5px solid var(--dsw-alias-border-l2);
+    background: var(--dsw-alias-bg-layer-2);
+    position: relative; overflow: visible;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0; padding: 0; cursor: pointer;
+    transition: border-color 150ms ease, background-color 150ms ease;
+  }
+  .wf-slot-well:hover {
+    border-color: var(--dsw-alias-border-l3);
+    background: var(--dsw-alias-interactive-bg-hover);
+  }
+  .wf-slot-well:focus-visible {
+    outline: 2px solid var(--dsw-alias-brand-primary);
+    outline-offset: 2px;
+  }
+  .wf-slot-well--empty,
+  button.wf-slot-well.wf-slot-well--append {
+    border-style: dashed;
+    border-color: var(--dsw-alias-border-l3);
+    background: transparent;
+    color: var(--dsw-alias-label-secondary);
+  }
+  .wf-slot-well--empty:hover,
+  button.wf-slot-well.wf-slot-well--append:hover {
+    border-style: solid;
+    border-color: var(--dsw-alias-border-l3);
+    background: var(--dsw-alias-interactive-bg-hover);
+    color: var(--dsw-alias-label-primary);
+  }
+  .wf-slot-well--required { border-color: var(--dsw-alias-state-warn-primary); }
+  .wf-slot-well--conflict { border-color: var(--dsw-alias-state-error-primary); }
+
+  .wf-slot-well__media {
+    width: 100%; height: 100%; object-fit: cover; border-radius: 9px; display: block;
+  }
+  .wf-slot-well__position {
+    position: absolute; inset: auto 1px 1px;
+    padding: 1px 2px; border-radius: 0 0 7px 7px;
+    background: var(--dsw-alias-bg-layer-2);
+    color: var(--dsw-alias-label-primary);
+    font-size: 9px; line-height: 12px; text-align: center;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    pointer-events: none;
+  }
+  .wf-slot-well--empty:has(.wf-slot-well__position) > svg { transform: translateY(-5px); }
+
+  /* 新样式：图 2 风格的图标 + 单行省略节点名方块 */
+  .wf-slot-well__tile {
+    box-sizing: border-box;
+    width: 100%; height: 100%;
+    min-width: 0; min-height: 0;
+    padding: 4px 3px 3px;
+    border-radius: 9px;
+    overflow: hidden;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: 3px;
+    color: var(--dsw-alias-label-secondary);
+  }
+  .wf-slot-well__tile > svg {
+    flex-shrink: 0;
+    color: var(--dsw-alias-label-secondary);
+  }
+  .wf-slot-well:hover .wf-slot-well__tile > svg {
+    color: var(--dsw-alias-label-primary);
+  }
+  .wf-slot-well__tile-name {
+    display: block;
+    width: 100%;
+    min-width: 0;
+    font-size: 10px;
+    line-height: 12px;
+    font-weight: 500;
+    text-align: center;
+    color: var(--dsw-alias-label-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* 旧样式对比：底部横条 & 仅音符图标 */
+  .wf-config-panel__prompt-references {
+    display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px;
+  }
+  .wf-prompt-reference {
+    display: inline-flex; align-items: center; gap: 6px;
+    max-width: 100%; min-height: 28px; padding: 4px 9px;
+    border: 1px solid var(--dsw-alias-border-l2); border-radius: 6px;
+    background: var(--dsw-alias-bg-layer-2);
+    color: var(--dsw-alias-label-secondary);
+    font-size: 11px; cursor: pointer;
+  }
+  .wf-prompt-reference--highlight {
+    outline: 2px solid var(--dsw-alias-state-error-primary);
+    outline-offset: 3px;
+  }
+  .wf-slot-well__placeholder {
+    width: 100%; height: 100%;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 9px;
+    color: var(--dsw-alias-label-secondary);
+  }
+  .wf-slot-well__placeholder--audio { color: var(--dsw-alias-brand-primary); }
+  .wf-slot-well__placeholder--broken { color: var(--dsw-alias-state-error-primary); }
+  .wf-slot-well__spin { animation: wf-spin 1s linear infinite; }
+  @keyframes wf-spin { to { transform: rotate(360deg); } }
+
+  .wf-slot-wells__swap {
+    width: 22px; height: 22px; border-radius: 50%;
+    border: 1px solid var(--dsw-alias-border-l2);
+    background: var(--dsw-alias-bg-layer-2);
+    color: var(--dsw-alias-label-secondary);
+    display: inline-flex; align-items: center; justify-content: center;
+    cursor: pointer; flex-shrink: 0; padding: 0;
+  }
+
+  /* Prompt 文本区与底栏 */
+  .wf-prompt-editor {
+    min-height: 52px; padding: 4px 0 6px;
+    font-size: 14px; line-height: 1.5;
+    color: var(--dsw-alias-label-tertiary);
+  }
+  .wf-prompt-meta {
+    display: flex; align-items: center; justify-content: flex-end; gap: 10px;
+    font-size: 11px; color: var(--dsw-alias-label-tertiary);
+    margin-bottom: 6px; font-variant-numeric: tabular-nums;
+  }
+  .wf-bottom-bar {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    margin-top: 10px;
+  }
+  .wf-params-group { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
+  .wf-pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    height: 30px; padding: 0 11px; border-radius: 999px;
+    border: 1px solid var(--dsw-alias-border-l2);
+    background: var(--dsw-alias-bg-layer-2);
+    color: var(--dsw-alias-label-primary);
+    font-size: 12px; white-space: nowrap;
+  }
+  .wf-send-btn {
+    width: 32px; height: 32px; border-radius: 50%;
+    border: 1px solid var(--dsw-alias-border-l2);
+    background: var(--dsw-alias-bg-layer-2);
+    color: var(--dsw-alias-label-primary);
+    display: inline-flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+
+  /* 悬停预览浮层（真实不透明表面） */
+  .wf-slot-hover-preview {
+    position: fixed; z-index: 1200; width: 248px;
+    display: flex; flex-direction: column; align-items: center; gap: 8px;
+    color: var(--dsw-alias-label-primary); font-size: 12px;
+  }
+  .wf-slot-hover-preview__card {
+    width: 100%; overflow: hidden; padding: 8px 10px; border-radius: 12px;
+    background: rgb(from var(--dsw-specific-menu) r g b / 1);
+    border: 1px solid var(--dsw-alias-border-l2);
+    box-shadow: 0 8px 24px var(--dsw-alias-bg-mask-1);
+    display: flex; flex-direction: column; gap: 6px;
+  }
+  .wf-slot-hover-preview__title {
+    font-size: 12px; font-weight: 600; line-height: 16px;
+    color: var(--dsw-alias-label-primary);
+    overflow-wrap: anywhere;
+  }
+  .wf-slot-hover-preview__media {
+    font-size: 12px; line-height: 18px;
+    color: var(--dsw-alias-label-secondary);
+    white-space: pre-wrap; overflow-wrap: anywhere;
+  }
+  .wf-slot-hover-preview__actions {
+    display: flex; gap: 8px; justify-content: center;
+  }
+  .wf-slot-well__replace-pill {
+    height: 32px; padding: 0 12px; border-radius: 8px;
+    border: 1px solid var(--dsw-alias-border-l2);
+    background: rgb(from var(--dsw-alias-bg-layer-2) r g b / 1);
+    color: var(--dsw-alias-label-primary);
+    font-size: 12px; cursor: pointer;
+  }
+  .wf-slot-well__replace-pill:hover {
+    background: rgb(from var(--dsw-alias-interactive-bg-hover) r g b / 1);
+  }
+
+  .stress-row {
+    display: flex; align-items: center; flex-wrap: wrap; gap: 10px;
+    padding: 14px 16px; border-radius: 12px;
+    background: var(--demo-panel-bg);
+    border: 1px solid var(--dsw-alias-border-l1);
+  }
+  .stress-item { display: flex; flex-direction: column; align-items: center; gap: 5px; }
+  .stress-caption { font-size: 11px; color: var(--dsw-alias-label-secondary); }
+</style>
+</head>
+<body data-theme="dark" data-width="wide">
+  <header class="topbar">
+    <h1>画布上游文本与音频卡槽统一（Issue #339）</h1>
+    <div class="spacer"></div>
+    <div class="pill-group" role="group" aria-label="视口宽度">
+      <button type="button" class="active" data-set-width="wide">双栏对比</button>
+      <button type="button" data-set-width="narrow">窄屏单栏</button>
+    </div>
+    <div class="pill-group" role="group" aria-label="主题切换">
+      <button type="button" class="active" data-set-theme="dark">深色主题</button>
+      <button type="button" data-set-theme="light">浅色主题</button>
+    </div>
+  </header>
+
+  <main class="page">
+    <!-- 场景 1：Wan 3.0 首帧（用户图 1 原场景） -->
+    <section class="section">
+      <div class="section-head">
+        <h2>1. 首帧模式（named）图片 + 上游文本</h2>
+        <div class="controls">
+          <button type="button" class="action-btn" id="toggle-s1-text">切换文本绑定（已连 / 断开）</button>
+        </div>
+      </div>
+      <div class="compare-grid">
+        <div class="stage-card">
+          <span class="stage-tag">修改前（文本掉在提示词下方横条）</span>
+          <div class="wf-config-panel">
+            <div class="wf-config-panel__prompt-container">
+              <div class="wf-config-panel__prompt-header">
+                <div class="wf-slot-wells">
+                  <div class="wf-slot-well" role="button" tabindex="0" aria-label="First frame">
+                    <svg class="wf-slot-well__media" viewBox="0 0 88 88" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="dog1" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#c99562"/><stop offset="100%" stop-color="#5c3d22"/></linearGradient></defs><rect width="88" height="88" fill="url(#dog1)"/><circle cx="44" cy="36" r="18" fill="#f3dfc7"/><circle cx="38" cy="34" r="3" fill="#2a1d12"/><circle cx="50" cy="34" r="3" fill="#2a1d12"/><ellipse cx="44" cy="42" rx="5" ry="3.5" fill="#2a1d12"/></svg>
+                    <span class="wf-slot-well__position">First frame</span>
+                  </div>
+                </div>
+                <div class="wf-config-panel__prompt-header-actions">
+                  <button type="button" class="wf-config-panel__expand-btn" aria-label="展开">↗</button>
+                </div>
+              </div>
+              <div class="wf-prompt-editor">Additional instructions (optional)</div>
+              <div class="wf-prompt-meta"><span>0/7000</span></div>
+              <div class="wf-config-panel__prompt-references" id="s1-before-row">
+                <div class="wf-prompt-reference wf-prompt-reference--highlight" role="button" tabindex="0">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>
+                  <span>核心文案槽位 (Copywriting)</span>
+                </div>
+              </div>
+            </div>
+            <div class="wf-bottom-bar">
+              <div class="wf-params-group">
+                <span class="wf-pill">wan-3.0 ▾</span>
+                <span class="wf-pill">First frame / 自适应 / 1080P / 5s ▾</span>
+              </div>
+              <span class="wf-send-btn">↑</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="stage-card">
+          <span class="stage-tag stage-tag--after">修改后（统一并入顶部素材卡槽，图标 + 截断节点名）</span>
+          <div class="wf-config-panel">
+            <div class="wf-config-panel__prompt-container">
+              <div class="wf-config-panel__prompt-header">
+                <div class="wf-slot-wells">
+                  <div class="wf-slot-well" role="button" tabindex="0" aria-label="First frame">
+                    <svg class="wf-slot-well__media" viewBox="0 0 88 88" xmlns="http://www.w3.org/2000/svg"><rect width="88" height="88" fill="url(#dog1)"/><circle cx="44" cy="36" r="18" fill="#f3dfc7"/><circle cx="38" cy="34" r="3" fill="#2a1d12"/><circle cx="50" cy="34" r="3" fill="#2a1d12"/><ellipse cx="44" cy="42" rx="5" ry="3.5" fill="#2a1d12"/></svg>
+                    <span class="wf-slot-well__position">First frame</span>
+                  </div>
+                  <div class="wf-slot-well" id="s1-after-text" role="button" tabindex="0"
+                       aria-label="核心文案槽位 (Copywriting)"
+                       data-preview-kind="text"
+                       data-preview-title="核心文案槽位 (Copywriting)"
+                       data-preview-body="Bring your product to life with movie-quality 3D characters facing relatable daily struggles.">
+                    <span class="wf-slot-well__tile">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>
+                      <span class="wf-slot-well__tile-name">核心文案槽位 (Copywriting)</span>
+                    </span>
+                  </div>
+                </div>
+                <div class="wf-config-panel__prompt-header-actions">
+                  <button type="button" class="wf-config-panel__expand-btn" aria-label="展开">↗</button>
+                </div>
+              </div>
+              <div class="wf-prompt-editor">Additional instructions (optional)</div>
+              <div class="wf-prompt-meta"><span>0/7000</span></div>
+            </div>
+            <div class="wf-bottom-bar">
+              <div class="wf-params-group">
+                <span class="wf-pill">wan-3.0 ▾</span>
+                <span class="wf-pill">First frame / 自适应 / 1080P / 5s ▾</span>
+              </div>
+              <span class="wf-send-btn">↑</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 场景 2：全能参考（strip）图片 + 文本 + 音频 + 加号 -->
+    <section class="section">
+      <div class="section-head">
+        <h2>2. 全能参考（strip）图片 + 文本 + 音频 + 追加入口</h2>
+      </div>
+      <div class="compare-grid">
+        <div class="stage-card">
+          <span class="stage-tag">修改前（音频只有孤立音符，文本落到下方）</span>
+          <div class="wf-config-panel">
+            <div class="wf-config-panel__prompt-container">
+              <div class="wf-config-panel__prompt-header">
+                <div class="wf-slot-wells">
+                  <div class="wf-slot-well" role="button" tabindex="0" aria-label="产品首图.png">
+                    <svg class="wf-slot-well__media" viewBox="0 0 88 88"><rect width="88" height="88" fill="url(#dog1)"/><circle cx="44" cy="36" r="18" fill="#f3dfc7"/></svg>
+                  </div>
+                  <div class="wf-slot-well" role="button" tabindex="0" aria-label="11月23日">
+                    <span class="wf-slot-well__placeholder wf-slot-well__placeholder--audio">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+                    </span>
+                  </div>
+                  <button type="button" class="wf-slot-well wf-slot-well--append" aria-label="添加素材">+</button>
+                </div>
+                <div class="wf-config-panel__prompt-header-actions">
+                  <button type="button" class="wf-config-panel__expand-btn" aria-label="展开">↗</button>
+                </div>
+              </div>
+              <div class="wf-prompt-editor">补充镜头节奏与风格要求</div>
+              <div class="wf-config-panel__prompt-references">
+                <div class="wf-prompt-reference wf-prompt-reference--highlight" role="button" tabindex="0">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/></svg>
+                  <span>Untitled Script Draft</span>
+                </div>
+              </div>
+            </div>
+            <div class="wf-bottom-bar">
+              <div class="wf-params-group">
+                <span class="wf-pill">wan-3.0 ▾</span>
+                <span class="wf-pill">全能参考 / 自适应 / 1080P / 5s ▾</span>
+              </div>
+              <span class="wf-send-btn">↑</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="stage-card">
+          <span class="stage-tag stage-tag--after">修改后（图 + 文 + 音全在顶部同一行，全部排在 + 之前）</span>
+          <div class="wf-config-panel">
+            <div class="wf-config-panel__prompt-container">
+              <div class="wf-config-panel__prompt-header">
+                <div class="wf-slot-wells">
+                  <div class="wf-slot-well" role="button" tabindex="0" aria-label="产品首图.png">
+                    <svg class="wf-slot-well__media" viewBox="0 0 88 88"><rect width="88" height="88" fill="url(#dog1)"/><circle cx="44" cy="36" r="18" fill="#f3dfc7"/></svg>
+                  </div>
+                  <div class="wf-slot-well" role="button" tabindex="0"
+                       aria-label="Untitled Script Draft"
+                       data-preview-kind="text"
+                       data-preview-title="Untitled Script Draft"
+                       data-preview-body="镜头从木桌上的三只狗碗缓缓推近，主角小狗抬头看向镜头。">
+                    <span class="wf-slot-well__tile">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>
+                      <span class="wf-slot-well__tile-name">Untitled Script Draft</span>
+                    </span>
+                  </div>
+                  <div class="wf-slot-well" role="button" tabindex="0"
+                       aria-label="11月23日_产品口播配音_最终版.mp3"
+                       data-preview-kind="audio"
+                       data-preview-title="11月23日_产品口播配音_最终版.mp3"
+                       data-preview-body="音频预览（00:08，wav/mp3，悬停可试听与替换）">
+                    <span class="wf-slot-well__tile">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+                      <span class="wf-slot-well__tile-name">11月23日_产品口播配音_最终版.mp3</span>
+                    </span>
+                  </div>
+                  <button type="button" class="wf-slot-well wf-slot-well--append" aria-label="添加素材">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+                  </button>
+                </div>
+                <div class="wf-config-panel__prompt-header-actions">
+                  <button type="button" class="wf-config-panel__expand-btn" aria-label="展开">↗</button>
+                </div>
+              </div>
+              <div class="wf-prompt-editor">补充镜头节奏与风格要求</div>
+            </div>
+            <div class="wf-bottom-bar">
+              <div class="wf-params-group">
+                <span class="wf-pill">wan-3.0 ▾</span>
+                <span class="wf-pill">全能参考 / 自适应 / 1080P / 5s ▾</span>
+              </div>
+              <span class="wf-send-btn">↑</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 场景 3：首尾帧 pair + 数字人 named + 纯文本空态/绑定态 -->
+    <section class="section">
+      <div class="section-head">
+        <h2>3. 首尾帧（pair）互换保活 / 数字人具名音频槽 / 纯文本空态对比</h2>
+        <div class="controls">
+          <button type="button" class="action-btn" id="toggle-empty-mode">切换纯文本：未连入 / 已连入</button>
+        </div>
+      </div>
+      <div class="compare-grid">
+        <div class="stage-card">
+          <span class="stage-tag stage-tag--after">首尾帧（pair）保留互换 + 顶部文本卡</span>
+          <div class="wf-config-panel">
+            <div class="wf-config-panel__prompt-header">
+              <div class="wf-slot-wells">
+                <div class="wf-slot-well" role="button" tabindex="0" aria-label="首帧">
+                  <svg class="wf-slot-well__media" viewBox="0 0 88 88"><rect width="88" height="88" fill="url(#dog1)"/></svg>
+                  <span class="wf-slot-well__position">首帧</span>
+                </div>
+                <button type="button" class="wf-slot-wells__swap" aria-label="互换首尾帧">⇄</button>
+                <div class="wf-slot-well wf-slot-well--empty wf-slot-well--required" role="button" tabindex="0" aria-label="添加尾帧">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+                  <span class="wf-slot-well__position">尾帧</span>
+                </div>
+                <div class="wf-slot-well" role="button" tabindex="0"
+                     aria-label="分镜文案_v3"
+                     data-preview-kind="text"
+                     data-preview-title="分镜文案_v3"
+                     data-preview-body="开场特写切换到全景，暖光穿透厨房窗格。">
+                  <span class="wf-slot-well__tile">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>
+                    <span class="wf-slot-well__tile-name">分镜文案_v3</span>
+                  </span>
+                </div>
+              </div>
+              <div class="wf-config-panel__prompt-header-actions">
+                <button type="button" class="wf-config-panel__expand-btn" aria-label="展开">↗</button>
+              </div>
+            </div>
+            <div class="wf-prompt-editor">描述首尾帧之间的过渡动作</div>
+          </div>
+        </div>
+
+        <div class="stage-card">
+          <span class="stage-tag stage-tag--after">数字人（具名音频槽无底标重叠）与纯文本紧凑空态</span>
+          <div class="wf-config-panel" style="margin-bottom: 12px;">
+            <div class="wf-config-panel__prompt-header">
+              <div class="wf-slot-wells">
+                <div class="wf-slot-well" role="button" tabindex="0" aria-label="角色图">
+                  <svg class="wf-slot-well__media" viewBox="0 0 88 88"><rect width="88" height="88" fill="url(#dog1)"/></svg>
+                  <span class="wf-slot-well__position">角色图</span>
+                </div>
+                <div class="wf-slot-well" role="button" tabindex="0"
+                     aria-label="驱动音频 11月23日口播"
+                     data-preview-kind="audio"
+                     data-preview-title="11月23日口播.wav"
+                     data-preview-body="已绑定至驱动音频槽，不与底标文字重叠。">
+                  <span class="wf-slot-well__tile">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+                    <span class="wf-slot-well__tile-name">11月23日口播</span>
+                  </span>
+                </div>
+                <div class="wf-slot-well wf-slot-well--empty wf-slot-well--required" role="button" tabindex="0" aria-label="添加驱动音频">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+                  <span class="wf-slot-well__position">驱动音频</span>
+                </div>
+              </div>
+              <div class="wf-config-panel__prompt-header-actions">
+                <button type="button" class="wf-config-panel__expand-btn" aria-label="展开">↗</button>
+              </div>
+            </div>
+            <div class="wf-prompt-editor">数字人口型驱动模式（空槽显角色名，已填显节点名）</div>
+          </div>
+
+          <div class="wf-config-panel">
+            <div class="wf-config-panel__prompt-header wf-config-panel__prompt-header--empty-slots" id="s3-empty-header">
+              <div class="wf-slot-wells" id="s3-empty-wells" style="display: none;">
+                <div class="wf-slot-well" role="button" tabindex="0" aria-label="未命名文本节点">
+                  <span class="wf-slot-well__tile">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>
+                    <span class="wf-slot-well__tile-name">未命名文本节点</span>
+                  </span>
+                </div>
+              </div>
+              <div class="wf-config-panel__prompt-header-actions">
+                <button type="button" class="wf-config-panel__expand-btn" aria-label="展开">↗</button>
+              </div>
+            </div>
+            <div class="wf-prompt-editor">纯文本节点（未连上游文本时 24px 紧凑顶栏，无多余文本 + 框）</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 场景 4：名称截断与异常状态压力测试 -->
+    <section class="section">
+      <div class="section-head">
+        <h2>4. 名称长度裁切与状态矩阵（悬停卡片查看浮层预览）</h2>
+      </div>
+      <div class="stress-row">
+        <div class="stress-item">
+          <div class="wf-slot-well" role="button" tabindex="0" data-preview-kind="text" data-preview-title="A" data-preview-body="极短单字节点名">
+            <span class="wf-slot-well__tile">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/></svg>
+              <span class="wf-slot-well__tile-name">A</span>
+            </span>
+          </div>
+          <span class="stress-caption">单字</span>
+        </div>
+        <div class="stress-item">
+          <div class="wf-slot-well" role="button" tabindex="0" data-preview-kind="text" data-preview-title="Untitled" data-preview-body="英文标准名">
+            <span class="wf-slot-well__tile">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/></svg>
+              <span class="wf-slot-well__tile-name">Untitled</span>
+            </span>
+          </div>
+          <span class="stress-caption">英文截断</span>
+        </div>
+        <div class="stress-item">
+          <div class="wf-slot-well" role="button" tabindex="0" data-preview-kind="text" data-preview-title="核心文案槽位 (Copywriting)" data-preview-body="中英混排长标题">
+            <span class="wf-slot-well__tile">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/></svg>
+              <span class="wf-slot-well__tile-name">核心文案槽位 (Copywriting)</span>
+            </span>
+          </div>
+          <span class="stress-caption">中文长名</span>
+        </div>
+        <div class="stress-item">
+          <div class="wf-slot-well" role="button" tabindex="0" data-preview-kind="audio" data-preview-title="SuperLongContinuousAudioFileName20261126.wav" data-preview-body="连续无空格长英文音频名">
+            <span class="wf-slot-well__tile">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+              <span class="wf-slot-well__tile-name">SuperLongContinuousAudioFileName20261126.wav</span>
+            </span>
+          </div>
+          <span class="stress-caption">无空格长音频</span>
+        </div>
+        <div class="stress-item">
+          <div class="wf-slot-well" role="button" tabindex="0" data-preview-kind="text" data-preview-title="生成中的文案节点" data-preview-body="等待上游节点产出结果">
+            <span class="wf-slot-well__placeholder">
+              <svg class="wf-slot-well__spin" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+            </span>
+          </div>
+          <span class="stress-caption">等待态</span>
+        </div>
+        <div class="stress-item">
+          <div class="wf-slot-well wf-slot-well--conflict" role="button" tabindex="0" data-preview-kind="text" data-preview-title="已失效来源" data-preview-body="来源不可用，可点击替换或停用">
+            <span class="wf-slot-well__placeholder wf-slot-well__placeholder--broken">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="18" x="3" y="3" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
+            </span>
+          </div>
+          <span class="stress-caption">失效态</span>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div class="wf-slot-hover-preview" id="hover-preview" style="display: none;" role="dialog" aria-label="素材预览">
+    <div class="wf-slot-hover-preview__card">
+      <div class="wf-slot-hover-preview__title" id="preview-title"></div>
+      <div class="wf-slot-hover-preview__media" id="preview-body"></div>
+    </div>
+    <div class="wf-slot-hover-preview__actions">
+      <button type="button" class="wf-slot-well__replace-pill" id="preview-replace">替换</button>
+      <button type="button" class="wf-slot-well__replace-pill" id="preview-disable">停用</button>
+    </div>
+  </div>
+
+<script>
+  document.querySelectorAll('[data-set-theme]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.body.dataset.theme = btn.dataset.setTheme;
+      document.querySelectorAll('[data-set-theme]').forEach(b => b.classList.toggle('active', b === btn));
+    });
+  });
+  document.querySelectorAll('[data-set-width]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.body.dataset.width = btn.dataset.setWidth;
+      document.querySelectorAll('[data-set-width]').forEach(b => b.classList.toggle('active', b === btn));
+    });
+  });
+
+  let s1Bound = true;
+  document.getElementById('toggle-s1-text').addEventListener('click', () => {
+    s1Bound = !s1Bound;
+    document.getElementById('s1-before-row').style.display = s1Bound ? '' : 'none';
+    document.getElementById('s1-after-text').style.display = s1Bound ? '' : 'none';
+  });
+
+  let s3Bound = false;
+  document.getElementById('toggle-empty-mode').addEventListener('click', () => {
+    s3Bound = !s3Bound;
+    const header = document.getElementById('s3-empty-header');
+    const wells = document.getElementById('s3-empty-wells');
+    header.classList.toggle('wf-config-panel__prompt-header--empty-slots', !s3Bound);
+    wells.style.display = s3Bound ? '' : 'none';
+  });
+
+  const preview = document.getElementById('hover-preview');
+  const titleEl = document.getElementById('preview-title');
+  const bodyEl = document.getElementById('preview-body');
+  let hideTimer = null;
+
+  function showPreview(anchor) {
+    if (hideTimer) clearTimeout(hideTimer);
+    titleEl.textContent = anchor.dataset.previewTitle || '';
+    bodyEl.textContent = anchor.dataset.previewBody || '';
+    preview.style.display = 'flex';
+    const rect = anchor.getBoundingClientRect();
+    const left = Math.max(12, Math.min(window.innerWidth - 260, rect.left + rect.width / 2 - 124));
+    const top = Math.min(window.innerHeight - 160, rect.bottom + 8);
+    preview.style.left = left + 'px';
+    preview.style.top = top + 'px';
+  }
+  function scheduleHide() {
+    hideTimer = setTimeout(() => { preview.style.display = 'none'; }, 160);
+  }
+  document.querySelectorAll('[data-preview-title]').forEach(el => {
+    el.addEventListener('mouseenter', () => showPreview(el));
+    el.addEventListener('focus', () => showPreview(el));
+    el.addEventListener('mouseleave', scheduleHide);
+  });
+  preview.addEventListener('mouseenter', () => { if (hideTimer) clearTimeout(hideTimer); });
+  preview.addEventListener('mouseleave', scheduleHide);
+  document.getElementById('preview-replace').addEventListener('click', () => { preview.style.display = 'none'; });
+  document.getElementById('preview-disable').addEventListener('click', () => { preview.style.display = 'none'; });
+</script>
+</body>
+</html>

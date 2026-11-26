@@ -73,11 +73,16 @@ export default function SlotHoverPreview({ anchor, upstream, state, reasonCode, 
         : upstream?.url && upstream.availability === 'ready' && upstream.materialType === 'audio' ? <audio src={upstream.url} controls />
           : upstream?.textContent && upstream.availability === 'ready' ? <span style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{upstream.textContent}</span>
             : <span>{t(upstream?.availability === 'unavailable' ? 'input.state.unavailable' : 'input.state.pending')}</span>;
+  const upstreamType = upstream?.materialType as string | undefined;
+  const showHeaderTitle = Boolean(
+    upstream?.label && (upstreamType === 'text' || upstreamType === 'table' || upstreamType === 'audio'),
+  );
   return createPortal(
     <div ref={panelRef} className="wf-slot-hover-preview nodrag nowheel" role="dialog" aria-label={t('mention.preview')}
       style={{ position: 'fixed', left: position.left, width: position.width, maxHeight: available, ...(position.placement === 'top' ? { bottom: position.bottom } : { top: position.top }) }}
       onPointerDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()} onWheel={(event) => event.stopPropagation()}>
       <div className="wf-slot-hover-preview__card">
+        {showHeaderTitle ? <div className="wf-slot-hover-preview__title">{upstream!.label}</div> : null}
         <div className="wf-slot-hover-preview__media">{media}</div>
       </div>
       {hasActions ? (

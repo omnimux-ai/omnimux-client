@@ -122,7 +122,8 @@ test('text sources occupy the input header without creating media slots or copyi
   const empty = render(node('text'), fixture('text', false));
   assert.match(empty, /wf-config-panel__prompt-header--empty-slots/);
   const supplied = render(node('text'), fixture('text', false), [{nodeId:'source',edgeId:'text-edge',label:'正文来源',materialType:'text',textContent:'1dog',hasMedia:true,availability:'ready'}]);
-  assert.match(supplied, /1dog/);
+  assert.match(supplied, /class="wf-slot-well__tile-name">正文来源<\/span>/);
+  assert.doesNotMatch(supplied, /class="wf-slot-well__tile-name">1dog<\/span>/);
   assert.doesNotMatch(supplied, /wf-config-panel__prompt-header--empty-slots|data-testid="wf-slot-wells"/);
   assert.match(supplied, /<textarea[^>]*><\/textarea>/);
 });
@@ -160,8 +161,8 @@ const textUpstream = (id, content) => ({
 });
 function textChipCounts(html) {
   return {
-    effective: (html.match(/class="wf-effective-text wf-effective-text--slot"/g) || []).length,
-    slotWells: (html.match(/class="wf-prompt-reference nodrag" role="button"/g) || []).length,
+    effective: (html.match(/wf-effective-text--slot/g) || []).length,
+    slotWells: (html.match(/class="wf-slot-well wf-slot-well--filled" role="button" tabindex="0" data-slot="prompt"/g) || []).length,
   };
 }
 
