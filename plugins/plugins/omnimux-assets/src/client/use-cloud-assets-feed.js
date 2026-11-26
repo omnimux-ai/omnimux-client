@@ -464,8 +464,13 @@ export function useCloudAssetsFeed(options) {
     }
   }, [category, subCategory, filtering, filterTokens, t, batchSize])
 
+  const isRowLayoutScope = category === CLOUD_ALL_CATEGORY && !filtering
+
   // Scope change — a category, a sub-category or a dimension combination: stop
   // any audition, drop the old rows, and fetch page 0 of the new scope.
+  // In the cross-category row layout (`公共 → 全部` without search/filter),
+  // individual `CloudCategoryRow`s own their sampled data and `feed.items` is
+  // never rendered, so skip fetching the unused `all/page-0000.json`.
   useEffect(() => {
     if (!open || manifest === null) return
     stopAudition()
@@ -473,10 +478,11 @@ export function useCloudAssetsFeed(options) {
     setLoadedPages(0)
     setScopedPages(null)
     setPageError('')
+    if (isRowLayoutScope) return
     void loadPage(0, { reset: true })
     // `loadPage` already depends on category/subCategory/filterTokens, so those
     // are the real triggers; listing them separately would double-fetch.
-  }, [open, manifest, loadPage, stopAudition])
+  }, [open, manifest, loadPage, stopAudition, isRowLayoutScope])
 
   // Debounced search. A blank query returns to paged browsing instead of
   // issuing a request.
@@ -522,7 +528,10 @@ export function useCloudAssetsFeed(options) {
           items: rowsOf(result.body),
         })
       } catch (caught) {
-        if (!cancelled) setPageError(errText(caught))
+        if (!cancelled) {
+          setPageError(errText(caught))
+          setSearchResult({ total: 0, items: [] })
+        }
       } finally {
         if (!cancelled) setSearching(false)
       }
@@ -612,8 +621,15 @@ export function useCloudAssetsFeed(options) {
     setItems([])
     setLoadedPages(0)
     setScopedPages(null)
-    await loadPage(0, { reset: true })
-  }, [reloadManifest, loadPage])
+    if (!isRowLayoutScope) {
+      await loadPage(0, { reset: true })
+    }
+  }, [reloadManifest, loadPage, isRowLayoutScope])
+
+  const searchPending = query.trim() !== ''
+    && pageError === ''
+    && manifestError === ''
+    && (searching || query.trim() !== queryApplied || searchResult === null)
 
   return {
     manifest,
@@ -626,7 +642,7 @@ export function useCloudAssetsFeed(options) {
     characterFilters,
     items: visible,
     hasMore,
-    loading: manifestLoading || (loadingPage && items.length === 0),
+    loading: manifestLoading || (loadingPage && items.length === 0) || (searchPending && searchResult === null),
     /** True while a page or a search slice is in flight, for the button state. */
     loadingMore: loadingPage || searching,
     error: manifestError || pageError,

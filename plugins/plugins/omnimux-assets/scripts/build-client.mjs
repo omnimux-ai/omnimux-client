@@ -21,6 +21,7 @@ const result = await esbuild.build({
   absWorkingDir: root,
   entryPoints: ['src/client/index.js'],
   bundle: true,
+  minify: true,
   format: 'cjs',
   platform: 'browser',
   jsx: 'automatic',

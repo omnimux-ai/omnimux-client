@@ -129,7 +129,7 @@ export function sendPreview(res, status, stream) {
     ...(stream.mime.split(';')[0].trim().toLowerCase() === 'image/svg+xml'
       ? { 'Content-Security-Policy': "sandbox; default-src 'none'; style-src 'unsafe-inline'; img-src data:" } : {}),
     ...(Number.isFinite(stream.size) ? { 'Content-Length': String(stream.size) } : {}),
-    'Cache-Control': 'private, max-age=30',
+    'Cache-Control': stream.cacheControl || 'private, max-age=30',
   })
   createReadStream(stream.absolutePath).on('error', () => {
     if (!res.headersSent) {
@@ -144,15 +144,16 @@ export function sendPreview(res, status, stream) {
  * @param {import('node:http').ServerResponse} res
  * @param {number} status
  * @param {unknown} body
+ * @param {Record<string, string>} [headers]
  */
-export function sendJson(res, status, body) {
+export function sendJson(res, status, body, headers = {}) {
   const text = JSON.stringify(body)
   if (serializedJsonContainsSecret(text)) {
     res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' })
     res.end(JSON.stringify({ error: 'refused to emit a secret' }))
     return
   }
-  res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' })
+  res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', ...headers })
   res.end(text)
 }
 
@@ -189,6 +190,10 @@ export function sendText(res, status, text, headers = {}) {
  * @param {string} text
  */
 function serializedJsonContainsSecret(text) {
+  // 快速预检：常规 JSON 既不含目标字面子串也不含 \u 转义时，跳过整包二次 JSON.parse。
+  if (!text.includes('access_token') && !text.includes('sk-') && !text.includes('\\u')) {
+    return false
+  }
   let found = false
   JSON.parse(text, (key, value) => {
     if (containsSecretText(key) || (typeof value === 'string' && containsSecretText(value))) {
@@ -358,7 +363,11 @@ export function createAssetsDispatcher(deps) {
     if (status !== 'ok') throw new AssetsError('catalog-not-found', 'catalog page not found')
     return {
       status: 200,
-      stream: { absolutePath: file, mime: 'application/json; charset=utf-8' },
+      stream: {
+        absolutePath: file,
+        mime: 'application/json; charset=utf-8',
+        cacheControl: 'private, max-age=3600',
+      },
     }
   }
 
@@ -376,7 +385,11 @@ export function createAssetsDispatcher(deps) {
     if (status !== 'ok') throw new AssetsError('catalog-not-found', 'cloud catalog index not found')
     return {
       status: 200,
-      stream: { absolutePath: file, mime: 'application/json; charset=utf-8' },
+      stream: {
+        absolutePath: file,
+        mime: 'application/json; charset=utf-8',
+        cacheControl: 'private, max-age=3600',
+      },
     }
   }
 
@@ -598,7 +611,11 @@ export function createAssetsDispatcher(deps) {
 
       // ---- cloud assets -------------------------------------------------
       if (cloud && method === 'GET' && CLOUD_MANIFEST_PATHS.has(path)) {
-        return { status: 200, body: cloud.getManifest() }
+        return {
+          status: 200,
+          body: cloud.getManifest(),
+          headers: { 'Cache-Control': 'private, max-age=3600' },
+        }
       }
 
       if (cloud && method === 'GET' && CLOUD_INDEX_PATHS.has(path)) {
@@ -1056,7 +1073,7 @@ export function registerAssetsRoutes(webServer, dispatcher) {
           sendText(res, result.status, result.text, result.headers)
           return
         }
-        sendJson(res, result.status, result.body)
+        sendJson(res, result.status, result.body, result.headers)
       } catch (error) {
         if (error instanceof AssetsError) {
           sendJson(res, STATUS_BY_CODE[error.code] ?? 400, { error: error.code, message: error.message })

@@ -23,6 +23,7 @@ import { MasonryGrid } from './masonry-grid.jsx'
 import { pageSizeFor } from './page-size.js'
 import { coverRatioCache } from './ratio-cache.js'
 import { CloudCategoryRow } from './CloudCategoryRow.jsx'
+import { bareVideoQueue } from './bare-video-queue.js'
 
 /** Media type -> tile icon, for a media row whose picture and clip are both gone. */
 const TYPE_ICON = {
@@ -64,6 +65,12 @@ export const HOVER_AUDITION_DELAY_MS = 200
  */
 export const BARE_CLIP_FIRST_FRAME_SECONDS = 0.001
 
+/** 无封面视频首帧加载槽位的兜底超时，防止单条卡顿饿死队列后续卡片。 */
+export const BARE_CLIP_QUEUE_TIMEOUT_MS = 8000
+
+/** manifest 到达前的首屏占位分类行（消除空白闪屏）。 */
+const INITIAL_SKELETON_ROWS = ['character', 'scene']
+
 /**
  * 首次加载骨架卡张数随列数自适应（3 行，见 pageSizeFor），不再固定 12 张。
  */
@@ -92,7 +99,7 @@ export const BARE_CLIP_FIRST_FRAME_SECONDS = 0.001
  * as real DOM behaviour instead of by matching source text (#3879).
  */
 export function CloudTileMedia(props) {
-  const { asset, broken, onBroken, hovering } = props
+  const { asset, broken, onBroken, hovering, priority = 'auto' } = props
   /**
    * How far down the picture ladder this tile has fallen.
    *
@@ -101,17 +108,47 @@ export function CloudTileMedia(props) {
    * Each step only advances on a real load failure, so a working thumbnail is
    * never traded for a heavier original.
    */
-  const [srcStep, setSrcStep] = useState(0)
+  const initialBareVisible = typeof IntersectionObserver !== 'function'
+  const [tileState, setTileState] = useState(() => ({
+    assetId: asset.id,
+    srcStep: 0,
+    bareVisible: initialBareVisible,
+    bareSlotReady: false,
+  }))
+  const isCurrentAsset = tileState.assetId === asset.id
+  const srcStep = isCurrentAsset ? tileState.srcStep : 0
+  const bareVisible = isCurrentAsset ? tileState.bareVisible : initialBareVisible
+  const bareSlotReady = isCurrentAsset ? tileState.bareSlotReady : false
+
+  const setSrcStep = (nextStep) => {
+    setTileState((prev) => ({
+      assetId: asset.id,
+      srcStep: nextStep,
+      bareVisible: prev.assetId === asset.id ? prev.bareVisible : initialBareVisible,
+      bareSlotReady: prev.assetId === asset.id ? prev.bareSlotReady : false,
+    }))
+  }
+  const setBareVisible = (nextVisible) => {
+    setTileState((prev) => ({
+      assetId: asset.id,
+      srcStep: prev.assetId === asset.id ? prev.srcStep : 0,
+      bareVisible: nextVisible,
+      bareSlotReady: prev.assetId === asset.id ? prev.bareSlotReady : false,
+    }))
+  }
+  const setBareSlotReady = (nextReady) => {
+    setTileState((prev) => ({
+      assetId: asset.id,
+      srcStep: prev.assetId === asset.id ? prev.srcStep : 0,
+      bareVisible: prev.assetId === asset.id ? prev.bareVisible : initialBareVisible,
+      bareSlotReady: nextReady,
+    }))
+  }
+
   const videoRef = useRef(/** @type {HTMLVideoElement | null} */ (null))
+  const releaseBareSlotRef = useRef(/** @type {(() => void) | null} */ (null))
 
   const isVideo = asset.mediaType === 'video'
-  const hasCover = asset.hasCover === true
-  /**
-   * The picture the tile draws, cheapest first. The order lives in
-   * `coverLadderOf` so the "an image row walks the same ladder" rule — and the
-   * fact that a failed load always advances instead of stranding the tile — can
-   * be asserted as pure behaviour rather than by matching this source text.
-   */
   const ladder = coverLadderOf(asset, cloudMediaUrl)
   const imageSrc = ladder[srcStep] ?? ''
   const hasClip = asset.hasMedia === true
@@ -120,41 +157,113 @@ export function CloudTileMedia(props) {
   // no picture sits above it, which is when it has to be visible on its own.
   const showClip = hasClip && (isVideo || imageSrc === '')
   const bareClip = showClip && imageSrc === ''
+  // 有封面的视频卡在非悬停态不预先挂载空闲 <video> 节点，仅悬停或退化为无封面时挂载。
+  const mountClip = bareClip || (showClip && hovering)
+  const bareCanLoad = bareClip && bareSlotReady
+
+  useEffect(() => {
+    setTileState((prev) => (prev.assetId === asset.id ? prev : {
+      assetId: asset.id,
+      srcStep: 0,
+      bareVisible: typeof IntersectionObserver !== 'function',
+      bareSlotReady: false,
+    }))
+  }, [asset.id])
+
+  // 无封面视频先经视口门控，离屏绝不抢占 HTTP/2 带宽与解码器。
+  useEffect(() => {
+    if (broken || !bareClip || bareVisible) return undefined
+    const node = videoRef.current
+    if (!node || typeof IntersectionObserver !== 'function') {
+      setBareVisible(true)
+      return undefined
+    }
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) {
+        setBareVisible(true)
+        observer.disconnect()
+      }
+    }, { rootMargin: '80px 0px' })
+    observer.observe(node)
+    return () => { observer.disconnect() }
+  }, [broken, bareClip, bareVisible, asset.id])
+
+  // 进入视口后经全局并发队列申请槽位（最多 3 路同时解首帧）。
+  useEffect(() => {
+    if (broken || !bareClip || !bareVisible) return undefined
+    let active = true
+    let timeoutId = null
+    const release = bareVideoQueue.acquire(() => {
+      if (!active) return
+      setBareSlotReady(true)
+      timeoutId = setTimeout(() => {
+        if (releaseBareSlotRef.current) {
+          const fn = releaseBareSlotRef.current
+          releaseBareSlotRef.current = null
+          fn()
+        }
+      }, BARE_CLIP_QUEUE_TIMEOUT_MS)
+    })
+    const releaseOnce = () => {
+      if (timeoutId !== null) {
+        clearTimeout(timeoutId)
+        timeoutId = null
+      }
+      release()
+    }
+    releaseBareSlotRef.current = releaseOnce
+    return () => {
+      active = false
+      releaseBareSlotRef.current = null
+      releaseOnce()
+      setBareSlotReady(false)
+    }
+  }, [broken, bareClip, bareVisible, asset.id])
 
   useEffect(() => {
     const element = videoRef.current
-    if (!element) return
+    if (!element) return undefined
+    if (bareClip && !bareCanLoad) return undefined
     if (hovering) {
-      void element.play().catch(() => {})
+      void element.play().catch((error) => {
+        if (error?.name !== 'AbortError' && error?.name !== 'NotAllowedError') {
+          console.warn('[omnimux-assets] cloud tile preview play failed:', error?.message || error)
+        }
+      })
     } else {
       element.pause()
       // A bare clip must stay parked on its decoded first frame; 0 would be a
       // no-op for a paused element and can leave the surface blank again.
       element.currentTime = bareClip ? BARE_CLIP_FIRST_FRAME_SECONDS : 0
     }
-  }, [hovering, bareClip])
+    return () => {
+      element.pause()
+      if (!bareClip && hovering) {
+        element.removeAttribute('src')
+        if (typeof element.load === 'function') element.load()
+      }
+    }
+  }, [hovering, bareClip, bareCanLoad, mountClip])
 
-  // A bare clip has to decode the frame it already shows: at mount, and again if
-  // the cover request failed after mount. A clip with a poster above it waits for
-  // hover, so nothing is fetched up front — that poster used to be a multi-megabyte
-  // original, and pulling a clip alongside it put the first screen on the wire twice.
+  // 获得视口与并发槽位后才触发无封面视频的首帧元数据读取。
   useEffect(() => {
     const element = videoRef.current
-    if (!element || !bareClip || element.readyState > 0) return
+    if (!element || !bareCanLoad || element.readyState > 0 || (element.networkState && element.networkState > 0)) return
     element.load()
-  }, [bareClip])
-
-  useEffect(() => { setSrcStep(0) }, [asset.id])
+  }, [bareCanLoad])
 
   const Icon = TYPE_ICON[asset.mediaType] ?? DocIcon
   if (broken) return <Icon size={22} />
 
+  const releaseBareSlot = () => {
+    if (releaseBareSlotRef.current) {
+      const fn = releaseBareSlotRef.current
+      releaseBareSlotRef.current = null
+      fn()
+    }
+  }
+
   const handleImageError = () => {
-    // Step down the ladder before giving up. Only when there is no further
-    // picture to try does the tile fall back to its clip (for a video row) or
-    // to its type icon. Every row walks the same ladder, so this reaches the
-    // last resort on the very first failure at the final rung — it never
-    // depends on one URL failing repeatedly.
     const next = nextLadderStep({ ladder, step: srcStep, mediaType: asset.mediaType, hasClip })
     if (next.kind === 'advance') {
       setSrcStep(next.step)
@@ -165,19 +274,16 @@ export function CloudTileMedia(props) {
   }
 
   const handleVideoError = () => {
-    // The clip was the tile's only picture, so with it gone the tile falls back
-    // to its type icon instead of sitting there blank.
+    releaseBareSlot()
     if (bareClip) onBroken()
   }
 
   const handleVideoLoadedMetadata = () => {
+    releaseBareSlot()
     const element = videoRef.current
     if (!element) return
     const width = Number(element.videoWidth) || 0
     const height = Number(element.videoHeight) || 0
-    // Adopt the real frame dimensions, then cache their ratio for the masonry
-    // estimator. The card's own layout follows the video's intrinsic ratio
-    // through `height:auto`; the attributes only keep the pre-metadata ratio hint.
     if (width > 0 && height > 0) {
       element.setAttribute('width', String(width))
       element.setAttribute('height', String(height))
@@ -188,6 +294,8 @@ export function CloudTileMedia(props) {
     }
   }
 
+  const isHighPriority = priority === 'high'
+
   return (
     <>
       {imageSrc === '' ? null : (
@@ -195,7 +303,9 @@ export function CloudTileMedia(props) {
           src={imageSrc}
           className="omnimux-assets-card-media"
           alt=""
-          loading="lazy"
+          loading={isHighPriority ? 'eager' : 'lazy'}
+          fetchpriority={isHighPriority ? 'high' : undefined}
+          decoding="async"
           width={9}
           height={16}
           onLoad={(event) => {
@@ -211,15 +321,15 @@ export function CloudTileMedia(props) {
           onError={handleImageError}
         />
       )}
-      {showClip ? (
+      {mountClip ? (
         <video
           ref={videoRef}
           className={bareClip ? BARE_PREVIEW_CLASS : PREVIEW_CLASS}
-          src={cloudMediaUrl(asset.id, 'media')}
+          src={(!bareClip || bareCanLoad) ? cloudMediaUrl(asset.id, 'media') : undefined}
           muted
           loop
           playsInline
-          preload={bareClip ? 'metadata' : 'none'}
+          preload={bareCanLoad ? 'metadata' : 'none'}
           width={bareClip ? 9 : undefined}
           height={bareClip ? 16 : undefined}
           onLoadedMetadata={handleVideoLoadedMetadata}
@@ -274,7 +384,7 @@ export function CloudTileMedia(props) {
  * }} props
  */
 export function CloudAssetCard(props) {
-  const { asset, t, playing, onTogglePlay, onPreview, aspect, autoplaySuppressed = false, saved = false, saving = false, onSave } = props
+  const { asset, t, playing, onTogglePlay, onPreview, aspect, autoplaySuppressed = false, saved = false, saving = false, onSave, priority = 'auto' } = props
   const [broken, setBroken] = useState(false)
   const [hovering, setHovering] = useState(false)
   const [added, setAdded] = useState(false)
@@ -429,7 +539,7 @@ export function CloudAssetCard(props) {
           onClick={canPlay ? handlePlayClick : undefined}
           onKeyDown={canPlay ? activateRowKeydown(togglePlay) : undefined}
         >
-          {showArt ? <CloudTileMedia asset={asset} broken={broken} onBroken={handleBroken} hovering={hovering} /> : null}
+          {showArt ? <CloudTileMedia asset={asset} broken={broken} onBroken={handleBroken} hovering={hovering} priority={priority} /> : null}
           {canPlay ? (
             <span className="omnimux-assets-cloud-play" aria-hidden="true">
               {playing ? <PauseIcon size={16} /> : <PlayIcon size={16} />}
@@ -766,13 +876,43 @@ export function CloudAssetsView(props) {
   // 已经挤进网络管道。现在整批预取已删除，加载顺序完全交给浏览器按可见性决定。
 
   let body = null
-  if (showRowLayout) {
+  if (showRowLayout && rowCategories.length === 0 && feed.loading) {
+    // manifest 到达前先铺 2 行首屏骨架，消除切入「公共 → 全部」时的空白闪屏。
+    body = (
+      <div
+        className="omnimux-assets-cloud-scroll omnimux-assets-cloud-rows-scroll"
+        data-skeleton="true"
+        aria-busy="true"
+        aria-label={t('cloud.loading')}
+      >
+        {INITIAL_SKELETON_ROWS.map((catId) => (
+          <section key={catId} className="omnimux-assets-cloud-row-section" data-category={catId}>
+            <div className="omnimux-assets-cloud-row-wrapper">
+              <div className="omnimux-assets-cloud-row-cards">
+                {Array.from({ length: 6 }, (_unused, index) => (
+                  <div
+                    key={`${catId}-skeleton-${index}`}
+                    className="omnimux-assets-card omnimux-assets-cloud-card omnimux-assets-cloud-skeleton omnimux-assets-cloud-row-skeleton"
+                  >
+                    <div className="omnimux-assets-cloud-skeleton-thumb" />
+                    <div className="omnimux-assets-cloud-skeleton-line" />
+                  </div>
+                ))}
+              </div>
+            </div>
+          </section>
+        ))}
+      </div>
+    )
+  } else if (showRowLayout) {
     body = (
       <div className="omnimux-assets-cloud-scroll omnimux-assets-cloud-rows-scroll">
-        {rowCategories.map((cat) => (
+        {rowCategories.map((cat, index) => (
           <CloudCategoryRow
             key={cat.id}
             category={cat}
+            rowIndex={index}
+            eager={index < 2}
             t={t}
             onSelectCategory={feed.selectCategory}
             onTogglePlay={onTogglePlay}

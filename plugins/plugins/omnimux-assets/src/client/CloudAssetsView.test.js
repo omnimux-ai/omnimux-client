@@ -209,7 +209,7 @@ describe('Cloud text card renders the text, not a placeholder plate', () => {
 
   it('mounts no media plate and requests no image for a text row', () => {
     assert.match(viewJsx, /\{kind === 'text' \? null : \(/)
-    assert.match(viewJsx, /<CloudTileMedia asset=\{asset\} broken=\{broken\} onBroken=\{handleBroken\} hovering=\{hovering\} \/>/)
+    assert.match(viewJsx, /<CloudTileMedia asset=\{asset\} broken=\{broken\} onBroken=\{handleBroken\} hovering=\{hovering\} priority=\{priority\} \/>/)
   })
 
   it('shows the description on text and voice rows only', () => {
@@ -275,7 +275,7 @@ describe('Cloud avatar card paints the portrait under its play control', () => {
   })
 
   it('mounts the tile from that flag, so a playable row can still show its portrait', () => {
-    assert.match(viewJsx, /\{showArt \? <CloudTileMedia asset=\{asset\} broken=\{broken\} onBroken=\{handleBroken\} hovering=\{hovering\} \/> : null\}/)
+    assert.match(viewJsx, /\{showArt \? <CloudTileMedia asset=\{asset\} broken=\{broken\} onBroken=\{handleBroken\} hovering=\{hovering\} priority=\{priority\} \/> : null\}/)
     assert.doesNotMatch(viewJsx, /\{canPlay \? null : <CloudTileMedia/)
   })
 
@@ -302,7 +302,7 @@ describe('Cloud video tile keeps its own frame and plays on hover', () => {
     assert.match(viewJsx, /const \[hovering, setHovering\] = useState\(false\)/)
     assert.match(viewJsx, /onMouseEnter=\{\(\) => \{\n      userControlledRef\.current = false\n      setHovering\(true\)\n    \}\}/)
     assert.match(viewJsx, /onMouseLeave=\{\(\) => \{ setHovering\(false\) \}\}/)
-    assert.match(viewJsx, /\{showArt \? <CloudTileMedia asset=\{asset\} broken=\{broken\} onBroken=\{handleBroken\} hovering=\{hovering\} \/> : null\}/)
+    assert.match(viewJsx, /\{showArt \? <CloudTileMedia asset=\{asset\} broken=\{broken\} onBroken=\{handleBroken\} hovering=\{hovering\} priority=\{priority\} \/> : null\}/)
     // The one effect that turns the pointer state into playback.
     assert.match(viewJsx, /if \(hovering\) \{\n      void element\.play\(\)\.catch/)
     assert.match(viewJsx, /element\.pause\(\)/)
@@ -318,11 +318,13 @@ describe('Cloud video tile keeps its own frame and plays on hover', () => {
     assert.match(viewJsx, /const imageSrc = ladder\[srcStep\] \?\? ''/)
   })
 
-  it('gives a poster-less clip the face of the tile and only then loads it', () => {
+  it('gives a poster-less clip the face of the tile and gates its loading by viewport and queue', () => {
     assert.match(viewJsx, /const showClip = hasClip && \(isVideo \|\| imageSrc === ''\)/)
     assert.match(viewJsx, /const bareClip = showClip && imageSrc === ''/)
+    assert.match(viewJsx, /const mountClip = bareClip \|\| \(showClip && hovering\)/)
+    assert.match(viewJsx, /const bareCanLoad = bareClip && bareSlotReady/)
     assert.match(viewJsx, /className=\{bareClip \? BARE_PREVIEW_CLASS : PREVIEW_CLASS\}/)
-    assert.match(viewJsx, /preload=\{bareClip \? 'metadata' : 'none'\}/)
+    assert.match(viewJsx, /preload=\{bareCanLoad \? 'metadata' : 'none'\}/)
     assert.match(viewJsx, /onLoadedMetadata=\{handleVideoLoadedMetadata\}/)
     assert.match(viewJsx, /BARE_CLIP_FIRST_FRAME_SECONDS/)
     const bareRule = ruleBody(ASSETS_CSS, '.omnimux-assets-cloud-preview--bare')

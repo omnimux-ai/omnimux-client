@@ -1,0 +1,603 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>资产中心「公共 → 全部」首次加载性能优化前后对比演示</title>
+<style>
+  :root {
+    --bg: #eef0f3;
+    --panel: #ffffff;
+    --panel-2: #f6f7f9;
+    --layer: #f2f3f6;
+    --elevated: #ffffff;
+    --border: #e3e5e9;
+    --border-strong: #cfd4dc;
+    --label: #17191d;
+    --label-2: #5a6069;
+    --label-3: #8b919b;
+    --danger: #d93f45;
+    --danger-bg: #ffefef;
+    --success: #248a3d;
+    --success-bg: #eaf7ee;
+    --warn: #b26a00;
+    --warn-bg: #fff5e5;
+    --chip-bg: #eceef2;
+    --chip-active-bg: #17191d;
+    --chip-active-fg: #ffffff;
+    --card-bg: #f3f4f7;
+    --skeleton-bg: #e7e9ee;
+    --shadow: 0 12px 36px rgba(18, 22, 30, 0.10), 0 2px 6px rgba(18, 22, 30, 0.05);
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  body[data-theme="dark"] {
+    --bg: #0e1013;
+    --panel: #15181c;
+    --panel-2: #191d22;
+    --layer: #20242a;
+    --elevated: #232830;
+    --border: #2a2f37;
+    --border-strong: #3b424d;
+    --label: #f0f2f5;
+    --label-2: #a8afb9;
+    --label-3: #767e89;
+    --danger: #ff6b6b;
+    --danger-bg: #361c1f;
+    --success: #4cd964;
+    --success-bg: #183020;
+    --warn: #f5b041;
+    --warn-bg: #332613;
+    --chip-bg: #232830;
+    --chip-active-bg: #f0f2f5;
+    --chip-active-fg: #111317;
+    --card-bg: #1c2026;
+    --skeleton-bg: #252a32;
+    --shadow: 0 18px 48px rgba(0, 0, 0, 0.48), 0 2px 8px rgba(0, 0, 0, 0.28);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--label);
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  button { font: inherit; color: inherit; }
+  .topbar {
+    position: sticky; top: 0; z-index: 40;
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    padding: 12px 24px; background: var(--panel); border-bottom: 1px solid var(--border);
+  }
+  .topbar h1 { margin: 0; font-size: 15px; font-weight: 680; }
+  .topbar .sub { color: var(--label-2); font-size: 12px; margin-top: 2px; }
+  .spacer { flex: 1; }
+  .toggle {
+    display: inline-flex; padding: 3px; gap: 2px;
+    border: 1px solid var(--border); border-radius: 999px; background: var(--panel-2);
+  }
+  .toggle button {
+    border: 0; background: transparent; color: var(--label-2);
+    font-size: 12px; padding: 5px 12px; border-radius: 999px; cursor: pointer;
+  }
+  .toggle button.active {
+    color: var(--label); background: var(--panel);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.14); font-weight: 600;
+  }
+  .btn-primary {
+    border: 1px solid var(--border-strong); background: var(--chip-active-bg); color: var(--chip-active-fg);
+    font-size: 12px; font-weight: 600; padding: 6px 14px; border-radius: 999px; cursor: pointer;
+  }
+  .btn-primary:hover { opacity: 0.9; }
+  .page { max-width: 1480px; margin: 0 auto; padding: 20px 24px 56px; }
+  .metrics-strip {
+    display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 18px;
+  }
+  .metric-card {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px;
+  }
+  .metric-label { font-size: 11px; color: var(--label-3); margin-bottom: 6px; }
+  .metric-row { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+  .metric-before { font-family: var(--mono); font-size: 13px; color: var(--danger); text-decoration: line-through; }
+  .metric-arrow { font-size: 11px; color: var(--label-3); }
+  .metric-after { font-family: var(--mono); font-size: 16px; font-weight: 700; color: var(--success); }
+  .compare {
+    display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; align-items: start;
+  }
+  body[data-viewport="narrow"] .compare { grid-template-columns: minmax(0, 520px); justify-content: center; }
+  body[data-viewport="narrow"] .metrics-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .panel {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 16px; overflow: hidden; box-shadow: var(--shadow);
+  }
+  .panel-head {
+    display: flex; align-items: center; gap: 10px; padding: 12px 16px;
+    border-bottom: 1px solid var(--border); background: var(--panel-2);
+  }
+  .panel-tag { font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 999px; }
+  .panel.before .panel-tag { color: var(--danger); background: var(--danger-bg); }
+  .panel.after .panel-tag { color: var(--success); background: var(--success-bg); }
+  .panel-title { font-size: 13px; font-weight: 650; }
+  .panel-clock {
+    margin-left: auto; font-family: var(--mono); font-size: 12px; font-weight: 600;
+    padding: 2px 8px; border-radius: 6px; background: var(--layer); color: var(--label-2);
+  }
+  .telemetry {
+    display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px;
+    padding: 10px 14px; border-bottom: 1px solid var(--border); background: var(--panel);
+    font-family: var(--mono); font-size: 11px;
+  }
+  .tel-item { display: flex; flex-direction: column; gap: 2px; }
+  .tel-k { color: var(--label-3); font-size: 10px; }
+  .tel-v { font-weight: 700; color: var(--label); }
+  .tel-v.bad { color: var(--danger); }
+  .tel-v.good { color: var(--success); }
+  .stage-shell {
+    height: 540px; overflow-y: auto; overflow-x: hidden;
+    padding: 14px 16px 24px; background: var(--panel); position: relative;
+  }
+  .stage-tabs {
+    display: flex; gap: 16px; align-items: center; border-bottom: 1px solid var(--border);
+    padding-bottom: 8px; margin-bottom: 10px; font-size: 12px; color: var(--label-3);
+  }
+  .stage-tabs .active {
+    color: var(--label); font-weight: 650; position: relative;
+  }
+  .stage-tabs .active::after {
+    content: ""; position: absolute; left: 0; right: 0; bottom: -9px;
+    height: 2px; background: var(--label); border-radius: 2px;
+  }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
+  .chip {
+    font-size: 12px; padding: 4px 11px; border-radius: 999px;
+    color: var(--label-2); background: transparent;
+  }
+  .chip.active { background: var(--chip-active-bg); color: var(--chip-active-fg); font-weight: 600; }
+  .blank-flash {
+    height: 360px; display: flex; align-items: center; justify-content: center;
+    border: 1px dashed var(--border-strong); border-radius: 12px;
+    color: var(--label-3); font-size: 12px;
+  }
+  .row-section { margin-bottom: 24px; }
+  .row-header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 10px; gap: 8px;
+  }
+  .row-title-wrap { display: flex; align-items: center; gap: 8px; }
+  .row-title { margin: 0; font-size: 15px; font-weight: 700; }
+  .row-state {
+    font-family: var(--mono); font-size: 10px; padding: 2px 7px; border-radius: 999px;
+    background: var(--layer); color: var(--label-2);
+  }
+  .row-state.deferred { background: var(--warn-bg); color: var(--warn); }
+  .row-state.eager { background: var(--success-bg); color: var(--success); }
+  .row-state.storm { background: var(--danger-bg); color: var(--danger); }
+  .row-btn {
+    border: 1px solid var(--border); background: var(--layer); color: var(--label-2);
+    border-radius: 999px; font-size: 11px; padding: 4px 10px; cursor: pointer;
+  }
+  .row-wrap { position: relative; }
+  .cards-rail {
+    display: flex; gap: 10px; overflow-x: auto; overflow-y: hidden;
+    padding: 2px 2px 8px; scrollbar-width: none; scroll-behavior: smooth;
+  }
+  .cards-rail::-webkit-scrollbar { display: none; }
+  .card {
+    flex: 0 0 116px; width: 116px; height: 206px; border-radius: 10px;
+    position: relative; overflow: hidden; background: var(--card-bg);
+    border: 1px solid var(--border); display: flex; flex-direction: column; justify-content: flex-end;
+  }
+  .card.horiz { flex: 0 0 184px; width: 184px; height: 104px; }
+  .card-skeleton {
+    position: absolute; inset: 0; background: var(--skeleton-bg);
+    animation: breathe 1.5s ease-in-out infinite;
+  }
+  @keyframes breathe { 0%, 100% { opacity: 0.45; } 50% { opacity: 0.85; } }
+  .card-art {
+    position: absolute; inset: 0; opacity: 0; transition: opacity 0.25s ease;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 600; color: rgba(255,255,255,0.92);
+    padding: 8px; text-align: center;
+  }
+  .card.loaded .card-art { opacity: 1; }
+  .card.loaded .card-skeleton { display: none; }
+  .card-badge {
+    position: absolute; top: 6px; left: 6px; z-index: 2;
+    font-family: var(--mono); font-size: 9px; padding: 2px 5px; border-radius: 4px;
+    background: rgba(0,0,0,0.58); color: #ffffff;
+  }
+  .card-badge.mp4 { background: var(--danger); }
+  .card-badge.high { background: var(--success); }
+  .card-title {
+    position: relative; z-index: 2; padding: 6px 7px; font-size: 11px; font-weight: 600;
+    color: #ffffff; background: linear-gradient(to top, rgba(0,0,0,0.68), transparent);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .rail-arrow {
+    position: absolute; right: 4px; top: 50%; transform: translateY(-50%); z-index: 5;
+    width: 28px; height: 28px; border-radius: 50%;
+    border: 1px solid var(--border-strong); background: var(--elevated);
+    color: var(--label); cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.22);
+  }
+  .waterfall {
+    padding: 12px 14px 14px; border-top: 1px solid var(--border); background: var(--panel-2);
+  }
+  .wf-head { font-size: 11px; font-weight: 650; color: var(--label-2); margin-bottom: 8px; }
+  .wf-row { display: grid; grid-template-columns: 148px 1fr 56px; align-items: center; gap: 8px; margin-bottom: 5px; font-size: 11px; }
+  .wf-name { color: var(--label-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-family: var(--mono); }
+  .wf-track { height: 10px; background: var(--layer); border-radius: 5px; position: relative; overflow: hidden; }
+  .wf-bar { position: absolute; top: 0; bottom: 0; border-radius: 5px; }
+  .wf-bar.meta { background: #5c7cfa; }
+  .wf-bar.vis { background: var(--success); }
+  .wf-bar.storm { background: var(--danger); }
+  .wf-bar.idle { background: var(--warn); }
+  .wf-ms { text-align: right; font-family: var(--mono); color: var(--label-3); font-size: 10px; }
+</style>
+</head>
+<body data-theme="dark" data-viewport="desktop">
+  <header class="topbar">
+    <div>
+      <h1>资产中心「公共 → 全部」首次加载性能对比演示</h1>
+      <div class="sub">基于 Issue #324 实测数据还原：离屏 20 路 MP4 并发风暴、21 次串行元数据瀑布 vs 视口按需加载与热池并行策略</div>
+    </div>
+    <div class="spacer"></div>
+    <button class="btn-primary" id="replayBtn" type="button">重放冷启动加载</button>
+    <div class="toggle" role="group" aria-label="视口切换">
+      <button type="button" class="active" data-vp="desktop">桌面宽屏</button>
+      <button type="button" data-vp="narrow">窄屏视图</button>
+    </div>
+    <div class="toggle" role="group" aria-label="主题切换">
+      <button type="button" class="active" data-th="dark">深色</button>
+      <button type="button" data-th="light">浅色</button>
+    </div>
+  </header>
+
+  <main class="page">
+    <section class="metrics-strip" aria-label="关键指标前后对比">
+      <div class="metric-card">
+        <div class="metric-label">首屏元数据 HTTP 请求</div>
+        <div class="metric-row">
+          <span class="metric-before">21 次 (3-4 轮串行)</span>
+          <span class="metric-arrow">→</span>
+          <span class="metric-after">2-4 次 (1 轮并行)</span>
+        </div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">首屏离屏 MP4 视频请求</div>
+        <div class="metric-row">
+          <span class="metric-before">~20 路 (11MB 级)</span>
+          <span class="metric-arrow">→</span>
+          <span class="metric-after">0 路 (滚动才触发, 限流 3 路)</span>
+        </div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">首屏并发 DOM 卡片与流量</div>
+        <div class="metric-row">
+          <span class="metric-before">144 卡 / 15.4 MB</span>
+          <span class="metric-arrow">→</span>
+          <span class="metric-after">20 卡 / 2.3 MB (补缩略图 0.5 MB)</span>
+        </div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">前端客户端包体 (lib/client.js)</div>
+        <div class="metric-row">
+          <span class="metric-before">2.18 MB</span>
+          <span class="metric-arrow">→</span>
+          <span class="metric-after">1.34 MB (-39%)</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="compare">
+      <!-- BEFORE PANEL -->
+      <article class="panel before">
+        <div class="panel-head">
+          <span class="panel-tag">优化前</span>
+          <span class="panel-title">全 6 行同时挂载 + 离屏 MP4 抢带宽 + 串行瀑布</span>
+          <span class="panel-clock" id="beforeClock">0 ms</span>
+        </div>
+        <div class="telemetry">
+          <div class="tel-item"><span class="tel-k">元数据请求</span><span class="tel-v bad" id="bMeta">0 / 21</span></div>
+          <div class="tel-item"><span class="tel-k">已挂载卡片</span><span class="tel-v bad" id="bCards">0 / 144</span></div>
+          <div class="tel-item"><span class="tel-k">离屏 MP4 并发</span><span class="tel-v bad" id="bMp4">0</span></div>
+          <div class="tel-item"><span class="tel-k">首屏 14 图完成</span><span class="tel-v bad" id="bDone">等待中</span></div>
+        </div>
+        <div class="stage-shell" id="beforeScroll">
+          <div class="stage-tabs">
+            <span>本地</span><span class="active">公共</span><span>产品库</span><span>AI生成</span>
+          </div>
+          <div class="chips">
+            <span class="chip active">全部</span><span class="chip">角色</span><span class="chip">场景</span><span class="chip">道具</span><span class="chip">素材</span><span class="chip">风格</span><span class="chip">声音</span>
+          </div>
+          <div id="beforeRows"></div>
+        </div>
+        <div class="waterfall">
+          <div class="wf-head">网络瀑布示意图 (0 - 6500 ms)</div>
+          <div class="wf-row"><span class="wf-name">manifest + 4.3M index</span><div class="wf-track"><div class="wf-bar meta" style="left:0%;width:4%"></div></div><span class="wf-ms">220ms</span></div>
+          <div class="wf-row"><span class="wf-name">20x 串行分片 + all/p0</span><div class="wf-track"><div class="wf-bar meta" style="left:4%;width:9%"></div></div><span class="wf-ms">580ms</span></div>
+          <div class="wf-row"><span class="wf-name">20x 离屏 MP4 (素材行)</span><div class="wf-track"><div class="wf-bar storm" style="left:13%;width:84%"></div></div><span class="wf-ms">6260ms</span></div>
+          <div class="wf-row"><span class="wf-name">首屏 14 张可见图 (被挤占)</span><div class="wf-track"><div class="wf-bar vis" style="left:13%;width:58%"></div></div><span class="wf-ms">4200ms</span></div>
+        </div>
+      </article>
+
+      <!-- AFTER PANEL -->
+      <article class="panel after">
+        <div class="panel-head">
+          <span class="panel-tag">优化后</span>
+          <span class="panel-title">首屏 2 行并行高优 + 离屏行/横向按需展开 (可滚可点)</span>
+          <span class="panel-clock" id="afterClock">0 ms</span>
+        </div>
+        <div class="telemetry">
+          <div class="tel-item"><span class="tel-k">元数据请求</span><span class="tel-v good" id="aMeta">0 / 4</span></div>
+          <div class="tel-item"><span class="tel-k">首屏挂载卡片</span><span class="tel-v good" id="aCards">0 / 20</span></div>
+          <div class="tel-item"><span class="tel-k">离屏 MP4 并发</span><span class="tel-v good" id="aMp4">0</span></div>
+          <div class="tel-item"><span class="tel-k">首屏 14 图完成</span><span class="tel-v good" id="aDone">等待中</span></div>
+        </div>
+        <div class="stage-shell" id="afterScroll">
+          <div class="stage-tabs">
+            <span>本地</span><span class="active">公共</span><span>产品库</span><span>AI生成</span>
+          </div>
+          <div class="chips">
+            <span class="chip active">全部</span><span class="chip">角色</span><span class="chip">场景</span><span class="chip">道具</span><span class="chip">素材</span><span class="chip">风格</span><span class="chip">声音</span>
+          </div>
+          <div id="afterRows"></div>
+        </div>
+        <div class="waterfall">
+          <div class="wf-head">网络瀑布示意图 (0 - 6500 ms，滚动右侧列表体验按需加载)</div>
+          <div class="wf-row"><span class="wf-name">preconnect + 轻清单</span><div class="wf-track"><div class="wf-bar meta" style="left:0%;width:1%"></div></div><span class="wf-ms">15ms</span></div>
+          <div class="wf-row"><span class="wf-name">行1-2 并行热池分片</span><div class="wf-track"><div class="wf-bar meta" style="left:1%;width:2%"></div></div><span class="wf-ms">95ms</span></div>
+          <div class="wf-row"><span class="wf-name">首屏 14 图 (high 优先)</span><div class="wf-track"><div class="wf-bar vis" style="left:3%;width:16%"></div></div><span class="wf-ms">1080ms</span></div>
+          <div class="wf-row"><span class="wf-name">行3-6 与横向 11-24 卡</span><div class="wf-track"><div class="wf-bar idle" style="left:19%;width:6%"></div></div><span class="wf-ms">按需</span></div>
+        </div>
+      </article>
+    </section>
+  </main>
+
+<script>
+const CATEGORIES = [
+  { id: 'character', title: '角色', horiz: false, palette: ['#3a4f66', '#4a5568', '#524b69', '#3d5a58', '#5e4b4b', '#3f5168', '#4f4a5c'] },
+  { id: 'scene', title: '场景', horiz: false, palette: ['#2f4f6f', '#3d5c5c', '#4b5563', '#2e4a5e', '#445a6e', '#364f63', '#495867'] },
+  { id: 'prop', title: '道具', horiz: false, palette: ['#544d46', '#4c5259', '#5a4e48', '#4a5450', '#564d56', '#4c545c'] },
+  { id: 'material', title: '素材', horiz: false, isVideoRow: true, palette: ['#3b3f4a', '#443d48', '#3a4648', '#48423a', '#3d424d', '#453f46'] },
+  { id: 'style', title: '风格', horiz: true, palette: ['#4b4453', '#3b4d5e', '#524742', '#3c4e4a', '#484556'] },
+  { id: 'audio', title: '声音', horiz: true, palette: ['#1f2a48', '#1b3532', '#1b2f4a', '#302247', '#292c31'] },
+]
+
+const timers = []
+function schedule(fn, ms) {
+  const id = setTimeout(fn, ms)
+  timers.push(id)
+  return id
+}
+function clearAllTimers() {
+  while (timers.length) clearTimeout(timers.pop())
+}
+
+function makeCard(cat, idx, opts = {}) {
+  const card = document.createElement('div')
+  card.className = 'card' + (cat.horiz ? ' horiz' : '')
+  const color = cat.palette[idx % cat.palette.length]
+  const badge = opts.badgeText
+    ? `<span class="card-badge ${opts.badgeClass || ''}">${opts.badgeText}</span>`
+    : ''
+  card.innerHTML = `
+    <div class="card-skeleton"></div>
+    ${badge}
+    <div class="card-art" style="background:linear-gradient(155deg, ${color}, #16191f)">${cat.title} #${idx + 1}</div>
+    <div class="card-title">${cat.title}素材 ${idx + 1}</div>
+  `
+  return card
+}
+
+let afterActivatedRows = new Set()
+let afterExpandedCounts = {}
+let afterObserver = null
+
+function updateAfterTelemetry() {
+  let totalCards = 0
+  let mp4Active = 0
+  for (const cat of CATEGORIES) {
+    if (afterActivatedRows.has(cat.id)) {
+      const count = afterExpandedCounts[cat.id] || 10
+      totalCards += count
+      if (cat.isVideoRow) mp4Active = Math.min(3, count)
+    }
+  }
+  document.getElementById('aCards').textContent = `${totalCards} / 144`
+  document.getElementById('aMp4').textContent = String(mp4Active)
+  document.getElementById('aMeta').textContent = `${Math.min(12, afterActivatedRows.size * 2)} / 12`
+}
+
+function populateAfterRow(section, cat) {
+  if (afterActivatedRows.has(cat.id)) return
+  afterActivatedRows.add(cat.id)
+  afterExpandedCounts[cat.id] = 10
+  const rail = section.querySelector('.cards-rail')
+  const badge = section.querySelector('.row-state')
+  badge.textContent = cat.isVideoRow ? '已入视口 并发限流 3 路' : '已加载 10/24 张'
+  badge.className = 'row-state eager'
+  rail.innerHTML = ''
+  for (let i = 0; i < 10; i++) {
+    const isHigh = cat.id === 'character' && i < 7
+    const card = makeCard(cat, i, {
+      badgeText: isHigh ? 'high' : (cat.isVideoRow ? 'MP4 队列' : ''),
+      badgeClass: isHigh ? 'high' : (cat.isVideoRow ? 'mp4' : ''),
+    })
+    rail.appendChild(card)
+    const delay = isHigh ? 140 + i * 70 : (cat.isVideoRow ? 260 + Math.floor(i / 3) * 280 : 240 + i * 75)
+    schedule(() => card.classList.add('loaded'), delay)
+  }
+  const arrow = section.querySelector('.rail-arrow')
+  arrow.style.display = 'inline-flex'
+  arrow.onclick = () => {
+    const current = afterExpandedCounts[cat.id] || 10
+    if (current < 24) {
+      const nextCount = Math.min(24, current + 8)
+      for (let i = current; i < nextCount; i++) {
+        const card = makeCard(cat, i, {
+          badgeText: cat.isVideoRow ? 'MP4 队列' : '按需展开',
+          badgeClass: cat.isVideoRow ? 'mp4' : '',
+        })
+        rail.appendChild(card)
+        schedule(() => card.classList.add('loaded'), 140 + (i - current) * 50)
+      }
+      afterExpandedCounts[cat.id] = nextCount
+      badge.textContent = `已展开 ${nextCount}/24 张`
+      updateAfterTelemetry()
+    }
+    rail.scrollBy({ left: 320, behavior: 'smooth' })
+  }
+  updateAfterTelemetry()
+}
+
+function runSimulation() {
+  clearAllTimers()
+  if (afterObserver) { afterObserver.disconnect(); afterObserver = null }
+  afterActivatedRows = new Set()
+  afterExpandedCounts = {}
+
+  const beforeRows = document.getElementById('beforeRows')
+  const afterRows = document.getElementById('afterRows')
+  document.getElementById('beforeScroll').scrollTop = 0
+  document.getElementById('afterScroll').scrollTop = 0
+
+  document.getElementById('bMeta').textContent = '1 / 21'
+  document.getElementById('bCards').textContent = '0 / 144'
+  document.getElementById('bMp4').textContent = '0'
+  document.getElementById('bDone').textContent = '空白等待'
+  document.getElementById('beforeClock').textContent = '0 ms'
+
+  document.getElementById('aMeta').textContent = '0 / 4'
+  document.getElementById('aCards').textContent = '0 / 20'
+  document.getElementById('aMp4').textContent = '0'
+  document.getElementById('aDone').textContent = '加载中'
+  document.getElementById('afterClock').textContent = '0 ms'
+
+  // Before: starts with blank flash while manifest blocks on 4.3MB index.json
+  beforeRows.innerHTML = '<div class="blank-flash">manifest 加载中（无骨架屏，Host 同步解析 4.3MB index.json）</div>'
+
+  // After: immediately shows 2-row skeleton with zero blank flash
+  afterRows.innerHTML = ''
+  for (const [idx, cat] of CATEGORIES.entries()) {
+    const sec = document.createElement('section')
+    sec.className = 'row-section'
+    sec.dataset.cat = cat.id
+    const deferred = idx >= 2
+    sec.innerHTML = `
+      <div class="row-header">
+        <div class="row-title-wrap">
+          <h3 class="row-title">${cat.title}</h3>
+          <span class="row-state ${deferred ? 'deferred' : 'eager'}">${deferred ? '离屏延后 (未请求)' : '首屏高优'}</span>
+        </div>
+        <button class="row-btn" type="button">查看全部</button>
+      </div>
+      <div class="row-wrap">
+        <div class="cards-rail"></div>
+        <button class="rail-arrow" type="button" aria-label="向右滚动" style="display:none">›</button>
+      </div>
+    `
+    const rail = sec.querySelector('.cards-rail')
+    for (let s = 0; s < 6; s++) {
+      const sk = document.createElement('div')
+      sk.className = 'card' + (cat.horiz ? ' horiz' : '')
+      sk.innerHTML = '<div class="card-skeleton"></div>'
+      rail.appendChild(sk)
+    }
+    afterRows.appendChild(sec)
+  }
+
+  // After: eager rows (0, 1) resolve in 1 parallel wave (~95ms)
+  schedule(() => {
+    document.getElementById('afterClock').textContent = '95 ms'
+    const sections = afterRows.querySelectorAll('.row-section')
+    populateAfterRow(sections[0], CATEGORIES[0])
+    populateAfterRow(sections[1], CATEGORIES[1])
+    afterObserver = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue
+        const cat = CATEGORIES.find((c) => c.id === entry.target.dataset.cat)
+        if (cat) populateAfterRow(entry.target, cat)
+      }
+    }, { root: document.getElementById('afterScroll'), rootMargin: '120px 0px' })
+    for (let i = 2; i < sections.length; i++) afterObserver.observe(sections[i])
+  }, 110)
+
+  schedule(() => {
+    document.getElementById('afterClock').textContent = '1080 ms'
+    document.getElementById('aDone').textContent = '1.08 s'
+  }, 1080)
+
+  // Before: 220ms manifest lands -> 20 serial requests -> 650ms mounts all 144 cards + 20 offscreen MP4s
+  schedule(() => {
+    document.getElementById('beforeClock').textContent = '220 ms'
+    document.getElementById('bMeta').textContent = '8 / 21'
+    beforeRows.innerHTML = ''
+    for (const cat of CATEGORIES) {
+      const sec = document.createElement('section')
+      sec.className = 'row-section'
+      sec.innerHTML = `
+        <div class="row-header">
+          <div class="row-title-wrap">
+            <h3 class="row-title">${cat.title}</h3>
+            <span class="row-state storm">${cat.isVideoRow ? '全量挂载 + 20 路 MP4' : '立即全量挂载 24 张'}</span>
+          </div>
+          <button class="row-btn" type="button">查看全部</button>
+        </div>
+        <div class="row-wrap"><div class="cards-rail"></div></div>
+      `
+      const rail = sec.querySelector('.cards-rail')
+      for (let s = 0; s < 6; s++) {
+        const sk = document.createElement('div')
+        sk.className = 'card' + (cat.horiz ? ' horiz' : '')
+        sk.innerHTML = '<div class="card-skeleton"></div>'
+        rail.appendChild(sk)
+      }
+      beforeRows.appendChild(sec)
+    }
+  }, 240)
+
+  schedule(() => {
+    document.getElementById('beforeClock').textContent = '620 ms'
+    document.getElementById('bMeta').textContent = '21 / 21'
+    document.getElementById('bCards').textContent = '144 / 144'
+    document.getElementById('bMp4').textContent = '20 (挤占 HTTP/2)'
+    const sections = beforeRows.querySelectorAll('.row-section')
+    CATEGORIES.forEach((cat, rIdx) => {
+      const rail = sections[rIdx].querySelector('.cards-rail')
+      rail.innerHTML = ''
+      for (let i = 0; i < 24; i++) {
+        const card = makeCard(cat, i, {
+          badgeText: cat.isVideoRow ? '11MB MP4' : (i >= 7 ? '离屏抢载' : '原图 MISS'),
+          badgeClass: cat.isVideoRow ? 'mp4' : '',
+        })
+        rail.appendChild(card)
+        // Starved by offscreen storm: visible cards trickle in over 1.6s - 4.2s
+        const loadDelay = 1100 + rIdx * 320 + i * 240
+        schedule(() => card.classList.add('loaded'), loadDelay)
+      }
+    })
+  }, 640)
+
+  schedule(() => {
+    document.getElementById('beforeClock').textContent = '4200 ms'
+    document.getElementById('bDone').textContent = '4.20 s (总流 6.26 s)'
+  }, 4200)
+}
+
+document.getElementById('replayBtn').addEventListener('click', runSimulation)
+document.querySelectorAll('[data-th]').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    document.body.dataset.theme = btn.dataset.th
+    document.querySelectorAll('[data-th]').forEach((b) => b.classList.toggle('active', b === btn))
+  })
+})
+document.querySelectorAll('[data-vp]').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    document.body.dataset.viewport = btn.dataset.vp
+    document.querySelectorAll('[data-vp]').forEach((b) => b.classList.toggle('active', b === btn))
+  })
+})
+runSimulation()
+</script>
+</body>
+</html>

@@ -15,6 +15,7 @@
  * that built the catalog.
  */
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { readFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { AssetsError } from './mappings.js'
@@ -132,49 +133,109 @@ export function createCloudCatalog(deps = {}) {
   let manifest = null
   /** @type {Map<string, CatalogIndexRow> | null} */
   let index = null
-  let loaded = false
+  let manifestLoaded = false
+  let indexLoaded = false
+  /** Monotonic generation incremented on reload() so stale async warms drop cleanly. */
+  let loadGen = 0
+  /** @type {Promise<void> | null} */
+  let indexWarming = null
   /** Monotonic part of a staging slice name: the clock alone can repeat. */
   let stagingSeq = 0
 
-  function load() {
-    if (loaded) return
+  /**
+   * 仅加载轻量 `manifest.json`（~5.6 KB）。首次切到「公共」Tab 时只需要清单即可渲染
+   * 分类导航与分片路由，绝不再同步阻塞读取 4.3 MB 的 `index.json`。
+   * 读到有效清单后才上锁；目录尚未物化完时保持未加载，允许后续请求自愈。
+   */
+  function loadManifest() {
+    if (manifestLoaded) return true
     const parsedManifest = readJsonFile(join(catalogDir, 'manifest.json'))
-    const parsedIndex = readJsonFile(join(catalogDir, 'index.json'))
-    // 读到有效目录之后才上锁。目录缺失、或正撞上物化脚本「删掉再整份拷回」的窗口时这里会
-    // 读空，那就保持「未加载」，让下一次请求重试——否则一次瞬时读空会把插件永久钉在
-    // 「目录未构建」上，只能靠重启应用恢复。
-    if (!parsedManifest || !Array.isArray(parsedIndex)) return
-    loaded = true
+    if (!parsedManifest || typeof parsedManifest !== 'object' || Array.isArray(parsedManifest)) return false
+    manifestLoaded = true
     manifest = parsedManifest
-    index = new Map()
+    return true
+  }
+
+  /** @param {unknown} parsedIndex */
+  function hydrateIndex(parsedIndex) {
+    if (!Array.isArray(parsedIndex)) return false
+    const next = new Map()
     for (const row of parsedIndex) {
-      if (row && typeof row.id === 'string') index.set(row.id, /** @type {CatalogIndexRow} */ (row))
+      if (row && typeof row.id === 'string') next.set(row.id, /** @type {CatalogIndexRow} */ (row))
     }
+    index = next
+    indexLoaded = true
+    return true
+  }
+
+  /**
+   * 仅在查询单条行（media 重定向 / 保存到本地 / 搜索 / 维度筛选）时加载 4.3 MB `index.json`。
+   */
+  function loadIndex() {
+    if (indexLoaded) return true
+    const parsedIndex = readJsonFile(join(catalogDir, 'index.json'))
+    return hydrateIndex(parsedIndex)
+  }
+
+  /**
+   * 后台非阻塞异步预热 `index.json`：不阻塞 Host 主线程上的首次 `manifest.json` 响应，
+   * 又让随后到达的搜索、筛选或媒体解析直接命中内存 Map。
+   */
+  function warmIndexAsync() {
+    if (indexLoaded) return Promise.resolve()
+    if (indexWarming !== null) return indexWarming
+    const gen = loadGen
+    const target = join(catalogDir, 'index.json')
+    const task = readFile(target, 'utf8')
+      .then((text) => {
+        if (gen !== loadGen || indexLoaded) return
+        const parsed = JSON.parse(text)
+        hydrateIndex(parsed)
+      })
+      .catch((error) => {
+        // 预热失败保持 indexLoaded=false，后续同步调用按既有自愈路径重试；ENOENT 属未物化常态不刷日志。
+        if (error && typeof error === 'object' && error.code !== 'ENOENT') {
+          console.warn('[assets] async cloud index warm failed:', error.message || error)
+        }
+      })
+      .finally(() => {
+        if (indexWarming === task) indexWarming = null
+      })
+    indexWarming = task
+    return task
   }
 
   /** Force a re-read; used by tests and after a catalog rebuild. */
   function reload() {
-    loaded = false
+    loadGen += 1
+    manifestLoaded = false
+    indexLoaded = false
+    indexWarming = null
     manifest = null
     index = null
-    load()
+    loadManifest()
+    loadIndex()
   }
 
   function ready() {
-    load()
-    return manifest !== null && index !== null
+    if (!loadManifest() || manifest === null) return false
+    const hasIndex = loadIndex()
+    return hasIndex && index !== null
   }
 
   function getManifest() {
-    if (!ready()) {
+    if (!loadManifest() || manifest === null) {
       throw new AssetsError('catalog-unavailable', 'cloud assets catalog is not built; run the build:cloud-catalog script')
+    }
+    if (!indexLoaded && indexWarming === null) {
+      setImmediate(() => { void warmIndexAsync() })
     }
     return /** @type {Record<string, unknown>} */ (manifest)
   }
 
   /** @param {string} id */
   function getRow(id) {
-    if (!ready()) return null
+    if (!loadIndex() || index === null) return null
     return /** @type {Map<string, CatalogIndexRow>} */ (index).get(id) ?? null
   }
 
@@ -558,6 +619,7 @@ export function createCloudCatalog(deps = {}) {
     reload,
     getManifest,
     getRow,
+    warmIndexAsync,
     search,
     filter,
     resolveMedia,

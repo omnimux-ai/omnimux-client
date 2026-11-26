@@ -2,24 +2,85 @@
  * Loads the cloud assets manifest — the totals, category table, and
  * sub-category table the cloud tab renders its navigation from.
  *
- * The manifest is small and fetched once per mount; per-category pages are the
- * `useCloudAssetsFeed` hook's job.
+ * The manifest is small (~5.6 KB) and cached at module scope across tab mounts.
+ * `prefetchCloudManifest()` shares the same single-flight request so opening
+ * the Assets stage on the default Local tab can warm the manifest during idle
+ * time without duplicating fetches when the user clicks Cloud.
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { cloudManifest } from './api.js'
 
 /**
  * 清单的模块级缓存。
- *
- * 组件内的 `loadedRef` 只挡得住同一个实例的重复加载；页签切走再切回来是重新挂载，
- * 没有这一层就每次都要再拉一遍。清单是纯字典数据、只读、体量小，跨挂载复用是安全的。
  * @type {{ value: any } | null}
  */
 let manifestCache = null
 
+/**
+ * 飞行中清单请求，合并预热与正式挂载的并发读取。
+ * @type {Promise<{ ok: boolean, body?: any, error?: string }> | null}
+ */
+let manifestInFlight = null
+
+/**
+ * 单调递增请求代数，避免早期预热请求晚于显式 `force: true` 刷新落盘并覆盖新清单。
+ */
+let manifestRequestGen = 0
+
 /** 清空清单缓存（测试与显式刷新用）。 */
 export function clearCloudManifestCache() {
+  manifestRequestGen += 1
   manifestCache = null
+  manifestInFlight = null
+}
+
+/**
+ * Single-flight manifest fetch. Populates `manifestCache` on success.
+ * @param {{ force?: boolean }} [options]
+ * @returns {Promise<{ ok: boolean, body?: any, error?: string }>}
+ */
+export function fetchCloudManifestCached(options = {}) {
+  const force = options.force === true
+  if (!force && manifestCache !== null) {
+    return Promise.resolve({ ok: true, body: manifestCache.value })
+  }
+  if (!force && manifestInFlight !== null) {
+    return manifestInFlight
+  }
+  const gen = ++manifestRequestGen
+  const request = (async () => {
+    try {
+      const result = await cloudManifest({ force })
+      if (!result.ok) {
+        return {
+          ok: false,
+          error: String(result.body?.message ?? result.body?.error ?? 'manifest unavailable'),
+        }
+      }
+      if (gen === manifestRequestGen) {
+        manifestCache = { value: result.body }
+      }
+      return { ok: true, body: result.body }
+    } catch (caught) {
+      return {
+        ok: false,
+        error: caught instanceof Error ? caught.message : String(caught),
+      }
+    } finally {
+      if (manifestInFlight === request) manifestInFlight = null
+    }
+  })()
+  manifestInFlight = request
+  return request
+}
+
+/**
+ * Best-effort idle prefetch of the small manifest.json before switching to 公共.
+ * Never throws; failures stay uncached so an explicit Cloud mount retries cleanly.
+ */
+export function prefetchCloudManifest() {
+  if (manifestCache !== null || manifestInFlight !== null) return Promise.resolve(null)
+  return fetchCloudManifestCached({ force: false })
 }
 
 /**
@@ -28,32 +89,33 @@ export function clearCloudManifestCache() {
 export function useCloudManifest(options = {}) {
   const { enabled = true } = options
   const [manifest, setManifest] = useState(/** @type {any} */ (manifestCache?.value ?? null))
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(() => Boolean(enabled && manifestCache === null))
   const [error, setError] = useState('')
   const loadedRef = useRef(false)
 
   const load = useCallback(async (force = false) => {
-    if (!force && loadedRef.current) return
-    // 缓存命中直接落状态，不发请求、也不再进加载态。
+    if (!force && loadedRef.current) {
+      setLoading(false)
+      return
+    }
+    // 缓存命中直接落状态，并显式结束冷启动首帧的 loading=true，避免预热在首帧与 effect 之间落盘时卡骨架。
     if (!force && manifestCache !== null) {
       loadedRef.current = true
       setError('')
       setManifest(manifestCache.value)
+      setLoading(false)
       return
     }
     setLoading(true)
     try {
-      const result = await cloudManifest({ force })
+      const result = await fetchCloudManifestCached({ force })
       if (!result.ok) {
-        setError(String(result.body?.message ?? result.body?.error ?? 'manifest unavailable'))
+        setError(String(result.error ?? 'manifest unavailable'))
         return
       }
       loadedRef.current = true
       setError('')
-      manifestCache = { value: result.body }
       setManifest(result.body)
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : String(caught))
     } finally {
       setLoading(false)
     }

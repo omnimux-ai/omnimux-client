@@ -16,6 +16,7 @@ import { addAssetToConversation } from './add-to-chat.js'
 import { revealAssetEntry } from './api.js'
 import { injectAssetsStyles } from './styles.js'
 import { useAssetsFeed } from './use-assets-feed.js'
+import { prefetchCloudManifest } from './use-cloud-manifest.js'
 import { ProductCategoryNav } from './ProductCategoryNav.jsx'
 import { ProductTab } from './ProductTab.jsx'
 import { ProductFormPage } from 'omnimux-products/ui'
@@ -23,6 +24,29 @@ import { CreateProductMenu } from './CreateProductMenu.jsx'
 import { GenerationsCategoryNav, GenerationsView } from './GenerationsView.jsx'
 
 const TAB_ID = 'omnimux-assets:library'
+export const CLOUD_ASSETS_ORIGIN = 'https://assets.omnimux.ai'
+
+/**
+ * 幂等注入公网资源 CDN 预连接标签，将 220-580ms 冷 TLS 握手前置到打开资产页时。
+ * @param {Document | undefined} [doc]
+ */
+export const ensureCloudPreconnect = (targetDoc) => {
+  const doc = targetDoc ?? (typeof document !== 'undefined' ? document : undefined)
+  if (!doc || !doc.head) return
+  if (!doc.head.querySelector(`link[rel="preconnect"][href="${CLOUD_ASSETS_ORIGIN}"]`)) {
+    const preconnect = doc.createElement('link')
+    preconnect.rel = 'preconnect'
+    preconnect.href = CLOUD_ASSETS_ORIGIN
+    preconnect.crossOrigin = 'anonymous'
+    doc.head.appendChild(preconnect)
+  }
+  if (!doc.head.querySelector(`link[rel="dns-prefetch"][href="${CLOUD_ASSETS_ORIGIN}"]`)) {
+    const dns = doc.createElement('link')
+    dns.rel = 'dns-prefetch'
+    dns.href = CLOUD_ASSETS_ORIGIN
+    doc.head.appendChild(dns)
+  }
+}
 
 function AssetsHeader(props) {
   const { t } = props
@@ -496,6 +520,19 @@ export function AssetsStage(props) {
   // modal share it, so a row saved from either one is marked in both.
   const cloudSave = useCloudSave({ t })
   useEffect(() => { injectAssetsStyles() }, [])
+  // 打开资产页（默认停在本地 Tab）时提前建连 CDN 并在空闲时预热 5.6 KB 云端清单，
+  // 用户切到「公共」Tab 时无需等待冷 TLS 握手与清单往返。
+  useEffect(() => {
+    if (!visible) return undefined
+    ensureCloudPreconnect()
+    if (typeof window === 'undefined') return undefined
+    if (typeof window.requestIdleCallback === 'function') {
+      const idleId = window.requestIdleCallback(() => { void prefetchCloudManifest() }, { timeout: 1000 })
+      return () => { window.cancelIdleCallback?.(idleId) }
+    }
+    const timer = window.setTimeout(() => { void prefetchCloudManifest() }, 150)
+    return () => { window.clearTimeout(timer) }
+  }, [visible])
   const everOpened = true
 
   useEffect(() => {
