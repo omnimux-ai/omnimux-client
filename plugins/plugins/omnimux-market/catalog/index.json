@@ -215,7 +215,7 @@
       "downloads": 860,
       "cover": {
         "asset": "catalog/covers/skills/skill-card-3.webp",
-        "alt": "视频拆解"
+        "alt": "拆解视频"
       },
       "titleZh": "拆解视频",
       "titleEn": "Video Breakdown",
@@ -227,10 +227,10 @@
       "coverFile": "skill-card-3.webp",
       "badge": "HOT",
       "installFlow": "session-guide",
-      "sessionPrefill": "/video-hook-analysis\n请运行 视频拆解 (Video Breakdown) 技能，帮我拆解这条参考短视频的前 3 秒钩子与分镜节奏。",
+      "sessionPrefill": "/video-hook-analysis\n请运行 拆解视频 (Video Breakdown) 技能，帮我拆解这条参考短视频的前 3 秒钩子与分镜节奏。",
       "homeCover": {
         "asset": "catalog/covers/skills/skill-card-3.webp",
-        "alt": "视频拆解"
+        "alt": "拆解视频"
       },
       "author": "OmniMux",
       "origin": "first-party",
@@ -261,7 +261,7 @@
       "downloads": 790,
       "cover": {
         "asset": "catalog/covers/skills/skill-card-4.webp",
-        "alt": "反推视频提示词"
+        "alt": "视频转提示词"
       },
       "titleZh": "视频转提示词",
       "titleEn": "Reverse Video Prompt",
@@ -273,10 +273,10 @@
       "coverFile": "skill-card-4.webp",
       "badge": "HOT",
       "installFlow": "session-guide",
-      "sessionPrefill": "/reverse-video-prompt\n请运行 反推视频提示词 (Reverse Video Prompt) 技能，帮我把参考视频反推为结构化 I2V 生成提示词。",
+      "sessionPrefill": "/reverse-video-prompt\n请运行 视频转提示词 (Reverse Video Prompt) 技能，帮我把参考视频反推为结构化 I2V 生成提示词。",
       "homeCover": {
         "asset": "catalog/covers/skills/skill-card-4.webp",
-        "alt": "反推视频提示词"
+        "alt": "视频转提示词"
       },
       "author": "OmniMux",
       "origin": "first-party",
@@ -307,7 +307,7 @@
       "downloads": 720,
       "cover": {
         "asset": "catalog/covers/skills/skill-card-5.webp",
-        "alt": "图文复刻"
+        "alt": "复刻爆款图文"
       },
       "titleZh": "复刻爆款图文",
       "titleEn": "Carousel Replication",
@@ -319,10 +319,10 @@
       "coverFile": "skill-card-5.webp",
       "badge": "HOT",
       "installFlow": "session-guide",
-      "sessionPrefill": "/replicate-carousel\n请运行 图文复刻 (Carousel Replication) 技能，为我的商品复刻电商图文轮播方案。",
+      "sessionPrefill": "/replicate-carousel\n请运行 复刻爆款图文 (Carousel Replication) 技能，为我的商品复刻电商图文轮播方案。",
       "homeCover": {
         "asset": "catalog/covers/skills/skill-card-5.webp",
-        "alt": "图文复刻"
+        "alt": "复刻爆款图文"
       },
       "author": "OmniMux",
       "origin": "first-party",
@@ -353,7 +353,7 @@
       "downloads": 540,
       "cover": {
         "asset": "catalog/covers/skills/skill-card-6.webp",
-        "alt": "商品轮播图"
+        "alt": "制作商品轮播图"
       },
       "titleZh": "制作商品轮播图",
       "titleEn": "Shoppable Carousel",
@@ -365,10 +365,10 @@
       "coverFile": "skill-card-6.webp",
       "badge": "NEW",
       "installFlow": "session-guide",
-      "sessionPrefill": "/shoppable-carousel\n请运行 商品轮播图 (Shoppable Carousel) 技能，为我的商品规划逐页轮播图方案与生图提示词。",
+      "sessionPrefill": "/shoppable-carousel\n请运行 制作商品轮播图 (Shoppable Carousel) 技能，为我的商品规划逐页轮播图方案与生图提示词。",
       "homeCover": {
         "asset": "catalog/covers/skills/skill-card-6.webp",
-        "alt": "商品轮播图"
+        "alt": "制作商品轮播图"
       },
       "author": "OmniMux",
       "origin": "first-party",
@@ -399,7 +399,7 @@
       "downloads": 510,
       "cover": {
         "asset": "catalog/covers/skills/skill-card-7.webp",
-        "alt": "电商商品套图"
+        "alt": "生成电商套图"
       },
       "titleZh": "生成电商套图",
       "titleEn": "E-commerce Product Images",
@@ -411,10 +411,10 @@
       "coverFile": "skill-card-7.webp",
       "badge": "NEW",
       "installFlow": "session-guide",
-      "sessionPrefill": "/ecommerce-image\n请运行 电商商品套图 (E-commerce Product Images) 技能，基于我的实拍商品图规划平台合规套图。",
+      "sessionPrefill": "/ecommerce-image\n请运行 生成电商套图 (E-commerce Product Images) 技能，基于我的实拍商品图规划平台合规套图。",
       "homeCover": {
         "asset": "catalog/covers/skills/skill-card-7.webp",
-        "alt": "电商商品套图"
+        "alt": "生成电商套图"
       },
       "author": "OmniMux",
       "origin": "first-party",
@@ -445,7 +445,7 @@
       "downloads": 460,
       "cover": {
         "asset": "catalog/covers/skills/skill-card-8.webp",
-        "alt": "广告创意"
+        "alt": "生成广告文案"
       },
       "titleZh": "生成广告文案",
       "titleEn": "Ad Creative",
@@ -457,10 +457,10 @@
       "coverFile": "skill-card-8.webp",
       "badge": "NEW",
       "installFlow": "session-guide",
-      "sessionPrefill": "/ad-creative\n请运行 广告创意 (Ad Creative) 技能，按目标平台规格为我的产品生成多角度投放文案矩阵。",
+      "sessionPrefill": "/ad-creative\n请运行 生成广告文案 (Ad Creative) 技能，按目标平台规格为我的产品生成多角度投放文案矩阵。",
       "homeCover": {
         "asset": "catalog/covers/skills/skill-card-8.webp",
-        "alt": "广告创意"
+        "alt": "生成广告文案"
       },
       "author": "OmniMux",
       "origin": "first-party",
@@ -492,7 +492,7 @@
       "downloads": 430,
       "cover": {
         "asset": "catalog/covers/skills/skill-card-9.webp",
-        "alt": "多语言出海视频广告"
+        "alt": "视频多语改编"
       },
       "titleZh": "视频多语改编",
       "titleEn": "Global Ad Localizer",
@@ -504,10 +504,10 @@
       "coverFile": "skill-card-9.webp",
       "badge": "NEW",
       "installFlow": "session-guide",
-      "sessionPrefill": "/global-ad-localizer\n请运行 多语言出海视频广告 (Global Ad Localizer) 技能，帮我将商品广告本地化适配至目标出海市场。",
+      "sessionPrefill": "/global-ad-localizer\n请运行 视频多语改编 (Global Ad Localizer) 技能，帮我将商品广告本地化适配至目标出海市场。",
       "homeCover": {
         "asset": "catalog/covers/skills/skill-card-9.webp",
-        "alt": "多语言出海视频广告"
+        "alt": "视频多语改编"
       },
       "author": "OmniMux",
       "origin": "first-party",
@@ -585,7 +585,7 @@
       "downloads": 350,
       "cover": {
         "asset": "catalog/covers/skills/skill-card-11.webp",
-        "alt": "动态海报"
+        "alt": "生成动态海报"
       },
       "titleZh": "生成动态海报",
       "titleEn": "Dynamic Poster",
@@ -597,10 +597,10 @@
       "coverFile": "skill-card-11.webp",
       "badge": "NEW",
       "installFlow": "session-guide",
-      "sessionPrefill": "/dynamic-poster\n请运行 动态海报 (Dynamic Poster) 技能，为我的产品设计商业视觉动态海报与镜头提示词。",
+      "sessionPrefill": "/dynamic-poster\n请运行 生成动态海报 (Dynamic Poster) 技能，为我的产品设计商业视觉生成动态海报与镜头提示词。",
       "homeCover": {
         "asset": "catalog/covers/skills/skill-card-11.webp",
-        "alt": "动态海报"
+        "alt": "生成动态海报"
       },
       "author": "OmniMux",
       "origin": "first-party",
@@ -631,7 +631,7 @@
       "downloads": 320,
       "cover": {
         "asset": "catalog/covers/skills/skill-card-12.webp",
-        "alt": "角色场景分镜板"
+        "alt": "生成分镜设定图"
       },
       "titleZh": "生成分镜设定图",
       "titleEn": "Character & Scene Storyboard",
@@ -643,10 +643,10 @@
       "coverFile": "skill-card-12.webp",
       "badge": "",
       "installFlow": "session-guide",
-      "sessionPrefill": "/character-scene-storyboard\n请运行 角色场景分镜板 (Character & Scene Storyboard) 技能，基于角色与剧本生成前期设定与分镜板。",
+      "sessionPrefill": "/character-scene-storyboard\n请运行 生成分镜设定图 (Character & Scene Storyboard) 技能，基于角色与剧本生成前期设定与分镜板。",
       "homeCover": {
         "asset": "catalog/covers/skills/skill-card-12.webp",
-        "alt": "角色场景分镜板"
+        "alt": "生成分镜设定图"
       },
       "author": "OmniMux",
       "origin": "first-party",
@@ -676,7 +676,7 @@
       "downloads": 310,
       "cover": {
         "asset": "catalog/covers/skills/skill-card-13.webp",
-        "alt": "电影级运镜语言"
+        "alt": "生成运镜提示词"
       },
       "titleZh": "生成运镜提示词",
       "titleEn": "Cinematic Motion Language",
@@ -688,10 +688,10 @@
       "coverFile": "skill-card-13.webp",
       "badge": "",
       "installFlow": "session-guide",
-      "sessionPrefill": "/cinematic-motion-language\n请运行 电影级运镜语言 (Cinematic Motion Language) 技能，帮我将分镜构思改写为精准可控的视频提示词。",
+      "sessionPrefill": "/cinematic-motion-language\n请运行 生成运镜提示词 (Cinematic Motion Language) 技能，帮我将分镜构思改写为精准可控的视频提示词。",
       "homeCover": {
         "asset": "catalog/covers/skills/skill-card-13.webp",
-        "alt": "电影级运镜语言"
+        "alt": "生成运镜提示词"
       },
       "author": "OmniMux",
       "origin": "first-party",
@@ -721,7 +721,7 @@
       "downloads": 290,
       "cover": {
         "asset": "catalog/covers/skills/skill-card-14.webp",
-        "alt": "内容策略"
+        "alt": "规划内容策略"
       },
       "titleZh": "规划内容策略",
       "titleEn": "Content Strategy",
@@ -733,10 +733,10 @@
       "coverFile": "skill-card-14.webp",
       "badge": "",
       "installFlow": "session-guide",
-      "sessionPrefill": "/content-strategy\n请运行 内容策略 (Content Strategy) 技能，帮我制定品牌内容支柱与优先级选题规划。",
+      "sessionPrefill": "/content-strategy\n请运行 规划内容策略 (Content Strategy) 技能，帮我制定品牌内容支柱与优先级选题规划。",
       "homeCover": {
         "asset": "catalog/covers/skills/skill-card-14.webp",
-        "alt": "内容策略"
+        "alt": "规划内容策略"
       },
       "author": "OmniMux",
       "origin": "first-party",
@@ -766,7 +766,7 @@
       "downloads": 280,
       "cover": {
         "asset": "catalog/covers/skills/skill-card-15.webp",
-        "alt": "社媒文案"
+        "alt": "生成社媒配文"
       },
       "titleZh": "生成社媒配文",
       "titleEn": "Social Caption",
@@ -778,10 +778,10 @@
       "coverFile": "skill-card-15.webp",
       "badge": "",
       "installFlow": "session-guide",
-      "sessionPrefill": "/social-caption\n请运行 社媒文案 (Social Caption) 技能，为我的视觉素材撰写多平台原生社媒配文。",
+      "sessionPrefill": "/social-caption\n请运行 生成社媒配文 (Social Caption) 技能，为我的视觉素材撰写多平台原生社媒配文。",
       "homeCover": {
         "asset": "catalog/covers/skills/skill-card-15.webp",
-        "alt": "社媒文案"
+        "alt": "生成社媒配文"
       },
       "author": "OmniMux",
       "origin": "first-party",
@@ -811,7 +811,7 @@
       "downloads": 260,
       "cover": {
         "asset": "catalog/covers/skills/skill-card-16.webp",
-        "alt": "剪辑草稿导出"
+        "alt": "导出剪辑草稿"
       },
       "titleZh": "导出剪辑草稿",
       "titleEn": "Clip Draft Export",
@@ -823,10 +823,10 @@
       "coverFile": "skill-card-16.webp",
       "badge": "",
       "installFlow": "session-guide",
-      "sessionPrefill": "/clip-export\n请运行 剪辑草稿导出 (Clip Draft Export) 技能，帮我将本地素材装配导出为剪映 / CapCut 可编辑草稿。",
+      "sessionPrefill": "/clip-export\n请运行 导出剪辑草稿 (Clip Draft Export) 技能，帮我将本地素材装配导出为剪映 / CapCut 可编辑草稿。",
       "homeCover": {
         "asset": "catalog/covers/skills/skill-card-16.webp",
-        "alt": "剪辑草稿导出"
+        "alt": "导出剪辑草稿"
       },
       "author": "OmniMux",
       "origin": "first-party",

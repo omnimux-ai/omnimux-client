@@ -38,7 +38,7 @@
 
 ## 证伪方式
 
-1. **真实浏览器几何探针（E2E）**：通过 `runStyleDomProbe` 在真实 Chromium 中以宿主真实 `css.js` 样式和 `380px` 面板宽度渲染全部 5 个 Tab 与 33 条技能行，逐条断言 `tabs.scrollWidth <= tabs.clientWidth`、`.sh-picker-more` 未渲染、且 33 条 `.sh-picker-name` 与 `.sh-picker-desc` 的 `scrollWidth <= clientWidth`；同时构造 8 个 Tab 的溢出夹具断言 `.sh-picker-more` 会正常出现。任意一条触发截断或箭头显隐错误即直接证伪失败。
+1. **真实浏览器几何探针（E2E）**：通过 `runStyleDomProbe` 在真实 Chromium 中以宿主真实 `css.js` 样式和 `360px` / `380px` 面板宽度渲染全部 5 个 Tab 与经真实 `i18n.js` 解析的 33 条技能行，逐条断言 `tabs.scrollWidth <= tabs.clientWidth`、`.sh-picker-more` 未渲染、且 33 条 `.sh-picker-name` 与 `.sh-picker-desc` 的 `scrollWidth <= clientWidth`；同时构造 6 个 Tab 的溢出夹具断言 `.sh-picker-more` 会正常出现。任意一条触发截断或箭头显隐错误即直接证伪失败。
 2. **检索与契约回归单测**：运行 `omnimux-market` 全量单测与 E2E，验证 4 分类分布（8 / 6 / 11 / 8 = 33）、`omni-agent` 与 `tiktok-agent` 同步一致、单一字段形状（`rawShapes.size === 1`）、搜旧词（`VOC`、`单元经济`、`社媒聆听`、`反推`、`CR10`）命中新技能、双语门禁（`market-all-skills-bilingual.spec.js`）与 `generate-featured-skills.mjs --check` 全部通过。
 3. **高保真 HTML 演示 + 亮/暗主题实机浏览器检查**：先用独立 HTML 演示对比改前/改后在亮/暗双主题、380px 窄容器下的视觉与交互，并确认实测截图无截断、无透底、无布局跳动。
 
@@ -74,4 +74,3 @@
   - 原断言：中文环境下断言精选卡片包含旧标题 `内容策略` 与 `社媒文案`。
   - 变更理由：`content-strategy` 与 `social-caption` 中文标题按方案 1 统一为动宾短名 `规划内容策略`、`生成社媒配文`（`titleEn` 保持 `Content Strategy` / `Social Caption`）。
   - 新期望证据：中文环境下断言包含 `规划内容策略` 与 `生成社媒配文`，英文双语切换逻辑不变，`skills-tab.test.js` 7/7 通过。
-

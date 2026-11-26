@@ -181,6 +181,9 @@
       const pickerTabs = presetBinding && Array.isArray(presetBinding.tabs)
         ? presetBinding.tabs
         : SkillShelf.PICKER_TABS;
+      const pickerTabsKey = pickerTabs
+        .map((tab) => `${tab.id}:${(tab.labelKey && tr(tab.labelKey)) || tab.name || tab.id}`)
+        .join("|");
 
       useEffect(() => {
         if (!open) return undefined;
@@ -295,8 +298,15 @@
           const sw = typeof el.scrollWidth === "number" ? el.scrollWidth : 0;
           const cw = typeof el.clientWidth === "number" ? el.clientWidth : 0;
           const parent = el.parentElement;
-          const avail = parent && typeof parent.clientWidth === "number" && parent.clientWidth > 16
-            ? Math.max(cw, parent.clientWidth - 16)
+          let padX = 16;
+          if (parent && typeof window !== "undefined" && typeof window.getComputedStyle === "function") {
+            const cs = window.getComputedStyle(parent);
+            const pl = parseFloat(cs.paddingLeft);
+            const pr = parseFloat(cs.paddingRight);
+            if (Number.isFinite(pl) && Number.isFinite(pr)) padX = pl + pr;
+          }
+          const avail = parent && typeof parent.clientWidth === "number" && parent.clientWidth > padX
+            ? Math.max(cw, parent.clientWidth - padX)
             : cw;
           setTabsOverflow(sw > avail + 1);
         };
@@ -315,7 +325,7 @@
             window.removeEventListener("resize", measure);
           }
         };
-      }, [open, pickerTabs, pos.width]);
+      }, [open, pickerTabsKey, pos.width]);
 
       useEffect(() => {
         if (!open) return undefined;
