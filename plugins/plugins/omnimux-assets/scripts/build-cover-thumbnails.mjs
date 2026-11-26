@@ -39,17 +39,26 @@
  * ## Usage (from the plugin directory)
  *
  *   node scripts/build-cover-thumbnails.mjs --out=/tmp/thumbs
+ *   node scripts/build-cover-thumbnails.mjs --out=/tmp/thumbs --recommended
+ *   node scripts/build-cover-thumbnails.mjs --out=/tmp/thumbs --include-categories=character --max-bytes=120000 --video-posters
  *   node scripts/build-cover-thumbnails.mjs --out=/tmp/thumbs --all
  *   node scripts/build-cover-thumbnails.mjs --out=/tmp/thumbs --limit=5 --dry-run
  *   node scripts/build-cover-thumbnails.mjs --out=/tmp/thumbs --ids=ids.txt
  *
+ * `--recommended` selects the high-ROI full-catalog set in one pass:
+ *   1. All `.png` covers (existing default);
+ *   2. All `character` covers (closes the 329 unthumbnailed 200-480 KB pippit JPGs);
+ *   3. Any image row whose `meta.bytes` exceeds 120 KB (closes oversized scene/prop JPGs);
+ *   4. All poster-less video rows via ffmpeg first-frame extraction (closes 694 material/hook MP4s).
+ *
  * `--ids=<file>` names rows explicitly (one id per line, `#` comments allowed) and
- * outranks the format filter, so a few oversized JPEG covers can be fixed without
+ * outranks the format/size filters, so a few oversized covers can be fixed without
  * re-encoding the rest of the catalog.
  */
+import { execFile } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { createRequire } from 'node:module'
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, extname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -60,6 +69,12 @@ const DEFAULT_CATALOG_DIR = join(PLUGIN_ROOT, 'cloud-catalog')
 export const THUMB_WIDTH = 640
 /** Measured on the real 1152×2048 portrait: 69 KB at this setting. */
 export const THUMB_QUALITY = 78
+/** Recommended byte threshold for re-encoding oversized JPEG image covers. */
+export const RECOMMENDED_MAX_COVER_BYTES = 120 * 1024
+/** Recommended categories whose covers should always ship WebP thumbnails. */
+export const RECOMMENDED_CATEGORIES = new Set(['character'])
+/** Timeout per ffmpeg remote first-frame probe (ms). */
+export const VIDEO_POSTER_TIMEOUT_MS = 30_000
 /** The manifest's own schema version, so a future field can be added safely. */
 export const THUMB_MANIFEST_SCHEMA = 1
 export const THUMB_MANIFEST_NAME = 'thumb-manifest.json'
@@ -93,18 +108,51 @@ export function thumbObjectKey(rowId) {
 }
 
 /**
- * Whether a catalog row should get a thumbnail.
- *
- * A row with no cover has nothing to shrink. A row whose cover is a legacy
- * `file:` locator has no remote object at all, so there is nothing to pair a
- * thumbnail with.
- *
- * `ids` names rows explicitly, so it outranks the format filter: a caller who
- * lists a JPEG row wants that JPEG row handled, even though JPEG is not in the
- * default extension set. Naming rows is how a handful of oversized covers get
- * fixed without re-encoding the other four thousand.
+ * Parse a comma-separated `--include-categories` list into a trimmed Set.
+ * @param {unknown} value
+ * @returns {Set<string>}
+ */
+export function parseIncludeCategories(value) {
+  if (value instanceof Set) return new Set([...value].map((s) => String(s).trim()).filter(Boolean))
+  if (Array.isArray(value)) return new Set(value.map((s) => String(s).trim()).filter(Boolean))
+  const raw = String(value ?? '').trim()
+  if (raw === '') return new Set()
+  return new Set(raw.split(',').map((part) => part.trim()).filter(Boolean))
+}
+
+/**
+ * Whether a poster-less video row qualifies for first-frame WebP poster extraction.
  * @param {any} row
- * @param {{ exts?: Set<string>, all?: boolean, ids?: Set<string> }} [options]
+ * @param {{ videoPosters?: boolean, ids?: Set<string> }} [options]
+ */
+export function needsVideoPoster(row, options = {}) {
+  if (options.videoPosters !== true) return false
+  const cover = String(row?.cover_url ?? '').trim()
+  if (cover !== '') return false
+  const media = String(row?.media_url ?? '').trim()
+  if (!/^https?:\/\//i.test(media)) return false
+  if (row?.media_type !== 'video') return false
+  const ids = options.ids
+  if (ids instanceof Set && ids.size > 0) return ids.has(String(row?.id ?? ''))
+  return true
+}
+
+/**
+ * Whether a catalog row should get a thumbnail from its cover image.
+ *
+ * A row with no cover has nothing to shrink here (see `needsVideoPoster` for
+ * poster-less videos). A row whose cover is a legacy `file:` locator has no
+ * remote object at all, so there is nothing to pair a thumbnail with.
+ *
+ * `ids` names rows explicitly, so it outranks the format/size/category filters.
+ * @param {any} row
+ * @param {{
+ *   exts?: Set<string>,
+ *   all?: boolean,
+ *   ids?: Set<string>,
+ *   maxBytes?: number,
+ *   includeCategories?: Set<string> | string[] | string,
+ * }} [options]
  */
 export function needsThumbnail(row, options = {}) {
   const exts = options.exts ?? DEFAULT_REENCODE_EXTS
@@ -113,7 +161,20 @@ export function needsThumbnail(row, options = {}) {
   const ids = options.ids
   if (ids instanceof Set && ids.size > 0) return ids.has(String(row?.id ?? ''))
   if (options.all === true) return true
-  return exts.has(extname(cover).toLowerCase())
+  const coverExt = extname(cover.split('?')[0]).toLowerCase()
+  if (exts.has(coverExt)) return true
+  const includeCategories = parseIncludeCategories(options.includeCategories)
+  if (includeCategories.size > 0 && includeCategories.has(String(row?.category ?? ''))) {
+    return coverExt !== '.webp'
+  }
+  const maxBytes = Number(options.maxBytes)
+  if (Number.isFinite(maxBytes) && maxBytes > 0) {
+    // Only trust `meta.bytes` as cover byte size when the cover IS the row's media image.
+    const isImageCover = String(row?.media_url ?? '') === cover
+    const bytes = Number(row?.meta?.bytes) || 0
+    if (isImageCover && bytes > maxBytes && coverExt !== '.webp') return true
+  }
+  return false
 }
 
 /**
@@ -122,20 +183,34 @@ export function needsThumbnail(row, options = {}) {
  * Pure: it reads the catalog rows it is given and nothing else, so the selection
  * rule can be asserted without a filesystem or a network.
  * @param {any[]} rows
- * @param {{ exts?: Set<string>, all?: boolean, ids?: Set<string>, limit?: number }} [options]
- * @returns {{ id: string, coverUrl: string, key: string }[]}
+ * @param {{
+ *   exts?: Set<string>,
+ *   all?: boolean,
+ *   ids?: Set<string>,
+ *   limit?: number,
+ *   maxBytes?: number,
+ *   includeCategories?: Set<string> | string[] | string,
+ *   videoPosters?: boolean,
+ * }} [options]
+ * @returns {{ id: string, coverUrl: string, mediaUrl?: string, sourceKind: 'cover' | 'video-poster', key: string }[]}
  */
 export function planThumbs(rows, options = {}) {
   const list = Array.isArray(rows) ? rows : []
   const plan = []
   const seen = new Set()
   for (const row of list) {
-    if (!needsThumbnail(row, options)) continue
     const id = String(row?.id ?? '')
     const key = thumbObjectKey(id)
     if (key === '' || seen.has(id)) continue
-    seen.add(id)
-    plan.push({ id, coverUrl: String(row.cover_url), key })
+    if (needsThumbnail(row, options)) {
+      seen.add(id)
+      plan.push({ id, coverUrl: String(row.cover_url), sourceKind: 'cover', key })
+      continue
+    }
+    if (needsVideoPoster(row, options)) {
+      seen.add(id)
+      plan.push({ id, coverUrl: '', mediaUrl: String(row.media_url), sourceKind: 'video-poster', key })
+    }
   }
   plan.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
   const limit = Number(options.limit)
@@ -150,7 +225,7 @@ export function planThumbs(rows, options = {}) {
  * prefixes with the CDN base — plus the measured size so a reviewer can see the
  * payload budget without re-downloading anything.
  * @param {{ rows: { id: string, key: string, bytes: number, width: number }[],
- *   generatedAt: string, all?: boolean }} spec
+ *   generatedAt: string, all?: boolean, scope?: string }} spec
  */
 export function buildManifest(spec) {
   const rows = Array.isArray(spec.rows) ? spec.rows.slice() : []
@@ -160,7 +235,7 @@ export function buildManifest(spec) {
     width: THUMB_WIDTH,
     quality: THUMB_QUALITY,
     format: 'webp',
-    scope: spec.all === true ? 'all' : 'png',
+    scope: spec.scope ?? (spec.all === true ? 'all' : 'png'),
     generatedAt: spec.generatedAt,
     total: rows.length,
     totalBytes: rows.reduce((sum, row) => sum + (Number(row.bytes) || 0), 0),
@@ -266,7 +341,6 @@ function writeFileAtomic(file, data) {
   const tmp = `${file}.tmp`
   writeFileSync(tmp, data)
   // rename keeps a concurrent reader from seeing a half-written object.
-  const { renameSync } = createRequire(import.meta.url)('node:fs')
   renameSync(tmp, file)
 }
 
@@ -287,14 +361,60 @@ async function fetchCover(url, fetchImpl = globalThis.fetch) {
 }
 
 /**
+ * Extract the first video frame (at 0.001s) as a PNG buffer via ffmpeg (`shell: false`).
+ * Used for poster-less `material/hook` videos so clients render lightweight WebP cards
+ * instead of fetching multi-megabyte MP4 streams on first load.
+ * @param {string} url
+ * @param {{ ffmpegBin?: string, timeoutMs?: number }} [opts]
+ * @returns {Promise<Buffer>}
+ */
+export function extractVideoFirstFrame(url, opts = {}) {
+  const ffmpegBin = opts.ffmpegBin || 'ffmpeg'
+  const timeout = Number(opts.timeoutMs) > 0 ? Number(opts.timeoutMs) : VIDEO_POSTER_TIMEOUT_MS
+  return new Promise((resolvePromise, rejectPromise) => {
+    execFile(
+      ffmpegBin,
+      [
+        '-hide_banner',
+        '-loglevel', 'error',
+        '-ss', '0.001',
+        '-i', url,
+        '-frames:v', '1',
+        '-f', 'image2pipe',
+        '-vcodec', 'png',
+        'pipe:1',
+      ],
+      { encoding: 'buffer', maxBuffer: 16 * 1024 * 1024, timeout },
+      (error, stdout) => {
+        if (error) {
+          rejectPromise(error)
+          return
+        }
+        if (!Buffer.isBuffer(stdout) || stdout.length === 0) {
+          rejectPromise(new Error('ffmpeg produced empty frame output'))
+          return
+        }
+        resolvePromise(stdout)
+      },
+    )
+  })
+}
+
+/**
  * @param {{
  *   catalogDir?: string,
  *   outDir: string,
  *   all?: boolean,
+ *   recommended?: boolean,
+ *   maxBytes?: number,
+ *   includeCategories?: Set<string> | string[] | string,
+ *   videoPosters?: boolean,
+ *   ids?: Set<string>,
  *   limit?: number,
  *   dryRun?: boolean,
  *   generatedAt?: string,
  *   fetchImpl?: typeof fetch,
+ *   extractFrameImpl?: (url: string) => Promise<Buffer>,
  *   sharp?: any,
  *   log?: (line: string) => void,
  * }} options
@@ -308,19 +428,42 @@ export async function buildThumbnails(options) {
     throw new Error(`catalog index is missing or unreadable: ${join(catalogDir, 'index.json')}`)
   }
 
-  const plan = planThumbs(index, { all: options.all === true, ids: options.ids, limit: options.limit })
+  const effectiveIncludeCategories = options.recommended === true
+    ? new Set([...RECOMMENDED_CATEGORIES, ...parseIncludeCategories(options.includeCategories)])
+    : parseIncludeCategories(options.includeCategories)
+  const effectiveMaxBytes = options.recommended === true && !(Number(options.maxBytes) > 0)
+    ? RECOMMENDED_MAX_COVER_BYTES
+    : options.maxBytes
+  const effectiveVideoPosters = options.recommended === true || options.videoPosters === true
+
+  const plan = planThumbs(index, {
+    all: options.all === true,
+    ids: options.ids,
+    limit: options.limit,
+    maxBytes: effectiveMaxBytes,
+    includeCategories: effectiveIncludeCategories,
+    videoPosters: effectiveVideoPosters,
+  })
   const scope = options.ids instanceof Set && options.ids.size > 0
     ? `${options.ids.size} named row(s)`
-    : options.all === true ? 'all covers' : 'png covers'
+    : options.all === true
+      ? 'all covers'
+      : options.recommended === true
+        ? 'recommended covers + video posters'
+        : 'png covers'
   log(`[thumbs] ${plan.length} row(s) selected (${scope})`)
 
   if (options.dryRun === true) {
-    for (const row of plan) log(`[thumbs] would encode ${row.id} <- ${row.coverUrl}`)
+    for (const row of plan) {
+      const source = row.sourceKind === 'video-poster' ? row.mediaUrl : row.coverUrl
+      log(`[thumbs] would encode (${row.sourceKind}) ${row.id} <- ${source}`)
+    }
     return { plan, rows: [], manifest: null, written: 0, skipped: 0 }
   }
 
   const sharp = options.sharp ?? loadSharp()
   const fetchImpl = options.fetchImpl ?? globalThis.fetch
+  const extractFrameImpl = options.extractFrameImpl ?? extractVideoFirstFrame
   /** @type {{ id: string, key: string, bytes: number, width: number }[]} */
   const rows = []
   let written = 0
@@ -330,11 +473,13 @@ export async function buildThumbnails(options) {
     const target = join(outDir, item.key)
     let input
     try {
-      input = await fetchCover(item.coverUrl, fetchImpl)
+      input = item.sourceKind === 'video-poster'
+        ? await extractFrameImpl(String(item.mediaUrl ?? ''))
+        : await fetchCover(item.coverUrl, fetchImpl)
     } catch (error) {
-      // One unreachable cover must not abort the run: the row simply ships
+      // One unreachable cover/video must not abort the run: the row simply ships
       // without a thumbnail and the client falls back to its original.
-      log(`[thumbs] SKIP ${item.id}: cover fetch failed (${error instanceof Error ? error.message : String(error)})`)
+      log(`[thumbs] SKIP ${item.id}: ${item.sourceKind} fetch failed (${error instanceof Error ? error.message : String(error)})`)
       continue
     }
     let encoded
@@ -362,10 +507,18 @@ export async function buildThumbnails(options) {
     rows.push({ id: item.id, key: item.key, bytes: encoded.length, width: THUMB_WIDTH })
   }
 
+  const manifestScope = options.all === true
+    ? 'all'
+    : options.recommended === true
+      ? 'recommended'
+      : effectiveVideoPosters || effectiveIncludeCategories.size > 0 || Number(effectiveMaxBytes) > 0
+        ? 'filtered'
+        : 'png'
   const manifest = buildManifest({
     rows,
     generatedAt: options.generatedAt ?? new Date().toISOString(),
     all: options.all === true,
+    scope: manifestScope,
   })
   writeFileAtomic(join(outDir, THUMB_MANIFEST_NAME), Buffer.from(`${JSON.stringify(manifest, null, 2)}\n`))
 
@@ -384,6 +537,10 @@ async function main(argv) {
     catalogDir: typeof args.catalog === 'string' ? resolve(args.catalog) : DEFAULT_CATALOG_DIR,
     outDir: args.out,
     all: args.all === true,
+    recommended: args.recommended === true,
+    maxBytes: typeof args['max-bytes'] === 'string' ? Number(args['max-bytes']) : undefined,
+    includeCategories: typeof args['include-categories'] === 'string' ? args['include-categories'] : undefined,
+    videoPosters: args['video-posters'] === true,
     ids: typeof args.ids === 'string' ? readIdList(resolve(args.ids)) : undefined,
     limit: typeof args.limit === 'string' ? Number(args.limit) : undefined,
     dryRun: args['dry-run'] === true,

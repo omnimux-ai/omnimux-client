@@ -40,8 +40,8 @@ describe('Cloud category row layout and refresh shuffle cache contract', () => {
     assert.match(rowJsx, /fetchScopesRandomSample/)
     // 行级过滤必须在截断之前生效，否则这一行会在 24 与 23 张之间抖动。
     assert.match(rowJsx, /\(row\) => cloudCardKind\(row\) === 'audio'/)
-    // 未列出的分类仍走全量抽样，缓存键仍是 catId，刷新语义不变。
-    assert.match(rowJsx, /fetchCategoryRandomSample\(catId, cloudPage, normalizeCloudAsset, 24\)/)
+    // 未列出的分类走常规抽样并透传 manifest 页数与热池配置，缓存键仍是 catId，刷新语义不变。
+    assert.match(rowJsx, /fetchCategoryRandomSample\(\s*catId,\s*cloudPage,\s*normalizeCloudAsset,\s*24,/)
     assert.match(rowJsx, /globalShuffleCache\.set\(catId/)
   })
 

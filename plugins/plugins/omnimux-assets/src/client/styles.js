@@ -1923,6 +1923,13 @@ export const ASSETS_CSS = `
   flex-direction: column;
   gap: 14px;
   position: relative;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 410px;
+}
+
+.omnimux-assets-cloud-row-section[data-category="style"],
+.omnimux-assets-cloud-row-section[data-category="audio"] {
+  contain-intrinsic-size: auto 240px;
 }
 
 .omnimux-assets-cloud-row-header {

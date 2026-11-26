@@ -4,6 +4,7 @@ import {
   CategoryShuffleCache,
   fetchCategoryRandomSample,
   fetchScopesRandomSample,
+  selectSamplePages,
   shuffleArray,
 } from './category-shuffle-cache.js'
 
@@ -222,6 +223,79 @@ describe('fetchScopesRandomSample 多 scope 合并采样与行级过滤', () => 
     const fetchPage = scopePages({ 'a/b': [[{ id: 'only_1' }]] })
     const res = await fetchScopesRandomSample(['a/b'], fetchPage)
     assert.deepEqual(res.map((row) => row.id), ['only_1'])
+  })
+})
+
+describe('性能优化回归（Issue #324）：并行分片拉取与有界热池确定性抽样', () => {
+  it('传入已知 totalPages 时跳过 page-0 串行探测并并发拉取两页（1 轮 RTT）', async () => {
+    let inFlight = 0
+    let maxInFlight = 0
+    const requested = []
+    const fetchPage = async (_cat, page) => {
+      requested.push(page)
+      inFlight += 1
+      maxInFlight = Math.max(maxInFlight, inFlight)
+      await new Promise((r) => setTimeout(r, 15))
+      inFlight -= 1
+      return {
+        ok: true,
+        body: {
+          totalPages: 18,
+          items: Array.from({ length: 24 }, (_, i) => ({ id: `char_p${page}_${i}` })),
+        },
+      }
+    }
+
+    const res = await fetchCategoryRandomSample('character', fetchPage, (x) => x, 24, {
+      totalPages: 18,
+      useHotPool: true,
+      dayBucket: '2026-11-26',
+    })
+    assert.equal(res.length, 24)
+    assert.equal(requested.length, 2, '已知总页数时应只发 2 个目标页请求而非 3 次')
+    assert.equal(maxInFlight, 2, '两页必须并行拉取而非串行等待')
+  })
+
+  it('有界热池按日稳定且横跨分类头尾页，同时保留子类多样性与缓存命中', () => {
+    const pagesRun1 = selectSamplePages({ totalPages: 18, scope: 'character', useHotPool: true, dayBucket: '2026-11-26' })
+    const pagesRun2 = selectSamplePages({ totalPages: 18, scope: 'character', useHotPool: true, dayBucket: '2026-11-26' })
+    assert.deepEqual(pagesRun1, pagesRun2, '同日冷启动必须命中完全相同的热池页对')
+    assert.equal(pagesRun1.length, 2)
+    assert.ok(pagesRun1[0] <= 1, `前锚点应落在热池前段 [0..1]，实得 ${pagesRun1[0]}`)
+    assert.ok(pagesRun1[1] >= 16, `后锚点应落在热池尾段 [16..17] 保证头尾子类混排，实得 ${pagesRun1[1]}`)
+  })
+
+  it('fetchScopesRandomSample 并行拉取所有二级 scope 而非串行 for-await', async () => {
+    let inFlight = 0
+    let maxInFlight = 0
+    const fetchPage = async (scope, page) => {
+      inFlight += 1
+      maxInFlight = Math.max(maxInFlight, inFlight)
+      await new Promise((r) => setTimeout(r, 15))
+      inFlight -= 1
+      return {
+        ok: true,
+        body: {
+          totalPages: scope === 'audio/bgm' ? 5 : 1,
+          items: [{ id: `${scope}_${page}_0`, kind: 'audio' }],
+        },
+      }
+    }
+
+    const res = await fetchScopesRandomSample(
+      ['audio/bgm', 'audio/sfx'],
+      fetchPage,
+      (x) => x,
+      24,
+      () => true,
+      {
+        totalPagesByScope: { 'audio/bgm': 5, 'audio/sfx': 1 },
+        useHotPool: true,
+        dayBucket: '2026-11-26',
+      },
+    )
+    assert.equal(res.length, 3)
+    assert.equal(maxInFlight, 3, 'bgm 两页与 sfx 一页应全部在同一轮并行发出')
   })
 })
 

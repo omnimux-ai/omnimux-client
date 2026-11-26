@@ -1,0 +1,38 @@
+{
+  "issue": 324,
+  "task": "perf-assets-first-load",
+  "date": "2026-11-26",
+  "target": "omnimux-assets / Public Cloud Assets (All category row layout)",
+  "verification": {
+    "worktreeWebQa": {
+      "command": "corepack pnpm --dir plugins run test:worktree-web -- assets",
+      "status": "PASS",
+      "durationSeconds": 1.97,
+      "viewport": "1280x713"
+    },
+    "liveChromiumRun": {
+      "browser": "ego-browser (Chromium)",
+      "preconnectInjected": true,
+      "dnsPrefetchInjected": true,
+      "manifestHostLatencyMs": 0.92,
+      "manifestCacheControl": "private, max-age=3600",
+      "initialHostCloudRequests": 5,
+      "unusedAllPage0Requests": 0,
+      "initialOffscreenRowRequests": 0,
+      "initialOffscreenMp4Requests": 0,
+      "initialMountedCards": 20,
+      "initialIdleVideosMounted": 0,
+      "characterRowEagerHighImgs": 7,
+      "characterRowLazyImgs": 3,
+      "characterRowCardsAfterRightArrow": 24,
+      "materialRowBareVideosWithSrcAfterScroll": 3,
+      "themesChecked": ["dark", "light"],
+      "horizontalOverflow": false
+    },
+    "bundleSize": {
+      "beforeBytes": 2232520,
+      "afterBytes": 1375593,
+      "reductionPercent": 38.4
+    }
+  }
+}

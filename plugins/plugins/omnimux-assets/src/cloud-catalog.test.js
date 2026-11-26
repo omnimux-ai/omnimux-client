@@ -211,6 +211,39 @@ describe('createCloudCatalog: manifest and index', () => {
     cloud.reload()
     assert.equal(cloud.getManifest().totalAssets, 0)
   })
+
+  it('serves manifest.json without synchronously requiring or parsing index.json (Issue #324)', async () => {
+    // 仅写 manifest.json，不写 index.json：证明 getManifest() 不再同步读解析 4.3MB 索引。
+    writeFileSync(join(catalogDir, 'manifest.json'), JSON.stringify({
+      version: 1,
+      pageSize: 24,
+      totalAssets: 42,
+      categories: [{ id: 'character', zh: '角色', en: 'Characters', total: 42, pages: 2, sub_categories: [] }],
+    }))
+    const cloud = makeCatalog()
+    assert.equal(cloud.getManifest().totalAssets, 42)
+    assert.equal(cloud.getRow('missing'), null)
+    // 写入 index.json 后按需自愈加载仍可用
+    writeFileSync(join(catalogDir, 'index.json'), JSON.stringify([
+      { id: 'character-1', category: 'character', sub_category: 'digital-human', name: 'Ava', media_type: 'video', media_url: 'https://assets.omnimux.ai/a.mp4', cover_url: 'https://assets.omnimux.ai/a.jpg', tags: [] },
+    ]))
+    await cloud.warmIndexAsync()
+    assert.equal(cloud.getRow('character-1')?.name, 'Ava')
+  })
+
+  it('emits 1-hour private cache-control headers on static manifest and page routes (Issue #324)', async () => {
+    writeCatalog()
+    const cloud = makeCatalog()
+    const stores = makeStores()
+    const dispatcher = createAssetsDispatcher({ ...stores, cloud })
+    const manifestRes = await dispatcher.dispatch({ method: 'GET', url: '/omnimux/assets/cloud/manifest.json' })
+    assert.equal(manifestRes.status, 200)
+    assert.equal(manifestRes.headers?.['Cache-Control'], 'private, max-age=3600')
+
+    const pageRes = await dispatcher.dispatch({ method: 'GET', url: '/omnimux/assets/cloud/scene/page-0000.json' })
+    assert.equal(pageRes.status, 200)
+    assert.equal(pageRes.stream?.cacheControl, 'private, max-age=3600')
+  })
 })
 
 describe('createCloudCatalog: media resolution', () => {
