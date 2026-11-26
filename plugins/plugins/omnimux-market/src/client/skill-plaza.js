@@ -38,6 +38,7 @@
       safeTrySkillInSession,
       WORKSHOP_DOMAIN_ORDER,
       DEFAULT_MARKET_EXPERTS,
+      buildExpertStartersLookup,
       EXPERT_STAGE_OPTIONS,
       EXPERT_STATUS_CONFIG,
       getExpertStageLabel,
@@ -372,6 +373,13 @@
         const onListSuccess = (d) => {
           if (d && Array.isArray(d.items)) {
             state.setExpertMarketItems(d.items);
+            if (typeof window !== "undefined") {
+              if (window.__omnimuxExpertStarters && typeof window.__omnimuxExpertStarters.update === "function") {
+                window.__omnimuxExpertStarters.update(d.items);
+              } else if (typeof buildExpertStartersLookup === "function") {
+                window.__omnimuxExpertStarters = buildExpertStartersLookup(d.items);
+              }
+            }
             if (typeof state.setExpertMarketError === "function") state.setExpertMarketError("");
           }
         };

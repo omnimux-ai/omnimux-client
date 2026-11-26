@@ -96,10 +96,11 @@ export const MUTATING_METHODS = new Set([
     'tryDetach',
 ]);
 import { DEFAULT_MARKET_EXPERTS, SYSTEM_PRESET_METADATA, findMarketExpertById, isMarketExpertId, resolveExpertPersonaText, getMarketExpertStatus, installMarketExpertPreset, disableMarketExpertPreset, materializeEnabledMarketExperts, reconcileMarketExperts, } from './expert-market.js';
+import { ALL_EXPERT_TOOL_DOMAINS, MANAGED_DOMAIN_RULES, computeDeniedTools, resolveManagedToolDomain, } from './expert-tool-domains.js';
 import { expertLedgerPath, readExpertLedger, writeExpertLedger, markExpertInstalled, markExpertDisabled, } from './expert-ledger.js';
 import { ExpertPresetRuntime, buildMarketExpertPluginRows, buildMarketExpertPresetDefinition, } from './expert-runtime.js';
 import { agentPresetCordis, healAgentPresetCordis, healInstalledAgentPresets, writeAgentPreset, } from './expert-presets.js';
-export { DEFAULT_MARKET_EXPERTS, SYSTEM_PRESET_METADATA, findMarketExpertById, isMarketExpertId, resolveExpertPersonaText, getMarketExpertStatus, installMarketExpertPreset, disableMarketExpertPreset, materializeEnabledMarketExperts, reconcileMarketExperts, expertLedgerPath, readExpertLedger, writeExpertLedger, markExpertInstalled, markExpertDisabled, ExpertPresetRuntime, buildMarketExpertPluginRows, buildMarketExpertPresetDefinition, agentPresetCordis, healAgentPresetCordis, healInstalledAgentPresets, writeAgentPreset, };
+export { ALL_EXPERT_TOOL_DOMAINS, MANAGED_DOMAIN_RULES, computeDeniedTools, resolveManagedToolDomain, DEFAULT_MARKET_EXPERTS, SYSTEM_PRESET_METADATA, findMarketExpertById, isMarketExpertId, resolveExpertPersonaText, getMarketExpertStatus, installMarketExpertPreset, disableMarketExpertPreset, materializeEnabledMarketExperts, reconcileMarketExperts, expertLedgerPath, readExpertLedger, writeExpertLedger, markExpertInstalled, markExpertDisabled, ExpertPresetRuntime, buildMarketExpertPluginRows, buildMarketExpertPresetDefinition, agentPresetCordis, healAgentPresetCordis, healInstalledAgentPresets, writeAgentPreset, };
 /**
  * 官方 `@deepseek-ai/dsh-client-ui-agent-preset` 的 seat 控制器在收到
  * `settings/document-updated`（命名空间 `agent-preset-registry`）时重读列表，

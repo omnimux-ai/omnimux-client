@@ -15,6 +15,7 @@
  */
 
 import { markExpertDisabled, markExpertInstalled, readExpertLedger } from './expert-ledger.js'
+import type { ExpertToolDomain } from './expert-tool-domains.js'
 import {
   DEFAULT_MARKET_EXPERTS,
   findMarketExpertById,
@@ -58,6 +59,7 @@ export interface BuildPresetOptions {
   resolvesSpecifier?: (specifier: string) => boolean
   presetId?: string
   skills?: readonly string[]
+  toolDomains?: readonly ExpertToolDomain[]
 }
 
 /**
@@ -229,6 +231,16 @@ export function buildMarketExpertPluginRows(
           },
         }]
       : []),
+    ...(Array.isArray(opts.toolDomains) && opts.toolDomains.length > 0
+      ? [{
+          id: 'expert-tool-scope',
+          name: 'omnimux-market/expert-tool-scope',
+          config: {
+            ...(opts.presetId ? { presetId: opts.presetId } : {}),
+            allowedDomains: [...opts.toolDomains],
+          },
+        }]
+      : []),
   ]
 
   return typeof opts.isPackageResolvable === 'function'
@@ -237,7 +249,10 @@ export function buildMarketExpertPluginRows(
 }
 
 export function buildMarketExpertPresetDefinition(
-  exp: Pick<MarketExpertItem, 'id' | 'name' | 'description' | 'order'> & { skills?: readonly string[] },
+  exp: Pick<MarketExpertItem, 'id' | 'name' | 'description' | 'order'> & {
+    skills?: readonly string[]
+    toolDomains?: readonly ExpertToolDomain[]
+  },
   opts: BuildPresetOptions = {},
 ): DynamicPresetDefinition {
   return {
@@ -249,6 +264,7 @@ export function buildMarketExpertPresetDefinition(
       ...opts,
       presetId: opts.presetId ?? exp.id,
       skills: opts.skills ?? exp.skills,
+      toolDomains: opts.toolDomains ?? exp.toolDomains,
     }),
   }
 }

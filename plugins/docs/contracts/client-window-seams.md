@@ -12,7 +12,7 @@ updated: "2026-11-26"
 
 OmniMux 客户端插件分别独立打包为单文件 `lib/client.js`（由宿主 `window.__ModuleLoader__.load` 加载）。垂直插件不得通过相对路径跨包导入 Hub 内部模块（由 `plugins/scripts/verify-plugin-boundaries.mjs` 门禁约束），因此跨插件协作统一通过窄接口挂载到浏览器 `window.__omnimux*`（或经 `dsh-ui-kit` 封装消费）。
 
-本文档是全仓生产态 `window.__omnimux*` 全局接缝的**唯一权威索引**（覆盖全部 42 个运行态标识），标明每个接缝的唯一生产者、消费方、契约形态与生命周期状态。
+本文档是全仓生产态 `window.__omnimux*` 全局接缝的**唯一权威索引**（覆盖全部 43 个运行态标识），标明每个接缝的唯一生产者、消费方、契约形态与生命周期状态。
 
 ## 治理硬约束
 
@@ -44,7 +44,7 @@ OmniMux 客户端插件分别独立打包为单文件 `lib/client.js`（由宿�
 | `__omnimuxTabViewport` | `plugins/plugins/omnimux/src/client/workbench/tab-viewport-reconciler.js` | `omnimux` (`sidebar-controller.js`)、`omnimux-workflow` (`projectCanvas.js`) | 右栏视口全屏/分栏程序化切换防抖协调器（`beginProgrammatic` / `endProgrammatic`） | `active` |
 | `__omnimuxEnterRightSidebarFullscreen` | `plugins/plugins/omnimux/src/client/workbench/tab-viewport-reconciler.js` | `omnimux` (`tab-viewport-reconciler.js`)、`omnimux-workflow` (`projectCanvas.js`) | 触发宿主右侧栏进入全屏态的桥接函数 | `active` |
 
-## 二、输入栏、附件、引用、技能与预设接缝（15 项）
+## 二、输入栏、附件、引用、技能与预设接缝（16 项）
 
 | 全局标识 | 生产者（单一真源） | 主要消费者 | 接口形态与职责 | 状态 |
 |---|---|---|---|---|
@@ -56,13 +56,14 @@ OmniMux 客户端插件分别独立打包为单文件 `lib/client.js`（由宿�
 | `__omnimuxComposerPrefill` | `plugins/plugins/omnimux/src/client/media-viewer/composer-prefill.js` (`STORE_KEY`) | `omnimux` (`media-viewer/composer-prefill.js`) 及经其桥接的 `omnimux-viewer` | 媒体预览器回填聊天输入栏的跨包单例 Store | `active` |
 | `__omnimuxReference` | `plugins/plugins/omnimux/src/client/reference/index.ts` | `omnimux-assets` (`add-to-chat.js`)、`omnimux-products` (`reference.js`)、`omnimux-workflow` (`useAddToConversation.ts`) | 统一实体引用分发接口（资产、商品、画布节点统一送入对话） | `active` |
 | `__omnimuxShadowContext` | `plugins/plugins/omnimux/src/client/reference/shadow-context.ts` | `omnimux` (`reference/shadow-context.ts`) | 引用上下文影子表单例（防止重复实例化） | `internal-guard` |
-| `__omnimuxActivePreset` | `plugins/plugins/omnimux/src/client/agent-preset-enhancer.js` | `omnimux` (`isTikTokAgentPreset.js`)、`omnimux-market` (`skill-picker-logic.js`) | 当前会话激活的 Agent 预设标识，供快捷技能栏与预设绑定过滤读取 | `active` |
+| `__omnimuxActivePreset` | `plugins/plugins/omnimux/src/client/agent-preset-enhancer.js` | `omnimux` (`isTikTokAgentPreset.js`、`expertBootstrapCatalog.js`)、`omnimux-market` (`skill-picker-logic.js`) | 当前会话激活的 Agent 预设标识，供快捷技能栏、专家首启引导条与预设绑定过滤读取 | `active` |
 | `__omnimuxActiveSkill` | `plugins/plugins/omnimux/src/client/composer-add/skill-event.ts`、`omnimux-market` (`session-create.js`, `skill-picker.js`) | `omnimux`、`omnimux-market` | 当前输入栏选中的 Skill 状态与同步缓存 | `active` |
 | `__omnimuxSkillLibrary` | `plugins/plugins/omnimux-market/src/client/apply.js` | `omnimux` (`ComposerQuickShortcuts.jsx`、`catalog.js`、`index.js`) | 出厂预设技能只读解析通道：`{ resolvePresetSkill(slug) }`（无会话态，严格只读） | `active` |
+| `__omnimuxExpertStarters` | `plugins/plugins/omnimux-market/src/client/apply.js`（由 `skill-plaza.js` 经 `.update()` 原地刷新） | `omnimux` (`expertBootstrapCatalog.js`、`ExpertBootstrapBar.jsx`) | 专家市场 SOP 专家空白会话起手式只读通道：`{ resolveStarters(presetId), listExpertIds(), update(items) }`，卸载时由 `apply.js` 按对象身份清理 | `active` |
 | `__omnimuxInstalledSkills` | 宿主/运行态按需注入（未注入时安全降级） | `omnimux` (`composer-commands-i18n.js`) | 已安装技能列表只读快照，供斜杠命令补全过滤 | `legacy-compat` |
 | `__omnimuxPresetAvatars` | 宿主可选注入（`PRESET_AVATAR_HOST_KEY`） | `omnimux` (`agent-preset-enhancer.js`) | 预设头像覆盖映射表（缺失时回落确定性生成头像） | `active` |
 | `__omnimuxSessionPrefill` | `plugins/plugins/omnimux/src/client/forms/mount.js` | `omnimux-inspiration` (`session-prefill.js`) | 新建或跳转会话时的一次性预填文本通道 | `active` |
-| `__omnimuxLocale` | `plugins/plugins/omnimux-market/src/client/apply.js` | `omnimux` (`promptFenceGenerate.ts`、`focus-state.js`)、`omnimux-market` (`i18n.js`) | 当前宿主 `locale` 服务引用缓存 | `legacy-compat` |
+| `__omnimuxLocale` | `plugins/plugins/omnimux-market/src/client/apply.js` | `omnimux` (`promptFenceGenerate.ts`、`focus-state.js`、`ExpertBootstrapBar.jsx`)、`omnimux-market` (`i18n.js`) | 当前宿主 `locale` 服务引用缓存 | `legacy-compat` |
 
 ## 三、垂直插件与工作流桥接接缝（11 项）
 

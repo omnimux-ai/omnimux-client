@@ -14,9 +14,11 @@ const ECOM_SOP_SKILLS = [
   'omnimux-ecom-platform-rules',
   'omnimux-ecom-market-research',
   'omnimux-ecom-pricing-strategy',
+  'omnimux-ecom-brand-curator',
   'omnimux-ecom-listing-copy',
   'omnimux-ecom-visual-qa',
   'omnimux-ecom-video-script',
+  'omnimux-ecom-global-localizer',
   'omnimux-ecom-ads-diagnosis',
   'omnimux-ecom-review-voc',
 ]
@@ -35,7 +37,7 @@ function runPy(scriptRel, args) {
   return res
 }
 
-test('all 8 cross-border SOP skills are declared in dsh.manifest.json with valid frontmatter and zero dead tools', () => {
+test('all 10 cross-border SOP skills are declared in dsh.manifest.json with valid frontmatter and zero dead tools', () => {
   const manifest = JSON.parse(readFileSync(join(PACKAGE_ROOT, 'dsh.manifest.json'), 'utf8'))
   assert.ok(Array.isArray(manifest.skills))
 
@@ -47,6 +49,7 @@ test('all 8 cross-border SOP skills are declared in dsh.manifest.json with valid
     const text = readFileSync(full, 'utf8')
     const fm = parseFrontmatter(text, relPath)
     assert.equal(fm.name, id)
+    assert.equal(fm['disable-model-invocation'], true, `${relPath} must keep disable-model-invocation: true`)
     assert.match(fm.description, /[\u4e00-\u9fff]/)
     assert.match(fm.description, /触发[：:]/)
     assert.doesNotMatch(text, /\bharvest_[a-z0-9_]+\b/, `${relPath} must not reference dead harvest_* tools`)
@@ -273,4 +276,185 @@ test('script 07: analyze_reviews.py enforces 8-cause count conservation and fixa
   assert.equal(out.summary.fixable_misunderstanding_count, 3)
   assert.equal(out.summary.fixable_misunderstanding_rate, 0.6)
   assert.ok(out.positive_selling_points.length >= 2)
+})
+
+test('script 08: validate_brand_kit.py validates complete kit (pass), missing anchor (needs_input), and invalid hex/banned claims (fail)', (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'omx-ecom-brand-kit-'))
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
+
+  const goodPath = join(dir, 'good.json')
+  writeFileSync(goodPath, JSON.stringify({
+    product_name: 'AeroFlask 500ml Insulated Tumbler',
+    category: 'Kitchen & Drinkware',
+    core_selling_point: 'Double-wall 304 steel keeps drinks chilled for 12h without leaks',
+    target_markets: ['us', 'br'],
+    spec_table: { capacity: '500ml', material: '304 stainless steel', weight: '320g', cold_retention: '12h' },
+    brand_palette: ['#1a2b3c', '#fff'],
+    forbidden_words: ['BrandX', 'Yeti'],
+    anchor_assets: { hero_photo: 'assets/hero-front.png', angle_photos: ['assets/side.png'] },
+  }), 'utf8')
+  const goodRes = runPy('omnimux-ecom-brand-curator/scripts/validate_brand_kit.py', ['--input', goodPath, '--format', 'json'])
+  assert.equal(goodRes.status, 0, goodRes.stdout + goodRes.stderr)
+  const goodOut = JSON.parse(goodRes.stdout)
+  assert.equal(goodOut.status, 'pass')
+  assert.equal(goodOut.passed, true)
+  assert.equal(goodOut.score, 100)
+  assert.deepEqual(goodOut.normalized_kit.brand_palette, ['#1A2B3C', '#FFFFFF'])
+  assert.deepEqual(goodOut.normalized_kit.target_markets, ['US', 'BR'])
+
+  const needsPath = join(dir, 'needs.json')
+  writeFileSync(needsPath, JSON.stringify({
+    product_name: 'AeroFlask 500ml',
+    category: 'Drinkware',
+    core_selling_point: 'Leakproof commuter tumbler',
+    target_markets: ['US'],
+    spec_table: { capacity: '500ml', weight: '320g', material: '304 steel' },
+    brand_palette: ['#112233'],
+    forbidden_words: ['BrandX'],
+    anchor_assets: {},
+  }), 'utf8')
+  const needsRes = runPy('omnimux-ecom-brand-curator/scripts/validate_brand_kit.py', ['--input', needsPath, '--format', 'json'])
+  assert.equal(needsRes.status, 2)
+  const needsOut = JSON.parse(needsRes.stdout)
+  assert.equal(needsOut.status, 'needs_input')
+  assert.ok(needsOut.missing_fields.includes('anchor_assets.hero_photo'))
+
+  const badPath = join(dir, 'bad.json')
+  writeFileSync(badPath, JSON.stringify({
+    product_name: 'Miracle Tumbler',
+    category: '',
+    core_selling_point: '100% guaranteed miracle cure best in the world',
+    target_markets: [],
+    spec_table: { material: 'plastic' },
+    brand_palette: ['not-a-hex'],
+    forbidden_words: [],
+  }), 'utf8')
+  const badRes = runPy('omnimux-ecom-brand-curator/scripts/validate_brand_kit.py', ['--input', badPath, '--format', 'json'])
+  assert.equal(badRes.status, 2)
+  const badOut = JSON.parse(badRes.stdout)
+  assert.equal(badOut.status, 'fail')
+  const badCodes = new Set(badOut.issues.map((i) => i.code))
+  assert.ok(badCodes.has('missing_category'))
+  assert.ok(badCodes.has('banned_claim_in_usp'))
+  assert.ok(badCodes.has('missing_target_markets'))
+  assert.ok(badCodes.has('insufficient_specs'))
+  assert.ok(badCodes.has('invalid_palette_hex'))
+
+  // Regression: JSON null values must NEVER coerce to "None" and 100% must count as measured unit
+  const nullSpecsPath = join(dir, 'null-specs.json')
+  writeFileSync(nullSpecsPath, JSON.stringify({
+    product_name: 'Cotton Tee',
+    category: 'Apparel',
+    core_selling_point: 'Breathable 100% combed cotton daily tee',
+    target_markets: ['US', null],
+    spec_table: { cotton: '100%', lining: null, trim: null },
+    brand_palette: ['#112233'],
+    forbidden_words: ['BrandX', null],
+    anchor_assets: { hero_photo: 'assets/hero.png', angle_photos: [null] },
+  }), 'utf8')
+  const nullSpecsRes = runPy('omnimux-ecom-brand-curator/scripts/validate_brand_kit.py', ['--input', nullSpecsPath, '--format', 'json'])
+  assert.equal(nullSpecsRes.status, 2)
+  const nullSpecsOut = JSON.parse(nullSpecsRes.stdout)
+  assert.equal(nullSpecsOut.status, 'fail')
+  assert.equal(nullSpecsOut.metrics.spec_count, 1)
+  assert.equal(nullSpecsOut.metrics.measured_spec_count, 1, '100% must match NUMERIC_UNIT_RE')
+  assert.deepEqual(nullSpecsOut.normalized_kit.spec_table, { cotton: '100%' })
+  assert.deepEqual(nullSpecsOut.normalized_kit.target_markets, ['US'])
+  assert.deepEqual(nullSpecsOut.normalized_kit.forbidden_words, ['BrandX'])
+  assert.ok(nullSpecsOut.issues.some((i) => i.code === 'insufficient_specs'))
+})
+
+test('script 09: check_localization_matrix.py passes valid multilingual shots and blocks voiceover overflow, spec drift (including CJK/%/unit drift), and banned claims', (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'omx-ecom-loc-'))
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
+
+  const goodPath = join(dir, 'good.json')
+  writeFileSync(goodPath, JSON.stringify({
+    spec_table: { capacity: '500ml', retention: '12 hours', uv_block: '98%' },
+    forbidden_words: ['BrandX'],
+    markets: [
+      {
+        market: 'US',
+        lang: 'en-US',
+        shots: [
+          { shot_id: 'S1', duration_sec: 4, voiceover: 'Still drinking warm water at work?', subtitle: 'Warm water again?' },
+          { shot_id: 'S2', duration_sec: 6, voiceover: 'This 500ml bottle keeps ice cold for 12h straight with 98% UV shield.', subtitle: '500ml 12h cold 98%' },
+        ],
+      },
+      {
+        market: 'JP',
+        lang: 'ja',
+        shots: [
+          { shot_id: 'S1', duration_sec: 4, voiceover: 'ぬるい水にさよなら。', subtitle: 'ぬるい水にさよなら' },
+          { shot_id: 'S2', duration_sec: 5, voiceover: '500mlで12hしっかり保冷。', subtitle: '500ml 12h保冷' },
+        ],
+      },
+    ],
+  }), 'utf8')
+  const goodRes = runPy('omnimux-ecom-global-localizer/scripts/check_localization_matrix.py', ['--input', goodPath, '--format', 'json'])
+  assert.equal(goodRes.status, 0, goodRes.stdout + goodRes.stderr)
+  const goodOut = JSON.parse(goodRes.stdout)
+  assert.equal(goodOut.passed, true)
+  assert.equal(goodOut.markets.length, 2)
+
+  const badPath = join(dir, 'bad.json')
+  writeFileSync(badPath, JSON.stringify({
+    spec_table: { capacity: '500ml', retention: '12h' },
+    forbidden_words: ['BrandX'],
+    markets: [
+      {
+        market: 'BR',
+        lang: 'pt-BR',
+        shots: [
+          {
+            shot_id: 'S1',
+            duration_sec: 3,
+            voiceover: 'Esta garrafa termica incrivel de 900ml mantem sua bebida gelada por 48h garantido 100% muito melhor do que BrandX no escritorio e na academia todos os dias.',
+            subtitle: '900ml 48h garantido 100%',
+          },
+        ],
+      },
+    ],
+  }), 'utf8')
+  const badRes = runPy('omnimux-ecom-global-localizer/scripts/check_localization_matrix.py', ['--input', badPath, '--format', 'json'])
+  assert.equal(badRes.status, 2)
+  const badOut = JSON.parse(badRes.stdout)
+  assert.equal(badOut.passed, false)
+  const badCodes = new Set(badOut.issues.map((i) => i.code))
+  assert.ok(badCodes.has('voiceover_overflow'))
+  assert.ok(badCodes.has('banned_compliance_term'))
+  assert.ok(badCodes.has('forbidden_word_hit'))
+  assert.ok(badCodes.has('unverified_numeric_spec'))
+
+  // Regression: CJK adjacent numbers, unit mistranslation (500ml -> 500L, 12h -> 12 days), and % drift MUST fail
+  const driftPath = join(dir, 'drift.json')
+  writeFileSync(driftPath, JSON.stringify({
+    spec_table: { capacity: '500ml', retention: '12h' },
+    markets: [
+      {
+        market: 'JP',
+        lang: 'ja',
+        shots: [
+          { shot_id: 'S_JP', duration_sec: 5, voiceover: '999mlで99hしっかり保冷。', subtitle: '这款999ml保温杯' },
+        ],
+      },
+      {
+        market: 'US',
+        lang: 'en-US',
+        shots: [
+          { shot_id: 'S_UNIT', duration_sec: 6, voiceover: 'This 500L tank runs 12 days.', subtitle: 'Blocks 99% UV rays.' },
+        ],
+      },
+    ],
+  }), 'utf8')
+  const driftRes = runPy('omnimux-ecom-global-localizer/scripts/check_localization_matrix.py', ['--input', driftPath, '--format', 'json'])
+  assert.equal(driftRes.status, 2)
+  const driftOut = JSON.parse(driftRes.stdout)
+  assert.equal(driftOut.passed, false)
+  const driftMsgs = driftOut.issues.filter((i) => i.code === 'unverified_numeric_spec').map((i) => i.message).join('\n')
+  assert.match(driftMsgs, /999ml/, 'must catch CJK-adjacent ml drift')
+  assert.match(driftMsgs, /99h/, 'must catch CJK-adjacent h drift')
+  assert.match(driftMsgs, /500L/, 'must catch unit drift from 500ml to 500L')
+  assert.match(driftMsgs, /12 days/, 'must catch unit drift from 12h to 12 days')
+  assert.match(driftMsgs, /99%/, 'must catch unverified percentage drift')
 })

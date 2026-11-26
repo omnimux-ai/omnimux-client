@@ -3,10 +3,10 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>OmniMux · 专家市场真状态修复与跨境电商 SOP 专家库演示</title>
+<title>OmniMux 专家市场精兵演进（8 到 10）与底座裁剪演示</title>
 <style>
   :root,
-  [data-theme="dark"] {
+  :root[data-theme="dark"] {
     --dsw-alias-bg-base: #141517;
     --dsw-alias-bg-layer-1: #1a1c1f;
     --dsw-alias-bg-layer-2: #1e2023;
@@ -27,7 +27,7 @@
     --dsw-alias-shadow-overlay: 0 12px 32px rgba(0, 0, 0, 0.42);
   }
 
-  [data-theme="light"] {
+  :root[data-theme="light"] {
     --dsw-alias-bg-base: #f5f6f8;
     --dsw-alias-bg-layer-1: #ffffff;
     --dsw-alias-bg-layer-2: #ffffff;
@@ -59,8 +59,7 @@
   }
 
   .demo-bar {
-    position: sticky;
-    top: 0;
+    position: relative;
     z-index: 50;
     display: flex;
     flex-wrap: wrap;
@@ -71,7 +70,7 @@
     background: var(--dsw-alias-bg-layer-1);
     border-bottom: 1px solid var(--dsw-alias-border-l2);
   }
-  .demo-brand { display: flex; align-items: center; gap: 10px; font-size: 13px; font-weight: 600; }
+  .demo-brand { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; font-size: 13px; font-weight: 600; }
   .demo-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
   .seg {
     display: inline-flex;
@@ -113,16 +112,14 @@
     max-width: 1320px;
     margin: 0 auto;
     padding: 28px 24px 64px;
-    transition: max-width .2s ease;
   }
   .viewport-shell.narrow {
-    max-width: 540px;
+    max-width: 520px;
     border-left: 1px dashed var(--dsw-alias-border-subtle);
     border-right: 1px dashed var(--dsw-alias-border-subtle);
     min-height: calc(100vh - 56px);
   }
 
-  /* Page Intro */
   .workshop-intro { margin-bottom: 20px; }
   .workshop-title { font-size: 24px; font-weight: 700; margin: 0 0 6px; letter-spacing: -0.01em; }
   .workshop-subtitle { font-size: 14px; color: var(--dsw-alias-label-secondary); margin: 0 0 14px; }
@@ -140,7 +137,6 @@
     cursor: pointer;
   }
 
-  /* Nav bar */
   .nav-bar {
     display: flex;
     flex-wrap: wrap;
@@ -182,7 +178,6 @@
   }
   .search-input:focus { border-color: var(--dsw-alias-border-subtle); }
 
-  /* Stage Filter Bar (New in After) */
   .expert-stage-bar {
     display: flex;
     flex-wrap: wrap;
@@ -209,7 +204,6 @@
     font-weight: 600;
   }
 
-  /* Error Banner (only on real failure) */
   .expert-error-toast {
     position: fixed;
     right: 24px;
@@ -234,7 +228,6 @@
     border: none; background: transparent; color: var(--dsw-alias-label-secondary); cursor: pointer; font-size: 14px;
   }
 
-  /* Grid & Cards */
   .expert-market-grid {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -318,10 +311,10 @@
   .expert-card-title { font-size: 16px; font-weight: 700; margin: 0 0 8px; line-height: 1.35; }
   .expert-card-desc { font-size: 13px; line-height: 1.55; color: var(--dsw-alias-label-secondary); margin: 0; flex: 1; }
 
-  /* Live Composer Preset Picker Mirror */
+  /* Live Composer & Tool Scope Preview */
   .live-sync-panel {
     margin-top: 28px;
-    padding: 18px 20px;
+    padding: 20px;
     border-radius: 16px;
     background: var(--dsw-alias-bg-layer-1);
     border: 1px solid var(--dsw-alias-border-l2);
@@ -332,7 +325,7 @@
     align-items: center;
     justify-content: space-between;
     gap: 8px;
-    margin-bottom: 12px;
+    margin-bottom: 14px;
   }
   .live-sync-title { font-size: 13px; font-weight: 600; }
   .live-sync-sub { font-size: 12px; color: var(--dsw-alias-label-secondary); }
@@ -340,6 +333,7 @@
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
+    margin-bottom: 18px;
   }
   .picker-chip {
     display: inline-flex;
@@ -349,32 +343,128 @@
     border-radius: 10px;
     border: 1px solid var(--dsw-alias-border-l2);
     background: var(--dsw-alias-bg-layer-2);
+    color: var(--dsw-alias-label-primary);
     font-size: 13px;
     font-weight: 500;
+    cursor: pointer;
+    transition: border-color .15s, background .15s;
+  }
+  .picker-chip:hover { border-color: var(--dsw-alias-border-subtle); background: var(--dsw-alias-interactive-bg-hover); }
+  .picker-chip.active {
+    border-color: var(--dsw-alias-label-primary);
+    background: var(--dsw-alias-bg-layer-3);
+    font-weight: 600;
   }
   .picker-chip img { width: 20px; height: 20px; border-radius: 50%; }
-  .picker-chip .badge-def {
+  .picker-chip .badge-def { font-size: 11px; color: var(--dsw-alias-label-tertiary); }
+
+  /* Blank-session Composer Preview */
+  .composer-preview-wrap {
+    max-width: 680px;
+    margin: 0 auto;
+  }
+  .composer-card {
+    border-radius: 16px;
+    border: 1px solid var(--dsw-alias-border-subtle);
+    background: var(--dsw-alias-bg-layer-2);
+    padding: 14px 16px;
+  }
+  .composer-textarea {
+    width: 100%;
+    min-height: 68px;
+    border: 0;
+    resize: vertical;
+    outline: none;
+    background: transparent;
+    color: var(--dsw-alias-label-primary);
+    font: inherit;
+    font-size: 14px;
+    line-height: 1.55;
+  }
+  .composer-textarea::placeholder { color: var(--dsw-alias-label-tertiary); }
+  .composer-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid var(--dsw-alias-border-l2);
+    gap: 8px;
+  }
+  .composer-seat {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--dsw-alias-label-secondary);
+  }
+  .composer-seat img { width: 18px; height: 18px; border-radius: 50%; }
+  .composer-scope-badge {
     font-size: 11px;
+    color: var(--dsw-alias-label-secondary);
+    background: var(--dsw-alias-bg-layer-3);
+    padding: 3px 8px;
+    border-radius: 9999px;
+  }
+
+  /* Mirrors production .omx-quick-shortcuts exactly (borderless centered links) */
+  .omx-quick-shortcuts {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 6px 24px;
+    margin-top: 12px;
+  }
+  .omx-quick-shortcut-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 30px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--dsw-alias-label-secondary);
+    font: inherit;
+    font-size: 13px;
+    line-height: 18px;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: color .15s ease;
+  }
+  .omx-quick-shortcut-btn:hover,
+  .omx-quick-shortcut-btn.is-active { color: var(--dsw-alias-label-primary); }
+  .omx-quick-shortcut-btn.is-active { font-weight: 600; }
+  .omx-quick-shortcut-arrow { opacity: 0.55; font-size: 12px; }
+  .omx-quick-shortcut-btn:hover .omx-quick-shortcut-arrow,
+  .omx-quick-shortcut-btn.is-active .omx-quick-shortcut-arrow { opacity: 1; }
+  .empty-dock-hint {
+    margin-top: 12px;
+    text-align: center;
+    font-size: 12px;
     color: var(--dsw-alias-label-tertiary);
   }
-  .before-note {
-    margin-bottom: 16px;
-    padding: 12px 14px;
-    border-radius: 12px;
-    background: var(--dsw-color-danger-bg);
-    border: 1px solid var(--dsw-color-danger-border);
-    font-size: 13px;
-    color: var(--dsw-alias-label-primary);
+  .tool-scope-summary {
+    margin-top: 14px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    background: var(--dsw-alias-bg-layer-3);
+    font-size: 12px;
+    color: var(--dsw-alias-label-secondary);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 14px;
   }
+  .tool-scope-summary strong { color: var(--dsw-alias-label-primary); font-weight: 600; }
 </style>
 </head>
 <body>
   <div class="demo-bar">
     <div class="demo-brand">
-      <span>OmniMux · 专家市场交互演示</span>
+      <span>OmniMux 专家市场精兵演进演示</span>
       <div class="seg" role="group" aria-label="Before or After">
-        <button id="btnAfter" class="active" type="button">改造后（真状态 + 8 SOP 专家）</button>
-        <button id="btnBefore" type="button">改造前（原缺陷复现）</button>
+        <button id="btnAfter" class="active" type="button">改造后（10 专家 + 工具裁剪 + 首启引导）</button>
+        <button id="btnBefore" type="button">改造前（8 专家 + 裸输入框）</button>
       </div>
     </div>
     <div class="demo-controls">
@@ -388,7 +478,7 @@
       </div>
       <div class="seg" role="group" aria-label="Viewport">
         <button id="btnWide" class="active" type="button">宽屏</button>
-        <button id="btnNarrow" type="button">窄屏 540px</button>
+        <button id="btnNarrow" type="button">窄屏 520px</button>
       </div>
       <button id="btnFail" class="ctrl-btn warn" type="button">模拟挂载失败</button>
     </div>
@@ -397,7 +487,7 @@
   <main id="shell" class="viewport-shell">
     <section class="workshop-intro">
       <h1 id="introTitle" class="workshop-title">专家市场</h1>
-      <p id="introSub" class="workshop-subtitle">发现并按需聘用跨境电商 SOP 专家，即装即进会话预设选择器</p>
+      <p id="introSub" class="workshop-subtitle">按需聘用跨境电商 SOP 专家，即装即进会话预设选择器</p>
       <button id="btnCreate" class="btn-create" type="button">创建专家</button>
     </section>
 
@@ -411,19 +501,28 @@
       <input id="searchInput" class="search-input" type="search" placeholder="搜索全部专家..." />
     </div>
 
-    <div id="beforeWarning" class="before-note" style="display:none;">
-      改造前问题复现：5 位市场专家全显 [ 已入职 ]（实际底座仅注册了 omni-agent 和 cordis），含 Topview 历史残留文案，cordis 裸显英文且系统预置误显禁用按钮。
-    </div>
-
     <div id="stageBar" class="expert-stage-bar"></div>
     <div id="grid" class="expert-market-grid"></div>
 
     <section class="live-sync-panel" aria-live="polite">
       <div class="live-sync-head">
-        <span class="live-sync-title" id="pickerTitle">底座真实注册表（ctx.agentPresets.list() · 新对话下拉菜单实时同步）</span>
+        <span class="live-sync-title" id="pickerTitle">新对话预设切换与空白会话引导预览</span>
         <span class="live-sync-sub" id="pickerMeta"></span>
       </div>
       <div id="pickerList" class="picker-list"></div>
+
+      <div class="composer-preview-wrap">
+        <div class="composer-card">
+          <textarea id="composerInput" class="composer-textarea" placeholder="输入你的内容电商需求，或点下方起手式填入模板..."></textarea>
+          <div class="composer-footer">
+            <span id="composerSeat" class="composer-seat"></span>
+            <span id="composerScopeBadge" class="composer-scope-badge"></span>
+          </div>
+        </div>
+        <div id="dockBar" class="omx-quick-shortcuts"></div>
+        <div id="dockHint" class="empty-dock-hint" style="display:none;"></div>
+        <div id="toolScopeBox" class="tool-scope-summary"></div>
+      </div>
     </section>
   </main>
 
@@ -456,38 +555,140 @@
     return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
   }
 
-  const BEFORE_ITEMS = [
-    { id: 'shopee-ops-expert', name: 'Shopee 运营专家', nameEn: 'Shopee Ops Expert', desc: '负责市场、产品、店铺、品牌和关键词分析的Shopee运营专员。', descEn: 'Shopee operation specialist.', status: 'enabled', group: 'ecommerce' },
-    { id: 'youtube-creator-expert', name: 'YouTube 创作者专家', nameEn: 'YouTube Creator Expert', desc: '帮助商家利用 Topview 自有创作者池数据寻找和评估 YouTube 创作者。', descEn: 'Find YouTube creators using Topview pool.', status: 'enabled', group: 'ecommerce' },
-    { id: 'amazon-operations-expert', name: '亚马逊运营专家', nameEn: 'Amazon Operations Expert', desc: '专注于亚马逊店铺运营、商品详情优化、广告投放和竞争对手分析。', descEn: 'Amazon store ops specialist.', status: 'enabled', group: 'ecommerce' },
-    { id: 'tiktok-ecommerce-expert', name: 'TikTok 电商专家', nameEn: 'TikTok Ecommerce Expert', desc: '擅长TikTok短视频销售、创作者合作和增长策略。', descEn: 'TikTok Shop growth specialist.', status: 'enabled', group: 'ecommerce' },
-    { id: 'media-creator', name: '媒体创作者', nameEn: 'Media Creator', desc: 'AI内容生成：使用 Topview AI 创意工具生成视频、图像、数字替身。', descEn: 'AI media generation using Topview AI.', status: 'enabled', group: 'ecommerce' },
-    { id: 'omni-agent', name: '社媒专家', nameEn: 'Social Media Expert', desc: '全平台社媒营销操盘、跨渠道爆款内容创作与品牌心智建设。', descEn: 'Multi-platform social marketing.', status: 'enabled', group: 'system' },
-    { id: 'cordis', name: 'cordis', nameEn: 'cordis', desc: '', descEn: '', status: 'enabled', group: 'system' },
+  const SYSTEM_PRESETS = [
+    { id: 'omni-agent', name: 'OmniMux', nameEn: 'OmniMux', stage: 'system', desc: '内容电商全链路默认 Agent，覆盖选品洞察、脚本分镜、素材生产与全域增长。', descEn: 'All-in-one content e-commerce default Agent from research to production and growth.', status: 'system', domains: ['全部 15 个受管域'] },
+    { id: 'cordis', name: '创建Agent', nameEn: 'Create Agent', stage: 'system', desc: 'DSH 原生创造模式：插件实验开发、运行时检查与自定义 Agent 搭建。', descEn: 'DSH native Creator Mode for plugin development, runtime inspection, and custom Agents.', status: 'system', domains: ['DSH 原生创造模式'] },
   ];
 
-  const AFTER_SYSTEM = [
-    { id: 'omni-agent', name: 'OmniMux', nameEn: 'OmniMux', stage: 'system', stageZh: '系统预置', stageEn: 'System', desc: '内容电商全链路默认 Agent——覆盖选品洞察、脚本分镜、素材生产与全域增长。', descEn: 'All-in-one content e-commerce default Agent from research to production and growth.', status: 'system', group: 'system' },
-    { id: 'cordis', name: '创建Agent', nameEn: 'Create Agent', stage: 'system', stageZh: '系统预置', stageEn: 'System', desc: 'DSH 原生创造模式：插件实验开发、运行时检查与自定义 Agent 搭建。', descEn: 'DSH native Creator Mode for plugin development, runtime inspection, and custom Agents.', status: 'system', group: 'system' },
+  const ALL_EXPERTS = [
+    {
+      id: 'ecom-market-research', name: '选品专家', nameEn: 'Market Analyst', stage: 'research', stageZh: '选品', stageEn: 'Research',
+      descBefore: '类目容量/CR10/价格带波谷测算、社媒痛点挖掘与竞品拆解，用脚本计算替代心算，输出可验证选品结论。',
+      desc: '接管 TikTok 三闸跟爆工作台与类目表脚本，覆盖销量加速初筛、渠道占比核验、品牌词风控及价格带波谷测算。',
+      descEn: 'Runs TikTok 3-gate discovery tasks and CSV category scripts for velocity screening, risk audits, CR10, and price-band gaps.',
+      domains: ['products', 'inspiration', 'tiktok_selection', 'social_data', 'viewer', 'market', 'workbench'],
+      hiddenCount: 64,
+      starters: [
+        { id: 'tk-gate', labelZh: 'TikTok 三闸跟爆筛品', labelEn: 'Run TikTok 3-Gate Scout', promptZh: '用跟爆选品三闸工作台帮我试拉并筛选 <目标类目或关键词> 的加速爆品，先给干跑规模预估再创建任务。', promptEn: 'Dry-run the TikTok 3-gate selection workbench for <category/keyword> and preview hit volume before creating a task.' },
+        { id: 'csv-gap', labelZh: '类目表容量与波谷测算', labelEn: 'Analyze Category CSV', promptZh: '我有一份类目导出表 <粘贴路径或上传CSV>，请用脚本计算月容量、CR10 与价格带波谷并给进入结论。', promptEn: 'Analyze my exported category sheet <path/CSV> with scripts for market size, CR10, and price-band gaps.' },
+        { id: 'risk-check', labelZh: '核查选品库与同步商品库', labelEn: 'Review & Sync Picks', promptZh: '查看当前跟爆选品库待审核商品，核对品牌敏感词风控结果，确认后同步进商品库。', promptEn: 'Review pending picks in the TikTok selection library, inspect risk audit results, and sync approved items to Products.' },
+      ],
+    },
+    {
+      id: 'ecom-product-strategy', name: '定价专家', nameEn: 'Pricing Strategist', stage: 'research', stageZh: '选品', stageEn: 'Research',
+      desc: '提炼唯一核心卖点、规划 SKU 角色矩阵、精算含税净利率/盈亏价/券余量，并沉淀进商品库作为全链路真源。',
+      descEn: 'Distills a single core selling point, SKU role matrix, tax-aware margin/break-even/coupon headroom, and syncs truth to Products.',
+      domains: ['products', 'social_data', 'viewer', 'market', 'workbench'],
+      hiddenCount: 91,
+      starters: [
+        { id: 'margin', labelZh: '核算含税毛利与盈亏价', labelEn: 'Calculate Net Margin', promptZh: '帮我核算 @Product/<商品名> 在 <目标平台站点> 的含税净利率、盈亏平衡价与优惠券余量。', promptEn: 'Compute tax-aware net margin, break-even price, and coupon headroom for @Product/<name> on <marketplace>.' },
+        { id: 'usp', labelZh: '收敛唯一核心卖点', labelEn: 'Distill Single Core USP', promptZh: '基于商品参数与竞品痛点，把这款产品收敛成唯一核心卖点与禁用词清单。', promptEn: 'Distill verified specs and competitor pain points into one core USP and forbidden-word list.' },
+        { id: 'sku', labelZh: '规划 SKU 四角色矩阵', labelEn: 'Plan SKU Role Matrix', promptZh: '为这款商品设计引流款、利润款、组合款与形象款 SKU 矩阵并沉淀进商品库。', promptEn: 'Design traffic, profit, bundle, and hero SKU roles and sync the verified spec table to Products.' },
+      ],
+    },
+    {
+      id: 'ecom-brand-curator', name: '品牌管家', nameEn: 'Brand Curator', stage: 'research', stageZh: '选品', stageEn: 'Research', addedInAfter: true,
+      desc: '从商品页链接与实拍素材冷启动建档，确定性校验参数真源与色值规范，一次性沉淀可复用的商品库与品牌资产锚点。',
+      descEn: 'Bootstraps structured product profiles, validated spec tables, and reusable brand visual anchors from URLs and raw photos.',
+      domains: ['products', 'assets', 'inspiration', 'workflow', 'media_gen', 'social_data', 'browser', 'viewer', 'market', 'workbench'],
+      hiddenCount: 45,
+      starters: [
+        { id: 'url-onboard', labelZh: '从商品链接冷启动建档', labelEn: 'Onboard from Product URL', promptZh: '请抓取这个商品链接 <粘贴链接>，拆出四级事实参数表并用脚本校验缺口，确认后写入商品库。', promptEn: 'Fetch <product URL>, extract a 4-tier verified spec table, validate gaps via script, and save to Products.' },
+        { id: 'asset-anchor', labelZh: '整理实拍图沉淀品牌资产', labelEn: 'Organize Brand Assets', promptZh: '把这批商品实拍图与品牌主色整理成可长期复用的资产库角色、场景与风格锚点。', promptEn: 'Curate these product photos and brand palette into reusable Asset Center characters, scenes, and style packs.' },
+        { id: 'audit-kit', labelZh: '体检商品库与资产缺口', labelEn: 'Audit Workspace Truth', promptZh: '盘点我当前商品库和资产库里缺失的关键参数、禁用词或白底锚点图，给出补齐清单。', promptEn: 'Audit my existing Products and Assets for missing specs, forbidden words, or hero anchor images.' },
+      ],
+    },
+    {
+      id: 'ecom-listing-copy', name: '文案专家', nameEn: 'Listing Copywriter', stage: 'production', stageZh: '内容', stageEn: 'Content',
+      desc: '读取商品库参数真源，产出关键词分层、多语母语 Listing 标题与七段式商详，并通过字数、禁用词与参数溯源校验。',
+      descEn: 'Turns verified product specs into tiered keywords, native multilingual titles and 7-part listings with compliance checks.',
+      domains: ['products', 'assets', 'social_data', 'viewer', 'market', 'workbench'],
+      hiddenCount: 86,
+      starters: [
+        { id: 'title-desc', labelZh: '生成母语标题与七段商详', labelEn: 'Draft Native Listing', promptZh: '读取 @Product/<商品名> 真源，生成 <目标平台与语言> 高转化标题与七段式商详，并跑完合规校验。', promptEn: 'Draft a native <marketplace/language> title and 7-part listing from @Product/<name> with validation.' },
+        { id: 'kw', labelZh: '输出关键词分层矩阵', labelEn: 'Build Keyword Tiers', promptZh: '为 @Product/<商品名> 拆出核心词、场景长尾词与痛点词分层表。', promptEn: 'Build tiered core, scenario, and pain-point keywords for @Product/<name>.' },
+        { id: 'lint', labelZh: '校验已有文案合规与参数', labelEn: 'Validate Existing Copy', promptZh: '用校验脚本检查这段 Listing 文案的字节上限、违禁词与数字参数溯源：<粘贴文案>。', promptEn: 'Validate this listing draft for byte limits, banned words, and spec traceability: <paste copy>.' },
+      ],
+    },
+    {
+      id: 'ecom-visual-studio', name: '视觉专家', nameEn: 'Visual Designer', stage: 'production', stageZh: '内容', stageEn: 'Content',
+      desc: '锁定商品实拍外观与色值，规划 9 图视觉矩阵与商详排版，驱动创作画布批量出图并执行白底/主体占比像素质检。',
+      descEn: 'Plans 9-image visual stacks locked to real product photos, drives Canvas generation, and runs pixel compliance checks.',
+      domains: ['products', 'assets', 'inspiration', 'workflow', 'media_gen', 'viewer', 'market', 'workbench'],
+      hiddenCount: 61,
+      starters: [
+        { id: 'nine-grid', labelZh: '规划 9 图视觉矩阵', labelEn: 'Plan 9-Image Stack', promptZh: '锁定 @Product/<商品名> 实拍外观，先输出 9 图视觉矩阵分工表，确认后再进画布出图。', promptEn: 'Lock real product appearance from @Product/<name> and plan a 9-image visual matrix before Canvas generation.' },
+        { id: 'hero-qa', labelZh: '质检白底主图合规像素', labelEn: 'Run Main-Image QA', promptZh: '运行像素质检脚本检查这组主图的分辨率、纯白底与主体占比：<附图片或路径>。', promptEn: 'Run pixel compliance QA on resolution, white background, and subject ratio for <images>.' },
+        { id: 'aplus', labelZh: '设计商详对比与场景图', labelEn: 'Design A+ Visuals', promptZh: '围绕唯一核心卖点设计痛点对比图与场景卖点图，并在创作画布搭建生成节点。', promptEn: 'Plan pain-point comparison and lifestyle feature visuals on the Workflow Canvas.' },
+      ],
+    },
+    {
+      id: 'ecom-video-director', name: '视频导演', nameEn: 'Video Director', stage: 'production', stageZh: '内容', stageEn: 'Content',
+      desc: '串联灵感 5D 拆解、资产与数字人、画布分镜生片与视频剪辑工坊，把控 3 秒 Hook、口播时长与参数溯源校验。',
+      descEn: 'Connects 5D inspiration breakdowns, assets/avatars, Canvas storyboards, and Clip timeline with duration & spec checks.',
+      domains: ['products', 'assets', 'inspiration', 'workflow', 'clip', 'media_gen', 'viewer', 'market', 'workbench'],
+      hiddenCount: 52,
+      starters: [
+        { id: 'hook-script', labelZh: '策划 3 秒 Hook 带货脚本', labelEn: 'Plan 3s Hook Script', promptZh: '基于 @Product/<商品名> 策划 30 秒竖屏带货脚本，先用脚本校验口播时长与参数再开画布。', promptEn: 'Draft a 30s vertical shoppable video script for @Product/<name> with duration & spec validation.' },
+        { id: 'replicate', labelZh: '5D 拆解参考爆款复刻', labelEn: '5D Viral Replication', promptZh: '结合灵感库这条参考视频 <粘贴链接或编号> 做 5D 拆解，为我的商品搭建复刻分镜画布。', promptEn: 'Break down reference video <link/id> in 5D and wire a replication storyboard on Canvas.' },
+        { id: 'clip-cut', labelZh: '汇总镜头进剪辑工坊精修', labelEn: 'Assemble in Clip Studio', promptZh: '把当前画布生成的片段装配进 Clip 剪辑工程，完成字幕对轨、黑场诊断并输出预览。', promptEn: 'Assemble generated clips in Clip Studio, sync captions, run diagnostics, and prepare review cut.' },
+      ],
+    },
+    {
+      id: 'ecom-global-localizer', name: '本土专家', nameEn: 'Global Localizer', stage: 'production', stageZh: '内容', stageEn: 'Content', addedInAfter: true,
+      desc: '锁定商品实拍与参数真源，将验证过的带货视频与套图按四栏矩阵安全裂变至多国多语种，脚本校核口播时长膨胀与本地红线。',
+      descEn: 'Locks verified product specs and localizes proven video ads across countries and languages with duration expansion & compliance checks.',
+      domains: ['products', 'assets', 'inspiration', 'workflow', 'clip', 'media_gen', 'social_data', 'viewer', 'market', 'workbench'],
+      hiddenCount: 48,
+      starters: [
+        { id: 'four-col', labelZh: '拆解四栏跨国本地化方案', labelEn: 'Build 4-Column Plan', promptZh: '把 @Product/<商品名> 的母版视频拆解为 <美区 EN / 巴西 PT-BR / 拉美 ES> 四栏本地化方案，锁定外观与数字参数。', promptEn: 'Create a 4-column localization matrix for @Product/<name> targeting <US EN / BR PT-BR / LATAM ES>.' },
+        { id: 'dur-check', labelZh: '校验多语口播时长与红线', labelEn: 'Check Voiceover Expansion', promptZh: '用校验脚本核对这套多语翻译脚本的语速膨胀率、参数一致性与目标国违禁词。', promptEn: 'Run the localization check script on voiceover expansion ratio, spec invariance, and market redlines.' },
+        { id: 'pilot', labelZh: '先跑单市场数字人小样', labelEn: 'Run Single-Market Pilot', promptZh: '先在 <目标国家/语言> 选配本地数字人与配音跑 1 条核心镜头小样，我确认后再批量铺开其他市场。', promptEn: 'Run a single pilot shot for <target market> with local avatar and voiceover before scaling to all markets.' },
+      ],
+    },
+    {
+      id: 'ecom-ads-optimizer', name: '广告专家', nameEn: 'Ads Optimizer', stage: 'growth', stageZh: '运营', stageEn: 'Operations',
+      desc: '测算盈亏线 ROAS 与可承受 CPC，按五层转化漏斗定位点击/加购/转化瓶颈，输出分级调优清单并定向回流素材优化。',
+      descEn: 'Computes break-even ROAS & max CPC, diagnoses 5-stage ad funnels, outputs P0/P1/P2 checklists and targeted creative feedback.',
+      domains: ['products', 'analytics', 'social_data', 'viewer', 'market', 'workbench'],
+      hiddenCount: 83,
+      starters: [
+        { id: 'roas', labelZh: '五层漏斗诊断广告报表', labelEn: 'Diagnose Ad Funnel', promptZh: '帮我用脚本解析这份广告导出表 <路径/CSV>，算出盈亏线 ROAS 与最大 CPC，并按 P0/P1/P2 给出调优动作。', promptEn: 'Diagnose <ad CSV> with scripts for break-even ROAS, max CPC, and P0/P1/P2 action checklists.' },
+        { id: 'feedback', labelZh: '生成定向素材回流工单', labelEn: 'Emit Creative Feedback', promptZh: '根据当前点击率与转化率瓶颈，定位只需重做的具体主图或前 3 秒 Hook。', promptEn: 'Pinpoint exact listing fields, main image slots, or 3s hooks to revise from funnel bottlenecks.' },
+        { id: 'budget', labelZh: '测算新品放量预算护栏', labelEn: 'Set Launch Budget Guard', promptZh: '结合 @Product/<商品名> 毛利率，计算测品期止损线与加预算触发阈值。', promptEn: 'Compute stop-loss and scale-up thresholds from @Product/<name> unit economics.' },
+      ],
+    },
+    {
+      id: 'ecom-review-voc', name: '评论运营', nameEn: 'Review Analyst', stage: 'growth', stageZh: '运营', stageEn: 'Operations',
+      desc: '差评 8 类归因与误解型差评识别、好评卖点提炼，输出商详防误解补丁、包装提示图需求与多语合规售后回复话术。',
+      descEn: 'Classifies negative reviews across 8 root causes to isolate fixable misunderstandings, emitting listing patches and compliant replies.',
+      domains: ['products', 'social_data', 'viewer', 'market', 'workbench'],
+      hiddenCount: 91,
+      starters: [
+        { id: 'voc-8', labelZh: '差评 8 类归因与防误解补丁', labelEn: 'Classify 8 Review Causes', promptZh: '运行评论脚本分析这份评价表 <路径/CSV>，筛出误解型差评并输出可直接粘贴的商详补丁。', promptEn: 'Analyze <reviews CSV> across 8 root causes and emit copy-paste listing patches for misunderstandings.' },
+        { id: 'reply', labelZh: '生成多语合规售后回复', labelEn: 'Draft Compliant Replies', promptZh: '针对这几条差评生成 <目标语言> 合规客服回复话术，绝不触碰平台删评红线。', promptEn: 'Draft policy-compliant customer care replies in <language> for these negative reviews.' },
+        { id: 'praise', labelZh: '提炼好评高频卖点词', labelEn: 'Mine Praise Phrases', promptZh: '从五星好评里提炼买家原声高频词，反哺下一轮主图与口播钩子。', promptEn: 'Extract recurring buyer phrases from 5-star reviews to feed next-round hooks.' },
+      ],
+    },
+    {
+      id: 'ecom-creator-growth', name: '达人运营', nameEn: 'Creator Manager', stage: 'growth', stageZh: '运营', stageEn: 'Operations',
+      desc: '基于公开社媒数据评估 TikTok/YouTube/IG 达人与爆款信号，输出建联 Brief、内容排期与增长复盘。',
+      descEn: 'Evaluates TikTok/YouTube/IG creators & viral outliers from public data, drafting outreach briefs, schedules, and growth recaps.',
+      domains: ['products', 'inspiration', 'social_data', 'analytics', 'viewer', 'market', 'workbench'],
+      hiddenCount: 74,
+      starters: [
+        { id: 'eval', labelZh: '评估候选达人带货匹配度', labelEn: 'Evaluate Creator Fit', promptZh: '拉取这批达人公开作品数据 <粘贴账号列表>，按中位数基线计算爆款 lift 并分层。', promptEn: 'Fetch public metrics for <creators>, score median-baseline lift, and tier candidates.' },
+        { id: 'brief', labelZh: '生成多语达人建联 Brief', labelEn: 'Draft Outreach Brief', promptZh: '结合 @Product/<商品名> 核心卖点与禁说红线，写一份 <目标语言> 达人寄样建联 Brief。', promptEn: 'Write a <language> creator brief with core USP, redlines, and gifting terms for @Product/<name>.' },
+        { id: 'outlier', labelZh: '扫描品类近期爆款信号', labelEn: 'Scan Category Outliers', promptZh: '扫描 <品类关键词> 近期在 TikTok 的高 lift 异常爆款视频并整理选题排期。', promptEn: 'Scan recent high-lift TikTok outlier posts for <keyword> and draft a test schedule.' },
+      ],
+    },
   ];
 
-  const AFTER_EXPERTS = [
-    { id: 'ecom-market-research', name: '选品专家', nameEn: 'Market Analyst', stage: 'research', stageZh: '选品', stageEn: 'Research', desc: '类目容量/CR10/价格带波谷测算、社媒痛点挖掘与竞品拆解，用脚本计算替代心算，输出可验证选品结论。', descEn: 'Category size, CR10, price-band gaps, social pain-point mining, and competitor teardown with deterministic scripts.', status: 'available' },
-    { id: 'ecom-product-strategy', name: '定价专家', nameEn: 'Pricing Strategist', stage: 'research', stageZh: '选品', stageEn: 'Research', desc: '提炼唯一核心卖点、规划 SKU 角色矩阵、精算含税净利率/盈亏价/券余量，并沉淀进商品库作为全链路真源。', descEn: 'Distills single core USP, SKU role matrix, tax-aware margin/break-even/coupon headroom, synced into Products.', status: 'available' },
-    { id: 'ecom-listing-copy', name: '文案专家', nameEn: 'Listing Copywriter', stage: 'production', stageZh: '内容', stageEn: 'Content', desc: '读取商品库参数真源，产出关键词分层、多语母语 Listing 标题与七段式商详，并通过字数、禁用词与参数溯源校验。', descEn: 'Turns verified specs into tiered keywords, native multilingual titles and 7-part listings with compliance checks.', status: 'available' },
-    { id: 'ecom-visual-studio', name: '视觉专家', nameEn: 'Visual Designer', stage: 'production', stageZh: '内容', stageEn: 'Content', desc: '锁定商品实拍外观与色值，规划 9 图视觉矩阵与商详排版，驱动创作画布批量出图并执行白底/主体占比像素质检。', descEn: 'Plans 9-image visual stacks locked to real product photos, drives Canvas generation, and runs pixel QA.', status: 'available' },
-    { id: 'ecom-video-director', name: '视频导演', nameEn: 'Video Director', stage: 'production', stageZh: '内容', stageEn: 'Content', desc: '串联灵感 5D 拆解、资产与数字人、画布分镜生片与视频剪辑工坊，把控 3 秒 Hook、口播时长与参数溯源校验。', descEn: 'Connects 5D inspiration breakdowns, assets/avatars, Canvas storyboards, and Clip timeline with duration & spec checks.', status: 'available' },
-    { id: 'ecom-ads-optimizer', name: '广告专家', nameEn: 'Ads Optimizer', stage: 'growth', stageZh: '运营', stageEn: 'Operations', desc: '测算盈亏线 ROAS 与可承受 CPC，按五层转化漏斗定位点击/加购/转化瓶颈，输出分级调优清单并定向回流素材优化。', descEn: 'Computes break-even ROAS & max CPC, diagnoses 5-stage funnels, outputs P0/P1/P2 checklists and creative feedback.', status: 'available' },
-    { id: 'ecom-review-voc', name: '评论运营', nameEn: 'Review Analyst', stage: 'growth', stageZh: '运营', stageEn: 'Operations', desc: '差评 8 类归因与误解型差评识别、好评卖点提炼，输出商详防误解补丁、包装提示图需求与多语合规售后回复话术。', descEn: 'Classifies negative reviews across 8 root causes to isolate fixable misunderstandings and emit listing patches.', status: 'available' },
-    { id: 'ecom-creator-growth', name: '达人运营', nameEn: 'Creator Manager', stage: 'growth', stageZh: '运营', stageEn: 'Operations', desc: '基于公开社媒数据评估 TikTok/YouTube/IG 达人与爆款信号，输出建联 Brief、内容排期与增长复盘。', descEn: 'Evaluates TikTok/YouTube/IG creators & viral outliers from public data, drafting outreach briefs and schedules.', status: 'available' },
-  ];
-
-  const STAGES = [
-    { id: 'all', zh: '全部 (10)', en: 'All (10)' },
-    { id: 'research', zh: '选品', en: 'Research' },
-    { id: 'production', zh: '内容', en: 'Content' },
-    { id: 'growth', zh: '运营', en: 'Operations' },
-    { id: 'system', zh: '系统', en: 'System' },
+  const OMNI_SHORTCUTS = [
+    { id: 'clone', labelZh: '复刻爆款视频', labelEn: 'Replicate Viral', promptZh: '参考这条爆款视频结构，为我的商品策划并制作同款竖屏带货视频：' },
+    { id: 'selling', labelZh: '创作带货视频', labelEn: 'Selling Video', promptZh: '基于 @Product 卖点，规划 30 秒带货短视频并搭建画布节点：' },
+    { id: 'breakdown', labelZh: '视频拆解', labelEn: 'Video Breakdown', promptZh: '请对这条参考视频做 5D 结构与前 3 秒钩子拆解：' },
+    { id: 'reverse', labelZh: '反推视频提示词', labelEn: 'Reverse Prompt', promptZh: '反推这条参考视频可直接复用的分镜与运镜提示词：' },
   ];
 
   let mode = 'after';
@@ -495,7 +696,9 @@
   let stage = 'all';
   let query = '';
   let failNextInstall = false;
-  const expertStates = Object.fromEntries(AFTER_EXPERTS.map((e) => [e.id, 'available']));
+  let activePresetId = 'ecom-global-localizer';
+  let activeStarterId = null;
+  const expertStates = Object.fromEntries(ALL_EXPERTS.map((e) => [e.id, e.id === 'ecom-global-localizer' || e.id === 'ecom-brand-curator' || e.id === 'ecom-market-research' ? 'enabled' : 'available']));
 
   function showError(msg) {
     document.getElementById('errorText').textContent = msg;
@@ -505,21 +708,36 @@
     document.getElementById('errorToast').style.display = 'none';
   }
 
+  function currentExpertsPool() {
+    return mode === 'before' ? ALL_EXPERTS.filter((e) => !e.addedInAfter) : ALL_EXPERTS;
+  }
+
   function render() {
     const isEn = lang === 'en';
+    const pool = currentExpertsPool();
+    const totalCount = SYSTEM_PRESETS.length + pool.length;
+    const researchCount = pool.filter((e) => e.stage === 'research').length;
+    const prodCount = pool.filter((e) => e.stage === 'production').length;
+    const growthCount = pool.filter((e) => e.stage === 'growth').length;
+
     document.getElementById('introTitle').textContent = isEn ? 'Experts Market' : '专家市场';
     document.getElementById('introSub').textContent = isEn
-      ? 'Discover and hire cross-border e-commerce SOP AI experts — registered live into your session preset picker'
+      ? 'Discover and hire cross-border e-commerce SOP AI experts into your session preset picker'
       : '发现并按需聘用跨境电商 SOP 专家，安装后免重启进入会话预设选择器';
     document.getElementById('btnCreate').textContent = isEn ? 'Create Expert' : '创建专家';
     document.getElementById('tabExperts').textContent = isEn ? 'Experts Market' : '专家市场';
     document.getElementById('searchInput').placeholder = isEn ? 'Search all experts...' : '搜索全部专家...';
-    document.getElementById('beforeWarning').style.display = mode === 'before' ? 'block' : 'none';
-    document.getElementById('stageBar').style.display = mode === 'after' ? 'flex' : 'none';
 
+    const stages = [
+      { id: 'all', zh: `全部 (${totalCount})`, en: `All (${totalCount})` },
+      { id: 'research', zh: `选品 (${researchCount})`, en: `Research (${researchCount})` },
+      { id: 'production', zh: `内容 (${prodCount})`, en: `Content (${prodCount})` },
+      { id: 'growth', zh: `运营 (${growthCount})`, en: `Operations (${growthCount})` },
+      { id: 'system', zh: '系统 (2)', en: 'System (2)' },
+    ];
     const stageBar = document.getElementById('stageBar');
     stageBar.innerHTML = '';
-    for (const s of STAGES) {
+    for (const s of stages) {
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.className = 'cat-btn' + (stage === s.id ? ' active' : '');
@@ -529,14 +747,12 @@
     }
 
     const q = query.trim().toLowerCase();
-    const rawList = mode === 'before'
-      ? BEFORE_ITEMS
-      : [...AFTER_SYSTEM, ...AFTER_EXPERTS.map((e) => ({ ...e, status: expertStates[e.id] }))];
-
+    const rawList = [...SYSTEM_PRESETS, ...pool.map((e) => ({ ...e, status: expertStates[e.id] || 'available' }))];
     const filtered = rawList.filter((it) => {
-      if (mode === 'after' && stage !== 'all' && it.stage !== stage) return false;
+      if (stage !== 'all' && it.stage !== stage) return false;
       if (!q) return true;
-      return `${it.name} ${it.nameEn} ${it.desc} ${it.descEn}`.toLowerCase().includes(q);
+      const d = mode === 'before' && it.descBefore ? it.descBefore : it.desc;
+      return `${it.name} ${it.nameEn} ${d} ${it.descEn}`.toLowerCase().includes(q);
     });
 
     const grid = document.getElementById('grid');
@@ -550,26 +766,25 @@
         disabled: isEn ? '[ Resigned ]' : '[ 已离职 ]',
         system: isEn ? '[ System ]' : '[ 系统预置 ]',
       };
-      const showBtn = mode === 'before' ? true : (it.status !== 'system');
       const isEnabled = it.status === 'enabled';
       const btnLabel = isEnabled ? (isEn ? 'Disable' : '禁用') : (isEn ? 'Install' : '安装');
-      const stageBadge = mode === 'after' && it.stage !== 'system' && it.stageZh ? `<span class="expert-card-stage">${isEn ? it.stageEn : it.stageZh}</span>` : '';
+      const stageBadge = it.stage !== 'system' && it.stageZh ? `<span class="expert-card-stage">${isEn ? it.stageEn : it.stageZh}</span>` : '';
+      const descText = isEn ? it.descEn : (mode === 'before' && it.descBefore ? it.descBefore : it.desc);
 
       card.innerHTML = `
         <div class="expert-card-top">
           <div class="expert-card-avatar-wrap"><img class="expert-card-avatar" src="${pixelAvatar(it.id)}" alt="${isEn ? it.nameEn : it.name}"/></div>
-          ${showBtn ? `<button type="button" class="expert-pill-btn ${isEnabled ? 'secondary' : ''}">${btnLabel}</button>` : ''}
+          ${it.status !== 'system' ? `<button type="button" class="expert-pill-btn ${isEnabled ? 'secondary' : ''}">${btnLabel}</button>` : ''}
         </div>
         <div class="expert-card-meta-row">
           <div class="expert-card-status ${it.status}">${statusMap[it.status]}</div>
           ${stageBadge}
         </div>
         <div class="expert-card-title">${isEn ? it.nameEn : it.name}</div>
-        <p class="expert-card-desc">${isEn ? it.descEn : it.desc}</p>
+        <p class="expert-card-desc">${descText}</p>
       `;
-
       const btn = card.querySelector('.expert-pill-btn');
-      if (btn && mode === 'after') {
+      if (btn) {
         btn.onclick = () => {
           hideError();
           if (!isEnabled && failNextInstall) {
@@ -580,28 +795,98 @@
             return;
           }
           expertStates[it.id] = isEnabled ? 'disabled' : 'enabled';
+          if (expertStates[it.id] === 'enabled') activePresetId = it.id;
+          else if (activePresetId === it.id) activePresetId = 'omni-agent';
+          activeStarterId = null;
           render();
         };
       }
       grid.appendChild(card);
     }
 
-    // Live Preset Picker mirror
-    const registered = mode === 'before'
-      ? AFTER_SYSTEM // Real host ONLY had omni-agent + cordis despite 5 fake-enabled cards!
-      : [...AFTER_SYSTEM, ...AFTER_EXPERTS.filter((e) => expertStates[e.id] === 'enabled')];
+    const registered = [...SYSTEM_PRESETS, ...pool.filter((e) => expertStates[e.id] === 'enabled')];
+    if (!registered.some((p) => p.id === activePresetId)) activePresetId = 'omni-agent';
 
-    document.getElementById('pickerMeta').textContent = mode === 'before'
-      ? (isEn ? 'Mismatch: UI claims 7 employed, host actually has 2' : '状态失真：界面显示 7 个已入职，底座实际仅 2 个')
-      : (isEn ? `Synced: ${registered.length} active presets in session dropdown` : `真源同步：会话下拉当前共 ${registered.length} 个可用预设`);
+    document.getElementById('pickerMeta').textContent = isEn
+      ? `Active session presets: ${registered.length} (click to preview blank-session dock & tool scope)`
+      : `当前会话下拉共 ${registered.length} 项（点击切换预览空白会话引导与工具裁剪）`;
 
     const pickerList = document.getElementById('pickerList');
     pickerList.innerHTML = '';
     for (const p of registered) {
-      const chip = document.createElement('div');
-      chip.className = 'picker-chip';
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'picker-chip' + (p.id === activePresetId ? ' active' : '');
       chip.innerHTML = `<img src="${pixelAvatar(p.id)}" alt=""/><span>${isEn ? p.nameEn : p.name}</span>${p.id === 'omni-agent' ? `<span class="badge-def">${isEn ? 'Default' : '默认'}</span>` : ''}`;
+      chip.onclick = () => {
+        activePresetId = p.id;
+        activeStarterId = null;
+        document.getElementById('composerInput').value = '';
+        render();
+      };
       pickerList.appendChild(chip);
+    }
+
+    const activePreset = registered.find((p) => p.id === activePresetId) || SYSTEM_PRESETS[0];
+    document.getElementById('composerSeat').innerHTML = `<img src="${pixelAvatar(activePreset.id)}" alt=""/><span>${isEn ? activePreset.nameEn : activePreset.name}</span>`;
+
+    const dockBar = document.getElementById('dockBar');
+    const dockHint = document.getElementById('dockHint');
+    const scopeBadge = document.getElementById('composerScopeBadge');
+    const scopeBox = document.getElementById('toolScopeBox');
+    dockBar.innerHTML = '';
+    dockHint.style.display = 'none';
+
+    if (activePreset.id === 'omni-agent') {
+      scopeBadge.textContent = isEn ? 'All 15 managed domains' : '全量 15 个受管工具域';
+      scopeBox.innerHTML = isEn
+        ? '<strong>Tool Scope:</strong> Default OmniMux keeps all Host domains visible. Dock shows 4 standard commerce shortcuts.'
+        : '<strong>工具裁剪：</strong>默认 OmniMux 保留全量宿主工具域，下方展示 4 条内容电商快捷方式。';
+      for (const sc of OMNI_SHORTCUTS) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'omx-quick-shortcut-btn' + (activeStarterId === sc.id ? ' is-active' : '');
+        b.innerHTML = `<span>${isEn ? sc.labelEn : sc.labelZh}</span><span class="omx-quick-shortcut-arrow">↗</span>`;
+        b.onclick = () => {
+          activeStarterId = activeStarterId === sc.id ? null : sc.id;
+          document.getElementById('composerInput').value = activeStarterId ? sc.promptZh : '';
+          render();
+        };
+        dockBar.appendChild(b);
+      }
+    } else if (activePreset.id === 'cordis') {
+      scopeBadge.textContent = isEn ? 'Creator Mode' : 'DSH 原生创造模式';
+      scopeBox.innerHTML = isEn
+        ? '<strong>Dock Mutual Exclusion:</strong> Creator Mode renders zero shortcut / bootstrap DOM.'
+        : '<strong>互斥门控：</strong>创造模式下输入框下方严格保持 0 DOM，不挂载任何电商引导条。';
+      dockHint.style.display = 'block';
+      dockHint.textContent = isEn ? '(Zero DOM below composer in Creator Mode)' : '（创造模式下此处为 0 DOM）';
+    } else if (mode === 'before') {
+      scopeBadge.textContent = isEn ? 'Unrestricted (100+ tools)' : '未裁剪（暴露全量 100+ 工具）';
+      scopeBox.innerHTML = isEn
+        ? '<strong>Before:</strong> All hired experts receive every global Host tool and a bare blank-session composer.'
+        : '<strong>改造前痛点：</strong>所有聘用专家挂载同一份 100+ 全局工具，且空白会话无任何起手式引导。';
+      dockHint.style.display = 'block';
+      dockHint.textContent = isEn ? '(Bare composer before ExpertBootstrapBar)' : '（改造前此处为空白无引导）';
+    } else {
+      scopeBadge.textContent = isEn
+        ? `${activePreset.domains.length} domains allowed (${activePreset.hiddenCount} hidden)`
+        : `仅放行 ${activePreset.domains.length} 域（裁剪 ${activePreset.hiddenCount} 个无关工具）`;
+      scopeBox.innerHTML = isEn
+        ? `<span><strong>Allowed Host Domains:</strong> ${activePreset.domains.join(', ')}</span><span><strong>External MCP:</strong> Passed through</span>`
+        : `<span><strong>放行宿主域：</strong>${activePreset.domains.join(', ')}</span><span><strong>第三方自装 MCP：</strong>默认透传不误杀</span>`;
+      for (const st of activePreset.starters || []) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'omx-quick-shortcut-btn' + (activeStarterId === st.id ? ' is-active' : '');
+        b.innerHTML = `<span>${isEn ? st.labelEn : st.labelZh}</span><span class="omx-quick-shortcut-arrow">↗</span>`;
+        b.onclick = () => {
+          activeStarterId = activeStarterId === st.id ? null : st.id;
+          document.getElementById('composerInput').value = activeStarterId ? (isEn ? st.promptEn : st.promptZh) : '';
+          render();
+        };
+        dockBar.appendChild(b);
+      }
     }
   }
 

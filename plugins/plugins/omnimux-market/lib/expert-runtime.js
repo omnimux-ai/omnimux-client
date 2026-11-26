@@ -181,6 +181,16 @@ export function buildMarketExpertPluginRows(persona, opts = {}) {
                     },
                 }]
             : []),
+        ...(Array.isArray(opts.toolDomains) && opts.toolDomains.length > 0
+            ? [{
+                    id: 'expert-tool-scope',
+                    name: 'omnimux-market/expert-tool-scope',
+                    config: {
+                        ...(opts.presetId ? { presetId: opts.presetId } : {}),
+                        allowedDomains: [...opts.toolDomains],
+                    },
+                }]
+            : []),
     ];
     return typeof opts.isPackageResolvable === 'function'
         ? pruneUnresolvableRows(rawRows, opts.isPackageResolvable)
@@ -196,6 +206,7 @@ export function buildMarketExpertPresetDefinition(exp, opts = {}) {
             ...opts,
             presetId: opts.presetId ?? exp.id,
             skills: opts.skills ?? exp.skills,
+            toolDomains: opts.toolDomains ?? exp.toolDomains,
         }),
     };
 }

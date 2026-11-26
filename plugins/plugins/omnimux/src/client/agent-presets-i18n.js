@@ -128,8 +128,16 @@ export function getPresetFallbackCopy(presetId, locale = 'zh') {
     return {
       name: lang === 'en' ? 'Market Analyst' : '选品专家',
       description: lang === 'en'
-        ? 'Category size, CR10, price-band gaps, social pain-point mining, and competitor teardown powered by deterministic scripts.'
-        : '类目容量/CR10/价格带波谷测算、社媒痛点挖掘与竞品拆解，用脚本计算替代心算，输出可验证选品结论。',
+        ? 'Runs TikTok 3-gate discovery tasks and CSV category scripts for velocity screening, risk audits, CR10, and price-band gaps.'
+        : '接管 TikTok 三闸跟爆工作台与类目表脚本，覆盖销量加速初筛、渠道占比核验、品牌词风控及价格带波谷测算。',
+    }
+  }
+  if (presetId === 'ecom-brand-curator') {
+    return {
+      name: lang === 'en' ? 'Brand Curator' : '品牌管家',
+      description: lang === 'en'
+        ? 'Bootstraps structured product profiles, validated spec tables, and reusable brand visual anchors from URLs and raw photos.'
+        : '从商品页链接与实拍素材冷启动建档，确定性校验参数真源与色值规范，一次性沉淀可复用的商品库与品牌资产锚点。',
     }
   }
   if (presetId === 'ecom-product-strategy') {
@@ -162,6 +170,14 @@ export function getPresetFallbackCopy(presetId, locale = 'zh') {
       description: lang === 'en'
         ? 'Connects 5D inspiration breakdowns, assets/avatars, Canvas storyboards, and Clip timeline with 3s hook, duration & spec checks.'
         : '串联灵感 5D 拆解、资产与数字人、画布分镜生片与视频剪辑工坊，把控 3 秒 Hook、口播时长与参数溯源校验。',
+    }
+  }
+  if (presetId === 'ecom-global-localizer') {
+    return {
+      name: lang === 'en' ? 'Global Localizer' : '本土专家',
+      description: lang === 'en'
+        ? 'Locks verified product specs and localizes proven video ads across countries and languages with duration expansion & compliance checks.'
+        : '锁定商品实拍与参数真源，将验证过的带货视频与套图按四栏矩阵安全裂变至多国多语种，脚本校核口播时长膨胀与本地红线。',
     }
   }
   if (presetId === 'ecom-ads-optimizer') {

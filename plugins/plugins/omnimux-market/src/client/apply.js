@@ -90,8 +90,13 @@
             },
           };
           window.__omnimuxSkillLibrary = api;
+          const startersSeam = typeof buildExpertStartersLookup === "function"
+            ? buildExpertStartersLookup(typeof DEFAULT_MARKET_EXPERTS !== "undefined" ? DEFAULT_MARKET_EXPERTS : [])
+            : null;
+          if (startersSeam) window.__omnimuxExpertStarters = startersSeam;
           return () => {
             if (window.__omnimuxSkillLibrary === api) delete window.__omnimuxSkillLibrary;
+            if (startersSeam && window.__omnimuxExpertStarters === startersSeam) delete window.__omnimuxExpertStarters;
           };
         }, "omnimux-market: preset skill library seam");
       }

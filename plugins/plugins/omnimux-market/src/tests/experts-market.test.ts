@@ -135,15 +135,17 @@ const SAME_ORIGIN_HEADERS = {
   'sec-fetch-site': 'same-origin',
 }
 
-test('DEFAULT_MARKET_EXPERTS defines 8 SOP cross-border experts, all default available with zero Topview residue', () => {
-  assert.equal(DEFAULT_MARKET_EXPERTS.length, 8)
+test('DEFAULT_MARKET_EXPERTS defines 10 SOP cross-border experts, all default available with toolDomains, starters, and zero Topview residue', () => {
+  assert.equal(DEFAULT_MARKET_EXPERTS.length, 10)
   const ids = DEFAULT_MARKET_EXPERTS.map((e) => e.id)
   assert.deepEqual(ids, [
     'ecom-market-research',
     'ecom-product-strategy',
+    'ecom-brand-curator',
     'ecom-listing-copy',
     'ecom-visual-studio',
     'ecom-video-director',
+    'ecom-global-localizer',
     'ecom-ads-optimizer',
     'ecom-review-voc',
     'ecom-creator-growth',
@@ -154,6 +156,12 @@ test('DEFAULT_MARKET_EXPERTS defines 8 SOP cross-border experts, all default ava
     assert.ok(exp.description && exp.descriptionEn, `${exp.id} has bilingual descriptions`)
     assert.ok(['research', 'production', 'growth'].includes(exp.stage), `${exp.id} has valid SOP stage`)
     assert.ok(Array.isArray(exp.skills) && exp.skills.length >= 2, `${exp.id} links bundled SOP skills`)
+    assert.ok(Array.isArray(exp.toolDomains) && exp.toolDomains.length >= 1, `${exp.id} declares explicit toolDomains`)
+    assert.ok(Array.isArray(exp.starters) && exp.starters.length === 3, `${exp.id} declares 3 bootstrap starters`)
+    for (const s of exp.starters) {
+      assert.ok(s.id && s.labelZh && s.labelEn && s.promptZh && s.promptEn, `${exp.id} starter has bilingual fields`)
+      assert.ok(!s.labelZh.includes('·') && !s.labelEn.includes('·'), `${exp.id} starter label avoids middle dot`)
+    }
     assert.match(exp.avatar, /^data:image\/svg\+xml/, `${exp.id} uses crisp pixel SVG avatar`)
     assert.match(decodeURIComponent(exp.avatar), /shape-rendering="crispEdges"/)
     assert.doesNotMatch(`${exp.name} ${exp.description} ${exp.descriptionEn}`, /topview/i, `${exp.id} has zero Topview residue`)
@@ -180,7 +188,7 @@ test('truthful state: fresh env & stale .agent-presets dir never show fake enabl
   assert.equal(res._status, 200)
   assert.equal(res._json?.ok, true)
   const items = res._json.items as any[]
-  assert.equal(items.length, 10, '2 system presets + 8 SOP market experts')
+  assert.equal(items.length, 12, '2 system presets + 10 SOP market experts')
 
   const omni = items.find((it) => it.id === 'omni-agent')
   assert.equal(omni?.status, 'system')
@@ -227,6 +235,13 @@ test('live install -> official register -> disable -> unregister -> restart rest
   assert.ok(pluginNames.includes('@deepseek-ai/dsh-persona'))
   assert.ok(pluginNames.includes('@deepseek-ai/dsh-skill-filesystem'))
   assert.ok(pluginNames.includes('@deepseek-ai/dsh-tool-skill'))
+  assert.ok(pluginNames.includes('omnimux-market/expert-skills'))
+  assert.ok(pluginNames.includes('omnimux-market/expert-tool-scope'))
+  const scopeRow = mountedDef.plugins.find((r) => r.id === 'expert-tool-scope')
+  assert.deepEqual(
+    (scopeRow?.config as any)?.allowedDomains,
+    ['products', 'inspiration', 'tiktok_selection', 'social_data', 'viewer', 'market', 'workbench'],
+  )
   const personaRow = mountedDef.plugins.find((r) => r.id === 'persona')
   assert.ok(typeof (personaRow?.config as any)?.prefix === 'string' && (personaRow?.config as any).prefix.includes('omnimux-ecom-market-research'))
 

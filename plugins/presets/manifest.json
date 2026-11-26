@@ -51,13 +51,19 @@
       "id": "ecom-market-research",
       "name": "选品专家",
       "category": "ecommerce-sop",
-      "description": "类目容量/CR10/价格带波谷测算、社媒痛点挖掘与竞品拆解，用脚本计算替代心算，输出可验证选品结论。"
+      "description": "接管 TikTok 三闸跟爆工作台与类目表脚本，覆盖销量加速初筛、渠道占比核验、品牌词风控及价格带波谷测算。"
     },
     {
       "id": "ecom-product-strategy",
       "name": "定价专家",
       "category": "ecommerce-sop",
       "description": "提炼唯一核心卖点、规划 SKU 角色矩阵、精算含税净利率/盈亏价/券余量，并沉淀进商品库作为全链路真源。"
+    },
+    {
+      "id": "ecom-brand-curator",
+      "name": "品牌管家",
+      "category": "ecommerce-sop",
+      "description": "从商品页链接与实拍素材冷启动建档，确定性校验参数真源与色值规范，一次性沉淀可复用的商品库与品牌资产锚点。"
     },
     {
       "id": "ecom-listing-copy",
@@ -76,6 +82,12 @@
       "name": "视频导演",
       "category": "ecommerce-sop",
       "description": "串联灵感 5D 拆解、资产与数字人、画布分镜生片与视频剪辑工坊，把控 3 秒 Hook、口播时长与参数溯源校验。"
+    },
+    {
+      "id": "ecom-global-localizer",
+      "name": "本土专家",
+      "category": "ecommerce-sop",
+      "description": "锁定商品实拍与参数真源，将验证过的带货视频与套图按四栏矩阵安全裂变至多国多语种，脚本校核口播时长膨胀与本地红线。"
     },
     {
       "id": "ecom-ads-optimizer",
