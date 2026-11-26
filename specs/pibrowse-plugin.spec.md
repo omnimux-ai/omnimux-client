@@ -127,3 +127,8 @@ Cordis 插件宿主 (plugins/plugins/omnimux-pibrowse/src/index.js)
   - **原断言**：用例名与断言固定要求真实仓库 `plugins/plugins/` 共 15 个插件且按分类计数为 `{ original: 10, fork: 3, vendor: 2 }`。
   - **必须变更的理由**：本 PR 按已批准规划新增第 16 个工作区插件 `plugins/plugins/omnimux-pibrowse`（AGPL-3.0 自主开发插件，并在 `plugins/scripts/license-registry.json` 登记为 `original`），原 15 个插件 / `original: 10` 快照计数随插件总数增加自然更新为 16 个插件 / `original: 11`，用例同步更名为 `真实仓库：16 个插件全部登记且通过`。
   - **新期望证据**：`plugins/plugins/omnimux-pibrowse/LICENSE` 与 `NOTICE` 已与 `plugins/LICENSE` / `plugins/NOTICE` 逐字节一致，`corepack pnpm --dir plugins run verify:licenses` 与 `corepack pnpm --dir plugins run test:licenses`（16/16）全部通过。
+
+- `plugins/plugins/omnimux-pibrowse/src/paths-and-platform.test.js` :: `resolveAgentBinary and probeCoreInstallation detect managed, custom, and standalone paths`
+  - **原断言**：在 `data/core/FuryCore.app` 创建空目录并断言 `probeCoreInstallation` 返回 `{ installed: true, path: fakeCoreApp }`。
+  - **必须变更的理由**：上游 `v0.5.5` `agent/src/main.rs::core_leaves()` 与 `core_binary()` 实际只识别包含可执行体的真实路径（如 `Fury.app/Contents/MacOS/Fury`、`PiBrowse.app/Contents/MacOS/PiBrowse`），空 `.app` 目录会导致误报已安装并在启动时报错；修复后 `probeCoreInstallation` 改为严格校验真实可执行体并解析 `.app` / `core.bundle` 至内部可执行文件。
+  - **新期望证据**：同用例现显式断言空 `Fury.app` 目录返回 `installed: false`，并在写入真实可执行叶文件 `core.bundle/Fury.app/Contents/MacOS/Fury` 后断言 `managed` / `custom` 均返回准确可执行路径（同时覆盖 Windows `Fury/chrome.exe`）。

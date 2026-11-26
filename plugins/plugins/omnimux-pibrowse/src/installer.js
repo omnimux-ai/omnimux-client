@@ -322,21 +322,26 @@ export function createInstaller(opts) {
    * `fury-agent install-core <archive>` under isolated `FURY_HOME`.
    * @param {{ agentBinaryPath: string }} params
    */
-  async function installCore({ agentBinaryPath }) {
+  function installCore({ agentBinaryPath } = {}) {
     if (coreInFlight) return coreInFlight
     const info = getPlatformInfo({ platform: opts.platform, arch: opts.arch })
     if (!info.prebuiltSupported) {
-      throw new PibrowseError('unsupported-platform', info.unsupportedGuidance)
+      return Promise.reject(new PibrowseError('unsupported-platform', info.unsupportedGuidance))
     }
-    if (!agentBinaryPath || !(await pathAccessible(agentBinaryPath))) {
-      throw new PibrowseError('agent-not-installed', 'Install or configure fury-agent before installing Chromium Core')
+    if (!agentBinaryPath) {
+      return Promise.reject(new PibrowseError('agent-not-installed', 'Install or configure fury-agent before installing Chromium Core'))
     }
     const asset = PINNED_UPSTREAM.assets[info.targetKey].core
     const archivePath = join(opts.paths.downloadsDir, asset.filename)
 
+    // Transition synchronously so background callers observe `downloading` immediately.
+    state.core = { status: 'downloading', progress: { downloadedBytes: 0, totalBytes: asset.sizeBytes, percent: 0 }, error: null, updatedAt: Date.now() }
+
     coreInFlight = (async () => {
-      state.core = { status: 'downloading', progress: { downloadedBytes: 0, totalBytes: asset.sizeBytes, percent: 0 }, error: null, updatedAt: Date.now() }
       try {
+        if (!(await pathAccessible(agentBinaryPath))) {
+          throw new PibrowseError('agent-not-installed', 'Install or configure fury-agent before installing Chromium Core')
+        }
         const verified = await downloadAndVerifyFile({
           url: asset.url,
           destPath: archivePath,

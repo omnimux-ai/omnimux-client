@@ -156,3 +156,65 @@ test('installer blocks unsupported platforms, detects Gatekeeper SIGKILL, and cl
     await rm(tmp, { recursive: true, force: true })
   }
 })
+
+test('real createInstaller.installCore transitions synchronously to downloading, deduplicates concurrent calls, and handles missing agent', async () => {
+  const tmp = await mkdtemp(join(tmpdir(), 'pb-core-inst-'))
+  try {
+    const paths = resolvePibrowsePaths({ rootDir: tmp, platform: 'darwin' })
+    const configStore = createConfigStore({ configFile: paths.configFile })
+    const fakeAgent = join(tmp, 'fury-agent')
+    await writeFile(fakeAgent, '#!/bin/sh\necho ok\n', { mode: 0o755 })
+
+    let fetchCalls = 0
+    let releaseFetch = null
+    const installer = createInstaller({
+      paths,
+      configStore,
+      platform: 'darwin',
+      arch: 'arm64',
+      fetchImpl: () => {
+        fetchCalls += 1
+        return new Promise((resolve) => {
+          releaseFetch = () =>
+            resolve({
+              ok: true,
+              status: 200,
+              headers: new Headers({ 'content-length': '8' }),
+              body: (async function* () {
+                yield Buffer.from('mismatch')
+              })(),
+            })
+        })
+      },
+    })
+
+    // 1. Calling with undefined rejects cleanly rather than throwing synchronously
+    await assert.rejects(() => installer.installCore(), (err) => err.code === 'agent-not-installed')
+
+    // 2. Synchronous transition to downloading before any microtask resolves + concurrent dedup
+    const p1 = installer.installCore({ agentBinaryPath: fakeAgent })
+    assert.equal(installer.getStatus().core.status, 'downloading')
+    const p2 = installer.installCore({ agentBinaryPath: fakeAgent })
+    assert.equal(p1, p2, 'concurrent installCore calls must share in-flight promise')
+
+    // Wait one tick for pathAccessible -> fetchImpl
+    for (let i = 0; i < 20 && !releaseFetch; i += 1) {
+      await new Promise((r) => setTimeout(r, 5))
+    }
+    assert.equal(fetchCalls, 1)
+    releaseFetch()
+
+    await assert.rejects(() => p1, (err) => err.code === 'checksum-mismatch')
+    assert.equal(installer.getStatus().core.status, 'error')
+    assert.match(installer.getStatus().core.error, /SHA-256/)
+
+    // 3. Missing agentBinaryPath rejects with agent-not-installed and records error status
+    await assert.rejects(
+      () => installer.installCore({ agentBinaryPath: join(tmp, 'does-not-exist') }),
+      (err) => err.code === 'agent-not-installed',
+    )
+    assert.equal(installer.getStatus().core.status, 'error')
+  } finally {
+    await rm(tmp, { recursive: true, force: true })
+  }
+})

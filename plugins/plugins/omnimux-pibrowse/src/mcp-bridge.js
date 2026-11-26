@@ -1,5 +1,5 @@
 import { MCP_SERVER_NAME, UPSTREAM_MCP_TOOL_NAMES } from './constants.js'
-import { resolveAgentBinary } from './platform.js'
+import { resolveAgentBinary, resolveCoreExecutable } from './platform.js'
 import { redactLogLine } from './redact.js'
 
 /**
@@ -189,11 +189,17 @@ export function createMcpBridge(opts) {
       return getStatus()
     }
 
+    // Only inject FURY_CORE when it resolves to a real executable; never pass a raw
+    // directory or non-executable file into upstream fury-agent.
+    const resolvedCorePath = config.corePath
+      ? await resolveCoreExecutable(config.corePath, opts.platform)
+      : null
+
     if (
       !force &&
       registered &&
       registeredCommand === resolved.path &&
-      registeredCorePath === (config.corePath || null)
+      registeredCorePath === resolvedCorePath
     ) {
       return getStatus()
     }
@@ -208,7 +214,7 @@ export function createMcpBridge(opts) {
       FURY_SOCKET: opts.paths.socketPath,
       FURY_API_PORT: '',
       FURY_API_TOKEN: '',
-      ...(config.corePath ? { FURY_CORE: config.corePath } : {}),
+      ...(resolvedCorePath ? { FURY_CORE: resolvedCorePath } : {}),
     }
 
     try {
@@ -227,7 +233,7 @@ export function createMcpBridge(opts) {
           : null
       registered = true
       registeredCommand = resolved.path
-      registeredCorePath = config.corePath || null
+      registeredCorePath = resolvedCorePath
 
       const managerSnap = readManagerServerStatus(manager)
       lastStatus = {

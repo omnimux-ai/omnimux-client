@@ -28,8 +28,11 @@ export function EnvironmentPanel({ overview, t, onNotify, onOverviewChanged }) {
     try {
       await api.runtime({ action, ...payload })
       await onOverviewChanged()
+      return true
     } catch (err) {
       onNotify(err instanceof Error ? err.message : `操作 ${action} 失败`, true)
+      await Promise.resolve(onOverviewChanged({ silent: true })).catch(() => {})
+      return false
     } finally {
       setBusyAction(null)
     }
@@ -45,12 +48,44 @@ export function EnvironmentPanel({ overview, t, onNotify, onOverviewChanged }) {
     }
   }
 
-  const activeProgress =
+  const formatMb = (bytes) => (Number.isFinite(bytes) && bytes > 0 ? (bytes / (1024 * 1024)).toFixed(1) : '0.0')
+
+  const agentInstallActive =
     installer.agent?.status === 'downloading' || installer.agent?.status === 'extracting'
-      ? installer.agent.progress?.percent ?? 50
-      : installer.core?.status === 'downloading' || installer.core?.status === 'extracting'
-        ? installer.core.progress?.percent ?? 50
-        : null
+  const coreInstallActive =
+    installer.core?.status === 'downloading' ||
+    installer.core?.status === 'extracting' ||
+    Boolean(installer.ipcCoreDownload?.running)
+
+  let activeProgress = null
+  let activeProgressLabel = null
+  if (agentInstallActive) {
+    const prog = installer.agent.progress
+    const hasTotal = Number.isFinite(prog?.totalBytes) && prog.totalBytes > 0
+    activeProgress = installer.agent.status === 'extracting' ? 100 : prog?.percent ?? 0
+    activeProgressLabel =
+      installer.agent.status === 'extracting'
+        ? '正在解压并校验 fury-agent...'
+        : hasTotal
+          ? `正在下载 fury-agent ${activeProgress}% (${formatMb(prog.downloadedBytes)} / ${formatMb(prog.totalBytes)} MB)`
+          : `正在下载 fury-agent (${formatMb(prog?.downloadedBytes)} MB)`
+  } else if (installer.core?.status === 'downloading' || installer.core?.status === 'extracting') {
+    const prog = installer.core.progress
+    const hasTotal = Number.isFinite(prog?.totalBytes) && prog.totalBytes > 0
+    activeProgress = installer.core.status === 'extracting' ? 100 : prog?.percent ?? 0
+    activeProgressLabel =
+      installer.core.status === 'extracting'
+        ? '正在解压并校验 Chromium 157 Core...'
+        : hasTotal
+          ? `正在下载 Chromium Core ${activeProgress}% (${formatMb(prog.downloadedBytes)} / ${formatMb(prog.totalBytes)} MB)`
+          : `正在下载 Chromium Core (${formatMb(prog?.downloadedBytes)} MB)`
+  } else if (installer.ipcCoreDownload?.running) {
+    const dl = installer.ipcCoreDownload
+    activeProgress = dl.total > 0 ? Math.min(100, Math.round((dl.downloaded / dl.total) * 100)) : 50
+    activeProgressLabel = dl.total > 0
+      ? `正在下载 Chromium Core ${activeProgress}% (${formatMb(dl.downloaded)} / ${formatMb(dl.total)} MB)`
+      : `正在下载 Chromium Core (${formatMb(dl.downloaded)} MB)`
+  }
 
   return (
     <>
@@ -160,8 +195,11 @@ export function EnvironmentPanel({ overview, t, onNotify, onOverviewChanged }) {
           </div>
 
           {activeProgress !== null && (
-            <div className="omnimux-pibrowse-progress-track" role="progressbar" aria-valuenow={activeProgress} aria-valuemin={0} aria-valuemax={100}>
-              <div className="omnimux-pibrowse-progress-fill" style={{ '--pb-progress': `${activeProgress}%` }} />
+            <div className="omnimux-pibrowse-field">
+              {activeProgressLabel && <div className="omnimux-pibrowse-muted omnimux-pibrowse-mono">{activeProgressLabel}</div>}
+              <div className="omnimux-pibrowse-progress-track" role="progressbar" aria-valuenow={activeProgress} aria-valuemin={0} aria-valuemax={100}>
+                <div className="omnimux-pibrowse-progress-fill" style={{ '--pb-progress': `${activeProgress}%` }} />
+              </div>
             </div>
           )}
 
@@ -171,17 +209,18 @@ export function EnvironmentPanel({ overview, t, onNotify, onOverviewChanged }) {
                 <Button
                   variant={agent.installed ? 'secondary' : 'primary'}
                   size="sm"
-                  loading={busyAction === 'install_agent'}
-                  onClick={() => runRuntime('install_agent')}
+                  disabled={agentInstallActive}
+                  loading={busyAction === 'install_agent' || agentInstallActive}
+                  onClick={() => runRuntime('install_agent', { background: true })}
                 >
                   {t('downloadAgent')}
                 </Button>
                 <Button
                   variant={agent.installed && !core.installed ? 'primary' : 'outline'}
                   size="sm"
-                  disabled={!agent.installed}
-                  loading={busyAction === 'install_core'}
-                  onClick={() => runRuntime('install_core')}
+                  disabled={!agent.installed || coreInstallActive}
+                  loading={busyAction === 'install_core' || coreInstallActive}
+                  onClick={() => runRuntime('install_core', { background: true })}
                 >
                   {t('downloadCore')}
                 </Button>
@@ -261,11 +300,11 @@ export function EnvironmentPanel({ overview, t, onNotify, onOverviewChanged }) {
               variant="primary"
               loading={busyAction === 'configure_paths'}
               onClick={async () => {
-                await runRuntime('configure_paths', {
+                const ok = await runRuntime('configure_paths', {
                   agentPath: agentPathInput.trim() || null,
                   corePath: corePathInput.trim() || null,
                 })
-                setPathsOpen(false)
+                if (ok) setPathsOpen(false)
               }}
             >
               {t('save')}
@@ -291,17 +330,17 @@ export function EnvironmentPanel({ overview, t, onNotify, onOverviewChanged }) {
           </div>
           <div className="omnimux-pibrowse-row">
             <InputField
-              label="FURY_CORE Chromium 内核路径（可选）"
+              label="FURY_CORE Chromium 内核路径（可选，支持 .app 或可执行文件）"
               value={corePathInput}
               onChange={(e) => setCorePathInput(e.target.value)}
-              placeholder="/path/to/FuryCore.app"
+              placeholder="/path/to/Fury.app/Contents/MacOS/Fury"
             />
             <Button
               variant="outline"
               size="sm"
-              onClick={() => pickPath(setCorePathInput, 'directory', '选择 FURY_CORE 目录')}
+              onClick={() => pickPath(setCorePathInput, 'file', '选择 FURY_CORE (.app 或可执行文件)')}
             >
-              选择目录
+              选择路径
             </Button>
           </div>
         </div>
@@ -317,8 +356,8 @@ export function EnvironmentPanel({ overview, t, onNotify, onOverviewChanged }) {
         confirmVariant="danger"
         confirmLoading={busyAction === 'clear_cache'}
         onConfirm={async () => {
-          await runRuntime('clear_cache', { confirm: true })
-          setClearCacheOpen(false)
+          const ok = await runRuntime('clear_cache', { confirm: true })
+          if (ok) setClearCacheOpen(false)
         }}
       />
     </>

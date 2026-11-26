@@ -116,6 +116,13 @@ export const STYLES = `
   border-color: var(--dsw-alias-state-error-primary);
   background: var(--dsw-alias-state-error-secondary);
 }
+.omnimux-pibrowse-notice-col {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1 1 240px;
+  min-width: 0;
+}
 .omnimux-pibrowse-table-wrap {
   width: 100%;
   overflow-x: auto;

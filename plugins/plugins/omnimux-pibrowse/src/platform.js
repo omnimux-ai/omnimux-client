@@ -177,48 +177,137 @@ export async function probeStandaloneAgent(opts = {}) {
 }
 
 /**
- * Inspect whether Chromium Core is installed inside the isolated `FURY_HOME/core`
- * or via an explicit `corePath` override.
+ * Upstream `agent/src/main.rs::core_leaves()` executable paths inside a Core directory.
+ * @param {NodeJS.Platform} [platform]
+ * @returns {string[]}
+ */
+export function getCoreLeaves(platform = process.platform) {
+  if (platform === 'darwin') {
+    return [
+      'PiBrowse.app/Contents/MacOS/PiBrowse',
+      'Fury.app/Contents/MacOS/Fury',
+      'Chromium.app/Contents/MacOS/Chromium',
+    ]
+  }
+  if (platform === 'win32') {
+    return [
+      'PiBrowse/chrome.exe',
+      'PiBrowse/pibrowse.exe',
+      'Fury/chrome.exe',
+      'Fury/fury.exe',
+      'pibrowse.exe',
+      'fury.exe',
+      'chrome.exe',
+    ]
+  }
+  return ['pibrowse-core', 'fury-core', 'chrome']
+}
+
+async function isAccessibleExecutableFile(candidatePath, execMode) {
+  const info = await stat(candidatePath).catch(() => null)
+  if (!info || !info.isFile()) return false
+  return pathAccessible(candidatePath, execMode)
+}
+
+/**
+ * Resolve a user-supplied or managed Core path (executable file, macOS `.app` bundle,
+ * or `core.bundle` root directory) to the exact Chromium executable expected by
+ * upstream `fury-agent` (`FURY_CORE` / `core_binary()`).
+ *
+ * @param {string | null | undefined} targetPath
+ * @param {NodeJS.Platform} [platform]
+ * @returns {Promise<string | null>}
+ */
+export async function resolveCoreExecutable(targetPath, platform = process.platform) {
+  if (!targetPath || typeof targetPath !== 'string') return null
+  const trimmed = targetPath.trim()
+  if (!trimmed) return null
+  const info = await stat(trimmed).catch(() => null)
+  if (!info) return null
+
+  const execMode = platform === 'win32' ? fsConstants.F_OK : fsConstants.X_OK
+  if (info.isFile()) {
+    return (await pathAccessible(trimmed, execMode)) ? trimmed : null
+  }
+  if (!info.isDirectory()) return null
+
+  const directCandidates =
+    platform === 'darwin'
+      ? [
+          'Contents/MacOS/PiBrowse',
+          'Contents/MacOS/Fury',
+          'Contents/MacOS/Chromium',
+          ...getCoreLeaves(platform),
+        ]
+      : getCoreLeaves(platform)
+
+  for (const rel of directCandidates) {
+    const candidate = join(trimmed, rel)
+    if (await isAccessibleExecutableFile(candidate, execMode)) {
+      return candidate
+    }
+  }
+
+  // Match upstream `install_core::find_core()` one-level-down archive wrapper search
+  if (!(platform === 'darwin' && trimmed.endsWith('.app'))) {
+    const entries = await readdir(trimmed, { withFileTypes: true }).catch(() => null)
+    if (entries) {
+      const leaves = getCoreLeaves(platform)
+      for (const entry of entries) {
+        if ((!entry.isDirectory() && !entry.isSymbolicLink()) || entry.name.startsWith('.')) continue
+        for (const rel of leaves) {
+          const candidate = join(trimmed, entry.name, rel)
+          if (await isAccessibleExecutableFile(candidate, execMode)) {
+            return candidate
+          }
+        }
+      }
+    }
+  }
+
+  return null
+}
+
+/**
+ * Inspect whether Chromium Core is installed inside the isolated `FURY_HOME/core.bundle`
+ * (or legacy `core`) or via an explicit `corePath` override, verifying that a real
+ * upstream executable leaf exists.
  * @param {{ dataDir: string, corePath?: string | null, platform?: NodeJS.Platform }} opts
  */
 export async function probeCoreInstallation(opts) {
   const platform = opts.platform ?? process.platform
   if (opts.corePath) {
-    const exists = await pathAccessible(opts.corePath)
+    const resolved = await resolveCoreExecutable(opts.corePath, platform)
     return {
-      installed: exists,
-      source: exists ? 'custom' : 'missing',
-      path: opts.corePath,
+      installed: Boolean(resolved),
+      source: resolved ? 'custom' : 'missing',
+      path: resolved || opts.corePath,
+      configuredPath: opts.corePath,
     }
   }
 
   const coreBundleRoot = join(opts.dataDir, 'core.bundle')
   const legacyCoreRoot = join(opts.dataDir, 'core')
-  const coreRoot = (await isDirectory(coreBundleRoot))
-    ? coreBundleRoot
-    : (await isDirectory(legacyCoreRoot))
-      ? legacyCoreRoot
-      : null
-  if (!coreRoot) {
-    return { installed: false, source: 'missing', path: coreBundleRoot }
+
+  const bundleExe = await resolveCoreExecutable(coreBundleRoot, platform)
+  if (bundleExe) {
+    return {
+      installed: true,
+      source: 'managed',
+      path: bundleExe,
+    }
   }
 
-  const entries = await readdir(coreRoot, { withFileTypes: true }).catch(() => null)
-  if (!entries) {
-    return { installed: false, source: 'missing', path: coreRoot }
+  const legacyExe = await resolveCoreExecutable(legacyCoreRoot, platform)
+  if (legacyExe) {
+    return {
+      installed: true,
+      source: 'managed',
+      path: legacyExe,
+    }
   }
-  const nonHidden = entries.filter((e) => !e.name.startsWith('.'))
-  if (nonHidden.length === 0) {
-    return { installed: false, source: 'missing', path: coreRoot }
-  }
-  const preferred = platform === 'darwin'
-    ? nonHidden.find((e) => e.name.endsWith('.app')) || nonHidden[0]
-    : nonHidden[0]
-  return {
-    installed: true,
-    source: 'managed',
-    path: join(coreRoot, preferred.name),
-  }
+
+  return { installed: false, source: 'missing', path: coreBundleRoot }
 }
 
 /**

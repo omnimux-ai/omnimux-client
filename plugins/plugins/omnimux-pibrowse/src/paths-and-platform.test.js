@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { computeSocketPath, resolvePibrowsePaths, validateUserPath } from './paths.js'
-import { getPlatformInfo, probeCoreInstallation, probeWidevineCdm, resolveAgentBinary } from './platform.js'
+import { getPlatformInfo, probeCoreInstallation, probeWidevineCdm, resolveAgentBinary, resolveCoreExecutable } from './platform.js'
 
 test('resolvePibrowsePaths isolates data under $DSH_HOME/omnimux/pibrowse and keeps Unix socket < 104B', () => {
   const deepHome = '/tmp/' + 'nested-directory-segment/'.repeat(8)
@@ -104,11 +104,43 @@ test('resolveAgentBinary and probeCoreInstallation detect managed, custom, and s
     const coreMissing = await probeCoreInstallation({ dataDir: paths.dataDir, platform: 'darwin' })
     assert.equal(coreMissing.installed, false)
 
-    const fakeCoreApp = join(paths.dataDir, 'core', 'FuryCore.app')
-    await mkdir(fakeCoreApp, { recursive: true })
+    // Bidirectional regression: empty .app directory without inner executable must NOT report installed
+    const emptyCoreApp = join(paths.dataDir, 'core.bundle', 'Fury.app')
+    await mkdir(emptyCoreApp, { recursive: true })
+    const coreEmpty = await probeCoreInstallation({ dataDir: paths.dataDir, platform: 'darwin' })
+    assert.equal(coreEmpty.installed, false)
+    assert.equal(await resolveCoreExecutable(emptyCoreApp, 'darwin'), null)
+
+    // Real upstream macOS leaf inside core.bundle
+    const realCoreExe = join(emptyCoreApp, 'Contents', 'MacOS', 'Fury')
+    await mkdir(join(emptyCoreApp, 'Contents', 'MacOS'), { recursive: true })
+    await writeFile(realCoreExe, '#!/bin/sh\necho 157.0.8103.39\n', { mode: 0o755 })
+
     const coreFound = await probeCoreInstallation({ dataDir: paths.dataDir, platform: 'darwin' })
     assert.equal(coreFound.installed, true)
-    assert.equal(coreFound.path, fakeCoreApp)
+    assert.equal(coreFound.source, 'managed')
+    assert.equal(coreFound.path, realCoreExe)
+
+    // Custom corePath pointing to .app bundle, core.bundle dir, or inner binary all resolve to exact executable
+    assert.equal(await resolveCoreExecutable(emptyCoreApp, 'darwin'), realCoreExe)
+    assert.equal(await resolveCoreExecutable(join(paths.dataDir, 'core.bundle'), 'darwin'), realCoreExe)
+    assert.equal(await resolveCoreExecutable(realCoreExe, 'darwin'), realCoreExe)
+
+    const customViaApp = await probeCoreInstallation({
+      dataDir: paths.dataDir,
+      corePath: emptyCoreApp,
+      platform: 'darwin',
+    })
+    assert.equal(customViaApp.installed, true)
+    assert.equal(customViaApp.source, 'custom')
+    assert.equal(customViaApp.path, realCoreExe)
+
+    // Windows core_leaves resolution
+    const winCoreDir = join(tmp, 'win-core')
+    const winExe = join(winCoreDir, 'Fury', 'chrome.exe')
+    await mkdir(join(winCoreDir, 'Fury'), { recursive: true })
+    await writeFile(winExe, 'MZ')
+    assert.equal(await resolveCoreExecutable(winCoreDir, 'win32'), winExe)
   } finally {
     await rm(tmp, { recursive: true, force: true })
   }

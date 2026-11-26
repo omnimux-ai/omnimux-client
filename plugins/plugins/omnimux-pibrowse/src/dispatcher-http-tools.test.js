@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -408,6 +408,181 @@ test('dispatcher normalizes upstream v0.5.5 Profile/Proxy/Extension/Reseed IPC p
         }),
       (err) => err.code === 'invalid-input',
     )
+  } finally {
+    await rm(tmp, { recursive: true, force: true })
+  }
+})
+
+test('Core missing launch error maps to 503 core-not-installed, configure_paths restarts sidecar, and install_core uses verified installer', async () => {
+  const tmp = await mkdtemp(join(tmpdir(), 'pb-core-flow-'))
+  try {
+    const paths = resolvePibrowsePaths({ rootDir: tmp, socketDir: tmp, platform: 'darwin' })
+    await mkdir(paths.binDir, { recursive: true })
+    await writeFile(paths.managedAgentPath, '#!/bin/sh\necho ok\n', { mode: 0o755 })
+    const configStore = createConfigStore({ configFile: paths.configFile })
+
+    const ipcCalls = []
+    let sidecarRestarts = 0
+    let failNextRestart = false
+    let mcpSyncCalls = 0
+    let statusCoreOverride = null
+    let resolveDownload = null
+    let coreInstallCalledWith = null
+
+    const mockIpc = {
+      async ping() {
+        return { ok: true, info: { version: '0.5.5' } }
+      },
+      async call(method, params) {
+        ipcCalls.push({ method, params })
+        if (method === 'status') {
+          return {
+            version: '0.5.5',
+            core: statusCoreOverride,
+            core_problem: statusCoreOverride ? null : 'FURY_CORE missing',
+            core_download: { running: false, downloaded: 0, total: 0, installed: null, error: null },
+          }
+        }
+        if (method === 'profile.launch') {
+          throw new Error(
+            "no core binary found. Install one with 'fury-agent install-core <file>', build it, or point FURY_CORE at one",
+          )
+        }
+        if (method === 'core.download') {
+          throw new Error('unverified IPC core.download must not be called by default')
+        }
+        return []
+      },
+    }
+
+    const mockSidecar = {
+      getStatus: () => ({ running: true, state: 'running', pid: 5555, recentLogs: [] }),
+      start: async () => ({ running: true, state: 'running', pid: 5555 }),
+      stop: async () => ({ running: false, state: 'stopped', pid: null }),
+      restart: async () => {
+        sidecarRestarts += 1
+        if (failNextRestart) {
+          failNextRestart = false
+          throw new Error('simulated sidecar restart failure')
+        }
+        return { running: true, state: 'running', pid: 5555 + sidecarRestarts }
+      },
+      dispose: async () => {},
+    }
+
+    const baseMcpBridge = createMcpBridge({ paths, configStore, getMcpManager: () => null, platform: 'darwin' })
+    const trackedMcpBridge = {
+      ...baseMcpBridge,
+      async sync(opts) {
+        mcpSyncCalls += 1
+        return baseMcpBridge.sync(opts)
+      },
+    }
+
+    const installerState = {
+      agent: { status: 'idle', progress: null, error: null, updatedAt: null },
+      core: { status: 'idle', progress: null, error: null, updatedAt: null },
+    }
+    const mockInstaller = {
+      getStatus: () => ({ agent: { ...installerState.agent }, core: { ...installerState.core } }),
+      installCore: ({ agentBinaryPath }) => {
+        coreInstallCalledWith = agentBinaryPath
+        installerState.core = {
+          status: 'downloading',
+          progress: { downloadedBytes: 0, totalBytes: 119633052, percent: 0 },
+          error: null,
+          updatedAt: Date.now(),
+        }
+        return new Promise((resolve) => {
+          resolveDownload = () => {
+            installerState.core = {
+              status: 'installed',
+              progress: { downloadedBytes: 119633052, totalBytes: 119633052, percent: 100 },
+              error: null,
+              updatedAt: Date.now(),
+            }
+            resolve({ ok: true, chromiumVersion: '157.0.8103.39' })
+          }
+        })
+      },
+      installAgent: async () => ({ ok: true }),
+      probeAgentBinary: async () => ({ ok: true }),
+      clearCache: async () => ({ ok: true }),
+    }
+
+    const dispatcher = createPibrowseDispatcher({
+      paths,
+      configStore,
+      ipcClient: mockIpc,
+      installer: mockInstaller,
+      sidecar: mockSidecar,
+      mcpBridge: trackedMcpBridge,
+      teamClient: createTeamClient({ paths, configStore, ipcClient: mockIpc }),
+      platform: 'darwin',
+      arch: 'arm64',
+    })
+    const http = createHttpHandler(dispatcher)
+
+    // 1. launchProfile & detect_suite map raw upstream error to HTTP 503 core-not-installed
+    const launchRes = await http.dispatch({
+      method: 'POST',
+      url: '/omnimux/pibrowse/profiles/pf-1/launch',
+      body: {},
+    })
+    assert.equal(launchRes.status, 503)
+    assert.equal(launchRes.body.error, 'core-not-installed')
+    assert.match(launchRes.body.message, /Chromium 157/)
+
+    const detectRes = await http.dispatch({
+      method: 'POST',
+      url: '/omnimux/pibrowse/profiles/manage',
+      body: { action: 'detect_suite', profileId: 'pf-1' },
+    })
+    assert.equal(detectRes.status, 503)
+    assert.equal(detectRes.body.error, 'core-not-installed')
+
+    // 2. getOverview merges sidecar status core_problem and core_download
+    const ov = await dispatcher.getOverview()
+    assert.equal(ov.core.installed, false)
+    assert.equal(ov.core.problem, 'FURY_CORE missing')
+    assert.equal(ov.installer.ipcCoreDownload.running, false)
+
+    // 3. install_core with background: true uses verified installer (not IPC core.download) and reports downloading immediately
+    const bgRes = await dispatcher.manageRuntime({ action: 'install_core', background: true })
+    assert.equal(bgRes.ok, true)
+    assert.equal(bgRes.started, true)
+    assert.equal(bgRes.mode, 'verified-installer')
+    assert.equal(bgRes.installer.core.status, 'downloading')
+    assert.equal(coreInstallCalledWith, paths.managedAgentPath)
+    assert.equal(ipcCalls.some((c) => c.method === 'core.download'), false)
+    resolveDownload()
+
+    // 4. configure_paths changing geoipPath does NOT restart sidecar; changing corePath DOES restart sidecar
+    await dispatcher.manageRuntime({ action: 'configure_paths', geoipPath: '/tmp/GeoLite2-City.mmdb' })
+    assert.equal(sidecarRestarts, 0)
+
+    const cfgRes = await dispatcher.manageRuntime({ action: 'configure_paths', corePath: '/tmp/Fury.app' })
+    assert.equal(cfgRes.ok, true)
+    assert.equal(sidecarRestarts, 1)
+    assert.equal(cfgRes.sidecar.pid, 5556)
+
+    // 5. Empty/invalid configured corePath stays installed: false with actionable problem even if sidecar status echoes raw dir
+    const emptyApp = join(tmp, 'Empty.app')
+    await mkdir(emptyApp, { recursive: true })
+    await dispatcher.manageRuntime({ action: 'configure_paths', corePath: emptyApp })
+    statusCoreOverride = emptyApp
+    const ovInvalidCore = await dispatcher.getOverview()
+    assert.equal(ovInvalidCore.core.installed, false)
+    assert.match(ovInvalidCore.core.problem, /FURY_CORE/)
+
+    // 6. If sidecar.restart() throws during configure_paths, mcpBridge.sync() STILL executes in finally
+    const syncBefore = mcpSyncCalls
+    failNextRestart = true
+    await assert.rejects(
+      () => dispatcher.manageRuntime({ action: 'configure_paths', corePath: null }),
+      /simulated sidecar restart failure/,
+    )
+    assert.equal(mcpSyncCalls, syncBefore + 1, 'mcpBridge.sync must still run even when sidecar.restart throws')
   } finally {
     await rm(tmp, { recursive: true, force: true })
   }
