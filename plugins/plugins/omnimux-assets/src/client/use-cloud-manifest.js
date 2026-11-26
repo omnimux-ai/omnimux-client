@@ -22,8 +22,14 @@ let manifestCache = null
  */
 let manifestInFlight = null
 
+/**
+ * 单调递增请求代数，避免早期预热请求晚于显式 `force: true` 刷新落盘并覆盖新清单。
+ */
+let manifestRequestGen = 0
+
 /** 清空清单缓存（测试与显式刷新用）。 */
 export function clearCloudManifestCache() {
+  manifestRequestGen += 1
   manifestCache = null
   manifestInFlight = null
 }
@@ -41,6 +47,7 @@ export function fetchCloudManifestCached(options = {}) {
   if (!force && manifestInFlight !== null) {
     return manifestInFlight
   }
+  const gen = ++manifestRequestGen
   const request = (async () => {
     try {
       const result = await cloudManifest({ force })
@@ -50,7 +57,9 @@ export function fetchCloudManifestCached(options = {}) {
           error: String(result.body?.message ?? result.body?.error ?? 'manifest unavailable'),
         }
       }
-      manifestCache = { value: result.body }
+      if (gen === manifestRequestGen) {
+        manifestCache = { value: result.body }
+      }
       return { ok: true, body: result.body }
     } catch (caught) {
       return {
@@ -80,7 +89,7 @@ export function prefetchCloudManifest() {
 export function useCloudManifest(options = {}) {
   const { enabled = true } = options
   const [manifest, setManifest] = useState(/** @type {any} */ (manifestCache?.value ?? null))
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(() => Boolean(enabled && manifestCache === null))
   const [error, setError] = useState('')
   const loadedRef = useRef(false)
 

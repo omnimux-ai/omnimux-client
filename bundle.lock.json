@@ -31,7 +31,7 @@
       "version": "0.2.2",
       "path": "plugins/plugins/omnimux-assets",
       "spec": "link:../../plugins/plugins/omnimux-assets",
-      "contentHash": "sha256:e80ab770b6eb44cdc8a958a29bf3a4ed222f2dfb171a87d442ed43c8455b9cd7"
+      "contentHash": "sha256:2f4ffafab9cd435f970d01e7b464fc8c561e16a96ca35595b639677839432097"
     },
     {
       "name": "omnimux-browser",

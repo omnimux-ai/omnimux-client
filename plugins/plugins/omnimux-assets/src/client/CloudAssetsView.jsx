@@ -108,9 +108,43 @@ export function CloudTileMedia(props) {
    * Each step only advances on a real load failure, so a working thumbnail is
    * never traded for a heavier original.
    */
-  const [srcStep, setSrcStep] = useState(0)
-  const [bareVisible, setBareVisible] = useState(() => typeof IntersectionObserver !== 'function')
-  const [bareSlotReady, setBareSlotReady] = useState(false)
+  const initialBareVisible = typeof IntersectionObserver !== 'function'
+  const [tileState, setTileState] = useState(() => ({
+    assetId: asset.id,
+    srcStep: 0,
+    bareVisible: initialBareVisible,
+    bareSlotReady: false,
+  }))
+  const isCurrentAsset = tileState.assetId === asset.id
+  const srcStep = isCurrentAsset ? tileState.srcStep : 0
+  const bareVisible = isCurrentAsset ? tileState.bareVisible : initialBareVisible
+  const bareSlotReady = isCurrentAsset ? tileState.bareSlotReady : false
+
+  const setSrcStep = (nextStep) => {
+    setTileState((prev) => ({
+      assetId: asset.id,
+      srcStep: nextStep,
+      bareVisible: prev.assetId === asset.id ? prev.bareVisible : initialBareVisible,
+      bareSlotReady: prev.assetId === asset.id ? prev.bareSlotReady : false,
+    }))
+  }
+  const setBareVisible = (nextVisible) => {
+    setTileState((prev) => ({
+      assetId: asset.id,
+      srcStep: prev.assetId === asset.id ? prev.srcStep : 0,
+      bareVisible: nextVisible,
+      bareSlotReady: prev.assetId === asset.id ? prev.bareSlotReady : false,
+    }))
+  }
+  const setBareSlotReady = (nextReady) => {
+    setTileState((prev) => ({
+      assetId: asset.id,
+      srcStep: prev.assetId === asset.id ? prev.srcStep : 0,
+      bareVisible: prev.assetId === asset.id ? prev.bareVisible : initialBareVisible,
+      bareSlotReady: nextReady,
+    }))
+  }
+
   const videoRef = useRef(/** @type {HTMLVideoElement | null} */ (null))
   const releaseBareSlotRef = useRef(/** @type {(() => void) | null} */ (null))
 
@@ -128,14 +162,17 @@ export function CloudTileMedia(props) {
   const bareCanLoad = bareClip && bareSlotReady
 
   useEffect(() => {
-    setSrcStep(0)
-    setBareSlotReady(false)
-    setBareVisible(typeof IntersectionObserver !== 'function')
+    setTileState((prev) => (prev.assetId === asset.id ? prev : {
+      assetId: asset.id,
+      srcStep: 0,
+      bareVisible: typeof IntersectionObserver !== 'function',
+      bareSlotReady: false,
+    }))
   }, [asset.id])
 
   // 无封面视频先经视口门控，离屏绝不抢占 HTTP/2 带宽与解码器。
   useEffect(() => {
-    if (!bareClip || bareVisible) return undefined
+    if (broken || !bareClip || bareVisible) return undefined
     const node = videoRef.current
     if (!node || typeof IntersectionObserver !== 'function') {
       setBareVisible(true)
@@ -149,11 +186,11 @@ export function CloudTileMedia(props) {
     }, { rootMargin: '80px 0px' })
     observer.observe(node)
     return () => { observer.disconnect() }
-  }, [bareClip, bareVisible])
+  }, [broken, bareClip, bareVisible, asset.id])
 
   // 进入视口后经全局并发队列申请槽位（最多 3 路同时解首帧）。
   useEffect(() => {
-    if (!bareClip || !bareVisible) return undefined
+    if (broken || !bareClip || !bareVisible) return undefined
     let active = true
     let timeoutId = null
     const release = bareVideoQueue.acquire(() => {
@@ -181,11 +218,12 @@ export function CloudTileMedia(props) {
       releaseOnce()
       setBareSlotReady(false)
     }
-  }, [bareClip, bareVisible, asset.id])
+  }, [broken, bareClip, bareVisible, asset.id])
 
   useEffect(() => {
     const element = videoRef.current
-    if (!element) return
+    if (!element) return undefined
+    if (bareClip && !bareCanLoad) return undefined
     if (hovering) {
       void element.play().catch((error) => {
         if (error?.name !== 'AbortError' && error?.name !== 'NotAllowedError') {
@@ -198,12 +236,19 @@ export function CloudTileMedia(props) {
       // no-op for a paused element and can leave the surface blank again.
       element.currentTime = bareClip ? BARE_CLIP_FIRST_FRAME_SECONDS : 0
     }
-  }, [hovering, bareClip, mountClip])
+    return () => {
+      element.pause()
+      if (!bareClip && hovering) {
+        element.removeAttribute('src')
+        if (typeof element.load === 'function') element.load()
+      }
+    }
+  }, [hovering, bareClip, bareCanLoad, mountClip])
 
   // 获得视口与并发槽位后才触发无封面视频的首帧元数据读取。
   useEffect(() => {
     const element = videoRef.current
-    if (!element || !bareCanLoad || element.readyState > 0) return
+    if (!element || !bareCanLoad || element.readyState > 0 || (element.networkState && element.networkState > 0)) return
     element.load()
   }, [bareCanLoad])
 

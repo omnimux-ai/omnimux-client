@@ -5,10 +5,12 @@ import { join } from 'node:path'
 import { afterEach, describe, it } from 'node:test'
 import {
   buildThumbnails,
+  extractVideoFirstFrame,
   needsThumbnail,
   needsVideoPoster,
   planThumbs,
   RECOMMENDED_MAX_COVER_BYTES,
+  validateVideoSourceUrl,
 } from '../scripts/build-cover-thumbnails.mjs'
 
 const temps = []
@@ -160,5 +162,45 @@ describe('build-cover-thumbnails: 扩展角色 JPG、大图阈值与无封面视
       manifest.rows.map((r) => r.id),
       ['character-animal-1', 'character-pippit-1', 'material-hook-video', 'scene-big-jpg'],
     )
+  })
+
+  it('extractVideoFirstFrame 拒绝选项注入与非 HTTP(S) 协议，并固定 -nostdin 与 -protocol_whitelist', async () => {
+    const badInputs = [
+      '',
+      '-i',
+      '-protocol_whitelist',
+      'file:///etc/passwd',
+      '/etc/passwd',
+      'concat:a.mp4|b.mp4',
+      'lavfi:testsrc',
+      'ftp://assets.omnimux.ai/a.mp4',
+    ]
+    for (const bad of badInputs) {
+      assert.throws(() => validateVideoSourceUrl(bad))
+      await assert.rejects(() => extractVideoFirstFrame(bad, {
+        execFileImpl: () => {
+          throw new Error('must not spawn ffmpeg for rejected input')
+        },
+      }))
+    }
+
+    let capturedBin = ''
+    let capturedArgs = []
+    const frame = await extractVideoFirstFrame('https://assets.omnimux.ai/elements/hooks/clip.mp4', {
+      ffmpegBin: '/custom/ffmpeg',
+      execFileImpl: (bin, args, _opts, cb) => {
+        capturedBin = bin
+        capturedArgs = args
+        cb(null, Buffer.from('PNG_FRAME'))
+      },
+    })
+    assert.equal(frame.toString('utf8'), 'PNG_FRAME')
+    assert.equal(capturedBin, '/custom/ffmpeg')
+    assert.ok(capturedArgs.includes('-nostdin'))
+    const wlIdx = capturedArgs.indexOf('-protocol_whitelist')
+    assert.ok(wlIdx >= 0)
+    assert.equal(capturedArgs[wlIdx + 1], 'https,http,tcp,tls')
+    const iIdx = capturedArgs.indexOf('-i')
+    assert.equal(capturedArgs[iIdx + 1], 'https://assets.omnimux.ai/elements/hooks/clip.mp4')
   })
 })

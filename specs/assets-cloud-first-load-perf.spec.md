@@ -50,7 +50,16 @@
 - [ ] `scripts/build-cover-thumbnails.mjs` 支持 `--max-bytes` / `--include-categories` / `--video-posters`（`ffmpeg` 首帧提取），附完整单测。
 - [ ] 全部自动化单测、E2E 几何测试与真实浏览器实测证据齐备并通过。
 
-## 旧测试契约变更说明
+## 旧标准变更
 
-- `plugins/plugins/omnimux-assets/src/client/CloudCategoryRow.test.js`：原源码正则锁定 `fetchCategoryRandomSample(catId, cloudPage, normalizeCloudAsset, 24)` 的四参固定拼写；升级后额外传递 `manifest` 页数与热池/并发配置对象，保留全部行为契约（缓存复用、声音双 scope 过滤与 24 张满员、保存三元组透传）并新增并发与懒加载行为测试。
-- `plugins/plugins/omnimux-assets/src/client/CloudAssetsView.test.js`：原源码正则锁定 `<CloudTileMedia asset={asset} broken={broken} onBroken={handleBroken} hovering={hovering} />` 与无条件 `showClip` 挂载；升级后 `CloudTileMedia` 接受 `priority` 属性且有封面视频仅在悬停态挂载 `<video>`（无封面 `bareClip` 仍在进入视口后挂载并受并发门控），相应更新源码断言并补强真实 DOM 行为断言。
+- `plugins/plugins/omnimux-assets/src/client/CloudAssetsView.test.js` :: `mounts no media plate and requests no image for a text row`
+- `plugins/plugins/omnimux-assets/src/client/CloudAssetsView.test.js` :: `mounts the tile from that flag, so a playable row can still show its portrait`
+- `plugins/plugins/omnimux-assets/src/client/CloudAssetsView.test.js` :: `binds the pointer surface on the card and hands it down to the tile`
+- `plugins/plugins/omnimux-assets/src/client/CloudAssetsView.test.js` :: `gives a poster-less clip the face of the tile and only then loads it`
+- `plugins/plugins/omnimux-assets/src/client/CloudCategoryRow.test.js` :: `narrows the 声音 row sample to the two playable second-level scopes (#2664)`
+
+上述 5 条旧用例变更原因与新证据：
+
+1. `CloudAssetsView.test.js` 前 3 条原源码正则精确匹配 `<CloudTileMedia asset={asset} broken={broken} onBroken={handleBroken} hovering={hovering} />`。本次为首屏首行可见图片增加加载优先级 `priority={priority}` 属性，原精确字符串不再匹配；已同步更新源码断言保留文本/头像/悬停全部原有契约，并在 `cloud-first-load-perf.test.js` 补强真实 DOM 对 `loading="eager"` / `fetchpriority="high"` 与悬停挂载 `<video>` 的行为断言。
+2. `CloudAssetsView.test.js` 第 4 条原用例断言无封面视频在挂载时即 `preload={bareClip ? 'metadata' : 'none'}`，该策略正是导致首屏下方 20 路 11 MB 级 MP4 并发抢占带宽的核心根因。本次改为 `preload={bareCanLoad ? 'metadata' : 'none'}`（经视口邻域与并发上限 3 路的 `bareVideoQueue` 门控后再加载），同时在 `bare-video-queue.test.js` 与 `cloud-first-load-perf.test.js` 验证滚动进入视口后仍正常加载并受并发上限保护。
+3. `CloudCategoryRow.test.js` 原用例正则精确匹配四参调用 `fetchCategoryRandomSample(catId, cloudPage, normalizeCloudAsset, 24)`。本次新增第 5 个可选配置对象，透传 `manifest` 已知页数（消除串行探针 `page-0`）与热池抽样参数，保留全部原有缓存复用、声音双 scope 过滤与 24 张满员契约，并在 `category-shuffle-cache.test.js` 与 `cloud-first-load-perf.test.js` 补充并行拉取与热池多样性回归测试。

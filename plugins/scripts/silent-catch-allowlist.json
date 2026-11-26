@@ -3,14 +3,14 @@
     {
       "path": "plugins/omnimux-assets/src/client/AssetsStage.jsx",
       "rule": "SC2",
-      "line": 640,
-      "reason": "宿主能力探测：window.__omnimuxWorkbench 的 setConversationCollapsed 是可选接缝，老宿主没有时保持原状是刻意行为，不属于吞错。该行在 origin/main 上已存在，随列表视图批量操作与文本编辑器导入下移。"
+      "line": 677,
+      "reason": "宿主能力探测：window.__omnimuxWorkbench 的 setConversationCollapsed 是可选接缝，老宿主没有时保持原状是刻意行为，不属于吞错。该行在 origin/main 上已存在，随列表视图批量操作、文本编辑器导入与云资产预连接/预热逻辑下移。"
     },
     {
       "path": "plugins/omnimux-assets/src/client/AssetsStage.jsx",
       "rule": "SC2",
-      "line": 641,
-      "reason": "同上：window.__omnimuxWorkbench 的 setFocus 也是可选接缝，老宿主没有时保持原状是刻意行为。该行在 origin/main 上已存在，随列表视图批量操作与文本编辑器导入下移。"
+      "line": 678,
+      "reason": "同上：window.__omnimuxWorkbench 的 setFocus 也是可选接缝，老宿主没有时保持原状是刻意行为。该行在 origin/main 上已存在，随列表视图批量操作、文本编辑器导入与云资产预连接/预热逻辑下移。"
     },
     {
       "path": "plugins/omnimux-workflow/src/client/projects/projectCanvas.js",

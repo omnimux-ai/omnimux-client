@@ -66,6 +66,8 @@ function installDom(observerController) {
   globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
   const loadCalls = []
+  const playCalls = []
+  const pauseCalls = []
   const proto = window.HTMLMediaElement.prototype
   const currents = new WeakMap()
   Object.defineProperty(proto, 'currentTime', {
@@ -76,11 +78,16 @@ function installDom(observerController) {
   proto.load = function load() {
     loadCalls.push(this.getAttribute('src') || '')
   }
-  proto.play = function play() { return Promise.resolve() }
-  proto.pause = function pause() {}
+  proto.play = function play() {
+    playCalls.push(this.getAttribute('src') || '')
+    return Promise.resolve()
+  }
+  proto.pause = function pause() {
+    pauseCalls.push(this.getAttribute('src') || '')
+  }
   window.HTMLElement.prototype.scrollBy = function scrollBy() {}
 
-  return { window, loadCalls }
+  return { window, loadCalls, playCalls, pauseCalls }
 }
 
 async function bundleModule(relPath) {
@@ -195,7 +202,7 @@ function buildPageItems(scope, page) {
 
 test('公共 → 全部首屏性能契约：零无用 all/page-0、离屏行不发请求、横向 10→24 展开、无封面视频限流 3 路与悬停挂载', async () => {
   const observerCtrl = createMockObserverController()
-  const { window, loadCalls } = installDom(observerCtrl)
+  const { window, loadCalls, playCalls, pauseCalls } = installDom(observerCtrl)
   const React = pluginRequire('react')
   const { createRoot } = pluginRequire('react-dom/client')
 
@@ -328,7 +335,7 @@ test('公共 → 全部首屏性能契约：零无用 all/page-0、离屏行不�
     '前一路元数据就绪后必须自动放行排队中的下一路视频',
   )
 
-  // 断言 G：有封面视频卡在鼠标悬停时按需挂载 <video>，移出后卸载
+  // 断言 G：有封面视频卡在鼠标悬停时按需挂载 <video>，移出后卸载并调用 pause() + 清 src 中止拉流
   const hoverRoot = window.document.createElement('div')
   window.document.body.appendChild(hoverRoot)
   const cardRoot = createRoot(hoverRoot)
@@ -354,15 +361,170 @@ test('公共 → 全部首屏性能契约：零无用 all/page-0、离屏行不�
   })
   assert.equal(hoverRoot.querySelector('video'), null, '非悬停态不挂载 <video>')
   const cardEl = hoverRoot.querySelector('.omnimux-assets-cloud-card')
+  const playsBeforeHover = playCalls.length
+  const pausesBeforeLeave = pauseCalls.length
+  const loadsBeforeLeave = loadCalls.length
   await React.act(async () => {
     cardEl.dispatchEvent(new window.MouseEvent('mouseover', { bubbles: true }))
   })
-  assert.ok(hoverRoot.querySelector('video.omnimux-assets-cloud-preview'), '悬停后必须挂载预览 <video>')
+  const mountedVideo = hoverRoot.querySelector('video.omnimux-assets-cloud-preview')
+  assert.ok(mountedVideo, '悬停后必须挂载预览 <video>')
+  assert.equal(playCalls.length, playsBeforeHover + 1, '悬停后应触发 play()')
+
+  await React.act(async () => {
+    cardEl.dispatchEvent(new window.MouseEvent('mouseout', { bubbles: true }))
+  })
+  assert.equal(hoverRoot.querySelector('video'), null, '鼠标移出后必须卸载预览 <video>')
+  assert.equal(pauseCalls.length, pausesBeforeLeave + 1, '卸载前 cleanup 必须调用 pause()')
+  assert.equal(mountedVideo.getAttribute('src'), null, '卸载前 cleanup 必须移除 src 中止下载')
+  assert.equal(loadCalls.length, loadsBeforeLeave + 1, '移除 src 后调用 load() 重置媒体管线')
+
+  // 断言 H：排队中的无封面视频悬停时不得对无 src 节点调 play()；放行后立即开始播放
+  const queuedVideo = materialVideos[4]
+  assert.equal(queuedVideo.getAttribute('src'), null, '第 5 路仍在队列等待中')
+  const queuedCard = queuedVideo.closest('.omnimux-assets-cloud-card')
+  const playsBeforeQueuedHover = playCalls.length
+  await React.act(async () => {
+    queuedCard.dispatchEvent(new window.MouseEvent('mouseover', { bubbles: true }))
+  })
+  assert.equal(playCalls.length, playsBeforeQueuedHover, '排队无 src 态悬停不得误调 play()')
+  await React.act(async () => {
+    loadedBeforeRelease[1].dispatchEvent(new window.Event('loadedmetadata', { bubbles: false }))
+  })
+  assert.ok(queuedVideo.getAttribute('src'), '前序释放后第 5 路获得槽位并写入 src')
+  assert.equal(playCalls.length, playsBeforeQueuedHover + 1, '仍在悬停的排队视频获槽后应自动开播')
+
+  // 断言 I：在「公共 → 全部」键入搜索词防抖窗口内不得误发 all/page-0000.json，且展示骨架而非空态
+  const reqCountBeforeSearch = requestedUrls.length
+  await React.act(async () => {
+    root.render(React.createElement(CloudAssetsView, { t, open: true, query: 'hero' }))
+  })
+  assert.equal(
+    requestedUrls.slice(reqCountBeforeSearch).some((u) => u.includes('/all/page-')),
+    false,
+    '输入搜索词防抖期间不得发出 all/page-0000.json',
+  )
+  assert.ok(
+    container.querySelector('[data-skeleton="true"]'),
+    '搜索防抖期间应展示骨架屏，不得闪现空状态',
+  )
 
   await React.act(async () => {
     cardRoot.unmount()
     root.unmount()
   })
+})
+
+test('CloudTileMedia 切换 asset.id 与 broken=true 时不泄漏旧视口状态或占用并发槽位', async () => {
+  const observerCtrl = createMockObserverController()
+  const { window } = installDom(observerCtrl)
+  const React = pluginRequire('react')
+  const { createRoot } = pluginRequire('react-dom/client')
+  const { CloudTileMedia } = await bundleModule('CloudAssetsView.jsx')
+
+  const container = window.document.getElementById('root')
+  const root = createRoot(container)
+  const bareA = { id: 'bare-a', mediaType: 'video', hasCover: false, hasMedia: true, coverUrl: '', thumbUrl: '' }
+  const bareB = { id: 'bare-b', mediaType: 'video', hasCover: false, hasMedia: true, coverUrl: '', thumbUrl: '' }
+
+  await React.act(async () => {
+    root.render(React.createElement(CloudTileMedia, { asset: bareA, broken: false, onBroken: () => {}, hovering: false }))
+  })
+  const videoA = container.querySelector('video')
+  await React.act(async () => { observerCtrl.trigger(videoA) })
+  assert.ok(videoA.getAttribute('src')?.includes('bare-a'), 'bareA 进入视口后获槽')
+
+  // 原位切换为 offscreen 的 bareB：首帧即重置视口态，未触发新 observer 前不得获得 src
+  await React.act(async () => {
+    root.render(React.createElement(CloudTileMedia, { asset: bareB, broken: false, onBroken: () => {}, hovering: false }))
+  })
+  const videoB = container.querySelector('video')
+  assert.equal(videoB.getAttribute('src'), null, '切换 asset.id 后未进入视口的 bareB 不得继承旧 bareVisible 获得 src')
+
+  // broken=true 时不挂载 video 且不得触发 observer 兜底放行
+  await React.act(async () => {
+    root.render(React.createElement(CloudTileMedia, { asset: bareB, broken: true, onBroken: () => {}, hovering: false }))
+  })
+  assert.equal(container.querySelector('video'), null)
+  await React.act(async () => {
+    root.render(React.createElement(CloudTileMedia, { asset: bareB, broken: false, onBroken: () => {}, hovering: false }))
+  })
+  assert.equal(container.querySelector('video').getAttribute('src'), null, 'broken 期间不得通过 !node 兜底偷设 bareVisible=true')
+
+  await React.act(async () => { root.unmount() })
+})
+
+test('useCloudManifest 冷启动首帧 loading=true、force 走 cache:no-cache 且旧预热不覆盖新刷新', async () => {
+  const observerCtrl = createMockObserverController()
+  const { window } = installDom(observerCtrl)
+  const React = pluginRequire('react')
+  const { createRoot } = pluginRequire('react-dom/client')
+  const manifestMod = await bundleModule('use-cloud-manifest.js')
+  const {
+    clearCloudManifestCache,
+    fetchCloudManifestCached,
+    prefetchCloudManifest,
+    useCloudManifest,
+  } = manifestMod
+
+  clearCloudManifestCache()
+  const fetchCalls = []
+  let resolveSlow = null
+  let resolveFast = null
+  let callIndex = 0
+  globalThis.fetch = async (url, init) => {
+    fetchCalls.push({ url: String(url), init })
+    callIndex += 1
+    if (callIndex === 1) {
+      await new Promise((r) => { resolveSlow = r })
+      return { ok: true, status: 200, json: async () => ({ version: 1, tag: 'stale-prefetch', categories: [] }) }
+    }
+    await new Promise((r) => { resolveFast = r })
+    return { ok: true, status: 200, json: async () => ({ version: 2, tag: 'fresh-force', categories: [] }) }
+  }
+
+  // 1. 慢预热 + 快 force 刷新乱序返回：慢预热不得回写覆盖 fresh-force 缓存
+  const slowPromise = prefetchCloudManifest()
+  const fastPromise = fetchCloudManifestCached({ force: true })
+  await new Promise((r) => setTimeout(r, 10))
+  assert.equal(fetchCalls.length, 2)
+  assert.equal(fetchCalls[1].init?.cache, 'no-cache', 'force 刷新必须传 cache: no-cache 绕过 1h 私有缓存')
+  resolveFast()
+  const fastRes = await fastPromise
+  assert.equal(fastRes.body.tag, 'fresh-force')
+  resolveSlow()
+  await slowPromise
+  const cached = await fetchCloudManifestCached({ force: false })
+  assert.equal(cached.body.tag, 'fresh-force', '旧预热晚返回不得覆盖新 force 刷新的缓存')
+
+  // 2. 冷启动首帧（effect 运行前）useCloudManifest 同步返回 loading=true，避免 1 帧空渲染
+  clearCloudManifestCache()
+  let resolveCold = null
+  globalThis.fetch = async () => {
+    await new Promise((r) => { resolveCold = r })
+    return { ok: true, status: 200, json: async () => ({ version: 3, categories: [] }) }
+  }
+  const renderSnapshots = []
+  function Probe() {
+    const state = useCloudManifest({ enabled: true })
+    renderSnapshots.push({ loading: state.loading, hasManifest: state.manifest !== null })
+    return null
+  }
+  const container = window.document.getElementById('root')
+  const root = createRoot(container)
+  await React.act(async () => {
+    root.render(React.createElement(Probe))
+  })
+  assert.equal(renderSnapshots[0].loading, true, '冷启动首帧 loading 必须立即为 true')
+  assert.equal(renderSnapshots[0].hasManifest, false)
+  await React.act(async () => {
+    resolveCold()
+    await new Promise((r) => setTimeout(r, 10))
+  })
+  assert.equal(renderSnapshots.at(-1).loading, false)
+  assert.equal(renderSnapshots.at(-1).hasManifest, true)
+
+  await React.act(async () => { root.unmount() })
 })
 
 test('ensureCloudPreconnect 幂等注入 preconnect 与 dns-prefetch', async () => {

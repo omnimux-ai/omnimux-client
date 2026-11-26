@@ -464,7 +464,7 @@ export function useCloudAssetsFeed(options) {
     }
   }, [category, subCategory, filtering, filterTokens, t, batchSize])
 
-  const isRowLayoutScope = category === CLOUD_ALL_CATEGORY && !filtering && query.trim() === '' && queryApplied === ''
+  const isRowLayoutScope = category === CLOUD_ALL_CATEGORY && !filtering
 
   // Scope change — a category, a sub-category or a dimension combination: stop
   // any audition, drop the old rows, and fetch page 0 of the new scope.
@@ -623,6 +623,8 @@ export function useCloudAssetsFeed(options) {
     }
   }, [reloadManifest, loadPage, isRowLayoutScope])
 
+  const searchPending = query.trim() !== '' && (searching || query.trim() !== queryApplied || searchResult === null)
+
   return {
     manifest,
     categories,
@@ -634,7 +636,7 @@ export function useCloudAssetsFeed(options) {
     characterFilters,
     items: visible,
     hasMore,
-    loading: manifestLoading || (loadingPage && items.length === 0),
+    loading: manifestLoading || (loadingPage && items.length === 0) || (searchPending && searchResult === null),
     /** True while a page or a search slice is in flight, for the button state. */
     loadingMore: loadingPage || searching,
     error: manifestError || pageError,

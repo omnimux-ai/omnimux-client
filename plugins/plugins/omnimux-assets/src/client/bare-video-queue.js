@@ -20,13 +20,26 @@ export function createBareVideoQueue(maxConcurrent = DEFAULT_MAX_CONCURRENT_BARE
   /** @type {{ onGrant: () => void, cancelled: boolean, granted: boolean }[]} */
   const waiters = []
 
+  function invokeGrant(entry) {
+    try {
+      entry.onGrant()
+      return true
+    } catch (error) {
+      active = Math.max(0, active - 1)
+      entry.granted = false
+      entry.cancelled = true
+      console.warn('[omnimux-assets] bare video queue grant failed:', error?.message || error)
+      return false
+    }
+  }
+
   function drain() {
     while (active < limit && waiters.length > 0) {
       const next = waiters.shift()
       if (!next || next.cancelled) continue
       active += 1
       next.granted = true
-      next.onGrant()
+      invokeGrant(next)
     }
   }
 
@@ -42,7 +55,10 @@ export function createBareVideoQueue(maxConcurrent = DEFAULT_MAX_CONCURRENT_BARE
     if (active < limit) {
       active += 1
       entry.granted = true
-      onGrant()
+      if (!invokeGrant(entry)) {
+        released = true
+        drain()
+      }
     } else {
       waiters.push(entry)
     }

@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict'
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
+import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, it } from 'node:test'
 import { createCloudCatalog } from './cloud-catalog.js'
-import { createAssetsDispatcher, resolveCatalogPagePath } from './http-routes.js'
+import { createAssetsDispatcher, registerAssetsRoutes, resolveCatalogPagePath } from './http-routes.js'
 import { createArtifactStore } from './artifacts.js'
 import { createLibraryStore } from './library.js'
 import { createMappingStore } from './mappings.js'
@@ -231,18 +232,77 @@ describe('createCloudCatalog: manifest and index', () => {
     assert.equal(cloud.getRow('character-1')?.name, 'Ava')
   })
 
-  it('emits 1-hour private cache-control headers on static manifest and page routes (Issue #324)', async () => {
+  it('emits 1-hour private cache-control headers on static manifest and page routes over HTTP (Issue #324)', async () => {
     writeCatalog()
     const cloud = makeCatalog()
     const stores = makeStores()
     const dispatcher = createAssetsDispatcher({ ...stores, cloud })
-    const manifestRes = await dispatcher.dispatch({ method: 'GET', url: '/omnimux/assets/cloud/manifest.json' })
-    assert.equal(manifestRes.status, 200)
-    assert.equal(manifestRes.headers?.['Cache-Control'], 'private, max-age=3600')
+    let registered = null
+    const dispose = registerAssetsRoutes({
+      register(route) {
+        registered = route
+        return () => { registered = null }
+      },
+    }, dispatcher)
+    assert.equal(typeof registered?.handler, 'function')
+    const server = createServer((req, res) => { void registered.handler(req, res) })
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
+    try {
+      const addr = server.address()
+      const base = `http://127.0.0.1:${addr.port}`
+      const manifestRes = await fetch(`${base}/omnimux/assets/cloud/manifest.json`)
+      assert.equal(manifestRes.status, 200)
+      assert.equal(manifestRes.headers.get('cache-control'), 'private, max-age=3600')
 
-    const pageRes = await dispatcher.dispatch({ method: 'GET', url: '/omnimux/assets/cloud/scene/page-0000.json' })
-    assert.equal(pageRes.status, 200)
-    assert.equal(pageRes.stream?.cacheControl, 'private, max-age=3600')
+      const pageRes = await fetch(`${base}/omnimux/assets/cloud/scene/page-0000.json`)
+      assert.equal(pageRes.status, 200)
+      assert.equal(pageRes.headers.get('cache-control'), 'private, max-age=3600')
+    } finally {
+      dispose()
+      await new Promise((resolve) => server.close(resolve))
+    }
+  })
+
+  it('ready() short-circuits when manifest is absent without locking stale index, and warmIndexAsync() honors reload() generation (Issue #324)', async () => {
+    // 只有旧 index.json、尚无 manifest.json：ready() 返回 false 且不得锁死旧索引。
+    writeFileSync(join(catalogDir, 'index.json'), JSON.stringify([
+      { id: 'stale-row', category: 'character', sub_category: 'digital-human', name: 'Stale', media_type: 'image', media_url: 'https://assets.omnimux.ai/s.jpg', cover_url: 'https://assets.omnimux.ai/s.jpg', tags: [] },
+    ]))
+    const cloud = makeCatalog()
+    assert.equal(cloud.ready(), false)
+
+    // 随后物化出新 manifest + 新 index：ready() 应读到新索引而非旧缓存。
+    writeCatalog()
+    assert.equal(cloud.ready(), true)
+    assert.equal(cloud.getRow('stale-row'), null)
+    assert.equal(cloud.getRow('scene-nature-aaa')?.name, 'Bedroom')
+
+    // indexLoaded === true 时 warmIndexAsync() 仍返回 Promise。
+    const alreadyLoadedPromise = cloud.warmIndexAsync()
+    assert.equal(typeof alreadyLoadedPromise?.then, 'function')
+    await alreadyLoadedPromise
+
+    // 并发 warmIndexAsync() 期间触发 reload()：旧异步预热结果不得覆盖 reload 后的新目录。
+    const freshCloud = makeCatalog()
+    const warmPromise = freshCloud.warmIndexAsync()
+    writeCatalog({
+      rows: [
+        {
+          id: 'post-reload-row',
+          category: 'scene',
+          sub_category: 'nature',
+          name: 'Fresh',
+          media_type: 'image',
+          media_url: 'https://cdn.example.com/fresh.jpg',
+          cover_url: 'https://cdn.example.com/fresh.jpg',
+          tags: [],
+        },
+      ],
+    })
+    freshCloud.reload()
+    await warmPromise
+    assert.equal(freshCloud.getRow('post-reload-row')?.name, 'Fresh')
+    assert.equal(freshCloud.getRow('scene-nature-aaa'), null)
   })
 })
 

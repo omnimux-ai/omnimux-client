@@ -182,7 +182,8 @@ export function createCloudCatalog(deps = {}) {
    * 又让随后到达的搜索、筛选或媒体解析直接命中内存 Map。
    */
   function warmIndexAsync() {
-    if (indexLoaded || indexWarming !== null) return indexWarming
+    if (indexLoaded) return Promise.resolve()
+    if (indexWarming !== null) return indexWarming
     const gen = loadGen
     const target = join(catalogDir, 'index.json')
     const task = readFile(target, 'utf8')
@@ -217,9 +218,9 @@ export function createCloudCatalog(deps = {}) {
   }
 
   function ready() {
-    const hasManifest = loadManifest()
+    if (!loadManifest() || manifest === null) return false
     const hasIndex = loadIndex()
-    return hasManifest && hasIndex && manifest !== null && index !== null
+    return hasIndex && index !== null
   }
 
   function getManifest() {

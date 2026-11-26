@@ -361,24 +361,60 @@ async function fetchCover(url, fetchImpl = globalThis.fetch) {
 }
 
 /**
+ * Validate a remote video URL before handing it to `ffmpeg`: reject CLI flags
+ * (leading `-`), local file paths, and non-HTTP(S) schemes (`file:`, `concat:`,
+ * `lavfi:`, `subfile:`, etc.).
+ * @param {string} url
+ * @returns {string}
+ */
+export function validateVideoSourceUrl(url) {
+  if (typeof url !== 'string' || url.trim() === '') {
+    throw new Error('video source url must be a non-empty string')
+  }
+  const trimmed = url.trim()
+  if (trimmed.startsWith('-')) {
+    throw new Error(`refusing ffmpeg option-like video url: ${trimmed}`)
+  }
+  let parsed
+  try {
+    parsed = new URL(trimmed)
+  } catch (error) {
+    throw new Error(`invalid video source url: ${trimmed}`, { cause: error })
+  }
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+    throw new Error(`unsupported video source protocol: ${parsed.protocol}`)
+  }
+  return parsed.href
+}
+
+/**
  * Extract the first video frame (at 0.001s) as a PNG buffer via ffmpeg (`shell: false`).
  * Used for poster-less `material/hook` videos so clients render lightweight WebP cards
  * instead of fetching multi-megabyte MP4 streams on first load.
  * @param {string} url
- * @param {{ ffmpegBin?: string, timeoutMs?: number }} [opts]
+ * @param {{ ffmpegBin?: string, timeoutMs?: number, execFileImpl?: typeof execFile }} [opts]
  * @returns {Promise<Buffer>}
  */
 export function extractVideoFirstFrame(url, opts = {}) {
+  let safeUrl
+  try {
+    safeUrl = validateVideoSourceUrl(url)
+  } catch (error) {
+    return Promise.reject(error)
+  }
   const ffmpegBin = opts.ffmpegBin || 'ffmpeg'
+  const runExecFile = opts.execFileImpl || execFile
   const timeout = Number(opts.timeoutMs) > 0 ? Number(opts.timeoutMs) : VIDEO_POSTER_TIMEOUT_MS
   return new Promise((resolvePromise, rejectPromise) => {
-    execFile(
+    runExecFile(
       ffmpegBin,
       [
+        '-nostdin',
         '-hide_banner',
         '-loglevel', 'error',
+        '-protocol_whitelist', 'https,http,tcp,tls',
         '-ss', '0.001',
-        '-i', url,
+        '-i', safeUrl,
         '-frames:v', '1',
         '-f', 'image2pipe',
         '-vcodec', 'png',

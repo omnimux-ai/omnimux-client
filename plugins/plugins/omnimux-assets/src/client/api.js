@@ -14,16 +14,18 @@ import { defaultRequestCoalescer } from './request-coalescer.js'
 
 /**
  * @param {string} path
- * @param {{ method?: string, body?: unknown, signal?: AbortSignal }} [opts]
+ * @param {{ method?: string, body?: unknown, signal?: AbortSignal, cache?: RequestCache }} [opts]
  * @returns {Promise<{ ok: boolean, status: number, body: any }>}
  */
 export async function assetsRequest(path, opts = {}) {
-  const response = await fetch(path, {
+  const fetchInit = {
     method: opts.method ?? 'GET',
     headers: opts.body === undefined ? undefined : { 'Content-Type': 'application/json' },
     body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
     signal: opts.signal,
-  })
+  }
+  if (opts.cache !== undefined) fetchInit.cache = opts.cache
+  const response = await fetch(path, fetchInit)
   let json = {}
   try {
     json = await response.json()
@@ -385,7 +387,7 @@ export function artifactPreviewUrl(id) {
  */
 export async function cloudManifest(options = {}) {
   const base = await resolveCloudBase(options)
-  return assetsRequest(cloudManifestUrl(base))
+  return assetsRequest(cloudManifestUrl(base), options.force ? { cache: 'no-cache' } : undefined)
 }
 
 /**

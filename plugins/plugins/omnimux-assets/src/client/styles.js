@@ -1923,13 +1923,6 @@ export const ASSETS_CSS = `
   flex-direction: column;
   gap: 14px;
   position: relative;
-  content-visibility: auto;
-  contain-intrinsic-size: auto 410px;
-}
-
-.omnimux-assets-cloud-row-section[data-category="style"],
-.omnimux-assets-cloud-row-section[data-category="audio"] {
-  contain-intrinsic-size: auto 240px;
 }
 
 .omnimux-assets-cloud-row-header {
@@ -1999,6 +1992,13 @@ export const ASSETS_CSS = `
   scroll-behavior: smooth;
   scrollbar-width: none;
   padding: 6px 4px 14px;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 358px;
+}
+
+.omnimux-assets-cloud-row-section[data-category="style"] .omnimux-assets-cloud-row-cards,
+.omnimux-assets-cloud-row-section[data-category="audio"] .omnimux-assets-cloud-row-cards {
+  contain-intrinsic-size: auto 189px;
 }
 
 .omnimux-assets-cloud-row-cards::-webkit-scrollbar {
