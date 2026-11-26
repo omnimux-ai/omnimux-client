@@ -55,6 +55,25 @@ test('probeWidevineCdm detects Chrome CDM read-only and returns honest warning w
     assert.equal(foundRes.available, true)
     assert.equal(foundRes.version, '4.10.2891.0')
     assert.equal(foundRes.warning, null)
+
+    const frameworkRoot = join(tmp, 'FrameworkWidevineCdm')
+    await mkdir(frameworkRoot, { recursive: true })
+    await writeFile(join(frameworkRoot, 'manifest.json'), '{"version":"4.10.2934.0"}')
+    const directRes = await probeWidevineCdm({ candidateRoots: [frameworkRoot] })
+    assert.equal(directRes.available, true)
+    assert.equal(directRes.version, '4.10.2934.0')
+    assert.equal(directRes.sourcePath, frameworkRoot)
+
+    // Bidirectional TCC regression: darwin default lookup must NEVER probe ~/Library/Application Support/Google/Chrome
+    const fakeUserChromeCdm = join(tmp, 'Library', 'Application Support', 'Google', 'Chrome', 'WidevineCdm', '4.10.9999.0')
+    await mkdir(fakeUserChromeCdm, { recursive: true })
+    await writeFile(join(fakeUserChromeCdm, 'manifest.json'), '{"version":"4.10.9999.0"}')
+    const darwinDefault = await probeWidevineCdm({ platform: 'darwin', home: tmp })
+    assert.equal(
+      Boolean(darwinDefault.sourcePath && darwinDefault.sourcePath.startsWith(tmp)),
+      false,
+      'darwin default Widevine lookup must never read ~/Library/Application Support/Google/Chrome (triggers macOS TCC alert)',
+    )
   } finally {
     await rm(tmp, { recursive: true, force: true })
   }

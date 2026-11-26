@@ -107,7 +107,7 @@ export function ExtensionsTeamPanel({ overview, t, onNotify, onOverviewChanged }
 
   const handlePickExtension = async () => {
     const picked = await requestFilePicker(
-      { mode: 'file', title: '选择 .crx 文件或扩展目录' },
+      { mode: 'file', title: '选择 .crx 扩展包文件' },
       async () => ({ ok: false, status: 503, body: { path: null } }),
     )
     if (picked?.ok && picked.body?.path) {
@@ -465,7 +465,7 @@ export function ExtensionsTeamPanel({ overview, t, onNotify, onOverviewChanged }
         }
       >
         <InputField
-          label="本地 .crx / 扩展目录路径或 Chrome Web Store ID"
+          label="本地 .crx 扩展包路径或 32 位 Chrome Web Store ID"
           required
           value={extSource}
           onChange={(e) => setExtSource(e.target.value)}

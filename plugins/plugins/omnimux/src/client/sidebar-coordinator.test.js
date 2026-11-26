@@ -973,19 +973,30 @@ test('0.2.2-rc.5：无 newSessionRow（canStartSession=false）时仍可挂进 n
   }
 })
 
-test('omnimux-pibrowse 在常驻侧栏白名单内，作为独立行挂入侧栏而不被收敛', () => {
+test('omnimux-pibrowse 收敛至官方更多菜单，不作为独立行挂入侧栏，可通过 registerExploreItem 注册入口', () => {
   setup()
   installSidebarGlobal()
   const api = SIDEBAR_GLOBAL()
   const btn = document.createElement('button')
   btn.dataset.omnimuxPibrowseEntry = ''
-  const dispose = api.register({ id: 'omnimux-pibrowse-entry', rank: 6.5, create: () => btn })
+  const disposeRow = api.register({ id: 'omnimux-pibrowse-entry', rank: 6.5, create: () => btn })
+  const disposeMore = api.registerExploreItem({
+    id: 'pibrowse',
+    label: '指纹浏览器',
+    iconSvg: '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><circle cx="8" cy="8" r="6"/></svg>',
+    tabId: 'omnimux-pibrowse:workbench',
+  })
   try {
     api.place()
     const root = document.querySelector('[data-pane="sidebar"]')
-    assert.equal(btn.parentElement, root, 'omnimux-pibrowse 必须直接挂入侧栏而非收敛到更多菜单')
-    assert.equal(getConvergedRowsForTests().has('omnimux-pibrowse-entry'), false)
+    assert.notEqual(btn.parentElement, root, 'omnimux-pibrowse 不得作为独立常驻行挂入侧栏')
+    assert.equal(getConvergedRowsForTests().has('omnimux-pibrowse-entry'), true)
+    const menuItems = resolveExploreMenuItems()
+    const entry = menuItems.find((item) => item.id === 'pibrowse')
+    assert.ok(entry, '指纹浏览器必须出现在更多菜单解析结果中')
+    assert.equal(entry.tabId, 'omnimux-pibrowse:workbench')
   } finally {
-    dispose()
+    disposeMore()
+    disposeRow()
   }
 })

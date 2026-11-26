@@ -26,6 +26,165 @@ function asArray(val, field) {
   return []
 }
 
+function cleanOptionalId(val) {
+  if (typeof val !== 'string') return null
+  const trimmed = val.trim()
+  if (!trimmed || trimmed === 'all') return null
+  return trimmed
+}
+
+/**
+ * Choose a default Persona ID matching the current host OS when the user leaves
+ * Persona as default/random on single-profile creation.
+ */
+function pickDefaultPersonaId(personas, platform = process.platform) {
+  const list = asArray(personas, 'personas').filter((p) => p && typeof p.id === 'string' && p.id.trim())
+  if (list.length === 0) return ''
+  const want = platform === 'darwin' ? /mac/i : platform === 'win32' ? /win/i : /linux/i
+  const match = list.find((p) => want.test(String(p.os || p.id)))
+  return (match || list[0]).id
+}
+
+/**
+ * Normalize a partial UI/tool profile payload into the full Rust `Profile` serde
+ * struct expected by upstream `v0.5.5` `fury-agent` (`profiles.upsert` / `profiles.createMany`).
+ */
+export function normalizeProfilePayload(body = {}, existing = null, opts = {}) {
+  const id = existing?.id ?? (typeof body.id === 'string' ? body.id.trim() : '')
+  const name = typeof body.name === 'string' ? body.name.trim() : String(existing?.name || '').trim()
+  if (!opts.allowEmptyName && !name) {
+    throw new PibrowseError('invalid-input', 'Profile name is required')
+  }
+
+  let projectId = existing?.project_id ?? null
+  for (const key of ['project_id', 'projectId', 'group_id', 'groupId', 'group']) {
+    if (body[key] !== undefined) {
+      projectId = cleanOptionalId(body[key])
+      break
+    }
+  }
+
+  let proxyId = existing?.proxy_id ?? existing?.proxy?.id ?? null
+  for (const key of ['proxy_id', 'proxyId']) {
+    if (body[key] !== undefined) {
+      proxyId = cleanOptionalId(body[key])
+      break
+    }
+  }
+
+  const explicitPersona = cleanOptionalId(body.persona_id) ?? cleanOptionalId(body.persona)
+  const personaId = explicitPersona ?? cleanOptionalId(existing?.persona_id) ?? cleanOptionalId(opts.fallbackPersonaId) ?? ''
+  if (!opts.allowEmptyPersona && !personaId) {
+    throw new PibrowseError('invalid-input', 'A valid Persona ID is required (call personas.list first)')
+  }
+
+  let startUrls = Array.isArray(existing?.start_urls) ? existing.start_urls.map(String).filter(Boolean) : []
+  if (Array.isArray(body.start_urls)) {
+    startUrls = body.start_urls.map((u) => String(u).trim()).filter(Boolean)
+  } else if (typeof body.start_url === 'string' || typeof body.startUrl === 'string') {
+    const raw = String(body.start_url ?? body.startUrl ?? '').trim()
+    startUrls = raw ? [raw] : []
+  }
+
+  const allowNoProxy =
+    typeof body.allow_no_proxy === 'boolean'
+      ? body.allow_no_proxy
+      : typeof body.allowNoProxy === 'boolean'
+        ? body.allowNoProxy
+        : existing
+          ? Boolean(existing.allow_no_proxy)
+          : !proxyId
+
+  const fpSeed =
+    typeof body.fp_seed === 'number' && Number.isFinite(body.fp_seed)
+      ? Math.trunc(body.fp_seed)
+      : typeof existing?.fp_seed === 'number' && Number.isFinite(existing.fp_seed)
+        ? Math.trunc(existing.fp_seed)
+        : 0
+
+  return {
+    id,
+    project_id: projectId,
+    name,
+    notes: typeof body.notes === 'string' ? body.notes : String(existing?.notes ?? ''),
+    tags: Array.isArray(body.tags)
+      ? body.tags.map(String)
+      : Array.isArray(existing?.tags)
+        ? existing.tags.map(String)
+        : [],
+    status: typeof body.status === 'string' ? body.status : String(existing?.status ?? ''),
+    blocklists: Array.isArray(body.blocklists)
+      ? body.blocklists.map(String)
+      : Array.isArray(existing?.blocklists)
+        ? existing.blocklists.map(String)
+        : [],
+    inline_lists: Array.isArray(body.inline_lists)
+      ? body.inline_lists
+      : Array.isArray(existing?.inline_lists)
+        ? existing.inline_lists
+        : [],
+    persona_id: personaId,
+    fp_seed: fpSeed,
+    allow_no_proxy: allowNoProxy,
+    proxy: null,
+    proxy_id: proxyId,
+    timezone: body.timezone !== undefined ? (body.timezone ? String(body.timezone) : null) : (existing?.timezone ?? null),
+    languages:
+      body.languages !== undefined
+        ? Array.isArray(body.languages)
+          ? body.languages.map(String)
+          : null
+        : (existing?.languages ?? null),
+    overrides:
+      body.overrides && typeof body.overrides === 'object' && !Array.isArray(body.overrides)
+        ? body.overrides
+        : existing?.overrides && typeof existing.overrides === 'object' && !Array.isArray(existing.overrides)
+          ? existing.overrides
+          : {},
+    start_urls: startUrls,
+    last_opened_at: existing?.last_opened_at ?? null,
+  }
+}
+
+/**
+ * Normalize a proxy payload into the full Rust `Proxy` serde struct expected
+ * by upstream `v0.5.5` `fury-agent` (`proxies.upsert`).
+ */
+export function normalizeProxyPayload(body = {}, existing = null) {
+  const id = existing?.id ?? (typeof body.id === 'string' ? body.id.trim() : '')
+  const host = String(body.host ?? existing?.host ?? '').trim()
+  const port = Number(body.port ?? existing?.port)
+  if (!host) {
+    throw new PibrowseError('invalid-input', 'Proxy host is required')
+  }
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new PibrowseError('invalid-input', 'Proxy port must be an integer between 1 and 65535')
+  }
+  const kind = String(body.kind || body.scheme || body.protocol || existing?.kind || 'http').trim().toLowerCase()
+  const name = String(body.name ?? existing?.name ?? `${host}:${port}`).trim() || `${host}:${port}`
+  return {
+    id,
+    name,
+    kind,
+    host,
+    port,
+    username: body.username !== undefined ? (body.username ? String(body.username) : null) : (existing?.username ?? null),
+    password: body.password !== undefined ? (body.password ? String(body.password) : null) : (existing?.password ?? null),
+    last_country: existing?.last_country ?? null,
+    last_ip: existing?.last_ip ?? null,
+    last_timezone: existing?.last_timezone ?? null,
+    last_location: existing?.last_location ?? null,
+    rotate_url:
+      body.rotate_url !== undefined || body.rotateUrl !== undefined
+        ? (body.rotate_url || body.rotateUrl ? String(body.rotate_url || body.rotateUrl) : null)
+        : (existing?.rotate_url ?? null),
+    checker_url:
+      body.checker_url !== undefined || body.checkerUrl !== undefined
+        ? (body.checker_url || body.checkerUrl ? String(body.checker_url || body.checkerUrl) : null)
+        : (existing?.checker_url ?? null),
+  }
+}
+
 /**
  * Single authoritative domain dispatcher shared by HTTP routes (`/omnimux/pibrowse/*`)
  * and Agent tools (`ctx.tools` `pibrowse_*`).
@@ -347,33 +506,60 @@ export function createPibrowseDispatcher(deps) {
     return toLosslessJson({ ok: true, personas: redactAny(asArray(personas, 'personas')) })
   }
 
+  async function findLocalProfile(profileId) {
+    const res = await ipcClient.call('profiles.list', {})
+    return asArray(res, 'profiles').find((p) => p && p.id === profileId) || null
+  }
+
+  async function resolveFallbackPersonaId() {
+    const personas = await ipcClient.call('personas.list', {})
+    return pickDefaultPersonaId(personas, deps.platform)
+  }
+
   async function upsertProfile(body = {}) {
     await ensureSidecarRunning()
     if (!body || typeof body !== 'object') {
       throw new PibrowseError('invalid-input', 'Profile payload object is required')
     }
-    const created = await ipcClient.call('profiles.upsert', body)
-    return toLosslessJson({ ok: true, profile: redactProfile(created) })
+    const existing = typeof body.id === 'string' && body.id.trim()
+      ? await findLocalProfile(body.id.trim())
+      : null
+    const hasPersona = Boolean(cleanOptionalId(body.persona_id) ?? cleanOptionalId(body.persona) ?? cleanOptionalId(existing?.persona_id))
+    const fallbackPersonaId = hasPersona ? '' : await resolveFallbackPersonaId()
+    const payload = normalizeProfilePayload(body, existing, { fallbackPersonaId })
+    const created = await ipcClient.call('profiles.upsert', payload)
+    const id = created?.id || payload.id
+    return toLosslessJson({ ok: true, id, profile: redactProfile({ ...payload, ...created, id }) })
   }
 
   async function batchCreateProfiles(body = {}) {
     await ensureSidecarRunning()
     const count = Math.min(50, Math.max(1, Number(body.count) || 1))
-    const prefix = String(body.prefix || 'Profile').trim()
-    const results = []
-    for (let i = 1; i <= count; i += 1) {
-      const payload = {
-        ...body.template,
-        name: `${prefix}-${String(i).padStart(2, '0')}`,
-        ...(body.persona ? { persona: body.persona } : {}),
-        ...(body.groupId ? { group_id: body.groupId } : {}),
-        ...(body.proxyId ? { proxy_id: body.proxyId } : {}),
-        ...(body.startUrl ? { start_url: body.startUrl } : {}),
-      }
-      const created = await ipcClient.call('profiles.upsert', payload)
-      results.push(redactProfile(created))
+    const prefix = String(body.prefix || 'Profile').trim() || 'Profile'
+    const templateInput = {
+      ...(body.template && typeof body.template === 'object' ? body.template : {}),
+      name: prefix,
+      ...(body.persona_id || body.persona ? { persona_id: body.persona_id || body.persona } : {}),
+      ...(body.project_id || body.groupId ? { project_id: body.project_id || body.groupId } : {}),
+      ...(body.proxy_id || body.proxyId ? { proxy_id: body.proxy_id || body.proxyId } : {}),
+      ...(body.start_urls || body.startUrl ? { start_urls: body.start_urls || [body.startUrl] } : {}),
     }
-    return toLosslessJson({ ok: true, count: results.length, profiles: results })
+    const template = normalizeProfilePayload(templateInput, null, {
+      allowEmptyPersona: true,
+      allowEmptyName: true,
+    })
+    const res = await ipcClient.call('profiles.createMany', {
+      count,
+      name_pattern: `${prefix}-{n}`,
+      template,
+    })
+    const createdIds = Array.isArray(res?.created) ? res.created : []
+    return toLosslessJson({
+      ok: true,
+      count: createdIds.length,
+      created: createdIds,
+      failed: redactAny(Array.isArray(res?.failed) ? res.failed : []),
+    })
   }
 
   async function launchProfile({ id, url, cdp = false, background = false }) {
@@ -428,10 +614,20 @@ export function createPibrowseDispatcher(deps) {
       return toLosslessJson({ ok: true, profile: redactAny(res) })
     }
     if (action === 'rerandomize') {
-      const res = await ipcClient.call('profiles.randomize', {
-        id: args.profileId,
-      })
-      return toLosslessJson({ ok: true, profile: redactProfile(res) })
+      const requestedPersona = cleanOptionalId(args.personaId) ?? cleanOptionalId(args.persona)
+      if (requestedPersona) {
+        const existing = await findLocalProfile(args.profileId)
+        if (!existing) {
+          throw new PibrowseError('not-found', `Profile "${args.profileId}" not found`)
+        }
+        if (existing.running) {
+          throw new PibrowseError('conflict', 'Stop the running profile before changing its Persona or reseeding its fingerprint')
+        }
+        const updated = normalizeProfilePayload({ persona_id: requestedPersona }, existing)
+        await ipcClient.call('profiles.upsert', updated)
+      }
+      const res = await ipcClient.call('profiles.reseed', { id: args.profileId })
+      return toLosslessJson({ ok: true, profile: redactAny(res) })
     }
     if (action === 'reset_fingerprint') {
       const res = await ipcClient.call('profiles.reseed', { id: args.profileId })
@@ -446,13 +642,20 @@ export function createPibrowseDispatcher(deps) {
       return toLosslessJson({ ok: true, restored: args.profileId, profile: redactProfile(res) })
     }
     if (action === 'detect_suite') {
-      const detectUrl = args.detectUrl || 'https://browserleaks.com/'
       const res = await ipcClient.call('profile.launch', {
         id: args.profileId,
-        url: detectUrl,
-        detect_suite: true,
+        cdp: true,
+        background: false,
       })
-      return toLosslessJson({ ok: true, profileId: args.profileId, detectUrl, launch: redactAny(res) })
+      const targetUrl = args.detectUrl || res?.probe_url || 'https://browserleaks.com/'
+      if (targetUrl) {
+        await ipcClient.call('page.navigate', { id: args.profileId, url: targetUrl }).catch((err) => {
+          logger?.warn?.('omnimux-pibrowse: detect_suite page.navigate skipped or failed', {
+            error: err instanceof Error ? err.message : String(err),
+          })
+        })
+      }
+      return toLosslessJson({ ok: true, profileId: args.profileId, detectUrl: targetUrl, launch: redactAny(res) })
     }
 
     throw new PibrowseError('invalid-input', `Unknown profile management action "${action}"`)
@@ -475,8 +678,15 @@ export function createPibrowseDispatcher(deps) {
 
   async function upsertProxy(body = {}) {
     await ensureSidecarRunning()
-    const res = await ipcClient.call('proxies.upsert', body)
-    return toLosslessJson({ ok: true, proxy: redactProxy(res) })
+    let existing = null
+    if (typeof body.id === 'string' && body.id.trim()) {
+      const list = await ipcClient.call('proxies.list', {})
+      existing = asArray(list, 'proxies').find((p) => p && p.id === body.id.trim()) || null
+    }
+    const payload = normalizeProxyPayload(body, existing)
+    const res = await ipcClient.call('proxies.upsert', payload)
+    const id = res?.id || payload.id
+    return toLosslessJson({ ok: true, id, proxy: redactProxy({ ...payload, ...res, id }) })
   }
 
   async function importProxies(body = {}) {
@@ -515,10 +725,11 @@ export function createPibrowseDispatcher(deps) {
       if (!found) {
         throw new PibrowseError('not-found', `Proxy "${args.proxyId}" not found`)
       }
-      const proxyUrl = found.url || `${found.scheme || found.protocol || 'http'}://${found.username ? `${encodeURIComponent(found.username)}:${encodeURIComponent(found.password || '')}@` : ''}${found.host}:${found.port}`
+      const proxyUrl = found.url || `${found.kind || found.scheme || found.protocol || 'http'}://${found.username ? `${encodeURIComponent(found.username)}:${encodeURIComponent(found.password || '')}@` : ''}${found.host}:${found.port}`
+      const effectiveCheckerUrl = checkerUrl || found.checker_url || undefined
       const res = await ipcClient.call(
         'proxies.check',
-        { url: proxyUrl, ...(checkerUrl ? { checker_url: checkerUrl } : {}) },
+        { id: args.proxyId, url: proxyUrl, ...(effectiveCheckerUrl ? { checker_url: effectiveCheckerUrl } : {}) },
         { timeoutMs: 20_000 },
       )
       return toLosslessJson({ ok: true, action, proxyId: args.proxyId, result: redactAny(res) })
@@ -603,11 +814,13 @@ export function createPibrowseDispatcher(deps) {
       if (!args.profileId || !Array.isArray(args.blocklists)) {
         throw new PibrowseError('invalid-input', 'profileId and blocklists array are required')
       }
-      const res = await ipcClient.call('profiles.upsert', {
-        id: args.profileId,
-        blocklists: args.blocklists,
-      })
-      return toLosslessJson({ ok: true, profile: redactProfile(res) })
+      const existing = await findLocalProfile(args.profileId)
+      if (!existing) {
+        throw new PibrowseError('not-found', `Profile "${args.profileId}" not found`)
+      }
+      const payload = normalizeProfilePayload({ blocklists: args.blocklists }, existing)
+      const res = await ipcClient.call('profiles.upsert', payload)
+      return toLosslessJson({ ok: true, profile: redactProfile({ ...payload, ...res }) })
     }
     if (action === 'delete') {
       const blocked = requireConfirm(args.confirm, 'delete_blocklist')
@@ -644,30 +857,44 @@ export function createPibrowseDispatcher(deps) {
     }
     if (action === 'install_extension') {
       if (!args.source) {
-        throw new PibrowseError('invalid-input', 'Extension source (local path or CWS ID/URL) is required')
+        throw new PibrowseError('invalid-input', 'Extension source (local .crx path or 32-char Chrome Web Store ID) is required')
       }
-      const profileIds = Array.isArray(args.profileIds) && args.profileIds.length > 0
-        ? args.profileIds
+      let profileIds = Array.isArray(args.profileIds) && args.profileIds.length > 0
+        ? args.profileIds.map(String)
         : args.profileId
-          ? [args.profileId]
+          ? [String(args.profileId)]
           : []
-      const kind = args.kind || (/^[a-p]{32}$/.test(String(args.source).trim()) ? 'store' : String(args.source).endsWith('.crx') ? 'crx' : 'unpacked')
+      if (profileIds.length === 0) {
+        const list = await ipcClient.call('profiles.list', {})
+        profileIds = asArray(list, 'profiles').map((p) => p?.id).filter(Boolean)
+      }
+      if (profileIds.length === 0) {
+        throw new PibrowseError('invalid-input', 'Create at least one browser profile before installing an extension')
+      }
+      const trimmedSource = String(args.source).trim()
+      const kind = args.kind || (/^[a-p]{32}$/.test(trimmedSource) ? 'store' : trimmedSource.toLowerCase().endsWith('.crx') ? 'crx' : 'unsupported')
       let res
       if (kind === 'store') {
         res = await ipcClient.call('extensions.install_from_store', {
-          ext_id: String(args.source).trim(),
+          ext_id: trimmedSource,
           profile_ids: profileIds,
         })
       } else if (kind === 'crx') {
-        res = await ipcClient.call('extensions.install', {
-          profile_id: profileIds[0] || '',
-          path: validateUserPath(args.source, { label: 'extensionPath' }),
-        })
+        const crxPath = validateUserPath(trimmedSource, { label: 'extensionPath' })
+        const installed = []
+        for (const pid of profileIds) {
+          const single = await ipcClient.call('extensions.install', {
+            profile_id: pid,
+            path: crxPath,
+          })
+          installed.push({ profileId: pid, extension: single })
+        }
+        res = installed.length === 1 ? installed[0].extension : { installed }
       } else {
-        res = await ipcClient.call('extensions.install_folder', {
-          profile_ids: profileIds,
-          path: validateUserPath(args.source, { label: 'extensionFolder' }),
-        })
+        throw new PibrowseError(
+          'invalid-input',
+          'Upstream fury-agent v0.5.5 only accepts .crx extension packages or 32-character Chrome Web Store IDs',
+        )
       }
       return toLosslessJson({ ok: true, extension: redactAny(res) })
     }
@@ -677,11 +904,30 @@ export function createPibrowseDispatcher(deps) {
       if (!args.extensionId) {
         throw new PibrowseError('invalid-input', 'extensionId is required')
       }
-      const res = await ipcClient.call('extensions.remove', {
-        id: args.extensionId,
-        ...(args.profileId ? { profile_id: args.profileId } : {}),
+      let targetProfileIds = args.profileId ? [String(args.profileId)] : []
+      if (targetProfileIds.length === 0) {
+        const allExts = await ipcClient.call('extensions.list_all', {})
+        const found = asArray(allExts, 'extensions').find((e) => e && e.id === args.extensionId)
+        if (Array.isArray(found?.profiles)) {
+          targetProfileIds = found.profiles.map((p) => (typeof p === 'string' ? p : p?.id)).filter(Boolean)
+        }
+      }
+      if (targetProfileIds.length === 0) {
+        throw new PibrowseError('invalid-input', 'profileId is required to remove an extension (no profile owns this extension)')
+      }
+      const results = []
+      for (const pid of targetProfileIds) {
+        const r = await ipcClient.call('extensions.remove', {
+          id: args.extensionId,
+          profile_id: pid,
+        })
+        results.push({ profileId: pid, result: r })
+      }
+      return toLosslessJson({
+        ok: true,
+        removed: args.extensionId,
+        result: redactAny(results.length === 1 ? results[0].result : { removedFrom: results }),
       })
-      return toLosslessJson({ ok: true, removed: args.extensionId, result: redactAny(res) })
     }
     if (action === 'mirror_status') {
       const res = await ipcClient.call('mirror.status', {})

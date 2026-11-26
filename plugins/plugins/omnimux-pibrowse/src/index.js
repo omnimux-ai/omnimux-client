@@ -339,7 +339,7 @@ export function apply(ctx, config = {}) {
   ctx.tools.register({
     name: 'pibrowse_manage_extensions_and_mirror',
     description:
-      'List, install (.crx, unpacked directory, or store ID), or remove browser extensions (remove_extension requires confirm: true), and start or stop multi-window mirror input broadcasting.',
+      'List, install (.crx package or 32-char Chrome Web Store ID), or remove browser extensions (remove_extension requires confirm: true), and start or stop multi-window mirror input broadcasting.',
     parameters: objectParams({
       action: {
         type: 'string',
@@ -347,8 +347,8 @@ export function apply(ctx, config = {}) {
         enum: ['list_extensions', 'install_extension', 'remove_extension', 'mirror_status', 'mirror_start', 'mirror_stop'],
         description: 'Extension or multi-window mirror operation',
       },
-      source: { type: 'string', description: 'Local .crx/directory path or Chrome Web Store ID for install_extension' },
-      kind: { type: 'string', enum: ['crx', 'unpacked', 'store'], description: 'Optional extension source kind' },
+      source: { type: 'string', description: 'Local .crx package path or 32-char Chrome Web Store ID for install_extension' },
+      kind: { type: 'string', enum: ['crx', 'store'], description: 'Optional extension source kind' },
       extensionId: { type: 'string', description: 'Extension ID for remove_extension' },
       profileId: { type: 'string', description: 'Optional target profile ID for list_extensions, install_extension, or remove_extension' },
       profileIds: { type: 'array', items: { type: 'string' }, description: 'Target profile IDs for install_extension or mirror_start' },

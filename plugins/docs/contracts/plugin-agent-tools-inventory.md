@@ -381,7 +381,7 @@ superseded_by: null
 | 经代理检测出口 IP/国家/时区、执行分段连通性诊断或触发移动代理轮换 | 代理池检测/诊断/换 IP / `POST /omnimux/pibrowse/proxies/check` | `pibrowse_check_proxy` | L2 | `Implemented` | 否 |
 | 校验活跃配置引用后删除指定代理条目 | 代理池删除确认框 / `POST /omnimux/pibrowse/proxies/delete` | `pibrowse_delete_proxy` | L1 | `Implemented` | 是 (`confirm: true`) |
 | 列出、读取、保存域名黑白名单（含 `@allow-only`）、绑定配置或删除规则集 | 域名黑白名单编辑器 / `POST /omnimux/pibrowse/blocklists` | `pibrowse_manage_blocklists` | L1 | `Implemented` | 条件 (`action=delete` 需 `confirm: true`) |
-| 列出、安装（`.crx`/目录/商店 ID）或移除扩展，以及启停多窗口镜像同步 | 扩展管理与多窗同步 / `POST /omnimux/pibrowse/extensions` | `pibrowse_manage_extensions_and_mirror` | L1 | `Implemented` | 条件 (`action=remove_extension` 需 `confirm: true`) |
+| 列出、安装（`.crx`/商店 ID）或移除扩展，以及启停多窗口镜像同步 | 扩展管理与多窗同步 / `POST /omnimux/pibrowse/extensions` | `pibrowse_manage_extensions_and_mirror` | L1 | `Implemented` | 条件 (`action=remove_extension` 需 `confirm: true`) |
 | 查询 Team 状态/项目/配置/成员/审计日志、加锁启停同步配置、上传本地配置或断开 | 扩展与团队面板 / `POST /omnimux/pibrowse/team/sync` | `pibrowse_team_sync` | L1 | `Implemented` | 条件 (`action=disconnect` 需 `confirm: true`) |
 | 四视图 Tab 切换、筛选下拉与弹窗展开状态 | 顶部 Tab 与筛选栏 | — | UI-Only | `UI-Only` | 豁免 (前端局部交互状态) |
 

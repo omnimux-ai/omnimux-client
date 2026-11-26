@@ -71,5 +71,26 @@ test('built lib/client.js wraps omnimux-pibrowse module factory and registers si
   assert.equal(loadedModule.name, 'omnimux-pibrowse')
   assert.deepEqual(loadedModule.inject, ['slots', 'locale'])
   assert.equal(loadedModule.PIBROWSE_TAB_ID, 'omnimux-pibrowse:workbench')
+  assert.equal(loadedModule.EXPLORE_ITEM_ID, 'pibrowse')
   assert.equal(typeof loadedModule.apply, 'function')
+  assert.equal(typeof loadedModule.registerMoreMenuEntry, 'function')
+
+  const registered = []
+  let unregisteredCount = 0
+  mockWindow.__omnimuxSidebar = {
+    registerExploreItem(item) {
+      registered.push(item)
+      return () => {
+        unregisteredCount += 1
+      }
+    },
+  }
+  const dispose = loadedModule.registerMoreMenuEntry((k) => (k === 'nav' ? '指纹浏览器' : k))
+  assert.equal(registered.length, 1)
+  assert.equal(registered[0].id, 'pibrowse')
+  assert.equal(registered[0].label, '指纹浏览器')
+  assert.equal(registered[0].tabId, 'omnimux-pibrowse:workbench')
+  assert.match(registered[0].iconSvg, /^<svg\b/)
+  dispose()
+  assert.equal(unregisteredCount, 1)
 })
