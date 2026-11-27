@@ -31,6 +31,12 @@ function destinationPath(root: string, platform: DesktopDownloadPlatform, versio
   return join(root, desktopUpdateFilename(platform, version))
 }
 
+function sha256(bytes: Uint8Array): string {
+  return createHash('sha256').update(bytes).digest('hex')
+}
+
+const VALID_TEST_DIGEST = 'f'.repeat(64)
+
 function dmgArtifact(): Uint8Array {
   const artifact = Buffer.alloc(1024, 0x5a)
   artifact.write('koly', artifact.byteLength - 512, 'ascii')
@@ -96,6 +102,7 @@ describe('desktop update installer download', () => {
     const request = vi.fn<UpdateArtifactRequest>(async () => chunkedResponse([dmgArtifact()]))
     await expect(downloadDesktopUpdate({ platform, version, channel: 'stable',
       destinationPath: join(directory, `DSH-NEXT-${version}-${platform === 'darwin' ? 'mac.dmg' : 'windows.exe'}`),
+      expectedSha256: VALID_TEST_DIGEST,
       request,
     })).rejects.toThrow()
     expect(request).not.toHaveBeenCalled()
@@ -117,6 +124,7 @@ describe('desktop update installer download', () => {
       version: '2.1.0',
       destinationPath: destinationPath(directory, 'darwin', '2.1.0'),
       request,
+      expectedSha256: sha256(artifact),
     })
 
     expect(result).toBe(join(directory, 'OmniMux-2.1.0-mac.dmg'))
@@ -134,6 +142,7 @@ describe('desktop update installer download', () => {
       platform: 'win32',
       version: '2.2.0',
       destinationPath: destinationPath(directory, 'win32', '2.2.0'),
+      expectedSha256: sha256(artifact),
       request: async (url) => {
         expect(url).toBe(DESKTOP_DOWNLOAD_URLS.win32)
         return chunkedResponse([artifact], {}, 'https://www.dshdesktop.cn/api/downloads/windows')
@@ -157,6 +166,7 @@ describe('desktop update installer download', () => {
       platform: 'darwin',
       version: '2.2.1',
       destinationPath: destinationPath(directory, 'darwin', '2.2.1'),
+      expectedSha256: sha256(artifact),
       request: async () => chunkedResponse(
         [artifact],
         {},
@@ -177,6 +187,7 @@ describe('desktop update installer download', () => {
       platform: 'darwin',
       version: '2.3.0',
       destinationPath: destinationPath(directory, 'darwin', '2.3.0'),
+      expectedSha256: VALID_TEST_DIGEST,
       request: async () => chunkedResponse([dmgArtifact()], {}, finalUrl),
     }), 'redirect-origin')
     await expectNoPartialFiles(directory)
@@ -193,6 +204,7 @@ describe('desktop update installer download', () => {
       platform: 'darwin',
       version: '2.3.0',
       destinationPath: destinationPath(directory, 'darwin', '2.3.0'),
+      expectedSha256: VALID_TEST_DIGEST,
       request: async () => ({
         response: new Response(body, { status: 200 }),
         finalUrl: 'http://cdn.example/installer.dmg',
@@ -213,6 +225,7 @@ describe('desktop update installer download', () => {
       platform: 'darwin',
       version: '2.4.1',
       destinationPath: destinationPath(directory, 'darwin', '2.4.1'),
+      expectedSha256: VALID_TEST_DIGEST,
       request: async () => ({
         response: new Response(body, { status: 503 }),
         finalUrl: 'https://www.dshdesktop.cn/api/downloads/mac',
@@ -272,11 +285,13 @@ describe('desktop update installer download', () => {
 
   it('accepts canonical stable SemVer build metadata in the private artifact path', async () => {
     const directory = await temporaryDirectory()
+    const artifact = dmgArtifact()
     const result = await downloadDesktopUpdate({
       platform: 'darwin',
       version: '2.8.0+build',
       destinationPath: destinationPath(directory, 'darwin', '2.8.0+build'),
-      request: async () => chunkedResponse([dmgArtifact()]),
+      expectedSha256: sha256(artifact),
+      request: async () => chunkedResponse([artifact]),
     })
 
     expect(result).toBe(join(
@@ -295,6 +310,7 @@ describe('desktop update installer download', () => {
       platform,
       version: '2.3.0',
       destinationPath: destinationPath(directory, platform, '2.3.0'),
+      expectedSha256: sha256(artifact),
       request: async () => chunkedResponse([artifact]),
     }), 'invalid-artifact')
     await expectNoPartialFiles(directory)
@@ -311,6 +327,7 @@ describe('desktop update installer download', () => {
       platform: 'win32',
       version: '2.3.1',
       destinationPath: path,
+      expectedSha256: VALID_TEST_DIGEST,
       request: async () => chunkedResponse([Buffer.alloc(128)]),
     }), 'invalid-artifact')
     expect(await readFile(path)).toEqual(existing)
@@ -320,6 +337,7 @@ describe('desktop update installer download', () => {
       platform: 'win32',
       version: '2.3.1',
       destinationPath: path,
+      expectedSha256: sha256(replacement),
       request: async () => chunkedResponse([replacement]),
     })
     expect(await readFile(path)).toEqual(Buffer.from(replacement))
@@ -342,6 +360,7 @@ describe('desktop update installer download', () => {
       platform: 'darwin',
       version: '2.4.0',
       destinationPath: destinationPath(directory, 'darwin', '2.4.0'),
+      expectedSha256: VALID_TEST_DIGEST,
       request,
     }), code)
     await expectNoPartialFiles(directory)
@@ -353,6 +372,7 @@ describe('desktop update installer download', () => {
       platform: 'darwin',
       version: '2.5.0',
       destinationPath: destinationPath(directory, 'darwin', '2.5.0'),
+      expectedSha256: VALID_TEST_DIGEST,
       request: async () => chunkedResponse(
         [dmgArtifact()],
         { 'content-length': String(MAX_UPDATE_DOWNLOAD_BYTES + 1) },
@@ -380,6 +400,7 @@ describe('desktop update installer download', () => {
       platform: 'darwin',
       version: '2.6.0',
       destinationPath: destinationPath(directory, 'darwin', '2.6.0'),
+      expectedSha256: VALID_TEST_DIGEST,
       request,
       signal: controller.signal,
     }), 'aborted')
@@ -393,12 +414,14 @@ describe('desktop update installer download', () => {
       platform: 'darwin',
       version: '2.7.0',
       destinationPath: destinationPath(directory, 'darwin', '2.7.0'),
+      expectedSha256: VALID_TEST_DIGEST,
       request: async () => { throw new DOMException('cancelled', 'AbortError') },
     }), 'aborted')
     await expectFailure(downloadDesktopUpdate({
       platform: 'darwin',
       version: '2.7.1',
       destinationPath: destinationPath(directory, 'darwin', '2.7.1'),
+      expectedSha256: VALID_TEST_DIGEST,
       request: async () => { throw new Error('offline') },
     }), 'network')
     await expectNoPartialFiles(directory)
@@ -416,6 +439,7 @@ describe('desktop update installer download', () => {
       platform: platform as DesktopDownloadPlatform,
       version,
       destinationPath: join(directory, 'installer.dmg'),
+      expectedSha256: VALID_TEST_DIGEST,
       request: async () => {
         requested = true
         return chunkedResponse([dmgArtifact()])
@@ -435,6 +459,7 @@ describe('desktop update installer download', () => {
       platform: 'darwin',
       version: '2.9.0',
       destinationPath: 'relative.dmg',
+      expectedSha256: VALID_TEST_DIGEST,
       request,
     }), 'invalid-options')
     expect(requested).toBe(false)
@@ -455,6 +480,7 @@ describe('desktop update installer download', () => {
       platform: 'darwin',
       version: '2.9.0',
       destinationPath: join(linked, 'installer.dmg'),
+      expectedSha256: VALID_TEST_DIGEST,
       request,
     }), 'invalid-options')
     expect(requested).toBe(false)
@@ -516,11 +542,12 @@ describe('desktop update artifact cleanup', () => {
 
 it('downloads Next with a pinned release, a distinct filename and byte progress', async () => {
   const root = await temporaryDirectory();
+  const artifact = dmgArtifact();
   const progress = vi.fn();
-  const request = vi.fn<UpdateArtifactRequest>(async () => chunkedResponse([dmgArtifact()], {'content-length':'1024'}));
+  const request = vi.fn<UpdateArtifactRequest>(async () => chunkedResponse([artifact], {'content-length':'1024'}));
   const filename = desktopUpdateFilename('darwin', '2.0.14-next', 'next');
   expect(filename).toContain('DSH-NEXT-2.0.14-next');
-  const path = await downloadDesktopUpdate({platform:'darwin',version:'2.0.14-next',channel:'next',destinationPath:join(root,filename),request,onProgress:progress});
+  const path = await downloadDesktopUpdate({platform:'darwin',version:'2.0.14-next',channel:'next',destinationPath:join(root,filename),expectedSha256:sha256(artifact),request,onProgress:progress});
   expect((await readFile(path)).byteLength).toBe(1024);
   expect(progress).toHaveBeenLastCalledWith(1024,1024);
   const headers = new Headers(request.mock.calls[0]?.[1]?.headers);
@@ -598,6 +625,7 @@ describe('parallel range update download', () => {
       platform: 'darwin',
       version: '2.1.0',
       destinationPath: destinationPath(root, 'darwin', '2.1.0'),
+      expectedSha256: sha256(artifact),
       parallel: { minBytes: 2048, chunkBytes: 2048, concurrency: 4 },
       request: async (_url, init) => {
         const range = new Headers(init.headers).get('range')

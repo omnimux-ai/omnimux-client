@@ -1,4 +1,5 @@
 import { VideoError } from '../../errors.js'
+import { resolveInputPath } from '../remote-media.js'
 
 export const slug = 'video_thumbnail_extract'
 export const timeoutMs = 180_000
@@ -57,12 +58,14 @@ export const RETRY_TIMES = [1, 0.5, 0.1, 2, 3, 5]
  */
 export async function execute(input, ctx) {
   validate(input)
+  const videoUrl = await resolveInputPath(input.videoUrl, 'thumb-input', ctx)
+  const resolved = { ...input, videoUrl }
   const requested = Number(input?.timeSeconds ?? 1) || 0
   const candidates = [requested, ...RETRY_TIMES.filter((t) => t !== requested)]
   const errors = []
   for (const t of candidates) {
     try {
-      const candidate = { ...input, timeSeconds: t }
+      const candidate = { ...resolved, timeSeconds: t }
       ctx.addFile(ctx.dest)
       await ctx.runFfmpeg(buildThumbArgs(candidate, ctx.dest))
       return { files: [{ path: ctx.dest, kind: 'image', meta: { timeSeconds: t } }] }

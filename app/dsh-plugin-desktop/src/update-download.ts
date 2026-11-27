@@ -1,8 +1,11 @@
 /** Headless, confirmation-gated downloads for DSH Desktop installers. */
 
+import { execFile } from 'node:child_process'
 import { createHash, randomUUID, timingSafeEqual } from 'node:crypto'
-import { chmod, lstat, mkdir, open, readFile, rename, unlink } from 'node:fs/promises'
+import { chmod, lstat, mkdir, mkdtemp, open, readdir, readFile, rename, rm, unlink } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { basename, dirname, extname, isAbsolute, join, resolve } from 'node:path'
+import { promisify } from 'node:util'
 import { writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 import {
   compareSemVerVersions,
@@ -86,11 +89,18 @@ export interface DownloadDesktopUpdateOptions {
   /** Optional cancellation signal owned by the update coordinator. */
   readonly signal?: AbortSignal
   /**
-   * Hex SHA-256 the downloaded installer must match. Passing this turns the
-   * digest check into a hard gate in front of execution; it is optional only
-   * because the version endpoint does not publish digests yet.
+   * Required hex SHA-256 digest the downloaded installer must match. Downloads
+   * fail closed when this digest is missing or malformed so unverified
+   * binaries are never accepted or launched.
    */
-  readonly expectedSha256?: string
+  readonly expectedSha256: string
+  /**
+   * Optional artifact verifier (such as native code-signature verification) run
+   * against the temporary file after digest verification and BEFORE atomic
+   * rename into `destinationPath`, ensuring rejected installers never land in
+   * the user's download folder.
+   */
+  readonly verifyArtifact?: (temporaryPath: string) => Promise<void>
   /** Progress after each bounded chunk; omitted by existing Desktop callers. */
   readonly onProgress?: (received: number, total: number | undefined) => void
   /**
@@ -240,8 +250,9 @@ export async function downloadDesktopUpdate(options: DownloadDesktopUpdateOption
     }
     throwIfAborted(options.signal)
     await validateArtifact(paths.temporary, platform)
-    if (expectedSha256 !== undefined) {
-      await assertInstallerDigest(paths.temporary, expectedSha256)
+    await assertInstallerDigest(paths.temporary, expectedSha256)
+    if (options.verifyArtifact !== undefined) {
+      await options.verifyArtifact(paths.temporary)
     }
     throwIfAborted(options.signal)
     await unlinkIfPresent(paths.completed)
@@ -511,9 +522,11 @@ export function assertSecureDownloadUrl(finalUrl: string): URL {
   return parsed
 }
 
-/** Normalize the optional expected digest at option validation time, before any network work. */
-function normalizedExpectedDigest(expected: string | undefined): string | undefined {
-  if (expected === undefined) return undefined
+/** Require and normalize the expected SHA-256 digest before any network work. */
+export function normalizedExpectedDigest(expected: string | undefined): string {
+  if (typeof expected !== 'string') {
+    throw new UpdateDownloadError('invalid-options', 'The expected installer SHA-256 digest is required.')
+  }
   const normalized = expected.trim().toLowerCase()
   if (!/^[0-9a-f]{64}$/u.test(normalized)) {
     throw new UpdateDownloadError('invalid-options', 'The expected installer digest is not a hex SHA-256.')
@@ -527,8 +540,13 @@ function normalizedExpectedDigest(expected: string | undefined): string | undefi
  * single whole-file buffer would spike main-process memory — and compared in
  * constant time over the decoded bytes.
  */
-async function assertInstallerDigest(filename: string, expected: string): Promise<void> {
-  const expectedBytes = Buffer.from(expected, 'hex')
+export async function assertInstallerDigest(filename: string, expected: string): Promise<void> {
+  const normalized = normalizedExpectedDigest(expected)
+  const expectedBytes = Buffer.from(normalized, 'hex')
+  const stat = await lstat(filename)
+  if (!stat.isFile() || stat.isSymbolicLink()) {
+    throw new UpdateDownloadError('invalid-artifact', 'The update installer must be a regular file.')
+  }
   const hash = createHash('sha256')
   const handle = await open(filename, 'r')
   try {
@@ -548,6 +566,181 @@ async function assertInstallerDigest(filename: string, expected: string): Promis
       'invalid-artifact',
       'The update installer does not match the published digest.',
     )
+  }
+}
+
+const execFileAsync = promisify(execFile)
+
+export type SignatureCommandRunner = (
+  file: string,
+  args: readonly string[],
+  options?: {
+    readonly signal?: AbortSignal
+    readonly timeout?: number
+    readonly maxBuffer?: number
+    readonly windowsHide?: boolean
+    readonly env?: NodeJS.ProcessEnv
+  },
+) => Promise<{ readonly stdout: string; readonly stderr: string }>
+
+export interface VerifyInstallerSignatureOptions {
+  readonly signal?: AbortSignal
+  readonly installedExecutablePath?: string
+  readonly expectedSignerThumbprint?: string
+  readonly runCommand?: SignatureCommandRunner
+  readonly readMountEntries?: (mountDir: string) => Promise<ReadonlyArray<{ readonly name: string; readonly isDirectory: () => boolean }>>
+}
+
+/**
+ * Verify native platform code signatures on a downloaded installer before
+ * handing it off for execution or mounting.
+ *
+ * - macOS (`darwin`): mounts the DMG read-only (`-nobrowse -noautoopen`),
+ *   verifies the single `.app` bundle via `codesign --verify --deep --strict`,
+ *   and enforces that its `TeamIdentifier` matches the currently installed app.
+ * - Windows (`win32`): inspects the PE Authenticode signature via PowerShell
+ *   `Get-AuthenticodeSignature` and requires `Status === Valid` with a
+ *   non-empty signer certificate thumbprint.
+ */
+export async function verifyInstallerSignature(
+  artifactPath: string,
+  platform: DesktopDownloadPlatform,
+  options: VerifyInstallerSignatureOptions = {},
+): Promise<void> {
+  validatedPlatform(platform)
+  const stat = await lstat(artifactPath)
+  if (!stat.isFile() || stat.isSymbolicLink()) {
+    throw new UpdateDownloadError('invalid-artifact', 'The update installer must be a regular file.')
+  }
+  const run: SignatureCommandRunner = options.runCommand
+    ?? ((file, args, cmdOptions) => execFileAsync(file, [...args], { ...cmdOptions, encoding: 'utf8' }))
+
+  if (platform === 'win32') {
+    const queryAuthenticode = async (targetPath: string, errorLabel: string): Promise<string> => {
+      const script = [
+        '$ErrorActionPreference="Stop"',
+        '$sig = Get-AuthenticodeSignature -LiteralPath $env:OMNIMUX_UPDATE_INSTALLER',
+        '[PSCustomObject]@{ Status = [string]$sig.Status; Thumbprint = if ($sig.SignerCertificate) { [string]$sig.SignerCertificate.Thumbprint } else { "" } } | ConvertTo-Json -Compress',
+      ].join('; ')
+      const powershell = join(process.env.SystemRoot || 'C:\\Windows', 'System32/WindowsPowerShell/v1.0/powershell.exe')
+      let stdout: string
+      try {
+        const result = await run(
+          powershell,
+          ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')],
+          {
+            ...(options.signal === undefined ? {} : { signal: options.signal }),
+            timeout: 30_000,
+            windowsHide: true,
+            maxBuffer: 16_384,
+            env: { ...process.env, OMNIMUX_UPDATE_INSTALLER: targetPath },
+          },
+        )
+        stdout = result.stdout
+      } catch (cause) {
+        if (options.signal?.aborted === true || isAbortFailure(cause)) throw aborted(cause)
+        throw new UpdateDownloadError('invalid-artifact', `Failed to verify ${errorLabel} Authenticode signature.`, { cause })
+      }
+      let parsed: { Status?: unknown; Thumbprint?: unknown }
+      try {
+        parsed = JSON.parse(stdout.replace(/^\uFEFF/u, '')) as { Status?: unknown; Thumbprint?: unknown }
+      } catch (cause) {
+        throw new UpdateDownloadError('invalid-artifact', `The ${errorLabel} Authenticode output could not be parsed.`, { cause })
+      }
+      const status = typeof parsed.Status === 'string' ? parsed.Status.trim() : String(parsed.Status ?? '')
+      const thumbprint = typeof parsed.Thumbprint === 'string' ? parsed.Thumbprint.trim().toLowerCase() : ''
+      if ((status !== 'Valid' && status !== '0') || !/^[0-9a-f]{40,}$/u.test(thumbprint)) {
+        throw new UpdateDownloadError('invalid-artifact', `The ${errorLabel} does not have a valid Authenticode signature.`)
+      }
+      return thumbprint
+    }
+
+    const expectedThumbprint = options.expectedSignerThumbprint !== undefined
+      ? options.expectedSignerThumbprint.trim().toLowerCase()
+      : await queryAuthenticode(options.installedExecutablePath ?? process.execPath, 'installed Windows executable')
+    if (!/^[0-9a-f]{40,}$/u.test(expectedThumbprint)) {
+      throw new UpdateDownloadError('invalid-artifact', 'Invalid expected Windows signer thumbprint.')
+    }
+    const actualThumbprint = await queryAuthenticode(artifactPath, 'Windows update installer')
+    const actualBuf = Buffer.from(actualThumbprint, 'utf8')
+    const expectedBuf = Buffer.from(expectedThumbprint, 'utf8')
+    if (actualBuf.byteLength !== expectedBuf.byteLength || !timingSafeEqual(actualBuf, expectedBuf)) {
+      throw new UpdateDownloadError('invalid-artifact', 'The Windows update installer signer thumbprint does not match.')
+    }
+    return
+  }
+
+  const installedExe = options.installedExecutablePath ?? process.execPath
+  const installedBundle = dirname(dirname(dirname(installedExe)))
+  if (!installedBundle.endsWith('.app') || /[\r\n\0]/u.test(installedBundle)) {
+    throw new UpdateDownloadError('invalid-artifact', 'Cannot verify macOS update signature without a signed installed .app bundle.')
+  }
+  const cmdOpts = {
+    ...(options.signal === undefined ? {} : { signal: options.signal }),
+    timeout: 60_000,
+    maxBuffer: 1024 * 1024,
+  }
+  const extractSingleTeamId = (stderr: string): string | undefined => {
+    const matches = [...stderr.matchAll(/^TeamIdentifier=([A-Z0-9]+)$/gmu)]
+    if (matches.length !== 1) return undefined
+    return matches[0]![1]
+  }
+  let installedTeam: string | undefined
+  try {
+    await run('/usr/bin/codesign', ['--verify', '--deep', '--strict', '--', installedBundle], cmdOpts)
+    const installedSig = await run('/usr/bin/codesign', ['-dv', '--verbose=4', '--', installedBundle], cmdOpts)
+    installedTeam = extractSingleTeamId(installedSig.stderr)
+  } catch (cause) {
+    if (options.signal?.aborted === true || isAbortFailure(cause)) throw aborted(cause)
+    throw new UpdateDownloadError('invalid-artifact', 'Failed to verify the installed macOS application signature.', { cause })
+  }
+  if (!installedTeam) {
+    throw new UpdateDownloadError('invalid-artifact', 'The installed macOS application has no TeamIdentifier for update signature pinning.')
+  }
+
+  const tempRoot = await mkdtemp(join(tmpdir(), 'dsh-update-verify-'))
+  const mountDir = join(tempRoot, 'volume')
+  let attached = false
+  try {
+    await mkdir(mountDir, { mode: PRIVATE_DIRECTORY_MODE })
+    await run('/usr/bin/hdiutil', ['attach', '-readonly', '-nobrowse', '-noautoopen', '-mountpoint', mountDir, artifactPath], {
+      ...cmdOpts,
+      timeout: 5 * 60_000,
+    })
+    attached = true
+    const entries = options.readMountEntries
+      ? await options.readMountEntries(mountDir)
+      : await readdir(mountDir, { withFileTypes: true })
+    const apps = entries.filter(entry => entry.isDirectory() && entry.name.endsWith('.app'))
+    if (apps.length !== 1) {
+      throw new UpdateDownloadError('invalid-artifact', 'Expected exactly one application bundle in the update disk image.')
+    }
+    const appName = apps[0]!.name
+    if (/[\r\n\0/\\]/u.test(appName)) {
+      throw new UpdateDownloadError('invalid-artifact', 'The update disk image application bundle name is invalid.')
+    }
+    const candidateBundle = join(mountDir, appName)
+    // Cryptographically enforce an Apple-anchored certificate chain pinned to the
+    // installed TeamIdentifier so ad-hoc signed bundles and stderr newline
+    // spoofing cannot pass verification.
+    const designatedRequirement = `=anchor apple generic and certificate leaf[subject.OU] = "${installedTeam}"`
+    await run('/usr/bin/codesign', ['--verify', '--deep', '--strict', '-R', designatedRequirement, '--', candidateBundle], cmdOpts)
+    const candidateSig = await run('/usr/bin/codesign', ['-dv', '--verbose=4', '--', candidateBundle], cmdOpts)
+    const candidateTeam = extractSingleTeamId(candidateSig.stderr)
+    if (candidateTeam !== installedTeam) {
+      throw new UpdateDownloadError('invalid-artifact', 'The update disk image signing team does not match the installed application.')
+    }
+  } catch (cause) {
+    if (cause instanceof UpdateDownloadError) throw cause
+    if (options.signal?.aborted === true || isAbortFailure(cause)) throw aborted(cause)
+    throw new UpdateDownloadError('invalid-artifact', 'Failed to verify the macOS update disk image signature.', { cause })
+  } finally {
+    if (attached) {
+      await run('/usr/bin/hdiutil', ['detach', mountDir], { timeout: 30_000 }).catch(async () => {
+        await run('/usr/bin/hdiutil', ['detach', '-force', mountDir], { timeout: 30_000 }).catch(() => undefined)
+      })
+    }
+    await rm(tempRoot, { recursive: true, force: true }).catch(() => undefined)
   }
 }
 
