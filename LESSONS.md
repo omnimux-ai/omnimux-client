@@ -1,4 +1,4 @@
-<!-- reviewed-through: d471e48ba7ac4d135b42f1010a1b4935ab06211b (2026-11-26) -->
+<!-- reviewed-through: 96d244f7d0042c4913bcb0fd32d2113a6529c120 (2026-11-27) -->
 # Lessons from merged work
 
 改动源码或评审 PR 前先读本页活跃条目。本页只留可公开的工程反模式与正反例，**严禁写入密钥、内部地址、本机绝对路径或未公开信息**。
@@ -46,22 +46,15 @@
   - 反例：#269 `121cb7bc` 合入 #268 后触发 `materialize=failed`；#272 `22bc22e1` 在 0.4h 内修 B1 混合改动漏装、B2 macOS bash 3.2 空数组、B3 `plugins/.agents` 等目录误判，旧 worktree.sh 在新增 3 条用例上 8 pass / 3 fail。
   - 正例：#272 使用真实 `plugins/plugins/<name>` 路径、`/bin/bash` 3.2 与混合改动用例，`worktree-primary-cleanliness 12/12`、`worktree-delivery + cleanup 62/62`。
 
-- **PR 入队前须留下绑定最终 head 的独立评审通过记录**（`seen 2` · 最近 `2026-11-26`）
-  - 为什么：合后评审只能靠追加 PR 修复，且会把问题与正常演进混在同一提交窗口，增加回归和审计成本。
-  - 反例：#271 `6ef9fd6e`（04:25 合入）后独立评审提出 13 项缺陷，#274 `928f9785`（04:51，0.4h）修复其中影响正确性、契约一致性与门禁覆盖面的部分；两 PR 改同一 `omnimux-analytics` / `omnimux/src/text` / `verify-plugin-boundaries` 面。
-  - #317 的可查 head PASS 晚于入队，#319 的可查 head PASS 晚于合入。同日计一次。 [#317 评审](https://github.com/omnimux-ai/omnimux-client/pull/317#pullrequestreview-6068448954) [#319 评审](https://github.com/omnimux-ai/omnimux-client/pull/319#pullrequestreview-6068426036)
-  - #298 的最终 head `3265044d` 在首次入队前已有 PASS。 [#298 评审](https://github.com/omnimux-ai/omnimux-client/pull/298#pullrequestreview-6067904102)
-
 - **公开仓每个合并 PR 必须绑定可追踪 Issue（`Closes/Fixes #...`）或在正文记录明确豁免；完整新插件、发布链与大范围改动不得以无 Issue 状态进入合并队列**（`seen 2` · 最近 `2026-11-26`）
   - 为什么：无 Issue 时无法回溯需求、验收边界、责任与回滚决定。
   - #299 `a6482ddb` 交付完整 PiBrowse 插件，仅引用 spec。#316 `a9ec0206` 修订同插件的 IPC 契约和用户入口，正文仍无工单关联或豁免。 [#299](https://github.com/omnimux-ai/omnimux-client/pull/299) [#316](https://github.com/omnimux-ai/omnimux-client/pull/316)
   - #312 关联 #310 并随合入闭环，#308 为纯文档复盘记录了明确豁免。
 
-- **主干动过锁文件或插件包后，合并/变基禁止沿用自动合并的 `bundle.lock.json`，须取主干版本并在构建后重算**（`seen 2` · 最近 `2026-11-25`）
-  - 为什么：`bundle.lock.json` 按包记录 `contentHash`，自动三方合并只按文本行拼装；主干与本分支各改不同槽位时文本不冲突，但「合并结果里每个哈希是否对应真实内容」只能靠按当前树重算来证明，沿用合并结果会让 `workspace-check` 与后续安装拿到的清单同实际产物脱节。
-  - 反例：#186 的 PR #273（分支自 `f9d27045` 切出、落后主干 4 个提交，期间 #262/#266 改了 `dsh-ui-kit` 与 `bundle.lock.json`；分支变基到 `91e15206` 后，publish 槽哈希必须在合并后的树上重算，分支自身未改 `dsh-ui-kit`）、#275 的 PR #277（本分支改 `omnimux-inspiration` 槽，主干 #276 改 `omnimux` 槽，槽位正交但文本可自动合并）。
-  - 正例：PR #277 `abfc670a`、PR #281 `d3144835`（先 `git checkout origin/main -- bundle.lock.json`，`build:all` 后 `pnpm run bundle:lock` 重算，`git diff origin/main -- bundle.lock.json` 只剩本任务单槽，再 `bundle:lock:check`）。
-  - PR 自身改动锁文件时执行重算流程；基线落后且未改锁文件时，按入队口径核对当前 head 和合并树。 [AGENTS.md 工作区元数据](AGENTS.md#验证按改动边界选最小集) [#334](https://github.com/omnimux-ai/omnimux-client/pull/334)
+- **收紧共享契约（鉴权、CORS、SSRF、配置校验）前须全仓排查跨包调用方与编译产物，推分支前跑齐受影响跨包单测与基线门禁**（`seen 1`，最近 `2026-11-27`）
+  - 为什么：只跑本插件源码单测会漏掉消费同一接口的兄弟插件、`app/` 集成测试、已编译 `lib/` 测试及 `verify-product-baseline` 门禁，导致反复推修。
+  - 反例：#371 首推破坏 `dsh-desktop-next` `market-plugin-manager-integration.spec.ts`（报 503）；#388 连两次推分支因破坏 `omnimux-browser` `save-inspiration-rpc.spec.ts` 及触发 `verify-product-baseline` 失败；#390 首推在 `lib/tests/config-store.test.js` 失败；#389 收紧 STT SSRF 触发 `stt-fallback.test.js` 5 处失败并暴露 #392 守卫死锁。
+  - 正例：收紧共享路由、来源或 URL 边界前先 `rg` 全仓调用方与测试夹具，构建 `build:all` 后联跑受影响跨包测试、`verify-product-baseline` 与 `workspace-check`。
 
 ### 契约与运行时边界
 
@@ -69,6 +62,11 @@
   - 为什么：异步回执缺少作用域或代际取消，会导致草稿丢失、导入串节点或共享路由卡在加载态；Host 主线程同步扫盘会卡死桌面交互。
   - 反例：#129（新建会话 remount 丢失技能创建草稿）、#144（重选文件/JSON 未取消旧读取导致落到错误节点）、#162（画布与剪辑绑定串上下文）、#177（托管工坊共享路由停在无工程 `editor` 态导致欢迎页卡死）、#182（工程列表与文件读取阻塞 Host 主线程）。
   - 正例：#144（按当前节点隔离导入并取消过期 JSON 读取）、#177（无打开工程时将托管工坊路由收敛到 `welcome` 并禁用非法跳转）、#182（工程扫描与文件读取全部异步化移出主线程）。
+
+- **安全边界改动须对照插件安全契约一次补齐纵深防护，避免首轮漏掉 DNS IP 固定、祖先符号链接或主动内容降级**（`seen 1`，最近 `2026-11-27`）
+  - 为什么：仅靠直觉手写防护易留 TOCTOU 重绑定、祖先目录符号链接绕过、标签走私或缺少 `attachment` 降级等二阶漏洞，且跨插件各自手写会造成实现参差。
+  - 反例：#384（二轮补修配对 CSRF/来源、Prompt 分隔符与 `postMessage`）、#385（二轮补修 Markdown 标签走私与 `installRoot` 祖先符号链接，且 `urlGuard.ts` 仍无 DNS IP 固定）、#387（二轮补修图标代理 DNS IP 固定与发布媒体 `attachment` 降级）、#383（`scraper-fallback.js` 仍为无固定 `fetch`）。
+  - 正例：新增或加固路由、出站请求、文件读写、富文本与归档解压时，按 [插件与宿主运行时安全边界契约](plugins/docs/contracts/plugin-security-boundaries.md) 逐项核对并附双向证伪回归测试。
 
 ### 打包与基线
 
@@ -93,3 +91,5 @@
 | UI 真实渲染几何、连续操作与浮层防透底（`seen 3`） | [AGENTS.md · 合并与复核](AGENTS.md#合并与复核) · [guard-no-transparent-popover.mjs](plugins/scripts/guard-no-transparent-popover.mjs)（#45/#54/#112→#116/#155/#171） |
 | 公开文档 DSH 运行时版本声明一致性 | [verify-docs-dsh-version.mjs](scripts/verify-docs-dsh-version.mjs) · [workspace-check.mjs](scripts/workspace-check.mjs)（PR #256） |
 | 网关、目录与宿主运行时契约单一真源（`seen 3`） | [AGENTS.md · 硬约束](AGENTS.md#硬约束) · [verify-dsw-tokens.mjs](plugins/scripts/verify-dsw-tokens.mjs)（#264 / PR #266） |
+| 入队前留下绑定最终 head 的公开独立评审记录（`seen 3`） | [AGENTS.md 合并与复核](AGENTS.md#合并与复核)（#271→#274 / #317 / #319 / #371–#396 批次；正例 #398） |
+| 插件改动推前重算与合并禁止沿用自动合并 `bundle.lock.json`（`seen 3`） | [AGENTS.md 工作区元数据](AGENTS.md#验证按改动边界选最小集)（#273 / #277 / #334 / #385 / #387 / #392） |
