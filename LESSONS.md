@@ -53,7 +53,7 @@
 
 - **收紧共享契约（鉴权、CORS、SSRF、配置校验）前须全仓排查跨包调用方与编译产物，推分支前跑齐受影响跨包单测与基线门禁**（`seen 1`，最近 `2026-11-27`）
   - 为什么：只跑本插件源码单测会漏掉消费同一接口的兄弟插件、`app/` 集成测试、已编译 `lib/` 测试及 `verify-product-baseline` 门禁，导致反复推修。
-  - 反例：#371 首推破坏 `dsh-desktop-next` `market-plugin-manager-integration.spec.ts`（报 503）；#388 连两次推分支因破坏 `omnimux-browser` `save-inspiration-rpc.spec.ts` 及触发 `verify-product-baseline` 失败；#390 首推在 `lib/tests/config-store.test.js` 失败；#389 收紧 STT SSRF 触发 `stt-fallback.test.js` 5 处失败并暴露 #392 守卫死锁。
+  - 反例：#371 首推破坏 `app/dsh-plugin-desktop/tests/market-plugin-manager-integration.spec.ts`（报 503）；#388 连两次推分支因破坏 `omnimux-browser` `save-inspiration-rpc.spec.ts` 及触发 `verify-product-baseline` 失败；#390 首推在 `lib/tests/config-store.test.js` 失败；#392 因加固 `stt-audio` 时修改含顶层 helper 的 `stt-fallback.test.js` 暴露守卫死锁。
   - 正例：收紧共享路由、来源或 URL 边界前先 `rg` 全仓调用方与测试夹具，构建 `build:all` 后联跑受影响跨包测试、`verify-product-baseline` 与 `workspace-check`。
 
 ### 契约与运行时边界
