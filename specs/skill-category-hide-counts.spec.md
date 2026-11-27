@@ -14,7 +14,7 @@
 2. `plugins/plugins/omnimux-market/src/client/css.js`：移除无引用的 `.cat-count` 与 `.cat-btn.active .cat-count` 样式规则，保留 `.cat-btn` 交互样式。
 3. `plugins/plugins/omnimux/src/client/session-guide/skills/SkillsPanel.jsx`：`chipsBar` 中 `.omnimux-skills-chip` 移除 `<span className="omnimux-skills-chip-count">{cat.count}</span>`。
 4. `plugins/plugins/omnimux/src/client/session-guide/styles.js`：移除无引用的 `.omnimux-skills-chip-count` 样式块。
-5. 新增两条端到端测试（`plugins/plugins/omnimux-market/tests/e2e/skill-category-no-count.spec.js` 与 `plugins/plugins/omnimux/tests/e2e/skill-category-no-count.spec.js`），强断言 7 个胶囊均为纯分类名称、不含任何数字节点或 `.cat-count` / `.omnimux-skills-chip-count`。
+5. 新增两条端到端测试（`plugins/plugins/omnimux-market/tests/e2e/skill-category-no-count.spec.js` 与 `plugins/plugins/omnimux/src/client/session-guide/skills/skill-category-no-count.e2e.test.js`，均已接入各自包 `test` / CI 发现范围），强断言中英双语与 `chipsOnly` 下 7 个胶囊均为纯分类名称、不含任何数字节点或 `.cat-count` / `.omnimux-skills-chip-count`。
 
 ## 假设
 
