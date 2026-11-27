@@ -157,6 +157,7 @@ export function registerRivalTools(tools, service) {
           limit,
           sort: args.sort,
         })
+        const account = page.account || null
         const posts = page.items.map((post) => ({
           id: post.id,
           account_id: post.account_id,
@@ -166,14 +167,30 @@ export function registerRivalTools(tools, service) {
           posted_at: post.posted_at,
           type: post.type,
           duration: post.duration,
+          cover_url: post.cover_http_url || post.cover_url || null,
+          ratio: typeof post.ratio === 'number' ? post.ratio : null,
           stats: post.stats,
+          velocity: post.velocity || null,
           potential: {
             flagged: post.potential?.flagged === true,
             rules: post.potential?.rules || [],
             reason_keys: post.potential?.reason_keys || [],
           },
         }))
-        return safeJsonOutput({ count: posts.length, carry_over: page.carry_over, posts })
+        return safeJsonOutput({
+          count: posts.length,
+          carry_over: page.carry_over,
+          account: account
+            ? {
+                id: account.id,
+                platform: account.platform,
+                handle: account.handle,
+                nickname: account.nickname,
+                avatar_url: account.avatar_http_url || account.avatar_url || null,
+              }
+            : null,
+          posts,
+        })
       } catch (err) {
         throw toToolError(err)
       }
@@ -195,12 +212,16 @@ export function registerRivalTools(tools, service) {
         const post = service.requirePost(accountId, postId)
         const account = service.requireAccount(accountId)
         return safeJsonOutput({
-          post,
+          post: {
+            ...post,
+            cover_url: post.cover_http_url || post.cover_url || null,
+          },
           account: {
             id: account.id,
             platform: account.platform,
             handle: account.handle,
             nickname: account.nickname,
+            avatar_url: account.avatar_http_url || account.avatar_url || null,
             followers: account.followers,
           },
         })
