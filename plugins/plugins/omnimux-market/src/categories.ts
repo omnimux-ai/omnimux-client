@@ -27,10 +27,10 @@ export function parseCategory(raw: unknown): string | undefined {
 }
 
 export const VERTICAL_SCENARIOS: ReadonlyArray<{ id: string; titleZh: string; titleEn: string }> = Object.freeze([
-  { id: 'scene-video', titleZh: '短视频创作', titleEn: 'Video Creation' },
-  { id: 'scene-replicate', titleZh: '爆款复刻与再制', titleEn: 'Viral Replication' },
-  { id: 'scene-visual', titleZh: '商品视觉与海报', titleEn: 'Visual & Product' },
-  { id: 'scene-research', titleZh: '选品与社媒洞察', titleEn: 'Market & Social Research' },
-  { id: 'scene-growth', titleZh: '投放与增长运营', titleEn: 'Ads & Growth Ops' },
-  { id: 'scene-tools', titleZh: '剪辑与效率工具', titleEn: 'Editing & Tools' },
+  { id: 'scene-video', titleZh: '视频创作', titleEn: 'Video Creation' },
+  { id: 'scene-replicate', titleZh: '爆款复刻', titleEn: 'Viral Replication' },
+  { id: 'scene-visual', titleZh: '商品视觉', titleEn: 'Product Visuals' },
+  { id: 'scene-research', titleZh: '市场洞察', titleEn: 'Market Insights' },
+  { id: 'scene-growth', titleZh: '营销增长', titleEn: 'Growth Marketing' },
+  { id: 'scene-tools', titleZh: '效率工具', titleEn: 'Editing & Tools' },
 ])
