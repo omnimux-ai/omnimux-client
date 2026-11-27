@@ -172,7 +172,7 @@ test('DetailCard 从 handleSkillDetail({ card }) 水合 preinstalled 与 install
       './i18n.js': {
         useTr: () => (k) => (k === 'action.install' ? '安装' : k === 'workshop.try' ? '去对话中试试' : k),
         lookup: (k) => k,
-        catLabel: () => '剪辑与效率工具',
+        catLabel: () => '效率工具',
         skillDesc: (x) => x?.description || x?.summary || '',
         skillTitle: (x) => x?.name || '',
       },

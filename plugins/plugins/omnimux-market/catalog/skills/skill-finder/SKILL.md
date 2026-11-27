@@ -23,12 +23,12 @@ description_en: "Discover installed and marketplace OmniMux skills matched to yo
 
 ### 第 1 步：提炼任务意图与所属场景
 将用户诉求归纳到 6 大核心垂直场景之一或组合链路：
-1. **短视频创作**：`create-selling-video`、`stickman-video-director`、`character-scene-storyboard`、`cinematic-motion-language`、`omnimux-ecom-video-script`
-2. **爆款复刻与再制**：`replicate-viral-video`、`video-hook-analysis`、`reverse-video-prompt`、`replicate-carousel`、`omnimux-content-repurposing`、`omnimux-transcript-intelligence`
-3. **商品视觉与海报**：`shoppable-carousel`、`ecommerce-image`、`dynamic-poster`、`omnimux-ecom-visual-qa`、`omnimux-ecom-brand-curator`
-4. **选品与社媒洞察**：`omnimux-ecom-market-research`、`omnimux-product-demand`、`omnimux-ecom-review-voc`、`omnimux-trend-discovery`、`omnimux-outlier-post-finder`、`omnimux-creator-teardown`、`omnimux-competitor-research`、`omnimux-social-listening`
-5. **投放与增长运营**：`ad-creative`、`global-ad-localizer`、`omnimux-ecom-ads-diagnosis`、`omnimux-ecom-listing-copy`、`omnimux-ecom-pricing-strategy`、`content-strategy`、`social-caption`、`tiktok-growth`
-6. **剪辑与效率工具**：`clip-craft`、`clip-export`、`skill-creator`、`skill-finder`
+1. **视频创作**：`create-selling-video`、`stickman-video-director`、`character-scene-storyboard`、`cinematic-motion-language`、`omnimux-ecom-video-script`
+2. **爆款复刻**：`replicate-viral-video`、`video-hook-analysis`、`reverse-video-prompt`、`replicate-carousel`、`omnimux-content-repurposing`、`omnimux-transcript-intelligence`
+3. **商品视觉**：`shoppable-carousel`、`ecommerce-image`、`dynamic-poster`、`omnimux-ecom-visual-qa`、`omnimux-ecom-brand-curator`
+4. **市场洞察**：`omnimux-ecom-market-research`、`omnimux-product-demand`、`omnimux-ecom-review-voc`、`omnimux-trend-discovery`、`omnimux-outlier-post-finder`、`omnimux-creator-teardown`、`omnimux-competitor-research`、`omnimux-social-listening`
+5. **营销增长**：`ad-creative`、`global-ad-localizer`、`omnimux-ecom-ads-diagnosis`、`omnimux-ecom-listing-copy`、`omnimux-ecom-pricing-strategy`、`content-strategy`、`social-caption`、`tiktok-growth`
+6. **效率工具**：`clip-craft`、`clip-export`、`skill-creator`、`skill-finder`
 
 ### 第 2 步：查询真实库存与目录（严禁臆造技能）
 按需调用已注册工具核实真实可用状态：
