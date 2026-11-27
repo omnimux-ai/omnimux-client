@@ -43,28 +43,21 @@ async function assertUpload(form) {
   assert.deepEqual(Buffer.from(await form.get('file').arrayBuffer()), bytes)
 }
 
-test('STT adapts local HTTP audio to Whisper before submission', async () => {
+test('STT rejects loopback and private HTTP audio URLs before fetching', async () => {
   for (const audio of [
     'http://127.0.0.1:43120/audio.mp3', 'http://localhost:43120/audio.mp3',
     'http://[::1]:43120/audio.mp3', 'http://192.168.1.10/audio.mp3',
   ]) {
     const calls = []
     const signal = new AbortController().signal
-    const result = await transcribeWithFallback({
+    await assert.rejects(() => transcribeWithFallback({
       ...request, audio, signal,
-      fetcher: async (url, init) => {
+      fetcher: async (url) => {
         calls.push(String(url))
-        assert.equal(init.signal, signal)
-        if (init.method !== 'POST') {
-          assert.equal(init.headers.authorization, undefined)
-          return new Response(bytes)
-        }
-        await assertUpload(init.body)
-        return new Response(srt)
+        return new Response(bytes)
       },
-    })
-    assert.deepEqual(calls, [audio, endpoint])
-    assert.deepEqual(result, { mode: 'live', model: 'whisper-1', text: srt })
+    }), { code: 'omnimux-invalid-request' })
+    assert.deepEqual(calls, [])
   }
 })
 
@@ -130,7 +123,7 @@ test('wire primitive retries an unrecognized URL-first model and reuses loaded b
   const forms = []
   let downloads = 0
   const result = await transcribeSpeechToTextRequest({
-    ...request, audio: 'http://localhost/audio.mp3',
+    ...request, audio: audioUrl,
     route: { modelId: 'fixture-url-first-asr', baseUrl: 'https://api.omnimux.ai/v1' },
     fetcher: async (_url, init) => {
       if (init.method !== 'POST') { downloads++; return new Response(bytes) }

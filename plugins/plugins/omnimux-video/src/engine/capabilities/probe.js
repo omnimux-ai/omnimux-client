@@ -1,4 +1,5 @@
 import { VideoError } from '../../errors.js'
+import { resolveInputPath } from '../remote-media.js'
 
 export const slug = 'media_metadata'
 export const timeoutMs = 120_000
@@ -46,7 +47,8 @@ export function validate(input) {
  */
 export async function execute(input, ctx) {
   validate(input)
-  const stdout = await ctx.runFprobe(buildProbeArgs(input))
+  const mediaUrl = await resolveInputPath(resolveMediaUrl(input), 'probe-input', ctx)
+  const stdout = await ctx.runFprobe(buildProbeArgs({ ...input, mediaUrl, videoUrl: undefined, audioUrl: undefined }))
   /** @type {{ streams?: any[], format?: any }} */
   let info
   try {

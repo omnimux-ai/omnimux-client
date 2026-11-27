@@ -1,5 +1,6 @@
 import { join } from 'node:path'
 import { VideoError } from '../../errors.js'
+import { resolveInputPath } from '../remote-media.js'
 
 export const slug = 'video_split'
 export const timeoutMs = 900_000
@@ -59,11 +60,13 @@ export async function execute(input, ctx) {
   validate(input)
   const segments = resolveSegments(input)
   const keepAudio = input?.keepAudio !== false
+  const videoUrl = await resolveInputPath(input.videoUrl, 'split-input', ctx)
+  const resolved = { ...input, videoUrl }
   const files = []
   for (const seg of segments) {
     const out = join(ctx.dest, segmentFilename(seg.index))
     ctx.addFile(out)
-    await ctx.runFfmpeg(buildSplitArgs(input, { ...seg, keepAudio, dest: out }))
+    await ctx.runFfmpeg(buildSplitArgs(resolved, { ...seg, keepAudio, dest: out }))
     files.push({ path: out, kind: 'video', meta: { index: seg.index } })
   }
   return { files, result: { segmentCount: files.length } }

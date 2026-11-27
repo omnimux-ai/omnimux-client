@@ -27,8 +27,13 @@ const testConfig: UpdateConfig = {
   requestTimeoutMs: 1000,
 }
 
+const TEST_SHA256 = {
+  windows: 'a'.repeat(64),
+  mac: 'b'.repeat(64),
+}
+
 function versionResponse(version: unknown): Response {
-  return Response.json({ version })
+  return Response.json({ version, sha256: TEST_SHA256 })
 }
 
 interface Harness {
@@ -195,8 +200,8 @@ describe('desktop update Host plugin', () => {
     const request = vi.fn(async (_url: string, init: RequestInit) => {
       const channel = new Headers(init.headers).get(DESKTOP_RELEASE_CHANNEL_HEADER)
       return Response.json(channel === 'beta'
-        ? { version: '2.0.6-beta.1', channel: 'beta' }
-        : { version: '2.0.4', channel: 'stable' })
+        ? { version: '2.0.6-beta.1', channel: 'beta', sha256: TEST_SHA256 }
+        : { version: '2.0.4', channel: 'stable', sha256: TEST_SHA256 })
     })
     const harness = await createHarness({
       releaseChannel: 'beta',
@@ -215,6 +220,7 @@ describe('desktop update Host plugin', () => {
       '2.0.4',
       expect.any(AbortSignal),
       'stable',
+      { win32: TEST_SHA256.windows, darwin: TEST_SHA256.mac },
     )
     const channels = request.mock.calls.map(([, init]) => new Headers(init.headers).get(DESKTOP_RELEASE_CHANNEL_HEADER))
     expect(channels).toContain('beta')
@@ -287,6 +293,7 @@ describe('desktop update Host plugin', () => {
       status: 'up-to-date',
       currentVersion: '2.0.0',
       latestVersion: '2.0.0',
+      installerSha256: { win32: TEST_SHA256.windows, darwin: TEST_SHA256.mac },
     })
     expect(res.statusCode).toBe(200)
     expect(JSON.parse(body)).toEqual({ accepted: true })
@@ -322,6 +329,7 @@ describe('desktop update Host plugin', () => {
       status: 'up-to-date',
       currentVersion: '2.0.0',
       latestVersion: '2.0.0',
+      installerSha256: { win32: TEST_SHA256.windows, darwin: TEST_SHA256.mac },
     })
     expect(harness.confirmDownload).not.toHaveBeenCalled()
     expect(harness.downloadAndOpen).not.toHaveBeenCalled()
@@ -430,19 +438,16 @@ describe('desktop update Host plugin', () => {
     await pending
   })
 
-  it('omits the digest argument when the service publishes none', async () => {
+  it('refuses to download when the service publishes no installer digest', async () => {
     vi.useFakeTimers()
     const harness = await createHarness({
       packaged: false,
-      request: async () => versionResponse('2.1.0'),
+      request: async () => Response.json({ version: '2.1.0' }),
       confirmDownload: async () => true,
     })
 
-    const pending = harness.tray.invoke()
-    await vi.waitFor(() => { expect(harness.downloadAndOpen).toHaveBeenCalledOnce() })
-    const digestArgument = harness.downloadAndOpen.mock.calls[0]?.[3]
-    expect(digestArgument).toBeUndefined()
-    await pending
+    await harness.tray.invoke()
+    expect(harness.downloadAndOpen).not.toHaveBeenCalled()
   })
 
   it('treats a manual available-version selection as a fresh confirmation', async () => {
@@ -504,9 +509,11 @@ describe('desktop update Host plugin', () => {
   it.each([
     ['same version', async () => versionResponse('2.0.0'), {
       status: 'up-to-date', currentVersion: '2.0.0', latestVersion: '2.0.0',
+      installerSha256: { win32: TEST_SHA256.windows, darwin: TEST_SHA256.mac },
     }],
     ['older version', async () => versionResponse('1.9.9'), {
       status: 'up-to-date', currentVersion: '2.0.0', latestVersion: '1.9.9',
+      installerSha256: { win32: TEST_SHA256.windows, darwin: TEST_SHA256.mac },
     }],
     ['invalid version', async () => versionResponse('v2.1.0'), null],
     ['service unavailable', async () => new Response('unavailable', { status: 503 }), null],
@@ -588,6 +595,7 @@ describe('desktop update Host plugin', () => {
       status: 'update-available',
       currentVersion: '2.0.0',
       latestVersion: '2.1.0',
+      installerSha256: { win32: TEST_SHA256.windows, darwin: TEST_SHA256.mac },
     })
     expect(harness.downloadAndOpen).not.toHaveBeenCalled()
     expect(harness.notifications).toEqual([])

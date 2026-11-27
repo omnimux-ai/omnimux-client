@@ -2,6 +2,7 @@ import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { VideoError } from '../../errors.js'
 import { supportsXfade } from '../ffmpeg.js'
+import { resolveInputPath } from '../remote-media.js'
 import { escapeConcatPath } from './merge.js'
 
 export const slug = 'slideshow_export'
@@ -143,9 +144,14 @@ export async function execute(input, ctx) {
   const xfade = wantXfade && hasXfade
   const degraded = wantXfade && !hasXfade ? ['xfade-missing'] : []
 
+  const localImages = []
+  for (let i = 0; i < input.imageUrls.length; i += 1) {
+    localImages.push(await resolveInputPath(input.imageUrls[i], `slideshow-${i}.img`, ctx))
+  }
+
   let firstDims = null
   try {
-    const stdout = await ctx.runFprobe(buildProbeArgs(String(input.imageUrls[0])))
+    const stdout = await ctx.runFprobe(buildProbeArgs(localImages[0]))
     const info = JSON.parse(stdout)
     const s = Array.isArray(info.streams) && info.streams[0] ? info.streams[0] : null
     firstDims = s ? { w: Number(s.width) || 0, h: Number(s.height) || 0 } : null
@@ -153,14 +159,13 @@ export async function execute(input, ctx) {
   const { width, height } = resolveCanvas(input, firstDims)
 
   const segments = []
-  for (let i = 0; i < input.imageUrls.length; i += 1) {
-    const local = await ctx.materialize(input.imageUrls[i], `slideshow-${i}.img`)
+  for (let i = 0; i < localImages.length; i += 1) {
     const seg = join(ctx.tmpDir, `seg-${i}.mp4`)
-    await ctx.runFfmpeg(buildImageSegmentArgs(input, { image: local, dur, width, height, fps, out: seg }))
+    await ctx.runFfmpeg(buildImageSegmentArgs(input, { image: localImages[i], dur, width, height, fps, out: seg }))
     segments.push(seg)
   }
 
-  const audioUrl = input.audioUrl ? String(input.audioUrl) : null
+  const audioUrl = input.audioUrl ? await resolveInputPath(input.audioUrl, 'slideshow-audio', ctx) : null
   const audioVolume = Number(input.audioVolume ?? 1.0)
   ctx.addFile(ctx.dest)
   if (xfade) {

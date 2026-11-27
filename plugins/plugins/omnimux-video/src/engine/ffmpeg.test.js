@@ -89,7 +89,7 @@ test('spawnFfmpeg prepends -hide_banner -loglevel error -y', async () => {
   }
   const out = await spawnFfmpeg({ bin: { ffmpeg: 'ffmpeg' }, args: ['-i', 'x.mp4', 'out.mp4'], runChild })
   assert.equal(out.code, 0)
-  assert.deepEqual(seen.args, ['-hide_banner', '-loglevel', 'error', '-y', '-i', 'x.mp4', 'out.mp4'])
+  assert.deepEqual(seen.args, ['-hide_banner', '-loglevel', 'error', '-y', '-protocol_whitelist', 'file,pipe', '-i', 'x.mp4', 'out.mp4'])
 })
 
 test('spawnFfmpeg loglevel defaults to error but is overridable', async () => {

@@ -1,9 +1,24 @@
-import { mkdir, mkdtemp, rm, unlink, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, unlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { VideoError } from '../errors.js'
 import { spawnFfmpeg, spawnFfprobe } from './ffmpeg.js'
+import {
+  MAX_REMOTE_MEDIA_BYTES,
+  DEFAULT_REMOTE_FETCH_TIMEOUT_MS,
+  assertSafeRemoteMediaUrl,
+  materializeInput,
+  resolveInputPath,
+} from './remote-media.js'
 import { CAPABILITIES, SLUGS } from './video.js'
+
+export {
+  MAX_REMOTE_MEDIA_BYTES,
+  DEFAULT_REMOTE_FETCH_TIMEOUT_MS,
+  assertSafeRemoteMediaUrl,
+  materializeInput,
+  resolveInputPath,
+}
 
 /**
  * Ensure the destination is ready for the capability's destKind.
@@ -17,40 +32,6 @@ export async function prepDest(dest, kind) {
   }
   if (kind === 'single') await mkdir(dirname(dest), { recursive: true })
   else await mkdir(dest, { recursive: true })
-}
-
-function guessExt(url) {
-  try {
-    const pathname = new URL(url).pathname
-    const m = /\.([a-zA-Z0-9]{1,5})$/.exec(pathname)
-    return m ? `.${m[1].toLowerCase()}` : '.dat'
-  } catch {
-    return '.dat'
-  }
-}
-
-function safeLabel(label) {
-  return String(label || 'input').replace(/[^a-zA-Z0-9._-]/g, '_')
-}
-
-/**
- * Turn an input into a local seekable path: http(s) URLs are downloaded into
- * tmpDir; local paths pass through untouched.
- * @param {string} input @param {string} tmpDir @param {string} label
- */
-export async function materializeInput(input, tmpDir, label) {
-  const s = String(input || '').trim()
-  if (/^https?:\/\//i.test(s)) {
-    const resp = await fetch(s)
-    if (!resp.ok) {
-      throw new VideoError('video-ffmpeg-failed', `failed to download ${s}: HTTP ${resp.status}`)
-    }
-    const buf = Buffer.from(await resp.arrayBuffer())
-    const file = join(tmpDir, `${safeLabel(label)}${guessExt(s)}`)
-    await writeFile(file, buf)
-    return file
-  }
-  return s
 }
 
 /**
@@ -102,7 +83,7 @@ export async function executeVideoProcess({ capability, input, dest, signal, bin
       return spawnFfprobe({ bin, args, timeoutMs: opts.timeoutMs ?? Math.min(cap.timeoutMs, 120_000), signal, procs })
     },
     materialize(urlOrPath, label) {
-      return materializeInput(urlOrPath, tmpDir, label)
+      return materializeInput(urlOrPath, tmpDir, label, { signal })
     },
   }
   try {

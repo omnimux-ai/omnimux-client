@@ -247,21 +247,20 @@ class DesktopUpdateLifecycleOwner implements DesktopUpdateLifecycle {
         ? confirmedResult.latestVersion
         : undefined
       const confirmedDigests = confirmedResult?.installerSha256
+      const hasPublishedDigest = confirmedDigests !== undefined
+        && (Boolean(confirmedDigests.darwin) || Boolean(confirmedDigests.win32))
       if (channel === (this.options.adapter.releaseChannel ?? 'stable')) this.observeResult(confirmedResult)
-      if (confirmedVersion !== version || this.disposed) return
+      if (confirmedVersion !== version || !hasPublishedDigest || this.disposed) return
 
       const controller = new AbortController()
       this.downloadController = controller
       this.downloadingVersion = version
       this.registration.refresh()
       try {
-        // An omitted digest must not surface as a trailing undefined argument:
-        // the beta variant's spec pins the exact call shape.
-        const digestArguments = confirmedDigests === undefined ? [] : [confirmedDigests] as const
         if (this.options.adapter.releaseChannel === undefined && channel === 'stable') {
-          await this.options.adapter.downloadAndOpen(version, controller.signal, undefined, ...digestArguments)
+          await this.options.adapter.downloadAndOpen(version, controller.signal, undefined, confirmedDigests)
         } else {
-          await this.options.adapter.downloadAndOpen(version, controller.signal, channel, ...digestArguments)
+          await this.options.adapter.downloadAndOpen(version, controller.signal, channel, confirmedDigests)
         }
       } catch {
         // Network, filesystem, and installer-opening failures are deliberately silent.

@@ -1,4 +1,5 @@
 import { VideoError } from '../../errors.js'
+import { resolveInputPath } from '../remote-media.js'
 
 /** Default output audio formats: { codec, extension }. */
 export const AUDIO_CODECS = {
@@ -68,7 +69,9 @@ export function buildHasAudioArgs(path) {
 export async function executeExtract(input, ctx) {
   validateExtract(input)
   const fmt = validateFormat(input)
-  const stdout = await ctx.runFprobe(buildHasAudioArgs(input.videoUrl))
+  const videoUrl = await resolveInputPath(input.videoUrl, 'audio-extract-input', ctx)
+  const resolved = { ...input, videoUrl }
+  const stdout = await ctx.runFprobe(buildHasAudioArgs(videoUrl))
   if (!String(stdout).trim()) {
     // No audio stream → succeed without a file (PRD §5.1). The flag rides
     // under `result` so job.js flattens it to the documented success shape:
@@ -77,7 +80,7 @@ export async function executeExtract(input, ctx) {
   }
   const out = ctx.dest
   ctx.addFile(out)
-  await ctx.runFfmpeg(buildExtractArgs(input, out))
+  await ctx.runFfmpeg(buildExtractArgs(resolved, out))
   return { files: [{ path: out, kind: 'audio', meta: { format: fmt } }] }
 }
 
@@ -121,8 +124,10 @@ export function buildPrepareArgs(input, out) {
  */
 export async function executePrepare(input, ctx) {
   validatePrepare(input)
+  const audioUrl = await resolveInputPath(input.audioUrl, 'audio-prepare-input', ctx)
+  const resolved = { ...input, audioUrl }
   ctx.addFile(ctx.dest)
-  await ctx.runFfmpeg(buildPrepareArgs(input, ctx.dest))
+  await ctx.runFfmpeg(buildPrepareArgs(resolved, ctx.dest))
   return { files: [{ path: ctx.dest, kind: 'audio', meta: {} }] }
 }
 

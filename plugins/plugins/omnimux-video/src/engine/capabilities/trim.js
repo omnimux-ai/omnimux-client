@@ -1,4 +1,5 @@
 import { VideoError } from '../../errors.js'
+import { resolveInputPath } from '../remote-media.js'
 
 export const slug = 'video_trim'
 export const timeoutMs = 600_000
@@ -68,15 +69,17 @@ export function buildTrimReencodeArgs(input, out) {
  */
 export async function execute(input, ctx) {
   validate(input)
+  const videoUrl = await resolveInputPath(input.videoUrl, 'trim-input', ctx)
+  const resolved = { ...input, videoUrl }
   const out = ctx.dest
   ctx.addFile(out)
   if (input.precise) {
-    await ctx.runFfmpeg(buildTrimReencodeArgs(input, out))
+    await ctx.runFfmpeg(buildTrimReencodeArgs(resolved, out))
   } else {
     try {
-      await ctx.runFfmpeg(buildTrimCopyArgs(input, out))
+      await ctx.runFfmpeg(buildTrimCopyArgs(resolved, out))
     } catch {
-      await ctx.runFfmpeg(buildTrimReencodeArgs(input, out))
+      await ctx.runFfmpeg(buildTrimReencodeArgs(resolved, out))
     }
   }
   return { files: [{ path: out, kind: 'video', meta: {} }] }
