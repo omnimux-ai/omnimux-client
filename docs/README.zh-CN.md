@@ -389,9 +389,9 @@ cd app && corepack yarn install --immutable && corepack yarn dev
 
 | 角色 | 文档入口 |
 | --- | --- |
-| **终端用户** | [使用手册](../app/docs/user-guide.md) | [常见问题 FAQ](../app/docs/faq.md) | [隐私政策](PRIVACY.zh-CN.md) |
-| **桌面与插件开发者** | [桌面端文档](../app/README.md) | [插件工作区文档](../plugins/README.md) | [桌面架构说明](../app/docs/architecture.md) | [插件开发文档](../app/docs/plugin-development.md) |
-| **契约与工程规范** | [Agent 工具契约清单](../plugins/docs/contracts/plugin-agent-tools-inventory.md) | [画布生成契约](../plugins/docs/contracts/canvas-generation.md) | [画布剪辑联动契约](../plugins/docs/contracts/clip-live-control.md) | [子系统索引](subsystems.md) |
+| **终端用户** | [使用手册](../app/docs/user-guide.md) / [常见问题 FAQ](../app/docs/faq.md) / [隐私政策](PRIVACY.zh-CN.md) |
+| **桌面与插件开发者** | [桌面端文档](../app/README.md) / [插件工作区文档](../plugins/README.md) / [桌面架构说明](../app/docs/architecture.md) / [插件开发文档](../app/docs/plugin-development.md) |
+| **契约与工程规范** | [Agent 工具契约清单](../plugins/docs/contracts/plugin-agent-tools-inventory.md) / [画布生成契约](../plugins/docs/contracts/canvas-generation.md) / [画布剪辑联动契约](../plugins/docs/contracts/clip-live-control.md) / [子系统索引](subsystems.md) |
 
 </details>
 

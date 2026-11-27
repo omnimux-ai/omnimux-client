@@ -389,9 +389,9 @@ cd app && corepack yarn install --immutable && corepack yarn dev
 
 | Audience | Links |
 | --- | --- |
-| **Users** | [User Guide](app/docs/user-guide.en.md) | [FAQ](app/docs/faq.en.md) | [Privacy Policy](PRIVACY.md) |
-| **Desktop & Plugin Developers** | [Desktop Subtree README](app/README.en.md) | [Plugins Subtree README](plugins/README.md) | [Desktop Architecture](app/docs/architecture.en.md) | [Plugin Development](app/docs/plugin-development.en.md) |
-| **Contracts & Specs** | [Agent Tool Inventory](plugins/docs/contracts/plugin-agent-tools-inventory.md) | [Canvas Generation Contract](plugins/docs/contracts/canvas-generation.md) | [Clip Live Control Contract](plugins/docs/contracts/clip-live-control.md) | [Subsystem Index](docs/subsystems.md) |
+| **Users** | [User Guide](app/docs/user-guide.en.md) / [FAQ](app/docs/faq.en.md) / [Privacy Policy](PRIVACY.md) |
+| **Desktop & Plugin Developers** | [Desktop Subtree README](app/README.en.md) / [Plugins Subtree README](plugins/README.md) / [Desktop Architecture](app/docs/architecture.en.md) / [Plugin Development](app/docs/plugin-development.en.md) |
+| **Contracts & Specs** | [Agent Tool Inventory](plugins/docs/contracts/plugin-agent-tools-inventory.md) / [Canvas Generation Contract](plugins/docs/contracts/canvas-generation.md) / [Clip Live Control Contract](plugins/docs/contracts/clip-live-control.md) / [Subsystem Index](docs/subsystems.md) |
 
 </details>
 
