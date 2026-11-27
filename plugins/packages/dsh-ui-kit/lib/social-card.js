@@ -1109,14 +1109,26 @@ function isSafeHttpUrl(value) {
 		return false;
 	}
 }
-/** Validate media/image sources: public `http(s):` or safe same-origin `/omnimux/inspiration/` route. */
+const ALLOWED_LOCAL_MEDIA_PREFIXES = ["/omnimux/inspiration/media/", "/omnimux/inspiration/local/media/"];
+/** Validate media/image sources: public `http(s):` or safe same-origin `/omnimux/inspiration/(local/)?media/*` route. */
 function isSafeMediaSrc(value) {
 	if (typeof value !== "string") return false;
 	const trimmed = value.trim();
-	if (!trimmed) return false;
+	if (!trimmed || /[\u0000-\u001f\u007f\\?#]/.test(trimmed)) return false;
 	if (trimmed.startsWith("/")) {
-		if (trimmed.startsWith("//") || trimmed.includes("..")) return false;
-		return trimmed.startsWith("/omnimux/inspiration/");
+		const matchedPrefix = ALLOWED_LOCAL_MEDIA_PREFIXES.find((prefix) => trimmed.startsWith(prefix));
+		if (!matchedPrefix) return false;
+		const suffix = trimmed.slice(matchedPrefix.length);
+		if (!suffix || /(?:%2e|%2f|%5c)/i.test(suffix)) return false;
+		let decoded = suffix;
+		try {
+			decoded = decodeURIComponent(suffix);
+		} catch {
+			return false;
+		}
+		if (/[\u0000-\u001f\u007f\\?#]/.test(decoded)) return false;
+		const hasCleanSegments = (rawPath) => rawPath.split("/").every((seg) => Boolean(seg) && seg !== "." && seg !== "..");
+		return hasCleanSegments(suffix) && hasCleanSegments(decoded);
 	}
 	return isSafeHttpUrl(trimmed);
 }
@@ -1288,13 +1300,20 @@ function isPostListContainer(obj) {
 	return LIST_CONTAINERS.some((k) => Array.isArray(obj[k]));
 }
 function hasLooksLikePostRow(row) {
-	return Boolean(row.id || row.id_str || row.post_id || row.aweme_id || row.tweet_id || row.rest_id || row.shortcode || row.shortCode || row.videoId || row.source_url || row.article || row.caption || row.video || row.mediaDetails || row.image_versions2 || row.text || row.desc || row.full_text || row.title);
+	return Boolean(row.id || row.id_str || row.post_id || row.aweme_id || row.tweet_id || row.rest_id || row.shortcode || row.shortCode || row.videoId || row.source_url || row.url || row.share_url || row.cover_url || row.cover_http_url || row.article || row.caption || row.video || row.mediaDetails || row.image_versions2 || row.content || row.text || row.desc || row.full_text || row.title);
 }
 function extractPostRows(payload) {
-	if (Array.isArray(payload)) return {
-		rows: payload.map(unwrapRendererEntry).filter((r) => Boolean(r)),
-		foundListContainer: true
-	};
+	if (Array.isArray(payload)) {
+		if (payload.length === 0) return {
+			rows: [],
+			foundListContainer: true
+		};
+		const rows = payload.map(unwrapRendererEntry).filter((r) => r !== null && hasLooksLikePostRow(r));
+		return {
+			rows,
+			foundListContainer: rows.length > 0
+		};
+	}
 	const root = asRecord(payload);
 	if (!root) return {
 		rows: [],
@@ -1370,6 +1389,7 @@ function extractPostRows(payload) {
 }
 function mapRawRowToSocialItem(row, index, options) {
 	const { platformHint, toolName, locale, nowMs, containerAccount } = options;
+	const validYoutubeVideoId = typeof row.videoId === "string" && /^[\w-]{11}$/.test(row.videoId.trim()) ? row.videoId.trim() : void 0;
 	const explicitUrl = sanitizeHttpUrl([
 		row.source_url,
 		row.url,
@@ -1379,7 +1399,7 @@ function mapRawRowToSocialItem(row, index, options) {
 		row.permalink,
 		row.link,
 		row.expanded_url,
-		row.videoId ? `https://www.youtube.com/watch?v=${String(row.videoId)}` : void 0
+		validYoutubeVideoId ? synthesizedPostUrl("youtube", validYoutubeVideoId) : void 0
 	]);
 	const platform = normalizeSocialPlatform(firstNonEmptyString([
 		row.source_platform,
@@ -1395,7 +1415,7 @@ function mapRawRowToSocialItem(row, index, options) {
 		row.aweme_id,
 		row.tweet_id,
 		row.rest_id,
-		row.videoId,
+		validYoutubeVideoId,
 		shortcodeCandidate,
 		row.pk
 	]);
@@ -1472,6 +1492,7 @@ function mapRawRowToSocialItem(row, index, options) {
 		asRecord(articleResult?.cover_media)?.original_img_url,
 		articleResult?.cover_image_url,
 		articleResult?.cover_url,
+		row.cover_http_url,
 		row.cover_url,
 		row.cover,
 		row.thumbnail_url,
@@ -1533,6 +1554,7 @@ function mapRawRowToSocialItem(row, index, options) {
 	const ytChannelThumbObj = asRecord(asRecord(asRecord(row.channelThumbnailSupportedRenderers)?.channelThumbnailWithLinkRenderer)?.thumbnail);
 	const ytChannelThumbs = Array.isArray(ytChannelThumbObj?.thumbnails) ? ytChannelThumbObj.thumbnails : [];
 	const avatarUrl = sanitizeMediaUrl([
+		rawUser.avatar_http_url,
 		rawUser.avatar_url,
 		rawUser.avatarUrl,
 		rawUser.avatar,
@@ -1541,9 +1563,10 @@ function mapRawRowToSocialItem(row, index, options) {
 		asRecord(userResult?.avatar)?.image_url,
 		urlListFirst(rawUser.avatar_thumb),
 		urlListFirst(rawUser.avatar_larger),
+		row.avatar_http_url,
 		row.avatar_url,
-		containerAccount?.avatar_url,
 		containerAccount?.avatar_http_url,
+		containerAccount?.avatar_url,
 		asRecord(ytChannelThumbs[0])?.url
 	]);
 	const author = authorName || authorHandle || avatarUrl ? {
@@ -1635,7 +1658,12 @@ function parseSocialToolBlock(block, toolName, options = {}) {
 		querySummary: initialQuery,
 		items: [],
 		totalCount: 0,
-		errorMessage: rawOutputText || firstNonEmptyString([blk.error?.message, blk.error?.code]) || (locale === "en" ? "Tool execution failed" : "工具调用失败"),
+		errorMessage: rawOutputText || firstNonEmptyString([
+			blk.error?.reason,
+			blk.error?.message,
+			blk.error?.name,
+			blk.error?.code
+		]) || (locale === "en" ? "Tool execution failed" : "工具调用失败"),
 		rawOutputText: rawOutputText || void 0
 	};
 	const parsedJson = tryParseJson(rawOutputText);
@@ -1900,7 +1928,18 @@ function SocialSearchToolView({ toolName, block, locale = "zh", inspect, initial
 		const b = block && typeof block === "object" ? block : void 0;
 		return typeof b?.callId === "string" ? b.callId : toolName;
 	}, [block, toolName]);
+	const mountedRef = useRef(true);
+	const callKeyRef = useRef(callKey);
+	const inFlightSavesRef = useRef(/* @__PURE__ */ new Set());
+	callKeyRef.current = callKey;
 	useEffect(() => {
+		mountedRef.current = true;
+		return () => {
+			mountedRef.current = false;
+		};
+	}, []);
+	useEffect(() => {
+		inFlightSavesRef.current = /* @__PURE__ */ new Set();
 		setShowAll(false);
 		setRawOpen(false);
 		setCardsExpanded(true);
@@ -1938,6 +1977,9 @@ function SocialSearchToolView({ toolName, block, locale = "zh", inspect, initial
 		if (!canSaveToInspiration || !onSaveToInspiration || !isSafeHttpUrl(item.sourceUrl)) return;
 		const current = saveStates.get(item.id);
 		if (current === "saving" || current === "saved") return;
+		if (inFlightSavesRef.current.has(item.id)) return;
+		const activeCallKey = callKeyRef.current;
+		inFlightSavesRef.current.add(item.id);
 		setSaveStates((prev) => {
 			const next = new Map(prev);
 			next.set(item.id, "saving");
@@ -1951,6 +1993,7 @@ function SocialSearchToolView({ toolName, block, locale = "zh", inspect, initial
 		});
 		try {
 			const res = await onSaveToInspiration(item);
+			if (!mountedRef.current || callKeyRef.current !== activeCallKey) return;
 			if (res && res.ok) setSaveStates((prev) => {
 				const next = new Map(prev);
 				next.set(item.id, "saved");
@@ -1969,6 +2012,7 @@ function SocialSearchToolView({ toolName, block, locale = "zh", inspect, initial
 				});
 			}
 		} catch (err) {
+			if (!mountedRef.current || callKeyRef.current !== activeCallKey) return;
 			setSaveStates((prev) => {
 				const next = new Map(prev);
 				next.set(item.id, "error");
@@ -1979,6 +2023,8 @@ function SocialSearchToolView({ toolName, block, locale = "zh", inspect, initial
 				next.set(item.id, err instanceof Error ? err.message : String(err));
 				return next;
 			});
+		} finally {
+			if (callKeyRef.current === activeCallKey) inFlightSavesRef.current.delete(item.id);
 		}
 	}, [
 		canSaveToInspiration,
@@ -2084,7 +2130,7 @@ function SocialSearchToolView({ toolName, block, locale = "zh", inspect, initial
 					maxColumns: singleCard ? 1 : 2,
 					defaultColumns: singleCard ? 1 : 2,
 					gap: 10,
-					resetKey: `${toolName}:${parsed.totalCount}:${parsed.items[0]?.id ?? ""}`,
+					resetKey: `${callKey}:${toolName}:${parsed.totalCount}:${parsed.items[0]?.id ?? ""}`,
 					estimateWeight: estimateArchetypeWeight,
 					ariaLabel: title,
 					renderItem: (item) => {

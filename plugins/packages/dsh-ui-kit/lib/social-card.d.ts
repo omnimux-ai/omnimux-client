@@ -146,7 +146,9 @@ interface SocialToolBlockLike {
   readonly argsRaw?: string | undefined;
   readonly isError?: boolean | undefined;
   readonly error?: {
+    readonly name?: string | undefined;
     readonly code?: string | undefined;
+    readonly reason?: string | undefined;
     readonly message?: string | undefined;
   } | undefined;
   readonly call?: {
@@ -170,7 +172,7 @@ interface ParsedSocialToolView {
 }
 /** Validate that an external post link strictly uses `http:` or `https:`. */
 declare function isSafeHttpUrl(value: unknown): boolean;
-/** Validate media/image sources: public `http(s):` or safe same-origin `/omnimux/inspiration/` route. */
+/** Validate media/image sources: public `http(s):` or safe same-origin `/omnimux/inspiration/(local/)?media/*` route. */
 declare function isSafeMediaSrc(value: unknown): boolean;
 /** Format an ISO timestamp or epoch seconds/ms into concise relative labels without middle dots. */
 declare function formatSocialRelativeTime(isoOrEpoch: unknown, locale?: "zh" | "en", nowMs?: number): string | undefined;

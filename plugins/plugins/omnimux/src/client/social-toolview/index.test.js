@@ -44,7 +44,10 @@ describe('omnimux social-toolview registration & locale', () => {
     const injectedSlots = []
     const registrations = new Map()
     const ctx = {
-      locale: { getSnapshot: () => ({ locale: 'en-US' }) },
+      locale: {
+        getSnapshot: () => ({ active: 'en-US', locales: [], revision: 1 }),
+        subscribe: () => () => {},
+      },
       slots: {
         inject(slotName, fn) {
           injectedSlots.push(slotName)
@@ -71,13 +74,15 @@ describe('omnimux social-toolview registration & locale', () => {
       assert.equal(entry.opts.id, key)
       assert.equal(entry.component, OmnimuxSocialToolView)
       assert.equal(entry.opts.inject().getLocale(), 'en')
+      assert.equal(entry.opts.inject().localeRuntime, ctx.locale)
     }
   })
 
-  it('resolves locale safely across prop, ctx, and fallback', () => {
+  it('resolves locale safely from props and real LocaleRuntime active snapshot', () => {
     assert.equal(resolveSocialToolViewLocale({ locale: 'en-US' }), 'en')
     assert.equal(resolveSocialToolViewLocale({ locale: 'zh-CN' }), 'zh')
-    assert.equal(resolveSocialToolViewLocale({}, { locale: { current: 'en' } }), 'en')
+    assert.equal(resolveSocialToolViewLocale({}, { locale: { getSnapshot: () => ({ active: 'en', locales: [], revision: 1 }) } }), 'en')
+    assert.equal(resolveSocialToolViewLocale({}, { locale: { getSnapshot: () => ({ locale: 'en' }), current: 'en' } }), 'zh')
     assert.equal(resolveSocialToolViewLocale({}, {}), 'zh')
   })
 })
@@ -255,5 +260,102 @@ describe('OmnimuxSocialToolView multi-state SSR & interactive DOM rendering', ()
     await act(async () => {
       root.unmount()
     })
+  })
+
+  it('subscribes to LocaleRuntime changes and ignores late in-flight save results after callId swap', async () => {
+    globalThis.IS_REACT_ACT_ENVIRONMENT = true
+    activeDom = new JSDOM('<!doctype html><html><body><div id="root"></div></body></html>', { url: 'http://127.0.0.1/' })
+    globalThis.window = activeDom.window
+    globalThis.document = activeDom.window.document
+
+    let currentActive = 'zh'
+    let rev = 1
+    const listeners = new Set()
+    const localeRuntime = {
+      getSnapshot: () => ({ active: currentActive, locales: [], revision: rev }),
+      subscribe: (cb) => {
+        listeners.add(cb)
+        return () => listeners.delete(cb)
+      },
+    }
+
+    let resolveSlowSave
+    const origFetch = globalThis.fetch
+    globalThis.fetch = async () => new Promise((resolve) => {
+      resolveSlowSave = () => resolve({ ok: true, status: 202, json: async () => ({ data: { id: 'insp_late' } }) })
+    })
+
+    try {
+      const makeBlock = (callId, text) => ({
+        kind: 'tool-result',
+        callId,
+        call: { name: 'omnimux_x_search', argsRaw: '{"query":"agent"}' },
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            platform: 'x',
+            capability: 'search',
+            data: {
+              timeline: [
+                {
+                  id_str: 'shared_same_id',
+                  text,
+                  source_url: 'https://x.com/u/status/55555',
+                  user: { name: 'Tester', screen_name: 'tester' },
+                },
+              ],
+            },
+          }),
+        }],
+      })
+
+      const container = activeDom.window.document.getElementById('root')
+      const root = createRoot(container)
+      await act(async () => {
+        root.render(createElement(OmnimuxSocialToolView, {
+          toolName: 'omnimux_x_search',
+          block: makeBlock('call-1', 'First call post'),
+          localeRuntime,
+        }))
+      })
+      assert.match(container.textContent || '', /已搜索 X 帖子/)
+
+      await act(async () => {
+        currentActive = 'en'
+        rev += 1
+        for (const cb of listeners) cb()
+      })
+      assert.match(container.textContent || '', /Searched X posts/)
+
+      const saveBtnCall1 = container.querySelector('button[data-save-state="idle"]')
+      assert.ok(saveBtnCall1)
+      await act(async () => {
+        saveBtnCall1.click()
+      })
+      assert.equal(container.querySelector('button[data-save-state]')?.getAttribute('data-save-state'), 'saving')
+
+      // Swap callId while call-1 save is still in flight
+      await act(async () => {
+        root.render(createElement(OmnimuxSocialToolView, {
+          toolName: 'omnimux_x_search',
+          block: makeBlock('call-2', 'Second call post'),
+          localeRuntime,
+        }))
+      })
+      assert.equal(container.querySelector('button[data-save-state]')?.getAttribute('data-save-state'), 'idle')
+
+      // Settle call-1 save late: must NOT mutate call-2 state
+      await act(async () => {
+        resolveSlowSave()
+        await Promise.resolve()
+      })
+      assert.equal(container.querySelector('button[data-save-state]')?.getAttribute('data-save-state'), 'idle')
+
+      await act(async () => {
+        root.unmount()
+      })
+    } finally {
+      globalThis.fetch = origFetch
+    }
   })
 })

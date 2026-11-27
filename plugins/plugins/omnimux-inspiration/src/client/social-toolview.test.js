@@ -29,7 +29,10 @@ describe('omnimux-inspiration social toolview registration & rendering', () => {
 
     const registrations = new Map()
     const ctx = {
-      locale: { getSnapshot: () => ({ locale: 'en' }) },
+      locale: {
+        getSnapshot: () => ({ active: 'en', locales: [], revision: 1 }),
+        subscribe: () => () => {},
+      },
       slots: {
         inject(_name, fn) {
           fn()
@@ -52,6 +55,8 @@ describe('omnimux-inspiration social toolview registration & rendering', () => {
       assert.equal(entry.opts.key, key)
       assert.equal(entry.opts.id, key)
       assert.equal(entry.component, InspirationSocialToolView)
+      assert.equal(entry.opts.inject().getLocale(), 'en')
+      assert.equal(entry.opts.inject().localeRuntime, ctx.locale)
     }
   })
 
@@ -158,5 +163,68 @@ describe('omnimux-inspiration social toolview registration & rendering', () => {
     assert.match(rivalHtml, /已读取对标作品/)
     assert.match(rivalHtml, /data-archetype="short-video"/)
     assert.match(rivalHtml, /Creator Lab/)
+  })
+
+  it('returns cover_url and account.avatar_url on inspiration_rival_post and renders via LocaleRuntime active', async () => {
+    const tempHome = mkdtempSync(join(tmpdir(), 'insp-tv-rival-'))
+    tempDirs.push(tempHome)
+    const { createRivalAccountsService } = await import('../rival/rival-accounts-service.js')
+    const { registerRivalTools } = await import('../rival/rival-agent-tools.js')
+
+    const tools = new Map()
+    const fakeStore = {
+      posts: [
+        {
+          id: 'p_local_1',
+          account_id: 'riv_1',
+          title: 'Local cached rival',
+          url: 'https://www.tiktok.com/@creator/video/7412345678901234567',
+          posted_at: '2026-11-26T00:00:00.000Z',
+          type: 'video',
+          duration: 21,
+          cover_url: 'https://remote.expired.cdn/c.jpg',
+          cover_http_url: '/omnimux/inspiration/local/media/rival-accounts/covers/cached.jpg',
+          stats: { likes: 99, views: 1200 },
+        },
+      ],
+      accounts: [
+        {
+          id: 'riv_1',
+          platform: 'tiktok',
+          handle: '@creator',
+          nickname: 'Creator Lab',
+          avatar_http_url: '/omnimux/inspiration/local/media/rival-accounts/avatars/av.jpg',
+          followers: 5000,
+        },
+      ],
+      requireAccount(id) {
+        return this.accounts.find((a) => a.id === id)
+      },
+      requirePost(_aid, pid) {
+        return this.posts.find((p) => p.id === pid)
+      },
+    }
+    registerRivalTools({ register: (t) => tools.set(t.name, t) }, fakeStore)
+    assert.ok(createRivalAccountsService)
+
+    const rivalPost = await tools.get('inspiration_rival_post').execute({ account_id: 'riv_1', post_id: 'p_local_1' })
+    assert.equal(rivalPost.post.cover_url, '/omnimux/inspiration/local/media/rival-accounts/covers/cached.jpg')
+    assert.equal(rivalPost.account.avatar_url, '/omnimux/inspiration/local/media/rival-accounts/avatars/av.jpg')
+
+    const html = renderToStaticMarkup(
+      createElement(InspirationSocialToolView, {
+        toolName: 'inspiration_rival_post',
+        localeRuntime: { getSnapshot: () => ({ active: 'en', locales: [], revision: 1 }) },
+        block: {
+          kind: 'tool-result',
+          callId: 'riv-single-1',
+          call: { name: 'inspiration_rival_post', argsRaw: '{"account_id":"riv_1","post_id":"p_local_1"}' },
+          content: [{ type: 'text', text: JSON.stringify(rivalPost) }],
+        },
+      }),
+    )
+    assert.match(html, /Fetched rival posts/)
+    assert.match(html, /\/omnimux\/inspiration\/local\/media\/rival-accounts\/covers\/cached\.jpg/)
+    assert.match(html, /\/omnimux\/inspiration\/local\/media\/rival-accounts\/avatars\/av\.jpg/)
   })
 })

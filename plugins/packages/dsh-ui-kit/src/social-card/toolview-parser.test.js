@@ -348,12 +348,19 @@ describe('dsh-ui-kit/social-card toolview parser', () => {
     ])
   })
 
-  it('blocks unsafe javascript: and data: URLs in parsed links and media', () => {
+  it('blocks unsafe javascript:, data:, traversal, query/fragment smuggling, and crafted videoIds', () => {
     assert.equal(isSafeHttpUrl('https://x.com/user/status/1'), true)
     assert.equal(isSafeHttpUrl('javascript:alert(1)'), false)
     assert.equal(isSafeMediaSrc('/omnimux/inspiration/local/media/covers/c1.jpg'), true)
+    assert.equal(isSafeMediaSrc('/omnimux/inspiration/media/covers/c1.jpg'), true)
     assert.equal(isSafeMediaSrc('data:text/html,<script>alert(1)</script>'), false)
     assert.equal(isSafeMediaSrc('/omnimux/inspiration/media/../etc/passwd'), false)
+    assert.equal(isSafeMediaSrc('/omnimux/inspiration/media/%2e%2e/etc/passwd'), false)
+    assert.equal(isSafeMediaSrc('/omnimux/inspiration/media/%2E%2E%2Fsecret.jpg'), false)
+    assert.equal(isSafeMediaSrc('/omnimux/inspiration/media/covers/c1.jpg?pat=leak'), false)
+    assert.equal(isSafeMediaSrc('/omnimux/inspiration/media/covers/c1.jpg#frag'), false)
+    assert.equal(isSafeMediaSrc('/omnimux/inspiration/media/covers\\evil.jpg'), false)
+    assert.equal(isSafeMediaSrc('/omnimux/inspiration/local/import-url'), false)
 
     const parsed = parseSocialToolBlock(
       {
@@ -368,7 +375,12 @@ describe('dsh-ui-kit/social-card toolview parser', () => {
                 id_str: '9999999',
                 text: 'Safe text with bad links stripped',
                 url: 'javascript:alert(1)',
-                cover_url: 'data:image/svg+xml,<svg onload=alert(1)>',
+                cover_url: '/omnimux/inspiration/media/%2e%2e/secret',
+              },
+              {
+                id: 'yt-crafted-1',
+                title: 'Crafted videoId must not forge watch URL',
+                videoId: 'abc&list=PL_evil#frag',
               },
             ],
           }),
@@ -379,6 +391,65 @@ describe('dsh-ui-kit/social-card toolview parser', () => {
     assert.equal(parsed.phase, 'ready')
     assert.equal(parsed.items[0]?.sourceUrl, 'https://x.com/i/status/9999999')
     assert.equal(parsed.items[0]?.coverUrl, undefined)
+    assert.equal(parsed.items[1]?.sourceUrl, undefined)
+  })
+
+  it('handles inspiration_get, inspiration_rival_post cached media, non-post arrays, and error.reason', () => {
+    const rivalSingle = parseSocialToolBlock(
+      {
+        kind: 'tool-result',
+        callId: 'c-riv-single',
+        call: { name: 'inspiration_rival_post', argsRaw: '{"account_id":"riv_1","post_id":"p_1"}' },
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            post: {
+              id: 'p_1',
+              type: 'video',
+              url: 'https://www.tiktok.com/@creator/video/7412345678901234567',
+              cover_http_url: '/omnimux/inspiration/local/media/rival-accounts/covers/x.jpg',
+              cover_url: 'https://expired.remote/cdn.jpg',
+              duration: 19,
+            },
+            account: {
+              id: 'riv_1',
+              platform: 'tiktok',
+              handle: '@creator',
+              nickname: 'Creator Lab',
+              avatar_http_url: '/omnimux/inspiration/local/media/rival-accounts/avatars/a.jpg',
+            },
+          }),
+        }],
+      },
+      'inspiration_rival_post',
+    )
+    assert.equal(rivalSingle.phase, 'ready')
+    assert.equal(rivalSingle.items[0]?.coverUrl, '/omnimux/inspiration/local/media/rival-accounts/covers/x.jpg')
+    assert.equal(rivalSingle.items[0]?.author?.avatarUrl, '/omnimux/inspiration/local/media/rival-accounts/avatars/a.jpg')
+
+    const primitiveArray = parseSocialToolBlock(
+      {
+        kind: 'tool-result',
+        callId: 'c-arr',
+        call: { name: 'omnimux_social_data', argsRaw: '{"capability":"search"}' },
+        content: [{ type: 'text', text: '[1, 2, 3]' }],
+      },
+      'omnimux_social_data',
+    )
+    assert.equal(primitiveArray.phase, 'passthrough')
+
+    const reasonErr = parseSocialToolBlock(
+      {
+        kind: 'tool-result',
+        callId: 'c-err-reason',
+        isError: true,
+        error: { name: 'ToolError', code: 'E_RATE', reason: 'Upstream backoff 30s' },
+        content: [],
+      },
+      'omnimux_x_search',
+    )
+    assert.equal(reasonErr.phase, 'error')
+    assert.equal(reasonErr.errorMessage, 'Upstream backoff 30s')
   })
 
   it('formats relative time cleanly without middle dots', () => {

@@ -212,12 +212,16 @@ export function registerRivalTools(tools, service) {
         const post = service.requirePost(accountId, postId)
         const account = service.requireAccount(accountId)
         return safeJsonOutput({
-          post,
+          post: {
+            ...post,
+            cover_url: post.cover_http_url || post.cover_url || null,
+          },
           account: {
             id: account.id,
             platform: account.platform,
             handle: account.handle,
             nickname: account.nickname,
+            avatar_url: account.avatar_http_url || account.avatar_url || null,
             followers: account.followers,
           },
         })

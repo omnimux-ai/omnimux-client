@@ -1,4 +1,4 @@
-import { createElement } from 'react'
+import { createElement, useCallback, useSyncExternalStore } from 'react'
 import { SocialSearchToolView } from 'dsh-ui-kit/social-card'
 import { NS } from './locales.js'
 import { openExternalUrl } from './open-url.js'
@@ -15,19 +15,23 @@ export const INSPIRATION_SOCIAL_TOOLVIEW_KEYS = Object.freeze([
   'inspiration_rival_post',
 ])
 
+function subscribeNoop() {
+  return () => {}
+}
+
 /**
- * Resolve active UI locale ('zh' | 'en') from props, Cordis locale service, or document root.
- * @param {{ locale?: unknown, getLocale?: () => 'zh' | 'en' }} [props]
- * @param {{ locale?: { getSnapshot?: () => { locale?: string }, current?: string } }} [ctx]
+ * Resolve active UI locale ('zh' | 'en') from props, Cordis `LocaleRuntime` snapshot (`active`), or document root.
+ * @param {{ locale?: unknown, getLocale?: () => 'zh' | 'en', localeRuntime?: { getSnapshot?: () => { active?: string } } }} [props]
+ * @param {{ locale?: { getSnapshot?: () => { active?: string } } }} [ctx]
  * @returns {'zh' | 'en'}
  */
 export function resolveInspirationToolViewLocale(props, ctx) {
-  const fromGetter = typeof props?.getLocale === 'function' ? props.getLocale() : undefined
   const fromProp = typeof props?.locale === 'string' ? props.locale : undefined
+  const fromGetter = typeof props?.getLocale === 'function' ? props.getLocale() : undefined
+  const runtime = props?.localeRuntime ?? ctx?.locale
   let fromCtx
   try {
-    const snap = ctx?.locale?.getSnapshot?.()
-    fromCtx = snap?.locale ?? ctx?.locale?.current
+    fromCtx = runtime?.getSnapshot?.()?.active
   } catch {
     fromCtx = undefined
   }
@@ -42,7 +46,16 @@ export function resolveInspirationToolViewLocale(props, ctx) {
  */
 export function InspirationSocialToolView(props) {
   const toolName = String(props?.toolName || props?.block?.call?.name || props?.block?.name || '')
-  const locale = resolveInspirationToolViewLocale(props)
+  const runtime = props?.localeRuntime
+  const subscribe = useCallback(
+    (onStoreChange) => (typeof runtime?.subscribe === 'function' ? runtime.subscribe(onStoreChange) : subscribeNoop()),
+    [runtime],
+  )
+  const getSnapshot = useCallback(
+    () => resolveInspirationToolViewLocale(props),
+    [props],
+  )
+  const locale = useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
 
   return createElement(SocialSearchToolView, {
     toolName,
@@ -76,7 +89,10 @@ export function registerInspirationSocialToolViews(ctx) {
           key,
           id: key,
           locale: NS,
-          inject: () => ({ getLocale }),
+          inject: () => ({
+            localeRuntime: ctx.locale,
+            getLocale,
+          }),
         },
         InspirationSocialToolView,
       ),

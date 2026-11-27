@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { cssClass } from "../internal/cssClass.ts";
 import { cx } from "../internal/cx.ts";
@@ -188,7 +188,20 @@ export function SocialSearchToolView({
     return typeof b?.callId === "string" ? b.callId : toolName;
   }, [block, toolName]);
 
+  const mountedRef = useRef(true);
+  const callKeyRef = useRef(callKey);
+  const inFlightSavesRef = useRef<Set<string>>(new Set());
+  callKeyRef.current = callKey;
+
   useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    inFlightSavesRef.current = new Set();
     setShowAll(false);
     setRawOpen(false);
     setCardsExpanded(true);
@@ -232,6 +245,10 @@ export function SocialSearchToolView({
       if (!canSaveToInspiration || !onSaveToInspiration || !isSafeHttpUrl(item.sourceUrl)) return;
       const current = saveStates.get(item.id);
       if (current === "saving" || current === "saved") return;
+      if (inFlightSavesRef.current.has(item.id)) return;
+
+      const activeCallKey = callKeyRef.current;
+      inFlightSavesRef.current.add(item.id);
 
       setSaveStates((prev) => {
         const next = new Map(prev);
@@ -247,6 +264,7 @@ export function SocialSearchToolView({
 
       try {
         const res = await onSaveToInspiration(item);
+        if (!mountedRef.current || callKeyRef.current !== activeCallKey) return;
         if (res && res.ok) {
           setSaveStates((prev) => {
             const next = new Map(prev);
@@ -266,6 +284,7 @@ export function SocialSearchToolView({
           });
         }
       } catch (err) {
+        if (!mountedRef.current || callKeyRef.current !== activeCallKey) return;
         setSaveStates((prev) => {
           const next = new Map(prev);
           next.set(item.id, "error");
@@ -276,6 +295,10 @@ export function SocialSearchToolView({
           next.set(item.id, err instanceof Error ? err.message : String(err));
           return next;
         });
+      } finally {
+        if (callKeyRef.current === activeCallKey) {
+          inFlightSavesRef.current.delete(item.id);
+        }
       }
     },
     [canSaveToInspiration, onSaveToInspiration, saveStates, lang],
@@ -376,7 +399,7 @@ export function SocialSearchToolView({
               maxColumns={singleCard ? 1 : 2}
               defaultColumns={singleCard ? 1 : 2}
               gap={10}
-              resetKey={`${toolName}:${parsed.totalCount}:${parsed.items[0]?.id ?? ""}`}
+              resetKey={`${callKey}:${toolName}:${parsed.totalCount}:${parsed.items[0]?.id ?? ""}`}
               estimateWeight={estimateArchetypeWeight}
               ariaLabel={title}
               renderItem={(item) => {

@@ -9,7 +9,9 @@ export interface SocialToolBlockLike {
   readonly name?: string | undefined;
   readonly argsRaw?: string | undefined;
   readonly isError?: boolean | undefined;
-  readonly error?: { readonly code?: string | undefined; readonly message?: string | undefined } | undefined;
+  readonly error?:
+    | { readonly name?: string | undefined; readonly code?: string | undefined; readonly reason?: string | undefined; readonly message?: string | undefined }
+    | undefined;
   readonly call?: { readonly name?: string | undefined; readonly argsRaw?: string | undefined } | undefined;
   readonly content?: unknown;
   readonly meta?: unknown;
@@ -142,14 +144,31 @@ export function isSafeHttpUrl(value: unknown): boolean {
   }
 }
 
-/** Validate media/image sources: public `http(s):` or safe same-origin `/omnimux/inspiration/` route. */
+const ALLOWED_LOCAL_MEDIA_PREFIXES = [
+  "/omnimux/inspiration/media/",
+  "/omnimux/inspiration/local/media/",
+] as const;
+
+/** Validate media/image sources: public `http(s):` or safe same-origin `/omnimux/inspiration/(local/)?media/*` route. */
 export function isSafeMediaSrc(value: unknown): boolean {
   if (typeof value !== "string") return false;
   const trimmed = value.trim();
-  if (!trimmed) return false;
+  if (!trimmed || /[\u0000-\u001f\u007f\\?#]/.test(trimmed)) return false;
   if (trimmed.startsWith("/")) {
-    if (trimmed.startsWith("//") || trimmed.includes("..")) return false;
-    return trimmed.startsWith("/omnimux/inspiration/");
+    const matchedPrefix = ALLOWED_LOCAL_MEDIA_PREFIXES.find((prefix) => trimmed.startsWith(prefix));
+    if (!matchedPrefix) return false;
+    const suffix = trimmed.slice(matchedPrefix.length);
+    if (!suffix || /(?:%2e|%2f|%5c)/i.test(suffix)) return false;
+    let decoded = suffix;
+    try {
+      decoded = decodeURIComponent(suffix);
+    } catch {
+      return false;
+    }
+    if (/[\u0000-\u001f\u007f\\?#]/.test(decoded)) return false;
+    const hasCleanSegments = (rawPath: string) =>
+      rawPath.split("/").every((seg) => Boolean(seg) && seg !== "." && seg !== "..");
+    return hasCleanSegments(suffix) && hasCleanSegments(decoded);
   }
   return isSafeHttpUrl(trimmed);
 }
@@ -395,11 +414,16 @@ function hasLooksLikePostRow(row: Record<string, unknown>): boolean {
       row.shortCode ||
       row.videoId ||
       row.source_url ||
+      row.url ||
+      row.share_url ||
+      row.cover_url ||
+      row.cover_http_url ||
       row.article ||
       row.caption ||
       row.video ||
       row.mediaDetails ||
       row.image_versions2 ||
+      row.content ||
       row.text ||
       row.desc ||
       row.full_text ||
@@ -411,8 +435,11 @@ function extractPostRows(
   payload: unknown,
 ): { rows: Record<string, unknown>[]; foundListContainer: boolean; containerAccount?: Record<string, unknown> | null } {
   if (Array.isArray(payload)) {
-    const rows = payload.map(unwrapRendererEntry).filter((r): r is Record<string, unknown> => Boolean(r));
-    return { rows, foundListContainer: true };
+    if (payload.length === 0) return { rows: [], foundListContainer: true };
+    const rows = payload
+      .map(unwrapRendererEntry)
+      .filter((r): r is Record<string, unknown> => r !== null && hasLooksLikePostRow(r));
+    return { rows, foundListContainer: rows.length > 0 };
   }
 
   const root = asRecord(payload);
@@ -495,6 +522,9 @@ function mapRawRowToSocialItem(
 ): SocialPostCardItem | null {
   const { platformHint, toolName, locale, nowMs, containerAccount } = options;
 
+  const validYoutubeVideoId =
+    typeof row.videoId === "string" && /^[\w-]{11}$/.test(row.videoId.trim()) ? row.videoId.trim() : undefined;
+
   const explicitUrl = sanitizeHttpUrl([
     row.source_url,
     row.url,
@@ -504,7 +534,7 @@ function mapRawRowToSocialItem(
     row.permalink,
     row.link,
     row.expanded_url,
-    row.videoId ? `https://www.youtube.com/watch?v=${String(row.videoId)}` : undefined,
+    validYoutubeVideoId ? synthesizedPostUrl("youtube", validYoutubeVideoId) : undefined,
   ]);
 
   const rawPlatformSlug = firstNonEmptyString([
@@ -526,7 +556,7 @@ function mapRawRowToSocialItem(
     row.aweme_id,
     row.tweet_id,
     row.rest_id,
-    row.videoId,
+    validYoutubeVideoId,
     shortcodeCandidate,
     row.pk,
   ]);
@@ -661,6 +691,7 @@ function mapRawRowToSocialItem(
       asRecord(articleResult?.cover_media)?.original_img_url,
       articleResult?.cover_image_url,
       articleResult?.cover_url,
+      row.cover_http_url,
       row.cover_url,
       row.cover,
       row.thumbnail_url,
@@ -779,6 +810,7 @@ function mapRawRowToSocialItem(
     : [];
 
   const avatarUrl = sanitizeMediaUrl([
+    rawUser.avatar_http_url,
     rawUser.avatar_url,
     rawUser.avatarUrl,
     rawUser.avatar,
@@ -787,9 +819,10 @@ function mapRawRowToSocialItem(
     asRecord(userResult?.avatar)?.image_url,
     urlListFirst(rawUser.avatar_thumb),
     urlListFirst(rawUser.avatar_larger),
+    row.avatar_http_url,
     row.avatar_url,
-    containerAccount?.avatar_url,
     containerAccount?.avatar_http_url,
+    containerAccount?.avatar_url,
     asRecord(ytChannelThumbs[0])?.url,
   ]);
 
@@ -913,7 +946,7 @@ export function parseSocialToolBlock(
       totalCount: 0,
       errorMessage:
         rawOutputText ||
-        firstNonEmptyString([blk.error?.message, blk.error?.code]) ||
+        firstNonEmptyString([blk.error?.reason, blk.error?.message, blk.error?.name, blk.error?.code]) ||
         (locale === "en" ? "Tool execution failed" : "工具调用失败"),
       rawOutputText: rawOutputText || undefined,
     };
