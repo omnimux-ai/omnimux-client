@@ -617,6 +617,27 @@ function applyProductFilters(list, filter = {}) {
   return out
 }
 
+const SELECTION_CHANNEL_UNAVAILABLE_QUERY_MESSAGE =
+  '实时选品数据源暂不可用，请稍后重试或先导入 CSV/JSON 快照'
+const SELECTION_CHANNEL_UNAVAILABLE_DETAIL_MESSAGE =
+  '实时选品数据源暂不可用，请稍后重试'
+
+/**
+ * Format upstream socialData failures into selection-specific actionable messages.
+ * @param {unknown} err
+ * @param {string} fallback
+ * @param {{ suggestSnapshot?: boolean }} [options]
+ * @returns {string}
+ */
+function formatSocialDataErrorMessage(err, fallback, { suggestSnapshot = false } = {}) {
+  if (err?.code === 'CHANNEL_UNAVAILABLE') {
+    return suggestSnapshot
+      ? SELECTION_CHANNEL_UNAVAILABLE_QUERY_MESSAGE
+      : SELECTION_CHANNEL_UNAVAILABLE_DETAIL_MESSAGE
+  }
+  return err?.message || fallback
+}
+
 /**
  * Create the dual-mode DataSource adapter (Hub live socialData + imported CSV/JSON snapshots).
  */
@@ -691,9 +712,10 @@ export function createDataSourceAdapter({ store, getService, logger }) {
         region,
       })
     } catch (err) {
-      logger?.warn?.('omnimux-tiktok-selection: rank query failed', { error: err?.message })
+      logger?.warn?.('omnimux-tiktok-selection: rank query failed', { code: err?.code, error: err?.message })
       const code = err?.code === 'needs-omnimux' ? 'needs-omnimux' : 'upstream-failed'
-      throw new SelectionError(code, err?.message || 'TikTok Shop rank query failed')
+      const message = formatSocialDataErrorMessage(err, 'TikTok Shop rank query failed', { suggestSnapshot: true })
+      throw new SelectionError(code, message)
     }
 
     const rawList = extractItemsFromHubResponse(rawRes)
@@ -766,9 +788,10 @@ export function createDataSourceAdapter({ store, getService, logger }) {
         region,
       })
     } catch (err) {
-      logger?.warn?.('omnimux-tiktok-selection: search query failed', { error: err?.message })
+      logger?.warn?.('omnimux-tiktok-selection: search query failed', { code: err?.code, error: err?.message })
       const code = err?.code === 'needs-omnimux' ? 'needs-omnimux' : 'upstream-failed'
-      throw new SelectionError(code, err?.message || 'TikTok Shop search failed')
+      const message = formatSocialDataErrorMessage(err, 'TikTok Shop search failed', { suggestSnapshot: true })
+      throw new SelectionError(code, message)
     }
 
     const rawList = extractItemsFromHubResponse(rawRes)
@@ -834,8 +857,8 @@ export function createDataSourceAdapter({ store, getService, logger }) {
           }
         }
       } catch (err) {
-        detailWarning = err?.message || 'Live product detail unavailable'
-        logger?.warn?.('omnimux-tiktok-selection: detail lookup fallback to local', { productId: pid, error: detailWarning })
+        detailWarning = formatSocialDataErrorMessage(err, 'Live product detail unavailable')
+        logger?.warn?.('omnimux-tiktok-selection: detail lookup fallback to local', { productId: pid, code: err?.code, error: detailWarning })
       }
     }
 
@@ -863,8 +886,8 @@ export function createDataSourceAdapter({ store, getService, logger }) {
             }
           }
         } catch (err) {
-          videosWarning = err?.message || 'Failed to load TikTok reference videos'
-          logger?.warn?.('omnimux-tiktok-selection: reference video lookup failed', { productId: pid, error: videosWarning })
+          videosWarning = formatSocialDataErrorMessage(err, 'Failed to load TikTok reference videos')
+          logger?.warn?.('omnimux-tiktok-selection: reference video lookup failed', { productId: pid, code: err?.code, error: videosWarning })
         }
       } else {
         videosWarning = 'Hub socialData 未挂载，无法在线拉取带货视频'
@@ -884,8 +907,8 @@ export function createDataSourceAdapter({ store, getService, logger }) {
           })
           reviews = normalizeHubReviews(rRes)
         } catch (err) {
-          reviewsWarning = err?.message || 'Failed to load product reviews'
-          logger?.warn?.('omnimux-tiktok-selection: reviews lookup failed', { productId: pid, error: reviewsWarning })
+          reviewsWarning = formatSocialDataErrorMessage(err, 'Failed to load product reviews')
+          logger?.warn?.('omnimux-tiktok-selection: reviews lookup failed', { productId: pid, code: err?.code, error: reviewsWarning })
         }
       } else {
         reviewsWarning = 'Hub socialData 未挂载，无法在线拉取商品评价'
