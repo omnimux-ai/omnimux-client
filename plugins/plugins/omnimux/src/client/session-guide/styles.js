@@ -2432,12 +2432,6 @@ html[data-omnimux-rightbar-open="true"]:not([data-omnimux-rightbar-fullscreen="t
   color:var(--dsw-alias-label-primary);
   font-weight:600;
 }
-.omnimux-skills-chip-count {
-  min-width:18px; height:16px; padding:0 5px; border-radius:999px;
-  background:var(--dsw-alias-bg-module-platform, rgba(255,255,255,.06));
-  color:var(--dsw-alias-label-caption); font-size:10px; line-height:16px;
-  display:inline-grid; place-items:center; font-variant-numeric:tabular-nums;
-}
 
 /* 技能专区分组容器与标题行 (1:1 对标 Creatify) */
 .omnimux-creatify-sections-wrap {

@@ -150,7 +150,6 @@ export function SkillsPanel({
         >
           <CategoryTabIcon id={cat.id} />
           <span>{t(`skills.category.${cat.id}`, cat.title)}</span>
-          {Number.isFinite(cat.count) ? <span className="omnimux-skills-chip-count">{cat.count}</span> : null}
         </button>
       ))}
     </div>
