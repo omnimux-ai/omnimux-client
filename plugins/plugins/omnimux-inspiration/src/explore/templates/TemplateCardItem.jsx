@@ -116,27 +116,28 @@ export function TemplateCardItem({ template, onSelect, onOpenDetail, locale, t }
   const metricViews = isEn ? 'Views' : '播放量'
   const coverUrl = template.thumbnailUrl || template.cover || template.img || ''
 
-  // 技能卡片：完整复刻 Creatify（badge + 星标 + hover-drawer），直接复用 SkillCard 组件
+  // 技能卡片：复用 Plan A 工作台组件，由内部语义按钮承担单一键盘交互（避免嵌套 role="button"）
   if (isSkill) {
+    const skillTranslator = typeof t === 'function'
+      ? t
+      : (key, fallback) => {
+          if (isEn) {
+            if (key === 'skills.card.use') return 'Use Skill'
+            if (key === 'skills.card.useShort') return 'Use'
+            if (key === 'skills.badge.new') return 'New'
+          }
+          return fallback || key
+        }
     return (
       <div
         className="omnimux-tpl-card is-skill-card"
         data-template-id={template.id}
         data-template-type="skill"
         data-is-app="false"
-        role="button"
-        tabIndex={0}
-        aria-label={title}
-        onKeyDown={(e) => {
-          if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) {
-            e.preventDefault()
-            handleCardClick()
-          }
-        }}
       >
         <SkillCard
           skill={template}
-          t={typeof t === 'function' ? t : (key, fallback) => fallback || key}
+          t={skillTranslator}
           active={false}
           onSelect={onSelect}
           index={template.skillIndex ?? 0}

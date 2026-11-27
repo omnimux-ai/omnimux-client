@@ -18,32 +18,33 @@ const root = join(here, '../../../../');
 test('E2E-1 样式规则核验：技能市场 CSS 中标题中心区悬停上移与平滑过渡生效', () => {
   const css = readFileSync(join(root, 'plugins/omnimux-market/src/client/css.js'), 'utf8');
   assert.ok(
-    css.includes('.omnimux-creatify-card:hover .omnimux-creatify-card-center'),
-    '必须包含 .omnimux-creatify-card:hover .omnimux-creatify-card-center 选择器'
+    css.includes('.omx-skill-card-header') && css.includes('.omx-skill-card-desc'),
+    '必须定义方案 A 左对齐标题行与常驻简介样式',
   );
   assert.ok(
-    css.includes('transform:translateY(-28px)'),
-    '必须包含上移位移样式 transform:translateY(-28px)'
+    css.includes('text-align:left;') && css.includes(':focus-visible'),
+    '必须包含左对齐文本规则与键盘焦点态',
   );
   assert.ok(
-    css.includes('transition:transform 350ms cubic-bezier(0.16, 1, 0.3, 1)'),
-    '必须配置平滑过渡贝塞尔曲线'
+    css.includes('transition:transform 160ms ease'),
+    '必须配置克制平滑的卡片过渡动画（非 transition: all）',
   );
 });
 
 test('E2E-2 跨模块对齐核验：首页推荐卡片样式中标题悬停上移与平滑过渡完全一致', () => {
   const styles = readFileSync(join(root, 'plugins/omnimux/src/client/session-guide/styles.js'), 'utf8');
   assert.ok(
-    styles.includes('.omnimux-creatify-card:hover .omnimux-creatify-card-center'),
-    '首页引导样式必须包含 .omnimux-creatify-card:hover .omnimux-creatify-card-center 选择器'
+    styles.includes('.omnimux-skill-card .omx-skill-card-header') && styles.includes('.omnimux-skill-card .omnimux-skill-card-summary'),
+    '会话引导样式必须同步定义左对齐标题行与常驻摘要规则',
   );
   assert.ok(
-    styles.includes('transform:translateY(-28px)'),
-    '首页引导样式必须包含 transform:translateY(-28px)'
+    styles.includes('.omnimux-skill-card:focus-visible'),
+    '会话引导样式必须支持键盘 :focus-visible 焦点指示',
   );
-  assert.ok(
-    styles.includes('transition:transform 350ms cubic-bezier(0.16, 1, 0.3, 1)'),
-    '首页引导样式必须包含过渡动画'
+  assert.equal(
+    /(?:^|\n)\s*\.omnimux-creatify-card(?::hover|\.is-active|\s*\{)/.test(styles),
+    false,
+    '会话引导样式不得泄露裸 .omnimux-creatify-card 选择器污染技能市场',
   );
 });
 
@@ -56,16 +57,8 @@ test('E2E-3 视图层遮挡清理：FeaturedCard 根节点移除原生 title 属
   );
 });
 
-test('E2E-4 几何间隙断言：长文本换行两行时，上移后标题底边与描述顶边保持充足留白', () => {
-  const cardHeight = 150;
-  const twoLineTitleHeight = 40; // 18px * 1.25 * 2
-  const drawerTopAtHover = 75; // 抽屉内容起始 Y 坐标
-  const shiftDistance = 28;
-
-  // 上移后几何位置推导
-  const titleCenterShifted = cardHeight / 2 - shiftDistance; // 47px
-  const titleBottomShifted = titleCenterShifted + twoLineTitleHeight / 2; // 67px
-  const verticalGap = drawerTopAtHover - titleBottomShifted; // 8px
-
-  assert.ok(verticalGap >= 8, `悬停上移后垂直呼吸留白必须大于等于 8px，实际为: ${verticalGap}px`);
+test('E2E-4 几何间隙断言：长文本换行两行时，常驻简介保持 >=6px 顶部间距且零抽屉覆盖', () => {
+  const css = readFileSync(join(root, 'plugins/omnimux-market/src/client/css.js'), 'utf8');
+  assert.match(css, /\.omx-skill-card-desc\s*\{[^}]*margin:\s*6px 0 0/, '常驻简介应通过 6px 顶部间距与标题自然分段');
+  assert.equal(/\.omnimux-creatify-card-hover-drawer/.test(css), false, '不得保留阻塞卡片布局的绝对定位遮罩抽屉');
 });

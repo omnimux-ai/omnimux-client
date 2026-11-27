@@ -65,17 +65,17 @@ function probeWidths(detail, tryLabel, widths) {
 
 const creatifyHtml = (tryTooltip, tryLabel) => `
 <div style="width:1600px;padding:20px">
-  <div class="probe-creatify-card omnimux-creatify-card featured-card" style="width:320px">
-    <div class="omnimux-creatify-card-hover-drawer">
-      <div class="omnimux-creatify-drawer-content">
-        <div style="display:flex;align-items:center;justify-content:space-between;width:100%">
-          <div class="omnimux-creatify-drawer-uses"><span>100+ 次使用</span></div>
-          <button type="button" class="omnimux-creatify-quick-try-btn" title="${tryTooltip}" aria-label="${tryTooltip}">
-            <svg width="12" height="12" viewBox="0 0 24 24"></svg>
-            <span class="${CREATIFY_LABEL.slice(1)}">${tryLabel}</span>
-          </button>
-        </div>
-      </div>
+  <div class="probe-creatify-card omnimux-creatify-card omx-skill-card featured-card" style="width:320px">
+    <div class="omx-skill-card-header">
+      <h3 class="omx-skill-card-title"><span>规划内容策略</span></h3>
+    </div>
+    <p class="omx-skill-card-desc">规划跨平台内容方向与发布排期</p>
+    <div class="omx-skill-card-footer">
+      <span class="omx-skill-card-category">营销增长</span>
+      <button type="button" class="omnimux-creatify-quick-try-btn" title="${tryTooltip}" aria-label="${tryTooltip}">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"></svg>
+        <span class="${CREATIFY_LABEL.slice(1)}">${tryLabel}</span>
+      </button>
     </div>
   </div>
 </div>`
@@ -152,37 +152,37 @@ test('专家市场精选卡：卡片自身宽度驱动 CTA 退化，紧凑只留
   }
 })
 
-test('3:2营销精选卡：卡片自身宽度驱动快捷试用 CTA 退化，窄栏(<=288px)隐藏文字保留24px图标按钮与气泡提示，宽栏显示文字', () => {
+test('3:2营销精选卡：卡片自身宽度驱动快捷试用 CTA 退化，窄栏(<=204px)隐藏文字保留28px图标按钮与气泡提示，宽栏显示文字', () => {
   assert.ok(MARKET_CSS.includes('.omnimux-creatify-quick-try-btn'), '营销卡片试用按钮样式必须被完整提取')
 
   for (const [locale, tryTooltip, tryLabel] of [
-    ['zh', '去对话试试', '去对话中试试'],
-    ['en', 'Try in Chat', 'Try in Chat'],
+    ['zh', '去对话试试', '去试试'],
+    ['en', 'Try in Chat', 'Try'],
   ]) {
-    const rows = probeCreatifyWidths(tryTooltip, tryLabel, [140, 180, 220, 260, 280, 296, 420])
-    const compact = rows.filter((r) => r.cardWidth <= 280)
-    const roomy = rows.filter((r) => r.cardWidth >= 296)
+    const rows = probeCreatifyWidths(tryTooltip, tryLabel, [140, 180, 200, 220, 260, 296, 420])
+    const compact = rows.filter((r) => r.cardWidth <= 204)
+    const roomy = rows.filter((r) => r.cardWidth >= 220)
 
     assert.equal(compact.length > 0 && roomy.length > 0, true, `${locale}: 宽度分组必须同时覆盖紧凑与充足区间`)
 
     for (const row of compact) {
       const btn = row.button
       assert.ok(btn, `${locale} ${row.cardWidth}px: 按钮必须存在`)
-      assert.equal(btn.display, 'none', `${locale} ${row.cardWidth}px: 紧凑状态(<=288px)文字标签必须退出布局 (display: none)`)
-      assert.equal(btn.width, 24, `${locale} ${row.cardWidth}px: 紧凑状态按钮收缩为 24px 图标按钮`)
-      assert.equal(btn.height, 24, `${locale} ${row.cardWidth}px: 紧凑状态按钮高度为 24px`)
-      assert.equal(btn.iconCount >= 1, true, `${locale} ${row.cardWidth}px: 紧凑状态按钮必须保留图标`)
-      assert.equal(btn.title, tryTooltip, `${locale} ${row.cardWidth}px: 紧凑状态按钮必须保留气泡提示 title`)
-      assert.equal(btn.ariaLabel, tryTooltip, `${locale} ${row.cardWidth}px: 紧凑状态按钮必须保留 aria-label`)
+      assert.equal(btn.display, 'none', `${locale} ${row.cardWidth}px: 极窄状态(<=204px)文字标签必须退出布局 (display: none)`)
+      assert.equal(btn.width, 28, `${locale} ${row.cardWidth}px: 极窄状态按钮收缩为 28px 图标按钮`)
+      assert.equal(btn.height, 28, `${locale} ${row.cardWidth}px: 极窄状态按钮高度保持 28px`)
+      assert.equal(btn.iconCount >= 1, true, `${locale} ${row.cardWidth}px: 极窄状态按钮必须保留图标`)
+      assert.equal(btn.title, tryTooltip, `${locale} ${row.cardWidth}px: 极窄状态按钮必须保留气泡提示 title`)
+      assert.equal(btn.ariaLabel, tryTooltip, `${locale} ${row.cardWidth}px: 极窄状态按钮必须保留 aria-label`)
     }
 
     for (const row of roomy) {
       const btn = row.button
       assert.ok(btn, `${locale} ${row.cardWidth}px: 按钮必须存在`)
-      assert.notEqual(btn.display, 'none', `${locale} ${row.cardWidth}px: 充足状态(>288px)必须显示文字标签`)
-      assert.equal(btn.clipped, false, `${locale} ${row.cardWidth}px: 充足状态文字不得被裁切`)
-      assert.equal(btn.iconCount >= 1, true, `${locale} ${row.cardWidth}px: 充足状态同时显示图标与文字`)
-      assert.equal(btn.title, tryTooltip, `${locale} ${row.cardWidth}px: 充足状态按钮必须保留气泡提示 title`)
+      assert.notEqual(btn.display, 'none', `${locale} ${row.cardWidth}px: 常规宽度(>204px)必须显示精炼文字标签`)
+      assert.equal(btn.clipped, false, `${locale} ${row.cardWidth}px: 常规宽度文字不得被裁切`)
+      assert.equal(btn.iconCount >= 1, true, `${locale} ${row.cardWidth}px: 常规宽度同时显示图标与文字`)
+      assert.equal(btn.title, tryTooltip, `${locale} ${row.cardWidth}px: 常规宽度按钮必须保留气泡提示 title`)
     }
   }
 })
@@ -191,8 +191,8 @@ test('专家市场精选卡：退化由具名容器查询判定，且声明落�
   assert.match(MARKET_CSS, /\.featured-card\{[^}]*container-type:inline-size/, '卡片根节点必须是 inline-size 容器')
   assert.match(MARKET_CSS, /container-name:market-featured-card/, '容器必须有唯一名字，避免误命中祖先容器')
   assert.match(MARKET_CSS, /@container market-featured-card \(max-width:288px\)/, '退化规则必须由具名容器查询判定')
-  assert.match(MARKET_CSS, /\.omnimux-creatify-card\s*\{[^}]*container-type:\s*inline-size/, '3:2营销卡片根节点必须是 inline-size 容器')
-  assert.match(MARKET_CSS, /\.omnimux-creatify-card\s*\{[^}]*container-name:\s*market-featured-card/, '3:2营销卡片容器必须声明 market-featured-card')
+  assert.match(MARKET_CSS, /\.omx-skill-card\s*\{[^}]*container-type:\s*inline-size/, '3:2营销卡片根节点必须是 inline-size 容器')
+  assert.match(MARKET_CSS, /\.omx-skill-card\s*\{[^}]*container-name:\s*market-featured-card/, '3:2营销卡片容器必须声明 market-featured-card')
   assert.match(MARKET_CSS, /\.omnimux-creatify-quick-try-btn\s*\{[^}]*white-space:\s*nowrap/, '试用按钮文字不折行')
 })
 

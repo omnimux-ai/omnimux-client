@@ -40,7 +40,7 @@ test('E2E-2 响应式阶梯衰减断点验证：平滑兼容不同尺寸视口',
 
 test('E2E-3 卡片内部排版与极光流光算法适配：标题与胶囊尺寸和谐', () => {
   // 标题字号支持适配
-  assert.match(cssSrc, /\.omnimux-creatify-center-title\s*\{/);
+  assert.match(cssSrc, /\.omx-skill-card-title\s*\{/);
   // 点阵层依然保持微孔覆盖
   assert.match(cssSrc, /\.omnimux-creatify-dot-overlay\s*\{/);
   // FeaturedCard 依然使用极光算法
