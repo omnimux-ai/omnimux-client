@@ -65,17 +65,17 @@ function probeWidths(detail, tryLabel, widths) {
 
 const creatifyHtml = (tryTooltip, tryLabel) => `
 <div style="width:1600px;padding:20px">
-  <div class="probe-creatify-card omnimux-creatify-card featured-card" style="width:320px">
-    <div class="omnimux-creatify-card-hover-drawer">
-      <div class="omnimux-creatify-drawer-content">
-        <div style="display:flex;align-items:center;justify-content:space-between;width:100%">
-          <div class="omnimux-creatify-drawer-uses"><span>100+ 次使用</span></div>
-          <button type="button" class="omnimux-creatify-quick-try-btn" title="${tryTooltip}" aria-label="${tryTooltip}">
-            <svg width="12" height="12" viewBox="0 0 24 24"></svg>
-            <span class="${CREATIFY_LABEL.slice(1)}">${tryLabel}</span>
-          </button>
-        </div>
-      </div>
+  <div class="probe-creatify-card omnimux-creatify-card omx-skill-card featured-card" style="width:320px">
+    <div class="omx-skill-card-header">
+      <h3 class="omx-skill-card-title"><span>规划内容策略</span></h3>
+    </div>
+    <p class="omx-skill-card-desc">规划跨平台内容方向与发布排期</p>
+    <div class="omx-skill-card-footer">
+      <span class="omx-skill-card-category">营销增长</span>
+      <button type="button" class="omnimux-creatify-quick-try-btn" title="${tryTooltip}" aria-label="${tryTooltip}">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"></svg>
+        <span class="${CREATIFY_LABEL.slice(1)}">${tryLabel}</span>
+      </button>
     </div>
   </div>
 </div>`
@@ -152,7 +152,7 @@ test('专家市场精选卡：卡片自身宽度驱动 CTA 退化，紧凑只留
   }
 })
 
-test('3:2营销精选卡：卡片自身宽度驱动快捷试用 CTA 退化，窄栏(<=288px)隐藏文字保留24px图标按钮与气泡提示，宽栏显示文字', () => {
+test('3:2营销精选卡：卡片自身宽度驱动快捷试用 CTA 退化，窄栏(<=204px)隐藏文字保留28px图标按钮与气泡提示，宽栏显示文字', () => {
   assert.ok(MARKET_CSS.includes('.omnimux-creatify-quick-try-btn'), '营销卡片试用按钮样式必须被完整提取')
 
   for (const [locale, tryTooltip, tryLabel] of [
@@ -191,8 +191,8 @@ test('专家市场精选卡：退化由具名容器查询判定，且声明落�
   assert.match(MARKET_CSS, /\.featured-card\{[^}]*container-type:inline-size/, '卡片根节点必须是 inline-size 容器')
   assert.match(MARKET_CSS, /container-name:market-featured-card/, '容器必须有唯一名字，避免误命中祖先容器')
   assert.match(MARKET_CSS, /@container market-featured-card \(max-width:288px\)/, '退化规则必须由具名容器查询判定')
-  assert.match(MARKET_CSS, /\.omnimux-creatify-card\s*\{[^}]*container-type:\s*inline-size/, '3:2营销卡片根节点必须是 inline-size 容器')
-  assert.match(MARKET_CSS, /\.omnimux-creatify-card\s*\{[^}]*container-name:\s*market-featured-card/, '3:2营销卡片容器必须声明 market-featured-card')
+  assert.match(MARKET_CSS, /\.omx-skill-card\s*\{[^}]*container-type:\s*inline-size/, '3:2营销卡片根节点必须是 inline-size 容器')
+  assert.match(MARKET_CSS, /\.omx-skill-card\s*\{[^}]*container-name:\s*market-featured-card/, '3:2营销卡片容器必须声明 market-featured-card')
   assert.match(MARKET_CSS, /\.omnimux-creatify-quick-try-btn\s*\{[^}]*white-space:\s*nowrap/, '试用按钮文字不折行')
 })
 

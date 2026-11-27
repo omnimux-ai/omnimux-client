@@ -141,16 +141,7 @@ export function SkillCard({ skill, t, onSelect, active = false, categoryTitle = 
       className={`omnimux-creatify-card omnimux-skill-card ${active ? 'is-active' : ''}`}
       data-skill-id={skill.id}
       data-skill-active={active ? 'true' : 'false'}
-      role="button"
-      tabIndex={0}
-      aria-label={title}
       onClick={() => onSelect?.(skill)}
-      onKeyDown={(e) => {
-        if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) {
-          e.preventDefault()
-          onSelect?.(skill)
-        }
-      }}
       style={{ '--skill-aura-accent': aurora.accent }}
     >
       {/* 1. 柔和右上角氛围微光背景层 */}

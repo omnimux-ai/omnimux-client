@@ -2461,7 +2461,11 @@ html[data-omnimux-rightbar-open="true"]:not([data-omnimux-rightbar-fullscreen="t
 .omnimux-tpl-card.is-skill-card {
   flex:0 0 240px;
   aspect-ratio:16 / 10;
+  border:0;
+  background:transparent;
+  box-shadow:none;
   border-radius:14px;
+  overflow:visible;
 }
 .omnimux-tpl-card.is-skill-card .omnimux-skill-card {
   height:100%;
@@ -2515,7 +2519,12 @@ html[data-omnimux-rightbar-open="true"]:not([data-omnimux-rightbar-fullscreen="t
 body[data-ds-dark-theme] .omnimux-skill-card:hover {
   box-shadow:0 8px 20px color-mix(in srgb, var(--dsw-static-neutral-1000) 24%, transparent);
 }
-.omnimux-skill-card:focus-visible {
+.omnimux-skill-card:focus-visible,
+.omnimux-skill-card:has(.omnimux-skill-card-btn:focus-visible) {
+  outline:2px solid var(--dsw-alias-border-selected);
+  outline-offset:2px;
+}
+.omnimux-skill-card-btn:focus-visible {
   outline:2px solid var(--dsw-alias-border-selected);
   outline-offset:2px;
 }
@@ -3630,18 +3639,20 @@ html[data-omnimux-rightbar-open="true"]:not([data-omnimux-rightbar-fullscreen="t
   width:100%;
   min-width:0;
   aspect-ratio:9 / 16;
-  background:var(--dsw-alias-bg-layer-2);
-  border:1px solid var(--dsw-alias-border-l2);
   border-radius:12px;
-  overflow:hidden;
   position:relative;
   cursor:pointer;
-  transition:all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
   display:flex;
   flex-direction:column;
   justify-content:flex-end;
 }
-.omnimux-tpl-card:hover {
+.omnimux-tpl-card:not(.is-skill-card) {
+  background:var(--dsw-alias-bg-layer-2);
+  border:1px solid var(--dsw-alias-border-l2);
+  overflow:hidden;
+  transition:border-color 0.25s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.omnimux-tpl-card:not(.is-skill-card):hover {
   border-color:var(--dsw-alias-brand-primary);
   box-shadow:0 8px 24px var(--dsw-alias-bg-base);
 }

@@ -15,10 +15,11 @@ const marketRoot = join(here, '../..');
 const pluginsRoot = join(marketRoot, '..');
 
 const cssFileSrc = readFileSync(join(marketRoot, 'src/client/css.js'), 'utf8');
-const marketCss = /const CSS = `([\s\S]*)`\s*;/.exec(cssFileSrc)?.[1] || '';
-const cardStart = marketCss.indexOf('.omnimux-creatify-card {');
+const marketCss = /const CSS = `([\s\S]*?)`\s*;/.exec(cssFileSrc)?.[1] || '';
+const cardStart = marketCss.indexOf('.sh-mkt .omx-skill-card,');
 const cardEnd = marketCss.indexOf('/* 插件专栏', cardStart);
-const cardBlock = marketCss.slice(cardStart, cardEnd > cardStart ? cardEnd : undefined);
+assert.ok(cardStart !== -1 && cardEnd > cardStart, '市场 CSS 必须包含完整方案 A 卡片样式块');
+const cardBlock = marketCss.slice(cardStart, cardEnd);
 
 const omnimuxStylesSrc = readFileSync(join(pluginsRoot, 'omnimux/src/client/session-guide/styles.js'), 'utf8');
 const featuredSrc = readFileSync(join(marketRoot, 'src/client/plaza/FeaturedCard.jsx'), 'utf8');
@@ -64,15 +65,25 @@ test('regression(Issue #410): css.js 与 FeaturedCard.jsx 彻底消除 P0 CSS/SV
   assert.match(cardBlock, /corner-shape:\s*round/, '圆形/胶囊快速按钮必须配对 corner-shape: round');
   assert.match(cardBlock, /:focus-visible/, '卡片必须声明清晰的键盘 :focus-visible 焦点框');
 
-  // 跨插件隔离：omnimux/styles.js 不得再声明裸 .omnimux-creatify-card 污染 omnimux-market
+  // 跨插件隔离：omnimux/styles.js 与 omnimux-market/css.js 均不得保留裸全局选择器互踩
   assert.equal(
     /(?:^|\n)\s*\.omnimux-creatify-card(?::hover|\.is-active|\s*\{)/.test(omnimuxStylesSrc),
     false,
     'omnimux styles.js 不得保留裸 .omnimux-creatify-card 选择器跨插件覆盖市场卡片',
   );
+  assert.equal(
+    /(?:^|\n)\s*\.omnimux-creatify-card\s*\{/.test(marketCss),
+    false,
+    'omnimux-market css.js 不得声明裸 .omnimux-creatify-card 选择器劫持 SkillCard 容器查询',
+  );
+  assert.equal(
+    /(?:^|\n|,)\s*\.omnimux-creatify-center-title\s*[\{,]/.test(marketCss),
+    false,
+    'omnimux-market css.js 不得声明裸 .omnimux-creatify-center-title 选择器',
+  );
 });
 
-test('regression(Issue #410): 工作台卡片静息态即左对齐展示标题、2 行简介、低对比场景名与>=28px试用按钮且支持键盘可达性', () => {
+test('regression(Issue #410): 工作台卡片静息态即左对齐展示标题、2 行简介、低对比场景名与>=28px试用按钮且支持键盘可达性', async () => {
   const trZh = (k) => ({
     locale: 'zh',
     'cat.scene-growth': '营销增长',
@@ -110,12 +121,11 @@ test('regression(Issue #410): 工作台卡片静息态即左对齐展示标题�
   assert.equal(opened, 1);
   assert.equal(tried, 0);
 
-  // 真实浏览器探测双样式注入零冲突、左对齐几何、无横向溢出且紧凑圆钮 >= 28px
-  const omnimuxCss = /const STYLES = `([\s\S]*)`;/.exec(omnimuxStylesSrc)?.[1] || '';
-  const probe = runStyleDomProbe({
-    name: 'plan-a-market-card-e2e',
-    styles: `${marketCss}\n${omnimuxCss}`,
-    html: `
+  // 真实浏览器探测双向样式表加载顺序均零冲突、左对齐几何、无双边框与 28px 紧凑折叠
+  const { GUIDE_CSS: omnimuxCss } = await import(join(pluginsRoot, 'omnimux/src/client/session-guide/styles.js'));
+  assert.ok(omnimuxCss && omnimuxCss.length > 1000, '必须完整加载 GUIDE_CSS（不得为空）');
+
+  const dualHtml = `
       <div class="sh-plaza-body" style="width:1360px">
         <div class="sh-mkt">
           <div class="featured-grid cards-grid">
@@ -136,34 +146,99 @@ test('regression(Issue #410): 工作台卡片静息态即左对齐展示标题�
               </div>
             </div>
           </div>
+          <div id="m-narrow" style="width:190px;margin-top:16px">
+            <div class="featured-card omnimux-creatify-card omx-skill-card">
+              <div class="omx-skill-card-header"><h3 class="omx-skill-card-title"><span>窄卡</span></h3></div>
+              <p class="omx-skill-card-desc">窄容器</p>
+              <div class="omx-skill-card-footer">
+                <span class="omx-skill-card-category">营销增长</span>
+                <button type="button" class="omnimux-creatify-quick-try-btn">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"></svg>
+                  <span class="omnimux-creatify-quick-try-label">去试试</span>
+                </button>
+              </div>
+            </div>
+          </div>
+          <div id="g-narrow" style="width:190px;margin-top:16px">
+            <article class="omnimux-creatify-card omnimux-skill-card">
+              <div class="omx-skill-card-header"><h3 class="omnimux-skill-card-title"><span>引导窄卡</span></h3></div>
+              <p class="omnimux-skill-card-summary">引导窄容器</p>
+              <div class="omx-skill-card-footer">
+                <span class="omx-skill-card-category">营销增长</span>
+                <button type="button" class="omnimux-skill-card-btn">
+                  <span class="omnimux-skill-card-btn-icon"><svg width="13" height="13" viewBox="0 0 24 24"></svg></span>
+                  <span class="omnimux-skill-card-btn-label">使用</span>
+                </button>
+              </div>
+            </article>
+          </div>
+          <div class="omnimux-tpl-card is-skill-card" style="width:240px;margin-top:16px">
+            <article class="omnimux-creatify-card omnimux-skill-card">
+              <div class="omx-skill-card-header"><h3 class="omnimux-skill-card-title"><span>货架技能卡</span></h3></div>
+            </article>
+          </div>
         </div>
-      </div>`,
-    measure: () => {
-      const card = document.querySelector('.omx-skill-card');
-      const title = card.querySelector('.omx-skill-card-title');
-      const desc = card.querySelector('.omx-skill-card-desc');
-      const btn = card.querySelector('.omnimux-creatify-quick-try-btn');
-      const cRect = card.getBoundingClientRect();
-      const tRect = title.getBoundingClientRect();
-      const dRect = desc.getBoundingClientRect();
-      const bRect = btn.getBoundingClientRect();
-      return {
-        textAlign: getComputedStyle(title).textAlign,
-        titleLeftDelta: Math.round(tRect.left - cRect.left),
-        descLeftDelta: Math.round(dRect.left - cRect.left),
-        gapTitleDesc: Math.round(dRect.top - tRect.bottom),
-        descOpacity: getComputedStyle(desc).opacity,
-        btnW: Math.round(bRect.width),
-        btnH: Math.round(bRect.height),
-        overflowX: document.documentElement.scrollWidth - document.documentElement.clientWidth,
-      };
-    },
-  });
+      </div>`;
 
-  assert.equal(probe.textAlign, 'left');
-  assert.equal(probe.titleLeftDelta, probe.descLeftDelta, '标题与简介必须共享同一左对齐轴线');
-  assert.equal(probe.gapTitleDesc >= 4, true, `标题与简介之间必须保留 >=4px 呼吸间距，实际 ${probe.gapTitleDesc}`);
-  assert.equal(probe.descOpacity, '1', '静息态简介必须直接可见');
-  assert.equal(probe.btnH >= 28 && probe.btnW >= 28, true, '按钮热区不得小于 28px');
-  assert.equal(probe.overflowX, 0);
+  for (const [orderName, combinedCss] of [
+    ['market-first', `${marketCss}\n${omnimuxCss}`],
+    ['guide-first', `${omnimuxCss}\n${marketCss}`],
+  ]) {
+    const probe = runStyleDomProbe({
+      name: `plan-a-${orderName}`,
+      styles: combinedCss,
+      html: dualHtml,
+      measure: () => {
+        const card = document.querySelector('.omx-skill-card');
+        const title = card.querySelector('.omx-skill-card-title');
+        const desc = card.querySelector('.omx-skill-card-desc');
+        const btn = card.querySelector('.omnimux-creatify-quick-try-btn');
+        const cRect = card.getBoundingClientRect();
+        const tRect = title.getBoundingClientRect();
+        const dRect = desc.getBoundingClientRect();
+        const bRect = btn.getBoundingClientRect();
+
+        const mNarrowCard = document.querySelector('#m-narrow .omx-skill-card');
+        const mNarrowBtn = mNarrowCard.querySelector('.omnimux-creatify-quick-try-btn').getBoundingClientRect();
+        const mNarrowLabel = getComputedStyle(mNarrowCard.querySelector('.omnimux-creatify-quick-try-label')).display;
+
+        const gNarrowCard = document.querySelector('#g-narrow .omnimux-skill-card');
+        const gNarrowBtn = gNarrowCard.querySelector('.omnimux-skill-card-btn').getBoundingClientRect();
+        const gNarrowLabel = getComputedStyle(gNarrowCard.querySelector('.omnimux-skill-card-btn-label')).display;
+
+        const tplWrap = document.querySelector('.omnimux-tpl-card.is-skill-card');
+        return {
+          textAlign: getComputedStyle(title).textAlign,
+          titleLeftDelta: Math.round(tRect.left - cRect.left),
+          descLeftDelta: Math.round(dRect.left - cRect.left),
+          gapTitleDesc: Math.round(dRect.top - tRect.bottom),
+          descOpacity: getComputedStyle(desc).opacity,
+          btnW: Math.round(bRect.width),
+          btnH: Math.round(bRect.height),
+          overflowX: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+          marketContainerName: getComputedStyle(mNarrowCard).containerName,
+          marketNarrowBtnW: Math.round(mNarrowBtn.width),
+          marketNarrowLabel: mNarrowLabel,
+          guideContainerName: getComputedStyle(gNarrowCard).containerName,
+          guideNarrowBtnW: Math.round(gNarrowBtn.width),
+          guideNarrowLabel: gNarrowLabel,
+          tplWrapBorderTopWidth: getComputedStyle(tplWrap).borderTopWidth,
+        };
+      },
+    });
+
+    assert.equal(probe.textAlign, 'left', orderName);
+    assert.equal(probe.titleLeftDelta, probe.descLeftDelta, `${orderName}: 标题与简介左对齐`);
+    assert.equal(probe.gapTitleDesc >= 4, true, `${orderName}: 标题与简介间距 >=4px`);
+    assert.equal(probe.descOpacity, '1', `${orderName}: 静息态简介直接可见`);
+    assert.equal(probe.btnH >= 28 && probe.btnW >= 28, true, `${orderName}: 按钮热区 >=28px`);
+    assert.equal(probe.overflowX, 0, `${orderName}: 零横向溢出`);
+    assert.equal(probe.marketContainerName, 'market-featured-card', `${orderName}: 广场卡片保持独立容器名`);
+    assert.equal(probe.marketNarrowLabel, 'none', `${orderName}: 广场 190px 卡片收起按钮文案`);
+    assert.equal(probe.marketNarrowBtnW, 28, `${orderName}: 广场 190px 卡片 CTA 收为 28px`);
+    assert.equal(probe.guideContainerName, 'guide-skill-card', `${orderName}: 引导卡片不得被市场样式劫持容器名`);
+    assert.equal(probe.guideNarrowLabel, 'none', `${orderName}: 引导 190px 卡片收起按钮文案`);
+    assert.equal(probe.guideNarrowBtnW, 28, `${orderName}: 引导 190px 卡片 CTA 收为 28px`);
+    assert.equal(probe.tplWrapBorderTopWidth, '0px', `${orderName}: is-skill-card 外框不得叠加双边框`);
+  }
 });

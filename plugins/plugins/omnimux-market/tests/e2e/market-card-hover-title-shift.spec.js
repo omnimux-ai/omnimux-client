@@ -57,16 +57,8 @@ test('E2E-3 视图层遮挡清理：FeaturedCard 根节点移除原生 title 属
   );
 });
 
-test('E2E-4 几何间隙断言：长文本换行两行时，上移后标题底边与描述顶边保持充足留白', () => {
-  const cardHeight = 150;
-  const twoLineTitleHeight = 40; // 18px * 1.25 * 2
-  const drawerTopAtHover = 75; // 抽屉内容起始 Y 坐标
-  const shiftDistance = 28;
-
-  // 上移后几何位置推导
-  const titleCenterShifted = cardHeight / 2 - shiftDistance; // 47px
-  const titleBottomShifted = titleCenterShifted + twoLineTitleHeight / 2; // 67px
-  const verticalGap = drawerTopAtHover - titleBottomShifted; // 8px
-
-  assert.ok(verticalGap >= 8, `悬停上移后垂直呼吸留白必须大于等于 8px，实际为: ${verticalGap}px`);
+test('E2E-4 几何间隙断言：长文本换行两行时，常驻简介保持 >=6px 顶部间距且零抽屉覆盖', () => {
+  const css = readFileSync(join(root, 'plugins/omnimux-market/src/client/css.js'), 'utf8');
+  assert.match(css, /\.omx-skill-card-desc\s*\{[^}]*margin:\s*6px 0 0/, '常驻简介应通过 6px 顶部间距与标题自然分段');
+  assert.equal(/\.omnimux-creatify-card-hover-drawer/.test(css), false, '不得保留阻塞卡片布局的绝对定位遮罩抽屉');
 });

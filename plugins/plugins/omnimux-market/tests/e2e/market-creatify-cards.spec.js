@@ -78,7 +78,7 @@ describe('E2E: Creatify 技能卡片 1:1 视觉复刻、一行三列与流光渐
     const cssContent = readFileSync(cssPath, 'utf8');
     assert.match(cssContent, /\.cards-grid,\s*\.featured-grid\s*\{[^}]*grid-template-columns:repeat\(5,\s*minmax\(0,\s*1fr\)\)\s*!important/);
     assert.match(cssContent, /\.omnimux-creatify-dot-overlay\s*\{[^}]*mix-blend-mode:overlay/);
-    assert.match(cssContent, /\.omnimux-creatify-card\s*\{[^}]*aspect-ratio:3\s*\/\s*2/);
+    assert.match(cssContent, /\.omx-skill-card\s*\{[^}]*aspect-ratio:3\s*\/\s*2/);
   });
 
   it('skill-plaza.js 彻底消除陈旧的局部私有写死代码，统一接入真实分区组件', () => {

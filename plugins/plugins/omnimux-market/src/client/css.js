@@ -553,7 +553,8 @@ html[data-omnimux-composer-mode='marketing'] .sh-picker-wrap:has([data-omnimux-s
 @media (max-width:768px){.cards-grid, .featured-grid{grid-template-columns:repeat(2, minmax(0, 1fr)) !important; gap:10px !important;}}
 @media (max-width:480px){.cards-grid, .featured-grid{grid-template-columns:1fr !important;}}
 
-.omnimux-creatify-card {
+.sh-mkt .omx-skill-card,
+.omx-skill-card {
   position:relative; width:100%; aspect-ratio:3 / 2; min-height:152px;
   padding:14px 16px 12px; border-radius:14px; overflow:hidden;
   background-color:var(--dsw-alias-card-fill);
@@ -597,8 +598,8 @@ body:not([data-ds-dark-theme]) .omx-skill-card-aura {
 .omx-skill-card:hover .omx-skill-card-aura {
   opacity:1;
 }
-.sh-mkt .omnimux-creatify-dot-overlay,
-.omnimux-creatify-dot-overlay {
+.sh-mkt .omx-skill-card .omnimux-creatify-dot-overlay,
+.omx-skill-card .omnimux-creatify-dot-overlay {
   position:absolute; inset:0;
   background-image:radial-gradient(circle, var(--dsw-alias-border-l4) 1px, transparent 1px);
   background-size:14px 14px; mix-blend-mode:overlay; pointer-events:none; opacity:0.55;
@@ -610,8 +611,7 @@ body:not([data-ds-dark-theme]) .omx-skill-card-aura {
   position:relative; z-index:1; display:flex; align-items:flex-start; justify-content:space-between; gap:8px; min-width:0;
 }
 .sh-mkt .omx-skill-card-title,
-.omx-skill-card-title,
-.omnimux-creatify-center-title {
+.omx-skill-card-title {
   margin:0; min-width:0;
   font-size:15px; font-weight:600; line-height:1.35; letter-spacing:-0.01em;
   color:var(--dsw-alias-label-primary); text-align:left; text-wrap:balance;
@@ -621,26 +621,26 @@ body:not([data-ds-dark-theme]) .omx-skill-card-aura {
 .omx-skill-card-badges {
   flex:none; display:inline-flex; align-items:center; gap:4px;
 }
-.sh-mkt .omnimux-creatify-badge-hot,
-.omnimux-creatify-badge-hot {
+.sh-mkt .omx-skill-card .omnimux-creatify-badge-hot,
+.omx-skill-card .omnimux-creatify-badge-hot {
   display:inline-flex; align-items:center; justify-content:center;
   width:22px; height:22px; border-radius:6px;
   background:color-mix(in srgb, var(--dsw-static-amber-500) 16%, transparent);
   color:var(--dsw-static-amber-600);
 }
-body[data-ds-dark-theme] .sh-mkt .omnimux-creatify-badge-hot,
-body[data-ds-dark-theme] .omnimux-creatify-badge-hot {
+body[data-ds-dark-theme] .sh-mkt .omx-skill-card .omnimux-creatify-badge-hot,
+body[data-ds-dark-theme] .omx-skill-card .omnimux-creatify-badge-hot {
   color:var(--dsw-static-amber-400);
 }
-.sh-mkt .omnimux-creatify-badge-new,
-.omnimux-creatify-badge-new {
+.sh-mkt .omx-skill-card .omnimux-creatify-badge-new,
+.omx-skill-card .omnimux-creatify-badge-new {
   display:inline-flex; align-items:center; justify-content:center;
   height:22px; padding:0 7px; border-radius:6px;
   background:color-mix(in srgb, var(--dsw-static-deepseek-500) 14%, transparent);
   color:var(--dsw-static-deepseek-500); font-size:11px; font-weight:600;
 }
-body[data-ds-dark-theme] .sh-mkt .omnimux-creatify-badge-new,
-body[data-ds-dark-theme] .omnimux-creatify-badge-new {
+body[data-ds-dark-theme] .sh-mkt .omx-skill-card .omnimux-creatify-badge-new,
+body[data-ds-dark-theme] .omx-skill-card .omnimux-creatify-badge-new {
   color:var(--dsw-static-deepseek-400);
 }
 .sh-mkt .omx-skill-card-desc,
@@ -695,7 +695,7 @@ body[data-ds-dark-theme] .omnimux-creatify-badge-new {
   .omnimux-creatify-quick-try-btn { width: 28px !important; height: 28px !important; padding: 0 !important; border-radius: 50% !important; corner-shape: round !important; gap: 0 !important; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .omnimux-creatify-card, .omx-skill-card-aura, .omnimux-creatify-quick-try-btn { transition: none !important; }
+  .sh-mkt .omx-skill-card, .omx-skill-card, .omx-skill-card-aura, .omnimux-creatify-quick-try-btn { transition: none !important; }
 }
 
 /* 插件专栏 / Plugins Column (2-Column Grid & Grouped Layout) */
