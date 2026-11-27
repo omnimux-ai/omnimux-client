@@ -118,6 +118,7 @@ export const SOCIAL_DATA_EXTRA_FIELDS = Object.freeze({
 
 const DEFAULT_SHOP_REGION = 'SG'
 export const SOCIAL_DATA_GROUP = 'social-data-tikhub'
+export const SOCIAL_DATA_CHANNEL_UNAVAILABLE_MESSAGE = '社媒数据通道暂不可用，请稍后重试'
 
 /**
  * @param {{ platform?: string, capability?: string, id?: string, url?: string, query?: string, region?: string }} args
@@ -388,17 +389,28 @@ export async function fetchSocialData(client, args, options = {}) {
     }
   }
   options.signal?.throwIfAborted()
-  const raw = await client.withSk('/v1/chat/completions', {
-    method: 'POST',
-    headers: { 'X-Omnimux-Group': SOCIAL_DATA_GROUP },
-    ...(options.signal ? { signal: options.signal } : {}),
-    body: {
-      model,
-      messages: [{ role: 'user', content: '.' }],
-      [field]: value,
-      ...(extras && typeof extras === 'object' ? extras : {}),
-    },
-  })
+  let raw
+  try {
+    raw = await client.withSk('/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'X-Omnimux-Group': SOCIAL_DATA_GROUP },
+      ...(options.signal ? { signal: options.signal } : {}),
+      body: {
+        model,
+        messages: [{ role: 'user', content: '.' }],
+        [field]: value,
+        ...(extras && typeof extras === 'object' ? extras : {}),
+      },
+    })
+  } catch (error) {
+    if (error?.code === 'CHANNEL_UNAVAILABLE') {
+      throw new OmnimuxError('CHANNEL_UNAVAILABLE', SOCIAL_DATA_CHANNEL_UNAVAILABLE_MESSAGE, {
+        status: error.status || 503,
+        retryable: true,
+      })
+    }
+    throw error
+  }
   return {
     platform,
     capability,
@@ -428,6 +440,12 @@ export function pickSocialPayload(raw) {
   const failed = row.success === false || row.ok === false || failedStatus || hasError
   if (failed) {
     const failure = classifyQuotaFailure({ status: code, body: row })
+    if (failure.kind === 'channel-unavailable') {
+      throw new OmnimuxError(failure.code, SOCIAL_DATA_CHANNEL_UNAVAILABLE_MESSAGE, {
+        status: failure.status || 503,
+        retryable: true,
+      })
+    }
     throw new OmnimuxError(failure.code,
       failure.kind === 'other' ? '社媒采集服务返回失败，请稍后重试' : failure.message,
       { status: failure.status || 502 })

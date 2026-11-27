@@ -4,6 +4,7 @@ import { OmnimuxError } from '../media/errors.js'
 import { createOfficialClient } from './client.js'
 import {
   SOCIAL_DATA_CATALOG,
+  SOCIAL_DATA_CHANNEL_UNAVAILABLE_MESSAGE,
   SOCIAL_DATA_GROUP,
   extractTweetId,
   extractTikTokShopProductId,
@@ -139,6 +140,114 @@ describe('social data catalog', () => {
       await assert.rejects(fetchSocialData(client, { platform: 'x', capability: 'user', id: 'sample' }),
         (error) => error instanceof OmnimuxError && error.code === expected)
     }
+  })
+
+  it('uses SOCIAL_DATA_CHANNEL_UNAVAILABLE_MESSAGE on 503 withSk errors while preserving non-channel errors', async () => {
+    assert.equal(SOCIAL_DATA_CHANNEL_UNAVAILABLE_MESSAGE, '社媒数据通道暂不可用，请稍后重试')
+
+    const client503 = createOfficialClient({
+      siteBaseUrl: 'https://site.example',
+      apiBaseUrl: 'https://api.example',
+      resolveApiKey: () => 'fixture-key',
+      resolveAccess: async () => ({ token: '' }),
+      fetcher: async () => ({
+        ok: false,
+        status: 503,
+        json: async () => ({
+          error: { message: '分组 social-data-tikhub 下模型 tiktok-shop-search-v2 无可用渠道（distributor）' },
+        }),
+      }),
+    })
+    await assert.rejects(
+      fetchSocialData(client503, { platform: 'tiktok', capability: 'shop_search_v2', query: 'serum', region: 'US' }),
+      (error) => error instanceof OmnimuxError
+        && error.code === 'CHANNEL_UNAVAILABLE'
+        && error.message === SOCIAL_DATA_CHANNEL_UNAVAILABLE_MESSAGE
+        && !error.message.includes('该模型当前不可用')
+        && error.status === 503
+        && error.retryable === true,
+    )
+
+    const authClient = createOfficialClient({
+      siteBaseUrl: 'https://site.example',
+      apiBaseUrl: 'https://api.example',
+      resolveApiKey: () => 'fixture-key',
+      resolveAccess: async () => ({ token: '' }),
+      fetcher: async () => ({ ok: false, status: 401, json: async () => ({ error: 'unauthorized' }) }),
+    })
+    await assert.rejects(
+      fetchSocialData(authClient, { platform: 'tiktok', capability: 'shop_search_v2', query: 'serum', region: 'US' }),
+      (error) => error instanceof OmnimuxError
+        && error.code === 'needs-omnimux'
+        && error.message !== SOCIAL_DATA_CHANNEL_UNAVAILABLE_MESSAGE,
+    )
+
+    const quotaClient = createOfficialClient({
+      siteBaseUrl: 'https://site.example',
+      apiBaseUrl: 'https://api.example',
+      resolveApiKey: () => 'fixture-key',
+      resolveAccess: async () => ({ token: '' }),
+      fetcher: async () => ({ ok: false, status: 402, json: async () => ({ error: 'payment required' }) }),
+    })
+    await assert.rejects(
+      fetchSocialData(quotaClient, { platform: 'tiktok', capability: 'shop_search_v2', query: 'serum', region: 'US' }),
+      (error) => error instanceof OmnimuxError
+        && error.code === 'quota-exceeded'
+        && error.message !== SOCIAL_DATA_CHANNEL_UNAVAILABLE_MESSAGE,
+    )
+
+    const abortReason = new DOMException('aborted by caller', 'AbortError')
+    await assert.rejects(
+      fetchSocialData({
+        withSk: async () => {
+          throw abortReason
+        },
+      }, { platform: 'tiktok', capability: 'shop_search_v2', query: 'serum', region: 'US' }),
+      (error) => error === abortReason,
+    )
+  })
+
+  it('uses SOCIAL_DATA_CHANNEL_UNAVAILABLE_MESSAGE for channel-unavailable envelopes in pickSocialPayload and fetchSocialData', async () => {
+    assert.throws(
+      () => pickSocialPayload({
+        code: 503,
+        error: { message: '分组 social-data-tikhub 下模型 tiktok-shop-product-v3 无可用渠道（distributor）' },
+      }),
+      (error) => error instanceof OmnimuxError
+        && error.code === 'CHANNEL_UNAVAILABLE'
+        && error.message === SOCIAL_DATA_CHANNEL_UNAVAILABLE_MESSAGE
+        && !error.message.includes('该模型当前不可用')
+        && error.status === 503
+        && error.retryable === true,
+    )
+
+    assert.throws(
+      () => pickSocialPayload({
+        success: false,
+        error: { code: 'CHANNEL_UNAVAILABLE', message: 'get_channel_failed' },
+      }),
+      (error) => error instanceof OmnimuxError
+        && error.code === 'CHANNEL_UNAVAILABLE'
+        && error.message === SOCIAL_DATA_CHANNEL_UNAVAILABLE_MESSAGE
+        && !error.message.includes('该模型当前不可用')
+        && error.status === 503
+        && error.retryable === true,
+    )
+
+    await assert.rejects(
+      fetchSocialData({
+        withSk: async () => ({
+          success: false,
+          error: { message: '分组 social-data-tikhub 下模型 tiktok-shop-reviews-v2 无可用渠道（distributor）' },
+        }),
+      }, { platform: 'tiktok', capability: 'shop_reviews_v2', id: '1732604036473983816', region: 'US' }),
+      (error) => error instanceof OmnimuxError
+        && error.code === 'CHANNEL_UNAVAILABLE'
+        && error.message === SOCIAL_DATA_CHANNEL_UNAVAILABLE_MESSAGE
+        && !error.message.includes('该模型当前不可用')
+        && error.status === 503
+        && error.retryable === true,
+    )
   })
 
   it('resolves documented platform pairs and business fields', () => {

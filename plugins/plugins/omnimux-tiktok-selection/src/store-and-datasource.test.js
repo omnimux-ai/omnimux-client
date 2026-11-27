@@ -525,4 +525,98 @@ describe('DataSourceAdapter CSV/JSON snapshot parsing & live socialData', () => 
       cleanup()
     }
   })
+
+  it('formats CHANNEL_UNAVAILABLE into actionable selection messages while preserving needs-omnimux and quota-exceeded', async () => {
+    const { store, cleanup } = makeTempStore()
+    try {
+      let nextError = Object.assign(new Error('该模型当前不可用，请换一个试试'), {
+        code: 'CHANNEL_UNAVAILABLE',
+        status: 503,
+        retryable: true,
+      })
+      const adapter = createDataSourceAdapter({
+        store,
+        getService: (name) => (name === 'socialData'
+          ? {
+              fetch: async () => {
+                throw nextError
+              },
+            }
+          : null),
+      })
+
+      await assert.rejects(
+        () => adapter.queryRank({ region: 'US' }),
+        (err) => err.name === 'SelectionError'
+          && err.code === 'upstream-failed'
+          && err.message === '实时选品数据源暂不可用，请稍后重试或先导入 CSV/JSON 快照'
+          && !err.message.includes('该模型当前不可用'),
+      )
+
+      await assert.rejects(
+        () => adapter.searchProducts({ keyword: 'serum', region: 'US' }),
+        (err) => err.name === 'SelectionError'
+          && err.code === 'upstream-failed'
+          && err.message === '实时选品数据源暂不可用，请稍后重试或先导入 CSV/JSON 快照'
+          && !err.message.includes('该模型当前不可用'),
+      )
+
+      nextError = Object.assign(new Error('社媒数据通道暂不可用，请稍后重试'), {
+        code: 'CHANNEL_UNAVAILABLE',
+        status: 503,
+        retryable: true,
+      })
+
+      const detail = await adapter.getProductDetail({
+        productId: 'live_901',
+        region: 'US',
+        loadVideos: true,
+        loadReviews: true,
+        productHint: { productId: 'live_901', region: 'US', title: 'Vitamin C Serum' },
+      })
+      assert.deepEqual(detail.warnings, [
+        '实时选品数据源暂不可用，请稍后重试',
+        '实时选品数据源暂不可用，请稍后重试',
+        '实时选品数据源暂不可用，请稍后重试',
+      ])
+
+      nextError = Object.assign(new Error('请先登录 OmniMux。'), {
+        code: 'needs-omnimux',
+        status: 401,
+      })
+      await assert.rejects(
+        () => adapter.queryRank({ region: 'US' }),
+        (err) => err.name === 'SelectionError' && err.code === 'needs-omnimux' && err.message === '请先登录 OmniMux。',
+      )
+      await assert.rejects(
+        () => adapter.searchProducts({ keyword: 'serum', region: 'US' }),
+        (err) => err.name === 'SelectionError' && err.code === 'needs-omnimux' && err.message === '请先登录 OmniMux。',
+      )
+
+      nextError = Object.assign(new Error('当前操作需要更多额度，充值后即可继续使用 OmniMux。'), {
+        code: 'quota-exceeded',
+        status: 402,
+      })
+      await assert.rejects(
+        () => adapter.queryRank({ region: 'US' }),
+        (err) => err.name === 'SelectionError'
+          && err.code === 'upstream-failed'
+          && err.message === '当前操作需要更多额度，充值后即可继续使用 OmniMux。',
+      )
+      const quotaDetail = await adapter.getProductDetail({
+        productId: 'live_901',
+        region: 'US',
+        loadVideos: true,
+        loadReviews: true,
+        productHint: { productId: 'live_901', region: 'US', title: 'Vitamin C Serum' },
+      })
+      assert.deepEqual(quotaDetail.warnings, [
+        '当前操作需要更多额度，充值后即可继续使用 OmniMux。',
+        '当前操作需要更多额度，充值后即可继续使用 OmniMux。',
+        '当前操作需要更多额度，充值后即可继续使用 OmniMux。',
+      ])
+    } finally {
+      cleanup()
+    }
+  })
 })
