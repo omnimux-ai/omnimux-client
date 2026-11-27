@@ -4,6 +4,7 @@ import { mountSidebarEntry } from './sidebar-entry.js'
 import { InspirationStage } from './InspirationStage.jsx'
 import { bindOfficialSessions } from './new-session-click.js'
 import { registerPreviewService } from './preview-service.jsx'
+import { registerInspirationSocialToolViews } from './social-toolview.js'
 import { mountSessionGuide } from '../explore/mount.js'
 
 export const name = 'omnimux-inspiration'
@@ -50,6 +51,7 @@ export function apply(ctx) {
   // of probing dictionary values (R5-⑦).
   try { t.hostLocale = ctx.locale } catch { /* a frozen translator keeps the dictionary fallback */ }
   ctx.effect(() => registerPreviewService(t), 'omnimux-inspiration: shared preview')
+  registerInspirationSocialToolViews(ctx)
 
 
   mountSessionGuide(ctx)

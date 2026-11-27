@@ -27,7 +27,8 @@
     "slots": [
       { "target": "brand.chrome", "componentPath": "src/client/chrome.js" },
       { "target": "sidebar.extra", "componentPath": "src/client/app-tabs.js" },
-      { "target": "shell.overlay", "componentPath": "src/client/AppsStage.jsx" }
+      { "target": "shell.overlay", "componentPath": "src/client/AppsStage.jsx" },
+      { "target": "tool.call.toolview", "componentPath": "src/client/social-toolview/index.js" }
     ],
     "storageDomains": ["$DSH_HOME/omnimux/"]
   },

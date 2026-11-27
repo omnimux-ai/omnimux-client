@@ -320,10 +320,18 @@ export function mountSidebarEntry(_stage, t, locale) {
 
 - `SocialPostCard`：按内容结构呈现 6 类原型（`article`、`social-post`、`short-video`、`photo-feed`、`landscape-video`、`web-link` / `raw-media`），支持 `default` 与 `compact` 密度，提供 `topLeftSlot` / `topRightSlot` / `hoverActions` / `statusOverlay` 业务插槽，颜色 100% 消费官方 `--dsw-alias-*` / `--dsw-static-*` Token，自动适配亮/暗主题。
 - `MasonryGrid`：基于 CSS Flex 纵向列容器与稳定键映射缓存的自然瀑布流，支持 `maxColumns` 约束与增量追加不跳列。
+- `SocialSearchToolView`：面向聊天 `tool.call.toolview` 槽位的社媒搜索 / 创作者作品 / 单帖 / 灵感检索视图组件，内置折叠标题栏、原始 JSON 查验、渐进展开与双列紧凑瀑布流（窄屏或单条自动切换单列），并开放 `canSaveToInspiration` / `onSaveToInspiration` / `onOpenPost` 回调。
+- `parseSocialToolBlock()` / `isSafeHttpUrl()` / `isSafeMediaSrc()` / `formatSocialRelativeTime()`：零 DOM / 零网络纯解析与安全过滤工具，将运行态与各类平台异构载荷规整为 5 态（`running` / `ready` / `empty` / `error` / `passthrough`）渲染模型。
 - `resolveSocialCardArchetype()` / `resolveOutlierBadges()` / `SocialPlatformMark`：原型判定、真实后端离群指标渲染（无数据不伪造）及平台来源标识。
 
 ```tsx
-import { MasonryGrid, SocialPostCard, estimateArchetypeWeight } from 'dsh-ui-kit/social-card'
+import {
+  MasonryGrid,
+  SocialPostCard,
+  SocialSearchToolView,
+  estimateArchetypeWeight,
+  parseSocialToolBlock,
+} from 'dsh-ui-kit/social-card'
 ```
 
 ---

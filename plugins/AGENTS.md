@@ -42,7 +42,7 @@ Out-of-tree OmniMux product plugins for official DeepSeek Harness. This director
 - **Model truth.** The gateway catalog owns official model and group availability. Consult official provider docs for research and validate the client projection through the [canvas generation contract](docs/contracts/canvas-generation.md#目录和协议). Record simulated and real results separately.
 - **Real verification boundary.** Image/audio real-task verification is agent-allowed; video-generation live verification requires task-level approval (plugin QA).
 - **State truth.** Degraded output (`ui` fixtures, cached results, fallbacks) is never reported as live or persisted; business-error or non-OK responses are failures even when the page still renders.
-- **Validated write paths.** Delete, publish, quota, credential, and account writes verify ownership and references first — no fallback IDs, default permissions, or silent `catch`; referenced assets are preserved, failed physical cleanup never erases the record.
+- **Validated write paths & security boundaries.** Delete, publish, quota, credential, and account writes verify ownership and references first — no fallback IDs, default permissions, or silent `catch`; referenced assets are preserved, failed physical cleanup never erases the record. Plugin HTTP/WS routes, outbound fetches, file I/O, media/HTML rendering, and archive extraction MUST obey [plugin security boundaries](docs/contracts/plugin-security-boundaries.md).
 
 ## MVP scope
 
