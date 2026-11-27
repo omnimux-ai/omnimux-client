@@ -1,12 +1,12 @@
 display-name-zh: 智能发现技能
 version: 1.0.0
 tag-en: "Editing & Tools / Discovery"
-tag-cn: "剪辑与效率工具 / 技能检索"
+tag-cn: "效率工具 / 技能检索"
 complete-tags-en:
   - "Editing & Tools"
   - "Skill Discovery"
 complete-tags-cn:
-  - "剪辑与效率工具"
+  - "效率工具"
   - "技能发现"
 summary-en: "Search installed and official OmniMux vertical skills by task goal, compare fit, and guide setup."
 summary-cn: "按创作与运营目标检索 OmniMux 已装与可装精品技能，推荐最佳组合方案。"

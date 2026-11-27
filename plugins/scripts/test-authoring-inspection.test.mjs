@@ -816,3 +816,185 @@ test('单模板下新判定与原判定等价（域：新用例形状 ⊆ 无主
   assert.equal(legacyMigration(supersetBefore, supersetAfter), true, '旧规则对超集放行')
   assert.equal(inspectTestStandardChange(supersetBefore, supersetAfter).attributionMigration === true, false, '新规则对超集收紧')
 })
+
+test('unchanged live-called top-level assertion helpers stay preserved across full attribution migration while mutations and bypasses remain denied', () => {
+  const helper = 'function checkUpload(form) { assert.equal(form.a, 1); assert.equal(form.b, 2) }\n'
+  const before = helper +
+    "for (const x of ['a', 'b']) { test(`handles ${x}`, () => { checkUpload(make(x)); assert.equal(run(x), 1) }) }\n" +
+    "test('existing', () => { checkUpload(make('c')); assert.equal(run('c'), 1) })\n"
+
+  // 1. Path A (exact fingerprint preserved): moving dynamic loop inside a named test with unchanged helper and preserved call count -> allowed.
+  const pathA = helper +
+    "test('handles all items', () => { for (const x of ['a', 'b']) { checkUpload(make(x)); assert.equal(run(x), 1) } })\n" +
+    "test('existing', () => { checkUpload(make('c')); assert.equal(run('c'), 1) })\n"
+  assert.equal(inspectTestStandardChange(before, pathA).allowed, true)
+
+  // 2. Path B (unrolled static cases with literal value substitution, unchanged helper and preserved call count) -> attributionMigration: true.
+  const pathB = helper +
+    "test('handles a', () => { checkUpload(make('a')); assert.equal(run('a'), 2) })\n" +
+    "test('handles b', () => { checkUpload(make('b')); assert.equal(run('b'), 2) })\n" +
+    "test('existing', () => { checkUpload(make('c')); assert.equal(run('c'), 1) })\n"
+  const pathBRes = inspectTestStandardChange(before, pathB)
+  assert.equal(pathBRes.allowed, false)
+  assert.equal(pathBRes.reason, 'test-assertion-removed-or-rewritten')
+  assert.equal(pathBRes.attributionMigration, true, JSON.stringify(pathBRes))
+
+  // 3. Adversarial Attack 1: mutating or weakening the helper body during migration -> denied, attributionMigration: false.
+  const mutatedHelper = 'function checkUpload(form) { assert.equal(form.a, 1) }\n' +
+    "test('handles all items', () => { for (const x of ['a', 'b']) { checkUpload(make(x)); assert.equal(run(x), 1) } })\n" +
+    "test('existing', () => { checkUpload(make('c')); assert.equal(run('c'), 1) })\n"
+  const mutatedRes = inspectTestStandardChange(before, mutatedHelper)
+  assert.equal(mutatedRes.allowed, false)
+  assert.equal(mutatedRes.attributionMigration, false)
+
+  // 4. Adversarial Attack 2 (F3 bypass): hiding a new residual assertion inside a newly added helper -> denied, attributionMigration: false.
+  const newSneakyHelper = helper +
+    'function sneaky() { assert.equal(residual(), 3) }\n' +
+    "test('handles all items', () => { for (const x of ['a', 'b']) { checkUpload(make(x)); sneaky(); assert.equal(run(x), 1) } })\n" +
+    "test('existing', () => { checkUpload(make('c')); assert.equal(run('c'), 1) })\n"
+  const sneakyRes = inspectTestStandardChange(before, newSneakyHelper)
+  assert.equal(sneakyRes.allowed, false)
+  assert.equal(sneakyRes.attributionMigration, false)
+
+  // 5. Adversarial Attack 3 (dead helper): leaving checkUpload untouched while dropping its invocation in the migrated test -> denied!
+  const droppedCall = helper +
+    "test('handles all items', () => { for (const x of ['a', 'b']) { assert.equal(run(x), 1) } })\n" +
+    "test('existing', () => { checkUpload(make('c')); assert.equal(run('c'), 1) })\n"
+  const droppedCallRes = inspectTestStandardChange(before, droppedCall)
+  assert.equal(droppedCallRes.allowed, false)
+  assert.equal(droppedCallRes.attributionMigration, false)
+
+  // 6. Adversarial Attack 4 (partial migration): two dynamic loops, only one migrated -> denied!
+  const twoLoopsBefore = helper +
+    "for (const x of ['a']) { test(`one ${x}`, () => { checkUpload(make(x)); assert.equal(run(x), 1) }) }\n" +
+    "for (const y of ['b']) { test(`two ${y}`, () => { checkUpload(make(y)); assert.ok(other(y)) }) }\n"
+  const partialAfter = helper +
+    "test('one all', () => { for (const x of ['a']) { checkUpload(make(x)); assert.equal(run(x), 1) } })\n" +
+    "for (const y of ['b']) { test(`two ${y}`, () => { checkUpload(make(y)); assert.ok(other(y)) }) }\n"
+  const partialRes = inspectTestStandardChange(twoLoopsBefore, partialAfter)
+  assert.equal(partialRes.allowed, false)
+  assert.equal(partialRes.attributionMigration, false)
+
+  // 7. Adversarial Attack 5 (shadowed helper): locally shadowing checkUpload inside a migrated case -> denied!
+  const shadowedAfter = helper +
+    "test('handles all items', () => { const checkUpload = () => {}; for (const x of ['a', 'b']) { checkUpload(make(x)); assert.equal(run(x), 1) } })\n" +
+    "test('existing', () => { checkUpload(make('c')); assert.equal(run('c'), 1) })\n"
+  const shadowedRes = inspectTestStandardChange(before, shadowedAfter)
+  assert.equal(shadowedRes.allowed, false)
+  assert.equal(shadowedRes.attributionMigration, false)
+
+  // 8. Blocker B1: top-level helper reassignment (=, &&=, destructuring, for-of target, update) -> denied!
+  for (const mutation of [
+    'checkUpload = () => {}\n',
+    'checkUpload &&= () => {}\n',
+    '[checkUpload] = [() => {}]\n',
+    '({ a: checkUpload } = { a: () => {} })\n',
+    'for (checkUpload of [() => {}]) {}\n',
+    'checkUpload++\n',
+  ]) {
+    const reassigned = helper + mutation +
+      "test('handles all items', () => { for (const x of ['a', 'b']) { checkUpload(make(x)); assert.equal(run(x), 1) } })\n" +
+      "test('existing', () => { checkUpload(make('c')); assert.equal(run('c'), 1) })\n"
+    const res = inspectTestStandardChange(before, reassigned)
+    assert.equal(res.allowed, false, mutation)
+    assert.equal(res.attributionMigration, false, mutation)
+  }
+
+  // 9. Blocker B2: dropping helper call from migrated loop while padding existing test, or faking args, or dropping from N-1 of N Path B cases -> denied!
+  const paddedExisting = helper +
+    "test('handles all items', () => { for (const x of ['a', 'b']) { assert.equal(run(x), 1) } })\n" +
+    "test('existing', () => { checkUpload(make('c')); checkUpload(make('c')); assert.equal(run('c'), 1) })\n"
+  assert.equal(inspectTestStandardChange(before, paddedExisting).allowed, false)
+  assert.equal(inspectTestStandardChange(before, paddedExisting).attributionMigration, false)
+
+  const fakedArgs = helper +
+    "test('handles all items', () => { for (const x of ['a', 'b']) { checkUpload(fakeValidForm); assert.equal(run(x), 1) } })\n" +
+    "test('existing', () => { checkUpload(make('c')); assert.equal(run('c'), 1) })\n"
+  assert.equal(inspectTestStandardChange(before, fakedArgs).allowed, false)
+
+  const droppedInOneUnrolled = helper +
+    "test('handles a', () => { checkUpload(make('a')); assert.equal(run('a'), 2) })\n" +
+    "test('handles b', () => { assert.equal(run('b'), 2) })\n" +
+    "test('existing', () => { checkUpload(make('c')); assert.equal(run('c'), 1) })\n"
+  assert.equal(inspectTestStandardChange(before, droppedInOneUnrolled).allowed, false)
+  assert.equal(inspectTestStandardChange(before, droppedInOneUnrolled).attributionMigration, false)
+
+  // 10. Blocker B3: Path B migration must NOT weaken or delete pre-existing named tests behind `:: *`!
+  const weakenedExisting = helper +
+    "test('handles a', () => { checkUpload(make('a')); assert.equal(run('a'), 2) })\n" +
+    "test('handles b', () => { checkUpload(make('b')); assert.equal(run('b'), 2) })\n" +
+    "test('existing', () => { checkUpload(make('c')); assert.ok(true) })\n"
+  const weakenedExistingRes = inspectTestStandardChange(before, weakenedExisting)
+  assert.equal(weakenedExistingRes.allowed, false)
+  assert.equal(weakenedExistingRes.attributionMigration, false)
+
+  const deletedExisting = helper +
+    "test('handles a', () => { checkUpload(make('a')); assert.equal(run('a'), 2) })\n" +
+    "test('handles b', () => { checkUpload(make('b')); assert.equal(run('b'), 2); checkUpload(make('b')); assert.equal(run('b'), 2) })\n"
+  const deletedExistingRes = inspectTestStandardChange(before, deletedExisting)
+  assert.equal(deletedExistingRes.allowed, false)
+  assert.equal(deletedExistingRes.attributionMigration, false)
+
+  // 11. Blocker B4: pre-existing skipped tests ({ skip: true } or test.skip) must NOT count as live named cases or live helper call sites!
+  const beforeWithSkipOption = helper +
+    "for (const x of ['a']) { test(`handles ${x}`, () => { checkUpload(make(x)); assert.equal(run(x), 1) }) }\n" +
+    "test('already skipped', { skip: true }, () => {})\n"
+  const movedIntoSkipOption = helper +
+    "test('already skipped', { skip: true }, () => { for (const x of ['a']) { checkUpload(make(x)); assert.equal(run(x), 1) } })\n"
+  assert.equal(inspectTestStandardChange(beforeWithSkipOption, movedIntoSkipOption).allowed, false)
+  assert.equal(inspectTestStandardChange(beforeWithSkipOption, movedIntoSkipOption).attributionMigration, false)
+
+  const beforeWithTestSkip = helper +
+    "for (const x of ['a']) { test(`handles ${x}`, () => { checkUpload(make(x)); assert.equal(run(x), 1) }) }\n" +
+    "test.skip('already skipped', () => {})\n"
+  const movedIntoNestedSkip = helper +
+    "test.skip('already skipped', () => { test('fake live inside skip', () => { for (const x of ['a']) { checkUpload(make(x)); assert.equal(run(x), 1) } }) })\n"
+  assert.equal(inspectTestStandardChange(beforeWithTestSkip, movedIntoNestedSkip).allowed, false)
+  assert.equal(inspectTestStandardChange(beforeWithTestSkip, movedIntoNestedSkip).attributionMigration, false)
+
+  // 12. Minor Defect 2: a top-level function with a runner call inside default params is NOT a pure assertion helper.
+  const runnerInParamBefore = "function sneaky(x = test('hidden', () => {})) { assert.equal(1, 1) }\n" +
+    "for (const x of ['a']) { test(`handles ${x}`, () => { sneaky(); assert.equal(run(x), 1) }) }\n"
+  const runnerInParamAfter = "function sneaky(x = test('hidden', () => {})) { assert.equal(1, 1) }\n" +
+    "test('handles all', () => { for (const x of ['a']) { sneaky(); assert.equal(run(x), 1) } })\n"
+  assert.equal(inspectTestStandardChange(runnerInParamBefore, runnerInParamAfter).allowed, false)
+
+  // 13. Blocker R2-B1: computed literal skip/only selectors/options and curried skipped selectors must NOT credit live cases.
+  for (const [skipHead, label] of [
+    ["test['skip']('already skipped', () => {", "test['skip']"],
+    ["describe['skip']('already skipped', () => {", "describe['skip']"],
+    ["test.describe['skip']('already skipped', () => {", "test.describe['skip']"],
+    ["test('already skipped', { ['skip']: true }, () => {", "computed ['skip'] option"],
+    ["test('already skipped', { ['only']: true }, () => {", "computed ['only'] option"],
+    ["xit.each([1])('already skipped', () => {", 'xit.each'],
+    ["test.skipIf({ a: 1 })('already skipped', () => {", 'test.skipIf'],
+  ]) {
+    const b = helper +
+      "for (const x of ['a']) { test(`handles ${x}`, () => { checkUpload(make(x)); assert.equal(run(x), 1) }) }\n" +
+      `${skipHead}})\n`
+    const a = helper +
+      `${skipHead} test('fake live', () => { for (const x of ['a']) { checkUpload(make(x)); assert.equal(run(x), 1) } }) })\n`
+    const r = inspectTestStandardChange(b, a)
+    assert.equal(r.allowed, false, label)
+    assert.equal(r.attributionMigration, false, label)
+  }
+
+  // 14. Blocker R2-B2: reassigning or shadowing a top-level assertion helper on an already-static file (non-migration edit) -> hard deny!
+  const staticBefore = helper +
+    "test('handles all items', () => { for (const x of ['a', 'b']) { checkUpload(make(x)); assert.equal(run(x), 1) } })\n" +
+    "test('existing', () => { checkUpload(make('c')); assert.equal(run('c'), 1) })\n"
+  const staticReassigned = helper +
+    'checkUpload = () => {}\n' +
+    "test('handles all items', () => { for (const x of ['a', 'b']) { checkUpload(make(x)); assert.equal(run(x), 1) } })\n" +
+    "test('existing', () => { checkUpload(make('c')); assert.equal(run('c'), 1) })\n"
+  const staticShadowed = helper +
+    "test('handles all items', () => { const checkUpload = () => {}; for (const x of ['a', 'b']) { checkUpload(make(x)); assert.equal(run(x), 1) } })\n" +
+    "test('existing', () => { checkUpload(make('c')); assert.equal(run('c'), 1) })\n"
+  for (const evil of [staticReassigned, staticShadowed]) {
+    const r = inspectTestStandardChange(staticBefore, evil)
+    assert.equal(r.allowed, false)
+    assert.equal(r.reason, 'test-assertion-removed-or-rewritten')
+    assert.deepEqual(r.changedCases, [])
+    assert.equal(r.attributionMigration, false)
+  }
+})

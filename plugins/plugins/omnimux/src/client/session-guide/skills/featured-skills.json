@@ -278,7 +278,7 @@
       "category": "product-showcase",
       "scenario": "scene-research",
       "tags": [
-        "选品与社媒洞察",
+        "市场洞察",
         "电商",
         "新品上市"
       ],
@@ -393,7 +393,7 @@
       "category": "other",
       "scenario": "scene-tools",
       "tags": [
-        "剪辑与效率工具",
+        "效率工具",
         "平台工具"
       ],
       "cover": "catalog/covers/skills/skill-card-2.webp",
@@ -450,7 +450,7 @@
       "category": "ugc-testimonial",
       "scenario": "scene-research",
       "tags": [
-        "选品与社媒洞察",
+        "市场洞察",
         "商业广告"
       ],
       "cover": "catalog/covers/skills/skill-card-12.webp",
@@ -479,7 +479,7 @@
       "category": "video-ads",
       "scenario": "scene-replicate",
       "tags": [
-        "爆款复刻与再制",
+        "爆款复刻",
         "电商"
       ],
       "cover": "catalog/covers/skills/skill-card-2.webp",
@@ -536,7 +536,7 @@
       "category": "ugc-testimonial",
       "scenario": "scene-research",
       "tags": [
-        "选品与社媒洞察",
+        "市场洞察",
         "商业广告"
       ],
       "cover": "catalog/covers/skills/skill-card-11.webp",
@@ -565,7 +565,7 @@
       "category": "video-ads",
       "scenario": "scene-growth",
       "tags": [
-        "投放与增长运营",
+        "营销增长",
         "商业广告",
         "电商"
       ],
@@ -595,7 +595,7 @@
       "category": "product-showcase",
       "scenario": "scene-visual",
       "tags": [
-        "商品视觉与海报",
+        "商品视觉",
         "电商"
       ],
       "cover": "catalog/covers/skills/skill-card-5.webp",
@@ -624,7 +624,7 @@
       "category": "product-showcase",
       "scenario": "scene-growth",
       "tags": [
-        "投放与增长运营",
+        "营销增长",
         "电商"
       ],
       "cover": "catalog/covers/skills/skill-card-15.webp",
@@ -653,7 +653,7 @@
       "category": "product-showcase",
       "scenario": "scene-growth",
       "tags": [
-        "投放与增长运营",
+        "营销增长",
         "电商"
       ],
       "cover": "catalog/covers/skills/skill-card-16.webp",
@@ -682,7 +682,7 @@
       "category": "ugc-testimonial",
       "scenario": "scene-research",
       "tags": [
-        "选品与社媒洞察",
+        "市场洞察",
         "电商"
       ],
       "cover": "catalog/covers/skills/skill-card-8.webp",
@@ -711,7 +711,7 @@
       "category": "video-ads",
       "scenario": "scene-video",
       "tags": [
-        "短视频创作",
+        "视频创作",
         "电商"
       ],
       "cover": "catalog/covers/skills/skill-card-1.webp",
@@ -740,7 +740,7 @@
       "category": "image-static",
       "scenario": "scene-visual",
       "tags": [
-        "商品视觉与海报",
+        "商品视觉",
         "电商"
       ],
       "cover": "catalog/covers/skills/skill-card-4.webp",
@@ -798,7 +798,7 @@
       "category": "video-ads",
       "scenario": "scene-research",
       "tags": [
-        "选品与社媒洞察",
+        "市场洞察",
         "商业广告"
       ],
       "cover": "catalog/covers/skills/skill-card-10.webp",
@@ -827,7 +827,7 @@
       "category": "product-showcase",
       "scenario": "scene-research",
       "tags": [
-        "选品与社媒洞察",
+        "市场洞察",
         "电商"
       ],
       "cover": "catalog/covers/skills/skill-card-7.webp",
@@ -856,7 +856,7 @@
       "category": "other",
       "scenario": "scene-tools",
       "tags": [
-        "剪辑与效率工具",
+        "效率工具",
         "平台工具"
       ],
       "cover": "catalog/covers/skills/skill-card-15.webp",
@@ -884,7 +884,7 @@
       "category": "other",
       "scenario": "scene-tools",
       "tags": [
-        "剪辑与效率工具",
+        "效率工具",
         "平台工具"
       ],
       "cover": "catalog/covers/skills/skill-card-16.webp",
@@ -940,7 +940,7 @@
       "category": "ugc-testimonial",
       "scenario": "scene-research",
       "tags": [
-        "选品与社媒洞察",
+        "市场洞察",
         "商业广告"
       ],
       "cover": "catalog/covers/skills/skill-card-13.webp",
@@ -969,7 +969,7 @@
       "category": "video-ads",
       "scenario": "scene-growth",
       "tags": [
-        "投放与增长运营",
+        "营销增长",
         "电商"
       ],
       "cover": "catalog/covers/skills/skill-card-1.webp",
@@ -998,7 +998,7 @@
       "category": "storytelling-script",
       "scenario": "scene-replicate",
       "tags": [
-        "爆款复刻与再制",
+        "爆款复刻",
         "AIGC 创作"
       ],
       "cover": "catalog/covers/skills/skill-card-3.webp",
@@ -1027,7 +1027,7 @@
       "category": "video-ads",
       "scenario": "scene-research",
       "tags": [
-        "选品与社媒洞察",
+        "市场洞察",
         "电商"
       ],
       "cover": "catalog/covers/skills/skill-card-9.webp",
@@ -1049,32 +1049,32 @@
   "categories": [
     {
       "id": "scene-video",
-      "title": "短视频创作",
+      "title": "视频创作",
       "count": 5
     },
     {
       "id": "scene-replicate",
-      "title": "爆款复刻与再制",
+      "title": "爆款复刻",
       "count": 6
     },
     {
       "id": "scene-visual",
-      "title": "商品视觉与海报",
+      "title": "商品视觉",
       "count": 5
     },
     {
       "id": "scene-research",
-      "title": "选品与社媒洞察",
+      "title": "市场洞察",
       "count": 8
     },
     {
       "id": "scene-growth",
-      "title": "投放与增长运营",
+      "title": "营销增长",
       "count": 8
     },
     {
       "id": "scene-tools",
-      "title": "剪辑与效率工具",
+      "title": "效率工具",
       "count": 4
     }
   ]

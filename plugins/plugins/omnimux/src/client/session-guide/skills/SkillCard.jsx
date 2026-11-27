@@ -17,11 +17,11 @@ export const CATEGORY_NAMES = {
   'product-showcase': '产品展示',
   'meme-native': '模因与原生',
   'other': '其它营销分类',
-  'scene-video': '短视频创作',
-  'scene-replicate': '爆款复刻与再制',
-  'scene-visual': '商品视觉与海报',
-  'scene-research': '选品与社媒洞察',
-  'scene-growth': '投放与增长运营',
+  'scene-video': '视频创作',
+  'scene-replicate': '爆款复刻',
+  'scene-visual': '商品视觉',
+  'scene-research': '市场洞察',
+  'scene-growth': '营销增长',
   'scene-seeding': '内容种草',
   'scene-brand': '品牌宣传',
   'scene-product': '商品展示',
@@ -29,7 +29,7 @@ export const CATEGORY_NAMES = {
   'scene-app': '应用推广',
   'scene-local': '本地生活',
   'scene-repurpose': '内容再制',
-  'scene-tools': '剪辑与效率工具',
+  'scene-tools': '效率工具',
 }
 
 // 分类矢量图标

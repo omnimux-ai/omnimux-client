@@ -59,32 +59,32 @@
     },
     {
       "id": "scene-video",
-      "title": "短视频创作",
+      "title": "视频创作",
       "tab": "skills"
     },
     {
       "id": "scene-replicate",
-      "title": "爆款复刻与再制",
+      "title": "爆款复刻",
       "tab": "skills"
     },
     {
       "id": "scene-visual",
-      "title": "商品视觉与海报",
+      "title": "商品视觉",
       "tab": "skills"
     },
     {
       "id": "scene-research",
-      "title": "选品与社媒洞察",
+      "title": "市场洞察",
       "tab": "skills"
     },
     {
       "id": "scene-growth",
-      "title": "投放与增长运营",
+      "title": "营销增长",
       "tab": "skills"
     },
     {
       "id": "scene-tools",
-      "title": "剪辑与效率工具",
+      "title": "效率工具",
       "tab": "skills"
     }
   ],
@@ -838,11 +838,11 @@
       "tab": "skills",
       "kind": "skill",
       "title": "创建自定义技能",
-      "subtitle": "剪辑与效率工具",
+      "subtitle": "效率工具",
       "summary": "零门槛设计并验证可复用的双语标准工作流技能包",
       "category": "other",
       "tags": [
-        "剪辑与效率工具",
+        "效率工具",
         "平台工具"
       ],
       "skill": "skill-creator",
@@ -883,11 +883,11 @@
       "tab": "skills",
       "kind": "skill",
       "title": "智能发现技能",
-      "subtitle": "剪辑与效率工具",
+      "subtitle": "效率工具",
       "summary": "按创作或营销目标检索已装与官方精品技能并推荐组合",
       "category": "other",
       "tags": [
-        "剪辑与效率工具",
+        "效率工具",
         "平台工具"
       ],
       "skill": "skill-finder",
@@ -928,11 +928,11 @@
       "tab": "skills",
       "kind": "skill",
       "title": "写带货脚本",
-      "subtitle": "短视频创作",
+      "subtitle": "视频创作",
       "summary": "提炼商品卖点，生成 3 秒钩子分镜与口播时长脚本",
       "category": "video-ads",
       "tags": [
-        "短视频创作",
+        "视频创作",
         "电商"
       ],
       "skill": "omnimux-ecom-video-script",
@@ -975,11 +975,11 @@
       "tab": "skills",
       "kind": "skill",
       "title": "跨平台改写",
-      "subtitle": "爆款复刻与再制",
+      "subtitle": "爆款复刻",
       "summary": "将视频或长帖拆解改写为短视频脚本与多平台原生图文",
       "category": "video-ads",
       "tags": [
-        "爆款复刻与再制",
+        "爆款复刻",
         "电商"
       ],
       "skill": "omnimux-content-repurposing",
@@ -1022,11 +1022,11 @@
       "tab": "skills",
       "kind": "skill",
       "title": "拆解视频口播",
-      "subtitle": "爆款复刻与再制",
+      "subtitle": "爆款复刻",
       "summary": "分析视频口播转写，提取开头钩子、金句与卖点转换结构",
       "category": "storytelling-script",
       "tags": [
-        "爆款复刻与再制",
+        "爆款复刻",
         "AIGC 创作"
       ],
       "skill": "omnimux-transcript-intelligence",
@@ -1069,11 +1069,11 @@
       "tab": "skills",
       "kind": "skill",
       "title": "商详九图质检",
-      "subtitle": "商品视觉与海报",
+      "subtitle": "商品视觉",
       "summary": "规划 9 张商详矩阵主图并执行白底占比与像素级合规质检",
       "category": "image-static",
       "tags": [
-        "商品视觉与海报",
+        "商品视觉",
         "电商"
       ],
       "skill": "omnimux-ecom-visual-qa",
@@ -1116,11 +1116,11 @@
       "tab": "skills",
       "kind": "skill",
       "title": "品牌视觉建档",
-      "subtitle": "商品视觉与海报",
+      "subtitle": "商品视觉",
       "summary": "整理商品四级参数真源、品牌色板、实拍锚点与禁用词档案",
       "category": "product-showcase",
       "tags": [
-        "商品视觉与海报",
+        "商品视觉",
         "电商"
       ],
       "skill": "omnimux-ecom-brand-curator",
@@ -1163,11 +1163,11 @@
       "tab": "skills",
       "kind": "skill",
       "title": "分析类目市场",
-      "subtitle": "选品与社媒洞察",
+      "subtitle": "市场洞察",
       "summary": "解析类目导出表，测算市场容量、CR10 集中度与价格带机会",
       "category": "product-showcase",
       "tags": [
-        "选品与社媒洞察",
+        "市场洞察",
         "电商",
         "新品上市"
       ],
@@ -1211,11 +1211,11 @@
       "tab": "skills",
       "kind": "skill",
       "title": "验证选品需求",
-      "subtitle": "选品与社媒洞察",
+      "subtitle": "市场洞察",
       "summary": "从真实社媒讨论与购买求助中挖掘细分痛点与需求证据",
       "category": "product-showcase",
       "tags": [
-        "选品与社媒洞察",
+        "市场洞察",
         "电商"
       ],
       "skill": "omnimux-product-demand",
@@ -1258,11 +1258,11 @@
       "tab": "skills",
       "kind": "skill",
       "title": "分析商品评论",
-      "subtitle": "选品与社媒洞察",
+      "subtitle": "市场洞察",
       "summary": "统计差评 8 类归因占比并提炼好评卖点与合规售后话术",
       "category": "ugc-testimonial",
       "tags": [
-        "选品与社媒洞察",
+        "市场洞察",
         "电商"
       ],
       "skill": "omnimux-ecom-review-voc",
@@ -1305,11 +1305,11 @@
       "tab": "skills",
       "kind": "skill",
       "title": "挖掘赛道趋势",
-      "subtitle": "选品与社媒洞察",
+      "subtitle": "市场洞察",
       "summary": "按关键词追踪热门社媒趋势，提炼正在起量的选题与钩子",
       "category": "video-ads",
       "tags": [
-        "选品与社媒洞察",
+        "市场洞察",
         "电商"
       ],
       "skill": "omnimux-trend-discovery",
@@ -1352,11 +1352,11 @@
       "tab": "skills",
       "kind": "skill",
       "title": "找账号爆款帖",
-      "subtitle": "选品与社媒洞察",
+      "subtitle": "市场洞察",
       "summary": "定位远超账号自身均值的离群爆款内容，提炼可复制模板",
       "category": "video-ads",
       "tags": [
-        "选品与社媒洞察",
+        "市场洞察",
         "商业广告"
       ],
       "skill": "omnimux-outlier-post-finder",
@@ -1399,11 +1399,11 @@
       "tab": "skills",
       "kind": "skill",
       "title": "分析达人主页",
-      "subtitle": "选品与社媒洞察",
+      "subtitle": "市场洞察",
       "summary": "拆解博主或品牌账号定位、内容支柱与可借鉴转化打法",
       "category": "ugc-testimonial",
       "tags": [
-        "选品与社媒洞察",
+        "市场洞察",
         "商业广告"
       ],
       "skill": "omnimux-creator-teardown",
@@ -1446,11 +1446,11 @@
       "tab": "skills",
       "kind": "skill",
       "title": "对比竞品账号",
-      "subtitle": "选品与社媒洞察",
+      "subtitle": "市场洞察",
       "summary": "横向对比 2 至 5 个竞品账号策略，识别内容差异与机会点",
       "category": "ugc-testimonial",
       "tags": [
-        "选品与社媒洞察",
+        "市场洞察",
         "商业广告"
       ],
       "skill": "omnimux-competitor-research",
@@ -1493,11 +1493,11 @@
       "tab": "skills",
       "kind": "skill",
       "title": "分析品牌口碑",
-      "subtitle": "选品与社媒洞察",
+      "subtitle": "市场洞察",
       "summary": "汇总品牌或话题全网讨论声音，梳理用户偏好与舆情倾向",
       "category": "ugc-testimonial",
       "tags": [
-        "选品与社媒洞察",
+        "市场洞察",
         "商业广告"
       ],
       "skill": "omnimux-social-listening",
@@ -1540,11 +1540,11 @@
       "tab": "skills",
       "kind": "skill",
       "title": "诊断广告投放",
-      "subtitle": "投放与增长运营",
+      "subtitle": "营销增长",
       "summary": "核算保本 ROAS 与 CPC 上限，按五层漏斗定位投放瓶颈",
       "category": "video-ads",
       "tags": [
-        "投放与增长运营",
+        "营销增长",
         "商业广告",
         "电商"
       ],
@@ -1588,11 +1588,11 @@
       "tab": "skills",
       "kind": "skill",
       "title": "生成商详文案",
-      "subtitle": "投放与增长运营",
+      "subtitle": "营销增长",
       "summary": "依据商品参数真源生成多语言标题、五点卖点与合规详情文案",
       "category": "product-showcase",
       "tags": [
-        "投放与增长运营",
+        "营销增长",
         "电商"
       ],
       "skill": "omnimux-ecom-listing-copy",
@@ -1635,11 +1635,11 @@
       "tab": "skills",
       "kind": "skill",
       "title": "测算定价利润",
-      "subtitle": "投放与增长运营",
+      "subtitle": "营销增长",
       "summary": "精算佣金、物流与广告占比下的净利率、保本价与优惠余量",
       "category": "product-showcase",
       "tags": [
-        "投放与增长运营",
+        "营销增长",
         "电商"
       ],
       "skill": "omnimux-ecom-pricing-strategy",
@@ -1682,11 +1682,11 @@
       "tab": "skills",
       "kind": "skill",
       "title": "海外短视频增长指南",
-      "subtitle": "投放与增长运营",
+      "subtitle": "营销增长",
       "summary": "结合 TikTok 节奏、界面安全区与橱窗规范规划矩阵增长内容",
       "category": "video-ads",
       "tags": [
-        "投放与增长运营",
+        "营销增长",
         "电商"
       ],
       "skill": "tiktok-growth",
@@ -1729,11 +1729,11 @@
       "tab": "skills",
       "kind": "skill",
       "title": "智能视频剪辑",
-      "subtitle": "剪辑与效率工具",
+      "subtitle": "效率工具",
       "summary": "修整视频时间轴、自动切片、添加字幕花字与成片导出",
       "category": "other",
       "tags": [
-        "剪辑与效率工具",
+        "效率工具",
         "平台工具"
       ],
       "skill": "clip-craft",
@@ -5809,76 +5809,76 @@
     },
     {
       "id": "scene-video",
-      "title": "短视频创作",
-      "titleZh": "短视频创作",
+      "title": "视频创作",
+      "titleZh": "视频创作",
       "titleEn": "Video Creation"
     },
     {
       "id": "scene-replicate",
-      "title": "爆款复刻与再制",
-      "titleZh": "爆款复刻与再制",
+      "title": "爆款复刻",
+      "titleZh": "爆款复刻",
       "titleEn": "Viral Replication"
     },
     {
       "id": "scene-visual",
-      "title": "商品视觉与海报",
-      "titleZh": "商品视觉与海报",
-      "titleEn": "Visual & Product"
+      "title": "商品视觉",
+      "titleZh": "商品视觉",
+      "titleEn": "Product Visuals"
     },
     {
       "id": "scene-research",
-      "title": "选品与社媒洞察",
-      "titleZh": "选品与社媒洞察",
-      "titleEn": "Market & Social Research"
+      "title": "市场洞察",
+      "titleZh": "市场洞察",
+      "titleEn": "Market Insights"
     },
     {
       "id": "scene-growth",
-      "title": "投放与增长运营",
-      "titleZh": "投放与增长运营",
-      "titleEn": "Ads & Growth Ops"
+      "title": "营销增长",
+      "titleZh": "营销增长",
+      "titleEn": "Growth Marketing"
     },
     {
       "id": "scene-tools",
-      "title": "剪辑与效率工具",
-      "titleZh": "剪辑与效率工具",
+      "title": "效率工具",
+      "titleZh": "效率工具",
       "titleEn": "Editing & Tools"
     }
   ],
   "skillScenarios": [
     {
       "id": "scene-video",
-      "title": "短视频创作",
-      "titleZh": "短视频创作",
+      "title": "视频创作",
+      "titleZh": "视频创作",
       "titleEn": "Video Creation"
     },
     {
       "id": "scene-replicate",
-      "title": "爆款复刻与再制",
-      "titleZh": "爆款复刻与再制",
+      "title": "爆款复刻",
+      "titleZh": "爆款复刻",
       "titleEn": "Viral Replication"
     },
     {
       "id": "scene-visual",
-      "title": "商品视觉与海报",
-      "titleZh": "商品视觉与海报",
-      "titleEn": "Visual & Product"
+      "title": "商品视觉",
+      "titleZh": "商品视觉",
+      "titleEn": "Product Visuals"
     },
     {
       "id": "scene-research",
-      "title": "选品与社媒洞察",
-      "titleZh": "选品与社媒洞察",
-      "titleEn": "Market & Social Research"
+      "title": "市场洞察",
+      "titleZh": "市场洞察",
+      "titleEn": "Market Insights"
     },
     {
       "id": "scene-growth",
-      "title": "投放与增长运营",
-      "titleZh": "投放与增长运营",
-      "titleEn": "Ads & Growth Ops"
+      "title": "营销增长",
+      "titleZh": "营销增长",
+      "titleEn": "Growth Marketing"
     },
     {
       "id": "scene-tools",
-      "title": "剪辑与效率工具",
-      "titleZh": "剪辑与效率工具",
+      "title": "效率工具",
+      "titleZh": "效率工具",
       "titleEn": "Editing & Tools"
     }
   ]

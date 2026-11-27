@@ -132,8 +132,8 @@ describe('E2E: Creatify 技能卡片 1:1 视觉复刻、一行三列与流光渐
       'workshop.viewAll': '查看全部 >',
       'workshop.badgeNew': '新',
       'workshop.bookmark': '收藏',
-      'cat.scene-video': '短视频创作',
-      'cat.scene-visual': '商品视觉与海报',
+      'cat.scene-video': '视频创作',
+      'cat.scene-visual': '商品视觉',
     };
 
     const enDict = {
@@ -145,7 +145,7 @@ describe('E2E: Creatify 技能卡片 1:1 视觉复刻、一行三列与流光渐
       'workshop.badgeNew': 'NEW',
       'workshop.bookmark': 'Bookmark',
       'cat.scene-video': 'Video Creation',
-      'cat.scene-visual': 'Visual & Product',
+      'cat.scene-visual': 'Product Visuals',
     };
 
     const trZh = (k) => zhDict[k] || k;
@@ -195,10 +195,10 @@ describe('E2E: Creatify 技能卡片 1:1 视觉复刻、一行三列与流光渐
     // 3. 分类栏 buildWorkshopCategories 双语对齐
     const catsZh = buildWorkshopCategories(null, trZh);
     const catsEn = buildWorkshopCategories(null, trEn);
-    assert.equal(catsZh[1].label, '短视频创作');
+    assert.equal(catsZh[1].label, '视频创作');
     assert.equal(catsEn[1].label, 'Video Creation');
-    assert.equal(catsZh[3].label, '商品视觉与海报');
-    assert.equal(catsEn[3].label, 'Visual & Product');
+    assert.equal(catsZh[3].label, '商品视觉');
+    assert.equal(catsEn[3].label, 'Product Visuals');
   });
 
   it('技能卡片极简重构：彻底移除分类胶囊 (.omnimux-creatify-pill-cat) 与收藏星标 (.omnimux-creatify-star-btn)', () => {
