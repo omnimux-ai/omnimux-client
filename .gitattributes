@@ -1,0 +1,10 @@
+# GitHub Linguist classification — exclude third-party vendored bundles,
+# compiled TypeScript/esbuild lib outputs, and inline Base64 WebP cover assets
+# from repository language statistics.
+
+plugins/plugins/omnimux/lib/video-inspect.js linguist-vendored
+plugins/plugins/omnimux/lib/generation-core.js linguist-generated
+plugins/packages/dsh-ui-kit/lib/** linguist-generated
+plugins/plugins/omnimux-market/lib/** linguist-generated
+plugins/plugins/omnimux-market/src/client/plaza/cardCoversData.js linguist-generated
+plugins/plugins/omnimux-inspiration/src/explore/starter-covers.js linguist-generated
