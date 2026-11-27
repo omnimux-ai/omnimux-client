@@ -9,8 +9,12 @@ import {
 } from 'node:fs'
 import { extname, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
+import { request as httpRequest } from 'node:http'
+import { request as httpsRequest } from 'node:https'
+import { isIP } from 'node:net'
 import { Readable, Transform } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
+import { createBrotliDecompress, createUnzip } from 'node:zlib'
 import { assertDownloadableUrl, isRedirectStatus, resolveRedirectUrl } from './url-policy.js'
 
 /** Hard ceiling for one media download. */
@@ -254,20 +258,123 @@ function documentResponseError(url) {
  * @param {{ resolver?: Function, headers?: Record<string, string> }} deps resolver forwarded to the policy check
  * @returns {Promise<{ response: Response, url: string }>}
  */
+const SENSITIVE_REDIRECT_HEADERS = new Set(['cookie', 'authorization', 'proxy-authorization'])
+
+/**
+ * Strip authentication/cookie headers when following a cross-origin redirect.
+ * @param {Record<string, string> | undefined} headers
+ * @returns {Record<string, string> | undefined}
+ */
+export function stripCrossOriginHeaders(headers) {
+  if (!headers || typeof headers !== 'object') return undefined
+  /** @type {Record<string, string>} */
+  const kept = {}
+  let count = 0
+  for (const [key, value] of Object.entries(headers)) {
+    if (SENSITIVE_REDIRECT_HEADERS.has(key.toLowerCase())) continue
+    kept[key] = value
+    count += 1
+  }
+  return count > 0 ? kept : undefined
+}
+
+/**
+ * Single-hop HTTP(S) transport pinning the exact DNS IP addresses already validated
+ * by `assertDownloadableUrl`, eliminating the DNS rebinding TOCTOU window.
+ * @param {string} targetUrl
+ * @param {{ signal?: AbortSignal, headers?: Record<string, string> }} init
+ * @param {Array<{ address: string, family: 4 | 6 }>} pinnedAddresses
+ * @param {typeof httpsRequest | typeof httpRequest} [requestImpl]
+ * @returns {Promise<Response>}
+ */
+export function pinnedMediaFetch(targetUrl, init, pinnedAddresses, requestImpl) {
+  const parsed = new URL(targetUrl)
+  const request = requestImpl ?? (parsed.protocol === 'https:' ? httpsRequest : httpRequest)
+  const cleanHost = parsed.hostname.replace(/^\[|\]$/g, '')
+  return new Promise((resolve, reject) => {
+    const pinnedLookup = (_hostname, opts, cb) => {
+      const callback = typeof opts === 'function' ? opts : cb
+      const all = typeof opts === 'object' && opts !== null && opts.all === true
+      if (all) callback(null, pinnedAddresses.map((entry) => ({ address: entry.address, family: entry.family })))
+      else callback(null, pinnedAddresses[0].address, pinnedAddresses[0].family)
+    }
+    const headers = {
+      ...(init.headers || {}),
+      'accept-encoding': 'identity',
+    }
+    const req = request(parsed, {
+      method: 'GET',
+      headers,
+      signal: init.signal,
+      agent: false,
+      lookup: pinnedLookup,
+      ...(parsed.protocol === 'https:' && isIP(cleanHost) === 0 ? { servername: cleanHost } : {}),
+    }, (incoming) => {
+      let body = incoming
+      try {
+        const status = incoming.statusCode ?? 500
+        const resHeaders = new Headers()
+        for (const [key, value] of Object.entries(incoming.headers)) {
+          if (value !== undefined) resHeaders.set(key, Array.isArray(value) ? value.join(', ') : String(value))
+        }
+        if ([204, 205, 304].includes(status) || isRedirectStatus(status)) {
+          incoming.on('error', reject)
+          incoming.resume()
+          resolve(new Response(null, { status, headers: resHeaders }))
+          return
+        }
+        const encoding = resHeaders.get('content-encoding')?.toLowerCase()
+        if (encoding === 'gzip' || encoding === 'deflate' || encoding === 'br') {
+          body = encoding === 'br' ? createBrotliDecompress() : createUnzip()
+          incoming.on('error', (error) => body.destroy(error))
+          body.on('close', () => incoming.destroy())
+          incoming.pipe(body)
+          resHeaders.delete('content-length')
+          resHeaders.delete('content-encoding')
+        }
+        resolve(new Response(Readable.toWeb(body), { status, headers: resHeaders }))
+      } catch (error) {
+        body.destroy()
+        if (body !== incoming) incoming.destroy()
+        req.destroy()
+        reject(error)
+      }
+    })
+    req.on('error', reject)
+    req.end()
+  })
+}
+
 async function fetchValidated(fetcher, url, signal, deps = {}) {
   let current = url
+  let activeHeaders = deps.headers ? { ...deps.headers } : undefined
+  const initialOrigin = (() => {
+    try { return new URL(url).origin } catch { return '' }
+  })()
   for (let hop = 0; hop <= MAX_REDIRECTS; hop += 1) {
     if (signal?.aborted) throw createAbortError()
-    await assertDownloadableUrl(current, deps)
+    const resolvedAddresses = await assertDownloadableUrl(current, deps)
     if (signal?.aborted) throw createAbortError()
     const init = { redirect: 'manual', signal }
-    if (deps.headers) init.headers = deps.headers
-    const response = await fetcher(current, init)
+    if (activeHeaders) init.headers = activeHeaders
+    const useInjectedFetcher = typeof fetcher === 'function' && fetcher !== globalThis.fetch
+    const response = useInjectedFetcher
+      ? await fetcher(current, init)
+      : await pinnedMediaFetch(current, init, resolvedAddresses, deps.requestImpl)
     if (!isRedirectStatus(response.status)) return { response, url: current }
+    await response.body?.cancel?.().catch(() => {})
     const location = resolveRedirectUrl(response.headers?.get?.('location'), current)
     if (!location) return { response, url: current }
     if (hop === MAX_REDIRECTS) {
       throw new Error(`媒体下载重定向次数超过 ${MAX_REDIRECTS} 次，已中止`)
+    }
+    try {
+      const nextOrigin = new URL(location).origin
+      if (nextOrigin !== initialOrigin) {
+        activeHeaders = stripCrossOriginHeaders(activeHeaders)
+      }
+    } catch {
+      activeHeaders = stripCrossOriginHeaders(activeHeaders)
     }
     current = location
   }
@@ -407,7 +514,7 @@ async function writeBody(response, tempPath, maxBytes, url, signal) {
  */
 export async function downloadMedia(url, destDir, opts = {}) {
   if (!existsSync(destDir)) mkdirSync(destDir, { recursive: true })
-  const fetcher = opts.fetcher ?? fetch
+  const fetcher = opts.fetcher
   const ext = opts.ext || detectExt(url, '.mp4')
   const prefix = opts.prefix || 'insp_'
   const maxBytes = opts.maxBytes ?? MAX_DOWNLOAD_BYTES
@@ -430,6 +537,7 @@ export async function downloadMedia(url, destDir, opts = {}) {
     }
     const deps = {}
     if (opts.resolver) deps.resolver = opts.resolver
+    if (opts.requestImpl) deps.requestImpl = opts.requestImpl
     // 只透传调用方已清洗的 header；未提供时请求参数与旧行为完全一致。
     if (opts.headers && typeof opts.headers === 'object') deps.headers = opts.headers
     const { response, url: finalUrl } = await fetchValidated(

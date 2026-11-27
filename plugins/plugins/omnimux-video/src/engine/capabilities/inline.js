@@ -1,5 +1,6 @@
 import { stat } from 'node:fs/promises'
 import { VideoError } from '../../errors.js'
+import { resolveInputPath } from '../remote-media.js'
 
 export const slug = 'video_inline_analysis_prepare'
 export const timeoutMs = 600_000
@@ -47,11 +48,11 @@ export async function execute(input, ctx) {
   validate(input)
   const maxReq = maxRequestBytesOf(input)
   const complete = input.preserveTimeline === true
+  const videoUrl = await resolveInputPath(input.videoUrl, 'inline-source', ctx)
+  input = { ...input, videoUrl }
   let source
   if (complete) {
-    const videoUrl = ctx.materialize ? await ctx.materialize(String(input.videoUrl), 'inline-source') : String(input.videoUrl)
     if ((await stat(videoUrl)).size > maxSourceBytesOf(input)) throw new VideoError('video-invalid-input', 'video source exceeds preparation limit')
-    input = { ...input, videoUrl }
     source = await probeComplete(videoUrl, ctx)
   }
   const statBytes = ctx.statBytes || ((p) => stat(p).then((s) => s.size))

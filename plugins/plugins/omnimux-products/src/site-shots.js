@@ -109,7 +109,11 @@ export async function captureSiteScreenshots(args = {}) {
     if (!binary) return degraded(SCREENSHOT_REASON.NO_BROWSER)
 
     try {
-      handle = await launch(binary, { budgetMs: args.launchOptions?.budgetMs, ...(args.launchOptions ?? {}) })
+      handle = await launch(binary, {
+        budgetMs: args.launchOptions?.budgetMs,
+        ...(args.resolver ? { resolver: args.resolver } : {}),
+        ...(args.launchOptions ?? {}),
+      })
     } catch (error) {
       return degraded(reasonOf(error, SCREENSHOT_REASON.LAUNCH_FAILED))
     }
@@ -118,10 +122,14 @@ export async function captureSiteScreenshots(args = {}) {
     const sleep = args.sleep ?? defaultSleep
     const deadline = Date.now() + budgetMs
     try {
+      const attachOptions = {
+        ...(args.attachOptions ?? {}),
+        ...(args.resolver ? { resolver: args.resolver } : {}),
+      }
       const settled = await Promise.allSettled(VIEWPORT_ORDER.map((key) => captureViewport(
         handle,
         VIEWPORTS[key],
-        { url, navTimeoutMs, settleMs, retrySettleMs, deadline, attach, sleep, log: args.log, attachOptions: args.attachOptions ?? {} },
+        { url, navTimeoutMs, settleMs, retrySettleMs, deadline, attach, sleep, log: args.log, attachOptions },
       )))
 
       const outcomes = settled.map((row, index) => (row.status === 'fulfilled'

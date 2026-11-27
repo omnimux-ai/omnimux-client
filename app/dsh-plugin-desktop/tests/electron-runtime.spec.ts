@@ -16,11 +16,13 @@ const transitionNotice = vi.hoisted(() => ({ open: vi.fn(async () => {}) }))
 vi.mock('../src/next-transition-notice.ts', () => ({ NextTransitionNotice: class { open = transitionNotice.open } }))
 
 const updater = vi.hoisted(() => ({
+  assertDigest: vi.fn(async () => {}),
   download: vi.fn(),
   filename: vi.fn(),
   pending: vi.fn(),
   record: vi.fn(),
   resolve: vi.fn(),
+  verifySignature: vi.fn(async () => {}),
 }))
 const childProcess = vi.hoisted(() => {
   type Listener = (...args: unknown[]) => void
@@ -71,13 +73,19 @@ vi.mock('../src/diagnostic-export.ts', () => ({
 }))
 
 
-vi.mock('../src/update-download.ts', () => ({
-  desktopUpdateFilename: updater.filename,
-  downloadDesktopUpdate: updater.download,
-  pendingDesktopUpdateArtifact: updater.pending,
-  recordDesktopUpdateArtifact: updater.record,
-  resolveDesktopUpdateArtifact: updater.resolve,
-}))
+vi.mock('../src/update-download.ts', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../src/update-download.ts')>()
+  return {
+    ...original,
+    assertInstallerDigest: updater.assertDigest,
+    desktopUpdateFilename: updater.filename,
+    downloadDesktopUpdate: updater.download,
+    pendingDesktopUpdateArtifact: updater.pending,
+    recordDesktopUpdateArtifact: updater.record,
+    resolveDesktopUpdateArtifact: updater.resolve,
+    verifyInstallerSignature: updater.verifySignature,
+  }
+})
 
 vi.mock('node:child_process', async (importOriginal) => ({
   ...await importOriginal<typeof import('node:child_process')>(),
@@ -2843,7 +2851,7 @@ describe('Electron desktop runtime', () => {
       canceled: false,
       filePath: '/tmp/Downloads/DSH-Desktop-2.1.0-mac.dmg',
     })
-    await runtime.updates.downloadAndOpen('2.1.0', controller.signal)
+    await runtime.updates.downloadAndOpen('2.1.0', controller.signal, undefined, { darwin: 'a'.repeat(64) })
     expect(electron.dialog.showSaveDialog).toHaveBeenCalledWith(
       activeWindow,
       expect.objectContaining({
@@ -2857,6 +2865,8 @@ describe('Electron desktop runtime', () => {
       destinationPath: '/tmp/Downloads/DSH-Desktop-2.1.0-mac.dmg',
       request: expect.any(Function),
       signal: controller.signal,
+      expectedSha256: 'a'.repeat(64),
+      verifyArtifact: expect.any(Function),
     })
     expect(electron.shell.openPath).toHaveBeenCalledWith('/tmp/DSH-Desktop-2.1.0-mac.dmg')
     expect(updater.record).toHaveBeenCalledWith('/tmp/dsh-desktop-user-data', {
@@ -2903,7 +2913,7 @@ describe('Electron desktop runtime', () => {
       filePath: 'C:\\Updates\\DSH-Desktop-2.1.0-windows.exe',
     })
 
-    const pending = runtime.updates.downloadAndOpen('2.1.0', new AbortController().signal)
+    const pending = runtime.updates.downloadAndOpen('2.1.0', new AbortController().signal, undefined, { win32: 'b'.repeat(64) })
     await vi.waitFor(() => { expect(childProcess.spawn).toHaveBeenCalledOnce() })
     expect(childProcess.spawn).toHaveBeenCalledWith(
       'C:\\Updates\\DSH-Desktop-2.1.0-windows.exe',
@@ -2940,7 +2950,7 @@ describe('Electron desktop runtime', () => {
       filePath: 'C:\\Updates\\DSH-Desktop-2.1.0-windows.exe',
     })
 
-    const pending = runtime.updates.downloadAndOpen('2.1.0', new AbortController().signal)
+    const pending = runtime.updates.downloadAndOpen('2.1.0', new AbortController().signal, undefined, { win32: 'b'.repeat(64) })
     await vi.waitFor(() => { expect(childProcess.spawn).toHaveBeenCalledOnce() })
     childProcess.emit('error', new Error('blocked'))
 
@@ -2966,7 +2976,7 @@ describe('Electron desktop runtime', () => {
       filePath: 'C:\\Updates\\DSH-Desktop-2.1.0-windows.exe',
     })
 
-    await runtime.updates.downloadAndOpen('2.1.0', new AbortController().signal)
+    await runtime.updates.downloadAndOpen('2.1.0', new AbortController().signal, undefined, { win32: 'b'.repeat(64) })
 
     expect(childProcess.spawn).not.toHaveBeenCalled()
     expect(updater.record).toHaveBeenCalledOnce()
@@ -2985,7 +2995,7 @@ describe('Electron desktop runtime', () => {
     const { ElectronDesktopRuntime } = await import('../src/electron-runtime.ts')
     const runtime = new ElectronDesktopRuntime(async () => {}, undefined, logger)
 
-    await expect(runtime.updates.downloadAndOpen('2.1.0', new AbortController().signal))
+    await expect(runtime.updates.downloadAndOpen('2.1.0', new AbortController().signal, undefined, { win32: 'b'.repeat(64) }))
       .resolves.toBeUndefined()
 
     expect(logger.error).toHaveBeenCalledWith(
@@ -2999,7 +3009,7 @@ describe('Electron desktop runtime', () => {
     const { ElectronDesktopRuntime } = await import('../src/electron-runtime.ts')
     const runtime = new ElectronDesktopRuntime(async () => {})
 
-    await runtime.updates.downloadAndOpen('2.1.0', new AbortController().signal)
+    await runtime.updates.downloadAndOpen('2.1.0', new AbortController().signal, undefined, { win32: 'b'.repeat(64) })
 
     expect(electron.dialog.showSaveDialog).toHaveBeenCalledOnce()
     expect(updater.download).not.toHaveBeenCalled()
@@ -3046,7 +3056,7 @@ describe('Electron desktop runtime', () => {
       filePath: '/tmp/DSH-Desktop-2.1.0-mac.dmg',
     })
 
-    await expect(runtime.updates.downloadAndOpen('2.1.0', new AbortController().signal))
+    await expect(runtime.updates.downloadAndOpen('2.1.0', new AbortController().signal, undefined, { darwin: 'a'.repeat(64) }))
       .rejects.toThrow('Launch Services rejected the image')
     expect(electron.dialog.showMessageBox).not.toHaveBeenCalled()
   })
@@ -3066,7 +3076,7 @@ describe('Electron desktop runtime', () => {
       filePath: '/tmp/DSH-Desktop-2.1.0-mac.dmg',
     })
 
-    const pending = runtime.updates.downloadAndOpen('2.1.0', controller.signal)
+    const pending = runtime.updates.downloadAndOpen('2.1.0', controller.signal, undefined, { darwin: 'a'.repeat(64) })
     await vi.waitFor(() => { expect(electron.shell.openPath).toHaveBeenCalledOnce() })
     controller.abort()
     finishOpen('')

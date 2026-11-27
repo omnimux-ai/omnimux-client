@@ -233,11 +233,36 @@ export async function runControlled(opts) {
   }
 }
 
+export const FFMPEG_PROTOCOL_WHITELIST = 'file,pipe'
+
 /**
- * Run ffmpeg. The spawn layer prepends `-hide_banner -loglevel <level> -y`;
- * capability modules MUST NOT add those themselves (nor `-y`). Default level
- * is `error` (keeps unrelated capabilities quiet); scene detection needs
- * `info` so `showinfo`'s `pts_time` lines reach stderr.
+ * Inject `-protocol_whitelist file,pipe` immediately before every `-i` input
+ * so FFmpeg never opens network/nested protocols (http, tcp, rtmp, concat:,
+ * subfile:, etc.) on any input (including multi-input graphs and playlists).
+ * @param {string[]} args
+ * @returns {string[]}
+ */
+export function applyInputProtocolWhitelist(args) {
+  const src = Array.isArray(args) ? args : []
+  const out = []
+  for (let i = 0; i < src.length; i += 1) {
+    if (src[i] === '-i') {
+      const alreadySet = out.length >= 2 && out[out.length - 2] === '-protocol_whitelist' && out[out.length - 1] === FFMPEG_PROTOCOL_WHITELIST
+      if (!alreadySet) {
+        out.push('-protocol_whitelist', FFMPEG_PROTOCOL_WHITELIST)
+      }
+    }
+    out.push(src[i])
+  }
+  return out
+}
+
+/**
+ * Run ffmpeg. The spawn layer prepends `-hide_banner -loglevel <level> -y` and
+ * restricts every `-i` input to `-protocol_whitelist file,pipe`; capability
+ * modules MUST NOT add those themselves (nor `-y`). Default level is `error`
+ * (keeps unrelated capabilities quiet); scene detection needs `info` so
+ * `showinfo`'s `pts_time` lines reach stderr.
  *
  * @param {{ bin: { ffmpeg: string }, args: string[], timeoutMs?: number, signal?: AbortSignal, procs?: Set<unknown>, runChild?: typeof defaultRunChild, loglevel?: string }} opts
  * @returns {Promise<{ code: number, stdout: string, stderr: string }>}
@@ -245,7 +270,7 @@ export async function runControlled(opts) {
 export async function spawnFfmpeg({ bin, args, timeoutMs, signal, procs, runChild, loglevel = 'error' }) {
   return runControlled({
     cmd: bin.ffmpeg ?? bin,
-    args: ['-hide_banner', '-loglevel', loglevel, '-y', ...(args || [])],
+    args: ['-hide_banner', '-loglevel', loglevel, '-y', ...applyInputProtocolWhitelist(args)],
     timeoutMs,
     signal,
     procs,
@@ -256,7 +281,7 @@ export async function spawnFfmpeg({ bin, args, timeoutMs, signal, procs, runChil
 
 /**
  * Run ffprobe. Returns the stdout text on success; throws on non-zero.
- * Prefix `-hide_banner -loglevel error`.
+ * Prefix `-hide_banner -loglevel error -protocol_whitelist file,pipe`.
  *
  * @param {{ bin: { ffprobe: string }, args: string[], timeoutMs?: number, signal?: AbortSignal, procs?: Set<unknown>, runChild?: typeof defaultRunChild }} opts
  * @returns {Promise<string>}
@@ -264,7 +289,7 @@ export async function spawnFfmpeg({ bin, args, timeoutMs, signal, procs, runChil
 export async function spawnFfprobe({ bin, args, timeoutMs, signal, procs, runChild }) {
   const out = await runControlled({
     cmd: bin.ffprobe ?? bin,
-    args: ['-hide_banner', '-loglevel', 'error', ...(args || [])],
+    args: ['-hide_banner', '-loglevel', 'error', '-protocol_whitelist', FFMPEG_PROTOCOL_WHITELIST, ...(args || [])],
     timeoutMs,
     signal,
     procs,

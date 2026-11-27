@@ -55,11 +55,14 @@ import {
   rendererRecoveryCopy,
 } from './tray-locale.ts'
 import {
+  assertInstallerDigest,
   desktopUpdateFilename,
   downloadDesktopUpdate,
+  normalizedExpectedDigest,
   pendingDesktopUpdateArtifact,
   recordDesktopUpdateArtifact,
   resolveDesktopUpdateArtifact,
+  verifyInstallerSignature,
   type DesktopUpdateArtifact,
   type UpdateArtifactResponse,
 } from './update-download.ts'
@@ -921,6 +924,7 @@ export class ElectronDesktopRuntime implements DesktopRuntime {
     if (platform === undefined) {
       throw new Error(`dsh-plugin-desktop: updates are unavailable on ${this.platform}`)
     }
+    const expectedSha256 = normalizedExpectedDigest(installerSha256?.[platform])
     const destinationPath = await this.chooseUpdateDestination(version, channel)
     if (destinationPath === undefined) return
     signal.throwIfAborted()
@@ -931,7 +935,8 @@ export class ElectronDesktopRuntime implements DesktopRuntime {
       destinationPath,
       request: requestDesktopArtifact,
       signal,
-      ...(installerSha256?.[platform] === undefined ? {} : { expectedSha256: installerSha256[platform] }),
+      expectedSha256,
+      verifyArtifact: (temporaryPath) => verifyInstallerSignature(temporaryPath, platform, { signal }),
     })
     signal.throwIfAborted()
     const artifact: DesktopUpdateArtifact = { platform, version, path: artifactPath }
@@ -942,6 +947,8 @@ export class ElectronDesktopRuntime implements DesktopRuntime {
     }
 
     if (platform === 'darwin') {
+      await assertInstallerDigest(artifactPath, expectedSha256)
+      await verifyInstallerSignature(artifactPath, platform, { signal })
       const openError = await shell.openPath(artifactPath)
       if (openError !== '') throw new Error(`dsh-plugin-desktop: failed to open update disk image: ${openError}`)
       signal.throwIfAborted()
@@ -971,6 +978,9 @@ export class ElectronDesktopRuntime implements DesktopRuntime {
 
     const spec = this.scheduled
     if (spec === undefined) throw new Error('dsh-plugin-desktop: no active shell can exit for update installation')
+    signal.throwIfAborted()
+    await assertInstallerDigest(artifactPath, expectedSha256)
+    await verifyInstallerSignature(artifactPath, platform, { signal })
     signal.throwIfAborted()
     await this.launchWindowsUpdateInstaller(artifactPath)
     this.quitting = true

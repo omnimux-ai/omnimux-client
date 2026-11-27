@@ -1,5 +1,6 @@
 import { join } from 'node:path'
 import { VideoError } from '../../errors.js'
+import { resolveInputPath } from '../remote-media.js'
 
 export const slug = 'video_scene_detect'
 export const timeoutMs = 300_000
@@ -78,7 +79,9 @@ export function frameFilename(index) {
  */
 export async function execute(input, ctx) {
   validate(input)
-  const { stderr } = await ctx.runFfmpeg(buildSceneArgs(input), { loglevel: 'info' })
+  const videoUrl = await resolveInputPath(input.videoUrl, 'scene-input', ctx)
+  const resolved = { ...input, videoUrl }
+  const { stderr } = await ctx.runFfmpeg(buildSceneArgs(resolved), { loglevel: 'info' })
   const starts = parseSceneTimestamps(stderr)
   const scenes = starts.map((start, i) => ({
     start,
@@ -89,7 +92,7 @@ export async function execute(input, ctx) {
     for (let i = 0; i < starts.length; i += 1) {
       const out = join(ctx.dest, frameFilename(i + 1))
       ctx.addFile(out)
-      await ctx.runFfmpeg(buildFrameArgs(input, starts[i], out))
+      await ctx.runFfmpeg(buildFrameArgs(resolved, starts[i], out))
       files.push({ path: out, kind: 'image', meta: { timeSeconds: starts[i] } })
     }
   }

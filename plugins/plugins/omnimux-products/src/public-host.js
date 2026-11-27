@@ -116,6 +116,7 @@ function isBlockedIpv4(bytes) {
   if (a === 192 && b === 168) return true
   if (a === 192 && b === 0) return true
   if (a === 192 && b === 88 && bytes[2] === 99) return true
+  if (a === 198 && (b === 18 || b === 19)) return true
   if (a === 198 && b === 51 && bytes[2] === 100) return true
   if (a === 203 && b === 0 && bytes[2] === 113) return true
   if (a >= 224) return true
@@ -153,6 +154,7 @@ export function isPrivateHost(hostname) {
   const host = normalizeHostname(hostname)
   if (!host) return true
   if (host === 'localhost' || host.endsWith('.localhost')) return true
+  if (host === 'ip6-localhost' || host === 'ip6-loopback' || host === 'metadata' || host === 'metadata.goog' || host === 'instance-data') return true
   if (host.endsWith('.local') || host.endsWith('.localdomain')) return true
   if (host.endsWith('.internal') || host.endsWith('.home.arpa')) return true
   if (host.includes(':')) {
