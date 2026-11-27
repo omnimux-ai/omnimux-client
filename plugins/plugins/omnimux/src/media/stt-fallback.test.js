@@ -43,11 +43,11 @@ async function assertUpload(form) {
   assert.deepEqual(Buffer.from(await form.get('file').arrayBuffer()), bytes)
 }
 
-for (const audio of [
-  'http://127.0.0.1:43120/audio.mp3', 'http://localhost:43120/audio.mp3',
-  'http://[::1]:43120/audio.mp3', 'http://192.168.1.10/audio.mp3',
-]) {
-  test(`STT adapts local HTTP audio to Whisper before submission: ${audio}`, async () => {
+test('STT adapts local HTTP audio to Whisper before submission', async () => {
+  for (const audio of [
+    'http://127.0.0.1:43120/audio.mp3', 'http://localhost:43120/audio.mp3',
+    'http://[::1]:43120/audio.mp3', 'http://192.168.1.10/audio.mp3',
+  ]) {
     const calls = []
     const signal = new AbortController().signal
     const result = await transcribeWithFallback({
@@ -65,11 +65,11 @@ for (const audio of [
     })
     assert.deepEqual(calls, [audio, endpoint])
     assert.deepEqual(result, { mode: 'live', model: 'whisper-1', text: srt })
-  })
-}
+  }
+})
 
-for (const modelId of [model, 'seedasr-auc']) {
-  test(`wire primitive adapts ${modelId} with data audio`, async () => {
+test('wire primitive adapts URL-first models with data audio', async () => {
+  for (const modelId of [model, 'seedasr-auc']) {
     const route = { modelId, baseUrl: 'https://api.omnimux.ai/v1' }
     let calls = 0
     const result = await transcribeSpeechToTextRequest({
@@ -83,19 +83,19 @@ for (const modelId of [model, 'seedasr-auc']) {
     assert.equal(calls, 1)
     assert.equal(route.modelId, modelId)
     assert.equal(result.model, 'whisper-1')
-  })
-}
+  }
+})
 
-for (const [body, contentType] of [
-  [{ error: { message: urlError } }, 'application/json'],
-  [{ message: 'AUDIO URL IS REQUIRED' }, 'application/json'],
-  [{ data: { error: { message: 'URL-first mode' } } }, 'application/json'],
-  [{ error: urlError }, 'application/json'],
-  [{ error: { message: `${'context '.repeat(160)}${urlError}` } }, 'application/json'],
-  [urlError, 'text/plain'],
-  [JSON.stringify({ error: { message: urlError } }), 'text/plain'],
-]) {
-  test(`STT retries URL-required errors once as a binary Whisper request: ${JSON.stringify(body)}`, async () => {
+test('STT retries URL-required errors once as a binary Whisper request', async () => {
+  for (const [body, contentType] of [
+    [{ error: { message: urlError } }, 'application/json'],
+    [{ message: 'AUDIO URL IS REQUIRED' }, 'application/json'],
+    [{ data: { error: { message: 'URL-first mode' } } }, 'application/json'],
+    [{ error: urlError }, 'application/json'],
+    [{ error: { message: `${'context '.repeat(160)}${urlError}` } }, 'application/json'],
+    [urlError, 'text/plain'],
+    [JSON.stringify({ error: { message: urlError } }), 'text/plain'],
+  ]) {
     const calls = []
     const models = []
     const signal = new AbortController().signal
@@ -123,8 +123,8 @@ for (const [body, contentType] of [
     assert.deepEqual(models, [model, 'whisper-1'])
     assert.deepEqual(calls, [endpoint, audioUrl, endpoint])
     assert.deepEqual(result, { mode: 'live', model: 'whisper-1', text: srt })
-  })
-}
+  }
+})
 
 test('wire primitive retries an unrecognized URL-first model and reuses loaded bytes', async () => {
   const forms = []
@@ -146,17 +146,17 @@ test('wire primitive retries an unrecognized URL-first model and reuses loaded b
   assert.equal(result.model, 'whisper-1')
 })
 
-for (const [status, body, code, message] of [
-  [401, { error: { message: urlError } }, 'needs-omnimux', '请先登录 OmniMux。'],
-  [402, { error: { message: urlError } }, 'quota-exceeded', '当前操作需要更多额度，充值后即可继续使用 OmniMux。'],
-  [429, { error: { message: 'insufficient quota' } }, 'quota-exceeded', '当前操作需要更多额度，充值后即可继续使用 OmniMux。'],
-  [503, { error: { code: 'get_channel_failed', message: '分组 secret 下模型 unavailable' } }, 'CHANNEL_UNAVAILABLE', '该模型当前不可用，请换一个试试'],
-  [403, { error: { message: 'Permission denied' } }, 'omnimux-request-failed', 'Permission denied'],
-  [500, { error: { message: 'Decoder failed' } }, 'omnimux-request-failed', 'Decoder failed'],
-  [502, 'gateway unavailable', 'omnimux-request-failed', 'gateway unavailable'],
-  [400, { detail: 'Unsupported audio encoding' }, 'omnimux-request-failed', 'Unsupported audio encoding'],
-]) {
-  test(`STT preserves classified or detailed failures without unrelated retries: ${status} ${code}`, async () => {
+test('STT preserves classified or detailed failures without unrelated retries', async () => {
+  for (const [status, body, code, message] of [
+    [401, { error: { message: urlError } }, 'needs-omnimux', '请先登录 OmniMux。'],
+    [402, { error: { message: urlError } }, 'quota-exceeded', '当前操作需要更多额度，充值后即可继续使用 OmniMux。'],
+    [429, { error: { message: 'insufficient quota' } }, 'quota-exceeded', '当前操作需要更多额度，充值后即可继续使用 OmniMux。'],
+    [503, { error: { code: 'get_channel_failed', message: '分组 secret 下模型 unavailable' } }, 'CHANNEL_UNAVAILABLE', '该模型当前不可用，请换一个试试'],
+    [403, { error: { message: 'Permission denied' } }, 'omnimux-request-failed', 'Permission denied'],
+    [500, { error: { message: 'Decoder failed' } }, 'omnimux-request-failed', 'Decoder failed'],
+    [502, 'gateway unavailable', 'omnimux-request-failed', 'gateway unavailable'],
+    [400, { detail: 'Unsupported audio encoding' }, 'omnimux-request-failed', 'Unsupported audio encoding'],
+  ]) {
     let calls = 0
     await assert.rejects(() => transcribeWithFallback({
       ...request,
@@ -172,8 +172,8 @@ for (const [status, body, code, message] of [
       return true
     })
     assert.equal(calls, 1)
-  })
-}
+  }
+})
 
 test('STT transport errors do not trigger URL-first fallback without an HTTP response', async () => {
   const error = Object.assign(new Error(urlError), { code: 'omnimux-request-failed' })

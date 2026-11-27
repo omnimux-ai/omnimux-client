@@ -362,3 +362,51 @@ test('F3 残留无主断言不能用文件级声明放行', () => {
     assert.equal(result.violations[0].declarable, false)
   })
 })
+
+test('含原样保留的顶层断言 helper 时：完整归因迁移可通过，削弱/漏调 helper 仍硬拒', () => {
+  withFixtureRepo(repo => {
+    const helper = "import test from 'node:test'\nimport assert from 'node:assert/strict'\nfunction check(v) { assert.equal(v, 1) }\n"
+    const before = helper + "for (const n of ['a', 'b']) test(`covers ${n}`, () => { check(1); assert.equal(needs([n]), true) })\n"
+    const pathAAfter = helper + "test('covers all', () => { for (const n of ['a', 'b']) { check(1); assert.equal(needs([n]), true) } })\n"
+    const pathBAfter = helper + "test('covers a', () => { check(1); assert.equal(needs(['a']), true) })\ntest('covers b', () => { check(1); assert.equal(needs(['b']), true) })\n"
+    const deadHelperAfter = helper + "test('covers all', () => { for (const n of ['a', 'b']) { assert.equal(needs([n]), true) } })\n"
+
+    repo.write(TEST_FILE, before)
+    const base = repo.commit('base helper + dynamic template')
+
+    // 1. Path A（纯静态化、保留 helper 且调用次数不降）→ 零违规直接放行
+    repo.write(TEST_FILE, pathAAfter)
+    repo.commit('staticize loop preserving helper')
+    assert.deepEqual(verifyTestStandardDeclarations({ root: repo.root, base }).violations, [])
+
+    // 2. 丢弃 helper 调用 → 即使带 `:: *` 声明仍不可放行
+    repo.write(TEST_FILE, deadHelperAfter)
+    repo.write(SPEC_FILE, `${SPEC_HEADER}\n## 旧标准变更\n\n- \`${TEST_FILE}\` :: \`*\`\n  - 理由：试图丢掉 helper 调用。\n`)
+    repo.commit('drop helper call behind file-level declaration')
+    const deadRes = verifyTestStandardDeclarations({ root: repo.root, base })
+    assert.equal(deadRes.violations.length, 1)
+    assert.equal(deadRes.violations[0].declarable, false)
+
+    // 3. Path B（展开字面量 + 保留 helper + 有效 `:: *` 声明）→ 放行
+    repo.write(TEST_FILE, pathBAfter)
+    repo.commit('unroll loop preserving helper with declaration')
+    assert.deepEqual(verifyTestStandardDeclarations({ root: repo.root, base }).violations, [])
+
+    // 4. B1/B3 对抗：对 helper 重新赋值或在 Path B 期间削弱既有具名用例 → 即使带 `:: *` 仍硬拒
+    const withExistingBefore = helper + "for (const n of ['a', 'b']) test(`covers ${n}`, () => { check(1); assert.equal(needs([n]), true) })\ntest('existing', () => { assert.equal(keep(), 1) })\n"
+    repo.write(TEST_FILE, withExistingBefore)
+    const base2 = repo.commit('base helper + dynamic + existing named case')
+
+    repo.write(TEST_FILE, helper + "check = () => {}\ntest('covers all', () => { for (const n of ['a', 'b']) { check(1); assert.equal(needs([n]), true) } })\ntest('existing', () => { assert.equal(keep(), 1) })\n")
+    repo.commit('reassign helper in Path A')
+    const reassignRes = verifyTestStandardDeclarations({ root: repo.root, base: base2 })
+    assert.equal(reassignRes.violations.length, 1)
+    assert.equal(reassignRes.violations[0].declarable, false)
+
+    repo.write(TEST_FILE, helper + "test('covers a', () => { check(1); assert.equal(needs(['a']), true) })\ntest('covers b', () => { check(1); assert.equal(needs(['b']), true) })\ntest('existing', () => { assert.ok(true) })\n")
+    repo.commit('weaken existing named case during Path B')
+    const weakenExistingRes = verifyTestStandardDeclarations({ root: repo.root, base: base2 })
+    assert.equal(weakenExistingRes.violations.length, 1)
+    assert.equal(weakenExistingRes.violations[0].declarable, false)
+  })
+})

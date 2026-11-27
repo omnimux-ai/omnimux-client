@@ -2,6 +2,7 @@ import { parse } from 'acorn'
 
 const scope = 'syntax-only; changed test standards still require independent review'
 const blocked = new Set(['skip', 'only', 'todo', 'skipIf', 'runIf'])
+const legacySelectors = new Set(['xit', 'xtest', 'xdescribe', 'xcontext', 'xspecify', 'fit', 'ftest', 'fdescribe'])
 const execution = new Set(['eval', 'Function', 'constructor', 'defineProperty', 'defineProperties', 'call', 'apply', 'bind', 'getBuiltinModule', 'binding', '_linkedBinding', 'dlopen', 'createRequire'])
 const functions = new Set(['FunctionDeclaration', 'FunctionExpression', 'ArrowFunctionExpression'])
 
@@ -88,12 +89,6 @@ function collectRisks(code, { resolveImport } = {}) {
   const references = referenceIdentifiers(ast)
   const risks = []
   const runners = new Set(['test', 'it', 'describe'])
-  // jasmine / mocha / jest 的旧式跳过与聚焦别名：调用它们本身就是一个跳过/聚焦选择，
-  // 语义与 `test.skip` / `test.only` 等价，所以按运行器选择器处理，不可经声明放行。
-  // 集合取自三个框架公布的 globals 并取**保守超集**：mocha 有 xcontext/xdescribe/xit/xspecify，
-  // jasmine 与 jest 有 fdescribe/fit/xdescribe/xit，jest 另有 xtest；`ftest` 未必存在于任何
-  // 框架，但它是聚焦别名的常见拼写，宁可多拒一个不存在的名字。
-  const legacySelectors = new Set(['xit', 'xtest', 'xdescribe', 'xcontext', 'xspecify', 'fit', 'ftest', 'fdescribe'])
   const imports = new Map()
   for (const statement of ast.body) {
     if (statement.type !== 'ImportDeclaration') continue
@@ -263,8 +258,25 @@ export function collectAssertionFacts(code) {
   const caseStructural = new Map()
   const unattributedStructural = new Map()
   const unattributedTemplates = new Map()
+  const nonHelperUnattributedAssertions = new Map()
+  const nonHelperUnattributedStructural = new Map()
+  const nonHelperUnattributedTemplates = new Map()
+  const topLevelHelperNodes = new Map()
+  const topLevelHelperBodies = new Map()
+  const helperCallsTotal = new Map()
+  const helperCallsInCases = new Map()
+  const helperCallsInNonHelperUnattributed = new Map()
+  const helperCallEdges = new Map()
+  const shadowedHelpers = new Set()
   const runners = new Set(['test', 'it', 'describe'])
   const caseRunners = new Set(['test', 'it'])
+  for (const statement of ast.body) {
+    if (statement?.type !== 'ImportDeclaration') continue
+    if (!['node:test', 'vitest', '@jest/globals'].includes(statement.source.value)) continue
+    for (const specifier of statement.specifiers) {
+      runners.add(specifier.local.name)
+    }
+  }
   const bump = (map, key) => map.set(key, (map.get(key) || 0) + 1)
   function calleeRoot(node) {
     let current = node
@@ -272,51 +284,201 @@ export function collectAssertionFacts(code) {
     if (current?.type === 'CallExpression') return calleeRoot(current.callee)
     return current?.type === 'Identifier' ? current.name : null
   }
-  function visit(node, caseName, template) {
+  function runnerCallInfo(node) {
+    const directRunner = node.callee.type === 'Identifier' && runners.has(node.callee.name)
+    const chain = []
+    let current = node.callee
+    while (current) {
+      if (current.type === 'ChainExpression') {
+        current = current.expression
+      } else if (current.type === 'CallExpression') {
+        current = current.callee
+      } else if (current.type === 'MemberExpression') {
+        const prop = current.computed
+          ? (current.property.type === 'Literal' ? current.property.value : null)
+          : current.property.name
+        if (typeof prop === 'string') chain.push(prop)
+        current = current.object
+      } else {
+        break
+      }
+    }
+    const chainRoot = current?.type === 'Identifier' ? current.name : null
+    const chainIsRunner = chainRoot !== null && runners.has(chainRoot)
+    const legacySelector = chainRoot !== null && legacySelectors.has(chainRoot)
+    const isRunner = directRunner || legacySelector || chainIsRunner
+    if (!isRunner) return { isRunner: false, directRunner: false, skipped: false }
+    const chainIsSkip = chain.some(name => blocked.has(name) && name !== 'only')
+    const chainIsOnly = chain.includes('only') || (chainRoot !== null && /^f/.test(chainRoot) && legacySelectors.has(chainRoot))
+    const selectorIsSkip = legacySelector || chainIsSkip
+    const selectorIsOnly = chainIsOnly
+    const first = node.arguments[0]
+    const named = first?.type === 'Literal' && typeof first.value === 'string'
+    const options = named ? node.arguments[1] : first
+    const propertyKey = property => {
+      if (property.type !== 'Property') return null
+      if (property.computed) return property.key.type === 'Literal' ? property.key.value : null
+      return property.key.name ?? property.key.value
+    }
+    const optionSkip = options?.type === 'ObjectExpression' && options.properties.some(property => {
+      const key = propertyKey(property)
+      return typeof key === 'string' && blocked.has(key) && key !== 'only' && !(property.value?.type === 'Literal' && property.value.value === false)
+    })
+    const optionOnly = options?.type === 'ObjectExpression' && options.properties.some(property => propertyKey(property) === 'only')
+    return {
+      isRunner: true,
+      directRunner,
+      skipped: Boolean(selectorIsSkip || selectorIsOnly || optionSkip || optionOnly),
+    }
+  }
+  function isPureAssertionHelper(fnNode) {
+    let hasRunner = false
+    let hasAssertion = false
+    function scan(node) {
+      if (!node || typeof node !== 'object') return
+      if (Array.isArray(node)) { node.forEach(scan); return }
+      if (!node.type) return
+      if (node.type === 'CallExpression') {
+        const root = calleeRoot(node.callee)
+        if (root === 'assert' || root === 'expect') hasAssertion = true
+        if (root !== null && (runners.has(root) || legacySelectors.has(root))) hasRunner = true
+      }
+      for (const value of Object.values(node)) {
+        if (Array.isArray(value)) value.forEach(scan)
+        else if (value && typeof value === 'object') scan(value)
+      }
+    }
+    scan(fnNode.params)
+    scan(fnNode.body)
+    return !hasRunner && hasAssertion
+  }
+  const topLevelFnByName = new Map()
+  for (const stmt of ast.body) {
+    if (stmt?.type === 'FunctionDeclaration' && stmt.id?.name) {
+      const name = stmt.id.name
+      if (topLevelFnByName.has(name)) {
+        const prev = topLevelFnByName.get(name)
+        if (prev) topLevelHelperNodes.delete(prev)
+        topLevelHelperBodies.delete(name)
+        topLevelFnByName.set(name, null)
+      } else {
+        topLevelFnByName.set(name, stmt)
+        if (isPureAssertionHelper(stmt)) {
+          topLevelHelperNodes.set(stmt, name)
+          topLevelHelperBodies.set(name, JSON.stringify(canonical(stmt)))
+        }
+      }
+    }
+  }
+  function checkShadowPattern(pattern) {
+    if (!pattern || typeof pattern !== 'object') return
+    if (pattern.type === 'Identifier' && topLevelHelperBodies.has(pattern.name)) shadowedHelpers.add(pattern.name)
+    else if (pattern.type === 'AssignmentPattern') checkShadowPattern(pattern.left)
+    else if (pattern.type === 'RestElement') checkShadowPattern(pattern.argument)
+    else if (pattern.type === 'ArrayPattern') pattern.elements.forEach(checkShadowPattern)
+    else if (pattern.type === 'ObjectPattern') pattern.properties.forEach(p => checkShadowPattern(p.type === 'RestElement' ? p.argument : p.value))
+  }
+  function recordFact(fingerprint, structuralFingerprint, caseName, template, activeHelper, inSkipped) {
+    // Skipped/focused test bodies never execute as live coverage and must not
+    // credit live assertions or compensate for removed/migrated live assertions.
+    if (inSkipped) return
+    bump(assertions, fingerprint)
+    bump(structuralAssertions, structuralFingerprint)
+    if (caseName === null) {
+      bump(unattributedAssertions, fingerprint)
+      bump(unattributedStructural, structuralFingerprint)
+      let ownTemplate = unattributedTemplates.get(template ?? 'top')
+      if (!ownTemplate) unattributedTemplates.set(template ?? 'top', ownTemplate = new Map())
+      bump(ownTemplate, structuralFingerprint)
+      if (activeHelper === null) {
+        bump(nonHelperUnattributedAssertions, fingerprint)
+        bump(nonHelperUnattributedStructural, structuralFingerprint)
+        let ownNonHelperTemplate = nonHelperUnattributedTemplates.get(template ?? 'top')
+        if (!ownNonHelperTemplate) nonHelperUnattributedTemplates.set(template ?? 'top', ownNonHelperTemplate = new Map())
+        bump(ownNonHelperTemplate, structuralFingerprint)
+      }
+    } else {
+      let own = caseAssertions.get(caseName)
+      if (!own) caseAssertions.set(caseName, own = new Map())
+      bump(own, fingerprint)
+      let ownStructural = caseStructural.get(caseName)
+      if (!ownStructural) caseStructural.set(caseName, ownStructural = new Map())
+      bump(ownStructural, structuralFingerprint)
+    }
+  }
+  function visit(node, caseName, template, activeHelper, inSkipped) {
     if (!node || typeof node !== 'object') return
-    if (Array.isArray(node)) { node.forEach(child => visit(child, caseName, template)); return }
+    if (Array.isArray(node)) { node.forEach(child => visit(child, caseName, template, activeHelper, inSkipped)); return }
     if (!node.type) return
+    const nextHelper = topLevelHelperNodes.has(node) ? topLevelHelperNodes.get(node) : activeHelper
+    if (!topLevelHelperNodes.has(node)) {
+      if ((node.type === 'FunctionDeclaration' || node.type === 'FunctionExpression' || node.type === 'ClassDeclaration' || node.type === 'ClassExpression') && node.id?.name && topLevelHelperBodies.has(node.id.name)) {
+        shadowedHelpers.add(node.id.name)
+      }
+      if (functions.has(node.type) && Array.isArray(node.params)) node.params.forEach(checkShadowPattern)
+      if (node.type === 'VariableDeclarator') checkShadowPattern(node.id)
+      if (node.type === 'CatchClause' && node.param) checkShadowPattern(node.param)
+      if (node.type === 'AssignmentExpression') checkShadowPattern(node.left)
+      if ((node.type === 'ForOfStatement' || node.type === 'ForInStatement') && node.left?.type !== 'VariableDeclaration') checkShadowPattern(node.left)
+      if (node.type === 'UpdateExpression') checkShadowPattern(node.argument)
+    }
     let childCase = caseName
+    let childInSkipped = inSkipped
     // 无主断言的「模板分组」：顶层 for 循环内的断言各成一组。多种模板循环共存时，
     // 静态化后每个新用例的形状集合应等于其中某个模板的完整形状集合（issue #4099）。
     let childTemplate = template
-    if (caseName === null && ['ForStatement', 'ForOfStatement', 'ForInStatement'].includes(node.type)) childTemplate = node.start
+    if (caseName === null && nextHelper === null && ['ForStatement', 'ForOfStatement', 'ForInStatement'].includes(node.type)) childTemplate = node.start
     if (node.type === 'CallExpression') {
+      if (!inSkipped && node.callee.type === 'Identifier' && topLevelHelperBodies.has(node.callee.name)) {
+        const calleeName = node.callee.name
+        bump(helperCallsTotal, calleeName)
+        if (caseName !== null) bump(helperCallsInCases, calleeName)
+        else if (nextHelper !== null) {
+          let edges = helperCallEdges.get(nextHelper)
+          if (!edges) helperCallEdges.set(nextHelper, edges = new Set())
+          edges.add(calleeName)
+        } else {
+          bump(helperCallsInNonHelperUnattributed, calleeName)
+        }
+        // Treat invocations of top-level assertion helpers outside other helpers
+        // as first-class assertion call sites (preserving helper name + args in
+        // canonical fingerprints and helper name + arg shapes in structural
+        // fingerprints), so helper calls cannot be silently dropped, faked, or
+        // moved across cases during migration.
+        if (nextHelper === null) {
+          const callFingerprint = JSON.stringify(canonical({ type: 'HelperCall', name: calleeName, arguments: node.arguments }))
+          const callStructuralFingerprint = JSON.stringify({ type: 'HelperCall', name: calleeName, arguments: structural(node.arguments) })
+          recordFact(callFingerprint, callStructuralFingerprint, caseName, childTemplate, null, inSkipped)
+        }
+      }
       const root = calleeRoot(node.callee)
       if (root === 'assert' || root === 'expect') {
         const fingerprint = JSON.stringify(canonical({ callee: node.callee, arguments: node.arguments }))
-        bump(assertions, fingerprint)
         const structuralFingerprint = JSON.stringify(structural({ callee: node.callee, arguments: node.arguments }))
-        bump(structuralAssertions, structuralFingerprint)
-        if (caseName === null) {
-          bump(unattributedAssertions, fingerprint)
-          bump(unattributedStructural, structuralFingerprint)
-          let ownTemplate = unattributedTemplates.get(template ?? 'top')
-          if (!ownTemplate) unattributedTemplates.set(template ?? 'top', ownTemplate = new Map())
-          bump(ownTemplate, structuralFingerprint)
-        } else {
-          let own = caseAssertions.get(caseName)
-          if (!own) caseAssertions.set(caseName, own = new Map())
-          bump(own, fingerprint)
-          let ownStructural = caseStructural.get(caseName)
-          if (!ownStructural) caseStructural.set(caseName, ownStructural = new Map())
-          bump(ownStructural, structuralFingerprint)
-        }
+        recordFact(fingerprint, structuralFingerprint, caseName, childTemplate, nextHelper, inSkipped)
       }
-      const directRunner = node.callee.type === 'Identifier' && runners.has(node.callee.name)
-      const first = node.arguments[0]
-      if (directRunner && first?.type === 'Literal' && typeof first.value === 'string') {
-        cases.add(first.value)
-        if (caseRunners.has(node.callee.name)) childCase = first.value
+      const runnerInfo = runnerCallInfo(node)
+      if (runnerInfo.isRunner) {
+        if (runnerInfo.skipped) childInSkipped = true
+        const first = node.arguments[0]
+        if (!childInSkipped && runnerInfo.directRunner && first?.type === 'Literal' && typeof first.value === 'string') {
+          cases.add(first.value)
+          if (caseRunners.has(node.callee.name)) childCase = first.value
+        }
       }
     }
     for (const value of Object.values(node)) {
-      if (Array.isArray(value)) value.forEach(child => visit(child, childCase, childTemplate))
-      else if (value && typeof value === 'object') visit(value, childCase, childTemplate)
+      if (Array.isArray(value)) value.forEach(child => visit(child, childCase, childTemplate, nextHelper, childInSkipped))
+      else if (value && typeof value === 'object') visit(value, childCase, childTemplate, nextHelper, childInSkipped)
     }
   }
-  visit(ast, null)
-  return { assertions, cases, caseAssertions, unattributedAssertions, structuralAssertions, caseStructural, unattributedStructural, unattributedTemplates }
+  visit(ast, null, null, null, false)
+  return {
+    assertions, cases, caseAssertions, unattributedAssertions, structuralAssertions, caseStructural,
+    unattributedStructural, unattributedTemplates, topLevelHelperBodies, helperCallsTotal,
+    helperCallsInCases, helperCallsInNonHelperUnattributed, helperCallEdges, shadowedHelpers,
+    nonHelperUnattributedAssertions, nonHelperUnattributedStructural, nonHelperUnattributedTemplates,
+  }
 }
 
 const sumCounts = map => { let total = 0; for (const count of map.values()) total += count; return total }
@@ -326,19 +488,74 @@ const mergeCounts = maps => {
   return out
 }
 
+function reachableHelpersFromCases(facts) {
+  const reachable = new Set()
+  const queue = []
+  for (const [name, count] of facts.helperCallsInCases) {
+    if (count > 0 && facts.topLevelHelperBodies.has(name)) {
+      reachable.add(name)
+      queue.push(name)
+    }
+  }
+  while (queue.length) {
+    const current = queue.shift()
+    for (const next of facts.helperCallEdges.get(current) || []) {
+      if (!reachable.has(next) && facts.topLevelHelperBodies.has(next)) {
+        reachable.add(next)
+        queue.push(next)
+      }
+    }
+  }
+  return reachable
+}
+
+/**
+ * True only when every top-level assertion helper in `before` and `after` is
+ * identical (exact canonical AST), unshadowed, still called at least as many
+ * times as before, no longer called from loose/dynamic unattributed code, and
+ * reachable from live named test cases. Prevents mutating, adding, or dead-coding
+ * helpers during attribution migration.
+ */
+function preservedTopLevelHelpers(beforeFacts, afterFacts) {
+  if (!beforeFacts.topLevelHelperBodies.size || beforeFacts.topLevelHelperBodies.size !== afterFacts.topLevelHelperBodies.size) {
+    return false
+  }
+  const reachable = reachableHelpersFromCases(afterFacts)
+  for (const [name, afterBody] of afterFacts.topLevelHelperBodies) {
+    if (beforeFacts.topLevelHelperBodies.get(name) !== afterBody) return false
+    if (afterFacts.shadowedHelpers.has(name)) return false
+    const beforeCalls = beforeFacts.helperCallsTotal.get(name) || 0
+    const afterCalls = afterFacts.helperCallsTotal.get(name) || 0
+    if (beforeCalls < 1 || afterCalls < beforeCalls) return false
+    if ((afterFacts.helperCallsInNonHelperUnattributed.get(name) || 0) > 0) return false
+    if (!reachable.has(name)) return false
+  }
+  return true
+}
+
 /**
  * Bounded channel B: `before` assertions that no named case owned moved into
  * named cases. Allowed to reach the declaration channel only when nothing was
  * lost or loosened — total assertion count must not drop, every pre-existing
  * unattributed assertion *shape* must still exist afterwards, and those shapes
- * must now be owned by named cases.
+ * must now be owned by named cases (unchanged, live-called top-level assertion
+ * helpers may remain at top level while every non-helper unattributed assertion
+ * migrates completely).
  */
 function isAttributionMigration(beforeFacts, afterFacts) {
   if (!beforeFacts.unattributedStructural.size) return false
   if (sumCounts(afterFacts.structuralAssertions) < sumCounts(beforeFacts.structuralAssertions)) return false
-  const beforeUnattributed = sumCounts(beforeFacts.unattributedStructural)
-  // 迁移必须把无主断言**全部**交出去：after 残留任何无主断言都不算完成（review F3）。
-  if (sumCounts(afterFacts.unattributedAssertions) > 0) return false
+  const afterRemainingUnattributed = sumCounts(afterFacts.unattributedAssertions)
+  const keptHelpersOnly = afterRemainingUnattributed > 0
+    && sumCounts(afterFacts.nonHelperUnattributedAssertions) === 0
+    && beforeFacts.nonHelperUnattributedStructural.size > 0
+    && preservedTopLevelHelpers(beforeFacts, afterFacts)
+  // 迁移必须把非辅助函数的无主断言**全部**交出去：after 残留任何非原样保留 helper
+  // 的无主断言都不算完成（review F3）。
+  if (afterRemainingUnattributed > 0 && !keptHelpersOnly) return false
+  const migratedStructural = keptHelpersOnly ? beforeFacts.nonHelperUnattributedStructural : beforeFacts.unattributedStructural
+  const migratedTemplates = keptHelpersOnly ? beforeFacts.nonHelperUnattributedTemplates : beforeFacts.unattributedTemplates
+  const beforeUnattributed = sumCounts(migratedStructural)
   const afterAttributed = mergeCounts([...afterFacts.caseStructural.values()])
   if (sumCounts(afterAttributed) < beforeUnattributed) return false
   for (const [fingerprint, count] of beforeFacts.unattributedStructural) {
@@ -349,10 +566,28 @@ function isAttributionMigration(beforeFacts, afterFacts) {
   // 某个无主「模板」的完整形状集合。单模板时等价于原判定；同一文件里本来就有多个
   // 模板循环时（issue #4099：UI 与非 UI 两套用例），各模板可以各自完整迁移。
   // 「a 用例放宽一条、b 用例补上一条」会让 a 的形状集合对不上任何模板 → 仍被拒。
-  const templateShapeSets = [...beforeFacts.unattributedTemplates.values()]
+  // Pre-existing named cases must stay intact during an attribution migration:
+  // weakening or deleting an existing named case cannot hide behind `:: *`.
+  for (const name of beforeFacts.cases) {
+    if (!afterFacts.cases.has(name)) return false
+  }
+  for (const [name, beforeOwn] of beforeFacts.caseAssertions) {
+    const afterOwn = afterFacts.caseAssertions.get(name)
+    if (!afterOwn) return false
+    for (const [fingerprint, count] of beforeOwn) {
+      if ((afterOwn.get(fingerprint) || 0) < count) return false
+    }
+  }
+  const templateShapeSets = [...migratedTemplates.values()]
     .map(map => [...map.keys()].sort().join('\u0000'))
   const newCaseNames = [...afterFacts.caseStructural.keys()].filter(name => !beforeFacts.cases.has(name))
   if (!newCaseNames.length) return false
+  if (keptHelpersOnly) {
+    const newAttributed = mergeCounts(newCaseNames.map(name => afterFacts.caseStructural.get(name)))
+    for (const [fingerprint, count] of migratedStructural) {
+      if ((newAttributed.get(fingerprint) || 0) < count) return false
+    }
+  }
   for (const name of newCaseNames) {
     const own = afterFacts.caseStructural.get(name)
     if (!templateShapeSets.includes([...own.keys()].sort().join('\u0000'))) return false
@@ -382,6 +617,20 @@ export function inspectTestStandardChange(before, after, trustedFacts = {}) {
   const beforeFacts = collectAssertionFacts(before)
   const afterFacts = collectAssertionFacts(after)
   if (!beforeFacts || !afterFacts) return { allowed: false, reason: 'unsupported-or-incomplete-test-syntax', scope, changedCases: [] }
+  // Reassigning or locally shadowing any pre-existing top-level assertion
+  // helper silently neuters all of its call sites — deny unconditionally on
+  // both migration and non-migration edits.
+  for (const name of beforeFacts.topLevelHelperBodies.keys()) {
+    if (afterFacts.shadowedHelpers.has(name) && !beforeFacts.shadowedHelpers.has(name)) {
+      return {
+        allowed: false,
+        reason: 'test-assertion-removed-or-rewritten',
+        scope,
+        changedCases: [],
+        attributionMigration: false,
+      }
+    }
+  }
   // A: per-fingerprint compensation — an assertion may move from the
   // unattributed bucket into a named case, but only if the named side really
   // gained the same fingerprint. Comparing totals (or only the before
@@ -390,11 +639,47 @@ export function inspectTestStandardChange(before, after, trustedFacts = {}) {
   const beforeNamed = mergeCounts([...beforeFacts.caseAssertions.values()])
   const afterNamed = mergeCounts([...afterFacts.caseAssertions.values()])
   // 归因迁移必须一次交清：一旦检测到无主断言真的减少（迁移发生），after 不得
-  // 残留任何无主断言（否则「迁一半、留一半」会绕过完整迁移审查，review F3）。
-  // 只有「减少后仍有残留」才是削弱信号；无主断言原样不动（例如追加用例）不算。
-  const beforeUnattributedTotal = sumCounts(beforeFacts.unattributedAssertions)
+  // 残留任何非「原样保留且仍被具名用例调用的顶层断言 helper」的无主断言
+  // （否则「迁一半、留一半」会绕过完整迁移审查，review F3）。
+  // 只有「减少后仍有非保留 helper 的残留」才是削弱信号；无主断言原样不动（例如追加用例）不算。
   const afterUnattributedTotal = sumCounts(afterFacts.unattributedAssertions)
-  let assertionDeficit = afterUnattributedTotal < beforeUnattributedTotal && afterUnattributedTotal > 0
+  let anyUnattributedDropped = false
+  for (const [fingerprint, count] of beforeFacts.unattributedAssertions) {
+    if ((afterFacts.unattributedAssertions.get(fingerprint) || 0) < count) {
+      anyUnattributedDropped = true
+      break
+    }
+  }
+  const onlyPreservedHelpersRemain = afterUnattributedTotal > 0
+    && sumCounts(afterFacts.nonHelperUnattributedAssertions) === 0
+    && preservedTopLevelHelpers(beforeFacts, afterFacts)
+  let assertionDeficit = anyUnattributedDropped && afterUnattributedTotal > 0 && !onlyPreservedHelpersRemain
+  // When migrating dynamic loops in a file with preserved helpers (Path A),
+  // verify that migrated helper calls and assertions landed inside new named
+  // cases matching pre-existing template shapes (preventing dropping helper
+  // calls from one migrated loop while padding another or an existing test).
+  if (!assertionDeficit && anyUnattributedDropped && onlyPreservedHelpersRemain) {
+    const templateShapeSets = [...beforeFacts.nonHelperUnattributedTemplates.values()]
+      .map(map => [...map.keys()].sort().join('\u0000'))
+    const newCaseNames = [...afterFacts.caseStructural.keys()].filter(name => !beforeFacts.cases.has(name))
+    if (!newCaseNames.length) {
+      assertionDeficit = true
+    } else {
+      const newAttributed = mergeCounts(newCaseNames.map(name => afterFacts.caseStructural.get(name)))
+      for (const [fingerprint, count] of beforeFacts.nonHelperUnattributedStructural) {
+        if ((newAttributed.get(fingerprint) || 0) < count) { assertionDeficit = true; break }
+      }
+      if (!assertionDeficit) {
+        for (const name of newCaseNames) {
+          const own = afterFacts.caseStructural.get(name)
+          if (!templateShapeSets.includes([...own.keys()].sort().join('\u0000'))) {
+            assertionDeficit = true
+            break
+          }
+        }
+      }
+    }
+  }
   const fingerprints = new Set([...beforeFacts.unattributedAssertions.keys(), ...beforeNamed.keys()])
   if (!assertionDeficit) {
     for (const fingerprint of fingerprints) {
