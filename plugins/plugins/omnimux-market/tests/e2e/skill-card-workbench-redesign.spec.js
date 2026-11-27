@@ -83,7 +83,7 @@ test('regression(Issue #410): css.js 与 FeaturedCard.jsx 彻底消除 P0 CSS/SV
   );
 });
 
-test('regression(Issue #410): 工作台卡片静息态即左对齐展示标题、2 行简介、低对比场景名与>=28px试用按钮且支持键盘可达性', async () => {
+test('regression(Issue #410): 工作台卡片静息态即左对齐展示标题、2 行简介、低对比场景名与>=28px试用按钮且无嵌套交互与货架高度裁切', async () => {
   const trZh = (k) => ({
     locale: 'zh',
     'cat.scene-growth': '营销增长',
@@ -103,35 +103,59 @@ test('regression(Issue #410): 工作台卡片静息态即左对齐展示标题�
   });
 
   const treeText = JSON.stringify(vnode);
-  assert.equal(vnode.props.role, 'button');
-  assert.equal(vnode.props.tabIndex, 0);
+  assert.equal(vnode.props.role, undefined, '外层容器不得设 role="button" 导致嵌套交互控件');
+  assert.equal(vnode.props.tabIndex, undefined, '外层容器不得设 tabIndex 导致焦点重复');
   assert.equal(treeText.includes('290 次使用'), false, '卡片表面不显示数字使用次数');
   assert.equal(treeText.includes('100+'), false, '卡片表面不显示编造的 100+ 次数');
   assert.equal(treeText.includes('营销增长'), true, '底部左侧应保留简洁场景分类名');
   assert.equal(treeText.includes('去试试'), true, '底部右侧应渲染清晰的 去试试 CTA');
 
-  let prevented = false;
-  vnode.props.onKeyDown({
-    target: vnode,
-    currentTarget: vnode,
-    key: 'Enter',
-    preventDefault: () => { prevented = true; },
-  });
-  assert.equal(prevented, true);
+  const findNodes = (node, pred, acc = []) => {
+    if (!node || typeof node !== 'object') return acc;
+    if (pred(node)) acc.push(node);
+    const ch = node.props?.children;
+    if (Array.isArray(ch)) ch.forEach((c) => findNodes(c, pred, acc));
+    else if (ch && typeof ch === 'object') findNodes(ch, pred, acc);
+    return acc;
+  };
+  const openBtn = findNodes(vnode, (n) => n.type === 'button' && String(n.props?.className || '').includes('omx-skill-card-open-trigger'))[0];
+  const tryBtn = findNodes(vnode, (n) => n.type === 'button' && String(n.props?.className || '').includes('omnimux-creatify-quick-try-btn'))[0];
+  assert.ok(openBtn, '卡片应存在独立的语义化详情触发按钮');
+  assert.equal(openBtn.props['aria-label'], '规划内容策略');
+  assert.ok(tryBtn, '卡片应存在独立的快捷试用按钮');
+
+  let openStopped = false;
+  openBtn.props.onClick({ stopPropagation: () => { openStopped = true; } });
+  assert.equal(openStopped, true);
   assert.equal(opened, 1);
   assert.equal(tried, 0);
+
+  let tryStopped = false;
+  tryBtn.props.onClick({ stopPropagation: () => { tryStopped = true; } });
+  assert.equal(tryStopped, true);
+  assert.equal(tried, 1);
+  assert.equal(opened, 1);
 
   // 真实浏览器探测双向样式表加载顺序均零冲突、左对齐几何、无双边框与 28px 紧凑折叠
   const { GUIDE_CSS: omnimuxCss } = await import(join(pluginsRoot, 'omnimux/src/client/session-guide/styles.js'));
   assert.ok(omnimuxCss && omnimuxCss.length > 1000, '必须完整加载 GUIDE_CSS（不得为空）');
 
+  const shelfTitles = [
+    ['Replicate Viral Video', 'Analyze winning viral video structure and produce a lookalike clip.'],
+    ['Create Selling Video', 'Turn product highlights and scenes into conversion-ready short videos.'],
+    ['Reverse Video Prompt', 'Extract camera movement and action prompts from reference clips.'],
+    ['Carousel Replication', 'Deconstruct high-converting carousel notes and generate original posts.'],
+    ['Video Hook Analysis', 'Audit opening hooks and pacing to improve 3-second retention rate.'],
+  ];
+
   const dualHtml = `
       <div class="sh-plaza-body" style="width:1360px">
         <div class="sh-mkt">
           <div class="featured-grid cards-grid">
-            <div class="featured-card omnimux-creatify-card omx-skill-card" role="button" tabindex="0">
+            <div class="featured-card omnimux-creatify-card omx-skill-card">
               <div class="omnimux-creatify-card-bg-img omx-skill-card-aura"></div>
               <div class="omnimux-creatify-dot-overlay"></div>
+              <button type="button" class="omx-skill-card-open-trigger" aria-label="规划内容策略"></button>
               <div class="omx-skill-card-header">
                 <h3 class="omnimux-creatify-center-title omx-skill-card-title"><span>规划内容策略</span></h3>
                 <div class="omx-skill-card-badges"><span class="omnimux-creatify-badge-hot">H</span></div>
@@ -146,8 +170,10 @@ test('regression(Issue #410): 工作台卡片静息态即左对齐展示标题�
               </div>
             </div>
           </div>
-          <div id="m-narrow" style="width:190px;margin-top:16px">
+          <div style="display:flex;gap:16px;align-items:flex-start;margin-top:12px">
+          <div id="m-narrow" style="width:190px;flex:none">
             <div class="featured-card omnimux-creatify-card omx-skill-card">
+              <button type="button" class="omx-skill-card-open-trigger" aria-label="窄卡"></button>
               <div class="omx-skill-card-header"><h3 class="omx-skill-card-title"><span>窄卡</span></h3></div>
               <p class="omx-skill-card-desc">窄容器</p>
               <div class="omx-skill-card-footer">
@@ -159,9 +185,9 @@ test('regression(Issue #410): 工作台卡片静息态即左对齐展示标题�
               </div>
             </div>
           </div>
-          <div id="g-narrow" style="width:190px;margin-top:16px">
+          <div id="g-narrow" style="width:190px;flex:none">
             <article class="omnimux-creatify-card omnimux-skill-card">
-              <div class="omx-skill-card-header"><h3 class="omnimux-skill-card-title"><span>引导窄卡</span></h3></div>
+              <div class="omx-skill-card-header"><h3 class="omnimux-creatify-center-title omnimux-skill-card-title"><span>引导窄卡</span></h3></div>
               <p class="omnimux-skill-card-summary">引导窄容器</p>
               <div class="omx-skill-card-footer">
                 <span class="omx-skill-card-category">营销增长</span>
@@ -172,10 +198,28 @@ test('regression(Issue #410): 工作台卡片静息态即左对齐展示标题�
               </div>
             </article>
           </div>
-          <div class="omnimux-tpl-card is-skill-card" style="width:240px;margin-top:16px">
+          <div class="omnimux-tpl-card is-skill-card" style="width:240px;flex:none">
             <article class="omnimux-creatify-card omnimux-skill-card">
-              <div class="omx-skill-card-header"><h3 class="omnimux-skill-card-title"><span>货架技能卡</span></h3></div>
+              <div class="omx-skill-card-header"><h3 class="omnimux-creatify-center-title omnimux-skill-card-title"><span>货架技能卡</span></h3></div>
             </article>
+          </div>
+          </div>
+          <div class="omnimux-shelf-grid" id="shelf-1205-probe" style="width:965px;margin-top:12px">
+            ${shelfTitles.map(([t, s]) => `
+              <div class="omnimux-tpl-card is-skill-card">
+                <article class="omnimux-creatify-card omnimux-skill-card">
+                  <div class="omx-skill-card-header"><h3 class="omnimux-creatify-center-title omnimux-skill-card-title"><span>${t}</span></h3></div>
+                  <p class="omnimux-skill-card-summary">${s}</p>
+                  <div class="omx-skill-card-footer">
+                    <span class="omx-skill-card-category">Growth</span>
+                    <button type="button" class="omnimux-skill-card-btn">
+                      <span class="omnimux-skill-card-btn-icon"><svg width="13" height="13" viewBox="0 0 24 24"></svg></span>
+                      <span class="omnimux-skill-card-btn-label">Use</span>
+                    </button>
+                  </div>
+                </article>
+              </div>
+            `).join('')}
           </div>
         </div>
       </div>`;
@@ -189,6 +233,7 @@ test('regression(Issue #410): 工作台卡片静息态即左对齐展示标题�
       styles: combinedCss,
       html: dualHtml,
       measure: () => {
+        const plaza = document.querySelector('.sh-plaza-body');
         const card = document.querySelector('.omx-skill-card');
         const title = card.querySelector('.omx-skill-card-title');
         const desc = card.querySelector('.omx-skill-card-desc');
@@ -197,6 +242,9 @@ test('regression(Issue #410): 工作台卡片静息态即左对齐展示标题�
         const tRect = title.getBoundingClientRect();
         const dRect = desc.getBoundingClientRect();
         const bRect = btn.getBoundingClientRect();
+
+        const descHit = document.elementFromPoint(dRect.left + dRect.width / 2, dRect.top + dRect.height / 2);
+        const btnHit = document.elementFromPoint(bRect.left + bRect.width / 2, bRect.top + bRect.height / 2);
 
         const mNarrowCard = document.querySelector('#m-narrow .omx-skill-card');
         const mNarrowBtn = mNarrowCard.querySelector('.omnimux-creatify-quick-try-btn').getBoundingClientRect();
@@ -207,6 +255,9 @@ test('regression(Issue #410): 工作台卡片静息态即左对齐展示标题�
         const gNarrowLabel = getComputedStyle(gNarrowCard.querySelector('.omnimux-skill-card-btn-label')).display;
 
         const tplWrap = document.querySelector('.omnimux-tpl-card.is-skill-card');
+        const shelfSummaries = Array.from(document.querySelectorAll('#shelf-1205-probe .omnimux-skill-card-summary'));
+        const minSummaryClientH = Math.min(...shelfSummaries.map((el) => el.clientHeight));
+
         return {
           textAlign: getComputedStyle(title).textAlign,
           titleLeftDelta: Math.round(tRect.left - cRect.left),
@@ -216,6 +267,10 @@ test('regression(Issue #410): 工作台卡片静息态即左对齐展示标题�
           btnW: Math.round(bRect.width),
           btnH: Math.round(bRect.height),
           overflowX: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+          plazaOverflowX: plaza.scrollWidth - plaza.clientWidth,
+          docScrollHeight: document.documentElement.scrollHeight,
+          descHitsOpenTrigger: !!descHit?.classList?.contains('omx-skill-card-open-trigger'),
+          btnHitsTryBtn: !!btnHit?.closest?.('.omnimux-creatify-quick-try-btn'),
           marketContainerName: getComputedStyle(mNarrowCard).containerName,
           marketNarrowBtnW: Math.round(mNarrowBtn.width),
           marketNarrowLabel: mNarrowLabel,
@@ -223,16 +278,23 @@ test('regression(Issue #410): 工作台卡片静息态即左对齐展示标题�
           guideNarrowBtnW: Math.round(gNarrowBtn.width),
           guideNarrowLabel: gNarrowLabel,
           tplWrapBorderTopWidth: getComputedStyle(tplWrap).borderTopWidth,
+          minSummaryClientH,
+          nestedInteractiveCount: card.querySelectorAll('[role="button"]').length,
         };
       },
     });
 
+    assert.equal(probe.nestedInteractiveCount, 0, `${orderName}: 外层卡片不得设 role="button" 嵌套`);
+    assert.equal(probe.descHitsOpenTrigger, true, `${orderName}: 点击简介区域必须命中平铺详情按钮`);
+    assert.equal(probe.btnHitsTryBtn, true, `${orderName}: 点击试用按钮必须优先命中 CTA 而非详情触发器`);
     assert.equal(probe.textAlign, 'left', orderName);
     assert.equal(probe.titleLeftDelta, probe.descLeftDelta, `${orderName}: 标题与简介左对齐`);
     assert.equal(probe.gapTitleDesc >= 4, true, `${orderName}: 标题与简介间距 >=4px`);
     assert.equal(probe.descOpacity, '1', `${orderName}: 静息态简介直接可见`);
     assert.equal(probe.btnH >= 28 && probe.btnW >= 28, true, `${orderName}: 按钮热区 >=28px`);
+    assert.equal(probe.docScrollHeight <= 900, true, `${orderName}: 探测页高度保持在视口内以避免 Linux 滚动条误报`);
     assert.equal(probe.overflowX, 0, `${orderName}: 零横向溢出`);
+    assert.equal(probe.plazaOverflowX, 0, `${orderName}: 广场容器零横向溢出`);
     assert.equal(probe.marketContainerName, 'market-featured-card', `${orderName}: 广场卡片保持独立容器名`);
     assert.equal(probe.marketNarrowLabel, 'none', `${orderName}: 广场 190px 卡片收起按钮文案`);
     assert.equal(probe.marketNarrowBtnW, 28, `${orderName}: 广场 190px 卡片 CTA 收为 28px`);
@@ -240,5 +302,6 @@ test('regression(Issue #410): 工作台卡片静息态即左对齐展示标题�
     assert.equal(probe.guideNarrowLabel, 'none', `${orderName}: 引导 190px 卡片收起按钮文案`);
     assert.equal(probe.guideNarrowBtnW, 28, `${orderName}: 引导 190px 卡片 CTA 收为 28px`);
     assert.equal(probe.tplWrapBorderTopWidth, '0px', `${orderName}: is-skill-card 外框不得叠加双边框`);
+    assert.equal(probe.minSummaryClientH >= 30, true, `${orderName}: 1205px 五列货架卡片简介最小高度 >=30px（实际 ${probe.minSummaryClientH}px）`);
   }
 });

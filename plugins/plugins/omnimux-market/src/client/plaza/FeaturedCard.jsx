@@ -173,12 +173,6 @@ export function renderFeaturedCard(item, opts, onOpenArg, onPinArg, onTryArg) {
   const tryTooltip = safeTr('workshop.tryTooltip', undefined, isEn ? 'Try in Chat' : '去对话试试');
 
   const onCardClick = () => { if (onOpen) onOpen(item); };
-  const onCardKeyDown = (e) => {
-    if (e && e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) {
-      if (typeof e.preventDefault === 'function') e.preventDefault();
-      onCardClick();
-    }
-  };
   const onTryClick = (e) => {
     e && e.stopPropagation();
     (onTry || safeTrySkillInSession)(item);
@@ -187,13 +181,12 @@ export function renderFeaturedCard(item, opts, onOpenArg, onPinArg, onTryArg) {
   return h('div', {
     key: item.slug || item.id,
     className: 'featured-card omnimux-creatify-card omx-skill-card',
-    role: 'button',
-    tabIndex: 0,
-    'aria-label': title,
     'data-cover-fallback': coverSvgFallback || undefined,
     'data-icon-src': iconSrc || undefined,
-    onClick: onCardClick,
-    onKeyDown: onCardKeyDown,
+    onClick: (e) => {
+      if (e?.target?.closest?.('button')) return;
+      onCardClick();
+    },
     style: { '--skill-aura-accent': aurora.accent },
   },
     // 1. 柔和右上角氛围微光背景层
@@ -204,6 +197,16 @@ export function renderFeaturedCard(item, opts, onOpenArg, onPinArg, onTryArg) {
     }),
     // 2. 局部微孔光栅（仅映衬微光区）
     h('div', { className: 'omnimux-creatify-dot-overlay', 'aria-hidden': 'true' }),
+    // 2.5 整卡语义化详情触发按钮（铺满卡片，避免 role="button" 嵌套 <button>）
+    h('button', {
+      type: 'button',
+      className: 'omx-skill-card-open-trigger',
+      'aria-label': title,
+      onClick: (e) => {
+        e && e.stopPropagation();
+        onCardClick();
+      },
+    }),
     // 3. 顶行：左对齐标题 + 轻量状态角标
     h('div', { className: 'omx-skill-card-header' },
       h('h3', { className: 'omnimux-creatify-center-title omx-skill-card-title' },

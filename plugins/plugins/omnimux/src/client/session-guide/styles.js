@@ -2461,6 +2461,7 @@ html[data-omnimux-rightbar-open="true"]:not([data-omnimux-rightbar-fullscreen="t
 .omnimux-tpl-card.is-skill-card {
   flex:0 0 240px;
   aspect-ratio:16 / 10;
+  min-height:152px;
   border:0;
   background:transparent;
   box-shadow:none;
@@ -2469,7 +2470,7 @@ html[data-omnimux-rightbar-open="true"]:not([data-omnimux-rightbar-fullscreen="t
 }
 .omnimux-tpl-card.is-skill-card .omnimux-skill-card {
   height:100%;
-  min-height:0;
+  min-height:152px;
   aspect-ratio:auto;
   padding:12px 14px;
   border-radius:14px;
@@ -2481,6 +2482,9 @@ html[data-omnimux-rightbar-open="true"]:not([data-omnimux-rightbar-fullscreen="t
   margin-top:4px;
   font-size:12px;
   line-height:1.4;
+}
+.omnimux-tpl-card.is-skill-card .omx-skill-card-footer {
+  padding-top:8px;
 }
 
 /* 技能卡片网格：基准 4 列，响应式折叠 */

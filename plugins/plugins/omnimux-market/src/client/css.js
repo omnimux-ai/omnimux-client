@@ -577,7 +577,9 @@ body[data-ds-dark-theme] .omx-skill-card:hover {
   box-shadow:0 8px 20px color-mix(in srgb, var(--dsw-static-neutral-1000) 24%, transparent);
 }
 .sh-mkt .omx-skill-card:focus-visible,
-.omx-skill-card:focus-visible {
+.omx-skill-card:focus-visible,
+.sh-mkt .omx-skill-card:has(.omx-skill-card-open-trigger:focus-visible),
+.omx-skill-card:has(.omx-skill-card-open-trigger:focus-visible) {
   outline:2px solid var(--dsw-alias-border-selected);
   outline-offset:2px;
 }
@@ -587,7 +589,7 @@ body[data-ds-dark-theme] .omx-skill-card:hover {
 }
 .sh-mkt .omx-skill-card-aura,
 .omx-skill-card-aura {
-  position:absolute; inset:0; width:100%; height:100%; pointer-events:none; opacity:0.85;
+  position:absolute; inset:0; z-index:0; width:100%; height:100%; pointer-events:none; opacity:0.85;
   transition:opacity 180ms ease;
 }
 body:not([data-ds-dark-theme]) .sh-mkt .omx-skill-card-aura,
@@ -600,15 +602,25 @@ body:not([data-ds-dark-theme]) .omx-skill-card-aura {
 }
 .sh-mkt .omx-skill-card .omnimux-creatify-dot-overlay,
 .omx-skill-card .omnimux-creatify-dot-overlay {
-  position:absolute; inset:0;
+  position:absolute; inset:0; z-index:0;
   background-image:radial-gradient(circle, var(--dsw-alias-border-l4) 1px, transparent 1px);
   background-size:14px 14px; mix-blend-mode:overlay; pointer-events:none; opacity:0.55;
   mask-image:radial-gradient(ellipse 80% 70% at 96% 0%, var(--dsw-static-neutral-1000) 0%, transparent 72%);
   -webkit-mask-image:radial-gradient(ellipse 80% 70% at 96% 0%, var(--dsw-static-neutral-1000) 0%, transparent 72%);
 }
+.sh-mkt .omx-skill-card-open-trigger,
+.omx-skill-card-open-trigger {
+  position:absolute; inset:0; z-index:1; width:100%; height:100%;
+  margin:0; padding:0; appearance:none; border:0; background:transparent;
+  cursor:pointer; border-radius:inherit;
+}
+.sh-mkt .omx-skill-card-open-trigger:focus-visible,
+.omx-skill-card-open-trigger:focus-visible {
+  outline:none;
+}
 .sh-mkt .omx-skill-card-header,
 .omx-skill-card-header {
-  position:relative; z-index:1; display:flex; align-items:flex-start; justify-content:space-between; gap:8px; min-width:0;
+  position:relative; z-index:2; pointer-events:none; display:flex; align-items:flex-start; justify-content:space-between; gap:8px; min-width:0;
 }
 .sh-mkt .omx-skill-card-title,
 .omx-skill-card-title {
@@ -645,13 +657,13 @@ body[data-ds-dark-theme] .omx-skill-card .omnimux-creatify-badge-new {
 }
 .sh-mkt .omx-skill-card-desc,
 .omx-skill-card-desc {
-  position:relative; z-index:1; margin:6px 0 0;
+  position:relative; z-index:2; pointer-events:none; margin:6px 0 0;
   font-size:13px; line-height:1.45; color:var(--dsw-alias-label-secondary); text-wrap:pretty;
   display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; overflow-wrap:anywhere;
 }
 .sh-mkt .omx-skill-card-footer,
 .omx-skill-card-footer {
-  position:relative; z-index:1; margin-top:auto; padding-top:10px;
+  position:relative; z-index:2; pointer-events:none; margin-top:auto; padding-top:10px;
   display:flex; align-items:center; justify-content:space-between; gap:8px; min-width:0;
 }
 .sh-mkt .omx-skill-card-category,
@@ -660,6 +672,7 @@ body[data-ds-dark-theme] .omx-skill-card .omnimux-creatify-badge-new {
   white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0;
 }
 .omnimux-creatify-quick-try-btn {
+  position:relative; z-index:3; pointer-events:auto;
   flex:none; display:inline-flex; align-items:center; justify-content:center; gap:5px;
   height:28px; padding:0 10px; border-radius:999px; corner-shape:round;
   background:var(--dsw-alias-interactive-bg-hover);
@@ -668,6 +681,10 @@ body[data-ds-dark-theme] .omx-skill-card .omnimux-creatify-badge-new {
   font:inherit; font-size:12px; font-weight:500; line-height:1;
   cursor:pointer; white-space:nowrap; box-sizing:border-box;
   transition:background-color 150ms ease, border-color 150ms ease, color 150ms ease, transform 120ms ease;
+}
+.omnimux-creatify-quick-try-btn:focus-visible {
+  outline:2px solid var(--dsw-alias-border-selected);
+  outline-offset:2px;
 }
 .sh-mkt .omx-skill-card:hover .omnimux-creatify-quick-try-btn,
 .omx-skill-card:hover .omnimux-creatify-quick-try-btn,
