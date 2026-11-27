@@ -649,6 +649,53 @@
   aspect-ratio: 4 / 3;
 }
 
+/* Compact density refinements for chat conversation toolview */
+.card[data-density="compact"] .articleBody {
+  padding: 10px 11px 8px;
+  gap: 6px;
+}
+
+.card[data-density="compact"] .socialWrap {
+  padding: 10px 11px;
+  gap: 8px;
+}
+
+.card[data-density="compact"] .shortVideoStage {
+  aspect-ratio: 3 / 4;
+  max-height: 360px;
+}
+
+.card[data-density="compact"] .shortVideoFooter {
+  padding: 9px 11px;
+}
+
+.card[data-density="compact"] .photoFeedHeader {
+  padding: 9px 11px;
+}
+
+.card[data-density="compact"] .photoFeedMedia {
+  aspect-ratio: 4 / 5;
+  max-height: 320px;
+}
+
+.card[data-density="compact"] .photoFeedBody {
+  padding: 9px 11px 10px;
+  gap: 6px;
+}
+
+.card[data-density="compact"] .landscapeFooter {
+  padding: 9px 11px 10px;
+  gap: 9px;
+}
+
+.card[data-density="compact"] .webLinkBody {
+  padding: 9px 11px 10px;
+}
+
+.card[data-density="compact"] .statsBar {
+  padding: 0 11px 10px;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .card,
   .topLeft,

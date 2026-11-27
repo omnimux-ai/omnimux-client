@@ -22,6 +22,7 @@ import { ensureSidebarGuideScrollChrome, removeSidebarGuideScrollChrome } from '
 import { HeroBrandMark } from './HeroBrandMark.jsx'
 import { installHeroBrandSlot } from './hero-brand.js'
 import { installStatsLineShadow } from './stats-line-shadow.js'
+import { registerSocialToolViews } from './social-toolview/index.js'
 import { AttachmentTray } from './attachments/AttachmentTray.tsx'
 import { createClipComposer } from './attachments/clipComposer.js'
 import { getGlobalAttachmentStore } from './attachments/store.ts'
@@ -88,6 +89,7 @@ export function apply(ctx) {
   installQuotaGlobal(typeof window !== 'undefined' ? window : undefined)
   installHeroBrandSlot(ctx, HeroBrandMark)
   installStatsLineShadow(ctx)
+  registerSocialToolViews(ctx)
   // Optional session warmup: fill the status cache so the first sidebar
   // click can take the sync short path. Not a startup gate — fire-and-forget,
   // never setState, never block apply().

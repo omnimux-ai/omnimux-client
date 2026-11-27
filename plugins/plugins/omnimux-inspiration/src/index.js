@@ -420,6 +420,19 @@ export function apply(ctx) {
         tags: item.tags,
         is_favorite: item.is_favorite,
         hook_summary: typeof item.deconstruction === 'object' ? (item.deconstruction?.hook || null) : null,
+        content: item.content || '',
+        excerpt: item.excerpt || '',
+        content_shape: item.content_shape || null,
+        cover_url: item.cover_url || '',
+        media_urls: Array.isArray(item.media_urls) ? item.media_urls : [],
+        author: item.author || null,
+        stats: item.stats || null,
+        duration: typeof item.duration === 'number' ? item.duration : null,
+        published_at: item.published_at || item.posted_at || item.created_at || null,
+        favicon_url: item.favicon_url || '',
+        media_count: Array.isArray(item.media_items) && item.media_items.length > 0
+          ? item.media_items.length
+          : (Array.isArray(item.media_urls) ? item.media_urls.length : 0),
       }))
       return safeJsonOutput({
         count: mapped.length,

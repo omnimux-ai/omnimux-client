@@ -14,8 +14,10 @@ const srcIndexPath = join(root, 'src/index.ts')
 
 const EXPECTED_SOCIAL_EXPORTS = [
   'SocialPostCard',
+  'SocialSearchToolView',
   'MasonryGrid',
   'SocialPlatformMark',
+  'parseSocialToolBlock',
   'resolveSocialCardArchetype',
   'resolveOutlierBadges',
 ]

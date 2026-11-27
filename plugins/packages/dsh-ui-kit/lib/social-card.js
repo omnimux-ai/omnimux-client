@@ -1,5 +1,5 @@
 import { n as cx, r as cssClass, t as injectCss } from "./injectCss-73B9Wi4w.js";
-import { forwardRef, useEffect, useMemo, useRef, useState } from "react";
+import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Fragment, jsx, jsxs } from "react/jsx-runtime";
 // src/social-card/archetype.ts
 const KNOWN_PLATFORMS = /* @__PURE__ */ new Set([
@@ -245,7 +245,7 @@ function SocialPlatformMark({ platform, variant = "icon", size = 15, className, 
 	});
 }
 // \0dsh-ui-kit-css:src/social-card/SocialPostCard.module.css.mjs
-injectCss("SocialPostCard.module.css", ".dshUk-SocialPostCard-card {\n  position: relative;\n  display: flex;\n  flex-direction: column;\n  width: 100%;\n  min-width: 0;\n  box-sizing: border-box;\n  border-radius: 12px;\n  border: 1px solid var(--dsw-alias-border-l2);\n  background-color: var(--dsw-alias-card-fill);\n  color: var(--dsw-alias-label-primary);\n  overflow: hidden;\n  text-align: left;\n  transition: border-color 140ms ease;\n}\n\n.dshUk-SocialPostCard-card[data-interactive=\"true\"] {\n  cursor: pointer;\n}\n\n.dshUk-SocialPostCard-card:hover {\n  border-color: var(--dsw-alias-border-l3);\n}\n\n.dshUk-SocialPostCard-card:focus {\n  outline: none;\n}\n\n.dshUk-SocialPostCard-card:focus-visible {\n  outline: 2px solid var(--dsw-alias-brand-primary);\n  outline-offset: 2px;\n}\n\n.dshUk-SocialPostCard-card[data-selected=\"true\"],\n.dshUk-SocialPostCard-card[data-active=\"true\"] {\n  border-color: var(--dsw-alias-brand-primary);\n  box-shadow: inset 0 0 0 1px var(--dsw-alias-brand-primary);\n}\n\n/* Chrome overlay slots (selection, favorite/menu, hover CTAs) */\n.dshUk-SocialPostCard-topLeft {\n  position: absolute;\n  top: 8px;\n  left: 8px;\n  z-index: 6;\n  display: inline-flex;\n  align-items: center;\n  opacity: 0;\n  transition: opacity 130ms ease;\n}\n\n.dshUk-SocialPostCard-topRight {\n  position: absolute;\n  top: 8px;\n  right: 8px;\n  z-index: 6;\n  display: inline-flex;\n  align-items: center;\n  gap: 4px;\n}\n\n.dshUk-SocialPostCard-hoverActions {\n  position: absolute;\n  right: 8px;\n  bottom: 8px;\n  z-index: 5;\n  display: inline-flex;\n  align-items: center;\n  gap: 6px;\n  opacity: 0;\n  transform: translateY(3px);\n  pointer-events: none;\n  transition:\n    opacity 130ms ease,\n    transform 130ms ease;\n}\n\n.dshUk-SocialPostCard-card:hover .dshUk-SocialPostCard-topLeft,\n.dshUk-SocialPostCard-card:focus-within .dshUk-SocialPostCard-topLeft,\n.dshUk-SocialPostCard-card[data-selected=\"true\"] .dshUk-SocialPostCard-topLeft,\n.dshUk-SocialPostCard-card[data-menu-open=\"true\"] .dshUk-SocialPostCard-topLeft {\n  opacity: 1;\n}\n\n.dshUk-SocialPostCard-card:hover .dshUk-SocialPostCard-hoverActions,\n.dshUk-SocialPostCard-card:focus-within .dshUk-SocialPostCard-hoverActions {\n  opacity: 1;\n  transform: translateY(0);\n  pointer-events: auto;\n}\n\n@media (hover: none) {\n  .dshUk-SocialPostCard-topLeft {\n    opacity: 1;\n  }\n\n  .dshUk-SocialPostCard-hoverActions {\n    opacity: 1;\n    transform: none;\n    pointer-events: auto;\n  }\n}\n\n/* Pin-clearance when top-right carries persistent indicator(s) (favorite star / error badge) */\n.dshUk-SocialPostCard-card[data-pinned-tr=\"true\"] .dshUk-SocialPostCard-pinnedClearance {\n  padding-right: 36px;\n}\n\n.dshUk-SocialPostCard-card[data-pinned-tr-multi=\"true\"] .dshUk-SocialPostCard-pinnedClearance {\n  padding-right: 64px;\n}\n\n/* Shared sub-elements */\n.dshUk-SocialPostCard-avatar {\n  flex-shrink: 0;\n  border-radius: 9999px;\n  overflow: hidden;\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  background-color: var(--dsw-alias-bg-layer-3);\n  border: 1px solid var(--dsw-alias-border-l1);\n  color: var(--dsw-alias-label-secondary);\n  font-weight: 600;\n  font-size: 12px;\n}\n\n.dshUk-SocialPostCard-avatarImg {\n  width: 100%;\n  height: 100%;\n  object-fit: cover;\n  display: block;\n}\n\n.dshUk-SocialPostCard-avatarSm {\n  width: 28px;\n  height: 28px;\n}\n\n.dshUk-SocialPostCard-avatarMd {\n  width: 32px;\n  height: 32px;\n}\n\n.dshUk-SocialPostCard-avatarLg {\n  width: 36px;\n  height: 36px;\n}\n\n.dshUk-SocialPostCard-authorRow {\n  display: flex;\n  align-items: center;\n  gap: 8px;\n  min-width: 0;\n}\n\n.dshUk-SocialPostCard-authorMeta {\n  display: flex;\n  flex-direction: column;\n  gap: 1px;\n  min-width: 0;\n  flex: 1;\n}\n\n.dshUk-SocialPostCard-authorTop {\n  display: flex;\n  align-items: baseline;\n  gap: 5px;\n  min-width: 0;\n}\n\n.dshUk-SocialPostCard-authorName {\n  font-size: 13px;\n  font-weight: 600;\n  line-height: 17px;\n  color: var(--dsw-alias-label-primary);\n  white-space: nowrap;\n  overflow: hidden;\n  text-overflow: ellipsis;\n}\n\n.dshUk-SocialPostCard-authorHandle {\n  font-size: 12.5px;\n  font-weight: 400;\n  line-height: 16px;\n  color: var(--dsw-alias-label-tertiary);\n  white-space: nowrap;\n  overflow: hidden;\n  text-overflow: ellipsis;\n}\n\n.dshUk-SocialPostCard-timeLabel {\n  font-size: 12px;\n  line-height: 15px;\n  color: var(--dsw-alias-label-tertiary);\n}\n\n.dshUk-SocialPostCard-statsBar {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 8px;\n  padding: 0 12px 11px;\n  margin-top: auto;\n}\n\n.dshUk-SocialPostCard-statsLeft {\n  display: flex;\n  align-items: center;\n  flex-wrap: wrap;\n  gap: 8px;\n  min-width: 0;\n  font-variant-numeric: tabular-nums;\n}\n\n.dshUk-SocialPostCard-statItem {\n  display: inline-flex;\n  align-items: center;\n  gap: 4px;\n  font-size: 12px;\n  line-height: 16px;\n  font-weight: 500;\n  color: var(--dsw-alias-label-secondary);\n}\n\n.dshUk-SocialPostCard-outlierBadge {\n  display: inline-flex;\n  align-items: center;\n  padding: 2px 6px;\n  border-radius: 6px;\n  font-size: 11px;\n  line-height: 15px;\n  font-weight: 600;\n  font-variant-numeric: tabular-nums;\n}\n\n.dshUk-SocialPostCard-outlierBlue {\n  background-color: var(--dsw-alias-state-business-tertiary);\n  color: var(--dsw-alias-state-business-primary);\n}\n\n.dshUk-SocialPostCard-outlierViolet {\n  background-color: color-mix(in srgb, var(--dsw-alias-state-done-primary) 16%, transparent);\n  color: var(--dsw-alias-state-done-primary);\n}\n\n.dshUk-SocialPostCard-outlierAmber {\n  background-color: var(--dsw-alias-state-warn-tertiary);\n  color: var(--dsw-alias-state-warn-label);\n}\n\n.dshUk-SocialPostCard-outlierGreen {\n  background-color: var(--dsw-alias-state-success-tertiary);\n  color: var(--dsw-alias-state-success-primary);\n}\n\n.dshUk-SocialPostCard-platformMark {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  flex-shrink: 0;\n  color: var(--dsw-alias-label-secondary);\n}\n\n.dshUk-SocialPostCard-platformCircle {\n  width: 24px;\n  height: 24px;\n  border-radius: 9999px;\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  flex-shrink: 0;\n  background-color: var(--dsw-alias-brand-primary);\n  color: var(--dsw-alias-bg-base);\n}\n\n.dshUk-SocialPostCard-mediaBox {\n  position: relative;\n  width: 100%;\n  overflow: hidden;\n  background-color: var(--dsw-alias-bg-layer-2);\n}\n\n.dshUk-SocialPostCard-mediaImg {\n  display: block;\n  width: 100%;\n  height: 100%;\n  object-fit: cover;\n}\n\n.dshUk-SocialPostCard-mediaFallback {\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  width: 100%;\n  height: 100%;\n  color: var(--dsw-alias-label-tertiary);\n  background-color: var(--dsw-alias-bg-layer-2);\n}\n\n.dshUk-SocialPostCard-durationPill {\n  position: absolute;\n  padding: 2px 6px;\n  border-radius: 5px;\n  background-color: color-mix(in srgb, var(--dsw-static-neutral-1000) 76%, transparent);\n  color: var(--dsw-static-neutral-00);\n  font-size: 11px;\n  font-weight: 600;\n  line-height: 15px;\n  font-variant-numeric: tabular-nums;\n}\n\n.dshUk-SocialPostCard-galleryPill {\n  position: absolute;\n  top: 8px;\n  right: 8px;\n  padding: 2px 7px;\n  border-radius: 9999px;\n  background-color: color-mix(in srgb, var(--dsw-static-neutral-1000) 70%, transparent);\n  color: var(--dsw-static-neutral-00);\n  font-size: 11px;\n  font-weight: 600;\n  line-height: 15px;\n  font-variant-numeric: tabular-nums;\n}\n\n.dshUk-SocialPostCard-videoPlayBadge {\n  position: absolute;\n  right: 10px;\n  bottom: 10px;\n  width: 30px;\n  height: 30px;\n  border-radius: 9999px;\n  background-color: color-mix(in srgb, var(--dsw-static-neutral-1000) 72%, transparent);\n  color: var(--dsw-static-neutral-00);\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n}\n\n/* 1. Article archetype */\n.dshUk-SocialPostCard-articleCover {\n  aspect-ratio: 16 / 9;\n}\n\n.dshUk-SocialPostCard-articleBody {\n  display: flex;\n  flex-direction: column;\n  gap: 7px;\n  padding: 12px 12px 10px;\n}\n\n.dshUk-SocialPostCard-articleTitle {\n  margin: 0;\n  font-size: 15px;\n  font-weight: 600;\n  line-height: 1.35;\n  color: var(--dsw-alias-label-primary);\n  display: -webkit-box;\n  -webkit-line-clamp: 3;\n  -webkit-box-orient: vertical;\n  overflow: hidden;\n}\n\n.dshUk-SocialPostCard-card[data-density=\"compact\"] .dshUk-SocialPostCard-articleTitle {\n  font-size: 14px;\n}\n\n.dshUk-SocialPostCard-articleExcerpt {\n  margin: 0;\n  font-size: 13px;\n  line-height: 1.45;\n  color: var(--dsw-alias-label-secondary);\n  display: -webkit-box;\n  -webkit-line-clamp: 2;\n  -webkit-box-orient: vertical;\n  overflow: hidden;\n}\n\n/* 2. Social-post archetype */\n.dshUk-SocialPostCard-socialWrap {\n  display: flex;\n  flex-direction: column;\n  gap: 10px;\n  padding: 12px;\n}\n\n.dshUk-SocialPostCard-socialBodyText {\n  margin: 0;\n  font-size: 13.5px;\n  line-height: 1.48;\n  color: var(--dsw-alias-label-primary);\n  white-space: pre-line;\n  display: -webkit-box;\n  -webkit-line-clamp: 5;\n  -webkit-box-orient: vertical;\n  overflow: hidden;\n  user-select: text;\n}\n\n.dshUk-SocialPostCard-socialBodyTextOnly {\n  -webkit-line-clamp: 10;\n}\n\n.dshUk-SocialPostCard-card[data-density=\"compact\"] .dshUk-SocialPostCard-socialBodyText {\n  font-size: 13px;\n  -webkit-line-clamp: 4;\n}\n\n.dshUk-SocialPostCard-card[data-density=\"compact\"] .dshUk-SocialPostCard-socialBodyTextOnly {\n  -webkit-line-clamp: 6;\n}\n\n.dshUk-SocialPostCard-socialMediaInset {\n  border-radius: 8px;\n  border: 1px solid var(--dsw-alias-border-l2);\n  aspect-ratio: 16 / 10;\n}\n\n/* 3. Short-video archetype */\n.dshUk-SocialPostCard-shortVideoStage {\n  position: relative;\n  width: 100%;\n  aspect-ratio: 5 / 8;\n  overflow: hidden;\n  background-color: var(--dsw-alias-bg-layer-3);\n}\n\n.dshUk-SocialPostCard-shortVideoDuration {\n  top: 8px;\n  left: 8px;\n}\n\n.dshUk-SocialPostCard-shortVideoScrim {\n  position: absolute;\n  inset: auto 0 0 0;\n  height: 46%;\n  background: linear-gradient(\n    180deg,\n    transparent 0%,\n    color-mix(in srgb, var(--dsw-static-neutral-1000) 82%, transparent) 100%\n  );\n  pointer-events: none;\n}\n\n.dshUk-SocialPostCard-shortVideoRightStats {\n  position: absolute;\n  right: 8px;\n  bottom: 52px;\n  z-index: 2;\n  display: flex;\n  flex-direction: column;\n  align-items: center;\n  gap: 10px;\n  color: var(--dsw-static-neutral-00);\n  text-shadow: 0 1px 4px color-mix(in srgb, var(--dsw-static-neutral-1000) 75%, transparent);\n  font-size: 11px;\n  font-weight: 600;\n  font-variant-numeric: tabular-nums;\n}\n\n.dshUk-SocialPostCard-shortVideoRightStat {\n  display: flex;\n  flex-direction: column;\n  align-items: center;\n  gap: 2px;\n}\n\n.dshUk-SocialPostCard-shortVideoBottomCopy {\n  position: absolute;\n  left: 10px;\n  right: 42px;\n  bottom: 10px;\n  z-index: 2;\n  color: var(--dsw-static-neutral-00);\n  text-shadow: 0 1px 4px color-mix(in srgb, var(--dsw-static-neutral-1000) 75%, transparent);\n}\n\n.dshUk-SocialPostCard-shortVideoHandle {\n  font-size: 12.5px;\n  font-weight: 600;\n  margin-bottom: 2px;\n  white-space: nowrap;\n  overflow: hidden;\n  text-overflow: ellipsis;\n}\n\n.dshUk-SocialPostCard-shortVideoCaption {\n  margin: 0;\n  font-size: 12px;\n  line-height: 1.38;\n  color: color-mix(in srgb, var(--dsw-static-neutral-00) 92%, transparent);\n  display: -webkit-box;\n  -webkit-line-clamp: 2;\n  -webkit-box-orient: vertical;\n  overflow: hidden;\n}\n\n.dshUk-SocialPostCard-shortVideoFooter {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 8px;\n  padding: 10px 12px;\n  background-color: var(--dsw-alias-card-fill);\n  border-top: 1px solid var(--dsw-alias-border-l1);\n}\n\n/* 4. Photo-feed archetype */\n.dshUk-SocialPostCard-photoFeedHeader {\n  padding: 10px 12px;\n}\n\n.dshUk-SocialPostCard-photoFeedMedia {\n  aspect-ratio: 4 / 5;\n}\n\n.dshUk-SocialPostCard-photoFeedBody {\n  display: flex;\n  flex-direction: column;\n  gap: 7px;\n  padding: 10px 12px 11px;\n}\n\n.dshUk-SocialPostCard-photoFeedCaptionRow {\n  display: flex;\n  align-items: flex-end;\n  justify-content: space-between;\n  gap: 8px;\n}\n\n.dshUk-SocialPostCard-photoFeedCaption {\n  margin: 0;\n  font-size: 12.5px;\n  line-height: 1.42;\n  color: var(--dsw-alias-label-secondary);\n  display: -webkit-box;\n  -webkit-line-clamp: 3;\n  -webkit-box-orient: vertical;\n  overflow: hidden;\n  user-select: text;\n}\n\n.dshUk-SocialPostCard-photoFeedHandle {\n  color: var(--dsw-alias-label-primary);\n  font-weight: 600;\n  margin-right: 5px;\n}\n\n/* 5. Landscape-video archetype */\n.dshUk-SocialPostCard-landscapeCover {\n  aspect-ratio: 16 / 9;\n}\n\n.dshUk-SocialPostCard-landscapeDuration {\n  right: 8px;\n  bottom: 8px;\n}\n\n.dshUk-SocialPostCard-landscapeFooter {\n  display: flex;\n  align-items: flex-start;\n  gap: 10px;\n  padding: 10px 12px 12px;\n}\n\n.dshUk-SocialPostCard-landscapeCol {\n  flex: 1;\n  min-width: 0;\n  display: flex;\n  flex-direction: column;\n  gap: 3px;\n}\n\n.dshUk-SocialPostCard-landscapeTitle {\n  margin: 0;\n  font-size: 13.5px;\n  font-weight: 600;\n  line-height: 1.35;\n  color: var(--dsw-alias-label-primary);\n  display: -webkit-box;\n  -webkit-line-clamp: 2;\n  -webkit-box-orient: vertical;\n  overflow: hidden;\n}\n\n.dshUk-SocialPostCard-landscapeSubrow {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 8px;\n  margin-top: 2px;\n}\n\n.dshUk-SocialPostCard-landscapeMetaPair {\n  display: flex;\n  align-items: center;\n  flex-wrap: wrap;\n  gap: 8px;\n  font-size: 12px;\n  line-height: 16px;\n  color: var(--dsw-alias-label-tertiary);\n  font-variant-numeric: tabular-nums;\n}\n\n/* 6. Web-link & raw-media archetypes */\n.dshUk-SocialPostCard-webLinkCover {\n  aspect-ratio: 16 / 9;\n  border-bottom: 1px solid var(--dsw-alias-border-l1);\n}\n\n.dshUk-SocialPostCard-webLinkBody {\n  display: flex;\n  flex-direction: column;\n  gap: 6px;\n  padding: 10px 12px 12px;\n}\n\n.dshUk-SocialPostCard-webLinkTitle {\n  margin: 0;\n  font-size: 13.5px;\n  font-weight: 600;\n  line-height: 1.36;\n  color: var(--dsw-alias-label-primary);\n  display: -webkit-box;\n  -webkit-line-clamp: 2;\n  -webkit-box-orient: vertical;\n  overflow: hidden;\n}\n\n.dshUk-SocialPostCard-webLinkHostRow {\n  display: flex;\n  align-items: center;\n  gap: 6px;\n  font-size: 12px;\n  line-height: 16px;\n  color: var(--dsw-alias-label-tertiary);\n}\n\n.dshUk-SocialPostCard-faviconImg {\n  width: 14px;\n  height: 14px;\n  border-radius: 3px;\n  object-fit: cover;\n  flex-shrink: 0;\n}\n\n.dshUk-SocialPostCard-rawMediaFrame {\n  aspect-ratio: 4 / 3;\n}\n\n@media (prefers-reduced-motion: reduce) {\n  .dshUk-SocialPostCard-card,\n  .dshUk-SocialPostCard-topLeft,\n  .dshUk-SocialPostCard-hoverActions {\n    transition: none;\n  }\n}\n");
+injectCss("SocialPostCard.module.css", ".dshUk-SocialPostCard-card {\n  position: relative;\n  display: flex;\n  flex-direction: column;\n  width: 100%;\n  min-width: 0;\n  box-sizing: border-box;\n  border-radius: 12px;\n  border: 1px solid var(--dsw-alias-border-l2);\n  background-color: var(--dsw-alias-card-fill);\n  color: var(--dsw-alias-label-primary);\n  overflow: hidden;\n  text-align: left;\n  transition: border-color 140ms ease;\n}\n\n.dshUk-SocialPostCard-card[data-interactive=\"true\"] {\n  cursor: pointer;\n}\n\n.dshUk-SocialPostCard-card:hover {\n  border-color: var(--dsw-alias-border-l3);\n}\n\n.dshUk-SocialPostCard-card:focus {\n  outline: none;\n}\n\n.dshUk-SocialPostCard-card:focus-visible {\n  outline: 2px solid var(--dsw-alias-brand-primary);\n  outline-offset: 2px;\n}\n\n.dshUk-SocialPostCard-card[data-selected=\"true\"],\n.dshUk-SocialPostCard-card[data-active=\"true\"] {\n  border-color: var(--dsw-alias-brand-primary);\n  box-shadow: inset 0 0 0 1px var(--dsw-alias-brand-primary);\n}\n\n/* Chrome overlay slots (selection, favorite/menu, hover CTAs) */\n.dshUk-SocialPostCard-topLeft {\n  position: absolute;\n  top: 8px;\n  left: 8px;\n  z-index: 6;\n  display: inline-flex;\n  align-items: center;\n  opacity: 0;\n  transition: opacity 130ms ease;\n}\n\n.dshUk-SocialPostCard-topRight {\n  position: absolute;\n  top: 8px;\n  right: 8px;\n  z-index: 6;\n  display: inline-flex;\n  align-items: center;\n  gap: 4px;\n}\n\n.dshUk-SocialPostCard-hoverActions {\n  position: absolute;\n  right: 8px;\n  bottom: 8px;\n  z-index: 5;\n  display: inline-flex;\n  align-items: center;\n  gap: 6px;\n  opacity: 0;\n  transform: translateY(3px);\n  pointer-events: none;\n  transition:\n    opacity 130ms ease,\n    transform 130ms ease;\n}\n\n.dshUk-SocialPostCard-card:hover .dshUk-SocialPostCard-topLeft,\n.dshUk-SocialPostCard-card:focus-within .dshUk-SocialPostCard-topLeft,\n.dshUk-SocialPostCard-card[data-selected=\"true\"] .dshUk-SocialPostCard-topLeft,\n.dshUk-SocialPostCard-card[data-menu-open=\"true\"] .dshUk-SocialPostCard-topLeft {\n  opacity: 1;\n}\n\n.dshUk-SocialPostCard-card:hover .dshUk-SocialPostCard-hoverActions,\n.dshUk-SocialPostCard-card:focus-within .dshUk-SocialPostCard-hoverActions {\n  opacity: 1;\n  transform: translateY(0);\n  pointer-events: auto;\n}\n\n@media (hover: none) {\n  .dshUk-SocialPostCard-topLeft {\n    opacity: 1;\n  }\n\n  .dshUk-SocialPostCard-hoverActions {\n    opacity: 1;\n    transform: none;\n    pointer-events: auto;\n  }\n}\n\n/* Pin-clearance when top-right carries persistent indicator(s) (favorite star / error badge) */\n.dshUk-SocialPostCard-card[data-pinned-tr=\"true\"] .dshUk-SocialPostCard-pinnedClearance {\n  padding-right: 36px;\n}\n\n.dshUk-SocialPostCard-card[data-pinned-tr-multi=\"true\"] .dshUk-SocialPostCard-pinnedClearance {\n  padding-right: 64px;\n}\n\n/* Shared sub-elements */\n.dshUk-SocialPostCard-avatar {\n  flex-shrink: 0;\n  border-radius: 9999px;\n  overflow: hidden;\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  background-color: var(--dsw-alias-bg-layer-3);\n  border: 1px solid var(--dsw-alias-border-l1);\n  color: var(--dsw-alias-label-secondary);\n  font-weight: 600;\n  font-size: 12px;\n}\n\n.dshUk-SocialPostCard-avatarImg {\n  width: 100%;\n  height: 100%;\n  object-fit: cover;\n  display: block;\n}\n\n.dshUk-SocialPostCard-avatarSm {\n  width: 28px;\n  height: 28px;\n}\n\n.dshUk-SocialPostCard-avatarMd {\n  width: 32px;\n  height: 32px;\n}\n\n.dshUk-SocialPostCard-avatarLg {\n  width: 36px;\n  height: 36px;\n}\n\n.dshUk-SocialPostCard-authorRow {\n  display: flex;\n  align-items: center;\n  gap: 8px;\n  min-width: 0;\n}\n\n.dshUk-SocialPostCard-authorMeta {\n  display: flex;\n  flex-direction: column;\n  gap: 1px;\n  min-width: 0;\n  flex: 1;\n}\n\n.dshUk-SocialPostCard-authorTop {\n  display: flex;\n  align-items: baseline;\n  gap: 5px;\n  min-width: 0;\n}\n\n.dshUk-SocialPostCard-authorName {\n  font-size: 13px;\n  font-weight: 600;\n  line-height: 17px;\n  color: var(--dsw-alias-label-primary);\n  white-space: nowrap;\n  overflow: hidden;\n  text-overflow: ellipsis;\n}\n\n.dshUk-SocialPostCard-authorHandle {\n  font-size: 12.5px;\n  font-weight: 400;\n  line-height: 16px;\n  color: var(--dsw-alias-label-tertiary);\n  white-space: nowrap;\n  overflow: hidden;\n  text-overflow: ellipsis;\n}\n\n.dshUk-SocialPostCard-timeLabel {\n  font-size: 12px;\n  line-height: 15px;\n  color: var(--dsw-alias-label-tertiary);\n}\n\n.dshUk-SocialPostCard-statsBar {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 8px;\n  padding: 0 12px 11px;\n  margin-top: auto;\n}\n\n.dshUk-SocialPostCard-statsLeft {\n  display: flex;\n  align-items: center;\n  flex-wrap: wrap;\n  gap: 8px;\n  min-width: 0;\n  font-variant-numeric: tabular-nums;\n}\n\n.dshUk-SocialPostCard-statItem {\n  display: inline-flex;\n  align-items: center;\n  gap: 4px;\n  font-size: 12px;\n  line-height: 16px;\n  font-weight: 500;\n  color: var(--dsw-alias-label-secondary);\n}\n\n.dshUk-SocialPostCard-outlierBadge {\n  display: inline-flex;\n  align-items: center;\n  padding: 2px 6px;\n  border-radius: 6px;\n  font-size: 11px;\n  line-height: 15px;\n  font-weight: 600;\n  font-variant-numeric: tabular-nums;\n}\n\n.dshUk-SocialPostCard-outlierBlue {\n  background-color: var(--dsw-alias-state-business-tertiary);\n  color: var(--dsw-alias-state-business-primary);\n}\n\n.dshUk-SocialPostCard-outlierViolet {\n  background-color: color-mix(in srgb, var(--dsw-alias-state-done-primary) 16%, transparent);\n  color: var(--dsw-alias-state-done-primary);\n}\n\n.dshUk-SocialPostCard-outlierAmber {\n  background-color: var(--dsw-alias-state-warn-tertiary);\n  color: var(--dsw-alias-state-warn-label);\n}\n\n.dshUk-SocialPostCard-outlierGreen {\n  background-color: var(--dsw-alias-state-success-tertiary);\n  color: var(--dsw-alias-state-success-primary);\n}\n\n.dshUk-SocialPostCard-platformMark {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  flex-shrink: 0;\n  color: var(--dsw-alias-label-secondary);\n}\n\n.dshUk-SocialPostCard-platformCircle {\n  width: 24px;\n  height: 24px;\n  border-radius: 9999px;\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  flex-shrink: 0;\n  background-color: var(--dsw-alias-brand-primary);\n  color: var(--dsw-alias-bg-base);\n}\n\n.dshUk-SocialPostCard-mediaBox {\n  position: relative;\n  width: 100%;\n  overflow: hidden;\n  background-color: var(--dsw-alias-bg-layer-2);\n}\n\n.dshUk-SocialPostCard-mediaImg {\n  display: block;\n  width: 100%;\n  height: 100%;\n  object-fit: cover;\n}\n\n.dshUk-SocialPostCard-mediaFallback {\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  width: 100%;\n  height: 100%;\n  color: var(--dsw-alias-label-tertiary);\n  background-color: var(--dsw-alias-bg-layer-2);\n}\n\n.dshUk-SocialPostCard-durationPill {\n  position: absolute;\n  padding: 2px 6px;\n  border-radius: 5px;\n  background-color: color-mix(in srgb, var(--dsw-static-neutral-1000) 76%, transparent);\n  color: var(--dsw-static-neutral-00);\n  font-size: 11px;\n  font-weight: 600;\n  line-height: 15px;\n  font-variant-numeric: tabular-nums;\n}\n\n.dshUk-SocialPostCard-galleryPill {\n  position: absolute;\n  top: 8px;\n  right: 8px;\n  padding: 2px 7px;\n  border-radius: 9999px;\n  background-color: color-mix(in srgb, var(--dsw-static-neutral-1000) 70%, transparent);\n  color: var(--dsw-static-neutral-00);\n  font-size: 11px;\n  font-weight: 600;\n  line-height: 15px;\n  font-variant-numeric: tabular-nums;\n}\n\n.dshUk-SocialPostCard-videoPlayBadge {\n  position: absolute;\n  right: 10px;\n  bottom: 10px;\n  width: 30px;\n  height: 30px;\n  border-radius: 9999px;\n  background-color: color-mix(in srgb, var(--dsw-static-neutral-1000) 72%, transparent);\n  color: var(--dsw-static-neutral-00);\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n}\n\n/* 1. Article archetype */\n.dshUk-SocialPostCard-articleCover {\n  aspect-ratio: 16 / 9;\n}\n\n.dshUk-SocialPostCard-articleBody {\n  display: flex;\n  flex-direction: column;\n  gap: 7px;\n  padding: 12px 12px 10px;\n}\n\n.dshUk-SocialPostCard-articleTitle {\n  margin: 0;\n  font-size: 15px;\n  font-weight: 600;\n  line-height: 1.35;\n  color: var(--dsw-alias-label-primary);\n  display: -webkit-box;\n  -webkit-line-clamp: 3;\n  -webkit-box-orient: vertical;\n  overflow: hidden;\n}\n\n.dshUk-SocialPostCard-card[data-density=\"compact\"] .dshUk-SocialPostCard-articleTitle {\n  font-size: 14px;\n}\n\n.dshUk-SocialPostCard-articleExcerpt {\n  margin: 0;\n  font-size: 13px;\n  line-height: 1.45;\n  color: var(--dsw-alias-label-secondary);\n  display: -webkit-box;\n  -webkit-line-clamp: 2;\n  -webkit-box-orient: vertical;\n  overflow: hidden;\n}\n\n/* 2. Social-post archetype */\n.dshUk-SocialPostCard-socialWrap {\n  display: flex;\n  flex-direction: column;\n  gap: 10px;\n  padding: 12px;\n}\n\n.dshUk-SocialPostCard-socialBodyText {\n  margin: 0;\n  font-size: 13.5px;\n  line-height: 1.48;\n  color: var(--dsw-alias-label-primary);\n  white-space: pre-line;\n  display: -webkit-box;\n  -webkit-line-clamp: 5;\n  -webkit-box-orient: vertical;\n  overflow: hidden;\n  user-select: text;\n}\n\n.dshUk-SocialPostCard-socialBodyTextOnly {\n  -webkit-line-clamp: 10;\n}\n\n.dshUk-SocialPostCard-card[data-density=\"compact\"] .dshUk-SocialPostCard-socialBodyText {\n  font-size: 13px;\n  -webkit-line-clamp: 4;\n}\n\n.dshUk-SocialPostCard-card[data-density=\"compact\"] .dshUk-SocialPostCard-socialBodyTextOnly {\n  -webkit-line-clamp: 6;\n}\n\n.dshUk-SocialPostCard-socialMediaInset {\n  border-radius: 8px;\n  border: 1px solid var(--dsw-alias-border-l2);\n  aspect-ratio: 16 / 10;\n}\n\n/* 3. Short-video archetype */\n.dshUk-SocialPostCard-shortVideoStage {\n  position: relative;\n  width: 100%;\n  aspect-ratio: 5 / 8;\n  overflow: hidden;\n  background-color: var(--dsw-alias-bg-layer-3);\n}\n\n.dshUk-SocialPostCard-shortVideoDuration {\n  top: 8px;\n  left: 8px;\n}\n\n.dshUk-SocialPostCard-shortVideoScrim {\n  position: absolute;\n  inset: auto 0 0 0;\n  height: 46%;\n  background: linear-gradient(\n    180deg,\n    transparent 0%,\n    color-mix(in srgb, var(--dsw-static-neutral-1000) 82%, transparent) 100%\n  );\n  pointer-events: none;\n}\n\n.dshUk-SocialPostCard-shortVideoRightStats {\n  position: absolute;\n  right: 8px;\n  bottom: 52px;\n  z-index: 2;\n  display: flex;\n  flex-direction: column;\n  align-items: center;\n  gap: 10px;\n  color: var(--dsw-static-neutral-00);\n  text-shadow: 0 1px 4px color-mix(in srgb, var(--dsw-static-neutral-1000) 75%, transparent);\n  font-size: 11px;\n  font-weight: 600;\n  font-variant-numeric: tabular-nums;\n}\n\n.dshUk-SocialPostCard-shortVideoRightStat {\n  display: flex;\n  flex-direction: column;\n  align-items: center;\n  gap: 2px;\n}\n\n.dshUk-SocialPostCard-shortVideoBottomCopy {\n  position: absolute;\n  left: 10px;\n  right: 42px;\n  bottom: 10px;\n  z-index: 2;\n  color: var(--dsw-static-neutral-00);\n  text-shadow: 0 1px 4px color-mix(in srgb, var(--dsw-static-neutral-1000) 75%, transparent);\n}\n\n.dshUk-SocialPostCard-shortVideoHandle {\n  font-size: 12.5px;\n  font-weight: 600;\n  margin-bottom: 2px;\n  white-space: nowrap;\n  overflow: hidden;\n  text-overflow: ellipsis;\n}\n\n.dshUk-SocialPostCard-shortVideoCaption {\n  margin: 0;\n  font-size: 12px;\n  line-height: 1.38;\n  color: color-mix(in srgb, var(--dsw-static-neutral-00) 92%, transparent);\n  display: -webkit-box;\n  -webkit-line-clamp: 2;\n  -webkit-box-orient: vertical;\n  overflow: hidden;\n}\n\n.dshUk-SocialPostCard-shortVideoFooter {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 8px;\n  padding: 10px 12px;\n  background-color: var(--dsw-alias-card-fill);\n  border-top: 1px solid var(--dsw-alias-border-l1);\n}\n\n/* 4. Photo-feed archetype */\n.dshUk-SocialPostCard-photoFeedHeader {\n  padding: 10px 12px;\n}\n\n.dshUk-SocialPostCard-photoFeedMedia {\n  aspect-ratio: 4 / 5;\n}\n\n.dshUk-SocialPostCard-photoFeedBody {\n  display: flex;\n  flex-direction: column;\n  gap: 7px;\n  padding: 10px 12px 11px;\n}\n\n.dshUk-SocialPostCard-photoFeedCaptionRow {\n  display: flex;\n  align-items: flex-end;\n  justify-content: space-between;\n  gap: 8px;\n}\n\n.dshUk-SocialPostCard-photoFeedCaption {\n  margin: 0;\n  font-size: 12.5px;\n  line-height: 1.42;\n  color: var(--dsw-alias-label-secondary);\n  display: -webkit-box;\n  -webkit-line-clamp: 3;\n  -webkit-box-orient: vertical;\n  overflow: hidden;\n  user-select: text;\n}\n\n.dshUk-SocialPostCard-photoFeedHandle {\n  color: var(--dsw-alias-label-primary);\n  font-weight: 600;\n  margin-right: 5px;\n}\n\n/* 5. Landscape-video archetype */\n.dshUk-SocialPostCard-landscapeCover {\n  aspect-ratio: 16 / 9;\n}\n\n.dshUk-SocialPostCard-landscapeDuration {\n  right: 8px;\n  bottom: 8px;\n}\n\n.dshUk-SocialPostCard-landscapeFooter {\n  display: flex;\n  align-items: flex-start;\n  gap: 10px;\n  padding: 10px 12px 12px;\n}\n\n.dshUk-SocialPostCard-landscapeCol {\n  flex: 1;\n  min-width: 0;\n  display: flex;\n  flex-direction: column;\n  gap: 3px;\n}\n\n.dshUk-SocialPostCard-landscapeTitle {\n  margin: 0;\n  font-size: 13.5px;\n  font-weight: 600;\n  line-height: 1.35;\n  color: var(--dsw-alias-label-primary);\n  display: -webkit-box;\n  -webkit-line-clamp: 2;\n  -webkit-box-orient: vertical;\n  overflow: hidden;\n}\n\n.dshUk-SocialPostCard-landscapeSubrow {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 8px;\n  margin-top: 2px;\n}\n\n.dshUk-SocialPostCard-landscapeMetaPair {\n  display: flex;\n  align-items: center;\n  flex-wrap: wrap;\n  gap: 8px;\n  font-size: 12px;\n  line-height: 16px;\n  color: var(--dsw-alias-label-tertiary);\n  font-variant-numeric: tabular-nums;\n}\n\n/* 6. Web-link & raw-media archetypes */\n.dshUk-SocialPostCard-webLinkCover {\n  aspect-ratio: 16 / 9;\n  border-bottom: 1px solid var(--dsw-alias-border-l1);\n}\n\n.dshUk-SocialPostCard-webLinkBody {\n  display: flex;\n  flex-direction: column;\n  gap: 6px;\n  padding: 10px 12px 12px;\n}\n\n.dshUk-SocialPostCard-webLinkTitle {\n  margin: 0;\n  font-size: 13.5px;\n  font-weight: 600;\n  line-height: 1.36;\n  color: var(--dsw-alias-label-primary);\n  display: -webkit-box;\n  -webkit-line-clamp: 2;\n  -webkit-box-orient: vertical;\n  overflow: hidden;\n}\n\n.dshUk-SocialPostCard-webLinkHostRow {\n  display: flex;\n  align-items: center;\n  gap: 6px;\n  font-size: 12px;\n  line-height: 16px;\n  color: var(--dsw-alias-label-tertiary);\n}\n\n.dshUk-SocialPostCard-faviconImg {\n  width: 14px;\n  height: 14px;\n  border-radius: 3px;\n  object-fit: cover;\n  flex-shrink: 0;\n}\n\n.dshUk-SocialPostCard-rawMediaFrame {\n  aspect-ratio: 4 / 3;\n}\n\n/* Compact density refinements for chat conversation toolview */\n.dshUk-SocialPostCard-card[data-density=\"compact\"] .dshUk-SocialPostCard-articleBody {\n  padding: 10px 11px 8px;\n  gap: 6px;\n}\n\n.dshUk-SocialPostCard-card[data-density=\"compact\"] .dshUk-SocialPostCard-socialWrap {\n  padding: 10px 11px;\n  gap: 8px;\n}\n\n.dshUk-SocialPostCard-card[data-density=\"compact\"] .dshUk-SocialPostCard-shortVideoStage {\n  aspect-ratio: 3 / 4;\n  max-height: 360px;\n}\n\n.dshUk-SocialPostCard-card[data-density=\"compact\"] .dshUk-SocialPostCard-shortVideoFooter {\n  padding: 9px 11px;\n}\n\n.dshUk-SocialPostCard-card[data-density=\"compact\"] .dshUk-SocialPostCard-photoFeedHeader {\n  padding: 9px 11px;\n}\n\n.dshUk-SocialPostCard-card[data-density=\"compact\"] .dshUk-SocialPostCard-photoFeedMedia {\n  aspect-ratio: 4 / 5;\n  max-height: 320px;\n}\n\n.dshUk-SocialPostCard-card[data-density=\"compact\"] .dshUk-SocialPostCard-photoFeedBody {\n  padding: 9px 11px 10px;\n  gap: 6px;\n}\n\n.dshUk-SocialPostCard-card[data-density=\"compact\"] .dshUk-SocialPostCard-landscapeFooter {\n  padding: 9px 11px 10px;\n  gap: 9px;\n}\n\n.dshUk-SocialPostCard-card[data-density=\"compact\"] .dshUk-SocialPostCard-webLinkBody {\n  padding: 9px 11px 10px;\n}\n\n.dshUk-SocialPostCard-card[data-density=\"compact\"] .dshUk-SocialPostCard-statsBar {\n  padding: 0 11px 10px;\n}\n\n@media (prefers-reduced-motion: reduce) {\n  .dshUk-SocialPostCard-card,\n  .dshUk-SocialPostCard-topLeft,\n  .dshUk-SocialPostCard-hoverActions {\n    transition: none;\n  }\n}\n");
 var SocialPostCard_module_css_default = {
 	"card": "dshUk-SocialPostCard-card",
 	"topLeft": "dshUk-SocialPostCard-topLeft",
@@ -317,7 +317,7 @@ var SocialPostCard_module_css_default = {
 	"rawMediaFrame": "dshUk-SocialPostCard-rawMediaFrame"
 };
 // src/social-card/SocialPostCard.tsx
-const c = (name) => cssClass(SocialPostCard_module_css_default[name], name);
+const c$1 = (name) => cssClass(SocialPostCard_module_css_default[name], name);
 function HeartGlyph() {
 	return /* @__PURE__ */ jsx("svg", {
 		width: "13",
@@ -370,12 +370,12 @@ function Avatar({ name, handle, avatarUrl, sizeClass }) {
 		setFailed(false);
 	}, [avatarUrl]);
 	return /* @__PURE__ */ jsx("span", {
-		className: cx(c("avatar"), sizeClass),
+		className: cx(c$1("avatar"), sizeClass),
 		"aria-hidden": "true",
 		children: avatarUrl && !failed ? /* @__PURE__ */ jsx("img", {
 			src: avatarUrl,
 			alt: "",
-			className: c("avatarImg"),
+			className: c$1("avatarImg"),
 			loading: "lazy",
 			onError: () => setFailed(true)
 		}) : avatarInitials(name, handle)
@@ -387,27 +387,27 @@ function AuthorRow({ item, avatarSize = "sm", showHandleInline = false, classNam
 	const showHandle = showHandleInline && handleText && handleText.toLowerCase() !== `@${authorName.toLowerCase()}`;
 	const timeText = item.publishedLabel || "";
 	if (!authorName && !timeText) return null;
-	const sizeCls = avatarSize === "lg" ? c("avatarLg") : avatarSize === "md" ? c("avatarMd") : c("avatarSm");
+	const sizeCls = avatarSize === "lg" ? c$1("avatarLg") : avatarSize === "md" ? c$1("avatarMd") : c$1("avatarSm");
 	return /* @__PURE__ */ jsxs("div", {
-		className: cx(c("authorRow"), className),
+		className: cx(c$1("authorRow"), className),
 		children: [/* @__PURE__ */ jsx(Avatar, {
 			name: authorName,
 			handle: handleText,
 			avatarUrl: item.author?.avatarUrl,
 			sizeClass: sizeCls
 		}), /* @__PURE__ */ jsxs("div", {
-			className: c("authorMeta"),
+			className: c$1("authorMeta"),
 			children: [/* @__PURE__ */ jsxs("div", {
-				className: c("authorTop"),
+				className: c$1("authorTop"),
 				children: [/* @__PURE__ */ jsx("span", {
-					className: c("authorName"),
+					className: c$1("authorName"),
 					children: authorName || handleText
 				}), showHandle ? /* @__PURE__ */ jsx("span", {
-					className: c("authorHandle"),
+					className: c$1("authorHandle"),
 					children: handleText
 				}) : null]
 			}), timeText ? /* @__PURE__ */ jsx("span", {
-				className: c("timeLabel"),
+				className: c$1("timeLabel"),
 				children: timeText
 			}) : null]
 		})]
@@ -416,9 +416,9 @@ function AuthorRow({ item, avatarSize = "sm", showHandleInline = false, classNam
 function OutlierBadges({ badges }) {
 	if (!badges?.length) return null;
 	return /* @__PURE__ */ jsx(Fragment, { children: badges.map((badge, idx) => {
-		const toneCls = badge.tone === "amber" ? c("outlierAmber") : badge.tone === "violet" ? c("outlierViolet") : badge.tone === "green" ? c("outlierGreen") : c("outlierBlue");
+		const toneCls = badge.tone === "amber" ? c$1("outlierAmber") : badge.tone === "violet" ? c$1("outlierViolet") : badge.tone === "green" ? c$1("outlierGreen") : c$1("outlierBlue");
 		return /* @__PURE__ */ jsx("span", {
-			className: cx(c("outlierBadge"), toneCls),
+			className: cx(c$1("outlierBadge"), toneCls),
 			children: badge.label
 		}, `${badge.label}-${idx}`);
 	}) });
@@ -429,27 +429,27 @@ function StatsBar({ item, platform, showViews = false, hidePlatformMark = false 
 	const views = showViews ? formatCompactCount(item.metrics?.views) : void 0;
 	if (!Boolean(likes || reposts || views || item.outlierBadges?.length) && hidePlatformMark) return null;
 	return /* @__PURE__ */ jsxs("div", {
-		className: c("statsBar"),
+		className: c$1("statsBar"),
 		children: [/* @__PURE__ */ jsxs("div", {
-			className: c("statsLeft"),
+			className: c$1("statsLeft"),
 			children: [
 				likes ? /* @__PURE__ */ jsxs("span", {
-					className: c("statItem"),
+					className: c$1("statItem"),
 					children: [/* @__PURE__ */ jsx(HeartGlyph, {}), /* @__PURE__ */ jsx("span", { children: likes })]
 				}) : null,
 				reposts ? /* @__PURE__ */ jsxs("span", {
-					className: c("statItem"),
+					className: c$1("statItem"),
 					children: [/* @__PURE__ */ jsx(RepostGlyph, {}), /* @__PURE__ */ jsx("span", { children: reposts })]
 				}) : null,
 				views ? /* @__PURE__ */ jsxs("span", {
-					className: c("statItem"),
+					className: c$1("statItem"),
 					children: [/* @__PURE__ */ jsx(PlayGlyph, { size: 11 }), /* @__PURE__ */ jsx("span", { children: views })]
 				}) : null,
 				/* @__PURE__ */ jsx(OutlierBadges, { badges: item.outlierBadges })
 			]
 		}), !hidePlatformMark ? /* @__PURE__ */ jsx(SocialPlatformMark, {
 			platform,
-			className: c("platformMark"),
+			className: c$1("platformMark"),
 			size: 15
 		}) : null]
 	});
@@ -459,18 +459,18 @@ function CoverMedia({ item, platform, aspectClass, coverNode, children }) {
 	useEffect(() => {
 		setFailed(false);
 	}, [item.coverUrl]);
-	const inlineStyle = !item.coverAspectRatio || aspectClass === c("articleCover") || aspectClass === c("landscapeCover") || aspectClass === c("webLinkCover") ? void 0 : { aspectRatio: String(Math.max(.55, Math.min(1.91, item.coverAspectRatio))) };
+	const inlineStyle = !item.coverAspectRatio || aspectClass === c$1("articleCover") || aspectClass === c$1("landscapeCover") || aspectClass === c$1("webLinkCover") ? void 0 : { aspectRatio: String(Math.max(.55, Math.min(1.91, item.coverAspectRatio))) };
 	return /* @__PURE__ */ jsxs("div", {
-		className: cx(c("mediaBox"), aspectClass),
+		className: cx(c$1("mediaBox"), aspectClass),
 		style: inlineStyle,
 		children: [coverNode != null ? coverNode : item.coverUrl && !failed ? /* @__PURE__ */ jsx("img", {
 			src: item.coverUrl,
 			alt: item.coverAlt || item.title || "",
-			className: c("mediaImg"),
+			className: c$1("mediaImg"),
 			loading: "lazy",
 			onError: () => setFailed(true)
 		}) : /* @__PURE__ */ jsx("div", {
-			className: c("mediaFallback"),
+			className: c$1("mediaFallback"),
 			children: /* @__PURE__ */ jsx(SocialPlatformMark, {
 				platform,
 				size: 26
@@ -486,18 +486,18 @@ function ArticleBody({ item, platform, coverNode, hideMedia }) {
 		hasCover ? /* @__PURE__ */ jsx(CoverMedia, {
 			item,
 			platform,
-			aspectClass: c("articleCover"),
+			aspectClass: c$1("articleCover"),
 			coverNode
 		}) : null,
 		/* @__PURE__ */ jsxs("div", {
-			className: c("articleBody"),
+			className: c$1("articleBody"),
 			children: [
 				titleText ? /* @__PURE__ */ jsx("h3", {
-					className: cx(c("articleTitle"), !hasCover && c("pinnedClearance")),
+					className: cx(c$1("articleTitle"), !hasCover && c$1("pinnedClearance")),
 					children: titleText
 				}) : null,
 				excerptText ? /* @__PURE__ */ jsx("p", {
-					className: c("articleExcerpt"),
+					className: c$1("articleExcerpt"),
 					children: excerptText
 				}) : null,
 				/* @__PURE__ */ jsx(AuthorRow, {
@@ -517,28 +517,28 @@ function SocialPostBody({ item, platform, coverNode, hideMedia }) {
 	const hasMedia = !hideMedia && Boolean(item.coverUrl || coverNode);
 	const mediaCount = item.mediaCount && item.mediaCount > 1 ? `1/${item.mediaCount}` : "";
 	return /* @__PURE__ */ jsxs(Fragment, { children: [/* @__PURE__ */ jsxs("div", {
-		className: c("socialWrap"),
+		className: c$1("socialWrap"),
 		children: [
 			/* @__PURE__ */ jsx(AuthorRow, {
 				item,
 				avatarSize: "md",
 				showHandleInline: true,
-				className: c("pinnedClearance")
+				className: c$1("pinnedClearance")
 			}),
 			bodyText ? /* @__PURE__ */ jsx("p", {
-				className: cx(c("socialBodyText"), !hasMedia && c("socialBodyTextOnly")),
+				className: cx(c$1("socialBodyText"), !hasMedia && c$1("socialBodyTextOnly")),
 				children: bodyText
 			}) : null,
 			hasMedia ? /* @__PURE__ */ jsxs(CoverMedia, {
 				item,
 				platform,
-				aspectClass: c("socialMediaInset"),
+				aspectClass: c$1("socialMediaInset"),
 				coverNode,
 				children: [mediaCount ? /* @__PURE__ */ jsx("span", {
-					className: c("galleryPill"),
+					className: c$1("galleryPill"),
 					children: mediaCount
 				}) : null, item.isVideo ? /* @__PURE__ */ jsx("span", {
-					className: c("videoPlayBadge"),
+					className: c$1("videoPlayBadge"),
 					"aria-hidden": "true",
 					children: /* @__PURE__ */ jsx(PlayGlyph, { size: 13 })
 				}) : null]
@@ -558,48 +558,48 @@ function ShortVideoBody({ item, platform, coverNode }) {
 	return /* @__PURE__ */ jsxs(Fragment, { children: [/* @__PURE__ */ jsxs(CoverMedia, {
 		item,
 		platform,
-		aspectClass: c("shortVideoStage"),
+		aspectClass: c$1("shortVideoStage"),
 		coverNode,
 		children: [
 			durationText ? /* @__PURE__ */ jsx("span", {
-				className: cx(c("durationPill"), c("shortVideoDuration")),
+				className: cx(c$1("durationPill"), c$1("shortVideoDuration")),
 				children: durationText
 			}) : null,
 			/* @__PURE__ */ jsx("div", {
-				className: c("shortVideoScrim"),
+				className: c$1("shortVideoScrim"),
 				"aria-hidden": "true"
 			}),
 			likes || reposts ? /* @__PURE__ */ jsxs("div", {
-				className: c("shortVideoRightStats"),
+				className: c$1("shortVideoRightStats"),
 				"aria-hidden": "true",
 				children: [likes ? /* @__PURE__ */ jsxs("div", {
-					className: c("shortVideoRightStat"),
+					className: c$1("shortVideoRightStat"),
 					children: [/* @__PURE__ */ jsx(HeartGlyph, {}), /* @__PURE__ */ jsx("span", { children: likes })]
 				}) : null, reposts ? /* @__PURE__ */ jsxs("div", {
-					className: c("shortVideoRightStat"),
+					className: c$1("shortVideoRightStat"),
 					children: [/* @__PURE__ */ jsx(RepostGlyph, {}), /* @__PURE__ */ jsx("span", { children: reposts })]
 				}) : null]
 			}) : null,
 			handle || caption ? /* @__PURE__ */ jsxs("div", {
-				className: c("shortVideoBottomCopy"),
+				className: c$1("shortVideoBottomCopy"),
 				children: [handle ? /* @__PURE__ */ jsx("div", {
-					className: c("shortVideoHandle"),
+					className: c$1("shortVideoHandle"),
 					children: handle
 				}) : null, caption ? /* @__PURE__ */ jsx("p", {
-					className: c("shortVideoCaption"),
+					className: c$1("shortVideoCaption"),
 					children: caption
 				}) : null]
 			}) : null
 		]
 	}), /* @__PURE__ */ jsxs("div", {
-		className: c("shortVideoFooter"),
+		className: c$1("shortVideoFooter"),
 		children: [/* @__PURE__ */ jsx(AuthorRow, {
 			item,
 			avatarSize: "sm"
 		}), /* @__PURE__ */ jsx(SocialPlatformMark, {
 			platform,
 			variant: "circle-badge",
-			className: c("platformCircle"),
+			className: c$1("platformCircle"),
 			size: 14
 		})]
 	})] });
@@ -612,7 +612,7 @@ function PhotoFeedBody({ item, platform, coverNode }) {
 	const views = formatCompactCount(item.metrics?.views);
 	return /* @__PURE__ */ jsxs(Fragment, { children: [
 		/* @__PURE__ */ jsx("div", {
-			className: cx(c("photoFeedHeader"), c("pinnedClearance")),
+			className: cx(c$1("photoFeedHeader"), c$1("pinnedClearance")),
 			children: /* @__PURE__ */ jsx(AuthorRow, {
 				item,
 				avatarSize: "sm"
@@ -621,43 +621,43 @@ function PhotoFeedBody({ item, platform, coverNode }) {
 		/* @__PURE__ */ jsxs(CoverMedia, {
 			item,
 			platform,
-			aspectClass: c("photoFeedMedia"),
+			aspectClass: c$1("photoFeedMedia"),
 			coverNode,
 			children: [mediaCount ? /* @__PURE__ */ jsx("span", {
-				className: c("galleryPill"),
+				className: c$1("galleryPill"),
 				children: mediaCount
 			}) : null, item.isVideo ? /* @__PURE__ */ jsx("span", {
-				className: c("videoPlayBadge"),
+				className: c$1("videoPlayBadge"),
 				"aria-hidden": "true",
 				children: /* @__PURE__ */ jsx(PlayGlyph, { size: 13 })
 			}) : null]
 		}),
 		/* @__PURE__ */ jsxs("div", {
-			className: c("photoFeedBody"),
+			className: c$1("photoFeedBody"),
 			children: [likes || views || item.outlierBadges?.length ? /* @__PURE__ */ jsxs("div", {
-				className: c("statsLeft"),
+				className: c$1("statsLeft"),
 				children: [
 					likes ? /* @__PURE__ */ jsxs("span", {
-						className: c("statItem"),
+						className: c$1("statItem"),
 						children: [/* @__PURE__ */ jsx(HeartGlyph, {}), /* @__PURE__ */ jsx("span", { children: likes })]
 					}) : null,
 					views ? /* @__PURE__ */ jsxs("span", {
-						className: c("statItem"),
+						className: c$1("statItem"),
 						children: [/* @__PURE__ */ jsx(PlayGlyph, { size: 11 }), /* @__PURE__ */ jsx("span", { children: views })]
 					}) : null,
 					/* @__PURE__ */ jsx(OutlierBadges, { badges: item.outlierBadges })
 				]
 			}) : null, /* @__PURE__ */ jsxs("div", {
-				className: c("photoFeedCaptionRow"),
+				className: c$1("photoFeedCaptionRow"),
 				children: [/* @__PURE__ */ jsxs("p", {
-					className: c("photoFeedCaption"),
+					className: c$1("photoFeedCaption"),
 					children: [inlineHandle ? /* @__PURE__ */ jsx("strong", {
-						className: c("photoFeedHandle"),
+						className: c$1("photoFeedHandle"),
 						children: inlineHandle
 					}) : null, caption]
 				}), /* @__PURE__ */ jsx(SocialPlatformMark, {
 					platform,
-					className: c("platformMark"),
+					className: c$1("platformMark"),
 					size: 15
 				})]
 			})]
@@ -673,34 +673,34 @@ function LandscapeVideoBody({ item, platform, coverNode }) {
 	return /* @__PURE__ */ jsxs(Fragment, { children: [/* @__PURE__ */ jsx(CoverMedia, {
 		item,
 		platform,
-		aspectClass: c("landscapeCover"),
+		aspectClass: c$1("landscapeCover"),
 		coverNode,
 		children: durationText ? /* @__PURE__ */ jsx("span", {
-			className: cx(c("durationPill"), c("landscapeDuration")),
+			className: cx(c$1("durationPill"), c$1("landscapeDuration")),
 			children: durationText
 		}) : null
 	}), /* @__PURE__ */ jsxs("div", {
-		className: c("landscapeFooter"),
+		className: c$1("landscapeFooter"),
 		children: [/* @__PURE__ */ jsx(Avatar, {
 			name: channelName,
 			handle: item.author?.handle,
 			avatarUrl: item.author?.avatarUrl,
-			sizeClass: c("avatarLg")
+			sizeClass: c$1("avatarLg")
 		}), /* @__PURE__ */ jsxs("div", {
-			className: c("landscapeCol"),
+			className: c$1("landscapeCol"),
 			children: [
 				titleText ? /* @__PURE__ */ jsx("h3", {
-					className: c("landscapeTitle"),
+					className: c$1("landscapeTitle"),
 					children: titleText
 				}) : null,
 				channelName ? /* @__PURE__ */ jsx("span", {
-					className: c("timeLabel"),
+					className: c$1("timeLabel"),
 					children: channelName
 				}) : null,
 				/* @__PURE__ */ jsxs("div", {
-					className: c("landscapeSubrow"),
+					className: c$1("landscapeSubrow"),
 					children: [/* @__PURE__ */ jsxs("div", {
-						className: c("landscapeMetaPair"),
+						className: c$1("landscapeMetaPair"),
 						children: [
 							timeText ? /* @__PURE__ */ jsx("span", { children: timeText }) : null,
 							views ? /* @__PURE__ */ jsx("span", { children: views }) : null,
@@ -708,7 +708,7 @@ function LandscapeVideoBody({ item, platform, coverNode }) {
 						]
 					}), /* @__PURE__ */ jsx(SocialPlatformMark, {
 						platform,
-						className: c("platformMark"),
+						className: c$1("platformMark"),
 						size: 15
 					})]
 				})
@@ -726,25 +726,25 @@ function WebLinkBody({ item, platform, coverNode, hideMedia }) {
 	return /* @__PURE__ */ jsxs(Fragment, { children: [!hideMedia ? /* @__PURE__ */ jsx(CoverMedia, {
 		item,
 		platform,
-		aspectClass: c("webLinkCover"),
+		aspectClass: c$1("webLinkCover"),
 		coverNode
 	}) : null, /* @__PURE__ */ jsxs("div", {
-		className: c("webLinkBody"),
+		className: c$1("webLinkBody"),
 		children: [titleText ? /* @__PURE__ */ jsx("h3", {
-			className: cx(c("webLinkTitle"), hideMedia && c("pinnedClearance")),
+			className: cx(c$1("webLinkTitle"), hideMedia && c$1("pinnedClearance")),
 			children: titleText
 		}) : null, /* @__PURE__ */ jsxs("div", {
-			className: c("webLinkHostRow"),
+			className: c$1("webLinkHostRow"),
 			children: [item.faviconUrl && !favFailed ? /* @__PURE__ */ jsx("img", {
 				src: item.faviconUrl,
 				alt: "",
-				className: c("faviconImg"),
+				className: c$1("faviconImg"),
 				loading: "lazy",
 				onError: () => setFavFailed(true)
 			}) : /* @__PURE__ */ jsx(SocialPlatformMark, {
 				platform: platform === "web" ? "web" : platform,
 				size: 13,
-				className: c("platformMark")
+				className: c$1("platformMark")
 			}), /* @__PURE__ */ jsx("span", { children: hostText })]
 		})]
 	})] });
@@ -754,13 +754,13 @@ function RawMediaBody({ item, platform, coverNode }) {
 	return /* @__PURE__ */ jsxs(CoverMedia, {
 		item,
 		platform,
-		aspectClass: c("rawMediaFrame"),
+		aspectClass: c$1("rawMediaFrame"),
 		coverNode,
 		children: [durationText ? /* @__PURE__ */ jsx("span", {
-			className: cx(c("durationPill"), c("shortVideoDuration")),
+			className: cx(c$1("durationPill"), c$1("shortVideoDuration")),
 			children: durationText
 		}) : null, item.isVideo ? /* @__PURE__ */ jsx("span", {
-			className: c("videoPlayBadge"),
+			className: c$1("videoPlayBadge"),
 			"aria-hidden": "true",
 			children: /* @__PURE__ */ jsx(PlayGlyph, { size: 13 })
 		}) : null]
@@ -798,23 +798,23 @@ const SocialPostCard = forwardRef(function SocialPostCard({ item, density = "def
 		"data-menu-open": menuOpen ? "true" : void 0,
 		"data-pinned-tr": hasPinnedTopRight ? "true" : void 0,
 		"data-pinned-tr-multi": hasPinnedTopRight && (pinnedTopRightCount ?? 1) > 1 ? "true" : void 0,
-		className: cx(c("card"), className),
+		className: cx(c$1("card"), className),
 		onClick,
 		onContextMenu,
 		onKeyDown: handleKeyDown,
 		children: [
 			topLeftSlot != null ? /* @__PURE__ */ jsx("div", {
-				className: c("topLeft"),
+				className: c$1("topLeft"),
 				onClick: (e) => e.stopPropagation(),
 				children: topLeftSlot
 			}) : null,
 			topRightSlot != null ? /* @__PURE__ */ jsx("div", {
-				className: c("topRight"),
+				className: c$1("topRight"),
 				onClick: (e) => e.stopPropagation(),
 				children: topRightSlot
 			}) : null,
 			hoverActions != null ? /* @__PURE__ */ jsx("div", {
-				className: c("hoverActions"),
+				className: c$1("hoverActions"),
 				onClick: (e) => e.stopPropagation(),
 				children: hoverActions
 			}) : null,
@@ -992,6 +992,1147 @@ function MasonryGrid({ items, getKey, renderItem, estimateWeight, minColumnWidth
 		}, colIdx))
 	});
 }
-export { MasonryGrid, SocialPlatformMark, SocialPostCard, computeMasonryColumnCount, distributeMasonryColumns, estimateArchetypeWeight, extractHostname, formatCompactCount, formatDuration, normalizeSocialPlatform, resolveOutlierBadges, resolveSocialCardArchetype };
+// \0dsh-ui-kit-css:src/social-card/SocialSearchToolView.module.css.mjs
+injectCss("SocialSearchToolView.module.css", ".dshUk-SocialSearchToolView-root,\n.dshUk-SocialSearchToolView-root * {\n  box-sizing: border-box;\n}\n\n.dshUk-SocialSearchToolView-root {\n  display: flex;\n  flex-direction: column;\n  gap: 10px;\n  width: 100%;\n  min-width: 0;\n  color: var(--dsw-alias-label-primary);\n}\n\n.dshUk-SocialSearchToolView-header {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 8px;\n  min-height: 28px;\n  min-width: 0;\n}\n\n.dshUk-SocialSearchToolView-headerLeft {\n  display: flex;\n  align-items: center;\n  gap: 8px;\n  min-width: 0;\n  flex: 1;\n}\n\n.dshUk-SocialSearchToolView-headerTrigger {\n  display: inline-flex;\n  align-items: center;\n  gap: 8px;\n  min-width: 0;\n  max-width: 100%;\n  padding: 2px 6px;\n  margin: -2px -6px;\n  border: none;\n  border-radius: var(--dsw-radius-sm, 6px);\n  background: transparent;\n  color: var(--dsw-alias-label-secondary);\n  font: inherit;\n  font-size: var(--dsh-content-font-size-secondary, 13px);\n  line-height: 20px;\n  text-align: left;\n  cursor: pointer;\n  transition: background-color 120ms ease, color 120ms ease;\n}\n\n.dshUk-SocialSearchToolView-headerTrigger[data-static=\"true\"] {\n  cursor: default;\n}\n\n.dshUk-SocialSearchToolView-headerTrigger:not([data-static=\"true\"]):hover {\n  background-color: var(--dsw-alias-interactive-bg-hover);\n  color: var(--dsw-alias-label-primary);\n}\n\n.dshUk-SocialSearchToolView-headerTrigger:focus-visible {\n  outline: 2px solid var(--dsw-alias-brand-primary);\n  outline-offset: 1px;\n}\n\n.dshUk-SocialSearchToolView-headerIcon {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  width: 16px;\n  height: 16px;\n  flex-shrink: 0;\n  color: var(--dsw-alias-label-tertiary);\n}\n\n@keyframes stvPulse {\n  0%,\n  100% {\n    opacity: 0.4;\n    transform: scale(0.9);\n  }\n  50% {\n    opacity: 1;\n    transform: scale(1.06);\n  }\n}\n\n.dshUk-SocialSearchToolView-runningDot {\n  width: 7px;\n  height: 7px;\n  border-radius: 9999px;\n  background-color: var(--dsw-alias-brand-primary);\n  animation: stvPulse 1.1s ease-in-out infinite;\n}\n\n.dshUk-SocialSearchToolView-title {\n  font-weight: 500;\n  color: var(--dsw-alias-label-secondary);\n  white-space: nowrap;\n  flex-shrink: 0;\n}\n\n.dshUk-SocialSearchToolView-headerTrigger[data-error=\"true\"] .dshUk-SocialSearchToolView-title {\n  color: var(--dsw-alias-state-error-primary);\n}\n\n.dshUk-SocialSearchToolView-headerTrigger:not([data-static=\"true\"]):hover .dshUk-SocialSearchToolView-title {\n  color: var(--dsw-alias-label-primary);\n}\n\n.dshUk-SocialSearchToolView-query {\n  color: var(--dsw-alias-label-tertiary);\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n  min-width: 0;\n}\n\n.dshUk-SocialSearchToolView-countPill {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  padding: 1px 8px;\n  border-radius: 9999px;\n  background-color: var(--dsw-alias-bg-layer-2);\n  border: 1px solid var(--dsw-alias-border-l1);\n  color: var(--dsw-alias-label-secondary);\n  font-size: 11px;\n  font-weight: 600;\n  line-height: 16px;\n  font-variant-numeric: tabular-nums;\n  white-space: nowrap;\n  flex-shrink: 0;\n}\n\n.dshUk-SocialSearchToolView-chevron {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  flex-shrink: 0;\n  color: var(--dsw-alias-label-tertiary);\n  transition: transform 140ms ease;\n}\n\n.dshUk-SocialSearchToolView-chevron[data-open=\"false\"] {\n  transform: rotate(-90deg);\n}\n\n.dshUk-SocialSearchToolView-headerActions {\n  display: inline-flex;\n  align-items: center;\n  gap: 4px;\n  flex-shrink: 0;\n}\n\n.dshUk-SocialSearchToolView-headerActionBtn {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  gap: 4px;\n  height: 24px;\n  padding: 0 7px;\n  border-radius: var(--dsw-radius-sm, 6px);\n  border: 1px solid transparent;\n  background: transparent;\n  color: var(--dsw-alias-label-tertiary);\n  font-family: var(--ds-font-family-code, monospace);\n  font-size: 11px;\n  line-height: 16px;\n  cursor: pointer;\n  transition: background-color 120ms ease, color 120ms ease, border-color 120ms ease;\n}\n\n.dshUk-SocialSearchToolView-headerActionBtn:hover,\n.dshUk-SocialSearchToolView-headerActionBtn[aria-expanded=\"true\"] {\n  background-color: var(--dsw-alias-bg-layer-2);\n  border-color: var(--dsw-alias-border-l1);\n  color: var(--dsw-alias-label-primary);\n}\n\n.dshUk-SocialSearchToolView-headerActionBtn:focus-visible {\n  outline: 2px solid var(--dsw-alias-brand-primary);\n  outline-offset: 1px;\n}\n\n.dshUk-SocialSearchToolView-gridSingle {\n  max-width: 380px;\n}\n\n.dshUk-SocialSearchToolView-hoverPillBtn {\n  width: 26px;\n  height: 26px;\n  border-radius: 7px;\n  border: 1px solid var(--dsw-alias-border-l2);\n  background-color: var(--dsw-alias-card-fill);\n  color: var(--dsw-alias-label-secondary);\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  padding: 0;\n  cursor: pointer;\n  transition: background-color 120ms ease, color 120ms ease, border-color 120ms ease;\n}\n\n.dshUk-SocialSearchToolView-hoverPillBtn:hover:not(:disabled) {\n  background-color: var(--dsw-alias-interactive-bg-hover);\n  color: var(--dsw-alias-label-primary);\n  border-color: var(--dsw-alias-border-l3);\n}\n\n.dshUk-SocialSearchToolView-hoverPillBtn:focus-visible {\n  outline: 2px solid var(--dsw-alias-brand-primary);\n  outline-offset: 1px;\n}\n\n.dshUk-SocialSearchToolView-hoverPillBtn[data-save-state=\"saved\"] {\n  background-color: var(--dsw-alias-state-success-tertiary);\n  color: var(--dsw-alias-state-success-primary);\n  border-color: transparent;\n  cursor: default;\n}\n\n.dshUk-SocialSearchToolView-hoverPillBtn[data-save-state=\"error\"] {\n  color: var(--dsw-alias-state-error-primary);\n}\n\n.dshUk-SocialSearchToolView-hoverPillBtn[data-save-state=\"saving\"] {\n  opacity: 0.7;\n  cursor: progress;\n}\n\n.dshUk-SocialSearchToolView-showMoreBtn {\n  align-self: flex-start;\n  height: 28px;\n  padding: 0 12px;\n  border-radius: var(--dsw-radius-md, 8px);\n  border: 1px solid var(--dsw-alias-border-l2);\n  background-color: var(--dsw-alias-bg-layer-1);\n  color: var(--dsw-alias-label-secondary);\n  font: inherit;\n  font-size: 12px;\n  font-weight: 500;\n  line-height: 16px;\n  cursor: pointer;\n  transition: background-color 120ms ease, color 120ms ease, border-color 120ms ease;\n}\n\n.dshUk-SocialSearchToolView-showMoreBtn:hover {\n  background-color: var(--dsw-alias-interactive-bg-hover);\n  color: var(--dsw-alias-label-primary);\n  border-color: var(--dsw-alias-border-l3);\n}\n\n.dshUk-SocialSearchToolView-showMoreBtn:focus-visible {\n  outline: 2px solid var(--dsw-alias-brand-primary);\n  outline-offset: 1px;\n}\n\n.dshUk-SocialSearchToolView-rawOutputBox {\n  margin: 0;\n  padding: 10px 12px;\n  border-radius: var(--dsw-radius-md, 10px);\n  border: 1px solid var(--dsw-alias-border-l2);\n  background-color: var(--dsw-alias-bg-layer-1);\n  color: var(--dsw-alias-label-secondary);\n  font-family: var(--ds-font-family-code, monospace);\n  font-size: 11px;\n  line-height: 1.48;\n  max-height: 240px;\n  overflow: auto;\n  white-space: pre-wrap;\n  word-break: break-word;\n}\n\n.dshUk-SocialSearchToolView-errorBox {\n  padding: 9px 12px;\n  border-radius: var(--dsw-radius-md, 10px);\n  border: 1px solid var(--dsw-alias-border-l2);\n  background-color: var(--dsw-alias-bg-layer-1);\n  color: var(--dsw-alias-state-error-primary);\n  font-size: 12px;\n  line-height: 1.45;\n  white-space: pre-wrap;\n  word-break: break-word;\n}\n\n@media (prefers-reduced-motion: reduce) {\n  .dshUk-SocialSearchToolView-runningDot {\n    animation: none;\n  }\n\n  .dshUk-SocialSearchToolView-headerTrigger,\n  .dshUk-SocialSearchToolView-chevron,\n  .dshUk-SocialSearchToolView-headerActionBtn,\n  .dshUk-SocialSearchToolView-hoverPillBtn,\n  .dshUk-SocialSearchToolView-showMoreBtn {\n    transition: none;\n  }\n}\n");
+var SocialSearchToolView_module_css_default = {
+	"root": "dshUk-SocialSearchToolView-root",
+	"header": "dshUk-SocialSearchToolView-header",
+	"headerLeft": "dshUk-SocialSearchToolView-headerLeft",
+	"headerTrigger": "dshUk-SocialSearchToolView-headerTrigger",
+	"headerIcon": "dshUk-SocialSearchToolView-headerIcon",
+	"runningDot": "dshUk-SocialSearchToolView-runningDot",
+	"title": "dshUk-SocialSearchToolView-title",
+	"query": "dshUk-SocialSearchToolView-query",
+	"countPill": "dshUk-SocialSearchToolView-countPill",
+	"chevron": "dshUk-SocialSearchToolView-chevron",
+	"headerActions": "dshUk-SocialSearchToolView-headerActions",
+	"headerActionBtn": "dshUk-SocialSearchToolView-headerActionBtn",
+	"gridSingle": "dshUk-SocialSearchToolView-gridSingle",
+	"hoverPillBtn": "dshUk-SocialSearchToolView-hoverPillBtn",
+	"showMoreBtn": "dshUk-SocialSearchToolView-showMoreBtn",
+	"rawOutputBox": "dshUk-SocialSearchToolView-rawOutputBox",
+	"errorBox": "dshUk-SocialSearchToolView-errorBox"
+};
+// src/social-card/toolview-parser.ts
+const POST_CAPABILITIES = /* @__PURE__ */ new Set([
+	"search",
+	"posts",
+	"tweet",
+	"post",
+	"video",
+	"creator_search_videos"
+]);
+const TOOL_PLATFORM_HINTS = {
+	omnimux_x_search: "x",
+	omnimux_x_posts: "x",
+	omnimux_x_tweet: "x",
+	omnimux_tiktok_search: "tiktok",
+	omnimux_tiktok_posts: "tiktok",
+	omnimux_tiktok_video: "tiktok",
+	omnimux_instagram_search: "instagram",
+	omnimux_instagram_posts: "instagram",
+	omnimux_instagram_post: "instagram",
+	omnimux_youtube_search: "youtube",
+	omnimux_youtube_posts: "youtube",
+	omnimux_youtube_video: "youtube"
+};
+const LIST_CONTAINERS = [
+	"inspirations",
+	"items",
+	"posts",
+	"aweme_list",
+	"item_list",
+	"timeline",
+	"tweets",
+	"videos",
+	"contents",
+	"results",
+	"list",
+	"edges",
+	"data"
+];
+const WRAPPER_CONTAINERS = [
+	"data",
+	"result",
+	"feed",
+	"payload",
+	"aweme_data"
+];
+const SINGLE_POST_CONTAINERS = [
+	"item",
+	"post",
+	"aweme_detail",
+	"aweme_info",
+	"tweet",
+	"video"
+];
+const SITE_MEDIA_PREFIXES = [
+	"https://omnimux.ai/api/inspiration/v1/media/",
+	"https://www.omnimux.ai/api/inspiration/v1/media/",
+	"/api/inspiration/v1/media/"
+];
+function asRecord(value) {
+	return value && typeof value === "object" && !Array.isArray(value) ? value : null;
+}
+function firstNonEmptyString(values) {
+	for (const val of values) if (typeof val === "string") {
+		const trimmed = val.trim();
+		if (trimmed) return trimmed;
+	} else if (typeof val === "number" && Number.isFinite(val)) return String(val);
+	return "";
+}
+function asFiniteNumber(value) {
+	if (typeof value === "number") return Number.isFinite(value) && value >= 0 ? value : void 0;
+	if (typeof value === "string") {
+		const cleaned = value.trim().replace(/,/g, "").replace(/\s*(?:views?|plays?|次观看|次播放)\s*$/i, "");
+		if (!cleaned) return void 0;
+		const compactMatch = /^(\d+(?:\.\d+)?)\s*([kmb])$/i.exec(cleaned);
+		if (compactMatch && compactMatch[1] && compactMatch[2]) {
+			const base = Number(compactMatch[1]);
+			if (!Number.isFinite(base)) return void 0;
+			const unit = compactMatch[2].toUpperCase();
+			return Math.round(base * (unit === "B" ? 1e9 : unit === "M" ? 1e6 : 1e3));
+		}
+		const parsed = Number(cleaned);
+		return Number.isFinite(parsed) && parsed >= 0 ? parsed : void 0;
+	}
+}
+/** Validate that an external post link strictly uses `http:` or `https:`. */
+function isSafeHttpUrl(value) {
+	if (typeof value !== "string") return false;
+	const trimmed = value.trim();
+	if (!trimmed) return false;
+	try {
+		const parsed = new URL(trimmed);
+		return parsed.protocol === "http:" || parsed.protocol === "https:";
+	} catch {
+		return false;
+	}
+}
+/** Validate media/image sources: public `http(s):` or safe same-origin `/omnimux/inspiration/` route. */
+function isSafeMediaSrc(value) {
+	if (typeof value !== "string") return false;
+	const trimmed = value.trim();
+	if (!trimmed) return false;
+	if (trimmed.startsWith("/")) {
+		if (trimmed.startsWith("//") || trimmed.includes("..")) return false;
+		return trimmed.startsWith("/omnimux/inspiration/");
+	}
+	return isSafeHttpUrl(trimmed);
+}
+function sanitizeHttpUrl(values) {
+	for (const val of values) if (isSafeHttpUrl(val)) return String(val).trim();
+}
+function sanitizeMediaUrl(values) {
+	for (const val of values) {
+		if (typeof val !== "string") continue;
+		let candidate = val.trim();
+		if (!candidate) continue;
+		for (const prefix of SITE_MEDIA_PREFIXES) if (candidate.startsWith(prefix)) {
+			candidate = `/omnimux/inspiration/media/${candidate.slice(prefix.length)}`;
+			break;
+		}
+		if (isSafeMediaSrc(candidate)) return candidate;
+	}
+}
+/** Format an ISO timestamp or epoch seconds/ms into concise relative labels without middle dots. */
+function formatSocialRelativeTime(isoOrEpoch, locale = "zh", nowMs = Date.now()) {
+	if (isoOrEpoch === null || isoOrEpoch === void 0 || isoOrEpoch === "") return void 0;
+	let ts = null;
+	if (typeof isoOrEpoch === "number" && Number.isFinite(isoOrEpoch) && isoOrEpoch > 0) ts = isoOrEpoch < 1e11 ? isoOrEpoch * 1e3 : isoOrEpoch;
+	else if (typeof isoOrEpoch === "string") {
+		const trimmed = isoOrEpoch.trim();
+		if (!trimmed) return void 0;
+		if (/^\d{9,16}$/.test(trimmed)) {
+			const n = Number(trimmed);
+			if (Number.isFinite(n) && n > 0) ts = n < 1e11 ? n * 1e3 : n;
+		} else {
+			const parsed = Date.parse(trimmed);
+			if (Number.isFinite(parsed) && parsed > 0) ts = parsed;
+			else {
+				if (trimmed.length <= 24) return trimmed;
+				return;
+			}
+		}
+	}
+	if (ts === null || !Number.isFinite(ts)) return void 0;
+	const diffSec = Math.max(0, Math.floor((nowMs - ts) / 1e3));
+	if (diffSec < 60) return locale === "en" ? "just now" : "刚刚";
+	const diffMin = Math.floor(diffSec / 60);
+	if (diffMin < 60) return locale === "en" ? `${diffMin}m` : `${diffMin}分钟前`;
+	const diffHour = Math.floor(diffMin / 60);
+	if (diffHour < 24) return locale === "en" ? `${diffHour}h` : `${diffHour}小时前`;
+	const diffDay = Math.floor(diffHour / 24);
+	if (diffDay < 30) return locale === "en" ? `${diffDay}d` : `${diffDay}天前`;
+	const diffMonth = Math.floor(diffDay / 30);
+	if (diffMonth < 12) return locale === "en" ? `${diffMonth}mo` : `${diffMonth}个月前`;
+	const diffYear = Math.max(1, Math.floor(diffDay / 365));
+	return locale === "en" ? `${diffYear}y` : `${diffYear}年前`;
+}
+function parseDurationText(raw) {
+	const direct = asFiniteNumber(raw);
+	if (direct !== void 0) return direct > 0 ? direct : void 0;
+	if (typeof raw !== "string") return void 0;
+	const parts = raw.trim().split(":").map((p) => Number(p));
+	if (parts.length < 2 || parts.length > 3 || parts.some((n) => !Number.isFinite(n) || n < 0)) return;
+	if (parts.length === 2 && parts[0] !== void 0 && parts[1] !== void 0) return parts[0] * 60 + parts[1];
+	if (parts.length === 3 && parts[0] !== void 0 && parts[1] !== void 0 && parts[2] !== void 0) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+}
+function parseArgsObject(raw) {
+	if (typeof raw !== "string" || !raw.trim()) return {};
+	try {
+		return asRecord(JSON.parse(raw)) ?? {};
+	} catch {
+		return {};
+	}
+}
+function extractQuerySummary(args, root) {
+	return firstNonEmptyString([
+		args.query,
+		args.q,
+		args.keyword,
+		args.search_word,
+		args.screen_name,
+		args.username,
+		args.unique_id,
+		args.channel_id,
+		args.handle,
+		args.tag,
+		args.url,
+		args.tweet_id,
+		args.video_id,
+		args.aweme_id,
+		args.media_id,
+		args.post_id,
+		args.id,
+		root?.value,
+		root?.query
+	]) || void 0;
+}
+function extractContentText(content) {
+	if (typeof content === "string") return content.trim();
+	if (!Array.isArray(content)) return "";
+	const parts = [];
+	for (const part of content) {
+		if (typeof part === "string" && part.trim()) {
+			parts.push(part.trim());
+			continue;
+		}
+		const rec = asRecord(part);
+		if (rec && rec.type === "text" && typeof rec.text === "string" && rec.text.trim()) parts.push(rec.text.trim());
+	}
+	return parts.join("\n").trim();
+}
+function tryParseJson(raw) {
+	if (!raw) return void 0;
+	const trimmed = raw.trim();
+	if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) return void 0;
+	try {
+		return JSON.parse(trimmed);
+	} catch {
+		return;
+	}
+}
+function decodeBasicEntities(text) {
+	return text.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, "\"").replace(/&#39;/g, "'");
+}
+function textFromRuns(value) {
+	if (typeof value === "string") return value.trim();
+	const rec = asRecord(value);
+	if (!rec) return "";
+	if (typeof rec.simpleText === "string") return rec.simpleText.trim();
+	if (typeof rec.text === "string") return rec.text.trim();
+	if (Array.isArray(rec.runs)) return rec.runs.map((r) => typeof asRecord(r)?.text === "string" ? String(asRecord(r)?.text) : "").join("").trim();
+	return "";
+}
+function urlListFirst(value) {
+	if (!value) return void 0;
+	if (Array.isArray(value)) {
+		for (const entry of value) if (typeof entry === "string") {
+			const clean = sanitizeMediaUrl([entry]);
+			if (clean) return clean;
+		} else {
+			const rec = asRecord(entry);
+			const clean = sanitizeMediaUrl([rec?.url, rec?.src]);
+			if (clean) return clean;
+		}
+		return;
+	}
+	const rec = asRecord(value);
+	if (rec && Array.isArray(rec.url_list)) return urlListFirst(rec.url_list);
+	return sanitizeMediaUrl([rec?.url]);
+}
+function synthesizedPostUrl(platform, rawId) {
+	const id = rawId.trim();
+	if (!id) return void 0;
+	if (platform === "x" && /^\d{5,}$/.test(id)) return `https://x.com/i/status/${id}`;
+	if (platform === "tiktok" && /^\d{15,25}$/.test(id)) return `https://www.tiktok.com/video/${id}`;
+	if (platform === "youtube" && /^[\w-]{11}$/.test(id)) return `https://www.youtube.com/watch?v=${id}`;
+	if (platform === "instagram" && /^[A-Za-z0-9_-]{5,}$/.test(id) && !/^\d+$/.test(id)) return `https://www.instagram.com/p/${id}`;
+}
+function unwrapRendererEntry(entry) {
+	const rec = asRecord(entry);
+	if (!rec) return null;
+	if (asRecord(rec.node)) return asRecord(rec.node);
+	if (asRecord(rec.aweme_info)) return asRecord(rec.aweme_info);
+	if (asRecord(rec.videoRenderer)) return asRecord(rec.videoRenderer);
+	if (asRecord(rec.compactVideoRenderer)) return asRecord(rec.compactVideoRenderer);
+	if (asRecord(rec.gridVideoRenderer)) return asRecord(rec.gridVideoRenderer);
+	const richContent = asRecord(asRecord(rec.richItemRenderer)?.content);
+	if (richContent && asRecord(richContent.videoRenderer)) return asRecord(richContent.videoRenderer);
+	if (asRecord(rec.item) && !rec.id && !rec.aweme_id && !rec.id_str) return asRecord(rec.item);
+	return rec;
+}
+function isPostListContainer(obj) {
+	if (obj.id_str || obj.aweme_id || obj.shortcode || obj.shortCode || obj.videoId) return false;
+	return LIST_CONTAINERS.some((k) => Array.isArray(obj[k]));
+}
+function hasLooksLikePostRow(row) {
+	return Boolean(row.id || row.id_str || row.post_id || row.aweme_id || row.tweet_id || row.rest_id || row.shortcode || row.shortCode || row.videoId || row.source_url || row.article || row.caption || row.video || row.mediaDetails || row.image_versions2 || row.text || row.desc || row.full_text || row.title);
+}
+function extractPostRows(payload) {
+	if (Array.isArray(payload)) return {
+		rows: payload.map(unwrapRendererEntry).filter((r) => Boolean(r)),
+		foundListContainer: true
+	};
+	const root = asRecord(payload);
+	if (!root) return {
+		rows: [],
+		foundListContainer: false
+	};
+	const containerAccount = asRecord(root.account);
+	const probeContainer = (obj) => {
+		for (const listKey of LIST_CONTAINERS) {
+			const candidate = obj[listKey];
+			if (Array.isArray(candidate)) {
+				const mapped = candidate.map(unwrapRendererEntry).filter((r) => Boolean(r));
+				if (mapped.length > 0) return {
+					rows: mapped,
+					foundListContainer: true
+				};
+			}
+			const nestedObj = asRecord(candidate);
+			if (nestedObj && Array.isArray(nestedObj.edges)) {
+				const mapped = nestedObj.edges.map(unwrapRendererEntry).filter((r) => Boolean(r));
+				if (mapped.length > 0) return {
+					rows: mapped,
+					foundListContainer: true
+				};
+			}
+		}
+		return null;
+	};
+	const direct = probeContainer(root);
+	if (direct) return {
+		...direct,
+		containerAccount
+	};
+	for (const wrapKey of WRAPPER_CONTAINERS) {
+		const wrapped = asRecord(root[wrapKey]);
+		if (!wrapped) continue;
+		const nested = probeContainer(wrapped);
+		if (nested) return {
+			...nested,
+			containerAccount: asRecord(wrapped.account) ?? containerAccount
+		};
+	}
+	if (LIST_CONTAINERS.some((k) => Array.isArray(root[k]) && root[k].length === 0) || WRAPPER_CONTAINERS.some((wk) => {
+		const w = asRecord(root[wk]);
+		return Boolean(w && LIST_CONTAINERS.some((k) => Array.isArray(w[k]) && w[k].length === 0));
+	})) return {
+		rows: [],
+		foundListContainer: true,
+		containerAccount
+	};
+	if ((Array.isArray(root.users) || Array.isArray(root.hashtags) || Array.isArray(root.places)) && !hasLooksLikePostRow(root)) return {
+		rows: [],
+		foundListContainer: false,
+		containerAccount
+	};
+	for (const singleKey of SINGLE_POST_CONTAINERS) {
+		const single = asRecord(root[singleKey]);
+		if (single && hasLooksLikePostRow(single)) return {
+			rows: [single],
+			foundListContainer: false,
+			containerAccount
+		};
+	}
+	if (!isPostListContainer(root) && hasLooksLikePostRow(root)) return {
+		rows: [root],
+		foundListContainer: false,
+		containerAccount
+	};
+	return {
+		rows: [],
+		foundListContainer: false,
+		containerAccount
+	};
+}
+function mapRawRowToSocialItem(row, index, options) {
+	const { platformHint, toolName, locale, nowMs, containerAccount } = options;
+	const explicitUrl = sanitizeHttpUrl([
+		row.source_url,
+		row.url,
+		row.share_url,
+		row.post_url,
+		row.webVideoUrl,
+		row.permalink,
+		row.link,
+		row.expanded_url,
+		row.videoId ? `https://www.youtube.com/watch?v=${String(row.videoId)}` : void 0
+	]);
+	const platform = normalizeSocialPlatform(firstNonEmptyString([
+		row.source_platform,
+		row.platform,
+		containerAccount?.platform,
+		platformHint
+	]) || void 0, explicitUrl);
+	const shortcodeCandidate = firstNonEmptyString([row.shortcode, row.shortCode]) || (typeof row.code === "string" && row.code.trim().length >= 5 ? row.code.trim() : "");
+	const rawId = firstNonEmptyString([
+		row.id_str,
+		row.id,
+		row.post_id,
+		row.aweme_id,
+		row.tweet_id,
+		row.rest_id,
+		row.videoId,
+		shortcodeCandidate,
+		row.pk
+	]);
+	const synthKey = platform === "instagram" && shortcodeCandidate ? shortcodeCandidate : rawId;
+	const sourceUrl = explicitUrl || (synthKey ? synthesizedPostUrl(platform, synthKey) : void 0);
+	const articleObj = asRecord(row.article);
+	const articleResult = asRecord(asRecord(articleObj?.article_results)?.result) ?? articleObj;
+	const noteTweetText = firstNonEmptyString([asRecord(asRecord(asRecord(row.note_tweet)?.note_tweet_results)?.result)?.text, asRecord(row.note_tweet)?.text]);
+	const captionText = firstNonEmptyString([asRecord(row.caption)?.text, typeof row.caption === "string" ? row.caption : ""]);
+	const ytTitle = textFromRuns(row.title);
+	const rawTitle = firstNonEmptyString([articleResult?.title, typeof row.title === "string" ? row.title : ytTitle]);
+	const rawExcerpt = firstNonEmptyString([
+		articleResult?.preview_text,
+		articleResult?.excerpt,
+		articleResult?.description,
+		row.excerpt,
+		row.preview_text,
+		row.hook_summary
+	]);
+	const rawBody = decodeBasicEntities(firstNonEmptyString([
+		noteTweetText,
+		articleResult?.plain_text,
+		articleResult?.body,
+		row.full_text,
+		row.content,
+		row.desc,
+		row.text,
+		captionText,
+		textFromRuns(row.descriptionSnippet),
+		row.description
+	]));
+	const declaredShape = firstNonEmptyString([row.content_shape, row.contentShape]).toLowerCase();
+	const isArticle = declaredShape === "article" || row.is_article === true || Boolean(articleResult && (articleResult.title || articleResult.preview_text || articleResult.plain_text));
+	const videoObj = asRecord(row.video);
+	const imagePostImages = Array.isArray(asRecord(row.image_post_info)?.images) ? asRecord(row.image_post_info)?.images : [];
+	const mediaDetails = Array.isArray(row.mediaDetails) ? row.mediaDetails : [];
+	const entitiesMedia = Array.isArray(asRecord(row.entities)?.media) ? asRecord(row.entities)?.media : [];
+	const extendedMedia = Array.isArray(asRecord(row.extended_entities)?.media) ? asRecord(row.extended_entities)?.media : [];
+	const mediaContainer = asRecord(row.media);
+	const mediaVideoArr = Array.isArray(mediaContainer?.video) ? mediaContainer.video : [];
+	const mediaPhotoArr = Array.isArray(mediaContainer?.photo) ? mediaContainer.photo : Array.isArray(mediaContainer?.photos) ? mediaContainer.photos : [];
+	const carouselMedia = Array.isArray(row.carousel_media) ? row.carousel_media : [];
+	const rowImages = Array.isArray(row.images) ? row.images : [];
+	const igCandidates = Array.isArray(asRecord(row.image_versions2)?.candidates) ? asRecord(row.image_versions2)?.candidates : [];
+	const ytThumbnails = Array.isArray(asRecord(row.thumbnail)?.thumbnails) ? asRecord(row.thumbnail)?.thumbnails : Array.isArray(row.thumbnails) ? row.thumbnails : [];
+	const collectedMediaEntries = [
+		...mediaDetails,
+		...extendedMedia,
+		...entitiesMedia,
+		...mediaVideoArr,
+		...mediaPhotoArr
+	].map((m) => asRecord(m)).filter((m) => Boolean(m));
+	const xCoverCandidate = sanitizeMediaUrl(collectedMediaEntries.map((m) => m.media_url_https ?? m.media_url ?? m.preview_image_url ?? m.display_url));
+	const igCarouselCover = sanitizeMediaUrl(carouselMedia.flatMap((c) => {
+		const cr = asRecord(c);
+		const cand = Array.isArray(asRecord(cr?.image_versions2)?.candidates) ? asRecord(cr?.image_versions2)?.candidates : [];
+		return [
+			cr?.display_url,
+			cr?.cover_url,
+			...cand.map((x) => asRecord(x)?.url)
+		];
+	}));
+	const igDirectCover = sanitizeMediaUrl([
+		row.display_url,
+		row.thumbnail_src,
+		...igCandidates.map((x) => asRecord(x)?.url)
+	]);
+	const ytLastThumb = ytThumbnails.length > 0 ? asRecord(ytThumbnails[ytThumbnails.length - 1])?.url : void 0;
+	const tiktokCover = urlListFirst(videoObj?.cover) ?? urlListFirst(videoObj?.origin_cover) ?? urlListFirst(videoObj?.dynamic_cover) ?? sanitizeMediaUrl([videoObj?.poster]) ?? (imagePostImages.length > 0 ? urlListFirst(asRecord(imagePostImages[0])?.display_image) ?? urlListFirst(asRecord(imagePostImages[0])?.thumbnail) : void 0);
+	const flatRowImages = rowImages.map((entry) => typeof entry === "string" ? sanitizeMediaUrl([entry]) : sanitizeMediaUrl([asRecord(entry)?.url, asRecord(entry)?.display_url])).filter((u) => Boolean(u));
+	const rowMediaUrls = Array.isArray(row.media_urls) ? row.media_urls.map((u) => sanitizeMediaUrl([u])).filter((u) => Boolean(u)) : [];
+	const coverUrl = sanitizeMediaUrl([
+		asRecord(asRecord(articleResult?.cover_media)?.media_info)?.original_img_url,
+		asRecord(articleResult?.cover_media)?.original_img_url,
+		articleResult?.cover_image_url,
+		articleResult?.cover_url,
+		row.cover_url,
+		row.cover,
+		row.thumbnail_url,
+		row.thumbnail,
+		row.origin_cover,
+		row.image_url,
+		ytLastThumb
+	]) ?? tiktokCover ?? xCoverCandidate ?? igCarouselCover ?? igDirectCover ?? flatRowImages[0] ?? rowMediaUrls[0];
+	const isVideo = String(row.type || "").toLowerCase() === "video" || declaredShape === "video" || row.is_video === true || Boolean(row.video_url) || Boolean(row.video_versions) || Boolean(videoObj && (videoObj.play_addr || videoObj.playAddr || videoObj.download_addr || videoObj.duration)) || mediaVideoArr.length > 0 || collectedMediaEntries.some((m) => m.type === "video" || m.type === "animated_gif") || platform === "tiktok" || platform === "youtube";
+	let durationSec = parseDurationText(row.duration ?? row.video_duration ?? row.duration_seconds ?? textFromRuns(row.lengthText));
+	if (durationSec === void 0 && videoObj?.duration != null) {
+		const vd = asFiniteNumber(videoObj.duration);
+		if (vd !== void 0 && vd > 0) durationSec = platform === "tiktok" && vd > 500 ? Math.round(vd / 1e3) : Math.round(vd);
+	}
+	if (durationSec === void 0) for (const m of collectedMediaEntries) {
+		const ms = asFiniteNumber(asRecord(m.video_info)?.duration_millis);
+		if (ms !== void 0 && ms > 0) {
+			durationSec = Math.round(ms / 1e3);
+			break;
+		}
+	}
+	let coverAspectRatio = asFiniteNumber(row.ratio);
+	if (coverAspectRatio === void 0 && videoObj) {
+		const w = asFiniteNumber(videoObj.width);
+		const h = asFiniteNumber(videoObj.height);
+		if (w && h && w > 0 && h > 0) coverAspectRatio = w / h;
+	}
+	if (coverAspectRatio === void 0) for (const m of collectedMediaEntries) {
+		const info = asRecord(m.original_info);
+		const w = asFiniteNumber(info?.width);
+		const h = asFiniteNumber(info?.height);
+		if (w && h && w > 0 && h > 0) {
+			coverAspectRatio = w / h;
+			break;
+		}
+	}
+	const mediaCount = asFiniteNumber(row.media_count) ?? (carouselMedia.length > 1 ? carouselMedia.length : imagePostImages.length > 1 ? imagePostImages.length : flatRowImages.length > 1 ? flatRowImages.length : collectedMediaEntries.length > 1 ? collectedMediaEntries.length : void 0);
+	const rawUser = asRecord(row.author) ?? asRecord(asRecord(asRecord(asRecord(row.core)?.user_results)?.result)?.legacy) ?? asRecord(row.user) ?? asRecord(row.owner) ?? containerAccount ?? {};
+	const userResult = asRecord(asRecord(asRecord(row.core)?.user_results)?.result);
+	const authorName = firstNonEmptyString([
+		rawUser.name,
+		rawUser.nickname,
+		asRecord(userResult?.core)?.name,
+		row.author_name,
+		row.channel_name,
+		textFromRuns(row.ownerText),
+		textFromRuns(row.longBylineText),
+		textFromRuns(row.shortBylineText)
+	]) || void 0;
+	const authorHandle = firstNonEmptyString([
+		rawUser.handle,
+		rawUser.screen_name,
+		rawUser.username,
+		rawUser.unique_id,
+		asRecord(userResult?.core)?.screen_name,
+		row.author_handle,
+		row.screen_name
+	]).replace(/^@+/, "") || void 0;
+	const ytChannelThumbObj = asRecord(asRecord(asRecord(row.channelThumbnailSupportedRenderers)?.channelThumbnailWithLinkRenderer)?.thumbnail);
+	const ytChannelThumbs = Array.isArray(ytChannelThumbObj?.thumbnails) ? ytChannelThumbObj.thumbnails : [];
+	const avatarUrl = sanitizeMediaUrl([
+		rawUser.avatar_url,
+		rawUser.avatarUrl,
+		rawUser.avatar,
+		rawUser.profile_image_url_https,
+		rawUser.profile_pic_url,
+		asRecord(userResult?.avatar)?.image_url,
+		urlListFirst(rawUser.avatar_thumb),
+		urlListFirst(rawUser.avatar_larger),
+		row.avatar_url,
+		containerAccount?.avatar_url,
+		containerAccount?.avatar_http_url,
+		asRecord(ytChannelThumbs[0])?.url
+	]);
+	const author = authorName || authorHandle || avatarUrl ? {
+		name: authorName,
+		handle: authorHandle,
+		avatarUrl
+	} : void 0;
+	const stats = asRecord(row.stats) ?? asRecord(row.statistics) ?? asRecord(row.engagement) ?? row;
+	const metrics = {
+		likes: asFiniteNumber(stats.likes ?? stats.like_count ?? stats.favorite_count ?? stats.digg_count),
+		reposts: asFiniteNumber(stats.shares ?? stats.reposts ?? stats.retweet_count ?? stats.repost_count ?? stats.share_count),
+		views: asFiniteNumber(stats.views ?? stats.view_count ?? stats.play_count ?? stats.video_view_count ?? textFromRuns(row.viewCountText)),
+		comments: asFiniteNumber(stats.comments ?? stats.comment_count ?? stats.reply_count)
+	};
+	const hasAnyMetric = Object.values(metrics).some((v) => v !== void 0);
+	const publishedAtRaw = firstNonEmptyString([
+		row.published_at,
+		row.posted_at,
+		row.create_time,
+		row.createTime,
+		row.taken_at,
+		row.created_at,
+		textFromRuns(row.publishedTimeText)
+	]);
+	const publishedLabel = formatSocialRelativeTime(publishedAtRaw || row.create_time || row.taken_at, locale, nowMs);
+	const outlierBadges = resolveOutlierBadges(asRecord(row.velocity));
+	const hostname = extractHostname(sourceUrl) || void 0;
+	const faviconUrl = sanitizeMediaUrl([row.favicon_url]);
+	const title = isArticle ? rawTitle || void 0 : rawTitle && rawTitle !== rawBody ? rawTitle : void 0;
+	const excerpt = rawExcerpt || void 0;
+	const body = rawBody || (!isArticle ? rawTitle : "") || void 0;
+	if (!title && !body && !excerpt && !coverUrl && !sourceUrl) return null;
+	const candidate = {
+		id: rawId || `${toolName}-${index}`,
+		platform,
+		contentShape: declaredShape || (isArticle ? "article" : void 0),
+		mediaType: !coverUrl ? sourceUrl ? "link" : "text" : isVideo ? "video" : "image",
+		isArticle: isArticle || void 0,
+		title,
+		excerpt,
+		body,
+		coverUrl,
+		coverAlt: title || body || hostname || platform,
+		coverAspectRatio,
+		mediaCount,
+		isVideo,
+		durationSec,
+		author,
+		metrics: hasAnyMetric ? metrics : void 0,
+		outlierBadges: outlierBadges.length > 0 ? outlierBadges : void 0,
+		publishedAt: publishedAtRaw || void 0,
+		publishedLabel,
+		sourceUrl,
+		faviconUrl,
+		hostname
+	};
+	return {
+		...candidate,
+		archetype: resolveSocialCardArchetype(candidate)
+	};
+}
+/**
+* Pure adapter transforming any chat `tool.call.toolview` block for social/inspiration
+* search, feed, or single-post tools into a render-ready model.
+*/
+function parseSocialToolBlock(block, toolName, options = {}) {
+	const locale = options.locale === "en" ? "en" : "zh";
+	const nowMs = typeof options.nowMs === "number" ? options.nowMs : Date.now();
+	const blk = asRecord(block);
+	const toolPlatform = TOOL_PLATFORM_HINTS[toolName];
+	const settled = Boolean(blk && blk.kind === "tool-result");
+	const args = parseArgsObject(settled ? blk?.call?.argsRaw ?? blk?.argsRaw : blk?.argsRaw);
+	const initialQuery = extractQuerySummary(args);
+	if (!blk || !settled) return {
+		phase: "running",
+		toolName,
+		platform: normalizeArgPlatform(args.platform) ?? toolPlatform,
+		capability: typeof args.capability === "string" ? args.capability : void 0,
+		querySummary: initialQuery,
+		items: [],
+		totalCount: 0
+	};
+	const rawOutputText = extractContentText(blk.content);
+	if (blk.isError) return {
+		phase: "error",
+		toolName,
+		platform: normalizeArgPlatform(args.platform) ?? toolPlatform,
+		capability: typeof args.capability === "string" ? args.capability : void 0,
+		querySummary: initialQuery,
+		items: [],
+		totalCount: 0,
+		errorMessage: rawOutputText || firstNonEmptyString([blk.error?.message, blk.error?.code]) || (locale === "en" ? "Tool execution failed" : "工具调用失败"),
+		rawOutputText: rawOutputText || void 0
+	};
+	const parsedJson = tryParseJson(rawOutputText);
+	if (parsedJson === void 0) return {
+		phase: "passthrough",
+		toolName,
+		platform: normalizeArgPlatform(args.platform) ?? toolPlatform,
+		capability: typeof args.capability === "string" ? args.capability : void 0,
+		querySummary: initialQuery,
+		items: [],
+		totalCount: 0,
+		rawOutputText: rawOutputText || void 0
+	};
+	const root = asRecord(parsedJson);
+	const resolvedCapability = firstNonEmptyString([root?.capability, args.capability]) || void 0;
+	const resolvedPlatform = normalizeArgPlatform(root?.platform ?? args.platform) ?? toolPlatform;
+	const querySummary = extractQuerySummary(args, root) ?? initialQuery;
+	if (toolName === "omnimux_social_data" && resolvedCapability && !POST_CAPABILITIES.has(resolvedCapability)) return {
+		phase: "passthrough",
+		toolName,
+		platform: resolvedPlatform,
+		capability: resolvedCapability,
+		querySummary,
+		items: [],
+		totalCount: 0,
+		rawOutputText: rawOutputText || void 0
+	};
+	let payload = parsedJson;
+	if (root) {
+		const inner = root.data;
+		if (Array.isArray(inner) || asRecord(inner)) {
+			payload = inner;
+			const innerRec = asRecord(inner);
+			if (innerRec && (typeof innerRec.code === "number" || innerRec.status != null) && asRecord(innerRec.data)) payload = innerRec.data;
+		}
+	}
+	const payloadRec = asRecord(payload);
+	if (payloadRec && Object.keys(payloadRec).length > 0 && Object.keys(payloadRec).every((k) => [
+		"text",
+		"code",
+		"message",
+		"msg",
+		"status"
+	].includes(k)) && (payloadRec.text === null || payloadRec.text === "")) return {
+		phase: "empty",
+		toolName,
+		platform: resolvedPlatform,
+		capability: resolvedCapability,
+		querySummary,
+		items: [],
+		totalCount: 0,
+		rawOutputText: rawOutputText || void 0
+	};
+	const { rows, foundListContainer, containerAccount } = extractPostRows(payload);
+	const seenIds = /* @__PURE__ */ new Set();
+	const items = [];
+	for (let i = 0; i < rows.length; i += 1) {
+		const mapped = mapRawRowToSocialItem(rows[i], i, {
+			platformHint: resolvedPlatform,
+			toolName,
+			locale,
+			nowMs,
+			containerAccount: containerAccount ?? asRecord(root?.account)
+		});
+		if (!mapped) continue;
+		if (seenIds.has(mapped.id)) continue;
+		seenIds.add(mapped.id);
+		items.push(mapped);
+	}
+	if (items.length === 0) return {
+		phase: foundListContainer ? "empty" : "passthrough",
+		toolName,
+		platform: resolvedPlatform,
+		capability: resolvedCapability,
+		querySummary,
+		items: [],
+		totalCount: 0,
+		rawOutputText: rawOutputText || void 0
+	};
+	const distinctPlatforms = new Set(items.map((it) => it.platform).filter(Boolean));
+	return {
+		phase: "ready",
+		toolName,
+		platform: resolvedPlatform ?? (distinctPlatforms.size === 1 ? Array.from(distinctPlatforms)[0] : void 0),
+		capability: resolvedCapability,
+		querySummary,
+		items,
+		totalCount: items.length,
+		rawOutputText: rawOutputText || void 0
+	};
+}
+function normalizeArgPlatform(raw) {
+	if (typeof raw !== "string" || !raw.trim()) return void 0;
+	const p = normalizeSocialPlatform(raw);
+	return p === "web" && raw.trim().toLowerCase() !== "web" ? void 0 : p;
+}
+// src/social-card/SocialSearchToolView.tsx
+const c = (name) => cssClass(SocialSearchToolView_module_css_default[name], name);
+const PLATFORM_NAMES = {
+	x: {
+		zh: "X",
+		en: "X"
+	},
+	tiktok: {
+		zh: "TikTok",
+		en: "TikTok"
+	},
+	instagram: {
+		zh: "Instagram",
+		en: "Instagram"
+	},
+	youtube: {
+		zh: "YouTube",
+		en: "YouTube"
+	},
+	bilibili: {
+		zh: "B站",
+		en: "Bilibili"
+	},
+	xiaohongshu: {
+		zh: "小红书",
+		en: "Xiaohongshu"
+	},
+	douyin: {
+		zh: "抖音",
+		en: "Douyin"
+	},
+	threads: {
+		zh: "Threads",
+		en: "Threads"
+	},
+	linkedin: {
+		zh: "LinkedIn",
+		en: "LinkedIn"
+	},
+	substack: {
+		zh: "Substack",
+		en: "Substack"
+	},
+	web: {
+		zh: "网页",
+		en: "Web"
+	}
+};
+function SearchGlyph() {
+	return /* @__PURE__ */ jsxs("svg", {
+		width: "14",
+		height: "14",
+		viewBox: "0 0 24 24",
+		fill: "none",
+		stroke: "currentColor",
+		strokeWidth: "2",
+		"aria-hidden": "true",
+		children: [/* @__PURE__ */ jsx("circle", {
+			cx: "11",
+			cy: "11",
+			r: "7"
+		}), /* @__PURE__ */ jsx("path", { d: "m20 20-3.5-3.5" })]
+	});
+}
+function ChevronGlyph() {
+	return /* @__PURE__ */ jsx("svg", {
+		width: "13",
+		height: "13",
+		viewBox: "0 0 24 24",
+		fill: "none",
+		stroke: "currentColor",
+		strokeWidth: "2",
+		"aria-hidden": "true",
+		children: /* @__PURE__ */ jsx("path", { d: "m6 9 6 6 6-6" })
+	});
+}
+function ExternalLinkGlyph() {
+	return /* @__PURE__ */ jsxs("svg", {
+		width: "13",
+		height: "13",
+		viewBox: "0 0 24 24",
+		fill: "none",
+		stroke: "currentColor",
+		strokeWidth: "2",
+		"aria-hidden": "true",
+		children: [
+			/* @__PURE__ */ jsx("path", { d: "M15 3h6v6" }),
+			/* @__PURE__ */ jsx("path", { d: "M10 14 21 3" }),
+			/* @__PURE__ */ jsx("path", { d: "M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" })
+		]
+	});
+}
+function BookmarkGlyph() {
+	return /* @__PURE__ */ jsx("svg", {
+		width: "13",
+		height: "13",
+		viewBox: "0 0 24 24",
+		fill: "none",
+		stroke: "currentColor",
+		strokeWidth: "2",
+		"aria-hidden": "true",
+		children: /* @__PURE__ */ jsx("path", { d: "m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z" })
+	});
+}
+function CheckGlyph() {
+	return /* @__PURE__ */ jsx("svg", {
+		width: "13",
+		height: "13",
+		viewBox: "0 0 24 24",
+		fill: "none",
+		stroke: "currentColor",
+		strokeWidth: "2.2",
+		"aria-hidden": "true",
+		children: /* @__PURE__ */ jsx("polyline", { points: "20 6 9 17 4 12" })
+	});
+}
+function InspectGlyph() {
+	return /* @__PURE__ */ jsxs("svg", {
+		width: "13",
+		height: "13",
+		viewBox: "0 0 24 24",
+		fill: "none",
+		stroke: "currentColor",
+		strokeWidth: "2",
+		"aria-hidden": "true",
+		children: [/* @__PURE__ */ jsx("polyline", { points: "16 18 22 12 16 6" }), /* @__PURE__ */ jsx("polyline", { points: "8 6 2 12 8 18" })]
+	});
+}
+function resolveActionTitle(parsed, locale) {
+	const { phase, toolName, platform } = parsed;
+	const plat = platform && PLATFORM_NAMES[platform] ? PLATFORM_NAMES[platform][locale] : void 0;
+	if (phase === "error") return locale === "en" ? "Post fetch failed" : "获取帖子失败";
+	const running = phase === "running";
+	if (phase === "passthrough") return locale === "en" ? "Social data output" : "社媒数据输出";
+	if (toolName.includes("_inspiration_") || toolName === "inspiration_search" || toolName === "inspiration_get") {
+		if (toolName.endsWith("_get")) return running ? locale === "en" ? "Fetching inspiration" : "正在读取灵感详情" : locale === "en" ? "Fetched inspiration" : "已读取灵感详情";
+		return running ? locale === "en" ? "Searching inspirations" : "正在检索灵感库" : locale === "en" ? "Searched inspirations" : "已检索灵感库";
+	}
+	if (toolName.startsWith("inspiration_rival_")) return running ? locale === "en" ? "Fetching rival posts" : "正在读取对标作品" : locale === "en" ? "Fetched rival posts" : "已读取对标作品";
+	if (toolName.endsWith("_search")) return running ? locale === "en" ? `Searching ${plat ?? "social"} posts` : `正在搜索${plat ? ` ${plat} ` : "社媒"}帖子` : locale === "en" ? `Searched ${plat ?? "social"} posts` : `已搜索${plat ? ` ${plat} ` : "社媒"}帖子`;
+	if (toolName.endsWith("_posts")) return running ? locale === "en" ? `Fetching ${plat ?? "creator"} posts` : `正在获取${plat ? ` ${plat} ` : "创作者"}作品` : locale === "en" ? `Fetched ${plat ?? "creator"} posts` : `已获取${plat ? ` ${plat} ` : "创作者"}作品`;
+	if (toolName.endsWith("_tweet") || toolName.endsWith("_video") || toolName.endsWith("_post")) return running ? locale === "en" ? `Fetching ${plat ?? "social"} post` : `正在获取${plat ? ` ${plat} ` : "社媒"}帖子` : locale === "en" ? `Fetched ${plat ?? "social"} post` : `已获取${plat ? ` ${plat} ` : "社媒"}帖子`;
+	return running ? locale === "en" ? "Querying social posts" : "正在查询社媒帖子" : locale === "en" ? "Fetched social posts" : "已获取社媒帖子";
+}
+function defaultOpenExternal(url) {
+	if (!isSafeHttpUrl(url)) return;
+	if (typeof window !== "undefined" && typeof window.open === "function") window.open(String(url).trim(), "_blank", "noopener,noreferrer");
+}
+/**
+* Shared chat conversation view (`tool.call.toolview`) that renders social search,
+* creator feeds, single posts, and inspiration items as 2-column compact 6-archetype cards.
+*/
+function SocialSearchToolView({ toolName, block, locale = "zh", inspect, initialVisibleCount = 6, canSaveToInspiration = false, onOpenPost, onSaveToInspiration, className }) {
+	const lang = locale === "en" ? "en" : "zh";
+	const parsed = useMemo(() => parseSocialToolBlock(block, toolName, { locale: lang }), [
+		block,
+		toolName,
+		lang
+	]);
+	const [cardsExpanded, setCardsExpanded] = useState(true);
+	const [rawOpen, setRawOpen] = useState(false);
+	const [showAll, setShowAll] = useState(false);
+	const [saveStates, setSaveStates] = useState(() => /* @__PURE__ */ new Map());
+	const [saveErrors, setSaveErrors] = useState(() => /* @__PURE__ */ new Map());
+	const callKey = useMemo(() => {
+		const b = block && typeof block === "object" ? block : void 0;
+		return typeof b?.callId === "string" ? b.callId : toolName;
+	}, [block, toolName]);
+	useEffect(() => {
+		setShowAll(false);
+		setRawOpen(false);
+		setCardsExpanded(true);
+		setSaveStates(/* @__PURE__ */ new Map());
+		setSaveErrors(/* @__PURE__ */ new Map());
+	}, [callKey]);
+	const title = resolveActionTitle(parsed, lang);
+	const isReady = parsed.phase === "ready";
+	const isRunning = parsed.phase === "running";
+	const isError = parsed.phase === "error";
+	const isPassthrough = parsed.phase === "passthrough";
+	const isEmpty = parsed.phase === "empty";
+	const canToggleBody = isReady || (isPassthrough || isError) && Boolean(parsed.rawOutputText);
+	const isBodyOpen = isReady ? cardsExpanded : rawOpen;
+	const handleToggleHeader = useCallback(() => {
+		if (isReady) {
+			setCardsExpanded((prev) => !prev);
+			return;
+		}
+		if (isPassthrough && parsed.rawOutputText || isError) setRawOpen((prev) => !prev);
+	}, [
+		isReady,
+		isPassthrough,
+		isError,
+		parsed.rawOutputText
+	]);
+	const handleOpen = useCallback((item) => {
+		if (onOpenPost) {
+			onOpenPost(item);
+			return;
+		}
+		defaultOpenExternal(item.sourceUrl);
+	}, [onOpenPost]);
+	const handleSave = useCallback(async (item) => {
+		if (!canSaveToInspiration || !onSaveToInspiration || !isSafeHttpUrl(item.sourceUrl)) return;
+		const current = saveStates.get(item.id);
+		if (current === "saving" || current === "saved") return;
+		setSaveStates((prev) => {
+			const next = new Map(prev);
+			next.set(item.id, "saving");
+			return next;
+		});
+		setSaveErrors((prev) => {
+			if (!prev.has(item.id)) return prev;
+			const next = new Map(prev);
+			next.delete(item.id);
+			return next;
+		});
+		try {
+			const res = await onSaveToInspiration(item);
+			if (res && res.ok) setSaveStates((prev) => {
+				const next = new Map(prev);
+				next.set(item.id, "saved");
+				return next;
+			});
+			else {
+				setSaveStates((prev) => {
+					const next = new Map(prev);
+					next.set(item.id, "error");
+					return next;
+				});
+				setSaveErrors((prev) => {
+					const next = new Map(prev);
+					next.set(item.id, res?.error || (lang === "en" ? "Save failed" : "保存失败"));
+					return next;
+				});
+			}
+		} catch (err) {
+			setSaveStates((prev) => {
+				const next = new Map(prev);
+				next.set(item.id, "error");
+				return next;
+			});
+			setSaveErrors((prev) => {
+				const next = new Map(prev);
+				next.set(item.id, err instanceof Error ? err.message : String(err));
+				return next;
+			});
+		}
+	}, [
+		canSaveToInspiration,
+		onSaveToInspiration,
+		saveStates,
+		lang
+	]);
+	const visibleItems = useMemo(() => {
+		if (!isReady) return [];
+		const cap = Math.max(1, initialVisibleCount);
+		return showAll || parsed.items.length <= cap ? parsed.items : parsed.items.slice(0, cap);
+	}, [
+		isReady,
+		parsed.items,
+		showAll,
+		initialVisibleCount
+	]);
+	const remainingCount = Math.max(0, parsed.items.length - Math.max(1, initialVisibleCount));
+	const countLabel = isReady || isEmpty ? `×${parsed.totalCount}` : null;
+	const singleCard = isReady && parsed.items.length === 1;
+	return /* @__PURE__ */ jsxs("section", {
+		className: cx(c("root"), className),
+		"data-social-toolview": toolName,
+		"data-phase": parsed.phase,
+		children: [
+			/* @__PURE__ */ jsxs("div", {
+				className: c("header"),
+				children: [/* @__PURE__ */ jsx("div", {
+					className: c("headerLeft"),
+					children: /* @__PURE__ */ jsxs("button", {
+						type: "button",
+						className: c("headerTrigger"),
+						"data-static": !canToggleBody ? "true" : void 0,
+						"data-error": isError ? "true" : void 0,
+						"aria-expanded": canToggleBody ? isBodyOpen : void 0,
+						onClick: canToggleBody ? handleToggleHeader : void 0,
+						disabled: !canToggleBody,
+						children: [
+							/* @__PURE__ */ jsx("span", {
+								className: c("headerIcon"),
+								"aria-hidden": "true",
+								children: isRunning ? /* @__PURE__ */ jsx("span", { className: c("runningDot") }) : parsed.platform ? /* @__PURE__ */ jsx(SocialPlatformMark, {
+									platform: parsed.platform,
+									size: 14
+								}) : /* @__PURE__ */ jsx(SearchGlyph, {})
+							}),
+							/* @__PURE__ */ jsx("span", {
+								className: c("title"),
+								children: title
+							}),
+							parsed.querySummary ? /* @__PURE__ */ jsx("span", {
+								className: c("query"),
+								children: parsed.querySummary
+							}) : null,
+							countLabel ? /* @__PURE__ */ jsx("span", {
+								className: c("countPill"),
+								children: countLabel
+							}) : null,
+							canToggleBody ? /* @__PURE__ */ jsx("span", {
+								className: c("chevron"),
+								"data-open": String(isBodyOpen),
+								"aria-hidden": "true",
+								children: /* @__PURE__ */ jsx(ChevronGlyph, {})
+							}) : null
+						]
+					})
+				}), /* @__PURE__ */ jsxs("div", {
+					className: c("headerActions"),
+					children: [parsed.rawOutputText ? /* @__PURE__ */ jsx("button", {
+						type: "button",
+						className: c("headerActionBtn"),
+						"aria-expanded": rawOpen,
+						"aria-label": lang === "en" ? "Toggle raw output" : "查看原始输出",
+						title: lang === "en" ? "Raw output" : "原始输出",
+						onClick: () => setRawOpen((prev) => !prev),
+						children: "JSON"
+					}) : null, inspect ? /* @__PURE__ */ jsx("button", {
+						type: "button",
+						className: c("headerActionBtn"),
+						"aria-label": lang === "en" ? "Inspect call" : "检查调用详情",
+						title: lang === "en" ? "Inspect call" : "检查调用详情",
+						onClick: inspect,
+						children: /* @__PURE__ */ jsx(InspectGlyph, {})
+					}) : null]
+				})]
+			}),
+			isError ? /* @__PURE__ */ jsx("div", {
+				className: c("errorBox"),
+				role: "status",
+				children: parsed.errorMessage
+			}) : null,
+			rawOpen && parsed.rawOutputText ? /* @__PURE__ */ jsx("pre", {
+				className: c("rawOutputBox"),
+				children: parsed.rawOutputText
+			}) : null,
+			isReady && cardsExpanded ? /* @__PURE__ */ jsxs(Fragment, { children: [/* @__PURE__ */ jsx("div", {
+				className: singleCard ? c("gridSingle") : void 0,
+				children: /* @__PURE__ */ jsx(MasonryGrid, {
+					items: visibleItems,
+					getKey: (item) => item.id,
+					minColumnWidth: 210,
+					minColumns: 1,
+					maxColumns: singleCard ? 1 : 2,
+					defaultColumns: singleCard ? 1 : 2,
+					gap: 10,
+					resetKey: `${toolName}:${parsed.totalCount}:${parsed.items[0]?.id ?? ""}`,
+					estimateWeight: estimateArchetypeWeight,
+					ariaLabel: title,
+					renderItem: (item) => {
+						const hasLink = isSafeHttpUrl(item.sourceUrl);
+						const saveStatus = saveStates.get(item.id) ?? "idle";
+						const saveErr = saveErrors.get(item.id);
+						const showSave = Boolean(canSaveToInspiration && onSaveToInspiration && hasLink);
+						const hoverActions = hasLink || showSave ? /* @__PURE__ */ jsxs(Fragment, { children: [hasLink ? /* @__PURE__ */ jsx("button", {
+							type: "button",
+							className: c("hoverPillBtn"),
+							"aria-label": lang === "en" ? "Open original post" : "打开原帖",
+							title: lang === "en" ? "Open original post" : "打开原帖",
+							onClick: (e) => {
+								e.stopPropagation();
+								handleOpen(item);
+							},
+							children: /* @__PURE__ */ jsx(ExternalLinkGlyph, {})
+						}) : null, showSave ? /* @__PURE__ */ jsx("button", {
+							type: "button",
+							className: c("hoverPillBtn"),
+							"data-save-state": saveStatus,
+							disabled: saveStatus === "saving" || saveStatus === "saved",
+							"aria-label": saveStatus === "saved" ? lang === "en" ? "Saved to inspiration" : "已保存到灵感库" : saveStatus === "error" ? saveErr || (lang === "en" ? "Retry save" : "重试保存") : lang === "en" ? "Save to inspiration" : "存为灵感",
+							title: saveStatus === "saved" ? lang === "en" ? "Saved" : "已存为灵感" : saveStatus === "error" ? saveErr || (lang === "en" ? "Save failed" : "保存失败") : lang === "en" ? "Save to inspiration" : "存为灵感",
+							onClick: (e) => {
+								e.stopPropagation();
+								handleSave(item);
+							},
+							children: saveStatus === "saved" ? /* @__PURE__ */ jsx(CheckGlyph, {}) : /* @__PURE__ */ jsx(BookmarkGlyph, {})
+						}) : null] }) : void 0;
+						return /* @__PURE__ */ jsx(SocialPostCard, {
+							item,
+							density: "compact",
+							onClick: hasLink || onOpenPost ? () => handleOpen(item) : void 0,
+							hoverActions
+						}, item.id);
+					}
+				})
+			}), remainingCount > 0 ? /* @__PURE__ */ jsx("button", {
+				type: "button",
+				className: c("showMoreBtn"),
+				"aria-expanded": showAll,
+				onClick: () => setShowAll((prev) => !prev),
+				children: showAll ? lang === "en" ? "Show less" : "收起" : lang === "en" ? `Show ${remainingCount} more` : `展开其余 ${remainingCount} 条`
+			}) : null] }) : null
+		]
+	});
+}
+export { MasonryGrid, SocialPlatformMark, SocialPostCard, SocialSearchToolView, computeMasonryColumnCount, distributeMasonryColumns, estimateArchetypeWeight, extractHostname, formatCompactCount, formatDuration, formatSocialRelativeTime, isSafeHttpUrl, isSafeMediaSrc, normalizeSocialPlatform, parseSocialToolBlock, resolveOutlierBadges, resolveSocialCardArchetype };
 
 //# sourceMappingURL=social-card.js.map

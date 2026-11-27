@@ -66,6 +66,10 @@
       {
         "target": "shell.overlay",
         "componentPath": "src/client/InspirationStage.jsx"
+      },
+      {
+        "target": "tool.call.toolview",
+        "componentPath": "src/client/social-toolview.js"
       }
     ],
     "storageDomains": [

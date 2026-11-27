@@ -89,6 +89,27 @@ interface MasonryGridProps<T> {
 }
 /** Semantic 6-archetype card for social posts, articles, videos, web links, and local media. */
 declare const SocialPostCard: import("react").ForwardRefExoticComponent<SocialPostCardProps & import("react").RefAttributes<HTMLElement>>;
+interface SaveToInspirationResult {
+  ok: boolean;
+  alreadySaved?: boolean | undefined;
+  error?: string | undefined;
+}
+interface SocialSearchToolViewProps {
+  toolName: string;
+  block: unknown;
+  locale?: "zh" | "en" | undefined;
+  inspect?: (() => void) | undefined;
+  initialVisibleCount?: number | undefined;
+  canSaveToInspiration?: boolean | undefined;
+  onOpenPost?: ((item: SocialPostCardItem) => void) | undefined;
+  onSaveToInspiration?: ((item: SocialPostCardItem) => Promise<SaveToInspirationResult>) | undefined;
+  className?: string | undefined;
+}
+/**
+ * Shared chat conversation view (`tool.call.toolview`) that renders social search,
+ * creator feeds, single posts, and inspiration items as 2-column compact 6-archetype cards.
+ */
+declare function SocialSearchToolView({ toolName, block, locale, inspect, initialVisibleCount, canSaveToInspiration, onOpenPost, onSaveToInspiration, className }: SocialSearchToolViewProps): import("react").JSX.Element;
 interface MasonryEntry<T> {
   item: T;
   index: number;
@@ -117,6 +138,50 @@ declare function distributeMasonryColumns<T>(items: readonly T[], getKey: (item:
 declare function MasonryGrid<T>({ items, getKey, renderItem, estimateWeight, minColumnWidth, minColumns, maxColumns, gap, defaultColumns, resetKey, className, ariaLabel }: MasonryGridProps<T>): import("react").JSX.Element;
 /** Source attribution mark for social platforms and generic web links. */
 declare function SocialPlatformMark({ platform, variant, size, className, title }: SocialPlatformMarkProps): import("react").JSX.Element;
+interface SocialToolBlockLike {
+  readonly kind?: string | undefined;
+  readonly phase?: string | undefined;
+  readonly callId?: string | undefined;
+  readonly name?: string | undefined;
+  readonly argsRaw?: string | undefined;
+  readonly isError?: boolean | undefined;
+  readonly error?: {
+    readonly code?: string | undefined;
+    readonly message?: string | undefined;
+  } | undefined;
+  readonly call?: {
+    readonly name?: string | undefined;
+    readonly argsRaw?: string | undefined;
+  } | undefined;
+  readonly content?: unknown;
+  readonly meta?: unknown;
+}
+type SocialToolViewPhase = "running" | "ready" | "empty" | "error" | "passthrough";
+interface ParsedSocialToolView {
+  phase: SocialToolViewPhase;
+  toolName: string;
+  platform?: SocialCardPlatform | undefined;
+  capability?: string | undefined;
+  querySummary?: string | undefined;
+  items: SocialPostCardItem[];
+  totalCount: number;
+  errorMessage?: string | undefined;
+  rawOutputText?: string | undefined;
+}
+/** Validate that an external post link strictly uses `http:` or `https:`. */
+declare function isSafeHttpUrl(value: unknown): boolean;
+/** Validate media/image sources: public `http(s):` or safe same-origin `/omnimux/inspiration/` route. */
+declare function isSafeMediaSrc(value: unknown): boolean;
+/** Format an ISO timestamp or epoch seconds/ms into concise relative labels without middle dots. */
+declare function formatSocialRelativeTime(isoOrEpoch: unknown, locale?: "zh" | "en", nowMs?: number): string | undefined;
+/**
+ * Pure adapter transforming any chat `tool.call.toolview` block for social/inspiration
+ * search, feed, or single-post tools into a render-ready model.
+ */
+declare function parseSocialToolBlock(block: unknown, toolName: string, options?: {
+  locale?: "zh" | "en" | undefined;
+  nowMs?: number | undefined;
+}): ParsedSocialToolView;
 /** Extract a clean lowercase hostname (stripping leading `www.`) from an HTTP URL. */
 declare function extractHostname(url: string | undefined): string;
 /** Normalize raw platform slugs or URL hostnames into canonical platform identifiers. */
@@ -144,5 +209,5 @@ declare function formatCompactCount(raw: number | undefined): string | undefined
 declare function formatDuration(seconds: number | undefined): string | undefined;
 /** Heuristic height weight for balanced initial masonry column assignment. */
 declare function estimateArchetypeWeight(item: SocialPostCardItem): number;
-export { type MasonryEntry, MasonryGrid, type MasonryGridProps, type OutlierVelocityInput, type SocialCardArchetype, type SocialCardDensity, type SocialCardOutlierBadge, type SocialCardOutlierTone, type SocialCardPlatform, SocialPlatformMark, type SocialPlatformMarkProps, SocialPostCard, type SocialPostCardAuthor, type SocialPostCardItem, type SocialPostCardMetrics, type SocialPostCardProps, computeMasonryColumnCount, distributeMasonryColumns, estimateArchetypeWeight, extractHostname, formatCompactCount, formatDuration, normalizeSocialPlatform, resolveOutlierBadges, resolveSocialCardArchetype };
+export { type MasonryEntry, MasonryGrid, type MasonryGridProps, type OutlierVelocityInput, type ParsedSocialToolView, type SaveToInspirationResult, type SocialCardArchetype, type SocialCardDensity, type SocialCardOutlierBadge, type SocialCardOutlierTone, type SocialCardPlatform, SocialPlatformMark, type SocialPlatformMarkProps, SocialPostCard, type SocialPostCardAuthor, type SocialPostCardItem, type SocialPostCardMetrics, type SocialPostCardProps, SocialSearchToolView, type SocialSearchToolViewProps, type SocialToolBlockLike, type SocialToolViewPhase, computeMasonryColumnCount, distributeMasonryColumns, estimateArchetypeWeight, extractHostname, formatCompactCount, formatDuration, formatSocialRelativeTime, isSafeHttpUrl, isSafeMediaSrc, normalizeSocialPlatform, parseSocialToolBlock, resolveOutlierBadges, resolveSocialCardArchetype };
 //# sourceMappingURL=social-card.d.ts.map
