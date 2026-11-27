@@ -296,4 +296,105 @@ describe('clickOfficialNewSession official lifecycle resolution (rc.3 shape)', (
     assert.equal(item.clicks.length, 1)
     assert.deepEqual(result, { ok: false, error: 'newSessionFailed' })
   })
+
+  it('resolves reused blank retained synchronously by mainView even before workbench snapshot catches up', async () => {
+    let snapshot = {
+      ids: ['old', 'blank-A'],
+      byId: {
+        old: { blank: false, retainedBy: { mainView: 1 } },
+        'blank-A': { blank: true },
+      },
+      phase: 'ready',
+      projectionsBySession: {},
+    }
+    const listeners = new Set()
+    const sessions = {
+      list: {
+        getSnapshot: () => snapshot,
+        subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener) },
+      },
+    }
+    const win = {
+      __omnimuxWorkbench: { getSnapshot: () => ({ sessionId: 'old' }) },
+      __omnimuxAttachments: { getActiveSessionId: () => 'old' },
+    }
+    const button = makeButton({ className: 'newSession' })
+    button.click = function click() {
+      this.clicks.push(1)
+      // Simulate rc.3+ replaceMain: retain fires list.subscribe while workbench still shows 'old'.
+      snapshot = {
+        ...snapshot,
+        byId: {
+          old: { blank: false },
+          'blank-A': { blank: true, retainedBy: { mainView: 1 } },
+        },
+      }
+      for (const listener of listeners) listener()
+    }
+    const result = await clickOfficialNewSession({
+      document: makeDoc([button]),
+      sessions,
+      window: win,
+      timeoutMs: 40,
+      pollMs: 1,
+    })
+    assert.deepEqual(result, { ok: true, sessionId: 'blank-A', reusedBlank: false })
+  })
+
+  it('polls workbench/attachments after list.subscribe when React commits target selection asynchronously', async () => {
+    const item = makeMenuItem('New Session')
+    const sessions = makeSessions({
+      ids: ['old', 'blank-A'],
+      byId: { old: { blank: false }, 'blank-A': { blank: true } },
+      activeId: 'old',
+    })
+    let committedActive = 'old'
+    const win = {
+      __omnimuxWorkbench: { getSnapshot: () => ({ sessionId: committedActive }) },
+    }
+    item.click = function click() {
+      this.clicks.push(1)
+      // First list.subscribe notification fires before React flushes committedActive.
+      sessions.select('old')
+      setTimeout(() => { committedActive = 'blank-A' }, 15)
+    }
+    const result = await clickOfficialNewSession({
+      document: makeDoc([], () => [item]),
+      sessions,
+      window: win,
+      timeoutMs: 120,
+      pollMs: 2,
+    })
+    assert.deepEqual(result, { ok: true, sessionId: 'blank-A', reusedBlank: false })
+  })
+
+  it('resolves same-id mainView-retained blank reuse when host read ports return empty', async () => {
+    let snapshot = {
+      ids: ['blank-B'],
+      byId: { 'blank-B': { blank: true, retainedBy: { mainView: 1 } } },
+      phase: 'ready',
+      projectionsBySession: {},
+    }
+    const listeners = new Set()
+    const sessions = {
+      list: {
+        getSnapshot: () => snapshot,
+        subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener) },
+      },
+    }
+    const button = makeButton({ className: 'newSession' })
+    button.click = function click() {
+      this.clicks.push(1)
+      snapshot = { ...snapshot, byId: { 'blank-B': { blank: true, retainedBy: { mainView: 2 } } } }
+      for (const listener of listeners) listener()
+    }
+    const result = await clickOfficialNewSession({
+      document: makeDoc([button]),
+      sessions,
+      window: { __omnimuxWorkbench: { getSnapshot: () => ({ sessionId: '' }) } },
+      timeoutMs: 40,
+      pollMs: 1,
+    })
+    assert.deepEqual(result, { ok: true, sessionId: 'blank-B', reusedBlank: true })
+  })
 })

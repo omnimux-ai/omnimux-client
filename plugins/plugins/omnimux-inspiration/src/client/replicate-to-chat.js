@@ -73,6 +73,9 @@ function resolveWindow(io, doc) {
  */
 function revealConversationColumn(wb) {
   if (!wb) return
+  if (typeof wb.ensureConversationVisible === 'function') {
+    try { wb.ensureConversationVisible() } catch { /* ignore */ }
+  }
   if (typeof wb.setConversationCollapsed === 'function') {
     try { wb.setConversationCollapsed(false) } catch { /* ignore */ }
   }

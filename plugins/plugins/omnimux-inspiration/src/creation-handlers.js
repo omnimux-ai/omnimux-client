@@ -194,6 +194,14 @@ export async function handleMaterializeCreationReferences(ctx) {
   } catch (error) {
     cancelled(ctx.signal)
     if (error?.name === 'AbortError' || error?.code === 'ABORT_ERR') throw error
+    const code = typeof error?.code === 'string' ? error.code : (error?.name || 'unknown')
+    console.warn('[omnimux-inspiration] creation-attachments failed:', code)
+    if (code === 'session-not-found') return fail(409, '目标会话尚未就绪，请重试')
+    if (code === 'needs-session-query' || code === 'needs-attachment-source' || code === 'needs-attachment-storage') {
+      return fail(503, '会话附件能力未就绪，请稍后重试')
+    }
+    if (code === 'disk-space-insufficient') return fail(507, '磁盘空间不足，无法带入参考文件')
+    if (code === 'attachment-source-changed') return fail(409, '创作参考文件已变化，请重新准备')
     return fail(502, '参考文件带入会话失败，请重试')
   }
 }

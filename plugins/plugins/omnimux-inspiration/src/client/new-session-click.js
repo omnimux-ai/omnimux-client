@@ -8,7 +8,7 @@
  */
 import { normalizeSessionId, resolveCurrentSessionId } from './current-session.js'
 
-export const NEW_SESSION_WAIT_MS = 1500
+export const NEW_SESSION_WAIT_MS = 4000
 export const NEW_SESSION_POLL_MS = 50
 
 /** Official `sessions` client service injected into this plugin at apply time. */
@@ -173,16 +173,17 @@ function resolveWindow(doc, explicit) {
 }
 
 /**
- * Snapshot the two things the official click promise must watch: the ids that
- * existed before the gesture and the current session from the legal host read
- * ports (rc.3 SessionListState has no `current`).
+ * Snapshot the existing session ids, main-view retained blank ids, and the
+ * current session from the legal host read ports (rc.3 SessionListState has no `current`).
  */
 function officialTargetBaseline(sessions, windowObject) {
   const snapshot = sessionSnapshot(sessions)
-  const ids = Array.isArray(snapshot?.ids)
-    ? snapshot.ids.slice()
-    : Object.keys(snapshot?.byId && typeof snapshot.byId === 'object' ? snapshot.byId : {})
-  return { ids, currentId: normalizeSessionId(resolveCurrentSessionId(windowObject)) }
+  const byId = snapshot?.byId && typeof snapshot.byId === 'object' ? snapshot.byId : {}
+  const ids = Array.isArray(snapshot?.ids) ? snapshot.ids.slice() : Object.keys(byId)
+  const mainViewBlankIds = ids.filter(
+    (id) => byId[id]?.blank === true && Number(byId[id]?.retainedBy?.mainView) > 0,
+  )
+  return { ids, mainViewBlankIds, currentId: normalizeSessionId(resolveCurrentSessionId(windowObject)) }
 }
 
 function resolvedOfficialTarget(sessions, baseline, windowObject) {
@@ -190,22 +191,40 @@ function resolvedOfficialTarget(sessions, baseline, windowObject) {
   if (!snapshot) return null
   const byId = snapshot.byId && typeof snapshot.byId === 'object' ? snapshot.byId : {}
   const ids = Array.isArray(snapshot.ids) ? snapshot.ids : Object.keys(byId)
-  // Prefer a blank session added by this gesture. This is the only proof that
-  // does not depend on the workbench projection settling first.
+  // 1. Prefer a blank session added by this gesture (does not wait for React projection).
   const addedBlank = ids.filter((id) => !baseline.ids.includes(id) && byId[id]?.blank === true)
   if (addedBlank.length > 0) {
     const sessionId = addedBlank[addedBlank.length - 1]
     return { ok: true, sessionId, reusedBlank: false }
   }
-  const currentId = normalizeSessionId(resolveCurrentSessionId(windowObject))
-  // `blank` is the official SessionSummary lifecycle bit. It proves that this
-  // selected target is a legal new-session result, including blank reuse.
-  if (!currentId || byId[currentId]?.blank !== true) return null
-  return {
-    ok: true,
-    sessionId: currentId,
-    reusedBlank: currentId === baseline.currentId,
+  // 2. Next prefer a blank session newly retained by mainView during blank reuse.
+  const mainViewBlanks = ids.filter(
+    (id) => byId[id]?.blank === true && Number(byId[id]?.retainedBy?.mainView) > 0,
+  )
+  const newMainViewBlank = mainViewBlanks.filter((id) => !baseline.mainViewBlankIds.includes(id))
+  if (newMainViewBlank.length > 0) {
+    const sessionId = newMainViewBlank[newMainViewBlank.length - 1]
+    return { ok: true, sessionId, reusedBlank: false }
   }
+  // 3. Official host read ports (workbench snapshot / attachment store) settled on a blank session.
+  const currentId = normalizeSessionId(resolveCurrentSessionId(windowObject))
+  if (currentId && byId[currentId]?.blank === true) {
+    return {
+      ok: true,
+      sessionId: currentId,
+      reusedBlank: currentId === baseline.currentId,
+    }
+  }
+  // 4. Fallback when a single blank session is synchronously retained by mainView before React flushes.
+  if (mainViewBlanks.length === 1) {
+    const sessionId = mainViewBlanks[0]
+    return {
+      ok: true,
+      sessionId,
+      reusedBlank: sessionId === baseline.currentId || baseline.mainViewBlankIds.includes(sessionId),
+    }
+  }
+  return null
 }
 
 /**
@@ -241,9 +260,11 @@ export async function clickOfficialNewSession(opts = {}) {
   const hasOfficialCurrent = Boolean(baseline.currentId)
   let directActionPending = false
   let menuActionDispatched = false
+  let listNotified = false
   let observedTarget = null
   const unsubscribe = list.subscribe(() => {
     if (!directActionPending && !menuActionDispatched) return
+    listNotified = true
     observedTarget = resolvedOfficialTarget(sessions, baseline, win)
   })
   const dispatchMenu = (el) => clickIfPossible(el, () => { menuActionDispatched = true })
@@ -269,6 +290,7 @@ export async function clickOfficialNewSession(opts = {}) {
         // The button was a menu opener, not the session action. Discard any
         // selection projection it observed and wait for the menuitem gesture.
         directActionPending = false
+        listNotified = false
         observedTarget = null
         clickedMenu = dispatchMenu(menuItem)
       }
@@ -280,12 +302,20 @@ export async function clickOfficialNewSession(opts = {}) {
         const menuItem = findNewSessionMenuItem(doc)
         if (menuItem) {
           directActionPending = false
+          listNotified = false
           observedTarget = null
           clickedMenu = dispatchMenu(menuItem)
         }
       }
+      // React workbench/attachment snapshots can commit after synchronous list.subscribe().
+      if (!observedTarget && listNotified) {
+        observedTarget = resolvedOfficialTarget(sessions, baseline, win)
+      }
       if (observedTarget) return observedTarget
       await sleep(pollMs)
+    }
+    if (!observedTarget && listNotified) {
+      observedTarget = resolvedOfficialTarget(sessions, baseline, win)
     }
     return observedTarget || { ok: false, error: 'newSessionFailed' }
   } finally {

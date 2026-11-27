@@ -30,6 +30,7 @@ import { useInspirationFeed } from './use-inspiration-feed.js'
 import { useRivalFeed } from './use-rival-feed.js'
 import { fetchRivalAccounts, removeRivalAccount, requestRivalPluginRefresh } from './rival-api.js'
 import { openExternalUrl } from './open-url.js'
+import { stablePostKey } from './post-detail.js'
 import {
   accountHealth,
   poolQuota,
@@ -1172,7 +1173,7 @@ export function InspirationSection({ t, active }) {
 
             {selectedItem && !expandedModal ? (
               <InspirationDetailSidebar
-                key={`${String(selectedItem.source_url || selectedItem.id)}:${detailLaunch.nonce}`}
+                key={`${stablePostKey(selectedItem)}:${detailLaunch.nonce}`}
                 row={selectedItem}
                 t={t}
                 initialShareOpen={detailLaunch.shareOpen}
@@ -1188,7 +1189,7 @@ export function InspirationSection({ t, active }) {
 
           {selectedItem && expandedModal ? (
             <InspirationPreviewModal
-              key={`${String(selectedItem.source_url || selectedItem.id)}:${detailLaunch.nonce}`}
+              key={`${stablePostKey(selectedItem)}:${detailLaunch.nonce}`}
               row={selectedItem}
               t={t}
               initialShareOpen={detailLaunch.shareOpen}
