@@ -69,12 +69,13 @@ describe('E2E: Creatify 112套营销技能库置顶分区与1:1卡片视觉交�
     const exploreCards = exploreSection.querySelectorAll('.omnimux-creatify-card')
     assert.equal(exploreCards.length, 26, '探索更多区域必须容纳剩余 26 套精品技能')
 
-    // 3. 验证卡片 1:1 视觉要素与属性
+    // 3. 验证卡片方案 A 工作台视觉要素（微孔点阵、左对齐标题、常驻简介、场景名称、使用按钮）
     const sampleCard = hotCards[0]
     assert.ok(sampleCard.querySelector('.omnimux-creatify-dot-overlay'), '必须具备点阵覆盖层')
-    assert.ok(sampleCard.querySelector('.omnimux-creatify-center-title'), '必须具备居中大标题')
-    assert.ok(sampleCard.querySelector('.omnimux-creatify-star-btn'), '必须具备收藏星标按钮')
-    assert.ok(sampleCard.querySelector('.omnimux-creatify-card-hover-drawer'), '必须具备悬停滑出抽屉')
+    assert.ok(sampleCard.querySelector('.omnimux-creatify-center-title'), '必须具备左对齐标题类名契约')
+    assert.ok(sampleCard.querySelector('.omnimux-skill-card-summary'), '必须具备常驻 2 行简介')
+    assert.ok(sampleCard.querySelector('.omx-skill-card-category'), '必须具备底栏场景分类标签')
+    assert.ok(sampleCard.querySelector('.omnimux-skill-card-btn'), '必须具备显式使用按钮')
 
     // 4. 验证点击卡片触发 onSelectSkill
     await act(async () => {

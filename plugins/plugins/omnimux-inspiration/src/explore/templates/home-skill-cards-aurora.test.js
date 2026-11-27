@@ -53,20 +53,22 @@ test('首页 Skills 技能库货架卡片：100% 对齐图 2 技能插件高颜�
   assert.ok(html.includes('omnimux-creatify-dot-overlay'), '技能卡片必须渲染点阵覆盖层');
   assert.ok(html.includes('radial-gradient'), '技能卡片必须携带 radial-gradient 极光流光背景');
 
-  // 3. 验证完整复刻 Creatify（左上徽章/分类胶囊、收藏星标、悬停抽屉、使用量）
-  assert.ok(html.includes('omnimux-creatify-card-top-left'), '技能卡片必须渲染左上角徽章与分类胶囊');
-  assert.ok(html.includes('omnimux-creatify-star-btn'), '技能卡片必须渲染右上角收藏星标');
-  assert.ok(html.includes('omnimux-creatify-card-hover-drawer'), '技能卡片必须渲染悬停简介抽屉');
-  assert.ok(html.includes('omnimux-creatify-drawer-uses'), '技能卡片必须展示使用量统计');
+  // 3. 验证方案 A 工作台结构（左对齐标题行、常驻 2 行简介、低对比场景分类、无本地伪星标与伪使用数）
+  assert.ok(html.includes('omx-skill-card-header'), '技能卡片必须渲染左对齐标题行');
+  assert.ok(html.includes('omnimux-skill-card-summary'), '技能卡片必须渲染常驻摘要描述');
+  assert.ok(html.includes('omx-skill-card-category'), '技能卡片必须渲染底栏场景分类标签');
+  assert.equal(html.includes('omnimux-creatify-star-btn'), false, '必须移除非持久化本地星标');
+  assert.equal(html.includes('omnimux-creatify-card-hover-drawer'), false, '必须移除旧悬停遮罩抽屉');
+  assert.equal(html.includes('omnimux-creatify-drawer-uses'), false, '必须移除伪使用次数统计');
 
-  // 4. 验证居中大标题（SkillCard 标准实现）
-  assert.ok(html.includes('omnimux-creatify-center-title'), '必须包含居中加粗大标题');
+  // 4. 验证左对齐标题（兼容 .omnimux-creatify-center-title 类名）
+  assert.ok(html.includes('omnimux-creatify-center-title'), '必须保留标题类名契约');
   assert.ok(html.includes('复刻爆款视频'), '必须正确渲染前置核心技能 复刻爆款视频');
   assert.ok(html.includes('电影级'), '必须正确渲染核心技能 电影级');
 
-  // 5. 验证悬停抽屉内 SkillCard 的「使用 Skill」CTA
+  // 5. 验证常驻底部 SkillCard 的使用 CTA
   assert.ok(html.includes('omnimux-skill-card-btn'), '必须具备 SkillCard 使用按键');
-  assert.ok(/使用/.test(html), '悬停按键必须带「使用」文案');
+  assert.ok(/使用/.test(html), '使用按键必须带「使用」语义');
 
   // 6. 验证彻底消除单调灰黑占位符
   assert.ok(!html.includes('omnimux-tpl-placeholder"><span class="omnimux-tpl-ph-icon'), '技能卡片严禁降级为黑灰占位符');

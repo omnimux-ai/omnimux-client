@@ -252,11 +252,11 @@ test('TrendingReplicateSection: 头部渲染「创作灵感 / Skill」双 Tab �
     const actualTop3Titles = Array.from(cards).slice(0, 3).map((c) => c.querySelector('.omnimux-skill-card-title')?.textContent?.trim())
     assert.deepEqual(actualTop3Titles, expectedTop3Titles, '前 3 张卡片必须为热门精选')
 
-    // 验证卡片内容规范（封面、点阵覆盖、hover 描述与使用量）
+    // 验证卡片内容规范（右上角微光层、点阵覆盖、常驻简介、无署名与 MiniMax 残留）
     const sampleCard = cards[0]
-    const coverImg = sampleCard.querySelector('.omnimux-skill-card-cover-img')
-    assert.ok(coverImg, '技能卡片必须渲染真实封面图片')
-    assert.ok(coverImg.getAttribute('src').includes('skill-card-'), '封面 src 必须正确指向对应资源')
+    const auraLayer = sampleCard.querySelector('.omx-skill-card-aura')
+    assert.ok(auraLayer, '技能卡片必须渲染柔和氛围微光层')
+    assert.ok(String(auraLayer.style.background || '').includes('radial-gradient'), '微光层必须应用极光径向渐变')
     const overlay = sampleCard.querySelector('.omnimux-creatify-dot-overlay')
     assert.ok(overlay, '技能卡片必须渲染点阵覆盖层')
     assert.equal(sampleCard.querySelector('.omnimux-skill-card-attribution'), null, '卡片不得渲染署名行')
@@ -264,7 +264,7 @@ test('TrendingReplicateSection: 头部渲染「创作灵感 / Skill」双 Tab �
     assert.equal(host.textContent.includes('MiniMax'), false, '技能面板不得出现 MiniMax 字样')
 
     // 5. 点击分类胶囊筛选
-    await click(chips[1]) // 第一个场景分类（内容种草）
+    await click(chips[1]) // 第一个场景分类
     await flush()
     const filteredCards = host.querySelectorAll('.omnimux-skill-card')
     assert.ok(filteredCards.length > 0 && filteredCards.length < snapshot.skills.length, '点击分类胶囊后数量减少')
@@ -272,7 +272,8 @@ test('TrendingReplicateSection: 头部渲染「创作灵感 / Skill」双 Tab �
     // 6. 点击卡片触发指令预填与激活态
     const useBtn = filteredCards[0].querySelector('.omnimux-skill-card-btn')
     assert.ok(useBtn, '技能卡片上必须有调用按钮')
-    assert.ok(useBtn.textContent.includes('skills.card.use') || useBtn.textContent.includes('使用 Skill'), '按钮文案必须对应使用技能/Skill')
+    const ariaOrText = `${useBtn.getAttribute('aria-label') || ''} ${useBtn.textContent || ''}`
+    assert.ok(ariaOrText.includes('skills.card.use') || ariaOrText.includes('使用 Skill'), '按钮可访问名称或文案必须对应使用技能/Skill')
     await click(useBtn)
     await flush()
 

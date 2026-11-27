@@ -42,10 +42,11 @@ test('E2E-3 视觉算法全量技能覆盖：120+ 技能卡片随机/散列生�
 
   const generated = sampleSkills.map((s) => resolveSkillAuroraStyle(s));
 
-  // 1. 所有生成的渐变绝不包含纯黑单调底色
+  // 1. 所有生成的渐变采用右上角柔和氛围微光并绝不包含纯黑单调底色
   generated.forEach((g, idx) => {
-    assert.ok(g.bg.includes('radial-gradient(ellipse 115% 82% at 50% 120%'), `技能 #${idx} 必须包含地平线椭圆渐变结构`);
-    assert.ok(g.glow.startsWith('rgba('), `技能 #${idx} 必须拥有环境霓虹光晕`);
+    assert.ok(g.bg.includes('radial-gradient(ellipse 88% 80% at 96% 0%'), `技能 #${idx} 必须包含右上角柔和微光渐变结构`);
+    assert.ok(g.accent && /^#[0-9a-f]{6}$/i.test(g.accent), `技能 #${idx} 必须定义合法悬停微光点缀色 accent`);
+    assert.ok(g.glow.startsWith('rgba('), `技能 #${idx} 必须拥有环境微光色值`);
     assert.doesNotMatch(g.bg, /#131414|#000000 100%/, '绝不能退化为纯黑灰暗死板底色');
   });
 

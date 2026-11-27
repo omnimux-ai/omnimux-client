@@ -18,32 +18,33 @@ const root = join(here, '../../../../');
 test('E2E-1 样式规则核验：技能市场 CSS 中标题中心区悬停上移与平滑过渡生效', () => {
   const css = readFileSync(join(root, 'plugins/omnimux-market/src/client/css.js'), 'utf8');
   assert.ok(
-    css.includes('.omnimux-creatify-card:hover .omnimux-creatify-card-center'),
-    '必须包含 .omnimux-creatify-card:hover .omnimux-creatify-card-center 选择器'
+    css.includes('.omx-skill-card-header') && css.includes('.omx-skill-card-desc'),
+    '必须定义方案 A 左对齐标题行与常驻简介样式',
   );
   assert.ok(
-    css.includes('transform:translateY(-28px)'),
-    '必须包含上移位移样式 transform:translateY(-28px)'
+    css.includes('text-align:left;') && css.includes(':focus-visible'),
+    '必须包含左对齐文本规则与键盘焦点态',
   );
   assert.ok(
-    css.includes('transition:transform 350ms cubic-bezier(0.16, 1, 0.3, 1)'),
-    '必须配置平滑过渡贝塞尔曲线'
+    css.includes('transition:transform 160ms ease'),
+    '必须配置克制平滑的卡片过渡动画（非 transition: all）',
   );
 });
 
 test('E2E-2 跨模块对齐核验：首页推荐卡片样式中标题悬停上移与平滑过渡完全一致', () => {
   const styles = readFileSync(join(root, 'plugins/omnimux/src/client/session-guide/styles.js'), 'utf8');
   assert.ok(
-    styles.includes('.omnimux-creatify-card:hover .omnimux-creatify-card-center'),
-    '首页引导样式必须包含 .omnimux-creatify-card:hover .omnimux-creatify-card-center 选择器'
+    styles.includes('.omnimux-skill-card .omx-skill-card-header') && styles.includes('.omnimux-skill-card .omnimux-skill-card-summary'),
+    '会话引导样式必须同步定义左对齐标题行与常驻摘要规则',
   );
   assert.ok(
-    styles.includes('transform:translateY(-28px)'),
-    '首页引导样式必须包含 transform:translateY(-28px)'
+    styles.includes('.omnimux-skill-card:focus-visible'),
+    '会话引导样式必须支持键盘 :focus-visible 焦点指示',
   );
-  assert.ok(
-    styles.includes('transition:transform 350ms cubic-bezier(0.16, 1, 0.3, 1)'),
-    '首页引导样式必须包含过渡动画'
+  assert.equal(
+    /(?:^|\n)\s*\.omnimux-creatify-card(?::hover|\.is-active|\s*\{)/.test(styles),
+    false,
+    '会话引导样式不得泄露裸 .omnimux-creatify-card 选择器污染技能市场',
   );
 });
 

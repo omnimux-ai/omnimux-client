@@ -65,8 +65,8 @@ export function renderFeaturedHoverActions(item, opts) {
 // 纯矢量火苗 (Hot)
 function renderFireSvg() {
   return h('svg', {
-    width: 15,
-    height: 15,
+    width: 13,
+    height: 13,
     viewBox: '0 0 24 24',
     fill: 'currentColor',
     'aria-hidden': 'true',
@@ -192,7 +192,7 @@ function resolveCategoryLabel(category, isEn, tr) {
 }
 
 /**
- * 1:1 复刻 Creatify 官方 3:2 质感卡片
+ * Plan A：氛围微光 + 常驻左对齐工作台技能卡片
  */
 export function renderFeaturedCard(item, opts, onOpenArg, onPinArg, onTryArg) {
   let safeOpts = {};
@@ -202,7 +202,7 @@ export function renderFeaturedCard(item, opts, onOpenArg, onPinArg, onTryArg) {
   } else if (opts && typeof opts === 'object') {
     safeOpts = opts;
   }
-  const { tr, onOpen, onTry, cardIndex } = safeOpts;
+  const { tr, onOpen, onTry } = safeOpts;
   const isEn = typeof tr === 'function' ? (tr('locale') === 'en') : (typeof document !== 'undefined' && document.documentElement.lang && /^en\b/i.test(document.documentElement.lang));
 
   const safeTr = (key, params, fallback) => {
@@ -216,88 +216,77 @@ export function renderFeaturedCard(item, opts, onOpenArg, onPinArg, onTryArg) {
   const title = resolveItemTitle(item, tr);
   const desc = resolveItemDesc(item, tr) || (isEn ? 'No description' : '暂无描述');
 
-  // 极光色彩光学算法：每个技能卡片计算一套高颜值流光
   const aurora = resolveSkillAuroraStyle(item);
-  // 兼容自定义封面与历史契约 (支持 item.homeCover / item.cover 及 featured-cover-svg 标记)
+  // 保留封面与图标路径契约供详情弹窗与既有用例读取
   const customCover = item.homeCover || item.cover;
   const coverSvgFallback = !customCover && item.icon ? 'featured-cover-svg' : '';
+  const iconSrc = typeof item?.icon === 'string' ? resolveIconSrc(item.icon) : '';
 
   const isHot = Boolean(item.isHot || item.tags?.includes('热门精选'));
   const isNew = Boolean(item.isNew || item.tags?.includes('新品上市'));
   const categoryLabel = resolveCategoryLabel(item.scenario || item.category, isEn, tr);
-  const usesText = item.downloads
-    ? safeTr('workshop.uses', { n: item.downloads }, `${item.downloads} ${isEn ? 'uses' : '次使用'}`)
-    : safeTr('workshop.usesDefault', undefined, isEn ? '100+ uses' : '100+ 次使用');
-  const bookmarkText = safeTr('workshop.bookmark', undefined, isEn ? 'Bookmark' : '收藏');
   const newBadgeText = safeTr('workshop.badgeNew', undefined, isEn ? 'NEW' : '新');
   const hotBadgeTitle = safeTr('workshop.hotPicks', undefined, isEn ? 'HOT PICKS' : '热门精选');
   const tryButtonText = safeTr('workshop.try', undefined, isEn ? 'Try in Chat' : '去对话中试试');
-  // 悬停气泡提示：有意使用更紧凑精炼的「去对话试试」（相比按钮展开全称「去对话中试试」更轻量，避免气泡文字冗长）
+  const tryShortText = safeTr('workshop.tryShort', undefined, isEn ? 'Try' : '去试试');
   const tryTooltip = safeTr('workshop.tryTooltip', undefined, isEn ? 'Try in Chat' : '去对话试试');
 
   const onCardClick = () => { if (onOpen) onOpen(item); };
+  const onCardKeyDown = (e) => {
+    if (e && e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) {
+      if (typeof e.preventDefault === 'function') e.preventDefault();
+      onCardClick();
+    }
+  };
   const onTryClick = (e) => {
-    e.stopPropagation();
+    e && e.stopPropagation();
     (onTry || safeTrySkillInSession)(item);
   };
 
   return h('div', {
     key: item.slug || item.id,
-    className: 'featured-card omnimux-creatify-card',
+    className: 'featured-card omnimux-creatify-card omx-skill-card',
+    role: 'button',
+    tabIndex: 0,
+    'aria-label': title,
+    'data-cover-fallback': coverSvgFallback || undefined,
+    'data-icon-src': iconSrc || undefined,
     onClick: onCardClick,
-    style: {
-      background: aurora.bg,
-    },
+    onKeyDown: onCardKeyDown,
+    style: { '--skill-aura-accent': aurora.accent },
   },
-    // 1. 动态极光流光背景层（纯算法渲染，零破图风险）
+    // 1. 柔和右上角氛围微光背景层
     h('div', {
-      className: 'omnimux-creatify-card-bg-img',
-      style: {
-        background: aurora.bg,
-        position: 'absolute',
-        inset: 0,
-        pointerEvents: 'none',
-      },
+      className: 'omnimux-creatify-card-bg-img omx-skill-card-aura',
+      style: { background: aurora.bg },
       'aria-hidden': 'true',
     }),
-    // 2. 点阵纹理 Overlay
+    // 2. 局部微孔光栅（仅映衬微光区）
     h('div', { className: 'omnimux-creatify-dot-overlay', 'aria-hidden': 'true' }),
-    // 3. 左上角徽标（热门/新品，移除冗余拥挤的分类胶囊）
-    (isHot || isNew) ? h('div', { className: 'omnimux-creatify-card-top-left' },
-      isHot ? h('span', { className: 'omnimux-creatify-badge-hot', title: hotBadgeTitle }, renderFireSvg()) : null,
-      isNew ? h('span', { className: 'omnimux-creatify-badge-new' }, newBadgeText) : null,
-    ) : null,
-    // 4. 居中白色加粗大标题
-    h('div', { className: 'omnimux-creatify-card-center' },
-      h('h3', { className: 'omnimux-creatify-center-title' },
+    // 3. 顶行：左对齐标题 + 轻量状态角标
+    h('div', { className: 'omx-skill-card-header' },
+      h('h3', { className: 'omnimux-creatify-center-title omx-skill-card-title' },
         h('span', null, title),
       ),
+      (isHot || isNew) ? h('div', { className: 'omnimux-creatify-card-top-left omx-skill-card-badges' },
+        isHot ? h('span', { className: 'omnimux-creatify-badge-hot', title: hotBadgeTitle }, renderFireSvg()) : null,
+        isNew ? h('span', { className: 'omnimux-creatify-badge-new' }, newBadgeText) : null,
+      ) : null,
     ),
-    // 6. 悬停浮层：滑出双行描述 + 使用量 + 快捷调用
-    h('div', { className: 'omnimux-creatify-card-hover-drawer' },
-      h('div', { className: 'omnimux-creatify-drawer-bg' }),
-      h('div', { className: 'omnimux-creatify-drawer-content' },
-        h('p', { className: 'omnimux-creatify-drawer-desc', title: desc }, desc),
-        h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', marginTop: '4px' } },
-          h('div', { className: 'omnimux-creatify-drawer-uses' },
-            h('svg', { width: 12, height: 12, viewBox: '0 0 24 24' },
-              h('path', { d: 'M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4' }),
-              h('polyline', { points: '7 10 12 15 17 10' }),
-              h('line', { x1: 12, y1: 15, x2: 12, y2: 3 }),
-            ),
-            h('span', null, usesText),
-          ),
-          h('button', {
-            type: 'button',
-            className: 'omnimux-creatify-quick-try-btn',
-            title: tryTooltip,
-            'aria-label': tryTooltip,
-            onClick: onTryClick,
-          },
-            renderHoverIcon('try'),
-            h('span', { className: 'omnimux-creatify-quick-try-label' }, tryButtonText),
-          ),
-        ),
+    // 4. 中部：常驻 2 行简介
+    h('p', { className: 'omx-skill-card-desc' }, desc),
+    // 5. 底栏：左侧低对比场景名称 + 右侧试用 CTA
+    h('div', { className: 'omx-skill-card-footer' },
+      h('span', { className: 'omx-skill-card-category' }, categoryLabel),
+      h('button', {
+        type: 'button',
+        className: 'omnimux-creatify-quick-try-btn',
+        title: tryTooltip,
+        'aria-label': tryTooltip || tryButtonText,
+        onClick: onTryClick,
+      },
+        renderHoverIcon('try'),
+        h('span', { className: 'omnimux-creatify-quick-try-label' }, tryShortText),
       ),
     ),
   );

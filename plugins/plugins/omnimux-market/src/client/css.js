@@ -554,154 +554,149 @@ html[data-omnimux-composer-mode='marketing'] .sh-picker-wrap:has([data-omnimux-s
 @media (max-width:480px){.cards-grid, .featured-grid{grid-template-columns:1fr !important;}}
 
 .omnimux-creatify-card {
-  position:relative; width:100%; aspect-ratio:3 / 2;
-  border-radius:16px; overflow:hidden; background:var(--dsw-alias-bg-layer-1, #131414);
-  border:1px solid var(--dsw-alias-border-l1, rgba(255, 255, 255, 0.08));
-  box-shadow:0 1px 3px var(--dsw-alias-shadow-color, rgba(0, 0, 0, 0.35));
+  position:relative; width:100%; aspect-ratio:3 / 2; min-height:152px;
+  padding:14px 16px 12px; border-radius:14px; overflow:hidden;
+  background-color:var(--dsw-alias-card-fill);
+  border:1px solid var(--dsw-alias-border-l2);
+  box-shadow:0 1px 2px color-mix(in srgb, var(--dsw-static-neutral-1000) 8%, transparent);
+  display:flex; flex-direction:column; align-items:stretch; text-align:left; box-sizing:border-box;
   cursor:pointer; user-select:none;
-  transition:transform 220ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 220ms ease, border-color 220ms ease;
+  transition:transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease, background-color 160ms ease;
   container-type:inline-size; container-name:market-featured-card;
 }
-.omnimux-creatify-card:hover {
-  transform:translateY(-4px);
-  box-shadow:0 12px 28px var(--dsw-alias-shadow-color, rgba(0, 0, 0, 0.5));
-  border-color:var(--dsw-alias-border-l2, rgba(255, 255, 255, 0.22));
+.sh-mkt .omx-skill-card:hover,
+.omx-skill-card:hover {
+  transform:translateY(-2px);
+  background-color:var(--dsw-alias-card-fill-hover);
+  border-color:color-mix(in srgb, var(--skill-aura-accent, var(--dsw-alias-border-l4)) 38%, var(--dsw-alias-border-l4));
+  box-shadow:0 4px 12px color-mix(in srgb, var(--dsw-static-neutral-1000) 6%, transparent);
 }
-.omnimux-creatify-card.is-active {
-  border-color:var(--dsw-alias-brand-primary, #EDA921);
+body[data-ds-dark-theme] .sh-mkt .omx-skill-card:hover,
+body[data-ds-dark-theme] .omx-skill-card:hover {
+  box-shadow:0 8px 20px color-mix(in srgb, var(--dsw-static-neutral-1000) 24%, transparent);
 }
-.omnimux-creatify-card-bg-img {
-  position:absolute; inset:0; width:100%; height:100%; object-fit:cover;
-  transform:scale(1.05); transition:transform 400ms ease; display:block;
+.sh-mkt .omx-skill-card:focus-visible,
+.omx-skill-card:focus-visible {
+  outline:2px solid var(--dsw-alias-border-selected);
+  outline-offset:2px;
 }
-.omnimux-creatify-card:hover .omnimux-creatify-card-bg-img {
-  transform:scale(1.12);
+.sh-mkt .omx-skill-card.is-active,
+.omx-skill-card.is-active {
+  border-color:var(--dsw-alias-border-selected);
 }
-.omnimux-creatify-dot-overlay {
-  position:absolute; inset:0;
-  background-image:radial-gradient(circle, var(--dsw-static-white-38, rgba(255, 255, 255, 0.24)) 1.2px, transparent 1.2px); /* exempt-ui03: 1:1复刻点阵微孔光栅 */
-  background-size:14px 14px; mix-blend-mode:overlay; pointer-events:none; opacity:0.9;
+.sh-mkt .omx-skill-card-aura,
+.omx-skill-card-aura {
+  position:absolute; inset:0; width:100%; height:100%; pointer-events:none; opacity:0.85;
+  transition:opacity 180ms ease;
 }
-.omnimux-creatify-card-top-left {
-  position:absolute; top:12px; left:12px; z-index:5;
-  display:flex; align-items:center; gap:6px;
+body:not([data-ds-dark-theme]) .sh-mkt .omx-skill-card-aura,
+body:not([data-ds-dark-theme]) .omx-skill-card-aura {
+  opacity:0.65;
 }
-.omnimux-creatify-badge-hot {
-  display:flex; align-items:center; justify-content:center;
-  width:28px; height:28px; border-radius:8px;
-  background:var(--dsw-alias-brand-bg, rgba(228, 152, 0, 0.18)); backdrop-filter:blur(12px); /* exempt-ui03: 热门火苗金色微光底色 */
-  color:var(--dsw-alias-label-on-color, #FFFFFF);
-}
-.omnimux-creatify-badge-new {
-  display:flex; align-items:center; justify-content:center;
-  height:28px; padding:0 9px; border-radius:8px;
-  background:var(--dsw-alias-brand-bg, rgba(228, 152, 0, 0.18)); backdrop-filter:blur(12px); /* exempt-ui03: 新品微标金色微光底色 */
-  color:var(--dsw-alias-label-on-color, #FFFFFF); font-size:11px; font-weight:600;
-}
-.omnimux-creatify-pill-cat {
-  display:flex; align-items:center; gap:5px;
-  height:28px; padding:0 8px; border-radius:999px;
-  max-width:calc(100% - 36px); overflow:hidden;
-  background:var(--dsw-alias-bg-layer-2, rgba(255, 255, 255, 0.08)); backdrop-filter:blur(12px);
-  border:1px solid var(--dsw-alias-border-l1, rgba(255, 255, 255, 0.06));
-  font-size:11px; font-weight:500; color:var(--dsw-alias-label-primary, #FFFFFF);
-}
-.omnimux-creatify-pill-cat span {
-  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
-}
-.omnimux-creatify-star-btn {
-  position:absolute; top:12px; right:12px; z-index:5;
-  width:28px; height:28px; border-radius:8px;
-  background:var(--dsw-alias-bg-layer-2, rgba(255, 255, 255, 0.08)); backdrop-filter:blur(12px);
-  border:1px solid var(--dsw-alias-border-l1, rgba(255, 255, 255, 0.06));
-  display:flex; align-items:center; justify-content:center;
-  color:var(--dsw-alias-label-tertiary, rgba(255, 255, 255, 0.7)); cursor:pointer;
-  transition:all 150ms ease;
-}
-.omnimux-creatify-star-btn:hover {
-  background:var(--dsw-alias-bg-layer-3, rgba(255, 255, 255, 0.16)); color:var(--dsw-alias-label-primary, #FFFFFF);
-}
-.omnimux-creatify-star-btn.active {
-  color:var(--dsw-alias-brand-primary, #EDA921);
-  background:var(--dsw-alias-brand-bg, rgba(237, 169, 33, 0.18)); /* exempt-ui03: 收藏高亮微光 */
-  border-color:var(--dsw-alias-brand-border, rgba(237, 169, 33, 0.3)); /* exempt-ui03: 收藏高亮边框 */
-}
-.omnimux-creatify-card-center {
-  position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
-  padding:0 16px; pointer-events:none;
-  transition:transform 350ms cubic-bezier(0.16, 1, 0.3, 1);
-  will-change:transform;
-}
-.omnimux-creatify-card:hover .omnimux-creatify-card-center {
-  transform:translateY(-28px);
-}
-.omnimux-creatify-center-title {
-  font-size:clamp(15px, 1.15vw, 18px); font-weight:600; color:var(--dsw-alias-label-on-color, #FFFFFF); text-align:center;
-  letter-spacing:-0.01em; text-shadow:0 2px 8px var(--dsw-alias-shadow-color, rgba(0, 0, 0, 0.45));
-  display:inline-flex; align-items:center; gap:6px; margin:0; line-height:1.25;
-}
-.omnimux-creatify-card-hover-drawer {
-  position:absolute; inset-x:0; bottom:0; pointer-events:none;
-}
-.omnimux-creatify-drawer-bg {
-  position:absolute; inset:0;
-  background:linear-gradient(to top, var(--dsw-alias-mask-92, rgba(0, 0, 0, 0.92)) 0%, var(--dsw-alias-mask-55, rgba(0, 0, 0, 0.55)) 65%, transparent 100%); /* exempt-ui03: 悬停抽屉渐变遮罩 */
-  opacity:0; transition:opacity 350ms cubic-bezier(0.16, 1, 0.3, 1);
-}
-.omnimux-creatify-card:hover .omnimux-creatify-drawer-bg {
+.sh-mkt .omx-skill-card:hover .omx-skill-card-aura,
+.omx-skill-card:hover .omx-skill-card-aura {
   opacity:1;
 }
-.omnimux-creatify-drawer-content {
-  position:relative; display:flex; flex-direction:column; gap:6px;
-  padding:30px 14px 12px; transform:translateY(18px); opacity:0;
-  transition:all 350ms cubic-bezier(0.16, 1, 0.3, 1);
+.sh-mkt .omnimux-creatify-dot-overlay,
+.omnimux-creatify-dot-overlay {
+  position:absolute; inset:0;
+  background-image:radial-gradient(circle, var(--dsw-alias-border-l4) 1px, transparent 1px);
+  background-size:14px 14px; mix-blend-mode:overlay; pointer-events:none; opacity:0.55;
+  mask-image:radial-gradient(ellipse 80% 70% at 96% 0%, var(--dsw-static-neutral-1000) 0%, transparent 72%);
+  -webkit-mask-image:radial-gradient(ellipse 80% 70% at 96% 0%, var(--dsw-static-neutral-1000) 0%, transparent 72%);
 }
-.omnimux-creatify-card:hover .omnimux-creatify-drawer-content {
-  transform:translateY(0); opacity:1;
+.sh-mkt .omx-skill-card-header,
+.omx-skill-card-header {
+  position:relative; z-index:1; display:flex; align-items:flex-start; justify-content:space-between; gap:8px; min-width:0;
 }
-.omnimux-creatify-drawer-desc {
-  font-size:12px; line-height:1.45; color:var(--dsw-alias-label-on-color, #FFFFFF);
-  display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical;
-  overflow:hidden; margin:0;
+.sh-mkt .omx-skill-card-title,
+.omx-skill-card-title,
+.omnimux-creatify-center-title {
+  margin:0; min-width:0;
+  font-size:15px; font-weight:600; line-height:1.35; letter-spacing:-0.01em;
+  color:var(--dsw-alias-label-primary); text-align:left; text-wrap:balance;
+  display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; overflow-wrap:anywhere;
 }
-.omnimux-creatify-drawer-uses {
-  display:flex; align-items:center; gap:4px; font-size:11px;
-  color:color-mix(in srgb, var(--dsw-alias-label-on-color, #FFFFFF) 78%, transparent);
+.sh-mkt .omx-skill-card-badges,
+.omx-skill-card-badges {
+  flex:none; display:inline-flex; align-items:center; gap:4px;
+}
+.sh-mkt .omnimux-creatify-badge-hot,
+.omnimux-creatify-badge-hot {
+  display:inline-flex; align-items:center; justify-content:center;
+  width:22px; height:22px; border-radius:6px;
+  background:color-mix(in srgb, var(--dsw-static-amber-500) 16%, transparent);
+  color:var(--dsw-static-amber-600);
+}
+body[data-ds-dark-theme] .sh-mkt .omnimux-creatify-badge-hot,
+body[data-ds-dark-theme] .omnimux-creatify-badge-hot {
+  color:var(--dsw-static-amber-400);
+}
+.sh-mkt .omnimux-creatify-badge-new,
+.omnimux-creatify-badge-new {
+  display:inline-flex; align-items:center; justify-content:center;
+  height:22px; padding:0 7px; border-radius:6px;
+  background:color-mix(in srgb, var(--dsw-static-deepseek-500) 14%, transparent);
+  color:var(--dsw-static-deepseek-500); font-size:11px; font-weight:600;
+}
+body[data-ds-dark-theme] .sh-mkt .omnimux-creatify-badge-new,
+body[data-ds-dark-theme] .omnimux-creatify-badge-new {
+  color:var(--dsw-static-deepseek-400);
+}
+.sh-mkt .omx-skill-card-desc,
+.omx-skill-card-desc {
+  position:relative; z-index:1; margin:6px 0 0;
+  font-size:13px; line-height:1.45; color:var(--dsw-alias-label-secondary); text-wrap:pretty;
+  display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; overflow-wrap:anywhere;
+}
+.sh-mkt .omx-skill-card-footer,
+.omx-skill-card-footer {
+  position:relative; z-index:1; margin-top:auto; padding-top:10px;
+  display:flex; align-items:center; justify-content:space-between; gap:8px; min-width:0;
+}
+.sh-mkt .omx-skill-card-category,
+.omx-skill-card-category {
+  font-size:12px; line-height:16px; color:var(--dsw-alias-label-tertiary);
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0;
 }
 .omnimux-creatify-quick-try-btn {
-  display:inline-flex; align-items:center; justify-content:center; gap:4px;
-  background:var(--dsw-alias-bg-layer-3, rgba(255, 255, 255, 0.16)); /* exempt-ui03: 悬停按钮底色 */
-  border:1px solid var(--dsw-alias-border-l2, rgba(255, 255, 255, 0.2)); /* exempt-ui03: 悬停按钮边框 */
-  border-radius:999px; padding:2px 10px;
-  font-size:11px; font-weight:500;
-  color:var(--dsw-static-neutral-00, #ffffff); /* exempt-ui03: 按钮文本纯白色 */
-  cursor:pointer; pointer-events:auto; white-space:nowrap; box-sizing:border-box;
-  transition:all 150ms ease;
+  flex:none; display:inline-flex; align-items:center; justify-content:center; gap:5px;
+  height:28px; padding:0 10px; border-radius:999px; corner-shape:round;
+  background:var(--dsw-alias-interactive-bg-hover);
+  border:1px solid var(--dsw-alias-border-l2);
+  color:var(--dsw-alias-label-primary);
+  font:inherit; font-size:12px; font-weight:500; line-height:1;
+  cursor:pointer; white-space:nowrap; box-sizing:border-box;
+  transition:background-color 150ms ease, border-color 150ms ease, color 150ms ease, transform 120ms ease;
+}
+.sh-mkt .omx-skill-card:hover .omnimux-creatify-quick-try-btn,
+.omx-skill-card:hover .omnimux-creatify-quick-try-btn,
+.sh-mkt .omx-skill-card:focus-within .omnimux-creatify-quick-try-btn,
+.omx-skill-card:focus-within .omnimux-creatify-quick-try-btn {
+  border-color:var(--dsw-alias-border-l4);
+  background:var(--dsw-alias-interactive-bg-active);
 }
 .omnimux-creatify-quick-try-btn:hover {
-  background:var(--dsw-alias-interactive-bg-hover, rgba(255, 255, 255, 0.24));
-  color:var(--dsw-static-neutral-00, #ffffff);
+  background:var(--dsw-alias-button-primary-fill);
+  border-color:var(--dsw-alias-button-primary-fill);
+  color:var(--dsw-alias-label-primary-foreground);
+}
+.omnimux-creatify-quick-try-btn:active {
+  transform:scale(0.96);
 }
 .omnimux-creatify-quick-try-btn svg {
-  flex:none; width:12px; height:12px;
+  flex:none; width:13px; height:13px;
 }
 .omnimux-creatify-quick-try-label {
   white-space:nowrap;
 }
-@container market-featured-card (max-width: 288px) {
+@container market-featured-card (max-width: 172px) {
   .omnimux-creatify-quick-try-label { display: none !important; }
-  .omnimux-creatify-quick-try-btn { width: 24px !important; height: 24px !important; padding: 0 !important; border-radius: 50% !important; gap: 0 !important; }
+  .omnimux-creatify-quick-try-btn { width: 28px !important; height: 28px !important; padding: 0 !important; border-radius: 50% !important; corner-shape: round !important; gap: 0 !important; }
 }
-
-/* 8 套高饱和度炫彩渐变卡片底色 (对标 Creatify 官方炫彩视觉) */
-.omnimux-creatify-card-grad-0 { background: linear-gradient(135deg, #103b22 0%, #1e6b3f 38%, #5ec278 100%) !important; } /* exempt-ui03: 极光翡翠绿 */
-.omnimux-creatify-card-grad-1 { background: linear-gradient(135deg, #451b03 0%, #854d0e 40%, #fbbf24 100%) !important; } /* exempt-ui03: 晨曦琥珀金 */
-.omnimux-creatify-card-grad-2 { background: linear-gradient(135deg, #2e1065 0%, #581c87 38%, #a855f7 100%) !important; } /* exempt-ui03: 霓虹极光紫 */
-.omnimux-creatify-card-grad-3 { background: linear-gradient(135deg, #4c0519 0%, #9f1239 40%, #f43f5e 100%) !important; } /* exempt-ui03: 暮色炽热红 */
-.omnimux-creatify-card-grad-4 { background: linear-gradient(135deg, #0c2b5e 0%, #1d4ed8 40%, #38bdf8 100%) !important; } /* exempt-ui03: 赛博深邃蓝 */
-.omnimux-creatify-card-grad-5 { background: linear-gradient(135deg, #3b0764 0%, #701a75 38%, #ec4899 100%) !important; } /* exempt-ui03: 幻彩落樱粉 */
-.omnimux-creatify-card-grad-6 { background: linear-gradient(135deg, #431407 0%, #c2410c 45%, #fb923c 100%) !important; } /* exempt-ui03: 烈焰赤阳橙 */
-.omnimux-creatify-card-grad-7 { background: linear-gradient(135deg, #042f2e 0%, #0f766e 40%, #2dd4bf 100%) !important; } /* exempt-ui03: 冰晶碧海青 */
+@media (prefers-reduced-motion: reduce) {
+  .omnimux-creatify-card, .omx-skill-card-aura, .omnimux-creatify-quick-try-btn { transition: none !important; }
+}
 
 /* 插件专栏 / Plugins Column (2-Column Grid & Grouped Layout) */
 .sh-plugins-column-wrap {

@@ -1,11 +1,17 @@
-import React, { useState } from 'react'
+import React from 'react'
 import { resolveSkillTitle, resolveSkillSummary } from './featured-skills-data.js'
 import { resolveSkillAuroraStyle } from './auroraGradients.js'
 
 // 纯矢量 SVG 火苗 (Hot Picks)
 export const ICON_FIRE = (
-  <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
     <path d="M12 2c-.6 1.8-1.5 3.3-2.6 4.7C8.1 8.2 6.8 9.9 6.8 12c0 3.3 2.7 6 6 6s6-2.7 6-6c0-1.8-1.1-4-2.8-5.7-1.1-1.1-2.1-2.4-2.7-4.3z" />
+  </svg>
+)
+
+const ICON_TRY_CHAT = (
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
   </svg>
 )
 
@@ -32,7 +38,7 @@ export const CATEGORY_NAMES = {
   'scene-tools': '效率工具',
 }
 
-// 分类矢量图标
+// 分类矢量图标（保留导出供跨模块复用）
 export function CategoryIcon({ category }) {
   const alias = {
     'scene-video': 'video',
@@ -110,130 +116,95 @@ export function CategoryIcon({ category }) {
   )
 }
 
-const COVER_NUMS = [4, 5, 6, 7, 9, 10, 2, 3]
-
 /**
- * 1:1 复刻 Creatify 官方卡片样式与随机循环渐变背景生成算法
+ * Plan A：氛围微光 + 常驻左对齐工作台技能卡片
  */
-export function SkillCard({ skill, t, onSelect, active = false, categoryTitle = '', index = 0 }) {
-  const [imgBroken, setImgBroken] = useState(false)
-  const [isFavorite, setIsFavorite] = useState(false)
-
+export function SkillCard({ skill, t, onSelect, active = false, categoryTitle = '' }) {
   if (!skill) return null
 
-  const title = resolveSkillTitle(skill, t)
-  const summary = resolveSkillSummary(skill, t)
+  const translate = typeof t === 'function' ? t : (_key, fallback) => fallback || ''
+  const title = resolveSkillTitle(skill, translate)
+  const summary = resolveSkillSummary(skill, translate)
   const displaySummary = summary.replace(/^用途[：:]\s*|^Purpose[：:]\s*/i, '')
-
-  // 封面图地址计算：优先使用本地静态 WebP，按索引循环映射 8 种高质感封面
-  const coverIndex = typeof skill.coverIndex === 'number' ? skill.coverIndex : COVER_NUMS[index % COVER_NUMS.length]
-  const coverUrl = skill.cover || `/omnimux/assets/skill-card-covers/skill-card-${coverIndex}.webp`
 
   const aurora = resolveSkillAuroraStyle(skill)
   const isHot = Boolean(skill.isHot || skill.tags?.includes('热门精选'))
   const isNew = Boolean(skill.isNew || skill.tags?.includes('新品上市'))
-  const catLabel = categoryTitle || CATEGORY_NAMES[skill.category] || (Array.isArray(skill.tags) ? skill.tags[0] : '') || '营销技能'
-  const usesText = skill.downloads ? `${skill.downloads} uses` : '100+ uses'
+  const catKey = skill.scenario || skill.category
+  const fallbackCat = CATEGORY_NAMES[catKey] || CATEGORY_NAMES[skill.category] || (Array.isArray(skill.tags) ? skill.tags[0] : '') || '营销技能'
+  const catLabel = categoryTitle || (catKey ? translate(`skills.category.${catKey}`, fallbackCat) : fallbackCat)
+  const useFullText = translate('skills.card.use', '使用 Skill')
+  const useShortText = translate('skills.card.useShort', '使用')
 
   return (
     <article
       className={`omnimux-creatify-card omnimux-skill-card ${active ? 'is-active' : ''}`}
       data-skill-id={skill.id}
       data-skill-active={active ? 'true' : 'false'}
+      role="button"
+      tabIndex={0}
       aria-label={title}
       onClick={() => onSelect?.(skill)}
-      style={{ background: aurora.bg }} /* exempt-ui02: 极光算法动态流光背景 */
+      onKeyDown={(e) => {
+        if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) {
+          e.preventDefault()
+          onSelect?.(skill)
+        }
+      }}
+      style={{ '--skill-aura-accent': aurora.accent }}
     >
-      {/* 1. 动态极光流光大封面 */}
-      {!imgBroken ? (
-        <img
-          src={coverUrl}
-          alt={title}
-          className="omnimux-creatify-card-bg-img omnimux-skill-card-cover-img"
-          loading="lazy"
-          style={{ background: aurora.bg }} /* exempt-ui02: 极光算法动态流光背景 */
-          onError={() => setImgBroken(true)}
-        />
-      ) : (
-        <div
-          className="omnimux-creatify-card-bg-img omnimux-skill-card-cover-img omnimux-skill-card-cover-fallback"
-          style={{ background: aurora.bg }} /* exempt-ui02: 极光算法动态流光背景 */
-        />
-      )}
+      {/* 1. 柔和右上角氛围微光背景层 */}
+      <div
+        className="omnimux-creatify-card-bg-img omx-skill-card-aura"
+        style={{ background: aurora.bg }} /* exempt-ui02: 微光算法背景渐变 */
+        aria-hidden="true"
+      />
 
-      {/* 2. 点阵纹理 Overlay (Dot Matrix) */}
+      {/* 2. 局部微孔光栅 */}
       <div className="omnimux-creatify-dot-overlay" aria-hidden="true" />
 
-      {/* 3. 左上角徽章组合 (热门火苗 / 新品微标 + 分类胶囊) */}
-      <div className="omnimux-creatify-card-top-left">
-        {isHot ? (
-          <span className="omnimux-creatify-badge-hot" title="热门精选">
-            {ICON_FIRE}
-          </span>
-        ) : isNew ? (
-          <span className="omnimux-creatify-badge-new">
-            新
-          </span>
-        ) : null}
-
-        {catLabel ? (
-          <div className="omnimux-creatify-pill-cat">
-            <CategoryIcon category={skill.category} />
-            <span>{catLabel}</span>
-          </div>
-        ) : null}
-      </div>
-
-      {/* 4. 右上角收藏星标 */}
-      <button /* exempt-ui01: 收藏按钮 */
-        type="button"
-        className={`omnimux-creatify-star-btn ${isFavorite ? 'active' : ''}`}
-        aria-label="收藏技能"
-        onClick={(e) => {
-          e.stopPropagation()
-          setIsFavorite(!isFavorite)
-        }}
-      >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill={isFavorite ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" aria-hidden="true">
-          <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
-        </svg>
-      </button>
-
-      {/* 5. 居中白色加粗大标题 */}
-      <div className="omnimux-creatify-card-center">
-        <h3 className="omnimux-creatify-center-title omnimux-skill-card-title" title={title}>
+      {/* 3. 顶行：左对齐标题 + 轻量状态角标 */}
+      <div className="omx-skill-card-header">
+        <h3 className="omnimux-creatify-center-title omnimux-skill-card-title">
           <span>{title}</span>
         </h3>
+        {(isHot || isNew) ? (
+          <div className="omnimux-creatify-card-top-left omx-skill-card-badges">
+            {isHot ? (
+              <span className="omnimux-creatify-badge-hot" title={translate('skills.section.hotPicks', '热门精选')}>
+                {ICON_FIRE}
+              </span>
+            ) : (
+              <span className="omnimux-creatify-badge-new">
+                {translate('skills.badge.new', '新')}
+              </span>
+            )}
+          </div>
+        ) : null}
       </div>
 
-      {/* 6. 悬停浮层：深色平滑渐变底 + 两行简介 + 使用量 */}
-      <div className="omnimux-creatify-card-hover-drawer">
-        <div className="omnimux-creatify-drawer-bg" />
-        <div className="omnimux-creatify-drawer-content">
-          <p className="omnimux-creatify-drawer-desc omnimux-skill-card-summary" title={displaySummary}>
-            {displaySummary}
-          </p>
-          <div className="omnimux-creatify-drawer-uses">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-              <polyline points="7 10 12 15 17 10" />
-              <line x1="12" y1="15" x2="12" y2="3" />
-            </svg>
-            <span>{usesText}</span>
-          </div>
-          <button /* exempt-ui01: session-guide 子树保持零 dsh-ui-kit 依赖；该按钮仅供快捷触发与外部测试 */
-            type="button"
-            className="omnimux-skill-card-btn"
-            aria-label={`${t('skills.card.use', '使用 Skill')}：${title}`}
-            aria-pressed={active ? 'true' : 'false'}
-            onClick={(e) => {
-              e.stopPropagation()
-              onSelect?.(skill)
-            }}
-          >
-            <span>{t('skills.card.use', '使用 Skill')}</span>
-          </button>
-        </div>
+      {/* 4. 中部：常驻 2 行简介 */}
+      <p className="omnimux-skill-card-summary">
+        {displaySummary}
+      </p>
+
+      {/* 5. 底栏：左侧低对比场景名称 + 右侧使用 CTA */}
+      <div className="omx-skill-card-footer">
+        <span className="omx-skill-card-category">{catLabel}</span>
+        <button /* exempt-ui01: session-guide 子树保持零 dsh-ui-kit 依赖；直接触发试用 */
+          type="button"
+          className="omnimux-skill-card-btn"
+          title={useFullText}
+          aria-label={`${useFullText}：${title}`}
+          aria-pressed={active ? 'true' : 'false'}
+          onClick={(e) => {
+            e.stopPropagation()
+            onSelect?.(skill)
+          }}
+        >
+          <span className="omnimux-skill-card-btn-icon">{ICON_TRY_CHAT}</span>
+          <span className="omnimux-skill-card-btn-label">{useShortText}</span>
+        </button>
       </div>
     </article>
   )

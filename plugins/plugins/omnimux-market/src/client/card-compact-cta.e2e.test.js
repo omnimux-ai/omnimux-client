@@ -156,33 +156,33 @@ test('3:2营销精选卡：卡片自身宽度驱动快捷试用 CTA 退化，窄
   assert.ok(MARKET_CSS.includes('.omnimux-creatify-quick-try-btn'), '营销卡片试用按钮样式必须被完整提取')
 
   for (const [locale, tryTooltip, tryLabel] of [
-    ['zh', '去对话试试', '去对话中试试'],
-    ['en', 'Try in Chat', 'Try in Chat'],
+    ['zh', '去对话试试', '去试试'],
+    ['en', 'Try in Chat', 'Try'],
   ]) {
-    const rows = probeCreatifyWidths(tryTooltip, tryLabel, [140, 180, 220, 260, 280, 296, 420])
-    const compact = rows.filter((r) => r.cardWidth <= 280)
-    const roomy = rows.filter((r) => r.cardWidth >= 296)
+    const rows = probeCreatifyWidths(tryTooltip, tryLabel, [140, 180, 200, 220, 260, 296, 420])
+    const compact = rows.filter((r) => r.cardWidth <= 204)
+    const roomy = rows.filter((r) => r.cardWidth >= 220)
 
     assert.equal(compact.length > 0 && roomy.length > 0, true, `${locale}: 宽度分组必须同时覆盖紧凑与充足区间`)
 
     for (const row of compact) {
       const btn = row.button
       assert.ok(btn, `${locale} ${row.cardWidth}px: 按钮必须存在`)
-      assert.equal(btn.display, 'none', `${locale} ${row.cardWidth}px: 紧凑状态(<=288px)文字标签必须退出布局 (display: none)`)
-      assert.equal(btn.width, 24, `${locale} ${row.cardWidth}px: 紧凑状态按钮收缩为 24px 图标按钮`)
-      assert.equal(btn.height, 24, `${locale} ${row.cardWidth}px: 紧凑状态按钮高度为 24px`)
-      assert.equal(btn.iconCount >= 1, true, `${locale} ${row.cardWidth}px: 紧凑状态按钮必须保留图标`)
-      assert.equal(btn.title, tryTooltip, `${locale} ${row.cardWidth}px: 紧凑状态按钮必须保留气泡提示 title`)
-      assert.equal(btn.ariaLabel, tryTooltip, `${locale} ${row.cardWidth}px: 紧凑状态按钮必须保留 aria-label`)
+      assert.equal(btn.display, 'none', `${locale} ${row.cardWidth}px: 极窄状态(<=204px)文字标签必须退出布局 (display: none)`)
+      assert.equal(btn.width, 28, `${locale} ${row.cardWidth}px: 极窄状态按钮收缩为 28px 图标按钮`)
+      assert.equal(btn.height, 28, `${locale} ${row.cardWidth}px: 极窄状态按钮高度保持 28px`)
+      assert.equal(btn.iconCount >= 1, true, `${locale} ${row.cardWidth}px: 极窄状态按钮必须保留图标`)
+      assert.equal(btn.title, tryTooltip, `${locale} ${row.cardWidth}px: 极窄状态按钮必须保留气泡提示 title`)
+      assert.equal(btn.ariaLabel, tryTooltip, `${locale} ${row.cardWidth}px: 极窄状态按钮必须保留 aria-label`)
     }
 
     for (const row of roomy) {
       const btn = row.button
       assert.ok(btn, `${locale} ${row.cardWidth}px: 按钮必须存在`)
-      assert.notEqual(btn.display, 'none', `${locale} ${row.cardWidth}px: 充足状态(>288px)必须显示文字标签`)
-      assert.equal(btn.clipped, false, `${locale} ${row.cardWidth}px: 充足状态文字不得被裁切`)
-      assert.equal(btn.iconCount >= 1, true, `${locale} ${row.cardWidth}px: 充足状态同时显示图标与文字`)
-      assert.equal(btn.title, tryTooltip, `${locale} ${row.cardWidth}px: 充足状态按钮必须保留气泡提示 title`)
+      assert.notEqual(btn.display, 'none', `${locale} ${row.cardWidth}px: 常规宽度(>204px)必须显示精炼文字标签`)
+      assert.equal(btn.clipped, false, `${locale} ${row.cardWidth}px: 常规宽度文字不得被裁切`)
+      assert.equal(btn.iconCount >= 1, true, `${locale} ${row.cardWidth}px: 常规宽度同时显示图标与文字`)
+      assert.equal(btn.title, tryTooltip, `${locale} ${row.cardWidth}px: 常规宽度按钮必须保留气泡提示 title`)
     }
   }
 })
