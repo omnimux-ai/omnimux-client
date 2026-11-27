@@ -213,7 +213,6 @@
           // exempt-ui01 category selector button
           return h("button", { key: c.id, type: "button", className: "cat-btn" + (category === c.id ? " active" : ""), "aria-pressed": category === c.id, onClick: onCatClick },
             label,
-            Number.isFinite(c.count) ? h("span", { className: "cat-count" }, String(c.count)) : null,
           );
         }),
       );
