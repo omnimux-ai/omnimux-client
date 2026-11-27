@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Badge, Button, CopyButton, Drawer, IconButton, InputField, Tabs } from 'dsh-ui-kit'
 import { ArrowRight, Check, ChevronLeft, ChevronRight, ExternalLink, FileText, Film, Minus, Plus, RotateCcw, Sparkles, X, ZoomIn } from 'lucide-react'
-import { getPostBody, getPostMedia, analysisTargetKey, getTargetAnalysis, getBodyTranslation, analysisDirections, hasRunningAnalysis, decideAnalysisPollOutcome, detectPostVariant, headlessStageLocaleKey, matchHeadlessSkillEvent } from './post-detail.js'
+import { getPostBody, getPostMedia, analysisTargetKey, getTargetAnalysis, getBodyTranslation, analysisDirections, hasRunningAnalysis, decideAnalysisPollOutcome, detectPostVariant, headlessStageLocaleKey, matchHeadlessSkillEvent, samePostIdentity, stablePostKey, isTargetMediaCompatible, assessPromotionDraft } from './post-detail.js'
 import { getInspirationPreviewData, parseDocAnalysis, renderPlainBreakdownText, scriptCopyText, deconstructionCopyText } from './inspiration-preview-data.js'
 import { triggerAnalyzeInspiration, cancelAnalyzeInspiration, getAnalysisService, confirmOfficialAnalysisService, translateInspiration, saveCreationDraft, prepareCreationReferences, ensureLocalInspiration, getLocalInspiration, pickCoverSrc, resolveTikTokEmbedUrl } from './api.js'
 import { createImportPoller } from './import-poller.js'
@@ -60,7 +60,15 @@ export function InspirationPostDetail({ item, t, onItemUpdated, onReplicate, rep
   const videos = useRef(new Map())
   const mediaNodes = useRef(new Map())
   const clipPlayback = useRef(null)
-  const requestIdentity = useRef(String(item.source_url || item.id))
+  const mountedRef = useRef(true)
+  const currentItemRef = useRef(item)
+  const prevItemRef = useRef(item)
+  const promotedIdRef = useRef('')
+  if (!samePostIdentity(prevItemRef.current, item) && promotedIdRef.current !== String(item?.id ?? '')) {
+    promotedIdRef.current = ''
+  }
+  prevItemRef.current = item
+  currentItemRef.current = item
   const body = getPostBody(item)
   const media = useMemo(() => getPostMedia(item), [item])
   const imageMedia = useMemo(() => media.filter(asset => asset.type === 'image'), [media])
@@ -102,12 +110,22 @@ export function InspirationPostDetail({ item, t, onItemUpdated, onReplicate, rep
   const [failedImages, setFailedImages] = useState({})
   const [drawer, setDrawer] = useState(false)
   const [draft, setDraft] = useState(() => reconcileCreationDraft(item, item.creation_draft || createEmptyCreationDraft(item)))
-  const [saving, setSaving] = useState(false)
+  const currentDraftRef = useRef(draft)
+  currentDraftRef.current = draft
+  const [savingAction, setSavingAction] = useState('')
+  const saving = Boolean(savingAction)
   const savingRef = useRef(false)
   const [draftError, setDraftError] = useState('')
   const [saved, setSaved] = useState(false)
   const id = String(item.id)
-  const postIdentity = String(item.source_url || item.id)
+  const postIdentity = stablePostKey(item)
+  const isStale = (originItem) => {
+    if (!mountedRef.current) return true
+    const current = currentItemRef.current
+    if (samePostIdentity(originItem, current)) return false
+    const currentId = current?.id == null ? '' : String(current.id)
+    return !(promotedIdRef.current && currentId === promotedIdRef.current)
+  }
   const preview = getInspirationPreviewData(item)
   const key = analysisTargetKey(target)
   const record = getTargetAnalysis(item, target)
@@ -264,9 +282,9 @@ export function InspirationPostDetail({ item, t, onItemUpdated, onReplicate, rep
     setTarget(current => current.scope === 'media' && !media.some(asset => asset.index === current.media_index) ? { scope: 'post' } : current)
   }, [mediaIdentity])
   useEffect(() => {
-    requestIdentity.current = postIdentity
-    return () => { requestIdentity.current = ''; clipPlayback.current?.() }
-  }, [postIdentity])
+    mountedRef.current = true
+    return () => { mountedRef.current = false; clipPlayback.current?.() }
+  }, [])
   useEffect(() => {
     if (initialTab !== 'deconstruct' && initialTab !== 'analysis') return
     setMobilePane('analysis')
@@ -327,36 +345,35 @@ export function InspirationPostDetail({ item, t, onItemUpdated, onReplicate, rep
     node.addEventListener('timeupdate', stop)
     clipPlayback.current = () => { node.removeEventListener('timeupdate', stop); clipPlayback.current = null }
   }
-  const ensureCurrent = async () => {
-    if (item.is_local === false) setLocalizing(true)
+  const ensureCurrent = async ({ commit = true } = {}) => {
+    const originItem = currentItemRef.current
+    if (originItem.is_local === false) setLocalizing(true)
     try {
-      const savedRow = await ensureLocalInspiration(item)
-      if (requestIdentity.current !== postIdentity) throw new Error(copy('savedReview'))
+      const savedRow = await ensureLocalInspiration(originItem)
+      if (isStale(originItem)) throw new Error(copy('savedReview'))
+      promotedIdRef.current = String(savedRow.id)
       const nextMediaIdentity = getPostMedia(savedRow).map(asset => `${asset.id}:${asset.url}`).join('\n')
       const mediaChanged = nextMediaIdentity !== mediaIdentity
-      const bodyChanged = getPostBody(savedRow) !== body
-      const promoted = String(savedRow.id) !== id
-      if (mediaChanged || bodyChanged || promoted) {
-        setDraft(current => reconcileCreationDraft(savedRow, current, {
-          references: (current.references || []).filter(ref => ref.kind === 'body' && !bodyChanged), clips: [],
-        }))
+      const assessed = assessPromotionDraft(originItem, savedRow, currentDraftRef.current)
+      if (commit) {
+        if (mediaChanged || assessed.bodyChanged || assessed.promoted) setDraft(assessed.nextDraft)
+        onItemUpdated?.(savedRow)
       }
-      onItemUpdated?.(savedRow)
-      return { savedRow, mediaChanged, bodyChanged, promoted }
-    } finally { if (requestIdentity.current === postIdentity) setLocalizing(false) }
+      return { savedRow, mediaChanged, bodyChanged: assessed.bodyChanged, promoted: assessed.promoted, assessed }
+    } finally { if (mountedRef.current && !isStale(originItem)) setLocalizing(false) }
   }
   const analyze = async () => {
     if (submittingAnalysis.current || runningKey || serverRunning || !statusReady || !directions.length || savingServiceRef.current || servicePending) return
-    const identity = postIdentity
+    const originItem = currentItemRef.current
     submittingAnalysis.current = true
     analysisReadVersion.current++
     setRunningKey(key); setAnalysisErrors(current => ({ ...current, [key]: '' }))
     try {
       const local = await ensureCurrent()
-      if (requestIdentity.current !== identity) return
-      if (target.scope === 'media' && local.mediaChanged) { setAnalysisErrors(current => ({ ...current, [key]: copy('savedReview') })); return }
+      if (isStale(originItem)) return
+      if (!isTargetMediaCompatible(originItem, local.savedRow, target)) { setAnalysisErrors(current => ({ ...current, [key]: copy('savedReview') })); return }
       const response = await triggerAnalyzeInspiration(local.savedRow.id, { ...target, directions })
-      if (requestIdentity.current !== identity) return
+      if (isStale(originItem)) return
       analysisReadVersion.current++
       if (response.body?.data) { onItemUpdated?.(response.body.data); setConfigureKey('') }
       const cancelledResponse = response.status === 499
@@ -370,7 +387,7 @@ export function InspirationPostDetail({ item, t, onItemUpdated, onReplicate, rep
             const readVersion = analysisReadVersion.current
             getLocalInspiration(local.savedRow.id).then((latest) => {
               if (
-                requestIdentity.current === identity
+                !isStale(originItem)
                 && readVersion === analysisReadVersion.current
                 && latest?.ok
                 && latest.body?.data
@@ -383,12 +400,12 @@ export function InspirationPostDetail({ item, t, onItemUpdated, onReplicate, rep
           setAnalysisErrors(current => ({ ...current, [key]: response.body?.error || copy('analysisFailed') }))
         }
       }
-    } catch (error) { if (requestIdentity.current === identity) setAnalysisErrors(current => ({ ...current, [key]: error.message || copy('analysisFailed') })) }
-    finally { submittingAnalysis.current = false; if (requestIdentity.current === identity) setRunningKey('') }
+    } catch (error) { if (!isStale(originItem)) setAnalysisErrors(current => ({ ...current, [key]: error.message || copy('analysisFailed') })) }
+    finally { submittingAnalysis.current = false; if (!isStale(originItem)) setRunningKey('') }
   }
   const cancelAnalysis = async () => {
     if (cancellingKey || !id || item.is_local === false) return
-    const identity = postIdentity
+    const originItem = currentItemRef.current
     setCancellingKey(key)
     try {
       const live = liveStages[key]
@@ -397,7 +414,7 @@ export function InspirationPostDetail({ item, t, onItemUpdated, onReplicate, rep
         ...(target.scope === 'media' ? { media_index: target.media_index } : {}),
         ...(live?.jobId ? { job_id: live.jobId } : {}),
       })
-      if (requestIdentity.current !== identity) return
+      if (isStale(originItem)) return
       if (response.body?.data) onItemUpdated?.(response.body.data)
       setLiveStages(current => {
         if (!current[key]) return current
@@ -406,42 +423,42 @@ export function InspirationPostDetail({ item, t, onItemUpdated, onReplicate, rep
         return next
       })
     } catch (error) {
-      if (requestIdentity.current === identity) setAnalysisErrors(current => ({ ...current, [key]: error?.message || copy('analysisFailed') }))
+      if (!isStale(originItem)) setAnalysisErrors(current => ({ ...current, [key]: error?.message || copy('analysisFailed') }))
     } finally {
-      if (requestIdentity.current === identity) setCancellingKey('')
+      if (!isStale(originItem)) setCancellingKey('')
     }
   }
   const confirmAnalysisService = async () => {
     if (savingServiceRef.current || runningKey || serverRunning || analysisService?.channel !== 'pending') return
     savingServiceRef.current = true; setSavingService(true); setServiceError('')
-    const identity = postIdentity
+    const originItem = currentItemRef.current
     try {
       const response = await confirmOfficialAnalysisService(analysisService.revision)
-      if (requestIdentity.current !== identity) return
+      if (isStale(originItem)) return
       if (response.ok) { setAnalysisService(response.body); setAnalysisErrors({}) }
       else {
         setServiceError(response.body?.error || copy('serviceSaveFailed'))
         const current = await getAnalysisService()
-        if (requestIdentity.current === identity && current.ok) setAnalysisService(current.body)
+        if (!isStale(originItem) && current.ok) setAnalysisService(current.body)
       }
-    } catch { if (requestIdentity.current === identity) setServiceError(copy('serviceSaveFailed')) }
-    finally { savingServiceRef.current = false; if (requestIdentity.current === identity) setSavingService(false) }
+    } catch { if (!isStale(originItem)) setServiceError(copy('serviceSaveFailed')) }
+    finally { savingServiceRef.current = false; if (!isStale(originItem)) setSavingService(false) }
   }
   const translate = async () => {
     if (bodyTranslation) { setTranslated(value => !value); return }
     if (translating || !body) return
-    const identity = postIdentity
+    const originItem = currentItemRef.current
     setTranslating(true); setTranslationError('')
     try {
       const local = await ensureCurrent()
-      if (requestIdentity.current !== identity) return
+      if (isStale(originItem)) return
       const response = await translateInspiration(local.savedRow.id, 'zh', { scope: 'body' })
-      if (requestIdentity.current !== identity) return
+      if (isStale(originItem)) return
       if (response.body?.data) onItemUpdated?.(response.body.data)
       if (response.ok) setTranslated(true)
       else setTranslationError(response.body?.error || t('modal.script.translateFailed'))
-    } catch (error) { if (requestIdentity.current === identity) setTranslationError(error.message) }
-    finally { if (requestIdentity.current === identity) setTranslating(false) }
+    } catch (error) { if (!isStale(originItem)) setTranslationError(error.message) }
+    finally { if (!isStale(originItem)) setTranslating(false) }
   }
   useEffect(() => {
     setDraft(current => reconcileCreationDraft(item, current))
@@ -451,33 +468,76 @@ export function InspirationPostDetail({ item, t, onItemUpdated, onReplicate, rep
     if (savingRef.current || !selected.length) return
     if (clipError) { setDraftError(copy('clipInvalid')); return }
     if (manualStale) { setDraftError(copy('manualChanged')); return }
-    const validation = validateCreationDraft(item, draft)
+    const originItem = currentItemRef.current
+    const validation = validateCreationDraft(originItem, currentDraftRef.current)
     if (!validation.ok) { setDraftError(validation.error); return }
-    const identity = postIdentity
     savingRef.current = true
-    setSaving(true); setDraftError('')
+    setSavingAction(prepare ? 'chat' : 'draft'); setDraftError('')
+    let promotedRow = null
+    let promotedDraft = null
     try {
-      const local = await ensureCurrent()
-      if (requestIdentity.current !== identity) return
-      if (local.mediaChanged || local.bodyChanged || local.promoted) { setDraftError(copy('savedReview')); return }
-      const payload = { ...draft, basis, clips: (draft.clips || []).map(clip => ({ ...clip, start_seconds: Number(clip.start_seconds), end_seconds: Number(clip.end_seconds) })) }
-      const response = prepare ? await prepareCreationReferences(local.savedRow.id, payload) : await saveCreationDraft(local.savedRow.id, payload)
-      if (requestIdentity.current !== identity) return
-      if (!response.ok) { setDraftError(response.body?.error || copy('saveFailed')); return }
+      const local = await ensureCurrent({ commit: false })
+      if (isStale(originItem)) return
+      const { savedRow, assessed } = local
+      const didPromote = assessed.promoted || local.mediaChanged || assessed.bodyChanged
+      if (didPromote) {
+        promotedRow = savedRow
+        promotedDraft = assessed.nextDraft
+      }
+      if (assessed.requiresReview) {
+        setDraft(assessed.nextDraft)
+        onItemUpdated?.(savedRow)
+        setDraftError(copy('savedReview'))
+        return
+      }
+      const nextClips = (assessed.nextDraft.clips || []).map(clip => ({ ...clip, start_seconds: Number(clip.start_seconds), end_seconds: Number(clip.end_seconds) }))
+      const basePayload = { ...assessed.nextDraft, clips: nextClips }
+      const payload = { ...basePayload, basis: creationBasis(savedRow, basePayload), stale: false }
+      const localValidation = validateCreationDraft(savedRow, payload)
+      if (!localValidation.ok) {
+        if (didPromote) {
+          setDraft(assessed.nextDraft)
+          onItemUpdated?.(savedRow)
+        }
+        setDraftError(localValidation.error)
+        return
+      }
+      analysisReadVersion.current++
+      const response = prepare ? await prepareCreationReferences(savedRow.id, payload) : await saveCreationDraft(savedRow.id, payload)
+      if (isStale(originItem)) return
+      if (!response.ok) {
+        if (didPromote) {
+          setDraft(assessed.nextDraft)
+          onItemUpdated?.(savedRow)
+        }
+        setDraftError(response.body?.error || copy('saveFailed'))
+        return
+      }
       const updated = response.body?.data
-      if (updated?.id) onItemUpdated?.(updated)
-      setDraft(payload); setSaved(true)
+      const persisted = updated?.id ? updated : savedRow
+      promotedIdRef.current = String(persisted.id)
+      // Update draft state before item promotion so [item] reconciliation preserves manual/auto basis.
+      setDraft(payload)
+      onItemUpdated?.(persisted)
+      setSaved(true)
       if (prepare) {
-        const reference = updated?.creation_reference
+        const reference = persisted?.creation_reference
         if (!reference) { setDraftError(copy('prepareFailed')); return }
-        const result = await onReplicate?.({ ...local.savedRow, ...(updated?.id ? updated : {}), creation_reference: reference })
-        if (requestIdentity.current !== identity) return
+        const result = await onReplicate?.({ ...persisted, creation_reference: reference })
+        if (isStale(originItem)) return
         if (result?.ok !== true) { setDraftError(result?.error || copy('prepareFailed')); return }
         setDrawer(false)
         onClose?.()
       }
-    } catch (error) { if (requestIdentity.current === identity) setDraftError(error.message || copy('saveFailed')) }
-    finally { savingRef.current = false; if (requestIdentity.current === identity) setSaving(false) }
+    } catch (error) {
+      if (!isStale(originItem)) {
+        if (promotedRow && promotedDraft) {
+          setDraft(promotedDraft)
+          onItemUpdated?.(promotedRow)
+        }
+        setDraftError(error.message || copy('saveFailed'))
+      }
+    } finally { savingRef.current = false; if (mountedRef.current) setSavingAction('') }
   }
 
   const isSidebar = mode === 'sidebar'
@@ -588,7 +648,7 @@ export function InspirationPostDetail({ item, t, onItemUpdated, onReplicate, rep
     <Drawer open={Boolean(image)} onClose={() => setImage(null)} title={<div className="omnimux-post-drawer-heading"><span>{image?.label || copy('image')}</span><IconButton variant="ghost" aria-label={t('close')} onClick={() => setImage(null)}><X size={16} /></IconButton></div>} closable={false} className="omnimux-post-lightbox" width="100%" container={container} closeOnEsc={false} footer={image && <ReferenceButton disabled={saving} selected={hasReference({ kind: 'media', media_index: image.index })} onClick={() => toggleReference({ kind: 'media', media_index: image.index })} t={t} />}>
       {image && <><div className="omnimux-post-lightbox-tools"><IconButton variant="ghost" aria-label={copy('previousImage')} disabled={imageLightboxPosition <= 0} onClick={() => stepImage(-1)}><ChevronLeft size={16} /></IconButton><span className="omnimux-post-lightbox-counter">{imageLightboxPosition + 1} / {imageMedia.length}</span><IconButton variant="ghost" aria-label={copy('nextImage')} disabled={imageLightboxPosition < 0 || imageLightboxPosition >= imageMedia.length - 1} onClick={() => stepImage(1)}><ChevronRight size={16} /></IconButton><IconButton variant="ghost" aria-label={copy('zoomOut')} onClick={() => setZoom(value => Math.max(1, value - .5))}><Minus size={16} /></IconButton><Button size="sm" variant="ghost" leadingIcon={<RotateCcw size={14} />} onClick={() => setZoom(1)}>{zoom === 1 ? copy('fit') : `${Math.round(zoom * 100)}%`}</Button><IconButton variant="ghost" aria-label={copy('zoomIn')} onClick={() => setZoom(value => Math.min(4, value + .5))}><Plus size={16} /></IconButton><a href={image.url} target="_blank" rel="noopener noreferrer">{copy('openOriginal')}</a></div><div className={`omnimux-post-lightbox-canvas ${zoom > 1 ? 'is-zoomed' : ''}`}><img src={image.url} alt={image.title || image.label} style={zoom > 1 ? { width: `${(dimensions[image.index]?.width || 600) * zoom}px`, maxWidth: 'none', maxHeight: 'none' } : undefined} /></div></>}
     </Drawer>
-    <Drawer open={drawer} onClose={() => setDrawer(false)} title={<div className="omnimux-post-drawer-heading"><span>{copy('creationTitle')}</span><IconButton variant="ghost" aria-label={t('close')} onClick={() => setDrawer(false)}><X size={16} /></IconButton></div>} closable={false} width={460} container={container} closeOnEsc={false} className="omnimux-post-creation-drawer" footer={<div className="omnimux-post-draft-actions"><Button variant="secondary" loading={saving} disabled={!selected.length} onClick={() => save(false)}>{copy('saveDraft')}</Button><Button variant="primary" loading={saving || replicateBusy} disabled={!selected.length || !onReplicate || manualStale || clipError} onClick={() => save(true)}>{copy('useInChat')}</Button></div>}>
+    <Drawer open={drawer} onClose={() => setDrawer(false)} title={<div className="omnimux-post-drawer-heading"><span>{copy('creationTitle')}</span><IconButton variant="ghost" aria-label={t('close')} onClick={() => setDrawer(false)}><X size={16} /></IconButton></div>} closable={false} width={460} container={container} closeOnEsc={false} className="omnimux-post-creation-drawer" footer={<div className="omnimux-post-draft-actions"><Button variant="secondary" loading={savingAction === 'draft'} disabled={saving || !selected.length} onClick={() => save(false)}>{copy('saveDraft')}</Button><Button variant="primary" loading={savingAction === 'chat' || replicateBusy} disabled={saving || !selected.length || !onReplicate || manualStale || clipError} onClick={() => save(true)}>{copy('useInChat')}</Button></div>}>
       <div className="omnimux-post-draft-content">
         <section><h4>{copy('reference')}</h4>{selected.map(ref => <div className="omnimux-post-draft-reference" key={refKey(ref)}><span>{ref.kind === 'media' ? <Film size={15} /> : <FileText size={15} />}{labelFor(ref)}</span><Button size="sm" variant="ghost" disabled={saving} onClick={() => toggleReference(ref)}>{copy('remove')}</Button></div>)}</section>
         {(draft.clips || []).map(clip => <fieldset className="omnimux-post-clip" key={clip.media_index}><legend>{labelFor({ kind: 'media', media_index: clip.media_index })} {copy('clip')}</legend><p>{copy('clipHint')}</p><div>{['start_seconds', 'end_seconds'].map(field => <InputField key={field} label={copy(field === 'start_seconds' ? 'start' : 'end')} disabled={saving} type="number" min="0" step="0.1" value={clip[field]} onChange={event => changeDraft({ clips: draft.clips.map(value => value.media_index === clip.media_index ? { ...value, [field]: event.target.value } : value) })} />)}<Button size="sm" variant="ghost" disabled={clipError} onClick={() => previewClip(clip)}>{copy('previewClip')}</Button></div></fieldset>)}

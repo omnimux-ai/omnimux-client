@@ -181,6 +181,22 @@ describe('revealConversationForReplicate', () => {
     assert.equal(counts.focus, 3)
     assert.equal(counts.closedTabs, 0)
   })
+
+  it('calls ensureConversationVisible without args when available to exit host right-sidebar fullscreen', () => {
+    const order = []
+    revealConversationForReplicate({
+      window: {
+        __omnimuxWorkbench: {
+          closeTab(id) { order.push(`close:${id}`) },
+          closePanel() { order.push('closePanel') },
+          ensureConversationVisible(opts) { order.push(`ensure:${opts === undefined ? 'none' : JSON.stringify(opts)}`) },
+          setConversationCollapsed(next) { order.push(`collapsed:${next}`) },
+          setFocus(mode) { order.push(`focus:${mode}`) },
+        },
+      },
+    })
+    assert.deepEqual(order, ['ensure:none', 'collapsed:false', 'focus:split'])
+  })
 })
 
 describe('oneClickReplicate', () => {

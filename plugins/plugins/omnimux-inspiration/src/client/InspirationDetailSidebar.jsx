@@ -6,7 +6,7 @@ import { createShareLink, getLocalInspiration, shareRequestPayload } from './api
 import { getInspirationPreviewData } from './inspiration-preview-data.js'
 import { importErrorText, importSettledNotice, importStageLabel, isFailedRow, isImportingRow } from './import-status.js'
 import { createImportPoller } from './import-poller.js'
-import { detectPostVariant } from './post-detail.js'
+import { detectPostVariant, isCurrentPostOrPromoted, resolveDetailMountKey } from './post-detail.js'
 import { decideSharePollOutcome, isShareRunning, shareErrorText, shareMediaNotice, shareSteps, shareUrlOf, shareValidityText } from './share-status.js'
 
 /**
@@ -42,7 +42,9 @@ export function InspirationDetailSidebar({
   const shareTriggerRef = useRef(null)
   const sharePopoverRef = useRef(null)
   const applyItemRef = useRef(() => {})
-  const currentItemRef = useRef({ id: '', isLocal: true, sourceUrl: '' })
+  const currentItemRef = useRef({ id: '', isLocal: true, sourceUrl: '', row: null })
+  const promotedTargetIdRef = useRef('')
+  const detailIdentityRef = useRef({ key: '', item: null })
 
   useEffect(() => {
     setItem(row)
@@ -53,20 +55,13 @@ export function InspirationDetailSidebar({
     id: itemKey,
     isLocal: item?.is_local !== false,
     sourceUrl: String(item?.source_url || ''),
+    row: item,
   }
+  const resolvedIdentity = resolveDetailMountKey(detailIdentityRef.current, promotedTargetIdRef.current, item)
+  if (resolvedIdentity.resetPromoted) promotedTargetIdRef.current = ''
+  detailIdentityRef.current = { key: resolvedIdentity.key, item: resolvedIdentity.item }
 
-  const isCurrentOrPromoted = (next) => {
-    if (!next || typeof next !== 'object') return false
-    const current = currentItemRef.current
-    if (!current.id) return true
-    if (next.id != null && String(next.id) === current.id) return true
-    // Allow cloud-to-local promotion for the same post (id changes from cloud id to local insp_* id).
-    if (current.isLocal === false && next.is_local !== false) {
-      const nextUrl = String(next.source_url || '')
-      if (!current.sourceUrl || !nextUrl || nextUrl === current.sourceUrl) return true
-    }
-    return false
-  }
+  const isCurrentOrPromoted = (next) => isCurrentPostOrPromoted(currentItemRef.current.row, next)
 
   useEffect(() => {
     setShowSharePopover(Boolean(initialShareOpen))
@@ -128,10 +123,15 @@ export function InspirationDetailSidebar({
 
   const commitItem = (next) => {
     if (!isCurrentOrPromoted(next)) return
+    const current = currentItemRef.current
+    if (current.isLocal === false && next.is_local !== false && next.id != null) {
+      promotedTargetIdRef.current = String(next.id)
+    }
     currentItemRef.current = {
       id: next.id == null ? '' : String(next.id),
       isLocal: next.is_local !== false,
-      sourceUrl: String(next.source_url || currentItemRef.current.sourceUrl || ''),
+      sourceUrl: String(next.source_url || current.sourceUrl || ''),
+      row: next,
     }
     setItem(next)
     onItemUpdated?.(next)
@@ -351,7 +351,7 @@ export function InspirationDetailSidebar({
       </div>
 
       <InspirationPostDetail
-        key={String(item?.source_url || item?.id)}
+        key={detailIdentityRef.current.key}
         mode="sidebar"
         initialTab={initialTab}
         item={item}

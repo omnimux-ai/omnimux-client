@@ -17,6 +17,7 @@ import {
   toggleIdInSet,
   updateItemInList,
 } from './feed-helpers.js'
+import { samePostIdentity } from './post-detail.js'
 import { oneClickReplicate } from './replicate-to-chat.js'
 
 export {
@@ -582,8 +583,7 @@ export function useInspirationFeed({ active, collectionId = '' }) {
     setLandedItem((prev) => prev && String(prev.id) === String(updatedItem?.id) ? updatedItem : prev)
     setSelectedItem((prev) => {
       if (!prev || !updatedItem) return prev
-      if (String(prev.id) === String(updatedItem.id)) return updatedItem
-      if (prev.source_url && updatedItem.source_url && prev.source_url === updatedItem.source_url) return updatedItem
+      if (samePostIdentity(prev, updatedItem)) return updatedItem
       return prev
     })
   }, [setItems])
