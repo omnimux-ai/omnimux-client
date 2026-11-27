@@ -71,3 +71,19 @@ test('mounted consumer refuses append while the composer is not plain', async ()
     assert.deepEqual(writes, [])
   })
 })
+
+test('mounted consumer protects replace prefill when rc.3 attachmentIds is non-empty', async () => {
+  resetSessionPrefill()
+  await withConsumer({ draft: '', phase: 'plain', imageIds: [], attachmentIds: ['att-1'] }, async ({ state, writes }) => {
+    let completion
+    await act(async () => {
+      completion = queueSessionPrefill({
+        targetSessionId: 'qa-session', prompt: 'NEW PROMPT', mode: 'replace', attach: () => ({ ok: true }),
+      })
+      await new Promise(resolve => setTimeout(resolve, 100))
+    })
+    assert.deepEqual(await completion, { ok: false, error: 'draft-protected' })
+    assert.equal(state.draft, '')
+    assert.deepEqual(writes, [])
+  })
+})

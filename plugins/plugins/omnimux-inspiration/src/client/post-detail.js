@@ -1,4 +1,6 @@
 import { analysisInputFingerprint, analysisMediaItems, sourceFingerprint } from '../analysis-input.js'
+import { confirmCreationDraftBasis, reconcileCreationDraft, resolveCreationAnalysis } from '../creation-draft.js'
+import { getCanonicalItemKey, isSameSocialContent, normalizeUrl } from '../url-normalizer.js'
 import { hostMediaSrc, pickVideoSrc } from './api.js'
 
 /** Original post text is independent of generated narration and analysis. */
@@ -152,4 +154,152 @@ export function matchHeadlessSkillEvent(event, itemId) {
     errorCode: typeof payload.errorCode === 'string' ? payload.errorCode : '',
     terminal: status === 'done' || status === 'failed' || status === 'cancelled',
   }
+}
+
+function normalizedBodyText(item) {
+  return getPostBody(item).replace(/\r\n/g, '\n').trim()
+}
+
+/** Stable React/identity key across cloud-to-local URL canonicalization. */
+export function stablePostKey(item) {
+  if (!item || typeof item !== 'object') return ''
+  const rawUrl = typeof item.source_url === 'string' ? item.source_url.trim() : ''
+  if (rawUrl) return getCanonicalItemKey(rawUrl).key || normalizeUrl(rawUrl) || rawUrl
+  return item.id == null ? '' : String(item.id)
+}
+
+/** Identify whether two post rows refer to the same item, including cloud-to-local promotion. */
+export function samePostIdentity(a, b) {
+  if (!a || !b || typeof a !== 'object' || typeof b !== 'object') return false
+  if (a.id != null && b.id != null && String(a.id) === String(b.id)) return true
+  const urlA = typeof a.source_url === 'string' ? a.source_url.trim() : ''
+  const urlB = typeof b.source_url === 'string' ? b.source_url.trim() : ''
+  return Boolean(urlA && urlB && isSameSocialContent(urlA, urlB))
+}
+
+/** Allow same-id updates or cloud-to-local promotion updates for the currently viewed post. */
+export function isCurrentPostOrPromoted(currentRow, nextRow) {
+  if (!nextRow || typeof nextRow !== 'object') return false
+  if (!currentRow || currentRow.id == null) return true
+  if (nextRow.id != null && String(nextRow.id) === String(currentRow.id)) return true
+  if (currentRow.is_local === false && nextRow.is_local !== false) {
+    const currentUrl = typeof currentRow.source_url === 'string' ? currentRow.source_url.trim() : ''
+    const nextUrl = typeof nextRow.source_url === 'string' ? nextRow.source_url.trim() : ''
+    if (!currentUrl || !nextUrl || samePostIdentity(currentRow, nextRow)) return true
+  }
+  return false
+}
+
+/** Keep the detail view mounted under one stable key while a cloud item promotes locally. */
+export function resolveDetailMountKey(identityState, promotedTargetId, item) {
+  const fallbackKey = stablePostKey(item)
+  if (!identityState?.key || !item) return { key: fallbackKey, item: item || null, resetPromoted: false }
+  if (identityState.item === item) return { key: identityState.key, item, resetPromoted: false }
+  const itemId = item.id == null ? '' : String(item.id)
+  const same = samePostIdentity(identityState.item, item) || Boolean(promotedTargetId && itemId === promotedTargetId)
+  if (same) return { key: identityState.key, item, resetPromoted: false }
+  return { key: fallbackKey, item, resetPromoted: true }
+}
+
+/** Check whether an analysis target remains valid after saving/promoting the post. */
+export function isTargetMediaCompatible(prevItem, savedRow, target) {
+  if (target?.scope !== 'media') return true
+  const prevMedia = getPostMedia(prevItem)
+  const nextMedia = getPostMedia(savedRow)
+  const prevAsset = prevMedia.find((asset) => asset.index === target.media_index)
+  const nextAsset = nextMedia.find((asset) => asset.index === target.media_index)
+  if (!prevAsset || !nextAsset || prevAsset.type !== nextAsset.type) return false
+  if (prevItem?.is_local === false && savedRow?.is_local !== false) {
+    return prevMedia.length === nextMedia.length
+  }
+  return prevAsset.url === nextAsset.url
+}
+
+/**
+ * Evaluate whether promoting/reloading a post invalidates any user-selected
+ * creation reference. Unselected media localization never blocks body-only
+ * or still-compatible selections, and valid choices stay checked on review.
+ */
+export function assessPromotionDraft(prevItem, savedRow, currentDraft) {
+  const promoted = String(savedRow?.id ?? '') !== String(prevItem?.id ?? '')
+  const isPromotion = prevItem?.is_local === false && savedRow?.is_local !== false
+  const bodyChanged = normalizedBodyText(prevItem) !== normalizedBodyText(savedRow)
+  const prevMedia = getPostMedia(prevItem)
+  const nextMedia = getPostMedia(savedRow)
+  const savedSlots = analysisMediaItems(savedRow)
+  const originalClips = Array.isArray(currentDraft?.clips) ? currentDraft.clips : []
+  const keptRefs = []
+  let requiresReview = false
+
+  for (const ref of Array.isArray(currentDraft?.references) ? currentDraft.references : []) {
+    if (!ref || typeof ref !== 'object') {
+      requiresReview = true
+      continue
+    }
+    if (ref.kind === 'body') {
+      if (!getPostBody(savedRow).trim()) {
+        requiresReview = true
+        continue
+      }
+      if (bodyChanged) requiresReview = true
+      keptRefs.push({ kind: 'body' })
+      continue
+    }
+    if (ref.kind === 'media') {
+      const prevAsset = prevMedia.find((asset) => asset.index === ref.media_index)
+      const nextAsset = nextMedia.find((asset) => asset.index === ref.media_index)
+      const slot = Number.isInteger(ref.media_index) ? savedSlots[ref.media_index] : null
+      if (!nextAsset || !slot || (prevAsset && prevAsset.type !== nextAsset.type)) {
+        requiresReview = true
+        continue
+      }
+      if (nextAsset.type === 'video') {
+        const clip = originalClips.find((entry) => entry?.media_index === ref.media_index)
+        const duration = Number(nextAsset.duration || savedRow?.duration)
+        if (clip && clip.end_seconds !== '' && duration > 0 && Number(clip.end_seconds) > duration) {
+          requiresReview = true
+        }
+      }
+      if (isPromotion) {
+        if (!prevAsset || prevMedia.length !== nextMedia.length) requiresReview = true
+      } else if (!prevAsset || nextAsset.url !== prevAsset.url) {
+        requiresReview = true
+      }
+      keptRefs.push({ kind: 'media', media_index: ref.media_index })
+      continue
+    }
+    if (ref.kind === 'analysis') {
+      const entry = resolveCreationAnalysis(savedRow, ref)
+      if (!entry) {
+        requiresReview = true
+        continue
+      }
+      keptRefs.push({
+        kind: 'analysis',
+        scope: ref.scope,
+        ...(ref.scope === 'media' ? { media_index: ref.media_index } : {}),
+        input_fingerprint: entry.input_fingerprint,
+        result_snapshot: entry.result,
+      })
+      continue
+    }
+    requiresReview = true
+  }
+
+  const keptVideoIndexes = new Set(
+    keptRefs
+      .filter((ref) => ref.kind === 'media' && nextMedia.find((asset) => asset.index === ref.media_index)?.type === 'video')
+      .map((ref) => ref.media_index),
+  )
+  const keptClips = originalClips
+    .filter((clip) => keptVideoIndexes.has(clip?.media_index))
+    .map((clip) => ({ ...clip }))
+
+  const baseDraft = { ...(currentDraft || {}), references: keptRefs, clips: keptClips }
+  let nextDraft = reconcileCreationDraft(savedRow, baseDraft)
+  if (!requiresReview && currentDraft?.manual === true) {
+    nextDraft = confirmCreationDraftBasis(savedRow, nextDraft)
+  }
+
+  return { nextDraft, requiresReview, bodyChanged, promoted }
 }

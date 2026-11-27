@@ -48,5 +48,19 @@ describe('saved creation references', () => {
   const result=await handleMaterializeCreationReferences(request(s.ctx,{sessionId:'session',reference_id:prepared.body.data.creation_reference.id}));
   assert.equal(result.status,409); assert.equal(result.body.attachments,undefined);
  })
+ it('maps known ComposerAttachmentError failure codes to explicit actionable HTTP statuses', async () => {
+  const s=setup(); const prepared=await handlePrepareCreationReferences(request(s.ctx,{draft:s.draft()}));
+  const cases = [
+   ['session-not-found', 409, /目标会话尚未就绪/],
+   ['disk-space-insufficient', 507, /磁盘空间不足/],
+   ['needs-session-query', 503, /会话附件能力未就绪/],
+  ]
+  for (const [code, status, msg] of cases) {
+   s.attachments.materializeProduced = async () => { throw Object.assign(new Error(code), { code }) }
+   const out = await handleMaterializeCreationReferences(request(s.ctx, { sessionId: 'session', reference_id: prepared.body.data.creation_reference.id }))
+   assert.equal(out.status, status)
+   assert.match(out.body.error, msg)
+  }
+ })
 
 })
