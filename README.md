@@ -6,9 +6,10 @@
   </picture>
 </p>
 
+<h1 align="center">OmniMux — Open-Source Local AI Video Studio &amp; Editor for E-Commerce &amp; UGC Ads</h1>
+
 <p align="center">
-  <strong>Open-source local AI video studio for product marketing &amp; UGC</strong><br>
-  <sub>Turn product links and reference videos into editable workflows, multi-track cuts, and consistent brand assets — co-edited by you and your AI Agent on macOS &amp; Windows.</sub>
+  <sub>Local-first AI video generator, multimodal workflow canvas, digital human asset library, and multi-track video editor built on DeepSeek Harness — co-edited by you and your AI Agent on macOS &amp; Windows.</sub>
 </p>
 
 <p align="center">
@@ -28,19 +29,19 @@
 </p>
 
 <p align="center">
-  <a href="#quick-start">Quick Start</a> ·
-  <a href="#showcase">Showcase</a> ·
-  <a href="#cloud-assets">Cloud Assets</a> ·
-  <a href="#capabilities">Interface &amp; Capabilities</a> ·
-  <a href="#ecosystem">Skills &amp; Ecosystem</a> ·
-  <a href="#models">Models</a> ·
-  <a href="#architecture">Architecture</a> ·
-  <a href="#status">Status</a> ·
+  <a href="#quick-start">Quick Start</a> |
+  <a href="#showcase">Showcase</a> |
+  <a href="#cloud-assets">Cloud Assets</a> |
+  <a href="#capabilities">Interface &amp; Capabilities</a> |
+  <a href="#ecosystem">Skills &amp; Ecosystem</a> |
+  <a href="#models">Models</a> |
+  <a href="#architecture">Architecture</a> |
+  <a href="#status">Status</a> |
   <a href="#community">Community</a>
 </p>
 
 <p align="center">
-  <strong>English</strong> · <a href="docs/README.zh-CN.md">简体中文</a>
+  <strong>English</strong> | <a href="docs/README.zh-CN.md">简体中文</a>
 </p>
 
 <p align="center">
@@ -52,12 +53,12 @@
 
 ---
 
-**OmniMux** solves the biggest headache in AI product video production: scattered prompts, inconsistent characters/products, and one-off web tools that lock your files in the cloud. It brings your **Product Library, 6,380+ Built-in Cloud & Local Assets, Inspiration Teardown, Infinite Multimodal Canvas, and Multi-Track Clip Studio** into one local-first desktop app built on [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness), where humans and AI Agents edit the exact same live workspace.
+**OmniMux** is an open-source AI video editor and AI video generator built for **e-commerce product videos, UGC video ads, and short-form video** across TikTok, Reels, and Shorts. Instead of scattered prompts, inconsistent characters/products, and cloud-locked web tools, it unifies your **Product Library, 6,380+ Built-in Cloud & Local Assets, Inspiration Teardown, Infinite Multimodal Canvas, and Multi-Track Clip Studio** into one local-first desktop app on [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness), where creators and AI Agents edit the exact same live workspace.
 
-- 🛍️ **Stop re-briefing your product every prompt** — Paste a landing page to extract selling points and local media refs, save reusable characters/scenes/styles, and mention `@Product` in any chat or canvas.
-- ☁️ **6,380+ built-in cloud assets ready out of the box** — Browse 350+ multi-filter digital humans, 3,390+ real-world scenes, 940 product props, 700+ first-3-second viral hooks, 150+ visual style packs, and 610+ voiceover/BGM tracks inside the Asset Center—audition live, save locally in one click, or attach straight into chat and workflows.
-- 🔍 **Turn reference videos into production briefs** — Capture posts via the Chrome companion, keep original copy & translations, break down hooks clip-by-clip, and send selected segments straight into a new session.
-- 🧩 **Co-edit workflows and timelines with your Agent** — Wire image, video, lip-sync, voiceover, and music nodes on a DAG canvas, then refine timing in the built-in multi-track timeline and export MP4 locally.
+- 🛍️ **Stop re-briefing your product every prompt** — Paste an e-commerce or SaaS landing page to extract selling points and local media refs, save reusable characters/scenes/styles, and mention `@Product` in any chat or canvas.
+- ☁️ **6,380+ built-in cloud assets & digital humans out of the box** — Browse 350+ multi-filter digital humans, 3,390+ real-world scenes, 940 product props, 700+ first-3-second viral hooks, 150+ visual style packs, and 610+ voiceover/BGM tracks inside the Asset Center — audition live, save locally in one click, or attach straight into chat and workflows.
+- 🔍 **Turn viral short-form & reference videos into briefs** — Capture posts via the Chrome companion, preserve original copy & translations, break down hooks clip-by-clip, and send selected segments straight into a new session.
+- 🧩 **Co-edit AI video workflows, lip-sync & timelines with your Agent** — Wire image, video generation, lip-sync, voiceover, and music nodes on a DAG canvas, then refine pacing in the built-in multi-track video editor and export MP4 locally.
 - 🔑 **Zero-CLI desktop app with local-first storage & BYOK** — Native macOS and Windows installers bundle the runtime and plugins. Use the unified OmniMux route or bring your own API keys (BYOK) locally.
 
 ---
@@ -332,26 +333,26 @@ OmniMux develops and ships its Electron desktop shell (`app/`) and product plugi
 ```text
 +-----------------------------------------------------------------------+
 |                       OmniMux Desktop (Electron)                      |
-|   Native Window · System Tray · Setup Wizard · Managed Local Runtime  |
+|   Native Window | System Tray | Setup Wizard | Managed Local Runtime  |
 +-----------------------------------+-----------------------------------+
                                     |
                     Local Runtime & Cordis Composition
                                     |
 +-----------------------------------+-----------------------------------+
 |          Dual-Surface Workbench (Human UI + Agent Tools)              |
-|  Products · Assets · Inspiration · Workflow · Clip · Browser · Market |
+|  Products | Assets | Inspiration | Workflow | Clip | Browser | Market |
 +-----------------------------------+-----------------------------------+
                                     |
                         Unified Seams & Event Bus
                                     |
 +-----------------------------------+-----------------------------------+
 |                        OmniMux Execution Hub                          |
-|  Auth · Local Credentials · Model Routing · Task Recovery · Guards    |
+|  Auth | Local Credentials | Model Routing | Task Recovery | Guards    |
 +------------------+---------------------------------+------------------+
                    |                                 |
                    v                                 v
       Official Route / BYOK Endpoints     Local-First Storage (~/.omnimux)
-     (Text · Image · Video · Music · TTS) (products · assets · workflow · clip)
+     (Text | Image | Video | Music | TTS) (products | assets | workflow | clip)
 ```
 
 ```text
@@ -388,9 +389,9 @@ cd app && corepack yarn install --immutable && corepack yarn dev
 
 | Audience | Links |
 | --- | --- |
-| **Users** | [User Guide](app/docs/user-guide.en.md) · [FAQ](app/docs/faq.en.md) · [Privacy Policy](PRIVACY.md) |
-| **Desktop & Plugin Developers** | [Desktop Subtree README](app/README.en.md) · [Plugins Subtree README](plugins/README.md) · [Desktop Architecture](app/docs/architecture.en.md) · [Plugin Development](app/docs/plugin-development.en.md) |
-| **Contracts & Specs** | [Agent Tool Inventory](plugins/docs/contracts/plugin-agent-tools-inventory.md) · [Canvas Generation Contract](plugins/docs/contracts/canvas-generation.md) · [Clip Live Control Contract](plugins/docs/contracts/clip-live-control.md) · [Subsystem Index](docs/subsystems.md) |
+| **Users** | [User Guide](app/docs/user-guide.en.md) / [FAQ](app/docs/faq.en.md) / [Privacy Policy](PRIVACY.md) |
+| **Desktop & Plugin Developers** | [Desktop Subtree README](app/README.en.md) / [Plugins Subtree README](plugins/README.md) / [Desktop Architecture](app/docs/architecture.en.md) / [Plugin Development](app/docs/plugin-development.en.md) |
+| **Contracts & Specs** | [Agent Tool Inventory](plugins/docs/contracts/plugin-agent-tools-inventory.md) / [Canvas Generation Contract](plugins/docs/contracts/canvas-generation.md) / [Clip Live Control Contract](plugins/docs/contracts/clip-live-control.md) / [Subsystem Index](docs/subsystems.md) |
 
 </details>
 
@@ -425,7 +426,7 @@ PRs, bug reports, workflow templates, and new `SKILL.md` skills are welcome — 
 
 - **GitHub Discussions** — Q&A, workflow showcase, and open-ended ideas: [Join Discussions](https://github.com/omnimux-ai/omnimux-client/discussions)
 - **GitHub Issues** — Bug reports, feature requests, and skill/plugin proposals: [Open an Issue](https://github.com/omnimux-ai/omnimux-client/issues/new/choose)
-- **Discord & X** — Real-time community chat and release announcements: [Discord](https://discord.gg/uNPBDz3WNC) · [@OmniMuxai](https://x.com/OmniMuxai)
+- **Discord & X** — Real-time community chat and release announcements: [Discord](https://discord.gg/uNPBDz3WNC) | [@OmniMuxai](https://x.com/OmniMuxai)
 - **Security & Commercial** — Private vulnerability reports ([SECURITY.md](SECURITY.md)) and licensing inquiries: `hello@omnimux.ai`
 
 <table>
@@ -445,7 +446,7 @@ PRs, bug reports, workflow templates, and new `SKILL.md` skills are welcome — 
         <p><a href="https://discord.gg/uNPBDz3WNC"><img src="https://img.shields.io/badge/Discord-Join%20OmniMux-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord"></a></p>
         <p><a href="https://x.com/OmniMuxai"><img src="https://img.shields.io/badge/X-Follow%20@OmniMuxai-000000?style=for-the-badge&logo=x&logoColor=white" alt="X"></a></p>
         <p><a href="https://github.com/omnimux-ai/omnimux-client/discussions"><img src="https://img.shields.io/badge/GitHub-Discussions-0969DA?style=for-the-badge&logo=github&logoColor=white" alt="GitHub Discussions"></a></p>
-        <sub>Guidelines: <a href="CONTRIBUTING.md">Contributing</a> · <a href="CODE_OF_CONDUCT.md">Code of Conduct</a> · <a href="SECURITY.md">Security</a></sub>
+        <sub>Guidelines: <a href="CONTRIBUTING.md">Contributing</a> | <a href="CODE_OF_CONDUCT.md">Code of Conduct</a> | <a href="SECURITY.md">Security</a></sub>
       </td>
     </tr>
   </tbody>
@@ -492,6 +493,15 @@ For full provenance, pinned revisions, and third-party license texts, see [NOTIC
 - **AI-Generated Content & IP Responsibility**: OmniMux is a local-first authoring and orchestration workbench. Output produced by third-party or official AI models (copy, images, audio, digital humans, and video) may be inaccurate or require review before publication. You are solely responsible for verifying product claims, advertising compliance, and copyright, trademark, portrait, and voice rights before publishing or commercializing generated media.
 - **Third-Party Services & Platform Terms**: When using landing-page parsing, inspiration import, the browser companion, BYOK endpoints, or international social scheduling, you are responsible for complying with the terms of service of target websites/platforms and applicable laws. OmniMux does not provide automated publishing to domestic Chinese social platforms (Douyin, Xiaohongshu, WeChat Channels, Kuaishou, Bilibili) and makes no guarantees regarding reach, conversions, or account standing.
 - **As-Is Warranty Disclaimer**: This software is provided "AS IS" without warranty of any kind under [AGPL-3.0](LICENSE). To the maximum extent permitted by applicable law, the authors and contributors are not liable for any claim, damages, or other liability arising from use of this software. For privacy, copyright, attribution, or compliance inquiries, see [PRIVACY.md](PRIVACY.md) or contact `hello@omnimux.ai`.
+
+---
+
+<details>
+<summary>🇨🇳 中文简介与搜索索引（查看完整中文文档：docs/README.zh-CN.md）</summary>
+
+**OmniMux** 是一款开源本地优先的 **AI 电商带货与 UGC 短视频工作台**（macOS / Windows），基于 DeepSeek Harness 构建，将商品库、6,380+ 云端与本地数字人/场景/道具/前 3 秒钩子资产库、Chrome 爆款灵感拆解、多模态无限工作流画布、对口型与多轨视频剪辑工坊整合在同一客户端中，支持官方统一路由与 BYOK 自定义模型密钥。完整安装说明、案例展示与开发文档请参阅 [简体中文 README](docs/README.zh-CN.md)。
+
+</details>
 
 ---
 

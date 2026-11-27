@@ -6,9 +6,10 @@
   </picture>
 </p>
 
+<h1 align="center">OmniMux — 开源本地 AI 电商带货与 UGC 短视频工作台</h1>
+
 <p align="center">
-  <strong>属于你的开源本地 AI 内容电商视频工作台</strong><br>
-  <sub>粘贴商品链接与参考视频，在一套桌面端完成拆解、资产管理、无限画布生成与多轨剪辑 — 人机协同，数据留在本地。</sub>
+  <sub>基于 DeepSeek Harness 构建的本地优先 AI 视频生成器、数字人资产库、多模态工作流画布与多轨视频剪辑工坊 — 面向电商带货、UGC 广告与短片创作（macOS / Windows）。</sub>
 </p>
 
 <p align="center">
@@ -28,19 +29,19 @@
 </p>
 
 <p align="center">
-  <a href="#quick-start">快速上手</a> ·
-  <a href="#showcase">带货案例</a> ·
-  <a href="#cloud-assets">云端资产</a> ·
-  <a href="#capabilities">界面与能力</a> ·
-  <a href="#ecosystem">技能与生态</a> ·
-  <a href="#models">模型路由</a> ·
-  <a href="#architecture">架构与开发</a> ·
-  <a href="#status">交付状态</a> ·
+  <a href="#quick-start">快速上手</a> |
+  <a href="#showcase">带货案例</a> |
+  <a href="#cloud-assets">云端资产</a> |
+  <a href="#capabilities">界面与能力</a> |
+  <a href="#ecosystem">技能与生态</a> |
+  <a href="#models">模型路由</a> |
+  <a href="#architecture">架构与开发</a> |
+  <a href="#status">交付状态</a> |
   <a href="#community">社区</a>
 </p>
 
 <p align="center">
-  <a href="../README.md">English</a> · <strong>简体中文</strong>
+  <a href="../README.md">English</a> | <strong>简体中文</strong>
 </p>
 
 <p align="center">
@@ -332,26 +333,26 @@ OmniMux 将原生桌面壳（`app/`）与产品插件工作区（`plugins/`）�
 ```text
 +-----------------------------------------------------------------------+
 |                       OmniMux 桌面客户端（Electron）                   |
-|   原生窗口 · 系统托盘 · 首次配置向导 · 本地运行时托管 · 手机远程协同    |
+|   原生窗口 | 系统托盘 | 首次配置向导 | 本地运行时托管 | 手机远程协同    |
 +-----------------------------------+-----------------------------------+
                                     |
                     本地运行时 & Cordis 插件组合层
                                     |
 +-----------------------------------+-----------------------------------+
 |               人机双面工作台（UI Surface + Agent Tools）               |
-|  产品库 · 资产库 · 灵感库 · 无限画布 · 剪辑工坊 · 浏览器伴侣 · 技能市场  |
+|  产品库 | 资产库 | 灵感库 | 无限画布 | 剪辑工坊 | 浏览器伴侣 | 技能市场  |
 +-----------------------------------+-----------------------------------+
                                     |
                         统一 Seam 接口 & 事件总线
                                     |
 +-----------------------------------+-----------------------------------+
 |                   OmniMux 执行中枢（Execution Hub）                    |
-|    身份认证 · 本地凭据存储 · 模型目录与路由 · 任务恢复 · 参数契约校验   |
+|    身份认证 | 本地凭据存储 | 模型目录与路由 | 任务恢复 | 参数契约校验   |
 +------------------+---------------------------------+------------------+
                    |                                 |
                    v                                 v
       官方通道 / BYOK 自定义端点            本地优先工作区存储（~/.omnimux）
-   (文本 · 图像 · 视频 · 音乐 · 语音)     (products · assets · workflow · clip)
+   (文本 | 图像 | 视频 | 音乐 | 语音)     (products | assets | workflow | clip)
 ```
 
 ```text
@@ -388,9 +389,9 @@ cd app && corepack yarn install --immutable && corepack yarn dev
 
 | 角色 | 文档入口 |
 | --- | --- |
-| **终端用户** | [使用手册](../app/docs/user-guide.md) · [常见问题 FAQ](../app/docs/faq.md) · [隐私政策](PRIVACY.zh-CN.md) |
-| **桌面与插件开发者** | [桌面端文档](../app/README.md) · [插件工作区文档](../plugins/README.md) · [桌面架构说明](../app/docs/architecture.md) · [插件开发文档](../app/docs/plugin-development.md) |
-| **契约与工程规范** | [Agent 工具契约清单](../plugins/docs/contracts/plugin-agent-tools-inventory.md) · [画布生成契约](../plugins/docs/contracts/canvas-generation.md) · [画布剪辑联动契约](../plugins/docs/contracts/clip-live-control.md) · [子系统索引](subsystems.md) |
+| **终端用户** | [使用手册](../app/docs/user-guide.md) / [常见问题 FAQ](../app/docs/faq.md) / [隐私政策](PRIVACY.zh-CN.md) |
+| **桌面与插件开发者** | [桌面端文档](../app/README.md) / [插件工作区文档](../plugins/README.md) / [桌面架构说明](../app/docs/architecture.md) / [插件开发文档](../app/docs/plugin-development.md) |
+| **契约与工程规范** | [Agent 工具契约清单](../plugins/docs/contracts/plugin-agent-tools-inventory.md) / [画布生成契约](../plugins/docs/contracts/canvas-generation.md) / [画布剪辑联动契约](../plugins/docs/contracts/clip-live-control.md) / [子系统索引](subsystems.md) |
 
 </details>
 
@@ -425,7 +426,7 @@ cd app && corepack yarn install --immutable && corepack yarn dev
 
 - **GitHub Discussions** — 使用问答、成片工作流分享与开放讨论：[进入 Discussions](https://github.com/omnimux-ai/omnimux-client/discussions)
 - **GitHub Issues** — 缺陷报告、功能建议与技能/插件提案：[选择模板提交 Issue](https://github.com/omnimux-ai/omnimux-client/issues/new/choose)
-- **Discord 与 X** — 全球社区交流与版本动态：[Discord](https://discord.gg/uNPBDz3WNC) · [@OmniMuxai](https://x.com/OmniMuxai)
+- **Discord 与 X** — 全球社区交流与版本动态：[Discord](https://discord.gg/uNPBDz3WNC) | [@OmniMuxai](https://x.com/OmniMuxai)
 - **安全与商业授权** — 私密安全漏洞通报（[SECURITY.md](../SECURITY.md)）及商业合作：`hello@omnimux.ai`
 
 <table>
@@ -445,7 +446,7 @@ cd app && corepack yarn install --immutable && corepack yarn dev
         <p><a href="https://discord.gg/uNPBDz3WNC"><img src="https://img.shields.io/badge/Discord-Join%20OmniMux-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord"></a></p>
         <p><a href="https://x.com/OmniMuxai"><img src="https://img.shields.io/badge/X-Follow%20@OmniMuxai-000000?style=for-the-badge&logo=x&logoColor=white" alt="X"></a></p>
         <p><a href="https://github.com/omnimux-ai/omnimux-client/discussions"><img src="https://img.shields.io/badge/GitHub-Discussions-0969DA?style=for-the-badge&logo=github&logoColor=white" alt="GitHub Discussions"></a></p>
-        <sub>社区规范：<a href="../CONTRIBUTING.md">贡献指南</a> · <a href="../CODE_OF_CONDUCT.md">行为准则</a> · <a href="../SECURITY.md">安全策略</a></sub>
+        <sub>社区规范：<a href="../CONTRIBUTING.md">贡献指南</a> | <a href="../CODE_OF_CONDUCT.md">行为准则</a> | <a href="../SECURITY.md">安全策略</a></sub>
       </td>
     </tr>
   </tbody>
