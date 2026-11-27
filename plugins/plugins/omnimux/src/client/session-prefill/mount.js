@@ -12,7 +12,7 @@ export function SessionPrefillConsumer(props) {
       sessionId: props.sessionId,
       draft: state.draft,
       phase: state.phase,
-      protected: state.imageIds?.length > 0 || state.phase !== 'plain',
+      protected: (state.attachmentIds?.length > 0) || (state.imageIds?.length > 0) || state.phase !== 'plain',
       inputActions: props.inputActions,
     })
   }, [intent, state, props.sessionId, props.inputActions])

@@ -1,7 +1,22 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { analysisInputFingerprint, sourceFingerprint } from '../analysis-input.js'
-import { analysisDirections, analysisTargetKey, getBodyTranslation, getPostBody, getPostMedia, getTargetAnalysis, hasRunningAnalysis, decideAnalysisPollOutcome } from './post-detail.js'
+import { createEmptyCreationDraft, creationBasis, reconcileCreationDraft, validateCreationDraft } from '../creation-draft.js'
+import {
+  analysisDirections,
+  analysisTargetKey,
+  assessPromotionDraft,
+  getBodyTranslation,
+  getPostBody,
+  getPostMedia,
+  getTargetAnalysis,
+  hasRunningAnalysis,
+  decideAnalysisPollOutcome,
+  isCurrentPostOrPromoted,
+  isTargetMediaCompatible,
+  samePostIdentity,
+  stablePostKey,
+} from './post-detail.js'
 
 test('post reading never substitutes a generated script for missing original text', () => {
   assert.equal(getPostBody({ title: '标题', deconstruction: { narrative: '生成故事' } }), '')
@@ -60,4 +75,45 @@ test('analysis polling follows every running scope and retains state on unreadab
   assert.deepEqual(decideAnalysisPollOutcome({ ok: true, body: { data: item } }), { action: 'settled', item })
   for (const response of [null, { ok: false, status: 500 }, { ok: true, body: {} }, { ok: true, body: { data: [] } }]) assert.equal(decideAnalysisPollOutcome(response).action, 'keep')
   assert.equal(decideAnalysisPollOutcome({ ok: false, status: 404 }).action, 'gone')
+})
+
+test('cloud-to-local promotion keeps valid body/compatible media selection without spurious review', () => {
+  const cloud = {
+    id: '2789',
+    is_local: false,
+    source_platform: 'tiktok',
+    source_url: 'https://www.tiktok.com/@thatgirlevia/video/7583655185608707350?utm_source=feed',
+    content: 'She thought he was perfect... then she typed his name.\r\n',
+    media_items: [{ type: 'video', url: '/omnimux/inspiration/media/cloud.mp4', duration: 15 }],
+  }
+  const local = {
+    id: 'insp_tiktok_1',
+    is_local: true,
+    source_platform: 'tiktok',
+    source_url: 'https://www.tiktok.com/@thatgirlevia/video/7583655185608707350',
+    content: 'She thought he was perfect... then she typed his name.',
+    media_items: [{ type: 'video', url: '/omnimux/inspiration/local/media/videos/tiktok_1.mp4', duration: 15 }],
+  }
+  assert.equal(samePostIdentity(cloud, local), true)
+  assert.equal(isCurrentPostOrPromoted(cloud, local), true)
+  assert.equal(stablePostKey(cloud), stablePostKey(local))
+  assert.equal(isTargetMediaCompatible(cloud, local, { scope: 'media', media_index: 0 }), true)
+
+  const bodyOnly = reconcileCreationDraft(cloud, createEmptyCreationDraft(cloud), { references: [{ kind: 'body' }] })
+  const bodyResult = assessPromotionDraft(cloud, local, bodyOnly)
+  assert.equal(bodyResult.requiresReview, false)
+  assert.equal(bodyResult.promoted, true)
+  assert.deepEqual(bodyResult.nextDraft.references, [{ kind: 'body' }])
+  assert.equal(validateCreationDraft(local, { ...bodyResult.nextDraft, basis: creationBasis(local, bodyResult.nextDraft) }).ok, true)
+
+  const editedLocal = { ...local, content: 'Edited transcript text after import' }
+  const changedBodyResult = assessPromotionDraft(cloud, editedLocal, bodyOnly)
+  assert.equal(changedBodyResult.requiresReview, true)
+  assert.deepEqual(changedBodyResult.nextDraft.references, [{ kind: 'body' }], 'body checkbox stays selected for review')
+
+  const manualDraft = reconcileCreationDraft(cloud, bodyOnly, { manual: true, text: '只学她的情绪转折', basis: creationBasis(cloud, bodyOnly) })
+  const manualResult = assessPromotionDraft(cloud, local, manualDraft)
+  assert.equal(manualResult.requiresReview, false)
+  assert.equal(manualResult.nextDraft.text, '只学她的情绪转折')
+  assert.equal(manualResult.nextDraft.stale, false)
 })

@@ -6,6 +6,7 @@ import { createShareLink, getLocalInspiration, shareRequestPayload } from './api
 import { getInspirationPreviewData } from './inspiration-preview-data.js'
 import { importErrorText, importSettledNotice, importStageLabel, isFailedRow, isImportingRow } from './import-status.js'
 import { createImportPoller } from './import-poller.js'
+import { isCurrentPostOrPromoted, resolveDetailMountKey } from './post-detail.js'
 import { decideSharePollOutcome, isShareRunning, shareErrorText, shareMediaNotice, shareSteps, shareUrlOf, shareValidityText } from './share-status.js'
 export { cleanScriptDisplay } from '../structure-script.js'
 const ICON_SHARE = (
@@ -70,6 +71,17 @@ export function InspirationPreviewModal({ row, t, onClose, onItemUpdated, onRepl
   }, [itemKey, initialShareOpen])
 
   const applyItemRef = useRef(() => {})
+  const currentItemRef = useRef({ id: '', isLocal: true, row: null })
+  const promotedTargetIdRef = useRef('')
+  const detailIdentityRef = useRef({ key: '', item: null })
+  currentItemRef.current = {
+    id: itemKey,
+    isLocal: item?.is_local !== false,
+    row: item,
+  }
+  const resolvedIdentity = resolveDetailMountKey(detailIdentityRef.current, promotedTargetIdRef.current, item)
+  if (resolvedIdentity.resetPromoted) promotedTargetIdRef.current = ''
+  detailIdentityRef.current = { key: resolvedIdentity.key, item: resolvedIdentity.item }
 
   // The row is the single source of the publish's state: the Host starts the job
   // and writes every stage into it, so the page asks about that row until it
@@ -95,6 +107,7 @@ export function InspirationPreviewModal({ row, t, onClose, onItemUpdated, onRepl
   useEffect(() => {
     applyItemRef.current = (next) => {
       if (!next || typeof next !== 'object') return
+      if (next.id != null && currentItemRef.current.id && String(next.id) !== currentItemRef.current.id) return
       setItem(next)
       onItemUpdated?.(next)
     }
@@ -145,7 +158,19 @@ export function InspirationPreviewModal({ row, t, onClose, onItemUpdated, onRepl
   const importing = isImportingRow(item)
   const failed = isFailedRow(item)
   const settledNotice = importSettledNotice(item, t)
-  const applyItem = (next) => { setItem(next); onItemUpdated?.(next) }
+  const applyItem = (next) => {
+    if (!isCurrentPostOrPromoted(currentItemRef.current.row, next)) return
+    if (currentItemRef.current.isLocal === false && next.is_local !== false && next.id != null) {
+      promotedTargetIdRef.current = String(next.id)
+    }
+    currentItemRef.current = {
+      id: next.id == null ? '' : String(next.id),
+      isLocal: next.is_local !== false,
+      row: next,
+    }
+    setItem(next)
+    onItemUpdated?.(next)
+  }
   if (!row) return null
   return <PreviewModalLayer onClose={onClose} title={data.title}>
     <div className="omnimux-inspiration-modal-backdrop" onClick={onClose} onWheel={event => event.stopPropagation()}>
@@ -276,7 +301,7 @@ export function InspirationPreviewModal({ row, t, onClose, onItemUpdated, onRepl
           </header>
 
 
-        <InspirationPostDetail key={String(item?.source_url || item?.id)} initialTab={initialTab} item={item} t={t} onClose={onClose} onItemUpdated={applyItem} onReplicate={onReplicate} replicateBusy={replicateBusy} notice={<>
+        <InspirationPostDetail key={detailIdentityRef.current.key} initialTab={initialTab} item={item} t={t} onClose={onClose} onItemUpdated={applyItem} onReplicate={onReplicate} replicateBusy={replicateBusy} notice={<>
           {importing && <p className="omnimux-inspiration-player-status">{importStageLabel(item, t)}</p>}
           {failed && <p className="omnimux-inspiration-error-text" role="alert">{importErrorText(item, t) || t('add.status.failed')}</p>}
           {!failed && settledNotice && <p className="omnimux-inspiration-player-status" role="status">{settledNotice}</p>}
