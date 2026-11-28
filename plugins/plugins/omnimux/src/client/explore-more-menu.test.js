@@ -487,3 +487,12 @@ describe('官方面板行白名单', () => {
       '不得原样渲染全部 entries（那是 #3809 决策前的行为）')
   })
 })
+
+describe('更多菜单当前激活项绑定（D9）', () => {
+  it('readActiveMoreItemId 通过 resolveFixedRailState 解析激活的子页并绑定 MenuItemButton current 属性', () => {
+    assert.match(source, /function readActiveMoreItemId\(/, '必须声明 readActiveMoreItemId 辅助函数')
+    assert.match(source, /resolveFixedRailState\(/, '必须调用 resolveFixedRailState 解析当前激活子项')
+    assert.match(source, /current=\{activeMoreId !== null && activeMoreId === item\.id\}/,
+      'MenuItemButton 必须绑定 current={activeMoreId !== null && activeMoreId === item.id}')
+  })
+})

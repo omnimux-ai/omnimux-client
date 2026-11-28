@@ -17,6 +17,7 @@ import { installTabViewportReconciler } from './workbench/tab-viewport-reconcile
 import { installAgentPresetAvatarEnhancer } from './agent-preset-enhancer.js'
 import { installSidebarToggleTopbar, setTopbarGeometryHook } from './sidebar-toggle-topbar.js'
 import { installSidebarPanelChrome } from './sidebar-panel-chrome.js'
+import { installNavRail } from './nav-rail.js'
 import { installCollapsedPanelFill } from './rightbar-collapsed-fill.js'
 import { NS, en, zh } from './locales.js'
 import {
@@ -69,10 +70,17 @@ export function installHubChrome(ctx) {
   // Optional services: layout/sessions ship with the web client; betterSidebar
   // is a community plugin. Never read them on the top-level inject list.
   if (typeof ctx.inject === 'function') {
+    // layout service is ready asynchronously; align rightbar track & subscribe for global panel switches.
     ctx.inject(['layout', 'sessions'], (inner) => {
       workbench.bind({ layout: inner.layout, sessions: inner.sessions })
       // layout 异步就绪时立即对齐外壳 panels.rightbar，避免首开与刷新后分隔线把手停在 45% 默认位。
       reconcileRightbarFromRatio(undefined, { doc: document })
+      if (typeof inner.layout?.subscribe === 'function') {
+        inner.effect(() => inner.layout.subscribe(() => {
+          requestRailActivationSync()
+          notifyWorkbenchChange()
+        }), 'omnimux: layout panel change listener')
+      }
     })
     ctx.inject(['workspaces'], (inner) => {
       inner.effect(() => {
@@ -135,6 +143,7 @@ export function installHubChrome(ctx) {
     hydrateConversationCollapsed()
     // 左侧栏激活位仲裁器：观察宿主三栏状态，裁决变化走既有 notifyWorkbenchChange 广播。
     const unsubActivation = installSidebarActivation()
+    const unsubNavRail = installNavRail()
     const unsubToggle = installChatToggle()
     const unsubLeftRail = installWorkbenchLeftRailObserver()
     const unsubSplitMin = installSplitConversationMin()
@@ -159,6 +168,7 @@ export function installHubChrome(ctx) {
     const unsubTabReconciler = installTabViewportReconciler()
     return () => {
       unsubActivation?.()
+      unsubNavRail?.()
       unsubToggle?.()
       unsubLeftRail?.()
       unsubSplitMin?.()

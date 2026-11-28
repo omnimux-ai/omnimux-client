@@ -51,7 +51,25 @@ export const ROOT_SIGNAL_ATTRS = Object.freeze([
   'data-omnimux-conversation-collapsed',
   LEFT_RAIL_COLLAPSED_ATTR,
   'data-dsh-product-stage',
+  'data-global-panel',
+  'data-omnimux-nav-rail-active',
 ])
+
+/** 固定导航轨直出的一级模块 Tab ID 映射。 */
+export const FIXED_RAIL_PINNED_TABS = Object.freeze({
+  'omnimux-workflow:library': 'projects',
+  'omnimux-market:plaza': 'market',
+  'omnimux-assets:library': 'assets',
+  'omnimux-inspiration:library': 'inspiration',
+})
+
+/** 遗留产品舞台 ID → 固定导航轨项 ID 映射。 */
+export const PRODUCT_STAGE_TO_RAIL_ID = Object.freeze({
+  'omnimux-workflow': 'projects',
+  'omnimux-market': 'market',
+  'omnimux-assets': 'assets',
+  'omnimux-inspiration': 'inspiration',
+})
 
 /** 左栏有对应行的 Tab 身份表（也是裁决的唯一合法取值域）。 */
 export const RAIL_TAB_IDS = Object.freeze(Object.keys(WORKBENCH_TAB_TITLE_FALLBACKS))
@@ -131,6 +149,94 @@ export function resolveSidebarActiveTarget(context = {}) {
  */
 export function isRailVerdictRow(verdict, tabId) {
   return Boolean(verdict) && verdict.winner === 'row' && verdict.tabId === tabId && Boolean(tabId)
+}
+
+function matchExploreItemId(key, exploreItems) {
+  const normalized = typeof key === 'string' ? key.trim() : ''
+  if (!normalized) return null
+  if (Array.isArray(exploreItems)) {
+    const found = exploreItems.find((item) => (
+      item
+      && (item.tabId === normalized
+        || item.id === normalized
+        || item.pluginId === normalized
+        || item.entryId === `${normalized}-entry`
+        || (typeof item.label === 'string' && item.label.trim().toLowerCase() === normalized.toLowerCase()))
+    ))
+    if (found?.id) return found.id
+  }
+  return normalized
+}
+
+/**
+ * 固定左侧导航轨单一状态裁决函数（纯函数）：
+ * 决定固定轨激活项、`home | business` 视图模式、「更多」菜单当前子项、以及是否处于对话+工作台分屏态。
+ *
+ * 优先级：
+ *   1. 官方全局主面板（plugins / schedules）→ more + activeMoreItemId + business；
+ *   2. 遗留产品舞台（data-dsh-product-stage）→ 直出模块或 more + business；
+ *   3. 工作台聚焦页签（右侧展开且对话列不可见，如 fullscreen / gui）→ 直出模块或 more + business；
+ *   4. 否则（首页对话 / 分屏态 / 空闲态）→ home + isSplit。
+ *
+ * @param {{
+ *   verdict?: RailVerdict | null,
+ *   signals?: Partial<HostSignals> | null,
+ *   officialPanelId?: string | null,
+ *   productStageId?: string | null,
+ *   exploreItems?: readonly { id?: string, label?: string, tabId?: string, pluginId?: string, entryId?: string }[],
+ * }} [input]
+ * @returns {{ railId: 'home' | 'projects' | 'market' | 'assets' | 'inspiration' | 'more', view: 'home' | 'business', activeMoreItemId: string | null, isSplit: boolean }}
+ */
+export function resolveFixedRailState(input = {}) {
+  const { verdict, signals, officialPanelId, productStageId, exploreItems } = input && typeof input === 'object' ? input : {}
+
+  const panelKey = typeof officialPanelId === 'string' ? officialPanelId.trim() : ''
+  if (panelKey) {
+    return { railId: 'more', view: 'business', activeMoreItemId: panelKey, isSplit: false }
+  }
+
+  const stageKey = typeof productStageId === 'string' ? productStageId.trim() : ''
+  if (stageKey) {
+    const pinnedStage = PRODUCT_STAGE_TO_RAIL_ID[stageKey]
+    if (pinnedStage) {
+      return { railId: pinnedStage, view: 'business', activeMoreItemId: null, isSplit: false }
+    }
+    return {
+      railId: 'more',
+      view: 'business',
+      activeMoreItemId: matchExploreItemId(stageKey, exploreItems),
+      isSplit: false,
+    }
+  }
+
+  const isFullscreenWorkbench = Boolean(
+    signals?.panelExpanded === true
+    && signals?.conversationVisible !== true
+    && (verdict?.winner === 'row' || Boolean(signals?.activeTabKey)),
+  )
+  const isRowOnlyWithoutConversation = verdict?.winner === 'row' && signals?.conversationVisible !== true
+  if (isFullscreenWorkbench || isRowOnlyWithoutConversation) {
+    const tabKey = verdict?.winner === 'row'
+      ? verdict.tabId
+      : (mapNativeTabKeyToRailTab(signals?.activeTabKey) || signals?.activeTabKey)
+    const pinnedId = typeof tabKey === 'string' ? FIXED_RAIL_PINNED_TABS[tabKey] : undefined
+    if (pinnedId) {
+      return { railId: pinnedId, view: 'business', activeMoreItemId: null, isSplit: false }
+    }
+    return {
+      railId: 'more',
+      view: 'business',
+      activeMoreItemId: matchExploreItemId(tabKey, exploreItems),
+      isSplit: false,
+    }
+  }
+
+  const isSplit = Boolean(
+    signals?.conversationVisible === true
+    && signals?.panelExpanded === true
+    && signals?.fullscreen !== true,
+  )
+  return { railId: 'home', view: 'home', activeMoreItemId: null, isSplit }
 }
 
 function rowIsInSearchScope(row) {
@@ -525,6 +631,30 @@ export function getSidebarActivationArbiter(doc = hostDocument()) {
 export function getRailVerdict(doc) {
   const instance = getSidebarActivationArbiter(doc)
   return instance ? instance.getVerdict() : IDLE_VERDICT
+}
+
+/**
+ * 当前宿主信号快照（供固定导航轨与菜单选中态共用，避免重复采样）。
+ * @param {Document} [doc]
+ * @returns {HostSignals | null}
+ */
+export function getRailSignals(doc) {
+  const instance = getSidebarActivationArbiter(doc)
+  return instance ? instance.getSignals() : null
+}
+
+/**
+ * 强制即时采样宿主信号并重算一次激活裁决（只读刷新缓存，不广播避免回环）。
+ * @param {Document} [doc]
+ * @returns {{ verdict: RailVerdict, signals: HostSignals }}
+ */
+export function readFreshRailActivation(doc = hostDocument()) {
+  if (arbiter && (!doc || arbiter.doc === doc)) {
+    arbiter.recompute()
+    return { verdict: arbiter.verdict, signals: arbiter.signals }
+  }
+  const signals = readSidebarActivationSignals(doc)
+  return { verdict: resolveSidebarActiveTarget(signals), signals }
 }
 
 /**

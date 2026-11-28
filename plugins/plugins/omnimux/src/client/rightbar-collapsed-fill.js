@@ -19,7 +19,7 @@
  * @see ./conversation-collapse.js 收起态属性与投影座席的来源
  */
 
-import { findSidebarColumn, readShellRailWidthPx } from './sidebar-toggle-topbar.js'
+import { findSidebarColumn, readNavRailWidthPx, readShellRailWidthPx } from './sidebar-toggle-topbar.js'
 import { currentRightbarPanel } from './workbench/current-panel.js'
 
 /** 收起态标记属性（由 conversation-collapse.js 写入 html）。 */
@@ -43,7 +43,9 @@ export function computeCollapsedPanelSpan(env = {}) {
   if (!Number.isFinite(viewport) || viewport <= 0) return 0
   const railRight = Number(env.leftRailRight)
   if (!env.leftCollapsed && (!Number.isFinite(railRight) || railRight <= 0)) return 0
-  const start = env.leftCollapsed ? 0 : Math.round(railRight)
+  const navRail = Number(env.navRailWidth)
+  const navRailBase = Number.isFinite(navRail) && navRail > 0 ? Math.round(navRail) : 0
+  const start = env.leftCollapsed ? navRailBase : Math.round(railRight)
   const span = viewport - start
   return span > 0 ? span : 0
 }
@@ -62,20 +64,22 @@ function measureEnv(doc) {
   const win = hostWindow(doc)
   const root = doc?.documentElement
   const leftCollapsed = Boolean(root?.hasAttribute?.(LEFT_COLLAPSED_ATTR))
+  const navRailWidth = readNavRailWidthPx(doc)
   let leftRailRight = null
   if (!leftCollapsed) {
     try {
       // Prefer the shell-authored track: collapsed-layout CSS can affect live geometry.
-      leftRailRight = readShellRailWidthPx(doc)
-      if (leftRailRight === null) {
-        leftRailRight = findSidebarColumn(doc)?.getBoundingClientRect?.().right ?? null
-      }
+      const shellRail = readShellRailWidthPx(doc)
+      leftRailRight = shellRail !== null
+        ? shellRail + navRailWidth
+        : (findSidebarColumn(doc)?.getBoundingClientRect?.().right ?? null)
     } catch { leftRailRight = null }
   }
   return {
     viewportWidth: win?.innerWidth || 0,
     leftRailRight,
     leftCollapsed,
+    navRailWidth,
   }
 }
 
@@ -158,7 +162,7 @@ export function installCollapsedPanelFill(doc = typeof document !== 'undefined' 
     observer.observe(root, {
       attributes: true,
       subtree: true,
-      attributeFilter: [COLLAPSED_ATTR, LEFT_COLLAPSED_ATTR, 'style', 'data-sidebar-right-open', 'data-sidebar-right-panel', 'hidden', 'aria-hidden'],
+      attributeFilter: [COLLAPSED_ATTR, LEFT_COLLAPSED_ATTR, 'data-omnimux-nav-rail-active', 'style', 'data-sidebar-right-open', 'data-sidebar-right-panel', 'hidden', 'aria-hidden'],
     })
   }
   let isApplying = false

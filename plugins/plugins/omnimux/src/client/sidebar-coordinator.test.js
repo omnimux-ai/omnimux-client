@@ -18,7 +18,9 @@ import {
   activateExploreItem,
   filterExploreItemsForChannel,
   getConvergedRowsForTests,
+  getPinnedRowsForTests,
   installSidebarGlobal,
+  resetSidebarCoordinatorForTests,
   resolveExploreMenuItems,
   setReleaseChannelForTests,
 } from './sidebar-coordinator.js'
@@ -997,5 +999,56 @@ test('omnimux-pibrowse 收敛至官方更多菜单，不作为独立行挂入侧
   } finally {
     disposeMore()
     disposeRow()
+  }
+})
+
+test('nav-rail 激活时固定行与内联新建项目行从次级会话栏分离，activatePinnedEntry 可触发已注册入口或回退工作台', () => {
+  setup()
+  installSidebarGlobal()
+  const api = SIDEBAR_GLOBAL()
+  const clicks = []
+  const opened = []
+  const prevWorkbench = window.__omnimuxWorkbench
+  window.__omnimuxWorkbench = { open: (opts) => opened.push(opts) }
+
+  const workflowBtn = document.createElement('button')
+  workflowBtn.dataset.omnimuxWorkflowEntry = ''
+  workflowBtn.addEventListener('click', () => clicks.push('workflow'))
+  const disposeWorkflow = api.register({ id: 'omnimux-workflow-entry', rank: 5, create: () => workflowBtn })
+
+  const newProjectBtn = document.createElement('button')
+  newProjectBtn.dataset.omnimuxNewProjectEntry = ''
+  const disposeNewProject = api.register({
+    id: 'omnimux-new-project',
+    kind: 'inline',
+    create: () => newProjectBtn,
+  })
+
+  try {
+    document.documentElement.removeAttribute('data-omnimux-nav-rail-active')
+    api.place()
+    const root = document.querySelector('[data-pane="sidebar"]')
+    assert.equal(workflowBtn.parentElement, root, '未激活 nav-rail 时固定入口应挂在会话栏中')
+    assert.ok(document.querySelector('[data-omnimux-inline-row]'), '未激活 nav-rail 时内联行应存在')
+
+    document.documentElement.setAttribute('data-omnimux-nav-rail-active', '1')
+    api.place()
+    assert.equal(workflowBtn.parentElement, null, '激活 nav-rail 后固定入口必须从次级会话栏分离')
+    assert.equal(document.querySelector('[data-omnimux-inline-row]'), null, '激活 nav-rail 后内联新建项目行必须移除')
+    assert.equal(getPinnedRowsForTests().has('omnimux-workflow-entry'), true)
+
+    assert.equal(api.activatePinnedEntry('omnimux-workflow-entry'), true)
+    assert.deepEqual(clicks, ['workflow'])
+
+    assert.equal(api.activatePinnedEntry('omnimux-nonexistent-entry', 'omnimux-assets:library'), true)
+    assert.equal(opened.length, 1)
+    assert.equal(opened[0]?.tabId, 'omnimux-assets:library')
+    assert.equal(opened[0]?.focus, 'gui')
+  } finally {
+    document.documentElement.removeAttribute('data-omnimux-nav-rail-active')
+    window.__omnimuxWorkbench = prevWorkbench
+    disposeNewProject()
+    disposeWorkflow()
+    resetSidebarCoordinatorForTests()
   }
 })

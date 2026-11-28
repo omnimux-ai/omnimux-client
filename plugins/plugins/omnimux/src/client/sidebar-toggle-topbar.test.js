@@ -6,6 +6,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
   LEFT_COLLAPSED_HTML_ATTR,
+  NAV_RAIL_WIDTH_FALLBACK_PX,
   SIDEBAR_TOGGLE_TOPBAR_ATTR,
   SIDEBAR_TOGGLE_TOPBAR_HTML_ATTR,
   SIDEBAR_ORIGINAL_TOGGLE_ATTR,
@@ -35,6 +36,7 @@ import {
   isShellSplitDragging,
   notePluginPanelWidthWrite,
   noteShellSplitDragObserved,
+  readNavRailWidthPx,
   readShellSplitPx,
   resetConversationRatioAuthorityForTests,
   resolveConversationRatio,
@@ -2296,6 +2298,44 @@ describe('Next shell readShellSplitPx and RIGHTBAR_CHROME_STYLES parity', () => 
     } finally {
       stop()
     }
+  })
+})
+
+describe('Nav-rail Chrome offsets and direct new-session trigger', () => {
+  it('readNavRailWidthPx returns 0 when inactive, 52px fallback when active, and honours CSS var', () => {
+    const doc = setup('<!doctype html><html><body></body></html>')
+    assert.equal(NAV_RAIL_WIDTH_FALLBACK_PX, 52)
+    assert.equal(readNavRailWidthPx(doc), 0)
+
+    doc.documentElement.setAttribute('data-omnimux-nav-rail-active', '1')
+    assert.equal(readNavRailWidthPx(doc), 52)
+
+    doc.documentElement.style.setProperty('--omnimux-nav-rail-width', '60px')
+    assert.equal(readNavRailWidthPx(doc), 60)
+  })
+
+  it('computeChromeLayout stations collapsed Home toggle at x=84 on macOS and x=60 on Web, and sets tabPadLeft in business view', () => {
+    const macHomeDoc = setup('<!doctype html><html data-platform="darwin" data-omnimux-nav-rail-active="1" data-omnimux-left-collapsed="1"><body><div class="vcssFG_frame" data-sidebar-collapsed=""></div></body></html>')
+    const macHomeLayout = computeChromeLayout(macHomeDoc)
+    assert.equal(macHomeLayout.toggleLeft, 84)
+    assert.equal(macHomeLayout.newSessionLeft, 124)
+
+    const webHomeDoc = setup('<!doctype html><html data-platform="web" data-omnimux-nav-rail-active="1" data-omnimux-left-collapsed="1"><body><div class="vcssFG_frame" data-sidebar-collapsed=""></div></body></html>')
+    const webHomeLayout = computeChromeLayout(webHomeDoc)
+    assert.equal(webHomeLayout.toggleLeft, 60)
+
+    const macBizDoc = setup('<!doctype html><html data-platform="darwin" data-omnimux-nav-rail-active="1" data-omnimux-nav-view="business"><body><div class="vcssFG_frame" data-sidebar-collapsed=""></div></body></html>')
+    const macBizLayout = computeChromeLayout(macBizDoc)
+    assert.equal(macBizLayout.tabPadLeft, 34)
+  })
+
+  it('RIGHTBAR_CHROME_STYLES includes 5.6 nav-rail width subtraction rules', () => {
+    const doc = setup('<!doctype html><html data-omnimux-nav-rail-active="1" data-omnimux-nav-view="business"><body><div class="tabBar_n" data-dsh-better-sidebar><div class="tabList_m"></div></div></body></html>')
+    syncNativeRightbarControls(doc)
+    const css = doc.getElementById('omnimux-rightbar-chrome-styles')?.textContent || ''
+    assert.match(css, /--omnimux-nav-rail-width/)
+    assert.match(css, /calc\(100vw\s*-\s*var\(--omnimux-nav-rail-width,\s*52px\)/)
+    assert.match(css, /html\[data-omnimux-nav-rail-active="1"\]\[data-omnimux-nav-view="business"\]\s+body\[data-dsh-desktop-platform="darwin"\]/)
   })
 })
 

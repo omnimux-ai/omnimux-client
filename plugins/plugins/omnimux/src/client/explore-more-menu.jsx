@@ -15,6 +15,7 @@
  * 外部依赖，测试与老宿主解析不到，顶层 import 会把整个模块变成不可加载。
  */
 import { ALPHA_DESCRIPTION, activateExploreItem, isAlphaEntry, resolveExploreMenuItems } from './sidebar-coordinator.js'
+import { getRailSignals, getRailVerdict, resolveFixedRailState } from './workbench/sidebar-activation.js'
 
 /** 官方「更多」菜单的 seat 名（root 作用域 list）。 */
 export const EXPLORE_MORE_MENU_SLOT = 'sidebar.panellist.actions'
@@ -124,6 +125,20 @@ function exploreMoreMenuLabel(item) {
  *   onOpen?: (id: string) => void,
  * }>}
  */
+function readActiveMoreItemId(items) {
+  if (typeof document === 'undefined') return null
+  const productStageId = document.documentElement?.dataset?.dshProductStage || null
+  const verdict = getRailVerdict(document)
+  const signals = getRailSignals(document)
+  const railState = resolveFixedRailState({
+    verdict,
+    signals,
+    productStageId,
+    exploreItems: items,
+  })
+  return railState.railId === 'more' ? railState.activeMoreItemId : null
+}
+
 export function createExploreMoreMenuContent({ MenuItemButton } = {}) {
   /**
    * 官方「更多」菜单内容：owner 提供 `onDismiss` 与折叠的官方面板清单，
@@ -131,6 +146,7 @@ export function createExploreMoreMenuContent({ MenuItemButton } = {}) {
    */
   function ExploreMoreMenuContent({ onDismiss, entries, onOpen }) {
     const items = resolveExploreMenuItems()
+    const activeMoreId = readActiveMoreItemId(items)
     // 白名单：官方「插件」和「自动化任务」进「更多」菜单；官方「插件」承载 bundle
     // 开关和配置页，其余官方新增面板不自动冒出来。
     const panels = Array.isArray(entries)
@@ -156,6 +172,7 @@ export function createExploreMoreMenuContent({ MenuItemButton } = {}) {
           <MenuItemButton
             key={item.id}
             icon={exploreMoreMenuIcon(item)}
+            current={activeMoreId !== null && activeMoreId === item.id}
             separatorBefore={
               (index > 0 && items[index - 1].dividerAfter === true)
               // 折叠块之后断开：官方面板入口与产品入口不是同一组。

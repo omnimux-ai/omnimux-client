@@ -43,6 +43,9 @@ export const MORE_MENU_SELECTOR = '[data-menu-material="translucent"][class*="mo
  * 它就在侧栏列内、包着按钮本身，取它的矩形比取按钮稳（按钮还可能被 Tooltip 再包一层）。
  */
 export const MORE_ANCHOR_SELECTOR = '[class*="moreAnchor"]'
+/** 固定左侧导航轨及其中「更多（…）」按钮选择器。 */
+export const NAV_RAIL_SELECTOR = '[data-omnimux-nav-rail="1"]'
+export const NAV_RAIL_MORE_ANCHOR_SELECTOR = '[data-omnimux-rail-item="more"]'
 
 /** 菜单与侧栏列之间的水平间隙（px）。 */
 export const PANEL_MENU_GAP = 8
@@ -132,6 +135,23 @@ ${MORE_MENU_SELECTOR} {
   --dsw-menu-backdrop-filter: none;
   translate: var(--omnimux-more-menu-shift, 0) var(--omnimux-more-menu-shift-y, 0);
   max-width: var(--omnimux-more-menu-max-width, calc(100vw - ${PANEL_MENU_VIEWPORT_MARGIN * 2}px));
+}
+
+/* 固定导航轨启用时，「更多」锚点在隐藏的次级栏 panelList 内，CSS Anchor Positioning
+   的 anchor(...) 在锚点隐藏时无布局盒。直接脱离 position-anchor，固定在 52px 轨右侧
+   （left: 60px），顶边与固定轨「更多」按钮对齐并保留实底描边与阴影。 */
+html[data-omnimux-nav-rail-active="1"] ${MORE_MENU_SELECTOR} {
+  position: fixed !important;
+  position-anchor: none !important;
+  left: calc(var(--omnimux-nav-rail-width, 52px) + ${PANEL_MENU_GAP}px) !important;
+  top: var(--omnimux-more-menu-top, 200px) !important;
+  bottom: auto !important;
+  right: auto !important;
+  translate: none !important;
+  max-width: var(--omnimux-more-menu-max-width, calc(100vw - var(--omnimux-nav-rail-width, 52px) - 20px)) !important;
+  border: 1px solid var(--dsw-alias-border-l2) !important;
+  box-shadow: var(--dsw-shadow-lv2) !important;
+  z-index: 1100 !important;
 }
 `
 
@@ -228,7 +248,8 @@ export function computePanelMenuVerticalOffset({
  */
 export function positionPanelMenu(menu, doc = document) {
   if (!isElement(menu)) return 0
-  const column = doc.querySelector(SIDEBAR_COLUMN_SELECTOR)
+  const navRail = doc.querySelector(NAV_RAIL_SELECTOR)
+  const column = isElement(navRail) ? navRail : doc.querySelector(SIDEBAR_COLUMN_SELECTOR)
   if (!isElement(column)) return 0
   const view = doc.defaultView
   const viewportWidth = view?.innerWidth ?? 0
@@ -248,11 +269,20 @@ export function positionPanelMenu(menu, doc = document) {
   if (maxWidth === null) menu.style.removeProperty('--omnimux-more-menu-max-width')
   else menu.style.setProperty('--omnimux-more-menu-max-width', `${maxWidth}px`)
 
-  // 纵向：菜单顶边对齐触发按钮顶边。锚点缺失时保持官方纵向位置。
-  const anchor = doc.querySelector(MORE_ANCHOR_SELECTOR)
+  // 纵向：菜单顶边对齐触发按钮顶边。固定轨启用时以固定轨「更多」按钮为锚点。
+  const anchor = (isElement(navRail) ? doc.querySelector(NAV_RAIL_MORE_ANCHOR_SELECTOR) : null)
+    ?? doc.querySelector(MORE_ANCHOR_SELECTOR)
   if (isElement(anchor) && viewportHeight > 0) {
+    const anchorTop = anchor.getBoundingClientRect().top
+    if (isElement(navRail) && Number.isFinite(anchorTop) && rect.height > 0) {
+      const clampedTop = Math.max(
+        PANEL_MENU_VIEWPORT_MARGIN,
+        Math.min(Math.round(anchorTop), Math.max(PANEL_MENU_VIEWPORT_MARGIN, viewportHeight - PANEL_MENU_VIEWPORT_MARGIN - Math.round(rect.height))),
+      )
+      menu.style.setProperty('--omnimux-more-menu-top', `${clampedTop}px`)
+    }
     const offsetY = computePanelMenuVerticalOffset({
-      anchorTop: anchor.getBoundingClientRect().top,
+      anchorTop,
       menuTop: rect.top - appliedY,
       menuHeight: rect.height,
       viewportHeight,

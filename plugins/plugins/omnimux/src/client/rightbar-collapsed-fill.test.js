@@ -224,4 +224,20 @@ describe('syncCollapsedPanelFill', () => {
     assert.equal(releaseCollapsedPanelFill(doc), true)
     assert.equal(releaseCollapsedPanelFill(doc), false)
   })
+
+  it('accounts for active nav-rail width when computing collapsed panel span', (t) => {
+    assert.equal(computeCollapsedPanelSpan({ viewportWidth: 1920, leftCollapsed: true, navRailWidth: 0 }), 1920)
+    assert.equal(computeCollapsedPanelSpan({ viewportWidth: 1920, leftCollapsed: true, navRailWidth: 52 }), 1868)
+    assert.equal(computeCollapsedPanelSpan({ viewportWidth: 1920, leftCollapsed: false, leftRailRight: 332, navRailWidth: 52 }), 1588)
+
+    const { doc, panel } = makeNativeEnv(t)
+    doc.documentElement.setAttribute('data-omnimux-nav-rail-active', '1')
+    doc.documentElement.setAttribute(LEFT_COLLAPSED_ATTR, '')
+    assert.equal(syncCollapsedPanelFill(doc), true)
+    assert.equal(panel.style.getPropertyValue('width'), '1868px')
+
+    doc.documentElement.removeAttribute(LEFT_COLLAPSED_ATTR)
+    assert.equal(syncCollapsedPanelFill(doc), true)
+    assert.equal(panel.style.getPropertyValue('width'), '1588px')
+  })
 })

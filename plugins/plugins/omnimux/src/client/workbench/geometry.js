@@ -103,8 +103,22 @@ export function officialExpandedRailBaselinePx() {
   return lastExpandedOfficialWidth
 }
 
-export function viewportWidth() {
+export function navRailWidthPx(doc = hostDocument()) {
+  const root = doc?.documentElement
+  if (!root || typeof root.hasAttribute !== 'function' || !root.hasAttribute('data-omnimux-nav-rail-active')) {
+    return 0
+  }
+  const parsed = Number.parseFloat(root.style?.getPropertyValue?.('--omnimux-nav-rail-width') || '')
+  return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed) : 52
+}
+
+export function rawViewportWidth() {
   return hostWindow()?.innerWidth || 0
+}
+
+export function viewportWidth(doc = hostDocument()) {
+  const raw = rawViewportWidth()
+  return raw > 0 ? Math.max(0, raw - navRailWidthPx(doc)) : 0
 }
 
 /**
@@ -156,13 +170,14 @@ function isLikelyWorkbenchPanel(el) {
   if (typeof el.getBoundingClientRect !== 'function') return true
   let rect
   try { rect = el.getBoundingClientRect() } catch { return true }
-  const viewport = viewportWidth()
+  const rawViewport = rawViewportWidth()
+  const usableViewport = viewportWidth()
   if (!rect || typeof rect.right !== 'number' || !Number.isFinite(rect.right)) return true
-  if (viewport > 0 && rect.right < viewport - 12) return false
+  if (rawViewport > 0 && rect.right < rawViewport - 12) return false
   if (typeof rect.width === 'number' && Number.isFinite(rect.width)
     && rect.width > 0 && rect.width < WORKBENCH_PANEL_MIN_PX - 1) return false
-  // 右侧分栏面板在分栏模式下宽度不可能占满整个视口，全宽节点必为外层视口容器
-  if (viewport > 0 && typeof rect.width === 'number' && rect.width >= viewport - 10) return false
+  // 右侧分栏面板在分栏模式下宽度不可能占满整个工作台舞台，全宽节点必为外层容器
+  if (usableViewport > 0 && typeof rect.width === 'number' && rect.width >= usableViewport - 10) return false
   return true
 }
 
