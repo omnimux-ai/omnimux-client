@@ -12,6 +12,18 @@ If Windows SmartScreen / Unknown publisher appears, use **More info → Run anyw
 
 On first launch, the application prepares the default profile and starts the official DSH Web surface locally. Closing the window normally hides it; use **Quit** from the tray when you want to stop the application and Host process.
 
+## First product video in 3 minutes
+
+Follow these four steps to go from a product landing page URL to a finished vertical MP4 inside OmniMux (if you need custom API endpoints first, check the [BYOK FAQ](faq.en.md#how-do-i-configure-byok-bring-your-own-keys-providers)):
+
+1. **Product Library (`omnimux-products`)**: Open the **Products** tab, paste your product landing page URL to create a product record, and review the extracted selling points, target audience, and product images before generating content.
+2. **Asset Center (`omnimux-assets`)**: Open **Assets** to choose a built-in digital human, scene, or 3-second hook (or import your own local media). Reference both items directly in chat using `@Product` and `@Asset` so the Agent keeps product facts consistent across shots.
+3. **Workflow Canvas (`omnimux-workflow`)**: Open the **Workflow** canvas to run image and video generation nodes (`omnimux_image_submit` / `omnimux_video_submit`), swap a reference frame when adjusting composition, and monitor live node progress until renders complete.
+
+   ![OmniMux Workflow Canvas](../../docs/readme/ui/omnimux-workflow-canvas.jpg)
+
+4. **Clip Studio (`omnimux-clip`)**: Open the generated `video_composition` node in Clip Studio, refine pacing, cuts, and subtitles via **AI Edit** or manual timeline dragging, and export the final vertical MP4 locally.
+
 ## Launching with a folder
 
 Besides choosing a directory inside the interface, you can name a folder when the application starts. The folder is registered as a workspace and opened. A folder that is already a workspace is simply opened again; nothing is duplicated.
