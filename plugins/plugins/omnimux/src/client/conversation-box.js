@@ -275,7 +275,7 @@ html[data-omnimux-left-collapsed] .dshDesktopFrame[data-rightbar-collapsed="true
 html[data-omnimux-left-collapsed] [class*="frame"][data-rightbar-collapsed="true"],
 .dshDesktopFrame[data-sidebar-collapsed][data-rightbar-collapsed="true"],
 [class*="frame"][data-sidebar-collapsed][data-rightbar-collapsed="true"] {
-  grid-template-columns: 0px 100vw 0px !important;
+  grid-template-columns: 0px minmax(0px, 1fr) 0px !important;
 }
 /* Tab labels dock by overlap: pad = max(0, toggleEnd − panel.left), written
    to --omnimux-tabbar-pad-left. Do NOT key this off left-collapsed: collapsed
@@ -300,6 +300,11 @@ html[data-omnimux-sidebar-toggle-topbar] [data-dsh-better-sidebar] [data-dsh-pan
 html[data-dsh-product-stage][data-omnimux-left-collapsed] body[data-dsh-desktop-platform="darwin"] .dshUk-PageHeader-pageHeader,
 html[data-dsh-product-stage][data-omnimux-left-collapsed][data-platform="darwin"] .dshUk-PageHeader-pageHeader {
   padding-left: var(--omnimux-topbar-toggle-left, 84px) !important;
+  box-sizing: border-box !important;
+}
+html[data-omnimux-nav-rail-active="1"][data-dsh-product-stage][data-omnimux-left-collapsed] body[data-dsh-desktop-platform="darwin"] .dshUk-PageHeader-pageHeader,
+html[data-omnimux-nav-rail-active="1"][data-dsh-product-stage][data-omnimux-left-collapsed][data-platform="darwin"] .dshUk-PageHeader-pageHeader {
+  padding-left: 34px !important;
   box-sizing: border-box !important;
 }
 /* Blue dot on the injected toggle while left rail is collapsed. */

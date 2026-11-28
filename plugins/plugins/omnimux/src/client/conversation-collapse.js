@@ -103,7 +103,7 @@ html[${CONVERSATION_COLLAPSED_ATTR}]:not(:has([data-rightbar-collapsed="true"]))
 ${IMAGE_CANVAS_PROJECTION_SELECTOR} [data-composer-seat]{
   position:fixed!important;
   bottom:10px!important;
-  left:var(--omnimux-sidebar-width, 280px)!important;
+  left:calc(var(--omnimux-nav-rail-width, 0px) + var(--omnimux-sidebar-width, 280px))!important;
   right:0!important;
   width:auto!important;
   display:flex!important;
@@ -115,18 +115,18 @@ ${IMAGE_CANVAS_PROJECTION_SELECTOR} [data-composer-seat]{
   opacity:1!important;
   background:transparent!important;
 }
-/* 左栏收起时全屏面板铺满 100vw（sidebar-toggle-topbar 的 5.2 规则），座席左基准归零。
+/* 左栏收起时全屏面板铺满右侧可用区（扣除固定左轨），座席左基准对齐工作区起点。
    收起态由插件镜像到 html[data-omnimux-left-collapsed]；这里必须显式写完整选择器，
    不能把带 html 前缀的投射选择器再接在它后面——那会要求 html 是 html 的后代，
    整条规则永远不命中（聚合校验抓不到，只有真实浏览器会暴露）。 */
 html[data-omnimux-left-collapsed]:has([data-omnimux-image-canvas][data-visible="true"]) .dshDesktopFrame[data-rightbar-fullscreen="true"] [data-composer-seat],
 html[data-omnimux-left-collapsed]:has([data-omnimux-image-canvas][data-visible="true"]) [class*="frame"][data-rightbar-fullscreen="true"] [data-composer-seat],
 html[data-omnimux-left-collapsed][${CONVERSATION_COLLAPSED_ATTR}]:not(:has([data-rightbar-collapsed="true"])):has([data-omnimux-image-canvas][data-visible="true"]) [data-composer-seat]{
-  left:0!important;
+  left:var(--omnimux-nav-rail-width, 0px)!important;
 }
 ${IMAGE_CANVAS_PROJECTION_SELECTOR} [data-composer-card]{
   width:640px!important;
-  max-width:min(640px, calc(100vw - var(--omnimux-sidebar-width, 280px) - 64px))!important;
+  max-width:min(640px, calc(100vw - var(--omnimux-nav-rail-width, 0px) - var(--omnimux-sidebar-width, 280px) - 64px))!important;
   margin:0 auto!important;
   box-shadow:0 20px 48px var(--dsw-alias-bg-layer-1, rgba(0, 0, 0, 0.4))!important;
   border-radius:18px!important;

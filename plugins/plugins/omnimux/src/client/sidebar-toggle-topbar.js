@@ -84,6 +84,21 @@ export const TOPBAR_TOGGLE_GAP_PX = 8
 export const TOPBAR_TOGGLE_RIGHT_MARGIN_PX = 8
 export const TOPBAR_TOGGLE_TOP_PX = 4
 export const TOPBAR_TOGGLE_Z_INDEX = 2147483647
+export const NAV_RAIL_WIDTH_FALLBACK_PX = 52
+
+/**
+ * 当前生效的最左侧固定导航轨宽度（未安装或引导态隐藏时为 0）。
+ * @param {Document | null | undefined} doc
+ * @returns {number}
+ */
+export function readNavRailWidthPx(doc) {
+  const root = doc?.documentElement
+  if (!root || typeof root.hasAttribute !== 'function' || !root.hasAttribute('data-omnimux-nav-rail-active')) {
+    return 0
+  }
+  const parsed = Number.parseFloat(root.style?.getPropertyValue?.('--omnimux-nav-rail-width') || '')
+  return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed) : NAV_RAIL_WIDTH_FALLBACK_PX
+}
 
 /**
  * Trigger click robustly penetrating React 17/18 synthetic event props.
@@ -1081,18 +1096,27 @@ export function computeChromeLayout(doc) {
     doc?.body?.matches?.('[data-dsh-desktop-mode][data-dsh-desktop-platform="darwin"]'),
   )
   const isFullscreen = doc?.documentElement?.hasAttribute?.('data-fullscreen') === true
+  const navRailW = readNavRailWidthPx(doc)
   // macOS native fullscreen hides traffic lights (html[data-fullscreen]) and
   // 0.2.2-rc.5 AppFrame lowers --dsh-frame-leading-clearance from 160px to 84px
   // (ConversationRoot title starts at 20 + 140 = 160px windowed, 20 + 64 = 84px
   // fullscreen). Dropping the traffic-light inset in fullscreen keeps the
   // collapsed two-button cluster right edge within both official clearances
   // (84 + 32 + 8 + 32 = 156 <= 160px; 8 + 32 + 8 + 32 = 80 <= 84px).
-  const leftInset = isDarwinDesktop && !isFullscreen
-    ? TOPBAR_MACOS_INSET_PX
-    : TOPBAR_TOGGLE_LEFT_PX
+  const leftInset = navRailW > 0
+    ? (isDarwinDesktop && !isFullscreen
+      ? Math.max(TOPBAR_MACOS_INSET_PX, navRailW + TOPBAR_TOGGLE_LEFT_PX)
+      : navRailW + TOPBAR_TOGGLE_LEFT_PX)
+    : (isDarwinDesktop && !isFullscreen
+      ? TOPBAR_MACOS_INSET_PX
+      : TOPBAR_TOGGLE_LEFT_PX)
   const toggleLeft = collapsed
     ? leftInset
-    : Math.max(leftInset, Math.round(leftRailW - TOPBAR_TOGGLE_SIZE_PX - TOPBAR_TOGGLE_RIGHT_MARGIN_PX))
+    : (navRailW > 0
+      ? (isDarwinDesktop && !isFullscreen
+        ? leftInset
+        : Math.max(leftInset, Math.round(navRailW + leftRailW - TOPBAR_TOGGLE_SIZE_PX - TOPBAR_TOGGLE_RIGHT_MARGIN_PX)))
+      : Math.max(leftInset, Math.round(leftRailW - TOPBAR_TOGGLE_SIZE_PX - TOPBAR_TOGGLE_RIGHT_MARGIN_PX)))
   // Cluster end clears toggle alone when expanded; when collapsed it also
   // clears the new-session control sitting to the toggle's right (same size + gap).
   const clusterExtra = collapsed ? TOPBAR_TOGGLE_SIZE_PX + TOPBAR_TOGGLE_GAP_PX : 0
@@ -1109,7 +1133,10 @@ export function computeChromeLayout(doc) {
       panelLeft = null
     }
   }
-  const tabPadLeft = panelLeft == null ? 0 : Math.max(0, toggleEnd - panelLeft)
+  const inBusinessView = navRailW > 0 && doc?.documentElement?.getAttribute?.('data-omnimux-nav-view') === 'business'
+  const tabPadLeft = inBusinessView
+    ? (isDarwinDesktop && !isFullscreen ? Math.max(0, 86 - navRailW) : 0)
+    : (panelLeft == null ? 0 : Math.max(0, toggleEnd - panelLeft))
   const derivedConversationWidth = deriveConversationWidthPx(doc, collapsed, leftRailW, lastGoodLeftRailW)
   // A host-fullscreen right panel reserves the minimum conversation rail by
   // design. The split ratio can still say ~670px from the last split gesture;
@@ -1300,7 +1327,7 @@ export function findTopbarAnchor(doc, options = {}) {
 }
 
 /** True while any first-run guide layer is on screen (#67). */
-function isOnboardingGuideActive(doc) {
+export function isOnboardingGuideActive(doc) {
   if (!doc) return false
   try {
     if (typeof doc.querySelector === 'function'
@@ -1309,7 +1336,8 @@ function isOnboardingGuideActive(doc) {
     }
     const root = typeof doc.getElementById === 'function' ? doc.getElementById('root') : null
     return Boolean(root && (root.inert === true || (typeof root.hasAttribute === 'function' && root.hasAttribute('inert'))))
-  } catch {
+  } catch (error) {
+    console.debug('[omnimux-topbar] onboarding guide check failed', error)
     return false
   }
 }
@@ -1428,7 +1456,8 @@ export function injectTopbarNewSessionButton(doc, collapsed, options = {}) {
       // official newSession button would open the menu at the hidden rail rect
       // (x≈0) and split it away from the icon.
       // Fall through to official click if coordinator is not ready.
-      if (safeDom(() => openCollapsedNewMenuAt(btn), false)) return
+      if (!doc.documentElement?.hasAttribute?.('data-omnimux-nav-rail-active')
+        && safeDom(() => openCollapsedNewMenuAt(btn), false)) return
       const official = findOfficialNewSessionButton(doc)
       if (official) triggerClick(official)
     })
@@ -1617,9 +1646,7 @@ html[data-omnimux-left-collapsed] [class*="_panel"][data-sidebar-right-panel="fu
 }
 
 /* 5.4 桌面端在全屏且左侧收起时，给顶栏 strip 预留避让操作按钮组（自适应对接 --omnimux-topbar-toggle-end，macOS 下基准避让交通灯及两按钮共 164px） */
-body[data-dsh-desktop-platform="darwin"] html[data-omnimux-left-collapsed] [data-sidebar-right-panel="fullscreen"] [data-dockkit-strip],
 html[data-omnimux-left-collapsed] body[data-dsh-desktop-platform="darwin"] [data-sidebar-right-panel="fullscreen"] [data-dockkit-strip],
-body[data-dsh-desktop-platform="darwin"] html[data-omnimux-left-collapsed] [data-sidebar-right-panel="fullscreen"] [class*="_tabStrip"],
 html[data-omnimux-left-collapsed] body[data-dsh-desktop-platform="darwin"] [data-sidebar-right-panel="fullscreen"] [class*="_tabStrip"],
 body[data-dsh-desktop-platform="darwin"] .dshDesktopFrame[data-sidebar-collapsed] [data-sidebar-right-panel="fullscreen"] [data-dockkit-strip],
 body[data-dsh-desktop-platform="darwin"] .dshDesktopFrame[data-sidebar-collapsed] [data-sidebar-right-panel="fullscreen"] [class*="_tabStrip"],
@@ -1643,6 +1670,40 @@ html[data-omnimux-left-collapsed] [data-sidebar-right-panel="fullscreen"] [class
 html[data-omnimux-sidebar-toggle-topbar] [data-shell-leading] {
   display: none !important;
   pointer-events: none !important;
+}
+
+/* 5.6 固定导航轨启用态（52px）：全屏工作台左右坐标、宽度及 tabStrip 内边距同步扣除固定轨 */
+html[data-omnimux-nav-rail-active="1"] [data-sidebar-right-panel="fullscreen"],
+html[data-omnimux-nav-rail-active="1"] [class*="_panel"][data-sidebar-right-panel="fullscreen"] {
+  left: calc(var(--omnimux-nav-rail-width, 52px) + var(--omnimux-sidebar-width, 280px)) !important;
+  width: calc(100vw - var(--omnimux-nav-rail-width, 52px) - var(--omnimux-sidebar-width, 280px)) !important;
+}
+html[data-omnimux-nav-rail-active="1"][data-omnimux-left-collapsed] [data-sidebar-right-panel="fullscreen"],
+html[data-omnimux-nav-rail-active="1"][data-omnimux-left-collapsed] [class*="_panel"][data-sidebar-right-panel="fullscreen"],
+html[data-omnimux-nav-rail-active="1"] [class*="frame"][data-sidebar-collapsed] [data-sidebar-right-panel="fullscreen"],
+html[data-omnimux-nav-rail-active="1"] [class*="frame"][data-sidebar-collapsed] [class*="_panel"][data-sidebar-right-panel="fullscreen"],
+html[data-omnimux-nav-rail-active="1"] .dshDesktopFrame[data-sidebar-collapsed] [data-sidebar-right-panel="fullscreen"],
+html[data-omnimux-nav-rail-active="1"] .dshDesktopFrame[data-sidebar-collapsed] [class*="_panel"][data-sidebar-right-panel="fullscreen"] {
+  left: auto !important;
+  width: calc(100vw - var(--omnimux-nav-rail-width, 52px) - var(--omnimux-sidebar-width, 0px)) !important;
+}
+html[data-omnimux-nav-rail-active="1"]:not([data-omnimux-nav-view="business"])[data-omnimux-left-collapsed] [data-sidebar-right-panel="fullscreen"] [data-dockkit-strip],
+html[data-omnimux-nav-rail-active="1"]:not([data-omnimux-nav-view="business"])[data-omnimux-left-collapsed] [data-sidebar-right-panel="fullscreen"] [class*="_tabStrip"],
+html[data-omnimux-nav-rail-active="1"]:not([data-omnimux-nav-view="business"]) .dshDesktopFrame[data-sidebar-collapsed] [data-sidebar-right-panel="fullscreen"] [data-dockkit-strip],
+html[data-omnimux-nav-rail-active="1"]:not([data-omnimux-nav-view="business"]) .dshDesktopFrame[data-sidebar-collapsed] [data-sidebar-right-panel="fullscreen"] [class*="_tabStrip"],
+html[data-omnimux-nav-rail-active="1"]:not([data-omnimux-nav-view="business"]) [class*="frame"][data-sidebar-collapsed] [data-sidebar-right-panel="fullscreen"] [data-dockkit-strip],
+html[data-omnimux-nav-rail-active="1"]:not([data-omnimux-nav-view="business"]) [class*="frame"][data-sidebar-collapsed] [data-sidebar-right-panel="fullscreen"] [class*="_tabStrip"] {
+  padding-left: calc(max(10px, var(--omnimux-topbar-toggle-end, 164px) - var(--omnimux-nav-rail-width, 52px))) !important;
+}
+html[data-omnimux-nav-rail-active="1"][data-omnimux-nav-view="business"] [data-sidebar-right-panel="fullscreen"] [data-dockkit-strip],
+html[data-omnimux-nav-rail-active="1"][data-omnimux-nav-view="business"] [data-sidebar-right-panel="fullscreen"] [class*="_tabStrip"] {
+  padding-left: 10px !important;
+}
+html[data-platform="darwin"]:not([data-fullscreen])[data-omnimux-nav-rail-active="1"][data-omnimux-nav-view="business"] [data-sidebar-right-panel="fullscreen"] [data-dockkit-strip],
+html[data-platform="darwin"]:not([data-fullscreen])[data-omnimux-nav-rail-active="1"][data-omnimux-nav-view="business"] [data-sidebar-right-panel="fullscreen"] [class*="_tabStrip"],
+html:not([data-fullscreen])[data-omnimux-nav-rail-active="1"][data-omnimux-nav-view="business"] body[data-dsh-desktop-platform="darwin"] [data-sidebar-right-panel="fullscreen"] [data-dockkit-strip],
+html:not([data-fullscreen])[data-omnimux-nav-rail-active="1"][data-omnimux-nav-view="business"] body[data-dsh-desktop-platform="darwin"] [data-sidebar-right-panel="fullscreen"] [class*="_tabStrip"] {
+  padding-left: 34px !important;
 }
 `
 
@@ -1709,10 +1770,13 @@ export function ensureSidebarToggleTopbar(doc, options = {}) {
   const collapsed = syncLeftCollapsedHtmlAttr(doc)
   // 几何变量与注入成败无关：拖动/缩放每帧都要发布中栏宽度，不能因暂无可见锚点而停。
   safeDom(() => applyTopbarToggleCssVars(doc))
+  const inBusinessNavView = root.getAttribute('data-omnimux-nav-rail-active') === '1'
+    && root.getAttribute('data-omnimux-nav-view') === 'business'
   const btn = injectTopbarToggleButton(doc, options)
   // 只有注入成功且可见才隐藏原生 toggle / 设 html marker；否则恢复原生。
   // 否则会出现「原生被 display:none、注入又返回 null」→ 0 个可见 toggle（#67 AC-4）。
-  if (!btn || !isInjectedControlVisible(btn, doc)) {
+  // 非首页全屏业务页下 NAV_RAIL_CSS 主动隐藏顶栏折叠钮，不得反向摘除 marker 并放出原生钮。
+  if (!inBusinessNavView && (!btn || !isInjectedControlVisible(btn, doc))) {
     root.removeAttribute(SIDEBAR_TOGGLE_TOPBAR_HTML_ATTR)
     restoreOriginalToggle(doc)
     injectTopbarNewSessionButton(doc, false, options)
@@ -1720,8 +1784,9 @@ export function ensureSidebarToggleTopbar(doc, options = {}) {
   }
   root.setAttribute(SIDEBAR_TOGGLE_TOPBAR_HTML_ATTR, '')
   hideOriginalToggle(doc)
-  injectTopbarNewSessionButton(doc, collapsed, options)
+  injectTopbarNewSessionButton(doc, inBusinessNavView ? false : collapsed, options)
   syncNativeRightbarControls(doc)
+  if (!btn) return null
   // Guard against the observer's aria-label attribute filter: setting the same
   // value would still fire a MutationRecord and loop forever.
   const label = collapsed ? '打开侧边栏' : '收起侧边栏'
@@ -1870,6 +1935,11 @@ export function installSidebarToggleTopbar(doc = typeof document !== 'undefined'
   let topbarRetryAttempt = 0
 
   const topbarControlMissing = () => {
+    const root = doc.documentElement
+    if (root?.getAttribute?.('data-omnimux-nav-rail-active') === '1'
+      && root?.getAttribute?.('data-omnimux-nav-view') === 'business') {
+      return false
+    }
     // 存在但不可见（例如落在隐藏 bottomPanel tabBar 里）同样算缺失，继续自愈。
     const toggle = doc.querySelector(`[${SIDEBAR_TOGGLE_TOPBAR_ATTR}="1"]`)
     if (!toggle || !isInjectedControlVisible(toggle, doc)) return true
@@ -2024,7 +2094,14 @@ export function installSidebarToggleTopbar(doc = typeof document !== 'undefined'
     desktopObserver = new ObserverClass(() => {
       scheduleSync()
     })
-    const rootFilter = ['data-dsh-desktop-mode', 'data-dsh-desktop-platform', 'data-platform', 'data-fullscreen']
+    const rootFilter = [
+      'data-dsh-desktop-mode',
+      'data-dsh-desktop-platform',
+      'data-platform',
+      'data-fullscreen',
+      'data-omnimux-nav-rail-active',
+      'data-omnimux-nav-view',
+    ]
     const bodyFilter = ['data-dsh-desktop-mode', 'data-dsh-desktop-platform']
     if (doc.documentElement) {
       desktopObserver.observe(doc.documentElement, {

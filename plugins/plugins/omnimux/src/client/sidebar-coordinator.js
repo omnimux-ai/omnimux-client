@@ -111,8 +111,13 @@ export const SIDEBAR_GLOBAL = () => (typeof window !== 'undefined' ? window[SIDE
 
 const ROWS = []
 const INLINE_ROWS = []
+const PINNED_ROWS = new Map()
 const CONVERGED_ROWS = new Map()
 const seen = new Set()
+
+function isNavRailActive() {
+  return typeof document !== 'undefined' && Boolean(document.documentElement?.hasAttribute?.('data-omnimux-nav-rail-active'))
+}
 
 /** 核心常驻侧栏项白名单（除 inline 新建项目外） */
 const PINNED_ENTRY_PREFIXES = ['omnimux-workflow', 'omnimux-market', 'omnimux-assets', 'omnimux-inspiration', 'omnimux-avatar']
@@ -336,6 +341,28 @@ export function activateExploreItem(item) {
   if (item.tabId && typeof window !== 'undefined' && window.__omnimuxWorkbench?.open) {
     window.__omnimuxWorkbench.open({ tabId: item.tabId, title: item.label })
   }
+}
+
+/**
+ * 激活固定导航轨迁移后的一级入口：
+ * 优先触发插件原有注册按钮的 click 处理器，保留鉴权、埋点与状态逻辑；
+ * 未就绪或未注册时兜底打开对应的全屏 Workbench Tab。
+ * @param {string} entryId
+ * @param {string} [fallbackTabId]
+ * @param {string} [fallbackTitle]
+ * @returns {boolean}
+ */
+export function activatePinnedEntry(entryId, fallbackTabId, fallbackTitle) {
+  const registered = typeof entryId === 'string' ? PINNED_ROWS.get(entryId) : undefined
+  if (registered?.element && typeof registered.element.click === 'function') {
+    registered.element.click()
+    return true
+  }
+  if (fallbackTabId && typeof window !== 'undefined' && typeof window.__omnimuxWorkbench?.open === 'function') {
+    window.__omnimuxWorkbench.open({ tabId: fallbackTabId, title: fallbackTitle, focus: 'gui' })
+    return true
+  }
+  return false
 }
 
 /** Inner pane/col first; desktop shell wrappers are fallback only. */
@@ -696,6 +723,12 @@ function runPlaceAll() {
 function placeBelow(root) {
   const sorted = [...ROWS].sort((a, b) => a.rank - b.rank)
   if (sorted.length === 0) return
+  if (isNavRailActive()) {
+    for (const row of sorted) {
+      if (row.element.parentElement !== null) row.element.remove()
+    }
+    return
+  }
   const panelList = findPanelList(root)
   const container = panelList ?? root
   let anchor = panelList ? null : directChildOf(root, newSessionButton(root))
@@ -733,6 +766,21 @@ function placeBelow(root) {
 function placeInline(root) {
   if (INLINE_ROWS.length === 0) return
   const session = newSessionButton(root)
+  if (isNavRailActive()) {
+    const existingWrapper = root.querySelector('[data-omnimux-inline-row]')
+    if (existingWrapper instanceof HTMLElement) {
+      if (session instanceof HTMLElement && session.parentElement === existingWrapper) {
+        session.classList.remove('omnimux-sidebar-inline-new-session')
+        existingWrapper.before(session)
+      }
+      existingWrapper.remove()
+    }
+    for (const row of INLINE_ROWS) {
+      if (row.element.parentElement !== null) row.element.remove()
+    }
+    closeNewMenu()
+    return
+  }
   if (session === undefined || session.parentElement === null) return
   let wrapper = root.querySelector('[data-omnimux-inline-row]')
   if (!(wrapper instanceof HTMLElement)) {
@@ -820,17 +868,21 @@ function createApi() {
       if (row.styles) injectStyles(row.styles, row.styleId)
       const element = row.create()
       markAlphaEntry(id, element)
-      ROWS.push({ id, rank: row.rank, element })
+      const entry = { id, rank: row.rank, element }
+      ROWS.push(entry)
+      PINNED_ROWS.set(id, entry)
       runPlaceAll()
       return () => {
         const i = ROWS.findIndex((r) => r.id === id)
         if (i >= 0) ROWS.splice(i, 1)
+        PINNED_ROWS.delete(id)
         seen.delete(id)
         element.remove()
         runPlaceAll()
       }
     },
     place: runPlaceAll,
+    activatePinnedEntry,
     /**
      * 把一项注册进官方「更多」菜单（第三方 / 个人插件唯一合法入口，替代自挂一级行）。
      * 非法形状或与内置 id 冲突时不注册且不抛错；返回注销函数。
@@ -905,6 +957,10 @@ export function getConvergedRowsForTests() {
   return CONVERGED_ROWS
 }
 
+export function getPinnedRowsForTests() {
+  return PINNED_ROWS
+}
+
 /**
  * Test-only: drop the singleton so a later case can re-install against a new DOM.
  * Not exposed on the window global.
@@ -926,6 +982,7 @@ export function resetSidebarCoordinatorForTests() {
   }
   ROWS.length = 0
   INLINE_ROWS.length = 0
+  PINNED_ROWS.clear()
   CONVERGED_ROWS.clear()
   EXTRA_EXPLORE_ITEMS.length = 0
   seen.clear()

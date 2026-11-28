@@ -11,7 +11,9 @@ import { JSDOM } from 'jsdom'
 import { CONVERSATION_COLLAPSED_ATTR } from '../conversation-collapse.js'
 import { bindWorkbenchDeps, resetWorkbenchHostAdapter } from './host-adapter.js'
 import {
+  FIXED_RAIL_PINNED_TABS,
   IDLE_VERDICT,
+  PRODUCT_STAGE_TO_RAIL_ID,
   RAIL_TAB_IDS,
   SidebarActivationArbiter,
   SESSION_ROW_SELECTOR,
@@ -24,6 +26,7 @@ import {
   readSidebarActivationSignals,
   requestRailActivationSync,
   resetSidebarActivationForTests,
+  resolveFixedRailState,
   resolveSidebarActiveTarget,
 } from './sidebar-activation.js'
 
@@ -366,4 +369,49 @@ test('arbiter without a document is inert instead of throwing', () => {
   assert.equal(arbiter.isRowActive(CLIP), false)
   assert.equal(arbiter.getSignals().conversationVisible, false)
   arbiter.dispose()
+})
+
+test('resolveFixedRailState maps Home, Split, Product Stage, Official Panel, and Fullscreen Workbench', () => {
+  assert.equal(FIXED_RAIL_PINNED_TABS['omnimux-workflow:library'], 'projects')
+  assert.equal(PRODUCT_STAGE_TO_RAIL_ID['omnimux-workflow'], 'projects')
+  assert.equal(PRODUCT_STAGE_TO_RAIL_ID['omnimux-clip'], undefined)
+
+  const homeState = resolveFixedRailState({
+    verdict: { winner: 'session', reason: 'session-wins' },
+    signals: { conversationVisible: true, panelExpanded: false, fullscreen: false },
+  })
+  assert.deepEqual(homeState, { railId: 'home', view: 'home', activeMoreItemId: null, isSplit: false })
+
+  const splitState = resolveFixedRailState({
+    verdict: { winner: 'session', reason: 'session-wins' },
+    signals: { conversationVisible: true, panelExpanded: true, fullscreen: false },
+  })
+  assert.deepEqual(splitState, { railId: 'home', view: 'home', activeMoreItemId: null, isSplit: true })
+
+  const workflowState = resolveFixedRailState({
+    verdict: { winner: 'row', tabId: 'omnimux-workflow:library', reason: 'focused-tab' },
+    signals: { conversationVisible: false, panelExpanded: true, activeTabKey: 'omnimux-workflow:library' },
+  })
+  assert.deepEqual(workflowState, { railId: 'projects', view: 'business', activeMoreItemId: null, isSplit: false })
+
+  const clipMoreState = resolveFixedRailState({
+    verdict: { winner: 'row', tabId: 'omnimux-clip:studio', reason: 'focused-tab' },
+    signals: { conversationVisible: false, panelExpanded: true, activeTabKey: 'omnimux-clip:studio' },
+    exploreItems: [{ id: 'clip', tabId: 'omnimux-clip:studio' }],
+  })
+  assert.deepEqual(clipMoreState, { railId: 'more', view: 'business', activeMoreItemId: 'clip', isSplit: false })
+
+  const officialPanelState = resolveFixedRailState({
+    officialPanelId: 'plugins',
+    verdict: { winner: 'none', reason: 'idle' },
+    signals: { conversationVisible: false },
+  })
+  assert.deepEqual(officialPanelState, { railId: 'more', view: 'business', activeMoreItemId: 'plugins', isSplit: false })
+
+  const productStageState = resolveFixedRailState({
+    productStageId: 'omnimux-workflow',
+    verdict: { winner: 'none', reason: 'idle' },
+    signals: { conversationVisible: false },
+  })
+  assert.deepEqual(productStageState, { railId: 'projects', view: 'business', activeMoreItemId: null, isSplit: false })
 })

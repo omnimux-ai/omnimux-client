@@ -3,6 +3,8 @@ import assert from 'node:assert/strict'
 import { JSDOM } from 'jsdom'
 import {
   MORE_MENU_SELECTOR,
+  NAV_RAIL_MORE_ANCHOR_SELECTOR,
+  NAV_RAIL_SELECTOR,
   PANEL_CHROME_CSS,
   PANEL_CHROME_STYLE_ID,
   PANEL_ENTRY_SELECTOR,
@@ -340,4 +342,29 @@ test('positionPanelMenu：锚点存在时写入纵向位移，且逐帧不叠加
 
   positionPanelMenu(menu, doc)
   assert.equal(menu.style.getPropertyValue('--omnimux-more-menu-shift-y'), '-36px', '逐帧跟随不得累积')
+})
+
+test('positionPanelMenu：固定左侧导航激活时基于导航栏更多按钮锚定并写入纵向位置变量', () => {
+  assert.ok(NAV_RAIL_SELECTOR.includes('data-omnimux-nav-rail'))
+  assert.ok(NAV_RAIL_MORE_ANCHOR_SELECTOR.includes('more'))
+
+  const dom = new JSDOM('<!doctype html><html data-omnimux-nav-rail-active="1"><body></body></html>')
+  const doc = dom.window.document
+
+  const rail = doc.createElement('aside')
+  rail.setAttribute('data-omnimux-nav-rail', '1')
+  rail.getBoundingClientRect = () => ({ top: 0, bottom: 900, left: 0, right: 52, width: 52, height: 900 })
+  const moreBtn = doc.createElement('button')
+  moreBtn.setAttribute('data-omnimux-rail-item', 'more')
+  moreBtn.getBoundingClientRect = () => ({ top: 240, bottom: 276, left: 6, right: 46, width: 40, height: 36 })
+  rail.appendChild(moreBtn)
+  doc.body.appendChild(rail)
+
+  const menu = doc.createElement('div')
+  menu.setAttribute('role', 'menu')
+  menu.getBoundingClientRect = () => ({ top: 240, bottom: 440, left: 60, right: 260, width: 200, height: 200 })
+  doc.body.appendChild(menu)
+
+  positionPanelMenu(menu, doc)
+  assert.equal(menu.style.getPropertyValue('--omnimux-more-menu-top'), '240px')
 })
