@@ -83,7 +83,7 @@ Select the minimal sufficient checks for the changed surfaces using plugin QA ·
 - **Browser acceptance** uses a real browser in the task worktree. Use ego-browser by default, or the worktree web QA runner if it exercises the required journey. Keep screenshots or a report. If neither can verify a required interaction, record it as blocked. Unit tests, HTTP 200, CI `qa:pass`, private harnesses and IAB do not count. For unpacked extensions use `scripts/lib/extension-e2e.mjs` (one browser per run, self-cleaning).
 - **Test environments** use the worktree bootstrap: synthetic `ui` mode by default; `live` needs task-specific credential authorization; never copy shared profiles or type real keys into test pages.
 - **Dev app acceptance is the desktop Bot's** responsibility. It owns the shared Dev instance and returns CDP evidence for the running build and affected journeys to the coordinating Agent.
-- After three consecutive same-class failures, record what failed and what was ruled out, then test a new hypothesis.
+- After two consecutive failures sharing one premise, write that premise down and test it directly before another fix; record what failed and what was ruled out before changing hypothesis.
 
 ## Delivery
 
