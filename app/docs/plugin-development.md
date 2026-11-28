@@ -188,6 +188,136 @@ desktopPnpm.runPlugin(['install', '--no-frozen-lockfile'], invokingDir, signal)
 
 `desktopRuntime`、`desktopPnpmBootstrap`、Electron `BrowserWindow`、托盘注册表、private Node helper、`ELECTRON_RUN_AS_NODE` 和生成的 shim 都是 Desktop 内部实现。即使它们出现在 declaration 或运行时上下文中，也不属于第三方兼容 contract。
 
+## 最小双面 Cordis 插件示例（UI 与 Agent 工具同源）
+
+OmniMux 插件遵循双面交付铁律：面向用户的 **UI 交互面**（`dsh-ui-kit`）与面向智能体的 **Agent 工具面**（`ctx.tools`）必须调用**同一个领域 Store/Service**，且涉及删除或覆写的破坏性操作必须带 `confirm: true` 守卫。开发前请先核对 [`plugins/packages/dsh-ui-kit/README.md`](../../plugins/packages/dsh-ui-kit/README.md)、[`plugins/docs/contracts/plugin-agent-tools-inventory.md`](../../plugins/docs/contracts/plugin-agent-tools-inventory.md) 与 [`CONTRIBUTING.md`](../../CONTRIBUTING.md)。
+
+### 1. 包清单与 Cordis Patch（`package.json` + `cordis.patch.yml`）
+
+```json
+{
+  "name": "omnimux-notes",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "src/index.js",
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "dependencies": {
+    "dsh-ui-kit": "^0.1.0"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/dsh-client-ui-primitives": ">=0.2.2-rc.5 <0.3.0-0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  }
+}
+```
+
+```yaml
+- insert:
+    - id: omnimux-notes
+      name: omnimux-notes
+```
+
+### 2. 带删除确认守卫的共享 Store（`src/store.js`）
+
+```js
+export function createNotesStore() {
+  const items = new Map()
+  return {
+    list() {
+      return [...items.values()]
+    },
+    create({ id, title }) {
+      const entry = { id: String(id), title: String(title || '').trim() }
+      items.set(entry.id, entry)
+      return { ok: true, item: entry }
+    },
+    remove({ id, confirm }) {
+      if (confirm !== true) {
+        return {
+          ok: false,
+          error: 'confirmation-required',
+          message: '请显式传入 confirm: true 后再执行删除。',
+        }
+      }
+      const deleted = items.delete(String(id))
+      return { ok: true, deleted }
+    },
+  }
+}
+```
+
+### 3. 宿主入口同时挂接路由与 `ctx.tools`（`src/index.js`）
+
+```js
+import { createNotesStore } from './store.js'
+
+export const name = 'omnimux-notes'
+export const inject = ['tools', 'webServer']
+
+export function apply(ctx) {
+  const store = createNotesStore()
+
+  // 人类交互 UI 路由直接复用同一 Store
+  ctx.webServer?.route?.('/omnimux-notes/api/notes', async (req) => {
+    if (req.method === 'GET') return { items: store.list() }
+    const body = await req.json()
+    if (req.method === 'DELETE') return store.remove(body)
+    return store.create(body)
+  })
+
+  // Agent 工具面走同一 Store 与 confirm 守卫
+  ctx.tools.register({
+    name: 'notes_create',
+    description: '在共享 Store 中创建条目。',
+    parameters: {
+      type: 'object',
+      required: ['id', 'title'],
+      properties: { id: { type: 'string' }, title: { type: 'string' } },
+    },
+    execute: async (args) => store.create(args),
+  })
+
+  ctx.tools.register({
+    name: 'notes_delete',
+    description: '删除条目（破坏性操作，必须传 confirm: true）。',
+    parameters: {
+      type: 'object',
+      required: ['id', 'confirm'],
+      properties: { id: { type: 'string' }, confirm: { type: 'boolean' } },
+    },
+    execute: async (args) => store.remove(args),
+  })
+}
+```
+
+### 4. 客户端视图消费 `dsh-ui-kit` 与语义 Token（`src/client/Panel.jsx`）
+
+```jsx
+import { Button, PageHeader } from 'dsh-ui-kit'
+
+export function NotesPanel({ items, onCreate }) {
+  return (
+    <section style={{ background: 'var(--dsw-alias-bg-secondary)' }}>
+      <PageHeader
+        title="Notes"
+        subtitle="与 Agent 工具共享同一本地数据源"
+        actions={<Button variant="primary" onClick={onCreate}>新建条目</Button>}
+      />
+      <p style={{ color: 'var(--dsw-alias-label-secondary)' }}>
+        当前条目数：{items.length}
+      </p>
+    </section>
+  )
+}
+```
+
+新增或变更工具时，请同步更新插件 `dsh.manifest.json`（`capabilities.tools` 与客户端 Slot）以及 [`plugins/docs/contracts/plugin-agent-tools-inventory.md`](../../plugins/docs/contracts/plugin-agent-tools-inventory.md)。
+
 ## 测试与发布检查
 
 插件至少应覆盖：

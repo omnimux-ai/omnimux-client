@@ -188,6 +188,136 @@ Arguments are passed as argv. Do not concatenate shell strings or depend on Wind
 
 `desktopRuntime`, `desktopPnpmBootstrap`, Electron `BrowserWindow`, the tray registry, private Node helpers, `ELECTRON_RUN_AS_NODE`, and generated shims are Desktop internals. Their presence in declarations or runtime context does not make them third-party compatibility contracts.
 
+## Minimal dual-surface Cordis plugin (UI + Agent tool)
+
+Every OmniMux feature should keep a **UI surface** (`dsh-ui-kit`) and an **Agent tool surface** (`ctx.tools`) backed by the **same local store/service**, with a strict `confirm: true` guard on destructive actions. See [`plugins/packages/dsh-ui-kit/README.md`](../../plugins/packages/dsh-ui-kit/README.md), [`plugins/docs/contracts/plugin-agent-tools-inventory.md`](../../plugins/docs/contracts/plugin-agent-tools-inventory.md), and [`CONTRIBUTING.md`](../../CONTRIBUTING.md) before authoring a new plugin.
+
+### 1. Package metadata and Cordis patch (`package.json` + `cordis.patch.yml`)
+
+```json
+{
+  "name": "omnimux-notes",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "src/index.js",
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "dependencies": {
+    "dsh-ui-kit": "^0.1.0"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/dsh-client-ui-primitives": ">=0.2.2-rc.5 <0.3.0-0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  }
+}
+```
+
+```yaml
+- insert:
+    - id: omnimux-notes
+      name: omnimux-notes
+```
+
+### 2. Shared store with destructive confirmation guard (`src/store.js`)
+
+```js
+export function createNotesStore() {
+  const items = new Map()
+  return {
+    list() {
+      return [...items.values()]
+    },
+    create({ id, title }) {
+      const entry = { id: String(id), title: String(title || '').trim() }
+      items.set(entry.id, entry)
+      return { ok: true, item: entry }
+    },
+    remove({ id, confirm }) {
+      if (confirm !== true) {
+        return {
+          ok: false,
+          error: 'confirmation-required',
+          message: 'Pass confirm: true to delete this note.',
+        }
+      }
+      const deleted = items.delete(String(id))
+      return { ok: true, deleted }
+    },
+  }
+}
+```
+
+### 3. Host plugin registering paired routes and `ctx.tools` (`src/index.js`)
+
+```js
+import { createNotesStore } from './store.js'
+
+export const name = 'omnimux-notes'
+export const inject = ['tools', 'webServer']
+
+export function apply(ctx) {
+  const store = createNotesStore()
+
+  // Human UI HTTP surface delegates directly to the shared store
+  ctx.webServer?.route?.('/omnimux-notes/api/notes', async (req) => {
+    if (req.method === 'GET') return { items: store.list() }
+    const body = await req.json()
+    if (req.method === 'DELETE') return store.remove(body)
+    return store.create(body)
+  })
+
+  // Agent tool surface uses the exact same store and confirmation guard
+  ctx.tools.register({
+    name: 'notes_create',
+    description: 'Create a note item in the shared store.',
+    parameters: {
+      type: 'object',
+      required: ['id', 'title'],
+      properties: { id: { type: 'string' }, title: { type: 'string' } },
+    },
+    execute: async (args) => store.create(args),
+  })
+
+  ctx.tools.register({
+    name: 'notes_delete',
+    description: 'Delete a note item (requires confirm: true).',
+    parameters: {
+      type: 'object',
+      required: ['id', 'confirm'],
+      properties: { id: { type: 'string' }, confirm: { type: 'boolean' } },
+    },
+    execute: async (args) => store.remove(args),
+  })
+}
+```
+
+### 4. Client panel consuming `dsh-ui-kit` and `--dsw-*` tokens (`src/client/Panel.jsx`)
+
+```jsx
+import { Button, PageHeader } from 'dsh-ui-kit'
+
+export function NotesPanel({ items, onCreate }) {
+  return (
+    <section style={{ background: 'var(--dsw-alias-bg-secondary)' }}>
+      <PageHeader
+        title="Notes"
+        subtitle="Backed by the same local store as Agent tools"
+        actions={<Button variant="primary" onClick={onCreate}>Add note</Button>}
+      />
+      <p style={{ color: 'var(--dsw-alias-label-secondary)' }}>
+        Items: {items.length}
+      </p>
+    </section>
+  )
+}
+```
+
+Keep plugin `dsh.manifest.json` (`capabilities.tools` and client slots) and [`plugins/docs/contracts/plugin-agent-tools-inventory.md`](../../plugins/docs/contracts/plugin-agent-tools-inventory.md) in sync whenever adding tools.
+
 ## Testing and release checks
 
 At minimum, a plugin should cover:
