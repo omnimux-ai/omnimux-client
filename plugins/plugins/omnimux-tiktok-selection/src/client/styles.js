@@ -61,6 +61,33 @@ export const STYLES = `
   flex-direction: column;
   gap: 12px;
 }
+.omnimux-ttsel-panel-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.omnimux-ttsel-drawer-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.omnimux-ttsel-stack-12 {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.omnimux-ttsel-minw0 {
+  min-width: 0;
+}
+.omnimux-ttsel-col-check {
+  width: 36px;
+}
+.omnimux-ttsel-col-actions {
+  width: 96px;
+}
+.omnimux-ttsel-push-end {
+  margin-left: auto;
+}
 .omnimux-ttsel-toolbar {
   display: flex;
   align-items: center;
@@ -207,18 +234,27 @@ export const STYLES = `
   font-size: 11px;
   color: var(--dsw-alias-label-secondary);
 }
-.omnimux-ttsel-title-btn {
+.omnimux-ttsel-table .omnimux-ttsel-title-btn {
   display: block;
   width: 100%;
+  height: auto;
+  min-width: 0;
   padding: 0;
   border: none;
+  border-radius: 4px;
+  white-space: normal;
+  justify-content: flex-start;
   background: transparent;
   color: var(--dsw-alias-label-primary);
   font: inherit;
   text-align: left;
   cursor: pointer;
 }
-.omnimux-ttsel-title-btn:focus-visible {
+.omnimux-ttsel-table .omnimux-ttsel-title-btn:hover {
+  background: transparent;
+  text-decoration: underline;
+}
+.omnimux-ttsel-table .omnimux-ttsel-title-btn:focus-visible {
   outline: 2px solid var(--dsw-alias-state-business-primary);
   outline-offset: 2px;
   border-radius: 4px;
@@ -545,7 +581,34 @@ export const STYLES = `
   50% { opacity: 0.35; }
 }
 @media (max-width: 900px) {
-  .omnimux-ttsel-toolbar {
+  .omnimux-ttsel-panel-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.omnimux-ttsel-drawer-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.omnimux-ttsel-stack-12 {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.omnimux-ttsel-minw0 {
+  min-width: 0;
+}
+.omnimux-ttsel-col-check {
+  width: 36px;
+}
+.omnimux-ttsel-col-actions {
+  width: 96px;
+}
+.omnimux-ttsel-push-end {
+  margin-left: auto;
+}
+.omnimux-ttsel-toolbar {
     flex-direction: column;
     align-items: stretch;
   }

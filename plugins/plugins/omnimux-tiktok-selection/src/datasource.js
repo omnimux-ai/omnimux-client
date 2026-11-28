@@ -1452,6 +1452,7 @@ export function createDataSourceAdapter({ store, getService, logger, cacheConfig
           let liveNormalized = null
           let invalidReason = ''
           let needV1Fallback = false
+          let v3Error = null
           let warning = ''
           let status = 'live'
           let shouldNegativeCache = false
@@ -1488,6 +1489,7 @@ export function createDataSourceAdapter({ store, getService, logger, cacheConfig
                 error: warning,
               })
             } else {
+              v3Error = err
               logger?.warn?.('omnimux-tiktok-selection: v3 detail failed, retrying shop_product_v1', {
                 productId: pid,
                 code: err?.code,
@@ -1507,14 +1509,33 @@ export function createDataSourceAdapter({ store, getService, logger, cacheConfig
               })
               const v1Status = inspectShopDetailStatus(v1Res)
               liveNormalized = v1Status.invalid ? null : tryNormalize(extractHubProductDetail(v1Res))
-              if (v1Status.invalid || !liveNormalized) {
+              if (v1Status.invalid) {
                 warning = '实时商品详情暂不可用或站点不匹配'
                 status = 'unavailable'
                 shouldNegativeCache = true
-                logger?.warn?.('omnimux-tiktok-selection: v1 detail returned invalid or empty payload', {
+                logger?.warn?.('omnimux-tiktok-selection: v1 detail returned deterministic invalid payload', {
                   productId: pid,
-                  reason: v1Status.reason || invalidReason || 'empty',
+                  reason: v1Status.reason || invalidReason || 'invalid',
                 })
+              } else if (!liveNormalized) {
+                if (v3Error) {
+                  warning = formatSocialDataErrorMessage(v3Error, 'Live product detail unavailable')
+                  status = 'error'
+                  shouldNegativeCache = false
+                  logger?.warn?.('omnimux-tiktok-selection: v3 errored and v1 returned empty payload, skipping negative cache', {
+                    productId: pid,
+                    code: v3Error?.code,
+                    error: warning,
+                  })
+                } else {
+                  warning = '实时商品详情暂不可用或站点不匹配'
+                  status = 'unavailable'
+                  shouldNegativeCache = true
+                  logger?.warn?.('omnimux-tiktok-selection: v1 detail returned empty payload', {
+                    productId: pid,
+                    reason: invalidReason || 'empty',
+                  })
+                }
               }
             } catch (v1Err) {
               warning = formatSocialDataErrorMessage(v1Err, 'Live product detail unavailable')
@@ -1542,6 +1563,7 @@ export function createDataSourceAdapter({ store, getService, logger, cacheConfig
         detailWarning = fetchedDetail.warning
         detailStatus = fetchedDetail.status
       } else {
+        detailWarning = 'Hub socialData 未挂载，无法在线拉取商品详情'
         detailStatus = 'error'
       }
     } else if (cachedDetail) {

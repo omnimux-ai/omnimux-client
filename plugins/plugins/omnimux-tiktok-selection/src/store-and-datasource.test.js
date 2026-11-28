@@ -1137,6 +1137,106 @@ describe('DataSourceAdapter CSV/JSON snapshot parsing & live socialData', () => 
       assert.equal(fetched.length, 0)
       await adapter.getProductDetail({ productId: 'snap_1', region: 'US', productHint: snapHint, forceRefresh: true })
       assert.equal(fetched.length, 1)
+
+      // 7. Positive detailCache hit, concurrent dedupeInFlight, forceRefresh on videos/reviews, and asc null-last sorting
+      fetched.length = 0
+      const validHint = { productId: 'p_valid', region: 'US', title: 'Valid Beauty Product' }
+      const [c1, c2] = await Promise.all([
+        adapter.getProductDetail({ productId: 'p_valid', region: 'US', productHint: validHint }),
+        adapter.getProductDetail({ productId: 'p_valid', region: 'US', productHint: validHint }),
+      ])
+      assert.equal(c1.detailStatus, 'live')
+      assert.equal(c2.detailStatus, 'live')
+      assert.equal(fetched.filter((r) => r.capability === 'shop_product').length, 1)
+
+      const cachedDetailHit = await adapter.getProductDetail({ productId: 'p_valid', region: 'US', productHint: validHint })
+      assert.equal(cachedDetailHit.detailStatus, 'cached')
+      assert.equal(cachedDetailHit.cache.detail, true)
+      assert.equal(fetched.length, 1)
+
+      await adapter.getProductDetail({ productId: 'p_valid', region: 'US', includeDetail: false, loadVideos: true, productHint: validHint })
+      await adapter.getProductDetail({ productId: 'p_valid', region: 'US', includeDetail: false, loadVideos: true, forceRefresh: true, productHint: validHint })
+      assert.equal(fetched.filter((r) => r.capability === 'creator_search_videos').length, 2)
+
+      await adapter.getProductDetail({ productId: 'p_valid', region: 'US', includeDetail: false, loadReviews: true, productHint: validHint })
+      await adapter.getProductDetail({ productId: 'p_valid', region: 'US', includeDetail: false, loadReviews: true, forceRefresh: true, productHint: validHint })
+      assert.equal(fetched.filter((r) => r.capability === 'shop_reviews_v2').length, 2)
+
+      // Snapshot asc sort keeps null values last
+      const nullSortSnap = adapter.importSnapshot({
+        name: 'null-last-snap',
+        region: 'US',
+        content: JSON.stringify([
+          { productId: 'n_null', title: 'Missing Price', price: null },
+          { productId: 'n_high', title: 'Higher Price', price: 29.9 },
+          { productId: 'n_low', title: 'Lower Price', price: 9.9 },
+        ]),
+      })
+      const ascSorted = await adapter.queryRank({
+        region: 'US',
+        snapshotId: nullSortSnap.snapshot.id,
+        sortField: 'priceMin',
+        sortDir: 'asc',
+      })
+      assert.deepEqual(
+        ascSorted.items.map((x) => x.productId),
+        ['n_low', 'n_high', 'n_null']
+      )
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('never negative-caches terminal quota/auth errors or transient v3 error with empty v1 stub', async () => {
+    const { store, cleanup } = makeTempStore('omx-ttsel-noncache-')
+    try {
+      let mode = 'quota-exceeded'
+      let callCount = 0
+      const errSocialData = {
+        async fetch(req) {
+          callCount += 1
+          if (req.capability === 'shop_product_v1') {
+            return { data: {} } // Empty non-terminal v1 stub
+          }
+          if (mode === 'transient') {
+            const err = new Error('upstream timeout')
+            err.code = 'UPSTREAM_TIMEOUT'
+            throw err
+          }
+          const err = new Error(`blocked:${mode}`)
+          err.code = mode
+          throw err
+        },
+      }
+      const adapter = createDataSourceAdapter({ store, getService: (n) => (n === 'socialData' ? errSocialData : null) })
+      const hint = { productId: 'p_err_1', region: 'US', title: 'Error Probe Product' }
+
+      for (const terminalCode of ['needs-omnimux', 'quota-exceeded', 'CHANNEL_UNAVAILABLE']) {
+        mode = terminalCode
+        const before = callCount
+        const dRes = await adapter.getProductDetail({ productId: `p_${terminalCode}`, region: 'US', productHint: { ...hint, productId: `p_${terminalCode}` } })
+        assert.equal(dRes.detailStatus, 'error')
+        const vRes = await adapter.getProductDetail({ productId: `p_${terminalCode}`, region: 'US', includeDetail: false, loadVideos: true, productHint: { ...hint, productId: `p_${terminalCode}` } })
+        assert.equal(vRes.videosStatus, 'error')
+        const rRes = await adapter.getProductDetail({ productId: `p_${terminalCode}`, region: 'US', includeDetail: false, loadReviews: true, productHint: { ...hint, productId: `p_${terminalCode}` } })
+        assert.equal(rRes.reviewsStatus, 'error')
+        assert.equal(callCount, before + 3)
+
+        // Immediate retry must re-invoke upstream (must NOT negative-cache)
+        await adapter.getProductDetail({ productId: `p_${terminalCode}`, region: 'US', productHint: { ...hint, productId: `p_${terminalCode}` } })
+        await adapter.getProductDetail({ productId: `p_${terminalCode}`, region: 'US', includeDetail: false, loadVideos: true, productHint: { ...hint, productId: `p_${terminalCode}` } })
+        await adapter.getProductDetail({ productId: `p_${terminalCode}`, region: 'US', includeDetail: false, loadReviews: true, productHint: { ...hint, productId: `p_${terminalCode}` } })
+        assert.equal(callCount, before + 6)
+      }
+
+      // Transient v3 error + empty v1 stub must return error and NOT negative-cache
+      mode = 'transient'
+      const beforeTransient = callCount
+      const tr1 = await adapter.getProductDetail({ productId: 'p_transient', region: 'US', productHint: { ...hint, productId: 'p_transient' } })
+      assert.equal(tr1.detailStatus, 'error')
+      const tr2 = await adapter.getProductDetail({ productId: 'p_transient', region: 'US', productHint: { ...hint, productId: 'p_transient' } })
+      assert.equal(tr2.detailStatus, 'error')
+      assert.equal(callCount, beforeTransient + 4)
     } finally {
       cleanup()
     }

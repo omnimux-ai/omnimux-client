@@ -153,6 +153,7 @@ export function DiscoveryPanel({ overview, t, onNotify, onLibraryChanged, onSnap
   const [reviews, setReviews] = useState([])
 
   const drawerCacheRef = useRef(new Map())
+  const activeDrawerKeyRef = useRef('')
   const detailSeqRef = useRef(0)
   const videosSeqRef = useRef(0)
   const reviewsSeqRef = useRef(0)
@@ -219,11 +220,15 @@ export function DiscoveryPanel({ overview, t, onNotify, onLibraryChanged, onSnap
     const { sortField, sortDir } = parseSortValue(nextSortValue)
 
     if (nextMode === 'snapshot' && !nextSnapshotId) {
+      listReqSeqRef.current += 1
+      setLoading(false)
       setResult(null)
       setError('')
       return
     }
     if (nextMode === 'search' && !String(nextKeyword).trim() && !String(nextCategory).trim()) {
+      listReqSeqRef.current += 1
+      setLoading(false)
       setError('请输入关键词或选择类目后再搜索')
       return
     }
@@ -275,6 +280,8 @@ export function DiscoveryPanel({ overview, t, onNotify, onLibraryChanged, onSnap
   }
 
   function handleModeChange(nextMode) {
+    listReqSeqRef.current += 1
+    setLoading(false)
     setMode(nextMode)
     setError('')
     setColMenuOpen(false)
@@ -292,6 +299,7 @@ export function DiscoveryPanel({ overview, t, onNotify, onLibraryChanged, onSnap
     } else {
       const validSort = LIVE_SORT_OPTIONS.some((o) => o.value === sortValue) ? sortValue : LIVE_SORT_OPTIONS[0].value
       setSortValue(validSort)
+      setResult((prev) => (prev?.source === 'snapshot' ? null : prev))
       if (nextMode === 'rank' && hasQueriedRef.current) {
         runQuery(1, { mode: 'rank', sortValue: validSort })
       }
@@ -429,8 +437,10 @@ export function DiscoveryPanel({ overview, t, onNotify, onLibraryChanged, onSnap
     detailSeqRef.current = seq
 
     if (product.source === 'snapshot' && !forceRefresh) {
-      setDetailStatus('snapshot')
-      setDetailError('')
+      if (activeDrawerKeyRef.current === key && detailSeqRef.current === seq) {
+        setDetailStatus('snapshot')
+        setDetailError('')
+      }
       updateProductCache(key, { product, detailStatus: 'snapshot', detailError: '' })
       return
     }
@@ -447,11 +457,21 @@ export function DiscoveryPanel({ overview, t, onNotify, onLibraryChanged, onSnap
         forceRefresh,
         productHint: product,
       })
-      if (detailSeqRef.current !== seq) return
-      const mergedProduct = { ...product, ...res.product, inLibrary: Boolean(product.inLibrary || res.product?.inLibrary) }
+      if (detailSeqRef.current !== seq || activeDrawerKeyRef.current !== key) return
+      const cachedNow = drawerCacheRef.current.get(key)?.product
+      const mergedProduct = {
+        ...product,
+        ...res.product,
+        inLibrary: Boolean(product.inLibrary || cachedNow?.inLibrary || res.product?.inLibrary),
+      }
       const nextStatus = res.detailStatus || (res.detailError ? 'unavailable' : 'live')
       const nextError = res.detailError || ''
-      setActiveProduct(mergedProduct)
+      setActiveProduct((prev) => ({
+        ...mergedProduct,
+        inLibrary: Boolean(
+          mergedProduct.inLibrary || (prev?.productId === mergedProduct.productId && prev?.inLibrary)
+        ),
+      }))
       setDetailStatus(nextStatus)
       setDetailError(nextError)
       const patch = { product: mergedProduct, detailStatus: nextStatus, detailError: nextError }
@@ -469,13 +489,13 @@ export function DiscoveryPanel({ overview, t, onNotify, onLibraryChanged, onSnap
       }
       updateProductCache(key, patch)
     } catch (err) {
-      if (detailSeqRef.current !== seq) return
+      if (detailSeqRef.current !== seq || activeDrawerKeyRef.current !== key) return
       const msg = err?.message || '读取详情失败'
       setDetailStatus('error')
       setDetailError(msg)
       updateProductCache(key, { detailStatus: 'error', detailError: msg })
     } finally {
-      if (detailSeqRef.current === seq) {
+      if (detailSeqRef.current === seq && activeDrawerKeyRef.current === key) {
         setDetailLoading(false)
       }
     }
@@ -498,7 +518,7 @@ export function DiscoveryPanel({ overview, t, onNotify, onLibraryChanged, onSnap
         forceRefresh,
         productHint: product,
       })
-      if (videosSeqRef.current !== seq) return
+      if (videosSeqRef.current !== seq || activeDrawerKeyRef.current !== key) return
       const list = Array.isArray(res.referenceVideos) ? res.referenceVideos : []
       const status = res.videosStatus || (res.videosError ? 'error' : list.length > 0 ? 'loaded' : 'empty')
       const errMsg = res.videosError || ''
@@ -507,13 +527,13 @@ export function DiscoveryPanel({ overview, t, onNotify, onLibraryChanged, onSnap
       setVideosError(errMsg)
       updateProductCache(key, { videos: list, videosStatus: status, videosError: errMsg })
     } catch (err) {
-      if (videosSeqRef.current !== seq) return
+      if (videosSeqRef.current !== seq || activeDrawerKeyRef.current !== key) return
       const msg = err?.message || '读取带货视频失败'
       setVideosStatus('error')
       setVideosError(msg)
       updateProductCache(key, { videosStatus: 'error', videosError: msg })
     } finally {
-      if (videosSeqRef.current === seq) {
+      if (videosSeqRef.current === seq && activeDrawerKeyRef.current === key) {
         setVideosLoading(false)
       }
     }
@@ -536,7 +556,7 @@ export function DiscoveryPanel({ overview, t, onNotify, onLibraryChanged, onSnap
         forceRefresh,
         productHint: product,
       })
-      if (reviewsSeqRef.current !== seq) return
+      if (reviewsSeqRef.current !== seq || activeDrawerKeyRef.current !== key) return
       const list = Array.isArray(res.reviews) ? res.reviews : []
       const status = res.reviewsStatus || (res.reviewsError ? 'error' : list.length > 0 ? 'loaded' : 'empty')
       const errMsg = res.reviewsError || ''
@@ -545,21 +565,37 @@ export function DiscoveryPanel({ overview, t, onNotify, onLibraryChanged, onSnap
       setReviewsError(errMsg)
       updateProductCache(key, { reviews: list, reviewsStatus: status, reviewsError: errMsg })
     } catch (err) {
-      if (reviewsSeqRef.current !== seq) return
+      if (reviewsSeqRef.current !== seq || activeDrawerKeyRef.current !== key) return
       const msg = err?.message || '读取商品评价失败'
       setReviewsStatus('error')
       setReviewsError(msg)
       updateProductCache(key, { reviewsStatus: 'error', reviewsError: msg })
     } finally {
-      if (reviewsSeqRef.current === seq) {
+      if (reviewsSeqRef.current === seq && activeDrawerKeyRef.current === key) {
         setReviewsLoading(false)
       }
     }
   }
 
+  function closeDrawer() {
+    activeDrawerKeyRef.current = ''
+    detailSeqRef.current += 1
+    videosSeqRef.current += 1
+    reviewsSeqRef.current += 1
+    setDetailOpen(false)
+    setDetailLoading(false)
+    setVideosLoading(false)
+    setReviewsLoading(false)
+  }
+
   function openDrawer(product) {
     const targetRegion = product.region || region
     const key = productCacheKey(product, targetRegion)
+    activeDrawerKeyRef.current = key
+    detailSeqRef.current += 1
+    videosSeqRef.current += 1
+    reviewsSeqRef.current += 1
+
     const cached = drawerCacheRef.current.get(key)
     const seededProduct = cached?.product ? { ...cached.product, inLibrary: Boolean(product.inLibrary || cached.product.inLibrary) } : product
 
@@ -642,7 +678,7 @@ export function DiscoveryPanel({ overview, t, onNotify, onLibraryChanged, onSnap
   const originalHref = activeProduct ? safeExternalHref(activeProduct.tiktokUrl) : ''
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+    <div className="omnimux-ttsel-panel-stack">
       <div className="omnimux-ttsel-toolbar">
         <div className="omnimux-ttsel-toolbar-group">
           <Tabs variant="pill" size="sm" items={modeTabItems} activeId={mode} onChange={handleModeChange} />
@@ -837,7 +873,7 @@ export function DiscoveryPanel({ overview, t, onNotify, onLibraryChanged, onSnap
           <table className="omnimux-ttsel-table">
             <thead>
               <tr>
-                <th style={{ width: '36px' }}>
+                <th className="omnimux-ttsel-col-check">
                   <input
                     type="checkbox"
                     aria-label="全选本页"
@@ -857,7 +893,7 @@ export function DiscoveryPanel({ overview, t, onNotify, onLibraryChanged, onSnap
                 {cols.rating && <th>评分</th>}
                 {cols.shopName && <th>店铺名称</th>}
                 {cols.category && <th>类目</th>}
-                <th style={{ width: '96px' }}>操作</th>
+                <th className="omnimux-ttsel-col-actions">操作</th>
               </tr>
             </thead>
             <tbody>
@@ -884,9 +920,9 @@ export function DiscoveryPanel({ overview, t, onNotify, onLibraryChanged, onSnap
                       ) : (
                         <div className="omnimux-ttsel-thumb">IMG</div>
                       )}
-                      <div style={{ minWidth: 0 }}>
-                        <button
-                          type="button"
+                      <div className="omnimux-ttsel-minw0">
+                        <Button
+                          variant="ghost"
                           className="omnimux-ttsel-title-btn"
                           onClick={(e) => {
                             e.stopPropagation()
@@ -894,7 +930,7 @@ export function DiscoveryPanel({ overview, t, onNotify, onLibraryChanged, onSnap
                           }}
                         >
                           <span className="omnimux-ttsel-title-clamp">{item.title}</span>
-                        </button>
+                        </Button>
                         <div className="omnimux-ttsel-prod-sub">
                           {item.shopName && <span>{item.shopName}</span>}
                           {item.category && !cols.category && <span>{item.category}</span>}
@@ -985,7 +1021,7 @@ export function DiscoveryPanel({ overview, t, onNotify, onLibraryChanged, onSnap
 
       <Drawer
         open={detailOpen}
-        onClose={() => setDetailOpen(false)}
+        onClose={closeDrawer}
         title="商品详情"
         width={600}
         footer={
@@ -1012,14 +1048,14 @@ export function DiscoveryPanel({ overview, t, onNotify, onLibraryChanged, onSnap
         }
       >
         {activeProduct ? (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <div className="omnimux-ttsel-drawer-stack">
             <div className="omnimux-ttsel-drawer-hero">
               {activeProduct.coverUrl ? (
                 <img className="omnimux-ttsel-drawer-thumb" src={activeProduct.coverUrl} alt="" />
               ) : (
                 <div className="omnimux-ttsel-drawer-thumb">IMG</div>
               )}
-              <div style={{ minWidth: 0 }}>
+              <div className="omnimux-ttsel-minw0">
                 <h4 className="omnimux-ttsel-drawer-title">{activeProduct.title}</h4>
                 <div className="omnimux-ttsel-drawer-meta">
                   {activeProduct.shopName && <span>{activeProduct.shopName}</span>}
@@ -1073,7 +1109,7 @@ export function DiscoveryPanel({ overview, t, onNotify, onLibraryChanged, onSnap
             <Tabs items={drawerTabItems} activeId={drawerTab} onChange={handleDrawerTabChange} size="sm" />
 
             {drawerTab === 'overview' && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div className="omnimux-ttsel-stack-12">
                 <div className="omnimux-ttsel-kv-list">
                   {activeProduct.shopName && (
                     <div className="omnimux-ttsel-kv">
@@ -1109,7 +1145,7 @@ export function DiscoveryPanel({ overview, t, onNotify, onLibraryChanged, onSnap
                     <span className="omnimux-ttsel-kv-k">商品 ID</span>
                     <span className="omnimux-ttsel-kv-v">
                       <span>{activeProduct.productId}</span>
-                      <CopyButton text={activeProduct.productId} size="xs" label="" copiedLabel="已复制" />
+                      <CopyButton aria-label="复制商品 ID" text={activeProduct.productId} size="xs" label="" copiedLabel="已复制" />
                     </span>
                   </div>
                 </div>
@@ -1196,13 +1232,12 @@ export function DiscoveryPanel({ overview, t, onNotify, onLibraryChanged, onSnap
                       <div className="omnimux-ttsel-row">
                         {v.author && <Badge>@{v.author}</Badge>}
                         {v.salesCount !== null && <Badge>销量 {fmtNum(v.salesCount)}</Badge>}
-                        {v.gmv !== null && <Badge variant="success">GMV {fmtMoney(v.gmv)}</Badge>}
+                        {v.gmv !== null && <Badge variant="success">GMV {fmtMoney(v.gmv, activeProduct.currency)}</Badge>}
                         <Badge>播放 {fmtNum(v.playCount)}</Badge>
                         <Badge>收藏 {fmtNum(v.collectCount)}</Badge>
                         {safeExternalHref(v.url) && (
                           <a
-                            className="omnimux-ttsel-ext-link"
-                            style={{ marginLeft: 'auto' }}
+                            className="omnimux-ttsel-ext-link omnimux-ttsel-push-end"
                             href={safeExternalHref(v.url)}
                             target="_blank"
                             rel="noopener noreferrer"
@@ -1287,7 +1322,7 @@ export function DiscoveryPanel({ overview, t, onNotify, onLibraryChanged, onSnap
           </div>
         }
       >
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        <div className="omnimux-ttsel-stack-12">
           <InputField
             label="快照名称"
             placeholder="例如 US 美妆日榜 2026-11-20"
