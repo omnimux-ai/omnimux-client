@@ -1,10 +1,11 @@
 import { EventEmitter } from 'node:events'
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { installFailLoud } from '@deepseek-ai/dsh-app-boot'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DesktopHostExitError, DesktopHostFatalError, DesktopHostProcess, DesktopHostUncleanExitError, exitFatalLine } from '../src/host-process.ts'
+import { removeTemporaryDirectory } from './support/temporary-directory.ts'
 
 const roots: string[] = []
 const hosts: DesktopHostProcess[] = []
@@ -69,7 +70,7 @@ function hostProcess(
 
 afterEach(async () => {
   await Promise.all(hosts.splice(0).map(host => host.stop()))
-  for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
+  for (const root of roots.splice(0)) await removeTemporaryDirectory(root)
 })
 
 describe('desktop host process', () => {

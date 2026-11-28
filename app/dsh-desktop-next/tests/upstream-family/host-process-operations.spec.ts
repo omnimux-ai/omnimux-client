@@ -1,16 +1,17 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
 import { DesktopHostProcess, type DesktopHostObserver } from '../../src/host-process.ts'
 import { DesktopOperationHistory } from '../../src/upstream-family/desktop-operation-history.ts'
+import { removeTemporaryDirectory } from '../support/temporary-directory.ts'
 
 const roots: string[] = []
 const hosts: DesktopHostProcess[] = []
 afterEach(async () => {
   await Promise.all(hosts.splice(0).map(host => host.stop()))
-  for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
+  for (const root of roots.splice(0)) await removeTemporaryDirectory(root)
 })
 
 const runId = 'c254ab28-97c9-4382-95e6-2db9c66f98c8'

@@ -1,15 +1,16 @@
 /** File drag authorization through a real Host child: answers, cancellation, invalid answers and Host exit. */
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
 import { DesktopHostProcess } from '../../src/host-process.ts'
+import { removeTemporaryDirectory } from '../support/temporary-directory.ts'
 
 const roots: string[] = []
 const hosts: DesktopHostProcess[] = []
 afterEach(async () => {
   await Promise.all(hosts.splice(0).map(host => host.stop()))
-  for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
+  for (const root of roots.splice(0)) await removeTemporaryDirectory(root)
 })
 
 /**
