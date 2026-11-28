@@ -1,10 +1,13 @@
 import { FILTER_PRESETS } from '../openreel/core/video/filter-presets'
 import { getTimelineItemCapabilities } from '../openreel/core/timeline/timeline-items'
-import type { Effect, Subtitle, Transform } from '../openreel/core/types/timeline'
+import { graphicInstanceOfClip } from '../openreel/core/graphic-templates/instances'
+import { createDefaultAnimation, TEXT_ANIMATION_PRESETS } from '../openreel/core/text/text-animation-presets'
+import { EASING_TYPES, type EasingType, type Effect, type Keyframe, type Subtitle, type Transform } from '../openreel/core/types/timeline'
 import { TitleEngine } from '../openreel/core/text/title-engine'
 import { SUBTITLE_STYLE_PRESETS } from '../openreel/core/text/subtitle-engine'
-import type { TextStyle } from '../openreel/core/text/types'
+import type { TextAnimation, TextAnimationPreset, TextStyle } from '../openreel/core/text/types'
 import { filterPresetEffectsForPreview } from '../openreel/web/services/filter-preset-application'
+import { ClipDomainError } from '../../errors.js'
 import { fields, invalid, number, onlyKeys, seconds, text, type Fields } from './native-input'
 import { addTrack, requireItem, requireNewItemId, requirePlacement, requireTrack, type NativeDraft } from './native-timeline'
 
@@ -122,6 +125,9 @@ export async function editText(draft: NativeDraft, operation: Fields) {
   if (cue) return editCue(draft, cue, operation, options, { start, duration, end })
   const target = requireItem(project, operation.clipId)
   if (target.kind !== 'text') invalid('Choose an editable subtitle or title clip')
+  if (graphicInstanceOfClip(project, target.item.id)) {
+    throw new ClipDomainError('graphic-member-readonly', 'Update this graphic through update_graphic_params or ungroup it first.')
+  }
   if (operation.trackId !== undefined && operation.trackId !== target.trackId) invalid('Use move_clip to change the text track')
   const clip = target.item
   const startTime = start ?? clip.startTime
@@ -186,4 +192,136 @@ export async function setClipEffect(draft: NativeDraft, operation: Fields) {
     await draft.action('effect/setStack', { clipId: item.id, effects })
   }
   return { clipId: item.id }
+}
+
+const KEYFRAME_PROPERTY_BOUNDS: Record<string, readonly [number, number]> = {
+  'position.x': [-100_000, 100_000],
+  'position.y': [-100_000, 100_000],
+  'scale.x': [0.01, 100],
+  'scale.y': [0.01, 100],
+  rotation: [-3600, 3600],
+  opacity: [0, 1],
+}
+const VALID_EASINGS = new Set<string>(EASING_TYPES.filter((easing) => easing !== 'bezier'))
+const VALID_TEXT_PRESETS = new Set<string>(TEXT_ANIMATION_PRESETS.map((preset) => preset.id))
+const TEXT_ANIMATION_UNITS = new Set(['character', 'word', 'line'])
+
+export async function setKeyframes(draft: NativeDraft, operation: Fields) {
+  const item = requireItem(draft.project, operation.clipId)
+  const supported = (item.kind === 'media' && getTimelineItemCapabilities(item).visual)
+    || item.kind === 'text' || item.kind === 'shape' || item.kind === 'svg'
+  if (!supported) invalid('Choose a visual media, text, shape, or svg clip')
+  if (item.kind !== 'media' && graphicInstanceOfClip(draft.project, item.id)) {
+    throw new ClipDomainError('graphic-member-readonly', 'Update this graphic through update_graphic_params or ungroup it first.')
+  }
+
+  const mode = operation.mode ?? 'merge'
+  if (mode !== 'merge' && mode !== 'replace') invalid('mode must be merge or replace')
+  if (!Array.isArray(operation.keyframes) || operation.keyframes.length === 0 || operation.keyframes.length > 64) {
+    invalid('keyframes must be an array of 1 to 64 keyframes')
+  }
+
+  const duration = item.item.duration
+  const incoming: Keyframe[] = operation.keyframes.map((entry, index) => {
+    const kf = fields(entry, `keyframes[${index}]`)
+    onlyKeys(kf, ['property', 'timeSec', 'value', 'easing'], `keyframes[${index}]`)
+    const property = text(kf.property, `keyframes[${index}].property`, 64)
+    const bounds = KEYFRAME_PROPERTY_BOUNDS[property]
+    if (!bounds) {
+      throw new ClipDomainError('keyframe-out-of-range', `Unsupported keyframe property "${property}"`)
+    }
+    if (typeof kf.timeSec !== 'number' || !Number.isFinite(kf.timeSec) || kf.timeSec < 0 || kf.timeSec > duration + 1e-6) {
+      throw new ClipDomainError('keyframe-out-of-range', `Keyframe timeSec ${String(kf.timeSec)} is outside [0, ${duration}]`)
+    }
+    const time = Math.min(duration, Math.max(0, kf.timeSec))
+    if (typeof kf.value !== 'number' || !Number.isFinite(kf.value) || kf.value < bounds[0] || kf.value > bounds[1]) {
+      throw new ClipDomainError('keyframe-out-of-range', `Keyframe value ${String(kf.value)} for ${property} must be between ${bounds[0]} and ${bounds[1]}`)
+    }
+    const easingRaw = kf.easing ?? 'ease-in-out'
+    if (typeof easingRaw !== 'string' || !VALID_EASINGS.has(easingRaw)) {
+      invalid(`Unsupported easing "${String(easingRaw)}"`)
+    }
+    return {
+      id: crypto.randomUUID(),
+      time,
+      property,
+      value: kf.value,
+      easing: easingRaw as EasingType,
+    }
+  })
+
+  const base: Keyframe[] = mode === 'replace' ? [] : [...(item.item.keyframes ?? [])]
+  for (const kf of incoming) {
+    const existingIndex = base.findIndex((candidate) => candidate.property === kf.property && Math.abs(candidate.time - kf.time) < 1e-4)
+    if (existingIndex >= 0) base[existingIndex] = kf
+    else base.push(kf)
+  }
+  const nextKeyframes = base.sort((left, right) => left.property.localeCompare(right.property) || left.time - right.time)
+
+  if (item.kind === 'media') {
+    await draft.action('keyframe/setAll', { clipId: item.id, keyframes: nextKeyframes })
+  } else if (item.kind === 'text') {
+    await draft.action('text/update', { clipId: item.id, updates: { keyframes: nextKeyframes } })
+  } else if (item.kind === 'shape') {
+    await draft.action('shape/update', { clipId: item.id, updates: { keyframes: nextKeyframes } })
+  } else {
+    await draft.action('svg/update', { clipId: item.id, updates: { keyframes: nextKeyframes } })
+  }
+  return { clipId: item.id, keyframeCount: nextKeyframes.length }
+}
+
+export async function setTextAnimation(draft: NativeDraft, operation: Fields) {
+  const item = requireItem(draft.project, operation.clipId)
+  if (item.kind !== 'text') invalid('set_text_animation requires an editable text clip')
+  if (graphicInstanceOfClip(draft.project, item.id)) {
+    throw new ClipDomainError('graphic-member-readonly', 'Update this graphic through update_graphic_params or ungroup it first.')
+  }
+
+  const preset = text(operation.preset, 'preset', 64) as TextAnimationPreset
+  if (!VALID_TEXT_PRESETS.has(preset)) invalid('Choose a supported OpenReel text animation preset')
+
+  const outPreset = operation.outPreset === undefined ? undefined : (text(operation.outPreset, 'outPreset', 64) as TextAnimationPreset)
+  if (outPreset !== undefined && !VALID_TEXT_PRESETS.has(outPreset)) invalid('Choose a supported OpenReel exit text animation preset')
+
+  const unit = operation.unit === undefined ? undefined : (text(operation.unit, 'unit', 32) as TextAnimation['unit'])
+  if (unit !== undefined && !TEXT_ANIMATION_UNITS.has(unit)) invalid('unit must be character, word, or line')
+
+  const stagger = operation.staggerSec === undefined ? undefined : number(operation.staggerSec, 'staggerSec', 0, 2)
+  const duration = item.item.duration
+  const defaults = createDefaultAnimation(preset)
+
+  let animation: TextAnimation
+  if (preset === 'none' && !outPreset) {
+    animation = { preset: 'none', params: {}, inDuration: 0, outDuration: 0 }
+  } else {
+    const inDuration = operation.inDurationSec === undefined
+      ? Math.min(duration, defaults.inDuration > 0 ? defaults.inDuration : Math.min(0.4, duration))
+      : number(operation.inDurationSec, 'inDurationSec', 1e-4, duration)
+    const outDuration = operation.outDurationSec === undefined
+      ? Math.min(Math.max(0, duration - inDuration), defaults.outDuration > 0 ? defaults.outDuration : 0.3)
+      : number(operation.outDurationSec, 'outDurationSec', 0, duration)
+    if (inDuration + outDuration > duration + 1e-6) {
+      invalid('inDurationSec + outDurationSec must not exceed the text clip duration')
+    }
+    const outDefaults = outPreset ? createDefaultAnimation(outPreset) : undefined
+    animation = {
+      preset,
+      params: defaults.params,
+      inDuration,
+      outDuration,
+      unit: unit ?? defaults.unit,
+      stagger: stagger ?? defaults.stagger,
+      ...(outPreset ? {
+        out: {
+          preset: outPreset,
+          params: outDefaults?.params ?? {},
+          unit: unit ?? outDefaults?.unit ?? defaults.unit,
+          stagger: stagger ?? outDefaults?.stagger ?? defaults.stagger,
+        },
+      } : {}),
+    }
+  }
+
+  await draft.action('text/update', { clipId: item.id, updates: { animation } })
+  return { clipId: item.id, preset }
 }

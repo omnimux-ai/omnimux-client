@@ -484,3 +484,209 @@ test('shouldProbeAudioStreamsWithFfmpeg avoids cold CDN wasm download when media
   assert.equal(shouldProbeAudioStreamsWithFfmpeg(undefined, 1024 * 1024, { hasFastProbe: false }), true)
   assert.equal(shouldProbeAudioStreamsWithFfmpeg(1, 100 * 1024 * 1024, { hasFastProbe: true }), false)
 })
+
+test('Phase 1 graphic templates: add, full projection, hot param update, protected duration, member guard, and ungroup (#phase1)', async () => {
+  // AC-M1-02 & AC-M1-03
+  const added = await edit([
+    {
+      type: 'add_graphic_instance',
+      templateId: 'builtin-lt-classic-bar',
+      instanceId: 'lt-main',
+      startSec: 1.0,
+      durationSec: 4.0,
+      params: [
+        { id: 'name', value: 'OmniMux Host' },
+        { id: 'accent', value: '#22c55e' },
+      ],
+    },
+  ])
+  const info = added.results[0]
+  assert.equal(info.instanceId, 'lt-main')
+  assert.equal(info.templateId, 'builtin-lt-classic-bar')
+  assert.ok(info.memberClipIds.length > 0)
+
+  const snapFull = readNativeSnapshot({ view: 'full', revision: 2 })
+  assert.equal(snapFull.graphicInstanceCount, 1)
+  assert.equal(snapFull.graphicInstances.length, 1)
+  assert.equal(snapFull.graphicInstances[0].id, 'lt-main')
+  assert.equal(snapFull.graphicInstances[0].values.name, 'OmniMux Host')
+  assert.ok(snapFull.clips.some((row) => row.graphicInstanceId === 'lt-main'))
+
+  // Update parameters and stretch duration to 8s preserving intro/outro protected durations and instanceId
+  const updated = await edit([
+    {
+      type: 'update_graphic_params',
+      instanceId: 'lt-main',
+      durationSec: 8.0,
+      params: [{ id: 'name', value: 'Updated Title' }],
+    },
+  ])
+  assert.equal(updated.results[0].instanceId, 'lt-main')
+  assert.equal(updated.results[0].durationSec, 8.0)
+  const snapUpdated = readNativeSnapshot({ view: 'full', revision: 3 })
+  assert.equal(snapUpdated.graphicInstances[0].values.name, 'Updated Title')
+
+  // Direct edit or text animation on member clip must throw graphic-member-readonly
+  const memberTextClip = snapUpdated.clips.find((c) => c.graphicInstanceId === 'lt-main' && c.kind === 'text')
+  assert.ok(memberTextClip, 'expected expanded text member clip')
+  await assert.rejects(
+    edit([{ type: 'set_text', clipId: memberTextClip.id, content: 'Hack' }]),
+    (error) => error.code === 'graphic-member-readonly',
+  )
+  await assert.rejects(
+    edit([{ type: 'set_text_animation', clipId: memberTextClip.id, preset: 'typewriter' }]),
+    (error) => error.code === 'graphic-member-readonly',
+  )
+
+  // Ungroup releases member clips so set_text & set_text_animation succeed afterwards
+  const ungrouped = await edit([{ type: 'remove_graphic_instance', instanceId: 'lt-main', ungroup: true }])
+  assert.equal(ungrouped.results[0].ungrouped, true)
+  assert.equal(readNativeSnapshot({ view: 'summary', revision: 4 }).graphicInstanceCount, 0)
+  await edit([
+    { type: 'set_text', clipId: memberTextClip.id, content: 'Now Editable' },
+    { type: 'set_text_animation', clipId: memberTextClip.id, preset: 'typewriter', inDurationSec: 0.6, outDurationSec: 0.3 },
+  ])
+  const afterUngroup = readNativeSnapshot({ view: 'full', revision: 5 })
+  const editedText = afterUngroup.clips.find((c) => c.id === memberTextClip.id)
+  assert.equal(editedText.text, 'Now Editable')
+  assert.equal(editedText.textAnimationPreset, 'typewriter')
+})
+
+test('Phase 1 editing template validateOnly isolation and single-step undo (#phase1)', async () => {
+  // AC-M1-04
+  await edit([{ type: 'add_track', trackType: 'video', trackId: 'v-main' }, clipOn('v-main', 'c-main', 0, 5)])
+  const projectBefore = store().project
+  const textBefore = useEngineStore.getState().getTitleEngine()?.getAllTextClips()?.length ?? 0
+  const graphicsBefore = useEngineStore.getState().getGraphicsEngine()?.getAllShapeClips()?.length ?? 0
+
+  const dry = await edit([
+    {
+      type: 'apply_editing_template',
+      clipId: 'c-main',
+      templateId: 'overlay-progress-bar',
+      controls: [{ id: 'barColor', value: '#ff5500' }],
+    },
+  ], { validateOnly: true })
+  assert.equal(dry.persisted, false)
+  assert.equal(dry.undoStep, false)
+  assert.ok(dry.results[0].addedOverlayClipIds.length > 0)
+  assert.equal(store().project, projectBefore)
+  assert.equal(useEngineStore.getState().getTitleEngine()?.getAllTextClips()?.length ?? 0, textBefore)
+  assert.equal(useEngineStore.getState().getGraphicsEngine()?.getAllShapeClips()?.length ?? 0, graphicsBefore)
+
+  const undoBefore = undoCount()
+  const applied = await edit([
+    {
+      type: 'apply_editing_template',
+      clipId: 'c-main',
+      templateId: 'overlay-progress-bar',
+      controls: [{ id: 'barColor', value: '#ff5500' }],
+    },
+  ])
+  assert.equal(applied.undoStep, true)
+  assert.equal(undoCount(), undoBefore + 1)
+  assert.ok((state().shapeClips?.length ?? 0) > 0)
+
+  await store().undo()
+  assert.equal(state().shapeClips?.length ?? 0, 0)
+})
+
+test('Phase 1 set_keyframes, set_text_animation, batch ripple sync, and custom unsafe SVG rejection (#phase1)', async () => {
+  // AC-M1-05, AC-M1-06, AC-M1-07
+  await edit([
+    { type: 'add_track', trackType: 'video', trackId: 'v1' },
+    clipOn('v1', 'main-vid', 0, 6),
+    { type: 'add_track', trackType: 'text', trackId: 't1' },
+    { type: 'add_text', trackId: 't1', clipId: 'title-1', kind: 'title', content: 'Kinetic', startSec: 1, durationSec: 3 },
+  ])
+
+  const kfRes = await edit([
+    {
+      type: 'set_keyframes',
+      clipId: 'main-vid',
+      mode: 'replace',
+      keyframes: [
+        { property: 'scale.x', timeSec: 0, value: 1.0, easing: 'easeInOutCubic' },
+        { property: 'scale.x', timeSec: 4, value: 1.2, easing: 'easeOutCubic' },
+      ],
+    },
+    {
+      type: 'set_keyframes',
+      clipId: 'title-1',
+      mode: 'merge',
+      keyframes: [
+        { property: 'opacity', timeSec: 0, value: 0, easing: 'linear' },
+        { property: 'opacity', timeSec: 0.5, value: 1, easing: 'easeOutQuad' },
+      ],
+    },
+    {
+      type: 'set_text_animation',
+      clipId: 'title-1',
+      preset: 'pop',
+      inDurationSec: 0.4,
+      outDurationSec: 0.3,
+      unit: 'character',
+      staggerSec: 0.04,
+      outPreset: 'fade',
+    },
+  ])
+  assert.equal(kfRes.results[0].keyframeCount, 2)
+  assert.equal(kfRes.results[1].keyframeCount, 2)
+  assert.equal(kfRes.results[2].preset, 'pop')
+  assert.equal(clip('main-vid').keyframes.length, 2)
+
+  // Keyframe bounds error
+  await assert.rejects(
+    edit([{ type: 'set_keyframes', clipId: 'main-vid', keyframes: [{ property: 'opacity', timeSec: 99, value: 1 }] }]),
+    (error) => error.code === 'keyframe-out-of-range',
+  )
+  await assert.rejects(
+    edit([{ type: 'set_keyframes', clipId: 'main-vid', keyframes: [{ property: 'opacity', timeSec: 1, value: 2.5 }] }]),
+    (error) => error.code === 'keyframe-out-of-range',
+  )
+
+  // Batch sync (add_graphic_instance + remove_range ripple) succeeds and keeps members synchronized
+  await edit([
+    { type: 'add_graphic_instance', templateId: 'builtin-callout-info', instanceId: 'g-batch-ok', startSec: 2, durationSec: 2 },
+    { type: 'remove_range', trackId: 'v1', fromSec: 0, toSec: 1, ripple: true },
+  ])
+  const afterBatch = readNativeSnapshot({ view: 'full', revision: 6 })
+  const batchInst = afterBatch.graphicInstances.find((inst) => inst.id === 'g-batch-ok')
+  assert.ok(batchInst)
+  const batchMembers = afterBatch.clips.filter((c) => c.graphicInstanceId === 'g-batch-ok')
+  assert.ok(batchMembers.length > 0)
+  assert.ok(batchMembers.every((c) => c.startSec === batchInst.startSec && c.durationSec === batchInst.durationSec))
+
+  // Batch rollback atomicity + unsafe SVG defense-in-depth
+  const survivingVideoClip = afterBatch.clips.find((c) => c.trackId === 'v1')
+  assert.ok(survivingVideoClip)
+  const snapBeforeInvalid = store().project
+  await assert.rejects(
+    edit([
+      { type: 'add_graphic_instance', templateId: 'builtin-callout-info', instanceId: 'g-batch', startSec: 1.5, durationSec: 2 },
+      { type: 'remove_range', trackId: 'v1', fromSec: 4, toSec: 5, ripple: true },
+      { type: 'set_keyframes', clipId: survivingVideoClip.id, keyframes: [{ property: 'scale.x', timeSec: 1, value: -1 }] },
+    ]),
+    (error) => error.code === 'keyframe-out-of-range',
+  )
+  assert.equal(store().project, snapBeforeInvalid)
+
+  await assert.rejects(
+    edit([{
+      type: 'add_graphic_instance',
+      startSec: 0,
+      resolvedTemplate: {
+        schemaVersion: 1,
+        id: 'unsafe-svg',
+        name: 'Unsafe',
+        category: 'custom',
+        description: '',
+        tags: [],
+        duration: 2,
+        layers: [{ id: 's', name: 'S', kind: 'svg', visible: true, x: 100, y: 100, width: 50, height: 50, rotation: 0, opacity: 1, svg: { svgContent: '<svg><foreignObject/></svg>', viewBoxWidth: 10, viewBoxHeight: 10 } }],
+        parameters: [],
+      },
+    }]),
+    (error) => error.code === 'template-invalid',
+  )
+})

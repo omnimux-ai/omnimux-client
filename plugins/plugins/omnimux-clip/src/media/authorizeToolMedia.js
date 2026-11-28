@@ -10,6 +10,7 @@ import { realpathSync, statSync } from 'node:fs'
 import { isAbsolute, relative, resolve, sep } from 'node:path'
 import { ClipDomainError } from '../errors.js'
 import { resolveWorkflowBinding } from '../live/command-broker.js'
+import { getBuiltInEditingTemplate, getBuiltInGraphicTemplate, resolveCustomGraphicTemplate } from '../templates/catalog.js'
 
 const LOCAL_MEDIA_ROUTE = '/omnimux-workflow/api/local-file'
 const MEDIA_FILE_RE = /\.(?:mp4|m4v|mov|webm|mkv|avi|mp3|m4a|aac|wav|flac|ogg|opus|png|jpe?g|webp|gif|avif|bmp)$/i
@@ -272,6 +273,9 @@ async function authorizeSourceSelector(selector, {
 export async function authorizeClipEditOperations(args, context) {
   const operations = []
   for (const op of args.operations) {
+    if (op && typeof op === 'object' && Object.hasOwn(op, 'resolvedTemplate')) {
+      throw ClipDomainError.invalidJson('resolvedTemplate is reserved for Host template resolution.')
+    }
     if (op.type === 'import_media') {
       const {
         path, sourceUrl, libraryAssetId, fileId, canvasNodeId, outputIndex, projectAssetId, workspaceId,
@@ -286,6 +290,33 @@ export async function authorizeClipEditOperations(args, context) {
       const { source, ...rest } = op
       const authorized = await authorizeSourceSelector(source ?? {}, { ...context, label: 'relink_media.source' })
       operations.push({ ...rest, ...authorized })
+    } else if (op.type === 'add_graphic_instance') {
+      const hasBuiltin = op.templateId !== undefined
+      const hasLibrary = op.libraryAssetId !== undefined
+      if (Number(hasBuiltin) + Number(hasLibrary) !== 1) {
+        throw ClipDomainError.invalidJson('add_graphic_instance requires exactly one of templateId or libraryAssetId.')
+      }
+      if (op.fileId !== undefined && !hasLibrary) {
+        throw ClipDomainError.invalidJson('add_graphic_instance.fileId requires libraryAssetId.')
+      }
+      if (hasLibrary) {
+        const { template, libraryAssetId, fileId } = await resolveCustomGraphicTemplate(
+          { libraryAssetId: op.libraryAssetId, fileId: op.fileId },
+          context,
+        )
+        const { libraryAssetId: _lib, fileId: _file, ...rest } = op
+        operations.push({ ...rest, resolvedTemplate: template, customSource: { libraryAssetId, fileId } })
+      } else {
+        if (!getBuiltInGraphicTemplate(op.templateId)) {
+          throw new ClipDomainError('template-not-found', `Graphic template not found: ${op.templateId}`)
+        }
+        operations.push(op)
+      }
+    } else if (op.type === 'apply_editing_template') {
+      if (!getBuiltInEditingTemplate(op.templateId)) {
+        throw new ClipDomainError('template-not-found', `Editing template not found: ${op.templateId}`)
+      }
+      operations.push(op)
     } else {
       operations.push(op)
     }

@@ -62,9 +62,44 @@ function clipView({ clip, kind }, track, trackIndex, media) {
       speed: finite(clip.speed, 1),
       volume: finite(clip.volume, 1),
     } : {}),
-    ...(kind === 'text' ? { text: safeText(clip.text, 4000), style: textStyleView(clip.style) } : {}),
+    ...(kind === 'text' ? {
+      text: safeText(clip.text, 4000),
+      style: textStyleView(clip.style),
+      ...(clip.animation?.preset ? { textAnimationPreset: safeText(clip.animation.preset, 64) } : {}),
+    } : {}),
+    ...(isReferenceId(clip.metadata?.graphicInstanceId) ? { graphicInstanceId: clip.metadata.graphicInstanceId } : {}),
+    keyframeCount: items(clip.keyframes).length,
     hasEffects: items(clip.effects).length > 0,
     hasColorGrading: clip.colorGrading != null,
+  }
+}
+
+function sanitizeGraphicValues(values) {
+  if (!values || typeof values !== 'object' || Array.isArray(values)) return {}
+  const out = {}
+  for (const [key, value] of Object.entries(values)) {
+    if (!isReferenceId(key)) continue
+    if (typeof value === 'string') {
+      out[key] = safeText(value, 4000) ?? ''
+    } else if (typeof value === 'boolean' || Number.isFinite(value)) {
+      out[key] = value
+    } else if (value && typeof value === 'object' && !Array.isArray(value) && Number.isFinite(value.x) && Number.isFinite(value.y)) {
+      out[key] = { x: value.x, y: value.y }
+    }
+  }
+  return out
+}
+
+function graphicInstanceView(instance) {
+  return {
+    id: isReferenceId(instance.id) ? instance.id : undefined,
+    name: safeText(instance.name, 120) || instance.id,
+    templateId: safeText(instance.template?.id, 128),
+    category: safeText(instance.template?.category, 64),
+    trackId: isReferenceId(instance.trackId) ? instance.trackId : undefined,
+    startSec: finite(instance.startTime, 0),
+    durationSec: finite(instance.duration, 0),
+    values: sanitizeGraphicValues(instance.values),
   }
 }
 
@@ -147,6 +182,7 @@ export function nativeProjectView(envelope, opts = {}) {
     mediaCount: media.size,
     missingMediaCount: [...media.values()].filter(mediaIsMissing).length,
     subtitleCount: subtitles.length,
+    graphicInstanceCount: items(project.graphicInstances).length,
   }
   if (view === 'summary') return base
 
@@ -168,6 +204,10 @@ export function nativeProjectView(envelope, opts = {}) {
   return {
     ...base,
     media: [...media.values()].map(mediaView),
+    graphicInstances: items(project.graphicInstances)
+      .filter((inst) => inst && (!opts.trackId || inst.trackId === opts.trackId)
+        && (inst.startTime + inst.duration) >= fromSec && inst.startTime <= toSec)
+      .map(graphicInstanceView),
     tracks: matchedTracks.map(({ track, index, clips: matchingClips }) => ({
       ...trackView(track, index, matchingClips.length),
       clips: matchingClips.filter(({ id }) => includedIds.has(id)),

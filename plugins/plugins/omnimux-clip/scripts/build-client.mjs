@@ -297,4 +297,33 @@ if (metafileOutput) {
   }))
   writeFileSync(metafileOutput, `${JSON.stringify({ client: result.metafile, workers: Object.fromEntries(workers.sort()), bytes: Buffer.byteLength(wrapped) }, null, 2)}\n`)
 }
+const templatesOutFile = join(root, 'lib', 'openreel-templates.js')
+
+const templatesResult = await esbuild.build({
+  absWorkingDir: root,
+  entryPoints: ['src/templates/openreel-entry.ts'],
+  bundle: true,
+  platform: 'node',
+  format: 'esm',
+  target: 'es2022',
+  write: false,
+  minifyWhitespace: true,
+  minifySyntax: true,
+  legalComments: 'none',
+  logLevel: 'info',
+  sourcemap: false,
+  plugins: [openreelAliasPlugin],
+  nodePaths: [
+    join(root, 'node_modules'),
+    join(root, '../../node_modules'),
+  ],
+})
+
+const templatesCode = templatesResult.outputFiles[0]?.text
+if (!templatesCode) throw new Error('esbuild produced no template catalog output')
+
+mkdirSync(dirname(templatesOutFile), { recursive: true })
+writeFileSync(templatesOutFile, templatesCode)
+console.log(`wrote ${templatesOutFile} (${Buffer.byteLength(templatesCode)} bytes)`)
+
 console.log(`wrote ${outFile} (${Buffer.byteLength(wrapped)} bytes)`)

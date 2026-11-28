@@ -26,7 +26,7 @@ const canvasTab = 'omnimux-workflow:canvas'
 const binding = { workspaceId: 'ws_canvas', nodeId: 'composition', projectId: 'clip_node_canvas' }
 const exec = { agent: { session: { id: 'chat-a' } }, session: { id: 'chat-b' } }
 
-function fixture(t, { exportJobs: jobs, workflowClip } = {}) {
+function fixture(t, { exportJobs: jobs, workflowClip, getAssetLibrary } = {}) {
   const home = realpathSync(mkdtempSync(join(tmpdir(), 'omnimux-clip-host-')))
   const paths = ensureClipDirs(resolveClipPaths({ homeDir: home, env: {} }))
   const store = createProjectStore({ paths })
@@ -53,8 +53,8 @@ function fixture(t, { exportJobs: jobs, workflowClip } = {}) {
     },
   })
   const broker = createClipCommandBroker({ getHubEvents, getWorkflowClip, now: () => clock, pollMs: 5 })
-  const dispatcher = createClipDispatcher({ paths, store, broker, getWorkflowClip, exportJobs })
-  const specs = createClipTools({ store, broker, getWorkflowClip, exportJobs })
+  const dispatcher = createClipDispatcher({ paths, store, broker, getWorkflowClip, getAssetLibrary, exportJobs })
+  const specs = createClipTools({ store, broker, getWorkflowClip, getAssetLibrary, exportJobs })
   const tools = new Map(specs.map((tool) => [tool.name, tool]))
   let handler
   registerClipRoutes({ register(route) { handler = route.handler; return () => {} } }, dispatcher, {
@@ -151,11 +151,11 @@ function withHostHome(t, home) {
 }
 
 describe('clip_* tools', () => {
-  it('registers the nine frozen tool names', (t) => {
+  it('registers the ten tool names including clip_templates', (t) => {
     const { specs: tools } = fixture(t)
     assert.deepEqual(
       tools.map((item) => item.name),
-      ['clip_list', 'clip_create', 'clip_open', 'clip_get', 'clip_edit', 'clip_view', 'clip_snapshot', 'clip_diagnostics', 'clip_export'],
+      ['clip_list', 'clip_templates', 'clip_create', 'clip_open', 'clip_get', 'clip_edit', 'clip_view', 'clip_snapshot', 'clip_diagnostics', 'clip_export'],
     )
   })
 
@@ -434,7 +434,7 @@ describe('apply() host entry', () => {
       inject: () => {},
     })
     assert.deepEqual(registered, [
-      'clip_list', 'clip_create', 'clip_open',
+      'clip_list', 'clip_templates', 'clip_create', 'clip_open',
       'clip_get', 'clip_edit', 'clip_view', 'clip_snapshot', 'clip_diagnostics', 'clip_export',
     ])
     assert.deepEqual(sections, ['clip:ops'])
@@ -458,12 +458,12 @@ describe('apply() host entry', () => {
   })
 })
 
-test('registers the nine Clip tools and forwards the Cordis execution identity', async t => {
+test('registers the ten Clip tools and forwards the Cordis execution identity', async t => {
   const h = fixture(t)
   const registered = []
   registerClipTools({ tools: { register: tool => registered.push(tool) } }, h.specs)
   assert.deepEqual(registered.map(tool => tool.name), [
-    'clip_list', 'clip_create', 'clip_open', 'clip_get', 'clip_edit', 'clip_view', 'clip_snapshot', 'clip_diagnostics', 'clip_export',
+    'clip_list', 'clip_templates', 'clip_create', 'clip_open', 'clip_get', 'clip_edit', 'clip_view', 'clip_snapshot', 'clip_diagnostics', 'clip_export',
   ])
   const clientA = h.connect('one')
   const clientB = h.connect('two', 'chat-b')
@@ -1204,4 +1204,192 @@ test('host apply provides the native seam and registers routes through guarded i
   assert.equal(typeof seam.export, 'function')
   assert.deepEqual(mounted, [prefix])
   assert.deepEqual(effects, ['omnimux-clip: live commands', 'omnimux-clip: prompt', 'omnimux-clip: tools', 'omnimux-clip: http routes'])
+})
+
+test('clip_templates and GET /templates enforce auth, parity, and Host custom template security (#phase1)', async (t) => {
+  const validCustomTemplate = {
+    schemaVersion: 1,
+    id: 'custom-callout-card',
+    name: 'Custom Callout Card',
+    category: 'callout',
+    description: 'Asset-library callout card',
+    tags: ['callout'],
+    duration: 3.5,
+    layers: [
+      {
+        id: 'label',
+        name: 'Label',
+        kind: 'text',
+        visible: true,
+        x: 960,
+        y: 540,
+        width: 800,
+        height: 120,
+        rotation: 0,
+        opacity: 1,
+        text: { text: 'Hello', style: { fontSize: 48, color: '#ffffff' } },
+      },
+    ],
+    parameters: [
+      {
+        id: 'title',
+        label: 'Title',
+        type: 'text',
+        defaultValue: 'Hello',
+        targets: [{ layerId: 'label', property: 'text' }],
+      },
+    ],
+  }
+  const badSvgTemplate = {
+    ...validCustomTemplate,
+    id: 'bad-svg-tpl',
+    layers: [
+      {
+        id: 'badge',
+        name: 'Badge',
+        kind: 'svg',
+        visible: true,
+        x: 960,
+        y: 540,
+        width: 200,
+        height: 200,
+        rotation: 0,
+        opacity: 1,
+        svg: {
+          svgContent: '<svg viewBox="0 0 10 10"><script>alert(1)</script></svg>',
+          viewBoxWidth: 10,
+          viewBoxHeight: 10,
+        },
+      },
+    ],
+    parameters: [],
+  }
+  const assetRecords = new Map([
+    ['ast_valid', {
+      id: 'ast_valid',
+      type: 'style',
+      files: [{ id: 'fil_valid', original_name: 'card.json', kind: 'text', size: 512 }],
+      content: JSON.stringify(validCustomTemplate),
+    }],
+    ['ast_bad_svg', {
+      id: 'ast_bad_svg',
+      type: 'custom',
+      files: [{ id: 'fil_bad_svg', original_name: 'bad.json', kind: 'text', size: 512 }],
+      content: JSON.stringify(badSvgTemplate),
+    }],
+    ['ast_proto', {
+      id: 'ast_proto',
+      type: 'custom',
+      files: [{ id: 'fil_proto', original_name: 'proto.json', kind: 'text', size: 512 }],
+      content: JSON.stringify(validCustomTemplate).replace(/\}$/, ',"__proto__":{"polluted":true}}'),
+    }],
+    ['ast_denied', {
+      id: 'ast_denied',
+      type: 'custom',
+      files: [{ id: 'fil_denied', original_name: 'denied.json', kind: 'text', size: 128 }],
+    }],
+  ])
+  const getAssetLibrary = () => ({
+    getAsset: (id) => assetRecords.get(id) ?? null,
+    listAssets: ({ type } = {}) => [...assetRecords.values()].filter((row) => !type || row.type === type),
+    readTextFile: async (assetId, fileId) => {
+      if (assetId === 'ast_denied') throw Object.assign(new Error('denied'), { code: 'path-denied' })
+      const row = assetRecords.get(assetId)
+      if (!row || !row.files.some((f) => f.id === fileId)) throw Object.assign(new Error('missing'), { code: 'path-not-found' })
+      return { content: row.content }
+    },
+  })
+  const h = fixture(t, { getAssetLibrary })
+
+  // Unauthenticated and missing-connection fail-closed checks on GET /templates
+  const denied = await h.http('GET', '/templates', undefined, undefined, { 'deny-request': '1' })
+  assert.equal(denied.status, 401)
+  let noConnHandler
+  const dispatcher = createClipDispatcher({
+    paths: h.paths, store: h.store, broker: undefined, getAssetLibrary,
+  })
+  registerClipRoutes({ register(route) { noConnHandler = route.handler; return () => {} } }, dispatcher, {
+    getConnection: () => undefined,
+  })
+  const noConnRes = {}
+  await noConnHandler(Object.assign(Readable.from([]), { method: 'GET', url: `${prefix}/templates`, headers: { host: '127.0.0.1:45812' } }), {
+    writeHead(status) { noConnRes.status = status },
+    end(text) { noConnRes.body = text ? JSON.parse(text) : null },
+  })
+  assert.equal(noConnRes.status, 503)
+
+  // Parity between clip_templates tool and GET /omnimux-clip/api/templates
+  const toolCatalog = await h.execute('clip_templates', { kind: 'all', includeAssetLibrary: true })
+  const httpCatalog = await h.http('GET', '/templates?kind=all&includeAssetLibrary=true')
+  assert.equal(httpCatalog.status, 200)
+  assert.deepEqual(httpCatalog.body, toolCatalog)
+  assert.equal(toolCatalog.graphicTemplates.filter((item) => item.source === 'builtin').length, 11)
+  assert.ok(toolCatalog.graphicTemplates.some((item) => item.id === 'custom-callout-card' && item.source === 'asset-library' && item.libraryAssetId === 'ast_valid'))
+  assert.equal(toolCatalog.graphicTemplates.some((item) => item.id === 'bad-svg-tpl'), false)
+  assert.ok(toolCatalog.editingTemplates.some((item) => item.id === 'overlay-progress-bar'))
+  assert.ok(toolCatalog.textAnimationPresets.includes('typewriter'))
+
+  await rejectsCode(h.execute('clip_templates', { templateId: 'nonexistent-tpl' }), 'template-not-found')
+
+  // Host authorization for add_graphic_instance & apply_editing_template
+  h.store.create('demo', createNativeProject('demo'))
+  const client = h.connect('tpl-win')
+  const leaseId = await acquire(h, client, 'demo')
+
+  for (const [requestId, operations, code, expectedStatus] of [
+    ['tpl-unknown-builtin', [{ type: 'add_graphic_instance', templateId: 'missing-tpl', startSec: 0 }], 'template-not-found', 404],
+    ['tpl-unknown-editing', [{ type: 'apply_editing_template', clipId: 'c1', templateId: 'missing-recipe' }], 'template-not-found', 404],
+    ['tpl-bad-svg', [{ type: 'add_graphic_instance', libraryAssetId: 'ast_bad_svg', startSec: 0 }], 'template-invalid', 400],
+    ['tpl-proto', [{ type: 'add_graphic_instance', libraryAssetId: 'ast_proto', startSec: 0 }], 'template-invalid', 400],
+    ['tpl-denied', [{ type: 'add_graphic_instance', libraryAssetId: 'ast_denied', startSec: 0 }], 'path-denied', 403],
+  ]) {
+    const pending = h.execute('clip_edit', {
+      requestId,
+      description: `Reject ${requestId}`,
+      operations,
+    })
+    const failure = rejectsCode(pending, code)
+    const claimed = await h.post(client, 'claim', { leaseId, requestId })
+    assert.equal(claimed.status, expectedStatus, JSON.stringify(claimed.body))
+    await failure
+  }
+  await rejectsCode(
+    h.execute('clip_edit', {
+      requestId: 'tpl-motion-expr',
+      description: 'Reject motion expression injection',
+      operations: [{ type: 'set_keyframes', clipId: 'c1', keyframes: [{ property: 'opacity', timeSec: 0, value: 1 }], expressions: ['x'] }],
+    }),
+    'motion-expression-denied',
+  )
+
+  // Valid Host custom template resolves and forwards resolvedTemplate in live command
+  const validEditPromise = h.execute('clip_edit', {
+    requestId: 'tpl-valid-custom',
+    description: 'Insert valid custom graphic template',
+    operations: [{ type: 'add_graphic_instance', libraryAssetId: 'ast_valid', startSec: 0.5, params: [{ id: 'title', value: 'Hi' }] }],
+  })
+  const claimed = await h.post(client, 'claim', { leaseId, requestId: 'tpl-valid-custom' })
+  assert.equal(claimed.status, 200, JSON.stringify(claimed.body))
+  const { command } = claimed.body
+  try {
+    assert.equal(command.args.operations[0].resolvedTemplate.id, 'custom-callout-card')
+  } finally {
+    await h.post(client, 'receipt', {
+      leaseId,
+      requestId: 'tpl-valid-custom',
+      receiptToken: command.receiptToken,
+      result: editResult(2, {
+        type: 'add_graphic_instance',
+        instanceId: 'g1',
+        templateId: 'custom-callout-card',
+        trackId: 't1',
+        startSec: 0.5,
+        durationSec: 3.5,
+        memberClipIds: ['g1__label'],
+      }),
+    })
+  }
+  const editRes = await validEditPromise
+  assert.equal(editRes.results[0].instanceId, 'g1')
+  assert.deepEqual(editRes.results[0].memberClipIds, ['g1__label'])
 })

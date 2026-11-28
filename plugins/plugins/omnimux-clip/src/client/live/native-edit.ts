@@ -6,11 +6,13 @@ import { useUIStore } from '../openreel/web/stores/ui-store'
 import { readOnlyReason } from '../openreel/web/services/project-lock'
 import { loadEngineModules } from '../openreel/web/services/lazy-engines'
 import { calculateProjectDuration } from '../openreel/core/timeline/project-duration'
+import { reconcileGraphicInstances } from '../openreel/core/graphic-templates/instances'
 import { reconcileMulticamAudio } from '../openreel/core/multicam/fixed-audio'
 import { sourceProjection } from '../../timeline/nativeProjectFields.js'
 import { assertSafeFields, boolean, fields, invalid, referenceId, text, type Fields } from './native-input'
 import { relinkNativeMedia, stageNativeMedia, type ResolvedNativeMedia } from './native-media'
-import { editText, setClipEffect } from './native-overlays'
+import { editText, setClipEffect, setKeyframes, setTextAnimation } from './native-overlays'
+import { addGraphicInstance, applyEditingTemplateToDraft, removeGraphicInstance, updateGraphicParams } from './native-templates'
 import { NativeDraft, addMediaClip, addTrack, addTransition, cutSilences, moveClip, removeClip, removeRange, removeTrack,
   removeTransition, requireClearConfirmation, setSpeed, setTrackState, setVolume, splitClip, trimClip } from './native-timeline'
 
@@ -47,6 +49,12 @@ const edits = {
   add_transition: addTransition,
   remove_transition: removeTransition,
   set_clip_effect: setClipEffect,
+  add_graphic_instance: addGraphicInstance,
+  update_graphic_params: updateGraphicParams,
+  remove_graphic_instance: removeGraphicInstance,
+  apply_editing_template: applyEditingTemplateToDraft,
+  set_keyframes: setKeyframes,
+  set_text_animation: setTextAnimation,
 }
 
 async function planMedia(draft: NativeDraft, op: Fields, options: NativeEditOptions) {
@@ -136,6 +144,7 @@ export async function executeNativeEdit(args: unknown, options: NativeEditOption
     current()
   }
   draft.replace(reconcileMulticamAudio(draft.project))
+  draft.replace(reconcileGraphicInstances(draft.project))
   requireClearConfirmation(previous, draft)
   const result = { projectId: previous.id, description, validateOnly, results, durationSec: calculateProjectDuration(draft.project) }
   if (validateOnly) return { ...result, persisted: false, undoStep: false }

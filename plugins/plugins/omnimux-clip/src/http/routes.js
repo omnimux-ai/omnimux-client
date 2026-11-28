@@ -11,6 +11,7 @@ import { inspectStagedMedia, persistToClipVault } from '../media/clipVault.js'
 import { mapResolverError, reconcileProjectMedia, resolveProjectMediaStream } from '../media/reconcile.js'
 import { isReferenceId } from '../timeline/nativeProjectFields.js'
 import { createProjectStore } from '../store/projectStore.js'
+import { listClipTemplates } from '../templates/catalog.js'
 import { requestRejection } from './request-authorization.js'
 
 export const CLIP_API_PREFIX = '/omnimux-clip/api'
@@ -177,7 +178,7 @@ function objectBody(body) {
   return body
 }
 
-export function createClipDispatcher({ paths, store, fs = DEFAULT_FS, broker, exportJobs, getWorkflowClip, getMediaResolver, mediaTransfers }) {
+export function createClipDispatcher({ paths, store, fs = DEFAULT_FS, broker, exportJobs, getWorkflowClip, getMediaResolver, getAssetLibrary, mediaTransfers }) {
   ensureClipDirs(paths)
   store ??= createProjectStore({ paths, fs })
 
@@ -270,6 +271,19 @@ export function createClipDispatcher({ paths, store, fs = DEFAULT_FS, broker, ex
       if (method === 'OPTIONS') return { status: 204, body: {} }
       if (method === 'GET' && path === '/health') return { status: 200, body: { clip: true, version: CLIP_VERSION } }
       if (method === 'GET' && path === '/projects') return { status: 200, body: store.list() }
+      if (method === 'GET' && path === '/templates') {
+        const includeRaw = searchParams.get('includeAssetLibrary')
+        if (includeRaw !== null && includeRaw !== 'true' && includeRaw !== 'false' && includeRaw !== '1' && includeRaw !== '0') {
+          throw ClipDomainError.invalidJson('includeAssetLibrary must be a boolean.')
+        }
+        const templates = await listClipTemplates({
+          kind: searchParams.get('kind') ?? 'all',
+          ...(searchParams.has('category') ? { category: searchParams.get('category') } : {}),
+          ...(searchParams.has('templateId') ? { templateId: searchParams.get('templateId') } : {}),
+          includeAssetLibrary: includeRaw === 'true' || includeRaw === '1',
+        }, { getAssetLibrary })
+        return { status: 200, body: templates }
+      }
 
       const live = path.match(LIVE_PATH)
       if (live && method === 'POST') {

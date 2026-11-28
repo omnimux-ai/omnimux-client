@@ -212,6 +212,8 @@ export function apply(ctx, config) {
     // 也不另起一个库；服务缺失时调用方必须返回 unavailable。
     ctx.provide('assetLibrary', {
       getAsset: (id) => library.getView(id),
+      listAssets: (filter) => library.list(filter),
+      readTextFile: (assetId, fileId, subPath) => library.readTextFile(assetId, fileId, subPath),
       ingestDownloadedImage: (input) => imageIngest.ingestDownloadedImage(input),
       saveTypedAsset: async (input) => {
         const asset = await library.add({

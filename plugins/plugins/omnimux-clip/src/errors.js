@@ -181,6 +181,11 @@ export const CLIP_STATUS_BY_CODE = {
   'media-changed': 409,
   'unsupported-media': 415,
   'media-resolver-unavailable': 503,
+  'template-not-found': 404,
+  'template-invalid': 400,
+  'graphic-param-invalid': 400,
+  'graphic-member-readonly': 409,
+  'keyframe-out-of-range': 400,
 }
 
 /**
