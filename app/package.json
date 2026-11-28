@@ -1576,5 +1576,5 @@
     "test:session-reference-compat": "node --test scripts/session-reference-compat.test.mjs",
     "test:listed-bundles-compat": "node --test scripts/listed-bundles-compat.test.mjs"
   },
-  "version": "2.0.25"
+  "version": "2.0.26"
 }
