@@ -22,7 +22,7 @@ import { registerComputerUseCommandUi } from './computer-use-command-ui.tsx'
 import { installOfficialComputerUseStyles, registerDesktopSettingsIcon } from './upstream-family.ts'
 import { desktopDirectoryPicker, registerDesktopDirectoryPicker } from './directory-picker.ts'
 import { SettingsRequests } from './settings-requests.tsx'
-import type { DesktopSettingsLocaleKey } from '../../../dsh-plugin-desktop/src/client/desktop-settings-locales.ts'
+import type { DesktopSettingsLocaleKey } from './desktop-settings-locales.ts'
 import { installRendererRecovery } from './renderer-recovery.ts'
 import { installClientDiagnostics } from './client-diagnostics.ts'
 

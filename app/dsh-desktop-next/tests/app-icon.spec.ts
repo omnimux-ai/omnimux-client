@@ -40,10 +40,10 @@ vi.mock('@deepseek-ai/dsh-client-ui-primitives', () => ({
   Toast: 'div',
 }))
 vi.mock('../src/native-ui/onboarding.css', () => ({}))
-vi.mock('../../dsh-plugin-desktop/src/native-ui/components/ui/button.tsx', () => ({ Button: 'button' }))
-vi.mock('../../dsh-plugin-desktop/src/native-ui/components/ui/switch.tsx', () => ({ Switch: 'input' }))
-vi.mock('../../dsh-plugin-desktop/src/native-ui/components/ui/radio-group.tsx', () => ({ RadioGroup: 'div', RadioGroupItem: 'input' }))
-vi.mock('../../dsh-plugin-desktop/src/native-ui/components/ui/alert.tsx', () => ({ Alert: 'div', AlertDescription: 'span' }))
+vi.mock('../src/native-ui/components/ui/button.tsx', () => ({ Button: 'button' }))
+vi.mock('../src/native-ui/components/ui/switch.tsx', () => ({ Switch: 'input' }))
+vi.mock('../src/native-ui/components/ui/radio-group.tsx', () => ({ RadioGroup: 'div', RadioGroupItem: 'input' }))
+vi.mock('../src/native-ui/components/ui/alert.tsx', () => ({ Alert: 'div', AlertDescription: 'span' }))
 vi.mock('electron', () => ({
   Menu: { buildFromTemplate: (items: unknown) => items, setApplicationMenu() {} },
   Notification: class { static isSupported(): boolean { return false } },
@@ -129,7 +129,7 @@ it('resolves every platform and theme to the OmniMux default icon set and omits 
 
 it('derives Linux hicolor icons from the OmniMux lavender ghost icon rather than upstream whale artwork', async () => {
   const { createRequire } = await import('node:module')
-  const sharp = createRequire(join(root, '../dsh-plugin-desktop/package.json'))('sharp')
+  const sharp = createRequire(join(root, 'package.json'))('sharp')
   const icon128 = await sharp(join(root, 'build', 'icons', '128x128.png')).raw().toBuffer({ resolveWithObject: true })
   expect([icon128.info.width, icon128.info.height]).toEqual([128, 128])
   // Sample an upper-left background tile pixel (24, 24) inside the rounded squircle: OmniMux lavender (#b8b7ff) vs upstream near-white/blue whale.

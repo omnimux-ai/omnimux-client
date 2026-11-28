@@ -8,8 +8,9 @@ import { authorizeClipEditOperations } from './media/authorizeToolMedia.js'
 import { reconcileProjectMedia } from './media/reconcile.js'
 import { assertProjectId } from './paths.js'
 import { createNativeProject } from './store/nativeProject.js'
-import { EASING_TYPES, TEXT_ANIMATION_PRESETS } from '../lib/openreel-templates.js'
+import { AUDIO_TYPES, CAPTION_ANIMATION_STYLES, EASING_TYPES, TEXT_ANIMATION_PRESETS } from '../lib/openreel-templates.js'
 import { listClipTemplates } from './templates/catalog.js'
+import { analyzeProjectTranscript } from './timeline/analyzeTranscript.js'
 import { MEDIA_HANDLE_SCOPES, TRACK_TYPES, isRecord, isReferenceId, safeText, sourceProjection } from './timeline/nativeProjectFields.js'
 import { diagnoseNativeProject, enrichDiagnosticsWithReconcile, nativeProjectView } from './timeline/nativeProjectView.js'
 
@@ -65,6 +66,37 @@ const textStyleFields = {
   color: string(80), backgroundColor: string(80), strokeColor: string(80), strokeWidth: seconds,
   textAlign: choices('left', 'center', 'right', 'justify'), position: oneOf(string(64), point), presetId: string(80),
 }
+const captionExtendedStyleFields = {
+  highlightColor: string(80),
+  upcomingColor: string(80),
+  shadowColor: string(80),
+  shadowBlur: { type: 'number', minimum: 0, maximum: 64 },
+  boxPaddingX: { type: 'number', minimum: 0, maximum: 120 },
+  boxPaddingY: { type: 'number', minimum: 0, maximum: 120 },
+  boxRadius: { type: 'number', minimum: 0, maximum: 120 },
+  safeMargin: { type: 'number', minimum: 0, maximum: 0.25 },
+  animationStyle: choices(...CAPTION_ANIMATION_STYLES),
+}
+const captionStyleFields = {
+  fontSize: positive, fontFamily: string(96), color: string(80), backgroundColor: string(80),
+  position: oneOf(string(64), point), presetId: string(80),
+  strokeColor: string(80), strokeWidth: { type: 'number', minimum: 0, maximum: 64 },
+  ...captionExtendedStyleFields,
+}
+const subtitleWordEntry = objectParams({
+  text: required(string(80)),
+  startSec: required(seconds),
+  endSec: required(seconds),
+})
+const subtitleCueEntry = objectParams({
+  id: string(256),
+  text: required(string(4096)),
+  startSec: required(seconds),
+  endSec: required(positive),
+  speaker: string(80),
+  language: string(32),
+  words: arrayOf(subtitleWordEntry, 500),
+})
 const textFields = {
   ...textStyleFields, textStyle: objectParams(textStyleFields), content: { type: 'string', maxLength: 8192 },
   startSec: seconds, endSec: seconds, durationSec: positive,
@@ -109,7 +141,7 @@ const EDIT_FIELDS = {
   set_speed: { clipId, speed: required(positive) },
   add_text: { clipId: string(256), trackId: string(256), kind: choices('subtitle', 'title'), ...textFields, content: required(textFields.content) },
   set_text: { clipId, ...textFields },
-  set_subtitle_style: { clipId, ...textFields },
+  set_subtitle_style: { clipId, ...textFields, ...captionExtendedStyleFields, style: objectParams(captionStyleFields) },
   add_transition: { clipId, clipBId: string(256), transitionId: string(256), transition: string(80), edge: choices('in', 'out'), durationSec: positive },
   remove_transition: { transitionId: string(256), clipId: string(256), edge: choices('in', 'out') },
   set_clip_effect: { clipId, ...transformFields, transform: objectParams(transformFields), filterId: string(100), strength: { ...seconds, maximum: 1 },
@@ -149,6 +181,66 @@ const EDIT_FIELDS = {
     unit: choices('character', 'word', 'line'),
     staggerSec: seconds,
     outPreset: choices(...TEXT_ANIM_PRESETS),
+  },
+  import_subtitles: {
+    srt: string(512_000),
+    transcriptJson: string(512_000),
+    cues: arrayOf(subtitleCueEntry, 2000, 1),
+    mode: choices('append', 'replace'),
+    captionTrackId: string(256),
+    language: string(32),
+    timeOffsetSec: { type: 'number', minimum: -86400, maximum: 86400 },
+    ...captionStyleFields,
+    style: objectParams(captionStyleFields),
+  },
+  set_caption_style: {
+    clipId: string(256),
+    clipIds: arrayOf(string(256), 500, 1),
+    captionTrackId: string(256),
+    ...captionStyleFields,
+    style: objectParams(captionStyleFields),
+  },
+  cut_transcript_ranges: {
+    mode: choices('ranges', 'pauses', 'fillers'),
+    ranges: arrayOf(objectParams(range), 250, 1),
+    captionTrackId: string(256),
+    minPauseSec: { type: 'number', minimum: 0.05, maximum: 60 },
+    keepPauseSec: seconds,
+    fillerPhrases: arrayOf(string(64), 64, 1),
+    paddingSec: { type: 'number', minimum: 0, maximum: 0.3 },
+    maxCuts: { type: 'integer', minimum: 1, maximum: 250 },
+  },
+  set_marker: {
+    markerId: string(256),
+    timeSec: seconds,
+    durationSec: seconds,
+    label: string(120),
+    color: string(80),
+    comment: string(1000),
+    kind: choices('comment', 'chapter', 'segmentation', 'web'),
+  },
+  remove_marker: {
+    markerId: required(string(256)),
+  },
+  set_audio_ducking: {
+    clipId,
+    audioType: choices(...AUDIO_TYPES, 'none'),
+    enabled: boolean,
+    amountDb: { type: 'number', minimum: 1, maximum: 40 },
+    attackMs: { type: 'number', minimum: 10, maximum: 3000 },
+    releaseMs: { type: 'number', minimum: 10, maximum: 3000 },
+    holdMs: { type: 'number', minimum: 0, maximum: 3000 },
+  },
+  sync_clips_to_beats: {
+    clipIds: required(arrayOf(string(256), 100, 1)),
+    beats: arrayOf(seconds, 1000, 2),
+    audioClipId: string(256),
+    audioStartSec: seconds,
+    syncMode: choices('cut-to-beats', 'smart', 'one-per-beat', 'preserve-duration'),
+    beatsPerClip: { type: 'integer', minimum: 1, maximum: 8 },
+    subdivision: { type: 'integer', minimum: 1, maximum: 4 },
+    offsetSec: { type: 'number', minimum: -10, maximum: 10 },
+    snapToDownbeats: boolean,
   },
 }
 const editUnion = oneOf(...Object.entries(EDIT_FIELDS).map(([type, fields]) => objectParams({ type: required(choices(type)), ...fields })))
@@ -225,8 +317,8 @@ function sessionOf(exec) {
 }
 
 const TRACK_FIELDS = 'id index name type locked syncLock hidden muted solo soloSafe clipCount'
-const CLIP_FIELDS = 'id name trackId trackIndex trackType kind startSec endSec durationSec mediaId mediaType sourceInSec sourceOutSec speed volume text graphicInstanceId keyframeCount textAnimationPreset hasEffects hasColorGrading'
-const STYLE_FIELDS = 'fontFamily fontSize fontWeight color backgroundColor strokeColor strokeWidth textAlign position'
+const CLIP_FIELDS = 'id name trackId trackIndex trackType kind startSec endSec durationSec mediaId mediaType sourceInSec sourceOutSec speed volume audioType text graphicInstanceId keyframeCount textAnimationPreset hasEffects hasColorGrading'
+const STYLE_FIELDS = 'fontFamily fontSize fontWeight color backgroundColor strokeColor strokeWidth textAlign position highlightColor upcomingColor shadowColor shadowBlur boxPaddingX boxPaddingY boxRadius safeMargin'
 
 function readFields(row, keys) {
   const selected = {}
@@ -235,7 +327,7 @@ function readFields(row, keys) {
     if (key === 'id' || key.endsWith('Id')) {
       if (isReferenceId(value)) selected[key] = value
     } else if (typeof value === 'string') {
-      selected[key] = safeText(value, key === 'text' ? 4000 : 160)
+      selected[key] = safeText(value, key === 'text' ? 4000 : key === 'comment' ? 1000 : 160)
     } else if (typeof value === 'boolean' || Number.isFinite(value)) {
       selected[key] = value
     }
@@ -247,7 +339,57 @@ function readItems(rows, keys, withStyle = false) {
   if (!Array.isArray(rows) || !rows.every(isRecord)) {
     throw new ClipDomainError('INVALID_RECEIPT', 'The native snapshot is missing its requested projection.')
   }
-  return rows.map((row) => ({ ...readFields(row, keys), ...(withStyle && row.style ? { style: readFields(row.style, STYLE_FIELDS) } : {}) }))
+  return rows.map((row) => ({
+    ...readFields(row, keys),
+    ...(withStyle && row.style ? { style: readFields(row.style, STYLE_FIELDS) } : {}),
+    ...(withStyle && isRecord(row.liveDucking) && typeof row.liveDucking.enabled === 'boolean'
+      ? { liveDucking: readFields(row.liveDucking, 'enabled amountDb attackMs releaseMs holdMs') }
+      : {}),
+    ...(withStyle && Array.isArray(row.words)
+      ? { words: row.words.slice(0, 200).filter(isRecord).map((word) => readFields(word, 'text startSec endSec')) }
+      : {}),
+  }))
+}
+
+function validateAnalyze(result, command) {
+  const { mode } = command.args
+  if (!isRecord(result) || result.projectId !== command.projectId || result.mode !== mode) {
+    throw new ClipDomainError('INVALID_RECEIPT', 'The editor did not return the requested Clip analysis.')
+  }
+  if (mode === 'transcript') {
+    if (!Number.isFinite(result.subtitleCount) || !Number.isFinite(result.wordCount)
+      || !Number.isFinite(result.sentenceCount) || !Array.isArray(result.sentences)
+      || !Array.isArray(result.pauses) || !Array.isArray(result.fillers)) {
+      throw new ClipDomainError('INVALID_RECEIPT', 'The editor did not return a valid transcript analysis.')
+    }
+    return {
+      ...readFields(result, 'projectId revision revisionEpoch mode durationSec subtitleCount wordCount sentenceCount estimatedWordCount'),
+      speakers: Array.isArray(result.speakers) ? result.speakers.slice(0, 100).map((speaker) => safeText(speaker, 80)).filter(Boolean) : [],
+      sentences: result.sentences.slice(0, 500).filter(isRecord).map((row) => readFields(row, 'index startSec endSec text speaker wordStart wordEnd')),
+      pauses: result.pauses.slice(0, 250).filter(isRecord).map((row) => readFields(row, 'startSec endSec gapSec cutFromSec cutToSec')),
+      fillers: result.fillers.slice(0, 250).filter(isRecord).map((row) => readFields(row, 'startSec endSec text phrase wordStart wordEnd')),
+      ...(Array.isArray(result.matches)
+        ? { matches: result.matches.slice(0, 100).filter(isRecord).map((row) => readFields(row, 'startSec endSec text wordStart wordEnd')) }
+        : {}),
+    }
+  }
+  if (mode === 'beats') {
+    if (!Number.isFinite(result.bpm) || !Number.isFinite(result.beatCount) || !Array.isArray(result.beats)) {
+      throw new ClipDomainError('INVALID_RECEIPT', 'The editor did not return a valid beat analysis.')
+    }
+    return {
+      ...readFields(result, 'projectId mode clipId mediaId bpm confidence audioDurationSec beatCount downbeatCount truncated'),
+      beats: result.beats.slice(0, 500).filter(isRecord).map((row) => readFields(row, 'timeSec sourceTimeSec strength index isDownbeat isSubdivision')),
+      downbeats: Array.isArray(result.downbeats) ? result.downbeats.slice(0, 500).filter(Number.isFinite) : [],
+    }
+  }
+  if (!Number.isFinite(result.highlightCount) || !Array.isArray(result.highlights)) {
+    throw new ClipDomainError('INVALID_RECEIPT', 'The editor did not return a valid highlight analysis.')
+  }
+  return {
+    ...readFields(result, 'projectId mode clipId mediaId audioDurationSec highlightCount'),
+    highlights: result.highlights.slice(0, 20).filter(isRecord).map((row) => readFields(row, 'startSec endSec durationSec score title reason')),
+  }
 }
 
 function validateRead(result, command) {
@@ -256,7 +398,7 @@ function validateRead(result, command) {
     || revisionEpoch !== (command.revisionEpoch ?? 0) || !Number.isFinite(result.durationSec) || !Number.isFinite(result.playheadSec)) {
     throw new ClipDomainError('INVALID_RECEIPT', 'The editor did not return the requested native Clip projection.')
   }
-  const snapshot = { ...readFields(result, 'title durationSec fps width height aspectRatio playheadSec isPlaying trackCount clipCount mediaCount missingMediaCount subtitleCount graphicInstanceCount'),
+  const snapshot = { ...readFields(result, 'title durationSec fps width height aspectRatio playheadSec isPlaying trackCount clipCount mediaCount missingMediaCount subtitleCount markerCount graphicInstanceCount'),
     view, revision, revisionEpoch, mode: command.mode, selectedClips: readItems(result.selectedClips, 'id name trackId startSec endSec').slice(0, 3) }
   if (Number.isFinite(result.updatedAt)) snapshot.updatedAt = result.updatedAt
   if (command.binding) Object.assign(snapshot, { workspaceId: command.binding.workspaceId, nodeId: command.binding.nodeId })
@@ -293,7 +435,8 @@ function validateRead(result, command) {
     clips,
     media,
     ...(graphicInstances ? { graphicInstances } : {}),
-    subtitles: readItems(result.subtitles, 'id trackId text startSec endSec hidden', true),
+    ...(Array.isArray(result.markers) ? { markers: readItems(result.markers, 'id timeSec durationSec label color comment kind') } : {}),
+    subtitles: readItems(result.subtitles, 'id trackId text startSec endSec hidden animationStyle speaker language wordCount', true),
   }
 }
 
@@ -307,17 +450,25 @@ function validateView(result, command) {
   return { action, durationSec, playheadSec, isPlaying, selectedClipIds, revision }
 }
 
-const EDIT_RESULT_FIELDS = 'type trackId clipId mediaId rightClipId transitionId instanceId templateId applicationId startSec durationSec sourceInSec sourceOutSec atSec fromSec toSec created reused relinked versionUpdated ungrouped keyframeCount preset clampedClipCount speed volume muted mode count closed minSilenceSec'
+const EDIT_RESULT_FIELDS = 'type trackId clipId mediaId rightClipId transitionId instanceId templateId applicationId markerId startSec durationSec sourceInSec sourceOutSec atSec fromSec toSec timeSec label color kind created updated reused relinked versionUpdated ungrouped keyframeCount preset clampedClipCount speed volume muted mode count closed minSilenceSec subtitleCount animationStyle cutDurationSec syncMode bpm beatCount audioType captionTrackId'
 
 function projectEditResult(row) {
   const result = readFields(row, EDIT_RESULT_FIELDS)
-  for (const key of ['createdClipIds', 'removedClipIds', 'memberClipIds', 'addedOverlayClipIds']) {
+  for (const key of ['createdClipIds', 'removedClipIds', 'updatedClipIds', 'memberClipIds', 'addedOverlayClipIds']) {
     if (Array.isArray(row[key])) result[key] = row[key].filter(isReferenceId)
   }
   if (MEDIA_HANDLE_SCOPES.includes(row.scope)) result.scope = row.scope
   const source = sourceProjection(row.omnimuxSource)
   if (source) result.omnimuxSource = source
   if (isRecord(row.transition)) result.transition = readFields(row.transition, 'type durationSec')
+  if (isRecord(row.liveDucking) && typeof row.liveDucking.enabled === 'boolean') {
+    result.liveDucking = readFields(row.liveDucking, 'enabled amountDb attackMs releaseMs holdMs')
+  }
+  if (Array.isArray(row.syncedClips)) {
+    result.syncedClips = row.syncedClips
+      .filter(isRecord)
+      .map((entry) => readFields(entry, 'clipId startSec durationSec'))
+  }
   if (Array.isArray(row.adjustedClips)) {
     result.adjustedClips = row.adjustedClips
       .filter(isRecord)
@@ -422,6 +573,67 @@ export function createClipTools({
         templateId: string(128),
         includeAssetLibrary: boolean,
       }, (args) => listClipTemplates(args, { getAssetLibrary })),
+    tool('clip_analyze', 'Analyze project subtitles/transcript (sentences, pauses, filler words, search matches) or live editor audio (BPM beats or energetic highlights). Transcript mode works on live or saved projects; beats and highlights require an open editor with audio.', 60_000,
+      {
+        ...targetArgs,
+        mode: required(choices('transcript', 'beats', 'highlights')),
+        captionTrackId: string(256),
+        minPauseSec: { type: 'number', minimum: 0.05, maximum: 60 },
+        keepPauseSec: { type: 'number', minimum: 0, maximum: 60 },
+        fillerPhrases: arrayOf(string(64), 64, 1),
+        query: string(160),
+        clipId: string(256),
+        mediaId: string(256),
+        minBpm: { type: 'number', minimum: 30, maximum: 240 },
+        maxBpm: { type: 'number', minimum: 30, maximum: 300 },
+        sensitivity: { type: 'number', minimum: 0.05, maximum: 1 },
+        subdivision: { type: 'integer', minimum: 1, maximum: 4 },
+        snapToDownbeats: boolean,
+        limit: { type: 'integer', minimum: 1, maximum: 500 },
+        targetClipCount: { type: 'integer', minimum: 1, maximum: 20 },
+        minClipDurationSec: { type: 'number', minimum: 1, maximum: 120 },
+        maxClipDurationSec: { type: 'number', minimum: 1, maximum: 300 },
+      }, async (args, exec) => {
+        if (args.mode === 'transcript') {
+          for (const key of ['clipId', 'mediaId', 'minBpm', 'maxBpm', 'sensitivity', 'subdivision', 'snapToDownbeats', 'limit', 'targetClipCount', 'minClipDurationSec', 'maxClipDurationSec']) {
+            if (args[key] !== undefined) throw ClipDomainError.invalidJson(`${key} is not supported in transcript analysis mode.`)
+          }
+          targetFor(args)
+          const result = await live('clip_analyze', 15_000, args, exec, { savedFallback: true, validateResult: validateAnalyze })
+          if (result !== null) return result
+          const loaded = store.load(assertProjectId(args.projectId))
+          return {
+            projectId: loaded.projectId,
+            revision: loaded.revision,
+            revisionEpoch: 0,
+            mode: 'transcript',
+            durationSec: loaded.project.timeline.duration,
+            ...analyzeProjectTranscript(loaded.project, args),
+          }
+        }
+        for (const key of ['minPauseSec', 'keepPauseSec', 'fillerPhrases', 'query']) {
+          if (args[key] !== undefined) throw ClipDomainError.invalidJson(`${key} is only supported in transcript analysis mode.`)
+        }
+        if (args.mode === 'beats') {
+          for (const key of ['captionTrackId', 'targetClipCount', 'minClipDurationSec', 'maxClipDurationSec']) {
+            if (args[key] !== undefined) throw ClipDomainError.invalidJson(`${key} is not supported in beats analysis mode.`)
+          }
+          if (args.minBpm !== undefined && args.maxBpm !== undefined && args.maxBpm < args.minBpm) {
+            throw ClipDomainError.invalidJson('maxBpm must be at least minBpm.')
+          }
+          if (args.subdivision !== undefined && args.subdivision !== 1 && args.subdivision !== 2 && args.subdivision !== 4) {
+            throw ClipDomainError.invalidJson('subdivision must be 1, 2, or 4.')
+          }
+        } else {
+          for (const key of ['minBpm', 'maxBpm', 'sensitivity', 'subdivision', 'snapToDownbeats', 'limit']) {
+            if (args[key] !== undefined) throw ClipDomainError.invalidJson(`${key} is not supported in highlights analysis mode.`)
+          }
+          if (args.minClipDurationSec !== undefined && args.maxClipDurationSec !== undefined && args.maxClipDurationSec < args.minClipDurationSec) {
+            throw ClipDomainError.invalidJson('maxClipDurationSec must be at least minClipDurationSec.')
+          }
+        }
+        return live('clip_analyze', 55_000, args, exec, { savedFallback: false, validateResult: validateAnalyze })
+      }),
     tool('clip_create', 'Create a saved, empty standalone OpenReel project. Use clip_open to show it when the user asks.', 15_000,
       { name: required(string(80)), resolution: choices('landscape', 'portrait', 'square'), fps: positive }, ({ name, resolution = 'landscape', fps = 30 }) => {
         name = name.trim()
@@ -571,6 +783,6 @@ export function registerClipTools(ctx, tools) {
 }
 
 export const CLIP_PROMPT = `Use OmniMux Clip tools to read or operate the right-side OpenReel editor. Before editing, read the target with live clip_get and reuse its revision and revisionEpoch as baseRevision and baseRevisionEpoch for the same project and window. All tool times are seconds.
-Use clip_get or clip_diagnostics to read saved projects and diagnose offline/drifted media reasons. Use clip_templates to discover built-in or asset-library graphic templates, editing templates, and text animation presets before applying them. When AMBIGUOUS_TARGET lists multiple projects or windows, resolve the target from the user's instruction or ask which one they mean. Use clip_open only when asked to open a specific editor.
-Use clip_edit for the requested changes (including import_media, relink_media, add_graphic_instance/update_graphic_params/remove_graphic_instance, apply_editing_template, set_keyframes, and set_text_animation), optionally with validateOnly first. Set confirmDestructive only with explicit user intent to delete a populated track or clear the timeline. Use clip_export only on an explicit export request, with confirm=true.
+Use clip_get or clip_diagnostics to read saved projects and diagnose offline/drifted media reasons. Use clip_templates to discover built-in or asset-library graphic templates, editing templates, and text animation presets before applying them. Use clip_analyze to inspect subtitles/pauses/filler words (mode: "transcript", supports live or saved projects) or run local BPM beat and highlight analysis on open editor audio (mode: "beats" | "highlights"). When AMBIGUOUS_TARGET lists multiple projects or windows, resolve the target from the user's instruction or ask which one they mean. Use clip_open only when asked to open a specific editor.
+Use clip_edit for the requested changes (including import_media, relink_media, add_graphic_instance/update_graphic_params/remove_graphic_instance, apply_editing_template, set_keyframes, set_text_animation, import_subtitles, set_caption_style, cut_transcript_ranges, set_marker, remove_marker, set_audio_ducking, and sync_clips_to_beats), optionally with validateOnly first. Set confirmDestructive only with explicit user intent to delete a populated track or clear the timeline. Use clip_export only on an explicit export request, with confirm=true.
 On REVISION_CONFLICT, read the current revision and reconsider the edit. For outcome-unknown, recheck the same request ID. Follow skills/clip-craft/SKILL.md for editing decisions and skills/clip-recreate/SKILL.md for reference recreation workflows.`

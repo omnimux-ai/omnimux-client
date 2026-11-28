@@ -2,11 +2,10 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
-import { packageLinuxArtifacts, type LinuxPackageOptions } from '../../dsh-plugin-desktop/scripts/package-linux.ts'
-import { packageMacSmoke, type MacSmokePackageOptions } from '../../dsh-plugin-desktop/scripts/package-mac.ts'
-import { verifyMacRelease } from '../../dsh-plugin-desktop/scripts/verify-mac-release.ts'
+import { packageLinuxArtifacts, type LinuxPackageOptions } from '../scripts/package-linux.ts'
+import { packageMacSmoke, type MacSmokePackageOptions } from '../scripts/package-mac.ts'
 import { linuxPackageTargets, macApplicationDirectory, macSmokeTarget } from '../scripts/package-targets.ts'
-import { nextMacVerification } from '../scripts/verify-mac-release.ts'
+import { nextMacVerification, verifyMacRelease } from '../scripts/verify-mac-release.ts'
 
 // A one-file inventory stands in for the application's native files.
 vi.mock('../scripts/mac-runtime.ts', async importOriginal => ({ ...await importOriginal<typeof import('../scripts/mac-runtime.ts')>(),

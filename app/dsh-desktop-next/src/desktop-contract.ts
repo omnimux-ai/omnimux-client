@@ -1,12 +1,12 @@
 /** General renderer state omits credentials; browser login links use a separate native operation. */
-import type { DesktopFailureStage } from '../../dsh-plugin-desktop/src/recovery-copy.ts'
+import type { DesktopFailureStage } from './recovery-copy.ts'
 import type { DesktopAppIcon } from './app-icon.ts'
 import type { DesktopHostExit } from './exit-code.ts'
 import { DEFAULT_HOST_STARTUP_TIMEOUT, type DesktopStartupTimeoutFailure, type HostStartupTimeout } from './host-startup-limit.ts'
 import type { Features, OnboardingChoices } from './profiles.ts'
 import type { DesktopLanHttpsRuntimeSnapshot } from './lan-https-runtime.ts'
 import type { DesktopPermissions } from './permissions.ts'
-import { defaultDesktopWebPort } from '../../dsh-plugin-desktop/src/desktop-port.ts'
+import { defaultDesktopWebPort } from './desktop-port.ts'
 
 export const NATIVE_ACCESS_HEADER = 'x-dsh-desktop-renderer'
 export const DEFAULT_PROFILE = 'desktop'

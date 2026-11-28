@@ -35,6 +35,13 @@
         "requiresAuth": false
       },
       {
+        "name": "clip_analyze",
+        "summary": "分析字幕台本（分句/停顿/口癖/检索）与本地音频节拍或高光片段",
+        "category": "clip",
+        "isWriteOperation": false,
+        "requiresAuth": false
+      },
+      {
         "name": "clip_create",
         "summary": "新建空剪辑工程（名称/分辨率/帧率），返回项目编号",
         "category": "clip",

@@ -619,4 +619,240 @@ describe('DataSourceAdapter CSV/JSON snapshot parsing & live socialData', () => 
       cleanup()
     }
   })
+
+  it('unpacks component_data.products, maps TikHub fields without HEIC, and avoids trending-best-seller rank miss (#438)', async () => {
+    const { store, cleanup } = makeTempStore()
+    try {
+      const rankQueries = []
+      const fakeSocialData = {
+        fetch: async (req) => {
+          if (req.capability === 'shop_search_v2') {
+            rankQueries.push(req.query)
+            if (req.query === 'Beauty & Personal Care') {
+              return {
+                data: {
+                  products: [],
+                  component_data: { products: [] },
+                },
+              }
+            }
+            return {
+              data: {
+                data: {
+                  products: [],
+                  component_data: {
+                    products: [
+                      {
+                        product_id: '1732501600694931597',
+                        title: 'Portable Blender - USB Charged, Leak-Proof, Easy-to-Clean',
+                        image: {
+                          url_list: [
+                            'https://p16-oec.example/cover~tplv-crop-heic.heic',
+                            'https://p16-oec.example/cover~tplv-webp.webp',
+                          ],
+                          thumb_url_list: ['https://p16-oec.example/thumb.jpg'],
+                        },
+                        product_price_info: {
+                          sale_price_decimal: '19.99',
+                          sale_price_format: '$19.99',
+                          origin_price_decimal: '39.99',
+                          currency_symbol: '$',
+                        },
+                        rate_info: {
+                          score: 4.8,
+                          review_count: '1.2K',
+                        },
+                        sold_info: {
+                          sold_count: '2.5K+',
+                        },
+                        seller_info: {
+                          seller_id: 'seller_99',
+                          shop_name: 'HydroBlend Direct',
+                        },
+                        brand_info: {
+                          brand_name: 'HydroBlend',
+                        },
+                        seo_url: 'https://shop.tiktok.com/view/product/1732501600694931597?region=US',
+                        sku_info: [{ sku_id: 'sku_1' }, { sku_id: 'sku_2' }],
+                      },
+                    ],
+                  },
+                },
+              },
+            }
+          }
+          return {}
+        },
+      }
+      const adapter = createDataSourceAdapter({
+        store,
+        getService: (name) => (name === 'socialData' ? fakeSocialData : null),
+      })
+
+      const rankRes = await adapter.queryRank({ region: 'US' })
+      assert.equal(rankQueries.includes('trending best seller'), false)
+      assert.deepEqual(rankQueries, ['Beauty & Personal Care', 'Home Supplies'])
+      assert.equal(rankRes.items.length, 1)
+      const item = rankRes.items[0]
+      assert.equal(item.productId, '1732501600694931597')
+      assert.equal(item.coverUrl, 'https://p16-oec.example/cover~tplv-webp.webp')
+      assert.equal(item.priceMin, 19.99)
+      assert.equal(item.priceMax, 19.99)
+      assert.equal(item.priceDisplay, '$19.99')
+      assert.equal(item.totalSales, 2500)
+      assert.equal(item.rating, 4.8)
+      assert.equal(item.reviewCount, 1200)
+      assert.equal(item.shopName, 'HydroBlend Direct')
+      assert.equal(item.shopId, 'seller_99')
+      assert.equal(item.skuCount, 2)
+      assert.equal(item.tiktokUrl, 'https://shop.tiktok.com/view/product/1732501600694931597?region=US')
+      assert.equal(item.sales28d, null)
+      assert.equal(item.channelMetrics, null)
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('falls back from shop_product v3 400/invalid to shop_product_v1, unwraps double product_info, and unpacks search_item_list videos (#438)', async () => {
+    const { store, cleanup } = makeTempStore()
+    try {
+      const calls = []
+      const fakeSocialData = {
+        fetch: async (req) => {
+          calls.push(req.capability)
+          if (req.capability === 'shop_product') {
+            throw Object.assign(new Error('openai_error: bad_response_status_code 400'), {
+              code: 'omnimux-request-failed',
+              status: 400,
+            })
+          }
+          if (req.capability === 'shop_product_v1') {
+            return {
+              data: {
+                components_map: [
+                  {
+                    component_name: 'feed_list_you_may_like',
+                    component_type: 'feed_list',
+                    component_data: {
+                      products: [
+                        {
+                          product_id: 'other_item',
+                          title: 'You may also like',
+                        },
+                      ],
+                    },
+                  },
+                ],
+                global_data: {
+                  product_info: {
+                    error_code: 0,
+                    categories: [{ category_name: 'Home Supplies' }, { category_name: 'Kitchen Appliances' }],
+                    product_info: {
+                      product_id: '1732501600694931597',
+                      seller_id: 'seller_99',
+                      product_model: {
+                        product_id: '1732501600694931597',
+                        name: 'Portable Blender - USB Charged, Leak-Proof',
+                        images: [
+                          {
+                            url_list: [
+                              'https://p16-oec.example/v1~tplv-crop-heic.heic',
+                              'https://p16-oec.example/v1~tplv.jpg',
+                            ],
+                          },
+                        ],
+                      },
+                      seller_model: {
+                        shop_name: 'HydroBlend Direct',
+                        seller_id: 'seller_99',
+                      },
+                      promotion_model: {
+                        promotion_product_price: {
+                          min_price: {
+                            sale_price_format: '21.50',
+                            currency_symbol: '$',
+                          },
+                        },
+                      },
+                      review_model: {
+                        product_rating: 4.9,
+                        review_count: 420,
+                      },
+                      sold_count: '3.1K',
+                    },
+                  },
+                },
+              },
+            }
+          }
+          if (req.capability === 'creator_search_videos') {
+            return {
+              data: {
+                aweme_list: [],
+                search_item_list: [
+                  {
+                    aweme_info: {
+                      aweme_id: '7499001122334455667',
+                      desc: 'Portable blender morning smoothie test',
+                      create_time: 1732500000,
+                      author: { unique_id: 'smoothie_lab', nickname: 'Smoothie Lab' },
+                      statistics: { play_count: 185000, digg_count: 9200, collect_count: 1400 },
+                      share_url: 'https://www.tiktok.com/@smoothie_lab/video/7499001122334455667',
+                    },
+                  },
+                ],
+              },
+            }
+          }
+          return {}
+        },
+      }
+      const adapter = createDataSourceAdapter({
+        store,
+        getService: (name) => (name === 'socialData' ? fakeSocialData : null),
+      })
+
+      const detail = await adapter.getProductDetail({
+        productId: '1732501600694931597',
+        region: 'US',
+        loadVideos: true,
+      })
+      assert.deepEqual(calls, ['shop_product', 'shop_product_v1', 'creator_search_videos'])
+      assert.deepEqual(detail.warnings, [])
+      assert.equal(detail.product.title, 'Portable Blender - USB Charged, Leak-Proof')
+      assert.equal(detail.product.shopName, 'HydroBlend Direct')
+      assert.equal(detail.product.category, 'Kitchen Appliances')
+      assert.equal(detail.product.priceMin, 21.5)
+      assert.equal(detail.product.totalSales, 3100)
+      assert.equal(detail.product.coverUrl, 'https://p16-oec.example/v1~tplv.jpg')
+      assert.equal(detail.referenceVideos.length, 1)
+      assert.equal(detail.referenceVideos[0].videoId, '7499001122334455667')
+      assert.equal(detail.referenceVideos[0].author, 'smoothie_lab')
+      assert.equal(detail.referenceVideos[0].playCount, 185000)
+      assert.equal(detail.referenceVideos[0].likeCount, 9200)
+      assert.equal(detail.referenceVideos[0].collectCount, 1400)
+      assert.equal(detail.referenceVideos[0].url, 'https://www.tiktok.com/@smoothie_lab/video/7499001122334455667')
+
+      // Invalid v3 & v1 envelopes without productHint must fail as not-found
+      const invalidAdapter = createDataSourceAdapter({
+        store,
+        getService: (name) => (name === 'socialData'
+          ? {
+              fetch: async (req) => {
+                if (req.capability === 'shop_product') {
+                  return { data: { exists: false, error_code: 23002002 } }
+                }
+                return { data: { region_match: false, error_code: 100000 } }
+              },
+            }
+          : null),
+      })
+      await assert.rejects(
+        () => invalidAdapter.getProductDetail({ productId: '9999999999999', region: 'US' }),
+        (err) => err.name === 'SelectionError' && err.code === 'not-found',
+      )
+    } finally {
+      cleanup()
+    }
+  })
 })

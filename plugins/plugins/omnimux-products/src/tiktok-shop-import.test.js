@@ -150,4 +150,127 @@ describe('importProductFromUrl tiktok shop path', () => {
     assert.ok(Array.isArray(draft.images) && draft.images.length >= 1)
     assert.equal(draft.kind, 'physical')
   })
+
+  it('unwraps v1 double product_info, skips recommendation blocks, avoids HEIC and prevents dashed title brand pollution (#438)', async () => {
+    const v1Response = {
+      data: {
+        components_map: [
+          {
+            component_name: 'top_reviewed_products',
+            component_type: 'top_reviewed_products',
+            component_data: {
+              products: [{ title: 'Top Reviewed Wrong Item', image: 'https://cdn.example/wrong.jpg' }],
+            },
+          },
+          {
+            component_name: 'feed_list_you_may_like',
+            component_type: 'feed_list',
+            component_data: {
+              products: [{ title: 'You may also like', image: 'https://cdn.example/rec.jpg' }],
+            },
+          },
+        ],
+        global_data: {
+          product_info: {
+            error_code: 0,
+            categories: [{ category_name: 'Kitchen' }],
+            product_info: {
+              product_model: {
+                product_id: '1732501600694931597',
+                name: 'Portable Blender - USB Charged, Leak-Proof, Easy-to-Clean',
+                images: [
+                  {
+                    url_list: [
+                      'https://p16-oec.example/main~tplv-crop-heic.heic',
+                      'https://p16-oec.example/main~tplv-1000:1000.webp',
+                    ],
+                  },
+                ],
+                description: [{ type: 'text', text: 'Compact rechargeable blender cup' }],
+              },
+              seller_model: {},
+              promotion_model: {
+                promotion_product_price: {
+                  min_price: {
+                    sale_price_format: '24.99',
+                    currency_symbol: '$',
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    }
+
+    const calls = []
+    const draft = await importProductFromUrl({
+      url: 'https://shop.tiktok.com/view/product/1732501600694931597?region=US&locale=en',
+      kind: 'physical',
+      fetcher: async () => {
+        throw new Error('should not HTML-fetch TikTok Shop URL')
+      },
+      hub: {
+        socialData: async (args) => {
+          calls.push(args.capability)
+          if (args.capability === 'shop_product') {
+            throw Object.assign(new Error('openai_error: bad_response_status_code 400'), {
+              code: 'omnimux-request-failed',
+              status: 400,
+            })
+          }
+          return v1Response
+        },
+      },
+    })
+
+    assert.deepEqual(calls, ['shop_product', 'shop_product_v1'])
+    assert.equal(draft.analysis.model, 'tiktok-shop-product')
+    assert.match(draft.name, /^Portable Blender/)
+    assert.equal(draft.brand, '')
+    assert.equal(draft.price, '$24.99')
+    assert.equal(draft.sku, '1732501600694931597')
+    assert.deepEqual(draft.images, ['https://p16-oec.example/main~tplv-1000:1000.webp'])
+  })
+
+  it('rejects invalid/region-mismatched TikTok Shop responses instead of fabricating placeholder names (#438)', async () => {
+    const invalidFields = mapShopDetailToFields(
+      {
+        region_match: false,
+        error_code: 100000,
+        global_data: {
+          product_info: {
+            error_code: 23002002,
+            product_info: { product_model: { product_id: '1732501600694931597' } },
+          },
+        },
+      },
+      { url: 'https://shop.tiktok.com/sg/pdp/1732501600694931597', productId: '1732501600694931597', region: 'SG' },
+    )
+    assert.equal(invalidFields.name, '')
+    assert.equal(invalidFields.sku, '')
+    assert.equal(invalidFields.valid, false)
+
+    let htmlFetched = false
+    await assert.rejects(
+      () => importProductFromUrl({
+        url: 'https://shop.tiktok.com/sg/pdp/1732501600694931597',
+        kind: 'physical',
+        fetcher: async () => {
+          htmlFetched = true
+          return new Response('<html><title>Blocked</title></html>', { status: 200 })
+        },
+        hub: {
+          socialData: async (args) => {
+            if (args.capability === 'shop_product') {
+              return { data: { exists: false, error_code: 23002002 } }
+            }
+            return { data: { region_match: false, error_code: 100000 } }
+          },
+        },
+      }),
+      (err) => err.name === 'LinkImportError' && err.code === 'link-import-empty',
+    )
+    assert.equal(htmlFetched, false)
+  })
 })

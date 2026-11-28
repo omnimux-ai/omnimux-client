@@ -2,7 +2,7 @@
 
 import { mkdir, mkdtemp, readdir, rm } from 'node:fs/promises'
 import { join } from 'node:path'
-import { getOrCreateDesktopInstallationId } from '../../../dsh-plugin-desktop/src/desktop-installation-id.ts'
+import { getOrCreateDesktopInstallationId } from '../desktop-installation-id.ts'
 import { atomicJson, privateDirectory, readPrivateFile } from '../private-files.ts'
 import type { UpdateArch } from '../update-arch.ts'
 import { downloadOmniMuxArtifact, omnimuxInstallerFilename } from './downloader.ts'

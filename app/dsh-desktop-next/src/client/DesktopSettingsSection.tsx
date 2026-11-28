@@ -10,7 +10,7 @@ import { DesktopSettingsProfilesTab } from './desktop-settings/profiles-tab.tsx'
 import { DesktopSettingsAccessTab } from './desktop-settings/access-tab.tsx'
 import { DesktopSettingsDiagnosticsTab } from './desktop-settings/diagnostics-tab.tsx'
 import { resolveDesktopLanConfirmation } from './desktop-settings/lan-access.ts'
-import { installDialogKeyboardIsolation } from '../../../dsh-plugin-desktop/src/client/modal-keyboard.ts'
+import { installDialogKeyboardIsolation } from './modal-keyboard.ts'
 
 export type {
   DesktopNotificationSettings,

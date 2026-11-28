@@ -12,9 +12,11 @@ import { sourceProjection } from '../../timeline/nativeProjectFields.js'
 import { assertSafeFields, boolean, fields, invalid, referenceId, text, type Fields } from './native-input'
 import { relinkNativeMedia, stageNativeMedia, type ResolvedNativeMedia } from './native-media'
 import { editText, setClipEffect, setKeyframes, setTextAnimation } from './native-overlays'
+import { cutTranscriptRanges, importSubtitles, removeMarker, setAudioDucking, setCaptionStyle, setMarker, syncClipsToBeats } from './native-rhythm'
 import { addGraphicInstance, applyEditingTemplateToDraft, removeGraphicInstance, updateGraphicParams } from './native-templates'
 import { NativeDraft, addMediaClip, addTrack, addTransition, cutSilences, moveClip, removeClip, removeRange, removeTrack,
   removeTransition, requireClearConfirmation, setSpeed, setTrackState, setVolume, splitClip, trimClip } from './native-timeline'
+import type { MediaItem } from '../openreel/core/types/project'
 
 export type { ResolvedNativeMedia } from './native-media'
 
@@ -29,6 +31,7 @@ export interface NativeEditOptions {
   assertCurrent: () => void
   /** The caller resolves an approved Host media reference to bytes and its stable content identity. */
   resolveMedia?: (operation: Fields) => ResolvedNativeMedia | null | undefined | Promise<ResolvedNativeMedia | null | undefined>
+  decodeAudioBuffer?: (params: { blob: Blob; mediaItem: MediaItem }) => Promise<AudioBuffer>
 }
 
 const edits = {
@@ -55,6 +58,13 @@ const edits = {
   apply_editing_template: applyEditingTemplateToDraft,
   set_keyframes: setKeyframes,
   set_text_animation: setTextAnimation,
+  import_subtitles: importSubtitles,
+  set_caption_style: setCaptionStyle,
+  cut_transcript_ranges: cutTranscriptRanges,
+  set_marker: setMarker,
+  remove_marker: removeMarker,
+  set_audio_ducking: setAudioDucking,
+  sync_clips_to_beats: syncClipsToBeats,
 }
 
 async function planMedia(draft: NativeDraft, op: Fields, options: NativeEditOptions) {
@@ -136,7 +146,9 @@ export async function executeNativeEdit(args: unknown, options: NativeEditOption
         ? await planRelinkMedia(draft, op, { ...options, assertCurrent: current })
         : type === 'add_clip' || type === 'import_media'
           ? await planMedia(draft, op, { ...options, assertCurrent: current })
-          : await edits[type as keyof typeof edits](draft, op)
+          : type === 'sync_clips_to_beats'
+            ? await syncClipsToBeats(draft, op, { assertCurrent: current, decodeAudioBuffer: options.decodeAudioBuffer })
+            : await edits[type as keyof typeof edits](draft, op)
       results.push({ type, ...result })
     } catch (error) {
       throw operationError(error, operationIndex)

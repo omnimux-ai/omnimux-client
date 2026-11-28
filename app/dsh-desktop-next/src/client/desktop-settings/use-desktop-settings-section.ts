@@ -1,16 +1,16 @@
 /** The Desktop settings page's state: the settings scopes, the Host view, busy and restart state, and the handlers its tabs share. */
 
 import { type FormEvent, useCallback, useEffect, useId, useRef, useState, useSyncExternalStore } from 'react'
-import type { DesktopSettingsForm } from '../../../../dsh-plugin-desktop/src/client/settings-bridge.ts'
+import type { DesktopSettingsForm } from '../settings-bridge.ts'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {
   DesktopMarketProvider,
   DesktopSettingsView,
-} from '../../../../dsh-plugin-desktop/src/client/desktop-settings-api.ts'
+} from '../desktop-settings-api.ts'
 import {
   desktopLanExposureAvailable,
   desktopBrowserAccessEnabled,
-} from '../../../../dsh-plugin-desktop/src/desktop-network.ts'
+} from '../../desktop-network.ts'
 import type {
   BusyOperation,
   DesktopNotificationSettings,

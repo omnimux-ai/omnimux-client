@@ -1,6 +1,6 @@
 import { chmodSync, cpSync, constants, existsSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
-import { MACOS_UNIVERSAL_NATIVE_ENTRIES, prepareMacUniversalRuntime, type MacSmokeArchitecture } from '../../dsh-plugin-desktop/scripts/mac-universal.ts'
+import { MACOS_UNIVERSAL_NATIVE_ENTRIES, prepareMacUniversalRuntime, type MacSmokeArchitecture } from './mac-universal.ts'
 import { nextRuntimeUnusedFeatureExclusion } from './runtime-file-policy.ts'
 
 /** One macOS package: the application for one CPU, or the universal application that carries both. */

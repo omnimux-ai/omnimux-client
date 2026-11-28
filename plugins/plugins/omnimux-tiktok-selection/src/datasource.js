@@ -235,26 +235,100 @@ export function parseSnapshotPayload({ content, format, region = 'US', name = ''
   return { format: detectedFormat, items: normalized }
 }
 
+const DEFAULT_RANK_QUERIES = Object.freeze([
+  'Beauty & Personal Care',
+  'Home Supplies',
+  'Phones & Electronics',
+])
+
+const TERMINAL_SOCIAL_ERROR_CODES = new Set(['needs-omnimux', 'quota-exceeded', 'CHANNEL_UNAVAILABLE'])
+
+const RECOMMENDATION_BLOCK_RE =
+  /^(?:top_reviewed_products|feed_list_you_may_like|feed_list_more_from|video_list|related_link|feed_list|recommend_products)$/i
+
+function isPlainObject(val) {
+  return Boolean(val) && typeof val === 'object' && !Array.isArray(val)
+}
+
 function pickScalar(val) {
   if (typeof val === 'number' && Number.isFinite(val)) return val
   if (typeof val === 'string' && val.trim() !== '') return val.trim()
   return null
 }
 
+function pickFirstNonEmptyArray(candidates) {
+  for (const list of candidates) {
+    if (Array.isArray(list) && list.length > 0) return list
+  }
+  return []
+}
+
+function isHeicImageUrl(url) {
+  const s = String(url || '').trim()
+  if (!s) return false
+  return /\.(?:heic|heif)(?:[?#]|$)/i.test(s) || /(?:crop|resize|origin)-heic|format=heic/i.test(s)
+}
+
+function parseCompactCount(val) {
+  if (typeof val === 'number' && Number.isFinite(val)) return val
+  if (typeof val !== 'string') return null
+  const text = val.trim()
+  if (!text) return null
+  const m = text.match(/^(?:sold|已售)?\s*([+-]?\d+(?:,\d{3})*(?:\.\d+)?)\s*([kKmMwW万])?\s*(?:\+|sold|已售|reviews?|条|件|笔)?\s*$/i)
+  if (m) {
+    const num = Number(m[1].replace(/,/g, ''))
+    if (!Number.isFinite(num)) return null
+    const unit = (m[2] || '').toLowerCase()
+    if (unit === 'k') return Math.round(num * 1000)
+    if (unit === 'm') return Math.round(num * 1000000)
+    if (unit === 'w' || unit === '万') return Math.round(num * 10000)
+    return num
+  }
+  const plain = Number(text.replace(/[,+\s]/g, ''))
+  return Number.isFinite(plain) ? plain : null
+}
+
+function parsePriceNumeric(val, kind = 'min') {
+  if (typeof val === 'number' && Number.isFinite(val)) return val
+  if (typeof val !== 'string') return null
+  const raw = val.trim()
+  if (!raw) return null
+  const rangeParts = raw.split(/\s*(?:-|~|–|—)\s*/).filter(Boolean)
+  if (rangeParts.length > 1) {
+    const chosen = kind === 'max' ? rangeParts[rangeParts.length - 1] : rangeParts[0]
+    const parsedPart = parsePriceNumeric(chosen, kind)
+    if (parsedPart !== null) return parsedPart
+  }
+  const stripped = raw.replace(/^(?:US\$|S\$|MX\$|R\$|RM|Rp|[$£€¥₱₫])\s*/i, '').replace(/,/g, '').trim()
+  if (!/^[+-]?\d+(?:\.\d+)?$/.test(stripped)) {
+    const m = raw.match(/(\d+(?:,\d{3})*(?:\.\d+)?)/)
+    if (!m) return null
+    const n = Number(m[1].replace(/,/g, ''))
+    return Number.isFinite(n) ? n : null
+  }
+  const n = Number(stripped)
+  return Number.isFinite(n) ? n : null
+}
+
 function extractPriceValue(raw, kind = 'min') {
-  const priceObj = raw.price && typeof raw.price === 'object' ? raw.price : null
-  const priceInfo =
-    raw.price_info && typeof raw.price_info === 'object'
+  const priceObj = isPlainObject(raw.price) ? raw.price : null
+  const priceInfo = isPlainObject(raw.product_price_info)
+    ? raw.product_price_info
+    : isPlainObject(raw.price_info)
       ? raw.price_info
-      : raw.product_price_info && typeof raw.product_price_info === 'object'
-        ? raw.product_price_info
-        : null
+      : isPlainObject(raw.sku_info?.price)
+        ? raw.sku_info.price
+        : isPlainObject(raw.price_model)
+          ? raw.price_model
+          : null
   const candidates =
     kind === 'max'
       ? [
           priceObj?.max_price,
           priceObj?.origin_price,
           priceObj?.origin_price_format,
+          priceInfo?.max_price_decimal,
+          priceInfo?.max_price_format,
           priceInfo?.max_price,
           raw.max_price,
           raw.price_max,
@@ -267,51 +341,188 @@ function extractPriceValue(raw, kind = 'min') {
           priceObj?.sale_price_format,
           priceObj?.price_format,
           priceInfo?.sale_price_decimal,
+          priceInfo?.sale_price_format,
           priceInfo?.sale_price,
+          priceInfo?.min_price_decimal,
+          priceInfo?.min_price_format,
           priceInfo?.min_price,
+          priceInfo?.real_price,
+          priceInfo?.origin_price_decimal,
+          priceInfo?.origin_price_format,
           raw.sale_price,
           raw.min_price,
           raw.price_min,
           priceObj ? null : raw.price,
         ]
   for (const val of candidates) {
-    const scalar = pickScalar(val)
-    if (scalar !== null) return scalar
+    const parsed = parsePriceNumeric(val, kind)
+    if (parsed !== null) return parsed
   }
   return null
 }
 
-function findProductInfoNode(root, seen = new Set(), depth = 0) {
+function inspectShopDetailStatus(res) {
+  if (!res || typeof res !== 'object') return { invalid: false, reason: '' }
+  const outerInfo = res?.data?.data?.global_data?.product_info || res?.data?.global_data?.product_info || res?.global_data?.product_info
+  const innerInfo = isPlainObject(outerInfo?.product_info) ? outerInfo.product_info : null
+  const nodes = [
+    res,
+    res?.data,
+    res?.data?.data,
+    res?.product_data,
+    res?.data?.product_data,
+    res?.data?.data?.product_data,
+    res?.global_data,
+    res?.data?.global_data,
+    res?.data?.data?.global_data,
+    outerInfo,
+    innerInfo,
+  ]
+  for (const node of nodes) {
+    if (!isPlainObject(node)) continue
+    if (node.exists === false) return { invalid: true, reason: 'exists=false' }
+    if (node.region_match === false) return { invalid: true, reason: 'region_match=false' }
+    if (node.error_code !== undefined && node.error_code !== null && String(node.error_code).trim() !== '') {
+      const code = Number(node.error_code)
+      if (Number.isFinite(code) && code !== 0) {
+        return { invalid: true, reason: `error_code=${code}` }
+      }
+    }
+  }
+  return { invalid: false, reason: '' }
+}
+
+function unwrapProductInfo(node) {
+  let cur = node
+  let categories = []
+  for (let depth = 0; depth < 4 && isPlainObject(cur); depth += 1) {
+    if (Array.isArray(cur.categories) && cur.categories.length > 0 && categories.length === 0) {
+      categories = cur.categories
+    }
+    if (isPlainObject(cur.product_model) || isPlainObject(cur.product_base)) {
+      return { pinfo: cur, categories }
+    }
+    if (isPlainObject(cur.product_info)) {
+      cur = cur.product_info
+      continue
+    }
+    return { pinfo: cur, categories }
+  }
+  return { pinfo: isPlainObject(cur) ? cur : null, categories }
+}
+
+function isRecommendationComponent(comp) {
+  if (!isPlainObject(comp)) return false
+  const name = String(comp.component_name || '')
+  const type = String(comp.component_type || '')
+  return RECOMMENDATION_BLOCK_RE.test(name) || RECOMMENDATION_BLOCK_RE.test(type)
+}
+
+function findProductInfoWithMeta(root, seen = new Set(), depth = 0) {
   if (!root || typeof root !== 'object' || depth > 8 || seen.has(root)) return null
   seen.add(root)
+  if (depth === 0) {
+    const v1Roots = [
+      root?.data?.data?.global_data?.product_info,
+      root?.data?.global_data?.product_info,
+      root?.global_data?.product_info,
+    ]
+    for (const candidate of v1Roots) {
+      if (isPlainObject(candidate)) {
+        const unwrapped = unwrapProductInfo(candidate)
+        if (unwrapped.pinfo) return unwrapped
+      }
+    }
+    const compMaps = [
+      root?.product_data?.page_config?.components_map,
+      root?.data?.product_data?.page_config?.components_map,
+      root?.data?.data?.product_data?.page_config?.components_map,
+      root?.components_map,
+      root?.data?.components_map,
+      root?.data?.data?.components_map,
+    ]
+    for (const cmap of compMaps) {
+      if (!Array.isArray(cmap)) continue
+      for (const comp of cmap) {
+        if (isRecommendationComponent(comp)) continue
+        const candidate = comp?.component_data?.product_info
+        if (isPlainObject(candidate)) {
+          const unwrapped = unwrapProductInfo(candidate)
+          if (unwrapped.pinfo) return unwrapped
+        }
+      }
+    }
+  }
   if (Array.isArray(root)) {
     for (let i = 0; i < Math.min(root.length, 40); i += 1) {
-      const hit = findProductInfoNode(root[i], seen, depth + 1)
+      const hit = findProductInfoWithMeta(root[i], seen, depth + 1)
       if (hit) return hit
     }
     return null
   }
-  if (root.product_info && typeof root.product_info === 'object') {
-    return root.product_info
+  if (isRecommendationComponent(root)) return null
+  if (isPlainObject(root.product_info)) {
+    const unwrapped = unwrapProductInfo(root.product_info)
+    if (
+      unwrapped.pinfo &&
+      (isPlainObject(unwrapped.pinfo.product_model) ||
+        isPlainObject(unwrapped.pinfo.product_base) ||
+        unwrapped.pinfo.title ||
+        unwrapped.pinfo.name ||
+        unwrapped.pinfo.product_name)
+    ) {
+      return unwrapped
+    }
   }
-  for (const val of Object.values(root)) {
-    const hit = findProductInfoNode(val, seen, depth + 1)
+  for (const [key, val] of Object.entries(root)) {
+    if (RECOMMENDATION_BLOCK_RE.test(key)) continue
+    const hit = findProductInfoWithMeta(val, seen, depth + 1)
     if (hit) return hit
   }
   return null
 }
 
-function pickImageUrl(candidate) {
-  if (typeof candidate === 'string') return candidate.trim()
-  if (candidate && typeof candidate === 'object') {
-    return (
-      pickScalar(candidate.url_list?.[0]) ??
-      pickScalar(candidate.thumb_url_list?.[0]) ??
-      pickScalar(candidate.url) ??
-      ''
-    )
+function findProductInfoNode(root, seen = new Set(), depth = 0) {
+  return findProductInfoWithMeta(root, seen, depth)?.pinfo || null
+}
+
+function collectImageUrls(candidate, out = [], depth = 0) {
+  if (depth > 3 || candidate == null) return out
+  if (typeof candidate === 'string') {
+    const s = candidate.trim()
+    if (s) out.push(s)
+    return out
   }
-  return ''
+  if (Array.isArray(candidate)) {
+    for (const item of candidate) collectImageUrls(item, out, depth + 1)
+    return out
+  }
+  if (typeof candidate === 'object') {
+    const preferredKeys = ['url_list', 'urls', 'url', 'image_url', 'src', 'thumb_url_list', 'thumb_urls']
+    for (const key of preferredKeys) {
+      if (candidate[key] !== undefined) collectImageUrls(candidate[key], out, depth + 1)
+    }
+    if (out.length === 0) {
+      for (const [key, val] of Object.entries(candidate)) {
+        if (preferredKeys.includes(key)) continue
+        if (typeof val === 'string' && /^https?:\/\//i.test(val.trim())) {
+          out.push(val.trim())
+        } else if (Array.isArray(val)) {
+          for (const entry of val) {
+            if (typeof entry === 'string' && /^https?:\/\//i.test(entry.trim())) out.push(entry.trim())
+          }
+        }
+      }
+    }
+  }
+  return out
+}
+
+function pickImageUrl(candidate) {
+  const urls = collectImageUrls(candidate)
+  if (urls.length === 0) return ''
+  const renderable = urls.find((u) => !isHeicImageUrl(u))
+  return renderable || urls[0] || ''
 }
 
 function firstImageUrl(candidates) {
@@ -323,17 +534,18 @@ function firstImageUrl(candidates) {
 }
 
 function normalizeHubReviews(rRes) {
-  const rawReviews =
-    rRes?.product_reviews ||
-    rRes?.reviews ||
-    rRes?.data?.product_reviews ||
-    rRes?.data?.reviews ||
-    rRes?.data?.items ||
-    rRes?.data?.data?.product_reviews ||
-    rRes?.data?.data?.reviews ||
-    rRes?.data?.data?.items ||
-    []
-  if (!Array.isArray(rawReviews)) return []
+  const rawReviews = pickFirstNonEmptyArray([
+    rRes?.product_reviews,
+    rRes?.reviews,
+    rRes?.data?.product_reviews,
+    rRes?.data?.reviews,
+    rRes?.data?.items,
+    rRes?.data?.data?.product_reviews,
+    rRes?.data?.data?.reviews,
+    rRes?.data?.data?.items,
+    rRes?.data?.data?.data?.product_reviews,
+  ])
+  if (!Array.isArray(rawReviews) || rawReviews.length === 0) return []
   return rawReviews
     .filter((r) => r && typeof r === 'object')
     .slice(0, 10)
@@ -359,54 +571,133 @@ function normalizeHubReviews(rRes) {
     .filter((r) => r.rating !== null || r.text !== '' || r.reviewer !== '' || r.createdAt !== '')
 }
 
+function extractCategoryFromList(categories) {
+  if (!Array.isArray(categories) || categories.length === 0) return ''
+  for (let i = categories.length - 1; i >= 0; i -= 1) {
+    const c = categories[i]
+    if (typeof c === 'string' && c.trim()) return c.trim()
+    if (isPlainObject(c)) {
+      const name = pickScalar(c.category_name) ?? pickScalar(c.name) ?? pickScalar(c.title)
+      if (name !== null) return String(name)
+    }
+  }
+  return ''
+}
+
 function extractHubProductDetail(res) {
+  if (inspectShopDetailStatus(res).invalid) return null
   const candidates = [res?.product, res?.data?.product, res?.data?.data, res?.data, res]
   for (const candidate of candidates) {
-    if (candidate && typeof candidate === 'object' && (candidate.title || candidate.product_name || candidate.name)) {
+    if (
+      isPlainObject(candidate) &&
+      !candidate.global_data &&
+      !candidate.components_map &&
+      !candidate.product_data &&
+      (candidate.title || candidate.product_name || candidate.name)
+    ) {
       return candidate
     }
   }
-  const pinfo = findProductInfoNode(res)
+  const located = findProductInfoWithMeta(res)
+  const pinfo = located?.pinfo
   if (!pinfo || typeof pinfo !== 'object') return null
-  const pm = pinfo.product_model && typeof pinfo.product_model === 'object' ? pinfo.product_model : pinfo
-  const title = String(pm.name ?? pm.title ?? pm.product_name ?? pinfo.title ?? '').trim()
+  const pm = isPlainObject(pinfo.product_model)
+    ? pinfo.product_model
+    : isPlainObject(pinfo.product_base)
+      ? pinfo.product_base
+      : pinfo
+  const title = String(pm.name ?? pm.title ?? pm.product_name ?? pinfo.title ?? pinfo.name ?? '').trim()
   if (!title) return null
-  const seller = pinfo.seller_model && typeof pinfo.seller_model === 'object' ? pinfo.seller_model : pinfo.seller || {}
-  const minPrice =
-    pinfo.promotion_model?.promotion_product_price?.min_price &&
-    typeof pinfo.promotion_model.promotion_product_price.min_price === 'object'
-      ? pinfo.promotion_model.promotion_product_price.min_price
+  const seller = isPlainObject(pinfo.seller_model)
+    ? pinfo.seller_model
+    : isPlainObject(pinfo.seller_info)
+      ? pinfo.seller_info
+      : isPlainObject(pinfo.seller)
+        ? pinfo.seller
+        : {}
+  const brandInfo = isPlainObject(pinfo.brand_info) ? pinfo.brand_info : isPlainObject(pm.brand_info) ? pm.brand_info : {}
+  const minPrice = isPlainObject(pinfo.promotion_model?.promotion_product_price?.min_price)
+    ? pinfo.promotion_model.promotion_product_price.min_price
+    : isPlainObject(pinfo.price_model?.min_price)
+      ? pinfo.price_model.min_price
+      : isPlainObject(pinfo.product_price_info)
+        ? pinfo.product_price_info
+        : isPlainObject(pinfo.price_info)
+          ? pinfo.price_info
+          : {}
+  const maxPrice = isPlainObject(pinfo.promotion_model?.promotion_product_price?.max_price)
+    ? pinfo.promotion_model.promotion_product_price.max_price
+    : isPlainObject(pinfo.price_model?.max_price)
+      ? pinfo.price_model.max_price
       : {}
-  const maxPrice =
-    pinfo.promotion_model?.promotion_product_price?.max_price &&
-    typeof pinfo.promotion_model.promotion_product_price.max_price === 'object'
-      ? pinfo.promotion_model.promotion_product_price.max_price
+  const reviewModel = isPlainObject(pinfo.review_model)
+    ? pinfo.review_model
+    : isPlainObject(pinfo.rate_info)
+      ? pinfo.rate_info
       : {}
-  const reviewModel = pinfo.review_model && typeof pinfo.review_model === 'object' ? pinfo.review_model : {}
-  const firstImg = Array.isArray(pm.images) ? pm.images[0] : null
-  const coverUrl = pickImageUrl(firstImg)
+  const coverUrl = firstImageUrl([
+    ...(Array.isArray(pm.images) ? pm.images : []),
+    ...(Array.isArray(pinfo.images) ? pinfo.images : []),
+    pm.image,
+    pinfo.image,
+    pinfo.cover_url,
+  ])
+  const skuList = Array.isArray(pinfo.sku_info)
+    ? pinfo.sku_info
+    : Array.isArray(pinfo.sku_info?.skus)
+      ? pinfo.sku_info.skus
+      : Array.isArray(pm.skus)
+        ? pm.skus
+        : null
 
   return {
     product_id: pm.product_id ?? pm.id ?? pinfo.product_id,
     title,
     cover_url: coverUrl,
     price: {
-      sale_price: minPrice.sale_price_format ?? minPrice.single_product_price_format ?? minPrice.sale_price,
-      max_price: maxPrice.sale_price_format ?? maxPrice.origin_price_format ?? maxPrice.sale_price,
-      currency: minPrice.currency_symbol || minPrice.currency_name,
+      sale_price:
+        minPrice.sale_price_format ??
+        minPrice.single_product_price_format ??
+        minPrice.sale_price_decimal ??
+        minPrice.sale_price ??
+        pinfo.price?.sale_price ??
+        pm.price?.sale_price,
+      max_price:
+        maxPrice.sale_price_format ??
+        maxPrice.origin_price_format ??
+        maxPrice.sale_price ??
+        pinfo.price?.max_price,
+      currency: minPrice.currency_symbol || minPrice.currency_name || pinfo.price?.currency,
     },
-    sold_count: pinfo.sold_count ?? pm.sold_count ?? pinfo.sales ?? null,
-    product_rating: reviewModel.product_rating ?? reviewModel.overall_score ?? pinfo.product_rating ?? null,
-    review_count: reviewModel.review_count ?? pinfo.review_count ?? null,
-    seller_name: seller.shop_name || seller.name || seller.seller_name || '',
-    seller_id: seller.seller_id || seller.id || '',
-    category_name: pm.category_name || pinfo.category_name || '',
+    sold_count: parseCompactCount(pinfo.sold_count ?? pinfo.sold_info?.sold_count ?? pm.sold_count ?? pinfo.sales),
+    product_rating: reviewModel.product_rating ?? reviewModel.overall_score ?? reviewModel.score ?? pinfo.product_rating ?? null,
+    review_count: parseCompactCount(reviewModel.review_count ?? reviewModel.count ?? pinfo.review_count),
+    seller_name:
+      seller.shop_name ||
+      seller.name ||
+      seller.seller_name ||
+      brandInfo.brand_name ||
+      brandInfo.name ||
+      pm.brand_name ||
+      pm.brand ||
+      '',
+    seller_id: seller.seller_id || seller.shop_id || seller.id || pinfo.seller_id || pm.seller_id || '',
+    category_name: pm.category_name || pinfo.category_name || extractCategoryFromList(located?.categories) || '',
+    sku_count: skuList ? skuList.length : pinfo.sku_count ?? null,
   }
 }
 
 function extractItemsFromHubResponse(res) {
   if (!res || typeof res !== 'object') return []
-  const candidates = [
+  return pickFirstNonEmptyArray([
+    res.data?.data?.component_data?.products,
+    res.data?.component_data?.products,
+    res.component_data?.products,
+    res.data?.data?.data?.component_data?.products,
+    res.result?.component_data?.products,
+    res.data?.data?.component_data?.product_list,
+    res.data?.component_data?.product_list,
+    res.data?.data?.component_data?.items,
     res.products,
     res.items,
     res.list,
@@ -423,11 +714,23 @@ function extractItemsFromHubResponse(res) {
     res.data?.data?.search_result,
     res.result?.products,
     res.result?.items,
-  ]
-  for (const list of candidates) {
-    if (Array.isArray(list)) return list
+  ])
+}
+
+function resolveShopUrl(raw) {
+  const direct = pickScalar(raw.url) ?? pickScalar(raw.product_url)
+  if (direct && /^https?:\/\//i.test(String(direct))) return String(direct)
+  const seo = raw.seo_url
+  if (typeof seo === 'string' && /^https?:\/\//i.test(seo.trim())) return seo.trim()
+  if (isPlainObject(seo)) {
+    const candidate =
+      pickScalar(seo.canonical_url) ??
+      pickScalar(seo.url) ??
+      pickScalar(seo.pdp_url) ??
+      pickScalar(seo.h5_url)
+    if (candidate && /^https?:\/\//i.test(String(candidate))) return String(candidate)
   }
-  return []
+  return ''
 }
 
 function normalizeHubShopItem(rawInput, idx, region, source, sourceDetail) {
@@ -435,11 +738,11 @@ function normalizeHubShopItem(rawInput, idx, region, source, sourceDetail) {
     rawInput && typeof rawInput === 'object'
       ? rawInput.title || rawInput.product_name || rawInput.name || rawInput.seo_title
         ? rawInput
-        : (rawInput.product_info && typeof rawInput.product_info === 'object'
-            ? rawInput.product_info
-            : rawInput.product_base && typeof rawInput.product_base === 'object'
-              ? rawInput.product_base
-              : rawInput)
+        : isPlainObject(rawInput.product_info)
+          ? rawInput.product_info
+          : isPlainObject(rawInput.product_base)
+            ? rawInput.product_base
+            : rawInput
       : {}
   const productId = String(
     raw.product_id ?? raw.productId ?? raw.id ?? raw.item_id ?? raw.spu_id ?? `tt_${idx + 1}`
@@ -458,18 +761,96 @@ function normalizeHubShopItem(rawInput, idx, region, source, sourceDetail) {
     raw.product_img,
     raw.product_image,
     Array.isArray(raw.images) ? raw.images[0] : null,
+    Array.isArray(raw.product_img_list) ? raw.product_img_list[0] : null,
+    Array.isArray(raw.image_list) ? raw.image_list[0] : null,
     raw.main_image,
   ])
-  const salesTotal =
-    raw.sold_count ?? raw.sold_info?.sold_count ?? raw.product_sales ?? raw.sales_count ?? raw.total_sales ?? raw.sale_count ?? raw.sales ?? raw.sold ?? null
-  const sales7d = raw.sales_7d ?? raw.sold_7d ?? raw.period_sales ?? null
-  const sales28d = raw.sales_28d ?? raw.sold_28d ?? null
-  const rating = raw.product_rating ?? raw.rate_info?.score ?? raw.review_info?.rating ?? raw.rating ?? raw.review_rating ?? raw.score ?? null
-  const reviewCount = raw.review_count ?? raw.rate_info?.review_count ?? raw.review_info?.review_count ?? raw.reviews_count ?? raw.comment_count ?? null
-  const shopName = raw.seller?.name ?? raw.seller?.shop_name ?? raw.shop?.name ?? raw.shop?.shop_name ?? raw.shop_name ?? raw.seller_name ?? ''
-  const shopId = raw.seller?.seller_id ?? raw.seller?.id ?? raw.shop?.id ?? raw.shop_id ?? raw.seller_id ?? ''
-  const category = raw.category_name ?? raw.category ?? raw.category_path ?? ''
+  const salesTotal = parseCompactCount(
+    raw.sold_count ??
+      raw.sold_info?.sold_count ??
+      raw.sold_info?.sold_num ??
+      raw.sold_info?.count ??
+      raw.sold_info?.sold_count_text ??
+      raw.sold_info?.format_sold_count ??
+      raw.sold_info?.sold_text ??
+      raw.product_sales ??
+      raw.sales_count ??
+      raw.total_sales ??
+      raw.sale_count ??
+      raw.sales ??
+      raw.sold
+  )
+  const sales7d = parseCompactCount(raw.sales_7d ?? raw.sold_7d ?? raw.period_sales)
+  const sales28d = parseCompactCount(raw.sales_28d ?? raw.sold_28d)
+  const rating = parsePriceNumeric(
+    raw.product_rating ??
+      raw.rate_info?.score ??
+      raw.rate_info?.rating ??
+      raw.rate_info?.avg_score ??
+      raw.rate_info?.product_rating ??
+      raw.review_info?.rating ??
+      raw.rating ??
+      raw.review_rating ??
+      raw.score
+  )
+  const reviewCount = parseCompactCount(
+    raw.review_count ??
+      raw.rate_info?.review_count ??
+      raw.rate_info?.review_count_str ??
+      raw.rate_info?.count ??
+      raw.rate_info?.total_count ??
+      raw.review_info?.review_count ??
+      raw.reviews_count ??
+      raw.comment_count
+  )
+  const shopName = String(
+    raw.seller_info?.shop_name ??
+      raw.seller_info?.name ??
+      raw.seller_info?.seller_name ??
+      raw.seller?.shop_name ??
+      raw.seller?.name ??
+      raw.shop?.shop_name ??
+      raw.shop?.name ??
+      raw.shop_name ??
+      raw.seller_name ??
+      raw.brand_info?.brand_name ??
+      raw.brand_info?.name ??
+      ''
+  ).trim()
+  const shopId = String(
+    raw.seller_info?.seller_id ??
+      raw.seller_info?.shop_id ??
+      raw.seller_info?.id ??
+      raw.seller?.seller_id ??
+      raw.seller?.id ??
+      raw.shop?.id ??
+      raw.shop_id ??
+      raw.seller_id ??
+      ''
+  ).trim()
+  const category =
+    raw.category_name ??
+    raw.category ??
+    raw.category_path ??
+    (Array.isArray(raw.categories) ? extractCategoryFromList(raw.categories) : '') ??
+    ''
   const commissionRate = raw.commission_rate ?? raw.affiliate_commission ?? null
+  const currency =
+    pickScalar(raw.currency) ||
+    pickScalar(raw.product_price_info?.currency_symbol) ||
+    pickScalar(raw.price_info?.currency_symbol) ||
+    pickScalar(raw.price?.currency_symbol) ||
+    pickScalar(raw.price?.currency) ||
+    pickScalar(raw.product_price_info?.currency_name) ||
+    pickScalar(raw.price_info?.currency_name) ||
+    currencyForRegion(region)
+  const skuCount =
+    raw.sku_count ??
+    (Array.isArray(raw.sku_info)
+      ? raw.sku_info.length
+      : Array.isArray(raw.sku_info?.skus)
+        ? raw.sku_info.skus.length
+        : raw.sku_info?.sku_count ?? null)
 
   return normalizeProductInput(
     {
@@ -477,7 +858,7 @@ function normalizeHubShopItem(rawInput, idx, region, source, sourceDetail) {
       region,
       title,
       coverUrl,
-      currency: pickScalar(raw.currency) || pickScalar(raw.price?.currency) || pickScalar(raw.price?.currency_symbol) || currencyForRegion(region),
+      currency,
       priceMin: priceRaw,
       priceMax: priceMaxRaw,
       totalSales: salesTotal,
@@ -491,11 +872,12 @@ function normalizeHubShopItem(rawInput, idx, region, source, sourceDetail) {
       videosCount: raw.videos_count ?? null,
       rating,
       reviewCount,
+      skuCount,
       shopName,
       shopId,
       category,
       rank: raw.rank ?? idx + 1,
-      tiktokUrl: raw.url ?? raw.product_url ?? '',
+      tiktokUrl: resolveShopUrl(raw),
       channelMetrics: raw.channelMetrics ?? raw,
       source,
       sourceDetail,
@@ -505,27 +887,37 @@ function normalizeHubShopItem(rawInput, idx, region, source, sourceDetail) {
 }
 
 function normalizeHubVideos(res) {
-  const list =
-    res?.video_list ||
-    res?.videos ||
-    res?.aweme_list ||
-    res?.items ||
-    res?.data?.video_list ||
-    res?.data?.videos ||
-    res?.data?.aweme_list ||
-    res?.data?.items ||
-    res?.data?.data?.video_list ||
-    res?.data?.data?.aweme_list ||
-    res?.data?.data?.videos ||
-    res?.data?.data?.items ||
-    res?.data?.data ||
-    []
-  if (!Array.isArray(list)) return []
+  const list = pickFirstNonEmptyArray([
+    res?.search_item_list,
+    res?.data?.search_item_list,
+    res?.data?.data?.search_item_list,
+    res?.video_list,
+    res?.videos,
+    res?.aweme_list,
+    res?.items,
+    res?.data?.video_list,
+    res?.data?.videos,
+    res?.data?.aweme_list,
+    res?.data?.items,
+    res?.data?.data?.video_list,
+    res?.data?.data?.aweme_list,
+    res?.data?.data?.videos,
+    res?.data?.data?.items,
+    res?.data?.data,
+  ])
+  if (!Array.isArray(list) || list.length === 0) return []
   return list
+    .map((entry) => (isPlainObject(entry?.aweme_info) ? entry.aweme_info : entry))
     .filter((v) => v && typeof v === 'object')
     .map((v, i) => {
       const id = String(v.aweme_id ?? v.video_id ?? v.id ?? `vid_${i + 1}`)
-      const author = v.author?.unique_id || v.author?.nickname || v.creator_handle || v.author_name || ''
+      const author =
+        v.author?.unique_id ||
+        v.author?.nickname ||
+        v.author?.short_id ||
+        v.creator_handle ||
+        v.author_name ||
+        ''
       const caption = String(v.desc ?? v.title ?? v.caption ?? '').trim()
       const playCount = Number(v.statistics?.play_count ?? v.stats?.play_count ?? v.play_count ?? v.views ?? 0) || 0
       const collectCount = Number(v.statistics?.collect_count ?? v.stats?.collect_count ?? v.collect_count ?? v.saves ?? 0) || 0
@@ -534,6 +926,7 @@ function normalizeHubVideos(res) {
       const gmv = Number(v.product_gmv ?? v.gmv ?? 0) || null
       const url =
         v.share_url ||
+        v.share_info?.share_url ||
         v.url ||
         (author ? `https://www.tiktok.com/@${encodeURIComponent(author)}/video/${encodeURIComponent(id)}` : `https://www.tiktok.com/video/${encodeURIComponent(id)}`)
       const rawTs = v.create_time
@@ -702,29 +1095,53 @@ export function createDataSourceAdapter({ store, getService, logger }) {
       )
     }
 
-    const queryKeyword = category || 'trending best seller'
-    let rawRes
-    try {
-      rawRes = await socialData.fetch({
-        platform: 'tiktok',
-        capability: 'shop_search_v2',
-        query: queryKeyword,
-        region,
-      })
-    } catch (err) {
-      logger?.warn?.('omnimux-tiktok-selection: rank query failed', { code: err?.code, error: err?.message })
-      const code = err?.code === 'needs-omnimux' ? 'needs-omnimux' : 'upstream-failed'
-      const message = formatSocialDataErrorMessage(err, 'TikTok Shop rank query failed', { suggestSnapshot: true })
+    const candidateQueries = category ? [category] : DEFAULT_RANK_QUERIES
+    let rawRes = null
+    let normalized = []
+    let lastError = null
+
+    for (let qIdx = 0; qIdx < candidateQueries.length; qIdx += 1) {
+      const queryKeyword = candidateQueries[qIdx]
+      try {
+        const res = await socialData.fetch({
+          platform: 'tiktok',
+          capability: 'shop_search_v2',
+          query: queryKeyword,
+          region,
+        })
+        const rawList = extractItemsFromHubResponse(res)
+        const sourceDetail = `${region} ${granularity} ${period} ${category || '全部类目'}`
+        const items = rawList
+          .map((item, idx) => normalizeHubShopItem(item, idx, region, 'rank', sourceDetail))
+          .filter(Boolean)
+        rawRes = res
+        normalized = items
+        if (items.length > 0) break
+      } catch (err) {
+        logger?.warn?.('omnimux-tiktok-selection: rank query failed', {
+          query: queryKeyword,
+          code: err?.code,
+          error: err?.message,
+        })
+        if (TERMINAL_SOCIAL_ERROR_CODES.has(err?.code) || category || qIdx === candidateQueries.length - 1) {
+          const code = err?.code === 'needs-omnimux' ? 'needs-omnimux' : 'upstream-failed'
+          const message = formatSocialDataErrorMessage(err, 'TikTok Shop rank query failed', { suggestSnapshot: true })
+          throw new SelectionError(code, message)
+        }
+        lastError = err
+      }
+    }
+    if (!rawRes && lastError) {
+      const code = lastError?.code === 'needs-omnimux' ? 'needs-omnimux' : 'upstream-failed'
+      const message = formatSocialDataErrorMessage(lastError, 'TikTok Shop rank query failed', { suggestSnapshot: true })
       throw new SelectionError(code, message)
     }
 
-    const rawList = extractItemsFromHubResponse(rawRes)
-    const sourceDetail = `${region} ${granularity} ${period} ${category || '全部类目'}`
-    const normalized = rawList
-      .map((item, idx) => normalizeHubShopItem(item, idx, region, 'rank', sourceDetail))
-      .filter(Boolean)
     const sorted = sortProducts(normalized, sortField, sortDir)
-    const slice = sorted.slice((page - 1) * pageSize, page * pageSize)
+    const slice = sorted.slice((page - 1) * pageSize, page * pageSize).map((item, i) => ({
+      ...item,
+      rank: (page - 1) * pageSize + i + 1,
+    }))
 
     return {
       source: 'omnimux_social_data',
@@ -826,6 +1243,34 @@ export function createDataSourceAdapter({ store, getService, logger }) {
     const socialData = getService?.('socialData')
     let detailWarning = ''
     if (socialData && typeof socialData.fetch === 'function') {
+      const mergeLiveDetail = (rawObj) => {
+        if (!rawObj || typeof rawObj !== 'object' || !(rawObj.title || rawObj.product_name || rawObj.name)) {
+          return false
+        }
+        const liveNormalized = normalizeHubShopItem(rawObj, 0, reg, product?.source || 'detail', product?.sourceDetail || '')
+        if (!liveNormalized) return false
+        product = product
+          ? {
+              ...liveNormalized,
+              ...product,
+              priceMin: liveNormalized.priceMin ?? product.priceMin,
+              priceMax: liveNormalized.priceMax ?? product.priceMax,
+              currency: liveNormalized.priceMin !== null ? liveNormalized.currency : product.currency,
+              priceDisplay: liveNormalized.priceMin !== null ? liveNormalized.priceDisplay : product.priceDisplay,
+              shopName: liveNormalized.shopName || product.shopName,
+              shopId: liveNormalized.shopId || product.shopId,
+              category: product.category || liveNormalized.category,
+              rating: liveNormalized.rating ?? product.rating,
+              reviewCount: liveNormalized.reviewCount ?? product.reviewCount,
+              totalSales: liveNormalized.totalSales ?? product.totalSales,
+              coverUrl: product.coverUrl || liveNormalized.coverUrl,
+            }
+          : liveNormalized
+        return true
+      }
+
+      let needV1Fallback = false
+      let invalidReason = ''
       try {
         const res = await socialData.fetch({
           platform: 'tiktok',
@@ -833,32 +1278,55 @@ export function createDataSourceAdapter({ store, getService, logger }) {
           id: pid,
           region: reg,
         })
-        const rawObj = extractHubProductDetail(res)
-        if (rawObj && typeof rawObj === 'object' && (rawObj.title || rawObj.product_name || rawObj.name)) {
-          const liveNormalized = normalizeHubShopItem(rawObj, 0, reg, product?.source || 'detail', product?.sourceDetail || '')
-          if (liveNormalized) {
-            product = product
-              ? {
-                  ...liveNormalized,
-                  ...product,
-                  priceMin: liveNormalized.priceMin ?? product.priceMin,
-                  priceMax: liveNormalized.priceMax ?? product.priceMax,
-                  currency: liveNormalized.priceMin !== null ? liveNormalized.currency : product.currency,
-                  priceDisplay: liveNormalized.priceMin !== null ? liveNormalized.priceDisplay : product.priceDisplay,
-                  shopName: liveNormalized.shopName || product.shopName,
-                  shopId: liveNormalized.shopId || product.shopId,
-                  category: product.category || liveNormalized.category,
-                  rating: liveNormalized.rating ?? product.rating,
-                  reviewCount: liveNormalized.reviewCount ?? product.reviewCount,
-                  totalSales: liveNormalized.totalSales ?? product.totalSales,
-                  coverUrl: product.coverUrl || liveNormalized.coverUrl,
-                }
-              : liveNormalized
-          }
+        const status = inspectShopDetailStatus(res)
+        if (status.invalid) {
+          invalidReason = status.reason
+          needV1Fallback = true
+        } else if (!mergeLiveDetail(extractHubProductDetail(res))) {
+          needV1Fallback = true
         }
       } catch (err) {
-        detailWarning = formatSocialDataErrorMessage(err, 'Live product detail unavailable')
-        logger?.warn?.('omnimux-tiktok-selection: detail lookup fallback to local', { productId: pid, code: err?.code, error: detailWarning })
+        if (TERMINAL_SOCIAL_ERROR_CODES.has(err?.code)) {
+          detailWarning = formatSocialDataErrorMessage(err, 'Live product detail unavailable')
+          logger?.warn?.('omnimux-tiktok-selection: detail lookup fallback to local', {
+            productId: pid,
+            code: err?.code,
+            error: detailWarning,
+          })
+        } else {
+          logger?.warn?.('omnimux-tiktok-selection: v3 detail failed, retrying shop_product_v1', {
+            productId: pid,
+            code: err?.code,
+            error: err?.message,
+          })
+          needV1Fallback = true
+        }
+      }
+
+      if (needV1Fallback) {
+        try {
+          const v1Res = await socialData.fetch({
+            platform: 'tiktok',
+            capability: 'shop_product_v1',
+            id: pid,
+            region: reg,
+          })
+          const v1Status = inspectShopDetailStatus(v1Res)
+          if (v1Status.invalid || !mergeLiveDetail(extractHubProductDetail(v1Res))) {
+            detailWarning = '实时商品详情暂不可用或站点不匹配'
+            logger?.warn?.('omnimux-tiktok-selection: v1 detail returned invalid or empty payload', {
+              productId: pid,
+              reason: v1Status.reason || invalidReason || 'empty',
+            })
+          }
+        } catch (v1Err) {
+          detailWarning = formatSocialDataErrorMessage(v1Err, 'Live product detail unavailable')
+          logger?.warn?.('omnimux-tiktok-selection: v1 detail lookup fallback to local', {
+            productId: pid,
+            code: v1Err?.code,
+            error: detailWarning,
+          })
+        }
       }
     }
 

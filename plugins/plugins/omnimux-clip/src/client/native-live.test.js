@@ -9,7 +9,8 @@ const vendor = fileURLToPath(new URL('./openreel/', import.meta.url))
 const require = createRequire(import.meta.url)
 const built = await build({
   stdin: {
-    contents: `export { executeNativeEdit } from './live/native-edit';
+    contents: `export { executeNativeAnalyze } from './live/native-analyze';
+      export { executeNativeEdit } from './live/native-edit';
       export { captureNativeFrames, executeNativeView, readNativeSnapshot } from './live/native-view';
       export { useProjectStore } from './openreel/web/stores/project-store';
       export { useTimelineStore } from './openreel/web/stores/timeline-store';
@@ -57,7 +58,7 @@ globalThis.OffscreenCanvas = TestCanvas
 globalThis.self = {}
 const module = { exports: {} }
 new Function('require', 'module', 'exports', built.outputFiles[0].text)(require, module, module.exports)
-const { executeNativeEdit, captureNativeFrames, executeNativeView, readNativeSnapshot, useProjectStore,
+const { executeNativeAnalyze, executeNativeEdit, captureNativeFrames, executeNativeView, readNativeSnapshot, useProjectStore,
   useTimelineStore, useUIStore, useEngineStore, getMediaEngine, EffectsBridge, getMediaBridge,
   shouldProbeAudioStreamsWithFfmpeg, projectAssetUrlFromHandle } = module.exports
 mock.method(EffectsBridge.prototype, 'initialize', async () => {})
@@ -537,6 +538,10 @@ test('Phase 1 graphic templates: add, full projection, hot param update, protect
     edit([{ type: 'set_text_animation', clipId: memberTextClip.id, preset: 'typewriter' }]),
     (error) => error.code === 'graphic-member-readonly',
   )
+  await assert.rejects(
+    edit([{ type: 'set_keyframes', clipId: memberTextClip.id, keyframes: [{ property: 'opacity', timeSec: 0, value: 0.5 }] }]),
+    (error) => error.code === 'graphic-member-readonly',
+  )
 
   // Ungroup releases member clips so set_text & set_text_animation succeed afterwards
   const ungrouped = await edit([{ type: 'remove_graphic_instance', instanceId: 'lt-main', ungroup: true }])
@@ -688,5 +693,506 @@ test('Phase 1 set_keyframes, set_text_animation, batch ripple sync, and custom u
       },
     }]),
     (error) => error.code === 'template-invalid',
+  )
+})
+
+function createSyntheticBeatAudioBuffer({ durationSec = 10, sampleRate = 44100, bpm = 120, peakStartSec = 5, peakEndSec = 10 } = {}) {
+  const intervalSec = 60 / bpm
+  const totalSamples = Math.floor(durationSec * sampleRate)
+  const channelData = Float32Array.from({ length: totalSamples }, (_, sampleIndex) => {
+    const t = sampleIndex / sampleRate
+    const baseHum = 0.004 * Math.sin(2 * Math.PI * 60 * t)
+    if (t < intervalSec) return baseHum
+    const nearestBeat = Math.floor((t - intervalSec) / intervalSec + 1e-9) * intervalSec + intervalSec
+    const dt = t - nearestBeat
+    if (dt < 0 || dt >= 0.055 || nearestBeat > durationSec - 0.1) return baseHum
+    const inPeak = t >= peakStartSec && t <= peakEndSec
+    const amp = inPeak ? 0.95 : 0.25
+    return baseHum + amp * Math.exp(-dt * 50) * Math.sin(2 * Math.PI * 160 * dt)
+  })
+  return {
+    sampleRate,
+    length: totalSamples,
+    numberOfChannels: 1,
+    duration: durationSec,
+    getChannelData: (channel) => {
+      if (channel !== 0) throw new RangeError('Mono synthetic test AudioBuffer only has channel 0')
+      return channelData
+    },
+    copyFromChannel: (dest, channel, startInChannel = 0) => {
+      if (channel !== 0) throw new RangeError('Mono synthetic test AudioBuffer only has channel 0')
+      dest.set(channelData.subarray(startInChannel, startInChannel + dest.length))
+    },
+    copyToChannel: () => {},
+  }
+}
+
+test('Phase 2 subtitles: SRT, Whisper verbose_json, cues with timeOffsetSec, set_caption_style preserving words, and subtitle-invalid (#phase2)', async () => {
+  // AC-M2-04
+  const srtImport = await edit([
+    {
+      type: 'import_subtitles',
+      srt: '1\n00:00:00,000 --> 00:00:01,500\nWelcome everyone\n\n2\n00:00:02,000 --> 00:00:03,500\nLet us begin',
+      animationStyle: 'word-highlight',
+      highlightColor: '#facc15',
+      position: 'bottom',
+    },
+  ])
+  assert.equal(srtImport.results[0].count, 2)
+  assert.equal(srtImport.results[0].subtitleCount, 2)
+
+  const snapAfterSrt = readNativeSnapshot({ view: 'full', revision: 2 })
+  assert.equal(snapAfterSrt.subtitleCount, 2)
+  assert.equal(snapAfterSrt.subtitles.at(0).animationStyle, 'word-highlight')
+  assert.equal(snapAfterSrt.subtitles.at(0).style.highlightColor, '#facc15')
+
+  const whisperPayload = JSON.stringify({
+    language: 'en',
+    segments: [{ id: 0, start: 0.0, end: 2.0, text: 'Hello bright world' }],
+    words: [
+      { word: 'Hello', start: 0.1, end: 0.5 },
+      { word: 'bright', start: 0.6, end: 1.1 },
+      { word: 'world', start: 1.2, end: 1.9 },
+    ],
+  })
+  const replaced = await edit([
+    {
+      type: 'import_subtitles',
+      mode: 'replace',
+      transcriptJson: whisperPayload,
+      animationStyle: 'bounce',
+    },
+  ])
+  assert.equal(replaced.results[0].subtitleCount, 1)
+
+  const appended = await edit([
+    {
+      type: 'import_subtitles',
+      mode: 'append',
+      timeOffsetSec: 2.5,
+      cues: [
+        {
+          id: 'cue-shifted',
+          text: 'Ship faster',
+          startSec: 0.0,
+          endSec: 1.4,
+          speaker: 'Host',
+          words: [
+            { text: 'Ship', startSec: 0.0, endSec: 0.6 },
+            { text: 'faster', startSec: 0.7, endSec: 1.4 },
+          ],
+        },
+      ],
+    },
+  ])
+  assert.equal(appended.results[0].subtitleCount, 2)
+
+  const styled = await edit([
+    {
+      type: 'set_caption_style',
+      animationStyle: 'karaoke',
+      highlightColor: '#22c55e',
+      strokeColor: '#111827',
+      strokeWidth: 4,
+      boxRadius: 10,
+      safeMargin: 0.1,
+    },
+  ])
+  assert.equal(styled.results[0].count, 2)
+  assert.equal(styled.results[0].animationStyle, 'karaoke')
+
+  const snapStyled = readNativeSnapshot({ view: 'full', revision: 4 })
+  assert.equal(snapStyled.subtitles.at(0).animationStyle, 'karaoke')
+  assert.equal(snapStyled.subtitles.at(0).wordCount, 3)
+  assert.equal(snapStyled.subtitles.at(0).words.at(1).text, 'bright')
+  assert.equal(snapStyled.subtitles.at(0).style.highlightColor, '#22c55e')
+  assert.equal(snapStyled.subtitles.at(0).style.boxRadius, 10)
+  assert.equal(snapStyled.subtitles.at(1).startSec, 2.5)
+  assert.equal(snapStyled.subtitles.at(1).words.at(0).startSec, 2.5)
+
+  // Validation errors produce subtitle-invalid
+  await assert.rejects(
+    edit([{ type: 'import_subtitles', srt: 'not valid srt' }]),
+    (error) => error.code === 'subtitle-invalid',
+  )
+  await assert.rejects(
+    edit([{ type: 'import_subtitles', transcriptJson: 'null' }]),
+    (error) => error.code === 'subtitle-invalid',
+  )
+  await assert.rejects(
+    edit([{ type: 'import_subtitles', timeOffsetSec: -1, cues: [{ text: 'Bad', startSec: 0.2, endSec: 1.0 }] }]),
+    (error) => error.code === 'subtitle-invalid',
+  )
+
+  // P1-2: adjacent Whisper segments sharing boundary never duplicate short boundary word
+  const boundarySub = await edit([
+    {
+      type: 'import_subtitles',
+      mode: 'replace',
+      transcriptJson: JSON.stringify({
+        language: 'en',
+        segments: [
+          { start: 0.0, end: 1.0, text: 'Hello world' },
+          { start: 1.0, end: 2.0, text: 'Next line' },
+        ],
+        words: [
+          { word: 'Hello', start: 0.1, end: 0.5 },
+          { word: 'world', start: 0.55, end: 0.9 },
+          { word: 'Next', start: 1.0, end: 1.04 },
+          { word: 'line', start: 1.1, end: 1.8 },
+        ],
+      }),
+    },
+  ])
+  assert.equal(boundarySub.results[0].subtitleCount, 2)
+  const snapBoundary = readNativeSnapshot({ view: 'full', revision: 5 })
+  assert.equal(snapBoundary.subtitles.at(0).text, 'Hello world')
+  assert.equal(snapBoundary.subtitles.at(1).text, 'Next line')
+
+  // P1-4: coordinate position-only set_caption_style update succeeds
+  await edit([
+    { type: 'set_caption_style', position: { x: 0.5, y: 0.8 } },
+  ])
+
+  await store().undo()
+  await store().undo()
+  const afterBoundaryUndo = readNativeSnapshot({ view: 'full', revision: 4 })
+  assert.equal(afterBoundaryUndo.subtitles.at(0).animationStyle, 'karaoke')
+  await store().undo()
+  const afterUndo = readNativeSnapshot({ view: 'full', revision: 3 })
+  assert.equal(afterUndo.subtitles.at(0).animationStyle, 'bounce')
+})
+
+test('Phase 2 transcript analysis and pause/filler/range cuts with validateOnly, single undo, and TRACK_LOCKED (#phase2)', async () => {
+  // AC-M2-02, AC-M2-05
+  await edit([
+    { type: 'add_track', trackType: 'video', trackId: 'v-talk' },
+    { type: 'add_clip', trackId: 'v-talk', clipId: 'c-talk', mediaId: 'source', startSec: 0, durationSec: 6 },
+    {
+      type: 'import_subtitles',
+      cues: [
+        {
+          text: 'Um hello world',
+          startSec: 0.2,
+          endSec: 1.2,
+          words: [
+            { text: 'Um', startSec: 0.2, endSec: 0.45 },
+            { text: 'hello', startSec: 0.5, endSec: 0.85 },
+            { text: 'world', startSec: 0.85, endSec: 1.2 },
+          ],
+        },
+        {
+          text: 'Actually great launch',
+          startSec: 2.4,
+          endSec: 4.5,
+          words: [
+            { text: 'Actually', startSec: 2.4, endSec: 3.1 },
+            { text: 'great', startSec: 3.2, endSec: 3.8 },
+            { text: 'launch', startSec: 3.8, endSec: 4.5 },
+          ],
+        },
+      ],
+    },
+  ])
+
+  const analyzed = await executeNativeAnalyze(
+    { mode: 'transcript', minPauseSec: 0.6, keepPauseSec: 0.2, query: 'launch' },
+    { assertCurrent },
+  )
+  assert.equal(analyzed.mode, 'transcript')
+  assert.equal(analyzed.subtitleCount, 2)
+  assert.equal(analyzed.pauses.length, 1)
+  assert.equal(analyzed.fillers.length, 1)
+  assert.equal(analyzed.matches.length, 1)
+
+  const beforeDry = store().project
+  const dryCut = await edit(
+    [{ type: 'cut_transcript_ranges', mode: 'pauses', minPauseSec: 0.6, keepPauseSec: 0.2 }],
+    { validateOnly: true },
+  )
+  assert.equal(dryCut.persisted, false)
+  assert.equal(dryCut.undoStep, false)
+  assert.equal(dryCut.results[0].count, 1)
+  assert.equal(store().project, beforeDry)
+
+  const undoBefore = undoCount()
+  const fillerCut = await edit([
+    { type: 'cut_transcript_ranges', mode: 'fillers', fillerPhrases: ['um'] },
+  ])
+  assert.equal(fillerCut.undoStep, true)
+  assert.equal(undoCount(), undoBefore + 1)
+  assert.ok(fillerCut.results[0].cutDurationSec > 0.2)
+  assert.ok(readNativeSnapshot({ view: 'full', revision: 4 }).durationSec < 5.8)
+
+  await store().undo()
+  const restored = readNativeSnapshot({ view: 'full', revision: 3 })
+  assert.equal(restored.durationSec, 6)
+  assert.equal(restored.subtitles.at(0).startSec, 0.2)
+
+  // Explicit ranges, filler padding near timeline end (clamped safely), & TRACK_LOCKED guard
+  await edit([{ type: 'cut_transcript_ranges', mode: 'ranges', ranges: [{ fromSec: 1.4, toSec: 2.2 }] }])
+  assert.equal(Number(readNativeSnapshot({ view: 'summary', revision: 4 }).durationSec.toFixed(2)), 5.2)
+
+  await edit([
+    {
+      type: 'import_subtitles',
+      mode: 'replace',
+      cues: [{ text: 'end um', startSec: 4.5, endSec: 5.2, words: [{ text: 'end', startSec: 4.5, endSec: 4.9 }, { text: 'um', startSec: 4.95, endSec: 5.2 }] }],
+    },
+    { type: 'cut_transcript_ranges', mode: 'fillers', paddingSec: 0.2 },
+  ])
+  assert.ok(readNativeSnapshot({ view: 'summary', revision: 5 }).durationSec < 5.1)
+
+  await edit([{ type: 'set_track_state', trackId: 'v-talk', locked: true }])
+  await assert.rejects(
+    edit([{ type: 'cut_transcript_ranges', mode: 'ranges', ranges: [{ fromSec: 0.2, toSec: 0.6 }] }]),
+    (error) => error.code === 'TRACK_LOCKED',
+  )
+})
+
+test('Phase 2 set_marker, remove_marker, and set_audio_ducking full projection and undo/redo (#phase2)', async () => {
+  // AC-M2-06
+  const audioItem = {
+    id: 'bgm-source',
+    name: 'BGM Audio',
+    blob: new File(['bgm audio'], 'bgm.wav', { type: 'audio/wav' }),
+    type: 'audio',
+    metadata: { duration: 10, fileSize: 100, codec: 'pcm', sampleRate: 44100, channels: 2, hasVideo: false, hasAudio: true },
+    thumbnailUrl: null,
+    waveformData: null,
+    fileHandle: null,
+  }
+  const baseProject = store().project
+  useProjectStore.setState({
+    project: { ...baseProject, mediaLibrary: { ...baseProject.mediaLibrary, items: [...baseProject.mediaLibrary.items, audioItem] } },
+  })
+  await edit([
+    { type: 'add_track', trackType: 'video', trackId: 'v1' },
+    { type: 'add_clip', trackId: 'v1', clipId: 'voice-clip', mediaId: 'source', startSec: 0, durationSec: 5 },
+    { type: 'add_track', trackType: 'audio', trackId: 'a1' },
+    { type: 'add_clip', trackId: 'a1', clipId: 'music-clip', mediaId: 'bgm-source', startSec: 0, durationSec: 5 },
+  ])
+
+  const undoBefore = undoCount()
+  const markerAndDuck = await edit([
+    { type: 'set_marker', timeSec: 1.0, durationSec: 0.5, label: 'Drop 1', color: '#ef4444', kind: 'chapter', comment: 'First beat' },
+    { type: 'set_marker', timeSec: 3.0, label: 'Temp Marker' },
+    { type: 'set_audio_ducking', clipId: 'voice-clip', audioType: 'dialogue' },
+    { type: 'set_audio_ducking', clipId: 'music-clip', audioType: 'music', enabled: true, amountDb: 15, attackMs: 220, releaseMs: 320, holdMs: 180 },
+  ])
+  assert.equal(undoCount(), undoBefore + 1)
+  const firstMarkerId = markerAndDuck.results[0].markerId
+  const secondMarkerId = markerAndDuck.results[1].markerId
+  assert.equal(markerAndDuck.results[1].color, '#3b82f6')
+
+  await edit([
+    { type: 'set_marker', markerId: firstMarkerId, label: 'Drop 1 Final', timeSec: 1.25 },
+    { type: 'remove_marker', markerId: secondMarkerId },
+  ])
+
+  const snap = readNativeSnapshot({ view: 'full', revision: 3 })
+  assert.equal(snap.markerCount, 1)
+  assert.equal(snap.markers.length, 1)
+  assert.equal(snap.markers[0].id, firstMarkerId)
+  assert.equal(snap.markers[0].label, 'Drop 1 Final')
+  assert.equal(snap.markers[0].timeSec, 1.25)
+
+  const voiceSnap = snap.clips.find((row) => row.id === 'voice-clip')
+  const musicSnap = snap.clips.find((row) => row.id === 'music-clip')
+  assert.equal(voiceSnap.audioType, 'dialogue')
+  assert.equal(musicSnap.audioType, 'music')
+  assert.deepEqual(musicSnap.liveDucking, { enabled: true, amountDb: 15, attackMs: 220, releaseMs: 320, holdMs: 180 })
+
+  await store().undo()
+  const afterUndo = readNativeSnapshot({ view: 'full', revision: 2 })
+  assert.equal(afterUndo.markerCount, 2)
+  assert.equal(afterUndo.markers.find((m) => m.id === secondMarkerId)?.color, '#3b82f6')
+
+  await store().redo()
+  const afterRedo = readNativeSnapshot({ view: 'full', revision: 3 })
+  assert.equal(afterRedo.markerCount, 1)
+  assert.equal(afterRedo.markers[0].label, 'Drop 1 Final')
+
+  // P1-4 / P2: preserve enabled: false when updating amountDb, and omit audioType when cleared via 'none'
+  const disabledUpdate = await edit([
+    { type: 'set_audio_ducking', clipId: 'music-clip', enabled: false },
+  ])
+  assert.equal(disabledUpdate.results[0].liveDucking.enabled, false)
+  const updateAmountWhileDisabled = await edit([
+    { type: 'set_audio_ducking', clipId: 'music-clip', amountDb: 20 },
+  ])
+  assert.equal(updateAmountWhileDisabled.results[0].liveDucking.enabled, false)
+  assert.equal(updateAmountWhileDisabled.results[0].liveDucking.amountDb, 20)
+
+  const clearedAudioType = await edit([
+    { type: 'set_audio_ducking', clipId: 'music-clip', audioType: 'none' },
+  ])
+  assert.equal(Object.hasOwn(clearedAudioType.results[0], 'audioType'), false)
+  const musicAfterClear = readNativeSnapshot({ view: 'full', revision: 6 }).clips.find((row) => row.id === 'music-clip')
+  assert.equal(musicAfterClear.audioType, undefined)
+})
+
+test('Phase 2 real BeatDetectionEngine, extractHighlights, and sync_clips_to_beats on synthetic 120 BPM & 96 BPM PCM (#phase2)', async () => {
+  // AC-M2-03, AC-M2-07
+  // Empty mediaLibrary truly exercises no-audio-source rejection before WebAudio decoding
+  const initialProject = store().project
+  useProjectStore.setState({ project: { ...initialProject, mediaLibrary: { ...initialProject.mediaLibrary, items: [] } } })
+  await assert.rejects(
+    executeNativeAnalyze({ mode: 'beats' }, { assertCurrent }),
+    (error) => error.code === 'audio-analysis-failed',
+  )
+  useProjectStore.setState({ project: initialProject })
+
+  const bgmFile = new File(['pcm synth'], 'bgm-120bpm.wav', { type: 'audio/wav' })
+  const bgmItem = {
+    id: 'bgm-media',
+    name: 'BGM 120',
+    blob: bgmFile,
+    type: 'audio',
+    metadata: { duration: 10, fileSize: 100, codec: 'pcm', sampleRate: 44100, channels: 1, hasVideo: false, hasAudio: true },
+    thumbnailUrl: null,
+    waveformData: null,
+    fileHandle: null,
+  }
+  const currentProject = store().project
+  useProjectStore.setState({
+    project: { ...currentProject, mediaLibrary: { ...currentProject.mediaLibrary, items: [...currentProject.mediaLibrary.items, bgmItem] } },
+  })
+
+  await edit([
+    { type: 'add_track', trackType: 'audio', trackId: 'a-bgm' },
+    { type: 'add_clip', trackId: 'a-bgm', clipId: 'bgm-clip', mediaId: 'bgm-media', startSec: 0, durationSec: 10 },
+    { type: 'add_clip', trackId: 'a-bgm', clipId: 'bgm-trimmed', mediaId: 'bgm-media', startSec: 10, sourceInSec: 5, sourceOutSec: 10, durationSec: 5 },
+    { type: 'add_track', trackType: 'video', trackId: 'v-broll' },
+    { type: 'add_clip', trackId: 'v-broll', clipId: 'broll-1', mediaId: 'source', startSec: 0, durationSec: 4 },
+    { type: 'add_clip', trackId: 'v-broll', clipId: 'broll-2', mediaId: 'source', startSec: 4, durationSec: 4 },
+  ])
+
+  // P1-5a: ultra-short audio (< 2048 samples) fails cleanly with audio-analysis-failed instead of RangeError
+  const shortBuf = createSyntheticBeatAudioBuffer({ durationSec: 0.02, sampleRate: 44100, bpm: 120 })
+  await assert.rejects(
+    executeNativeAnalyze({ mode: 'beats', clipId: 'bgm-clip' }, { assertCurrent, decodeAudioBuffer: async () => shortBuf }),
+    (error) => error.code === 'audio-analysis-failed',
+  )
+
+  const syntheticAudio = createSyntheticBeatAudioBuffer({ durationSec: 10, sampleRate: 44100, bpm: 120, peakStartSec: 5, peakEndSec: 10 })
+  const decodeAudioBuffer = async () => syntheticAudio
+
+  const beatRes = await executeNativeAnalyze(
+    { mode: 'beats', clipId: 'bgm-clip', minBpm: 90, maxBpm: 150, sensitivity: 0.5 },
+    { assertCurrent, decodeAudioBuffer },
+  )
+  assert.equal(beatRes.mode, 'beats')
+  assert.equal(beatRes.clipId, 'bgm-clip')
+  assert.ok(beatRes.confidence > 0.3, `expected genuine beat confidence > 0.3, got ${beatRes.confidence}`)
+  assert.ok(beatRes.bpm >= 110 && beatRes.bpm <= 130, `expected BPM near 120, got ${beatRes.bpm}`)
+  assert.ok(beatRes.beatCount >= 10, `expected >= 10 real detected beats, got ${beatRes.beatCount}`)
+
+  // P1-5b & non-120 BPM falsification: 96 BPM with soft intro beat aligns downbeats & snapToDownbeats matches downbeats[]
+  const interval96 = 60 / 96
+  const samples96 = Float32Array.from({ length: 10 * 44100 }, (_, sampleIndex) => {
+    const t = sampleIndex / 44100
+    const hum = 0.004 * Math.sin(2 * Math.PI * 60 * t)
+    if (t < interval96) return hum
+    const beatIndex = Math.floor((t - interval96) / interval96 + 1e-9)
+    const beatTime = beatIndex * interval96 + interval96
+    const dt = t - beatTime
+    if (dt < 0 || dt >= 0.055 || beatTime > 9.9) return hum
+    const amp = beatIndex === 0 ? 0.22 : (beatIndex % 4 === 1 ? 0.95 : 0.45)
+    return hum + amp * Math.exp(-dt * 50) * Math.sin(2 * Math.PI * 160 * dt)
+  })
+  const synthetic96 = {
+    sampleRate: 44100,
+    length: samples96.length,
+    numberOfChannels: 1,
+    duration: 10,
+    getChannelData: () => samples96,
+    copyFromChannel: (dest, _ch, start = 0) => { dest.set(samples96.subarray(start, start + dest.length)) },
+    copyToChannel: () => {},
+  }
+  const beat96Downbeats = await executeNativeAnalyze(
+    { mode: 'beats', clipId: 'bgm-clip', minBpm: 70, maxBpm: 140, snapToDownbeats: true },
+    { assertCurrent, decodeAudioBuffer: async () => synthetic96 },
+  )
+  assert.ok(beat96Downbeats.confidence > 0.3, `expected 96 BPM confidence > 0.3, got ${beat96Downbeats.confidence}`)
+  assert.ok(beat96Downbeats.bpm >= 88 && beat96Downbeats.bpm <= 104, `expected BPM near 96, got ${beat96Downbeats.bpm}`)
+  assert.deepEqual(
+    beat96Downbeats.beats.map((b) => Number(b.timeSec.toFixed(3))),
+    beat96Downbeats.downbeats.map((t) => Number(t.toFixed(3))),
+  )
+
+  // P1-5c: minBpm > 200 and minClipDurationSec > 60 without explicit max bounds do not invert
+  const highMinBpm = await executeNativeAnalyze(
+    { mode: 'beats', clipId: 'bgm-clip', minBpm: 210 },
+    { assertCurrent, decodeAudioBuffer },
+  )
+  assert.equal(highMinBpm.mode, 'beats')
+
+  // P1-1: highlights on trimmed clip strictly stay within clip timeline window [10, 15] & positive duration
+  const trimmedHighlight = await executeNativeAnalyze(
+    { mode: 'highlights', clipId: 'bgm-trimmed', targetClipCount: 2, minClipDurationSec: 2, maxClipDurationSec: 4 },
+    { assertCurrent, decodeAudioBuffer },
+  )
+  assert.ok(trimmedHighlight.highlightCount >= 1)
+  for (const h of trimmedHighlight.highlights) {
+    assert.ok(h.durationSec > 0.5, `expected positive trimmed highlight duration, got ${h.durationSec}`)
+    assert.ok(h.startSec >= 10 - 1e-3 && h.endSec <= 15 + 1e-3, `trimmed highlight [${h.startSec}, ${h.endSec}] escaped [10, 15]`)
+  }
+  const longMinHighlight = await executeNativeAnalyze(
+    { mode: 'highlights', clipId: 'bgm-clip', minClipDurationSec: 70 },
+    { assertCurrent, decodeAudioBuffer },
+  )
+  assert.equal(longMinHighlight.mode, 'highlights')
+
+  const highlightRes = await executeNativeAnalyze(
+    { mode: 'highlights', clipId: 'bgm-clip', targetClipCount: 2, minClipDurationSec: 2, maxClipDurationSec: 4 },
+    { assertCurrent, decodeAudioBuffer },
+  )
+  assert.equal(highlightRes.mode, 'highlights')
+  assert.ok(highlightRes.highlightCount >= 1)
+  assert.ok(highlightRes.highlights.some((seg) => seg.endSec > 5 && seg.score > 1))
+
+  // Cut-to-beats using real detected beat timestamps + single-step undo
+  const beatTimes = beatRes.beats.map((row) => row.timeSec)
+  const syncCut = await edit([
+    { type: 'sync_clips_to_beats', clipIds: ['broll-1', 'broll-2'], beats: beatTimes, syncMode: 'cut-to-beats', beatsPerClip: 2 },
+  ])
+  assert.equal(syncCut.results[0].count, 2)
+  assert.equal(syncCut.results[0].syncMode, 'cut-to-beats')
+  const synced1 = clip('broll-1')
+  const synced2 = clip('broll-2')
+  assert.ok(Math.abs(synced1.startTime - beatTimes.at(0)) < 1e-4)
+  assert.ok(Math.abs(synced2.startTime - beatTimes.at(2)) < 1e-4)
+  assert.ok(synced1.startTime + synced1.duration <= synced2.startTime + 1e-5)
+
+  await store().undo()
+  assert.equal(clip('broll-1').startTime, 0)
+  assert.equal(clip('broll-1').duration, 4)
+  assert.equal(clip('broll-2').startTime, 4)
+
+  // Preserve-duration driven directly by audioClipId + decodeAudioBuffer (short clips fit inside 0.5s beat spacing)
+  await edit([
+    { type: 'add_track', trackType: 'video', trackId: 'v-snap' },
+    { type: 'add_clip', trackId: 'v-snap', clipId: 'snap-1', mediaId: 'source', startSec: 0, durationSec: 0.35 },
+    { type: 'add_clip', trackId: 'v-snap', clipId: 'snap-2', mediaId: 'source', startSec: 2, durationSec: 0.35 },
+  ])
+  const syncPreserve = await edit(
+    [{ type: 'sync_clips_to_beats', clipIds: ['snap-1', 'snap-2'], audioClipId: 'bgm-clip', syncMode: 'preserve-duration', beatsPerClip: 1 }],
+    {},
+    { decodeAudioBuffer },
+  )
+  assert.equal(syncPreserve.results[0].syncMode, 'preserve-duration')
+  assert.equal(clip('snap-1').duration, 0.35)
+  assert.ok(clip('snap-1').startTime + clip('snap-1').duration <= clip('snap-2').startTime)
+  await store().undo()
+
+  // Overlap and source-bound guards on sync_clips_to_beats
+  await assert.rejects(
+    edit([{ type: 'sync_clips_to_beats', clipIds: ['broll-1', 'broll-2'], beats: [0.5, 1.0, 1.5, 2.0], syncMode: 'preserve-duration' }]),
+    (error) => error.code === 'clip_overlap',
+  )
+  await assert.rejects(
+    edit([{ type: 'sync_clips_to_beats', clipIds: ['broll-1'], beats: [0, 7, 14], syncMode: 'cut-to-beats', beatsPerClip: 1 }]),
+    (error) => error.code === 'invalid-json',
   )
 })

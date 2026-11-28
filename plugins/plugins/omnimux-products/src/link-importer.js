@@ -1746,7 +1746,9 @@ export async function importProductFromUrl(args) {
           text: shop.fields.text || shop.fields.name || '',
         },
       })
-      // Overlay structured shop fields (price/brand/sku/promotion/images).
+      // Overlay structured shop fields (price/brand/sku/promotion/images),
+      // clearing title-derived brand fallback first so dashed selling points never leak into brand.
+      fields.brand = ''
       for (const key of ['name', 'brand', 'price', 'sku', 'promotion', 'selling_points', 'features']) {
         const v = typeof shop.fields[key] === 'string' ? shop.fields[key].trim() : ''
         if (v) fields[key] = v
@@ -1778,7 +1780,13 @@ export async function importProductFromUrl(args) {
       return { ...draft, ...gallery }
     } catch (error) {
       if (error instanceof LinkImportError) throw error
-      // Fall through to generic page read when shop seam fails.
+      if (/** @type {any} */ (error)?.code === 'link-import-empty') {
+        throw new LinkImportError('link-import-empty', error.message || 'no product information was found on the page')
+      }
+      throw new LinkImportError(
+        'link-import-failed',
+        error instanceof Error ? error.message : 'TikTok Shop product import failed',
+      )
     }
   }
 

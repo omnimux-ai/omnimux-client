@@ -1,7 +1,7 @@
 /** The recovery assistant's quick-recovery card for the original environment's Host startup limit (#1569). */
 import { Timer } from 'lucide-react'
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '../../../dsh-plugin-desktop/src/native-ui/components/ui/card.tsx'
-import { RecoveryActionLink } from '../../../dsh-plugin-desktop/src/native-ui/shared/RecoveryWindowPrimitives.tsx'
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from './components/ui/card.tsx'
+import { RecoveryActionLink } from './shared/RecoveryWindowPrimitives.tsx'
 import { DEFAULT_HOST_STARTUP_TIMEOUT, HOST_STARTUP_TIMEOUT_PRESETS, hostStartupLimitTitle, hostStartupTimeoutLabel,
   type DesktopStartupTimeoutFailure, type HostStartupTimeout } from '../host-startup-limit.ts'
 

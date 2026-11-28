@@ -5,7 +5,7 @@
  */
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { test } from 'node:test'
@@ -247,4 +247,71 @@ test('app/scripts/worktree.sh disables direct-push ship and guard-worktree no lo
 test('app/scripts/worktree.sh cmd_remove no longer suggests ship', () => {
   const worktreeScriptPath = join(appDir, 'scripts', 'worktree.sh')
   assert.doesNotMatch(readFileSync(worktreeScriptPath, 'utf8'), /'ship'\s+it/u)
+})
+
+test('app/scripts/ops/guard-worktree.mjs allows confirmed non-Git targets across mount boundaries', () => {
+  const guardScriptPath = join(appDir, 'scripts', 'ops', 'guard-worktree.mjs')
+  // app/scripts/ops/guard-worktree.mjs treats any `tmp` path segment (e.g. Linux /tmp) as ephemeral before gitFileState.
+  const scratchParent = [process.env.RUNNER_TEMP, tmpdir(), '/dev/shm'].find(
+    candidate => candidate && existsSync(candidate) && !candidate.split(/[\\/]/u).includes('tmp'),
+  )
+  assert.ok(scratchParent, 'expected a writable temp parent without a `tmp` segment')
+  const scratch = mkdtempSync(join(scratchParent, 'app-guard-mount-'))
+  try {
+    const mountBin = join(scratch, 'mount-bin')
+    const extraErrorBin = join(scratch, 'extra-error-bin')
+    const nonGitDir = join(scratch, 'external/backups/agent/batch-1')
+    const nonGitFile = join(nonGitDir, 'backup.zip')
+    const brokenMount = join(scratch, 'broken-mount')
+    mkdirSync(mountBin, { recursive: true })
+    mkdirSync(extraErrorBin, { recursive: true })
+    mkdirSync(join(brokenMount, '.git'), { recursive: true })
+    writeFileSync(
+      join(mountBin, 'git'),
+      '#!/bin/sh\necho "fatal: not a git repository (or any parent up to mount point /Volumes)" >&2\necho "Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set)." >&2\nexit 128\n',
+      { mode: 0o755 },
+    )
+    writeFileSync(
+      join(extraErrorBin, 'git'),
+      '#!/bin/sh\necho "fatal: not a git repository (or any parent up to mount point /Volumes)" >&2\necho "Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set)." >&2\necho "fatal: Permission denied" >&2\nexit 128\n',
+      { mode: 0o755 },
+    )
+
+    const runGuard = (payload, binDir) => {
+      const result = spawnSync(process.execPath, [guardScriptPath], {
+        cwd: appDir,
+        env: { ...cleanEnv(), PATH: binDir },
+        encoding: 'utf8',
+        input: JSON.stringify({ hook_event_name: 'PreToolUse', cwd: appDir, ...payload }),
+      })
+      assert.equal(result.status, 0, result.stderr)
+      return JSON.parse(result.stdout).hookSpecificOutput
+    }
+
+    assert.equal(
+      runGuard({ tool_name: 'write', tool_input: { file_path: nonGitFile } }, mountBin).permissionDecision,
+      'allow',
+    )
+    assert.equal(
+      runGuard(
+        {
+          tool_name: 'bash',
+          tool_input: { command: `mkdir -p ${nonGitDir} && cp /tmp/source-app/Info.plist ${nonGitFile}` },
+        },
+        mountBin,
+      ).permissionDecision,
+      'allow',
+    )
+    const repoOut = runGuard({ tool_name: 'write', tool_input: { file_path: join(appDir, 'package.json') } }, mountBin)
+    assert.equal(repoOut.permissionDecision, 'deny')
+    assert.match(repoOut.permissionDecisionReason, /Git 状态读取失败/)
+    const brokenOut = runGuard({ tool_name: 'write', tool_input: { file_path: join(brokenMount, 'notes.txt') } }, mountBin)
+    assert.equal(brokenOut.permissionDecision, 'deny')
+    assert.match(brokenOut.permissionDecisionReason, /Git 状态读取失败/)
+    const extraOut = runGuard({ tool_name: 'write', tool_input: { file_path: nonGitFile } }, extraErrorBin)
+    assert.equal(extraOut.permissionDecision, 'deny')
+    assert.match(extraOut.permissionDecisionReason, /Git 状态读取失败/)
+  } finally {
+    rmSync(scratch, { recursive: true, force: true })
+  }
 })

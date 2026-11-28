@@ -4,10 +4,87 @@ import { closeSync, createReadStream, existsSync, mkdtempSync, openSync, readFil
 import { tmpdir } from 'node:os'
 import { join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { assertAppImage, assertDebArchive, assertElfExecutable } from '../../dsh-plugin-desktop/scripts/verify-linux-artifacts.ts'
-import { assertPortableExecutable } from '../../dsh-plugin-desktop/scripts/verify-win-installer.ts'
+import { assertAppImage, assertDebArchive, assertElfExecutable } from './verify-linux-artifacts.ts'
 import { packagingStep } from './packaging-step.ts'
 import { linuxPackageTargets } from './package-targets.ts'
+
+/** Verify a complete in-memory Windows PE image. */
+export function assertPortableExecutableBuffer(data: Buffer, label: string, source: string): void {
+  if (data.byteLength < 68 || data.subarray(0, 2).toString('ascii') !== 'MZ') {
+    throw new Error(`${label} does not have a Windows PE header: ${source}`)
+  }
+  const peOffset = data.readUInt32LE(0x3c)
+  if (peOffset > data.byteLength - 4) {
+    throw new Error(`${label} has an invalid Windows PE offset: ${source}`)
+  }
+  if (!data.subarray(peOffset, peOffset + 4).equals(Buffer.from('PE\0\0'))) {
+    throw new Error(`${label} does not have a Windows PE signature: ${source}`)
+  }
+}
+
+/** Paths returned after Windows installer verification succeeds. */
+export interface WindowsInstallerArtifacts {
+  readonly installerPath: string
+  readonly applicationPath: string
+}
+
+/** Injectable Windows installer verification boundary. */
+export interface WindowsInstallerVerificationOptions {
+  readonly desktopRoot: string
+  readonly version: string
+}
+
+function readPackageVersion(desktopRoot: string): string {
+  const manifest = JSON.parse(readFileSync(join(desktopRoot, 'package.json'), 'utf8')) as { version?: unknown }
+  if (typeof manifest.version !== 'string' || manifest.version.length === 0) {
+    throw new Error(`desktop package at ${desktopRoot} has no valid version`)
+  }
+  return manifest.version
+}
+
+/** Verify that a generated Windows artifact has a valid PE header. */
+export function assertPortableExecutable(path: string, label: string): void {
+  const stat = statSync(path)
+  if (!stat.isFile() || stat.size < 68) {
+    throw new Error(`${label} is not a non-empty regular file: ${path}`)
+  }
+  const descriptor = openSync(path, 'r')
+  const dosHeader = Buffer.alloc(64)
+  try {
+    const dosBytesRead = readSync(descriptor, dosHeader, 0, dosHeader.byteLength, 0)
+    if (dosBytesRead !== dosHeader.byteLength || dosHeader.subarray(0, 2).toString('ascii') !== 'MZ') {
+      throw new Error(`${label} does not have a Windows PE header: ${path}`)
+    }
+    const peOffset = dosHeader.readUInt32LE(0x3c)
+    if (peOffset > stat.size - 4) {
+      throw new Error(`${label} has an invalid Windows PE offset: ${path}`)
+    }
+    const signature = Buffer.alloc(4)
+    const signatureBytesRead = readSync(descriptor, signature, 0, signature.byteLength, peOffset)
+    if (signatureBytesRead !== signature.byteLength || !signature.equals(Buffer.from('PE\0\0'))) {
+      throw new Error(`${label} does not have a Windows PE signature: ${path}`)
+    }
+  } finally {
+    closeSync(descriptor)
+  }
+}
+
+function defaultInstallerOptions(): WindowsInstallerVerificationOptions {
+  const desktopRoot = resolve(fileURLToPath(new URL('..', import.meta.url)))
+  return { desktopRoot, version: readPackageVersion(desktopRoot) }
+}
+
+/** Verify the exact NSIS installer and unpacked application executable. */
+export function verifyWindowsInstaller(
+  options: WindowsInstallerVerificationOptions = defaultInstallerOptions(),
+): WindowsInstallerArtifacts {
+  const distDir = join(options.desktopRoot, 'dist')
+  const installerPath = join(distDir, `OmniMux-${options.version}-x64-Setup.exe`)
+  const applicationPath = join(distDir, 'win-unpacked', 'OmniMux.exe')
+  assertPortableExecutable(installerPath, 'Windows NSIS installer')
+  assertPortableExecutable(applicationPath, 'unpacked Windows application')
+  return { installerPath, applicationPath }
+}
 
 const uninstallExecutable = 'Uninstall OmniMux.exe'
 const uninstallIcon = 'uninstallerIcon.ico'

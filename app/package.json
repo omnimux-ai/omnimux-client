@@ -1506,10 +1506,10 @@
     "test": "yarn workspace dsh-plugin-desktop test && yarn workspace dsh-desktop-next test && yarn workspace dsh-community-market test",
     "test:bilingual-docs": "node --test scripts/bilingual-docs.test.mjs",
     "check:bilingual-docs": "yarn test:bilingual-docs && node scripts/verify-bilingual-docs.mjs",
-    "test:architecture-gates": "node --test scripts/market-dependency-direction.test.mjs",
+    "test:architecture-gates": "node --test scripts/market-dependency-direction.test.mjs scripts/verify-desktop-boundaries.test.mjs",
     "test:script-paths": "node --test scripts/omnimux-paths.test.mjs",
     "test:release-guards": "node --test scripts/sign-release-manifest.test.mjs scripts/verify-version-advance.test.mjs scripts/verify-version.test.mjs scripts/build-release-metadata.test.mjs scripts/r2-dist-sync.test.mjs",
-    "check:architecture": "yarn test:architecture-gates && node scripts/verify-market-dependency-direction.mjs",
+    "check:architecture": "yarn test:architecture-gates && node scripts/verify-market-dependency-direction.mjs && node scripts/verify-desktop-boundaries.mjs",
     "check:vendored-runtime": "node scripts/sync-vendored-runtime.mjs --check",
     "check:layout": "yarn check:bilingual-docs && yarn check:architecture && yarn check:vendored-runtime && node scripts/verify-layout.mjs",
     "check": "yarn check:layout && yarn workspace dsh-community-fabric check && yarn workspace dsh-community-market check && yarn workspace dsh-plugin-desktop check && yarn workspace dsh-desktop-next check && yarn test:script-paths && yarn test:release-guards && yarn test:next-compat",
@@ -1576,5 +1576,5 @@
     "test:session-reference-compat": "node --test scripts/session-reference-compat.test.mjs",
     "test:listed-bundles-compat": "node --test scripts/listed-bundles-compat.test.mjs"
   },
-  "version": "2.0.25"
+  "version": "2.0.26"
 }

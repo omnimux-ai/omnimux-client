@@ -18,11 +18,15 @@ it('declares every official optional bundle as a discoverable, version-aligned i
   }
 })
 
-it('archives the application like upstream Desktop while keeping fuses and native inventory aligned with Stable', () => {
-  const next = read('../package.json'); const stable = read('../../dsh-plugin-desktop/package.json')
-  expect(next.version).toBe(stable.version)
+it('archives the application like upstream Desktop with expected fuses and native inventory', () => {
+  const next = read('../package.json')
+  expect(next.version).toMatch(/^\d+\.\d+\.\d+/u)
   expect(next.desktopName).toBe(`${next.build.linux.executableName}.desktop`)
-  expect(next.repository).toEqual({ type: 'git', url: stable.repository.url, directory: 'dsh-desktop-next' })
+  expect(next.repository).toEqual({
+    type: 'git',
+    url: 'git+https://github.com/anywhere-labs/deepseek-harness-desktop.git',
+    directory: 'dsh-desktop-next',
+  })
   expect(next.build.appId).toBe('ai.omnimux.desktop')
   expect(next.build.asar).toBe(true)
   for (const platform of ['mac', 'win', 'linux']) expect(next.build[platform].asar, platform).toBeUndefined()
@@ -51,7 +55,15 @@ it('archives the application like upstream Desktop while keeping fuses and nativ
   expect(next.build.asarUnpack.every((pattern: string) => pattern.startsWith('**/') || pattern.startsWith('${env.DSH_NEXT_PAYLOAD_DIR}/'))).toBe(true)
   expect(next.build.afterPack).toBe('./scripts/verify-packaged.ts')
   expect(next.build.afterAllArtifactBuild).toBe('./scripts/verify-fuses.ts')
-  expect(next.build.electronFuses).toEqual(stable.build.electronFuses)
+  expect(next.build.electronFuses).toEqual({
+    enableCookieEncryption: true,
+    enableEmbeddedAsarIntegrityValidation: false,
+    enableNodeCliInspectArguments: false,
+    enableNodeOptionsEnvironmentVariable: false,
+    onlyLoadAppFromAsar: false,
+    resetAdHocDarwinSignature: true,
+    runAsNode: true,
+  })
   expect(next.build.mac.artifactName).toBe('OmniMux-${version}-${arch}.${ext}')
   expect(next.build.mac.x64ArchFiles).toBeUndefined()
   expect(next.build.mac.extraResources).toEqual([{ from: '${env.DSH_NEXT_RUNTIME_DIR}', to: 'runtime' }, { from: '${env.DSH_NEXT_PAYLOAD_DIR}/package.json', to: 'app/package.json' }])

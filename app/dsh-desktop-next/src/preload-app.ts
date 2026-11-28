@@ -12,7 +12,7 @@ import { onOpenSettings } from './preload-settings.ts'
 import { createDesktopKeyboardBridge } from './preload-keyboard.ts'
 import { createDesktopBrowserBridge } from './preload-browser.ts'
 import { createDesktopFileActionsBridge, createDesktopFileDragBridge } from './upstream-family-preload.ts'
-import { createNativeFilePickerBridge } from '../../dsh-plugin-desktop/src/native-file-picker-contract.ts'
+import { createNativeFilePickerBridge } from './native-file-picker-contract.ts'
 
 if (location.protocol === 'dsh-app:' && location.hostname === 'app') {
   let documentId: string | undefined

@@ -54,7 +54,15 @@ export function speechToTextMembershipOptions(modelId) {
  *   store?: { resolve: () => Promise<string | undefined> },
  *   credentials?: { resolve: (ref: string) => Promise<{ value?: string } | undefined> },
  * }} input
- * @returns {Promise<{ mode: 'live', model: string, text: string }>}
+ * @returns {Promise<{
+ *   mode: 'live',
+ *   model: string,
+ *   text: string,
+ *   language?: string,
+ *   duration?: number,
+ *   words?: Array<{ word: string, start: number, end: number }>,
+ *   segments?: Array<{ id?: string | number, start: number, end: number, text: string, words?: Array<{ word: string, start: number, end: number }> }>,
+ * }>}
  */
 export async function executeOmnimuxSpeechToText(input) {
   if (!input || typeof input.audio !== 'string' || !input.audio.trim()) {
@@ -115,7 +123,15 @@ export async function executeOmnimuxSpeechToText(input) {
  *   fetcher?: typeof fetch,
  *   signal?: AbortSignal,
  * }} input
- * @returns {Promise<{ mode: 'live', model: string, text: string }>}
+ * @returns {Promise<{
+ *   mode: 'live',
+ *   model: string,
+ *   text: string,
+ *   language?: string,
+ *   duration?: number,
+ *   words?: Array<{ word: string, start: number, end: number }>,
+ *   segments?: Array<{ id?: string | number, start: number, end: number, text: string, words?: Array<{ word: string, start: number, end: number }> }>,
+ * }>}
  */
 export async function transcribeSpeechToTextRequest(input) {
   const publicUrl = isPublicAudioUrl(input.audio) ? input.audio.trim() : ''
@@ -181,7 +197,10 @@ export async function transcribeSpeechToTextRequest(input) {
     if (!text?.trim()) {
       throw new OmnimuxError('omnimux-invalid-response', 'speech-to-text response carried no text')
     }
-    return { mode: /** @type {const} */ ('live'), model: effectiveModel, text }
+    const verboseMeta = responseFormat === 'verbose_json' ? extractVerboseTranscriptMeta(body) : undefined
+    return verboseMeta
+      ? { mode: /** @type {const} */ ('live'), model: effectiveModel, text, ...verboseMeta }
+      : { mode: /** @type {const} */ ('live'), model: effectiveModel, text }
   }
 
   try {
@@ -227,4 +246,53 @@ function safeTranscriptionError(message, apiKey) {
     .replace(/\b(?:sk|pat)-[a-z0-9_-]+/gi, '[redacted]')
     .replace(/\s+/g, ' ').trim()
   return safe.slice(0, 1024)
+}
+
+function normalizeWordTimings(rawWords, limit = 20000) {
+  if (!Array.isArray(rawWords)) return undefined
+  const words = []
+  for (const entry of rawWords) {
+    if (words.length >= limit) break
+    if (!entry || typeof entry !== 'object') continue
+    const token = typeof entry.word === 'string' ? entry.word.trim() : typeof entry.text === 'string' ? entry.text.trim() : ''
+    if (!token || !Number.isFinite(entry.start) || !Number.isFinite(entry.end) || entry.start < 0 || entry.end < entry.start) continue
+    words.push({ word: token.slice(0, 120), start: entry.start, end: entry.end })
+  }
+  return words
+}
+
+function extractVerboseTranscriptMeta(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined
+  const data = raw.data && typeof raw.data === 'object' && !Array.isArray(raw.data) ? raw.data : undefined
+  const root = data && (data.segments !== undefined || data.words !== undefined || data.language !== undefined || data.duration !== undefined)
+    ? data
+    : raw
+  const meta = {}
+  const languageRaw = typeof root.language === 'string' ? root.language.trim() : ''
+  if (languageRaw) meta.language = languageRaw.slice(0, 32)
+  if (typeof root.duration === 'number' && Number.isFinite(root.duration) && root.duration >= 0) {
+    meta.duration = root.duration
+  }
+  const words = normalizeWordTimings(root.words)
+  if (words !== undefined) meta.words = words
+  if (Array.isArray(root.segments)) {
+    const segments = []
+    for (const seg of root.segments) {
+      if (segments.length >= 5000) break
+      if (!seg || typeof seg !== 'object') continue
+      const text = typeof seg.text === 'string' ? seg.text.trim() : ''
+      if (!text || !Number.isFinite(seg.start) || !Number.isFinite(seg.end) || seg.start < 0 || seg.end < seg.start) continue
+      const segWords = normalizeWordTimings(seg.words, 2000)
+      segments.push({
+        ...(typeof seg.id === 'number' && Number.isSafeInteger(seg.id) ? { id: seg.id }
+          : typeof seg.id === 'string' && seg.id.trim() ? { id: seg.id.trim().slice(0, 64) } : {}),
+        start: seg.start,
+        end: seg.end,
+        text: text.slice(0, 4000),
+        ...(segWords && segWords.length > 0 ? { words: segWords } : {}),
+      })
+    }
+    meta.segments = segments
+  }
+  return Object.keys(meta).length > 0 ? meta : undefined
 }

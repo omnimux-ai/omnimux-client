@@ -580,6 +580,73 @@ describe('non-Git targets and Git read failures', () => {
     symlinkSync(join(nonGit, 'absent'), join(nonGit, 'dangling'))
     assert.equal(hook(join(nonGit, 'dangling/notes.txt')).permissionDecision, 'deny')
   })
+
+  it('allows confirmed non-Git targets across mount boundaries while staying fail-closed', () => {
+    const mountCleanDir = join(nonGit, 'mount-clean/backups/agent/batch-1')
+    const mountCleanTarget = join(mountCleanDir, 'backup.zip')
+    const brokenMount = join(nonGit, 'broken-mount')
+    mkdirSync(join(brokenMount, '.git'), { recursive: true })
+
+    const mountBin = join(fixture, 'mount-boundary-bin')
+    mkdirSync(mountBin)
+    writeFileSync(
+      join(mountBin, 'git'),
+      '#!/bin/sh\necho "fatal: not a git repository (or any parent up to mount point /Volumes)" >&2\necho "Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set)." >&2\nexit 128\n',
+      { mode: 0o755 },
+    )
+
+    const hookPayload = (payload, env = {}) => {
+      const result = spawnSync(process.execPath, [scriptPath], {
+        cwd: mainRepoRoot,
+        encoding: 'utf8',
+        env: { ...process.env, ...env },
+        input: JSON.stringify({ hook_event_name: 'PreToolUse', cwd: mainRepoRoot, ...payload }),
+      })
+      assert.equal(result.status, 0, result.stderr)
+      return JSON.parse(result.stdout).hookSpecificOutput
+    }
+
+    assert.equal(hook(mountCleanTarget, { PATH: mountBin }).permissionDecision, 'allow')
+    assert.equal(
+      hookPayload(
+        {
+          tool_name: 'bash',
+          tool_input: {
+            command: `mkdir -p ${mountCleanDir} && cp /tmp/source-app/Info.plist ${mountCleanTarget}`,
+          },
+        },
+        { PATH: mountBin },
+      ).permissionDecision,
+      'allow',
+    )
+
+    const crlfBin = join(fixture, 'mount-boundary-crlf-bin')
+    mkdirSync(crlfBin)
+    writeFileSync(
+      join(crlfBin, 'git'),
+      '#!/bin/sh\nprintf "fatal: not a git repository (or any parent up to mount point /Volumes)\\r\\nStopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).\\r\\n" >&2\nexit 128\n',
+      { mode: 0o755 },
+    )
+    assert.equal(hook(mountCleanTarget, { PATH: crlfBin }).permissionDecision, 'allow')
+
+    const repoOut = hook(join(mainRepoRoot, 'package.json'), { PATH: mountBin })
+    assert.equal(repoOut.permissionDecision, 'deny')
+    assert.match(repoOut.permissionDecisionReason, /仓库 Hook.*Git.*读取/)
+    const brokenOut = hook(join(brokenMount, 'notes.txt'), { PATH: mountBin })
+    assert.equal(brokenOut.permissionDecision, 'deny')
+    assert.match(brokenOut.permissionDecisionReason, /仓库 Hook.*Git.*读取/)
+
+    const extraErrorBin = join(fixture, 'mount-boundary-extra-bin')
+    mkdirSync(extraErrorBin)
+    writeFileSync(
+      join(extraErrorBin, 'git'),
+      '#!/bin/sh\necho "fatal: not a git repository (or any parent up to mount point /Volumes)" >&2\necho "Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set)." >&2\necho "fatal: Permission denied" >&2\nexit 128\n',
+      { mode: 0o755 },
+    )
+    const extraOut = hook(mountCleanTarget, { PATH: extraErrorBin })
+    assert.equal(extraOut.permissionDecision, 'deny')
+    assert.match(extraOut.permissionDecisionReason, /仓库 Hook.*Git.*读取/)
+  })
 })
 
 describe('guard-worktree git reset --hard safety guard', () => {
