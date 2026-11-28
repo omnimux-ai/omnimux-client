@@ -109,17 +109,18 @@ export function apply(ctx, config = {}) {
   // ---- 18 Dual-Surface Agent Tools (1:1 parity with Dispatcher/HTTP) ----
   ctx.tools.register({
     name: 'tiktok_selection_query_rank',
-    description: 'Query TikTok Shop hot-selling product rankings by region, granularity, period, category, sortField, or imported snapshotId.',
+    description: 'Query TikTok Shop hot-selling product rankings by region, granularity, period, category, sortField, or imported snapshotId. Reuses session cache unless forceRefresh is true.',
     parameters: objectParams({
       region: { type: 'string', description: '2-letter region code (e.g. US, GB, SG, MY)' },
       granularity: { type: 'string', enum: ['daily', 'weekly', 'monthly'], description: 'Ranking granularity' },
       period: { type: 'string', description: 'Ranking date or period string (e.g. 2026-11-20)' },
       category: { type: 'string', description: 'English TikTok Shop category filter' },
-      sortField: { type: 'string', description: 'periodSales | periodGmv | sales7d | totalSales | commissionRate | accelRatio' },
+      sortField: { type: 'string', description: 'periodSales | periodGmv | sales7d | totalSales | priceMin | rating | commissionRate | accelRatio' },
       sortDir: { type: 'string', enum: ['asc', 'desc'], description: 'Sort direction' },
       page: { type: 'number', description: 'Page number (1-based)' },
       pageSize: { type: 'number', description: 'Items per page (default 10)' },
       snapshotId: { type: 'string', description: 'Optional imported CSV/JSON snapshot ID' },
+      forceRefresh: { type: 'boolean', description: 'Bypass session cache and force fresh upstream query' },
     }),
     output: jsonOut,
     execute: (args) => dispatcher.queryRank(args),
@@ -127,12 +128,13 @@ export function apply(ctx, config = {}) {
 
   ctx.tools.register({
     name: 'tiktok_selection_search_products',
-    description: 'Search TikTok Shop products by keyword, category, sales/commission/creator thresholds, product tags, and shop type.',
+    description: 'Search TikTok Shop products by keyword, category, sales/commission/creator thresholds, product tags, and shop type. Reuses session cache unless forceRefresh is true.',
     parameters: objectParams({
       keyword: { type: 'string', description: 'Product title keyword' },
       region: { type: 'string', description: '2-letter region code (default US)' },
       category: { type: 'string', description: 'English category filter' },
       sortField: { type: 'string', description: 'Sort field (default sales7d)' },
+      sortDir: { type: 'string', enum: ['asc', 'desc'], description: 'Sort direction' },
       salesMin: { type: 'number', description: 'Minimum 7d/period sales' },
       salesMax: { type: 'number', description: 'Maximum 7d/period sales' },
       commissionMin: { type: 'number', description: 'Minimum commission rate (%)' },
@@ -143,6 +145,7 @@ export function apply(ctx, config = {}) {
       shopType: { type: 'string', enum: ['all', 'cross_border', 'local'], description: 'Shop type filter' },
       page: { type: 'number', description: 'Page number (1-based)' },
       snapshotId: { type: 'string', description: 'Optional imported snapshot ID' },
+      forceRefresh: { type: 'boolean', description: 'Bypass session cache and force fresh upstream search' },
     }),
     output: jsonOut,
     execute: (args) => dispatcher.searchProducts(args),
@@ -164,12 +167,14 @@ export function apply(ctx, config = {}) {
 
   ctx.tools.register({
     name: 'tiktok_selection_get_product_detail',
-    description: 'Fetch detailed TikTok product metrics, acceleration info, optional Top-10 reference affiliate videos, and optional VOC reviews.',
+    description: 'Fetch TikTok product detail, optional Top-10 reference affiliate videos, and optional VOC reviews with independent scope flags and session caching.',
     parameters: objectParams({
       productId: { type: 'string', required: true, description: 'TikTok Shop product ID or library ID' },
       region: { type: 'string', description: 'Region code (default US)' },
+      includeDetail: { type: 'boolean', description: 'Fetch live shop detail (default true; set false when loading only videos or reviews)' },
       loadVideos: { type: 'boolean', description: 'Load Top-10 reference TikTok commerce videos' },
       loadReviews: { type: 'boolean', description: 'Load TikTok Shop customer reviews' },
+      forceRefresh: { type: 'boolean', description: 'Bypass session cache and force fresh upstream lookup' },
     }),
     output: jsonOut,
     execute: (args) => dispatcher.getProductDetail(args),
