@@ -3,6 +3,7 @@ import type { CSSProperties, HTMLAttributes } from "react";
 
 import { cssClass } from "../internal/cssClass.ts";
 import { cx } from "../internal/cx.ts";
+import { resolveKitLocale } from "../internal/locale.ts";
 import css from "./GenWaveCard.module.css";
 import {
   GEN_WAVE_BADGE_FONT_FAMILY,
@@ -17,7 +18,7 @@ export interface GenWaveCardProps extends HTMLAttributes<HTMLDivElement> {
   statusText?: string;
   /** 0–100；传入后由外部接管进度显示并停用内置演示缓动。 */
   progress?: number;
-  /** 是否启用内置 0→96% 演示缓动；默认 progress 未提供时为 true。 */
+  /** 是否启用内置 0→96% 演示缓动；默认 false，仅在明确传入 true 或提供真实 progress 时显示百分比胶囊。 */
   autoProgress?: boolean;
   /** Custom class name. */
   className?: string;
@@ -50,9 +51,12 @@ const THEME_VARS = {
  * prefers-reduced-motion 定格参考帧。
  */
 export const GenWaveCard = forwardRef<HTMLDivElement, GenWaveCardProps>(
-  function GenWaveCard({ statusText, progress, autoProgress, className, style, ...rest }, ref) {
+  function GenWaveCard({ statusText, progress, autoProgress = false, className, style, ...rest }, ref) {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const badgeRef = useRef<HTMLSpanElement>(null);
+    const shouldShowBadge = progress !== undefined || autoProgress === true;
+    const showBadgeRef = useRef(shouldShowBadge);
+    showBadgeRef.current = shouldShowBadge;
     /** reduced-motion 下外部更新进度时触发的单帧重绘钩子。 */
     const redrawRef = useRef<(() => void) | null>(null);
 
@@ -153,21 +157,23 @@ export const GenWaveCard = forwardRef<HTMLDivElement, GenWaveCardProps>(
           }
         }
 
-        /* 进度胶囊：椭圆 58×35 CSS，右缘距画布右缘 BADGE_X_OFF、
-           下缘贴画布底（BADGE_BOTTOM_GAP=0），始终落在右下角画布区内。 */
-        const bw = C.BADGE_W;
-        const bh = C.BADGE_H;
-        const bx = cssW - (statusText ? C.BADGE_X_OFF : 12) - bw;
-        const by = cssH - (statusText ? C.BADGE_BOTTOM_GAP : 12) - bh;
-        ctx.fillStyle = GEN_WAVE_COLORS.badgeBg;
-        ctx.beginPath();
-        ctx.ellipse(bx + bw / 2, by + bh / 2, bw / 2, bh / 2, 0, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.fillStyle = GEN_WAVE_COLORS.badgeFg;
-        ctx.font = `500 ${C.BADGE_FONT}px ${GEN_WAVE_BADGE_FONT_FAMILY}`;
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        ctx.fillText(badgeEl.textContent ?? "", bx + bw / 2, by + bh / 2 + 0.5);
+        if (showBadgeRef.current) {
+          /* 进度胶囊：椭圆 58×35 CSS，右缘距画布右缘 BADGE_X_OFF、
+             下缘贴画布底（BADGE_BOTTOM_GAP=0），始终落在右下角画布区内。 */
+          const bw = C.BADGE_W;
+          const bh = C.BADGE_H;
+          const bx = cssW - (statusText ? C.BADGE_X_OFF : 12) - bw;
+          const by = cssH - (statusText ? C.BADGE_BOTTOM_GAP : 12) - bh;
+          ctx.fillStyle = GEN_WAVE_COLORS.badgeBg;
+          ctx.beginPath();
+          ctx.ellipse(bx + bw / 2, by + bh / 2, bw / 2, bh / 2, 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = GEN_WAVE_COLORS.badgeFg;
+          ctx.font = `500 ${C.BADGE_FONT}px ${GEN_WAVE_BADGE_FONT_FAMILY}`;
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillText(badgeEl.textContent ?? "", bx + bw / 2, by + bh / 2 + 0.5);
+        }
       };
 
       /* 主循环：尺寸波 φ 线性推进（波峰左上→右下扫动）；
@@ -219,6 +225,10 @@ export const GenWaveCard = forwardRef<HTMLDivElement, GenWaveCardProps>(
       };
     }, []);
 
+    useEffect(() => {
+      redrawRef.current?.();
+    }, [shouldShowBadge]);
+
     /* ---------- 外部进度接管（等价于源实现的 setProgress） ---------- */
     useEffect(() => {
       if (progress === undefined) return;
@@ -252,7 +262,7 @@ export const GenWaveCard = forwardRef<HTMLDivElement, GenWaveCardProps>(
         ref={ref}
         role="status"
         aria-live="polite"
-        aria-label="Generation in progress"
+        aria-label={resolveKitLocale() === "en" ? "Generation in progress" : "正在生成"}
         className={cx(
           cssClass(css.card, "card"),
           statusText ? "" : cssClass(css.cardFull, "cardFull"),
@@ -285,7 +295,7 @@ export const GenWaveCard = forwardRef<HTMLDivElement, GenWaveCardProps>(
         <canvas ref={canvasRef} className={cx(cssClass(css.field, "field"), statusText ? "" : cssClass(css.fieldFull, "fieldFull"))} aria-hidden="true" />
 
         <span ref={badgeRef} className={cssClass(css.badge, "badge")}>
-          0%
+          {shouldShowBadge ? "0%" : ""}
         </span>
       </div>
     );

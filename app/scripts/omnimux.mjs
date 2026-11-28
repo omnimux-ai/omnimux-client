@@ -14,7 +14,6 @@
  *   node scripts/omnimux.mjs restart
  *   node scripts/omnimux.mjs profile rebuild --target dev --app /absolute/frozen/OmniMux.app
  *   node scripts/omnimux.mjs profile upgrade-dev --app <frozen-dev.app> --recovery-dir <nas-batch-dir> --dry-run
- *   node scripts/omnimux.mjs stage
  *   node scripts/omnimux.mjs path
  */
 import { spawnSync } from 'node:child_process'
@@ -59,20 +58,8 @@ function runBash(scriptRel, args) {
   process.exit(result.status === null ? 1 : result.status)
 }
 
-function runYarnWorkspace(scriptName, args = []) {
-  const result = spawnSync('corepack', ['yarn', 'workspace', 'dsh-plugin-desktop', 'run', scriptName, ...args], {
-    cwd: forkRoot,
-    env: {
-      ...process.env,
-      OMNIMUX_PLUGINS_DIR: pluginsRoot,
-    },
-    stdio: 'inherit',
-  })
-  process.exit(result.status === null ? 1 : result.status)
-}
-
 function runProfile(args) {
-  const script = join(forkRoot, 'dsh-plugin-desktop/scripts/rebuild-managed-profile.ts')
+  const script = join(forkRoot, 'dsh-desktop-next/scripts/rebuild-managed-profile.ts')
   if (args[0] === 'recover-dev' || args[0] === 'accept-dev' || args.includes('--dry-run')) {
     const environment = { ...process.env }
     delete environment.ELECTRON_RUN_AS_NODE
@@ -148,10 +135,6 @@ function printHelp() {
                                   预检或升级共享 Dev，恢复副本直接归档到 NAS
   profile recover-dev|accept-dev --recovery-dir <nas-batch-dir>
                                   恢复同批次 Dev，或在运行验收后确认切换
-  stage                           物化进 preset/plugins（发布前）
-  verify --preset <dir>           校验发行清单与打包内容是否一致（发布前）
-  verify --profile <dir> --expect <distribution.json>
-                                  校验已安装的开发环境与发行清单是否一致
   path                            打印产品树 / 插件路径
   prod-reset（yarn omnimux:prod-reset）
                                   清空本机正式版安装（用户场景复测）；默认 dry-run，加 --yes 执行
@@ -163,9 +146,6 @@ function printHelp() {
   yarn omnimux:sync --prod omnimux-workflow   # 人类明确指令下同步至生产正式版
   yarn omnimux:restart dev
   yarn omnimux:profile rebuild --target dev --app /absolute/path/OmniMux.app
-  yarn omnimux:stage
-  yarn omnimux:verify --preset dsh-plugin-desktop/preset
-  yarn omnimux:verify --profile ~/.omnimux-dev/profiles/omnimux --expect /Applications/OmniMux Dev.app/Contents/Resources/app.asar.unpacked/preset/distribution.json
   yarn omnimux:prod-reset            # dry-run：预览将清空的正式版痕迹
   yarn omnimux:prod-reset --yes      # 真正清空正式版（不碰 Dev）
 `)
@@ -189,15 +169,6 @@ switch (cmd) {
     break
   case 'restart':
     restartApp(rest[0] || 'prod')
-    break
-  case 'stage':
-    if (!process.env.OMNIMUX_PLUGINS_DIR) {
-      process.env.OMNIMUX_PLUGINS_DIR = pluginsRoot
-    }
-    runYarnWorkspace('stage:preset', rest)
-    break
-  case 'verify':
-    runYarnWorkspace('verify:distribution', rest)
     break
   case 'path':
     requireProduct()

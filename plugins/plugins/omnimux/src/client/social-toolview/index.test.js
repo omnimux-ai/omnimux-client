@@ -168,7 +168,7 @@ describe('OmnimuxSocialToolView multi-state SSR & interactive DOM rendering', ()
       }),
     )
     assert.match(readyHtml, /Searched X posts/)
-    assert.match(readyHtml, /×2/)
+    assert.match(readyHtml, /2 results/)
     assert.match(readyHtml, /data-archetype="article"/)
     assert.match(readyHtml, /data-archetype="social-post"/)
     assert.match(readyHtml, /Deep Work Article/)
@@ -242,13 +242,11 @@ describe('OmnimuxSocialToolView multi-state SSR & interactive DOM rendering', ()
       moreBtn.click()
     })
     assert.equal(container.querySelectorAll('article[data-archetype]').length, 8)
-
-    const jsonBtn = [...container.querySelectorAll('button')].find((b) => b.textContent === 'JSON')
-    assert.ok(jsonBtn)
-    await act(async () => {
-      jsonBtn.click()
-    })
-    assert.ok(container.querySelector('pre'), 'expected raw JSON box after clicking JSON toggle')
+    assert.equal(
+      [...container.querySelectorAll('button')].find((b) => b.textContent === 'JSON'),
+      undefined,
+      'clean ready results keep raw JSON hidden from default header',
+    )
 
     const headerBtn = container.querySelector('[aria-expanded]')
     assert.ok(headerBtn)
@@ -256,6 +254,22 @@ describe('OmnimuxSocialToolView multi-state SSR & interactive DOM rendering', ()
       headerBtn.click()
     })
     assert.equal(container.querySelectorAll('article[data-archetype]').length, 0, 'cards collapse cleanly')
+
+    const passBlock = {
+      kind: 'tool-result',
+      callId: 'c-pass-dom',
+      call: { name: 'omnimux_social_data', argsRaw: '{"platform":"x","capability":"user"}' },
+      content: [{ type: 'text', text: JSON.stringify({ platform: 'x', capability: 'user', data: { followers: 700000 } }) }],
+    }
+    await act(async () => {
+      root.render(createElement(OmnimuxSocialToolView, { toolName: 'omnimux_social_data', block: passBlock, locale: 'zh' }))
+    })
+    const jsonBtn = [...container.querySelectorAll('button')].find((b) => b.textContent === 'JSON')
+    assert.ok(jsonBtn)
+    await act(async () => {
+      jsonBtn.click()
+    })
+    assert.ok(container.querySelector('pre'), 'expected raw JSON box after clicking JSON toggle')
 
     await act(async () => {
       root.unmount()

@@ -337,6 +337,10 @@ export function usePlazaState(initialSubmitted, hooks) {
   const [platformFilter, setPlatformFilter] = stateFn('');
   const [installingSlugs, setInstallingSlugs] = stateFn({});
   const [installError, setInstallError] = stateFn('');
+  // Appended at the end so existing numeric hook slots 0..29 stay invariant for tests.
+  const [confirmUninstallItem, setConfirmUninstallItem] = stateFn(null);
+  const [confirmUninstallError, setConfirmUninstallError] = stateFn('');
+  const [confirmUninstalling, setConfirmUninstalling] = stateFn(false);
   return {
     mainTab, setMainTab, category, setCategory, page, setPage, searchQuery, setSearchQuery,
     submitted, setSubmitted, uninstalledOnly, setUninstalledOnly, autoUpdate, setAutoUpdate,
@@ -353,6 +357,9 @@ export function usePlazaState(initialSubmitted, hooks) {
     platformFilter, setPlatformFilter,
     installingSlugs, setInstallingSlugs,
     installError, setInstallError,
+    confirmUninstallItem, setConfirmUninstallItem,
+    confirmUninstallError, setConfirmUninstallError,
+    confirmUninstalling, setConfirmUninstalling,
   };
 }
 

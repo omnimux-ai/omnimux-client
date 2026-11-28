@@ -8,6 +8,7 @@ import {
 import { copyToClipboard } from "../internal/clipboard.ts";
 import { cssClass } from "../internal/cssClass.ts";
 import { cx } from "../internal/cx.ts";
+import { resolveKitLocale } from "../internal/locale.ts";
 import { IconSwap } from "../motion/IconSwap.tsx";
 import { Button } from "./Button.tsx";
 import type { ButtonProps, ButtonSize, ButtonVariant } from "./Button.tsx";
@@ -48,9 +49,9 @@ export const CopyButton = forwardRef<HTMLButtonElement, CopyButtonProps>(
     {
       text,
       timeout = 2000,
-      label = "复制",
-      copiedLabel = "已复制",
-      errorLabel = "复制失败",
+      label,
+      copiedLabel,
+      errorLabel,
       size = "sm",
       variant = "ghost",
       onCopy,
@@ -63,11 +64,19 @@ export const CopyButton = forwardRef<HTMLButtonElement, CopyButtonProps>(
     },
     ref,
   ) {
+    const isEn = resolveKitLocale() === "en";
+    const resolvedLabel = label !== undefined ? label : (isEn ? "Copy" : "复制");
+    const resolvedCopiedLabel = copiedLabel !== undefined ? copiedLabel : (isEn ? "Copied" : "已复制");
+    const resolvedErrorLabel = errorLabel !== undefined ? errorLabel : (isEn ? "Copy failed" : "复制失败");
+
     const [state, setState] = useState<CopyState>("idle");
     const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const mountedRef = useRef(true);
 
     useEffect(() => {
+      mountedRef.current = true;
       return () => {
+        mountedRef.current = false;
         if (timerRef.current) {
           clearTimeout(timerRef.current);
         }
@@ -84,7 +93,9 @@ export const CopyButton = forwardRef<HTMLButtonElement, CopyButtonProps>(
 
       try {
         const resolvedText = typeof text === "function" ? await text() : text;
+        if (!mountedRef.current) return;
         const success = await copyToClipboard(resolvedText);
+        if (!mountedRef.current) return;
         if (success) {
           setState("copied");
           onCopy?.(resolvedText);
@@ -92,19 +103,23 @@ export const CopyButton = forwardRef<HTMLButtonElement, CopyButtonProps>(
           throw new Error("Clipboard copy failed");
         }
       } catch (err) {
+        if (!mountedRef.current) return;
         const error = err instanceof Error ? err : new Error(String(err));
         setState("error");
         onError?.(error);
       }
 
+      if (!mountedRef.current) return;
       timerRef.current = setTimeout(() => {
-        setState("idle");
+        if (mountedRef.current) {
+          setState("idle");
+        }
       }, timeout);
     };
 
-    let currentLabel: string | undefined = label;
-    if (state === "copied") currentLabel = copiedLabel;
-    else if (state === "error") currentLabel = errorLabel;
+    let currentLabel: string | undefined = resolvedLabel;
+    if (state === "copied") currentLabel = resolvedCopiedLabel;
+    else if (state === "error") currentLabel = resolvedErrorLabel;
 
     const iconSize = size === "xs" ? 14 : 16;
     const iconNode = showIcon
@@ -154,8 +169,8 @@ export const CopyButton = forwardRef<HTMLButtonElement, CopyButtonProps>(
           ? (
             <span
               className={cssClass(css.labelSlot, "labelSlot")}
-              data-idle-label={label || undefined}
-              data-copied-label={copiedLabel || undefined}
+              data-idle-label={resolvedLabel || undefined}
+              data-copied-label={resolvedCopiedLabel || undefined}
             >
               <span className={cssClass(css.labelCurrent, "labelCurrent")}>
                 {currentLabel}

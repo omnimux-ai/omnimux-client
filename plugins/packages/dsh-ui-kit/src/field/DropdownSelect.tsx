@@ -1,5 +1,5 @@
-import { useId, useMemo, useState } from "react";
-import type { ReactNode } from "react";
+import { useId, useMemo, useRef, useState } from "react";
+import type { KeyboardEvent, ReactNode } from "react";
 import * as primitives from "@deepseek-ai/dsh-client-ui-primitives";
 
 import { IconChevronDownOutline14 as ChevronDown } from "../icons/compat-icons.tsx";
@@ -8,6 +8,7 @@ const Menu = primitives.Menu;
 import type { MenuItem } from "@deepseek-ai/dsh-client-ui-primitives";
 
 import { cx } from "../internal/cx.ts";
+import { resolveKitLocale } from "../internal/locale.ts";
 import css from "./DropdownSelect.module.css";
 
 export interface DropdownOption {
@@ -37,14 +38,16 @@ export function DropdownSelect({
   value,
   options,
   onChange,
-  placeholder = "Select",
+  placeholder,
   disabled = false,
   className,
   "aria-label": ariaLabel,
   id,
   align = "start",
 }: DropdownSelectProps) {
+  const resolvedPlaceholder = placeholder ?? (resolveKitLocale() === "en" ? "Select" : "请选择");
   const [open, setOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const generatedId = useId();
   const triggerId = id ?? generatedId;
   const selected = options.find((option) => option.value === value);
@@ -59,12 +62,23 @@ export function DropdownSelect({
     [options],
   );
 
+  const handleTriggerKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
+    if (disabled || open) return;
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      setOpen(true);
+    }
+  };
+
   return (
     <Menu
       open={open && !disabled}
       portal
       compact
+      autoFocus
       align={align}
+      anchorRef={triggerRef}
+      returnFocus={() => triggerRef.current}
       selectedId={value}
       items={items}
       onSelect={(next) => {
@@ -75,6 +89,7 @@ export function DropdownSelect({
       className={cx(css.anchor, className)}
       anchor={(
         <button
+          ref={triggerRef}
           type="button"
           id={triggerId}
           className={cx(css.trigger, open && css.open)}
@@ -83,9 +98,10 @@ export function DropdownSelect({
           aria-expanded={open}
           disabled={disabled}
           onClick={() => { if (!disabled) setOpen((prev) => !prev); }}
+          onKeyDown={handleTriggerKeyDown}
         >
           <span className={cx(css.label, !selected && css.placeholder)}>
-            {selected ? selected.label : placeholder}
+            {selected ? selected.label : resolvedPlaceholder}
           </span>
           <span className={cx(css.chevron, open && css.chevronOpen)} aria-hidden="true">
             <ChevronDown size={14} />

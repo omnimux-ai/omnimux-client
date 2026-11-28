@@ -33,7 +33,7 @@ import releaseChannel from '../release-channel.json' with { type: 'json' }
 import { triggerClick } from './sidebar-toggle-topbar.js'
 
 /** Alpha 内测说明：侧栏行与官方「更多」菜单行共用同一份文案真源。 */
-export const ALPHA_DESCRIPTION = 'Alpha · 内测：开发阶段优先完善非 Alpha 功能；正式版不包含此功能。'
+export const ALPHA_DESCRIPTION = 'Alpha 内测：开发阶段优先完善非 Alpha 功能；正式版不包含此功能。'
 const ALPHA_STYLES = `
 .omnimux-sidebar-alpha-badge {
   flex: none; margin-left: auto; padding: 0 5px;
@@ -85,7 +85,7 @@ function markAlphaEntry(id, element) {
   const badge = document.createElement('span')
   badge.className = 'omnimux-sidebar-alpha-badge'
   badge.textContent = 'Alpha'
-  badge.setAttribute('aria-label', 'Alpha · 内测')
+  badge.setAttribute('aria-label', 'Alpha 内测')
   element.append(badge)
 }
 
@@ -257,7 +257,7 @@ export const EXPLORE_MENU_ITEMS = [
     id: 'device',
     pluginId: 'omnimux-device',
     entryId: 'omnimux-device-entry',
-    label: '手机管理',
+    label: '移动设备',
     tabId: 'omnimux-device:library',
     iconSvg: '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="1.5" width="8" height="13" rx="2"/><circle cx="8" cy="11.5" r="0.75" fill="currentColor" stroke="none"/></svg>',
     dividerAfter: true,
@@ -278,6 +278,30 @@ export const EXPLORE_MENU_ITEMS = [
  * 内置白名单保持只读；未注册即不渲染 —— 产品基线不会出现指向未安装插件的死条目。
  */
 const EXTRA_EXPLORE_ITEMS = []
+const EXPLORE_ITEM_LISTENERS = new Set()
+
+function notifyExploreItemsChanged() {
+  for (const listener of [...EXPLORE_ITEM_LISTENERS]) {
+    try {
+      listener()
+    } catch (error) {
+      console.debug('[omnimux-sidebar-coordinator] explore item listener failed', error)
+    }
+  }
+}
+
+/**
+ * 订阅运行期扩展「更多」菜单清单变化（注册 / 注销时触发，供固定左侧导航轨增量刷新）。
+ * @param {() => void} listener
+ * @returns {() => void}
+ */
+export function subscribeExploreItems(listener) {
+  if (typeof listener !== 'function') return () => {}
+  EXPLORE_ITEM_LISTENERS.add(listener)
+  return () => {
+    EXPLORE_ITEM_LISTENERS.delete(listener)
+  }
+}
 
 /** 菜单项身份键：非空字符串 id，其余一律视为非法。 */
 function exploreItemId(item) {
@@ -900,9 +924,13 @@ function createApi() {
       if (typeof item.tabId === 'string' && item.tabId.trim()) record.tabId = item.tabId
       if (typeof item.action === 'function') record.action = item.action
       EXTRA_EXPLORE_ITEMS.push(record)
+      notifyExploreItemsChanged()
       return () => {
         const index = EXTRA_EXPLORE_ITEMS.indexOf(record)
-        if (index >= 0) EXTRA_EXPLORE_ITEMS.splice(index, 1)
+        if (index >= 0) {
+          EXTRA_EXPLORE_ITEMS.splice(index, 1)
+          notifyExploreItemsChanged()
+        }
       }
     },
     /**
@@ -985,6 +1013,7 @@ export function resetSidebarCoordinatorForTests() {
   PINNED_ROWS.clear()
   CONVERGED_ROWS.clear()
   EXTRA_EXPLORE_ITEMS.length = 0
+  EXPLORE_ITEM_LISTENERS.clear()
   seen.clear()
   closeNewMenu()
   if (typeof window !== 'undefined') {

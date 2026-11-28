@@ -97,7 +97,7 @@ export function createComposerAddController(options) {
     if (counts.duplicate) parts.push(text('composerAdd.toast.duplicate', { n: counts.duplicate }))
     if (counts.quota) parts.push(text('composerAdd.toast.quota'))
     if (counts.failed) parts.push(text('composerAdd.toast.failed', { n: counts.failed }))
-    return parts.join(' · ')
+    return parts.join(text('composerAdd.cat.all') === 'All' ? ', ' : '，')
   }
 
   function close(operation, focus = false) {
@@ -287,7 +287,9 @@ export function createComposerAddController(options) {
         const failed = items.find(item => item?.ok === false)
         throw new Error(failed?.message || response.body.message || summary(counts) || text('composerAdd.toast.failed', { n: 1 }))
       }
-      notify(summary(counts))
+      if (counts.duplicate || counts.quota || counts.failed) {
+        notify(summary(counts))
+      }
       if (!keepOpen) close(operation, true)
       return counts
     } finally {
@@ -379,7 +381,9 @@ export function createComposerAddController(options) {
       else if (result.reason === 'quota-exceeded') counts.quota += 1
       else counts.failed += 1
     }
-    notify(summary(counts))
+    if (counts.duplicate || counts.quota || counts.failed) {
+      notify(summary(counts))
+    }
     if (counts.added && !keepOpen) close(operation, true)
     return counts
   }

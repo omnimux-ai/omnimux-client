@@ -33,7 +33,7 @@ test('resolveGreetingUserName returns profile name or falls back to 老钟', () 
   assert.equal(resolveGreetingUserName(fakeWin2), 'john_doe')
 
   const fakeWinEmpty = { __omnimuxAuth: null }
-  assert.equal(resolveGreetingUserName(fakeWinEmpty), '老钟')
+  assert.equal(resolveGreetingUserName(fakeWinEmpty), '创作者')
 })
 
 test('isSplitMode correctly detects whether right panel is open and not fullscreen', () => {
@@ -58,7 +58,7 @@ test('createWelcomeHeaderElement creates well-formed header element', () => {
   const el = createWelcomeHeaderElement(doc, '老钟')
   assert.ok(el.classList.contains('omnimux-welcome-header'))
   assert.match(el.innerHTML, /你好，老钟/)
-  assert.match(el.innerHTML, /属于你的AI社媒运营团队/)
+  assert.match(el.innerHTML, /AI 社媒内容创作助手/)
 })
 
 test('syncWelcomeGreeting mounts header in split mode and unhides in full mode', () => {

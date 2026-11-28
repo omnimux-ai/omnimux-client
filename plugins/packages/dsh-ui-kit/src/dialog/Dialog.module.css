@@ -53,7 +53,7 @@
 .description {
   margin: 8px 0 0;
   padding: 0 24px;
-  color: var(--dsw-alias-label-primary);
+  color: var(--dsw-alias-label-secondary);
   font-size: 14px;
   line-height: 22px;
 }
@@ -75,7 +75,7 @@
 .iconFooter {
   box-sizing: border-box;
   flex: none;
-  padding: 0 24px;
+  padding: 12px 24px 20px;
 }
 
 .message {

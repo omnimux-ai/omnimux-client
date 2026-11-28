@@ -358,8 +358,8 @@ OmniMux 将原生桌面壳（`app/`）与产品插件工作区（`plugins/`）�
 ```text
 omnimux-client/
 ├── app/                     # Electron 桌面端（Yarn 4 工作区，含打包、签名与原生集成）
-│   ├── dsh-desktop-next/    # OmniMux 原生桌面产品壳
-│   ├── dsh-plugin-desktop/  # 桌面能力插件（窗口、托盘、配置与更新）
+│   ├── dsh-desktop-next/    # OmniMux 活跃桌面产品壳（配置、托盘、恢复与更新）
+│   ├── dsh-plugin-desktop/  # 冻结旧版桌面壳（已停止调用，待阶段 3 移除）
 │   ├── config/              # 插件分级清单（plugin-tiers.json）
 │   └── docs/                # 使用手册、FAQ 与桌面架构文档
 ├── plugins/                 # 产品插件工作区（仓库根单一 pnpm workspace）

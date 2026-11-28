@@ -28,14 +28,16 @@ describe('DataTable composite component contract', () => {
   it('implements single and multiple selection with WAI-ARIA and no native input tags', () => {
     assert.doesNotMatch(tsx, /<input(?:\s|>)/)
     assert.match(tsx, /role="checkbox"/)
-    assert.match(tsx, /aria-label="全选所有行"/)
-    assert.match(tsx, /aria-label=\{`选择第 \$\{rowIndex \+ 1\} 行`\}/)
+    assert.match(tsx, /selectAllLabel \?\? \(isEn \? "Select all rows" : "全选所有行"\)/)
+    assert.match(tsx, /aria-label=\{selectAllAriaLabel\}/)
+    assert.match(tsx, /selectRowAriaLabel\(rowIndex\)/)
     assert.match(tsx, /isAllSelected \? "true" : isPartiallySelected \? "mixed" : "false"/)
   })
 
   it('integrates EmptyState for empty rows and skeleton loaders when loading', () => {
     assert.match(tsx, /import \{ EmptyState \} from "\.\.\/empty\/EmptyState\.tsx"/)
-    assert.match(tsx, /emptyContent \?\? <EmptyState title="暂无数据" \/>/)
+    assert.match(tsx, /emptyTitleText = emptyTitle \?\? \(isEn \? "No data" : "暂无数据"\)/)
+    assert.match(tsx, /emptyContent \?\? <EmptyState title=\{emptyTitleText\} \/>/)
     assert.match(tsx, /skeletonRow/)
     assert.match(css, /@keyframes pulse/)
   })

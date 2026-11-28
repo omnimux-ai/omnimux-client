@@ -24,14 +24,15 @@
 | 编号 | 决策项 | 选定方案与取舍理由 |
 | --- | --- | --- |
 | D1 | 双栏联动结构 | 最左侧新增 `52px` 固定纯图标窄轨；**仅「首页」展示第二层 Agent 工作区会话栏（`264px`）**，切到业务模块（项目、技能/专家、资产库、灵感社区及「更多」子页）自动收起次级栏让内容区占满，并保留页内拉出对话分屏能力。 |
-| D2 | 固定轨一级入口顺序 | macOS 顶栏安全区下方首位直放：**首页（对话）** → **项目** → **技能/专家** → **资产库** → **灵感社区** → **更多（`…`）**；官方「插件」「自动化任务」与扩展工具（应用、图像生成、视频剪辑、指纹浏览器、跟爆选品及开发版 Alpha 项）保留在「更多」右侧弹出浮层，避免窄轨图标过载。 |
+| D2 | 固定轨一级入口顺序 | macOS 顶栏安全区下方首位直放：**首页（对话）** → **项目** → **技能/专家** → **资产库** → **灵感社区** → **更多（`…`）**，这 6 项固定不变；官方「插件」「自动化任务」与扩展工具（应用、图像生成、视频剪辑、指纹浏览器、跟爆选品及开发版 Alpha 项）保留在「更多」右侧弹出浮层，支持由用户按需从「更多」固定到左侧栏「更多」下方快捷区。 |
 | D3 | 底部全局系统入口 | 原会话栏底部的 **应用更新**（有更新时带提示点）、**远程控制**、**账号设置** 全部迁入固定左侧栏底部（纯图标 + Tooltip）；次级 Agent 会话栏底部清空，保证任意业务页面均可一键触达系统配置。 |
 | D4 | 首页次级会话栏精简 | 顶部保留 `OmniMux` 品牌标识，下方仅保留满宽 **「新对话」** 按钮与 Agent 工作区会话树；原并排的 **「新建项目」** 按钮移出首页会话栏，收口至固定轨 **「项目」** 页内，消除入口职责交叉。 |
 | D5 | 固定轨视觉形态与品牌位 | `52px` 纯图标窄轨 + 右侧悬停 Tooltip；红绿灯下方首位直接放置 **「首页」** 图标（不在窄轨顶部另放重复 Brand Logo），`OmniMux` 品牌标识留在首页次级会话栏顶部标题位。 |
 | D6 | 「首页」点击与折叠钮状态机 | 点击固定轨「首页」始终幂等：退出全屏业务页/全局面板回到 Agent 对话并**确保展开**会话栏（已在首页时不误触收起）；折叠/展开仅走顶栏折叠钮（macOS 红绿灯右侧）与快捷键；进入非首页业务页时同步隐藏次级栏与顶栏折叠钮。 |
 | D7 | 首页收起态快捷入口 | 在首页手动收起会话栏后，顶栏折叠钮右侧出现 **「新对话」** 图标钮（`[红绿灯] [展开会话栏] [新对话]`），最左 `52px` 固定轨保持纯粹导航。 |
 | D8 | 分屏模式配合 | 对话 + 右栏工作台分屏时，固定轨高亮 **「首页」**（延续会话优先仲裁规则）；次级会话栏默认收起以让渡工作台宽度，顶栏保留折叠钮供用户按需拉出会话栏。 |
-| D9 | 「更多（`…`）」激活态与落地边界 | 固定轨图标数量锁定不变；从「更多」打开子页或官方面板时直接高亮 **「更多（`…`）」** 图标，再次展开「更多」浮层时内部对应行标出选中态。实现全部落在插件层（`plugins/plugins/omnimux` 与 `plugins/packages/dsh-ui-kit`），不改动只读的 `app/deepseek-harness`，兼容 Legacy / Next 双桌面壳与 Web；窄屏（`< 768px`）保持 `52px` 固定轨常驻，首页会话栏从其右侧（`left: 52px`）抽屉滑出。 |
+| D9 | 「更多（`…`）」激活态与落地边界 | 固定轨上方 6 项核心图标保持锁定不变；从「更多」打开未固定子页或官方面板时高亮 **「更多（`…`）」** 图标，再次展开「更多」浮层时内部对应行标出选中态。实现全部落在插件层（`plugins/plugins/omnimux` 与 `plugins/packages/dsh-ui-kit`），不改动只读的 `app/deepseek-harness`，兼容 Legacy / Next 双桌面壳与 Web；窄屏（`< 768px`）保持 `52px` 固定轨常驻，首页会话栏从其右侧（`left: 52px`）抽屉滑出。 |
+| D10 | 「更多」菜单入口固定与取消固定 | 参考图 2，在「更多」弹出菜单的每个可导航业务入口（官方面板白名单 `自动化任务`/`插件`、内置工具及运行时动态插件 `跟爆选品` 等，不含顶部一次性动作 `浏览更多插件`/`创建你的插件`）提供右侧图钉按钮：未固定项仅在鼠标悬停或键盘聚焦行时显现空心图钉，点击即固定且**保持菜单不关闭**（不弹冗余 Toast）；已固定项即使未悬停也常显实心图钉，再次点击即可取消固定。存在任意可用固定项时，固定轨「更多（`…`）」正下方出现水平分隔线与可纵向滚动的 `36×36` 快捷入口图标（支持右键弹出「取消固定」菜单）；当前页属于已固定入口时直接高亮左侧栏该固定图标而非「更多」。固定顺序持久化于 `localStorage`（`omnimux:nav-rail:pinned-more:v1`），兼容异步注册延迟挂载与正式版/开发版渠道过滤。 |
 
 ## 3. 信息架构与交互状态机
 
@@ -42,7 +43,8 @@
 | 首页（分屏：对话 + 右栏工作台） | 首页 | 默认收起（可手动点击展开） | 折叠/展开会话栏钮（收起时含新对话钮） | 对话列 + 右栏工作台平铺 `100vw - 52px`（展开时减去 `264px`） | 固定轨底部直达 |
 | 首页（窄屏 `< 768px`） | 首页 | 默认收起；展开时从 `left: 52px` 抽屉滑出并带遮罩 | 展开会话栏钮 + 新对话钮 | `100vw - 52px` | 固定轨底部直达 |
 | 一级直出业务页（项目 / 技能专家 / 资产库 / 灵感社区） | 对应入口图标 | 自动隐藏 | 隐藏（不留空按钮） | `100vw - 52px` 全宽占用（支持页内「展开对话分屏」） | 固定轨底部直达 |
-| 「更多」子页或官方面板（图像生成 / 视频剪辑 / 插件 / 自动化任务等） | 更多（`…`）图标 | 自动隐藏 | 隐藏 | `100vw - 52px` 全宽占用；点开「更多」内部对应项标为当前态 | 固定轨底部直达 |
+| 「更多」子页或官方面板（未固定，如插件 / 自动化任务 / 未固定工具） | 更多（`…`）图标 | 自动隐藏 | 隐藏 | `100vw - 52px` 全宽占用；点开「更多」内部对应项标为当前态 | 固定轨底部直达 |
+| 「更多」已固定入口页（点击固定快捷图标或「更多」内已固定项） | 对应已固定快捷图标 | 自动隐藏 | 隐藏 | `100vw - 52px` 全宽占用；点开「更多」内部对应项仍标为当前态且常显实心图钉 | 固定轨底部直达 |
 
 ### 关键交互迁移细节
 
@@ -74,9 +76,9 @@
 7. **并排新建项目收口策略（`sidebar-coordinator.js` 集中接管，向后兼容）**：
    - 在固定轨激活态（`html[data-omnimux-nav-rail-active="1"]`）下由 `sidebar-coordinator.js` 的 `placeInline()` 集中拆掉首页并排 `[data-omnimux-inline-row]` 并隐去内联「新建项目」按钮，保持 `omnimux-workflow/src/client/sidebar-new-project.js` 注册链路与 `ProjectLibraryPage` 页内「新建项目」不变，未启用固定轨时仍可平滑回退。
 8. **协同改造与回归测试文件清单**：
-   - 主控与chrome装配：`plugins/plugins/omnimux/src/client/nav-rail.js`、`chrome.js`。
-   - 协调与几何联动：`sidebar-coordinator.js`、`workbench/sidebar-activation.js`、`workbench/geometry.js`、`explore-more-menu.jsx`、`sidebar-panel-chrome.js`、`sidebar-toggle-topbar.js`、`conversation-box.js`、`conversation-collapse.js`、`rightbar-collapsed-fill.js`。
-   - 单元与真实浏览器 E2E 测试：`nav-rail.test.js`、`nav-rail.e2e.test.js` 及上述联动模块单测。
+   - 主控、固定状态与 chrome 装配：`plugins/plugins/omnimux/src/client/nav-rail.js`、`nav-rail-pins.js`、`chrome.js`。
+   - 协调与几何联动：`sidebar-coordinator.js`（新增 `subscribeExploreItems` 支撑动态插件注册同步）、`workbench/sidebar-activation.js`、`workbench/geometry.js`、`explore-more-menu.jsx`、`sidebar-panel-chrome.js`、`sidebar-toggle-topbar.js`、`conversation-box.js`、`conversation-collapse.js`、`rightbar-collapsed-fill.js`。
+   - 单元与真实浏览器 E2E 测试：`nav-rail-pins.test.js`、`nav-rail.test.js`、`nav-rail.e2e.test.js`、`explore-more-menu.test.js` 及上述联动模块单测。
 9. **契约与回归门禁同步**：
    - 更新 `plugins/docs/contracts/client-window-seams.md` 中 `__omnimuxSidebar` 接口说明（补充 `activatePinnedEntry`）。
    - 跑齐 `verify-next-shell-selectors.mjs`、`verify-dsw-tokens.mjs`、`verify-silent-catch.mjs`、`verify-anti-slop.test.mjs`、`three-column-layout-contract.test.js`、`sidebar-coordinator.test.js`、`sidebar-toggle-topbar.test.js`、`sidebar-rc5-layout.e2e.test.js` 与隔离工作树真实浏览器多视口验证。
@@ -109,3 +111,8 @@
 - **AC-6 分屏协同**：在首页或业务页触发对话 + 右栏工作台分屏后，固定轨高亮「首页」，次级会话栏默认收起留出分屏宽度，顶栏折叠钮可用并支持手动拉出会话栏。
 - **AC-7 窄屏抽屉**：视口窄屏（`< 768px`）下 `52px` 固定轨常驻，首页点击展开钮后会话栏从 `left: 52px` 抽屉式滑出，点击遮罩或按 `Esc` 收起。
 - **AC-8 无障碍与品味门禁**：所有图标按钮具备可访问名称与清晰 `:focus-visible` 焦点环，点击热区达标，界面零中点 `·`、零 Emoji 图标、零 `transition: all`、支持 `prefers-reduced-motion` 且无横向溢出。
+- **AC-9 「更多」菜单固定到左侧栏**：
+  1. 未固定的可固定菜单项默认隐藏图钉，悬停或键盘聚焦行时在右侧居中显现空心图钉（与分组分隔线及 `Alpha` 标识互不重叠），点击后立刻切换为常显实心图钉并保持「更多」菜单打开。
+  2. 存在 ≥1 个可用固定项时，「更多（`…`）」按钮正下方展示水平分隔线与对应顺序的 `36×36` 快捷入口图标（支持 Tooltip 与超长可内部滚动，不挤出底部系统入口）；无固定项时不显示空分隔线。
+  3. 点击固定快捷图标可一键进入对应业务页或官方面板，且直接高亮该固定图标（互斥取消「更多」高亮）；通过再次点击实心图钉或右键固定图标选择「取消固定」移除后，高亮平滑交还「更多」。
+  4. 固定列表按操作顺序持久化到 `localStorage`，兼容延迟 `registerExploreItem` 插件挂载与正式版/开发版 Alpha 渠道过滤，降级菜单保持同源能力。

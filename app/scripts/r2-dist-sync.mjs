@@ -570,7 +570,7 @@ async function main() {
       discoveredWin,
       join(ROOT_DIR, 'dist/release-download', `DSH-Desktop-${version}-x64-Setup.exe`),
       join(ROOT_DIR, 'dist/release-download', `OmniMux-${version}-x64-Setup.exe`),
-      join(ROOT_DIR, 'dsh-plugin-desktop/dist', `OmniMux-${version}-x64-Setup.exe`),
+      join(ROOT_DIR, 'dsh-desktop-next/dist', `OmniMux-${version}-x64-Setup.exe`),
     ].filter(Boolean)
 
     const candidateMacArm64Paths = [
@@ -592,7 +592,7 @@ async function main() {
       searchDir ? join(searchDir, `OmniMux-${version}-universal.dmg`) : null,
       discoveredMacUniversal,
       join(ROOT_DIR, 'dist/release-download', `OmniMux-${version}-universal.dmg`),
-      join(ROOT_DIR, 'dsh-plugin-desktop/dist/mac-release', `OmniMux-${version}-universal.dmg`),
+      join(ROOT_DIR, 'dsh-desktop-next/dist/mac-release', `OmniMux-${version}-universal.dmg`),
     ].filter(Boolean)
 
     for (const p of candidateWinPaths) {

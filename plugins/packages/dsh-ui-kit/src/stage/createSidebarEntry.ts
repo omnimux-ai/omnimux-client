@@ -58,6 +58,7 @@ const SIDEBAR_ENTRY_COMMON_STYLES = `
   color: var(--dsw-alias-label-primary, inherit);
   font: var(--dsw-font-s-14, inherit); font-size: 14px; line-height: 20px;
   cursor: pointer; text-align: left;
+  transition: background-color var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), transform var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .omnimux-sidebar-nav-entry[data-hidden="true"],
 .omnimux-sidebar-nav-entry.omnimux-sidebar-nav-entry-hidden {
@@ -65,6 +66,17 @@ const SIDEBAR_ENTRY_COMMON_STYLES = `
 }
 .omnimux-sidebar-nav-entry:hover {
   background: var(--dsw-alias-interactive-bg-hover);
+}
+.omnimux-sidebar-nav-entry:focus-visible {
+  outline: 2px solid var(--dsw-alias-brand-primary);
+  outline-offset: 1px;
+}
+.omnimux-sidebar-nav-entry:active {
+  transform: scale(var(--omnimux-motion-press-scale, 0.96));
+}
+@media (prefers-reduced-motion: reduce) {
+  .omnimux-sidebar-nav-entry { transition: none; }
+  .omnimux-sidebar-nav-entry:active { transform: none; }
 }
 .omnimux-sidebar-nav-entry[data-active="true"] {
   background: var(--dsw-alias-interactive-bg-active);
@@ -85,7 +97,7 @@ function resolveLabel(label: string | (() => string)): string {
   return typeof label === 'function' ? label() : label
 }
 
-function paintLabel(entry: HTMLElement, labelText: string, titleAttr = false) {
+function paintLabel(entry: HTMLElement, labelText: string, titleAttr = true) {
   entry.setAttribute('aria-label', labelText)
   if (titleAttr) {
     entry.title = labelText
@@ -143,7 +155,7 @@ export function createSidebarEntry(options: SidebarEntryOptions): () => void {
     customClassName,
     datasetKey,
     extraDatasetKeys,
-    titleAttr = false,
+    titleAttr = true,
     access = 'offline',
     requireAuth,
     authReason,

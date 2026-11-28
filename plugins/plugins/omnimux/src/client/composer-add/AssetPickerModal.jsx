@@ -29,6 +29,7 @@ export function AssetPickerModal({ open, onClose, t, occupied, alreadyIds, onCon
         onClick: () => {
           try {
             window.__omnimuxWorkbench?.open?.({ tabId: 'omnimux-assets:library', title: t('composerAdd.libraryTitle') })
+            onClose?.()
           } catch {
             // workbench 不可用时静默
           }

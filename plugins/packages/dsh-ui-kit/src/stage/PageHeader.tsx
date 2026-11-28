@@ -9,6 +9,7 @@ import { Tabs } from '../tabs/Tabs.tsx'
 import type { PageHeaderTabItem } from '../tabs/Tabs.tsx'
 import { cssClass } from '../internal/cssClass.ts'
 import { cx } from '../internal/cx.ts'
+import { resolveKitLocale } from '../internal/locale.ts'
 import css from './PageHeader.module.css'
 
 export type { PageHeaderTabItem } from '../tabs/Tabs.tsx'
@@ -51,15 +52,19 @@ export const PageHeader = forwardRef<HTMLElement, PageHeaderProps>(function Page
     actions,
     onRefresh,
     refreshing = false,
-    refreshTitle = 'Refresh',
+    refreshTitle,
     onClose,
-    closeTitle = 'Close',
+    closeTitle,
     breadcrumb,
     className,
     ...rest
   },
   ref,
 ) {
+  const isEn = resolveKitLocale() === 'en'
+  const resolvedRefreshTitle = refreshTitle ?? (isEn ? 'Refresh' : '刷新')
+  const resolvedCloseTitle = closeTitle ?? (isEn ? 'Close' : '关闭')
+
   return (
     <header {...rest} ref={ref} className={cx(PAGE_HEADER_CLASS, className)}>
       <div className={HEADING_CLASS}>
@@ -93,13 +98,13 @@ export const PageHeader = forwardRef<HTMLElement, PageHeaderProps>(function Page
           <IconButton
             variant="ghost"
             size="sm"
-            aria-label={refreshTitle}
-            title={refreshTitle}
+            aria-label={resolvedRefreshTitle}
+            title={resolvedRefreshTitle}
             aria-busy={refreshing || undefined}
             className={refreshing ? REFRESH_SPIN_CLASS : undefined}
             disabled={refreshing}
             onClick={() => {
-              void onRefresh()
+              if (!refreshing) void onRefresh()
             }}
           >
             <IconRefreshOutline16 />
@@ -110,8 +115,8 @@ export const PageHeader = forwardRef<HTMLElement, PageHeaderProps>(function Page
           <IconButton
             variant="ghost"
             size="sm"
-            aria-label={closeTitle}
-            title={closeTitle}
+            aria-label={resolvedCloseTitle}
+            title={resolvedCloseTitle}
             onClick={() => {
               onClose()
             }}

@@ -283,7 +283,7 @@ import { GenWaveCard } from 'dsh-ui-kit'
 |---|---|---|
 | `statusText` | `string` | 顶部任务文案（外部供给） |
 | `progress` | `number` | 0–100；传入后外部接管，停演示缓动 |
-| `autoProgress` | `boolean` | 默认 `progress === undefined` 时跑 0→96% 演示缓动 |
+| `autoProgress` | `boolean` | 默认 `false`（仅在传 `true` 时跑 0→96% 演示缓动；否则仅在传入真实 `progress` 时显示进度胶囊） |
 | `className` / `style` | — | 根元素透传；`prefers-reduced-motion` 下定格参考帧 |
 
 ---

@@ -1679,7 +1679,7 @@ export function resolveSkillDescription(rawName, fallbackDesc, locale) {
   const desc = config?.description || fallbackDesc || ''
   if (!desc) return rawName
   if (desc.includes(rawName)) return desc
-  return `${rawName} · ${desc}`
+  return `${rawName} - ${desc}`
 }
 
 /**

@@ -77,13 +77,13 @@ function renderFireSvg() {
 }
 
 const CATEGORY_NAMES_ZH = {
-  'ugc-testimonial': 'UGC 和用户评价',
-  'storytelling-script': '故事讲述和脚本',
-  'image-static': '图片和静态广告',
+  'ugc-testimonial': '口碑测评',
+  'storytelling-script': '故事脚本',
+  'image-static': '图文广告',
   'video-ads': '视频广告',
   'product-showcase': '产品展示',
-  'meme-native': '模因与原生',
-  'other': '其它营销分类',
+  'meme-native': '原生热梗',
+  'other': '其他',
   'scene-video': '视频创作',
   'scene-replicate': '爆款复刻',
   'scene-visual': '商品视觉',

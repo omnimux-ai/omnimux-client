@@ -3,6 +3,7 @@ import type { ChangeEvent, InputHTMLAttributes, KeyboardEvent } from "react";
 import { IconCloseFill14, IconSearchOutline16 } from "../icons/compat-icons.tsx";
 
 import { cx } from "../internal/cx.ts";
+import { resolveKitLocale } from "../internal/locale.ts";
 import "../motion/tokens.ts";
 import css from "./SearchField.module.css";
 
@@ -32,15 +33,26 @@ function isTypingTarget(target: EventTarget | null): boolean {
   return target.isContentEditable;
 }
 
+function isApplePlatform(): boolean {
+  if (typeof navigator === "undefined") return false;
+  const nav = navigator as Navigator & { userAgentData?: { platform?: string } };
+  const platform = nav.userAgentData?.platform || nav.platform || nav.userAgent || "";
+  return /mac|iphone|ipad|ipod/i.test(platform);
+}
+
 function matchesShortcut(event: globalThis.KeyboardEvent, shortcut: string): boolean {
   const raw = shortcut.trim();
   if (!raw) return false;
   const lower = raw.toLowerCase();
-  const wantsMeta = /⌘|cmd|meta/.test(lower);
-  const wantsCtrl = /\bctrl\b|⌃/.test(lower);
+  const hasExplicitMeta = /\b(cmd|meta)\b/.test(lower);
+  const hasCmdGlyph = /⌘/.test(lower);
+  const hasExplicitCtrl = /\bctrl\b|⌃/.test(lower);
+  const wantsMod = /\bmod\b/.test(lower) || (hasCmdGlyph && !hasExplicitMeta && !hasExplicitCtrl);
+  const wantsMeta = wantsMod ? isApplePlatform() : hasExplicitMeta || hasCmdGlyph;
+  const wantsCtrl = wantsMod ? !isApplePlatform() : hasExplicitCtrl;
   const wantsAlt = /\balt\b|⌥/.test(lower);
   const wantsShift = /\bshift\b|⇧/.test(lower);
-  const key = raw.replace(/⌘|⌃|⌥|⇧|cmd|meta|ctrl|alt|shift|\+/gi, "").trim().toLowerCase();
+  const key = raw.replace(/⌘|⌃|⌥|⇧|mod|cmd|meta|ctrl|alt|shift|\+/gi, "").trim().toLowerCase();
   if (!key) return false;
   if (Boolean(event.metaKey) !== wantsMeta) return false;
   if (Boolean(event.ctrlKey) !== wantsCtrl) return false;
@@ -63,15 +75,18 @@ export const SearchField = forwardRef<SearchFieldHandle, SearchFieldProps>(funct
     debounceMs = 200,
     shortcut,
     stretch = false,
-    clearLabel = "Clear",
+    clearLabel,
     className,
     disabled,
     id,
-    placeholder = "Search",
+    placeholder,
     ...rest
   },
   ref,
 ) {
+  const isEn = resolveKitLocale() === "en";
+  const resolvedClearLabel = clearLabel ?? (isEn ? "Clear search" : "清空搜索");
+  const resolvedPlaceholder = placeholder ?? (isEn ? "Search" : "搜索");
   const generatedId = useId();
   const inputId = id ?? generatedId;
   const inputRef = useRef<HTMLInputElement>(null);
@@ -79,18 +94,21 @@ export const SearchField = forwardRef<SearchFieldHandle, SearchFieldProps>(funct
   const controlled = value !== undefined;
   const [inner, setInner] = useState(defaultValue);
   const current = controlled ? value : inner;
-  const immediate = controlled || debounceMs <= 0;
+  const immediate = controlled || debounceMs <= 0 || !onValueChange;
 
-  useEffect(() => {
-    return () => {
-      if (timerRef.current) clearTimeout(timerRef.current);
-    };
-  }, []);
+  function clearPendingEmit(): void {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+  }
+
+  useEffect(() => clearPendingEmit, [immediate, onValueChange]);
 
   useEffect(() => {
     if (!shortcut || disabled) return;
     const onKey = (event: globalThis.KeyboardEvent) => {
-      if (event.defaultPrevented) return;
+      if (event.defaultPrevented || event.isComposing) return;
       if (isTypingTarget(event.target)) return;
       if (!matchesShortcut(event, shortcut)) return;
       event.preventDefault();
@@ -102,11 +120,11 @@ export const SearchField = forwardRef<SearchFieldHandle, SearchFieldProps>(funct
   }, [shortcut, disabled]);
 
   function emit(next: string): void {
+    clearPendingEmit();
     if (immediate) {
       onValueChange?.(next);
       return;
     }
-    if (timerRef.current) clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => {
       timerRef.current = null;
       onValueChange?.(next);
@@ -123,10 +141,7 @@ export const SearchField = forwardRef<SearchFieldHandle, SearchFieldProps>(funct
   }
 
   function handleClear(): void {
-    if (timerRef.current) {
-      clearTimeout(timerRef.current);
-      timerRef.current = null;
-    }
+    clearPendingEmit();
     if (!controlled) setInner("");
     onValueChange?.("");
     onClear?.();
@@ -143,6 +158,7 @@ export const SearchField = forwardRef<SearchFieldHandle, SearchFieldProps>(funct
     if (event.defaultPrevented) return;
     if (event.key === "Escape" && current) {
       event.preventDefault();
+      event.stopPropagation();
       handleClear();
     }
   }
@@ -160,7 +176,7 @@ export const SearchField = forwardRef<SearchFieldHandle, SearchFieldProps>(funct
         className={css.input}
         value={current}
         disabled={disabled}
-        placeholder={placeholder}
+        placeholder={resolvedPlaceholder}
         autoComplete="off"
         spellCheck={false}
         onChange={onChange}
@@ -171,8 +187,8 @@ export const SearchField = forwardRef<SearchFieldHandle, SearchFieldProps>(funct
           <button
             type="button"
             className={css.clear}
-            aria-label={clearLabel}
-            title={clearLabel}
+            aria-label={resolvedClearLabel}
+            title={resolvedClearLabel}
             disabled={disabled}
             onClick={handleClear}
           >

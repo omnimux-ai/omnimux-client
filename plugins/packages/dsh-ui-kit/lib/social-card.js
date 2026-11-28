@@ -993,7 +993,7 @@ function MasonryGrid({ items, getKey, renderItem, estimateWeight, minColumnWidth
 	});
 }
 // \0dsh-ui-kit-css:src/social-card/SocialSearchToolView.module.css.mjs
-injectCss("SocialSearchToolView.module.css", ".dshUk-SocialSearchToolView-root,\n.dshUk-SocialSearchToolView-root * {\n  box-sizing: border-box;\n}\n\n.dshUk-SocialSearchToolView-root {\n  display: flex;\n  flex-direction: column;\n  gap: 10px;\n  width: 100%;\n  min-width: 0;\n  color: var(--dsw-alias-label-primary);\n}\n\n.dshUk-SocialSearchToolView-header {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 8px;\n  min-height: 28px;\n  min-width: 0;\n}\n\n.dshUk-SocialSearchToolView-headerLeft {\n  display: flex;\n  align-items: center;\n  gap: 8px;\n  min-width: 0;\n  flex: 1;\n}\n\n.dshUk-SocialSearchToolView-headerTrigger {\n  display: inline-flex;\n  align-items: center;\n  gap: 8px;\n  min-width: 0;\n  max-width: 100%;\n  padding: 2px 6px;\n  margin: -2px -6px;\n  border: none;\n  border-radius: var(--dsw-radius-sm, 6px);\n  background: transparent;\n  color: var(--dsw-alias-label-secondary);\n  font: inherit;\n  font-size: var(--dsh-content-font-size-secondary, 13px);\n  line-height: 20px;\n  text-align: left;\n  cursor: pointer;\n  transition:\n    background-color var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),\n    color var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));\n}\n\n.dshUk-SocialSearchToolView-headerTrigger[data-static=\"true\"] {\n  cursor: default;\n}\n\n.dshUk-SocialSearchToolView-headerTrigger:not([data-static=\"true\"]):hover {\n  background-color: var(--dsw-alias-interactive-bg-hover);\n  color: var(--dsw-alias-label-primary);\n}\n\n.dshUk-SocialSearchToolView-headerTrigger:focus-visible {\n  outline: 2px solid var(--dsw-alias-brand-primary);\n  outline-offset: 1px;\n}\n\n.dshUk-SocialSearchToolView-headerIcon {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  width: 16px;\n  height: 16px;\n  flex-shrink: 0;\n  color: var(--dsw-alias-label-tertiary);\n}\n\n@keyframes stvPulse {\n  0%,\n  100% {\n    opacity: 0.4;\n    transform: scale(0.9);\n  }\n  50% {\n    opacity: 1;\n    transform: scale(1.06);\n  }\n}\n\n.dshUk-SocialSearchToolView-runningDot {\n  width: 7px;\n  height: 7px;\n  border-radius: 9999px;\n  background-color: var(--dsw-alias-brand-primary);\n  animation: stvPulse 1.1s ease-in-out infinite;\n}\n\n.dshUk-SocialSearchToolView-title {\n  font-weight: 500;\n  color: var(--dsw-alias-label-secondary);\n  white-space: nowrap;\n  flex-shrink: 0;\n}\n\n.dshUk-SocialSearchToolView-headerTrigger[data-error=\"true\"] .dshUk-SocialSearchToolView-title {\n  color: var(--dsw-alias-state-error-primary);\n}\n\n.dshUk-SocialSearchToolView-headerTrigger:not([data-static=\"true\"]):hover .dshUk-SocialSearchToolView-title {\n  color: var(--dsw-alias-label-primary);\n}\n\n.dshUk-SocialSearchToolView-query {\n  color: var(--dsw-alias-label-tertiary);\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n  min-width: 0;\n}\n\n.dshUk-SocialSearchToolView-countPill {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  padding: 1px 8px;\n  border-radius: 9999px;\n  background-color: var(--dsw-alias-bg-layer-2);\n  border: 1px solid var(--dsw-alias-border-l1);\n  color: var(--dsw-alias-label-secondary);\n  font-size: 11px;\n  font-weight: 600;\n  line-height: 16px;\n  font-variant-numeric: tabular-nums;\n  white-space: nowrap;\n  flex-shrink: 0;\n}\n\n.dshUk-SocialSearchToolView-chevron {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  flex-shrink: 0;\n  color: var(--dsw-alias-label-tertiary);\n  transition: transform var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));\n}\n\n.dshUk-SocialSearchToolView-chevron[data-open=\"false\"] {\n  transform: rotate(-90deg);\n}\n\n.dshUk-SocialSearchToolView-headerActions {\n  display: inline-flex;\n  align-items: center;\n  gap: 4px;\n  flex-shrink: 0;\n}\n\n.dshUk-SocialSearchToolView-headerActionBtn {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  gap: 4px;\n  height: 24px;\n  padding: 0 7px;\n  border-radius: var(--dsw-radius-sm, 6px);\n  border: 1px solid transparent;\n  background: transparent;\n  color: var(--dsw-alias-label-tertiary);\n  font-family: var(--ds-font-family-code, monospace);\n  font-size: 11px;\n  line-height: 16px;\n  cursor: pointer;\n  transition:\n    background-color var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),\n    color var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),\n    border-color var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),\n    transform var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));\n}\n\n.dshUk-SocialSearchToolView-headerActionBtn:active:not(:disabled) {\n  transform: scale(var(--omnimux-motion-press-scale, 0.96));\n}\n\n.dshUk-SocialSearchToolView-headerActionBtn:hover,\n.dshUk-SocialSearchToolView-headerActionBtn[aria-expanded=\"true\"] {\n  background-color: var(--dsw-alias-bg-layer-2);\n  border-color: var(--dsw-alias-border-l1);\n  color: var(--dsw-alias-label-primary);\n}\n\n.dshUk-SocialSearchToolView-headerActionBtn:focus-visible {\n  outline: 2px solid var(--dsw-alias-brand-primary);\n  outline-offset: 1px;\n}\n\n.dshUk-SocialSearchToolView-gridSingle {\n  max-width: 380px;\n}\n\n.dshUk-SocialSearchToolView-hoverPillBtn {\n  width: 26px;\n  height: 26px;\n  border-radius: 7px;\n  border: 1px solid var(--dsw-alias-border-l2);\n  background-color: var(--dsw-alias-card-fill);\n  color: var(--dsw-alias-label-secondary);\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  padding: 0;\n  cursor: pointer;\n  transition:\n    background-color var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),\n    color var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),\n    border-color var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),\n    transform var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));\n}\n\n.dshUk-SocialSearchToolView-hoverPillBtn:active:not(:disabled) {\n  transform: scale(var(--omnimux-motion-press-scale, 0.96));\n}\n\n.dshUk-SocialSearchToolView-hoverPillBtn:hover:not(:disabled) {\n  background-color: var(--dsw-alias-interactive-bg-hover);\n  color: var(--dsw-alias-label-primary);\n  border-color: var(--dsw-alias-border-l3);\n}\n\n.dshUk-SocialSearchToolView-hoverPillBtn:focus-visible {\n  outline: 2px solid var(--dsw-alias-brand-primary);\n  outline-offset: 1px;\n}\n\n.dshUk-SocialSearchToolView-hoverPillBtn[data-save-state=\"saved\"] {\n  background-color: var(--dsw-alias-state-success-tertiary);\n  color: var(--dsw-alias-state-success-primary);\n  border-color: transparent;\n  cursor: default;\n}\n\n.dshUk-SocialSearchToolView-hoverPillBtn[data-save-state=\"error\"] {\n  color: var(--dsw-alias-state-error-primary);\n}\n\n.dshUk-SocialSearchToolView-hoverPillBtn[data-save-state=\"saving\"] {\n  opacity: 0.7;\n  cursor: progress;\n}\n\n.dshUk-SocialSearchToolView-showMoreBtn {\n  align-self: flex-start;\n  height: 28px;\n  padding: 0 12px;\n  border-radius: var(--dsw-radius-md, 8px);\n  border: 1px solid var(--dsw-alias-border-l2);\n  background-color: var(--dsw-alias-bg-layer-1);\n  color: var(--dsw-alias-label-secondary);\n  font: inherit;\n  font-size: 12px;\n  font-weight: 500;\n  line-height: 16px;\n  cursor: pointer;\n  transition:\n    background-color var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),\n    color var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),\n    border-color var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),\n    transform var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));\n}\n\n.dshUk-SocialSearchToolView-showMoreBtn:active:not(:disabled) {\n  transform: scale(var(--omnimux-motion-press-scale, 0.96));\n}\n\n.dshUk-SocialSearchToolView-showMoreBtn:hover {\n  background-color: var(--dsw-alias-interactive-bg-hover);\n  color: var(--dsw-alias-label-primary);\n  border-color: var(--dsw-alias-border-l3);\n}\n\n.dshUk-SocialSearchToolView-showMoreBtn:focus-visible {\n  outline: 2px solid var(--dsw-alias-brand-primary);\n  outline-offset: 1px;\n}\n\n.dshUk-SocialSearchToolView-rawOutputBox {\n  margin: 0;\n  padding: 10px 12px;\n  border-radius: var(--dsw-radius-md, 10px);\n  border: 1px solid var(--dsw-alias-border-l2);\n  background-color: var(--dsw-alias-bg-layer-1);\n  color: var(--dsw-alias-label-secondary);\n  font-family: var(--ds-font-family-code, monospace);\n  font-size: 11px;\n  line-height: 1.48;\n  max-height: 240px;\n  overflow: auto;\n  white-space: pre-wrap;\n  word-break: break-word;\n}\n\n.dshUk-SocialSearchToolView-errorBox {\n  padding: 9px 12px;\n  border-radius: var(--dsw-radius-md, 10px);\n  border: 1px solid var(--dsw-alias-border-l2);\n  background-color: var(--dsw-alias-bg-layer-1);\n  color: var(--dsw-alias-state-error-primary);\n  font-size: 12px;\n  line-height: 1.45;\n  white-space: pre-wrap;\n  word-break: break-word;\n}\n\n@keyframes stvPulseReduced {\n  0%,\n  100% {\n    opacity: 0.4;\n  }\n  50% {\n    opacity: 1;\n  }\n}\n\n@media (prefers-reduced-motion: reduce) {\n  .dshUk-SocialSearchToolView-runningDot {\n    animation: stvPulseReduced 1.6s ease-in-out infinite;\n  }\n\n  .dshUk-SocialSearchToolView-headerTrigger,\n  .dshUk-SocialSearchToolView-chevron,\n  .dshUk-SocialSearchToolView-headerActionBtn,\n  .dshUk-SocialSearchToolView-hoverPillBtn,\n  .dshUk-SocialSearchToolView-showMoreBtn {\n    transition: none;\n  }\n\n  .dshUk-SocialSearchToolView-headerActionBtn:active:not(:disabled),\n  .dshUk-SocialSearchToolView-hoverPillBtn:active:not(:disabled),\n  .dshUk-SocialSearchToolView-showMoreBtn:active:not(:disabled) {\n    transform: none;\n  }\n}\n");
+injectCss("SocialSearchToolView.module.css", ".dshUk-SocialSearchToolView-root,\n.dshUk-SocialSearchToolView-root * {\n  box-sizing: border-box;\n}\n\n.dshUk-SocialSearchToolView-root {\n  display: flex;\n  flex-direction: column;\n  gap: 10px;\n  width: 100%;\n  min-width: 0;\n  color: var(--dsw-alias-label-primary);\n}\n\n.dshUk-SocialSearchToolView-header {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 8px;\n  min-height: 28px;\n  min-width: 0;\n}\n\n.dshUk-SocialSearchToolView-headerLeft {\n  display: flex;\n  align-items: center;\n  gap: 8px;\n  min-width: 0;\n  flex: 1;\n}\n\n.dshUk-SocialSearchToolView-headerTrigger {\n  display: inline-flex;\n  align-items: center;\n  gap: 8px;\n  min-width: 0;\n  max-width: 100%;\n  padding: 2px 6px;\n  margin: -2px -6px;\n  border: none;\n  border-radius: var(--dsw-radius-sm, 6px);\n  background: transparent;\n  color: var(--dsw-alias-label-secondary);\n  font: inherit;\n  font-size: var(--dsh-content-font-size-secondary, 13px);\n  line-height: 20px;\n  text-align: left;\n  cursor: pointer;\n  transition:\n    background-color var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),\n    color var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));\n}\n\n.dshUk-SocialSearchToolView-headerTrigger[data-static=\"true\"] {\n  cursor: default;\n}\n\n.dshUk-SocialSearchToolView-headerTrigger:not([data-static=\"true\"]):hover {\n  background-color: var(--dsw-alias-interactive-bg-hover);\n  color: var(--dsw-alias-label-primary);\n}\n\n.dshUk-SocialSearchToolView-headerTrigger:focus-visible {\n  outline: 2px solid var(--dsw-alias-brand-primary);\n  outline-offset: 1px;\n}\n\n.dshUk-SocialSearchToolView-headerIcon {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  width: 16px;\n  height: 16px;\n  flex-shrink: 0;\n  color: var(--dsw-alias-label-tertiary);\n}\n\n@keyframes stvPulse {\n  0%,\n  100% {\n    opacity: 0.4;\n    transform: scale(0.9);\n  }\n  50% {\n    opacity: 1;\n    transform: scale(1.06);\n  }\n}\n\n.dshUk-SocialSearchToolView-runningDot {\n  width: 7px;\n  height: 7px;\n  border-radius: 9999px;\n  background-color: var(--dsw-alias-brand-primary);\n  animation: stvPulse 1.1s ease-in-out infinite;\n}\n\n.dshUk-SocialSearchToolView-title {\n  font-weight: 500;\n  color: var(--dsw-alias-label-secondary);\n  white-space: nowrap;\n  flex-shrink: 0;\n}\n\n.dshUk-SocialSearchToolView-headerTrigger[data-error=\"true\"] .dshUk-SocialSearchToolView-title {\n  color: var(--dsw-alias-state-error-primary);\n}\n\n.dshUk-SocialSearchToolView-headerTrigger:not([data-static=\"true\"]):hover .dshUk-SocialSearchToolView-title {\n  color: var(--dsw-alias-label-primary);\n}\n\n.dshUk-SocialSearchToolView-query {\n  color: var(--dsw-alias-label-tertiary);\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n  min-width: 0;\n}\n\n.dshUk-SocialSearchToolView-countPill {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  padding: 1px 8px;\n  border-radius: 9999px;\n  background-color: var(--dsw-alias-bg-layer-2);\n  border: 1px solid var(--dsw-alias-border-l1);\n  color: var(--dsw-alias-label-secondary);\n  font-size: 11px;\n  font-weight: 600;\n  line-height: 16px;\n  font-variant-numeric: tabular-nums;\n  white-space: nowrap;\n  flex-shrink: 0;\n}\n\n.dshUk-SocialSearchToolView-chevron {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  flex-shrink: 0;\n  color: var(--dsw-alias-label-tertiary);\n  transition: transform var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));\n}\n\n.dshUk-SocialSearchToolView-chevron[data-open=\"false\"] {\n  transform: rotate(-90deg);\n}\n\n.dshUk-SocialSearchToolView-headerActions {\n  display: inline-flex;\n  align-items: center;\n  gap: 4px;\n  flex-shrink: 0;\n}\n\n.dshUk-SocialSearchToolView-headerActionBtn {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  gap: 4px;\n  height: 24px;\n  padding: 0 7px;\n  border-radius: var(--dsw-radius-sm, 6px);\n  border: 1px solid transparent;\n  background: transparent;\n  color: var(--dsw-alias-label-tertiary);\n  font-family: var(--ds-font-family-code, monospace);\n  font-size: 11px;\n  line-height: 16px;\n  cursor: pointer;\n  transition:\n    background-color var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),\n    color var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),\n    border-color var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),\n    transform var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));\n}\n\n.dshUk-SocialSearchToolView-headerActionBtn:active:not(:disabled) {\n  transform: scale(var(--omnimux-motion-press-scale, 0.96));\n}\n\n.dshUk-SocialSearchToolView-headerActionBtn:hover,\n.dshUk-SocialSearchToolView-headerActionBtn[aria-expanded=\"true\"] {\n  background-color: var(--dsw-alias-bg-layer-2);\n  border-color: var(--dsw-alias-border-l1);\n  color: var(--dsw-alias-label-primary);\n}\n\n.dshUk-SocialSearchToolView-headerActionBtn:focus-visible {\n  outline: 2px solid var(--dsw-alias-brand-primary);\n  outline-offset: 1px;\n}\n\n.dshUk-SocialSearchToolView-gridSingle {\n  max-width: 380px;\n}\n\n.dshUk-SocialSearchToolView-hoverPillBtn {\n  width: 26px;\n  height: 26px;\n  border-radius: 7px;\n  border: 1px solid var(--dsw-alias-border-l2);\n  background-color: var(--dsw-alias-card-fill);\n  color: var(--dsw-alias-label-secondary);\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  padding: 0;\n  cursor: pointer;\n  transition:\n    background-color var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),\n    color var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),\n    border-color var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),\n    transform var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));\n}\n\n.dshUk-SocialSearchToolView-hoverPillBtn:active:not(:disabled) {\n  transform: scale(var(--omnimux-motion-press-scale, 0.96));\n}\n\n.dshUk-SocialSearchToolView-hoverPillBtn:hover:not(:disabled) {\n  background-color: var(--dsw-alias-interactive-bg-hover);\n  color: var(--dsw-alias-label-primary);\n  border-color: var(--dsw-alias-border-l3);\n}\n\n.dshUk-SocialSearchToolView-hoverPillBtn:focus-visible {\n  outline: 2px solid var(--dsw-alias-brand-primary);\n  outline-offset: 1px;\n}\n\n.dshUk-SocialSearchToolView-hoverPillBtn[data-save-state=\"saved\"] {\n  background-color: var(--dsw-alias-state-success-tertiary);\n  color: var(--dsw-alias-state-success-primary);\n  border-color: transparent;\n  cursor: default;\n}\n\n.dshUk-SocialSearchToolView-hoverPillBtn[data-save-state=\"error\"] {\n  width: auto;\n  padding: 0 8px;\n  gap: 4px;\n  color: var(--dsw-alias-state-error-primary);\n  border-color: var(--dsw-alias-state-error-primary);\n}\n\n.dshUk-SocialSearchToolView-hoverRetryLabel {\n  font-size: 11px;\n  font-weight: 500;\n  line-height: 1;\n}\n\n.dshUk-SocialSearchToolView-hoverPillBtn[data-save-state=\"saving\"] {\n  opacity: 0.72;\n  cursor: wait;\n}\n\n.dshUk-SocialSearchToolView-hoverSpinner {\n  width: 12px;\n  height: 12px;\n  border-radius: 9999px;\n  border: 1.5px solid currentColor;\n  border-top-color: transparent;\n  animation: stvSaveSpin 700ms linear infinite;\n}\n\n@keyframes stvSaveSpin {\n  from {\n    transform: rotate(0deg);\n  }\n  to {\n    transform: rotate(360deg);\n  }\n}\n\n.dshUk-SocialSearchToolView-showMoreBtn {\n  align-self: flex-start;\n  height: 28px;\n  padding: 0 12px;\n  border-radius: var(--dsw-radius-md, 8px);\n  border: 1px solid var(--dsw-alias-border-l2);\n  background-color: var(--dsw-alias-bg-layer-1);\n  color: var(--dsw-alias-label-secondary);\n  font: inherit;\n  font-size: 12px;\n  font-weight: 500;\n  line-height: 16px;\n  cursor: pointer;\n  transition:\n    background-color var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),\n    color var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),\n    border-color var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),\n    transform var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));\n}\n\n.dshUk-SocialSearchToolView-showMoreBtn:active:not(:disabled) {\n  transform: scale(var(--omnimux-motion-press-scale, 0.96));\n}\n\n.dshUk-SocialSearchToolView-showMoreBtn:hover {\n  background-color: var(--dsw-alias-interactive-bg-hover);\n  color: var(--dsw-alias-label-primary);\n  border-color: var(--dsw-alias-border-l3);\n}\n\n.dshUk-SocialSearchToolView-showMoreBtn:focus-visible {\n  outline: 2px solid var(--dsw-alias-brand-primary);\n  outline-offset: 1px;\n}\n\n.dshUk-SocialSearchToolView-rawOutputBox {\n  margin: 0;\n  padding: 10px 12px;\n  border-radius: var(--dsw-radius-md, 10px);\n  border: 1px solid var(--dsw-alias-border-l2);\n  background-color: var(--dsw-alias-bg-layer-1);\n  color: var(--dsw-alias-label-secondary);\n  font-family: var(--ds-font-family-code, monospace);\n  font-size: 11px;\n  line-height: 1.48;\n  max-height: 240px;\n  overflow: auto;\n  white-space: pre-wrap;\n  word-break: break-word;\n}\n\n.dshUk-SocialSearchToolView-errorBox {\n  padding: 9px 12px;\n  border-radius: var(--dsw-radius-md, 10px);\n  border: 1px solid var(--dsw-alias-border-l2);\n  background-color: var(--dsw-alias-bg-layer-1);\n  color: var(--dsw-alias-state-error-primary);\n  font-size: 12px;\n  line-height: 1.45;\n  white-space: pre-wrap;\n  word-break: break-word;\n}\n\n@keyframes stvPulseReduced {\n  0%,\n  100% {\n    opacity: 0.4;\n  }\n  50% {\n    opacity: 1;\n  }\n}\n\n@media (prefers-reduced-motion: reduce) {\n  .dshUk-SocialSearchToolView-runningDot {\n    animation: stvPulseReduced 1.6s ease-in-out infinite;\n  }\n\n  .dshUk-SocialSearchToolView-hoverSpinner {\n    animation: stvPulseReduced 1.6s ease-in-out infinite;\n  }\n\n  .dshUk-SocialSearchToolView-headerTrigger,\n  .dshUk-SocialSearchToolView-chevron,\n  .dshUk-SocialSearchToolView-headerActionBtn,\n  .dshUk-SocialSearchToolView-hoverPillBtn,\n  .dshUk-SocialSearchToolView-showMoreBtn {\n    transition: none;\n  }\n\n  .dshUk-SocialSearchToolView-headerActionBtn:active:not(:disabled),\n  .dshUk-SocialSearchToolView-hoverPillBtn:active:not(:disabled),\n  .dshUk-SocialSearchToolView-showMoreBtn:active:not(:disabled) {\n    transform: none;\n  }\n}\n");
 var SocialSearchToolView_module_css_default = {
 	"root": "dshUk-SocialSearchToolView-root",
 	"header": "dshUk-SocialSearchToolView-header",
@@ -1009,6 +1009,8 @@ var SocialSearchToolView_module_css_default = {
 	"headerActionBtn": "dshUk-SocialSearchToolView-headerActionBtn",
 	"gridSingle": "dshUk-SocialSearchToolView-gridSingle",
 	"hoverPillBtn": "dshUk-SocialSearchToolView-hoverPillBtn",
+	"hoverRetryLabel": "dshUk-SocialSearchToolView-hoverRetryLabel",
+	"hoverSpinner": "dshUk-SocialSearchToolView-hoverSpinner",
 	"showMoreBtn": "dshUk-SocialSearchToolView-showMoreBtn",
 	"rawOutputBox": "dshUk-SocialSearchToolView-rawOutputBox",
 	"errorBox": "dshUk-SocialSearchToolView-errorBox"
@@ -1951,7 +1953,7 @@ function SocialSearchToolView({ toolName, block, locale = "zh", inspect, initial
 	const isRunning = parsed.phase === "running";
 	const isError = parsed.phase === "error";
 	const isPassthrough = parsed.phase === "passthrough";
-	const isEmpty = parsed.phase === "empty";
+	parsed.phase;
 	const canToggleBody = isReady || (isPassthrough || isError) && Boolean(parsed.rawOutputText);
 	const isBodyOpen = isReady ? cardsExpanded : rawOpen;
 	const handleToggleHeader = useCallback(() => {
@@ -2043,7 +2045,7 @@ function SocialSearchToolView({ toolName, block, locale = "zh", inspect, initial
 		initialVisibleCount
 	]);
 	const remainingCount = Math.max(0, parsed.items.length - Math.max(1, initialVisibleCount));
-	const countLabel = isReady || isEmpty ? `×${parsed.totalCount}` : null;
+	const countLabel = isReady && parsed.totalCount > 0 ? lang === "en" ? `${parsed.totalCount} ${parsed.totalCount === 1 ? "result" : "results"}` : `${parsed.totalCount} 条` : null;
 	const singleCard = isReady && parsed.items.length === 1;
 	return /* @__PURE__ */ jsxs("section", {
 		className: cx(c("root"), className),
@@ -2093,7 +2095,7 @@ function SocialSearchToolView({ toolName, block, locale = "zh", inspect, initial
 					})
 				}), /* @__PURE__ */ jsxs("div", {
 					className: c("headerActions"),
-					children: [parsed.rawOutputText ? /* @__PURE__ */ jsx("button", {
+					children: [(Boolean(inspect) || isPassthrough || isError) && parsed.rawOutputText ? /* @__PURE__ */ jsx("button", {
 						type: "button",
 						className: c("headerActionBtn"),
 						"aria-expanded": rawOpen,
@@ -2120,66 +2122,81 @@ function SocialSearchToolView({ toolName, block, locale = "zh", inspect, initial
 				className: c("rawOutputBox"),
 				children: parsed.rawOutputText
 			}) : null,
-			isReady && cardsExpanded ? /* @__PURE__ */ jsxs(Fragment, { children: [/* @__PURE__ */ jsx("div", {
-				className: singleCard ? c("gridSingle") : void 0,
-				children: /* @__PURE__ */ jsx(MasonryGrid, {
-					items: visibleItems,
-					getKey: (item) => item.id,
-					minColumnWidth: 210,
-					minColumns: 1,
-					maxColumns: singleCard ? 1 : 2,
-					defaultColumns: singleCard ? 1 : 2,
-					gap: 10,
-					resetKey: `${callKey}:${toolName}:${parsed.totalCount}:${parsed.items[0]?.id ?? ""}`,
-					estimateWeight: estimateArchetypeWeight,
-					ariaLabel: title,
-					renderItem: (item) => {
-						const hasLink = isSafeHttpUrl(item.sourceUrl);
-						const saveStatus = saveStates.get(item.id) ?? "idle";
-						const saveErr = saveErrors.get(item.id);
-						const showSave = Boolean(canSaveToInspiration && onSaveToInspiration && hasLink);
-						const hoverActions = hasLink || showSave ? /* @__PURE__ */ jsxs(Fragment, { children: [hasLink ? /* @__PURE__ */ jsx("button", {
-							type: "button",
-							className: c("hoverPillBtn"),
-							"aria-label": lang === "en" ? "Open original post" : "打开原帖",
-							title: lang === "en" ? "Open original post" : "打开原帖",
-							onClick: (e) => {
-								e.stopPropagation();
-								handleOpen(item);
-							},
-							children: /* @__PURE__ */ jsx(ExternalLinkGlyph, {})
-						}) : null, showSave ? /* @__PURE__ */ jsx("button", {
-							type: "button",
-							className: c("hoverPillBtn"),
-							"data-save-state": saveStatus,
-							disabled: saveStatus === "saving" || saveStatus === "saved",
-							"aria-label": saveStatus === "saved" ? lang === "en" ? "Saved to inspiration" : "已保存到灵感库" : saveStatus === "error" ? saveErr || (lang === "en" ? "Retry save" : "重试保存") : lang === "en" ? "Save to inspiration" : "存为灵感",
-							title: saveStatus === "saved" ? lang === "en" ? "Saved" : "已存为灵感" : saveStatus === "error" ? saveErr || (lang === "en" ? "Save failed" : "保存失败") : lang === "en" ? "Save to inspiration" : "存为灵感",
-							onClick: (e) => {
-								e.stopPropagation();
-								handleSave(item);
-							},
-							children: /* @__PURE__ */ jsx(IconSwap, {
-								active: saveStatus === "saved",
-								primary: /* @__PURE__ */ jsx(BookmarkGlyph, {}),
-								secondary: /* @__PURE__ */ jsx(CheckGlyph, {})
-							})
-						}) : null] }) : void 0;
-						return /* @__PURE__ */ jsx(SocialPostCard, {
-							item,
-							density: "compact",
-							onClick: hasLink || onOpenPost ? () => handleOpen(item) : void 0,
-							hoverActions
-						}, item.id);
-					}
-				})
-			}), remainingCount > 0 ? /* @__PURE__ */ jsx("button", {
-				type: "button",
-				className: c("showMoreBtn"),
-				"aria-expanded": showAll,
-				onClick: () => setShowAll((prev) => !prev),
-				children: showAll ? lang === "en" ? "Show less" : "收起" : lang === "en" ? `Show ${remainingCount} more` : `展开其余 ${remainingCount} 条`
-			}) : null] }) : null
+			isReady && cardsExpanded ? /* @__PURE__ */ jsxs(Fragment, { children: [
+				/* @__PURE__ */ jsx("div", {
+					className: singleCard ? c("gridSingle") : void 0,
+					children: /* @__PURE__ */ jsx(MasonryGrid, {
+						items: visibleItems,
+						getKey: (item) => item.id,
+						minColumnWidth: 210,
+						minColumns: 1,
+						maxColumns: singleCard ? 1 : 2,
+						defaultColumns: singleCard ? 1 : 2,
+						gap: 10,
+						resetKey: `${callKey}:${toolName}:${parsed.totalCount}:${parsed.items[0]?.id ?? ""}`,
+						estimateWeight: estimateArchetypeWeight,
+						ariaLabel: title,
+						renderItem: (item) => {
+							const hasLink = isSafeHttpUrl(item.sourceUrl);
+							const saveStatus = saveStates.get(item.id) ?? "idle";
+							const saveErr = saveErrors.get(item.id);
+							const showSave = Boolean(canSaveToInspiration && onSaveToInspiration && hasLink);
+							const hoverActions = hasLink || showSave ? /* @__PURE__ */ jsxs(Fragment, { children: [hasLink ? /* @__PURE__ */ jsx("button", {
+								type: "button",
+								className: c("hoverPillBtn"),
+								"aria-label": lang === "en" ? "Open original post" : "打开原帖",
+								title: lang === "en" ? "Open original post" : "打开原帖",
+								onClick: (e) => {
+									e.stopPropagation();
+									handleOpen(item);
+								},
+								children: /* @__PURE__ */ jsx(ExternalLinkGlyph, {})
+							}) : null, showSave ? /* @__PURE__ */ jsx("button", {
+								type: "button",
+								className: c("hoverPillBtn"),
+								"data-save-state": saveStatus,
+								"aria-busy": saveStatus === "saving" || void 0,
+								disabled: saveStatus === "saving" || saveStatus === "saved",
+								"aria-label": saveStatus === "saved" ? lang === "en" ? "Saved to inspiration" : "已保存到灵感库" : saveStatus === "saving" ? lang === "en" ? "Saving to inspiration" : "正在保存灵感" : saveStatus === "error" ? saveErr || (lang === "en" ? "Save failed, click to retry" : "保存失败，点击重试") : lang === "en" ? "Save to inspiration" : "存为灵感",
+								title: saveStatus === "saved" ? lang === "en" ? "Saved" : "已存为灵感" : saveStatus === "saving" ? lang === "en" ? "Saving..." : "保存中" : saveStatus === "error" ? saveErr || (lang === "en" ? "Save failed, click to retry" : "保存失败，点击重试") : lang === "en" ? "Save to inspiration" : "存为灵感",
+								onClick: (e) => {
+									e.stopPropagation();
+									handleSave(item);
+								},
+								children: saveStatus === "saving" ? /* @__PURE__ */ jsx("span", {
+									className: c("hoverSpinner"),
+									"aria-hidden": "true"
+								}) : saveStatus === "error" ? /* @__PURE__ */ jsx("span", {
+									className: c("hoverRetryLabel"),
+									children: lang === "en" ? "Retry" : "重试"
+								}) : /* @__PURE__ */ jsx(IconSwap, {
+									active: saveStatus === "saved",
+									primary: /* @__PURE__ */ jsx(BookmarkGlyph, {}),
+									secondary: /* @__PURE__ */ jsx(CheckGlyph, {})
+								})
+							}) : null] }) : void 0;
+							return /* @__PURE__ */ jsx(SocialPostCard, {
+								item,
+								density: "compact",
+								onClick: hasLink || onOpenPost ? () => handleOpen(item) : void 0,
+								hoverActions
+							}, item.id);
+						}
+					})
+				}),
+				saveErrors.size > 0 ? /* @__PURE__ */ jsx("div", {
+					className: c("errorBox"),
+					role: "status",
+					children: Array.from(saveErrors.values())[0]
+				}) : null,
+				remainingCount > 0 ? /* @__PURE__ */ jsx("button", {
+					type: "button",
+					className: c("showMoreBtn"),
+					"aria-expanded": showAll,
+					onClick: () => setShowAll((prev) => !prev),
+					children: showAll ? lang === "en" ? "Show less" : "收起" : lang === "en" ? `Show ${remainingCount} more` : `展开其余 ${remainingCount} 条`
+				}) : null
+			] }) : null
 		]
 	});
 }

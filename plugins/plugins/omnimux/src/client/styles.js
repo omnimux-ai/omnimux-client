@@ -1,4 +1,5 @@
 import { AGENT_PRESET_AVATAR_CSS } from './agent-preset-enhancer.js'
+import { EXPLORE_MORE_PIN_CSS } from './nav-rail-pins.js'
 
 export const STYLES_ID = 'omnimux-hub-styles'
 
@@ -1910,6 +1911,8 @@ button[aria-label*="context used"] {
   font-weight: 400;
   white-space: nowrap;
 }
+
+${EXPLORE_MORE_PIN_CSS}
 
 /* First-run "use your own key" panel: text conversation model only */
 .omx-key-panel {

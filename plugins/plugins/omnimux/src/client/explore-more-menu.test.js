@@ -310,12 +310,48 @@ describe('官方「更多」菜单内容', () => {
           assert.equal(typeof row.children, 'string', '非 Alpha 行内容仍是纯字符串（零变化）')
         }
       })
-      assert.deepEqual(alphaLabels, ['发布', '账号', '手机管理', '数据分析'], 'Alpha 项按菜单顺序命中')
+      assert.deepEqual(alphaLabels, ['发布', '账号', '移动设备', '数据分析'], 'Alpha 项按菜单顺序命中')
       assert.deepEqual(plainLabels, ['应用', '图像生成', '视频剪辑'], '仅应用、图像生成与视频剪辑保持非 Alpha 纯文本')
       assert.deepEqual(alphaLabels, TRUTH.filter((item) => isAlphaEntry(item.entryId)).map((item) => item.label), 'Alpha 项按菜单顺序命中')
       assert.deepEqual(plainLabels, TRUTH.filter((item) => !isAlphaEntry(item.entryId)).map((item) => item.label), '其余项不带标识')
       assert.equal(menu.container.querySelectorAll('.omnimux-explore-more-alpha').length, alphaLabels.length)
     } finally {
+      menu.cleanup()
+    }
+  })
+
+  it('每行渲染固定图钉按钮：点击仅切换固定态且保持菜单不关闭（不调用 onDismiss）', async () => {
+    let dismissCount = 0
+    let selectCount = 0
+    const menu = await renderMoreMenu({
+      onDismiss: () => { dismissCount += 1 },
+      entries: [{ id: 'schedules', label: '自动化任务', active: false }],
+      onOpen: () => { selectCount += 1 },
+    })
+    try {
+      menu.dom.window.localStorage.clear()
+      const clipPinBtn = menu.container.querySelector('[data-omnimux-pin-toggle="clip"]')
+      const schedulePinBtn = menu.container.querySelector('[data-omnimux-pin-toggle="panel:schedules"]')
+      assert.ok(clipPinBtn, '探索入口必须渲染右侧固定图钉按钮')
+      assert.ok(schedulePinBtn, '官方面板白名单项必须渲染右侧固定图钉按钮')
+      assert.equal(clipPinBtn.getAttribute('aria-pressed'), 'false')
+      assert.equal(schedulePinBtn.getAttribute('aria-pressed'), 'false')
+
+      await menu.api.React.act(async () => {
+        clipPinBtn.click()
+      })
+      assert.equal(dismissCount, 0, '点击固定图钉不得关闭「更多」菜单')
+      assert.equal(selectCount, 0, '点击固定图钉不得触发菜单行跳转')
+      assert.equal(clipPinBtn.getAttribute('aria-pressed'), 'true')
+      assert.equal(menu.container.querySelector('[data-omnimux-more-item="clip"]')?.getAttribute('data-pinned'), 'true')
+
+      await menu.api.React.act(async () => {
+        schedulePinBtn.click()
+      })
+      assert.equal(dismissCount, 0)
+      assert.equal(schedulePinBtn.getAttribute('aria-pressed'), 'true')
+    } finally {
+      menu.dom.window.localStorage.clear()
       menu.cleanup()
     }
   })

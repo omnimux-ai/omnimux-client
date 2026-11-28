@@ -14,6 +14,16 @@ export interface LinkInputState {
 }
 
 /** Accept one complete URL without changing the user-provided address. */
+export function normalizeUserLinkInput(value: string): string {
+  const raw = value.trim();
+  if (!raw || /\s|[<>]/u.test(raw)) return raw;
+  const hasScheme = /^[a-z][a-z0-9+.-]*:/i.test(raw) || raw.startsWith('//');
+  if (!hasScheme && /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+(?::\d+)?(?:[/?#].*)?$/i.test(raw)) {
+    return `https://${raw}`;
+  }
+  return raw;
+}
+
 export function validLinkUrl(value: string): string | null {
   const url = value.trim();
   if (!/^https?:\/\//i.test(url) || /\s|[<>]/u.test(url) || (url.match(/https?:\/\//gi)?.length ?? 0) !== 1) return null;
@@ -55,7 +65,7 @@ export function hasLinkReference(input: LinkInputState, kind: LinkKind, url: str
 export function createLinkReference(kind: LinkKind, url: string) {
   return {
     source: LINK_SOURCES[kind], ref: url,
-    label: `${kind === 'video' ? '参考视频' : '商品页面'} · ${new URL(url).hostname}`,
+    label: `${kind === 'video' ? '参考视频' : '商品页面'}：${new URL(url).hostname}`,
     clipboardText: linkClipboardText(kind, url),
   };
 }

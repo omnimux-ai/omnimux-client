@@ -19,6 +19,7 @@ export function ProviderConfigPanel({ t, value, busy, setBusy, setError, setNoti
   const [provider, setProvider] = useState('custom')
   const [endpoint, setEndpoint] = useState('')
   const [apiKey, setApiKey] = useState('')
+  const [showKey, setShowKey] = useState(false)
   const [models, setModels] = useState({})
   const [confirmed, setConfirmed] = useState(null)
   const confirmedRef = useRef(null)
@@ -110,12 +111,19 @@ export function ProviderConfigPanel({ t, value, busy, setBusy, setError, setNoti
     window.addEventListener('focus', refresh)
     return () => { stop?.(); window.removeEventListener('focus', refresh) }
   }, [reload, setError, setNotice])
+  const PROVIDER_DEFAULT_ENDPOINTS = {
+    openai: 'https://api.openai.com/v1',
+    openrouter: 'https://openrouter.ai/api/v1',
+    fal: 'https://fal.run',
+    siliconflow: 'https://api.siliconflow.cn/v1',
+  }
   const selectProvider = (next) => editDraft(() => {
     const saved = confirmed?.providers?.find((item) => item.provider === next)
     setProvider(next)
-    setEndpoint(saved?.endpoint || '')
+    setEndpoint(saved?.endpoint || PROVIDER_DEFAULT_ENDPOINTS[next] || '')
     setModels(saved?.models || {})
     setApiKey('')
+    setShowKey(false)
   })
   const payload = (saveIntent = false) => {
     const selected = Object.fromEntries(Object.entries(models)
@@ -223,8 +231,13 @@ export function ProviderConfigPanel({ t, value, busy, setBusy, setError, setNoti
       </div>
       <div className="omx-form-row">
         <span className="omx-section-title">{t('runtime.keyField')}</span>
-        <InputField aria-label={t('runtime.keyField')} type="password" value={apiKey} disabled={busy}
+        <InputField aria-label={t('runtime.keyField')} type={showKey ? 'text' : 'password'} value={apiKey} disabled={busy}
           placeholder={saved?.configured ? t('runtime.keyStored') : t('runtime.keyPlaceholder')}
+          suffix={(
+            <Button variant="ghost" className="omx-key-reveal" disabled={busy} onClick={() => setShowKey((prev) => !prev)}>
+              {showKey ? t('runtime.hideKey') : t('runtime.showKey')}
+            </Button>
+          )}
           onChange={(event) => editDraft(() => setApiKey(event.target.value))} />
       </div>
       {CONSUMPTION_SCENARIOS.map((scenario) => (

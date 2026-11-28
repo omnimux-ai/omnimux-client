@@ -5,16 +5,29 @@
  * list seat `sidebar.panellist.actions` 只要有注册就渲染该行，注册项**直接渲染成
  * 菜单行**（官方参考实现 `packages/client/ui-entry-customization/src/client/EntryMenuContent.tsx`）。
  * 本模块把 OmniMux 的探索入口注册进那个官方菜单：自绘「探索」常驻行与浮动菜单已在
- * #3785 退役，这里是这批入口在侧栏的唯一渲染面。
+ * #3785 退役，这里是这批入口在侧栏的唯一渲染面，并支持悬停/常显图钉将入口固定到固定左侧栏。
  *
  * 单一真源：清单 / 图标 / 分组 / 激活语义全部取自 `sidebar-coordinator.js`，
- * 本模块不复制第二份实现（契约 docs/contracts/sidebar-extra-entries.md）。
+ * 固定持久化与图钉 SVG 取自 `nav-rail-pins.js`，本模块不复制第二份实现
+ * （契约 docs/contracts/sidebar-extra-entries.md）。
  *
- * 依赖注入：官方 `MenuItemButton` 由调用方（`index.js` 的 `apply()`）传入。
+ * 依赖注入：官方 `MenuItemButton` 与可选 `IconPinOutlineRegular` / `IconPinFillRegular`
+ * 由调用方（`index.js` 的 `apply()`）传入。
  * 本模块**不得**顶层 import `@deepseek-ai/dsh-client-ui-primitives`：该包在宿主里是
  * 外部依赖，测试与老宿主解析不到，顶层 import 会把整个模块变成不可加载。
  */
+import { useSyncExternalStore } from 'react'
 import { ALPHA_DESCRIPTION, activateExploreItem, isAlphaEntry, resolveExploreMenuItems } from './sidebar-coordinator.js'
+import {
+  OFFICIAL_PANEL_ICON_SVG,
+  PIN_FILL_ICON_SVG,
+  PIN_OUTLINE_ICON_SVG,
+  getPinnedMoreSnapshot,
+  panelPinId,
+  rememberOfficialPanelMeta,
+  subscribePinnedMoreItems,
+  togglePinnedMoreItem,
+} from './nav-rail-pins.js'
 import { getRailSignals, getRailVerdict, resolveFixedRailState } from './workbench/sidebar-activation.js'
 
 /** 官方「更多」菜单的 seat 名（root 作用域 list）。 */
@@ -53,15 +66,6 @@ function exploreMoreMenuIcon(item) {
 }
 
 /**
- * 折叠进来的官方面板行图标：单一通用面板图标。
- *
- * 不按面板 id 映射图标 —— 那需要第二份 id 清单，官方新增面板时必然漂移。
- * 几何与 OmniMux 清单里的 `iconSvg` 同档（14×14、1.3 描边、纯矢量、无 Emoji）。
- */
-const PANEL_ROW_ICON_SVG =
-  '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><rect x="1.75" y="2.25" width="12.5" height="11.5" rx="2"/><path d="M1.75 6.25h12.5"/></svg>'
-
-/**
  * 允许进「更多」菜单的官方面板行 id（白名单）。
  *
  * 放行官方「插件」和「自动化任务」：「插件」是 DSH 官方面板的开关与配置入口，
@@ -79,7 +83,7 @@ function panelRowIcon() {
     <span
       className="omnimux-explore-more-icon"
       aria-hidden="true"
-      dangerouslySetInnerHTML={{ __html: PANEL_ROW_ICON_SVG }}
+      dangerouslySetInnerHTML={{ __html: OFFICIAL_PANEL_ICON_SVG }}
     />
   )
 }
@@ -105,27 +109,37 @@ function exploreMoreMenuLabel(item) {
   )
 }
 
+function renderPinGlyph(pinned, FillIcon, OutlineIcon) {
+  if (pinned) {
+    if (FillIcon) return <FillIcon size={14} aria-hidden="true" />
+    return <span aria-hidden="true" dangerouslySetInnerHTML={{ __html: PIN_FILL_ICON_SVG }} />
+  }
+  if (OutlineIcon) return <OutlineIcon size={14} aria-hidden="true" />
+  return <span aria-hidden="true" dangerouslySetInnerHTML={{ __html: PIN_OUTLINE_ICON_SVG }} />
+}
+
 /**
  * 生成「更多」菜单内容组件：顺序 / 分组 / 激活委托全部取自 sidebar-coordinator 真源。
  *
  * - 分组：`separatorBefore` 取「上一项的 `dividerAfter`」；
  * - 点击：先 `onDismiss()` 关掉官方菜单，再走 `activateExploreItem` 既有三段委托
  *   （`action` → 已挂载行 click → `__omnimuxWorkbench.open`），不另写导航；
+ * - 固定：每行右侧提供悬停空心 / 已固定常显实心图钉，点击阻止冒泡并保持菜单打开；
  * - 不订阅注册变更：官方菜单每次展开重新挂载即读取最新集合。
  *
- * 折叠的官方面板行（`插件` / `自动化任务`）排在最前：侧栏上的面板行已被
- * `sidebar-panel-chrome.js` 收起，官方 owner 通过 `entries` / `onOpen` 把它们交给本菜单，
- * 这里原样渲染并复用官方 `onOpen`，不复制面板 id、不硬编码文案。
- *
- * @param {{ MenuItemButton?: import('react').ComponentType<object> }} [primitives]
- *   官方 primitives 命名空间（只需 `MenuItemButton`）。
+ * @param {{
+ *   MenuItemButton?: import('react').ComponentType<object>,
+ *   IconPinOutlineRegular?: import('react').ComponentType<object>,
+ *   IconPinFillRegular?: import('react').ComponentType<object>,
+ * }} [primitives]
+ *   官方 primitives 命名空间（只需 `MenuItemButton`，图钉图标可选）。
  * @returns {import('react').FunctionComponent<{
  *   onDismiss?: () => void,
  *   entries?: readonly { id: string, label: string, active?: boolean }[],
  *   onOpen?: (id: string) => void,
  * }>}
  */
-function readActiveMoreItemId(items) {
+function readActiveMoreItemId(items, pinnedMoreIds) {
   if (typeof document === 'undefined') return null
   const productStageId = document.documentElement?.dataset?.dshProductStage || null
   const verdict = getRailVerdict(document)
@@ -135,57 +149,116 @@ function readActiveMoreItemId(items) {
     signals,
     productStageId,
     exploreItems: items,
+    pinnedMoreIds,
   })
-  return railState.railId === 'more' ? railState.activeMoreItemId : null
+  return railState.railId === 'more' || railState.railId === 'pinned' ? railState.activeMoreItemId : null
 }
 
-export function createExploreMoreMenuContent({ MenuItemButton } = {}) {
+export function createExploreMoreMenuContent({ MenuItemButton, IconPinOutlineRegular, IconPinFillRegular } = {}) {
+  const OutlinePinIcon = isRenderableComponent(IconPinOutlineRegular) ? IconPinOutlineRegular : null
+  const FillPinIcon = isRenderableComponent(IconPinFillRegular) ? IconPinFillRegular : null
+
   /**
    * 官方「更多」菜单内容：owner 提供 `onDismiss` 与折叠的官方面板清单，
    * 其余输入全部来自真源清单。
    */
   function ExploreMoreMenuContent({ onDismiss, entries, onOpen }) {
     const items = resolveExploreMenuItems()
-    const activeMoreId = readActiveMoreItemId(items)
+    const pinnedIds = useSyncExternalStore(
+      subscribePinnedMoreItems,
+      getPinnedMoreSnapshot,
+      getPinnedMoreSnapshot,
+    )
+    const pinnedSet = new Set(pinnedIds)
+    const activeMoreId = readActiveMoreItemId(items, pinnedIds)
     // 白名单：官方「插件」和「自动化任务」进「更多」菜单；官方「插件」承载 bundle
     // 开关和配置页，其余官方新增面板不自动冒出来。
     const panels = Array.isArray(entries)
       ? entries.filter((entry) => PANEL_ENTRY_WHITELIST.has(entry?.id))
       : []
+    for (const entry of panels) {
+      rememberOfficialPanelMeta(entry)
+    }
+
+    const renderPinAction = (pinId, label) => {
+      const pinned = pinnedSet.has(pinId)
+      const actionLabel = pinned ? `取消固定${label}` : `固定${label}到左侧边栏`
+      return (
+        <span className="omnimux-explore-more-pin-anchor">
+          <button /* exempt-ui01: 宿主原生 Menu 插槽内嵌 22px 图标按钮，禁止顶层耦合 dsh-ui-kit */
+            type="button"
+            className="omnimux-explore-more-pin-btn"
+            data-omnimux-pin-toggle={pinId}
+            aria-label={actionLabel}
+            aria-pressed={pinned ? 'true' : 'false'}
+            title={pinned ? '取消固定' : '固定到左侧边栏'}
+            onClick={(event) => {
+              event.preventDefault()
+              event.stopPropagation()
+              togglePinnedMoreItem(pinId)
+            }}
+          >
+            {renderPinGlyph(pinned, FillPinIcon, OutlinePinIcon)}
+          </button>
+        </span>
+      )
+    }
+
     return (
       <>
-        {panels.map((entry) => (
-          <MenuItemButton
-            key={`panel:${entry.id}`}
-            icon={panelRowIcon()}
-            current={entry.active === true}
-            separatorBefore={false}
-            onSelect={() => {
-              onDismiss?.()
-              onOpen?.(entry.id)
-            }}
-          >
-            {entry.label}
-          </MenuItemButton>
-        ))}
-        {items.map((item, index) => (
-          <MenuItemButton
-            key={item.id}
-            icon={exploreMoreMenuIcon(item)}
-            current={activeMoreId !== null && activeMoreId === item.id}
-            separatorBefore={
-              (index > 0 && items[index - 1].dividerAfter === true)
-              // 折叠块之后断开：官方面板入口与产品入口不是同一组。
-              || (index === 0 && panels.length > 0)
-            }
-            onSelect={() => {
-              onDismiss?.()
-              activateExploreItem(item)
-            }}
-          >
-            {exploreMoreMenuLabel(item)}
-          </MenuItemButton>
-        ))}
+        {panels.map((entry) => {
+          const pinId = panelPinId(entry.id)
+          const pinned = pinnedSet.has(pinId)
+          return (
+            <div
+              key={`panel:${entry.id}`}
+              className="omnimux-explore-more-row"
+              data-omnimux-more-item={pinId}
+              data-pinned={pinned ? 'true' : 'false'}
+            >
+              <MenuItemButton
+                icon={panelRowIcon()}
+                current={entry.active === true}
+                separatorBefore={false}
+                onSelect={() => {
+                  onDismiss?.()
+                  onOpen?.(entry.id)
+                }}
+              >
+                {entry.label}
+              </MenuItemButton>
+              {renderPinAction(pinId, entry.label)}
+            </div>
+          )
+        })}
+        {items.map((item, index) => {
+          const pinned = pinnedSet.has(item.id)
+          return (
+            <div
+              key={item.id}
+              className="omnimux-explore-more-row"
+              data-omnimux-more-item={item.id}
+              data-pinned={pinned ? 'true' : 'false'}
+            >
+              <MenuItemButton
+                icon={exploreMoreMenuIcon(item)}
+                current={activeMoreId !== null && activeMoreId === item.id}
+                separatorBefore={
+                  (index > 0 && items[index - 1].dividerAfter === true)
+                  // 折叠块之后断开：官方面板入口与产品入口不是同一组。
+                  || (index === 0 && panels.length > 0)
+                }
+                onSelect={() => {
+                  onDismiss?.()
+                  activateExploreItem(item)
+                }}
+              >
+                {exploreMoreMenuLabel(item)}
+              </MenuItemButton>
+              {renderPinAction(item.id, item.label)}
+            </div>
+          )
+        })}
       </>
     )
   }
@@ -201,15 +274,19 @@ export function createExploreMoreMenuContent({ MenuItemButton } = {}) {
  * 或渲染出空壳的占用项。
  *
  * @param {{ slots?: { inject?: Function, register?: Function } }} [ctx] cordis 插件上下文
- * @param {{ MenuItemButton?: unknown }} [primitives]
+ * @param {{ MenuItemButton?: unknown, IconPinOutlineRegular?: unknown, IconPinFillRegular?: unknown }} [primitives]
  *   官方 `@deepseek-ai/dsh-client-ui-primitives` 命名空间。
  * @returns {boolean} 是否完成注册
  */
 export function installExploreMoreMenu(ctx, primitives) {
   if (typeof ctx?.slots?.inject !== 'function') return false
-  const { MenuItemButton } = primitives ?? {}
+  const { MenuItemButton, IconPinOutlineRegular, IconPinFillRegular } = primitives ?? {}
   if (!isRenderableComponent(MenuItemButton)) return false
-  const Content = createExploreMoreMenuContent({ MenuItemButton })
+  const Content = createExploreMoreMenuContent({
+    MenuItemButton,
+    IconPinOutlineRegular,
+    IconPinFillRegular,
+  })
   ctx.slots.inject(EXPLORE_MORE_MENU_SLOT, () => ctx.slots.register({
     name: EXPLORE_MORE_MENU_SLOT,
     id: EXPLORE_MORE_MENU_ID,

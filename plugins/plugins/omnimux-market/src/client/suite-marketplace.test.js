@@ -183,8 +183,8 @@ test('A2 套件卡：构成计数真源完备且普通卡可渲染', () => {
   // 套件构成计数不再渲染在卡片上，由 plazaUtils 真源供详情页消费。
   assert.deepEqual(plazaUtils.resolveSuiteCounts({}), { skills: 0, rules: 0, agents: 0 })
   assert.deepEqual(plazaUtils.resolveSuiteCounts(SOCIAL_CONTENT), { skills: 0, rules: 5, agents: 7 })
-  assert.equal(plazaUtils.suiteCompositionText(SOCIAL_CONTENT, tr), '技能 0 · 规则 5 · Agent 7')
-  assert.equal(plazaUtils.suiteCompositionText(DISTRIBUTION, tr), '技能 6 · 规则 0 · Agent 5')
+  assert.equal(plazaUtils.suiteCompositionText(SOCIAL_CONTENT, tr), '技能 0、规则 5、Agent 7')
+  assert.equal(plazaUtils.suiteCompositionText(DISTRIBUTION, tr), '技能 6、规则 0、Agent 5')
 
   const skillCard = renderRegularCard({ kind: 'skill', slug: 'demo', name: '示例技能', summary: '说明' }, { tr, h, onOpen: () => {} })
   assert.ok(skillCard, 'regular card must render a tree')
@@ -354,6 +354,8 @@ test('A5 解析不到项目目录时不发请求，明确提示改选个人全�
   let tree = ui.render()
   withClass(tree, 'ws-detail-header-actions')[0].children[0].props.onClick()
   tree = ui.render()
+  withClass(tree, 'ws-suite-target-option')[0].props.onClick()
+  tree = ui.render()
   withClass(tree, 'ws-detail-actions')[0].children[1].props.onClick()
   await new Promise((resolve) => setImmediate(resolve))
 
@@ -389,7 +391,7 @@ test('A5 partial 回执标注未完成项，按钮不转「已安装」且不向
   assert.equal(receipt.props.className, 'ws-suite-receipt partial')
   assert.equal(withClass(receipt, 'ws-suite-receipt-title')[0].children[0], '部分未完成')
   const items = withClass(receipt, 'ws-suite-receipt-item').map((node) => node.children[0])
-  assert.ok(items.includes('未完成 · music-agent：EACCES'))
+  assert.ok(items.includes('未完成：music-agent（EACCES）'))
   assert.equal(withClass(tree, 'ws-detail-header-actions')[0].children[0].children[0], '安装')
   assert.deepEqual(installed, [], 'partial 不得向上层声明安装完成')
 })

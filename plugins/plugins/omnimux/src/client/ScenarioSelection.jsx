@@ -17,32 +17,37 @@ export function ScenarioSelection({ t, scope, value, busy, setBusy, setError }) 
     } catch (caught) { setError(caught instanceof Error ? caught.message : t('runtime.error')) }
     finally { setBusy(false) }
   }
+  const visibleRows = CONSUMPTION_SCENARIOS.map((scenario) => {
+    const binding = bindings[scenario]
+    const selected = binding.channel === 'byok' ? `byok:${binding.provider}` : binding.channel
+    const options = [{ value: 'official', label: t('runtime.official') }]
+    if (scenario === 'text' && value.runtimeAgentId && value.runtimeAgentVerified) {
+      options.push({ value: 'agent', label: t('runtime.agent') })
+    }
+    for (const provider of providers) {
+      if (provider.saveState !== 'pending' && provider.models?.[scenario] && provider.capabilities?.includes(scenario)) {
+        options.push({ value: `byok:${provider.provider}`, label: `${provider.provider} / ${provider.models[scenario]}` })
+      }
+    }
+    if (!options.some((option) => option.value === selected)) {
+      options.push({ value: selected, label: t('runtime.needsConfirmation') })
+    }
+    if (options.length <= 1) return null
+    return { scenario, selected, options }
+  }).filter(Boolean)
+
+  if (visibleRows.length === 0) return null
+
   return (
     <div className="omnimux-models-card__group-card" data-omnimux-scenario-bindings="">
-      {CONSUMPTION_SCENARIOS.map((scenario) => {
-        const binding = bindings[scenario]
-        const selected = binding.channel === 'byok' ? `byok:${binding.provider}` : binding.channel
-        const options = [{ value: 'official', label: t('runtime.official') }]
-        if (scenario === 'text' && value.runtimeAgentId && value.runtimeAgentVerified) {
-          options.push({ value: 'agent', label: t('runtime.agent') })
-        }
-        for (const provider of providers) {
-          if (provider.saveState !== 'pending' && provider.models?.[scenario] && provider.capabilities?.includes(scenario)) {
-            options.push({ value: `byok:${provider.provider}`, label: `${provider.provider} · ${provider.models[scenario]}` })
-          }
-        }
-        if (!options.some((option) => option.value === selected)) {
-          options.push({ value: selected, label: t('runtime.needsConfirmation') })
-        }
-        return (
-          <div key={scenario} className="omnimux-models-card__row">
-            <span className="omnimux-models-card__row-label">{t(`runtime.scenario.${scenario}`)}</span>
-            <DropdownSelect id={`omnimux-scenario-${scenario}`} aria-label={t(`runtime.scenario.${scenario}`)}
-              value={selected} options={options} disabled={busy}
-              onChange={(next) => { void change(scenario, next) }} />
-          </div>
-        )
-      })}
+      {visibleRows.map(({ scenario, selected, options }) => (
+        <div key={scenario} className="omnimux-models-card__row">
+          <span className="omnimux-models-card__row-label">{t(`runtime.scenario.${scenario}`)}</span>
+          <DropdownSelect id={`omnimux-scenario-${scenario}`} aria-label={t(`runtime.scenario.${scenario}`)}
+            value={selected} options={options} disabled={busy}
+            onChange={(next) => { void change(scenario, next) }} />
+        </div>
+      ))}
     </div>
   )
 }

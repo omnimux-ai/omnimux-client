@@ -1,6 +1,6 @@
 import { useEffect, useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom'
-import { Button } from 'dsh-ui-kit'
+import { Button, CopyButton } from 'dsh-ui-kit'
 import { ModalCloseButton } from './components/ModalCloseButton.jsx'
 import { begin, cancel, getSnapshot, retry, subscribe } from './auth-gate.js'
 import { parseLogoSvg, resolveHeroLogoSvg } from './hero-brand.js'
@@ -42,14 +42,16 @@ export function LoginGate({ t }) {
   const gate = useSyncExternalStore(subscribe, getSnapshot)
   const view = describeLoginGate(gate)
 
+  const allowBackdropDismiss = view.phase !== 'starting' && view.phase !== 'waiting'
+
   useEffect(() => {
-    if (!view.visible) return undefined
+    if (!view.visible || !allowBackdropDismiss) return undefined
     const onKey = (event) => {
       if (event.key === 'Escape') cancel()
     }
     window.addEventListener('keydown', onKey)
     return () => { window.removeEventListener('keydown', onKey) }
-  }, [view.visible])
+  }, [view.visible, allowBackdropDismiss])
 
   if (!view.visible) return null
   if (typeof document === 'undefined' || !document.body) return null
@@ -70,7 +72,7 @@ export function LoginGate({ t }) {
         className="omnimux-login-gate-backdrop"
         data-omnimux-login-gate=""
         data-phase={view.phase}
-        onClick={() => { cancel() }}
+        onClick={() => { if (allowBackdropDismiss) cancel() }}
       >
         <div
           className="omnimux-login-gate-dialog"
@@ -137,7 +139,12 @@ export function LoginGate({ t }) {
                     <span className="omnimux-login-gate-spinner" aria-hidden="true" />
                     <span>{t(COPY.waitingDeviceCode)}</span>
                     {view.phase === 'waiting' ? (
-                      <span className="omnimux-login-gate-code">{view.userCode}</span>
+                      <>
+                        <span className="omnimux-login-gate-code">{view.userCode}</span>
+                        {view.userCode && view.userCode !== '—' ? (
+                          <CopyButton text={view.userCode} size="xs" />
+                        ) : null}
+                      </>
                     ) : null}
                   </div>
                   {view.phase === 'waiting' && gate.verification_url ? (
