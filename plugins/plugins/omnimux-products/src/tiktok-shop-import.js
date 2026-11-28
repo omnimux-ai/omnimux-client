@@ -198,6 +198,23 @@ function isRecommendationComponent(comp) {
 }
 
 /**
+ * Check whether an unwrapped product_info node actually carries product title signal
+ * rather than being an empty stub wrapper.
+ * @param {unknown} pinfo
+ * @returns {boolean}
+ */
+function hasProductInfoSignal(pinfo) {
+  if (!isPlainObj(pinfo)) return false
+  const pm = isPlainObj(pinfo.product_model)
+    ? pinfo.product_model
+    : isPlainObj(pinfo.product_base)
+      ? pinfo.product_base
+      : null
+  const nodes = pm ? [pm, pinfo] : [pinfo]
+  return nodes.some((node) => Boolean(asText(node.name) || asText(node.title) || asText(node.product_name)))
+}
+
+/**
  * Locate the canonical `product_info` node for both v1 double-nested and v3 component layouts.
  * @param {Record<string, unknown>} root
  * @returns {{ pinfo: Record<string, unknown> | null, categories: unknown[] }}
@@ -205,6 +222,8 @@ function isRecommendationComponent(comp) {
 function locateProductInfo(root) {
   const dataObj = isPlainObj(root.data) ? root.data : null
   const dataDataObj = dataObj && isPlainObj(dataObj.data) ? dataObj.data : null
+  /** @type {{ pinfo: Record<string, unknown> | null, categories: unknown[] } | null} */
+  let stubFallback = null
   const v1Candidates = [
     isPlainObj(root.global_data) ? root.global_data.product_info : null,
     dataObj && isPlainObj(dataObj.global_data) ? dataObj.global_data.product_info : null,
@@ -213,7 +232,10 @@ function locateProductInfo(root) {
   for (const candidate of v1Candidates) {
     if (isPlainObj(candidate)) {
       const unwrapped = unwrapProductInfo(candidate)
-      if (unwrapped.pinfo) return unwrapped
+      if (unwrapped.pinfo) {
+        if (hasProductInfoSignal(unwrapped.pinfo)) return unwrapped
+        stubFallback ||= unwrapped
+      }
     }
   }
 
@@ -234,7 +256,10 @@ function locateProductInfo(root) {
       const candidate = isPlainObj(comp) && isPlainObj(comp.component_data) ? comp.component_data.product_info : null
       if (isPlainObj(candidate)) {
         const unwrapped = unwrapProductInfo(candidate)
-        if (unwrapped.pinfo) return unwrapped
+        if (unwrapped.pinfo) {
+          if (hasProductInfoSignal(unwrapped.pinfo)) return unwrapped
+          stubFallback ||= unwrapped
+        }
       }
     }
   }
@@ -248,14 +273,14 @@ function locateProductInfo(root) {
     if (isPlainObj(value.product_info)) {
       const unwrapped = unwrapProductInfo(value.product_info)
       if (!unwrapped.pinfo) return
-      if (isPlainObj(unwrapped.pinfo.product_model) || isPlainObj(unwrapped.pinfo.product_base)) {
+      if (hasProductInfoSignal(unwrapped.pinfo)) {
         preferred = unwrapped
       } else if (!fallback) {
         fallback = unwrapped
       }
     }
   })
-  return preferred || fallback || { pinfo: null, categories: [] }
+  return preferred || fallback || stubFallback || { pinfo: null, categories: [] }
 }
 
 /**
