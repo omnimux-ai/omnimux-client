@@ -60,6 +60,8 @@ export interface PlatformGlyph {
 /** A placement rule that needs nothing beyond the mark's own box. */
 export type SimpleAnchorStrategy =
   | 'avatar-above'
+  | 'feed-nav-above'
+  | 'engagement-bar-above'
   | 'side-rail-parking'
   | 'viewport-corner-left'
   | 'viewport-corner-right'
@@ -343,6 +345,7 @@ const TIKTOK_ENTRY: PlatformEntry = {
       default: ['avatar-above', 'viewport-corner-left'],
       byLayout: {
         'side-rail': ['avatar-above', 'side-rail-parking'],
+        'cinema-feed': ['feed-nav-above', 'engagement-bar-above', 'viewport-corner-right'],
         'browse-modal': ['modal-prev-arrow', 'modal-panel-left', 'viewport-corner-right'],
       },
     },

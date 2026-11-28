@@ -37,6 +37,9 @@ const CARD_SELECTORS: readonly string[] = [
   '[class*="ItemContainer"]',
 ]
 
+/** Detached Cinema overlay host holding the more-menu button and creator identity. */
+const CHROME_HOST_SELECTOR = '[data-e2e="anchoring-chrome-host"]'
+
 /**
  * Controls that name the post they belong to.
  *
@@ -151,6 +154,22 @@ function owningCard(control: Element): Element | null {
   return null
 }
 
+/** Visible Cinema chrome host closest to the viewport centre, or `null`. */
+function visibleChromeHost(doc: Document, viewport: ViewportSize): Element | null {
+  let best: Element | null = null
+  let bestDistance = Number.POSITIVE_INFINITY
+  for (const host of Array.from(doc.querySelectorAll(CHROME_HOST_SELECTOR))) {
+    const box = host.getBoundingClientRect()
+    if (box.width <= 0 || box.height <= 0 || box.bottom <= 0 || box.top >= viewport.height) continue
+    const distance = centreDistance(host, viewport)
+    if (distance < bestDistance) {
+      bestDistance = distance
+      best = host
+    }
+  }
+  return best
+}
+
 /**
  * Whether a card is a photo/carousel post rather than a video.
  *
@@ -165,6 +184,8 @@ function kindOf(card: Element | null): ActivePostKind {
   const tag = card.getAttribute('data-e2e')
   if (tag === 'feed-video' || tag === 'browse-video') return 'video'
   if (tag === 'feed-photo' || tag === 'browse-photo') return 'photo'
+  if (card.querySelector('[data-e2e="feed-video"], [data-e2e="browse-video"]') !== null) return 'video'
+  if (card.querySelector('[data-e2e="feed-photo"], [data-e2e="browse-photo"]') !== null) return 'photo'
   if (card.querySelector('video') !== null) return 'video'
   if (card.querySelector('[id*="xgwrapper-"], [id*="xgmedia-"]') !== null) return 'video'
   return 'photo'
@@ -174,7 +195,8 @@ function kindOf(card: Element | null): ActivePostKind {
  * The post the feed is showing, as a canonical URL, or `null`.
  *
  * Rungs, in order: the active card's item-id control (covers videos and photo
- * posts alike), a post link inside that card, the nearest item-id control
+ * posts alike), a post link inside that card, the detached Cinema chrome host's
+ * item-id control, an in-card player wrapper id, the nearest item-id control
  * anywhere in the viewport (overlays and future card layouts), a link in a browse
  * container, and finally the player wrapper's id for cards whose more button is
  * missing. A page with no post-sized card in the viewport answers `null` rather
@@ -183,7 +205,8 @@ function kindOf(card: Element | null): ActivePostKind {
  * @param viewport the viewport the cards are measured against
  */
 export function resolveActivePostUrl(doc: Document, viewport: ViewportSize): string | null {
-  // 1. The card that owns the viewport centre, plus the id on its more button.
+  // 1. The card that owns the viewport centre, plus the id on its more button, link,
+  //    or sibling Cinema chrome host.
   const card = activeCard(doc, viewport)
   if (card !== null) {
     const id = itemIdIn(card)
@@ -191,6 +214,16 @@ export function resolveActivePostUrl(doc: Document, viewport: ViewportSize): str
 
     const fromCard = postFromLink(card)
     if (fromCard !== null) return fromCard
+
+    const chromeHost = visibleChromeHost(doc, viewport)
+    const chromeId = itemIdIn(chromeHost)
+    if (chromeId !== null) return postUrl(kindOf(card), chromeId, authorOf(card) ?? authorOf(chromeHost))
+
+    const cardPlayer = card.querySelector<HTMLElement>('[id*="xgwrapper-"], [id*="xgmedia-"]')
+    const playerId = cardPlayer?.id.match(POST_ID_IN_TEXT) ?? null
+    if (playerId !== null) {
+      return postUrl('video', playerId[0], authorOf(card) ?? authorOf(chromeHost))
+    }
   }
 
   // 2. With no active card, the nearest item-id control in the viewport covers
@@ -233,13 +266,20 @@ export function resolveActivePostUrl(doc: Document, viewport: ViewportSize): str
   }
 
   // 4. The player wrapper's id, for a card whose more button is missing.
+  //    In Cinema feed cards `xgwrapper-0-*` has height 0 while its parent owns
+  //    the card height, so measure the parent box when the wrapper itself is flat.
   const players = Array.from(doc.querySelectorAll<HTMLElement>('[id*="xgwrapper-"], [id*="xgmedia-"]'))
   let bestPlayer: HTMLElement | null = null
   bestDistance = Number.POSITIVE_INFINITY
   for (const player of players) {
-    const box = player.getBoundingClientRect()
+    const rawBox = player.getBoundingClientRect()
+    const box = rawBox.height > 0
+      ? rawBox
+      : (rawBox.width >= MIN_CARD_PX && player.parentElement !== null
+        ? player.parentElement.getBoundingClientRect()
+        : rawBox)
     if (box.width <= 0 || box.height <= 0 || box.top >= viewport.height || box.bottom <= 0) continue
-    const distance = centreDistance(player, viewport)
+    const distance = Math.abs((box.top + box.bottom) / 2 - viewport.height / 2)
     if (distance < bestDistance) {
       bestDistance = distance
       bestPlayer = player
@@ -248,7 +288,8 @@ export function resolveActivePostUrl(doc: Document, viewport: ViewportSize): str
   if (bestPlayer !== null) {
     const id = bestPlayer.id.match(POST_ID_IN_TEXT)
     if (id !== null) {
-      return postUrl('video', id[0], authorOf(bestPlayer.closest(CARD_SELECTORS.join(', '))))
+      const ownerAuthor = authorOf(bestPlayer.closest(CARD_SELECTORS.join(', '))) ?? authorOf(visibleChromeHost(doc, viewport))
+      return postUrl('video', id[0], ownerAuthor)
     }
   }
 

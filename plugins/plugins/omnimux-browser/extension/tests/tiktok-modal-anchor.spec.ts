@@ -117,4 +117,56 @@ describe('TikTok browse 弹窗锚点', () => {
     assert.equal(top, 344)
     assert.ok(top >= 10)
   })
+
+  it('新版弹窗使用 data-e2e="arrow-left"（无 id）时，触发器仍居中停在其上方 8px', () => {
+    document.body.innerHTML = `
+      <div id="modal" data-e2e="browse-video"></div>
+      <button id="btn-left" data-e2e="arrow-left"></button>
+      <button id="btn-right" data-e2e="arrow-right"></button>
+      <div id="panel" class="DivCommentListContainer"></div>
+    `
+    place(document.getElementById('modal'), { top: 0, left: 0, width: 1200, height: 900 })
+    place(document.getElementById('btn-left'), { top: 400, left: 1150, width: 40, height: 40 })
+    place(document.getElementById('btn-right'), { top: 456, left: 1150, width: 40, height: 40 })
+    place(document.getElementById('panel'), { top: 0, left: 1200, width: 200, height: 900 })
+
+    const placement = resolveOnCurrentPage()
+    assert.equal(placement.source, 'modal-prev-arrow')
+    assert.equal(placement.left, 1146)
+    assert.equal(VIEWPORT.height - placement.bottom - 48, 344)
+  })
+
+  it('首条作品 arrow-left 隐藏(0x0) 时改对齐可见的 arrow-right，不再落回面板左缘压住箭头', () => {
+    document.body.innerHTML = `
+      <div id="modal" data-e2e="browse-video"></div>
+      <button id="btn-left" data-e2e="arrow-left"></button>
+      <button id="btn-right" data-e2e="arrow-right"></button>
+      <div id="panel" class="DivCommentListContainer"></div>
+    `
+    place(document.getElementById('modal'), { top: 0, left: 0, width: 1200, height: 900 })
+    place(document.getElementById('btn-left'), { top: 0, left: 0, width: 0, height: 0 })
+    place(document.getElementById('btn-right'), { top: 450, left: 1150, width: 40, height: 40 })
+    place(document.getElementById('panel'), { top: 0, left: 1200, width: 200, height: 900 })
+
+    const placement = resolveOnCurrentPage()
+    assert.equal(placement.source, 'modal-prev-arrow')
+    assert.equal(placement.left, 1146)
+    const top = VIEWPORT.height - placement.bottom - 48
+    assert.equal(top, 394)
+    assert.ok(top + 48 <= 450)
+  })
+
+  it('图文弹窗 [data-e2e="browse-photo"] 同样识别为 browse-modal 并对齐箭头', () => {
+    document.body.innerHTML = `
+      <div id="modal" data-e2e="browse-photo"></div>
+      <button id="btn-right" data-e2e="arrow-right"></button>
+    `
+    const modal = document.getElementById('modal')
+    place(modal, { top: 0, left: 0, width: 1200, height: 900 })
+    place(document.getElementById('btn-right'), { top: 450, left: 1150, width: 40, height: 40 })
+
+    const placement = resolveOnCurrentPage()
+    assert.equal(placement.source, 'modal-prev-arrow')
+    assert.equal(placement.left, 1146)
+  })
 })

@@ -59,6 +59,24 @@ const TRIGGER_BOX_PX = 48
  */
 export const MENU_FALLBACK_WIDTH_PX = 170
 
+/**
+ * Measure the toolbar's un-transformed width, falling back to its bounding box
+ * or the shipped fallback width when unmeasured.
+ *
+ * Read `offsetWidth` before `getBoundingClientRect().width`: closed CSS applies
+ * `scale(0.97)`, which under-measures the bounding rect by ~5px and causes a
+ * left-flipped panel to overlap the trigger.
+ */
+export function measureMenuWidth(el: {
+  readonly offsetWidth: number
+  getBoundingClientRect(): { readonly width: number }
+}): number {
+  const layoutWidth = el.offsetWidth
+  if (Number.isFinite(layoutWidth) && layoutWidth > 0) return layoutWidth
+  const rectWidth = el.getBoundingClientRect().width
+  return Number.isFinite(rectWidth) && rectWidth > 0 ? rectWidth : MENU_FALLBACK_WIDTH_PX
+}
+
 /** The icon size every toolbar row draws at. */
 const ROW_ICON_PX = 18
 
@@ -222,10 +240,7 @@ export function mountTiktokScene(options: TiktokSceneOptions): TiktokSceneHandle
    * Read from the element, never assumed: the direction decision is only worth
    * anything if it is made against the panel the stylesheet actually produced.
    */
-  const menuWidth = (): number => {
-    const width = menu.getBoundingClientRect().width
-    return Number.isFinite(width) && width > 0 ? width : MENU_FALLBACK_WIDTH_PX
-  }
+  const menuWidth = (): number => measureMenuWidth(menu)
 
   const reposition = (): void => {
     const viewport = {
