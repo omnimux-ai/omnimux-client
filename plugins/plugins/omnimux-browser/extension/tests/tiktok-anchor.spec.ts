@@ -223,3 +223,48 @@ describe('TikTok 图标定位 — 兜底', () => {
     })
   })
 })
+
+describe('TikTok 图标定位 — 新版 Cinema 推荐流', () => {
+  it('挂载后停在右侧 feed-navigation-prev 正上方 8px，不落在左下角 24x24 作者头像上，且评论抽屉左移后跟随同步', () => {
+    page(`
+      <div data-e2e="anchoring-chrome-host" id="chrome">
+        <div data-e2e="anchoring-description-layer">
+          <div data-e2e="cinema-creator-avatar">
+            <a data-e2e="video-author-avatar" href="/@creator"><img id="left-av" /></a>
+          </div>
+        </div>
+        <div data-e2e="anchoring-engagement-vertical" id="eng">
+          <div data-e2e="like-icon" id="like"></div>
+        </div>
+      </div>
+      <div data-e2e="anchoring-scroll-controls" id="sc">
+        <button data-e2e="feed-navigation-prev" id="prev"></button>
+        <button data-e2e="feed-navigation-next" id="next"></button>
+      </div>
+    `, {
+      '#chrome': { top: 16, left: 256, width: 1648, height: 897 },
+      '#left-av': { top: 820, left: 276, width: 24, height: 24 },
+      '#eng': { top: 680, left: 1852, width: 48, height: 198 },
+      '#like': { top: 680, left: 1857, width: 38, height: 42 },
+      '#sc': { top: 410, left: 1852, width: 48, height: 112 },
+      '#prev': { top: 410, left: 1852, width: 48, height: 48 },
+      '#next': { top: 474, left: 1852, width: 48, height: 48 },
+    })
+
+    const handle = mountAt(DESKTOP)
+    expect(placement()).toEqual({
+      left: 1852,
+      bottom: DESKTOP.height - 410 + ANCHOR_GAP,
+    })
+
+    // 模拟评论抽屉展开导致箭头左移 400px
+    place(document.getElementById('sc')!, { top: 410, left: 1452, width: 48, height: 112 })
+    place(document.getElementById('prev')!, { top: 410, left: 1452, width: 48, height: 48 })
+    handle.reposition()
+
+    expect(placement()).toEqual({
+      left: 1452,
+      bottom: DESKTOP.height - 410 + ANCHOR_GAP,
+    })
+  })
+})

@@ -167,4 +167,77 @@ describe('For You 当前作品解析 (Issue #3599)', () => {
     place(document.getElementById('card'), { top: 0, left: 240, width: 900, height: 900 })
     assert.equal(resolveActivePostUrl(document, VIEWPORT), 'https://www.tiktok.com/@someone/photo/7693330722479688973')
   })
+
+  it('Cinema 推荐流视频卡：作品 ID 与作者都在同级 anchoring-chrome-host 时正确解析', () => {
+    document.body.innerHTML = `
+      <article id="card" data-e2e="recommend-list-item-container">
+        <section data-e2e="feed-video">
+          <div id="player-parent"><div id="xgwrapper-0-7710049479080086815"></div></div>
+        </section>
+      </article>
+      <div id="chrome" data-e2e="anchoring-chrome-host">
+        <a data-e2e="video-author-avatar" href="/@creator"></a>
+        <button data-e2e="more-menu-icon" data-more-menu-item-id="7710049479080086815">...</button>
+      </div>
+    `
+    place(document.getElementById('card'), { top: 16, left: 256, width: 1144, height: 880 })
+    place(document.getElementById('player-parent'), { top: 16, left: 256, width: 1144, height: 880 })
+    place(document.getElementById('xgwrapper-0-7710049479080086815'), { top: 16, left: 256, width: 1144, height: 0 })
+    place(document.getElementById('chrome'), { top: 16, left: 256, width: 1144, height: 880 })
+    place(document.querySelector('[data-more-menu-item-id]'), { top: 820, left: 1320, width: 48, height: 48 })
+
+    assert.equal(resolveActivePostUrl(document, VIEWPORT), 'https://www.tiktok.com/@creator/video/7710049479080086815')
+  })
+
+  it('Cinema 推荐流图文卡：无播放器节点，通过 feed-photo 与同级 chrome-host 解析为 /photo/<id>', () => {
+    document.body.innerHTML = `
+      <article id="card" data-e2e="recommend-list-item-container">
+        <section data-e2e="feed-photo"><img src="slide.jpg" /></section>
+      </article>
+      <div id="chrome" data-e2e="anchoring-chrome-host">
+        <a data-e2e="video-author-avatar" href="/@photomaker"></a>
+        <button data-e2e="more-menu-icon" data-more-menu-item-id="7710049479080099999">...</button>
+      </div>
+    `
+    place(document.getElementById('card'), { top: 16, left: 256, width: 1144, height: 880 })
+    place(document.getElementById('chrome'), { top: 16, left: 256, width: 1144, height: 880 })
+    place(document.querySelector('[data-more-menu-item-id]'), { top: 820, left: 1320, width: 48, height: 48 })
+
+    assert.equal(resolveActivePostUrl(document, VIEWPORT), 'https://www.tiktok.com/@photomaker/photo/7710049479080099999')
+  })
+
+  it('Cinema 更多按钮缺失时，0 高度 xgwrapper 仍按父盒几何识别当前作品', () => {
+    document.body.innerHTML = `
+      <div id="parent"><div id="xgwrapper-0-7690747022869089556"></div></div>
+      <div id="chrome" data-e2e="anchoring-chrome-host">
+        <a data-e2e="video-author-avatar" href="/@studio"></a>
+      </div>
+    `
+    place(document.getElementById('parent'), { top: 16, left: 256, width: 1144, height: 880 })
+    place(document.getElementById('xgwrapper-0-7690747022869089556'), { top: 16, left: 256, width: 1144, height: 0 })
+    place(document.getElementById('chrome'), { top: 16, left: 256, width: 1144, height: 880 })
+
+    assert.equal(resolveActivePostUrl(document, VIEWPORT), 'https://www.tiktok.com/@studio/video/7690747022869089556')
+  })
+
+  it('切换到下一条 Cinema 作品时跟随更新目标链接', () => {
+    document.body.innerHTML = `
+      <article id="card0" data-e2e="recommend-list-item-container">
+        <section data-e2e="feed-video"><div id="xgwrapper-0-7111111111111111111"></div></section>
+      </article>
+      <article id="card1" data-e2e="recommend-list-item-container">
+        <section data-e2e="feed-video"><div id="xgwrapper-0-7222222222222222222"></div></section>
+      </article>
+      <div id="chrome" data-e2e="anchoring-chrome-host">
+        <a data-e2e="video-author-avatar" href="/@nextauthor"></a>
+        <button data-e2e="more-menu-icon" data-more-menu-item-id="7222222222222222222">...</button>
+      </div>
+    `
+    place(document.getElementById('card0'), { top: -880, left: 256, width: 1144, height: 880 })
+    place(document.getElementById('card1'), { top: 16, left: 256, width: 1144, height: 880 })
+    place(document.getElementById('chrome'), { top: 16, left: 256, width: 1144, height: 880 })
+    place(document.querySelector('[data-more-menu-item-id]'), { top: 820, left: 1320, width: 48, height: 48 })
+
+    assert.equal(resolveActivePostUrl(document, VIEWPORT), 'https://www.tiktok.com/@nextauthor/video/7222222222222222222')
+  })
 })

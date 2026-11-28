@@ -45,6 +45,7 @@
       --dsw-alias-label-secondary: rgb(207, 211, 214);
       --dsw-alias-label-tertiary: rgb(151, 157, 166);
       --dsw-alias-border-l1: rgba(255, 255, 255, 0.08);
+      --dsw-alias-border-l2-darkmode-thin: rgba(255, 255, 255, 0.06);
       --dsw-alias-border-l2: rgba(255, 255, 255, 0.13);
       --dsw-alias-border-l3: rgba(255, 255, 255, 0.18);
       --dsw-alias-interactive-bg-hover: rgba(255, 255, 255, 0.08);
@@ -85,6 +86,7 @@
       --dsw-alias-label-secondary: rgb(74, 79, 86);
       --dsw-alias-label-tertiary: rgb(97, 102, 107);
       --dsw-alias-border-l1: rgba(15, 17, 21, 0.08);
+      --dsw-alias-border-l2-darkmode-thin: rgba(15, 17, 21, 0.08);
       --dsw-alias-border-l2: rgba(15, 17, 21, 0.12);
       --dsw-alias-border-l3: rgba(15, 17, 21, 0.16);
       --dsw-alias-interactive-bg-hover: rgba(38, 49, 72, 0.07);
@@ -282,17 +284,30 @@
 
     /* ── 最左固定导航轨（52px） ── */
     .nav-rail {
+      --nav-rail-pad-top: 48px;
+      --nav-rail-pad-bottom: 12px;
       position: relative;
       flex: none;
       width: 52px;
       height: 100%;
       background: var(--dsw-specific-nav-rail-fill);
-      border-right: 1px solid var(--dsw-alias-border-l1);
+      border-right: none;
       display: flex;
       flex-direction: column;
       align-items: center;
-      padding: 48px 0 12px;
+      padding: var(--nav-rail-pad-top) 0 var(--nav-rail-pad-bottom);
       z-index: 220;
+    }
+
+    .nav-rail::after {
+      content: "";
+      position: absolute;
+      top: var(--nav-rail-pad-top);
+      bottom: var(--nav-rail-pad-bottom);
+      right: 0;
+      width: 0;
+      border-right: 0.5px solid var(--dsw-alias-border-l2-darkmode-thin, var(--dsw-alias-border-l1));
+      pointer-events: none;
     }
 
     .desktop-window[data-arch="before"] .nav-rail {
@@ -351,8 +366,9 @@
 
     .rail-divider {
       width: 24px;
-      height: 1px;
-      background: var(--dsw-alias-border-l2);
+      height: 0;
+      box-sizing: content-box;
+      border-top: 0.5px solid var(--dsw-alias-border-l2-darkmode-thin, var(--dsw-alias-border-l1));
       margin: 2px 0;
     }
 
