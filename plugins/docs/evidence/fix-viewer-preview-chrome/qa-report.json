@@ -1,0 +1,258 @@
+{
+  "issue": 434,
+  "spec": "specs/fix-viewer-preview-chrome.spec.md",
+  "capturedAt": "2026-11-28T07:21:11.630Z",
+  "component": "MediaViewerTab",
+  "screenshots": [
+    "01-dark-wide-portrait.png",
+    "02-dark-wide-multiline.png",
+    "03-light-wide-portrait.png",
+    "04-dark-narrow-portrait.png"
+  ],
+  "records": [
+    {
+      "scenario": "dark-wide-portrait",
+      "theme": "dark",
+      "viewport": {
+        "w": 920,
+        "h": 820
+      },
+      "displayBoxShadow": "none",
+      "slotBoxShadow": "none",
+      "slotBorderRadius": "12px",
+      "imgBorderRadius": "12px",
+      "slotSize": {
+        "w": 341.1,
+        "h": 593
+      },
+      "displaySize": {
+        "w": 341.1,
+        "h": 593
+      },
+      "imgSize": {
+        "w": 341.1,
+        "h": 593
+      },
+      "naturalSize": {
+        "w": 512,
+        "h": 890
+      },
+      "aspectRatioDiff": 0,
+      "slotImgSizeDelta": 0,
+      "overlapComposerPx": 0,
+      "overlapThumbsPx": 0
+    },
+    {
+      "scenario": "dark-wide-landscape",
+      "theme": "dark",
+      "viewport": {
+        "w": 920,
+        "h": 820
+      },
+      "displayBoxShadow": "none",
+      "slotBoxShadow": "none",
+      "slotBorderRadius": "12px",
+      "imgBorderRadius": "12px",
+      "slotSize": {
+        "w": 812,
+        "h": 456.8
+      },
+      "displaySize": {
+        "w": 812,
+        "h": 456.8
+      },
+      "imgSize": {
+        "w": 812,
+        "h": 456.8
+      },
+      "naturalSize": {
+        "w": 1280,
+        "h": 720
+      },
+      "aspectRatioDiff": 0,
+      "slotImgSizeDelta": 0,
+      "overlapComposerPx": 0,
+      "overlapThumbsPx": 0
+    },
+    {
+      "scenario": "dark-wide-square",
+      "theme": "dark",
+      "viewport": {
+        "w": 920,
+        "h": 820
+      },
+      "displayBoxShadow": "none",
+      "slotBoxShadow": "none",
+      "slotBorderRadius": "12px",
+      "imgBorderRadius": "12px",
+      "slotSize": {
+        "w": 593,
+        "h": 593
+      },
+      "displaySize": {
+        "w": 593,
+        "h": 593
+      },
+      "imgSize": {
+        "w": 593,
+        "h": 593
+      },
+      "naturalSize": {
+        "w": 800,
+        "h": 800
+      },
+      "aspectRatioDiff": 0,
+      "slotImgSizeDelta": 0,
+      "overlapComposerPx": 0,
+      "overlapThumbsPx": 0
+    },
+    {
+      "scenario": "dark-wide-multiline",
+      "theme": "dark",
+      "viewport": {
+        "w": 920,
+        "h": 820
+      },
+      "displayBoxShadow": "none",
+      "slotBoxShadow": "none",
+      "slotBorderRadius": "12px",
+      "imgBorderRadius": "12px",
+      "slotSize": {
+        "w": 295.1,
+        "h": 513
+      },
+      "displaySize": {
+        "w": 295.1,
+        "h": 513
+      },
+      "imgSize": {
+        "w": 295.1,
+        "h": 513
+      },
+      "naturalSize": {
+        "w": 512,
+        "h": 890
+      },
+      "aspectRatioDiff": 0,
+      "slotImgSizeDelta": 0,
+      "overlapComposerPx": 0,
+      "overlapThumbsPx": 0
+    },
+    {
+      "scenario": "light-wide-portrait",
+      "theme": "light",
+      "viewport": {
+        "w": 920,
+        "h": 820
+      },
+      "displayBoxShadow": "none",
+      "slotBoxShadow": "none",
+      "slotBorderRadius": "12px",
+      "imgBorderRadius": "12px",
+      "slotSize": {
+        "w": 341.1,
+        "h": 593
+      },
+      "displaySize": {
+        "w": 341.1,
+        "h": 593
+      },
+      "imgSize": {
+        "w": 341.1,
+        "h": 593
+      },
+      "naturalSize": {
+        "w": 512,
+        "h": 890
+      },
+      "aspectRatioDiff": 0,
+      "slotImgSizeDelta": 0,
+      "overlapComposerPx": 0,
+      "overlapThumbsPx": 0
+    },
+    {
+      "scenario": "dark-narrow-portrait",
+      "theme": "dark",
+      "viewport": {
+        "w": 460,
+        "h": 780
+      },
+      "displayBoxShadow": "none",
+      "slotBoxShadow": "none",
+      "slotBorderRadius": "12px",
+      "imgBorderRadius": "12px",
+      "slotSize": {
+        "w": 271.5,
+        "h": 472
+      },
+      "displaySize": {
+        "w": 271.5,
+        "h": 472
+      },
+      "imgSize": {
+        "w": 271.5,
+        "h": 472
+      },
+      "naturalSize": {
+        "w": 512,
+        "h": 890
+      },
+      "aspectRatioDiff": 0,
+      "slotImgSizeDelta": 0,
+      "overlapComposerPx": 0,
+      "overlapThumbsPx": 0
+    },
+    {
+      "scenario": "dark-wide-generating-3-4",
+      "theme": "dark",
+      "viewport": {
+        "w": 920,
+        "h": 820
+      },
+      "displayBoxShadow": "none",
+      "slotBoxShadow": "none",
+      "slotBorderRadius": "12px",
+      "imgBorderRadius": null,
+      "slotSize": {
+        "w": 390,
+        "h": 520
+      },
+      "displaySize": {
+        "w": 390,
+        "h": 520
+      },
+      "imgSize": null,
+      "naturalSize": null,
+      "aspectRatioDiff": null,
+      "slotImgSizeDelta": null,
+      "overlapComposerPx": 0,
+      "overlapThumbsPx": 0
+    },
+    {
+      "scenario": "dark-wide-failed",
+      "theme": "dark",
+      "viewport": {
+        "w": 920,
+        "h": 820
+      },
+      "displayBoxShadow": "none",
+      "slotBoxShadow": "none",
+      "slotBorderRadius": "12px",
+      "imgBorderRadius": null,
+      "slotSize": {
+        "w": 520,
+        "h": 520
+      },
+      "displaySize": {
+        "w": 520,
+        "h": 520
+      },
+      "imgSize": null,
+      "naturalSize": null,
+      "aspectRatioDiff": null,
+      "slotImgSizeDelta": null,
+      "overlapComposerPx": 0,
+      "overlapThumbsPx": 0
+    }
+  ]
+}
