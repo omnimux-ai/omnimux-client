@@ -4,16 +4,33 @@ import { request as httpsRequest } from 'node:https'
 import { isIP } from 'node:net'
 import { Readable } from 'node:stream'
 import { createUnzip, createBrotliDecompress } from 'node:zlib'
-import { isPrivateHost, normalizeHostname } from './public-host.js'
+import { isPrivateHost, isSyntheticProxyIpv4, normalizeHostname } from './public-host.js'
 
 /** Resolve once inside the socket lookup: the checked answer is the connected address. */
-export function publicLookup(resolver = lookup) {
-  return (hostname, options, callback) => {
-    resolver(hostname, { all: true, verbatim: true }).then((addresses) => {
-      if (!addresses.length || addresses.some(({ address, family }) => !isIP(address) || isIP(address) !== family || isPrivateHost(address))) {
+export function publicLookup(resolver = lookup, options = {}) {
+  const allowCheck = typeof options?.allowSyntheticProxyForHostname === 'function'
+    ? options.allowSyntheticProxyForHostname
+    : null
+  return (hostname, lookupOptions, callback) => {
+    const normalizedHost = normalizeHostname(hostname)
+    Promise.resolve().then(async () => {
+      const allowSyntheticProxy = Boolean(
+        allowCheck
+        && normalizedHost
+        && !isIP(normalizedHost)
+        && !isPrivateHost(normalizedHost)
+        && allowCheck(normalizedHost) === true,
+      )
+      const addresses = await resolver(hostname, { all: true, verbatim: true })
+      const isAllowedAddress = ({ address, family }) => {
+        if (!isIP(address) || isIP(address) !== family) return false
+        if (!isPrivateHost(address)) return true
+        return allowSyntheticProxy && family === 4 && isSyntheticProxyIpv4(address)
+      }
+      if (!addresses.length || !addresses.every(isAllowedAddress)) {
         throw new Error('remote host resolved to a non-public address')
       }
-      if (options?.all) callback(null, addresses)
+      if (lookupOptions?.all) callback(null, addresses)
       else callback(null, addresses[0].address, addresses[0].family)
     }).catch((error) => callback(error))
   }
@@ -32,7 +49,7 @@ export function publicFetch(input, init = {}, deps = {}) {
       headers: { ...Object.fromEntries(new Headers(init.headers).entries()), 'accept-encoding': 'identity' },
       signal: init.signal,
       agent: false,
-      lookup: publicLookup(deps.lookup),
+      lookup: publicLookup(deps.lookup, { allowSyntheticProxyForHostname: deps.allowSyntheticProxyForHostname }),
       // Keep the URL hostname for Host and certificate verification; lookup only selects the address.
       ...(url.protocol === 'https:' && !isIP(normalizeHostname(url.hostname)) ? { servername: normalizeHostname(url.hostname) } : {}),
     }, (incoming) => {
