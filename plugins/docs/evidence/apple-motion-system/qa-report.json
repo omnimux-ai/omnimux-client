@@ -53,5 +53,16 @@
     "03-light-narrow-390.png",
     "04-dark-narrow-390.png",
     "05-dsh-ui-kit-live-components.png"
-  ]
+  ],
+  "copyButtonAlignment": {
+    "idleWidthPx": 104,
+    "copiedWidthPx": 104,
+    "widthShiftPx": 0,
+    "idleIconLabelDeltaPx": 0.66,
+    "idleSiblingDeltaPx": 0.66,
+    "copiedIconLabelDeltaPx": 0.66,
+    "copiedSiblingDeltaPx": 0.66,
+    "thresholdPx": 1.5,
+    "passed": true
+  }
 }

@@ -148,11 +148,16 @@ async function buildLiveKitHarnessHtml() {
     --dsw-alias-interactive-bg-active: rgba(15, 20, 32, 0.1);
     --dsw-alias-interactive-bg-brand-hover: rgba(65, 118, 230, 0.12);
     --dsw-alias-interactive-bg-primary: #4176e6;
+    --dsw-alias-button-primary-fill: #4176e6;
+    --dsw-alias-button-primary-hover: #3164d1;
     --dsw-alias-interactive-label-primary: #ffffff;
+    --dsw-alias-label-primary-foreground: #ffffff;
     --dsw-alias-brand-primary: #4176e6;
     --dsw-alias-state-success-primary: #16a34a;
     --dsw-alias-state-error-primary: #dc2626;
     --dsw-alias-bg-mask: rgba(15, 20, 32, 0.45);
+    --dsw-alias-bg-mask-1: rgba(15, 20, 32, 0.45);
+    --dsw-shadow-lv3: 0 18px 48px rgba(15, 20, 32, 0.22);
   }
   body { margin: 0; background: var(--dsw-alias-bg-primary); color: var(--dsw-alias-label-primary); }
 </style>
@@ -365,13 +370,25 @@ describe('Apple motion system real-browser E2E', () => {
         const wAfter = tabs.map((t) => t.getBoundingClientRect().width);
         const tabDelta = Math.max(...wBefore.map((w, i) => Math.abs(w - wAfter[i])));
 
+        const centerY = (el) => {
+          if (!el) throw new Error('Missing element for centerY check');
+          const r = el.getBoundingClientRect();
+          return r.top + r.height / 2;
+        };
+        const getCopyIcon = (btn) => btn.querySelector('span[aria-hidden="true"]') || btn.querySelector('svg');
+        const getCopyLabel = (btn) => btn.querySelector('[data-idle-label] > span') || btn.querySelector('[class*="labelCurrent"]');
         const copyBtn = document.getElementById('live-copy-btn');
+        const openDrawerBtn = document.getElementById('live-open-drawer');
         const idleText = copyBtn.textContent;
         const c0 = copyBtn.getBoundingClientRect().width;
+        const copyIconLabelIdleDelta = Math.abs(centerY(getCopyIcon(copyBtn)) - centerY(getCopyLabel(copyBtn)));
+        const copyBtnVsSiblingIdleDelta = Math.abs(centerY(getCopyLabel(copyBtn)) - centerY(openDrawerBtn));
         copyBtn.click();
         await new Promise((r) => setTimeout(r, 80));
         const copiedText = copyBtn.textContent;
         const c1 = copyBtn.getBoundingClientRect().width;
+        const copyIconLabelCopiedDelta = Math.abs(centerY(getCopyIcon(copyBtn)) - centerY(getCopyLabel(copyBtn)));
+        const copyBtnVsSiblingCopiedDelta = Math.abs(centerY(getCopyLabel(copyBtn)) - centerY(openDrawerBtn));
 
         document.getElementById('live-open-drawer').click();
         await new Promise((r) => setTimeout(r, 240));
@@ -434,6 +451,10 @@ describe('Apple motion system real-browser E2E', () => {
           idleText,
           copiedText,
           copyDelta: Math.abs(c1 - c0),
+          copyIconLabelIdleDelta,
+          copyBtnVsSiblingIdleDelta,
+          copyIconLabelCopiedDelta,
+          copyBtnVsSiblingCopiedDelta,
           phaseOpen,
           phaseExiting,
           exitingPointerEvents,
@@ -455,6 +476,10 @@ describe('Apple motion system real-browser E2E', () => {
       assert.equal(kitLive.idleText, '复制指令')
       assert.equal(kitLive.copiedText, '已复制指令')
       assert.equal(kitLive.copyDelta <= 0.5, true, `Kit CopyButton width shift=${kitLive.copyDelta}`)
+      assert.equal(kitLive.copyIconLabelIdleDelta <= 1.5, true, `Kit CopyButton idle icon/label centerY delta=${kitLive.copyIconLabelIdleDelta}`)
+      assert.equal(kitLive.copyBtnVsSiblingIdleDelta <= 1.5, true, `Kit CopyButton idle vs sibling centerY delta=${kitLive.copyBtnVsSiblingIdleDelta}`)
+      assert.equal(kitLive.copyIconLabelCopiedDelta <= 1.5, true, `Kit CopyButton copied icon/label centerY delta=${kitLive.copyIconLabelCopiedDelta}`)
+      assert.equal(kitLive.copyBtnVsSiblingCopiedDelta <= 1.5, true, `Kit CopyButton copied vs sibling centerY delta=${kitLive.copyBtnVsSiblingCopiedDelta}`)
       assert.equal(kitLive.phaseOpen, 'entered')
       assert.equal(kitLive.phaseExiting, 'exiting')
       assert.equal(kitLive.exitingPointerEvents, 'none')

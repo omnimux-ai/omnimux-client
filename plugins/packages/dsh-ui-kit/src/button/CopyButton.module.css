@@ -21,16 +21,15 @@
 }
 
 .labelSlot {
-  display: inline-flex;
-  flex-direction: column;
+  display: inline-grid;
   align-items: center;
-  justify-content: center;
+  justify-items: center;
+  vertical-align: middle;
 }
 
 .labelSlot[data-idle-label]::before {
   content: attr(data-idle-label);
-  height: 0;
-  line-height: 0;
+  grid-area: 1 / 1;
   visibility: hidden;
   overflow: hidden;
   user-select: none;
@@ -40,8 +39,7 @@
 
 .labelSlot[data-copied-label]::after {
   content: attr(data-copied-label);
-  height: 0;
-  line-height: 0;
+  grid-area: 1 / 1;
   visibility: hidden;
   overflow: hidden;
   user-select: none;
@@ -50,5 +48,6 @@
 }
 
 .labelCurrent {
+  grid-area: 1 / 1;
   white-space: nowrap;
 }
