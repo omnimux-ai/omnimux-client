@@ -1,0 +1,1071 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>TikTok Web 新版布局适配交互演示</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #181a20;
+    --line: rgba(255, 255, 255, 0.12);
+    --fg: #f4f5f7;
+    --muted: #9aa1ad;
+    --brand: #b8b7ff;
+    --brand-ink: #121213;
+    --ck-orange: #ff6a2b;
+    --tt-bg: #0c0c0e;
+    --tt-nav: #000000;
+    --tt-pill: rgba(255, 255, 255, 0.12);
+    --tt-pill-hover: rgba(255, 255, 255, 0.18);
+    --danger: #ff6b6b;
+    --ok: #3ddc97;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI Variable Text", "Segoe UI", "PingFang SC", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .topbar {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 20px;
+    background: rgba(24, 26, 32, 0.94);
+    backdrop-filter: blur(14px);
+    border-bottom: 1px solid var(--line);
+  }
+  .topbar-title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 14px;
+    font-weight: 600;
+  }
+  .badge {
+    padding: 3px 8px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 600;
+    background: rgba(184, 183, 255, 0.16);
+    color: var(--brand);
+    border: 1px solid rgba(184, 183, 255, 0.35);
+  }
+  .controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+  }
+  .seg {
+    display: inline-flex;
+    padding: 3px;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid var(--line);
+    gap: 2px;
+  }
+  .seg button, .toggle-btn {
+    border: 0;
+    background: transparent;
+    color: var(--muted);
+    font: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 6px 10px;
+    border-radius: 7px;
+    cursor: pointer;
+    transition: background-color 140ms ease, color 140ms ease;
+    white-space: nowrap;
+  }
+  .seg button:hover, .toggle-btn:hover {
+    color: var(--fg);
+  }
+  .seg button.active {
+    background: var(--brand);
+    color: var(--brand-ink);
+  }
+  .seg button.active-danger {
+    background: rgba(255, 107, 107, 0.22);
+    color: #ffb8b8;
+  }
+  .toggle-btn {
+    border: 1px solid var(--line);
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--fg);
+    border-radius: 9px;
+  }
+  .toggle-btn.on {
+    border-color: rgba(255, 106, 43, 0.55);
+    background: rgba(255, 106, 43, 0.16);
+    color: #ffc3a8;
+  }
+
+  .main {
+    max-width: 1460px;
+    margin: 0 auto;
+    padding: 18px 20px 28px;
+    display: grid;
+    grid-template-columns: 1fr 310px;
+    gap: 16px;
+    align-items: start;
+  }
+  @media (max-width: 1120px) {
+    .main { grid-template-columns: 1fr; }
+  }
+
+  /* Simulated TikTok viewport */
+  .stage-shell {
+    background: #070709;
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    padding: 14px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 660px;
+    overflow: hidden;
+  }
+  .tt-viewport {
+    position: relative;
+    width: 100%;
+    max-width: 1080px;
+    height: 630px;
+    background: var(--tt-bg);
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    overflow: hidden;
+    display: flex;
+    transition: width 220ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .tt-viewport.is-portrait {
+    width: 420px;
+  }
+  .tt-sidebar {
+    width: 196px;
+    flex: 0 0 196px;
+    background: var(--tt-nav);
+    border-right: 1px solid rgba(255, 255, 255, 0.06);
+    padding: 16px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .tt-viewport.is-portrait .tt-sidebar,
+  .tt-viewport.is-modal .tt-sidebar {
+    display: none;
+  }
+  .tt-logo {
+    font-size: 18px;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    padding: 4px 8px 10px;
+    color: #fff;
+  }
+  .tt-search {
+    height: 34px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.08);
+    color: rgba(255, 255, 255, 0.55);
+    font-size: 12px;
+    display: flex;
+    align-items: center;
+    padding: 0 12px;
+    margin-bottom: 6px;
+  }
+  .tt-nav-item {
+    height: 34px;
+    border-radius: 8px;
+    padding: 0 10px;
+    display: flex;
+    align-items: center;
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.78);
+    font-weight: 500;
+  }
+  .tt-nav-item.active {
+    color: #fe2c55;
+    font-weight: 700;
+  }
+  .tt-nav-foot {
+    margin-top: auto;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 6px 2px;
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.7);
+  }
+  .tt-me-avatar {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #4b5563, #1f2937);
+    border: 1px solid rgba(255, 255, 255, 0.25);
+  }
+
+  .tt-player-col {
+    position: relative;
+    flex: 1 1 auto;
+    height: 100%;
+    background: radial-gradient(circle at 50% 42%, #241e22 0%, #0d0d10 72%);
+    display: flex;
+    justify-content: center;
+    align-items: stretch;
+    overflow: hidden;
+  }
+  .tt-video-frame {
+    position: relative;
+    width: 340px;
+    height: 100%;
+    background: linear-gradient(160deg, #2b2724 0%, #4b3d33 48%, #1f1b18 100%);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    box-shadow: 0 0 60px rgba(0, 0, 0, 0.65);
+  }
+  .tt-viewport.is-portrait .tt-video-frame {
+    width: 100%;
+  }
+  .tt-video-scene {
+    width: 82%;
+    padding: 14px 16px;
+    border-radius: 12px;
+    background: rgba(0, 0, 0, 0.36);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    text-align: center;
+    color: rgba(255, 255, 255, 0.92);
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  .tt-video-subtitle {
+    margin-top: 12px;
+    padding: 4px 10px;
+    border-radius: 6px;
+    background: rgba(0, 0, 0, 0.65);
+    font-size: 14px;
+    font-weight: 700;
+    color: #fff;
+  }
+
+  /* Bottom-left Cinema creator chrome */
+  .tt-cinema-desc {
+    position: absolute;
+    left: 16px;
+    bottom: 52px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-width: 340px;
+    z-index: 4;
+  }
+  .tt-viewport.is-classic .tt-cinema-desc,
+  .tt-viewport.is-modal .tt-cinema-desc {
+    display: none;
+  }
+  .tt-creator-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .tt-avatar-24 {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #6366f1, #ec4899);
+    border: 1px solid rgba(255, 255, 255, 0.45);
+    flex: 0 0 24px;
+  }
+  .tt-creator-name {
+    font-size: 13px;
+    font-weight: 700;
+  }
+  .tt-follow-pill {
+    padding: 2px 9px;
+    border-radius: 999px;
+    background: #fe2c55;
+    color: #fff;
+    font-size: 11px;
+    font-weight: 700;
+  }
+  .tt-caption-line {
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.8);
+  }
+
+  /* Cinema bottom playback bar */
+  .tt-playback-bar {
+    position: absolute;
+    left: 14px;
+    right: 14px;
+    bottom: 12px;
+    height: 28px;
+    border-top: 2px solid rgba(255, 255, 255, 0.25);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.72);
+    padding-top: 6px;
+    z-index: 4;
+  }
+  .tt-playback-bar::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: -2px;
+    width: 38%;
+    height: 2px;
+    background: #fe2c55;
+  }
+  .tt-viewport.is-classic .tt-playback-bar,
+  .tt-viewport.is-modal .tt-playback-bar {
+    display: none;
+  }
+
+  /* Cinema right scroll controls (middle-right) */
+  .tt-scroll-controls {
+    position: absolute;
+    right: 18px;
+    top: 266px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    align-items: center;
+    z-index: 5;
+  }
+  .tt-viewport.is-classic .tt-scroll-controls,
+  .tt-viewport.is-modal .tt-scroll-controls {
+    display: none;
+  }
+  .tt-round-btn {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    background: var(--tt-pill);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+  }
+  .tt-viewport.is-portrait .tt-round-btn {
+    width: 32px;
+    height: 32px;
+    font-size: 13px;
+  }
+  .tt-round-btn.disabled {
+    opacity: 0.45;
+  }
+
+  /* Cinema bottom-right vertical engagement bar */
+  .tt-engagement {
+    position: absolute;
+    right: 22px;
+    bottom: 54px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    z-index: 5;
+  }
+  .tt-viewport.is-classic .tt-engagement,
+  .tt-viewport.is-modal .tt-engagement {
+    display: none;
+  }
+  .tt-eng-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.86);
+  }
+  .tt-eng-icon {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.14);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+  }
+
+  /* Classic right-hand action bar (standalone / following) */
+  .tt-classic-bar {
+    position: absolute;
+    left: calc(50% + 188px);
+    bottom: 52px;
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    z-index: 5;
+  }
+  .tt-viewport.is-classic .tt-classic-bar {
+    display: flex;
+  }
+  .tt-classic-avatar {
+    position: relative;
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+    border: 2px solid rgba(255, 255, 255, 0.9);
+  }
+  .tt-classic-avatar::after {
+    content: "+";
+    position: absolute;
+    left: 50%;
+    bottom: -7px;
+    transform: translateX(-50%);
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: #fe2c55;
+    color: #fff;
+    font-size: 12px;
+    font-weight: 800;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .tt-classic-btn {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.14);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 15px;
+  }
+
+  /* Browse modal arrows */
+  .tt-modal-arrows {
+    position: absolute;
+    right: 18px;
+    top: 274px;
+    display: none;
+    flex-direction: column;
+    gap: 14px;
+    align-items: center;
+    z-index: 5;
+  }
+  .tt-viewport.is-modal .tt-modal-arrows {
+    display: flex;
+  }
+  .tt-modal-arrow {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.14);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 15px;
+  }
+  .tt-modal-arrow.hidden {
+    display: none;
+  }
+
+  /* Comments side panel (for Cinema comments-open & Browse modal) */
+  .tt-comment-drawer {
+    width: 0;
+    flex: 0 0 0;
+    background: #14151a;
+    border-left: 1px solid rgba(255, 255, 255, 0.08);
+    overflow: hidden;
+    transition: width 220ms cubic-bezier(0.16, 1, 0.3, 1), flex-basis 220ms cubic-bezier(0.16, 1, 0.3, 1);
+    display: flex;
+    flex-direction: column;
+  }
+  .tt-viewport.has-drawer .tt-comment-drawer {
+    width: 300px;
+    flex: 0 0 300px;
+  }
+  .tt-drawer-head {
+    padding: 14px 16px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    font-size: 13px;
+    font-weight: 700;
+  }
+  .tt-drawer-body {
+    padding: 14px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.72);
+  }
+  .tt-comment-row {
+    padding: 10px;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.04);
+  }
+
+  /* Competitor CK mark */
+  .ck-trigger {
+    position: absolute;
+    width: 44px;
+    height: 44px;
+    border-radius: 10px;
+    background: #1a1b20;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.45);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--ck-orange);
+    font-weight: 900;
+    font-size: 16px;
+    letter-spacing: -0.05em;
+    z-index: 10;
+    pointer-events: none;
+    transition: left 180ms ease, top 180ms ease, opacity 150ms ease;
+  }
+
+  /* OmniMux trigger + leftward menu */
+  .omx-anchor {
+    position: absolute;
+    width: 48px;
+    height: 48px;
+    z-index: 20;
+    transition: left 180ms cubic-bezier(0.16, 1, 0.3, 1), top 180ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .omx-trigger {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    border: 0;
+    padding: 0;
+    background: var(--brand);
+    color: var(--brand-ink);
+    box-shadow: 0 8px 22px rgba(0, 0, 0, 0.46), inset 0 1px 0 rgba(255, 255, 255, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: transform 160ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .omx-trigger:hover {
+    transform: translateY(-1px);
+  }
+  .omx-trigger.is-before-warning {
+    box-shadow: 0 0 0 2px var(--danger), 0 8px 22px rgba(255, 107, 107, 0.4);
+  }
+  .omx-menu {
+    position: absolute;
+    top: 50%;
+    right: calc(100% + 8px);
+    transform: translateY(-50%) translateX(6px) scale(0.97);
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 6px;
+    border-radius: 14px;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    background: rgba(24, 26, 31, 0.97);
+    box-shadow: 0 18px 42px rgba(0, 0, 0, 0.58);
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 140ms ease, transform 180ms cubic-bezier(0.16, 1, 0.3, 1), visibility 0s linear 180ms;
+  }
+  .omx-menu.is-right {
+    right: auto;
+    left: calc(100% + 8px);
+    transform: translateY(-50%) translateX(-6px) scale(0.97);
+  }
+  .omx-menu::before {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 100%;
+    transform: translateY(-50%);
+    border-top: 6px solid transparent;
+    border-bottom: 6px solid transparent;
+    border-left: 7px solid rgba(24, 26, 31, 0.97);
+  }
+  .omx-menu.is-right::before {
+    left: auto;
+    right: 100%;
+    border-left: none;
+    border-right: 7px solid rgba(24, 26, 31, 0.97);
+  }
+  .omx-anchor:hover .omx-menu,
+  .omx-anchor.menu-pinned .omx-menu {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(-50%) scale(1);
+    transition-delay: 0s;
+  }
+  .omx-item {
+    width: 156px;
+    padding: 8px 10px;
+    border: 0;
+    border-radius: 9px;
+    background: transparent;
+    color: rgba(255, 255, 255, 0.94);
+    font: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    text-align: left;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .omx-item:hover {
+    background: rgba(255, 255, 255, 0.1);
+  }
+
+  /* Inspector side card */
+  .inspector {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .inspector h2 {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 700;
+  }
+  .kv-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .kv {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    font-size: 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  }
+  .kv span:first-child { color: var(--muted); }
+  .kv code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11px;
+    color: var(--brand);
+    word-break: break-all;
+    text-align: right;
+  }
+  .status-box {
+    padding: 10px 12px;
+    border-radius: 10px;
+    font-size: 12px;
+    line-height: 1.5;
+    border: 1px solid var(--line);
+    background: rgba(255, 255, 255, 0.03);
+  }
+  .status-box.ok {
+    border-color: rgba(61, 220, 151, 0.4);
+    background: rgba(61, 220, 151, 0.08);
+    color: #b7f7d8;
+  }
+  .status-box.bad {
+    border-color: rgba(255, 107, 107, 0.45);
+    background: rgba(255, 107, 107, 0.1);
+    color: #ffc5c5;
+  }
+  .action-log {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11px;
+    line-height: 1.45;
+    padding: 10px;
+    border-radius: 10px;
+    background: #0c0d11;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    color: #d7dce5;
+    word-break: break-all;
+  }
+</style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-title">
+      <span>TikTok Web 新版布局适配演示</span>
+      <span class="badge" id="state-badge">改后效果</span>
+    </div>
+    <div class="controls">
+      <div class="seg" role="tablist" aria-label="场景切换" id="scenario-tabs">
+        <button type="button" class="active" data-scene="cinema-desktop">桌面推荐流</button>
+        <button type="button" data-scene="cinema-comments">评论抽屉展开</button>
+        <button type="button" data-scene="cinema-portrait">竖屏窄视口</button>
+        <button type="button" data-scene="browse-modal">作品弹窗</button>
+        <button type="button" data-scene="classic-standalone">经典单作品页</button>
+      </div>
+      <div class="seg" role="group" aria-label="改前改后切换" id="mode-tabs">
+        <button type="button" data-mode="before">改前</button>
+        <button type="button" class="active" data-mode="after">改后</button>
+      </div>
+      <div class="seg" role="group" aria-label="弹窗条目切换" id="modal-item-tabs" style="display:none;">
+        <button type="button" class="active" data-item="1">第 1 条作品</button>
+        <button type="button" data-item="2">第 2 条作品</button>
+      </div>
+      <button type="button" class="toggle-btn on" id="toggle-ck">显示竞品 CK</button>
+      <button type="button" class="toggle-btn" id="toggle-menu">固定展开菜单</button>
+    </div>
+  </header>
+
+  <main class="main">
+    <section class="stage-shell">
+      <div class="tt-viewport" id="tt-viewport">
+        <aside class="tt-sidebar">
+          <div class="tt-logo">TikTok</div>
+          <div class="tt-search">Search</div>
+          <div class="tt-nav-item active">For You</div>
+          <div class="tt-nav-item">Explore</div>
+          <div class="tt-nav-item">Following</div>
+          <div class="tt-nav-item">Friends</div>
+          <div class="tt-nav-item">Messages</div>
+          <div class="tt-nav-item">Profile</div>
+          <div class="tt-nav-foot">
+            <div class="tt-me-avatar"></div>
+            <span>Account</span>
+          </div>
+        </aside>
+
+        <div class="tt-player-col" id="player-col">
+          <div class="tt-video-frame">
+            <div class="tt-video-scene">
+              <div>TikTok Web 播放区</div>
+              <div class="tt-video-subtitle">悬停右上侧紫标即可展开快捷菜单</div>
+            </div>
+          </div>
+
+          <!-- Cinema bottom-left creator layer -->
+          <div class="tt-cinema-desc" id="cinema-desc">
+            <div class="tt-creator-row">
+              <div class="tt-avatar-24" id="cinema-avatar"></div>
+              <span class="tt-creator-name">Creator</span>
+              <span class="tt-follow-pill">Follow</span>
+            </div>
+            <div class="tt-caption-line">Cinema layout moves creator avatar to bottom-left</div>
+          </div>
+
+          <!-- Cinema bottom playback chrome -->
+          <div class="tt-playback-bar">
+            <span>00:12 / 00:35</span>
+            <span>Auto scroll 1.0x</span>
+          </div>
+
+          <!-- Cinema right scroll controls -->
+          <div class="tt-scroll-controls" id="scroll-controls">
+            <div class="tt-round-btn disabled" id="nav-prev" title="feed-navigation-prev">^</div>
+            <div class="tt-round-btn" id="nav-next" title="feed-navigation-next">v</div>
+          </div>
+
+          <!-- Cinema bottom-right vertical engagement -->
+          <div class="tt-engagement" id="cinema-engagement">
+            <div class="tt-eng-item"><div class="tt-eng-icon">♥</div><span>891</span></div>
+            <div class="tt-eng-item"><div class="tt-eng-icon">💬</div><span>89</span></div>
+            <div class="tt-eng-item"><div class="tt-eng-icon">★</div><span>80</span></div>
+            <div class="tt-eng-item"><div class="tt-eng-icon">↗</div><span>41</span></div>
+          </div>
+
+          <!-- Classic right-hand action bar -->
+          <div class="tt-classic-bar" id="classic-bar">
+            <div class="tt-classic-avatar" id="classic-avatar"></div>
+            <div class="tt-classic-btn">♥</div>
+            <div class="tt-classic-btn">💬</div>
+            <div class="tt-classic-btn">★</div>
+            <div class="tt-classic-btn">↗</div>
+          </div>
+
+          <!-- Browse modal arrows -->
+          <div class="tt-modal-arrows" id="modal-arrows">
+            <div class="tt-modal-arrow hidden" id="modal-arrow-left">^</div>
+            <div class="tt-modal-arrow" id="modal-arrow-right">v</div>
+          </div>
+
+          <!-- Rival CK mark -->
+          <div class="ck-trigger" id="ck-trigger" title="竞品按钮位置">CK</div>
+
+          <!-- OmniMux trigger + hover menu -->
+          <div class="omx-anchor" id="omx-anchor">
+            <div class="omx-menu" id="omx-menu" role="menu">
+              <button type="button" class="omx-item" data-action="video">⬇ 下载无水印视频</button>
+              <button type="button" class="omx-item" data-action="audio">♪ 下载原视频音频</button>
+              <button type="button" class="omx-item" data-action="save">⚑ 保存到灵感库</button>
+            </div>
+            <button type="button" class="omx-trigger" id="omx-trigger" aria-label="OmniMux">
+              <svg viewBox="0 0 24 24" width="27" height="27" fill="currentColor" aria-hidden="true">
+                <path d="M11.67 0.03c-.35.11-.49.46-.39.97.16.82-.08 1.59-.68 2.16-.31.3-.63.49-1.45.84-1.7.73-2.88 1.6-3.87 2.84-.98 1.22-1.62 2.68-1.9 4.29-.11.64-.14 1.09-.12 1.85.02.85.05 1.06.35 2.7.26 1.4.22 2.48-.12 3.21-.16.34-.3.54-.65.91-.32.34-.46.52-.57.74-.29.56-.21 1.16.2 1.61.2.21.41.36.67.44.18.06.25.07.52.07.47 0 .63-.05 1.29-.43.39-.22.53-.27.8-.27.19 0 .23.01.36.07.2.11.42.34.61.67.46.8.73 1.06 1.27 1.25.18.06.23.07.54.07.37 0 .5-.03.81-.17.28-.13.52-.3.93-.71.44-.42.63-.58.92-.72.48-.24 1.07-.26 1.57-.05.28.12.53.31.99.74.46.44.73.64 1.03.76.39.16.85.2 1.2.1.55-.15.88-.46 1.37-1.3.2-.34.4-.55.6-.64.13-.06.18-.07.37-.07.26 0 .39.05.74.25.74.44 1.18.55 1.72.42.29-.07.49-.18.7-.39.36-.36.51-.85.41-1.33-.08-.37-.22-.6-.7-1.1-.17-.18-.36-.4-.42-.49-.17-.24-.34-.61-.43-.95-.08-.3-.08-.3-.08-.97 0-.75.02-1.01.18-1.82.09-.49.21-1.25.27-1.7.02-.18.03-.58.03-1.13 0-.9-.02-1.07-.16-1.83-.49-2.7-2.11-4.97-4.45-6.29-.58-.33-.68-.46-.79-1.12-.07-.43-.15-.71-.3-1.02-.51-1.06-1.55-2.03-2.55-2.38-.25-.09-.62-.11-.8-.05ZM8.38 10.59a.95.95 0 0 1 .95.95v2.46a.95.95 0 1 1-1.9 0v-2.46a.95.95 0 0 1 .95-.95Zm7.21 0a.95.95 0 0 1 .95.95v2.46a.95.95 0 1 1-1.9 0v-2.46a.95.95 0 0 1 .95-.95Z"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <aside class="tt-comment-drawer">
+          <div class="tt-drawer-head">Comments</div>
+          <div class="tt-drawer-body">
+            <div class="tt-comment-row">评论抽屉展开后，播放列与右侧箭头列同步左移。</div>
+            <div class="tt-comment-row">竞品按钮与 OmniMux 触发器应保持在箭头列正上方，互不遮挡。</div>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <aside class="inspector">
+      <h2>布局与定位核验</h2>
+      <div class="status-box ok" id="status-box"></div>
+      <div class="kv-list" id="kv-list"></div>
+      <div>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:6px;">点击菜单项测试目标作品解析</div>
+        <div class="action-log" id="action-log">等待点击快捷菜单项</div>
+      </div>
+    </aside>
+  </main>
+
+<script>
+(() => {
+  const viewport = document.getElementById('tt-viewport');
+  const playerCol = document.getElementById('player-col');
+  const ckEl = document.getElementById('ck-trigger');
+  const omxAnchor = document.getElementById('omx-anchor');
+  const omxTrigger = document.getElementById('omx-trigger');
+  const omxMenu = document.getElementById('omx-menu');
+  const modalItemTabs = document.getElementById('modal-item-tabs');
+  const modalArrowLeft = document.getElementById('modal-arrow-left');
+  const modalArrowRight = document.getElementById('modal-arrow-right');
+  const stateBadge = document.getElementById('state-badge');
+  const statusBox = document.getElementById('status-box');
+  const kvList = document.getElementById('kv-list');
+  const actionLog = document.getElementById('action-log');
+
+  let state = {
+    scene: 'cinema-desktop',
+    mode: 'after',
+    modalItem: '1',
+    showCk: true,
+    pinMenu: false,
+  };
+
+  function relBox(el) {
+    const p = playerCol.getBoundingClientRect();
+    const b = el.getBoundingClientRect();
+    return {
+      left: Math.round(b.left - p.left),
+      top: Math.round(b.top - p.top),
+      width: Math.round(b.width),
+      height: Math.round(b.height),
+    };
+  }
+
+  function layout() {
+    viewport.classList.remove('is-portrait', 'is-modal', 'is-classic', 'has-drawer');
+    modalItemTabs.style.display = state.scene === 'browse-modal' ? 'inline-flex' : 'none';
+
+    if (state.scene === 'cinema-comments') {
+      viewport.classList.add('has-drawer');
+    } else if (state.scene === 'cinema-portrait') {
+      viewport.classList.add('is-portrait');
+    } else if (state.scene === 'browse-modal') {
+      viewport.classList.add('is-modal', 'has-drawer');
+      modalArrowLeft.classList.toggle('hidden', state.modalItem === '1');
+    } else if (state.scene === 'classic-standalone') {
+      viewport.classList.add('is-classic');
+    }
+
+    stateBadge.textContent = state.mode === 'before' ? '改前异常' : '改后效果';
+    stateBadge.style.color = state.mode === 'before' ? '#ffb8b8' : 'var(--brand)';
+
+    requestAnimationFrame(placeMarks);
+    clearTimeout(layout._t);
+    layout._t = setTimeout(placeMarks, 240);
+  }
+  viewport.addEventListener('transitionend', () => requestAnimationFrame(placeMarks));
+
+  function placeMarks() {
+    const pRect = playerCol.getBoundingClientRect();
+    const GAP = 8;
+    const OMX_BOX = 48;
+    const CK_BOX = 44;
+
+    let ckTarget = null;
+    if (state.scene === 'classic-standalone') {
+      ckTarget = relBox(document.getElementById('classic-avatar'));
+    } else if (state.scene === 'browse-modal') {
+      const arrow = state.modalItem === '1' ? modalArrowRight : modalArrowLeft;
+      ckTarget = relBox(arrow);
+    } else {
+      ckTarget = relBox(document.getElementById('nav-prev'));
+    }
+
+    // Position CK
+    let ckBox = null;
+    if (state.showCk && ckTarget) {
+      const ckLeft = Math.round(ckTarget.left + (ckTarget.width - CK_BOX) / 2);
+      const ckTop = Math.round(ckTarget.top - GAP - CK_BOX);
+      ckEl.style.display = 'flex';
+      ckEl.style.left = ckLeft + 'px';
+      ckEl.style.top = ckTop + 'px';
+      ckBox = { left: ckLeft, top: ckTop, width: CK_BOX, height: CK_BOX };
+    } else {
+      ckEl.style.display = 'none';
+    }
+
+    // Position OmniMux (before vs after)
+    let omxLeft = 0;
+    let omxTop = 0;
+    let layoutName = '';
+    let stepName = '';
+    let ok = true;
+    let diag = '';
+
+    if (state.mode === 'before') {
+      if (state.scene === 'browse-modal') {
+        // Missed #arrow-left -> fell back to modal-panel-left centered vertically, colliding with arrow-right!
+        omxLeft = Math.round(pRect.width - OMX_BOX - 14);
+        omxTop = Math.round(pRect.height / 2 - OMX_BOX / 2);
+        layoutName = 'browse-modal';
+        stepName = 'modal-panel-left (未命中 data-e2e 箭头)';
+        ok = false;
+        diag = '未识别 data-e2e="arrow-left/right"，退回面板左缘并压住原生右箭头且位于竞品下方。';
+      } else if (state.scene === 'classic-standalone') {
+        const av = relBox(document.getElementById('classic-avatar'));
+        omxLeft = av.left;
+        omxTop = ckBox ? ckBox.top - GAP - OMX_BOX : av.top - GAP - OMX_BOX;
+        layoutName = 'side-rail';
+        stepName = ckBox ? 'avatar-above + above-rival' : 'avatar-above';
+        diag = '经典右侧操作栏原本就位于头像与竞品上方。';
+      } else {
+        const av = relBox(document.getElementById('cinema-avatar'));
+        omxLeft = av.left;
+        omxTop = av.top - GAP - OMX_BOX;
+        layoutName = 'unknown';
+        stepName = 'avatar-above (误命中左下角 24x24 作者头像)';
+        ok = false;
+        diag = '错停在左下角简介区，远离右侧操作与竞品列。';
+      }
+    } else {
+      if (state.scene === 'classic-standalone') {
+        const av = relBox(document.getElementById('classic-avatar'));
+        omxLeft = Math.round(av.left + (av.width - OMX_BOX) / 2);
+        omxTop = ckBox ? ckBox.top - GAP - OMX_BOX : av.top - GAP - OMX_BOX;
+        layoutName = 'side-rail';
+        stepName = ckBox ? 'avatar-above -> above-rival' : 'avatar-above';
+        diag = '经典单作品页与 Following 保持原位，仍位于竞品与作者头像上方 8px。';
+      } else if (state.scene === 'browse-modal') {
+        const arrow = state.modalItem === '1' ? modalArrowRight : modalArrowLeft;
+        const aBox = relBox(arrow);
+        omxLeft = Math.round(aBox.left + (aBox.width - OMX_BOX) / 2);
+        omxTop = ckBox ? ckBox.top - GAP - OMX_BOX : aBox.top - GAP - OMX_BOX;
+        layoutName = 'browse-modal';
+        stepName = ckBox ? 'modal-prev-arrow -> above-rival' : 'modal-prev-arrow';
+        diag = '已识别 data-e2e="arrow-left/right"，对齐箭头列并稳居竞品上方 8px。';
+      } else {
+        const prevBox = relBox(document.getElementById('nav-prev'));
+        omxLeft = Math.round(prevBox.left + (prevBox.width - OMX_BOX) / 2);
+        omxTop = ckBox ? ckBox.top - GAP - OMX_BOX : prevBox.top - GAP - OMX_BOX;
+        layoutName = 'cinema-feed';
+        stepName = ckBox ? 'feed-nav-above -> above-rival' : 'feed-nav-above';
+        diag = '已识别 Cinema 导航控件列，水平居中停在竞品 CK 正上方 8px（无竞品时停在 ^ 上方 8px）。';
+      }
+    }
+
+    omxLeft = Math.min(Math.max(10, omxLeft), Math.max(10, pRect.width - OMX_BOX - 10));
+    omxAnchor.style.left = omxLeft + 'px';
+    omxAnchor.style.top = omxTop + 'px';
+    omxTrigger.classList.toggle('is-before-warning', !ok);
+    omxAnchor.classList.toggle('menu-pinned', state.pinMenu);
+
+    const openRight = omxLeft + OMX_BOX + 178 <= pRect.width;
+    omxMenu.classList.toggle('is-right', openRight);
+
+    statusBox.className = 'status-box ' + (ok ? 'ok' : 'bad');
+    statusBox.textContent = diag;
+
+    const activeTarget = state.mode === 'before' && state.scene.startsWith('cinema')
+      ? 'null (报 noTarget)'
+      : 'https://www.tiktok.com/@creator/video/7710049479080086815';
+
+    kvList.innerHTML = [
+      ['检测布局', layoutName],
+      ['命中规则', stepName],
+      ['OmniMux 坐标', `left=${omxLeft}px, top=${omxTop}px`],
+      ['竞品 CK 坐标', ckBox ? `left=${ckBox.left}px, top=${ckBox.top}px` : '未显示'],
+      ['菜单展开方向', openRight ? '向右 (right)' : '向左 (is-left)'],
+      ['活跃作品解析', activeTarget],
+    ].map(([k, v]) => `<div class="kv"><span>${k}</span><code>${v}</code></div>`).join('');
+  }
+
+  document.getElementById('scenario-tabs').addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-scene]');
+    if (!btn) return;
+    state.scene = btn.dataset.scene;
+    for (const b of document.querySelectorAll('#scenario-tabs button')) {
+      b.classList.toggle('active', b === btn);
+    }
+    layout();
+  });
+
+  document.getElementById('mode-tabs').addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-mode]');
+    if (!btn) return;
+    state.mode = btn.dataset.mode;
+    for (const b of document.querySelectorAll('#mode-tabs button')) {
+      b.classList.remove('active', 'active-danger');
+      if (b === btn) b.classList.add(state.mode === 'before' ? 'active-danger' : 'active');
+    }
+    layout();
+  });
+
+  modalItemTabs.addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-item]');
+    if (!btn) return;
+    state.modalItem = btn.dataset.item;
+    for (const b of document.querySelectorAll('#modal-item-tabs button')) {
+      b.classList.toggle('active', b === btn);
+    }
+    layout();
+  });
+
+  document.getElementById('toggle-ck').addEventListener('click', (e) => {
+    state.showCk = !state.showCk;
+    e.currentTarget.classList.toggle('on', state.showCk);
+    layout();
+  });
+
+  document.getElementById('toggle-menu').addEventListener('click', (e) => {
+    state.pinMenu = !state.pinMenu;
+    e.currentTarget.classList.toggle('on', state.pinMenu);
+    layout();
+  });
+
+  omxMenu.addEventListener('click', (e) => {
+    const item = e.target.closest('.omx-item');
+    if (!item) return;
+    const action = item.dataset.action;
+    if (state.mode === 'before' && state.scene.startsWith('cinema')) {
+      actionLog.textContent = `[改前] action=${action} -> 错误：当前页面没有可操作的作品 (more-menu-item-id 位于卡片外 anchoring-chrome-host，xgwrapper 高度为 0)`;
+    } else {
+      actionLog.textContent = `[改后] action=${action} -> 已解析目标作品 https://www.tiktok.com/@creator/video/7710049479080086815`;
+    }
+  });
+
+  window.addEventListener('resize', () => requestAnimationFrame(placeMarks));
+  setTimeout(layout, 50);
+})();
+</script>
+</body>
+</html>

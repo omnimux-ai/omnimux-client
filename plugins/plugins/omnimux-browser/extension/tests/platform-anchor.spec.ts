@@ -515,3 +515,119 @@ describe('可扩展性 — 新平台只加数据 (AC-601)', () => {
     expect(placement).toMatchObject({ left: 12, bottom: 88 })
   })
 })
+
+describe('TikTok Cinema 布局适配 — 定位与防误判', () => {
+  it('检测到 anchoring-scroll-controls 或 anchoring-chrome-host 时布局判为 cinema-feed，且优先于左栏', () => {
+    page(`
+      <aside id="rail"></aside>
+      <div id="controls" data-e2e="anchoring-scroll-controls">
+        <button id="prev" data-e2e="feed-navigation-prev"></button>
+      </div>
+    `, {
+      '#rail': { top: 0, left: 0, width: 240, height: 1175 },
+      '#controls': { top: 532, left: 2316, width: 48, height: 112 },
+      '#prev': { top: 532, left: 2316, width: 48, height: 48 },
+    })
+
+    const facts = measureAnchorFacts(document, { width: 2400, height: 1175 })
+    expect(facts.layout).toBe('cinema-feed')
+
+    // browse-modal 仍优先于 cinema-feed
+    expect(detectAnchorLayout({ rail: rect(0, 0, 240, 1175), cinema: rect(2316, 532, 48, 112), modal: rect(0, 0, 1800, 1175) }, { width: 2400, height: 1175 })).toBe('browse-modal')
+  })
+
+  it('Cinema 桌面/窄屏/竖屏/评论展开均水平居中停在 feed-navigation-prev 上方 8px', () => {
+    // 1. 桌面 2400px（48px 箭头）
+    page(`
+      <div data-e2e="anchoring-scroll-controls" id="sc">
+        <button data-e2e="feed-navigation-prev" id="prev"></button>
+      </div>
+    `, {
+      '#sc': { top: 532, left: 2316, width: 48, height: 112 },
+      '#prev': { top: 532, left: 2316, width: 48, height: 48 },
+    })
+    const wide = resolvePlatformAnchor(platformById('tiktok'), 'scene', document, { width: 2400, height: 1175 }, { box: 48 })
+    expect(wide).toEqual({ left: 2316, bottom: 1175 - (532 - 8 - 48) - 48, source: 'feed-nav-above' })
+
+    // 2. 窄屏 1125px（32px 箭头，水平居中 left = 1049 + (32 - 48)/2 = 1041）
+    page(`
+      <div data-e2e="anchoring-scroll-controls" id="sc">
+        <button data-e2e="feed-navigation-prev" id="prev"></button>
+      </div>
+    `, {
+      '#sc': { top: 460, left: 1049, width: 32, height: 80 },
+      '#prev': { top: 460, left: 1049, width: 32, height: 32 },
+    })
+    const narrow = resolvePlatformAnchor(platformById('tiktok'), 'scene', document, { width: 1125, height: 1000 }, { box: 48 })
+    expect(narrow).toEqual({ left: 1041, bottom: 1000 - (460 - 8 - 48) - 48, source: 'feed-nav-above' })
+
+    // 3. 竖屏贴右缘时向左钳位不出视口
+    page(`
+      <div data-e2e="anchoring-scroll-controls" id="sc">
+        <button data-e2e="feed-navigation-prev" id="prev"></button>
+      </div>
+    `, {
+      '#sc': { top: 523, left: 392, width: 32, height: 80 },
+      '#prev': { top: 523, left: 392, width: 32, height: 32 },
+    })
+    const portrait = resolvePlatformAnchor(platformById('tiktok'), 'scene', document, { width: 430, height: 900 }, { box: 48 })
+    expect(portrait.source).toBe('feed-nav-above')
+    expect(portrait.left).toBe(372)
+    expect(portrait.left + 48).toBeLessThanOrEqual(420)
+  })
+
+  it('缺少 scroll-controls 时退至右下 anchoring-engagement-vertical，绝不落在左下角 24x24 作者头像上', () => {
+    page(`
+      <div data-e2e="anchoring-chrome-host" id="chrome">
+        <div data-e2e="anchoring-description-layer">
+          <div data-e2e="cinema-creator-avatar">
+            <a data-e2e="video-author-avatar" href="/@creator"><img id="left-av" /></a>
+          </div>
+        </div>
+        <div data-e2e="anchoring-engagement-vertical" id="eng">
+          <div data-e2e="like-icon" id="like"></div>
+        </div>
+      </div>
+    `, {
+      '#chrome': { top: 16, left: 256, width: 2128, height: 1143 },
+      '#left-av': { top: 993, left: 276, width: 24, height: 24 },
+      '#eng': { top: 889, left: 2316, width: 48, height: 198 },
+      '#like': { top: 889, left: 2321, width: 38, height: 42 },
+    })
+
+    expect(findAvatarElement(document, { width: 2400, height: 1175 })).toBeNull()
+    const placement = resolvePlatformAnchor(platformById('tiktok'), 'scene', document, { width: 2400, height: 1175 }, { box: 48 })
+    expect(placement).toEqual({
+      left: 2316,
+      bottom: 1175 - (889 - 8 - 48) - 48,
+      source: 'engagement-bar-above',
+    })
+  })
+
+  it('直开单作品页与 Following 即使页面存在单独的 feed-navigation-prev，仍走右侧经典头像列', () => {
+    page(`
+      <aside id="rail"></aside>
+      <section class="SectionActionBarContainer" id="bar">
+        <div class="AvatarActionItem" data-e2e="video-author-avatar"><img id="author-img" /></div>
+        <div data-e2e="like-icon" id="like"></div>
+      </section>
+      <button data-e2e="feed-navigation-prev" id="prev"></button>
+    `, {
+      '#rail': { top: 0, left: 0, width: 240, height: 1175 },
+      '#bar': { top: 727, left: 1501, width: 63, height: 432 },
+      '#author-img': { top: 727, left: 1508, width: 48, height: 48 },
+      '#like': { top: 795, left: 1508, width: 48, height: 78 },
+      '#prev': { top: 532, left: 2336, width: 48, height: 48 },
+    })
+
+    const facts = measureAnchorFacts(document, { width: 2400, height: 1175 })
+    expect(facts.layout).toBe('side-rail')
+
+    const placement = resolvePlatformAnchor(platformById('tiktok'), 'scene', document, { width: 2400, height: 1175 }, { box: 48 })
+    expect(placement).toEqual({
+      left: 1508,
+      bottom: 1175 - 727 + ANCHOR_GAP,
+      source: 'avatar-above',
+    })
+  })
+})

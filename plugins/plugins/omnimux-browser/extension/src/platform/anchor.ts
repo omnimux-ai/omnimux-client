@@ -48,7 +48,7 @@ import type { AnchorRect } from '../content/media-hover/types.ts'
  * are one layout for placement purposes. Everything else is `unknown`, which is
  * a legal answer and has an answer of its own.
  */
-export type AnchorLayout = 'side-rail' | 'browse-modal' | 'unknown'
+export type AnchorLayout = 'side-rail' | 'browse-modal' | 'cinema-feed' | 'unknown'
 
 /**
  * Furthest a rail's near edge may sit from the viewport's matching edge, as a
@@ -189,6 +189,8 @@ export interface AnchorFacts {
    * `AnchorFacts` literal written before this layout existed still typechecks.
    */
   readonly modal?: AnchorRect | null
+  /** TikTok's cinema/anchoring feed container box, when rendered. */
+  readonly cinema?: AnchorRect | null
   /** The side rail's box, when a container passed the rail predicate. */
   readonly rail: AnchorRect | null
   /** The signed-in avatar's box, when one could be found. */
@@ -196,7 +198,10 @@ export interface AnchorFacts {
 }
 
 /** The measurable half of {@link AnchorFacts}: everything layout detection reads. */
-export type AnchorMeasurements = Pick<AnchorFacts, 'rail'> & { readonly modal?: AnchorRect | null }
+export type AnchorMeasurements = Pick<AnchorFacts, 'rail'> & {
+  readonly modal?: AnchorRect | null
+  readonly cinema?: AnchorRect | null
+}
 
 /** The mark being placed. */
 export interface AnchorRequest {
@@ -277,12 +282,36 @@ export function isSideRailRect(rect: AnchorRect, viewport: ViewportSize): boolea
  */
 export const BROWSE_MODAL_SELECTOR = '[data-e2e="browse-video"]'
 
-/** The overlay's video box, when one is on screen. */
+/** TikTok's updated Cinema feed containers (right-hand scroll arrows & detached chrome host). */
+export const CINEMA_SCROLL_CONTROLS_SELECTOR = '[data-e2e="anchoring-scroll-controls"]'
+export const CINEMA_CHROME_HOST_SELECTOR = '[data-e2e="anchoring-chrome-host"]'
+
+export const CINEMA_FEED_NAV_SELECTORS: readonly string[] = [
+  '[data-e2e="anchoring-scroll-controls"] [data-e2e="feed-navigation-prev"]',
+  '[data-e2e="anchoring-scroll-controls"] [data-e2e="feed-navigation-next"]',
+  '[data-e2e="anchoring-scroll-controls"]',
+]
+
+export const CINEMA_ENGAGEMENT_SELECTORS: readonly string[] = [
+  '[data-e2e="anchoring-engagement-vertical"]',
+  '[data-e2e="anchoring-chrome-host"] section[class*="SectionActionBarContainer"]',
+]
+
+export const MODAL_ARROW_SELECTORS: readonly string[] = [
+  '[data-e2e="arrow-left"]',
+  '#arrow-left',
+  '[data-e2e="arrow-right"]',
+  '#arrow-right',
+]
+
+/** The overlay's video or photo box, when one is on screen. */
 export function findBrowseModal(doc: Document): Element | null {
-  for (const element of Array.from(doc.querySelectorAll(BROWSE_MODAL_SELECTOR))) {
-    if (isMeasurable(element)) return element
-  }
-  return null
+  return firstMeasurable(doc, [BROWSE_MODAL_SELECTOR, '[data-e2e="browse-photo"]'])
+}
+
+/** The Cinema feed layout landmark, when TikTok's anchoring/cinema layout is active. */
+export function findCinemaFeedElement(doc: Document): Element | null {
+  return firstMeasurable(doc, [CINEMA_SCROLL_CONTROLS_SELECTOR, CINEMA_CHROME_HOST_SELECTOR])
 }
 
 /**
@@ -297,10 +326,13 @@ export function findBrowseModal(doc: Document): Element | null {
  * @param viewport the viewport box
  */
 export function detectAnchorLayout(measured: AnchorMeasurements, viewport: ViewportSize): AnchorLayout {
-  // The browse overlay wins over the rail: on a profile page the feed rail behind
-  // the overlay is still laid out, and anchoring to it would put the mark on a
+  // The browse overlay wins over everything else: on a profile page the feed rail
+  // behind the overlay is still laid out, and anchoring to it would put the mark on a
   // thumbnail the user is not watching.
   if (measured.modal !== null && measured.modal !== undefined) return 'browse-modal'
+  // Cinema feed wins over the left navigation rail so the trigger anchors on the
+  // right-hand navigation column rather than the left sidebar account avatar.
+  if (measured.cinema !== null && measured.cinema !== undefined) return 'cinema-feed'
   if (measured.rail !== null && isSideRailRect(measured.rail, viewport)) return 'side-rail'
   return 'unknown'
 }
@@ -483,7 +515,7 @@ function findActiveFeedAvatar(doc: Document, viewport: ViewportSize): Element | 
   // 1. Direct AvatarActionItem or video-author-avatar hook in view
   const namedAvatars = Array.from(
     doc.querySelectorAll('[class*="AvatarActionItem"], [data-e2e="video-author-avatar"]')
-  ).filter((el) => el.closest('#app-header, [class*="DivHeaderContainer"]') === null)
+  ).filter((el) => el.closest('#app-header, [class*="DivHeaderContainer"], [data-e2e="anchoring-description-layer"], [data-e2e="cinema-creator-identity"], [data-e2e="cinema-creator-avatar"]') === null)
   let bestNamed: { element: Element; diff: number } | null = null
   for (const el of namedAvatars) {
     const r = rectOf(el)
@@ -559,11 +591,13 @@ export function measureAnchorFacts(doc: Document, viewport: ViewportSize): Ancho
   const railElement = findSideRailElement(doc, viewport)
   const avatarElement = findAvatarElement(doc, viewport)
   const modalElement = findBrowseModal(doc)
+  const cinemaElement = findCinemaFeedElement(doc)
   const rail = railElement === null ? null : rectOf(railElement)
   const avatar = avatarElement === null ? null : rectOf(avatarElement)
   const modal = modalElement === null ? null : rectOf(modalElement)
-  const layout = detectAnchorLayout({ rail, modal }, viewport)
-  return { doc, viewport, layout, rail, avatar, modal }
+  const cinema = cinemaElement === null ? null : rectOf(cinemaElement)
+  const layout = detectAnchorLayout({ rail, modal, cinema }, viewport)
+  return { doc, viewport, layout, rail, avatar, modal, cinema }
 }
 
 /**
@@ -653,13 +687,65 @@ export const BROWSE_PANEL_SELECTORS: readonly string[] = [
 ]
 
 /**
- * Above the overlay's own previous-video arrow.
+ * Center a mark horizontally on an element and sit `gap` px above it,
+ * clamped inside the viewport margins so narrow columns never clip off-screen.
+ */
+function placeCenteredAboveElement(
+  element: Element,
+  viewport: ViewportSize,
+  request: AnchorRequest,
+  gap: number,
+  source: AnchorSource,
+): AnchorPlacement {
+  const rect = element.getBoundingClientRect()
+  const rawLeft = Math.round(rect.left + (rect.width - request.box) / 2)
+  const maxLeft = Math.max(VIEWPORT_MARGIN, viewport.width - request.box - VIEWPORT_MARGIN)
+  const left = viewport.width > 0
+    ? Math.min(Math.max(VIEWPORT_MARGIN, rawLeft), maxLeft)
+    : Math.max(VIEWPORT_MARGIN, rawLeft)
+  const top = Math.max(VIEWPORT_MARGIN, Math.round(rect.top - gap - request.box))
+  return {
+    left,
+    bottom: viewport.height - top - request.box,
+    source,
+  }
+}
+
+/**
+ * Above the Cinema feed's middle-right scroll controls (`feed-navigation-prev` / `next`),
+ * matching the exact column where CreatOK anchors (`stable-action-bar`).
+ */
+function placeAtFeedNavAbove(
+  facts: AnchorFacts,
+  viewport: ViewportSize,
+  request: AnchorRequest,
+): AnchorPlacement | null {
+  const nav = firstMeasurable(facts.doc, CINEMA_FEED_NAV_SELECTORS)
+  if (nav === null) return null
+  return placeCenteredAboveElement(nav, viewport, request, ANCHOR_GAP, 'feed-nav-above')
+}
+
+/**
+ * Above the Cinema feed's bottom-right engagement column when scroll controls are absent.
+ */
+function placeAtEngagementBarAbove(
+  facts: AnchorFacts,
+  viewport: ViewportSize,
+  request: AnchorRequest,
+): AnchorPlacement | null {
+  const bar = firstMeasurable(facts.doc, CINEMA_ENGAGEMENT_SELECTORS)
+  if (bar === null) return null
+  return placeCenteredAboveElement(bar, viewport, request, ANCHOR_GAP, 'engagement-bar-above')
+}
+
+/**
+ * Above the overlay's own navigation arrow (`data-e2e="arrow-left"` / `#arrow-left` / `arrow-right`).
  *
  * This is the slot CreatOK uses in the same overlay, and the reason the chain
  * tries it first: it is the one point both extensions derive from TikTok's own
  * geometry, so our mark and the rival end up in one column rather than on top of
- * each other. The arrow only exists while the video is hovered, which is why the
- * chain must keep a step that does not need it.
+ * each other. On the first video in a profile/modal list `arrow-left` is hidden,
+ * so `arrow-right` serves as the visible column landmark.
  * @param facts the measured page
  * @param viewport the viewport box
  * @param request the mark being placed
@@ -669,16 +755,9 @@ function placeAtModalPrevArrow(
   viewport: ViewportSize,
   request: AnchorRequest,
 ): AnchorPlacement | null {
-  const arrow = firstMeasurable(facts.doc, ['#arrow-left'])
+  const arrow = firstMeasurable(facts.doc, MODAL_ARROW_SELECTORS)
   if (arrow === null) return null
-  const rect = arrow.getBoundingClientRect()
-  const left = Math.max(VIEWPORT_MARGIN, Math.round(rect.left + (rect.width - request.box) / 2))
-  const top = Math.max(VIEWPORT_MARGIN, Math.round(rect.top - MODAL_ARROW_GAP - request.box))
-  return {
-    left,
-    bottom: viewport.height - top - request.box,
-    source: 'modal-prev-arrow',
-  }
+  return placeCenteredAboveElement(arrow, viewport, request, MODAL_ARROW_GAP, 'modal-prev-arrow')
 }
 
 /**
@@ -751,6 +830,10 @@ function runStep(
   switch (step) {
     case 'avatar-above':
       return placeAtAvatar(facts, viewport)
+    case 'feed-nav-above':
+      return placeAtFeedNavAbove(facts, viewport, request)
+    case 'engagement-bar-above':
+      return placeAtEngagementBarAbove(facts, viewport, request)
     case 'modal-prev-arrow':
       return placeAtModalPrevArrow(facts, viewport, request)
     case 'modal-panel-left':

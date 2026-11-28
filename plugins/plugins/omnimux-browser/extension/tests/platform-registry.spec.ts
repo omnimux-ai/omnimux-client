@@ -113,6 +113,16 @@ describe('平台表 — 锚点链', () => {
       expect(anchorChainFor(spec, 'brand', layout)).toEqual(['viewport-corner-right'])
     }
   })
+
+  it('TikTok Cinema 布局的场景链按导航控件 -> 互动栏 -> 右下角顺序回退', () => {
+    const spec = platformById('tiktok').anchor
+    expect(anchorChainFor(spec, 'scene', 'cinema-feed')).toEqual([
+      'feed-nav-above',
+      'engagement-bar-above',
+      'viewport-corner-right',
+    ])
+    expect(anchorChainFor(spec, 'brand', 'cinema-feed')).toEqual(['viewport-corner-right'])
+  })
 })
 
 describe('平台表 — 页面类型', () => {

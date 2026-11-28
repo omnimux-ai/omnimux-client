@@ -83,6 +83,7 @@ html, body {
   --dsw-alias-interactive-bg-hover: rgba(255, 255, 255, 0.08);
   --dsw-alias-interactive-bg-active: rgba(255, 255, 255, 0.14);
   --dsw-alias-border-l1: rgba(255, 255, 255, 0.06);
+  --dsw-alias-border-l2-darkmode-thin: rgba(255, 255, 255, 0.06);
   --dsw-alias-border-l2: rgba(255, 255, 255, 0.12);
   --dsw-alias-border-l3: rgba(255, 255, 255, 0.16);
   --dsw-alias-border-l4: rgba(255, 255, 255, 0.22);
@@ -359,6 +360,25 @@ test('Chromium E2E：固定导航轨 52px 布局、避让红绿灯、业务全�
       const panelList = document.querySelector('nav.SidebarRoot_panelList__e2e')
       const footArea = document.querySelector('.SidebarRoot_footArea__e2e')
       const homeBtn = rail.querySelector('[data-omnimux-rail-item="home"]')
+      const settingsBtn = rail.querySelector('[data-omnimux-rail-item="settings"]')
+      const hDivider = rail.querySelector('.omnimux-nav-rail-bottom .omnimux-nav-rail-divider')
+      const railStyle = getComputedStyle(rail)
+      const railAfterStyle = getComputedStyle(rail, '::after')
+      const hDividerStyle = getComputedStyle(hDivider)
+      const railRectMeasure = rect(rail)
+      const dividerMetrics = {
+        dpr: window.devicePixelRatio || 1,
+        railBorderRightWidth: railStyle.borderRightWidth,
+        afterBorderRightWidth: railAfterStyle.borderRightWidth,
+        afterBorderRightColor: railAfterStyle.borderRightColor,
+        afterTopPx: round(parseFloat(railAfterStyle.top)),
+        homeTopPx: round(rect(homeBtn).top),
+        afterBottomInsetPx: round(parseFloat(railAfterStyle.bottom)),
+        settingsBottomInsetPx: round(railRectMeasure.bottom - rect(settingsBtn).bottom),
+        hDividerBorderTopWidth: hDividerStyle.borderTopWidth,
+        hDividerHeight: hDividerStyle.height,
+        hDividerBorderTopColor: hDividerStyle.borderTopColor,
+      }
       const topbarToggle = document.querySelector('[data-omnimux-sidebar-toggle-topbar="1"]')
 
       const homeExpanded = {
@@ -421,8 +441,17 @@ test('Chromium E2E：固定导航轨 52px 布局、避让红绿灯、业务全�
       const modalRootRect = rect(rootEl)
       settingsDialog.remove()
 
+      document.documentElement.setAttribute('data-fullscreen', 'true')
+      const fullscreenDivider = {
+        afterTopPx: round(parseFloat(getComputedStyle(rail, '::after').top)),
+        homeTopPx: round(rect(homeBtn).top),
+      }
+      document.documentElement.removeAttribute('data-fullscreen')
+
       return {
         homeExpanded,
+        dividerMetrics,
+        fullscreenDivider,
         projectsBusiness,
         popupRect,
         popupBg,
@@ -471,6 +500,22 @@ test('Chromium E2E：固定导航轨 52px 布局、避让红绿灯、业务全�
 
   // 5. Token 白名单完整性确认
   assert.ok(allowlist.includes('--dsw-alias-bg-layer-2'))
+  assert.ok(allowlist.includes('--dsw-alias-border-l2-darkmode-thin'))
+
+  // 6. 分割线细度、浅色令牌与上下内缩对齐首末图标外侧验证（1x DPR 下 Chromium 自动将 0.5px 边框像素对齐为 1px）
+  const expectedHairline = metrics.dividerMetrics.dpr >= 2 ? '0.5px' : '1px'
+  assert.equal(metrics.dividerMetrics.railBorderRightWidth, '0px', '容器自身不得再绘满高右边框')
+  assert.equal(metrics.dividerMetrics.afterBorderRightWidth, expectedHairline, '固定轨右侧分隔线应为细线边框')
+  assert.equal(metrics.dividerMetrics.afterBorderRightColor, 'rgba(255, 255, 255, 0.06)', '固定轨竖向分隔线应消费柔和薄边令牌')
+  assert.equal(metrics.dividerMetrics.afterTopPx, 52, 'macOS 窗口化竖线上端应内缩 52px 避让红绿灯安全区')
+  assert.equal(metrics.dividerMetrics.afterTopPx, metrics.dividerMetrics.homeTopPx, '竖线上端必须对齐首枚首页按钮外顶边')
+  assert.equal(metrics.dividerMetrics.afterBottomInsetPx, 12, '竖线下端应距轨底内缩 12px')
+  assert.equal(metrics.dividerMetrics.afterBottomInsetPx, metrics.dividerMetrics.settingsBottomInsetPx, '竖线下端必须对齐最底部按钮外底边')
+  assert.equal(metrics.dividerMetrics.hDividerBorderTopWidth, expectedHairline, '栏内横向分隔线应为细线边框')
+  assert.equal(metrics.dividerMetrics.hDividerHeight, '0px', '横向分隔线不得保留 1px 实体高度')
+  assert.equal(metrics.dividerMetrics.hDividerBorderTopColor, 'rgba(255, 255, 255, 0.06)', '横向分隔线应与竖向分隔线共用柔和薄边令牌')
+  assert.equal(metrics.fullscreenDivider.afterTopPx, 12, '全屏模式下竖线上端应同步收敛至 12px')
+  assert.equal(metrics.fullscreenDivider.afterTopPx, metrics.fullscreenDivider.homeTopPx, '全屏模式下竖线上端仍须精确对齐首页图标外顶边')
 })
 
 test('Chromium E2E：「更多」菜单固定按钮对齐/分隔线保留、左侧栏快捷图标一键激活与窄高不挤出底部按钮', () => {
