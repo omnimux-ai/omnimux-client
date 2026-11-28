@@ -216,3 +216,83 @@ describe('TikTok 全场景活跃视频抓取 (resolveTargetPost)', () => {
     assert.equal(post.url, 'https://www.tiktok.com/@i/video/7681127662965886228')
   })
 })
+
+describe('TikTok 新版 Cinema 与弹窗下竞品避让 (mountTiktokScene)', () => {
+  it('Cinema 推荐流有 CreatOK 停在 prev 箭头上方时，OmniMux 水平居中叠在竞品正上方 8px 且向左展开菜单', () => {
+    document.body.innerHTML = `
+      <div id="chrome" data-e2e="anchoring-chrome-host">
+        <div data-e2e="anchoring-description-layer">
+          <div data-e2e="cinema-creator-avatar">
+            <a data-e2e="video-author-avatar" href="/@creator"><img id="left-av" /></a>
+          </div>
+        </div>
+      </div>
+      <div id="sc" data-e2e="anchoring-scroll-controls">
+        <div class="nav-wrap">
+          <button id="prev" data-e2e="feed-navigation-prev"></button>
+          <div id="creatok-video-trigger" data-placement="stable-action-bar" style="width:44px;height:44px">CK</div>
+        </div>
+      </div>
+    `
+    place(document.getElementById('chrome'), { top: 16, left: 256, width: 2128, height: 1143 })
+    place(document.getElementById('left-av'), { top: 993, left: 276, width: 24, height: 24 })
+    place(document.getElementById('sc'), { top: 532, left: 2316, width: 48, height: 112 })
+    place(document.getElementById('prev'), { top: 532, left: 2316, width: 48, height: 48 })
+    const rival = document.getElementById('creatok-video-trigger')
+    place(rival, { top: 480, left: 2318, width: 44, height: 44 })
+    window.innerWidth = 2400
+    window.innerHeight = 1175
+
+    const mounted = mountTiktokScene({
+      doc: document,
+      copy: tiktokCopy('zh'),
+      run: async () => ({ ok: true, code: 'exported' }),
+    })
+    try {
+      const host = document.getElementById(TIKTOK_SCENE_HOST_ID)
+      const anchor = host.shadowRoot.querySelector('.omx-anchor')
+      const menu = host.shadowRoot.querySelector('.omx-menu')
+      // CreatOK top=480 -> OmniMux bottom=472, top=424, left=2316
+      assert.equal(anchor.style.left, '2316px')
+      assert.equal(anchor.style.bottom, String(1175 - 424 - 48) + 'px')
+      assert.equal(menu.classList.contains('is-left'), true)
+      assert.equal(rival.getAttribute('style'), 'width:44px;height:44px')
+    } finally {
+      mounted.dispose()
+    }
+  })
+
+  it('Browse 弹窗首条作品仅显示 arrow-right 且带 CreatOK 时，OmniMux 叠在竞品正上方 8px 且不压箭头', () => {
+    document.body.innerHTML = `
+      <div id="modal" data-e2e="browse-video"></div>
+      <button id="arrow-left-btn" data-e2e="arrow-left"></button>
+      <button id="arrow-right-btn" data-e2e="arrow-right"></button>
+      <div id="creatok-video-trigger" data-placement="spa-navigation-action-above" style="width:44px;height:44px">CK</div>
+      <div id="panel" class="DivCommentListContainer"></div>
+    `
+    place(document.getElementById('modal'), { top: 0, left: 0, width: 1856, height: 1175 })
+    place(document.getElementById('arrow-left-btn'), { top: 0, left: 0, width: 0, height: 0 })
+    place(document.getElementById('arrow-right-btn'), { top: 572, left: 1796, width: 40, height: 40 })
+    const rival = document.getElementById('creatok-video-trigger')
+    place(rival, { top: 520, left: 1794, width: 44, height: 44 })
+    place(document.getElementById('panel'), { top: 0, left: 1856, width: 544, height: 1175 })
+    window.innerWidth = 2400
+    window.innerHeight = 1175
+
+    const mounted = mountTiktokScene({
+      doc: document,
+      copy: tiktokCopy('zh'),
+      run: async () => ({ ok: true, code: 'exported' }),
+    })
+    try {
+      const host = document.getElementById(TIKTOK_SCENE_HOST_ID)
+      const anchor = host.shadowRoot.querySelector('.omx-anchor')
+      // arrow-right left=1796 w=40 -> center left=1792; CK top=520 -> OmniMux top=464 (bottom=512 <= 572)
+      assert.equal(anchor.style.left, '1792px')
+      assert.equal(anchor.style.bottom, String(1175 - 464 - 48) + 'px')
+      assert.equal(rival.getAttribute('style'), 'width:44px;height:44px')
+    } finally {
+      mounted.dispose()
+    }
+  })
+})

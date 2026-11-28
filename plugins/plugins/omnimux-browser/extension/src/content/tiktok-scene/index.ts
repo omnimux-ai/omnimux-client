@@ -149,6 +149,9 @@ export function initTiktokScene(): void {
   }
 
   doc.addEventListener('pointerover', onPointerOver, { passive: true })
+  // Re-measure when CSS transitions (such as the comments drawer sliding open/closed)
+  // finish moving the player column and right-hand scroll controls.
+  doc.addEventListener('transitionend', pass, { passive: true })
   // Attribute changes count too: the rail hides or collapses itself by switching
   // a class or an inline style, which inserts no node at all and would otherwise
   // leave the trigger at the old anchor until something else mutated the tree.
@@ -174,6 +177,7 @@ export function initTiktokScene(): void {
       if (timer !== null) clearTimeout(timer)
       observer.disconnect()
       doc.removeEventListener('pointerover', onPointerOver)
+      doc.removeEventListener('transitionend', pass)
       doc.defaultView?.removeEventListener('popstate', pass)
       if (urlWatch !== null) doc.defaultView?.clearInterval(urlWatch)
       scene?.dispose()

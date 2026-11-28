@@ -1,0 +1,212 @@
+{
+  "scenarios": {
+    "cinemaDesktop": {
+      "mounted": true,
+      "trigger": {
+        "left": 1373,
+        "top": 287,
+        "right": 1421,
+        "bottom": 335,
+        "width": 48,
+        "height": 48
+      },
+      "menu": {
+        "left": 1214,
+        "top": 253,
+        "right": 1379,
+        "bottom": 369,
+        "width": 165,
+        "height": 116
+      },
+      "menuOpen": false,
+      "menuLeftClass": true,
+      "detailText": "",
+      "ck": {
+        "left": 1375,
+        "top": 343,
+        "right": 1419,
+        "bottom": 387,
+        "width": 44,
+        "height": 44
+      },
+      "prev": {
+        "left": 1373,
+        "top": 395,
+        "right": 1421,
+        "bottom": 443,
+        "width": 48,
+        "height": 48
+      },
+      "arrowRight": null,
+      "classicAvatar": null
+    },
+    "cinemaActivePostMessage": {
+      "type": "DSH_TIKTOK_FETCH_MEDIA",
+      "payload": {
+        "url": "https://www.tiktok.com/@creator/video/7710049479080086815",
+        "kind": "video"
+      }
+    },
+    "cinemaCommentsOpen": {
+      "mounted": true,
+      "trigger": {
+        "left": 974,
+        "top": 287,
+        "right": 1022,
+        "bottom": 335,
+        "width": 48,
+        "height": 48
+      },
+      "menu": {
+        "left": 1016,
+        "top": 231,
+        "right": 1181,
+        "bottom": 391,
+        "width": 165,
+        "height": 160
+      },
+      "menuOpen": false,
+      "menuLeftClass": false,
+      "detailText": "not-local",
+      "ck": {
+        "left": 976,
+        "top": 343,
+        "right": 1020,
+        "bottom": 387,
+        "width": 44,
+        "height": 44
+      },
+      "prev": {
+        "left": 974,
+        "top": 395,
+        "right": 1022,
+        "bottom": 443,
+        "width": 48,
+        "height": 48
+      },
+      "arrowRight": null,
+      "classicAvatar": null
+    },
+    "browseModal": {
+      "mounted": true,
+      "trigger": {
+        "left": 896,
+        "top": 322,
+        "right": 944,
+        "bottom": 370,
+        "width": 48,
+        "height": 48
+      },
+      "menu": {
+        "left": 938,
+        "top": 288,
+        "right": 1103,
+        "bottom": 404,
+        "width": 165,
+        "height": 116
+      },
+      "menuOpen": false,
+      "menuLeftClass": false,
+      "detailText": "",
+      "ck": {
+        "left": 898,
+        "top": 378,
+        "right": 942,
+        "bottom": 422,
+        "width": 44,
+        "height": 44
+      },
+      "prev": null,
+      "arrowRight": {
+        "left": 900,
+        "top": 430,
+        "right": 940,
+        "bottom": 470,
+        "width": 40,
+        "height": 40
+      },
+      "classicAvatar": null
+    },
+    "classicStandalone": {
+      "mounted": true,
+      "trigger": {
+        "left": 1066,
+        "top": 546,
+        "right": 1114,
+        "bottom": 594,
+        "width": 48,
+        "height": 48
+      },
+      "menu": {
+        "left": 1108,
+        "top": 512,
+        "right": 1273,
+        "bottom": 628,
+        "width": 165,
+        "height": 116
+      },
+      "menuOpen": false,
+      "menuLeftClass": false,
+      "detailText": "",
+      "ck": {
+        "left": 1058,
+        "top": 602,
+        "right": 1122,
+        "bottom": 668,
+        "width": 64,
+        "height": 66
+      },
+      "prev": {
+        "left": 1372,
+        "top": 414,
+        "right": 1420,
+        "bottom": 462,
+        "width": 48,
+        "height": 48
+      },
+      "arrowRight": null,
+      "classicAvatar": {
+        "left": 1066,
+        "top": 676,
+        "right": 1114,
+        "bottom": 724,
+        "width": 48,
+        "height": 48
+      }
+    },
+    "cinemaPortrait": {
+      "trigger": {
+        "left": 371,
+        "top": 303,
+        "right": 419,
+        "bottom": 351,
+        "width": 48,
+        "height": 48
+      },
+      "ck": {
+        "left": 373,
+        "top": 359,
+        "right": 417,
+        "bottom": 403,
+        "width": 44,
+        "height": 44
+      },
+      "prev": {
+        "left": 379,
+        "top": 411,
+        "right": 411,
+        "bottom": 443,
+        "width": 32,
+        "height": 32
+      },
+      "hoverMenu": {
+        "left": 201,
+        "top": 267,
+        "right": 371,
+        "bottom": 387
+      }
+    }
+  },
+  "pass": true,
+  "extensionDistVerified": true
+}

@@ -223,8 +223,12 @@ export function mountTiktokScene(options: TiktokSceneOptions): TiktokSceneHandle
    * anything if it is made against the panel the stylesheet actually produced.
    */
   const menuWidth = (): number => {
-    const width = menu.getBoundingClientRect().width
-    return Number.isFinite(width) && width > 0 ? width : MENU_FALLBACK_WIDTH_PX
+    // Use un-transformed layout width first: closed CSS applies `scale(0.97)` so
+    // `getBoundingClientRect().width` under-measures by ~5px and overlaps the trigger when flipping left.
+    const layoutWidth = menu.offsetWidth
+    if (Number.isFinite(layoutWidth) && layoutWidth > 0) return layoutWidth
+    const rectWidth = menu.getBoundingClientRect().width
+    return Number.isFinite(rectWidth) && rectWidth > 0 ? rectWidth : MENU_FALLBACK_WIDTH_PX
   }
 
   const reposition = (): void => {

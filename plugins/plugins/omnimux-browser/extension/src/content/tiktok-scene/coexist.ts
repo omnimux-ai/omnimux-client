@@ -81,6 +81,7 @@ const RIVAL_SELECTORS: readonly string[] = [
   '[class*="creatok" i]',
   'plasmo-csui',
   '[data-placement*="action-bar"]',
+  '[data-placement*="navigation-action"]',
 ]
 
 /** Tags that can never be a rival mark, whatever selector matched them. */
