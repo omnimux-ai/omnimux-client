@@ -107,7 +107,7 @@ function markerView(marker) {
     timeSec: finite(marker.time, 0),
     ...(durationSec !== undefined && durationSec > 0 ? { durationSec } : {}),
     label: safeText(marker.label, 120) ?? '',
-    color: safeText(marker.color, 32) ?? '#f59e0b',
+    color: safeText(marker.color, 32) ?? '#3b82f6',
     ...(comment ? { comment } : {}),
     ...(kind ? { kind } : {}),
   }

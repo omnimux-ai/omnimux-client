@@ -11,6 +11,7 @@ import {
 } from '../openreel/core/captions/transcript'
 import { cutDuration, planTranscriptCut } from '../openreel/core/captions/transcript-edit'
 import { EPS } from '../openreel/core/editing/timeline-tool-edit'
+import { DEFAULT_IMPORTED_MARKER_COLOR } from '../openreel/core/interchange/model'
 import { BeatSyncEngine, type ClipInfo, type SyncMode } from '../openreel/core/text/audio-text-sync-engine'
 import { SUBTITLE_STYLE_PRESETS, parseSRT } from '../openreel/core/text/subtitle-engine'
 import { calculateProjectDuration } from '../openreel/core/timeline/project-duration'
@@ -495,7 +496,7 @@ export async function setMarker(draft: NativeDraft, operation: Fields) {
 
   if (time === undefined) invalid('timeSec is required to add a marker')
   if (!label) invalid('label is required to add a marker')
-  const finalColor = markerColor ?? '#f59e0b'
+  const finalColor = markerColor ?? DEFAULT_IMPORTED_MARKER_COLOR
   await draft.action('marker/add', {
     time,
     label,

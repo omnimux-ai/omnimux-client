@@ -976,13 +976,14 @@ test('Phase 2 set_marker, remove_marker, and set_audio_ducking full projection a
   const undoBefore = undoCount()
   const markerAndDuck = await edit([
     { type: 'set_marker', timeSec: 1.0, durationSec: 0.5, label: 'Drop 1', color: '#ef4444', kind: 'chapter', comment: 'First beat' },
-    { type: 'set_marker', timeSec: 3.0, label: 'Temp Marker', color: '#3b82f6' },
+    { type: 'set_marker', timeSec: 3.0, label: 'Temp Marker' },
     { type: 'set_audio_ducking', clipId: 'voice-clip', audioType: 'dialogue' },
     { type: 'set_audio_ducking', clipId: 'music-clip', audioType: 'music', enabled: true, amountDb: 15, attackMs: 220, releaseMs: 320, holdMs: 180 },
   ])
   assert.equal(undoCount(), undoBefore + 1)
   const firstMarkerId = markerAndDuck.results[0].markerId
   const secondMarkerId = markerAndDuck.results[1].markerId
+  assert.equal(markerAndDuck.results[1].color, '#3b82f6')
 
   await edit([
     { type: 'set_marker', markerId: firstMarkerId, label: 'Drop 1 Final', timeSec: 1.25 },
@@ -1005,6 +1006,7 @@ test('Phase 2 set_marker, remove_marker, and set_audio_ducking full projection a
   await store().undo()
   const afterUndo = readNativeSnapshot({ view: 'full', revision: 2 })
   assert.equal(afterUndo.markerCount, 2)
+  assert.equal(afterUndo.markers.find((m) => m.id === secondMarkerId)?.color, '#3b82f6')
 
   await store().redo()
   const afterRedo = readNativeSnapshot({ view: 'full', revision: 3 })
