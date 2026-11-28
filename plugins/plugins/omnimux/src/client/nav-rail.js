@@ -846,8 +846,8 @@ function findSettingsTrigger(doc) {
 function findAccountMenuElement(doc) {
   const menus = doc?.querySelectorAll?.('[role="menu"]') || []
   for (const menu of menus) {
-    if (menu.id === NAV_RAIL_MORE_FALLBACK_ID) continue
-    if (menu.closest?.(`#${NAV_RAIL_MORE_FALLBACK_ID}`)) continue
+    if (menu.id === NAV_RAIL_MORE_FALLBACK_ID || menu.id === NAV_RAIL_PIN_CONTEXT_MENU_ID) continue
+    if (menu.closest?.(`#${NAV_RAIL_MORE_FALLBACK_ID}`) || menu.closest?.(`#${NAV_RAIL_PIN_CONTEXT_MENU_ID}`)) continue
     if (menu.matches?.(MORE_MENU_SELECTOR) || menu.closest?.(MORE_MENU_SELECTOR)) continue
     return menu
   }
@@ -1332,7 +1332,8 @@ export function installNavRail(doc = resolveDoc()) {
       closeFallbackMoreMenu()
     } else {
       const state = computeCurrentNavRailState(doc)
-      openFallbackMoreMenu(btn, state.railId === 'more' ? state.activeMoreItemId : null)
+      const activeMoreId = state.railId === 'more' || state.railId === 'pinned' ? state.activeMoreItemId : null
+      openFallbackMoreMenu(btn, activeMoreId)
     }
     syncAll()
   }

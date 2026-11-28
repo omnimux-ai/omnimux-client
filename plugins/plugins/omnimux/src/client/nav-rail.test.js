@@ -697,8 +697,19 @@ describe('nav-rail 固定左侧导航轨', () => {
     }
   })
 
-  it('降级「更多」菜单同样支持点击图钉固定/取消固定，且保持菜单不关闭并同步左侧栏', () => {
-    const { doc } = setupDom({ withOfficialMore: false })
+  it('降级「更多」菜单同样支持点击图钉固定/取消固定，且保持菜单不关闭并同步左侧栏与 pinned 激活态', () => {
+    const { win, doc } = setupDom({ withOfficialMore: false })
+    doc.querySelector('#session-1')?.setAttribute('aria-selected', 'false')
+    const right = doc.getElementById('official-right-panel')
+    right.setAttribute('data-sidebar-right-panel', 'fullscreen')
+    right.setAttribute('data-sidebar-right-open', 'true')
+    bindWorkbenchDeps({
+      sidebarRight: {
+        isExpanded: () => true,
+        active: () => ({ id: 'omnimux-clip:studio', kind: 'omnimux-clip:studio' }),
+      },
+    })
+    const disposeActivation = installSidebarActivation({ document: doc, notify: () => {} })
     const disposeRail = installNavRail(doc)
     try {
       const moreBtn = doc.querySelector('[data-omnimux-rail-item="more"]')
@@ -712,13 +723,38 @@ describe('nav-rail 固定左侧导航轨', () => {
       clipPinBtn.click()
       assert.ok(doc.getElementById(NAV_RAIL_MORE_FALLBACK_ID), '降级菜单点击图钉后不得关闭')
       assert.equal(clipPinBtn.getAttribute('aria-pressed'), 'true')
-      assert.ok(doc.querySelector('[data-omnimux-rail-pinned="clip"]'), '左侧栏应即时出现固定入口')
+      const pinnedClipBtn = doc.querySelector('[data-omnimux-rail-pinned="clip"]')
+      assert.ok(pinnedClipBtn, '左侧栏应即时出现固定入口')
 
-      clipPinBtn.click()
-      assert.equal(clipPinBtn.getAttribute('aria-pressed'), 'false')
+      // 当激活页已由左侧栏固定入口独占（railId === "pinned"）时，重开降级菜单仍应标出 aria-current="page"
+      moreBtn.click()
+      assert.equal(doc.getElementById(NAV_RAIL_MORE_FALLBACK_ID), null)
+      moreBtn.click()
+      const reopenedClipRow = doc.querySelector(`#${NAV_RAIL_MORE_FALLBACK_ID} [data-omnimux-more-item="clip"] .omnimux-nav-rail-more-item`)
+      assert.equal(reopenedClipRow?.getAttribute('aria-current'), 'page', 'pinned 激活态重开降级菜单仍应标记当前页')
+
+      const reopenedPinBtn = doc.querySelector(`#${NAV_RAIL_MORE_FALLBACK_ID} [data-omnimux-pin-toggle="clip"]`)
+      reopenedPinBtn.click()
+      assert.equal(reopenedPinBtn.getAttribute('aria-pressed'), 'false')
+      assert.equal(doc.querySelector('[data-omnimux-rail-pinned="clip"]'), null)
+
+      // 验证右键菜单打开、点击设置关闭且未误锚定，以及重新右键取消固定完整闭环
+      reopenedPinBtn.click()
+      assert.equal(reopenedPinBtn.getAttribute('aria-pressed'), 'true')
+      const clipRailAgain = doc.querySelector('[data-omnimux-rail-pinned="clip"]')
+      assert.ok(clipRailAgain)
+      clipRailAgain.dispatchEvent(new win.MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
+      const pinCtx = doc.getElementById(NAV_RAIL_PIN_CONTEXT_MENU_ID)
+      assert.ok(pinCtx)
+      doc.querySelector('[data-omnimux-rail-item="settings"]')?.click()
+      assert.equal(pinCtx.hasAttribute('data-omnimux-rail-anchored'), false, '账号菜单定位绝不得误锚定取消固定浮层')
+      assert.equal(doc.getElementById(NAV_RAIL_PIN_CONTEXT_MENU_ID), null, '点击其他轨按钮应关闭取消固定浮层')
+      clipRailAgain.dispatchEvent(new win.MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
+      doc.getElementById(NAV_RAIL_PIN_CONTEXT_MENU_ID)?.querySelector('.omnimux-nav-rail-pin-context-item')?.click()
       assert.equal(doc.querySelector('[data-omnimux-rail-pinned="clip"]'), null)
     } finally {
       disposeRail()
+      disposeActivation()
     }
   })
 })
