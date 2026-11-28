@@ -268,6 +268,7 @@ export const TrackHeader: React.FC<TrackHeaderProps> = React.memo(function Track
             {(outputBus || sendCount > 0) && (
               <span
                 className="block truncate text-[10px] leading-tight text-fg-muted"
+                data-clip-pro-only="true"
                 data-testid={`track-output-badge-${track.id}`}
                 title={t("Output: {0}{1}", [outputBus?.name ?? "Master", sendCount ? `, ${sendCount} send${sendCount === 1 ? "" : "s"}` : ""])}
               >
@@ -303,6 +304,7 @@ export const TrackHeader: React.FC<TrackHeaderProps> = React.memo(function Track
             {targetKind && (
               <Button variant="ghost" size="sm"
                 type="button"
+                data-clip-pro-only="true"
                 data-track-target={isTarget ? "true" : undefined}
                 aria-label={isTarget ? t("Untarget {0}", [track.name]) : t("Target {0}", [track.name])}
                 aria-pressed={isTarget}
@@ -350,6 +352,7 @@ export const TrackHeader: React.FC<TrackHeaderProps> = React.memo(function Track
                 </Button>
                 <Button variant="ghost" size="sm"
                   type="button"
+                  data-clip-pro-only="true"
                   aria-label={track.solo ? t("Clear solo {0}", [track.name]) : t("Solo {0}", [track.name])}
                   aria-pressed={track.solo}
                   title={track.solo ? t("Clear solo") : t("Solo track")}
@@ -369,6 +372,7 @@ export const TrackHeader: React.FC<TrackHeaderProps> = React.memo(function Track
             )}
             <Button variant="ghost" size="sm"
               type="button"
+              data-clip-pro-only="true"
               data-sync-lock={syncLocked ? "on" : "off"}
               aria-label={t("Sync lock {0}", [track.name])}
               aria-pressed={syncLocked}
@@ -385,6 +389,7 @@ export const TrackHeader: React.FC<TrackHeaderProps> = React.memo(function Track
             </Button>
             <Button variant="ghost" size="sm"
               type="button"
+              data-clip-pro-only="true"
               aria-label={track.locked ? t("Unlock") : t("Lock")}
               className={`h-auto w-auto p-0 text-xs font-normal leading-[1.4] transition-colors ${
                 track.locked ? "text-fg-2" : "text-fg-muted hover:text-fg-2"

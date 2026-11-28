@@ -404,6 +404,7 @@ const FalseColorToggle: React.FC = () => {
       {on ? <FalseColorOverlay /> : null}
       <button
         type="button"
+        data-clip-pro-only="true"
         aria-label={t("Toggle false colour")}
         aria-pressed={on}
         title={t("False colour (IRE bands)")}

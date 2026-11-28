@@ -8505,7 +8505,7 @@ export const Preview: React.FC = () => {
   const previewHeader = (<>
       {/* ── Panel bar header (mockup: 'Player') ───────────────── */}
       {!isMaximized && !isFullscreen && (
-        <div className="workspace-preview-header">
+        <div className="workspace-preview-header" data-clip-pro-only="true">
           <MonitorTabs active="program" /><span>{t("Timeline 1")}</span>
           <div className="workspace-preview-options">
             <MaskPenButton />
@@ -8600,7 +8600,7 @@ export const Preview: React.FC = () => {
         <PreviewTransportControls duration={actualEndTime} frameRate={settings.frameRate} playing={isPlaying}
           lockedReason={playbackLockedReason} exporting={exportState.isExporting} onTogglePlayback={togglePlayback} />
         <div data-preview-tools className="flex gap-1.5 items-center">
-          <ShadcnButton variant="ghost" size="icon-sm" title={t("Loop {0} to {1} • I: mark start • O: mark end • Shift+L: toggle", [formatFrameTimecode(previewLoopRange?.start ?? 0, settings.frameRate), formatFrameTimecode(previewLoopRange?.end ?? 0, settings.frameRate)])} aria-pressed={loopEnabled} onClick={handleToggleLoop} type="button" aria-label={loopEnabled ? t("Disable preview loop") : t("Enable preview loop")} disabled={(actualEndTime <= 0 || exportState.isExporting)} className={cn("inline-flex shrink-0 items-center justify-center rounded-[7px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50", "h-7 w-7", "bg-transparent text-fg-muted hover:bg-bg-2 hover:text-fg", `w-[34px] h-[34px] grid place-items-center rounded-[7px] transition-colors ${loopEnabled ? "bg-accent/15 text-accent" : "bg-bg-2 text-fg-2 hover:bg-bg-3 hover:text-fg"}`)}>
+          <ShadcnButton variant="ghost" size="icon-sm" data-clip-pro-only="true" title={t("Loop {0} to {1} • I: mark start • O: mark end • Shift+L: toggle", [formatFrameTimecode(previewLoopRange?.start ?? 0, settings.frameRate), formatFrameTimecode(previewLoopRange?.end ?? 0, settings.frameRate)])} aria-pressed={loopEnabled} onClick={handleToggleLoop} type="button" aria-label={loopEnabled ? t("Disable preview loop") : t("Enable preview loop")} disabled={(actualEndTime <= 0 || exportState.isExporting)} className={cn("inline-flex shrink-0 items-center justify-center rounded-[7px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50", "h-7 w-7", "bg-transparent text-fg-muted hover:bg-bg-2 hover:text-fg", `w-[34px] h-[34px] grid place-items-center rounded-[7px] transition-colors ${loopEnabled ? "bg-accent/15 text-accent" : "bg-bg-2 text-fg-2 hover:bg-bg-3 hover:text-fg"}`)}>
             {<PreviewTransportIcon name="loop" size={16} strokeWidth={1.8} />}
           </ShadcnButton>
           <ShadcnButton variant="ghost" size="icon-sm" onClick={() => setIsMuted(!userMuted)} type="button" data-preview-muted={isMuted} aria-label={isMuted ? t("Unmute") : t("Mute")} title={isMuted ? t("Unmute") : t("Mute")} className={cn("inline-flex shrink-0 items-center justify-center rounded-[7px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50", "h-7 w-7", "bg-transparent text-fg-muted hover:bg-bg-2 hover:text-fg", `w-[34px] h-[34px] grid place-items-center rounded-[7px] transition-colors ${
@@ -8666,7 +8666,7 @@ export const Preview: React.FC = () => {
         onMouseMove={interactionMode !== "none" ? handleMouseMove : undefined}
         onMouseUp={handleMouseUp}
       >
-        <div className="workspace-preview-meta"><span>{settings.width}×{settings.height} · {Math.round(previewFrameSize.width / programWidth * 100)}%</span><span>{previewLabelAt(previewLabelIndex, playheadPosition)}</span></div>
+        <div className="workspace-preview-meta" data-clip-pro-only="true"><span>{settings.width}×{settings.height} · {Math.round(previewFrameSize.width / programWidth * 100)}%</span><span>{previewLabelAt(previewLabelIndex, playheadPosition)}</span></div>
         <EmptyProjectStart />
         <ScopesPanel />
         <div

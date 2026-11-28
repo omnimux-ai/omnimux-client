@@ -2,6 +2,8 @@ import { getActiveClipSession, getActiveClipStageStore } from "../../../../stage
 import { notifyCanvasClose } from "../../../../CanvasBridge.js";
 import { useClipEditorActions } from "../../../../live/EditorSeat.jsx";
 import { ClipAiEditButton } from "../../../../live/ClipAiEditButton.jsx";
+import { ClipModeToggle } from "../../../../simple-mode/ClipModeToggle.jsx";
+import { ClipDrawerToggle } from "../../../../simple-mode/ClipDrawerToggle.jsx";
 import { useClipT } from "../../../../i18n/index.js";
 import { useLatch } from "./use-latch";
 import { usePhoneEditor } from "../../hooks/usePhoneEditor";
@@ -297,13 +299,15 @@ export const Toolbar: React.FC<{ canvasMode?: boolean }> = ({ canvasMode: isCanv
         exportLabel={exportState.isExporting ? `${Math.round(exportState.progress)}%` : exportState.error ? t("Retry") : exportState.complete ? t("Saved") : t("Export")}
         exportDisabled={exportState.complete}
         exportControl={<>
+          <ClipModeToggle />
           <ClipAiEditButton />
           {isDesktop ? <span className="mobile-native-export"><DesktopExportButton compact /></span> : <EditorExportControl
             state={exportState} disabled={!hasTimelineContent} compact onOpen={openExportDialog} onCancel={handleCancelExport} onDismissError={resetError} />}
         </>}
         menu={<EditorMenuBar onExport={openExportDialog} onQuickExport={handleQuickExport} onCompress={() => setIsCompressOpen(true)}/>}
       /> : <>
-      <div data-toolbar-section="left" className="openreel-toolbar-left contents">
+      <ClipDrawerToggle />
+      <div data-toolbar-section="left" className="openreel-toolbar-left openreel-toolbar-brand-block contents">
       <ProjectSwitcher trigger={<ShadcnButton variant="ghost" className="workspace-brand p-0 h-auto" aria-label={t("Project menu")}>
         <img src={reelIcon} alt="" />OpenReel
       </ShadcnButton>} />
@@ -313,7 +317,7 @@ export const Toolbar: React.FC<{ canvasMode?: boolean }> = ({ canvasMode: isCanv
         <Input aria-label={t("Project name")} value={projectNameDraft} onChange={(e) => setProjectNameDraft(e.target.value)}
           onBlur={commitProjectName}
           onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); else if (e.key === "Escape") { cancelProjectNameCommit.current = true; setProjectNameDraft(project.name); e.currentTarget.blur(); } }} />
-        <span className="workspace-project-meta">{project.settings.width}×{project.settings.height} · {project.settings.frameRate} fps</span>
+        <span className="workspace-project-meta" data-clip-pro-only="true">{project.settings.width}×{project.settings.height} · {project.settings.frameRate} fps</span>
         <WorkspaceSaveStatus />
       </div>
       <div className="workspace-actions">
@@ -322,10 +326,11 @@ export const Toolbar: React.FC<{ canvasMode?: boolean }> = ({ canvasMode: isCanv
           <ShadcnButton variant="ghost" size="icon" aria-label={t("Undo")} onClick={() => void useProjectStore.getState().undo()}><EditorHeaderIcon kind="undo" /></ShadcnButton>
           <ShadcnButton variant="ghost" size="icon" aria-label={t("Redo")} onClick={() => void useProjectStore.getState().redo()}><EditorHeaderIcon kind="redo" /></ShadcnButton>
         </div>
-        <ExportQueueButton className="workspace-queue h-7 w-7 text-fg-2" />
-        <ShadcnButton variant="secondary" className="workspace-share" title={t("Back up or package this project")} aria-label={t("Project backup")} onClick={() => setIsShareOpen(true)}>{t("Backup")}</ShadcnButton>
+        <span className="contents" data-clip-pro-only="true"><ExportQueueButton className="workspace-queue h-7 w-7 text-fg-2" /></span>
+        <ShadcnButton variant="secondary" data-clip-pro-only="true" className="workspace-share" title={t("Back up or package this project")} aria-label={t("Project backup")} onClick={() => setIsShareOpen(true)}>{t("Backup")}</ShadcnButton>
         </div>
         <div data-toolbar-section="right" className="openreel-toolbar-right inline-flex items-center gap-2.5">
+        <ClipModeToggle />
         <ClipAiEditButton />
         {isDesktop ? <DesktopExportButton /> : <EditorExportControl
           state={exportState} disabled={!hasTimelineContent} onOpen={openExportDialog}

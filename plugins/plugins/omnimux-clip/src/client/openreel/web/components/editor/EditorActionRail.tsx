@@ -22,6 +22,7 @@ import {
   useEditorWorkspaceStore,
 } from "../../stores/editor-workspace-store";
 import { useClipT } from "../../../../i18n/index.js";
+import { SIMPLE_RAIL_SECTIONS } from "../../../../simple-mode/uiModeStore.js";
 
 const tools = [
   ["media", "Media", Film],
@@ -41,27 +42,35 @@ export function EditorActionRail() {
   const section = useEditorWorkspaceStore((s) => s.section);
   const setSection = useEditorWorkspaceStore((s) => s.setSection);
   const railButton = (
+    value: string,
     label: string,
     active: boolean,
     onClick: () => void,
     icon: React.ReactNode,
-  ) => (
-    <Tooltip key={label}>
-      <TooltipTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label={t(label)}
-          aria-pressed={active}
-          className={`workspace-rail-button ${active ? "is-active" : ""}`}
-          onClick={onClick}
-        >
-          {icon}
-        </Button>
-      </TooltipTrigger>
-      <TooltipContent side="right">{t(label)}</TooltipContent>
-    </Tooltip>
-  );
+  ) => {
+    const simpleLabel = (SIMPLE_RAIL_SECTIONS as Record<string, string>)[value];
+    const proOnly = !simpleLabel;
+    return (
+      <Tooltip key={value}>
+        <TooltipTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label={t(simpleLabel ?? label)}
+            aria-pressed={active}
+            data-clip-section={value}
+            data-clip-pro-only={proOnly ? "true" : undefined}
+            className={`workspace-rail-button ${active ? "is-active" : ""}`}
+            onClick={onClick}
+          >
+            {icon}
+            {simpleLabel ? <span className="clip-rail-label">{t(simpleLabel)}</span> : null}
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="right">{t(simpleLabel ?? label)}</TooltipContent>
+      </Tooltip>
+    );
+  };
   return (
     <TooltipProvider delayDuration={350}>
       <nav
@@ -72,6 +81,7 @@ export function EditorActionRail() {
         <div className="workspace-rail-scroll" data-testid="workspace-rail-scroll">
         {tools.map(([value, label, Icon]) =>
           railButton(
+            value,
             label,
             section === value,
             () => setSection(value),
@@ -80,6 +90,7 @@ export function EditorActionRail() {
         )}
         </div>
         {railButton(
+          "settings",
           "Project settings",
           section === "settings",
           () => setSection("settings"),

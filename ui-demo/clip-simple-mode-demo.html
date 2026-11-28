@@ -1,0 +1,3944 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>OmniMux Clip 简易模式交互演示</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --dsw-alias-bg-base: #111214;
+      --dsw-alias-bg-layer-1: #16171a;
+      --dsw-alias-bg-layer-2: #1e2025;
+      --dsw-alias-bg-layer-3: #262930;
+      --dsw-alias-border-l1: #202329;
+      --dsw-alias-border-l2: #282b31;
+      --dsw-alias-border-l3: #383c45;
+      --dsw-alias-label-primary: #f1f3f6;
+      --dsw-alias-label-secondary: #a5abb6;
+      --dsw-alias-label-tertiary: #7c828e;
+      --dsw-alias-brand-primary: #2bd49a;
+      --dsw-alias-brand-hover: #21be89;
+      --dsw-alias-label-primary-foreground: #07261c;
+      --dsw-alias-interactive-bg-hover: #252830;
+      --dsw-alias-interactive-bg-selected: rgba(43, 212, 154, 0.16);
+      --dsw-alias-status-ok: #34d399;
+      --dsw-alias-status-warn: #f59e0b;
+      --dsw-alias-status-danger: #ef4444;
+      --dsw-alias-danger-soft: rgba(239, 68, 68, 0.14);
+      --stage-backdrop: #0b0c0e;
+      --timeline-bg: #0f1013;
+      --clip-video-bg: #244775;
+      --clip-video-border: #3b6fb6;
+      --clip-graphic-bg: #1e4d40;
+      --clip-graphic-border: #2bd49a;
+      --clip-text-bg: #4a3582;
+      --clip-text-border: #8b6fe6;
+      --clip-audio-bg: #184b39;
+      --clip-audio-border: #31a87d;
+      --clip-music-bg: #544018;
+      --clip-music-border: #d9a441;
+      --shadow-popover: 0 14px 36px rgba(0, 0, 0, 0.55), 0 0 0 1px var(--dsw-alias-border-l3);
+      --radius-sm: 6px;
+      --radius-md: 8px;
+      --radius-lg: 12px;
+      --motion-ease: cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    html[data-theme="light"] {
+      color-scheme: light;
+      --dsw-alias-bg-base: #f5f6f8;
+      --dsw-alias-bg-layer-1: #ffffff;
+      --dsw-alias-bg-layer-2: #eef0f4;
+      --dsw-alias-bg-layer-3: #e3e6ec;
+      --dsw-alias-border-l1: #e6e9ef;
+      --dsw-alias-border-l2: #d8dde6;
+      --dsw-alias-border-l3: #bfc7d4;
+      --dsw-alias-label-primary: #14171d;
+      --dsw-alias-label-secondary: #4e5563;
+      --dsw-alias-label-tertiary: #68707f;
+      --dsw-alias-brand-primary: #0f9f72;
+      --dsw-alias-brand-hover: #0d8a63;
+      --dsw-alias-label-primary-foreground: #ffffff;
+      --dsw-alias-interactive-bg-hover: #e7ebf0;
+      --dsw-alias-interactive-bg-selected: rgba(15, 159, 114, 0.14);
+      --dsw-alias-status-ok: #0f8f65;
+      --dsw-alias-status-warn: #b45309;
+      --dsw-alias-status-danger: #c81e1e;
+      --dsw-alias-danger-soft: rgba(200, 30, 30, 0.1);
+      --stage-backdrop: #e9ecf1;
+      --timeline-bg: #f1f3f7;
+      --clip-video-bg: #dbeafe;
+      --clip-video-border: #3b82f6;
+      --clip-graphic-bg: #d1fae5;
+      --clip-graphic-border: #0f9f72;
+      --clip-text-bg: #ede9fe;
+      --clip-text-border: #7c3aed;
+      --clip-audio-bg: #dcfce7;
+      --clip-audio-border: #16a34a;
+      --clip-music-bg: #fef3c7;
+      --clip-music-border: #d97706;
+      --shadow-popover: 0 12px 32px rgba(15, 23, 42, 0.14), 0 0 0 1px var(--dsw-alias-border-l2);
+    }
+
+    *, *::before, *::after { box-sizing: border-box; }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      width: 100%;
+      overflow: hidden;
+      background: var(--dsw-alias-bg-base);
+      color: var(--dsw-alias-label-primary);
+      font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", sans-serif;
+      font-size: 13px;
+      line-height: 1.45;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    button, input, textarea {
+      font: inherit;
+      color: inherit;
+    }
+
+    button {
+      border: 0;
+      background: transparent;
+      cursor: pointer;
+      padding: 0;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      white-space: nowrap;
+      user-select: none;
+      transition: background-color 120ms var(--motion-ease), border-color 120ms var(--motion-ease), color 120ms var(--motion-ease), transform 90ms var(--motion-ease);
+    }
+
+    button:active:not(:disabled) {
+      transform: scale(0.96);
+    }
+
+    button:disabled {
+      opacity: 0.42;
+      cursor: not-allowed;
+    }
+
+    button:focus-visible,
+    input:focus-visible,
+    textarea:focus-visible,
+    [tabindex="0"]:focus-visible {
+      outline: 2px solid var(--dsw-alias-brand-primary);
+      outline-offset: 2px;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      button, .drawer-slot, .inspector-slot, .playhead-line {
+        transition: none !important;
+        animation: none !important;
+      }
+      button:active:not(:disabled) {
+        transform: none !important;
+      }
+    }
+
+    .tabular {
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* ─── 顶部演示控制台 (与模拟 OmniMux 窗口明确分层) ─── */
+    .demo-harness {
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      background: var(--dsw-alias-bg-base);
+    }
+
+    .harness-bar {
+      flex: none;
+      height: 44px;
+      padding: 0 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      background: var(--dsw-alias-bg-layer-2);
+      border-bottom: 1px solid var(--dsw-alias-border-l2);
+      z-index: 60;
+    }
+
+    .harness-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+    }
+
+    .harness-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--dsw-alias-label-primary);
+      margin: 0;
+    }
+
+    .harness-badge {
+      display: inline-flex;
+      align-items: center;
+      height: 24px;
+      padding: 0 8px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 500;
+      background: var(--dsw-alias-interactive-bg-selected);
+      color: var(--dsw-alias-brand-primary);
+      border: 1px solid color-mix(in srgb, var(--dsw-alias-brand-primary) 35%, transparent);
+    }
+
+    .harness-badge.is-pro {
+      background: var(--dsw-alias-bg-layer-1);
+      color: var(--dsw-alias-label-secondary);
+      border-color: var(--dsw-alias-border-l3);
+    }
+
+    .harness-counts {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      color: var(--dsw-alias-label-secondary);
+    }
+
+    .harness-counts span {
+      padding: 2px 7px;
+      border-radius: 5px;
+      background: var(--dsw-alias-bg-layer-1);
+      border: 1px solid var(--dsw-alias-border-l2);
+    }
+
+    .seg-group {
+      display: inline-flex;
+      align-items: center;
+      gap: 2px;
+      padding: 3px;
+      border-radius: var(--radius-md);
+      background: var(--dsw-alias-bg-layer-1);
+      border: 1px solid var(--dsw-alias-border-l2);
+    }
+
+    .seg-btn {
+      height: 26px;
+      padding: 0 10px;
+      border-radius: var(--radius-sm);
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--dsw-alias-label-secondary);
+    }
+
+    .seg-btn:hover {
+      color: var(--dsw-alias-label-primary);
+      background: var(--dsw-alias-interactive-bg-hover);
+    }
+
+    .seg-btn[aria-pressed="true"] {
+      background: var(--dsw-alias-interactive-bg-selected);
+      color: var(--dsw-alias-brand-primary);
+      font-weight: 600;
+    }
+
+    .harness-right {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .btn-pill {
+      height: 30px;
+      padding: 0 10px;
+      border-radius: var(--radius-md);
+      font-size: 12px;
+      font-weight: 500;
+      background: var(--dsw-alias-bg-layer-1);
+      border: 1px solid var(--dsw-alias-border-l2);
+      color: var(--dsw-alias-label-primary);
+    }
+
+    .btn-pill:hover {
+      background: var(--dsw-alias-interactive-bg-hover);
+      border-color: var(--dsw-alias-border-l3);
+    }
+
+    .btn-pill[aria-pressed="true"] {
+      background: var(--dsw-alias-interactive-bg-selected);
+      color: var(--dsw-alias-brand-primary);
+      border-color: var(--dsw-alias-brand-primary);
+    }
+
+    /* ─── 模拟宿主桌面舞台 ─── */
+    .stage-wrapper {
+      flex: 1 1 auto;
+      min-height: 0;
+      display: flex;
+      align-items: stretch;
+      justify-content: center;
+      background: var(--dsw-alias-bg-base);
+      padding: 0;
+      overflow: hidden;
+    }
+
+    .stage-wrapper[data-viewport="narrow"] {
+      padding: 12px 16px;
+      background: var(--stage-backdrop);
+    }
+
+    .omnimux-window {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      min-width: 0;
+      min-height: 0;
+      background: var(--dsw-alias-bg-base);
+      overflow: hidden;
+    }
+
+    .stage-wrapper[data-viewport="narrow"] .omnimux-window {
+      width: 900px;
+      max-width: 100%;
+      height: 100%;
+      border-radius: var(--radius-lg);
+      border: 1px solid var(--dsw-alias-border-l3);
+      box-shadow: var(--shadow-popover);
+    }
+
+    /* ─── 最左侧宿主导航栏 ─── */
+    .host-rail {
+      flex: none;
+      width: 48px;
+      background: var(--dsw-alias-bg-layer-1);
+      border-right: 1px solid var(--dsw-alias-border-l2);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 10px 6px;
+      gap: 6px;
+    }
+
+    .host-rail-btn {
+      width: 34px;
+      height: 34px;
+      border-radius: var(--radius-md);
+      color: var(--dsw-alias-label-secondary);
+    }
+
+    .host-rail-btn:hover {
+      background: var(--dsw-alias-interactive-bg-hover);
+      color: var(--dsw-alias-label-primary);
+    }
+
+    .host-rail-btn.is-active {
+      background: var(--dsw-alias-interactive-bg-selected);
+      color: var(--dsw-alias-brand-primary);
+    }
+
+    /* ─── 对话分栏 (AI 协同上下文) ─── */
+    .chat-pane {
+      flex: none;
+      width: 296px;
+      display: flex;
+      flex-direction: column;
+      background: var(--dsw-alias-bg-layer-1);
+      border-right: 1px solid var(--dsw-alias-border-l2);
+      min-height: 0;
+    }
+
+    .stage-wrapper[data-viewport="standalone"] .chat-pane {
+      display: none;
+    }
+
+    .stage-wrapper[data-viewport="narrow"] .chat-pane {
+      width: 256px;
+    }
+
+    .chat-header {
+      height: 44px;
+      flex: none;
+      padding: 0 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--dsw-alias-border-l2);
+      font-weight: 600;
+      font-size: 13px;
+    }
+
+    .chat-scroll {
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow-y: auto;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .chat-bubble {
+      padding: 10px 12px;
+      border-radius: 10px;
+      background: var(--dsw-alias-bg-layer-2);
+      font-size: 13px;
+      line-height: 1.5;
+      color: var(--dsw-alias-label-primary);
+    }
+
+    .chat-bubble.is-user {
+      align-self: flex-end;
+      background: var(--dsw-alias-interactive-bg-selected);
+      border: 1px solid color-mix(in srgb, var(--dsw-alias-brand-primary) 28%, transparent);
+    }
+
+    .chat-stats {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 8px;
+    }
+
+    .chat-stat-chip {
+      font-size: 12px;
+      padding: 2px 8px;
+      border-radius: 5px;
+      background: var(--dsw-alias-bg-layer-1);
+      border: 1px solid var(--dsw-alias-border-l2);
+      color: var(--dsw-alias-label-secondary);
+    }
+
+    .chat-actions-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--dsw-alias-label-secondary);
+      margin-top: 4px;
+    }
+
+    .chat-quick-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .chat-quick-btn {
+      width: 100%;
+      justify-content: flex-start;
+      height: 34px;
+      padding: 0 10px;
+      border-radius: var(--radius-md);
+      background: var(--dsw-alias-bg-base);
+      border: 1px solid var(--dsw-alias-border-l2);
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--dsw-alias-label-primary);
+      text-align: left;
+    }
+
+    .chat-quick-btn:hover {
+      background: var(--dsw-alias-interactive-bg-hover);
+      border-color: var(--dsw-alias-brand-primary);
+    }
+
+    .chat-quick-btn svg {
+      color: var(--dsw-alias-brand-primary);
+      flex: none;
+    }
+
+    .chat-composer {
+      flex: none;
+      padding: 10px 12px;
+      border-top: 1px solid var(--dsw-alias-border-l2);
+    }
+
+    .chat-input-box {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 8px;
+      border-radius: 10px;
+      background: var(--dsw-alias-bg-layer-2);
+      border: 1px solid var(--dsw-alias-border-l2);
+    }
+
+    .chat-input-box input {
+      flex: 1 1 auto;
+      min-width: 0;
+      border: 0;
+      background: transparent;
+      font-size: 12px;
+      outline: none;
+    }
+
+    .chat-send-btn {
+      width: 28px;
+      height: 28px;
+      border-radius: 7px;
+      background: var(--dsw-alias-brand-primary);
+      color: var(--dsw-alias-label-primary-foreground);
+      flex: none;
+    }
+
+    /* ─── 右侧 Clip 剪辑面板 ─── */
+    .clip-root {
+      flex: 1 1 auto;
+      min-width: 0;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      background: var(--dsw-alias-bg-base);
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* 同步接缝高亮层 */
+    .clip-root[data-highlight-seams="true"] [data-seam] {
+      outline: 2px dashed var(--dsw-alias-brand-primary);
+      outline-offset: -2px;
+      position: relative;
+    }
+
+    .seam-tag {
+      display: none;
+      position: absolute;
+      z-index: 70;
+      padding: 1px 6px;
+      border-radius: 4px;
+      background: var(--dsw-alias-brand-primary);
+      color: var(--dsw-alias-label-primary-foreground);
+      font-size: 12px;
+      font-weight: 600;
+      pointer-events: none;
+      white-space: nowrap;
+    }
+
+    .clip-root[data-seam="root"] > .seam-tag {
+      top: 48px;
+      left: 50%;
+      transform: translateX(-50%);
+    }
+
+    .editor-topbar > .seam-tag {
+      top: 7px;
+      left: 50%;
+      transform: translateX(-50%);
+    }
+
+    .left-rail-seam-wrap {
+      position: relative;
+      display: flex;
+      flex: none;
+      min-height: 0;
+      z-index: 45;
+    }
+
+    .left-rail-seam-wrap > .seam-tag {
+      bottom: 8px;
+      left: 54px;
+    }
+
+    .clip-root[data-clip-ui-mode="simple"] .left-rail-seam-wrap > .seam-tag {
+      top: 40px;
+      right: 6px;
+      bottom: auto;
+      left: auto;
+    }
+
+    .inspector-slot > .seam-tag {
+      bottom: 48px;
+      right: 10px;
+    }
+
+    .timeline-slot > .seam-tag {
+      top: 7px;
+      left: 50%;
+      transform: translateX(-50%);
+    }
+
+    .clip-root[data-highlight-seams="true"] .seam-tag {
+      display: inline-flex;
+      align-items: center;
+    }
+
+    /* ─── 专业模式双层顶栏：第 1 层 Hostbar ─── */
+    .pro-hostbar {
+      display: none;
+      height: 32px;
+      flex: none;
+      padding: 0 12px;
+      align-items: center;
+      gap: 10px;
+      background: var(--dsw-alias-bg-layer-1);
+      border-bottom: 1px solid var(--dsw-alias-border-l2);
+      font-size: 12px;
+    }
+
+    .clip-root[data-clip-ui-mode="pro"] .pro-hostbar {
+      display: flex;
+    }
+
+    .pro-hostbar-title {
+      flex: 1 1 auto;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-weight: 500;
+    }
+
+    .pro-hostbar-status {
+      color: var(--dsw-alias-label-tertiary);
+    }
+
+    .pro-hostbar-save {
+      height: 24px;
+      padding: 0 10px;
+      border-radius: var(--radius-sm);
+      background: var(--dsw-alias-bg-layer-2);
+      border: 1px solid var(--dsw-alias-border-l2);
+      font-size: 12px;
+    }
+
+    /* ─── 编辑器主顶栏 (简易 44px 单行 vs 专业菜单栏) ─── */
+    .editor-topbar {
+      flex: none;
+      height: 44px;
+      padding: 0 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      background: var(--dsw-alias-bg-layer-1);
+      border-bottom: 1px solid var(--dsw-alias-border-l2);
+      position: relative;
+      z-index: 40;
+    }
+
+    .topbar-left {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      min-width: 0;
+      flex: 1 1 auto;
+    }
+
+    .clip-root[data-clip-ui-mode="simple"] .pro-only { display: none !important; }
+    .clip-root[data-clip-ui-mode="pro"] .simple-only { display: none !important; }
+    .clip-root:not([data-clip-mode="canvas"]) .canvas-only { display: none !important; }
+    .clip-root[data-clip-mode="canvas"] .standalone-only { display: none !important; }
+    .clip-root[data-clip-mode="canvas"] .pro-hostbar { display: none !important; }
+    .clip-root[data-clip-mode="canvas"] [data-toolbar-section="left"],
+    .clip-root[data-clip-mode="canvas"] [data-toolbar-section="center"] { display: none !important; }
+    .clip-root[data-clip-mode="canvas"] [data-toolbar-section="right"] { margin-left: auto; }
+
+    .clip-stage-shell {
+      flex: 1 1 auto;
+      min-width: 0;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      background: var(--dsw-alias-bg-base);
+    }
+
+    .canvas-portal-bar {
+      display: none;
+      flex: none;
+      height: 30px;
+      padding: 0 12px;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      background: var(--dsw-alias-bg-layer-2);
+      border-bottom: 1px solid var(--dsw-alias-border-l2);
+      font-size: 12px;
+      color: var(--dsw-alias-label-secondary);
+    }
+
+    .stage-wrapper[data-viewport="canvas"] .canvas-portal-bar {
+      display: flex;
+    }
+
+    .canvas-tab-group {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .canvas-tab-pill {
+      display: inline-flex;
+      align-items: center;
+      height: 22px;
+      padding: 0 8px;
+      border-radius: 5px;
+      font-size: 12px;
+      color: var(--dsw-alias-label-secondary);
+    }
+
+    .canvas-tab-pill.is-active {
+      background: var(--dsw-alias-bg-layer-1);
+      color: var(--dsw-alias-label-primary);
+      font-weight: 600;
+      border: 1px solid var(--dsw-alias-border-l2);
+    }
+
+    .canvas-node-pill {
+      display: inline-flex;
+      align-items: center;
+      height: 24px;
+      padding: 0 8px;
+      border-radius: 6px;
+      background: var(--dsw-alias-interactive-bg-selected);
+      color: var(--dsw-alias-brand-primary);
+      font-size: 12px;
+      font-weight: 600;
+      flex: none;
+    }
+
+    .media-upstream-badge {
+      position: absolute;
+      top: 5px;
+      left: 5px;
+      font-size: 12px;
+      font-weight: 600;
+      padding: 1px 6px;
+      border-radius: 4px;
+      background: rgba(15, 159, 114, 0.9);
+      color: #ffffff;
+    }
+
+    .brand-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-weight: 700;
+      font-size: 13px;
+      padding: 0 6px 0 2px;
+      flex: none;
+    }
+
+    .brand-dot {
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      border: 2px solid var(--dsw-alias-brand-primary);
+      display: inline-grid;
+      place-items: center;
+    }
+
+    .brand-dot::after {
+      content: "";
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--dsw-alias-brand-primary);
+    }
+
+    .clip-root[data-clip-mode="standalone"][data-clip-ui-mode="pro"] #btn-toggle-drawer {
+      display: none !important;
+    }
+
+    .pro-menus {
+      flex: none;
+      display: flex;
+      align-items: center;
+      gap: 0;
+      overflow: hidden;
+    }
+
+    .pro-menu-btn {
+      height: 26px;
+      padding: 0 4px;
+      border-radius: 5px;
+      font-size: 12px;
+      color: var(--dsw-alias-label-secondary);
+    }
+
+    .pro-menu-btn:hover {
+      background: var(--dsw-alias-interactive-bg-hover);
+      color: var(--dsw-alias-label-primary);
+    }
+
+    .stage-wrapper[data-viewport="narrow"] .pro-menus {
+      display: none;
+    }
+
+    .project-title-wrap {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      min-width: 0;
+      flex: 1 1 auto;
+    }
+
+    .project-name-input {
+      min-width: 68px;
+      max-width: 190px;
+      width: 104px;
+      height: 28px;
+      padding: 0 7px;
+      border-radius: var(--radius-sm);
+      border: 1px solid transparent;
+      background: transparent;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--dsw-alias-label-primary);
+      text-overflow: ellipsis;
+    }
+
+    .clip-root[data-clip-ui-mode="simple"] .project-name-input {
+      width: 168px;
+    }
+
+    .project-name-input:hover {
+      background: var(--dsw-alias-bg-layer-2);
+    }
+
+    .project-name-input:focus {
+      background: var(--dsw-alias-bg-layer-2);
+      border-color: var(--dsw-alias-brand-primary);
+      outline: none;
+    }
+
+    .meta-tag {
+      font-size: 12px;
+      color: var(--dsw-alias-label-secondary);
+      flex: none;
+    }
+
+    .stage-wrapper[data-viewport="narrow"] .meta-tag.is-spec {
+      display: none;
+    }
+
+    .save-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 12px;
+      color: var(--dsw-alias-label-secondary);
+      flex: none;
+    }
+
+    .save-status svg {
+      color: var(--dsw-alias-status-ok);
+    }
+
+    .topbar-right {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex: none;
+    }
+
+    .icon-btn {
+      width: 30px;
+      height: 30px;
+      border-radius: var(--radius-sm);
+      color: var(--dsw-alias-label-secondary);
+    }
+
+    .icon-btn:hover:not(:disabled) {
+      background: var(--dsw-alias-interactive-bg-hover);
+      color: var(--dsw-alias-label-primary);
+    }
+
+    .icon-btn[aria-pressed="true"] {
+      background: var(--dsw-alias-interactive-bg-selected);
+      color: var(--dsw-alias-brand-primary);
+    }
+
+    .mode-switch {
+      display: inline-flex;
+      align-items: center;
+      padding: 2px;
+      gap: 2px;
+      border-radius: var(--radius-md);
+      background: var(--dsw-alias-bg-layer-2);
+      border: 1px solid var(--dsw-alias-border-l2);
+    }
+
+    .mode-switch-btn {
+      height: 24px;
+      padding: 0 9px;
+      border-radius: var(--radius-sm);
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--dsw-alias-label-secondary);
+    }
+
+    .mode-switch-btn[aria-pressed="true"] {
+      background: var(--dsw-alias-bg-layer-1);
+      color: var(--dsw-alias-label-primary);
+      font-weight: 600;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+    }
+
+    .btn-secondary {
+      height: 30px;
+      padding: 0 10px;
+      border-radius: var(--radius-sm);
+      font-size: 12px;
+      font-weight: 500;
+      background: var(--dsw-alias-bg-layer-2);
+      border: 1px solid var(--dsw-alias-border-l2);
+      color: var(--dsw-alias-label-primary);
+    }
+
+    .btn-secondary:hover:not(:disabled) {
+      background: var(--dsw-alias-interactive-bg-hover);
+      border-color: var(--dsw-alias-border-l3);
+    }
+
+    .btn-secondary svg {
+      color: var(--dsw-alias-brand-primary);
+    }
+
+    .btn-primary {
+      height: 30px;
+      padding: 0 12px;
+      border-radius: var(--radius-sm);
+      font-size: 12px;
+      font-weight: 600;
+      background: var(--dsw-alias-brand-primary);
+      color: var(--dsw-alias-label-primary-foreground);
+    }
+
+    .btn-primary:hover:not(:disabled) {
+      background: var(--dsw-alias-brand-hover);
+    }
+
+    .stage-wrapper[data-viewport="narrow"] .btn-ai-label,
+    .stage-wrapper[data-viewport="narrow"] .save-status,
+    .stage-wrapper[data-viewport="narrow"] .pro-backup-btn {
+      display: none;
+    }
+
+    /* ─── 弹出菜单 (严格实体背景，绝不透底) ─── */
+    .popover-anchor {
+      position: relative;
+      display: inline-flex;
+    }
+
+    .popover-panel {
+      position: absolute;
+      top: calc(100% + 6px);
+      right: 0;
+      width: 248px;
+      padding: 10px;
+      border-radius: 10px;
+      background: var(--dsw-alias-bg-layer-1);
+      border: 1px solid var(--dsw-alias-border-l3);
+      box-shadow: var(--shadow-popover);
+      z-index: 95;
+      display: none;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .popover-panel.is-left {
+      right: auto;
+      left: 0;
+    }
+
+    .popover-panel.is-top {
+      top: auto;
+      bottom: calc(100% + 6px);
+      right: auto;
+      left: 0;
+      width: 170px;
+    }
+
+    .popover-panel[data-open="true"] {
+      display: flex;
+    }
+
+    .popover-head {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--dsw-alias-label-primary);
+      padding: 2px 4px 6px;
+      border-bottom: 1px solid var(--dsw-alias-border-l2);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .popover-item {
+      width: 100%;
+      justify-content: space-between;
+      padding: 7px 8px;
+      border-radius: var(--radius-sm);
+      font-size: 12px;
+      font-weight: 500;
+      background: var(--dsw-alias-bg-layer-2);
+      border: 1px solid transparent;
+      color: var(--dsw-alias-label-primary);
+    }
+
+    .popover-item:hover {
+      background: var(--dsw-alias-interactive-bg-hover);
+      border-color: var(--dsw-alias-border-l3);
+    }
+
+    .popover-item-meta {
+      font-size: 12px;
+      color: var(--dsw-alias-label-secondary);
+    }
+
+    /* ─── 主体工作区网格 ─── */
+    .editor-main {
+      flex: 1 1 auto;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .workspace-upper {
+      flex: 1 1 auto;
+      min-height: 0;
+      display: flex;
+      overflow: hidden;
+    }
+
+    /* ─── 左侧边栏组 (简易顶部横向标签 vs 专业竖轨+抽屉) ─── */
+    .left-sidebar-group {
+      flex: none;
+      width: 252px;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      background: var(--dsw-alias-bg-layer-1);
+      border-right: 1px solid var(--dsw-alias-border-l2);
+      overflow: visible;
+      position: relative;
+      z-index: 25;
+    }
+
+    .clip-root[data-clip-ui-mode="simple"][data-drawer-open="false"] .left-sidebar-group {
+      width: 0;
+      border-right: 0;
+      overflow: hidden;
+    }
+
+    .clip-root[data-clip-ui-mode="pro"] .left-sidebar-group {
+      width: 300px;
+      flex-direction: row;
+      border-right: 0;
+      background: transparent;
+    }
+
+    .clip-root[data-clip-ui-mode="pro"][data-drawer-open="false"] .left-sidebar-group {
+      width: 48px;
+    }
+
+    .clip-root[data-clip-ui-mode="simple"] .left-rail-seam-wrap {
+      width: 100%;
+    }
+
+    .clip-root[data-clip-ui-mode="pro"] .left-rail-seam-wrap {
+      width: auto;
+    }
+
+    .left-rail {
+      flex: none;
+      width: 48px;
+      background: var(--dsw-alias-bg-base);
+      border-right: 1px solid var(--dsw-alias-border-l2);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 8px 4px;
+      gap: 4px;
+      overflow-y: auto;
+      scrollbar-width: none;
+    }
+
+    .clip-root[data-clip-ui-mode="simple"] .left-rail {
+      width: 100%;
+      height: 38px;
+      flex-direction: row;
+      align-items: stretch;
+      padding: 0 6px;
+      gap: 2px;
+      border-right: 0;
+      border-bottom: 1px solid var(--dsw-alias-border-l2);
+      background: var(--dsw-alias-bg-layer-1);
+      overflow: hidden;
+    }
+
+    .rail-item {
+      width: 38px;
+      height: 40px;
+      border-radius: var(--radius-md);
+      flex-direction: column;
+      gap: 2px;
+      color: var(--dsw-alias-label-secondary);
+      flex: none;
+    }
+
+    .clip-root[data-clip-ui-mode="simple"] .rail-item {
+      flex: 1 1 0;
+      width: auto;
+      height: 100%;
+      flex-direction: row;
+      border-radius: 0;
+      border-bottom: 2px solid transparent;
+      padding: 0 4px;
+    }
+
+    .clip-root[data-clip-ui-mode="simple"] .rail-item svg {
+      display: none;
+    }
+
+    .rail-item-label {
+      font-size: 13px;
+      line-height: 1;
+      font-weight: 500;
+    }
+
+    .clip-root[data-clip-ui-mode="pro"] .rail-item {
+      height: 32px;
+    }
+
+    .clip-root[data-clip-ui-mode="pro"] .rail-item-label {
+      display: none;
+    }
+
+    .rail-item:hover {
+      background: var(--dsw-alias-bg-layer-2);
+      color: var(--dsw-alias-label-primary);
+    }
+
+    .clip-root[data-clip-ui-mode="simple"] .rail-item:hover {
+      background: transparent;
+      color: var(--dsw-alias-label-primary);
+    }
+
+    .rail-item[aria-pressed="true"] {
+      background: var(--dsw-alias-interactive-bg-selected);
+      color: var(--dsw-alias-brand-primary);
+    }
+
+    .clip-root[data-clip-ui-mode="simple"] .rail-item[aria-pressed="true"] {
+      background: transparent;
+      color: var(--dsw-alias-label-primary);
+      border-bottom-color: var(--dsw-alias-brand-primary);
+      font-weight: 600;
+    }
+
+    .clip-root[data-clip-ui-mode="simple"] .rail-item[data-pro-only="true"] {
+      display: none;
+    }
+
+    /* ─── 左侧抽屉面板 ─── */
+    .drawer-slot {
+      flex: 1 1 auto;
+      width: 100%;
+      background: var(--dsw-alias-bg-layer-1);
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      overflow: visible;
+      position: relative;
+      z-index: 25;
+    }
+
+    .clip-root[data-clip-ui-mode="simple"] .drawer-head {
+      display: none;
+    }
+
+    .clip-root[data-clip-ui-mode="pro"] .drawer-slot {
+      flex: none;
+      width: 252px;
+      border-right: 1px solid var(--dsw-alias-border-l2);
+    }
+
+    .clip-root[data-clip-ui-mode="pro"][data-drawer-open="false"] .drawer-slot {
+      width: 0;
+      border-right: 0;
+      overflow: hidden;
+    }
+
+    .drawer-head {
+      flex: none;
+      height: 38px;
+      padding: 0 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--dsw-alias-border-l2);
+      font-weight: 600;
+      font-size: 13px;
+    }
+
+    .drawer-body {
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow-y: auto;
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    /* 专业素材库重装饰区 */
+    .pro-bin-tabs {
+      display: none;
+      border-bottom: 1px solid var(--dsw-alias-border-l2);
+      padding: 0 8px;
+      gap: 4px;
+    }
+
+    .clip-root[data-clip-ui-mode="pro"] .pro-bin-tabs {
+      display: flex;
+    }
+
+    .pro-bin-tab {
+      height: 32px;
+      padding: 0 8px;
+      font-size: 12px;
+      color: var(--dsw-alias-label-secondary);
+      border-bottom: 2px solid transparent;
+      border-radius: 0;
+    }
+
+    .pro-bin-tab.is-active {
+      color: var(--dsw-alias-label-primary);
+      border-bottom-color: var(--dsw-alias-brand-primary);
+    }
+
+    .pro-bin-toolbar {
+      display: none;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .clip-root[data-clip-ui-mode="pro"] .pro-bin-toolbar {
+      display: flex;
+    }
+
+    .pro-pill-row {
+      display: flex;
+      gap: 4px;
+      flex-wrap: wrap;
+    }
+
+    .pro-filter-pill {
+      height: 24px;
+      padding: 0 8px;
+      border-radius: 6px;
+      font-size: 12px;
+      background: var(--dsw-alias-bg-layer-2);
+      color: var(--dsw-alias-label-secondary);
+      border: 1px solid var(--dsw-alias-border-l2);
+    }
+
+    .pro-filter-pill.is-active {
+      color: var(--dsw-alias-label-primary);
+      border-color: var(--dsw-alias-brand-primary);
+      background: var(--dsw-alias-interactive-bg-selected);
+    }
+
+    .simple-media-bar {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .search-input {
+      flex: 1 1 auto;
+      min-width: 0;
+      height: 30px;
+      padding: 0 8px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--dsw-alias-border-l2);
+      background: var(--dsw-alias-bg-base);
+      font-size: 12px;
+    }
+
+    .media-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .media-card {
+      border-radius: var(--radius-md);
+      background: var(--dsw-alias-bg-layer-2);
+      border: 1px solid var(--dsw-alias-border-l2);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .media-thumb {
+      height: 54px;
+      position: relative;
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      padding: 5px;
+      background: linear-gradient(135deg, var(--clip-video-bg), var(--dsw-alias-bg-layer-3));
+    }
+
+    .media-thumb[data-kind="audio"] {
+      background: linear-gradient(135deg, var(--clip-audio-bg), var(--dsw-alias-bg-layer-3));
+    }
+
+    .media-thumb[data-kind="music"] {
+      background: linear-gradient(135deg, var(--clip-music-bg), var(--dsw-alias-bg-layer-3));
+    }
+
+    .media-thumb[data-kind="image"] {
+      background: linear-gradient(135deg, var(--clip-text-bg), var(--dsw-alias-bg-layer-3));
+    }
+
+    .media-dur {
+      font-size: 12px;
+      padding: 1px 5px;
+      border-radius: 4px;
+      background: rgba(0, 0, 0, 0.58);
+      color: #ffffff;
+    }
+
+    .media-add-btn {
+      width: 24px;
+      height: 24px;
+      border-radius: 6px;
+      background: var(--dsw-alias-brand-primary);
+      color: var(--dsw-alias-label-primary-foreground);
+      font-weight: 700;
+    }
+
+    .media-name {
+      padding: 6px 7px;
+      font-size: 12px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      color: var(--dsw-alias-label-primary);
+    }
+
+    .list-card {
+      padding: 9px 10px;
+      border-radius: var(--radius-md);
+      background: var(--dsw-alias-bg-layer-2);
+      border: 1px solid var(--dsw-alias-border-l2);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      text-align: left;
+      width: 100%;
+    }
+
+    .list-card:hover {
+      background: var(--dsw-alias-interactive-bg-hover);
+      border-color: var(--dsw-alias-brand-primary);
+    }
+
+    .list-card-meta {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      gap: 2px;
+    }
+
+    .list-card-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--dsw-alias-label-primary);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .list-card-sub {
+      font-size: 12px;
+      color: var(--dsw-alias-label-secondary);
+    }
+
+    /* ─── 中央预览舞台 ─── */
+    .preview-pane {
+      flex: 1 1 auto;
+      min-width: 260px;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      background: var(--stage-backdrop);
+      position: relative;
+    }
+
+    .pro-preview-header {
+      display: none;
+      height: 36px;
+      flex: none;
+      padding: 0 10px;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      background: var(--dsw-alias-bg-layer-1);
+      border-bottom: 1px solid var(--dsw-alias-border-l2);
+    }
+
+    .clip-root[data-clip-ui-mode="pro"] .pro-preview-header {
+      display: flex;
+    }
+
+    .preview-stage {
+      flex: 1 1 auto;
+      min-height: 0;
+      padding: 12px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .preview-canvas-frame {
+      width: 100%;
+      max-width: 100%;
+      max-height: 100%;
+      aspect-ratio: 16 / 9;
+      background: #0c0e12;
+      border-radius: 10px;
+      border: 1px solid var(--dsw-alias-border-l3);
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .pro-preview-badge {
+      display: none;
+      position: absolute;
+      top: 10px;
+      right: 12px;
+      padding: 2px 7px;
+      border-radius: 5px;
+      background: rgba(17, 18, 20, 0.8);
+      color: #e2e8f0;
+      font-size: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      z-index: 10;
+    }
+
+    .clip-root[data-clip-ui-mode="pro"] .pro-preview-badge {
+      display: inline-flex;
+    }
+
+    .pro-preview-meta-left {
+      display: none;
+      position: absolute;
+      top: 10px;
+      left: 12px;
+      gap: 6px;
+      font-size: 12px;
+      color: #cbd5e1;
+      z-index: 10;
+    }
+
+    .clip-root[data-clip-ui-mode="pro"] .pro-preview-meta-left {
+      display: inline-flex;
+    }
+
+    /* 实时视频画面模拟层 */
+    .canvas-scene {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: transform 80ms linear, opacity 80ms linear;
+    }
+
+    .scene-visual {
+      width: 100%;
+      height: 100%;
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+
+    .scene-visual.scene-a {
+      background: radial-gradient(circle at 52% 44%, #184e40 0%, #0e1820 55%, #090b0f 100%);
+    }
+
+    .scene-visual.scene-b {
+      background: radial-gradient(circle at 38% 42%, #1d3963 0%, #101624 55%, #090b0f 100%);
+    }
+
+    .scene-visual.scene-extra {
+      background: radial-gradient(circle at 50% 45%, #492d72 0%, #141222 60%, #090b0f 100%);
+    }
+
+    .scene-card-art {
+      width: 66%;
+      height: 58%;
+      border-radius: 10px;
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      background: rgba(15, 20, 28, 0.68);
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      color: #f8fafc;
+    }
+
+    .scene-art-bars {
+      display: grid;
+      grid-template-columns: 2fr 1fr;
+      gap: 8px;
+      height: 46%;
+    }
+
+    .scene-art-block {
+      border-radius: 6px;
+      background: rgba(43, 212, 154, 0.2);
+      border: 1px solid rgba(43, 212, 154, 0.4);
+    }
+
+    .scene-visual.scene-b .scene-art-block {
+      background: rgba(96, 165, 250, 0.22);
+      border-color: rgba(96, 165, 250, 0.45);
+    }
+
+    .canvas-graphic-overlay {
+      position: absolute;
+      left: 7%;
+      bottom: 22%;
+      padding: 8px 14px;
+      border-radius: 8px;
+      background: rgba(14, 17, 22, 0.88);
+      border-left: 4px solid var(--dsw-alias-brand-primary);
+      color: #f8fafc;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      cursor: pointer;
+      z-index: 6;
+    }
+
+    .canvas-graphic-overlay[data-accent="blue"] { border-left-color: #3b82f6; }
+    .canvas-graphic-overlay[data-accent="amber"] { border-left-color: #f59e0b; }
+    .canvas-graphic-overlay[data-accent="white"] { border-left-color: #f8fafc; }
+
+    .canvas-graphic-overlay.is-selected,
+    .canvas-subtitle-overlay.is-selected {
+      box-shadow: 0 0 0 2px #facc15;
+    }
+
+    .graphic-main-text {
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+    }
+
+    .graphic-sub-text {
+      font-size: 12px;
+      color: #cbd5e1;
+    }
+
+    .canvas-subtitle-overlay {
+      position: absolute;
+      bottom: 7%;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 4px 12px;
+      border-radius: 6px;
+      color: #ffffff;
+      font-weight: 700;
+      text-align: center;
+      text-shadow: 0 2px 6px rgba(0, 0, 0, 0.85);
+      white-space: nowrap;
+      cursor: pointer;
+      z-index: 7;
+    }
+
+    .canvas-subtitle-overlay[data-style="highlight"] .sub-active-word {
+      color: #facc15;
+    }
+
+    .canvas-subtitle-overlay[data-style="box"] {
+      background: rgba(10, 12, 16, 0.86);
+      border: 1px solid rgba(255, 255, 255, 0.16);
+    }
+
+    /* ─── 播放控制条 ─── */
+    .preview-transport {
+      flex: none;
+      padding: 6px 14px 10px;
+      background: var(--dsw-alias-bg-layer-1);
+      border-top: 1px solid var(--dsw-alias-border-l2);
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .scrubber-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .scrubber-range {
+      width: 100%;
+      accent-color: var(--dsw-alias-brand-primary);
+      cursor: pointer;
+      height: 16px;
+      margin: 0;
+    }
+
+    .transport-controls-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .timecode-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: var(--dsw-alias-label-secondary);
+    }
+
+    .timecode-now {
+      font-weight: 600;
+      color: var(--dsw-alias-brand-primary);
+      padding: 2px 7px;
+      border-radius: 5px;
+      background: var(--dsw-alias-bg-layer-2);
+      border: 1px solid var(--dsw-alias-border-l2);
+    }
+
+    .transport-center {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .play-btn {
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      background: var(--dsw-alias-brand-primary);
+      color: var(--dsw-alias-label-primary-foreground);
+    }
+
+    .play-btn:hover {
+      background: var(--dsw-alias-brand-hover);
+    }
+
+    .play-btn svg {
+      margin-left: 1px;
+    }
+
+    .transport-right {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    /* ─── 右侧属性检查器 (简易按选中态自动展开/折叠 vs 专业常驻) ─── */
+    .inspector-slot {
+      flex: none;
+      width: 260px;
+      background: var(--dsw-alias-bg-layer-1);
+      border-left: 1px solid var(--dsw-alias-border-l2);
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      overflow: hidden;
+      transition: width 140ms var(--motion-ease);
+    }
+
+    .clip-root[data-clip-ui-mode="simple"][data-has-selection="false"] .inspector-slot {
+      width: 0;
+      border-left: 0;
+    }
+
+    .inspector-head {
+      flex: none;
+      height: 38px;
+      padding: 0 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--dsw-alias-border-l2);
+      gap: 6px;
+    }
+
+    .inspector-title-group {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      min-width: 0;
+    }
+
+    .clip-kind-tag {
+      font-size: 12px;
+      font-weight: 600;
+      padding: 1px 6px;
+      border-radius: 4px;
+      background: var(--dsw-alias-interactive-bg-selected);
+      color: var(--dsw-alias-brand-primary);
+      flex: none;
+    }
+
+    .inspector-clip-name {
+      font-size: 12px;
+      font-weight: 600;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .inspector-body {
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow-y: auto;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .field-block {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .field-label-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 12px;
+      color: var(--dsw-alias-label-secondary);
+      font-weight: 500;
+    }
+
+    .field-value {
+      color: var(--dsw-alias-label-primary);
+      font-weight: 600;
+    }
+
+    .field-input, .field-textarea {
+      width: 100%;
+      padding: 7px 9px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--dsw-alias-border-l2);
+      background: var(--dsw-alias-bg-base);
+      font-size: 12px;
+    }
+
+    .field-textarea {
+      resize: vertical;
+      min-height: 60px;
+      line-height: 1.45;
+    }
+
+    .field-range {
+      width: 100%;
+      accent-color: var(--dsw-alias-brand-primary);
+    }
+
+    .swatch-row {
+      display: flex;
+      gap: 8px;
+    }
+
+    .swatch-btn {
+      width: 28px;
+      height: 28px;
+      border-radius: 6px;
+      border: 2px solid transparent;
+    }
+
+    .swatch-btn[aria-pressed="true"] {
+      border-color: var(--dsw-alias-label-primary);
+      box-shadow: 0 0 0 2px var(--dsw-alias-bg-layer-1);
+    }
+
+    .pro-tabs-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--dsw-alias-border-l2);
+    }
+
+    .pro-tab-pill {
+      height: 24px;
+      padding: 0 7px;
+      border-radius: 5px;
+      font-size: 12px;
+      color: var(--dsw-alias-label-secondary);
+      background: var(--dsw-alias-bg-layer-2);
+    }
+
+    .pro-tab-pill.is-active {
+      background: var(--dsw-alias-interactive-bg-selected);
+      color: var(--dsw-alias-brand-primary);
+      font-weight: 600;
+    }
+
+    .shortcut-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-top: 4px;
+    }
+
+    .shortcut-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 12px;
+      color: var(--dsw-alias-label-secondary);
+    }
+
+    .kbd-chip {
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: var(--dsw-alias-bg-layer-2);
+      border: 1px solid var(--dsw-alias-border-l2);
+      font-size: 12px;
+      color: var(--dsw-alias-label-primary);
+    }
+
+    .inspector-footer {
+      flex: none;
+      padding: 8px 12px;
+      border-top: 1px solid var(--dsw-alias-border-l2);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    /* ─── 底部时间轴 ─── */
+    .timeline-slot {
+      flex: none;
+      height: 258px;
+      background: var(--timeline-bg);
+      border-top: 1px solid var(--dsw-alias-border-l2);
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      position: relative;
+    }
+
+    .clip-root[data-clip-ui-mode="pro"] .timeline-slot {
+      height: 286px;
+    }
+
+    .pro-sequence-bar {
+      display: none;
+      height: 28px;
+      flex: none;
+      padding: 0 10px;
+      align-items: center;
+      gap: 6px;
+      background: var(--dsw-alias-bg-layer-1);
+      border-bottom: 1px solid var(--dsw-alias-border-l2);
+      font-size: 12px;
+    }
+
+    .clip-root[data-clip-ui-mode="pro"] .pro-sequence-bar {
+      display: flex;
+    }
+
+    .timeline-toolbar {
+      flex: none;
+      height: 38px;
+      padding: 0 10px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      background: var(--dsw-alias-bg-layer-1);
+      border-bottom: 1px solid var(--dsw-alias-border-l2);
+      position: relative;
+      z-index: 30;
+    }
+
+    .tl-sep {
+      width: 1px;
+      height: 16px;
+      background: var(--dsw-alias-border-l2);
+      margin: 0 4px;
+      flex: none;
+    }
+
+    .tl-btn {
+      height: 28px;
+      padding: 0 8px;
+      border-radius: var(--radius-sm);
+      font-size: 12px;
+      color: var(--dsw-alias-label-secondary);
+    }
+
+    .tl-btn:hover:not(:disabled) {
+      background: var(--dsw-alias-interactive-bg-hover);
+      color: var(--dsw-alias-label-primary);
+    }
+
+    .tl-btn[aria-pressed="true"] {
+      background: var(--dsw-alias-interactive-bg-selected);
+      color: var(--dsw-alias-brand-primary);
+      font-weight: 600;
+    }
+
+    .tl-zoom-group {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex: none;
+    }
+
+    .tl-zoom-slider {
+      width: 84px;
+      accent-color: var(--dsw-alias-brand-primary);
+    }
+
+    .timeline-body {
+      flex: 1 1 auto;
+      min-height: 0;
+      display: flex;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .timeline-main-area {
+      flex: 1 1 auto;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .timeline-ruler-row {
+      flex: none;
+      height: 24px;
+      display: flex;
+      border-bottom: 1px solid var(--dsw-alias-border-l2);
+      background: var(--dsw-alias-bg-layer-1);
+    }
+
+    .track-header-spacer {
+      flex: none;
+      width: 108px;
+      border-right: 1px solid var(--dsw-alias-border-l2);
+      display: flex;
+      align-items: center;
+      padding: 0 8px;
+      font-size: 12px;
+      color: var(--dsw-alias-label-tertiary);
+    }
+
+    .clip-root[data-clip-ui-mode="pro"] .track-header-spacer {
+      width: 164px;
+    }
+
+    .ruler-track {
+      flex: 1 1 auto;
+      position: relative;
+      cursor: pointer;
+      overflow: hidden;
+    }
+
+    .ruler-tick {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      border-left: 1px solid var(--dsw-alias-border-l3);
+      padding-left: 4px;
+      font-size: 12px;
+      line-height: 22px;
+      color: var(--dsw-alias-label-tertiary);
+      pointer-events: none;
+    }
+
+    .tracks-scroll {
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow-y: auto;
+      overflow-x: auto;
+      position: relative;
+    }
+
+    .track-row {
+      display: flex;
+      height: 36px;
+      border-bottom: 1px solid var(--dsw-alias-border-l1);
+      min-width: 100%;
+    }
+
+    .track-head {
+      flex: none;
+      width: 108px;
+      position: sticky;
+      left: 0;
+      z-index: 15;
+      background: var(--dsw-alias-bg-layer-1);
+      border-right: 1px solid var(--dsw-alias-border-l2);
+      padding: 0 6px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 4px;
+    }
+
+    .clip-root[data-clip-ui-mode="pro"] .track-head {
+      width: 164px;
+    }
+
+    .track-badge {
+      font-size: 12px;
+      font-weight: 700;
+      width: 24px;
+      text-align: center;
+      color: var(--dsw-alias-label-secondary);
+      flex: none;
+    }
+
+    .track-name {
+      flex: 1 1 auto;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 12px;
+      color: var(--dsw-alias-label-primary);
+    }
+
+    .track-mini-group {
+      display: flex;
+      align-items: center;
+      gap: 2px;
+      flex: none;
+    }
+
+    .track-mini-btn {
+      width: 20px;
+      height: 20px;
+      border-radius: 4px;
+      font-size: 12px;
+      color: var(--dsw-alias-label-secondary);
+    }
+
+    .track-mini-btn:hover {
+      background: var(--dsw-alias-interactive-bg-hover);
+      color: var(--dsw-alias-label-primary);
+    }
+
+    .track-mini-btn[aria-pressed="true"] {
+      background: var(--dsw-alias-danger-soft);
+      color: var(--dsw-alias-status-danger);
+    }
+
+    .track-lane {
+      flex: 1 1 auto;
+      position: relative;
+      background: var(--timeline-bg);
+    }
+
+    .beat-tick {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      width: 1px;
+      background: var(--dsw-alias-border-l1);
+      pointer-events: none;
+      opacity: 0.7;
+    }
+
+    .tl-clip {
+      position: absolute;
+      top: 4px;
+      bottom: 4px;
+      border-radius: 6px;
+      padding: 0 8px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      overflow: hidden;
+      white-space: nowrap;
+      border: 1px solid transparent;
+      color: var(--dsw-alias-label-primary);
+      z-index: 5;
+    }
+
+    .tl-clip[data-kind="video"] { background: var(--clip-video-bg); border-color: var(--clip-video-border); }
+    .tl-clip[data-kind="graphic"] { background: var(--clip-graphic-bg); border-color: var(--clip-graphic-border); }
+    .tl-clip[data-kind="text"] { background: var(--clip-text-bg); border-color: var(--clip-text-border); }
+    .tl-clip[data-kind="audio"] { background: var(--clip-audio-bg); border-color: var(--clip-audio-border); }
+    .tl-clip[data-kind="music"] { background: var(--clip-music-bg); border-color: var(--clip-music-border); }
+
+    .tl-clip.is-selected {
+      box-shadow: 0 0 0 2px #facc15;
+      z-index: 8;
+    }
+
+    .tl-clip-label {
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .playhead-line {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      width: 2px;
+      background: #ef4444;
+      z-index: 20;
+      pointer-events: none;
+    }
+
+    .playhead-line::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: -5px;
+      width: 12px;
+      height: 10px;
+      background: #ef4444;
+      clip-path: polygon(0 0, 100% 0, 50% 100%);
+    }
+
+    /* 专业模式立体声电平表 */
+    .pro-stereo-meters {
+      display: none;
+      flex: none;
+      width: 38px;
+      background: var(--dsw-alias-bg-layer-1);
+      border-left: 1px solid var(--dsw-alias-border-l2);
+      padding: 8px 6px;
+      flex-direction: column;
+      align-items: center;
+      justify-content: space-between;
+      gap: 4px;
+    }
+
+    .clip-root[data-clip-ui-mode="pro"] .pro-stereo-meters {
+      display: flex;
+    }
+
+    .meter-bars {
+      flex: 1 1 auto;
+      display: flex;
+      gap: 4px;
+      align-items: flex-end;
+      width: 100%;
+      justify-content: center;
+    }
+
+    .meter-col {
+      width: 7px;
+      height: 100%;
+      background: var(--dsw-alias-bg-base);
+      border-radius: 3px;
+      overflow: hidden;
+      display: flex;
+      align-items: flex-end;
+    }
+
+    .meter-fill {
+      width: 100%;
+      background: linear-gradient(to top, var(--dsw-alias-brand-primary) 68%, #f59e0b 90%, #ef4444 100%);
+      transition: height 110ms linear;
+    }
+
+    /* 专业模式底部状态栏 */
+    .pro-status-bar {
+      display: none;
+      height: 26px;
+      flex: none;
+      padding: 0 10px;
+      align-items: center;
+      justify-content: space-between;
+      background: var(--dsw-alias-bg-layer-1);
+      border-top: 1px solid var(--dsw-alias-border-l2);
+      font-size: 12px;
+      color: var(--dsw-alias-label-secondary);
+    }
+
+    .clip-root[data-clip-ui-mode="pro"] .pro-status-bar {
+      display: flex;
+    }
+
+    /* ─── 窄分屏专属响应式布局 (<= 680px Clip 宽度，或 viewport="narrow") ─── */
+    .narrow-tabs {
+      display: none;
+      flex: none;
+      height: 46px;
+      padding: 4px;
+      gap: 4px;
+      background: var(--dsw-alias-bg-layer-1);
+      border-top: 1px solid var(--dsw-alias-border-l2);
+    }
+
+    .stage-wrapper[data-viewport="narrow"] .narrow-tabs {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .narrow-tab-btn {
+      height: 100%;
+      border-radius: var(--radius-md);
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--dsw-alias-label-secondary);
+    }
+
+    .narrow-tab-btn[aria-pressed="true"] {
+      background: var(--dsw-alias-interactive-bg-selected);
+      color: var(--dsw-alias-brand-primary);
+    }
+
+    .stage-wrapper[data-viewport="narrow"] .workspace-upper {
+      flex-direction: column;
+    }
+
+    .stage-wrapper[data-viewport="narrow"] .clip-root[data-narrow-panel="timeline"] .workspace-upper {
+      flex: none;
+      height: 46%;
+      min-height: 224px;
+    }
+
+    .stage-wrapper[data-viewport="narrow"] .left-sidebar-group,
+    .stage-wrapper[data-viewport="narrow"] .inspector-slot,
+    .stage-wrapper[data-viewport="narrow"] .timeline-slot {
+      display: none;
+    }
+
+    .stage-wrapper[data-viewport="narrow"] .preview-pane {
+      flex: none;
+      height: 44%;
+      min-height: 210px;
+    }
+
+    .stage-wrapper[data-viewport="narrow"] .clip-root[data-narrow-panel="timeline"] .preview-pane {
+      flex: 1 1 auto;
+      height: 100%;
+    }
+
+    .stage-wrapper[data-viewport="narrow"] .canvas-graphic-overlay {
+      left: 5%;
+      bottom: 24%;
+      padding: 5px 10px;
+    }
+
+    .stage-wrapper[data-viewport="narrow"] .graphic-main-text {
+      font-size: 13px;
+    }
+
+    .stage-wrapper[data-viewport="narrow"] .graphic-sub-text {
+      display: none;
+    }
+
+    .stage-wrapper[data-viewport="narrow"] .clip-root[data-narrow-panel="timeline"] .timeline-slot {
+      display: flex;
+      flex: 1 1 auto;
+      height: auto;
+    }
+
+    .stage-wrapper[data-viewport="narrow"] .clip-root[data-narrow-panel="media"] .left-sidebar-group {
+      display: flex;
+      flex-direction: column;
+      width: 100% !important;
+      flex: 1 1 auto;
+      border-right: 0;
+      border-top: 1px solid var(--dsw-alias-border-l2);
+    }
+
+    .stage-wrapper[data-viewport="narrow"] .clip-root[data-narrow-panel="media"] .left-rail-seam-wrap {
+      display: flex;
+      width: 100%;
+    }
+
+    .stage-wrapper[data-viewport="narrow"] .clip-root[data-narrow-panel="media"] .left-rail {
+      display: flex;
+      width: 100%;
+      height: 40px;
+      flex-direction: row;
+      border-right: 0;
+      border-bottom: 1px solid var(--dsw-alias-border-l2);
+      padding: 0 8px;
+      overflow-x: auto;
+    }
+
+    .stage-wrapper[data-viewport="narrow"] .clip-root[data-narrow-panel="media"][data-clip-ui-mode="pro"] .rail-item {
+      width: 36px;
+      height: 32px;
+      margin: 4px 2px;
+    }
+
+    .stage-wrapper[data-viewport="narrow"] .clip-root[data-narrow-panel="media"] .drawer-slot {
+      display: flex;
+      width: 100% !important;
+      flex: 1 1 auto;
+      border-right: 0;
+    }
+
+    .stage-wrapper[data-viewport="narrow"] .clip-root[data-narrow-panel="inspector"] .inspector-slot {
+      display: flex;
+      width: 100% !important;
+      flex: 1 1 auto;
+      border-left: 0;
+    }
+
+    /* ─── 瞬态浮层反馈 (不撑开布局) ─── */
+    .clip-toast {
+      position: fixed;
+      right: 18px;
+      bottom: 18px;
+      padding: 9px 14px;
+      border-radius: var(--radius-md);
+      background: var(--dsw-alias-bg-layer-1);
+      border: 1px solid var(--dsw-alias-border-l3);
+      box-shadow: var(--shadow-popover);
+      font-size: 13px;
+      font-weight: 500;
+      z-index: 120;
+      display: none;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .clip-toast[data-visible="true"] {
+      display: inline-flex;
+    }
+  </style>
+</head>
+<body>
+  <div class="demo-harness">
+    <!-- 顶部演示控制台 -->
+    <header class="harness-bar">
+      <div class="harness-left">
+        <h1 class="harness-title">Clip 简易模式交互演示</h1>
+        <span id="harness-mode-badge" class="harness-badge">默认简易模式</span>
+        <div class="harness-counts tabular" id="harness-counts">
+          <span>顶栏 1 行</span>
+          <span>顶签 4 项</span>
+          <span>时间轴 6 工具</span>
+        </div>
+      </div>
+
+      <div class="seg-group" role="group" aria-label="视口布局">
+        <button type="button" class="seg-btn" data-vp="split" aria-pressed="true">分屏工作台</button>
+        <button type="button" class="seg-btn" data-vp="canvas" aria-pressed="false">画布剪辑</button>
+        <button type="button" class="seg-btn" data-vp="standalone" aria-pressed="false">独立全宽</button>
+        <button type="button" class="seg-btn" data-vp="narrow" aria-pressed="false">窄分屏</button>
+      </div>
+
+      <div class="harness-right">
+        <button type="button" class="btn-pill" id="btn-toggle-seams" aria-pressed="false">高亮同步接缝</button>
+        <button type="button" class="btn-pill" id="btn-toggle-theme">切换浅色主题</button>
+      </div>
+    </header>
+
+    <!-- 模拟 OmniMux 桌面窗 -->
+    <main class="stage-wrapper" id="stage-wrapper" data-viewport="split">
+      <div class="omnimux-window">
+        <!-- 最左宿主图标栏 -->
+        <nav class="host-rail" aria-label="工作台导航">
+          <button type="button" class="host-rail-btn" title="对话" aria-label="对话">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          </button>
+          <button type="button" class="host-rail-btn" title="画布" aria-label="画布">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+          </button>
+          <button type="button" class="host-rail-btn is-active" title="剪辑" aria-label="剪辑">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M7 4v16M17 4v16M2 12h20"/></svg>
+          </button>
+          <button type="button" class="host-rail-btn" title="资产库" aria-label="资产库">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+          </button>
+        </nav>
+
+        <!-- AI 协同对话栏 -->
+        <aside class="chat-pane" aria-label="AI 协同对话">
+          <div class="chat-header">
+            <span>剪辑协同对话</span>
+            <span class="meta-tag">Clip Agent</span>
+          </div>
+          <div class="chat-scroll">
+            <div class="chat-bubble is-user">按 120 BPM 节拍把产品素材剪成 8 秒预告片，配上高亮字幕和标题条</div>
+            <div class="chat-bubble">
+              已按 120 BPM 完成卡点粗剪，添加 Classic Bar 标题条与逐词高亮字幕。
+              <div class="chat-stats tabular" id="chat-project-stats">
+                <span class="chat-stat-chip">5 轨</span>
+                <span class="chat-stat-chip">7 片段</span>
+                <span class="chat-stat-chip">8.0 秒</span>
+              </div>
+            </div>
+            <div class="chat-actions-title">试一下让对话联动剪辑器</div>
+            <div class="chat-quick-list">
+              <button type="button" class="chat-quick-btn" id="ai-cmd-sub">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3l1.9 4.7L18.6 9.6l-4.7 1.9L12 16.2l-1.9-4.7L5.4 9.6l4.7-1.9z"/></svg>
+                放大字幕字号
+              </button>
+              <button type="button" class="chat-quick-btn" id="ai-cmd-graphic">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3l1.9 4.7L18.6 9.6l-4.7 1.9L12 16.2l-1.9-4.7L5.4 9.6l4.7-1.9z"/></svg>
+                定位标题条
+              </button>
+              <button type="button" class="chat-quick-btn" id="ai-cmd-export">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3l1.9 4.7L18.6 9.6l-4.7 1.9L12 16.2l-1.9-4.7L5.4 9.6l4.7-1.9z"/></svg>
+                导出 1080p
+              </button>
+            </div>
+          </div>
+          <div class="chat-composer">
+            <div class="chat-input-box">
+              <input id="chat-prompt-input" type="text" placeholder="描述你想修改的画面或节奏" aria-label="输入剪辑指令" />
+              <button type="button" class="chat-send-btn" id="chat-send-btn" aria-label="发送指令">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+              </button>
+            </div>
+          </div>
+        </aside>
+
+        <!-- 右侧剪辑宿主区 (支持独立工坊 standalone 与画布节点 canvas Portal) -->
+        <div class="clip-stage-shell">
+          <div class="canvas-portal-bar" aria-label="画布标签上下文">
+            <div class="canvas-tab-group">
+              <span class="canvas-tab-pill">工作流画布</span>
+              <span class="canvas-tab-pill is-active">合成节点 01</span>
+            </div>
+            <span class="meta-tag">画布联动回写已启用</span>
+          </div>
+
+          <!-- Clip 主体区域 (接缝 1: data-clip-mode x data-clip-ui-mode) -->
+          <section
+            class="clip-root"
+            id="clip-root"
+            data-clip-mode="standalone"
+            data-clip-ui-mode="simple"
+            data-drawer-open="true"
+            data-has-selection="false"
+            data-narrow-panel="timeline"
+            data-highlight-seams="false"
+            data-seam="root"
+          >
+            <span class="seam-tag" id="root-seam-tag">接缝 1 mode=standalone ui=simple</span>
+
+            <!-- 专业模式才出现的旧版第一行 Hostbar -->
+            <div class="pro-hostbar">
+              <span class="pro-hostbar-title" id="pro-hostbar-title">产品发布预告片</span>
+              <span class="pro-hostbar-status">已保存</span>
+              <button type="button" class="pro-hostbar-save" id="pro-host-save-btn">保存</button>
+            </div>
+
+            <!-- 编辑器顶栏 (接缝 2: toolbar) -->
+            <header class="editor-topbar" data-seam="toolbar">
+              <span class="seam-tag">接缝 2 toolbar</span>
+              <div class="topbar-left">
+                <!-- 抽屉切换 -->
+                <button type="button" class="icon-btn" id="btn-toggle-drawer" aria-pressed="true" title="折叠或展开左侧栏" aria-label="折叠或展开左侧栏">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></svg>
+                </button>
+
+                <span class="canvas-node-pill canvas-only">合成节点 01</span>
+
+                <!-- 独立工坊左段：OpenReel 品牌 + 8 项菜单 (画布模式隐藏) -->
+                <div data-toolbar-section="left" style="display:contents;">
+                  <span class="brand-chip pro-only">
+                    <span class="brand-dot" aria-hidden="true"></span>
+                    <span>OpenReel</span>
+                  </span>
+                  <div class="pro-menus pro-only" aria-label="菜单栏">
+                    <button type="button" class="pro-menu-btn">文件</button>
+                    <button type="button" class="pro-menu-btn">编辑</button>
+                    <button type="button" class="pro-menu-btn">片段</button>
+                    <button type="button" class="pro-menu-btn">序列</button>
+                    <button type="button" class="pro-menu-btn">特效</button>
+                    <button type="button" class="pro-menu-btn">视图</button>
+                    <button type="button" class="pro-menu-btn">窗口</button>
+                    <button type="button" class="pro-menu-btn">帮助</button>
+                  </div>
+                </div>
+
+                <!-- 独立工坊中段：可编辑项目名与规格 (画布模式隐藏) -->
+                <div data-toolbar-section="center" class="project-title-wrap">
+                  <input id="project-name-input" class="project-name-input" type="text" value="产品发布预告片" aria-label="项目名称" />
+                  <span class="meta-tag is-spec tabular pro-only">1920×1080</span>
+                  <span class="meta-tag is-spec tabular pro-only">30 fps</span>
+                  <span class="save-status" id="save-status-pill">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>
+                    <span id="save-status-text">已保存</span>
+                  </span>
+                </div>
+              </div>
+
+              <div class="topbar-right" data-toolbar-section="right">
+                <button type="button" class="icon-btn" id="btn-undo" title="撤销" aria-label="撤销" disabled>
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg>
+                </button>
+                <button type="button" class="icon-btn" id="btn-redo" title="重做" aria-label="重做" disabled>
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M15 14l5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/></svg>
+                </button>
+
+                <div data-toolbar-section="left" style="display:contents;">
+                  <button type="button" class="icon-btn pro-only" title="导出队列" aria-label="导出队列">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+                  </button>
+                  <button type="button" class="btn-secondary pro-only pro-backup-btn">备份</button>
+                </div>
+
+                <!-- 简易 / 专业 核心模式切换器 (独立与画布共用) -->
+                <div class="mode-switch" role="group" aria-label="界面模式">
+                  <button type="button" class="mode-switch-btn" id="btn-mode-simple" aria-pressed="true">简易</button>
+                  <button type="button" class="mode-switch-btn" id="btn-mode-pro" aria-pressed="false">专业</button>
+                </div>
+
+                <button type="button" class="btn-secondary" id="btn-ai-edit">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3l1.9 4.7L18.6 9.6l-4.7 1.9L12 16.2l-1.9-4.7L5.4 9.6l4.7-1.9z"/></svg>
+                  <span class="btn-ai-label">AI 剪辑</span>
+                </button>
+
+                <div class="popover-anchor">
+                  <button type="button" class="btn-primary" id="btn-export-trigger" aria-expanded="false">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0l-4-4m4 4l4-4"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
+                    <span id="btn-export-label">导出</span>
+                  </button>
+                  <div class="popover-panel" id="export-popover" data-open="false" role="dialog" aria-label="导出选项">
+                    <div class="popover-head">
+                      <span id="export-popover-title">导出成片</span>
+                      <span class="meta-tag tabular">8.0 秒</span>
+                    </div>
+                    <button type="button" class="popover-item" data-export-preset="1080p MP4">
+                      <span>1080p MP4</span>
+                      <span class="popover-item-meta">1920×1080</span>
+                    </button>
+                    <button type="button" class="popover-item" data-export-preset="竖屏 9:16">
+                      <span>竖屏 9:16</span>
+                      <span class="popover-item-meta">1080×1920</span>
+                    </button>
+                    <button type="button" class="popover-item standalone-only" id="export-wav-preset" data-export-preset="仅音频 WAV">
+                      <span>仅音频 WAV</span>
+                      <span class="popover-item-meta">48 kHz</span>
+                    </button>
+                    <button type="button" class="btn-secondary" id="btn-open-pro-export">编码设置</button>
+                  </div>
+                </div>
+
+                <!-- 画布模式契约按钮：紧贴导出右侧、纯文本、no-drag -->
+                <button type="button" class="btn-secondary canvas-only" id="btn-exit-canvas" style="-webkit-app-region:no-drag;">退出编辑</button>
+              </div>
+            </header>
+
+          <!-- 主体内容区 -->
+          <div class="editor-main">
+            <div class="workspace-upper">
+              <!-- 左侧边栏组：简易模式顶置横向标签 / 专业模式竖轨+抽屉 -->
+              <div class="left-sidebar-group">
+                <!-- 左侧工具轨 (接缝 3: rail) -->
+                <div class="left-rail-seam-wrap" data-seam="rail">
+                <span class="seam-tag">接缝 3 rail</span>
+                <nav class="left-rail" aria-label="工具栏">
+                <button type="button" class="rail-item" data-section="media" aria-pressed="true" title="素材">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M10 9l5 3-5 3z"/></svg>
+                  <span class="rail-item-label">素材</span>
+                </button>
+                <button type="button" class="rail-item" data-section="audio" data-pro-only="true" aria-pressed="false" title="音频">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+                  <span class="rail-item-label">音频</span>
+                </button>
+                <button type="button" class="rail-item" data-section="text" aria-pressed="false" title="文字">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 7V4h16v3M9 20h6M12 4v16"/></svg>
+                  <span class="rail-item-label">文字</span>
+                </button>
+                <button type="button" class="rail-item" data-section="effects" data-pro-only="true" aria-pressed="false" title="特效">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 3l1.9 4.7L18.6 9.6l-4.7 1.9L12 16.2l-1.9-4.7L5.4 9.6l4.7-1.9z"/></svg>
+                  <span class="rail-item-label">特效</span>
+                </button>
+                <button type="button" class="rail-item" data-section="transitions" data-pro-only="true" aria-pressed="false" title="转场">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="5" width="7" height="14" rx="1"/><rect x="14" y="5" width="7" height="14" rx="1"/></svg>
+                  <span class="rail-item-label">转场</span>
+                </button>
+                <button type="button" class="rail-item" data-section="templates" aria-pressed="false" title="模板">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="3" width="8" height="8" rx="1.5"/><rect x="3" y="13" width="8" height="8" rx="1.5"/><rect x="13" y="13" width="8" height="8" rx="1.5"/></svg>
+                  <span class="rail-item-label">模板</span>
+                </button>
+                <button type="button" class="rail-item" data-section="recipes" data-pro-only="true" aria-pressed="false" title="配方">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+                  <span class="rail-item-label">配方</span>
+                </button>
+                <button type="button" class="rail-item" data-section="markers" data-pro-only="true" aria-pressed="false" title="标记">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
+                  <span class="rail-item-label">标记</span>
+                </button>
+                <button type="button" class="rail-item" data-section="comments" data-pro-only="true" aria-pressed="false" title="评论">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                  <span class="rail-item-label">评论</span>
+                </button>
+                <button type="button" class="rail-item" data-section="versions" aria-pressed="false" title="版本">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5M12 7v5l3 2"/></svg>
+                  <span class="rail-item-label">版本</span>
+                </button>
+                <button type="button" class="rail-item" data-section="settings" data-pro-only="true" aria-pressed="false" title="设置">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                  <span class="rail-item-label">设置</span>
+                </button>
+                </nav>
+              </div>
+
+              <!-- 左侧内容抽屉 -->
+              <aside class="drawer-slot" id="drawer-slot" aria-label="资源区">
+                <div class="pro-bin-tabs">
+                  <button type="button" class="pro-bin-tab is-active">项目</button>
+                  <button type="button" class="pro-bin-tab">素材库</button>
+                  <button type="button" class="pro-bin-tab">录制</button>
+                </div>
+                <div class="drawer-head" id="drawer-heading">素材</div>
+                <div class="drawer-body" id="drawer-body"></div>
+              </aside>
+              </div>
+
+              <!-- 中央预览区 -->
+              <section class="preview-pane" aria-label="视频预览">
+                <div class="pro-preview-header">
+                  <div class="pro-pill-row">
+                    <button type="button" class="pro-filter-pill is-active">节目</button>
+                    <button type="button" class="pro-filter-pill">来源</button>
+                  </div>
+                  <div class="pro-pill-row">
+                    <button type="button" class="pro-filter-pill">钢笔蒙版</button>
+                    <button type="button" class="pro-filter-pill">代理</button>
+                    <button type="button" class="pro-filter-pill">适应</button>
+                    <button type="button" class="pro-filter-pill">自动</button>
+                  </div>
+                </div>
+
+                <div class="preview-stage">
+                  <div class="preview-canvas-frame" id="preview-canvas-frame">
+                    <div class="pro-preview-meta-left tabular">
+                      <span>1920×1080</span>
+                      <span>100%</span>
+                    </div>
+                    <span class="pro-preview-badge">伪色</span>
+
+                    <div class="canvas-scene" id="canvas-scene">
+                      <div class="scene-visual scene-a" id="scene-visual">
+                        <div class="scene-card-art">
+                          <div style="display:flex;justify-content:space-between;align-items:center;">
+                            <strong id="scene-art-title" style="font-size:14px;">开场产品空镜</strong>
+                            <span id="scene-art-time" class="tabular" style="font-size:12px;color:#94a3b8;">00:01.2</span>
+                          </div>
+                          <div class="scene-art-bars">
+                            <div class="scene-art-block"></div>
+                            <div class="scene-art-block"></div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="canvas-graphic-overlay" id="canvas-graphic-overlay" data-accent="emerald" role="button" tabindex="0" aria-label="选中标题条">
+                      <span class="graphic-main-text" id="canvas-graphic-title">OmniMux 2.0</span>
+                      <span class="graphic-sub-text" id="canvas-graphic-sub">AI 原生剪辑工作台</span>
+                    </div>
+
+                    <div class="canvas-subtitle-overlay" id="canvas-subtitle-overlay" data-style="highlight" role="button" tabindex="0" aria-label="选中字幕" style="font-size: 20px;">
+                      <span id="canvas-subtitle-text">三步完成卡点成片</span>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- 播放控制条 -->
+                <div class="preview-transport">
+                  <div class="scrubber-row">
+                    <input type="range" class="scrubber-range" id="playhead-scrubber" min="0" max="8" step="0.05" value="1.2" aria-label="播放进度" />
+                  </div>
+                  <div class="transport-controls-row">
+                    <div class="timecode-pill tabular">
+                      <span class="timecode-now" id="timecode-now">00:01.2</span>
+                      <span>/</span>
+                      <span id="timecode-total">00:08.0</span>
+                    </div>
+
+                    <div class="transport-center">
+                      <button type="button" class="icon-btn pro-only" title="标记入点" aria-label="标记入点">I</button>
+                      <button type="button" class="icon-btn" id="btn-step-back" title="快退 1 秒" aria-label="快退 1 秒">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M15 18l-6-6 6-6"/></svg>
+                      </button>
+                      <button type="button" class="play-btn" id="btn-play" aria-label="播放">
+                        <svg id="icon-play" width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5l11 7-11 7z"/></svg>
+                      </button>
+                      <button type="button" class="icon-btn" id="btn-step-fwd" title="快进 1 秒" aria-label="快进 1 秒">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M9 18l6-6-6-6"/></svg>
+                      </button>
+                      <button type="button" class="icon-btn pro-only" title="标记出点" aria-label="标记出点">O</button>
+                    </div>
+
+                    <div class="transport-right">
+                      <button type="button" class="icon-btn" id="btn-mute" aria-pressed="false" title="静音" aria-label="静音">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M11 5L6 9H2v6h4l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/></svg>
+                      </button>
+                      <button type="button" class="icon-btn" id="btn-fullscreen-toggle" aria-pressed="false" title="切换全宽预览" aria-label="切换全宽预览">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              <!-- 右侧上下文检查器 (接缝 4: inspector) -->
+              <aside class="inspector-slot" id="inspector-slot" aria-label="属性" data-seam="inspector">
+                <span class="seam-tag">接缝 4 inspector</span>
+                <div class="inspector-head">
+                  <div class="inspector-title-group">
+                    <span class="clip-kind-tag" id="inspector-kind-tag">属性</span>
+                    <span class="inspector-clip-name" id="inspector-clip-name">未选择</span>
+                  </div>
+                  <button type="button" class="icon-btn simple-only" id="btn-close-inspector" title="关闭属性" aria-label="关闭属性">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                  </button>
+                </div>
+                <div class="inspector-body" id="inspector-body"></div>
+                <div class="inspector-footer simple-only">
+                  <button type="button" class="btn-secondary" id="btn-expand-pro-params" style="width:100%;">展开专业参数</button>
+                </div>
+              </aside>
+            </div>
+
+            <!-- 底部时间轴 (接缝 5: timeline) -->
+            <section class="timeline-slot" aria-label="时间轴" data-seam="timeline">
+              <span class="seam-tag">接缝 5 timeline</span>
+
+              <div class="pro-sequence-bar">
+                <span style="font-weight:600;">Sequence 1</span>
+                <span class="meta-tag">+</span>
+              </div>
+
+              <div class="timeline-toolbar">
+                <button type="button" class="tl-btn" id="tl-tool-select" aria-pressed="true" title="选择工具 (V)">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 4l7 16 2.5-6.5L20 11z"/></svg>
+                  <span>选择</span>
+                </button>
+                <button type="button" class="tl-btn" id="tl-tool-split" title="在播放头分割 (S)">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M20 4L8.1 15.9M14.5 14.5L20 20"/></svg>
+                  <span>分割</span>
+                </button>
+                <button type="button" class="tl-btn" id="tl-tool-delete" title="删除选中片段 (Del)" disabled>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>
+                  <span>删除</span>
+                </button>
+
+                <!-- 专业模式高频工具组 -->
+                <button type="button" class="tl-btn pro-only" data-pro-tool="ripple" aria-pressed="false">波纹</button>
+                <button type="button" class="tl-btn pro-only" data-pro-tool="roll" aria-pressed="false">滚动</button>
+                <button type="button" class="tl-btn pro-only" data-pro-tool="slip" aria-pressed="false">滑移</button>
+                <button type="button" class="tl-btn pro-only" data-pro-tool="stretch" aria-pressed="false">变速</button>
+
+                <div class="tl-sep"></div>
+
+                <button type="button" class="tl-btn" id="tl-snap" aria-pressed="true" title="磁吸对齐">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 15V7a6 6 0 0 1 12 0v8M6 12h4M14 12h4"/></svg>
+                  <span>吸附</span>
+                </button>
+
+                <button type="button" class="tl-btn pro-only" id="tl-scrub" aria-pressed="true">擦洗</button>
+                <button type="button" class="tl-btn pro-only" id="tl-link" aria-pressed="true">关联</button>
+                <button type="button" class="tl-btn pro-only" id="tl-marker">标记</button>
+
+                <div class="popover-anchor">
+                  <button type="button" class="tl-btn" id="tl-add-track-btn" aria-expanded="false">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+                    <span>添加轨道</span>
+                  </button>
+                  <div class="popover-panel is-top" id="add-track-popover" data-open="false">
+                    <button type="button" class="popover-item" data-add-track="video">视频轨</button>
+                    <button type="button" class="popover-item" data-add-track="text">字幕轨</button>
+                    <button type="button" class="popover-item" data-add-track="audio">音频轨</button>
+                  </div>
+                </div>
+
+                <button type="button" class="tl-btn pro-only">渲染</button>
+
+                <div class="tl-zoom-group">
+                  <span class="meta-tag tabular pro-only" id="pro-tl-summary">5 轨 7 片段</span>
+                  <span class="meta-tag tabular" id="tl-zoom-label">1.0x</span>
+                  <input type="range" class="tl-zoom-slider" id="tl-zoom-slider" min="0.6" max="2.2" step="0.1" value="1" aria-label="时间轴缩放" />
+                </div>
+              </div>
+
+              <div class="timeline-body">
+                <div class="timeline-main-area">
+                  <div class="timeline-ruler-row">
+                    <div class="track-header-spacer tabular">轨道</div>
+                    <div class="ruler-track" id="ruler-track" role="slider" tabindex="0" aria-label="时间轴标尺" aria-valuemin="0" aria-valuemax="8" aria-valuenow="1.2"></div>
+                  </div>
+                  <div class="tracks-scroll" id="tracks-scroll">
+                    <div id="tracks-container" style="position:relative;min-width:100%;">
+                      <div class="playhead-line" id="playhead-line" style="left: 168px;"></div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- 专业模式立体声输出电平表 -->
+                <div class="pro-stereo-meters" aria-label="立体声电平表">
+                  <div class="meter-bars">
+                    <div class="meter-col"><div class="meter-fill" id="meter-l" style="height: 22%;"></div></div>
+                    <div class="meter-col"><div class="meter-fill" id="meter-r" style="height: 28%;"></div></div>
+                  </div>
+                  <span class="meta-tag" style="font-size:12px;">L R</span>
+                </div>
+              </div>
+            </section>
+
+            <!-- 窄屏底部三段切换 (仅窄分屏可见) -->
+            <nav class="narrow-tabs" aria-label="工作区切换">
+              <button type="button" class="narrow-tab-btn" data-narrow-target="timeline" aria-pressed="true">时间线</button>
+              <button type="button" class="narrow-tab-btn" data-narrow-target="media" aria-pressed="false">素材</button>
+              <button type="button" class="narrow-tab-btn" data-narrow-target="inspector" aria-pressed="false" id="narrow-tab-inspector">属性</button>
+            </nav>
+
+            <!-- 专业模式底部状态条 -->
+            <footer class="pro-status-bar">
+              <span>闲置</span>
+              <span class="tabular">缓存 0 帧</span>
+            </footer>
+          </div>
+          </section>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- 非占位 Toast 反馈 -->
+  <div class="clip-toast" id="clip-toast" role="status" aria-live="polite">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--dsw-alias-brand-primary);"><path d="M20 6L9 17l-5-5"/></svg>
+    <span id="clip-toast-text"></span>
+  </div>
+
+  <script>
+    (function () {
+      const DURATION = 8.0;
+      const MEDIA_LIBRARY = [
+        { id: "m-intro", name: "开场产品空镜", kind: "video", duration: 3.8, label: "00:03.8" },
+        { id: "m-demo", name: "功能演示画面", kind: "video", duration: 4.2, label: "00:04.2" },
+        { id: "m-voice", name: "配音旁白.wav", kind: "audio", duration: 7.3, label: "00:07.3" },
+        { id: "m-bgm", name: "120 BPM 音乐", kind: "music", duration: 8.0, label: "00:08.0" },
+        { id: "m-card", name: "产品特性卡片", kind: "image", duration: 2.5, label: "00:02.5" },
+      ];
+
+      const TEMPLATES = [
+        { id: "tpl-classic-bar", name: "Classic Bar 标题条", sub: "底部左对齐双行信息卡", kind: "graphic", duration: 2.6, title: "核心能力升级", subtitle: "所见即所得实时预览" },
+        { id: "tpl-progress", name: "顶部进度指示条", sub: "随播放推进的扁平进度条", kind: "graphic", duration: 3.0, title: "章节节奏进度", subtitle: "120 BPM 自动对齐" },
+        { id: "tpl-endcard", name: "片尾行动引导卡", sub: "居中品牌标与主标题卡", kind: "graphic", duration: 2.2, title: "立即开启剪辑", subtitle: "支持一键切回专业模式" },
+      ];
+
+      function initialProject() {
+        return {
+          name: "产品发布预告片",
+          tracks: [
+            { id: "v2", badge: "V2", name: "图形", kind: "graphic", hidden: false, muted: false },
+            { id: "t1", badge: "T1", name: "字幕", kind: "text", hidden: false, muted: false },
+            { id: "v1", badge: "V1", name: "主视频", kind: "video", hidden: false, muted: false },
+            { id: "a1", badge: "A1", name: "人声", kind: "audio", hidden: false, muted: false },
+            { id: "a2", badge: "A2", name: "音乐", kind: "music", hidden: false, muted: false },
+          ],
+          clips: [
+            { id: "c-gfx-1", trackId: "v2", kind: "graphic", name: "Classic Bar 标题条", start: 0.6, duration: 3.0, title: "OmniMux 2.0", subtitle: "AI 原生剪辑工作台", accent: "emerald" },
+            { id: "c-sub-1", trackId: "t1", kind: "text", name: "三步完成卡点成片", start: 0.2, duration: 3.0, text: "三步完成卡点成片", style: "highlight", fontSize: 22 },
+            { id: "c-sub-2", trackId: "t1", kind: "text", name: "随时切回专业精调", start: 3.5, duration: 3.7, text: "随时切回专业精调", style: "highlight", fontSize: 22 },
+            { id: "c-vid-1", trackId: "v1", kind: "video", name: "开场产品空镜", start: 0.0, duration: 3.8, scene: "scene-a", scale: 100, opacity: 100, speed: "1.0x", volume: 80 },
+            { id: "c-vid-2", trackId: "v1", kind: "video", name: "功能演示画面", start: 3.8, duration: 4.2, scene: "scene-b", scale: 100, opacity: 100, speed: "1.0x", volume: 80 },
+            { id: "c-aud-1", trackId: "a1", kind: "audio", name: "配音旁白.wav", start: 0.2, duration: 7.3, volume: 100, ducking: true },
+            { id: "c-mus-1", trackId: "a2", kind: "music", name: "120 BPM 背景音乐", start: 0.0, duration: 8.0, volume: 65, ducking: true },
+          ],
+        };
+      }
+
+      const state = {
+        clipMode: "standalone",
+        uiMode: "simple",
+        theme: "dark",
+        viewport: "split",
+        highlightSeams: false,
+        relinkSynced: false,
+        drawerOpen: true,
+        section: "media",
+        textTab: "subtitles",
+        narrowPanel: "timeline",
+        playhead: 1.2,
+        playing: false,
+        muted: false,
+        snap: true,
+        zoom: 1.0,
+        timelineTool: "select",
+        proInspectorTab: "变换",
+        selectedClipId: null,
+        project: initialProject(),
+        versions: [
+          { id: "ver-3", name: "v3 已加高亮字幕", time: "2 分钟前", snapshot: null },
+          { id: "ver-2", name: "v2 节拍卡点完成", time: "8 分钟前", snapshot: null },
+          { id: "ver-1", name: "v1 原始素材粗剪", time: "18 分钟前", snapshot: null },
+        ],
+        undoStack: [],
+        redoStack: [],
+        nextId: 10,
+      };
+
+      const cloneProject = (p) => JSON.parse(JSON.stringify(p));
+      state.versions[0].snapshot = cloneProject(state.project);
+      state.versions[1].snapshot = cloneProject(state.project);
+      state.versions[1].snapshot.clips = state.versions[1].snapshot.clips.filter((c) => c.kind !== "text");
+      state.versions[2].snapshot = cloneProject(state.project);
+      state.versions[2].snapshot.clips = state.versions[2].snapshot.clips.filter((c) => c.kind === "video" || c.kind === "music");
+
+      const $ = (id) => document.getElementById(id);
+      const clipRoot = $("clip-root");
+      const stageWrapper = $("stage-wrapper");
+      const drawerBody = $("drawer-body");
+      const drawerHeading = $("drawer-heading");
+      const inspectorBody = $("inspector-body");
+      const tracksContainer = $("tracks-container");
+      const rulerTrack = $("ruler-track");
+
+      let toastTimer = null;
+      function showToast(msg) {
+        const toastEl = $("clip-toast");
+        $("clip-toast-text").textContent = msg;
+        toastEl.dataset.visible = "true";
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => { toastEl.dataset.visible = "false"; }, 2200);
+      }
+
+      function pushUndo() {
+        state.undoStack.push(cloneProject(state.project));
+        if (state.undoStack.length > 30) state.undoStack.shift();
+        state.redoStack = [];
+      }
+
+      function formatTime(sec) {
+        const clamped = Math.max(0, Math.min(DURATION, sec));
+        const totalTenths = Math.round(clamped * 10);
+        const s = Math.floor(totalTenths / 10);
+        const tenths = totalTenths % 10;
+        return `00:${String(s).padStart(2, "0")}.${tenths}`;
+      }
+
+      function getSelectedClip() {
+        return state.project.clips.find((c) => c.id === state.selectedClipId) || null;
+      }
+
+      function closeAllPopovers() {
+        $("export-popover").dataset.open = "false";
+        $("btn-export-trigger").setAttribute("aria-expanded", "false");
+        $("add-track-popover").dataset.open = "false";
+        $("tl-add-track-btn").setAttribute("aria-expanded", "false");
+        const imp = $("import-popover");
+        if (imp) imp.dataset.open = "false";
+      }
+
+      function setUiMode(mode) {
+        state.uiMode = mode;
+        if (mode === "simple") {
+          const simpleSections = new Set(["media", "text", "templates", "versions"]);
+          if (!simpleSections.has(state.section)) state.section = "media";
+          state.timelineTool = "select";
+        }
+        renderAll();
+      }
+
+      function setSelectedClip(clipId, openInspectorOnNarrow) {
+        state.selectedClipId = clipId;
+        if (clipId && state.viewport === "narrow" && openInspectorOnNarrow) {
+          state.narrowPanel = "inspector";
+        }
+        renderAll();
+      }
+
+      function trackHeaderWidth() {
+        return state.uiMode === "pro" ? 164 : 108;
+      }
+
+      function pxPerSecond() {
+        const lanesEl = $("tracks-scroll");
+        const avail = lanesEl ? Math.max(300, lanesEl.clientWidth - trackHeaderWidth() - 56) : 540;
+        return (avail / DURATION) * state.zoom;
+      }
+
+      function renderHarness() {
+        const isSimple = state.uiMode === "simple";
+        const isCanvas = state.clipMode === "canvas";
+        const badge = $("harness-mode-badge");
+        badge.textContent = isCanvas
+          ? (isSimple ? "画布简易模式" : "画布专业模式")
+          : (isSimple ? "默认简易模式" : "完整专业模式");
+        badge.className = `harness-badge${isSimple ? "" : " is-pro"}`;
+
+        $("harness-counts").innerHTML = isCanvas
+          ? (isSimple
+            ? `<span>画布节点</span><span>顶栏 1 行</span><span>顶签 4 项</span>`
+            : `<span>画布节点</span><span>无菜单单顶栏</span><span>左轨 11 项</span>`)
+          : (isSimple
+            ? `<span>顶栏 1 行</span><span>顶签 4 项</span><span>时间轴 6 工具</span>`
+            : `<span>顶栏 2 行</span><span>左轨 11 项</span><span>时间轴 13 工具</span>`);
+
+        $("root-seam-tag").textContent = `接缝 1 mode=${state.clipMode} ui=${state.uiMode}`;
+        $("export-popover-title").textContent = isCanvas ? "写回画布节点" : "导出成片";
+        $("btn-mode-simple").setAttribute("aria-pressed", String(isSimple));
+        $("btn-mode-pro").setAttribute("aria-pressed", String(!isSimple));
+        $("btn-toggle-seams").setAttribute("aria-pressed", String(state.highlightSeams));
+        $("btn-toggle-theme").textContent = state.theme === "dark" ? "切换浅色主题" : "切换深色主题";
+        clipRoot.dataset.clipMode = state.clipMode;
+        clipRoot.dataset.clipUiMode = state.uiMode;
+        clipRoot.dataset.drawerOpen = String(state.drawerOpen);
+        clipRoot.dataset.hasSelection = String(Boolean(getSelectedClip()));
+        clipRoot.dataset.narrowPanel = state.narrowPanel;
+        clipRoot.dataset.highlightSeams = String(state.highlightSeams);
+        stageWrapper.dataset.viewport = state.viewport;
+      }
+
+      function renderTopbarAndChat() {
+        $("project-name-input").value = state.project.name;
+        $("pro-hostbar-title").textContent = state.project.name;
+        $("btn-toggle-drawer").setAttribute("aria-pressed", String(state.drawerOpen));
+        $("btn-undo").disabled = state.undoStack.length === 0;
+        $("btn-redo").disabled = state.redoStack.length === 0;
+
+        const statsHtml = `
+          <span class="chat-stat-chip">${state.project.tracks.length} 轨</span>
+          <span class="chat-stat-chip">${state.project.clips.length} 片段</span>
+          <span class="chat-stat-chip">${DURATION.toFixed(1)} 秒</span>
+        `;
+        $("chat-project-stats").innerHTML = statsHtml;
+        $("pro-tl-summary").textContent = `${state.project.tracks.length} 轨 ${state.project.clips.length} 片段`;
+      }
+
+      function renderLeftRailAndDrawer() {
+        document.querySelectorAll(".rail-item").forEach((btn) => {
+          btn.setAttribute("aria-pressed", String(btn.dataset.section === state.section));
+        });
+
+        const titles = {
+          media: "素材",
+          audio: "音频库",
+          text: "文字与字幕",
+          effects: "视觉特效",
+          transitions: "转场",
+          templates: "模板",
+          recipes: "配方预设",
+          markers: "标记",
+          comments: "审阅评论",
+          versions: "版本快照",
+          settings: "项目设置",
+        };
+        drawerHeading.textContent = titles[state.section] || "素材";
+
+        if (state.section === "media") {
+          const isCanvas = state.clipMode === "canvas";
+          const cards = MEDIA_LIBRARY.map((m, idx) => {
+            const upstream = isCanvas && state.relinkSynced && idx < 2;
+            return `
+            <div class="media-card">
+              <div class="media-thumb" data-kind="${m.kind}">
+                ${upstream ? `<span class="media-upstream-badge">上游</span>` : ""}
+                <span class="media-dur tabular">${m.label}</span>
+                <button type="button" class="media-add-btn" data-add-media="${m.id}" title="添加到时间轴" aria-label="添加 ${m.name}">+</button>
+              </div>
+              <div class="media-name" title="${m.name}">${m.name}</div>
+            </div>
+          `;
+          }).join("");
+
+          const canvasActionHtml = isCanvas
+            ? `<button type="button" class="popover-item" id="btn-canvas-relink">画布同步重连</button>`
+            : `<button type="button" class="popover-item" data-import-src="画布生成">去画布生成</button>`;
+
+          drawerBody.innerHTML = `
+            <div class="pro-bin-toolbar">
+              <div class="pro-pill-row">
+                <button type="button" class="pro-filter-pill is-active">全部</button>
+                <button type="button" class="pro-filter-pill">视频</button>
+                <button type="button" class="pro-filter-pill">音频</button>
+                <button type="button" class="pro-filter-pill">图片</button>
+              </div>
+            </div>
+            <div class="simple-media-bar">
+              <input class="search-input" type="search" placeholder="搜索素材" aria-label="搜索素材" />
+              <div class="popover-anchor">
+                <button type="button" class="btn-secondary" id="btn-import-menu" style="height:30px;">导入</button>
+                <div class="popover-panel" id="import-popover" data-open="false" style="width:168px;">
+                  <button type="button" class="popover-item" data-import-src="本地文件">本地文件</button>
+                  <button type="button" class="popover-item" data-import-src="资产库">从资产库导入</button>
+                  ${canvasActionHtml}
+                </div>
+              </div>
+            </div>
+            <div class="media-grid">${cards}</div>
+          `;
+
+          $("btn-import-menu").addEventListener("click", (e) => {
+            e.stopPropagation();
+            const p = $("import-popover");
+            const next = p.dataset.open !== "true";
+            closeAllPopovers();
+            p.dataset.open = String(next);
+          });
+          const relinkBtn = $("btn-canvas-relink");
+          if (relinkBtn) {
+            relinkBtn.addEventListener("click", () => {
+              closeAllPopovers();
+              state.relinkSynced = true;
+              renderLeftRailAndDrawer();
+              showToast("已核对 2 路画布上游素材");
+            });
+          }
+          drawerBody.querySelectorAll("[data-import-src]").forEach((b) => {
+            b.addEventListener("click", () => {
+              closeAllPopovers();
+              showToast(`已触发 ${b.dataset.importSrc} 导入入口`);
+            });
+          });
+          drawerBody.querySelectorAll("[data-add-media]").forEach((b) => {
+            b.addEventListener("click", () => addMediaClipToTimeline(b.dataset.addMedia));
+          });
+        } else if (state.section === "text") {
+          const subs = state.project.clips.filter((c) => c.kind === "text");
+          const rows = subs.map((c) => `
+            <button type="button" class="list-card" data-jump-clip="${c.id}">
+              <span class="list-card-meta">
+                <span class="list-card-title">${c.text}</span>
+                <span class="list-card-sub tabular">${formatTime(c.start)} 至 ${formatTime(c.start + c.duration)}</span>
+              </span>
+              <span class="meta-tag">${c.fontSize} px</span>
+            </button>
+          `).join("");
+          drawerBody.innerHTML = `
+            <div style="display:flex;gap:6px;">
+              <button type="button" class="btn-primary" id="btn-add-sub" style="flex:1;">添加字幕</button>
+              <button type="button" class="btn-secondary" id="btn-add-title" style="flex:1;">添加标题</button>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:6px;">${rows}</div>
+          `;
+          $("btn-add-sub").addEventListener("click", () => addSubtitleAtPlayhead());
+          $("btn-add-title").addEventListener("click", () => applyTemplateCard(TEMPLATES[0]));
+          drawerBody.querySelectorAll("[data-jump-clip]").forEach((b) => {
+            b.addEventListener("click", () => {
+              const c = state.project.clips.find((item) => item.id === b.dataset.jumpClip);
+              if (c) {
+                state.playhead = c.start + 0.15;
+                setSelectedClip(c.id, true);
+              }
+            });
+          });
+        } else if (state.section === "templates") {
+          drawerBody.innerHTML = TEMPLATES.map((tpl) => `
+            <button type="button" class="list-card" data-apply-tpl="${tpl.id}">
+              <span class="list-card-meta">
+                <span class="list-card-title">${tpl.name}</span>
+                <span class="list-card-sub">${tpl.sub}</span>
+              </span>
+              <span class="clip-kind-tag">应用</span>
+            </button>
+          `).join("");
+          drawerBody.querySelectorAll("[data-apply-tpl]").forEach((b) => {
+            b.addEventListener("click", () => {
+              const tpl = TEMPLATES.find((item) => item.id === b.dataset.applyTpl);
+              if (tpl) applyTemplateCard(tpl);
+            });
+          });
+        } else if (state.section === "versions") {
+          drawerBody.innerHTML = state.versions.map((v) => `
+            <div class="list-card">
+              <div class="list-card-meta">
+                <span class="list-card-title">${v.name}</span>
+                <span class="list-card-sub">${v.time}</span>
+              </div>
+              <button type="button" class="btn-secondary" data-restore-ver="${v.id}" style="height:26px;padding:0 8px;">恢复</button>
+            </div>
+          `).join("");
+          drawerBody.querySelectorAll("[data-restore-ver]").forEach((b) => {
+            b.addEventListener("click", () => restoreVersion(b.dataset.restoreVer));
+          });
+        } else {
+          drawerBody.innerHTML = `
+            <div class="list-card">
+              <div class="list-card-meta">
+                <span class="list-card-title">${titles[state.section]}</span>
+                <span class="list-card-sub">仅在专业模式下展开此面板</span>
+              </div>
+              <span class="clip-kind-tag">专业</span>
+            </div>
+          `;
+        }
+      }
+
+      function renderPreview() {
+        const t = state.playhead;
+        $("timecode-now").textContent = formatTime(t);
+        $("timecode-total").textContent = formatTime(DURATION);
+        $("playhead-scrubber").value = String(t);
+
+        const playIcon = $("icon-play");
+        if (state.playing) {
+          $("btn-play").setAttribute("aria-label", "暂停");
+          playIcon.innerHTML = `<rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/>`;
+        } else {
+          $("btn-play").setAttribute("aria-label", "播放");
+          playIcon.innerHTML = `<path d="M8 5l11 7-11 7z"/>`;
+        }
+
+        const v1Hidden = state.project.tracks.find((tr) => tr.id === "v1")?.hidden;
+        const v2Hidden = state.project.tracks.find((tr) => tr.id === "v2")?.hidden;
+        const t1Hidden = state.project.tracks.find((tr) => tr.id === "t1")?.hidden;
+
+        const activeVideo = !v1Hidden && state.project.clips.find(
+          (c) => c.kind === "video" && t >= c.start && t <= c.start + c.duration,
+        );
+        const sceneEl = $("canvas-scene");
+        const visualEl = $("scene-visual");
+        if (activeVideo) {
+          sceneEl.style.opacity = String((activeVideo.opacity ?? 100) / 100);
+          sceneEl.style.transform = `scale(${(activeVideo.scale ?? 100) / 100})`;
+          visualEl.className = `scene-visual ${activeVideo.scene || "scene-a"}`;
+          $("scene-art-title").textContent = activeVideo.name;
+          $("scene-art-time").textContent = formatTime(t);
+        } else {
+          sceneEl.style.opacity = "0.2";
+          $("scene-art-title").textContent = "空画面片段";
+        }
+
+        const activeGraphic = !v2Hidden && state.project.clips.find(
+          (c) => c.kind === "graphic" && t >= c.start && t <= c.start + c.duration,
+        );
+        const gfxEl = $("canvas-graphic-overlay");
+        if (activeGraphic) {
+          gfxEl.style.display = "flex";
+          gfxEl.dataset.accent = activeGraphic.accent || "emerald";
+          gfxEl.dataset.clipId = activeGraphic.id;
+          gfxEl.classList.toggle("is-selected", activeGraphic.id === state.selectedClipId);
+          $("canvas-graphic-title").textContent = activeGraphic.title;
+          $("canvas-graphic-sub").textContent = activeGraphic.subtitle;
+        } else {
+          gfxEl.style.display = "none";
+        }
+
+        const activeSub = !t1Hidden && state.project.clips.find(
+          (c) => c.kind === "text" && t >= c.start && t <= c.start + c.duration,
+        );
+        const subEl = $("canvas-subtitle-overlay");
+        if (activeSub) {
+          subEl.style.display = "block";
+          subEl.dataset.style = activeSub.style || "highlight";
+          subEl.dataset.clipId = activeSub.id;
+          subEl.style.fontSize = `${Math.max(14, Math.min(30, Math.round((activeSub.fontSize || 22) * 0.9)))}px`;
+          subEl.classList.toggle("is-selected", activeSub.id === state.selectedClipId);
+          const text = activeSub.text || "";
+          if (activeSub.style === "highlight" && text.length >= 4) {
+            const progress = (t - activeSub.start) / Math.max(0.1, activeSub.duration);
+            const idx = Math.min(text.length - 2, Math.max(0, Math.floor(progress * (text.length - 1))));
+            const before = text.slice(0, idx);
+            const activeWord = text.slice(idx, idx + 2);
+            const after = text.slice(idx + 2);
+            $("canvas-subtitle-text").innerHTML = `${before}<span class="sub-active-word">${activeWord}</span>${after}`;
+          } else {
+            $("canvas-subtitle-text").textContent = text;
+          }
+        } else {
+          subEl.style.display = "none";
+        }
+      }
+
+      function renderInspector() {
+        const clip = getSelectedClip();
+        const narrowBadge = $("narrow-tab-inspector");
+        narrowBadge.textContent = clip ? `属性 (${clip.kind === "text" ? "字幕" : clip.kind === "graphic" ? "图形" : clip.kind === "video" ? "视频" : "音频"})` : "属性";
+
+        if (!clip) {
+          $("inspector-kind-tag").textContent = "属性";
+          $("inspector-clip-name").textContent = "未选择任何内容";
+          inspectorBody.innerHTML = `
+            <div style="display:flex;flex-direction:column;gap:8px;">
+              <strong style="font-size:13px;">选择片段即可编辑</strong>
+              <span class="meta-tag">点击时间轴任意片段或画布元素</span>
+              <div class="shortcut-list">
+                <div class="shortcut-row"><span>播放或暂停</span><kbd class="kbd-chip">空格</kbd></div>
+                <div class="shortcut-row"><span>穿梭播放</span><kbd class="kbd-chip">J K L</kbd></div>
+                <div class="shortcut-row"><span>标记出入点</span><kbd class="kbd-chip">I O</kbd></div>
+                <div class="shortcut-row"><span>分割片段</span><kbd class="kbd-chip">S</kbd></div>
+                <div class="shortcut-row"><span>选择工具</span><kbd class="kbd-chip">V</kbd></div>
+                <div class="shortcut-row"><span>添加标记</span><kbd class="kbd-chip">M</kbd></div>
+                <div class="shortcut-row"><span>撤销操作</span><kbd class="kbd-chip">⌘Z</kbd></div>
+              </div>
+            </div>
+          `;
+          return;
+        }
+
+        const kindMap = { video: "视频", text: "字幕", graphic: "标题条", audio: "人声", music: "音乐" };
+        $("inspector-kind-tag").textContent = kindMap[clip.kind] || "片段";
+        $("inspector-clip-name").textContent = clip.name;
+
+        const proTabsHtml = state.uiMode === "pro"
+          ? `<div class="pro-tabs-row">${["变换", "调色", "特效", "动画", "音频", "变速"].map((tab) =>
+              `<button type="button" class="pro-tab-pill${state.proInspectorTab === tab ? " is-active" : ""}" data-pro-tab="${tab}">${tab}</button>`
+            ).join("")}</div>`
+          : "";
+
+        let fieldsHtml = "";
+        if (clip.kind === "video") {
+          fieldsHtml = `
+            <div class="field-block">
+              <div class="field-label-row"><span>画面缩放</span><span class="field-value tabular">${clip.scale}%</span></div>
+              <input class="field-range" type="range" min="60" max="140" value="${clip.scale}" data-edit="scale" aria-label="画面缩放" />
+            </div>
+            <div class="field-block">
+              <div class="field-label-row"><span>不透明度</span><span class="field-value tabular">${clip.opacity}%</span></div>
+              <input class="field-range" type="range" min="15" max="100" value="${clip.opacity}" data-edit="opacity" aria-label="不透明度" />
+            </div>
+            <div class="field-block">
+              <div class="field-label-row"><span>播放倍速</span><span class="field-value tabular">${clip.speed}</span></div>
+              <div class="seg-group" style="width:100%;justify-content:space-between;">
+                ${["0.5x", "1.0x", "1.5x", "2.0x"].map((sp) => `<button type="button" class="seg-btn" style="flex:1;" data-edit-speed="${sp}" aria-pressed="${clip.speed === sp}">${sp}</button>`).join("")}
+              </div>
+            </div>
+            <div class="field-block">
+              <div class="field-label-row"><span>片段音量</span><span class="field-value tabular">${clip.volume}%</span></div>
+              <input class="field-range" type="range" min="0" max="100" value="${clip.volume}" data-edit="volume" aria-label="片段音量" />
+            </div>
+          `;
+        } else if (clip.kind === "text") {
+          fieldsHtml = `
+            <div class="field-block">
+              <div class="field-label-row"><span>字幕文本</span></div>
+              <textarea class="field-textarea" id="edit-sub-text" aria-label="字幕文本">${clip.text}</textarea>
+            </div>
+            <div class="field-block">
+              <div class="field-label-row"><span>显示样式</span></div>
+              <div class="seg-group" style="width:100%;">
+                ${[["highlight", "逐词高亮"], ["clean", "简约白字"], ["box", "黑底描边"]].map(([id, label]) =>
+                  `<button type="button" class="seg-btn" style="flex:1;" data-edit-style="${id}" aria-pressed="${clip.style === id}">${label}</button>`
+                ).join("")}
+              </div>
+            </div>
+            <div class="field-block">
+              <div class="field-label-row"><span>字号大小</span><span class="field-value tabular">${clip.fontSize} px</span></div>
+              <input class="field-range" type="range" min="16" max="34" value="${clip.fontSize}" data-edit="fontSize" aria-label="字号大小" />
+            </div>
+          `;
+        } else if (clip.kind === "graphic") {
+          fieldsHtml = `
+            <div class="field-block">
+              <div class="field-label-row"><span>主标题</span></div>
+              <input class="field-input" id="edit-gfx-title" type="text" value="${clip.title}" aria-label="主标题" />
+            </div>
+            <div class="field-block">
+              <div class="field-label-row"><span>副标题</span></div>
+              <input class="field-input" id="edit-gfx-sub" type="text" value="${clip.subtitle}" aria-label="副标题" />
+            </div>
+            <div class="field-block">
+              <div class="field-label-row"><span>强调色</span></div>
+              <div class="swatch-row">
+                ${[["emerald", "#2bd49a", "翠绿"], ["blue", "#3b82f6", "天蓝"], ["amber", "#f59e0b", "琥珀"], ["white", "#f8fafc", "素白"]].map(([k, col, label]) =>
+                  `<button type="button" class="swatch-btn" style="background:${col};" data-edit-accent="${k}" aria-pressed="${clip.accent === k}" aria-label="${label}" title="${label}"></button>`
+                ).join("")}
+              </div>
+            </div>
+          `;
+        } else {
+          fieldsHtml = `
+            <div class="field-block">
+              <div class="field-label-row"><span>轨道音量</span><span class="field-value tabular">${clip.volume}%</span></div>
+              <input class="field-range" type="range" min="0" max="120" value="${clip.volume}" data-edit="volume" aria-label="轨道音量" />
+            </div>
+            <div class="field-block">
+              <div class="field-label-row"><span>人声自动闪避</span></div>
+              <button type="button" class="btn-secondary" id="edit-ducking-btn" aria-pressed="${Boolean(clip.ducking)}" style="justify-content:space-between;">
+                <span>自动压低背景音量</span>
+                <span class="clip-kind-tag">${clip.ducking ? "已启用" : "已关闭"}</span>
+              </button>
+            </div>
+          `;
+        }
+
+        inspectorBody.innerHTML = proTabsHtml + fieldsHtml;
+
+        inspectorBody.querySelectorAll("[data-pro-tab]").forEach((btn) => {
+          btn.addEventListener("click", () => {
+            state.proInspectorTab = btn.dataset.proTab;
+            renderInspector();
+          });
+        });
+
+        inspectorBody.querySelectorAll("[data-edit]").forEach((input) => {
+          input.addEventListener("input", () => {
+            const key = input.dataset.edit;
+            clip[key] = Number(input.value);
+            if (key === "fontSize") clip.fontSize = Number(input.value);
+            input.previousElementSibling.querySelector(".field-value").textContent =
+              key === "fontSize" ? `${clip[key]} px` : `${clip[key]}%`;
+            renderPreview();
+          });
+        });
+
+        inspectorBody.querySelectorAll("[data-edit-speed]").forEach((btn) => {
+          btn.addEventListener("click", () => {
+            pushUndo();
+            clip.speed = btn.dataset.editSpeed;
+            renderAll();
+          });
+        });
+
+        inspectorBody.querySelectorAll("[data-edit-style]").forEach((btn) => {
+          btn.addEventListener("click", () => {
+            pushUndo();
+            clip.style = btn.dataset.editStyle;
+            renderAll();
+          });
+        });
+
+        inspectorBody.querySelectorAll("[data-edit-accent]").forEach((btn) => {
+          btn.addEventListener("click", () => {
+            pushUndo();
+            clip.accent = btn.dataset.editAccent;
+            renderAll();
+          });
+        });
+
+        const subInput = $("edit-sub-text");
+        if (subInput) {
+          subInput.addEventListener("input", () => {
+            clip.text = subInput.value;
+            clip.name = subInput.value || "字幕片段";
+            $("inspector-clip-name").textContent = clip.name;
+            renderPreview();
+            renderTimeline();
+          });
+        }
+
+        const gfxTitle = $("edit-gfx-title");
+        if (gfxTitle) {
+          gfxTitle.addEventListener("input", () => {
+            clip.title = gfxTitle.value;
+            renderPreview();
+          });
+        }
+
+        const gfxSub = $("edit-gfx-sub");
+        if (gfxSub) {
+          gfxSub.addEventListener("input", () => {
+            clip.subtitle = gfxSub.value;
+            renderPreview();
+          });
+        }
+
+        const duckBtn = $("edit-ducking-btn");
+        if (duckBtn) {
+          duckBtn.addEventListener("click", () => {
+            pushUndo();
+            clip.ducking = !clip.ducking;
+            renderAll();
+          });
+        }
+      }
+
+      function renderTimeline() {
+        const pps = pxPerSecond();
+        const headerW = trackHeaderWidth();
+        const totalLaneW = Math.max(420, DURATION * pps);
+
+        $("tl-zoom-label").textContent = `${state.zoom.toFixed(1)}x`;
+        $("tl-zoom-slider").value = String(state.zoom);
+        $("tl-snap").setAttribute("aria-pressed", String(state.snap));
+        $("tl-tool-select").setAttribute("aria-pressed", String(state.timelineTool === "select"));
+        $("tl-tool-delete").disabled = !getSelectedClip();
+
+        let ticksHtml = "";
+        for (let s = 0; s <= DURATION; s += 1) {
+          ticksHtml += `<span class="ruler-tick tabular" style="left:${s * pps}px;">${formatTime(s)}</span>`;
+        }
+        rulerTrack.innerHTML = ticksHtml;
+
+        let beatHtml = "";
+        for (let b = 0.5; b < DURATION; b += 0.5) {
+          beatHtml += `<span class="beat-tick" style="left:${b * pps}px;"></span>`;
+        }
+
+        const rowsHtml = state.project.tracks.map((tr) => {
+          const isAudio = tr.kind === "audio" || tr.kind === "music";
+          const clips = state.project.clips.filter((c) => c.trackId === tr.id);
+          const clipsHtml = clips.map((c) => {
+            const left = c.start * pps;
+            const width = Math.max(28, c.duration * pps - 2);
+            const selected = c.id === state.selectedClipId;
+            return `<div class="tl-clip${selected ? " is-selected" : ""}" data-clip-id="${c.id}" data-kind="${c.kind}" style="left:${left}px;width:${width}px;" title="${c.name}">
+              <span class="tl-clip-label">${c.name}</span>
+            </div>`;
+          }).join("");
+
+          const proBtns = state.uiMode === "pro"
+            ? `<button type="button" class="track-mini-btn" title="独奏">S</button><button type="button" class="track-mini-btn" title="锁定">L</button>`
+            : "";
+
+          const primaryToggleIcon = isAudio
+            ? (tr.muted ? "静" : "音")
+            : (tr.hidden ? "隐" : "显");
+
+          return `
+            <div class="track-row" style="width:${headerW + totalLaneW}px;">
+              <div class="track-head">
+                <span class="track-badge">${tr.badge}</span>
+                <span class="track-name">${tr.name}</span>
+                <div class="track-mini-group">
+                  <button type="button" class="track-mini-btn" data-toggle-track="${tr.id}" aria-pressed="${isAudio ? tr.muted : tr.hidden}" title="${isAudio ? "静音轨道" : "隐藏轨道"}">${primaryToggleIcon}</button>
+                  ${proBtns}
+                </div>
+              </div>
+              <div class="track-lane" style="width:${totalLaneW}px;">
+                ${beatHtml}
+                ${clipsHtml}
+              </div>
+            </div>
+          `;
+        }).join("");
+
+        tracksContainer.innerHTML = `<div class="playhead-line" id="playhead-line"></div>${rowsHtml}`;
+        tracksContainer.style.width = `${headerW + totalLaneW}px`;
+        $("playhead-line").style.left = `${headerW + state.playhead * pps}px`;
+
+        tracksContainer.querySelectorAll(".tl-clip").forEach((el) => {
+          el.addEventListener("click", (e) => {
+            e.stopPropagation();
+            setSelectedClip(el.dataset.clipId, true);
+          });
+        });
+
+        tracksContainer.querySelectorAll("[data-toggle-track]").forEach((btn) => {
+          btn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            const tr = state.project.tracks.find((item) => item.id === btn.dataset.toggleTrack);
+            if (!tr) return;
+            if (tr.kind === "audio" || tr.kind === "music") tr.muted = !tr.muted;
+            else tr.hidden = !tr.hidden;
+            renderAll();
+          });
+        });
+      }
+
+      function renderAll() {
+        renderHarness();
+        renderTopbarAndChat();
+        renderLeftRailAndDrawer();
+        renderPreview();
+        renderInspector();
+        renderTimeline();
+      }
+
+      function addMediaClipToTimeline(mediaId) {
+        const media = MEDIA_LIBRARY.find((m) => m.id === mediaId);
+        if (!media) return;
+        pushUndo();
+        const targetTrack = media.kind === "audio" ? "a1" : media.kind === "music" ? "a2" : "v1";
+        const trackClips = state.project.clips.filter((c) => c.trackId === targetTrack);
+        const tailEnd = trackClips.reduce((m, c) => Math.max(m, c.start + c.duration), 0);
+        const start = Math.min(DURATION - 1.2, Math.max(0, tailEnd >= DURATION - 0.5 ? state.playhead : tailEnd));
+        const dur = Math.min(2.2, DURATION - start);
+        const id = `c-added-${state.nextId++}`;
+        state.project.clips.push({
+          id,
+          trackId: targetTrack,
+          kind: media.kind === "image" ? "video" : media.kind,
+          name: media.name,
+          start,
+          duration: dur,
+          scene: "scene-extra",
+          scale: 100,
+          opacity: 100,
+          speed: "1.0x",
+          volume: 85,
+          ducking: true,
+        });
+        state.playhead = start + 0.1;
+        state.selectedClipId = id;
+        renderAll();
+      }
+
+      function addSubtitleAtPlayhead() {
+        pushUndo();
+        const start = Math.min(DURATION - 1.5, state.playhead);
+        const id = `c-sub-${state.nextId++}`;
+        state.project.clips.push({
+          id,
+          trackId: "t1",
+          kind: "text",
+          name: "新增旁白字幕",
+          start,
+          duration: 1.5,
+          text: "新增旁白字幕",
+          style: "highlight",
+          fontSize: 22,
+        });
+        state.selectedClipId = id;
+        renderAll();
+      }
+
+      function applyTemplateCard(tpl) {
+        pushUndo();
+        const start = Math.min(DURATION - 2.0, state.playhead);
+        const id = `c-gfx-${state.nextId++}`;
+        state.project.clips.push({
+          id,
+          trackId: "v2",
+          kind: "graphic",
+          name: tpl.name,
+          start,
+          duration: Math.min(tpl.duration, DURATION - start),
+          title: tpl.title,
+          subtitle: tpl.subtitle,
+          accent: "blue",
+        });
+        state.selectedClipId = id;
+        renderAll();
+      }
+
+      function restoreVersion(verId) {
+        const ver = state.versions.find((v) => v.id === verId);
+        if (!ver?.snapshot) return;
+        pushUndo();
+        state.project = cloneProject(ver.snapshot);
+        state.selectedClipId = null;
+        renderAll();
+        showToast(`已恢复到「${ver.name}」`);
+      }
+
+      function splitAtPlayhead() {
+        const t = state.playhead;
+        let target = getSelectedClip();
+        if (!target || t <= target.start + 0.15 || t >= target.start + target.duration - 0.15) {
+          target = state.project.clips.find(
+            (c) => c.kind === "video" && t > c.start + 0.15 && t < c.start + c.duration - 0.15,
+          );
+        }
+        if (!target) {
+          showToast("请将播放头移到片段中间后再分割");
+          return;
+        }
+        pushUndo();
+        const rightDur = target.start + target.duration - t;
+        target.duration = t - target.start;
+        const rightClip = {
+          ...JSON.parse(JSON.stringify(target)),
+          id: `c-split-${state.nextId++}`,
+          name: `${target.name} 片段 2`,
+          start: t,
+          duration: rightDur,
+        };
+        state.project.clips.push(rightClip);
+        state.selectedClipId = rightClip.id;
+        renderAll();
+      }
+
+      function deleteSelectedClip() {
+        const target = getSelectedClip();
+        if (!target) return;
+        pushUndo();
+        state.project.clips = state.project.clips.filter((c) => c.id !== target.id);
+        state.selectedClipId = null;
+        renderAll();
+      }
+
+      // 播放循环
+      let lastTs = 0;
+      function tickPlayback(ts) {
+        if (state.playing) {
+          if (!lastTs) lastTs = ts;
+          const dt = (ts - lastTs) / 1000;
+          lastTs = ts;
+          state.playhead += dt;
+          if (state.playhead >= DURATION) state.playhead = 0;
+          renderPreview();
+          const headerW = trackHeaderWidth();
+          const pps = pxPerSecond();
+          const ph = $("playhead-line");
+          if (ph) ph.style.left = `${headerW + state.playhead * pps}px`;
+          if (state.uiMode === "pro") {
+            $("meter-l").style.height = `${30 + Math.round(Math.sin(ts / 90) * 28 + 25)}%`;
+            $("meter-r").style.height = `${34 + Math.round(Math.cos(ts / 110) * 26 + 24)}%`;
+          }
+          requestAnimationFrame(tickPlayback);
+        } else {
+          lastTs = 0;
+        }
+      }
+
+      // ─── 绑定交互事件 ───
+      document.querySelectorAll("[data-vp]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          document.querySelectorAll("[data-vp]").forEach((b) => b.setAttribute("aria-pressed", String(b === btn)));
+          state.viewport = btn.dataset.vp;
+          state.clipMode = state.viewport === "canvas" ? "canvas" : "standalone";
+          closeAllPopovers();
+          renderAll();
+        });
+      });
+
+      $("btn-toggle-seams").addEventListener("click", () => {
+        state.highlightSeams = !state.highlightSeams;
+        renderHarness();
+      });
+
+      $("btn-toggle-theme").addEventListener("click", () => {
+        state.theme = state.theme === "dark" ? "light" : "dark";
+        document.documentElement.dataset.theme = state.theme;
+        renderHarness();
+      });
+
+      $("btn-mode-simple").addEventListener("click", () => setUiMode("simple"));
+      $("btn-mode-pro").addEventListener("click", () => setUiMode("pro"));
+      $("btn-expand-pro-params").addEventListener("click", () => setUiMode("pro"));
+
+      $("btn-toggle-drawer").addEventListener("click", () => {
+        state.drawerOpen = !state.drawerOpen;
+        renderAll();
+      });
+
+      $("project-name-input").addEventListener("input", (e) => {
+        state.project.name = e.target.value;
+        $("pro-hostbar-title").textContent = state.project.name;
+      });
+
+      $("btn-undo").addEventListener("click", () => {
+        if (!state.undoStack.length) return;
+        state.redoStack.push(cloneProject(state.project));
+        state.project = state.undoStack.pop();
+        state.selectedClipId = null;
+        renderAll();
+      });
+
+      $("btn-redo").addEventListener("click", () => {
+        if (!state.redoStack.length) return;
+        state.undoStack.push(cloneProject(state.project));
+        state.project = state.redoStack.pop();
+        state.selectedClipId = null;
+        renderAll();
+      });
+
+      $("btn-ai-edit").addEventListener("click", () => {
+        if (state.viewport === "standalone") {
+          state.viewport = "split";
+          document.querySelectorAll("[data-vp]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.vp === "split")));
+          renderAll();
+        }
+        $("chat-prompt-input")?.focus();
+      });
+
+      $("btn-export-trigger").addEventListener("click", (e) => {
+        e.stopPropagation();
+        const panel = $("export-popover");
+        const next = panel.dataset.open !== "true";
+        closeAllPopovers();
+        panel.dataset.open = String(next);
+        $("btn-export-trigger").setAttribute("aria-expanded", String(next));
+      });
+
+      document.querySelectorAll("[data-export-preset]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          closeAllPopovers();
+          if (state.clipMode === "canvas") {
+            showToast(`已静默渲染 ${btn.dataset.exportPreset} 并写回画布节点`);
+          } else {
+            showToast(`已创建导出任务 ${btn.dataset.exportPreset}`);
+          }
+        });
+      });
+
+      $("btn-exit-canvas").addEventListener("click", () => {
+        closeAllPopovers();
+        showToast("已保存草稿并退出画布编辑");
+      });
+
+      $("btn-open-pro-export").addEventListener("click", () => {
+        closeAllPopovers();
+        setUiMode("pro");
+        showToast("已切至专业模式，可调整编码参数");
+      });
+
+      document.querySelectorAll(".rail-item").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const sec = btn.dataset.section;
+          if (state.uiMode === "pro" && state.section === sec && state.viewport !== "narrow") {
+            state.drawerOpen = !state.drawerOpen;
+          } else {
+            state.section = sec;
+            state.drawerOpen = true;
+          }
+          renderAll();
+        });
+      });
+
+      $("playhead-scrubber").addEventListener("input", (e) => {
+        state.playhead = Number(e.target.value);
+        renderPreview();
+        const headerW = trackHeaderWidth();
+        const ph = $("playhead-line");
+        if (ph) ph.style.left = `${headerW + state.playhead * pxPerSecond()}px`;
+      });
+
+      $("btn-play").addEventListener("click", () => {
+        state.playing = !state.playing;
+        renderPreview();
+        if (state.playing) requestAnimationFrame(tickPlayback);
+      });
+
+      $("btn-step-back").addEventListener("click", () => {
+        state.playhead = Math.max(0, state.playhead - 1.0);
+        renderAll();
+      });
+
+      $("btn-step-fwd").addEventListener("click", () => {
+        state.playhead = Math.min(DURATION, state.playhead + 1.0);
+        renderAll();
+      });
+
+      $("btn-mute").addEventListener("click", () => {
+        state.muted = !state.muted;
+        $("btn-mute").setAttribute("aria-pressed", String(state.muted));
+      });
+
+      $("btn-fullscreen-toggle").addEventListener("click", () => {
+        state.viewport = state.viewport === "standalone" ? "split" : "standalone";
+        document.querySelectorAll("[data-vp]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.vp === state.viewport)));
+        $("btn-fullscreen-toggle").setAttribute("aria-pressed", String(state.viewport === "standalone"));
+        renderAll();
+      });
+
+      $("canvas-graphic-overlay").addEventListener("click", () => {
+        const id = $("canvas-graphic-overlay").dataset.clipId;
+        if (id) setSelectedClip(id, true);
+      });
+
+      $("canvas-subtitle-overlay").addEventListener("click", () => {
+        const id = $("canvas-subtitle-overlay").dataset.clipId;
+        if (id) setSelectedClip(id, true);
+      });
+
+      $("btn-close-inspector").addEventListener("click", () => {
+        setSelectedClip(null, false);
+      });
+
+      $("tl-tool-select").addEventListener("click", () => {
+        state.timelineTool = "select";
+        renderTimeline();
+      });
+      $("tl-tool-split").addEventListener("click", splitAtPlayhead);
+      $("tl-tool-delete").addEventListener("click", deleteSelectedClip);
+      $("tl-snap").addEventListener("click", () => {
+        state.snap = !state.snap;
+        renderTimeline();
+      });
+      $("tl-zoom-slider").addEventListener("input", (e) => {
+        state.zoom = Number(e.target.value);
+        renderTimeline();
+      });
+
+      $("tl-add-track-btn").addEventListener("click", (e) => {
+        e.stopPropagation();
+        const p = $("add-track-popover");
+        const next = p.dataset.open !== "true";
+        closeAllPopovers();
+        p.dataset.open = String(next);
+        $("tl-add-track-btn").setAttribute("aria-expanded", String(next));
+      });
+
+      document.querySelectorAll("[data-add-track]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          closeAllPopovers();
+          pushUndo();
+          const kind = btn.dataset.addTrack;
+          const n = state.project.tracks.length + 1;
+          const badge = kind === "video" ? `V${n}` : kind === "text" ? `T${n}` : `A${n}`;
+          const name = kind === "video" ? "叠加视频" : kind === "text" ? "辅助字幕" : "音效";
+          state.project.tracks.push({ id: `tr-${state.nextId++}`, badge, name, kind, hidden: false, muted: false });
+          renderAll();
+        });
+      });
+
+      rulerTrack.addEventListener("mousedown", (e) => {
+        const seek = (clientX) => {
+          const rect = rulerTrack.getBoundingClientRect();
+          const x = Math.max(0, clientX - rect.left);
+          state.playhead = Math.max(0, Math.min(DURATION, x / pxPerSecond()));
+          renderPreview();
+          const ph = $("playhead-line");
+          if (ph) ph.style.left = `${trackHeaderWidth() + state.playhead * pxPerSecond()}px`;
+        };
+        seek(e.clientX);
+        const onMove = (ev) => seek(ev.clientX);
+        const onUp = () => {
+          window.removeEventListener("mousemove", onMove);
+          window.removeEventListener("mouseup", onUp);
+        };
+        window.addEventListener("mousemove", onMove);
+        window.addEventListener("mouseup", onUp);
+      });
+
+      document.querySelectorAll("[data-narrow-target]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          state.narrowPanel = btn.dataset.narrowTarget;
+          document.querySelectorAll("[data-narrow-target]").forEach((b) => b.setAttribute("aria-pressed", String(b === btn)));
+          renderAll();
+        });
+      });
+
+      // AI 快捷联动
+      $("ai-cmd-sub").addEventListener("click", () => {
+        const sub = state.project.clips.find((c) => c.kind === "text");
+        if (!sub) return;
+        pushUndo();
+        sub.fontSize = Math.min(32, sub.fontSize + 4);
+        state.playhead = sub.start + 0.8;
+        setSelectedClip(sub.id, true);
+      });
+
+      $("ai-cmd-graphic").addEventListener("click", () => {
+        const gfx = state.project.clips.find((c) => c.kind === "graphic");
+        state.playhead = 2.4;
+        if (gfx) setSelectedClip(gfx.id, true);
+        else renderAll();
+      });
+
+      $("ai-cmd-export").addEventListener("click", () => {
+        closeAllPopovers();
+        $("export-popover").dataset.open = "true";
+        $("btn-export-trigger").setAttribute("aria-expanded", "true");
+      });
+
+      $("chat-send-btn").addEventListener("click", () => {
+        const inp = $("chat-prompt-input");
+        const val = inp.value.trim();
+        if (!val) return;
+        inp.value = "";
+        showToast(`已收到指令「${val}」`);
+      });
+
+      document.addEventListener("click", () => closeAllPopovers());
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") closeAllPopovers();
+      });
+      window.addEventListener("resize", renderTimeline);
+
+      renderAll();
+    })();
+  </script>
+</body>
+</html>

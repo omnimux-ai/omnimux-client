@@ -46,15 +46,15 @@ export function PreviewTransportControls({ duration, frameRate, playing, lockedR
   };
   const step = (direction: -1 | 1) => seek(stepEditingFrame(useTimelineStore.getState().playheadPosition, direction, frameRate));
   return <div data-preview-playback className="flex items-center">
-    <Button type="button" variant="ghost" size="icon" aria-label={t("Mark in")} title={t("Mark In at playhead (I)")} disabled={disabled} onClick={() => { if (!blocked()) markPreviewRange("in", duration, frameRate); }}><PreviewTransportIcon name="in"/></Button>
+    <Button type="button" variant="ghost" size="icon" data-clip-pro-only="true" aria-label={t("Mark in")} title={t("Mark In at playhead (I)")} disabled={disabled} onClick={() => { if (!blocked()) markPreviewRange("in", duration, frameRate); }}><PreviewTransportIcon name="in"/></Button>
     <Button type="button" variant="ghost" size="icon" aria-label={t("Go to start")} title={t("Go to start (Home)")} disabled={disabled} onClick={() => seek(0)}><PreviewTransportIcon name="start"/></Button>
-    <Button type="button" variant="ghost" size="icon" aria-label={t("Previous frame")} disabled={disabled} onClick={() => step(-1)}><PreviewTransportIcon name="previous"/></Button>
+    <Button type="button" variant="ghost" size="icon" data-clip-pro-only="true" aria-label={t("Previous frame")} disabled={disabled} onClick={() => step(-1)}><PreviewTransportIcon name="previous"/></Button>
     <Button type="button" variant="ghost" size="icon" data-preview-main-play aria-label={lockedReason ?? (playing ? t("Pause") : t("Play"))}
       disabled={disabled} onClick={() => { if (!blocked()) onTogglePlayback(); }}>
       {lockedReason ? <LoaderCircle className="animate-spin"/> : playing ? <Pause fill="currentColor"/> : <PreviewTransportIcon name="play" size={16}/>}
     </Button>
-    <Button type="button" variant="ghost" size="icon" aria-label={t("Next frame")} disabled={disabled} onClick={() => step(1)}><PreviewTransportIcon name="next"/></Button>
+    <Button type="button" variant="ghost" size="icon" data-clip-pro-only="true" aria-label={t("Next frame")} disabled={disabled} onClick={() => step(1)}><PreviewTransportIcon name="next"/></Button>
     <Button type="button" variant="ghost" size="icon" aria-label={t("Go to end")} title={t("Go to end (End)")} disabled={disabled} onClick={() => seek(duration)}><PreviewTransportIcon name="end"/></Button>
-    <Button type="button" variant="ghost" size="icon" aria-label={t("Mark out")} title={t("Mark Out at playhead (O)")} disabled={disabled} onClick={() => { if (!blocked()) markPreviewRange("out", duration, frameRate); }}><PreviewTransportIcon name="out"/></Button>
+    <Button type="button" variant="ghost" size="icon" data-clip-pro-only="true" aria-label={t("Mark out")} title={t("Mark Out at playhead (O)")} disabled={disabled} onClick={() => { if (!blocked()) markPreviewRange("out", duration, frameRate); }}><PreviewTransportIcon name="out"/></Button>
   </div>;
 }
