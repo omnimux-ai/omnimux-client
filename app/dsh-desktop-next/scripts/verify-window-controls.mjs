@@ -177,7 +177,10 @@ try {
       ready: async () => { globalThis.__NEXT_TEST_BOOT__.calls++; return window.__nextTestBootPayload() },
       failed: async message => { globalThis.__NEXT_TEST_BOOT__.failures.push(message) },
     }
-    const mark = () => { document.documentElement.dataset.platform = 'darwin' }
+    const mark = () => {
+      document.removeEventListener('DOMContentLoaded', mark)
+      document.documentElement.dataset.platform = 'darwin'
+    }
     if (document.documentElement) mark()
     else document.addEventListener('DOMContentLoaded', mark, { once: true })
   })
