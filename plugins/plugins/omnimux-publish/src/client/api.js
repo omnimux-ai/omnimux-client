@@ -2,6 +2,7 @@ import { quotaGuard } from 'dsh-ui-kit/quota-request'
 export { isQuotaHttpResult, notifyQuota, quotaGuard } from 'dsh-ui-kit/quota-request'
 
 import { PUBLISH_PROVIDER, isPublishingAccount } from '../account-policy.js'
+import { pickSeatsSummary } from '../shared/social-seat.js'
 /**
  * fetch 封装 over 本插件 Host 路由（/omnimux/publish/*）与 hub 只读面
  * （/omnimux/accounts，hub 权威合并实现）。同源相对路径，Electron 下走
@@ -189,5 +190,43 @@ export function disconnectHubAccount(accountId) {
   return quotaGuard(
     () => publishRequest(`/omnimux/accounts/${encodeURIComponent(id)}?provider=${PUBLISH_PROVIDER}`, { method: 'DELETE' }),
     { capability: 'publish', userInitiated: true },
+  )()
+}
+
+/**
+ * 读取当前社媒账号席位汇总与空席列表（hub `GET /omnimux/accounts/seats`）。
+ * 读取态不触发 quotaGuard 预检，以免余额不足时无法查看席位与点击续费。
+ * @returns {Promise<{ ok: boolean, status: number, body: any }>}
+ */
+export async function getHubSeats() {
+  const result = await publishRequest('/omnimux/accounts/seats')
+  if (!result.ok) return result
+  const summary = pickSeatsSummary(result.body)
+  if (!summary) return { ok: false, status: 502, body: { error: 'invalid seats response' } }
+  return { ...result, body: summary }
+}
+
+/**
+ * 手动续费/激活指定账号的席位（+30 天）。
+ * 跳过本地 quota 缓存预检，以网关真实扣费校验为唯一真源；遇到 402 时由
+ * quotaGuard 自动唤起原生充值弹窗。
+ * @param {string} accountId
+ * @returns {Promise<{ ok: boolean, status: number, body: any }>}
+ */
+export function renewHubAccountSeat(accountId) {
+  if (typeof accountId !== 'string') {
+    return Promise.resolve({ ok: false, status: 400, body: { error: 'id is required' } })
+  }
+  const id = accountId.trim()
+  if (id === '') {
+    return Promise.resolve({ ok: false, status: 400, body: { error: 'id is required' } })
+  }
+  return quotaGuard(
+    () => publishRequest(`/omnimux/accounts/${encodeURIComponent(id)}/renew?provider=${PUBLISH_PROVIDER}`, {
+      method: 'POST',
+      body: { provider: PUBLISH_PROVIDER },
+    }),
+    { capability: 'publish', userInitiated: true },
+    { precheck: false },
   )()
 }

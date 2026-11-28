@@ -25,6 +25,7 @@ publish_list_accounts lists connected social accounts (from the omnimux hub); pu
 publish_submit publishes a draft: validates Direct Post compliance + creator_info (can_post, allowed privacy_level_options, max_video_post_duration_sec), uploads media via presign, then creates one post per account — a single account failing never blocks the others; results land in the per-account subtask ledger.
 TikTok Direct Post compliance (accounts with capabilities.publish_direct=true): settings.tiktok_options MUST explicitly specify privacy_level (no default; must be in creator_info.privacy_level_options) and music_usage_confirmed: true (after creator confirmation). allow_comment / allow_duet / allow_stitch default to false; photo posts omit allow_duet and allow_stitch. If commercial_content: true, at least one of your_brand or branded_content must be true, and branded_content: true cannot use privacy_level "SELF_ONLY". Optional settings.is_aigc: true labels AI-generated content for both video and photo posts.
 publish_get_record returns the record with per-account subtask statuses (refresh:true polls the platform first); publish_retry_task retries one failed account, reusing already uploaded media.
+Social account seat billing: when seat billing is active, expired/unactivated seats are rejected with SOCIAL_SEAT_EXPIRED. Seat renewal is strictly manual (UI-only in Publish -> Accounts) and has no autonomous Agent debit tool — guide the user to renew manually in Publish -> Accounts before retrying.
 Unpublished drafts need neither OmniMux sign-in nor the hub; submitting requires the omnimux hub plugin and an OmniMux sign-in.`
 
 /**
@@ -206,7 +207,7 @@ export function apply(ctx, config = {}) {
   ctx.tools.register({
     name: 'publish_submit',
     description:
-      'One-click publish a draft: validates content, creator_info (can_post, allowed privacy_level_options, max_video_post_duration_sec), and required TikTok Direct Post options (privacy_level + music_usage_confirmed: true; commercial_content sub-options & SELF_ONLY rules), uploads media via presign, then creates one post per account (isolated failures; per-account subtasks land in the ledger immediately). Inlined — resolves when all accounts settled. Requires the omnimux hub plugin and an OmniMux sign-in.',
+      'One-click publish a draft: validates content, account seat status (expired/unactivated seats fail with SOCIAL_SEAT_EXPIRED; seat renewal is manual in Publish -> Accounts), creator_info (can_post, allowed privacy_level_options, max_video_post_duration_sec), and required TikTok Direct Post options (privacy_level + music_usage_confirmed: true; commercial_content sub-options & SELF_ONLY rules), uploads media via presign, then creates one post per account (isolated failures; per-account subtasks land in the ledger immediately). Inlined — resolves when all accounts settled. Requires the omnimux hub plugin and an OmniMux sign-in.',
     parameters: objectParams({
       draft_id: { type: 'string', required: true, description: 'Draft record id (rec_…)' },
     }),

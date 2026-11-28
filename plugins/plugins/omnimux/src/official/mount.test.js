@@ -253,3 +253,36 @@ it('analytics tools declare gateway contract parameter keys and wire valid reque
   )
   assert.equal(requests.length, beforeErrors, 'rejected analytics calls must never hit upstream')
 })
+
+it('does not register any seat renew Agent tool and tags SOCIAL_SEAT_* tool errors cleanly (#412)', async () => {
+  const capture = registerCapture()
+  capture.deps.accountMetaStore = { readForAuthorization: () => ({}) }
+  capture.deps.fetcher = async (url) => {
+    if (String(url).includes('/accounts?')) {
+      return new Response(JSON.stringify({ accounts: [{ id: '12', provider: 'tiktok_direct', platform: 'tiktok' }] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    }
+    return new Response(JSON.stringify({
+      success: false,
+      code: 'SOCIAL_SEAT_EXPIRED',
+      message: '社媒绑定席位已过期，请续费或解绑',
+    }), { status: 409, headers: { 'Content-Type': 'application/json' } })
+  }
+  mountOfficial(capture.ctx, capture.deps)
+
+  assert.equal(capture.names.some((name) => /renew/i.test(name)), false, 'renew must stay UI-Only (no Agent tool)')
+  assert.equal(capture.names.length, 42)
+
+  await assert.rejects(
+    () => capture.registeredTools.omnimux_publish_create.execute({
+      provider: 'tiktok_direct',
+      account_ids: ['12'],
+      content: 'hi',
+    }),
+    (err) => err instanceof OmnimuxError
+      && err.code === 'SOCIAL_SEAT_EXPIRED'
+      && /\[code=SOCIAL_SEAT_EXPIRED\]$/.test(err.message),
+  )
+})

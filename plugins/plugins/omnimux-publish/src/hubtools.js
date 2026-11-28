@@ -17,6 +17,7 @@ import { PUBLISH_PROVIDER } from './account-policy.js'
  */
 import { PublishError } from './publish-error.js'
 import { classifyTikTokError, isSocialTikTokCode, parseSocialTikTokTag } from './shared/tiktok-options.js'
+import { SOCIAL_SEAT_CODES, extractSocialSeatError } from './shared/social-seat.js'
 import { isObject } from './shared/values.js'
 /** @typedef {{ type: 'tool-call', id: string, name: string, arguments: string }} ToolBatchCall */
 /** @typedef {{ calls: ToolBatchCall[], signal: AbortSignal, agent?: unknown }} ToolBatchInput */
@@ -156,6 +157,19 @@ export function createHubChannel(deps = {}) {
         if (socialCandidate.upstream_log_id) details.upstream_log_id = socialCandidate.upstream_log_id
         throw new PublishError(socialCandidate.code, cleanMessage, details)
       }
+      const seatError = extractSocialSeatError({
+        code: infoCode,
+        message: rawMessage,
+        details: info,
+      })
+      if (seatError) {
+        /** @type {Record<string, unknown>} */
+        const details = { code: seatError.code }
+        if (typeof seatError.need_credits === 'number') details.need_credits = seatError.need_credits
+        if (typeof seatError.max_validity_days === 'number') details.max_validity_days = seatError.max_validity_days
+        const errorCode = seatError.code === SOCIAL_SEAT_CODES.QUOTA ? 'quota-exceeded' : seatError.code
+        throw new PublishError(errorCode, seatError.message, details)
+      }
       const structured = `${String(errorInfo.message || '')} ${String(info.code || '')}`
       const errText = `${text}\n${structured}`
       const sourceError = ['invalid-provider', 'account-provider-mismatch', 'post-provider-mismatch']
@@ -203,6 +217,15 @@ export function createHubChannel(deps = {}) {
         if (classified.upstream_code) details.upstream_code = classified.upstream_code
         if (classified.upstream_log_id) details.upstream_log_id = classified.upstream_log_id
         throw new PublishError(classified.code, msg, details)
+      }
+      const seatError = extractSocialSeatError(row)
+      if (seatError) {
+        /** @type {Record<string, unknown>} */
+        const details = { code: seatError.code }
+        if (typeof seatError.need_credits === 'number') details.need_credits = seatError.need_credits
+        if (typeof seatError.max_validity_days === 'number') details.max_validity_days = seatError.max_validity_days
+        const errorCode = seatError.code === SOCIAL_SEAT_CODES.QUOTA ? 'quota-exceeded' : seatError.code
+        throw new PublishError(errorCode, seatError.message, details)
       }
       throw new PublishError('hub-tool-error', msg)
     }

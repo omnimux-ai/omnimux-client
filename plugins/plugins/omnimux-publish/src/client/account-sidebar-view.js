@@ -1,5 +1,13 @@
 import { isPublishingAccount } from '../account-policy.js'
 import { accountPublishMode } from '../shared/tiktok-capabilities.js'
+import {
+  SOCIAL_SEAT_CODES,
+  computeSeatRenewPreview,
+  extractSocialSeatError,
+  formatSeatDate,
+  pickAccountSeat,
+  seatGraceDaysRemaining,
+} from '../shared/social-seat.js'
 /**
  * TikTok 账号侧栏视图的纯函数逻辑（无 DOM / 无 React，可 node --test 直测）。
  * 数据真源：hub `GET /omnimux/accounts?platform=tiktok`（ViewRow 合并），
@@ -146,4 +154,191 @@ export function findNewAccount(baselineIds, rows) {
 export function snapshotAccountIds(rows) {
   const list = Array.isArray(rows) ? rows : []
   return new Set(list.map((row) => String(row?.id)))
+}
+
+const SEAT_EXPIRING_SOON_MS = 5 * 24 * 60 * 60 * 1000
+
+/**
+ * 仅当服务端明确返回 `billing_mode === 'seat'` 时展示席位计费 UI。
+ * @param {import('../shared/social-seat.js').SeatsSummaryView | null | undefined} seats
+ */
+export function isSeatBillingActive(seats) {
+  return Boolean(seats && seats.billing_mode === 'seat')
+}
+
+/**
+ * 是否已达席位上限且无空席可复用。
+ * @param {import('../shared/social-seat.js').SeatsSummaryView | null | undefined} seats
+ */
+export function isSeatCapReached(seats) {
+  if (!isSeatBillingActive(seats)) return false
+  const vacant = typeof seats.seats_vacant === 'number' ? seats.seats_vacant : 0
+  const purchased = typeof seats.seats_purchased === 'number' ? seats.seats_purchased : 0
+  const cap = typeof seats.seats_cap === 'number' ? seats.seats_cap : 0
+  return vacant === 0 && cap > 0 && purchased >= cap
+}
+
+/**
+ * 授权弹窗 1 行计费提示判定（纯逻辑，仅 `billing_mode === 'seat'` 返回非空）。
+ * @param {import('../shared/social-seat.js').SeatsSummaryView | null | undefined} seats
+ * @returns {{
+ *   kind: 'vacantSwappable' | 'vacantSameOnly' | 'capReached' | 'newSeat',
+ *   tone: 'success' | 'warn' | 'error' | 'info',
+ *   blocked: boolean,
+ *   priceCredits: number,
+ *   purchased: number,
+ *   cap: number,
+ * } | null}
+ */
+export function authorizeSeatNotice(seats) {
+  if (!isSeatBillingActive(seats)) return null
+  const priceCredits = typeof seats.seat_price_credits === 'number' && seats.seat_price_credits > 0
+    ? seats.seat_price_credits
+    : 20
+  const purchased = typeof seats.seats_purchased === 'number' ? seats.seats_purchased : 0
+  const cap = typeof seats.seats_cap === 'number' ? seats.seats_cap : 20
+  const vacant = typeof seats.seats_vacant === 'number' ? seats.seats_vacant : 0
+  if (vacant > 0) {
+    const vacantList = Array.isArray(seats.vacant_seats) ? seats.vacant_seats : []
+    const allSameOnly = vacantList.length > 0 && vacantList.every((entry) => entry.same_account_only === true)
+    return {
+      kind: allSameOnly ? 'vacantSameOnly' : 'vacantSwappable',
+      tone: allSameOnly ? 'warn' : 'success',
+      blocked: false,
+      priceCredits,
+      purchased,
+      cap,
+    }
+  }
+  if (isSeatCapReached(seats)) {
+    return {
+      kind: 'capReached',
+      tone: 'error',
+      blocked: true,
+      priceCredits,
+      purchased,
+      cap,
+    }
+  }
+  return {
+    kind: 'newSeat',
+    tone: 'info',
+    blocked: false,
+    priceCredits,
+    purchased,
+    cap,
+  }
+}
+
+/**
+ * 单个账号行的席位展示投影（纯逻辑，无 DOM/React）。
+ * @param {Record<string, unknown> | null | undefined} row
+ * @param {number} [nowMs]
+ */
+export function accountSeatDisplay(row, nowMs = Date.now()) {
+  const seat = pickAccountSeat(row?.seat)
+  if (!seat) return null
+  const expiresDate = formatSeatDate(seat.expires_at)
+  const expiresMs = seat.expires_at ? Date.parse(seat.expires_at) : NaN
+  const isExpiringSoon = seat.status === 'active'
+    && Number.isFinite(expiresMs)
+    && expiresMs > nowMs
+    && expiresMs - nowMs <= SEAT_EXPIRING_SOON_MS
+  const graceDays = seatGraceDaysRemaining(seat, nowMs)
+  const isRenewLimit = seat.can_renew === false
+    && seat.renew_blocked_reason === SOCIAL_SEAT_CODES.RENEW_LIMIT
+  const priceCredits = typeof seat.price_credits === 'number' && seat.price_credits > 0
+    ? seat.price_credits
+    : 20
+  const swapsRemaining = typeof seat.swaps_remaining === 'number' ? seat.swaps_remaining : 0
+  return {
+    status: seat.status,
+    expiresDate,
+    graceDays,
+    isExpiringSoon,
+    canRenew: seat.can_renew !== false,
+    renewBlockedReason: seat.renew_blocked_reason || '',
+    isRenewLimit,
+    priceCredits,
+    swapsRemaining,
+    preview: computeSeatRenewPreview(seat, nowMs),
+  }
+}
+
+/**
+ * 将席位相关 HTTP 错误体映射为可读本地化文案，未知错误交由 fallback 处理。
+ * @param {(key: string, vars?: Record<string, unknown>) => string} t
+ * @param {unknown} body
+ * @param {number} status
+ * @param {(body: unknown, status?: number) => string} fallback
+ */
+export function seatErrorMessage(t, body, status, fallback) {
+  const obj = body && typeof body === 'object' && !Array.isArray(body)
+    ? /** @type {Record<string, unknown>} */ (body)
+    : null
+  const seatErr = extractSocialSeatError(obj)
+  const isQuota = status === 402
+    || obj?.error === 'quota-exceeded'
+    || seatErr?.code === SOCIAL_SEAT_CODES.QUOTA
+  if (isQuota) {
+    const credits = seatErr?.need_credits ?? (typeof obj?.need_credits === 'number' ? obj.need_credits : 20)
+    return t('acct.seat.err.quota', { credits })
+  }
+  if (seatErr?.code === SOCIAL_SEAT_CODES.CAP) return t('acct.seat.err.cap')
+  if (seatErr?.code === SOCIAL_SEAT_CODES.EXPIRED) return t('acct.seat.err.expired')
+  if (seatErr?.code === SOCIAL_SEAT_CODES.RENEW_LIMIT) {
+    const days = seatErr.max_validity_days ?? 90
+    return t('acct.seat.err.renewLimit', { days })
+  }
+  if (seatErr?.code === SOCIAL_SEAT_CODES.SWAP_LIMIT) return t('acct.seat.err.swapLimit')
+  return fallback(body, status)
+}
+
+/**
+ * 同步防重锁控制席位续费提交（与 createDisconnectController 同范式），防止双击产生重复扣费。
+ * @param {{
+ *   renew: (accountId: unknown) => Promise<{ ok: boolean, status: number, body: unknown }>,
+ *   reload: () => Promise<unknown>,
+ *   isMounted: () => boolean,
+ *   isNeedsLogin: (result: { ok: boolean, status: number, body: unknown }) => boolean,
+ *   formatError: (body: unknown, status: number) => string,
+ *   onStart: (accountId: string) => void,
+ *   onFailure: (message: string) => void,
+ *   onNeedLogin: () => void,
+ *   onSuccess: () => void,
+ *   onFinally: () => void,
+ * }} options
+ */
+export function createSeatRenewController(options) {
+  let locked = false
+  return {
+    /** @param {unknown} accountId */
+    async confirm(accountId) {
+      if (locked) return
+      locked = true
+      const displayId = typeof accountId === 'string' ? accountId : ''
+      if (options.isMounted()) options.onStart(displayId)
+      try {
+        const result = await options.renew(accountId)
+        if (!options.isMounted()) return
+        if (options.isNeedsLogin(result)) {
+          options.onNeedLogin()
+          return
+        }
+        if (!result.ok) {
+          options.onFailure(options.formatError(result.body, result.status))
+          return
+        }
+        options.onSuccess()
+        if (options.isMounted()) await options.reload()
+      } catch (caught) {
+        if (options.isMounted()) {
+          options.onFailure(caught instanceof Error ? caught.message : String(caught))
+        }
+      } finally {
+        locked = false
+        if (options.isMounted()) options.onFinally()
+      }
+    },
+  }
 }

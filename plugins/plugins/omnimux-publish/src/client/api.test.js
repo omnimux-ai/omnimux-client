@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import { connectTikTokAccount, disconnectHubAccount, errorText, listHubAccounts } from './api.js'
+import { connectTikTokAccount, disconnectHubAccount, errorText, getHubSeats, listHubAccounts, renewHubAccountSeat } from './api.js'
 
 describe('fixed official account scope', () => {
   it('filters same-name accounts and ignores a caller-supplied source override', async () => {
@@ -100,4 +100,54 @@ describe('disconnectHubAccount', () => {
       }
     })
   }
+})
+
+describe('getHubSeats & renewHubAccountSeat (#412)', () => {
+  it('fetches /omnimux/accounts/seats and whitelists the billing summary', async () => {
+    const originalFetch = globalThis.fetch
+    let seenUrl = ''
+    globalThis.fetch = async (path) => {
+      seenUrl = String(path)
+      return new Response(JSON.stringify({
+        billing_mode: 'seat',
+        seats_purchased: 2,
+        seats_occupied: 1,
+        seats_vacant: 1,
+        seats_cap: 20,
+        seat_price_credits: 20,
+        vacant_seats: [{ id: 9, expires_at: '2026-12-27T00:00:00Z', swaps_remaining: 2, same_account_only: false }],
+      }), { status: 200 })
+    }
+    try {
+      const res = await getHubSeats()
+      assert.equal(seenUrl, '/omnimux/accounts/seats')
+      assert.equal(res.ok, true)
+      assert.equal(res.body.billing_mode, 'seat')
+      assert.equal(res.body.seats_vacant, 1)
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+
+  it('posts /omnimux/accounts/:id/renew?provider=tiktok_direct and rejects invalid ids without fetch', async () => {
+    const originalFetch = globalThis.fetch
+    const seen = []
+    globalThis.fetch = async (path, init) => {
+      seen.push({ path: String(path), method: init?.method, body: init?.body })
+      return new Response(JSON.stringify({ account_id: 'a/b', seat: { status: 'active' } }), { status: 200 })
+    }
+    try {
+      const ok = await renewHubAccountSeat('a/b')
+      assert.equal(ok.ok, true)
+      assert.equal(seen[0].path, '/omnimux/accounts/a%2Fb/renew?provider=tiktok_direct')
+      assert.equal(seen[0].method, 'POST')
+      assert.deepEqual(JSON.parse(seen[0].body), { provider: 'tiktok_direct' })
+
+      const bad = await renewHubAccountSeat('   ')
+      assert.deepEqual(bad, { ok: false, status: 400, body: { error: 'id is required' } })
+      assert.equal(seen.length, 1)
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
 })

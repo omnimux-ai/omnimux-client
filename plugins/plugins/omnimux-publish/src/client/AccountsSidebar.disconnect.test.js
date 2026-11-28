@@ -142,7 +142,8 @@ describe('AccountsSidebar disconnect interaction', () => {
       assert.deepEqual(calls.filter((call) => call.method === 'DELETE'), [
         { path: '/omnimux/accounts/second%2Fid?provider=tiktok_direct', method: 'DELETE' },
       ])
-      assert.equal(calls.filter((call) => call.method === 'GET').length, 2)
+      assert.equal(calls.filter((call) => call.method === 'GET' && call.path.startsWith('/omnimux/accounts?')).length, 2)
+      assert.equal(calls.filter((call) => call.method === 'GET' && call.path === '/omnimux/accounts/seats').length, 2)
     } finally {
       await act(async () => { root.unmount() })
       globalThis.fetch = originalFetch
