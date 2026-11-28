@@ -65,7 +65,7 @@ export function DesktopVersionControl({
           variant="outline"
           onClick={runCheck}
         >
-          <RefreshCw aria-hidden="true" />
+          <RefreshCw aria-hidden="true" className={checking ? 'dshDesktopSpin' : undefined} />
           <span>{t(checking ? 'checkingForUpdates' : 'checkForUpdates')}</span>
         </Button>
         {failed && <span className="dshDesktopVersionCheckError" role="alert">{t('checkForUpdatesError')}</span>}

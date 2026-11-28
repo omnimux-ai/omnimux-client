@@ -5,6 +5,28 @@
 export const PRESETS_STYLE_ID = 'omnimux-creative-presets-style'
 
 export const PRESETS_CSS = `
+:root {
+  --omnimux-motion-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --omnimux-motion-ease-spatial: cubic-bezier(0.32, 0.72, 0, 1);
+  --omnimux-motion-ease-exit: cubic-bezier(0.32, 0, 0.67, 0);
+  --omnimux-motion-ease-linear: linear;
+  --omnimux-motion-dur-press: 90ms;
+  --omnimux-motion-dur-fast: 140ms;
+  --omnimux-motion-dur-base: 200ms;
+  --omnimux-motion-dur-sheet: 260ms;
+  --omnimux-motion-press-scale: 0.96;
+  --omnimux-motion-press-scale-subtle: 0.985;
+}
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --omnimux-motion-dur-press: 0ms;
+    --omnimux-motion-dur-fast: 0ms;
+    --omnimux-motion-dur-base: 0ms;
+    --omnimux-motion-dur-sheet: 0ms;
+    --omnimux-motion-press-scale: 1;
+    --omnimux-motion-press-scale-subtle: 1;
+  }
+}
 /* 创意预设模态框整体微调 */
 .omnimux-creative-presets-modal .omnimux-split-modal-inner {
   max-width: 1200px;
@@ -505,13 +527,17 @@ export const PRESETS_CSS = `
   align-items: center;
   justify-content: center;
   background: var(--dsw-alias-bg-mask-1);
-  backdrop-filter: blur(4px);
   padding: 24px;
-  animation: omnimux-dimension-fade-in 150ms cubic-bezier(0.16, 1, 0.3, 1);
+  animation: omnimux-dimension-fade-in var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
 }
 
 @keyframes omnimux-dimension-fade-in {
-  from { opacity: 0; transform: scale(0.98); }
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes omnimux-dimension-card-in {
+  from { opacity: 0; transform: scale(0.97); }
   to { opacity: 1; transform: scale(1); }
 }
 
@@ -527,6 +553,7 @@ export const PRESETS_CSS = `
   box-shadow: var(--dsw-alias-shadow-lg, none);
   overflow: hidden;
   position: relative;
+  animation: omnimux-dimension-card-in var(--omnimux-motion-dur-base, 200ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
 }
 
 .omnimux-dimension-modal-header {
@@ -661,7 +688,9 @@ export const PRESETS_CSS = `
   color: var(--dsw-alias-label-secondary);
   cursor: pointer;
   flex-shrink: 0;
-  transition: all 140ms ease;
+  transition: background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              border-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 
 .omnimux-dimension-tab-scroll-btn:hover {
@@ -881,7 +910,9 @@ export const PRESETS_CSS = `
   background: var(--dsw-alias-bg-layer-2);
   color: var(--dsw-alias-label-primary);
   font-size: 11px;
-  transition: all 120ms ease;
+  transition: border-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
   user-select: none;
 }
 
@@ -927,6 +958,27 @@ export const PRESETS_CSS = `
 .omnimux-composer-chip-remove:hover {
   background: var(--dsw-alias-bg-layer-3);
   color: var(--dsw-alias-state-error-primary);
+}
+@media (prefers-reduced-motion: reduce) {
+  .omnimux-dimension-modal-overlay,
+  .omnimux-dimension-modal-container {
+    animation: none;
+  }
+  .omnimux-preset-field-card,
+  .omnimux-preset-blueprint-row,
+  .omnimux-preset-chip,
+  .omnimux-preset-custom-chip,
+  .omnimux-preset-card-img,
+  .omnimux-preset-card-box,
+  .omnimux-preset-clear-btn,
+  .omnimux-preset-confirm-btn,
+  .omnimux-dimension-tab,
+  .omnimux-dimension-tab-scroll-btn,
+  .omnimux-dimension-search-input,
+  .omnimux-composer-presets-trigger,
+  .omnimux-composer-preset-chip {
+    transition: none !important;
+  }
 }
 `
 

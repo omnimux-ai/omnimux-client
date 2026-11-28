@@ -124,6 +124,7 @@ export function CanvasRelinkDialog({
   const mediaItems = useProjectStore((s) => s.project.mediaLibrary.items);
 
   const [loadState, setLoadState] = useState<LoadState>({ status: "loading" });
+  const [lastReport, setLastReport] = useState<ReconcileReport | null>(null);
   const [reloadTick, setReloadTick] = useState(0);
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [rowErrors, setRowErrors] = useState<Record<string, string>>({});
@@ -159,6 +160,7 @@ export function CanvasRelinkDialog({
     try {
       const report = await inspect();
       if (controller.signal.aborted) return;
+      setLastReport(report);
       setLoadState({ status: "ready", report });
       setSelectedCandidates((prev) => {
         const next = { ...prev };
@@ -176,6 +178,7 @@ export function CanvasRelinkDialog({
       });
     } catch (error) {
       if (controller.signal.aborted) return;
+      setLastReport(null);
       setLoadState({
         status: "error",
         message: error instanceof Error ? error.message : tRef.current("Could not inspect canvas media sources."),
@@ -188,6 +191,7 @@ export function CanvasRelinkDialog({
       abortRef.current?.abort();
       abortRef.current = null;
       setBusyKey(null);
+      setLastReport(null);
       return;
     }
     void loadReport();
@@ -201,7 +205,8 @@ export function CanvasRelinkDialog({
     [mediaItems],
   );
 
-  const report = loadState.status === "ready" ? loadState.report : null;
+  const isRefreshing = loadState.status === "loading";
+  const report = loadState.status === "ready" ? loadState.report : loadState.status === "loading" ? lastReport : null;
 
   const classified = useMemo(() => {
     if (!report) {
@@ -544,8 +549,14 @@ export function CanvasRelinkDialog({
               <Button
                 size="xs"
                 variant="outline"
-                disabled={busyKey !== null}
-                leadingIcon={<RefreshCw size={12} />}
+                disabled={busyKey !== null || isRefreshing}
+                leadingIcon={
+                  <RefreshCw
+                    size={12}
+                    className={isRefreshing ? "clip-relink-refresh-icon is-spinning" : "clip-relink-refresh-icon"}
+                    aria-hidden="true"
+                  />
+                }
                 onClick={() => setReloadTick((n) => n + 1)}
               >
                 {t("Refresh")}
@@ -554,7 +565,7 @@ export function CanvasRelinkDialog({
                 <Button
                   size="xs"
                   variant="primary"
-                  disabled={busyKey !== null}
+                  disabled={busyKey !== null || isRefreshing}
                   onClick={() => void runAutoRecoverAll()}
                 >
                   {busyKey === "__auto__"
@@ -566,9 +577,10 @@ export function CanvasRelinkDialog({
           </div>
         )}
 
-        <div className="clip-relink-body" aria-busy={loadState.status === "loading"}>
-          {loadState.status === "loading" ? (
+        <div className="clip-relink-body" aria-busy={isRefreshing}>
+          {loadState.status === "loading" && !report ? (
             <div className="clip-relink-message" role="status">
+              <RefreshCw size={14} className="clip-relink-refresh-icon is-spinning" aria-hidden="true" />
               <span>{t("Inspecting canvas upstream sources…")}</span>
             </div>
           ) : loadState.status === "error" ? (

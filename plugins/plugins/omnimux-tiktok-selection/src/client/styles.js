@@ -139,9 +139,13 @@ export const STYLES = `
   padding: 10px 12px;
   vertical-align: middle;
   border-bottom: 1px solid var(--dsw-alias-border-l2, var(--dsw-alias-border-subtle));
+  transition: background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .omnimux-ttsel-table tr:last-child td {
   border-bottom: none;
+}
+.omnimux-ttsel-table tbody tr:hover td {
+  background: var(--dsw-alias-interactive-bg-hover);
 }
 .omnimux-ttsel-num {
   font-variant-numeric: tabular-nums;
@@ -193,6 +197,15 @@ export const STYLES = `
   flex-direction: column;
   gap: 6px;
   font: inherit;
+  transition: background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              border-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              transform var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+}
+.omnimux-ttsel-step:hover {
+  border-color: var(--dsw-alias-border-l3, var(--dsw-alias-border-l2));
+}
+.omnimux-ttsel-step:active {
+  transform: scale(var(--omnimux-motion-press-scale-subtle, 0.985));
 }
 .omnimux-ttsel-step[data-active="true"] {
   border-color: var(--dsw-alias-brand-primary);
@@ -238,6 +251,7 @@ export const STYLES = `
   display: flex;
   flex-direction: column;
   gap: 4px;
+  animation: omnimux-ttsel-popover-enter var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
 }
 .omnimux-ttsel-menu-item {
   display: flex;
@@ -247,6 +261,7 @@ export const STYLES = `
   border-radius: 6px;
   font-size: 13px;
   cursor: pointer;
+  transition: background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .omnimux-ttsel-menu-item:hover {
   background: var(--dsw-alias-interactive-bg-hover, var(--dsw-alias-bg-hover));
@@ -319,6 +334,8 @@ export const STYLES = `
   color: var(--dsw-alias-label-primary);
   box-shadow: var(--dsw-specific-shadow-popover, var(--dsw-shadow-popover));
   font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  animation: omnimux-ttsel-toast-enter var(--omnimux-motion-dur-base, 200ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
 }
 .omnimux-ttsel-error-banner {
   padding: 10px 12px;
@@ -327,6 +344,15 @@ export const STYLES = `
   background: var(--dsw-alias-bg-secondary, var(--dsw-alias-bg-subtle));
   color: var(--dsw-alias-state-danger, var(--dsw-alias-label-primary));
   font-size: 13px;
+  animation: omnimux-ttsel-toast-enter var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
+}
+@keyframes omnimux-ttsel-popover-enter {
+  from { opacity: 0.94; transform: translateY(-4px) scale(0.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes omnimux-ttsel-toast-enter {
+  from { opacity: 0.94; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 @media (max-width: 820px) {
   .omnimux-ttsel-tabs-wrap,
@@ -339,6 +365,21 @@ export const STYLES = `
   }
   .omnimux-ttsel-kv-grid {
     grid-template-columns: 1fr;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .omnimux-ttsel-menu,
+  .omnimux-ttsel-toast,
+  .omnimux-ttsel-error-banner {
+    animation: none;
+  }
+  .omnimux-ttsel-table td,
+  .omnimux-ttsel-step,
+  .omnimux-ttsel-menu-item {
+    transition: none;
+  }
+  .omnimux-ttsel-step:active {
+    transform: none;
   }
 }
 `

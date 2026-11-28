@@ -19,6 +19,7 @@ const SHEET = `
   padding: 2px 0; border: 0; background: transparent; text-align: left;
   color: var(--dsw-alias-label-secondary); font: inherit; font-size: 12px; line-height: 20px;
   cursor: pointer;
+  transition: color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .dshview-head:hover { color: var(--dsw-alias-label-primary); }
 .dshview-icon { flex: none; display: inline-flex; color: var(--dsw-alias-label-secondary); }
@@ -39,11 +40,16 @@ const SHEET = `
   border: 1px solid var(--dsw-alias-border-l1);
   background: var(--dsw-alias-bg-layer-1);
   min-width: 0; overflow: hidden;
+  animation: dshview-enter var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
 }
 
 .dshview-imageButton {
   display: block; padding: 0; border: 0; background: transparent; cursor: zoom-in;
   line-height: 0; max-width: 100%;
+  transition: transform var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+}
+.dshview-imageButton:active {
+  transform: scale(var(--omnimux-motion-press-scale-subtle, 0.985));
 }
 .dshview-image {
   display: block; max-width: 100%; max-height: 420px; width: auto; height: auto;
@@ -79,10 +85,16 @@ const SHEET = `
   align-self: flex-start; padding: 4px 10px; cursor: pointer; font: inherit; font-size: 12px;
   border: 1px solid var(--dsw-alias-border-l1); border-radius: 8px;
   background: transparent; color: var(--dsw-alias-state-error-primary);
+  transition: background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              border-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              transform var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
+.dshview-retry:hover { background: var(--dsw-alias-bg-layer-2); }
+.dshview-retry:active { transform: scale(var(--omnimux-motion-press-scale, 0.96)); }
 .dshview-link {
   align-self: flex-start; font-size: 12px; color: var(--dsw-alias-brand-primary);
   text-decoration: none;
+  transition: opacity var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .dshview-link:hover { text-decoration: underline; }
 
@@ -90,9 +102,38 @@ const SHEET = `
   position: fixed; inset: 0; z-index: 2000; display: flex;
   align-items: center; justify-content: center;
   padding: 32px; background: var(--dsw-alias-bg-mask-1); cursor: zoom-out;
+  animation: dshview-enter var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
 }
 .dshview-lightboxImage {
   max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 4px;
+  animation: dshview-zoom var(--omnimux-motion-dur-base, 200ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
+}
+
+@keyframes dshview-enter {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes dshview-zoom {
+  from { opacity: 0.94; transform: scale(0.975); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dshview-body,
+  .dshview-lightbox,
+  .dshview-lightboxImage {
+    animation: none;
+  }
+  .dshview-head,
+  .dshview-imageButton,
+  .dshview-retry,
+  .dshview-link {
+    transition: none;
+  }
+  .dshview-imageButton:active,
+  .dshview-retry:active {
+    transform: none;
+  }
 }
 `
 

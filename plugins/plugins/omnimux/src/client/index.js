@@ -55,6 +55,7 @@ import { readActiveSkill, subscribeSkillChanged } from './composer-add/skill-eve
 import { findReplicateAttachment, shouldReleaseReplicateAttachments } from './session-guide/trending/replicate-linkage.js'
 import { installGlobalReferenceApi } from './reference/index.ts'
 import * as primitives from '@deepseek-ai/dsh-client-ui-primitives'
+import { ensureMotionTokens } from 'dsh-ui-kit'
 
 export const name = 'omnimux'
 export const inject = ['slots', 'locale']
@@ -95,6 +96,7 @@ export function apply(ctx) {
   // never setState, never block apply().
   void getStatusCached().catch(() => {})
   ctx.effect?.(() => {
+    ensureMotionTokens()
     injectHubStyles()
     return () => { document.getElementById(STYLES_ID)?.remove() }
   }, 'omnimux: hub client styles')

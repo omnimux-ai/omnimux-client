@@ -1,6 +1,6 @@
 import React, { memo, useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useViewport } from '@xyflow/react';
-import { ChevronDown, ChevronUp, Ungroup } from 'lucide-react';
+import { ChevronDown, Ungroup } from 'lucide-react';
 import { useT } from '../../../i18n';
 import { stopToolbarNativeEvent } from '../toolbarPointerGuard';
 import {
@@ -122,7 +122,13 @@ export const GroupHeader: React.FC<GroupHeaderProps> = memo(({
         onClick={handleChevronClick}
         title={isCollapsed ? t('group.expand') : t('group.collapse')}
       >
-        {isCollapsed ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+        <ChevronDown
+          size={14}
+          style={{
+            transform: isCollapsed ? 'rotate(180deg)' : 'rotate(0deg)',
+            transition: 'transform var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1))',
+          }}
+        />
       </button>
       {selected && (
         <button

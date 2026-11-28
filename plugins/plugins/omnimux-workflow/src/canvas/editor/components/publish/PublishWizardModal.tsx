@@ -28,6 +28,7 @@ import {
 } from 'lucide-react';
 import { CustomModal, toast } from '../../../ui';
 import { useT } from '../../../i18n';
+import { usePrefersReducedMotion } from '../../hooks/usePrefersReducedMotion';
 import {
   analyzeWorkflowInputs,
   generateFormConfig,
@@ -151,6 +152,7 @@ export const PublishWizardModal: React.FC<PublishWizardModalProps> = memo(({
 }) => {
   // 1. Run pure topology analysis on workflow graph
   const t = useT();
+  const prefersReducedMotion = usePrefersReducedMotion();
   const analysis = useMemo(() => {
     if (!isOpen) return null;
     return analyzeWorkflowInputs(nodes, edges, catalog || undefined);
@@ -549,7 +551,9 @@ export const PublishWizardModal: React.FC<PublishWizardModalProps> = memo(({
                   borderRadius: '50%',
                   background: 'var(--dsw-alias-label-primary, #ffffff)',
                   transform: isExposed ? 'translateX(16px)' : 'translateX(0)',
-                  transition: 'transform 140ms ease',
+                  transition: prefersReducedMotion
+                    ? 'none'
+                    : 'transform var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-spatial, cubic-bezier(0.32, 0.72, 0, 1))',
                 }}
               />
             </button>

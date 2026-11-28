@@ -214,7 +214,11 @@ export const AssetsDrawer: React.FC<AssetsDrawerProps> = ({
     }
     const el = document.getElementById(nodeId) || document.querySelector(`[data-id="${nodeId}"]`);
     if (!el) return;
-    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    const behavior: ScrollBehavior = typeof window !== 'undefined'
+      && window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches
+      ? 'auto'
+      : 'smooth';
+    el.scrollIntoView({ behavior, block: 'center' });
     el.classList.add('highlight-pulse');
     setTimeout(() => el.classList.remove('highlight-pulse'), 1800);
   };

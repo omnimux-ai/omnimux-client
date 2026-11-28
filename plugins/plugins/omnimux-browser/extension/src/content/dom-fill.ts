@@ -88,8 +88,11 @@ function pulseHighlightElement(element: HTMLElement) {
     const originalOutline = element.style.outline
     const originalTransition = element.style.transition
     const originalShadow = element.style.boxShadow
+    const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches ?? false
 
-    element.style.transition = 'outline 0.2s ease, box-shadow 0.2s ease'
+    element.style.transition = reducedMotion
+      ? 'none'
+      : 'outline var(--omnimux-motion-dur-base, 200ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), box-shadow var(--omnimux-motion-dur-base, 200ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1))'
     // 与推特助手填入层同一口径：白色描边 + 深色外圈，浅色/深色页面均可见（design.md 黑白中性，禁紫）
     element.style.outline = '2.5px solid #ffffff'
     element.style.boxShadow = '0 0 0 3px rgba(0, 0, 0, 0.55)'

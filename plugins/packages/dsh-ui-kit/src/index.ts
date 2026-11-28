@@ -141,3 +141,12 @@ export { copyToClipboard } from "./internal/clipboard.ts";
 export { focusFirstDescendant, trapFocus } from "./internal/a11y.ts";
 export { createPortalSafe, resolvePortalContainer } from "./internal/portal.ts";
 export type { PortalContainer } from "./internal/portal.ts";
+
+export { AnimatedNumber } from "./motion/AnimatedNumber.tsx";
+export type { AnimatedNumberProps } from "./motion/AnimatedNumber.tsx";
+export { IconSwap } from "./motion/IconSwap.tsx";
+export type { IconSwapProps } from "./motion/IconSwap.tsx";
+export { ensureMotionTokens, MOTION_TOKENS_CSS, MOTION_VARS } from "./motion/tokens.ts";
+export { getPrefersReducedMotion, usePrefersReducedMotion } from "./motion/usePrefersReducedMotion.ts";
+export { usePresence } from "./motion/usePresence.ts";
+export type { PresencePhase, PresenceState } from "./motion/usePresence.ts";

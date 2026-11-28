@@ -419,7 +419,8 @@ export function useComposerDocking({ hostRef, onUndock } = {}) {
       root.setAttribute(DOCK_OPEN_ATTR, '')
 
       // 仅在主动按钮点击时准备 FLIP 视觉过渡补偿
-      if (card && from && from.width > 0 && from.height > 0) {
+      const reduceMotion = typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      if (!reduceMotion && card && from && from.width > 0 && from.height > 0) {
         const to = card.getBoundingClientRect?.()
         if (to && to.width > 0 && to.height > 0) {
           const dx = Math.round(from.left - to.left)
@@ -548,9 +549,10 @@ export function useComposerDocking({ hostRef, onUndock } = {}) {
       root.removeAttribute(DOCK_OPEN_ATTR)
     }
 
+    const reduceMotion = typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
     // FLIP 释放：仅在按钮点击的主动吸底时执行动画，滚动过程中绝不执行全屏位移！
     let primedAnimCancel = null
-    if (primedFlipRef.current && !isScrollTransitionRef.current) {
+    if (!reduceMotion && primedFlipRef.current && !isScrollTransitionRef.current) {
       const primedCard = primedFlipRef.current
       primedFlipRef.current = null
       const raf = scheduleFrame(() => {
@@ -579,7 +581,7 @@ export function useComposerDocking({ hostRef, onUndock } = {}) {
     }
 
     let cancelAnim = null
-    if (!isScrollTransitionRef.current && currentlyDocked !== shouldDock && card && from && from.width > 0 && from.height > 0) {
+    if (!reduceMotion && !isScrollTransitionRef.current && currentlyDocked !== shouldDock && card && from && from.width > 0 && from.height > 0) {
       const to = card.getBoundingClientRect?.()
       if (to && to.width > 0 && to.height > 0) {
         const dx = Math.round(from.left - to.left)

@@ -589,7 +589,8 @@ export function createMediaTailElement(items: readonly DetectedMedia[], doc: Doc
       const activeThumb = thumbElements[activeIndex];
       if (activeThumb && typeof activeThumb.scrollIntoView === 'function') {
         try {
-          activeThumb.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+          const reducedMotion = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+          activeThumb.scrollIntoView({ block: 'nearest', behavior: reducedMotion ? 'auto' : 'smooth' });
         } catch {}
       }
       updateRailScrollHint();

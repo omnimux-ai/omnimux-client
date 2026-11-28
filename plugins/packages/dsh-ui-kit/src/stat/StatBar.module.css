@@ -43,6 +43,7 @@
   line-height: 28px;
   color: var(--dsw-alias-label-primary);
   letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
 }
 
 .trend {
@@ -52,6 +53,8 @@
   font-size: 12px;
   font-weight: 500;
   line-height: 16px;
+  font-variant-numeric: tabular-nums;
+  transition: color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 
 .trendUp {
@@ -81,4 +84,10 @@
   line-height: 16px;
   color: var(--dsw-alias-label-tertiary);
   margin-top: auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .trend {
+    transition: none;
+  }
 }

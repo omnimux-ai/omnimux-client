@@ -1,5 +1,6 @@
 /* Base container */
 .tabs {
+  position: relative;
   display: inline-flex;
   align-items: center;
   box-sizing: border-box;
@@ -9,6 +10,12 @@
   border: none;
   border-radius: 0;
   box-shadow: none;
+}
+
+.indicator {
+  position: absolute;
+  pointer-events: none;
+  opacity: 0;
 }
 
 /* Pill variant (classic capsule) */
@@ -27,7 +34,32 @@
   border-radius: 6px;
 }
 
+.pill .indicator {
+  top: 2px;
+  left: 0;
+  height: calc(100% - 4px);
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-layer-3);
+  box-shadow: 0 1px 2px var(--dsw-alias-border-l1);
+  transform: translate3d(var(--ind-x, 2px), 0, 0);
+  width: var(--ind-w, 0px);
+  z-index: 0;
+}
+
+.pill.sm .indicator {
+  border-radius: 4px;
+}
+
+.pill[data-indicator="ready"] .indicator {
+  opacity: 1;
+  transition:
+    transform var(--omnimux-motion-dur-base, 200ms) var(--omnimux-motion-ease-spatial, cubic-bezier(0.32, 0.72, 0, 1)),
+    width var(--omnimux-motion-dur-base, 200ms) var(--omnimux-motion-ease-spatial, cubic-bezier(0.32, 0.72, 0, 1));
+}
+
 .pill .tabItem {
+  position: relative;
+  z-index: 1;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -46,9 +78,9 @@
   white-space: nowrap;
   box-sizing: border-box;
   transition:
-    background-color 120ms cubic-bezier(0.16, 1, 0.3, 1),
-    color 120ms cubic-bezier(0.16, 1, 0.3, 1),
-    box-shadow 120ms cubic-bezier(0.16, 1, 0.3, 1);
+    background-color var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+    color var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+    box-shadow var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 
 .pill.sm .tabItem {
@@ -86,6 +118,12 @@
   box-shadow: 0 1px 2px var(--dsw-alias-border-l1);
 }
 
+.pill[data-indicator="ready"] .tabItem.active,
+.pill[data-indicator="ready"] .tabItem.active:hover {
+  background: transparent;
+  box-shadow: none;
+}
+
 .pill .tabItem.active:hover {
   background: var(--dsw-alias-bg-layer-3);
   color: var(--dsw-alias-label-primary);
@@ -103,8 +141,12 @@
   font-size: 11px;
   font-weight: 600;
   line-height: 1;
+  font-variant-numeric: tabular-nums;
   background: var(--dsw-alias-interactive-bg-hover);
   color: var(--dsw-alias-label-secondary);
+  transition:
+    background-color var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+    color var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 
 .pill.sm .badge {
@@ -142,6 +184,23 @@
   gap: 16px;
 }
 
+.underline .indicator {
+  bottom: 0;
+  left: 0;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--dsw-alias-label-primary);
+  transform: translate3d(var(--ind-x, 0px), 0, 0);
+  width: var(--ind-w, 0px);
+}
+
+.underline[data-indicator="ready"] .indicator {
+  opacity: 1;
+  transition:
+    transform var(--omnimux-motion-dur-base, 200ms) var(--omnimux-motion-ease-spatial, cubic-bezier(0.32, 0.72, 0, 1)),
+    width var(--omnimux-motion-dur-base, 200ms) var(--omnimux-motion-ease-spatial, cubic-bezier(0.32, 0.72, 0, 1));
+}
+
 .underline .tabItem {
   position: relative;
   display: inline-flex;
@@ -162,9 +221,7 @@
   cursor: pointer;
   white-space: nowrap;
   box-sizing: border-box;
-  transition:
-    color 120ms cubic-bezier(0.16, 1, 0.3, 1),
-    font-weight 120ms cubic-bezier(0.16, 1, 0.3, 1);
+  transition: color var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 
 .underline.sm .tabItem {
@@ -210,6 +267,10 @@
   border-radius: 1px;
 }
 
+.underline[data-indicator="ready"] .tabItem.active::after {
+  display: none;
+}
+
 .underline .badge {
   display: inline-flex;
   align-items: center;
@@ -222,11 +283,12 @@
   font-size: 11px;
   font-weight: 600;
   line-height: 1;
+  font-variant-numeric: tabular-nums;
   background: var(--dsw-alias-interactive-bg-hover);
   color: var(--dsw-alias-label-secondary);
   transition:
-    background-color 120ms cubic-bezier(0.16, 1, 0.3, 1),
-    color 120ms cubic-bezier(0.16, 1, 0.3, 1);
+    background-color var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+    color var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 
 .underline.sm .badge {
@@ -241,9 +303,36 @@
   color: var(--dsw-alias-label-primary);
 }
 
-/* Shared element styles */
+/* Shared element styles — zero bold-weight horizontal width jitter via CSS ::after (no DOM text duplication) */
 .label {
+  display: inline-block;
+  text-align: center;
   min-width: 0;
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.label[data-label]::after {
+  content: attr(data-label);
+  display: block;
+  height: 0;
+  line-height: 0;
+  visibility: hidden;
+  overflow: hidden;
+  user-select: none;
+  pointer-events: none;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pill[data-indicator="ready"] .indicator,
+  .underline[data-indicator="ready"] .indicator,
+  .pill .tabItem,
+  .underline .tabItem,
+  .pill .badge,
+  .underline .badge {
+    transition: none;
+  }
 }

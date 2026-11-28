@@ -71,7 +71,7 @@ export function Onboarding({ state, locale, bridge }: { state: Pick<DesktopState
       animation.current = slide.current.animate([
         { opacity: current.opacity, transform: current.transform },
         { opacity: 0, transform: `translateX(${-nextDirection * 18}px)` },
-      ], { duration: 180, easing: 'cubic-bezier(.4, 0, 1, 1)', fill: 'forwards' })
+      ], { duration: 140, easing: 'cubic-bezier(0.16, 1, 0.3, 1)', fill: 'forwards' })
       await animation.current.finished.catch(() => {})
     }
     if (!mounted.current) return

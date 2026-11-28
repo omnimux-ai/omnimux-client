@@ -19,3 +19,35 @@
 .copyButtonError {
   color: var(--dsw-alias-state-error-primary);
 }
+
+.labelSlot {
+  display: inline-grid;
+  align-items: center;
+  justify-items: center;
+  vertical-align: middle;
+}
+
+.labelSlot[data-idle-label]::before {
+  content: attr(data-idle-label);
+  grid-area: 1 / 1;
+  visibility: hidden;
+  overflow: hidden;
+  user-select: none;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.labelSlot[data-copied-label]::after {
+  content: attr(data-copied-label);
+  grid-area: 1 / 1;
+  visibility: hidden;
+  overflow: hidden;
+  user-select: none;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.labelCurrent {
+  grid-area: 1 / 1;
+  white-space: nowrap;
+}

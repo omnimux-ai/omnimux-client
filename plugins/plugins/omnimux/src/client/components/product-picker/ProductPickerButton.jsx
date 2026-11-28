@@ -41,7 +41,7 @@ export const PRODUCT_BTN_CSS = `
   outline: none !important;
   white-space: nowrap !important;
   user-select: none !important;
-  transition: background-color 150ms ease, color 150ms ease, box-shadow 150ms ease !important;
+  transition: background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), box-shadow var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) !important;
   max-width: 200px !important;
 }
 
@@ -111,6 +111,9 @@ export const PRODUCT_BTN_CSS = `
 .omnimux-composer-product-btn .omnimux-composer-product-btn__remove svg {
   width: 10px !important;
   height: 10px !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  .omnimux-composer-product-btn { transition: none !important; }
 }
 `;
 

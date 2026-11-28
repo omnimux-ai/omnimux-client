@@ -289,7 +289,8 @@ export function InspirationPostDetail({ item, t, onItemUpdated, onReplicate, rep
   useEffect(() => {
     if (initialTab !== 'deconstruct' && initialTab !== 'analysis') return
     setMobilePane('analysis')
-    analysisSectionRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })
+    const reduceMotion = typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    analysisSectionRef.current?.scrollIntoView?.({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'start' })
   }, [initialTab, postIdentity])
   useEffect(() => {
     if (!image && !drawer) return
@@ -328,7 +329,8 @@ export function InspirationPostDetail({ item, t, onItemUpdated, onReplicate, rep
     const node = videos.current.get(index)
     if (!node) return
     setMobilePane('post')
-    mediaNodes.current.get(index)?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' })
+    const reduceMotion = typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    mediaNodes.current.get(index)?.scrollIntoView?.({ block: 'nearest', behavior: reduceMotion ? 'auto' : 'smooth' })
     node.currentTime = Number(seconds) || 0
     node.play?.().catch(() => {})
     return node

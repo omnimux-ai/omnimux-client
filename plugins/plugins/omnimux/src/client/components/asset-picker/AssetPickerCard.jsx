@@ -170,7 +170,7 @@ export const ASSET_CARD_CSS = `
   display: flex; align-items: center; justify-content: center;
   color: var(--dsw-alias-label-tertiary); overflow: hidden;
   border: 1.5px solid transparent;
-  transition: border-color 0.15s ease, transform 0.15s ease;
+  transition: border-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), transform var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .omx-asset-pick-card:hover .omx-asset-pick-card__thumb { transform: translateY(-2px); }
 .omx-asset-pick-card[data-selected="true"] .omx-asset-pick-card__thumb {
@@ -192,7 +192,7 @@ export const ASSET_CARD_CSS = `
   display: inline-flex; align-items: center; justify-content: center; z-index: 2;
   border: 1.5px solid var(--dsw-alias-border-l4);
   background: var(--dsw-alias-bg-layer-2);
-  transition: background 0.15s ease, border-color 0.15s ease;
+  transition: background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), border-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .omx-asset-pick-card__check[data-selected="true"] {
   border-color: var(--dsw-alias-button-primary-fill);
@@ -228,7 +228,7 @@ export const ASSET_CARD_CSS = `
 .omx-asset-pick-card--add .omx-asset-pick-card__thumb--add {
   border: 1.5px dashed var(--dsw-alias-border-l3);
   background: var(--dsw-alias-bg-layer-2);
-  transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease;
+  transition: border-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), transform var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .omx-asset-pick-card--add:hover .omx-asset-pick-card__thumb--add {
   border-color: var(--dsw-alias-button-primary-fill);
@@ -239,6 +239,13 @@ export const ASSET_CARD_CSS = `
 .omx-asset-pick-card__add-icon {
   display: flex; align-items: center; justify-content: center;
   color: inherit;
+}
+@media (prefers-reduced-motion: reduce) {
+  .omx-asset-pick-card__thumb,
+  .omx-asset-pick-card__check,
+  .omx-asset-pick-card--add .omx-asset-pick-card__thumb--add { transition: none; }
+  .omx-asset-pick-card:hover .omx-asset-pick-card__thumb,
+  .omx-asset-pick-card--add:hover .omx-asset-pick-card__thumb--add { transform: none; }
 }
 `
 

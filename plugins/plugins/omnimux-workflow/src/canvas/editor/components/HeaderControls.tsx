@@ -32,6 +32,7 @@ import { useExecutionStore, type ExecutionUiStatus } from '../../store/execution
 import { useT, type DictKey } from '../../i18n';
 import { CustomDropdown, type DropdownMenuItem } from '../../ui';
 import { stopToolbarNativeEvent } from './toolbarPointerGuard';
+import { usePrefersReducedMotion } from '../hooks/usePrefersReducedMotion';
 
 export type SplitLayoutMode = 'split-left' | 'split-right' | 'canvas-only' | 'chat-only';
 
@@ -76,6 +77,7 @@ const HeaderControls: React.FC<HeaderControlsProps> = ({
   onToggleQueue,
 }) => {
   const t = useT();
+  const prefersReducedMotion = usePrefersReducedMotion();
   const { zoomIn, zoomOut, fitView } = useReactFlow();
   const zoomPercent = useStore(zoomSelector);
 
@@ -89,16 +91,16 @@ const HeaderControls: React.FC<HeaderControlsProps> = ({
   const hasProgress = progress.total > 0;
 
   const handleFitView = useCallback(() => {
-    fitView({ duration: 250, padding: 0.1 });
-  }, [fitView]);
+    fitView({ duration: prefersReducedMotion ? 0 : 250, padding: 0.1 });
+  }, [fitView, prefersReducedMotion]);
 
   const handleZoomIn = useCallback(() => {
-    zoomIn({ duration: 150 });
-  }, [zoomIn]);
+    zoomIn({ duration: prefersReducedMotion ? 0 : 150 });
+  }, [zoomIn, prefersReducedMotion]);
 
   const handleZoomOut = useCallback(() => {
-    zoomOut({ duration: 150 });
-  }, [zoomOut]);
+    zoomOut({ duration: prefersReducedMotion ? 0 : 150 });
+  }, [zoomOut, prefersReducedMotion]);
 
   const layoutMenuItems: DropdownMenuItem[] = [
     {

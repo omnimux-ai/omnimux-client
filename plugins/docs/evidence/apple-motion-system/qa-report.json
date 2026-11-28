@@ -1,0 +1,68 @@
+{
+  "suite": "apple-motion-system",
+  "verifiedAt": "2026-11-28T04:59:09.518Z",
+  "demo": {
+    "desktopLight": {
+      "overflowPx": 0,
+      "easeOut": "cubic-bezier(0.16, 1, 0.3, 1)",
+      "easeSpatial": "cubic-bezier(0.32, 0.72, 0, 1)",
+      "durFast": "calc(140ms * 1)"
+    },
+    "desktopDark": {
+      "overflowPx": 0,
+      "theme": "dark"
+    },
+    "narrowLight": {
+      "overflowPx": 0
+    },
+    "narrowDark": {
+      "overflowPx": 0
+    },
+    "interactions": {
+      "tabWidthDeltaPx": 0,
+      "copyWidthDeltaPx": 0,
+      "fps": 240,
+      "p95Ms": 4.5,
+      "cls": 0
+    },
+    "reducedMotionDurFast": "0ms"
+  },
+  "kitLive": {
+    "tokenStyleInjected": true,
+    "easeOut": "cubic-bezier(0.16, 1, 0.3, 1)",
+    "underlineReady": "ready",
+    "pillReady": "ready",
+    "tabTexts": [
+      "总览12",
+      "云端素材库48",
+      "高级设置"
+    ],
+    "tabWidthDeltaPx": 0,
+    "copyIdleText": "复制指令",
+    "copyCopiedText": "已复制指令",
+    "copyWidthDeltaPx": 0,
+    "phaseOpen": "entered",
+    "phaseExiting": "exiting",
+    "exitingPointerEvents": "none",
+    "phaseInterrupted": "entered",
+    "headerRefreshAnims": 1
+  },
+  "screenshots": [
+    "01-light-desktop-1440.png",
+    "02-dark-desktop-1440.png",
+    "03-light-narrow-390.png",
+    "04-dark-narrow-390.png",
+    "05-dsh-ui-kit-live-components.png"
+  ],
+  "copyButtonAlignment": {
+    "idleWidthPx": 104,
+    "copiedWidthPx": 104,
+    "widthShiftPx": 0,
+    "idleIconLabelDeltaPx": 0.66,
+    "idleSiblingDeltaPx": 0.66,
+    "copiedIconLabelDeltaPx": 0.66,
+    "copiedSiblingDeltaPx": 0.66,
+    "thresholdPx": 1.5,
+    "passed": true
+  }
+}

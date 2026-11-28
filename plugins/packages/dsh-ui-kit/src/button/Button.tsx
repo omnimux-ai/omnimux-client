@@ -7,6 +7,7 @@ import { IconLoadingOutline16 } from "../icons/compat-icons.tsx";
 
 import { cssClass } from "../internal/cssClass.ts";
 import { cx } from "../internal/cx.ts";
+import "../motion/tokens.ts";
 import css from "./Button.module.css";
 
 export type ButtonVariant = "primary" | "secondary" | "ghost" | "outline" | "danger";
@@ -16,6 +17,8 @@ export interface ButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement
   variant?: ButtonVariant;
   size?: ButtonSize;
   loading?: boolean;
+  /** Disable `:active` tactile press scale on dense toolbar/inline controls. */
+  staticScale?: boolean;
   leadingIcon?: ReactNode;
   trailingIcon?: ReactNode;
   type?: "button" | "submit" | "reset";
@@ -44,6 +47,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
     variant = "secondary",
     size = "default",
     loading = false,
+    staticScale = false,
     leadingIcon,
     trailingIcon,
     type = "button",
@@ -60,7 +64,13 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       {...rest}
       ref={ref}
       type={type}
-      className={cx(css.button, VARIANT_CLASS[variant], SIZE_CLASS[size], className)}
+      className={cx(
+        css.button,
+        VARIANT_CLASS[variant],
+        SIZE_CLASS[size],
+        staticScale && css.staticScale,
+        className,
+      )}
       disabled={isDisabled}
       aria-busy={loading || undefined}
       aria-disabled={isDisabled || undefined}
@@ -99,6 +109,7 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(functio
     variant = "ghost",
     size = "default",
     loading = false,
+    staticScale = false,
     type = "button",
     className,
     disabled,
@@ -122,6 +133,7 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(functio
         VARIANT_CLASS[variant],
         SIZE_CLASS[size],
         css.iconOnly,
+        staticScale && css.staticScale,
         className,
       )}
       disabled={isDisabled}
