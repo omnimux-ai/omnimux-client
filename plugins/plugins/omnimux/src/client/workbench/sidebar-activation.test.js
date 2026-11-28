@@ -414,4 +414,32 @@ test('resolveFixedRailState maps Home, Split, Product Stage, Official Panel, and
     signals: { conversationVisible: false },
   })
   assert.deepEqual(productStageState, { railId: 'projects', view: 'business', activeMoreItemId: null, isSplit: false })
+
+  const pinnedClipState = resolveFixedRailState({
+    verdict: { winner: 'row', tabId: 'omnimux-clip:studio', reason: 'focused-tab' },
+    signals: { conversationVisible: false, panelExpanded: true, activeTabKey: 'omnimux-clip:studio' },
+    exploreItems: [{ id: 'clip', tabId: 'omnimux-clip:studio' }],
+    pinnedMoreIds: ['clip'],
+  })
+  assert.deepEqual(pinnedClipState, {
+    railId: 'pinned',
+    pinnedRailId: 'clip',
+    view: 'business',
+    activeMoreItemId: 'clip',
+    isSplit: false,
+  })
+
+  const pinnedScheduleState = resolveFixedRailState({
+    officialPanelId: 'schedules',
+    verdict: { winner: 'none', reason: 'idle' },
+    signals: { conversationVisible: false },
+    pinnedMoreIds: ['panel:schedules'],
+  })
+  assert.deepEqual(pinnedScheduleState, {
+    railId: 'pinned',
+    pinnedRailId: 'panel:schedules',
+    view: 'business',
+    activeMoreItemId: 'schedules',
+    isSplit: false,
+  })
 })

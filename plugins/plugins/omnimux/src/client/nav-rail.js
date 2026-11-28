@@ -18,7 +18,19 @@ import {
   activatePinnedEntry,
   isAlphaEntry,
   resolveExploreMenuItems,
+  subscribeExploreItems,
 } from './sidebar-coordinator.js'
+import {
+  EXPLORE_MORE_PIN_CSS,
+  PIN_FILL_ICON_SVG,
+  PIN_OUTLINE_ICON_SVG,
+  parsePanelPinId,
+  readPinnedMoreIds,
+  resolveOfficialPanelMeta,
+  setPinnedMoreItem,
+  subscribePinnedMoreItems,
+  togglePinnedMoreItem,
+} from './nav-rail-pins.js'
 import { MORE_MENU_SELECTOR } from './sidebar-panel-chrome.js'
 import {
   ensureSidebarToggleTopbar,
@@ -55,6 +67,7 @@ export const NAV_RAIL_VIEW_ATTR = 'data-omnimux-nav-view'
 export const NAV_RAIL_WIDTH_VAR = '--omnimux-nav-rail-width'
 export const NAV_RAIL_WIDTH_PX = 52
 export const NAV_RAIL_MORE_FALLBACK_ID = 'omnimux-nav-rail-more-menu'
+export const NAV_RAIL_PIN_CONTEXT_MENU_ID = 'omnimux-nav-rail-pin-context-menu'
 
 const OFFICIAL_PANEL_IDS = Object.freeze(['plugins', 'schedules'])
 const DESKTOP_SETTINGS_TAB_RE = /^(桌面设置|Desktop settings)$/u
@@ -177,6 +190,7 @@ html:not([data-fullscreen]) body[data-dsh-desktop-platform="darwin"][data-dsh-de
 }
 
 .omnimux-nav-rail-group {
+  flex: none;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -184,13 +198,51 @@ html:not([data-fullscreen]) body[data-dsh-desktop-platform="darwin"][data-dsh-de
   width: 100%;
 }
 
+.omnimux-nav-rail-pinned-section {
+  flex: 0 1 auto;
+  min-height: 0;
+  width: 100%;
+  margin-top: 6px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  overflow: hidden;
+}
+
+.omnimux-nav-rail-pinned-section[hidden] {
+  display: none !important;
+}
+
+.omnimux-nav-rail-pinned-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  padding: 2px 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.omnimux-nav-rail-pinned-list::-webkit-scrollbar {
+  display: none;
+}
+
+.omnimux-nav-rail-pinned-list .omnimux-nav-rail-btn {
+  flex: none;
+}
+
 .omnimux-nav-rail-bottom {
+  flex: none;
   margin-top: auto;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 6px;
   width: 100%;
+  padding-top: 6px;
 }
 
 .omnimux-nav-rail-divider {
@@ -370,10 +422,101 @@ html[${NAV_RAIL_ACTIVE_ATTR}="1"][data-omnimux-conversation-collapsed][${LEFT_CO
   gap: 2px;
 }
 
+#${NAV_RAIL_MORE_FALLBACK_ID} .omnimux-nav-rail-more-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
 #${NAV_RAIL_MORE_FALLBACK_ID} .omnimux-nav-rail-more-item {
+  width: 100%;
   appearance: none;
   border: none;
   border-radius: var(--dsw-radius-sm, 8px);
+  background: transparent;
+  color: inherit;
+  min-height: 32px;
+  padding: 6px 34px 6px 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  line-height: 18px;
+  text-align: left;
+  cursor: pointer;
+}
+
+#${NAV_RAIL_MORE_FALLBACK_ID} .omnimux-nav-rail-more-row:hover .omnimux-nav-rail-more-item,
+#${NAV_RAIL_MORE_FALLBACK_ID} .omnimux-nav-rail-more-item:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+#${NAV_RAIL_MORE_FALLBACK_ID} .omnimux-nav-rail-more-item[aria-current="page"] {
+  background: var(--dsw-alias-interactive-bg-active);
+  font-weight: 500;
+}
+
+#${NAV_RAIL_MORE_FALLBACK_ID} .omnimux-nav-rail-more-pin-btn {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  appearance: none;
+  box-sizing: border-box;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: var(--dsw-radius-sm, 6px);
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+}
+
+#${NAV_RAIL_MORE_FALLBACK_ID} .omnimux-nav-rail-more-row:hover .omnimux-nav-rail-more-pin-btn,
+#${NAV_RAIL_MORE_FALLBACK_ID} .omnimux-nav-rail-more-row:focus-within .omnimux-nav-rail-more-pin-btn,
+#${NAV_RAIL_MORE_FALLBACK_ID} .omnimux-nav-rail-more-row[data-pinned="true"] .omnimux-nav-rail-more-pin-btn {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+#${NAV_RAIL_MORE_FALLBACK_ID} .omnimux-nav-rail-more-row[data-pinned="true"] .omnimux-nav-rail-more-pin-btn {
+  color: var(--dsw-alias-label-secondary);
+}
+
+#${NAV_RAIL_MORE_FALLBACK_ID} .omnimux-nav-rail-more-pin-btn:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+#${NAV_RAIL_PIN_CONTEXT_MENU_ID} {
+  position: fixed;
+  left: calc(var(${NAV_RAIL_WIDTH_VAR}, ${NAV_RAIL_WIDTH_PX}px) + 8px);
+  z-index: 1150;
+  min-width: 140px;
+  box-sizing: border-box;
+  padding: 4px;
+  border-radius: var(--dsw-radius-sm, 10px);
+  border: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-layer-2, var(--dsw-alias-bg-base));
+  color: var(--dsw-alias-label-primary);
+  box-shadow: var(--dsw-shadow-lv2);
+  display: flex;
+  flex-direction: column;
+}
+
+#${NAV_RAIL_PIN_CONTEXT_MENU_ID} .omnimux-nav-rail-pin-context-item {
+  appearance: none;
+  border: none;
+  border-radius: var(--dsw-radius-sm, 6px);
   background: transparent;
   color: inherit;
   min-height: 32px;
@@ -387,14 +530,11 @@ html[${NAV_RAIL_ACTIVE_ATTR}="1"][data-omnimux-conversation-collapsed][${LEFT_CO
   cursor: pointer;
 }
 
-#${NAV_RAIL_MORE_FALLBACK_ID} .omnimux-nav-rail-more-item:hover {
+#${NAV_RAIL_PIN_CONTEXT_MENU_ID} .omnimux-nav-rail-pin-context-item:hover {
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
-#${NAV_RAIL_MORE_FALLBACK_ID} .omnimux-nav-rail-more-item[aria-current="page"] {
-  background: var(--dsw-alias-interactive-bg-active);
-  font-weight: 500;
-}
+${EXPLORE_MORE_PIN_CSS}
 
 #${NAV_RAIL_MORE_FALLBACK_ID} .omnimux-nav-rail-more-sep {
   height: 1px;
@@ -510,11 +650,81 @@ function readOfficialGlobalPanelId(doc) {
   return null
 }
 
+function resolvePinnedRailEntries(doc, exploreItems = resolveExploreMenuItems()) {
+  const pinnedIds = readPinnedMoreIds()
+  if (pinnedIds.length === 0) return []
+  const layout = getWorkbenchLayout()
+  const hasSelectPanel = typeof layout?.selectPanel === 'function'
+  const hasPanelList = Boolean(doc?.querySelector?.('nav[class*="panelList"]'))
+  const byId = new Map()
+  for (const item of exploreItems) {
+    if (item?.id) byId.set(item.id, item)
+  }
+  const resolved = []
+  for (const pinId of pinnedIds) {
+    const panelId = parsePanelPinId(pinId)
+    if (panelId) {
+      if (!OFFICIAL_PANEL_IDS.includes(panelId)) continue
+      const meta = resolveOfficialPanelMeta(panelId, doc)
+      if (!meta.remembered && !meta.inDom && !hasPanelList && !hasSelectPanel) continue
+      resolved.push({ pinId, kind: 'panel', panelId, label: meta.label, iconSvg: meta.iconSvg })
+      continue
+    }
+    const item = byId.get(pinId)
+    if (!item) continue
+    resolved.push({ pinId, kind: 'explore', item, label: item.label, iconSvg: item.iconSvg || '' })
+  }
+  return resolved
+}
+
+function findOfficialPanelTrigger(doc, panelId) {
+  if (!doc?.querySelector) return null
+  const byData = doc.querySelector(
+    `nav[class*="panelList"] [data-entry="${panelId}"] [class*="panelRow"], nav[class*="panelList"] [data-panel-id="${panelId}"] [class*="panelRow"]`,
+  )
+  if (byData) return byData
+  const rows = doc.querySelectorAll?.('nav[class*="panelList"] [class*="panelRow"]:not([aria-haspopup="menu"])') || []
+  const labelRe = panelId === 'schedules'
+    ? /^(自动化任务|自动化|Schedules|Automations)$/i
+    : /^(插件|Plugins)$/i
+  for (const row of rows) {
+    const text = String(row.getAttribute?.('aria-label') || row.textContent || '').trim()
+    if (labelRe.test(text)) return row
+  }
+  return null
+}
+
+function activatePinnedShortcut(doc, entry) {
+  if (!entry) return false
+  if (entry.kind === 'panel') {
+    try {
+      const layout = getWorkbenchLayout()
+      if (typeof layout?.selectPanel === 'function') {
+        layout.selectPanel(entry.panelId)
+        return true
+      }
+    } catch (error) {
+      console.debug('[omnimux-nav-rail] selectPanel on pinned shortcut failed', error)
+    }
+    const row = findOfficialPanelTrigger(doc, entry.panelId)
+    if (row) {
+      triggerClick(row)
+      return true
+    }
+    return false
+  }
+  activateExploreItem(entry.item)
+  return true
+}
+
 /**
  * 读取当前固定导航轨的单一状态裁决。
  * @param {Document} [doc]
+ * @param {Iterable<string>} [pinnedMoreIds]
  */
-export function computeCurrentNavRailState(doc = resolveDoc()) {
+export function computeCurrentNavRailState(doc = resolveDoc(), pinnedMoreIds) {
+  const exploreItems = resolveExploreMenuItems()
+  const activePinnedIds = pinnedMoreIds ?? resolvePinnedRailEntries(doc, exploreItems).map((entry) => entry.pinId)
   const productStageId = doc?.documentElement?.dataset?.dshProductStage || null
   const officialPanelId = readOfficialGlobalPanelId(doc)
   const { verdict, signals } = readFreshRailActivation(doc)
@@ -523,7 +733,8 @@ export function computeCurrentNavRailState(doc = resolveDoc()) {
     signals,
     officialPanelId,
     productStageId,
-    exploreItems: resolveExploreMenuItems(),
+    exploreItems,
+    pinnedMoreIds: activePinnedIds,
   })
 }
 
@@ -635,8 +846,8 @@ function findSettingsTrigger(doc) {
 function findAccountMenuElement(doc) {
   const menus = doc?.querySelectorAll?.('[role="menu"]') || []
   for (const menu of menus) {
-    if (menu.id === NAV_RAIL_MORE_FALLBACK_ID) continue
-    if (menu.closest?.(`#${NAV_RAIL_MORE_FALLBACK_ID}`)) continue
+    if (menu.id === NAV_RAIL_MORE_FALLBACK_ID || menu.id === NAV_RAIL_PIN_CONTEXT_MENU_ID) continue
+    if (menu.closest?.(`#${NAV_RAIL_MORE_FALLBACK_ID}`) || menu.closest?.(`#${NAV_RAIL_PIN_CONTEXT_MENU_ID}`)) continue
     if (menu.matches?.(MORE_MENU_SELECTOR) || menu.closest?.(MORE_MENU_SELECTOR)) continue
     return menu
   }
@@ -722,6 +933,21 @@ export function installNavRail(doc = resolveDoc()) {
       topGroup.append(btn)
     }
 
+    const pinnedSection = doc.createElement('div')
+    pinnedSection.className = 'omnimux-nav-rail-pinned-section'
+    pinnedSection.setAttribute('data-omnimux-rail-pinned-section', '1')
+    pinnedSection.hidden = true
+
+    const pinnedDivider = doc.createElement('div')
+    pinnedDivider.className = 'omnimux-nav-rail-divider'
+    pinnedDivider.setAttribute('aria-hidden', 'true')
+
+    const pinnedList = doc.createElement('div')
+    pinnedList.className = 'omnimux-nav-rail-pinned-list'
+    pinnedList.setAttribute('role', 'group')
+    pinnedList.setAttribute('aria-label', '已固定快捷入口')
+    pinnedSection.append(pinnedDivider, pinnedList)
+
     const bottomGroup = doc.createElement('div')
     bottomGroup.className = 'omnimux-nav-rail-bottom'
     const divider = doc.createElement('div')
@@ -742,9 +968,14 @@ export function installNavRail(doc = resolveDoc()) {
       bottomGroup.append(btn)
     }
 
-    rail.append(topGroup, bottomGroup)
+    rail.append(topGroup, pinnedSection, bottomGroup)
     doc.body.prepend(rail)
   }
+
+  const pinnedSection = rail.querySelector('[data-omnimux-rail-pinned-section="1"]')
+  const pinnedList = rail.querySelector('.omnimux-nav-rail-pinned-list')
+  let renderedPinnedEntries = []
+  let renderedPinnedSignature = ''
 
   let tooltip = doc.querySelector('.omnimux-nav-rail-tooltip')
   if (!tooltip) {
@@ -758,12 +989,94 @@ export function installNavRail(doc = resolveDoc()) {
 
   let fallbackMenu = null
   let fallbackMenuCleanup = null
+  let pinContextMenu = null
+  let pinContextCleanup = null
   let updatesWaitCleanup = null
   let settingsAnchorCleanup = null
   let wasMoreMenuOpenOnPointerDown = false
   let wasSettingsMenuOpenOnPointerDown = false
   let prevView = null
   let prevSplit = false
+
+  const closePinContextMenu = () => {
+    pinContextCleanup?.()
+    pinContextCleanup = null
+    pinContextMenu?.remove()
+    pinContextMenu = null
+  }
+
+  const openPinContextMenu = (anchorBtn, pinId) => {
+    closePinContextMenu()
+    closeFallbackMoreMenu()
+    const menu = doc.createElement('div')
+    menu.id = NAV_RAIL_PIN_CONTEXT_MENU_ID
+    menu.setAttribute('role', 'menu')
+    menu.setAttribute('aria-label', '快捷入口操作')
+
+    const unpinBtn = doc.createElement('button')
+    unpinBtn.type = 'button'
+    unpinBtn.className = 'omnimux-nav-rail-pin-context-item'
+    unpinBtn.setAttribute('role', 'menuitem')
+    const iconSpan = doc.createElement('span')
+    iconSpan.setAttribute('aria-hidden', 'true')
+    iconSpan.style.cssText = 'display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;flex:none;'
+    iconSpan.innerHTML = PIN_OUTLINE_ICON_SVG
+    const labelSpan = doc.createElement('span')
+    labelSpan.textContent = '取消固定'
+    unpinBtn.append(iconSpan, labelSpan)
+    unpinBtn.addEventListener('click', () => {
+      closePinContextMenu()
+      setPinnedMoreItem(pinId, false)
+      syncAll()
+    })
+    menu.append(unpinBtn)
+    doc.body.append(menu)
+    pinContextMenu = menu
+
+    const anchorTop = Math.round(anchorBtn.getBoundingClientRect().top || 200)
+    const vh = win?.innerHeight || 800
+    const menuHeight = Math.round(menu.getBoundingClientRect().height || 40)
+    menu.style.top = `${Math.max(12, Math.min(anchorTop, Math.max(12, vh - 12 - menuHeight)))}px`
+
+    const onPointerDownDoc = (event) => {
+      const target = event.target
+      if (target && menu.contains(target)) return
+      closePinContextMenu()
+    }
+    const onKeyDownDoc = (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        event.stopPropagation()
+        closePinContextMenu()
+        anchorBtn.focus?.()
+      }
+    }
+    doc.addEventListener('pointerdown', onPointerDownDoc, true)
+    doc.addEventListener('keydown', onKeyDownDoc, true)
+    pinContextCleanup = () => {
+      doc.removeEventListener('pointerdown', onPointerDownDoc, true)
+      doc.removeEventListener('keydown', onKeyDownDoc, true)
+    }
+  }
+
+  const syncFallbackMoreMenuPinStates = () => {
+    if (!fallbackMenu) return
+    const pinnedSet = new Set(readPinnedMoreIds())
+    for (const rowWrap of fallbackMenu.querySelectorAll('[data-omnimux-more-item]')) {
+      const pinId = rowWrap.getAttribute('data-omnimux-more-item')
+      const itemBtn = rowWrap.querySelector('.omnimux-nav-rail-more-item')
+      const label = itemBtn?.getAttribute('data-item-label') || ''
+      const pinned = Boolean(pinId && pinnedSet.has(pinId))
+      rowWrap.setAttribute('data-pinned', pinned ? 'true' : 'false')
+      const pinBtn = rowWrap.querySelector('.omnimux-nav-rail-more-pin-btn')
+      if (pinBtn) {
+        pinBtn.setAttribute('aria-pressed', pinned ? 'true' : 'false')
+        pinBtn.setAttribute('aria-label', pinned ? `取消固定${label}` : `固定${label}到左侧边栏`)
+        pinBtn.title = pinned ? '取消固定' : '固定到左侧边栏'
+        pinBtn.innerHTML = pinned ? PIN_FILL_ICON_SVG : PIN_OUTLINE_ICON_SVG
+      }
+    }
+  }
 
   const closeFallbackMoreMenu = () => {
     fallbackMenuCleanup?.()
@@ -774,7 +1087,9 @@ export function installNavRail(doc = resolveDoc()) {
 
   const openFallbackMoreMenu = (anchorBtn, activeMoreItemId) => {
     closeFallbackMoreMenu()
+    closePinContextMenu()
     const items = resolveExploreMenuItems()
+    const pinnedSet = new Set(readPinnedMoreIds())
     const menu = doc.createElement('div')
     menu.id = NAV_RAIL_MORE_FALLBACK_ID
     menu.setAttribute('role', 'menu')
@@ -788,10 +1103,17 @@ export function installNavRail(doc = resolveDoc()) {
         sep.setAttribute('role', 'separator')
         menu.append(sep)
       }
+      const pinned = pinnedSet.has(item.id)
+      const rowWrap = doc.createElement('div')
+      rowWrap.className = 'omnimux-nav-rail-more-row'
+      rowWrap.setAttribute('data-omnimux-more-item', item.id)
+      rowWrap.setAttribute('data-pinned', pinned ? 'true' : 'false')
+
       const row = doc.createElement('button')
       row.type = 'button'
       row.className = 'omnimux-nav-rail-more-item'
       row.setAttribute('role', 'menuitem')
+      row.setAttribute('data-item-label', item.label)
       if (activeMoreItemId && activeMoreItemId === item.id) {
         row.setAttribute('aria-current', 'page')
       }
@@ -817,7 +1139,25 @@ export function installNavRail(doc = resolveDoc()) {
         syncAll()
         activateExploreItem(item)
       })
-      menu.append(row)
+
+      const pinBtn = doc.createElement('button')
+      pinBtn.type = 'button'
+      pinBtn.className = 'omnimux-nav-rail-more-pin-btn'
+      pinBtn.setAttribute('data-omnimux-pin-toggle', item.id)
+      pinBtn.setAttribute('aria-pressed', pinned ? 'true' : 'false')
+      pinBtn.setAttribute('aria-label', pinned ? `取消固定${item.label}` : `固定${item.label}到左侧边栏`)
+      pinBtn.title = pinned ? '取消固定' : '固定到左侧边栏'
+      pinBtn.innerHTML = pinned ? PIN_FILL_ICON_SVG : PIN_OUTLINE_ICON_SVG
+      pinBtn.addEventListener('click', (event) => {
+        event.preventDefault()
+        event.stopPropagation()
+        togglePinnedMoreItem(item.id)
+        syncFallbackMoreMenuPinStates()
+        syncAll()
+      })
+
+      rowWrap.append(row, pinBtn)
+      menu.append(rowWrap)
     }
 
     doc.body.append(menu)
@@ -865,6 +1205,30 @@ export function installNavRail(doc = resolveDoc()) {
     tooltip.setAttribute('data-visible', 'false')
   }
 
+  const syncPinnedShortcuts = () => {
+    renderedPinnedEntries = resolvePinnedRailEntries(doc)
+    if (!pinnedSection || !pinnedList) return renderedPinnedEntries
+    const nextSignature = renderedPinnedEntries.map((entry) => `${entry.pinId}:${entry.label}:${entry.iconSvg}`).join('|')
+    if (nextSignature !== renderedPinnedSignature) {
+      renderedPinnedSignature = nextSignature
+      pinnedList.replaceChildren()
+      for (const entry of renderedPinnedEntries) {
+        const btn = doc.createElement('button')
+        btn.type = 'button'
+        btn.className = 'omnimux-nav-rail-btn'
+        btn.setAttribute('data-omnimux-rail-item', `pinned:${entry.pinId}`)
+        btn.setAttribute('data-omnimux-rail-pinned', entry.pinId)
+        btn.setAttribute('data-tooltip', entry.label)
+        btn.setAttribute('aria-label', entry.label)
+        btn.setAttribute('data-active', 'false')
+        btn.innerHTML = entry.iconSvg
+        pinnedList.append(btn)
+      }
+    }
+    pinnedSection.hidden = renderedPinnedEntries.length === 0
+    return renderedPinnedEntries
+  }
+
   const syncOnboardingMode = () => {
     const onboarding = isNavRailOnboardingActive(doc)
     if (onboarding) {
@@ -873,6 +1237,7 @@ export function installNavRail(doc = resolveDoc()) {
       root.style.setProperty(NAV_RAIL_WIDTH_VAR, '0px')
       rail.hidden = true
       closeFallbackMoreMenu()
+      closePinContextMenu()
       settingsAnchorCleanup?.()
       hideTooltip()
       return true
@@ -885,7 +1250,8 @@ export function installNavRail(doc = resolveDoc()) {
 
   const syncAll = () => {
     if (syncOnboardingMode()) return
-    const state = computeCurrentNavRailState(doc)
+    const pinnedEntries = syncPinnedShortcuts()
+    const state = computeCurrentNavRailState(doc, pinnedEntries.map((entry) => entry.pinId))
     if (root.getAttribute(NAV_RAIL_VIEW_ATTR) !== state.view) {
       root.setAttribute(NAV_RAIL_VIEW_ATTR, state.view)
     }
@@ -918,6 +1284,14 @@ export function installNavRail(doc = resolveDoc()) {
           || doc.querySelector(MORE_MENU_SELECTOR),
         )
         btn.setAttribute('aria-expanded', expanded ? 'true' : 'false')
+      }
+    }
+
+    if (pinnedList) {
+      for (const btn of pinnedList.querySelectorAll('[data-omnimux-rail-pinned]')) {
+        const pinId = btn.getAttribute('data-omnimux-rail-pinned')
+        const isActive = state.railId === 'pinned' && state.pinnedRailId === pinId
+        btn.setAttribute('data-active', isActive ? 'true' : 'false')
       }
     }
 
@@ -962,7 +1336,8 @@ export function installNavRail(doc = resolveDoc()) {
       closeFallbackMoreMenu()
     } else {
       const state = computeCurrentNavRailState(doc)
-      openFallbackMoreMenu(btn, state.railId === 'more' ? state.activeMoreItemId : null)
+      const activeMoreId = state.railId === 'more' || state.railId === 'pinned' ? state.activeMoreItemId : null
+      openFallbackMoreMenu(btn, activeMoreId)
     }
     syncAll()
   }
@@ -1103,6 +1478,18 @@ export function installNavRail(doc = resolveDoc()) {
     const btn = target?.closest?.('[data-omnimux-rail-item]')
     if (!btn || !rail.contains(btn)) return
     hideTooltip()
+    closePinContextMenu()
+    const pinnedId = btn.getAttribute('data-omnimux-rail-pinned')
+    if (pinnedId) {
+      closeFallbackMoreMenu()
+      const entry = renderedPinnedEntries.find((item) => item.pinId === pinnedId)
+      if (entry) {
+        activatePinnedShortcut(doc, entry)
+        requestRailActivationSync()
+      }
+      syncAll()
+      return
+    }
     const id = btn.getAttribute('data-omnimux-rail-item')
     if (id === 'home') {
       closeFallbackMoreMenu()
@@ -1138,6 +1525,17 @@ export function installNavRail(doc = resolveDoc()) {
     }
   }
 
+  const onRailContextMenu = (event) => {
+    const pinnedBtn = event.target?.closest?.('[data-omnimux-rail-pinned]')
+    if (!pinnedBtn || !rail.contains(pinnedBtn)) return
+    const pinnedId = pinnedBtn.getAttribute('data-omnimux-rail-pinned')
+    if (!pinnedId) return
+    event.preventDefault()
+    event.stopPropagation()
+    hideTooltip()
+    openPinContextMenu(pinnedBtn, pinnedId)
+  }
+
   const onPointerOver = (event) => {
     const btn = event.target?.closest?.('[data-omnimux-rail-item]')
     if (btn && rail.contains(btn)) showTooltipFor(btn)
@@ -1156,12 +1554,20 @@ export function installNavRail(doc = resolveDoc()) {
   }
 
   rail.addEventListener('click', onRailClick)
+  rail.addEventListener('contextmenu', onRailContextMenu)
   rail.addEventListener('pointerover', onPointerOver)
   rail.addEventListener('pointerout', onPointerOut)
   rail.addEventListener('focusin', onFocusIn)
   rail.addEventListener('focusout', onFocusOut)
 
   const unsubWorkbench = subscribeWorkbench(() => syncAll())
+  const unsubPinnedMore = subscribePinnedMoreItems(() => {
+    syncFallbackMoreMenuPinStates()
+    syncAll()
+  })
+  const unsubExploreItems = subscribeExploreItems(() => {
+    syncAll()
+  })
   const onStageEvent = () => syncAll()
   win?.addEventListener?.('dsh-product-stage', onStageEvent)
 
@@ -1251,13 +1657,17 @@ export function installNavRail(doc = resolveDoc()) {
     moreRailBtn?.removeEventListener('pointerdown', onPointerDownMore)
     settingsRailBtn?.removeEventListener('pointerdown', onPointerDownSettings)
     rail.removeEventListener('click', onRailClick)
+    rail.removeEventListener('contextmenu', onRailContextMenu)
     rail.removeEventListener('pointerover', onPointerOver)
     rail.removeEventListener('pointerout', onPointerOut)
     rail.removeEventListener('focusin', onFocusIn)
     rail.removeEventListener('focusout', onFocusOut)
     win?.removeEventListener?.('dsh-product-stage', onStageEvent)
     unsubWorkbench?.()
+    unsubPinnedMore?.()
+    unsubExploreItems?.()
     closeFallbackMoreMenu()
+    closePinContextMenu()
     updatesWaitCleanup?.()
     settingsAnchorCleanup?.()
     for (const observer of observers) observer.disconnect()

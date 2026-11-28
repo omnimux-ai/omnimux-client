@@ -23,7 +23,12 @@ const RUNTIME_BUNDLE = esbuild.buildSync({
   absWorkingDir: HERE,
   stdin: {
     contents: `
+      import * as React from 'react'
+      import { flushSync } from 'react-dom'
+      import * as ReactDOMClient from 'react-dom/client'
       import { ensureProductStageChrome } from './conversation-box.js'
+      import { createExploreMoreMenuContent } from './explore-more-menu.jsx'
+      import { setPinnedMoreItem } from './nav-rail-pins.js'
       import { installSidebarGlobal } from './sidebar-coordinator.js'
       import { installSidebarPanelChrome } from './sidebar-panel-chrome.js'
       import { installSidebarToggleTopbar } from './sidebar-toggle-topbar.js'
@@ -31,7 +36,12 @@ const RUNTIME_BUNDLE = esbuild.buildSync({
       import { bindWorkbenchDeps } from './workbench/host-adapter.js'
       import { installNavRail } from './nav-rail.js'
       window.__NAV_RAIL_E2E = {
+        React,
+        flushSync,
+        ReactDOMClient,
         ensureProductStageChrome,
+        createExploreMoreMenuContent,
+        setPinnedMoreItem,
         installSidebarGlobal,
         installSidebarPanelChrome,
         installSidebarToggleTopbar,
@@ -47,6 +57,7 @@ const RUNTIME_BUNDLE = esbuild.buildSync({
   write: false,
   format: 'iife',
   platform: 'browser',
+  jsx: 'automatic',
   target: 'es2022',
   logLevel: 'silent',
 }).outputFiles[0].text
@@ -77,6 +88,7 @@ html, body {
   --dsw-alias-border-l4: rgba(255, 255, 255, 0.22);
   --dsw-alias-label-primary: #f4f5f7;
   --dsw-alias-label-secondary: #a1a6b3;
+  --dsw-alias-label-tertiary: #747a87;
   --dsw-alias-tooltip-bg: #24252a;
   --dsw-alias-tooltip-label: #f4f5f7;
   --dsw-alias-state-warn-primary: #f59e0b;
@@ -189,6 +201,33 @@ html, body {
 .SidebarRoot_moreMenu__e2e .MenuSurface_material {
   background: var(--dsw-menu-surface-fill);
   padding: 8px;
+}
+.Menu_itemWrap__e2e {
+  position: relative;
+}
+.Menu_separator__e2e {
+  height: 0.5px;
+  margin: 3px 8px;
+  background: var(--dsw-alias-border-l2);
+}
+.Menu_itemWrap__e2e:first-child > .Menu_separator__e2e:first-child {
+  display: none;
+}
+.Menu_item__e2e {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 34px;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  line-height: 20px;
+  text-align: left;
+  cursor: pointer;
 }
 `
 
@@ -432,4 +471,135 @@ test('Chromium E2E：固定导航轨 52px 布局、避让红绿灯、业务全�
 
   // 5. Token 白名单完整性确认
   assert.ok(allowlist.includes('--dsw-alias-bg-layer-2'))
+})
+
+test('Chromium E2E：「更多」菜单固定按钮对齐/分隔线保留、左侧栏快捷图标一键激活与窄高不挤出底部按钮', () => {
+  const metrics = runStyleDomProbe({
+    name: 'nav-rail-pin-e2e',
+    viewportHeight: 620,
+    styles: HOST_CSS,
+    html: buildE2eHtml(),
+    measure: () => {
+      const round = (n) => Math.round(n * 100) / 100
+      const rect = (el) => {
+        const r = el.getBoundingClientRect()
+        return { left: round(r.left), right: round(r.right), top: round(r.top), bottom: round(r.bottom), width: round(r.width), height: round(r.height) }
+      }
+      const e2e = window.__NAV_RAIL_E2E
+      const menuHost = document.createElement('div')
+      menuHost.id = 'e2e-real-more-menu'
+      menuHost.setAttribute('data-menu-material', 'translucent')
+      menuHost.className = 'SidebarRoot_moreMenu__e2e'
+      const material = document.createElement('div')
+      material.className = 'MenuSurface_material'
+      menuHost.append(material)
+      document.body.append(menuHost)
+
+      const StubMenuItemButton = ({ children, icon, current, separatorBefore, onSelect }) => e2e.React.createElement(
+        'div',
+        { className: 'Menu_itemWrap__e2e' },
+        separatorBefore ? e2e.React.createElement('div', { className: 'Menu_separator__e2e', role: 'separator' }) : null,
+        e2e.React.createElement(
+          'button',
+          {
+            type: 'button',
+            role: 'menuitem',
+            className: 'Menu_item__e2e',
+            'aria-current': current === true ? 'page' : undefined,
+            onClick: onSelect,
+          },
+          icon,
+          e2e.React.createElement('span', null, children),
+        ),
+      )
+
+      const Content = e2e.createExploreMoreMenuContent({ MenuItemButton: StubMenuItemButton })
+      const reactRoot = e2e.ReactDOMClient.createRoot(material)
+      e2e.flushSync(() => {
+        reactRoot.render(e2e.React.createElement(Content, {
+          onDismiss: () => {},
+          entries: [{ id: 'schedules', label: '自动化任务', active: false }],
+          onOpen: () => {},
+        }))
+      })
+
+      // 验证未固定态：默认隐藏（opacity 0）且分组分隔线可见（未受 :first-child 规则误藏）
+      const appsRow = material.querySelector('[data-omnimux-more-item="apps"]')
+      const appsSep = appsRow.querySelector('[role="separator"]')
+      const appsBtn = appsRow.querySelector('button[role="menuitem"]')
+      const appsPinAnchor = appsRow.querySelector('.omnimux-explore-more-pin-anchor')
+      const appsPinBtn = appsRow.querySelector('[data-omnimux-pin-toggle="apps"]')
+      const appsSepDisplay = getComputedStyle(appsSep).display
+      const unpinnedOpacity = getComputedStyle(appsPinAnchor).opacity
+      const appsBtnRect = rect(appsBtn)
+      const appsPinRect = rect(appsPinBtn)
+      const pinCenterDeltaY = Math.abs((appsPinRect.top + appsPinRect.height / 2) - (appsBtnRect.top + appsBtnRect.height / 2))
+      const appsPadRight = getComputedStyle(appsBtn).paddingRight
+
+      // 点击 6 项固定（验证菜单内固定后常显 + 左侧栏「更多」下方可滚动且不挤出底部系统按钮）
+      for (const pinId of ['panel:schedules', 'apps', 'image-generation', 'clip', 'publish', 'accounts']) {
+        const btn = material.querySelector(`[data-omnimux-pin-toggle="${pinId}"]`)
+        if (btn) btn.click()
+      }
+      e2e.flushSync(() => {})
+      const appsPinnedOpacity = getComputedStyle(appsPinAnchor).opacity
+
+      const pinnedSection = document.querySelector('[data-omnimux-rail-pinned-section="1"]')
+      const pinnedList = document.querySelector('.omnimux-nav-rail-pinned-list')
+      const updatesBtn = document.querySelector('[data-omnimux-rail-item="updates"]')
+      const settingsBtn = document.querySelector('[data-omnimux-rail-item="settings"]')
+      const moreBtn = document.querySelector('[data-omnimux-rail-item="more"]')
+      const firstPinnedBtn = pinnedList.querySelector('[data-omnimux-rail-pinned]')
+
+      const railMetrics = {
+        sectionVisible: !pinnedSection.hidden,
+        pinnedCount: pinnedList.querySelectorAll('[data-omnimux-rail-pinned]').length,
+        firstPinnedRect: rect(firstPinnedBtn),
+        moreRect: rect(moreBtn),
+        updatesRect: rect(updatesBtn),
+        settingsRect: rect(settingsBtn),
+        listClientHeight: pinnedList.clientHeight,
+        listScrollHeight: pinnedList.scrollHeight,
+        listScrollable: pinnedList.scrollHeight > pinnedList.clientHeight,
+        viewportHeight: window.innerHeight,
+      }
+
+      // 右键固定按钮，校验取消固定浮层实底且不透底
+      firstPinnedBtn.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
+      const ctxMenu = document.getElementById('omnimux-nav-rail-pin-context-menu')
+      const ctxBg = ctxMenu ? getComputedStyle(ctxMenu).backgroundColor : ''
+      ctxMenu?.querySelector('.omnimux-nav-rail-pin-context-item')?.click()
+
+      reactRoot.unmount()
+      menuHost.remove()
+
+      return {
+        appsSepDisplay,
+        unpinnedOpacity,
+        appsPinnedOpacity,
+        pinCenterDeltaY,
+        appsPadRight,
+        railMetrics,
+        ctxBg,
+        remainingAfterContextUnpin: pinnedList.querySelectorAll('[data-omnimux-rail-pinned]').length,
+      }
+    },
+  })
+
+  assert.equal(metrics.appsSepDisplay, 'block', '外包行后分组分隔线必须保持可见')
+  assert.equal(metrics.unpinnedOpacity, '0', '未固定图钉在默认未悬停态下必须隐藏')
+  assert.equal(metrics.appsPinnedOpacity, '1', '固定后即使带分隔线的行图钉也必须常显')
+  assert.ok(metrics.pinCenterDeltaY <= 1, `带分隔线行的图钉中心必须与按钮垂直居中（偏差 ${metrics.pinCenterDeltaY}px）`)
+  assert.equal(metrics.appsPadRight, '34px', '菜单按钮右侧必须预留 34px 防文案碰撞图钉')
+  assert.equal(metrics.railMetrics.sectionVisible, true)
+  assert.ok(metrics.railMetrics.pinnedCount >= 4)
+  assert.equal(metrics.railMetrics.firstPinnedRect.width, 36)
+  assert.equal(metrics.railMetrics.firstPinnedRect.height, 36)
+  assert.ok(metrics.railMetrics.listClientHeight >= 36, '固定区在窄高视口至少保留首枚图标可视高度')
+  assert.equal(metrics.railMetrics.listScrollable, true, '多固定项在窄高视口应启用固定列表内部滚动')
+  assert.ok(metrics.railMetrics.firstPinnedRect.top > metrics.railMetrics.moreRect.bottom, '固定图标必须落在更多图标下方')
+  assert.ok(metrics.railMetrics.settingsRect.bottom <= metrics.railMetrics.viewportHeight, '多固定项窄高视口下不得将底部设置钮挤出屏幕')
+  assert.ok(metrics.railMetrics.updatesRect.top > metrics.railMetrics.firstPinnedRect.bottom)
+  assert.doesNotMatch(metrics.ctxBg, /rgba\([^,]+,[^,]+,[^,]+,\s*0\)/, '右键取消固定菜单必须为实底')
+  assert.equal(metrics.remainingAfterContextUnpin, metrics.railMetrics.pinnedCount - 1)
 })

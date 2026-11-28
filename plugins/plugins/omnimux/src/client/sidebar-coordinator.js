@@ -278,6 +278,30 @@ export const EXPLORE_MENU_ITEMS = [
  * 内置白名单保持只读；未注册即不渲染 —— 产品基线不会出现指向未安装插件的死条目。
  */
 const EXTRA_EXPLORE_ITEMS = []
+const EXPLORE_ITEM_LISTENERS = new Set()
+
+function notifyExploreItemsChanged() {
+  for (const listener of [...EXPLORE_ITEM_LISTENERS]) {
+    try {
+      listener()
+    } catch (error) {
+      console.debug('[omnimux-sidebar-coordinator] explore item listener failed', error)
+    }
+  }
+}
+
+/**
+ * 订阅运行期扩展「更多」菜单清单变化（注册 / 注销时触发，供固定左侧导航轨增量刷新）。
+ * @param {() => void} listener
+ * @returns {() => void}
+ */
+export function subscribeExploreItems(listener) {
+  if (typeof listener !== 'function') return () => {}
+  EXPLORE_ITEM_LISTENERS.add(listener)
+  return () => {
+    EXPLORE_ITEM_LISTENERS.delete(listener)
+  }
+}
 
 /** 菜单项身份键：非空字符串 id，其余一律视为非法。 */
 function exploreItemId(item) {
@@ -900,9 +924,13 @@ function createApi() {
       if (typeof item.tabId === 'string' && item.tabId.trim()) record.tabId = item.tabId
       if (typeof item.action === 'function') record.action = item.action
       EXTRA_EXPLORE_ITEMS.push(record)
+      notifyExploreItemsChanged()
       return () => {
         const index = EXTRA_EXPLORE_ITEMS.indexOf(record)
-        if (index >= 0) EXTRA_EXPLORE_ITEMS.splice(index, 1)
+        if (index >= 0) {
+          EXTRA_EXPLORE_ITEMS.splice(index, 1)
+          notifyExploreItemsChanged()
+        }
       }
     },
     /**
@@ -985,6 +1013,7 @@ export function resetSidebarCoordinatorForTests() {
   PINNED_ROWS.clear()
   CONVERGED_ROWS.clear()
   EXTRA_EXPLORE_ITEMS.length = 0
+  EXPLORE_ITEM_LISTENERS.clear()
   seen.clear()
   closeNewMenu()
   if (typeof window !== 'undefined') {
