@@ -54,6 +54,13 @@ test('E2E 目录数据：每个场景分类都真实拥有技能成员', () => {
 
 test('E2E 安装源：场景技能全部为内置 bundled 或 plugin 源且物理目录存在', () => {
   for (const item of skills) {
+    if (item.origin === 'third-party') {
+      assert.equal(item.source?.type, 'git', `${item.id} third-party skill must use git source`)
+      assert.ok(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(String(item.source?.repo || '')), `${item.id} bad git repo`)
+      assert.ok(String(item.source?.path || '').startsWith('sealeap-amazon-skills/'), `${item.id} bad git path`)
+      assert.equal(item.recommended, false, `${item.id} external skill must not leak to All featured`)
+      continue
+    }
     assert.ok(item.source?.type === 'bundled' || item.source?.type === 'plugin', `${item.id} must be bundled or plugin`)
     if (item.source.type === 'bundled') {
       assert.ok(String(item.source.path || '').startsWith('catalog/skills/'), `${item.id} bad bundled path`)

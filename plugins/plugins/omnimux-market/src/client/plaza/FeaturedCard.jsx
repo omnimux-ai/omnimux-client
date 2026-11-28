@@ -1,5 +1,7 @@
 import React from 'react';
 import {
+  isExternalCatalogSkill,
+  resolveExternalPlatform,
   resolveIconSrc,
   resolveItemDesc,
   resolveItemTitle,
@@ -165,8 +167,24 @@ export function renderFeaturedCard(item, opts, onOpenArg, onPinArg, onTryArg) {
 
   const isHot = Boolean(item.isHot || item.tags?.includes('热门精选'));
   const isNew = Boolean(item.isNew || item.tags?.includes('新品上市'));
-  const categoryLabel = resolveCategoryLabel(item.scenario || item.category, isEn, tr);
+  const checkExternal = typeof isExternalCatalogSkill === 'function'
+    ? isExternalCatalogSkill
+    : (it) => Boolean(it && (it.origin === 'third-party' || (it.source && it.source.type === 'git')));
+  const getExtPlatform = typeof resolveExternalPlatform === 'function'
+    ? resolveExternalPlatform
+    : (it) => String(it?.subtitle || '').trim();
+  const isExternal = checkExternal(item);
+  const isInstalled = Boolean(item.installed);
+  const extPlatform = isExternal ? (getExtPlatform(item) || item.subtitle || '') : '';
+  const slugKey = item.slug || item.id || '';
+  const onInstallExternal = typeof safeOpts.onInstallExternal === 'function' ? safeOpts.onInstallExternal : null;
+  const installing = Boolean(safeOpts.installingSlugs && slugKey && safeOpts.installingSlugs[slugKey]);
+  const categoryLabel = extPlatform || resolveCategoryLabel(item.scenario || item.category, isEn, tr);
   const newBadgeText = safeTr('workshop.badgeNew', undefined, isEn ? 'NEW' : '新');
+  const enabledBadgeText = safeTr('workshop.badgeEnabled', undefined, isEn ? 'Enabled' : '已启用');
+  const externalBadgeText = safeTr('workshop.badgeExternal', undefined, 'MIT');
+  const installNowText = safeTr('workshop.installNow', undefined, isEn ? 'Install' : '安装');
+  const installingShortText = safeTr('workshop.installingShort', undefined, isEn ? 'Installing…' : '安装中…');
   const hotBadgeTitle = safeTr('workshop.hotPicks', undefined, isEn ? 'HOT PICKS' : '热门精选');
   const tryButtonText = safeTr('workshop.try', undefined, isEn ? 'Try in Chat' : '去对话中试试');
   const tryShortText = safeTr('workshop.tryShort', undefined, isEn ? 'Try' : '去试试');
@@ -177,6 +195,12 @@ export function renderFeaturedCard(item, opts, onOpenArg, onPinArg, onTryArg) {
     e && e.stopPropagation();
     (onTry || safeTrySkillInSession)(item);
   };
+  const onInstallClick = (e) => {
+    e && e.stopPropagation();
+    if (!installing && onInstallExternal) onInstallExternal(item);
+  };
+  const showExternalCta = isExternal && !isInstalled && onInstallExternal;
+  const hasBadges = isHot || isNew || isExternal;
 
   return h('div', {
     key: item.slug || item.id,
@@ -212,26 +236,37 @@ export function renderFeaturedCard(item, opts, onOpenArg, onPinArg, onTryArg) {
       h('h3', { className: 'omnimux-creatify-center-title omx-skill-card-title' },
         h('span', null, title),
       ),
-      (isHot || isNew) ? h('div', { className: 'omnimux-creatify-card-top-left omx-skill-card-badges' },
+      hasBadges ? h('div', { className: 'omnimux-creatify-card-top-left omx-skill-card-badges' },
         isHot ? h('span', { className: 'omnimux-creatify-badge-hot', title: hotBadgeTitle }, renderFireSvg()) : null,
         isNew ? h('span', { className: 'omnimux-creatify-badge-new' }, newBadgeText) : null,
+        isExternal && isInstalled ? h('span', { className: 'omx-skill-card-badge-enabled' }, enabledBadgeText) : null,
+        isExternal && !isInstalled ? h('span', { className: 'omx-skill-card-badge-external' }, externalBadgeText) : null,
       ) : null,
     ),
     // 4. 中部：常驻 2 行简介
     h('p', { className: 'omx-skill-card-desc' }, desc),
-    // 5. 底栏：左侧低对比场景名称 + 右侧试用 CTA
+    // 5. 底栏：左侧低对比场景名称或平台 + 右侧安装或试用 CTA
     h('div', { className: 'omx-skill-card-footer' },
       h('span', { className: 'omx-skill-card-category' }, categoryLabel),
-      h('button', {
-        type: 'button',
-        className: 'omnimux-creatify-quick-try-btn',
-        title: tryTooltip,
-        'aria-label': tryTooltip || tryButtonText,
-        onClick: onTryClick,
-      },
-        renderHoverIcon('try'),
-        h('span', { className: 'omnimux-creatify-quick-try-label' }, tryShortText),
-      ),
+      showExternalCta
+        // exempt-ui01 external card direct install action
+        ? h('button', {
+            type: 'button',
+            className: 'omx-skill-card-install-btn' + (installing ? ' is-installing' : ''),
+            disabled: installing,
+            'aria-label': installNowText + ' ' + title,
+            onClick: onInstallClick,
+          }, installing ? installingShortText : installNowText)
+        : h('button', {
+            type: 'button',
+            className: 'omnimux-creatify-quick-try-btn',
+            title: tryTooltip,
+            'aria-label': tryTooltip || tryButtonText,
+            onClick: onTryClick,
+          },
+            renderHoverIcon('try'),
+            h('span', { className: 'omnimux-creatify-quick-try-label' }, tryShortText),
+          ),
     ),
   );
 }

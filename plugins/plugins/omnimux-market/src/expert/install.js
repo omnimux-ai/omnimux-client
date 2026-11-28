@@ -1,8 +1,24 @@
-import { spawnSync } from 'node:child_process'
-import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { execFile, spawnSync } from 'node:child_process'
+import { copyFileSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { copyFile, lstat, mkdir, readdir, rename, rm } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
+import { promisify } from 'node:util'
 import { invalidateCatalogMemos, isInstalled } from './catalog.js'
 import { MCP_BEGIN, MCP_END, mcpRowPattern, mcpRowId, resolvePluginSkillFile, skillDir } from './paths.js'
+
+const execFileAsync = promisify(execFile)
+const repoLocks = new Map()
+
+function withRepoLock(repoKey, fn) {
+  const prev = repoLocks.get(repoKey) || Promise.resolve()
+  const run = prev.then(fn, fn)
+  const settled = run.then(() => undefined, () => undefined)
+  repoLocks.set(repoKey, settled)
+  settled.finally(() => {
+    if (repoLocks.get(repoKey) === settled) repoLocks.delete(repoKey)
+  })
+  return run
+}
 
 let connectorChain = Promise.resolve()
 let connectorBusy = 0
@@ -70,6 +86,39 @@ export function installItem(opts) {
       return { id: item.id, installed: true, kind: item.kind, skill: item.skill, source: 'git' }
     }
     throw new Error(`item ${item.id} has no installable skill source`)
+  } finally {
+    invalidateCatalogMemos()
+  }
+}
+
+/**
+ * 异步安装目录项：当来源为 git 时走异步加锁稀疏克隆，避免并发安装锁冲突或阻塞事件循环。
+ * @param {{
+ *   catalog: ReturnType<import('./catalog.js').parseCatalog>,
+ *   id: string,
+ *   home: string,
+ *   profileDir: string,
+ *   packageRoot: string,
+ *   signal?: AbortSignal,
+ *   timeoutMs?: number,
+ * }} opts
+ */
+export async function installItemAsync(opts) {
+  const item = findItem(opts.catalog, opts.id)
+  if (!item) throw new Error(`unknown item ${opts.id}`)
+  const roots = { home: opts.home, profileDir: opts.profileDir, packageRoot: opts.packageRoot }
+  if (isInstalled(item, roots)) {
+    return item.source?.type === 'plugin'
+      ? { id: item.id, installed: true, kind: item.kind, skill: item.skill, source: 'plugin', already: true }
+      : { id: item.id, installed: true, already: true }
+  }
+  if (item.source?.type !== 'git') {
+    return installItem(opts)
+  }
+  if (!item.skill) throw new Error(`item ${item.id} missing skill`)
+  try {
+    await installGitBundleAsync(opts.home, item, { signal: opts.signal, timeoutMs: opts.timeoutMs })
+    return { id: item.id, installed: true, kind: item.kind, skill: item.skill, source: 'git' }
   } finally {
     invalidateCatalogMemos()
   }
@@ -225,6 +274,7 @@ export function installGitBundle(home, item) {
   if (!item.skill) throw new Error('git install missing skill')
   const destDir = skillDir(home, item.skill)
   if (existsSync(join(destDir, 'SKILL.md'))) return
+  assertSafeGitSource(item.source)
   const sub = item.source.path
   const localBase = resolveLocalRepo(item.source.repo)
   const local = localBase ? join(localBase, sub) : ''
@@ -238,6 +288,58 @@ export function installGitBundle(home, item) {
   }
   ensureSkillMd(destDir, item)
   installNestedSkills(home, destDir)
+}
+
+/**
+ * 异步安装 Git 子目录技能：按仓库串行加锁拉取稀疏树，并经暂存目录原子落盘（拒绝符号链接）。
+ * @param {string} home
+ * @param {{ skill?: string, title?: string, summary?: string, source: { repo?: string, path?: string, ref?: string } }} item
+ * @param {{ signal?: AbortSignal, timeoutMs?: number }} [opts]
+ */
+export async function installGitBundleAsync(home, item, opts = {}) {
+  if (!item.skill) throw new Error('git install missing skill')
+  assertSafeGitSource(item.source)
+  const destDir = skillDir(home, item.skill)
+  if (existsSync(join(destDir, 'SKILL.md'))) return
+
+  const repoKey = `${home}::${String(item.source.repo || '')}`
+  await withRepoLock(repoKey, async () => {
+    if (existsSync(join(destDir, 'SKILL.md'))) return
+    const sub = item.source.path
+    const localBase = resolveLocalRepo(item.source.repo)
+    const local = localBase ? join(localBase, sub) : ''
+    const from = local && existsSync(local) ? local : await fetchGitTreeAsync(home, item, opts)
+    if (!existsSync(from)) throw new Error(`git bundle missing: ${sub}`)
+
+    const parentDir = dirname(destDir)
+    await mkdir(parentDir, { recursive: true })
+    const stageDir = join(parentDir, `.staging-${item.skill}-${process.pid}-${Date.now()}`)
+    let moved = false
+    try {
+      const fromStat = await lstat(from)
+      if (fromStat.isSymbolicLink()) {
+        throw new Error(`refusing symbolic link source: ${from}`)
+      }
+      if (fromStat.isDirectory()) {
+        await cpRecursiveAsync(from, stageDir)
+      } else {
+        await mkdir(stageDir, { recursive: true })
+        await copyFile(from, join(stageDir, 'SKILL.md'))
+      }
+      ensureSkillMd(stageDir, item)
+      if (existsSync(destDir)) {
+        await rm(destDir, { recursive: true, force: true })
+      }
+      await rename(stageDir, destDir)
+      moved = true
+      installNestedSkills(home, destDir)
+    } finally {
+      if (!moved && existsSync(stageDir)) {
+        rmSync(stageDir, { recursive: true, force: true })
+      }
+      invalidateCatalogMemos()
+    }
+  })
 }
 
 /**
@@ -305,7 +407,27 @@ export function installSkillAt(home, packDir, name, relPath) {
  * @param {string} home
  * @param {{ source: { repo?: string, path?: string, ref?: string } }} item
  */
+function assertSafeGitSource(source) {
+  const repo = String(source?.repo || '')
+  const sub = String(source?.path || '')
+  const ref = String(source?.ref || 'main')
+  if (repo.startsWith('-') || !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo)) {
+    throw new Error(`unsafe git repo: ${repo}`)
+  }
+  if (!sub || sub.startsWith('-') || sub.includes('..') || sub.startsWith('/') || /[\0\r\n]/.test(sub)) {
+    throw new Error(`unsafe git path: ${sub}`)
+  }
+  if (!ref || ref.startsWith('-') || !/^[A-Za-z0-9_./-]+$/.test(ref)) {
+    throw new Error(`unsafe git ref: ${ref}`)
+  }
+}
+
+/**
+ * @param {string} home
+ * @param {{ source: { repo?: string, path?: string, ref?: string } }} item
+ */
 function fetchGitTree(home, item) {
+  assertSafeGitSource(item.source)
   const cache = join(home, 'esc-gallery', 'cache', String(item.source.repo || 'repo').replace('/', '__'))
   mkdirSync(dirname(cache), { recursive: true })
   const ref = item.source.ref || 'main'
@@ -313,9 +435,30 @@ function fetchGitTree(home, item) {
   if (!existsSync(join(cache, '.git'))) {
     runGit(['clone', '--filter=blob:none', '--sparse', `https://github.com/${item.source.repo}.git`, cache])
   }
-  runGit(['-C', cache, 'sparse-checkout', 'set', '--cone', sub])
+  runGit(['-C', cache, 'sparse-checkout', 'set', '--cone', '--', sub])
   runGit(['-C', cache, 'fetch', '--depth', '1', 'origin', ref])
   runGit(['-C', cache, 'checkout', `origin/${ref}`])
+  return join(cache, sub)
+}
+
+async function fetchGitTreeAsync(home, item, opts = {}) {
+  assertSafeGitSource(item.source)
+  const cache = join(home, 'esc-gallery', 'cache', String(item.source.repo || 'repo').replace('/', '__'))
+  await mkdir(dirname(cache), { recursive: true })
+  const ref = item.source.ref || 'main'
+  const sub = item.source.path
+  const remoteUrl = typeof opts.remoteUrl === 'string' && opts.remoteUrl
+    ? opts.remoteUrl
+    : `https://github.com/${item.source.repo}.git`
+  if (remoteUrl.startsWith('-')) {
+    throw new Error(`unsafe git remoteUrl: ${remoteUrl}`)
+  }
+  if (!existsSync(join(cache, '.git'))) {
+    await runGitAsync(['clone', '--filter=blob:none', '--sparse', remoteUrl, cache], opts)
+  }
+  await runGitAsync(['-C', cache, 'sparse-checkout', 'set', '--cone', '--', sub], opts)
+  await runGitAsync(['-C', cache, 'fetch', '--depth', '1', 'origin', ref], opts)
+  await runGitAsync(['-C', cache, 'checkout', `origin/${ref}`], opts)
   return join(cache, sub)
 }
 
@@ -361,6 +504,16 @@ function runGit(args) {
   }
 }
 
+async function runGitAsync(args, opts = {}) {
+  const timeout = typeof opts.timeoutMs === 'number' && opts.timeoutMs > 0 ? opts.timeoutMs : 60_000
+  try {
+    await execFileAsync('git', args, { encoding: 'utf8', timeout, signal: opts.signal })
+  } catch (err) {
+    const detail = err?.stderr || err?.stdout || err?.message || String(err)
+    throw new Error(`git ${args.join(' ')} failed: ${detail}`)
+  }
+}
+
 /**
  * @param {string} from
  * @param {string} to
@@ -371,8 +524,27 @@ function cpRecursive(from, to) {
     if (name === '.git') continue
     const src = join(from, name)
     const dest = join(to, name)
-    if (statSync(src).isDirectory()) cpRecursive(src, dest)
+    const st = lstatSync(src)
+    if (st.isSymbolicLink()) {
+      throw new Error(`refusing symbolic link in bundle: ${src}`)
+    }
+    if (st.isDirectory()) cpRecursive(src, dest)
     else copyFileSync(src, dest)
+  }
+}
+
+async function cpRecursiveAsync(from, to) {
+  await mkdir(to, { recursive: true })
+  for (const name of await readdir(from)) {
+    if (name === '.git') continue
+    const src = join(from, name)
+    const dest = join(to, name)
+    const st = await lstat(src)
+    if (st.isSymbolicLink()) {
+      throw new Error(`refusing symbolic link in bundle: ${src}`)
+    }
+    if (st.isDirectory()) await cpRecursiveAsync(src, dest)
+    else await copyFile(src, dest)
   }
 }
 

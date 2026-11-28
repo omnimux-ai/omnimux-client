@@ -248,10 +248,14 @@ export function scoreCatalogSkill(item, tokens) {
     const skill = String(item.skill || '').toLowerCase();
     const id = String(item.id || '').toLowerCase();
     const title = String(item.title || '').toLowerCase();
+    const titleEn = String(item.titleEn || '').toLowerCase();
+    const subtitle = String(item.subtitle || '').toLowerCase();
     const summary = String(item.summary || '').toLowerCase();
+    const summaryEn = String(item.summaryEn || '').toLowerCase();
+    const author = String(item.author || '').toLowerCase();
     const tags = Array.isArray(item.tags) ? item.tags.map(String).join(' ').toLowerCase() : '';
-    const hay = `${title} ${summary} ${tags} ${skill} ${id}`;
-    const titleHay = `${title} ${skill} ${id}`;
+    const hay = `${title} ${titleEn} ${subtitle} ${summary} ${summaryEn} ${author} ${tags} ${skill} ${id}`;
+    const titleHay = `${title} ${titleEn} ${subtitle} ${skill} ${id}`;
     let score = 0;
     for (const token of tokens) {
         if (skill === token || id === token || id === `sk-omx-${token}` || id === `sk-${token}`) {
@@ -273,6 +277,12 @@ export function catalogItemToCard(item, channel, cfg, installed) {
     const pluginPreinstalled = item.source?.type === 'plugin'
         && Boolean(resolvePluginSkillFile(item.source, packageRoot()));
     const isPreinstalled = item.preinstalled === true || pluginPreinstalled;
+    const customOwner = typeof item.owner === 'string' && item.owner.trim() ? item.owner.trim() : '';
+    const origin = typeof item.origin === 'string' && item.origin.trim() ? item.origin.trim() : '';
+    const author = typeof item.author === 'string' && item.author.trim() ? item.author.trim() : '';
+    const license = typeof item.license === 'string' && item.license.trim() ? item.license.trim() : '';
+    const subtitle = typeof item.subtitle === 'string' && item.subtitle.trim() ? item.subtitle.trim() : '';
+    const installType = typeof item.installType === 'string' && item.installType.trim() ? item.installType.trim() : '';
     const card = {
         id: String(item.id || slug),
         slug,
@@ -281,12 +291,18 @@ export function catalogItemToCard(item, channel, cfg, installed) {
         category,
         categoryLabel: categoryLabel(category) || category,
         ...(scenario ? { scenario } : {}),
+        ...(subtitle ? { subtitle } : {}),
         version: '',
         downloads: typeof item.downloads === 'number' && Number.isSafeInteger(item.downloads) && item.downloads >= 0 ? item.downloads : 0,
         stars: 0,
         installs: 0,
         pageUrl: `${cfg.webBase.replace(/\/$/, '')}/skills/${encodeURIComponent(slug)}`,
-        owner: channel === 'custom' ? 'omnimux' : 'workbuddy',
+        owner: customOwner || (channel === 'custom' ? 'omnimux' : 'workbuddy'),
+        ...(origin ? { origin } : {}),
+        ...(author ? { author } : {}),
+        ...(license ? { license } : {}),
+        ...(installType ? { installType } : {}),
+        ...(item.source ? { source: item.source } : {}),
         installed: Boolean(installed?.has(slug) || pluginPreinstalled),
         ...(isPreinstalled ? { preinstalled: true } : {}),
         channel,
