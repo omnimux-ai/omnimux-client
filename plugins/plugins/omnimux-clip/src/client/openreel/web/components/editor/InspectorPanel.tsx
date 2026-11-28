@@ -1004,7 +1004,7 @@ const InspectorPanelBody = React.memo(function InspectorPanelBody({ selectedItem
         </div>
       ) : (
         <>
-          {(selectedClipIds.length > 1 || selectedSubtitle || (selectedClip && tabIds.length === 0)) && (
+          {(selectedItems.length > 0 && !(selectedClip && tabIds.length > 0)) && (
             <div className="clip-simple-inspector-topbar" data-clip-simple-only="true">
               <SimpleInspectorCloseButton onClose={clearSelection} />
             </div>

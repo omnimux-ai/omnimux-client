@@ -188,12 +188,14 @@ test('E2E: live uiModeStore + real OpenReel Zustand stores converge Pro -> Simpl
     assert.equal(mod.getClipUiModeSnapshot().mode, 'simple')
     assert.equal(mod.shouldAutoStartTour(), false, 'Simple Mode must suppress automatic passive web tour')
 
+    const unregisterStale = mod.registerSimpleModeStores({ workspaceStore: { getState: () => ({}) } })
     const unregister = mod.registerSimpleModeStores({
       workspaceStore: mod.useEditorWorkspaceStore,
       uiStore: mod.useUIStore,
       sourceMonitorStore: mod.useSourceMonitorStore,
       colorMonitorStore: mod.useColorMonitorStore,
     })
+    unregisterStale()
 
     const unsub1 = mod.subscribeClipUiMode(() => {})
     const unsub2 = mod.subscribeClipUiMode(() => {})

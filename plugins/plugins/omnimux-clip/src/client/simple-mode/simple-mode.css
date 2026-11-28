@@ -273,6 +273,10 @@
   background: transparent;
 }
 
+.openreel-studio-root[data-clip-ui-mode="simple"] .editor-shell:not(.editor-compact) .workspace-timeline-content {
+  margin-right: 0;
+}
+
 /* Narrow container polish so topbar never clips mode toggle or Export/Exit */
 @container clip-stage (width < 560px) {
   .openreel-studio-root .clip-ui-mode-toggle button {

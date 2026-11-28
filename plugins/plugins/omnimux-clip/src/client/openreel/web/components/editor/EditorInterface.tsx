@@ -24,6 +24,7 @@ import { useColorMonitorStore } from "../../stores/color-monitor-store";
 import { useEditorWorkspaceStore } from "../../stores/editor-workspace-store";
 import {
   useClipUiMode,
+  getClipUiModeSnapshot,
   registerSimpleModeStores,
   reconcileSimpleModeState,
 } from "../../../../simple-mode/uiModeStore.js";
@@ -213,7 +214,7 @@ function EditorWorkspace({ canvasMode, rootRef, compact, phone, compactPanel, se
       colorMonitorStore: useColorMonitorStore,
     };
     const unregister = registerSimpleModeStores(stores);
-    if (uiMode === "simple") {
+    if (getClipUiModeSnapshot().mode === "simple") {
       reconcileSimpleModeState(stores);
     }
     return unregister;

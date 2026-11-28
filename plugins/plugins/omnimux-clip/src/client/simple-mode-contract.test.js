@@ -210,6 +210,7 @@ test('5-point OpenReel vendor seam markers remain complete and aligned with Chin
     ['AssetsPanel.tsx', [/missingAssetsCount === 0 \? "true" : undefined/, /data-clip-pro-only="true"/]],
     ['InspectorPanel.tsx', [/SimpleInspectorCloseButton/, /SimpleInspectorFooter/]],
     ['inspector/shell/InspectorClipHeader.tsx', [/trailing\?:\s*ReactNode/, /\{trailing\}/]],
+    ['tour/useTour.ts', [/shouldAutoStartTour/, /getClipUiModeSnapshot/]],
   ]
 
   for (const [rel, patterns] of checks) {

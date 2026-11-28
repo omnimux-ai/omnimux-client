@@ -42,6 +42,7 @@ let snapshot = Object.freeze({
 })
 
 let registeredStores = {}
+let storeRegistrationToken = null
 const listeners = new Set()
 let storageHandler = null
 
@@ -111,9 +112,14 @@ export function useClipUiMode() {
  * cross-boundary TypeScript imports inside pure JS tests.
  */
 export function registerSimpleModeStores(stores) {
+  const token = Symbol('clip-simple-stores')
+  storeRegistrationToken = token
   registeredStores = stores && typeof stores === 'object' ? { ...stores } : {}
   return () => {
-    registeredStores = {}
+    if (storeRegistrationToken === token) {
+      storeRegistrationToken = null
+      registeredStores = {}
+    }
   }
 }
 
