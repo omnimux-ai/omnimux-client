@@ -319,6 +319,7 @@ test('app/scripts/ops/guard-worktree.mjs allows confirmed non-Git targets across
 test('default app scripts, omnimux ops entry, and plugins cli cut over to dsh-desktop-next without retired preset commands', () => {
   const pkg = JSON.parse(readFileSync(join(appDir, 'package.json'), 'utf8'))
   const scripts = pkg.scripts ?? {}
+  const scriptMap = new Map(Object.entries(scripts))
 
   const cutoverScripts = [
     'build',
@@ -336,8 +337,8 @@ test('default app scripts, omnimux ops entry, and plugins cli cut over to dsh-de
     'dist:linux',
   ]
   for (const name of cutoverScripts) {
-    assert.match(scripts[name] ?? '', /dsh-desktop-next/u, `${name} must target dsh-desktop-next`)
-    assert.doesNotMatch(scripts[name] ?? '', /dsh-plugin-desktop/u, `${name} must not invoke dsh-plugin-desktop`)
+    assert.match(scriptMap.get(name) ?? '', /dsh-desktop-next/u, `${name} must target dsh-desktop-next`)
+    assert.doesNotMatch(scriptMap.get(name) ?? '', /dsh-plugin-desktop/u, `${name} must not invoke dsh-plugin-desktop`)
   }
 
   for (const retired of ['package:dev:legacy', 'dist:win-release', 'omnimux:stage', 'omnimux:verify']) {
