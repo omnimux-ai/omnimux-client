@@ -350,6 +350,33 @@ button.dshDesktopSettingsButtonPrimary:hover:not(:disabled) {
   font-size: 13px;
   font-variant-numeric: tabular-nums;
 }
+.dshUpdateNotesLink {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 10px;
+  border-radius: var(--dsw-radius-sm, 8px);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  text-decoration: underline;
+  text-decoration-color: var(--dsw-alias-border-l2);
+  text-underline-offset: 4px;
+  white-space: nowrap;
+  transition: background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), transform var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+}
+.dshUpdateNotesLink:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+  text-decoration: none;
+}
+.dshUpdateNotesLink:active {
+  transform: scale(var(--omnimux-motion-press-scale, 0.96));
+}
+.dshUpdateNotesLink:focus-visible {
+  outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
+  outline-offset: 2px;
+}
 .dshUpdateBadgeBrand {
   background: var(--dsw-alias-state-business-tertiary);
   color: var(--dsw-alias-state-business-primary);
@@ -359,6 +386,80 @@ button.dshDesktopSettingsButtonPrimary:hover:not(:disabled) {
   background: var(--dsw-alias-state-warn-tertiary);
   color: var(--dsw-alias-state-warn-label);
   font-weight: 500;
+}
+.dshUpdateCard {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  border: 0.5px solid var(--dsw-alias-settings-card-stroke);
+  border-radius: var(--dsw-radius-xl, 20px);
+  background: var(--dsw-alias-settings-card-fill);
+  transition: border-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+}
+.dshUpdateCard[data-tone="error"] {
+  border-color: color-mix(in srgb, var(--dsw-alias-state-error-primary) 35%, var(--dsw-alias-settings-card-stroke));
+}
+.dshUpdateCard[data-tone="success"] {
+  border-color: color-mix(in srgb, var(--dsw-alias-state-success-primary) 35%, var(--dsw-alias-settings-card-stroke));
+}
+.dshUpdateCardTop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.dshUpdateCardSummary {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
+}
+.dshUpdateHeadlineRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.dshUpdateStatusDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  flex: none;
+  background: var(--dsw-alias-state-business-primary);
+}
+.dshUpdateStatusDot[data-tone="success"] { background: var(--dsw-alias-state-success-primary); }
+.dshUpdateStatusDot[data-tone="error"] { background: var(--dsw-alias-state-error-primary); }
+.dshUpdateStatusDot[data-tone="neutral"] { background: var(--dsw-alias-label-tertiary); }
+.dshUpdateSpinner {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  color: var(--dsw-alias-state-business-primary);
+  animation: dshUpdateSpin 900ms linear infinite;
+}
+.dshUpdateSubmeta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.dshUpdateTransition {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: var(--dsw-alias-bg-module-platform);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.dshUpdateCardAction {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
 }
 .dshUpdateStatusRow {
   display: flex;
@@ -371,10 +472,10 @@ button.dshDesktopSettingsButtonPrimary:hover:not(:disabled) {
   margin: 0;
   font-size: 14px;
   font-weight: 500;
+  line-height: 1.5;
   color: var(--dsw-alias-label-primary);
 }
 .dshUpdateStatusText[data-tone="error"] { color: var(--dsw-alias-state-error-primary); }
-.dshUpdateStatusText[data-tone="success"] { color: var(--dsw-alias-state-success-primary); }
 .dshUpdateMeta {
   color: var(--dsw-alias-label-tertiary);
   font-size: 12px;
@@ -386,13 +487,13 @@ button.dshDesktopSettingsButtonPrimary:hover:not(:disabled) {
   height: 6px;
   border: 0;
   border-radius: 999px;
-  background: var(--dsw-alias-bg-layer-2);
+  background: var(--dsw-alias-bg-module-platform);
   overflow: hidden;
   accent-color: var(--dsw-alias-brand-primary);
 }
 .dshUpdateProgress::-webkit-progress-bar {
   border-radius: 999px;
-  background: var(--dsw-alias-bg-layer-2);
+  background: var(--dsw-alias-bg-module-platform);
 }
 .dshUpdateProgress::-webkit-progress-value {
   border-radius: 999px;
@@ -401,14 +502,45 @@ button.dshDesktopSettingsButtonPrimary:hover:not(:disabled) {
 }
 .dshUpdateNotes {
   margin: 0;
-  padding: 12px 14px 12px 28px;
-  border-radius: var(--dsw-radius-md, 8px);
-  background: var(--dsw-alias-bg-layer-2);
+  padding: 12px 0 0;
+  border-top: 0.5px solid var(--dsw-alias-border-l2);
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: transparent;
   color: var(--dsw-alias-label-secondary);
   font-size: 13px;
   line-height: 1.65;
 }
-.dshUpdateNotes li + li { margin-top: 4px; }
+.dshUpdateNotes li {
+  position: relative;
+  padding-left: 14px;
+}
+.dshUpdateNotes li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 9px;
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--dsw-alias-label-tertiary);
+}
+.dshUpdateNoteTitle {
+  color: var(--dsw-alias-label-primary);
+  font-weight: 500;
+}
+.dshUpdateCardFooter {
+  padding-top: 10px;
+  border-top: 0.5px solid var(--dsw-alias-border-l2);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.dshUpdateCardFooter .dshDesktopSettingsHint {
+  margin-top: 0;
+}
 .dshUpdateErrorBlock {
   display: flex;
   flex-direction: column;
@@ -416,15 +548,18 @@ button.dshDesktopSettingsButtonPrimary:hover:not(:disabled) {
 }
 .dshUpdateErrorToggle {
   align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
   padding: 0;
   border: 0;
   background: transparent;
-  color: var(--dsw-alias-label-tertiary);
+  color: var(--dsw-alias-label-secondary);
   font: inherit;
-  font-size: 12px;
+  font-size: 13px;
   cursor: pointer;
   text-decoration: underline;
-  text-underline-offset: 2px;
+  text-underline-offset: 3px;
 }
 .dshUpdateErrorToggle:focus-visible,
 .dshUpdatePill:focus-visible,
@@ -435,12 +570,32 @@ button.dshDesktopSettingsButtonPrimary:hover:not(:disabled) {
 .dshUpdateErrorDetail {
   margin: 0;
   padding: 8px 10px;
-  border-radius: var(--dsw-radius-md, 8px);
-  background: var(--dsw-alias-bg-layer-2);
+  border-radius: var(--dsw-radius-sm, 8px);
+  background: var(--dsw-alias-bg-module-platform);
   color: var(--dsw-alias-label-secondary);
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 12px;
   overflow-wrap: anywhere;
+}
+@keyframes dshUpdateSpin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+@media (max-width: 560px) {
+  .dshUpdateNotesLink,
+  .dshUpdateErrorToggle {
+    min-height: 44px;
+  }
+  .dshUpdateCardTop {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .dshUpdateCardAction .dshDesktopSettingsButton {
+    width: 100%;
+    max-width: none;
+    height: auto;
+    min-height: 44px;
+  }
 }
 .dshUpdatePill {
   display: inline-flex;
@@ -595,10 +750,14 @@ body [class*="collapsed"] .dshUpdatePillVer {
 }
 @media (prefers-reduced-motion: reduce) {
   .dshUpdateProgress::-webkit-progress-value,
+  .dshUpdateCard,
+  .dshUpdateNotesLink,
   .dshUpdatePill,
   .dshUpdateNoticeDismiss { transition: none; }
+  .dshUpdateNotesLink:active,
   .dshUpdatePill:active,
   .dshUpdateNoticeDismiss:active { transform: none; }
+  .dshUpdateSpinner,
   .dshPostUpdateNotice,
   .dshMandatoryBackdrop,
   .dshMandatoryCard { animation: none; }

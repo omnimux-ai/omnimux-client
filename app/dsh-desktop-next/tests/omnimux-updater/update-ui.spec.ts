@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { expect, it, vi } from 'vitest'
-import { formatDownloadMeta, NextUpdateSettings, pickUpdateNotes, updatePrimaryButtonLabel } from '../../src/client/updates.tsx'
+import { formatDownloadMeta, NextUpdateSettings, pickUpdateNotes, splitUpdateNote, updatePrimaryButtonLabel } from '../../src/client/updates.tsx'
 import { SidebarUpdatePillView, UpdateShellOverlayView, shouldShowSidebarUpdatePill } from '../../src/client/update-indicator.tsx'
 import { DEFAULT_PREFERENCES, type DesktopState } from '../../src/desktop-contract.ts'
 import type { NextUpdateState } from '../../src/update-state.ts'
@@ -244,4 +244,74 @@ it('uses only real allowlisted --dsw-* tokens and zero bare hex/rgba colors in u
   expect(unknown).toEqual([])
   // Compact sidebar pill must clamp width: max-content !important from sidebar-footer-styles.ts to a 32x32 target.
   expect(updaterCss).toMatch(/\.dshUpdatePill\[data-compact="true"\],\s*body \[class\*="collapsed"\] \.dshUpdatePill\s*\{[^}]*min-width:\s*32px;/u)
+})
+
+it('splits topic-prefixed changelog lines cleanly without middle dots', () => {
+  expect(splitUpdateNote('动效体验升级：优化桌面交互与卡片切换。')).toEqual({
+    title: '动效体验升级',
+    separator: '：',
+    body: '优化桌面交互与卡片切换。',
+  })
+  expect(splitUpdateNote('Security: Harden Electron Fuses and manifest checks')).toEqual({
+    title: 'Security',
+    separator: ': ',
+    body: 'Harden Electron Fuses and manifest checks',
+  })
+  expect(splitUpdateNote('https://dl.omnimux.ai/releases/v2.0.26')).toEqual({
+    body: 'https://dl.omnimux.ai/releases/v2.0.26',
+  })
+  expect(splitUpdateNote('当一个前置说明明显超过了二十八个字符的长度上限时不再拆分为加粗小标题：继续作为正文展示')).toEqual({
+    body: '当一个前置说明明显超过了二十八个字符的长度上限时不再拆分为加粗小标题：继续作为正文展示',
+  })
+})
+
+it('enables production download/install primary actions, structures version jump card, and keeps Dev hint/disabled state intact', () => {
+  const prodAvailable = renderToStaticMarkup(createElement(NextUpdateSettings, {
+    state: {
+      ...baseState,
+      updates: {
+        phase: 'available',
+        version: '2.0.26',
+        installable: true,
+        environment: 'production',
+        channel: 'stable',
+        artifactSize: 414 * 1024 * 1024,
+        releaseNotes: { zh: ['体验升级：更新界面重构与交互优化'], en: ['UX: Update card overhaul'] },
+      },
+    },
+    language: 'zh-CN',
+    run: vi.fn(),
+  }))
+  expect(prodAvailable).toContain('dshUpdateCard')
+  expect(prodAvailable).toContain('dshUpdateNotesLink')
+  expect(prodAvailable).toContain('v2.0.25 → v2.0.26')
+  expect(prodAvailable).toContain('<strong class="dshUpdateNoteTitle">体验升级</strong>')
+  expect(prodAvailable).toContain('<span>：更新界面重构与交互优化</span>')
+  expect(prodAvailable).toMatch(/class="dshDesktopSettingsButton dshDesktopSettingsButtonPrimary"[^>]*>下载更新<\/button>/)
+  expect(prodAvailable).not.toMatch(/disabled=""[^>]*>下载更新/)
+  expect(prodAvailable).not.toContain('·')
+
+  const prodReady = renderToStaticMarkup(createElement(NextUpdateSettings, {
+    state: {
+      ...baseState,
+      updates: { phase: 'ready', version: '2.0.26', installable: true, environment: 'production' },
+    },
+    language: 'zh-CN',
+    run: vi.fn(),
+  }))
+  expect(prodReady).toMatch(/class="dshDesktopSettingsButton dshDesktopSettingsButtonPrimary"[^>]*>安装并重启<\/button>/)
+  expect(prodReady).not.toMatch(/disabled=""[^>]*>安装并重启/)
+  expect(prodReady).toContain('dshUpdateCardFooter')
+  expect(prodReady).toContain('安装时会重启应用并中断正在运行的任务')
+
+  const devAvailable = renderToStaticMarkup(createElement(NextUpdateSettings, {
+    state: {
+      ...baseState,
+      updates: { phase: 'available', version: '2.0.26', installable: false, environment: 'dev' },
+    },
+    language: 'zh-CN',
+    run: vi.fn(),
+  }))
+  expect(devAvailable).toContain('disabled=""')
+  expect(devAvailable).toContain('当前为 OmniMux Dev 开发版，可检查更新但不执行应用内覆盖安装。')
 })
