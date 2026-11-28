@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, writeFile } from 'node:fs/promises'
 import { readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -7,6 +7,7 @@ import { NextDesktopRuntime } from '../src/desktop-runtime.ts'
 import { DesktopHostProcess, type DesktopHostReady } from '../src/host-process.ts'
 import type { DesktopStartupEntry } from '../src/host-startup-limit.ts'
 import { historyFiles } from '../src/log-history.ts'
+import { removeTemporaryDirectory } from './support/temporary-directory.ts'
 
 vi.mock('../src/web-document.ts', async importOriginal => ({
   ...await importOriginal<typeof import('../src/web-document.ts')>(),
@@ -20,7 +21,7 @@ const directories: string[] = []
 afterEach(async () => {
   vi.useRealTimers()
   await Promise.all(runtimes.splice(0).map(runtime => runtime.close()))
-  await Promise.all(directories.splice(0).map(directory => rm(directory, { recursive: true, force: true })))
+  await Promise.all(directories.splice(0).map(directory => removeTemporaryDirectory(directory)))
   vi.restoreAllMocks()
 })
 

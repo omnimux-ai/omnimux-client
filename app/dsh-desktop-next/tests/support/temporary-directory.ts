@@ -19,7 +19,10 @@
  */
 import { rm } from 'node:fs/promises'
 
-/** Removal budget for one temporary test directory: five attempts, 100 ms apart. */
+/**
+ * Removal budget for one temporary test directory: up to 5 retries with
+ * 100-500 ms linear backoff (~1.5 s total) in Node `fs/promises.rm`.
+ */
 export const TEMPORARY_DIRECTORY_REMOVAL = Object.freeze({
   recursive: true,
   force: true,

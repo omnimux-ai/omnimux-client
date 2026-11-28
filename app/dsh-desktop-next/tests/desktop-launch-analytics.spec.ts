@@ -1,4 +1,4 @@
-import { access, mkdtemp, rm } from 'node:fs/promises'
+import { access, mkdtemp } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
@@ -7,6 +7,7 @@ import { DesktopLaunchAnalytics } from '../src/desktop-launch-analytics.ts'
 import { DesktopDiagnostics } from '../src/diagnostics.ts'
 import { NextProfiles } from '../src/profiles.ts'
 import { NextRecovery } from '../src/recovery.ts'
+import { removeTemporaryDirectory } from './support/temporary-directory.ts'
 
 const ENDPOINT = 'http://localhost:8077/api/send'
 const WEBSITE_ID = '11111111-2222-4333-8444-555555555555'
@@ -20,7 +21,7 @@ beforeEach(async () => { root = await mkdtemp(join(tmpdir(), 'next-launch-analyt
 afterEach(async () => {
   vi.restoreAllMocks()
   vi.useRealTimers()
-  await rm(root, { recursive: true, force: true })
+  await removeTemporaryDirectory(root)
 })
 
 function launch(overrides: Partial<ConstructorParameters<typeof DesktopLaunchAnalytics>[0]> = {}) {
