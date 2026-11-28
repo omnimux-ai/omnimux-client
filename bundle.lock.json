@@ -66,7 +66,7 @@
       "version": "0.1.2",
       "path": "plugins/plugins/omnimux-products",
       "spec": "link:../../plugins/plugins/omnimux-products",
-      "contentHash": "sha256:8412ea1394c190b4d4d4a98a73697432610a7d7ac0c5fac5fc7cc7b9735a7c6f"
+      "contentHash": "sha256:743333799e318ff5053e89a28b43e39183fc532b369567b7409778fe79bd5cc1"
     },
     {
       "name": "omnimux-publish",
