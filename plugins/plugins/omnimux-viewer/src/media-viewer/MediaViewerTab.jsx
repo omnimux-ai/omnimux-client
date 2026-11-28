@@ -237,12 +237,12 @@ export function MediaViewerTab({ scope, sessions, imageUrl, readFile, t }) {
       const padBottom = Math.max(compactLayout ? 156 : 164, composerReserve);
       const maxW = Math.max(120, Math.floor(stageRect.width - padLeft - padRight));
       const maxH = Math.max(120, Math.floor(stageRect.height - padTop - padBottom));
-      stage.style.setProperty('--omx-mv-stage-pad-top', `${padTop}px`);
-      stage.style.setProperty('--omx-mv-stage-pad-right', `${padRight}px`);
-      stage.style.setProperty('--omx-mv-stage-pad-bottom', `${padBottom}px`);
-      stage.style.setProperty('--omx-mv-stage-pad-left', `${padLeft}px`);
-      stage.style.setProperty('--omx-mv-stage-max-w', `${maxW}px`);
-      stage.style.setProperty('--omx-mv-stage-max-h', `${maxH}px`);
+      stage.style.setProperty('--omnimux-mv-stage-pad-top', `${padTop}px`);
+      stage.style.setProperty('--omnimux-mv-stage-pad-right', `${padRight}px`);
+      stage.style.setProperty('--omnimux-mv-stage-pad-bottom', `${padBottom}px`);
+      stage.style.setProperty('--omnimux-mv-stage-pad-left', `${padLeft}px`);
+      stage.style.setProperty('--omnimux-mv-stage-max-w', `${maxW}px`);
+      stage.style.setProperty('--omnimux-mv-stage-max-h', `${maxH}px`);
     };
     syncStageBudget();
     if (typeof ResizeObserver !== 'function') return undefined;

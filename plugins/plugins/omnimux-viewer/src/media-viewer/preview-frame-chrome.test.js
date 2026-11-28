@@ -52,9 +52,9 @@ describe('预览图去黑边、去外围光晕与真圆角契约 (Issue #434)', 
 
     // 3. ResizeObserver 同步舞台与悬浮输入框避让变量
     assert.match(src, /data-has-thumbnails=\{hasThumbnails \? 'true' : 'false'\}/);
-    assert.match(src, /--omx-mv-stage-max-w/);
-    assert.match(src, /--omx-mv-stage-max-h/);
-    assert.match(src, /--omx-mv-stage-pad-bottom/);
+    assert.match(src, /--omnimux-mv-stage-max-w/);
+    assert.match(src, /--omnimux-mv-stage-max-h/);
+    assert.match(src, /--omnimux-mv-stage-pad-bottom/);
     assert.match(src, /\.omx-mv-composer-outer/);
   });
 
@@ -87,7 +87,7 @@ describe('预览图去黑边、去外围光晕与真圆角契约 (Issue #434)', 
     assert.match(completedImgRule, /width:\s*auto;/);
     assert.match(completedImgRule, /height:\s*auto;/);
     assert.match(completedImgRule, /border-radius:\s*inherit;/);
-    assert.match(completedImgRule, /max-height:\s*var\(--omx-mv-stage-max-h,/);
+    assert.match(completedImgRule, /max-height:\s*var\(--omnimux-mv-stage-max-h,/);
   });
 
   it('占位卡槽补齐 3:4 / 2:3 / 3:2 / 21:9 比例并受舞台净高约束', () => {

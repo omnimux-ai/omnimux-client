@@ -376,10 +376,10 @@ export const MEDIA_VIEWER_CSS = `
   height: 100%;
   box-sizing: border-box;
   padding:
-    var(--omx-mv-stage-pad-top, 16px)
-    var(--omx-mv-stage-pad-right, 24px)
-    var(--omx-mv-stage-pad-bottom, 168px)
-    var(--omx-mv-stage-pad-left, 24px);
+    var(--omnimux-mv-stage-pad-top, 16px)
+    var(--omnimux-mv-stage-pad-right, 24px)
+    var(--omnimux-mv-stage-pad-bottom, 168px)
+    var(--omnimux-mv-stage-pad-left, 24px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -389,19 +389,19 @@ export const MEDIA_VIEWER_CSS = `
 }
 
 .omx-mv-single-stage[data-has-thumbnails="true"] {
-  --omx-mv-stage-pad-left: 84px;
+  --omnimux-mv-stage-pad-left: 84px;
 }
 
 .omx-media-viewer[data-layout-compact="true"] .omx-mv-single-stage {
-  --omx-mv-stage-pad-top: 12px;
-  --omx-mv-stage-pad-right: 16px;
-  --omx-mv-stage-pad-bottom: 156px;
-  --omx-mv-stage-pad-left: 16px;
+  --omnimux-mv-stage-pad-top: 12px;
+  --omnimux-mv-stage-pad-right: 16px;
+  --omnimux-mv-stage-pad-bottom: 156px;
+  --omnimux-mv-stage-pad-left: 16px;
 }
 
 .omx-media-viewer[data-layout-compact="true"] .omx-mv-single-stage[data-has-thumbnails="true"] {
-  --omx-mv-stage-pad-right: 12px;
-  --omx-mv-stage-pad-left: 76px;
+  --omnimux-mv-stage-pad-right: 12px;
+  --omnimux-mv-stage-pad-left: 76px;
 }
 
 /* 去胶囊外壳：缩略图列贴画布左侧从顶到底，超出时自身纵向滚动（滚轮由 stage 监听放行） */
@@ -2618,48 +2618,48 @@ button.omx-slot-add:hover,
 }
 
 .omx-media-slot:not(.omx-media-slot--media) {
-  width: min(520px, var(--omx-mv-stage-max-w, 100%), var(--omx-mv-stage-max-h, calc(100vh - 220px)));
-  height: min(520px, var(--omx-mv-stage-max-w, 100%), var(--omx-mv-stage-max-h, calc(100vh - 220px)));
+  width: min(520px, var(--omnimux-mv-stage-max-w, 100%), var(--omnimux-mv-stage-max-h, calc(100vh - 220px)));
+  height: min(520px, var(--omnimux-mv-stage-max-w, 100%), var(--omnimux-mv-stage-max-h, calc(100vh - 220px)));
 }
 
 .omx-media-slot:not(.omx-media-slot--media)[data-ratio="1:1"] {
-  width: min(520px, var(--omx-mv-stage-max-w, 100%), var(--omx-mv-stage-max-h, calc(100vh - 220px)));
-  height: min(520px, var(--omx-mv-stage-max-w, 100%), var(--omx-mv-stage-max-h, calc(100vh - 220px)));
+  width: min(520px, var(--omnimux-mv-stage-max-w, 100%), var(--omnimux-mv-stage-max-h, calc(100vh - 220px)));
+  height: min(520px, var(--omnimux-mv-stage-max-w, 100%), var(--omnimux-mv-stage-max-h, calc(100vh - 220px)));
 }
 
 .omx-media-slot:not(.omx-media-slot--media)[data-ratio="16:9"] {
-  width: min(780px, var(--omx-mv-stage-max-w, 80vw), calc(var(--omx-mv-stage-max-h, calc(100vh - 220px)) * 16 / 9));
-  height: calc(min(780px, var(--omx-mv-stage-max-w, 80vw), calc(var(--omx-mv-stage-max-h, calc(100vh - 220px)) * 16 / 9)) * 9 / 16);
+  width: min(780px, var(--omnimux-mv-stage-max-w, 80vw), calc(var(--omnimux-mv-stage-max-h, calc(100vh - 220px)) * 16 / 9));
+  height: calc(min(780px, var(--omnimux-mv-stage-max-w, 80vw), calc(var(--omnimux-mv-stage-max-h, calc(100vh - 220px)) * 16 / 9)) * 9 / 16);
 }
 
 .omx-media-slot:not(.omx-media-slot--media)[data-ratio="9:16"] {
-  height: min(520px, var(--omx-mv-stage-max-h, calc(100vh - 220px)), calc(var(--omx-mv-stage-max-w, 80vw) * 16 / 9));
-  width: calc(min(520px, var(--omx-mv-stage-max-h, calc(100vh - 220px)), calc(var(--omx-mv-stage-max-w, 80vw) * 16 / 9)) * 9 / 16);
+  height: min(520px, var(--omnimux-mv-stage-max-h, calc(100vh - 220px)), calc(var(--omnimux-mv-stage-max-w, 80vw) * 16 / 9));
+  width: calc(min(520px, var(--omnimux-mv-stage-max-h, calc(100vh - 220px)), calc(var(--omnimux-mv-stage-max-w, 80vw) * 16 / 9)) * 9 / 16);
 }
 
 .omx-media-slot:not(.omx-media-slot--media)[data-ratio="4:3"] {
-  width: min(640px, var(--omx-mv-stage-max-w, 75vw), calc(var(--omx-mv-stage-max-h, calc(100vh - 220px)) * 4 / 3));
-  height: calc(min(640px, var(--omx-mv-stage-max-w, 75vw), calc(var(--omx-mv-stage-max-h, calc(100vh - 220px)) * 4 / 3)) * 3 / 4);
+  width: min(640px, var(--omnimux-mv-stage-max-w, 75vw), calc(var(--omnimux-mv-stage-max-h, calc(100vh - 220px)) * 4 / 3));
+  height: calc(min(640px, var(--omnimux-mv-stage-max-w, 75vw), calc(var(--omnimux-mv-stage-max-h, calc(100vh - 220px)) * 4 / 3)) * 3 / 4);
 }
 
 .omx-media-slot:not(.omx-media-slot--media)[data-ratio="3:4"] {
-  height: min(520px, var(--omx-mv-stage-max-h, calc(100vh - 220px)), calc(var(--omx-mv-stage-max-w, 80vw) * 4 / 3));
-  width: calc(min(520px, var(--omx-mv-stage-max-h, calc(100vh - 220px)), calc(var(--omx-mv-stage-max-w, 80vw) * 4 / 3)) * 3 / 4);
+  height: min(520px, var(--omnimux-mv-stage-max-h, calc(100vh - 220px)), calc(var(--omnimux-mv-stage-max-w, 80vw) * 4 / 3));
+  width: calc(min(520px, var(--omnimux-mv-stage-max-h, calc(100vh - 220px)), calc(var(--omnimux-mv-stage-max-w, 80vw) * 4 / 3)) * 3 / 4);
 }
 
 .omx-media-slot:not(.omx-media-slot--media)[data-ratio="3:2"] {
-  width: min(660px, var(--omx-mv-stage-max-w, 78vw), calc(var(--omx-mv-stage-max-h, calc(100vh - 220px)) * 3 / 2));
-  height: calc(min(660px, var(--omx-mv-stage-max-w, 78vw), calc(var(--omx-mv-stage-max-h, calc(100vh - 220px)) * 3 / 2)) * 2 / 3);
+  width: min(660px, var(--omnimux-mv-stage-max-w, 78vw), calc(var(--omnimux-mv-stage-max-h, calc(100vh - 220px)) * 3 / 2));
+  height: calc(min(660px, var(--omnimux-mv-stage-max-w, 78vw), calc(var(--omnimux-mv-stage-max-h, calc(100vh - 220px)) * 3 / 2)) * 2 / 3);
 }
 
 .omx-media-slot:not(.omx-media-slot--media)[data-ratio="2:3"] {
-  height: min(520px, var(--omx-mv-stage-max-h, calc(100vh - 220px)), calc(var(--omx-mv-stage-max-w, 80vw) * 3 / 2));
-  width: calc(min(520px, var(--omx-mv-stage-max-h, calc(100vh - 220px)), calc(var(--omx-mv-stage-max-w, 80vw) * 3 / 2)) * 2 / 3);
+  height: min(520px, var(--omnimux-mv-stage-max-h, calc(100vh - 220px)), calc(var(--omnimux-mv-stage-max-w, 80vw) * 3 / 2));
+  width: calc(min(520px, var(--omnimux-mv-stage-max-h, calc(100vh - 220px)), calc(var(--omnimux-mv-stage-max-w, 80vw) * 3 / 2)) * 2 / 3);
 }
 
 .omx-media-slot:not(.omx-media-slot--media)[data-ratio="21:9"] {
-  width: min(820px, var(--omx-mv-stage-max-w, 82vw), calc(var(--omx-mv-stage-max-h, calc(100vh - 220px)) * 21 / 9));
-  height: calc(min(820px, var(--omx-mv-stage-max-w, 82vw), calc(var(--omx-mv-stage-max-h, calc(100vh - 220px)) * 21 / 9)) * 9 / 21);
+  width: min(820px, var(--omnimux-mv-stage-max-w, 82vw), calc(var(--omnimux-mv-stage-max-h, calc(100vh - 220px)) * 21 / 9));
+  height: calc(min(820px, var(--omnimux-mv-stage-max-w, 82vw), calc(var(--omnimux-mv-stage-max-h, calc(100vh - 220px)) * 21 / 9)) * 9 / 21);
 }
 
 .omx-media-result {
@@ -2721,8 +2721,8 @@ button.omx-slot-add:hover,
 .omx-media-slot.omx-media-slot--media > .omx-media-result > video {
   width: auto;
   height: auto;
-  max-width: var(--omx-mv-stage-max-w, 100%);
-  max-height: var(--omx-mv-stage-max-h, max(180px, calc(100vh - 260px)));
+  max-width: var(--omnimux-mv-stage-max-w, 100%);
+  max-height: var(--omnimux-mv-stage-max-h, max(180px, calc(100vh - 260px)));
   object-fit: contain;
   display: block;
   border-radius: inherit;

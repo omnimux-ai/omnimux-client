@@ -13,7 +13,7 @@
 ## 假设
 
 1. 将完成态图片/视频与生成中/失败占位框结构解耦（完成态使用 `.omx-media-slot--media` / `.omx-media-result--media`，取消固定 `data-ratio` 尺寸锁定并采用 `width: auto; height: auto` 紧贴媒体原生比例收缩），可以彻底消除黑边，让 `border-radius: var(--dsw-radius-md, 12px)` 直接裁切真实画面四角，并确保标注打点百分比坐标严格对齐画面边缘。
-2. 在 `MediaViewerTab.jsx` 中通过 `ResizeObserver` 同时监听 `.omx-mv-single-stage` 与同级底部悬浮输入框 `.omx-mv-composer-outer`，动态写入 `--omx-mv-stage-max-w`、`--omx-mv-stage-max-h` 与四边避让内边距 `--omx-mv-stage-pad-*`（样式层同步保留无 JS 时的 `calc(100vh - 260px)` 兜底），可在窗口缩放、非全屏分栏以及多行提示词撑高输入框时均保证完成态预览图和占位态卡槽零遮挡且不压住左侧缩略图栏。
+2. 在 `MediaViewerTab.jsx` 中通过 `ResizeObserver` 同时监听 `.omx-mv-single-stage` 与同级底部悬浮输入框 `.omx-mv-composer-outer`，动态写入 `--omnimux-mv-stage-max-w`、`--omnimux-mv-stage-max-h` 与四边避让内边距 `--omnimux-mv-stage-pad-*`（样式层同步保留无 JS 时的 `calc(100vh - 260px)` 兜底），可在窗口缩放、非全屏分栏以及多行提示词撑高输入框时均保证完成态预览图和占位态卡槽零遮挡且不压住左侧缩略图栏。
 3. 移除 `.omx-mv-display` 与 `.omx-media-slot` 上引用 `--dsw-alias-bg-layer-1` 的 `box-shadow`（统一置为 `box-shadow: none`）后，深色与浅色主题下预览图四周不再出现浅灰发光晕或阴影杂边，且不影响生成中 `GeneratingStateCard` 与失败卡槽的原有表现。
 
 ## 证伪方式
