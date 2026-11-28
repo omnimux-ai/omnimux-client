@@ -155,6 +155,8 @@ html[${NAV_RAIL_ACTIVE_ATTR}="1"] #root:not(:has([role="dialog"][aria-modal="tru
 }
 
 #${NAV_RAIL_ID}[data-omnimux-nav-rail="1"] {
+  --omnimux-nav-rail-pad-top: 12px;
+  --omnimux-nav-rail-pad-bottom: 12px;
   position: fixed;
   top: 0;
   bottom: 0;
@@ -165,18 +167,29 @@ html[${NAV_RAIL_ACTIVE_ATTR}="1"] #root:not(:has([role="dialog"][aria-modal="tru
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 12px 0;
+  padding: var(--omnimux-nav-rail-pad-top) 0 var(--omnimux-nav-rail-pad-bottom);
   background: var(--dsw-specific-sidebar-fill, var(--dsw-alias-bg-layer-1));
-  border-right: 1px solid var(--dsw-alias-border-l3);
+  border-right: none;
   color: var(--dsw-alias-label-secondary);
   user-select: none;
   overflow: visible;
 }
 
+#${NAV_RAIL_ID}[data-omnimux-nav-rail="1"]::after {
+  content: "";
+  position: absolute;
+  top: var(--omnimux-nav-rail-pad-top);
+  bottom: var(--omnimux-nav-rail-pad-bottom);
+  right: 0;
+  width: 0;
+  border-right: 0.5px solid var(--dsw-alias-border-l2-darkmode-thin, var(--dsw-alias-border-l1));
+  pointer-events: none;
+}
+
 /* macOS 窗口顶部留出 48px 红绿灯安全区（含窗口拖拽区域，按钮本身豁免拖拽） */
 html[data-platform="darwin"]:not([data-fullscreen]) #${NAV_RAIL_ID}[data-omnimux-nav-rail="1"],
 html:not([data-fullscreen]) body[data-dsh-desktop-platform="darwin"][data-dsh-desktop-mode] #${NAV_RAIL_ID}[data-omnimux-nav-rail="1"] {
-  padding-top: 52px;
+  --omnimux-nav-rail-pad-top: 52px;
 }
 
 html[data-platform="darwin"]:not([data-fullscreen]) #${NAV_RAIL_ID}[data-omnimux-nav-rail="1"]::before,
@@ -247,9 +260,10 @@ html:not([data-fullscreen]) body[data-dsh-desktop-platform="darwin"][data-dsh-de
 
 .omnimux-nav-rail-divider {
   width: 24px;
-  height: 1px;
+  height: 0;
+  box-sizing: content-box;
   margin: 4px 0;
-  background: var(--dsw-alias-border-l3);
+  border-top: 0.5px solid var(--dsw-alias-border-l2-darkmode-thin, var(--dsw-alias-border-l1));
 }
 
 .omnimux-nav-rail-btn {

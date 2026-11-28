@@ -19,6 +19,7 @@ import {
 import {
   NAV_RAIL_ACTIVE_ATTR,
   NAV_RAIL_BOTTOM_ITEMS,
+  NAV_RAIL_CSS,
   NAV_RAIL_ID,
   NAV_RAIL_MORE_FALLBACK_ID,
   NAV_RAIL_PIN_CONTEXT_MENU_ID,
@@ -778,6 +779,23 @@ describe('nav-rail 固定左侧导航轨', () => {
       assert.equal(leakedEscapes, 0, '兜底更多菜单消费 Esc 后不得穿透到底层监听')
     } finally {
       doc.removeEventListener('keydown', onBubbleEscape)
+      disposeRail()
+    }
+  })
+
+  it('固定轨竖向与横向分隔线采用 0.5px 浅色细线且竖线上下端点对齐首末图标外侧', () => {
+    const { doc } = setupDom()
+    const disposeRail = installNavRail(doc)
+    try {
+      const styleText = doc.getElementById('omnimux-nav-rail-styles')?.textContent || ''
+      assert.equal(styleText, NAV_RAIL_CSS)
+      assert.match(NAV_RAIL_CSS, /#omnimux-nav-rail\[data-omnimux-nav-rail="1"\]\s*\{[^}]*--omnimux-nav-rail-pad-top:\s*12px;[^}]*--omnimux-nav-rail-pad-bottom:\s*12px;[^}]*border-right:\s*none;/s)
+      assert.match(NAV_RAIL_CSS, /#omnimux-nav-rail\[data-omnimux-nav-rail="1"\]::after\s*\{[^}]*top:\s*var\(--omnimux-nav-rail-pad-top\);[^}]*bottom:\s*var\(--omnimux-nav-rail-pad-bottom\);[^}]*border-right:\s*0\.5px solid var\(--dsw-alias-border-l2-darkmode-thin,\s*var\(--dsw-alias-border-l1\)\);/s)
+      assert.match(NAV_RAIL_CSS, /--omnimux-nav-rail-pad-top:\s*52px;/)
+      assert.match(NAV_RAIL_CSS, /\.omnimux-nav-rail-divider\s*\{[^}]*height:\s*0;[^}]*border-top:\s*0\.5px solid var\(--dsw-alias-border-l2-darkmode-thin,\s*var\(--dsw-alias-border-l1\)\);/s)
+      assert.doesNotMatch(NAV_RAIL_CSS, /1px solid var\(--dsw-alias-border-l3\)/)
+      assert.doesNotMatch(NAV_RAIL_CSS, /\.omnimux-nav-rail-divider\s*\{[^}]*var\(--dsw-alias-border-l3\)/s)
+    } finally {
       disposeRail()
     }
   })
