@@ -3,7 +3,7 @@ import { requestRejection } from '../host/request-authorization.js'
 import { DEFAULT_SITE, resolveSiteBaseUrl } from '../auth/omnimux-auth.js'
 import { assertLocalWrite } from '../apps/origin.js'
 import { OmnimuxError } from '../media/errors.js'
-import { connectAccount, disconnectAccount, listAccounts } from './accounts.js'
+import { connectAccount, disconnectAccount, getSeats, listAccounts, renewAccountSeat } from './accounts.js'
 import {
   ANALYTICS_VALIDATION_ERROR_CODES,
   getDailyMetrics,
@@ -26,7 +26,7 @@ import { createOfficialClient } from './client.js'
 import { DEFAULT_ACCOUNT_AVATARS, parseOfficialConfig } from './config.js'
 import { computeStatus, filterRows, localAvatarUrl, pickAccountsView, pickConnectView } from './public-account.js'
 import { mergeMeta } from './account-meta.js'
-import { requireSocialProvider } from './provider.js'
+import { SOCIAL_SEAT_CONFLICT_CODES, SOCIAL_SEAT_QUOTA_CODE, requireSocialProvider } from './provider.js'
 
 const ACCOUNTS_PREFIX = '/omnimux/accounts/'
 
@@ -86,13 +86,41 @@ export function avatarIdFromPath(pathname) {
 }
 
 /**
+ * Pathname → account id for `POST /omnimux/accounts/{id}/renew`.
+ * `{id}` may contain `%2F`; a raw `/` means this is not the renew route.
+ * @param {string} pathname
+ */
+export function renewIdFromPath(pathname) {
+  if (!pathname.startsWith(ACCOUNTS_PREFIX) || !pathname.endsWith('/renew')) return ''
+  const raw = pathname.slice(ACCOUNTS_PREFIX.length, -'/renew'.length)
+  if (!raw || raw.includes('/') || raw === '.' || raw === '..') return ''
+  try {
+    const decoded = decodeURIComponent(raw)
+    if (decoded === '.' || decoded === '..') return ''
+    return decoded
+  } catch {
+    return ''
+  }
+}
+
+/**
  * Maps an official request failure to a safe HTTP response.
  * @param {unknown} error
- * @returns {{ status: number, body: Record<string, string> }}
+ * @returns {{ status: number, body: Record<string, unknown> }}
  */
 export function mapOfficialError(error) {
+  if (error instanceof OmnimuxError && SOCIAL_SEAT_CONFLICT_CODES.includes(error.code)) {
+    const details = error.details && typeof error.details === 'object'
+      ? /** @type {Record<string, unknown>} */ (error.details)
+      : null
+    /** @type {Record<string, unknown>} */
+    const body = { error: error.code, code: error.code, message: error.message }
+    if (typeof details?.max_validity_days === 'number') body.max_validity_days = details.max_validity_days
+    return { status: error.status || 409, body }
+  }
   if (error instanceof OmnimuxError && [
     'invalid-provider',
+    'invalid-account-id',
     'account-provider-mismatch',
     'post-provider-mismatch',
     ...ANALYTICS_VALIDATION_ERROR_CODES,
@@ -101,6 +129,19 @@ export function mapOfficialError(error) {
     return { status, body: { error: error.code, message: error.message } }
   }
   if (error instanceof OmnimuxError && error.code === 'quota-exceeded') {
+    const details = error.details && typeof error.details === 'object'
+      ? /** @type {Record<string, unknown>} */ (error.details)
+      : null
+    if (details?.code === SOCIAL_SEAT_QUOTA_CODE || typeof details?.need_credits === 'number') {
+      /** @type {Record<string, unknown>} */
+      const body = {
+        error: 'quota-exceeded',
+        code: SOCIAL_SEAT_QUOTA_CODE,
+        message: error.message || '当前操作需要更多额度，充值后即可继续使用 OmniMux。',
+      }
+      if (typeof details?.need_credits === 'number') body.need_credits = details.need_credits
+      return { status: 402, body }
+    }
     return { status: 402, body: { error: 'quota-exceeded', message: '当前操作需要更多额度，充值后即可继续使用 OmniMux。' } }
   }
   if (error instanceof OmnimuxError && error.code === 'needs-omnimux') {
@@ -287,6 +328,20 @@ export function createOfficialDispatcher(deps = {}) {
       }
     }
     try {
+      if (path === '/omnimux/accounts/seats') {
+        if (method !== 'GET') return { status: 405, body: { error: 'method not allowed' } }
+        const data = await getSeats(client)
+        return { status: 200, body: data }
+      }
+      if (path.startsWith(ACCOUNTS_PREFIX) && path.endsWith('/renew')) {
+        if (method !== 'POST') return { status: 405, body: { error: 'method not allowed' } }
+        const renewId = renewIdFromPath(path)
+        if (!renewId) return { status: 400, body: { error: 'id is required' } }
+        const body = req.body && typeof req.body === 'object' ? /** @type {Record<string, unknown>} */ (req.body) : {}
+        const provider = body.provider ?? url.searchParams.get('provider')
+        const data = await renewAccountSeat(client, { id: renewId, provider })
+        return { status: 200, body: data }
+      }
       if (method === 'GET' && path === '/omnimux/accounts') {
         const provider = requireSocialProvider(url.searchParams.get('provider'))
         const raw = await listAccounts(client, { provider })

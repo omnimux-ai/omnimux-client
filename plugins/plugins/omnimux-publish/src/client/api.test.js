@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import { connectTikTokAccount, disconnectHubAccount, errorText, listHubAccounts } from './api.js'
+import { connectTikTokAccount, disconnectHubAccount, errorText, getHubSeats, listHubAccounts, renewHubAccountSeat } from './api.js'
 
 describe('fixed official account scope', () => {
   it('filters same-name accounts and ignores a caller-supplied source override', async () => {
@@ -100,4 +100,113 @@ describe('disconnectHubAccount', () => {
       }
     })
   }
+})
+
+describe('getHubSeats & renewHubAccountSeat (#412)', () => {
+  it('fetches /omnimux/accounts/seats and whitelists the billing summary', async () => {
+    const originalFetch = globalThis.fetch
+    let seenUrl = ''
+    globalThis.fetch = async (path) => {
+      seenUrl = String(path)
+      return new Response(JSON.stringify({
+        billing_mode: 'seat',
+        seats_purchased: 2,
+        seats_occupied: 1,
+        seats_vacant: 1,
+        seats_cap: 20,
+        seat_price_credits: 20,
+        vacant_seats: [{ id: 9, expires_at: '2026-12-27T00:00:00Z', swaps_remaining: 2, same_account_only: false }],
+      }), { status: 200 })
+    }
+    try {
+      const res = await getHubSeats()
+      assert.equal(seenUrl, '/omnimux/accounts/seats')
+      assert.equal(res.ok, true)
+      assert.equal(res.body.billing_mode, 'seat')
+      assert.equal(res.body.seats_vacant, 1)
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+
+  it('posts /omnimux/accounts/:id/renew?provider=tiktok_direct and rejects invalid ids without fetch', async () => {
+    const originalFetch = globalThis.fetch
+    const seen = []
+    globalThis.fetch = async (path, init) => {
+      seen.push({ path: String(path), method: init?.method, body: init?.body })
+      return new Response(JSON.stringify({ account_id: 'a/b', seat: { status: 'active' } }), { status: 200 })
+    }
+    try {
+      const ok = await renewHubAccountSeat('a/b')
+      assert.equal(ok.ok, true)
+      assert.equal(seen[0].path, '/omnimux/accounts/a%2Fb/renew?provider=tiktok_direct')
+      assert.equal(seen[0].method, 'POST')
+      assert.deepEqual(JSON.parse(seen[0].body), { provider: 'tiktok_direct' })
+
+      const bad = await renewHubAccountSeat('   ')
+      assert.deepEqual(bad, { ok: false, status: 400, body: { error: 'id is required' } })
+      assert.equal(seen.length, 1)
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+
+  it('bypasses local quota precheck on list/connect/disconnect when ensureQuota reports zero balance while still notifying on real 402', async () => {
+    const originalFetch = globalThis.fetch
+    const hadWindow = Object.hasOwn(globalThis, 'window')
+    const previousWindow = globalThis.window
+    const notified = []
+    const calls = []
+    globalThis.window = {
+      __omnimuxQuota: {
+        async ensureQuota() { return { ok: false, reason: 'quota' } },
+        notify(payload) { notified.push(payload) },
+      },
+    }
+    globalThis.fetch = async (path, init = {}) => {
+      const url = String(path)
+      const method = init.method || 'GET'
+      calls.push({ url, method })
+      if (url.startsWith('/omnimux/accounts?') && method === 'GET') {
+        return new Response(JSON.stringify({
+          accounts: [{ id: 'acc-1', provider: 'tiktok_direct', platform: 'tiktok', display_name: 'ZeroBal' }],
+        }), { status: 200 })
+      }
+      if (url === '/omnimux/accounts' && method === 'POST') {
+        if (calls.filter((c) => c.method === 'POST').length === 1) {
+          return new Response(JSON.stringify({ auth_url: 'https://www.tiktok.com/v2/auth/authorize/' }), { status: 200 })
+        }
+        return new Response(JSON.stringify({ error: 'quota-exceeded', code: 'SOCIAL_SEAT_QUOTA', need_credits: 20 }), { status: 402 })
+      }
+      if (url === '/omnimux/accounts/acc-1?provider=tiktok_direct' && method === 'DELETE') {
+        return new Response(JSON.stringify({ disconnected: true }), { status: 200 })
+      }
+      return new Response(JSON.stringify({ error: 'unexpected' }), { status: 500 })
+    }
+    try {
+      const listed = await listHubAccounts()
+      assert.equal(listed.ok, true)
+      assert.equal(listed.body.accounts.length, 1)
+
+      const connectFree = await connectTikTokAccount()
+      assert.equal(connectFree.ok, true)
+      assert.equal(connectFree.body.auth_url, 'https://www.tiktok.com/v2/auth/authorize/')
+      assert.equal(notified.length, 0)
+
+      const connectQuota = await connectTikTokAccount()
+      assert.equal(connectQuota.ok, false)
+      assert.equal(connectQuota.status, 402)
+      assert.equal(connectQuota.body.code, 'SOCIAL_SEAT_QUOTA')
+      assert.equal(connectQuota.body.need_credits, 20)
+      assert.equal(notified.length, 1)
+
+      const disc = await disconnectHubAccount('acc-1')
+      assert.equal(disc.ok, true)
+      assert.equal(calls.length, 4)
+    } finally {
+      globalThis.fetch = originalFetch
+      if (hadWindow) globalThis.window = previousWindow
+      else delete globalThis.window
+    }
+  })
 })

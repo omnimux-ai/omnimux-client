@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, readdirSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -212,6 +212,106 @@ test('plugin-sourced skills resolve skillContent/exploreFile, install without co
     assert.deepEqual(readdirSync(emptySkillsDir), [], 'zero-copy plugin skill must not copy files into cfg.skillsDir')
   } finally {
     rmSync(emptySkillsDir, { recursive: true, force: true })
+  }
+})
+
+test('external SeaLeap skills search by platform/keyword, detail skips remote fetch, and skillContent reports honest external state', async () => {
+  const prevHome = process.env.DSH_HOME
+  const tmpHome = mkdtempSync(join(tmpdir(), 'omx-sealeap-api-test-'))
+  const skillsDir = join(tmpHome, 'skills')
+  mkdirSync(skillsDir, { recursive: true })
+  process.env.DSH_HOME = tmpHome
+  const origFetch = globalThis.fetch
+  let remoteFetchCalled = false
+  globalThis.fetch = async () => {
+    remoteFetchCalled = true
+    throw new Error('unexpected remote SkillHub call for local external catalog item')
+  }
+  try {
+    const cfg = withDefaults({
+      skillsDir,
+      aggregateChannels: ['custom', 'workbuddy'],
+      timeoutMs: 5000,
+      userAgent: 't',
+    })
+
+    // 1. Search by Chinese platform keyword 美客多
+    const searchReq = {
+      method: 'POST',
+      url: '/omnimux-market',
+      [Symbol.asyncIterator]: async function* () {
+        yield Buffer.from(JSON.stringify({ method: 'search', query: '美客多' }))
+      },
+    } as unknown as IncomingMessage
+    const searchRes = mockRes()
+    await handleApi(searchReq, searchRes, cfg)
+    assert.equal(searchRes._status, 200)
+    const searchBody = JSON.parse(searchRes._body)
+    assert.equal(searchBody.ok, true)
+    assert.ok(searchBody.items.some((i: { subtitle?: string; origin?: string; license?: string; author?: string }) => (
+      i.subtitle === '美客多' && i.origin === 'third-party' && i.license === 'MIT' && i.author === 'SeaLeap'
+    )))
+
+    // 2. Detail skips remote fetch for third-party git item
+    remoteFetchCalled = false
+    const detailReq = {
+      method: 'POST',
+      url: '/omnimux-market',
+      [Symbol.asyncIterator]: async function* () {
+        yield Buffer.from(JSON.stringify({
+          method: 'detail',
+          slug: 'sealeap-ozon-mpstats-data-audit',
+          catalogId: 'sk-sealeap-ozon-mpstats-data-audit',
+        }))
+      },
+    } as unknown as IncomingMessage
+    const detailRes = mockRes()
+    await handleApi(detailReq, detailRes, cfg)
+    assert.equal(detailRes._status, 200)
+    const detailBody = JSON.parse(detailRes._body)
+    assert.equal(detailBody.card.subtitle, 'OZON')
+    assert.equal(detailBody.card.license, 'MIT')
+    assert.equal(detailBody.card.installed, false)
+    assert.equal(remoteFetchCalled, false)
+
+    // 3. Uninstalled skillContent returns external metadata honestly
+    const contentBeforeReq = {
+      method: 'POST',
+      url: '/omnimux-market',
+      [Symbol.asyncIterator]: async function* () {
+        yield Buffer.from(JSON.stringify({ method: 'skillContent', slug: 'sealeap-ozon-mpstats-data-audit' }))
+      },
+    } as unknown as IncomingMessage
+    const contentBeforeRes = mockRes()
+    await handleApi(contentBeforeReq, contentBeforeRes, cfg)
+    const contentBefore = JSON.parse(contentBeforeRes._body)
+    assert.equal(contentBefore.ok, true)
+    assert.equal(contentBefore.found, false)
+    assert.equal(contentBefore.external, true)
+    assert.equal(contentBefore.catalog.subtitle, 'OZON')
+
+    // 4. After writing local SKILL.md, skillContent returns found=true and real SKILL.md
+    const destDir = join(skillsDir, 'sealeap-ozon-mpstats-data-audit')
+    mkdirSync(destDir, { recursive: true })
+    writeFileSync(join(destDir, 'SKILL.md'), '---\nname: sealeap-ozon-mpstats-data-audit\n---\n\n# Real OZON Doc\n', 'utf8')
+    const contentAfterReq = {
+      method: 'POST',
+      url: '/omnimux-market',
+      [Symbol.asyncIterator]: async function* () {
+        yield Buffer.from(JSON.stringify({ method: 'skillContent', slug: 'sealeap-ozon-mpstats-data-audit' }))
+      },
+    } as unknown as IncomingMessage
+    const contentAfterRes = mockRes()
+    await handleApi(contentAfterReq, contentAfterRes, cfg)
+    const contentAfter = JSON.parse(contentAfterRes._body)
+    assert.equal(contentAfter.ok, true)
+    assert.equal(contentAfter.found, true)
+    assert.ok(String(contentAfter.skillMd).includes('Real OZON Doc'))
+  } finally {
+    globalThis.fetch = origFetch
+    if (prevHome === undefined) delete process.env.DSH_HOME
+    else process.env.DSH_HOME = prevHome
+    rmSync(tmpHome, { recursive: true, force: true })
   }
 })
 

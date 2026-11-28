@@ -438,4 +438,28 @@ describe('validateForSubmit: TikTok Direct Post compliance (#186)', () => {
     }, { accounts: DIRECT_ACCOUNTS, platforms: TIKTOK_PLATFORMS, phase: 'assign' })
     assert.equal(verdict.ok, true)
   })
+
+  it('rejects frozen and unactivated account seats with SOCIAL_SEAT_EXPIRED (#412)', () => {
+    const accounts = [
+      {
+        id: 'frozen-1',
+        provider: 'tiktok_direct',
+        platform: 'tiktok',
+        display_name: 'Frozen',
+        status: 'active',
+        capabilities: { upload_draft: true, publish_direct: false },
+        seat: { status: 'frozen', expires_at: '2026-11-20T00:00:00Z', can_renew: true },
+      },
+    ]
+    const verdict = validateForSubmit({
+      type: 'video',
+      description: 'Blocked by expired seat',
+      mediaRows: [{ id: 'v1', kind: 'video', filename: 'a.mp4', content_type: 'video/mp4' }],
+      account_ids: ['frozen-1'],
+    }, { accounts, platforms: TIKTOK_PLATFORMS })
+    assert.equal(verdict.ok, false)
+    assert.ok(verdict.errors.some((e) => e.code === 'SOCIAL_SEAT_EXPIRED'))
+    const err = validationError(verdict.errors)
+    assert.equal(err.code, 'SOCIAL_SEAT_EXPIRED')
+  })
 })

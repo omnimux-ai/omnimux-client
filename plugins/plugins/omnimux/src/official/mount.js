@@ -12,6 +12,7 @@ import {
   getInboxAnalytics,
 } from './analytics.js'
 import { createOfficialClient } from './client.js'
+import { formatSocialSeatToolError } from './provider.js'
 import {
   createInspiration,
   deleteInspiration,
@@ -255,7 +256,7 @@ export function mountOfficial(ctx, deps) {
           assertCapabilityEnabled(gate, name, 'tool')
           return await run(args, exec)
         } catch (error) {
-          if (error instanceof OmnimuxError) throw error
+          if (error instanceof OmnimuxError) throw formatSocialSeatToolError(error)
           return deps.rethrow(error)
         }
       },

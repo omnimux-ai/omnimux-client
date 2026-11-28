@@ -4,7 +4,8 @@ import { PublishError } from './publish-error.js'
 import { ACCOUNT_SOURCE_MESSAGE, isPublishingAccount } from './account-policy.js'
 import { isObject } from './shared/values.js'
 import { accountPublishMode, pickAccountCapabilities } from './shared/tiktok-capabilities.js'
-/** @typedef {Record<string, unknown> & { id: string, platform: 'tiktok', provider: 'tiktok_direct', status: 'active' | 'expiring' | 'expired' | 'error', capabilities?: import('./shared/tiktok-capabilities.js').AccountCapabilities }} AccountRow */
+import { SOCIAL_SEAT_CODES, pickAccountSeat } from './shared/social-seat.js'
+/** @typedef {Record<string, unknown> & { id: string, platform: 'tiktok', provider: 'tiktok_direct', status: 'active' | 'expiring' | 'expired' | 'error', capabilities?: import('./shared/tiktok-capabilities.js').AccountCapabilities, seat?: import('./shared/social-seat.js').AccountSeatView }} AccountRow */
 const DEFAULT_FS = { readFileSync }
 const ACCOUNT_KEYS = Object.freeze([
   'id', 'platform', 'provider', 'display_name', 'username', 'name', 'group', 'status', 'expires_at', 'connected_at',
@@ -24,6 +25,8 @@ export function pickAccount(raw) {
   if (typeof row.avatar_url === 'string' && /^https:\/\//i.test(row.avatar_url)) out.avatar_url = row.avatar_url
   const capabilities = pickAccountCapabilities(row.capabilities)
   if (capabilities) out.capabilities = capabilities
+  const seat = pickAccountSeat(row.seat)
+  if (seat) out.seat = seat
   return out
 }
 
@@ -69,9 +72,24 @@ export function mergeMeta(row, meta) {
   return out
 }
 
-/** @param {Record<string, unknown>} row @returns {{ ok: boolean, reason: string }} */
+/** @param {Record<string, unknown>} row @returns {{ ok: boolean, reason: string, code?: string }} */
 export function accountAvailability(row) {
   if (!isPublishingAccount(row)) return { ok: false, reason: ACCOUNT_SOURCE_MESSAGE }
+  const seat = pickAccountSeat(row.seat)
+  if (seat?.status === 'frozen') {
+    return {
+      ok: false,
+      code: SOCIAL_SEAT_CODES.EXPIRED,
+      reason: '社媒绑定席位已过期，请前往「发布 → 账号」手动续费后再发布',
+    }
+  }
+  if (seat?.status === 'unactivated') {
+    return {
+      ok: false,
+      code: SOCIAL_SEAT_CODES.EXPIRED,
+      reason: '社媒绑定席位待激活，请前往「发布 → 账号」手动激活后再发布',
+    }
+  }
   const status = computeStatus(row)
   if (status === 'expired') return { ok: false, reason: 'account token expired' }
   if (status === 'error') return { ok: false, reason: `account status error${typeof row.status === 'string' ? ` (${row.status})` : ''}` }
@@ -94,7 +112,7 @@ export async function requirePublishingAccounts(source, ids) {
     const row = accounts.find((account) => String(account.id) === String(id))
     if (!isPublishingAccount(row)) throw new PublishError('account-provider-mismatch', ACCOUNT_SOURCE_MESSAGE)
     const available = accountAvailability(row)
-    if (!available.ok) throw new PublishError('account-unavailable', available.reason)
+    if (!available.ok) throw new PublishError(available.code || 'account-unavailable', available.reason)
     selected.push(row)
   }
   return selected

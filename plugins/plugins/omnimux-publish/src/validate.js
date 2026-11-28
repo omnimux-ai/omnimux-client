@@ -198,7 +198,11 @@ export function validateForSubmit(draft, ctx) {
     }
     const availability = accountAvailability(row)
     if (!availability.ok) {
-      errors.push({ code: 'account-unavailable', field: 'account_ids', message: `账号 ${key}（${String(row.display_name || row.username || row.platform || '')}）不可用：${availability.reason}` })
+      errors.push({
+        code: availability.code || 'account-unavailable',
+        field: 'account_ids',
+        message: `账号 ${key}（${String(row.display_name || row.username || row.platform || '')}）不可用：${availability.reason}`,
+      })
       continue
     }
     const platform = String(row.platform || '').toLowerCase()
@@ -247,9 +251,11 @@ export function validateForSubmit(draft, ctx) {
  * @param {Array<{ code: string, field: string, message: string }>} errors
  */
 export function validationError(errors) {
-  const code = errors.some((error) => error.code === 'account-provider-mismatch') ? 'account-provider-mismatch' : 'validation-failed'
+  const code = errors.some((error) => error.code === 'account-provider-mismatch')
+    ? 'account-provider-mismatch'
+    : (errors.some((error) => error.code === 'SOCIAL_SEAT_EXPIRED') ? 'SOCIAL_SEAT_EXPIRED' : 'validation-failed')
   return new PublishError(code, {
-    message: '提交前校验未通过',
+    message: code === 'SOCIAL_SEAT_EXPIRED' ? '所选社媒账号席位已过期或待激活，请前往「发布 → 账号」手动续费后再试' : '提交前校验未通过',
     errors,
   })
 }

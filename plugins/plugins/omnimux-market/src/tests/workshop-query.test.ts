@@ -476,3 +476,24 @@ test('T02-10：真实目录下工坊 featured 与门禁零拒绝（T02 验收证
     assert.ok(skill.titleZh && skill.titleEn && skill.summaryZh && skill.summaryEn, `缺双语：${skill.skillKey}`)
   }
 })
+
+test('T02-11：third-party + git 外部技能未安装时仅在搜索态可见，已安装时在浏览态保留', () => {
+  const external = item('ext-shopify', {
+    id: 'sk-sealeap-ext-shopify',
+    origin: 'third-party',
+    recommended: false,
+    tags: ['Shopify'],
+    summary: 'Shopify 选品洞察',
+    source: { type: 'git', repo: 'xjli360/sealeap-ecommerce-skills', path: 'sealeap-amazon-skills/demo', ref: 'main' },
+  })
+  const browseUninstalled = query(input([external]), { query: '' }).result.items
+  assert.equal(browseUninstalled.some((s) => s.skillKey === 'ext-shopify'), false, '浏览态应跳过未安装外部技能')
+
+  const searchUninstalled = query(input([external]), { query: 'Shopify' }).result.items
+  assert.equal(searchUninstalled.some((s) => s.skillKey === 'ext-shopify'), true, '搜索态应命中未安装外部技能')
+
+  const installedData = input([external])
+  installedData.inventory.entries = [{ origin: 'local', skill: skill('ext-shopify', { enabled: true }) }]
+  const browseInstalled = query(installedData, { query: '' }).result.items
+  assert.equal(browseInstalled.some((s) => s.skillKey === 'ext-shopify' && s.installed), true, '已安装外部技能在浏览态应保留')
+})

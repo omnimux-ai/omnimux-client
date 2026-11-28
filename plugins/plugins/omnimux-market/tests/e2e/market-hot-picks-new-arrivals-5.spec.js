@@ -43,10 +43,13 @@ test('E2E-2 渲染组件契约：hotPicks 和 newArrivals 各截取前 5 个排�
 
 test('E2E-3 新品上市专区严格限制为 5 个技能且不与热门精选重叠，总数严格守恒 36', () => {
   const catalog = JSON.parse(catalogSrc);
-  const items = (catalog.items || []).filter((i) => i.tab === 'skills' && i.kind === 'skill');
+  const allSkills = (catalog.items || []).filter((i) => i.tab === 'skills' && i.kind === 'skill');
+  const items = allSkills.filter((i) => i.recommended === true);
+  const externalItems = allSkills.filter((i) => i.origin === 'third-party');
   const hotItems = items.filter((i) => i.isHot || i.tags?.includes('热门精选'));
   const newItems = items.filter((i) => i.isNew || i.tags?.includes('新品上市'));
-  assert.equal(items.length, 36, '全部精品 Skill 必须恰好 36 款');
+  assert.equal(items.length, 36, '全部官方精品 Skill 必须恰好 36 款');
+  assert.equal(externalItems.some((i) => i.recommended === true || i.isHot || i.isNew), false, '外部技能不得标注推荐/热门/新品');
   assert.equal(hotItems.length, 5, '热门精选必须恰好为 5 款');
   assert.equal(newItems.length, 5, '新品上市必须恰好为 5 款');
   assert.equal(newItems.some((i) => i.isHot), false, '新品上市与热门精选不得重叠');

@@ -1,5 +1,10 @@
 import { OmnimuxError } from '../media/errors.js'
 import { classifyQuotaFailure } from '../errors/quota-classifier.js'
+import {
+  SOCIAL_SEAT_CONFLICT_CODES,
+  SOCIAL_SEAT_QUOTA_CODE,
+  extractSocialSeatDetails,
+} from './provider.js'
 
 /**
  * Two credentials, two origins, for official-only callers: the site PAT lane and
@@ -50,6 +55,22 @@ export function createOfficialClient(deps) {
     if (!response.ok) {
       if (['invalid-provider', 'account-provider-mismatch', 'post-provider-mismatch'].includes(json?.code)) {
         throw new OmnimuxError(json.code, pickErrorMessage(json) || json.code, { status: response.status })
+      }
+      if (SOCIAL_SEAT_CONFLICT_CODES.includes(json?.code)) {
+        throw new OmnimuxError(json.code, pickErrorMessage(json) || json.code, {
+          status: response.status,
+          details: extractSocialSeatDetails(json),
+        })
+      }
+      if (json?.code === SOCIAL_SEAT_QUOTA_CODE) {
+        throw new OmnimuxError(
+          'quota-exceeded',
+          pickErrorMessage(json) || '当前操作需要更多额度，充值后即可继续使用 OmniMux。',
+          {
+            status: response.status || 402,
+            details: { kind: 'quota-exceeded', ...extractSocialSeatDetails(json) },
+          },
+        )
       }
       const classification = classifyQuotaFailure({ status: response.status, body: json })
       if (classification.kind === 'needs-omnimux') {

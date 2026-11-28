@@ -7,6 +7,7 @@ import { ACCOUNT_SOURCE_MESSAGE, PUBLISH_PROVIDER } from './account-policy.js'
 import { createSubmitMedia, composeContent } from './submit-media.js'
 import { aggregateCreatorInfo, buildCreateTikTokOptions, formatTikTokErrorDiagnostic } from './shared/tiktok-options.js'
 import { accountPublishMode } from './shared/tiktok-capabilities.js'
+import { isSeatFrozen } from './shared/social-seat.js'
 import { createCreatorInfoCache } from './creator-info-cache.js'
 import { isObject } from './shared/values.js'
 export { composeContent } from './submit-media.js'
@@ -71,7 +72,7 @@ export function createSubmitService(deps) {
     const selected = record.account_ids
       .map((id) => accountRows.find((row) => String(row.id) === String(id)))
       .filter((row) => row != null)
-    const directAccounts = selected.filter((row) => accountPublishMode(row) === 'direct')
+    const directAccounts = selected.filter((row) => accountPublishMode(row) === 'direct' && !isSeatFrozen(row.seat))
     /** @type {import('./shared/tiktok-options.js').AggregatedCreatorInfo | null} */
     let aggregatedCreatorInfo = null
     if (directAccounts.length > 0) {

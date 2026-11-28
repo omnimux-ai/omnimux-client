@@ -163,6 +163,9 @@ export function createCatalogSkillProvider(opts = {}) {
       for (const item of catalog.items) {
         if (!item.skill) continue
         if (item.source?.type === 'plugin') continue
+        if (item.origin === 'third-party' && item.source?.type === 'git') {
+          if (!existsSync(join(home, 'skills', item.skill, 'SKILL.md'))) continue
+        }
         if (seen.has(item.skill)) continue
         seen.add(item.skill)
 

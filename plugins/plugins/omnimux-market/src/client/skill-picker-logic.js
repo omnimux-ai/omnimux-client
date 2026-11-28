@@ -6,6 +6,25 @@ import marketManifest from '../../dsh.manifest.json' with { type: 'json' }
 import recommendations from '../../catalog/skill-recommendations.json' with { type: 'json' }
 import presetSkillsMap from '../../catalog/preset-skills.json' with { type: 'json' }
 
+export const EXTERNAL_PLATFORM_ORDER = Object.freeze([
+  'Shopify', 'Etsy', 'eBay', 'TikTok Shop', 'Walmart', '美客多', 'OZON', 'Wayfair',
+])
+
+export function isExternalCatalogSkill(item) {
+  return Boolean(item && (item.origin === 'third-party' || (item.source && item.source.type === 'git')))
+}
+
+export function resolveExternalPlatform(item) {
+  if (!item) return ''
+  const sub = typeof item.subtitle === 'string' ? item.subtitle.trim() : ''
+  if (sub && EXTERNAL_PLATFORM_ORDER.includes(sub)) return sub
+  const tags = Array.isArray(item.tags) ? item.tags.map(String) : []
+  for (const platform of EXTERNAL_PLATFORM_ORDER) {
+    if (tags.includes(platform)) return platform
+  }
+  return ''
+}
+
 function extractManifestSkillSlugs(manifest) {
   const list = Array.isArray(manifest && manifest.skills) ? manifest.skills : []
   const slugs = []
@@ -544,6 +563,7 @@ export function plazaDiscoverySections(items = [], { category = '', query = '', 
   const localKeys = new Set(localCards.map(key))
   const scopedPresetCards = presetScoped ? presetCards : []
   const scopedItems = hasQuery ? items : items.filter(item => localKeys.has(key(item)))
+  const hideExternalInBrowse = !hasQuery && !category
   const regular = unique([...scopedPresetCards, ...localCards, ...scopedItems])
     .map(item => presetScoped && presetCategoryOf.has(key(item))
       ? hydratePresetSkill({ ...item, category: presetCategoryOf.get(key(item)) }, availability)
@@ -552,7 +572,14 @@ export function plazaDiscoverySections(items = [], { category = '', query = '', 
     ? { ...item, installed: true, enabled: installed.get(key(item)).enabled !== false }
     : (providerSet.has(key(item)) ? { ...item, installed: true } : item)).filter(matches).filter(available)
     .filter(item => !featuredKeys.has(key(item)))
+    .filter(item => !hideExternalInBrowse || !isExternalCatalogSkill(item))
     .filter(item => category !== 'featured' || (hasQuery && catalogFeatured.has(key(item))))
+    .sort((a, b) => {
+      if (hasQuery || !isScenarioTag(category)) return 0
+      const extA = isExternalCatalogSkill(a) ? 1 : 0
+      const extB = isExternalCatalogSkill(b) ? 1 : 0
+      return extA - extB
+    })
   return { featured, regular }
 }
 
@@ -702,12 +729,25 @@ export function matchesScenarioTag(item, tag) {
   return (SCENARIO_KEYWORDS[tag] || []).some((keyword) => hay.includes(String(keyword).toLowerCase()))
 }
 
-/** 场景计数：全部（技能条目）+ 各场景成员数。 */
+/** 场景计数：全部（官方技能条目，不含外部按需插件）+ 各场景官方成员数。 */
 export function skillScenarioCounts() {
   const counts = { total: 0, byId: {} }
   for (const row of SKILL_SCENARIOS) counts.byId[row.id] = 0
   for (const item of Array.isArray(catalog.items) ? catalog.items : []) {
-    if (!item || item.kind !== 'skill') continue
+    if (!item || item.kind !== 'skill' || isExternalCatalogSkill(item)) continue
+    counts.total += 1
+    const scenario = scenarioForItem(item)
+    if (scenario && Object.hasOwn(counts.byId, scenario)) counts.byId[scenario] += 1
+  }
+  return counts
+}
+
+/** 各场景下外部目录技能计数。 */
+export function skillScenarioExternalCounts() {
+  const counts = { total: 0, byId: {} }
+  for (const row of SKILL_SCENARIOS) counts.byId[row.id] = 0
+  for (const item of Array.isArray(catalog.items) ? catalog.items : []) {
+    if (!item || item.kind !== 'skill' || !isExternalCatalogSkill(item)) continue
     counts.total += 1
     const scenario = scenarioForItem(item)
     if (scenario && Object.hasOwn(counts.byId, scenario)) counts.byId[scenario] += 1

@@ -8,9 +8,9 @@ export const IconButton = React.forwardRef(function IconButton({ children, ...pr
   return <button ref={ref} type="button" {...props}>{children}</button>
 })
 
-export function ModalDialog({ open, title, children, onClose }) {
+export function ModalDialog({ open, title, children, footer, onClose }) {
   if (!open) return null
-  return <div role="dialog" aria-label={title}>{children}<button type="button" onClick={onClose}>Close</button></div>
+  return <div role="dialog" aria-label={title}>{children}{footer}<button type="button" onClick={onClose}>Close</button></div>
 }
 
 export function ConfirmModal({ open, title, children, confirmLabel, cancelLabel, confirmLoading, onConfirm, onClose }) {
@@ -30,7 +30,16 @@ export function Menu({ open, items, onSelect }) {
   return (
     <div role="menu">
       {items.map((item) => (
-        <button key={item.id} type="button" role="menuitem" onClick={() => onSelect(item.id)}>{item.label}</button>
+        <button
+          key={item.id}
+          type="button"
+          role="menuitem"
+          disabled={Boolean(item.disabled)}
+          title={item.title}
+          onClick={() => { if (!item.disabled) onSelect(item.id) }}
+        >
+          {item.label}
+        </button>
       ))}
     </div>
   )
