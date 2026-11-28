@@ -14,12 +14,16 @@ const electronDialog = vi.hoisted(() => ({
   showOpenDialog: vi.fn(async () => ({ canceled: true, filePaths: [] as string[] })),
 }))
 
+const electronShell = vi.hoisted(() => ({
+  showItemInFolder: vi.fn(),
+}))
+
 vi.mock('electron', () => ({
   app: {},
   BrowserWindow: class {},
   dialog: electronDialog,
   screen: {},
-  shell: {},
+  shell: electronShell,
 }))
 
 const desktopDialog = vi.hoisted(() => ({
@@ -582,9 +586,13 @@ describe('Desktop startup recovery diagnostics export', () => {
     return { promise, resolve, reject }
   }
 
-  it('shares an in-flight export and reuses the saved result', async () => {
-    const task = deferred<string>()
-    const exportDiagnostics = vi.fn(() => task.promise)
+  it('shares an in-flight export, reuses saved archive on ensureDiagnostics, and runs a fresh export on export-diagnostics again', async () => {
+    electronShell.showItemInFolder.mockClear()
+    const firstTask = deferred<string>()
+    const secondTask = deferred<string>()
+    const exportDiagnostics = vi.fn()
+      .mockImplementationOnce(() => firstTask.promise)
+      .mockImplementationOnce(() => secondTask.promise)
     const window = recoveryWindow(exportDiagnostics)
     const runAction = handleAction(window)
 
@@ -594,11 +602,20 @@ describe('Desktop startup recovery diagnostics export', () => {
 
     await Promise.resolve()
     expect(exportDiagnostics).toHaveBeenCalledOnce()
-    task.resolve('C:\\Temp\\diagnostics.zip')
+    firstTask.resolve('C:\\Temp\\diagnostics-first.zip')
     await Promise.all([first, second])
 
-    await runAction({ action: 'export-diagnostics' })
+    const ensured = await (window as unknown as { ensureDiagnostics: () => Promise<boolean> }).ensureDiagnostics()
+    expect(ensured).toBe(true)
     expect(exportDiagnostics).toHaveBeenCalledOnce()
+
+    const exportAgain = runAction({ action: 'export-diagnostics' })
+    await vi.waitFor(() => expect(exportDiagnostics).toHaveBeenCalledTimes(2))
+    secondTask.resolve('C:\\Temp\\diagnostics-second.zip')
+    await exportAgain
+
+    await runAction({ action: 'show-diagnostics' })
+    expect(electronShell.showItemInFolder).toHaveBeenCalledWith('C:\\Temp\\diagnostics-second.zip')
   })
 
   it('clears a failed export task so the next attempt can retry', async () => {

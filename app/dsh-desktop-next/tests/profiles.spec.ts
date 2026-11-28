@@ -15,7 +15,8 @@ function profiles() { const home = mkdtempSync(join(tmpdir(), 'dsh-next-profiles
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }) })
 
 it.each(['../outside', 'a/b', 'a\\b', 'node_modules', 'CON', '', 'a'.repeat(65)])('rejects invalid profile name %s', name => {
-  expect(() => profileName(name)).toThrow()
+  expect(() => profileName(name, 'zh')).toThrow('1–64 个英文字母')
+  expect(() => profileName(name, 'en')).toThrow('1–64 letters, numbers, underscores, or hyphens')
 })
 it('starts fresh homes with desktop and preserves an explicitly selected legacy Profile', () => {
   const manager = profiles()

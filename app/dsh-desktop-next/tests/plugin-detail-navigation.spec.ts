@@ -388,7 +388,7 @@ it('renders the on-demand /computer-use command sub-switch on the Computer Use d
   hooks.cursor = 0
   pageTree = ComputerUseSettings({ context: ctx as Context, zh: true, mode: 'page' }) as unknown as Node
   const sectionCount = nodes(pageTree).find(node => node.props.className === 'dshNextComponentSectionCount')!
-  expect(sectionCount.props.children).toBe('共 1 个 · 1 运行中')
+  expect(sectionCount.props.children).toBe('共 1 个，1 运行中')
   const rowNode = nodes(pageTree).find(node => node.props['data-plugin-row'] === 'computer-use-command')!
   expect(rowNode.props['data-state']).toBeUndefined()
   const rowIcon = nodes(rowNode).find(

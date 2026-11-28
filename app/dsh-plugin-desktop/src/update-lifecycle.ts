@@ -262,8 +262,16 @@ class DesktopUpdateLifecycleOwner implements DesktopUpdateLifecycle {
         } else {
           await this.options.adapter.downloadAndOpen(version, controller.signal, channel, confirmedDigests)
         }
-      } catch {
-        // Network, filesystem, and installer-opening failures are deliberately silent.
+      } catch (cause) {
+        if (!controller.signal.aborted && !this.disposed && !(cause instanceof Error && cause.name === 'AbortError')) {
+          const zh = this.options.locale() === 'zh'
+          this.options.adapter.notify({
+            title: zh ? '更新下载失败' : 'Update Download Failed',
+            body: zh
+              ? `未能下载或打开 v${version} 安装包，请检查网络后重试。`
+              : `Could not download or open installer v${version}. Check your network connection and try again.`,
+          })
+        }
       } finally {
         if (this.downloadController === controller) this.downloadController = undefined
         this.downloadingVersion = undefined

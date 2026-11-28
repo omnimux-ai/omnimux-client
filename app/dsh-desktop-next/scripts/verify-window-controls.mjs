@@ -177,7 +177,10 @@ try {
       ready: async () => { globalThis.__NEXT_TEST_BOOT__.calls++; return window.__nextTestBootPayload() },
       failed: async message => { globalThis.__NEXT_TEST_BOOT__.failures.push(message) },
     }
-    const mark = () => { document.documentElement.dataset.platform = 'darwin' }
+    const mark = () => {
+      document.removeEventListener('DOMContentLoaded', mark)
+      document.documentElement.dataset.platform = 'darwin'
+    }
     if (document.documentElement) mark()
     else document.addEventListener('DOMContentLoaded', mark, { once: true })
   })
@@ -828,28 +831,17 @@ try {
   await settings.getByRole('heading', { name: /^(OmniMux 设置|OmniMux settings)$/ }).waitFor()
   // Four tabs group the page and General opens first; a hidden tab stays mounted, and only one panel shows.
   const settingsTabs = settings.getByRole('tablist', { name: '桌面设置分类' })
-  assert.deepEqual(await settingsTabs.getByRole('tab').allTextContents(), ['通用', 'Profile 与数据', '浏览器与局域网', '诊断与恢复'])
+  assert.deepEqual(await settingsTabs.getByRole('tab').allTextContents(), ['通用', '环境数据', '远程访问', '诊断恢复'])
   assert.equal(await settingsTabs.getByRole('tab', { selected: true }).textContent(), '通用')
   const openSettingsTab = async name => {
     await settingsTabs.getByRole('tab', { name, exact: true }).click()
     await settings.getByRole('tabpanel', { name, exact: true }).waitFor()
     assert.equal(await settings.getByRole('tabpanel').count(), 1)
   }
-  await openSettingsTab('浏览器与局域网')
+  await openSettingsTab('远程访问')
   assert.equal(await settings.locator('[data-desktop-settings-tab="general"] [data-desktop-material-row]').count(), 1)
-  const pluginNotice = settings.locator('[data-next-plugin-settings-notice]')
-  await pluginNotice.getByText('插件市场和远程控制设置已移至插件页面。', { exact: true }).waitFor()
-  await pluginNotice.scrollIntoViewIfNeeded()
-  await page.screenshot({ path: join(screenshots, 'desktop-plugin-settings-notice.png'), animations: 'disabled' })
-  await pluginNotice.getByRole('button', { name: /^(前往插件页面|Go to Plugins)$/ }).click()
-  await page.getByRole('dialog', { name: /^(设置|Settings)$/ }).waitFor({ state: 'hidden' })
-  await page.locator('[data-plugin-panel]').waitFor({ state: 'visible' })
-  await controls.waitFor({ state: 'visible' })
-  assert.equal(await context.pages().length, 1, 'Leaving Settings for Plugins must reuse the main window')
-  await openSettingsPanel()
-  await page.getByRole('button', { name: /^(桌面设置|Desktop settings)$/ }).click()
-  await settings.getByRole('heading', { name: /^(OmniMux 设置|OmniMux settings)$/ }).waitFor()
-  assert.equal(await settings.locator('nav').count(), 0)
+  assert.equal(await settings.locator('[data-next-plugin-settings-notice]').count(), 0)
+  await openSettingsTab('通用')
   assert.equal(await settingsTabs.getByRole('tab', { selected: true }).textContent(), '通用')
   // OmniMux ships one branded app icon: the upstream icon switcher row is hidden and window material leads appearance.
   assert.equal(await settings.locator('[data-next-app-icon]').count(), 0)
@@ -920,7 +912,7 @@ try {
   await page.screenshot({ path: join(screenshots, 'desktop-setup-wizard-entry.png'), animations: 'disabled' })
   // Profiles & data: the data directory follows the Profile list, above the folder buttons,
   // with the recovery assistant's switch and a backup before any reset.
-  await openSettingsTab('Profile 与数据')
+  await openSettingsTab('环境数据')
   assert.equal(await settings.getByRole('radio', { name: /^broken/ }).getAttribute('aria-disabled'), 'true')
   // Profile cards use the official settings card material in both themes; the current Profile takes the selected
   // fill and border.
@@ -977,7 +969,7 @@ try {
   await page.waitForFunction(() => [...document.querySelectorAll('[data-next-data-directory] button')].every(button => !button.disabled))
   // Diagnostics: logging and developer tools, then the Host startup limit (#1569): the presets,
   // a limit saved outside them, and Safe Mode's fixed one.
-  await openSettingsTab('诊断与恢复')
+  await openSettingsTab('诊断恢复')
   await settings.getByRole('button', { name: /^(打开日志目录|Open log directory)$/ }).click()
   assert.equal(controlCommands.at(-1).type, 'open-logs')
   const startupLimit = settings.locator('[data-next-startup-limit]')
@@ -1047,16 +1039,18 @@ try {
   controlState.platform = 'darwin'
   await actions.getByRole('button', { name: /打开 DSH 终端|Open DSH Terminal/ }).waitFor({ state: 'visible' })
   // Each local/LAN login link has its own row and native open/copy target.
-  await openSettingsTab('浏览器与局域网')
+  await openSettingsTab('远程访问')
   const webSettings = settings.locator('section[aria-labelledby="dsh-desktop-web-title"]')
   const browserAccess = webSettings.getByRole('switch', { name: /允许在浏览器中打开|Allow opening this Profile in a browser/ })
   const lanAccess = webSettings.getByRole('switch', { name: /局域网访问|Local-network access/ })
   const loginRows = webSettings.locator('.dshDesktopSettingsUrlRow')
   const exportCa = webSettings.getByRole('button', { name: /导出 CA 证书|Export CA certificate/ })
+  assert.equal(await lanAccess.count(), 0)
   assert.equal(await loginRows.count(), 0)
   assert.equal(await settings.getByRole('button', { name: /复制本机登录链接|Copy local login link|复制局域网登录链接|Copy LAN login link/ }).count(), 0)
   await browserAccess.click()
   await loginRows.first().waitFor()
+  assert.equal(await lanAccess.count(), 1)
   assert.equal(await loginRows.count(), 1)
   assert.equal(await exportCa.count(), 0)
   await lanAccess.click()
@@ -1089,7 +1083,7 @@ try {
   await openSettingsTab('通用')
   await settings.locator('#dsh-desktop-notifications-title').scrollIntoViewIfNeeded()
   await page.screenshot({ path: join(screenshots, 'desktop-notification-settings.png'), animations: 'disabled' })
-  await openSettingsTab('Profile 与数据')
+  await openSettingsTab('环境数据')
   await settings.getByRole('radio', { name: /^work/ }).click()
   await page.waitForFunction(() => [...document.querySelectorAll('[role="radio"]')].some(el => el.textContent.startsWith('work') && el.getAttribute('aria-checked') === 'true'))
   assert.deepEqual(controlCommands.at(-1), { type: 'switch', name: 'work' })

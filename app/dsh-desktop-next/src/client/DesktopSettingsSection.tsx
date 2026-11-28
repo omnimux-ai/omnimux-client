@@ -1,6 +1,6 @@
 /** Desktop-owned settings section registered into the official Settings shell. */
 
-import type { ReactNode } from 'react'
+import { useEffect, useRef, type ReactNode } from 'react'
 import { type SegmentedTab, SegmentedTabs } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { DesktopSettingsSectionInjected, DesktopSettingsTab } from './desktop-settings/model.ts'
@@ -10,6 +10,7 @@ import { DesktopSettingsProfilesTab } from './desktop-settings/profiles-tab.tsx'
 import { DesktopSettingsAccessTab } from './desktop-settings/access-tab.tsx'
 import { DesktopSettingsDiagnosticsTab } from './desktop-settings/diagnostics-tab.tsx'
 import { resolveDesktopLanConfirmation } from './desktop-settings/lan-access.ts'
+import { installDialogKeyboardIsolation } from '../../../dsh-plugin-desktop/src/client/modal-keyboard.ts'
 
 export type {
   DesktopNotificationSettings,
@@ -63,8 +64,44 @@ export function DesktopSettingsSection(
 ) {
   const model = useDesktopSettingsSection(props)
   const {
-    t, tabsId, tab, setTab, operationFailed, aaStatus, restart, confirmLan, setConfirmLan, setNetworkExposure,
+    t, tabsId, tab, setTab, operationFailed, operationError, aaStatus, restart, confirmLan, setConfirmLan, setNetworkExposure,
+    busy, settingsWritable, browserAccess, mode,
   } = model
+  const cancelLanRef = useRef<HTMLButtonElement>(null)
+  const dialogRef = useRef<HTMLDivElement>(null)
+  const webGroupRef = useRef<HTMLHeadingElement>(null)
+  const pendingLanTriggerRef = useRef<HTMLElement | null>(null)
+  const onDismissLanRef = useRef<() => void>(() => {})
+  onDismissLanRef.current = () => {
+    resolveDesktopLanConfirmation(false, () => { setConfirmLan(false) }, () => { setNetworkExposure('lan') })
+  }
+
+  useEffect(() => {
+    if (!confirmLan) return
+    return installDialogKeyboardIsolation(
+      dialogRef.current,
+      cancelLanRef.current,
+      () => { onDismissLanRef.current() },
+      (target) => {
+        pendingLanTriggerRef.current = target
+        webGroupRef.current?.focus()
+      },
+    )
+  }, [confirmLan])
+
+  useEffect(() => {
+    if (busy !== undefined || confirmLan) return
+    const target = pendingLanTriggerRef.current
+    if (!target) return
+    if (!target.isConnected) {
+      pendingLanTriggerRef.current = null
+      return
+    }
+    if (!target.hasAttribute('disabled')) {
+      pendingLanTriggerRef.current = null
+      target.focus()
+    }
+  }, [busy, confirmLan, settingsWritable, browserAccess, mode])
 
   const tabItem = (value: DesktopSettingsTab): SegmentedTab<DesktopSettingsTab> => ({
     value,
@@ -80,7 +117,11 @@ export function DesktopSettingsSection(
         <p>{t('intro')}</p>
       </header>
 
-      {operationFailed && aaStatus !== 'failed' && <p className="dshDesktopSettingsError" role="alert">{t('operationFailed')}</p>}
+      {operationFailed && aaStatus !== 'failed' && (
+        <p className="dshDesktopSettingsError" role="alert">
+          {operationError ? `${t('operationFailed')}${t('language') === 'zh' ? '：' : ': '}${operationError}` : t('operationFailed')}
+        </p>
+      )}
       {restart !== 'none' && (
         <p className="dshDesktopSettingsSuccess" role="status">
           {t(restart === 'restarting' ? 'restarting' : 'restartRequired')}
@@ -105,7 +146,7 @@ export function DesktopSettingsSection(
       </DesktopSettingsTabPanel>
 
       <DesktopSettingsTabPanel tabsId={tabsId} value="access" active={tab === 'access'}>
-        <DesktopSettingsAccessTab model={model} />
+        <DesktopSettingsAccessTab model={model} webGroupRef={webGroupRef} />
       </DesktopSettingsTabPanel>
 
       <DesktopSettingsTabPanel tabsId={tabsId} value="diagnostics" active={tab === 'diagnostics'}>
@@ -113,12 +154,21 @@ export function DesktopSettingsSection(
       </DesktopSettingsTabPanel>
 
       {confirmLan && (
-        <div className="dshDesktopSettingsDialogBackdrop" role="presentation">
-          <div className="dshDesktopSettingsDialog" role="alertdialog" aria-modal="true" aria-labelledby="dsh-desktop-lan-warning-title" aria-describedby="dsh-desktop-lan-warning-body">
+        <div
+          className="dshDesktopSettingsDialogBackdrop"
+          role="presentation"
+          onClick={(event) => {
+            if (event.target === event.currentTarget) {
+              resolveDesktopLanConfirmation(false, () => { setConfirmLan(false) }, () => { setNetworkExposure('lan') })
+            }
+          }}
+        >
+          <div ref={dialogRef} className="dshDesktopSettingsDialog" role="alertdialog" aria-modal="true" aria-labelledby="dsh-desktop-lan-warning-title" aria-describedby="dsh-desktop-lan-warning-body">
             <h3 id="dsh-desktop-lan-warning-title">{t('lanWarningTitle')}</h3>
             <p id="dsh-desktop-lan-warning-body">{t('lanWarningBody')}</p>
             <div className="dshDesktopSettingsDialogActions">
               <button
+                ref={cancelLanRef}
                 type="button"
                 className="dshDesktopSettingsButton dshDesktopSettingsButtonSecondary"
                 onClick={() => {

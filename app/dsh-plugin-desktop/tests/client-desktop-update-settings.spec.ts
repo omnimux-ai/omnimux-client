@@ -159,4 +159,100 @@ describe('AA settings clicks', () => {
     expect(section.querySelector('[role="alert"]')).toBeNull()
     expect(enabledChoice(section).getAttribute('aria-checked')).toBe('true')
   })
+
+  it('traps Tab/Shift+Tab, intercepts Escape in capture phase, and restores focus on LAN modal dismiss', async () => {
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
+    container = document.createElement('div')
+    document.body.append(container)
+    root = createRoot(container)
+    const set = vi.fn(async () => true)
+    let resolvePendingSet!: (value: boolean) => void
+    const desktopSettings = {
+      ...scope({ mode: 'compatibility', openBrowser: true, networkExposure: 'loopback', macosMaterial: 'off', windowsMaterial: 'off' }),
+      set,
+    }
+    const props = {
+      t: (key: keyof typeof zh) => zh[key],
+      api: {
+        read: async () => ({
+          current: 'desktop',
+          profiles: [],
+          aa: { requested: false, effective: false },
+          market: { requested: 'disabled', effective: 'disabled', legacyDefaulted: false },
+          web: { localUrl: 'http://127.0.0.1:43120/?token=t', lanUrls: [], lanState: 'inactive', lanError: null, lanCaFingerprint: null, lanCaUrls: [] },
+        }),
+      },
+      platform: 'darwin',
+      version: '2.0.3',
+      initialMode: 'compatibility',
+      setMode: async () => {},
+      desktopSettings,
+      notificationSettings: scope({ enabled: false }),
+    } as unknown as DesktopSettingsSectionProps
+    await act(async () => { root!.render(createElement(DesktopSettingsSection, props)) })
+
+    const switches = [...container.querySelectorAll<HTMLButtonElement>('[role="switch"]')]
+    const lanSwitch = switches[1]!
+    lanSwitch.focus()
+    await act(async () => { lanSwitch.click() })
+
+    const dialog = container.querySelector<HTMLElement>('[role="alertdialog"]')!
+    expect(dialog).not.toBeNull()
+    const [cancelBtn, confirmBtn] = [...dialog.querySelectorAll<HTMLButtonElement>('button')]
+    expect(document.activeElement).toBe(cancelBtn)
+
+    const parentEscape = vi.fn()
+    const onParentKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') parentEscape(event)
+    }
+    window.addEventListener('keydown', onParentKeyDown)
+    document.addEventListener('keydown', onParentKeyDown)
+    try {
+      confirmBtn!.focus()
+      await act(async () => {
+        confirmBtn!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }))
+      })
+      expect(document.activeElement).toBe(cancelBtn)
+
+      await act(async () => {
+        cancelBtn!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, bubbles: true }))
+      })
+      expect(document.activeElement).toBe(confirmBtn)
+
+      // Unrelated parent re-render must not yank focus back to Cancel.
+      await act(async () => { root!.render(createElement(DesktopSettingsSection, { ...props })) })
+      expect(document.activeElement).toBe(confirmBtn)
+
+      await act(async () => {
+        confirmBtn!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+      })
+      expect(container.querySelector('[role="alertdialog"]')).toBeNull()
+      expect(parentEscape).not.toHaveBeenCalled()
+      expect(document.activeElement).toBe(lanSwitch)
+      expect(set).not.toHaveBeenCalled()
+
+      await act(async () => { lanSwitch.click() })
+      const backdrop = container.querySelector<HTMLElement>('.dshDesktopSettingsDialogBackdrop')!
+      await act(async () => {
+        backdrop.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      })
+      expect(container.querySelector('[role="alertdialog"]')).toBeNull()
+      expect(document.activeElement).toBe(lanSwitch)
+
+      set.mockImplementationOnce(() => new Promise<boolean>(resolve => { resolvePendingSet = resolve }))
+      await act(async () => { lanSwitch.click() })
+      const reopenedConfirm = container.querySelectorAll<HTMLButtonElement>('[role="alertdialog"] button')[1]!
+      reopenedConfirm.focus()
+      await act(async () => { reopenedConfirm.click() })
+      expect(container.querySelector('[role="alertdialog"]')).toBeNull()
+      expect(lanSwitch.disabled).toBe(true)
+      expect(document.activeElement).toBe(container.querySelector('#dsh-desktop-web-title'))
+      await act(async () => { resolvePendingSet(true) })
+      expect(lanSwitch.disabled).toBe(false)
+      expect(document.activeElement).toBe(lanSwitch)
+    } finally {
+      window.removeEventListener('keydown', onParentKeyDown)
+      document.removeEventListener('keydown', onParentKeyDown)
+    }
+  })
 })

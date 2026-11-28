@@ -9,6 +9,7 @@ export interface DesktopProfileCreateCopy {
   readonly label: string
   readonly placeholder: string
   readonly submit: string
+  readonly creating: string
   readonly cancel: string
   readonly empty: string
   readonly failed: string
@@ -22,6 +23,7 @@ const COPY: Record<DesktopLocale, DesktopProfileCreateCopy> = {
     label: 'Profile name',
     placeholder: 'For example: work',
     submit: 'Create Profile',
+    creating: 'Creating…',
     cancel: 'Cancel',
     empty: 'Enter a Profile name.',
     failed: 'The Profile could not be created. Check the name and try again.',
@@ -33,6 +35,7 @@ const COPY: Record<DesktopLocale, DesktopProfileCreateCopy> = {
     label: 'Profile 名称',
     placeholder: '例如：work',
     submit: '创建 Profile',
+    creating: '正在创建…',
     cancel: '取消',
     empty: '请输入 Profile 名称。',
     failed: '无法创建 Profile，请检查名称后重试。',

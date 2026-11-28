@@ -343,6 +343,7 @@ const updates = new NextUpdates({
     const confirmActiveTasks = () => confirmed(
       t('仍有任务正在运行，确定安装更新并重启？', 'Tasks are still running. Install the update and restart anyway?'),
       t('继续安装会中断当前正在运行的对话或后台任务，Profile 和已保存会话会保留。', 'Continuing will interrupt running turns or background jobs. Profiles and saved sessions are preserved.'),
+      t('安装并重启', 'Install and Restart'),
     )
     const releaseLock = async () => {
       if (!tasksLocked) return
@@ -834,10 +835,14 @@ function raiseDialogOwner(): BrowserWindow | undefined {
   return undefined
 }
 
-async function confirmed(message: string, detail = t('将停止当前 Host，正在运行的任务会被中断。', 'This stops the current Host and interrupts running tasks.')): Promise<boolean> {
+async function confirmed(
+  message: string,
+  detail = t('将停止当前后台服务，正在运行的任务会被中断。', 'This stops the current background service and interrupts running tasks.'),
+  confirmLabel = t('继续', 'Continue'),
+): Promise<boolean> {
   const owner = raiseDialogOwner()
   const options = { type: 'question' as const, title: 'OmniMux', message, detail,
-    buttons: [t('继续', 'Continue'), t('取消', 'Cancel')], defaultId: 1, cancelId: 1 }
+    buttons: [confirmLabel, t('取消', 'Cancel')], defaultId: 1, cancelId: 1 }
   const result = await (owner === undefined ? dialog.showMessageBox(options) : dialog.showMessageBox(owner, options))
   return result.response === 0 && !quitting
 }
@@ -863,6 +868,7 @@ function confirmLanAccess(): Promise<boolean> {
   return confirmed(
     t('允许局域网 HTTPS 访问？', 'Allow LAN access over HTTPS?'),
     t('同一网络中的设备可以连接。请仅向可信设备分享登录链接，并在设备上核对和信任 CA 证书。', 'Devices on your local network can connect. Share login links only with trusted devices, and verify and trust the CA certificate on each device.'),
+    t('开启局域网访问', 'Enable LAN Access'),
   )
 }
 /** Linux packages and portable Windows copies are not installed in the app: open the release page, which carries every package format. */
@@ -966,8 +972,10 @@ async function performCommand(input: Record<string, unknown>, type: string, sour
     return
   }
   if (runtime.busy || quitting) throw new Error(t('另一项操作正在进行，请稍候。', 'Another operation is in progress.'))
+  let postCommand: (() => Promise<void>) | undefined
   runtime.busy = true; native.refresh()
   try {
+    await (async () => {
     if (type === 'onboarding-complete' || type === 'onboarding-skip') {
       if (!onboarding || runtime.safeMode || runtime.recoveryMode || input.profile !== runtime.selected) throw new Error('Onboarding is unavailable for this Profile')
       if (type === 'onboarding-complete' && ((input.browserAccess !== undefined && typeof input.browserAccess !== 'boolean')
@@ -992,27 +1000,40 @@ async function performCommand(input: Record<string, unknown>, type: string, sour
     if (type === 'restart-onboarding') {
       if (runtime.safeMode || runtime.recoveryMode) throw new Error('Onboarding is unavailable in safe or recovery mode')
       if (onboarding) { openControls('onboarding'); return }
-      if (!await confirmed(t('重新打开设置向导？', 'Reopen the setup wizard?'),
-        t('应用将重启，并带入当前 Profile 的设置。正在运行的任务会中断。', 'The app will restart with your current Profile settings selected. Running tasks will be interrupted.'))) return
+      if (!await confirmed(
+        t('重新打开设置向导？', 'Reopen the setup wizard?'),
+        t('应用将重启，并带入当前 Profile 的设置。正在运行的任务会中断。', 'The app will restart with your current Profile settings selected. Running tasks will be interrupted.'),
+        t('打开向导并重启', 'Reopen and Restart'),
+      )) return
       relaunch = relaunchArguments(process.argv.slice(1), false, false, true)
       app.quit()
       return
     }
     if (type === 'restart-app' || type === 'restart-recovery') {
-      if (!await confirmed(type === 'restart-recovery'
-        ? t('重启应用并进入恢复模式？', 'Restart the application in recovery mode?')
-        : t('现在重启 OmniMux？', 'Restart OmniMux now?'), type === 'restart-recovery'
-        ? t('应用将先打开恢复助手，暂不加载当前 Profile 和插件。正在运行的任务会中断。', 'The recovery assistant will open before loading the current Profile and plugins. Running tasks will be interrupted.')
-        : undefined)) return
+      if (!await confirmed(
+        type === 'restart-recovery'
+          ? t('重启应用并进入恢复模式？', 'Restart the application in recovery mode?')
+          : t('现在重启 OmniMux？', 'Restart OmniMux now?'),
+        type === 'restart-recovery'
+          ? t('应用将先打开恢复助手，暂不加载当前 Profile 和插件。正在运行的任务会中断。', 'The recovery assistant will open before loading the current Profile and plugins. Running tasks will be interrupted.')
+          : undefined,
+        type === 'restart-recovery'
+          ? t('进入恢复模式', 'Restart in Recovery')
+          : t('立即重启', 'Restart Now'),
+      )) return
       relaunch = relaunchArguments(process.argv.slice(1), type === 'restart-recovery', runtime.safeMode)
       app.quit()
       return
     }
-    if (type === 'create') { runtime.profiles.create(profileName(input.name)); return }
+    if (type === 'create') { runtime.profiles.create(profileName(input.name, language())); return }
     if (type === 'delete') {
-      const name = profileName(input.name)
+      const name = profileName(input.name, language())
       if (name === runtime.selected || name === DEFAULT_PROFILE) throw new Error(t('不能移除当前或默认 Profile。', 'Cannot remove the active or default Profile.'))
-      if (await confirmed(t(`移除 Profile「${name}」？`, `Remove Profile “${name}”?`), t('其文件将移入恢复备份目录。共享的会话和设置会保留。', 'Its files move to recovery backups. Shared sessions and settings are retained.'))) runtime.recovery.removeProfile(name, runtime.selected)
+      if (await confirmed(
+        t(`移除 Profile「${name}」？`, `Remove Profile “${name}”?`),
+        t('其文件将移入恢复备份目录。共享的会话和设置会保留。', 'Its files move to recovery backups. Shared sessions and settings are retained.'),
+        t('移除环境', 'Remove Profile'),
+      )) runtime.recovery.removeProfile(name, runtime.selected)
       return
     }
     if (type === 'reload') {
@@ -1059,7 +1080,7 @@ async function performCommand(input: Record<string, unknown>, type: string, sour
       const sampling = type === 'diagnostics' ? collectRendererDiagnostics(mainWindow?.webContents) : undefined
       const owner = raiseDialogOwner()
       const options = { title: type === 'export-ca' ? t('导出局域网 CA 证书', 'Export LAN CA certificate') : t('导出诊断（分享前请检查内容）', 'Export diagnostics (review before sharing)'),
-        defaultPath: type === 'export-ca' ? 'dsh-desktop-next-ca.crt' : `dsh-desktop-next-diagnostics-${Date.now()}.json`,
+        defaultPath: type === 'export-ca' ? 'omnimux-ca.crt' : `omnimux-diagnostics-${Date.now()}.json`,
         filters: [{ name: type === 'export-ca' ? 'CA certificate' : 'Diagnostics', extensions: [type === 'export-ca' ? 'crt' : 'json'] }] }
       const result = await (owner === undefined ? dialog.showSaveDialog(options) : dialog.showSaveDialog(owner, options))
       if (result.canceled || !result.filePath || quitting) {
@@ -1076,15 +1097,38 @@ async function performCommand(input: Record<string, unknown>, type: string, sour
         await runtime.diagnostics.exportTo(result.filePath, state(), renderer)
       }
       if (type === 'diagnostics') diagnosticsFile = result.filePath
+      if (!quitting) {
+        const savedPath = result.filePath
+        const savedType = type
+        postCommand = async () => {
+          if (quitting) return
+          const completionOwner = raiseDialogOwner()
+          const completionOptions = {
+            type: 'info' as const,
+            title: 'OmniMux',
+            message: savedType === 'export-ca' ? t('局域网 CA 证书已导出', 'LAN CA certificate exported') : t('诊断信息已导出', 'Diagnostics exported'),
+            detail: t(`保存位置：${savedPath}`, `Saved to: ${savedPath}`),
+            buttons: [t('在文件夹中显示', 'Show in folder'), t('完成', 'Done')],
+            defaultId: 1,
+            cancelId: 1,
+          }
+          const done = await (completionOwner === undefined ? dialog.showMessageBox(completionOptions) : dialog.showMessageBox(completionOwner, completionOptions))
+          if (done.response === 0) shell.showItemInFolder(savedPath)
+        }
+      }
       return
     }
     if (type === 'preferences') {
       if (runtime.safeMode) throw new Error(t('安全模式使用固定的桌面设置。', 'Safe Mode uses fixed desktop settings.'))
       const preferences = parsePreferences(input.preferences)
       if (portsChanged(runtime.preferences, preferences)) {
-        if (!await confirmed(t('应用访问设置并重启 Host？', 'Apply access settings and restart the Host?'), preferences.browserAccess && preferences.networkExposure === 'lan'
-          ? t('开启后，同一网络中的设备可通过 HTTPS 访问。登录链接可授予访问权限，请仅与可信设备共享。正在运行的任务会被中断。', 'Devices on your network can connect over HTTPS. Login links grant access; share only with trusted devices. Running tasks will be interrupted.')
-          : undefined)) return
+        if (!await confirmed(
+          t('应用访问设置并重启后台服务？', 'Apply access settings and restart the background service?'),
+          preferences.browserAccess && preferences.networkExposure === 'lan'
+            ? t('开启后，同一网络中的设备可通过 HTTPS 访问。登录链接可授予访问权限，请仅与可信设备共享。正在运行的任务会被中断。', 'Devices on your network can connect over HTTPS. Login links grant access; share only with trusted devices. Running tasks will be interrupted.')
+            : undefined,
+          t('应用并重启', 'Apply and Restart'),
+        )) return
         rendererRecovery?.stop()
         await runtime.restart(() => runtime.writePreferences(preferences))
         if (mainWindow) await reloadMain()
@@ -1100,7 +1144,7 @@ async function performCommand(input: Record<string, unknown>, type: string, sour
       return
     }
     if (!['switch', 'features', 'restart', 'recover', 'safe-mode', 'normal-mode', 'rollback', 'repair-global'].includes(String(type))) throw new Error('Invalid Next command')
-    const next = type === 'switch' ? profileName(input.name) : runtime.selected
+    const next = type === 'switch' ? profileName(input.name, language()) : runtime.selected
     if (type === 'switch' && next === runtime.selected && !runtime.safeMode && !runtime.recoveryMode && runtime.backend.state.phase === 'ready') return
     if (type === 'switch' && !runtime.profiles.selectable(next)) throw new Error('Profile is unavailable for Desktop Next')
     const features = type === 'features' ? parseFeatures(input.features) : undefined
@@ -1113,7 +1157,19 @@ async function performCommand(input: Record<string, unknown>, type: string, sour
       'safe-mode': t('在独立的临时环境中进入安全模式？原有数据和配置会保留。', 'Enter safe mode in a separate temporary environment? Existing data and configuration are preserved.'),
       'normal-mode': t('退出安全模式并重启原 Profile？', 'Exit Safe Mode and restart the original Profile?'),
     }
-    if (!await confirmed(messages[String(type)] ?? t('重启工作环境以应用更改？', 'Restart the environment to apply this change?'))) return
+    const confirmLabels: Record<string, string> = {
+      switch: t('切换并重启', 'Switch and Restart'),
+      recover: t('备份并修复', 'Back Up and Repair'),
+      'repair-global': t('停用并修复', 'Disable and Repair'),
+      rollback: t('还原并重启', 'Restore and Restart'),
+      'safe-mode': t('进入安全模式', 'Enter Safe Mode'),
+      'normal-mode': t('退出并重启', 'Exit and Restart'),
+    }
+    if (!await confirmed(
+      messages[String(type)] ?? t('重启工作环境以应用更改？', 'Restart the environment to apply this change?'),
+      undefined,
+      confirmLabels[String(type)] ?? t('应用并重启', 'Apply and Restart'),
+    )) return
     if (type === 'switch') {
       runtime.profiles.select(next)
       relaunch = relaunchArguments(process.argv.slice(1), false, false)
@@ -1161,12 +1217,16 @@ async function performCommand(input: Record<string, unknown>, type: string, sour
     await runtime.restart(change)
     await reloadMain()
     if (!runtime.safeMode && mainWindow) shellWindow?.close()
+    })()
   } catch (error) {
     // A refused directory or a full disk is shown where the user acted; it is not a Host failure.
     if (['recovery-action', 'change-data-directory', 'backup-data-directory'].includes(type) || onboarding && (type === 'onboarding-complete' || type === 'onboarding-skip')) runtime.diagnostics.append(String(error), 'error')
     else runtime.report(error)
     throw error
   } finally { runtime.busy = false; native.refresh() }
+  if (postCommand) {
+    void postCommand().catch(cause => { runtime.diagnostics.append(String(cause), 'warn') })
+  }
 }
 
 async function restoreCheckpoint(id?: string): Promise<void> {
@@ -1208,10 +1268,11 @@ async function recoveryAction(input: Record<string, unknown>): Promise<void> {
   const action = input.action
   recoveryNotice = undefined
   if (action === 'restart') {
-    if (!await confirmed(runtime.safeMode ? t('退出安全模式并重启？', 'Exit Safe Mode and restart?') : t('现在重启 OmniMux？', 'Restart OmniMux now?'),
-      runtime.safeMode
-        ? t('应用将返回原 Profile，并移除临时环境。临时数据不会保留，正在运行的任务会中断。', 'The app will return to the original Profile and remove the temporary environment. Temporary data will not be kept, and running tasks will be interrupted.')
-        : t('应用将退出恢复助手，重新启动原 Profile。', 'The app will leave the recovery assistant and restart the original Profile.'))) return
+    if (runtime.safeMode && !await confirmed(
+      t('退出安全模式并重启？', 'Exit Safe Mode and restart?'),
+      t('应用将返回原 Profile，并移除临时环境。临时数据不会保留，正在运行的任务会中断。', 'The app will return to the original Profile and remove the temporary environment. Temporary data will not be kept, and running tasks will be interrupted.'),
+      t('退出并重启', 'Exit and Restart'),
+    )) return
     relaunch = relaunchArguments(process.argv.slice(1), false, false)
     app.quit()
     return
@@ -1259,9 +1320,12 @@ async function recoveryAction(input: Record<string, unknown>): Promise<void> {
     if (!checkpoint) throw new Error('Recovery checkpoint is no longer available')
     if (action === 'open-checkpoint') { await openPath(checkpoint.directory); return }
     const undo = runtime.recovery.repairBackup(runtime.selected)?.id === checkpoint.id
-    if (!await confirmed(undo ? t('撤销修复，恢复修复前的配置？', 'Undo the repair and restore the previous configuration?') : t('还原所选配置备份？', 'Restore the selected configuration backup?'),
+    if (!await confirmed(
+      undo ? t('撤销修复，恢复修复前的配置？', 'Undo the repair and restore the previous configuration?') : t('还原所选配置备份？', 'Restore the selected configuration backup?'),
       undo ? t(`修复时间：${checkpoint.created}。当前配置会先备份，然后恢复修复前的配置并安装所需插件依赖；导致故障的插件可能随之恢复。共享数据不会回滚。`, `Repaired: ${checkpoint.created}. Current configuration will be backed up, then the configuration from before the repair and its required plugin dependencies will be restored; a plugin that caused the failure may return with it. Shared data is not rolled back.`)
-        : t(`备份时间：${checkpoint.created}。当前配置会先备份，然后恢复配置并安装所需插件依赖。共享数据不会回滚。`, `Saved: ${checkpoint.created}. Current configuration will be backed up, then the saved configuration and required plugin dependencies will be restored. Shared data is not rolled back.`))) return
+        : t(`备份时间：${checkpoint.created}。当前配置会先备份，然后恢复配置并安装所需插件依赖。共享数据不会回滚。`, `Saved: ${checkpoint.created}. Current configuration will be backed up, then the saved configuration and required plugin dependencies will be restored. Shared data is not rolled back.`),
+      undo ? t('撤销修复', 'Undo Repair') : t('还原备份', 'Restore Backup'),
+    )) return
     await recoveryStopping
     if (!runtime.safeMode) await runtime.backend.stop()
     await restoreCheckpoint(checkpoint.id)
@@ -1284,8 +1348,11 @@ async function recoveryAction(input: Record<string, unknown>): Promise<void> {
   if (action === 'preview-uninstall') {
     const bundle = runtime.recovery.bundles(runtime.selected).find(item => item.bundleId === input.id)
     if (!bundle || bundle.action !== 'uninstall' || !/^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/u.test(bundle.packageName)) throw new Error('This bundle cannot be uninstalled')
-    if (!await confirmed(t(`卸载插件「${bundle.packageName}」？`, `Uninstall “${bundle.packageName}”?`),
-      t('先备份当前 Profile 配置，然后卸载所选插件。', 'Back up the Profile configuration, then uninstall the selected plugin.'))) return
+    if (!await confirmed(
+      t(`卸载插件「${bundle.packageName}」？`, `Uninstall “${bundle.packageName}”?`),
+      t('先备份当前 Profile 配置，然后卸载所选插件。', 'Back up the Profile configuration, then uninstall the selected plugin.'),
+      t('卸载插件', 'Uninstall Plugin'),
+    )) return
     await recoveryStopping
     if (!runtime.safeMode) await runtime.backend.stop()
     runtime.recovery.backup(runtime.selected, 'before-plugin-uninstall')
@@ -1297,8 +1364,11 @@ async function recoveryAction(input: Record<string, unknown>): Promise<void> {
     return
   }
   if (action === 'factory-reset') {
-    if (!await confirmed(t('重置当前数据目录并重启？', 'Reset the current data directory and restart?'),
-      t('Profile、会话、设置和凭据将移入 recovery 备份目录，应用将重新初始化。', 'Profiles, sessions, settings and credentials will move to a recovery backup. The app will initialize again.'))) return
+    if (!await confirmed(
+      t('重置当前数据目录并重启？', 'Reset the current data directory and restart?'),
+      t('Profile、会话、设置和凭据将移入 recovery 备份目录，应用将重新初始化。', 'Profiles, sessions, settings and credentials will move to a recovery backup. The app will initialize again.'),
+      t('重置数据并重启', 'Reset and Restart'),
+    )) return
     await recoveryStopping
     await runtime.backend.stop()
     runtime.diagnostics.flush()
@@ -1390,8 +1460,11 @@ async function changeDataDirectory(restoreDefault: boolean): Promise<void> {
     if (restoreDefault && dataSource === 'desktop') { rmSync(locationFile, { force: true }); dataSource = environmentHome ? 'environment' : 'default' }
     return
   }
-  if (!await confirmed(t('切换数据目录并重启？', 'Change data directory and restart?'),
-    t(`新目录：${destination}。原目录的数据会保留，不会自动迁移。`, `New directory: ${destination}. Existing data remains in its original directory and is not moved.`))) return
+  if (!await confirmed(
+    t('切换数据目录并重启？', 'Change data directory and restart?'),
+    t(`新目录：${destination}。原目录的数据会保留，不会自动迁移。`, `New directory: ${destination}. Existing data remains in its original directory and is not moved.`),
+    t('切换并重启', 'Switch and Restart'),
+  )) return
   // Forgetting the choice lets DSH_DESKTOP_NEXT_HOME or the default apply again.
   if (restoreDefault) rmSync(locationFile, { force: true })
   else atomicJson(locationFile, { home: destination })
@@ -1409,9 +1482,12 @@ async function backupDataDirectory(): Promise<void> {
   if (!parent || !isAbsolute(parent)) return
   const destination = join(parent, backupDirectoryName(home))
   try { assertBackupLocation(home, destination) } catch { throw new Error(t('请选择当前数据目录以外的位置。', 'Choose a location outside the current data directory.')) }
-  if (!await confirmed(t('备份当前数据目录？', 'Back up the current data directory?'),
+  if (!await confirmed(
+    t('备份当前数据目录？', 'Back up the current data directory?'),
     t(`备份位置：${destination}\n复制期间工作环境会暂停，正在运行的任务会中断，完成后自动恢复。electron-user-data 中的窗口和浏览器缓存不会备份。`,
-      `Backup location: ${destination}\nThe environment pauses while copying, interrupting running tasks, and resumes afterwards. Window and browser caches in electron-user-data are not included.`))) return
+      `Backup location: ${destination}\nThe environment pauses while copying, interrupting running tasks, and resumes afterwards. Window and browser caches in electron-user-data are not included.`),
+    t('开始备份', 'Start Backup'),
+  )) return
   rendererRecovery?.stop()
   await recoveryStopping
   let failure: Error | undefined

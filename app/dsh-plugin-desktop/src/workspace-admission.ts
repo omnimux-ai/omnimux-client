@@ -142,7 +142,7 @@ export class ElectronWorkspaceAdmission {
       detail: zh
         ? `请选择本地 NTFS 或 ReFS 磁盘上的文件夹。exFAT、FAT32、网络盘和无法检测的磁盘不会被保存为工作区。\n\n${path}`
         : `Choose a folder on a local NTFS or ReFS volume. exFAT, FAT32, network drives, and uninspectable volumes are not persisted as workspaces.\n\n${path}`,
-      buttons: [zh ? '选择其他文件夹' : 'Choose Another Folder'],
+      buttons: [zh ? '知道了' : 'Got It'],
       defaultId: 0,
       cancelId: 0,
       noLink: true,

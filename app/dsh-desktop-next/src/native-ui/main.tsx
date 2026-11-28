@@ -73,13 +73,21 @@ function NativePages({ adapter }: { adapter: NextSettingsAdapter }) {
   }, [adapter, busy, state])
   if (!state) return <><DesktopFrame /><main className={page === 'onboarding' ? 'next-onboarding dshNativeContent p-6' : 'dshNativeContent p-6'} data-platform={new URLSearchParams(location.search).get('platform') ?? undefined} data-material="transparent"><Alert><AlertDescription>{t('正在读取桌面状态…', 'Loading Desktop state…')}</AlertDescription></Alert></main></>
   if (page === 'onboarding') return <Onboarding key={state.selected} state={state} locale={locale} bridge={adapter.bridge} />
-  if (page === 'create-profile') return <ProfileCreateApp onCancel={() => { void perform({ type: 'close-controls' }) }} onCreate={async name => {
-    await adapter.command({ type: 'create', name })
-    await adapter.command({ type: 'switch', name })
-    const updated = await adapter.refresh()
-    if (updated.selected === name) await adapter.command({ type: 'close-controls' })
-    else await adapter.command({ type: 'controls', page: 'profiles' })
-  }} />
+  if (page === 'create-profile') return <ProfileCreateApp
+    maxLength={64}
+    hint={t(
+      '支持 1–64 个英文字母、数字、下划线或连字符，需以字母或数字开头。',
+      'Use 1–64 letters, numbers, underscores, or hyphens, starting with a letter or number.',
+    )}
+    onCancel={() => { void perform({ type: 'close-controls' }) }}
+    onCreate={async name => {
+      await adapter.command({ type: 'create', name })
+      await adapter.command({ type: 'switch', name })
+      const updated = await adapter.refresh()
+      if (updated.selected === name) await adapter.command({ type: 'close-controls' })
+      else await adapter.command({ type: 'controls', page: 'profiles' })
+    }}
+  />
   // An action that failed outside this page, such as from the tray, is reported here too.
   const actionFailure = failure || (busy ? '' : state.actionFailure ?? '')
   const notice = actionFailure ? { tone: 'error' as const, title: t('操作未完成', 'Action failed'), body: actionFailure } : undefined
@@ -134,8 +142,10 @@ function NativePages({ adapter }: { adapter: NextSettingsAdapter }) {
   return <RecoveryApp state={recovery} copy={copy} support={recoverySupport(locale)}
     quickCards={<>
       {state.portConflict && <PortConflictCard locale={locale} conflict={state.portConflict} safeMode={state.safeMode} restart={copy.restart} />}
-      <StartupLimitCard locale={locale} value={state.hostStartupTimeout} safeMode={state.safeMode}
-        timeout={state.safeMode ? undefined : state.failureTimeout} restart={copy.restart} pluginsTab={copy.tabs.plugins} />
+      {(state.failureTimeout !== undefined || (Boolean(state.failure) && (state.failureStage ?? 'host-boot') === 'host-boot')) && (
+        <StartupLimitCard locale={locale} value={state.hostStartupTimeout} safeMode={state.safeMode}
+          timeout={state.safeMode ? undefined : state.failureTimeout} restart={copy.restart} pluginsTab={copy.tabs.plugins} />
+      )}
     </>} />
 }
 

@@ -458,7 +458,7 @@ function MarketSourcesDialog({ open, onClose, context, bundles, preferredMarket,
                   {busyAction === marketDef.key
                     ? t('正在处理…', 'Processing…')
                     : isMarketConfigured
-                      ? t('重置', 'Reset')
+                      ? t('移除源', 'Remove sources')
                       : t('添加', 'Add')}
                 </Button>
               </div>

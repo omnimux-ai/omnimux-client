@@ -76,7 +76,11 @@ export function DesktopDialogApp(): JSX.Element {
     return () => { window.removeEventListener('keydown', onKeyDown) }
   }, [state])
 
-  if (state === undefined) return <><DesktopFrame /><main className="dshNativeContent flex items-center justify-center p-5"><p className="text-sm text-destructive">Desktop dialog state is unavailable.</p></main></>
+  if (state === undefined) {
+    const rawLocale = new URLSearchParams(window.location.search).get('locale') ?? (typeof navigator !== 'undefined' ? navigator.language : '')
+    const zh = rawLocale.toLowerCase().startsWith('zh')
+    return <><DesktopFrame /><main className="dshNativeContent flex items-center justify-center p-5"><p className="text-sm text-destructive">{zh ? '未收到对话框状态，请关闭此窗口后重试。' : 'Dialog details are unavailable. Close this window and try again.'}</p></main></>
+  }
   const diagnostic = state.presentation === 'diagnostic'
   const profileCompatibility = state.presentation === 'profile-compatibility'
   const showToneIcon = desktopDialogShowsToneIcon(state.presentation)

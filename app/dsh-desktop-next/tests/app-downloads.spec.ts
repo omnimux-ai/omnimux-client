@@ -81,7 +81,7 @@ it('reports Host failures instead of failing silently', async () => {
   const { download, owner, warn } = setup(async () => new Response(null, { status: 403 }))
   download(ROUTE)
   await vi.waitFor(() => expect(fixture.message).toHaveBeenCalledOnce())
-  expect(fixture.message).toHaveBeenCalledWith(owner, expect.objectContaining({ type: 'error', message: '下载失败', detail: 'Host responded with HTTP 403' }))
+  expect(fixture.message).toHaveBeenCalledWith(owner, expect.objectContaining({ type: 'error', message: '下载失败', detail: '当前登录或访问权限已失效' }))
   expect(fixture.save).not.toHaveBeenCalled()
   expect(warn).toHaveBeenCalledOnce()
 })
@@ -90,7 +90,7 @@ it('carries the Host explanation into the failure prompt', async () => {
   const { download } = setup(async () => new Response('session not found\n', { status: 404 }))
   download(ROUTE)
   await vi.waitFor(() => expect(fixture.message).toHaveBeenCalledOnce())
-  expect(fixture.message.mock.calls[0]![1].detail).toBe('Host responded with HTTP 404: session not found')
+  expect(fixture.message.mock.calls[0]![1].detail).toBe('请求的文件或会话已不存在（session not found）')
 })
 
 it('cancels the Host stream when the save dialog is dismissed', async () => {

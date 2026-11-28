@@ -155,7 +155,7 @@ export function useOfficialComputerUse({ context, t, page, revision, onError, on
       const running = [commandActive, active].filter(Boolean).length
       return [t('共 2 个', '2 total'),
         ...running > 0 ? [t(`${String(running)} 运行中`, `${String(running)} running`)] : [],
-        ...running < 2 ? [t(`${String(2 - running)} 已停用`, `${String(2 - running)} off`)] : []].join(' · ')
+        ...running < 2 ? [t(`${String(2 - running)} 已停用`, `${String(2 - running)} off`)] : []].join(t('，', ', '))
     },
   }
 }
