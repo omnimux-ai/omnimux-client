@@ -175,12 +175,14 @@ function parseItem(raw) {
   const license = typeof row.license === 'string' && row.license.trim() ? row.license.trim().slice(0, 80) : undefined
   const owner = typeof row.owner === 'string' && row.owner.trim() ? row.owner.trim().slice(0, 120) : undefined
   const author = typeof row.author === 'string' && row.author.trim() ? row.author.trim().slice(0, 80) : undefined
+  const installType = typeof row.installType === 'string' && row.installType.trim() ? row.installType.trim().slice(0, 40) : undefined
   const item = {
     id, tab, kind, title, subtitle, summary, category, scenario, tags, avatar, skill, serverName, source, hub,
     ...(origin ? { origin } : {}),
     ...(license ? { license } : {}),
     ...(owner ? { owner } : {}),
     ...(author ? { author } : {}),
+    ...(installType ? { installType } : {}),
   }
   if (typeof row.preinstalled === 'boolean') item.preinstalled = row.preinstalled
   if (kind === 'suite') item.suite = parseSuiteManifest(row.suite, id)
@@ -304,11 +306,14 @@ function parseSource(raw, id) {
     const repo = String(row.repo || '')
     const path = String(row.path || '')
     const ref = String(row.ref || 'main')
-    if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo)) {
+    if (repo.startsWith('-') || !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo)) {
       throw new Error(`catalog: item ${id} bad git repo`)
     }
-    if (!path || path.includes('..') || path.startsWith('/')) {
+    if (!path || path.startsWith('-') || path.includes('..') || path.startsWith('/') || /[\0\r\n]/.test(path)) {
       throw new Error(`catalog: item ${id} bad git path`)
+    }
+    if (!ref || ref.startsWith('-') || !/^[A-Za-z0-9_./-]+$/.test(ref)) {
+      throw new Error(`catalog: item ${id} bad git ref`)
     }
     return { type: 'git', repo, path, ref }
   }

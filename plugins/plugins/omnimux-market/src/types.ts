@@ -17,9 +17,14 @@ export interface CatalogSkillItem {
   tags?: string[]
   skill?: string
   avatar?: string
-  source?: { type?: string; plugin?: string; repo?: string; path?: string }
+  source?: { type?: string; plugin?: string; repo?: string; path?: string; ref?: string }
   recommended?: boolean
   preinstalled?: boolean
+  origin?: string
+  author?: string
+  license?: string
+  owner?: string
+  installType?: string
   cover?: { asset: string; alt: string }
   downloads?: number | null
   updatedAt?: string | null
@@ -255,6 +260,12 @@ export interface SkillCard extends BilingualSkillFields {
   cover?: { asset: string; alt?: string }
   installFlow?: string
   sessionPrefill?: string
+  subtitle?: string
+  origin?: string
+  author?: string
+  license?: string
+  installType?: string
+  source?: { type?: string; plugin?: string; repo?: string; path?: string; ref?: string }
 }
 
 export interface SearchResult {

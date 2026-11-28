@@ -8,7 +8,7 @@ import { assignConfig, dshHome, publicConfig, sanitizePatch, sanitizeSortBy, val
 import { HttpError, configureHttpJsonCache } from './http.js';
 import { ICON_SECURITY_HEADERS, MAX_ICON_BYTES, assertSafeIconUrlSyntax, fetchSafeIconBytes, normalizeSafeRasterMime, pruneAvatarDiskCache, sniffSafeRasterImageMime, } from './icon-guard.js';
 import { BOOT_ID, progress, publicInstallStatus } from './dsh-cli.js';
-import { decorateCatalog, loadCatalog } from './expert/catalog.js';
+import { decorateCatalog, invalidateCatalogMemos, loadCatalog } from './expert/catalog.js';
 import { findItem, installItem, readCatalogSkillMarkdown, readLocalBundledSkillMarkdown, removeMcpRow, resolveLocalBundledSkillDir, withConnectorPatchLock, } from './expert/install.js';
 import { packageRoot, profileDir, resolvePluginSkillFile } from './expert/paths.js';
 import { summonItem } from './expert/summon.js';
@@ -19,7 +19,7 @@ import { listMarketplaceConnectors, resolveMarketplaceIconFile } from './marketp
 import { installMarketPlugin, isPluginInstallBusy, listPluginCategories, listPlugins, withPluginInstallLock } from './plugin-market.js';
 import { scheduleRestart, servingPort, trustedRestartRequest } from './restart.js';
 import { fetchEvalScore, fetchSkillTab } from './skill-detail.js';
-import { aggregateSkillSearch, catalogItemToCard, findCatalogSkill } from './skill-aggregate.js';
+import { aggregateSkillSearch, catalogItemToCard, catalogSkillChannel, findCatalogSkill } from './skill-aggregate.js';
 import { RequestGuard, WORKSHOP_READ_METHODS } from './workshop-request-guard.js';
 import { WorkshopReadError } from './workshop-store.js';
 import { WorkshopQueryError } from './workshop-query.js';
@@ -217,6 +217,7 @@ async function handleSkillInstall(ctx) {
         return sendJson(res, 400, { ok: false, error: '缺少 slug' });
     const version = String(body.version || url.searchParams.get('version') || '').trim();
     const result = await installSkill(slug, cfg, undefined, undefined, version || undefined, body.catalogId ? String(body.catalogId) : undefined);
+    invalidateCatalogMemos();
     return sendJson(res, 200, { ok: true, ...result });
 }
 async function handleSkillList(ctx) {
@@ -234,6 +235,7 @@ async function handleSkillUninstall(ctx) {
     if (!slug)
         return sendJson(res, 400, { ok: false, error: '缺少 slug' });
     const result = await uninstallSkill(slug, cfg.skillsDir);
+    invalidateCatalogMemos();
     return sendJson(res, 200, { ok: true, ...result });
 }
 async function handleTryAttach(ctx) {
@@ -405,15 +407,19 @@ async function handleSkillDetail(ctx) {
     const { body, url, cfg, res } = ctx;
     const slug = parseSlug(String(body.slug || url.searchParams.get('slug') || ''));
     const installed = await installedSlugs(cfg.skillsDir);
-    let card = await fetchSkillCard(slug, cfg, installed);
-    // 官方 catalog 条目（含 session-guide）优先合并本地字段，避免远程详情冲掉安装分流标记
     const catalogId = body.catalogId ? String(body.catalogId) : undefined;
     const catalogItem = findCatalogSkill(slug, catalogId);
+    const tab = String(body.tab || url.searchParams.get('tab') || 'readme');
+    if (catalogItem?.origin === 'third-party' && catalogItem?.source?.type === 'git') {
+        const card = catalogItemToCard(catalogItem, catalogSkillChannel(catalogItem) || 'workbuddy', cfg, installed);
+        return sendJson(res, 200, { ok: true, card, tab, content: { ok: true } });
+    }
+    let card = await fetchSkillCard(slug, cfg, installed);
+    // 官方 catalog 条目（含 session-guide）优先合并本地字段，避免远程详情冲掉安装分流标记
     if (catalogItem) {
-        const local = catalogItemToCard(catalogItem, 'custom', cfg, installed);
+        const local = catalogItemToCard(catalogItem, catalogSkillChannel(catalogItem) || 'custom', cfg, installed);
         card = card ? { ...card, ...local, installed: Boolean(local.installed || installed.has(local.slug) || card.installed) } : local;
     }
-    const tab = String(body.tab || url.searchParams.get('tab') || 'readme');
     const content = await fetchSkillTab(slug, tab, cfg);
     return sendJson(res, 200, { ok: true, card, tab, content });
 }
@@ -443,8 +449,18 @@ function handleSkillContent(ctx) {
     if (!slug)
         return sendJson(res, 400, { ok: false, error: '缺少 slug' });
     const skillDir = resolveExploreDirectory(slug, cfg.skillsDir);
-    if (!skillDir)
+    if (!skillDir) {
+        const catalogItem = findCatalogSkill(slug);
+        if (catalogItem?.origin === 'third-party' && catalogItem?.source?.type === 'git') {
+            return sendJson(res, 200, {
+                ok: true,
+                found: false,
+                external: true,
+                catalog: catalogItemToCard(catalogItem, catalogSkillChannel(catalogItem) || 'workbuddy', cfg),
+            });
+        }
         return sendJson(res, 200, { ok: true, found: false });
+    }
     try {
         const files = readdirSync(skillDir, { withFileTypes: true });
         const tree = [];

@@ -334,6 +334,9 @@ export function usePlazaState(initialSubmitted, hooks) {
   const [expertStage, setExpertStage] = stateFn('all');
   const [expertMarketError, setExpertMarketError] = stateFn('');
   const [providerSlugs, setProviderSlugs] = stateFn([]);
+  const [platformFilter, setPlatformFilter] = stateFn('');
+  const [installingSlugs, setInstallingSlugs] = stateFn({});
+  const [installError, setInstallError] = stateFn('');
   return {
     mainTab, setMainTab, category, setCategory, page, setPage, searchQuery, setSearchQuery,
     submitted, setSubmitted, uninstalledOnly, setUninstalledOnly, autoUpdate, setAutoUpdate,
@@ -347,6 +350,9 @@ export function usePlazaState(initialSubmitted, hooks) {
     expertStage, setExpertStage,
     expertMarketError, setExpertMarketError,
     providerSlugs, setProviderSlugs,
+    platformFilter, setPlatformFilter,
+    installingSlugs, setInstallingSlugs,
+    installError, setInstallError,
   };
 }
 

@@ -2,8 +2,8 @@ import { cp, mkdir, mkdtemp, readdir, readFile, rename, rm, stat, writeFile } fr
 import { dirname, join, relative, resolve, sep } from 'node:path'
 import { fetchOpts, parseSlug } from './api.js'
 import { dshHome } from './config-store.js'
-import { loadCatalog } from './expert/catalog.js'
-import { installItem, resolveLocalBundledSkillDir } from './expert/install.js'
+import { invalidateCatalogMemos, loadCatalog } from './expert/catalog.js'
+import { installItem, installItemAsync, resolveLocalBundledSkillDir } from './expert/install.js'
 import { packageRoot, profileDir, resolvePluginSkillFile } from './expert/paths.js'
 import { fetchBytes } from './http.js'
 import { catalogSkillSlug, findCatalogSkill } from './skill-aggregate.js'
@@ -50,7 +50,7 @@ export async function installSkill(slug: string, cfg: PluginConfig, deps: Instal
     lookup = raw.trim().toLowerCase()
   }
   const catalogItem = findCatalogSkill(lookup, catalogId)
-  if (catalogItem) return installFromCatalog(catalogItem, cfg)
+  if (catalogItem) return installFromCatalog(catalogItem, cfg, signal)
   const localBundledDir = resolveLocalBundledSkillDir(lookup, packageRoot())
   if (localBundledDir) return installFromLocalDir(lookup, localBundledDir, cfg)
   const id = parseSlug(slug)
@@ -108,17 +108,28 @@ async function installFromLocalDir(slug: string, sourceDir: string, cfg: PluginC
   }
 }
 
-async function installFromCatalog(item: CatalogSkillItem, cfg: PluginConfig): Promise<InstallResult> {
+async function installFromCatalog(item: CatalogSkillItem, cfg: PluginConfig, signal?: AbortSignal): Promise<InstallResult> {
   const home = dshHome()
   const slug = catalogSkillSlug(item)
   const pkgRoot = packageRoot()
-  installItem({
-    catalog: loadCatalog(),
-    id: item.id,
-    home,
-    profileDir: profileDir(home),
-    packageRoot: pkgRoot,
-  })
+  if (item.source?.type === 'git') {
+    await installItemAsync({
+      catalog: loadCatalog(),
+      id: item.id,
+      home,
+      profileDir: profileDir(home),
+      packageRoot: pkgRoot,
+      signal,
+    })
+  } else {
+    installItem({
+      catalog: loadCatalog(),
+      id: item.id,
+      home,
+      profileDir: profileDir(home),
+      packageRoot: pkgRoot,
+    })
+  }
   const pluginSkillMd = item.source?.type === 'plugin'
     ? resolvePluginSkillFile(item.source, pkgRoot)
     : ''
@@ -247,16 +258,32 @@ export async function peekSkillMarkdown(slug: string, cfg: PluginConfig, deps: I
 export async function uninstallSkill(slug: string, skillsDir: string): Promise<{ slug: string; path: string }> {
   const id = parseSlug(slug)
   const target = skillDir(skillsDir, id)
-  let hasSkill = false
+  const homeSkillsTarget = process.env.DSH_HOME
+    ? join(dshHome(), 'skills', id)
+    : ''
+  const alsoRemoveHome = Boolean(homeSkillsTarget && resolve(homeSkillsTarget) !== resolve(target))
+
+  let hasTargetSkill = false
   try {
     await readFile(join(target, 'SKILL.md'))
-    hasSkill = true
+    hasTargetSkill = true
   } catch {
-    hasSkill = false
+    hasTargetSkill = false
   }
-  if (!hasSkill) throw new Error(`未安装或不含 SKILL.md: ${id}`)
-  await rm(target, { recursive: true, force: true })
-  return { slug: id, path: target }
+  let hasHomeSkill = false
+  if (alsoRemoveHome) {
+    try {
+      await readFile(join(homeSkillsTarget, 'SKILL.md'))
+      hasHomeSkill = true
+    } catch {
+      hasHomeSkill = false
+    }
+  }
+  if (!hasTargetSkill && !hasHomeSkill) throw new Error(`未安装或不含 SKILL.md: ${id}`)
+  if (hasTargetSkill) await rm(target, { recursive: true, force: true })
+  if (hasHomeSkill) await rm(homeSkillsTarget, { recursive: true, force: true })
+  invalidateCatalogMemos()
+  return { slug: id, path: hasTargetSkill ? target : homeSkillsTarget }
 }
 
 export function parseFrontmatter(text: string): { name?: string; description?: string; version?: string } {

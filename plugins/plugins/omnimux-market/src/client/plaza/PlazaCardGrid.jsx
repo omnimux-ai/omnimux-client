@@ -1,6 +1,9 @@
 import React from 'react';
 import { renderFeaturedCard } from './FeaturedCard.jsx';
 import {
+  EXTERNAL_PLATFORM_ORDER,
+  isExternalCatalogSkill,
+  resolveExternalPlatform,
   safeTrySkillInSession,
   WorkshopSwitch,
   resolveItemDesc,
@@ -83,7 +86,23 @@ export function renderRegularStatus(statusOpts, tr) {
 
 export function renderRegularSection(opts) {
   const h = getH(opts);
-  const { category, hasQuery, regularItems, uninstalledOnly, setUninstalledOnly, status, page, err, tr, setOpen, onToggle } = opts;
+  const {
+    category,
+    hasQuery,
+    regularItems,
+    uninstalledOnly,
+    setUninstalledOnly,
+    status,
+    page,
+    err,
+    tr,
+    setOpen,
+    onToggle,
+    platformFilter = '',
+    setPlatformFilter,
+    onInstallExternal,
+    installingSlugs,
+  } = opts;
   const statusNode = renderRegularStatus({ status, page, err, count: regularItems.length }, tr);
 
   // 搜索态：展示全量搜索结果大网格
@@ -97,7 +116,7 @@ export function renderRegularSection(opts) {
         ),
       ),
       statusNode,
-      regularItems.length ? h('div', { className: 'featured-grid cards-grid' }, regularItems.map((item) => renderFeaturedCard(item, { tr, onOpen: setOpen, onTry: safeTrySkillInSession }))) : null,
+      regularItems.length ? h('div', { className: 'featured-grid cards-grid' }, regularItems.map((item) => renderFeaturedCard(item, { tr, onOpen: setOpen, onTry: safeTrySkillInSession, onInstallExternal, installingSlugs }))) : null,
     );
   }
 
@@ -185,8 +204,93 @@ export function renderRegularSection(opts) {
     );
   }
 
-  // 特定单分类状态：平铺展示该分类下的一行三列卡片
+  // 特定单分类状态：平铺展示该分类下的一行三列卡片；含外部技能时先官方后外部并提供平台二级筛选
   const singleCategoryTitle = safeTr('cat.' + category, String(category).toUpperCase());
+  const checkExternal = typeof isExternalCatalogSkill === 'function'
+    ? isExternalCatalogSkill
+    : (it) => Boolean(it && (it.origin === 'third-party' || (it.source && it.source.type === 'git')));
+  const getExtPlatform = typeof resolveExternalPlatform === 'function'
+    ? resolveExternalPlatform
+    : (it) => String(it?.subtitle || '').trim();
+  const platformOrder = Array.isArray(EXTERNAL_PLATFORM_ORDER)
+    ? EXTERNAL_PLATFORM_ORDER
+    : ['Shopify', 'Etsy', 'eBay', 'TikTok Shop', 'Walmart', '美客多', 'OZON', 'Wayfair'];
+  const officialItems = regularItems.filter((it) => !checkExternal(it));
+  const externalItems = regularItems.filter((it) => checkExternal(it));
+
+  if (externalItems.length > 0) {
+    const presentSet = new Set();
+    for (const item of externalItems) {
+      const p = getExtPlatform(item);
+      if (p) presentSet.add(p);
+    }
+    const orderedPlatforms = [
+      ...platformOrder.filter((p) => presentSet.has(p)),
+      ...[...presentSet].filter((p) => !platformOrder.includes(p)),
+    ];
+    const allPlatformLabel = safeTr('workshop.platformAll', isEn ? 'All' : '全部');
+    const officialPlatformLabel = safeTr('workshop.platformOfficial', isEn ? 'Official' : '官方');
+    const officialSectionTitle = safeTr('workshop.sectionOfficial', isEn ? 'Official Skills' : '官方技能');
+    const externalSectionTitle = safeTr('workshop.sectionExternal', isEn ? 'External Skills SeaLeap' : '外部技能 SeaLeap');
+    const cardRenderOpts = { tr, onOpen: setOpen, onTry: safeTrySkillInSession, onInstallExternal, installingSlugs };
+
+    const activeFilter = platformFilter || '';
+    const showOfficial = activeFilter === '' || activeFilter === 'official';
+    const filteredExternal = activeFilter === 'official'
+      ? []
+      : externalItems.filter((it) => !activeFilter || getExtPlatform(it) === activeFilter);
+    const visibleCount = (showOfficial ? officialItems.length : 0) + filteredExternal.length;
+
+    const filterChips = [
+      { id: '', label: allPlatformLabel },
+      ...(officialItems.length > 0 ? [{ id: 'official', label: officialPlatformLabel }] : []),
+      ...orderedPlatforms.map((p) => ({ id: p, label: p })),
+    ];
+
+    return h('section', { className: 'regular-section', 'aria-label': singleCategoryTitle },
+      h('div', { className: 'regular-header' },
+        h('div', { className: 'regular-title-row' },
+          h('span', { className: 'omx-scenario-group-title' }, singleCategoryTitle),
+          h('span', { className: 'regular-title-count' }, String(visibleCount)),
+        ),
+      ),
+      h('div', { className: 'omx-platform-filter-bar', role: 'group', 'aria-label': singleCategoryTitle },
+        filterChips.map((chip) => {
+          const active = activeFilter === chip.id;
+          // exempt-ui01 platform filter pill
+          return h('button', {
+            key: chip.id || '__all_platforms__',
+            type: 'button',
+            className: 'omx-platform-chip' + (active ? ' active' : ''),
+            'aria-pressed': active,
+            onClick: () => setPlatformFilter && setPlatformFilter(chip.id),
+          }, chip.label);
+        }),
+      ),
+      statusNode,
+      h('div', { className: 'omx-scenario-groups-wrap' },
+        showOfficial && officialItems.length > 0 ? h('div', { className: 'omx-scenario-group' },
+          h('div', { className: 'omx-scenario-group-header' },
+            h('span', { className: 'omx-scenario-group-title' }, officialSectionTitle),
+            h('span', { className: 'regular-title-count' }, String(officialItems.length)),
+          ),
+          h('div', { className: 'featured-grid cards-grid' },
+            officialItems.map((item) => renderFeaturedCard(item, cardRenderOpts)),
+          ),
+        ) : null,
+        filteredExternal.length > 0 ? h('div', { className: 'omx-scenario-group' },
+          h('div', { className: 'omx-scenario-group-header' },
+            h('span', { className: 'omx-scenario-group-title' }, externalSectionTitle),
+            h('span', { className: 'regular-title-count' }, String(filteredExternal.length)),
+          ),
+          h('div', { className: 'featured-grid cards-grid' },
+            filteredExternal.map((item) => renderFeaturedCard(item, cardRenderOpts)),
+          ),
+        ) : null,
+      ),
+    );
+  }
+
   return h('section', { className: 'regular-section', 'aria-label': singleCategoryTitle },
     h('div', { className: 'regular-header', style: { marginBottom: '14px' } },
       h('div', { className: 'regular-title-row' },

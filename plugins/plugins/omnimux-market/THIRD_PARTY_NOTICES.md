@@ -104,9 +104,14 @@ catalog entries carry structured `origin` (`first-party` / `third-party` / `upst
   declared in `dsh.manifest.json` are OmniMux first-party (`origin: "first-party"`,
   `license: "MIT"`).
 - **Remote-only catalog pointers (`source.type: "git"` / `"mcp"`)**: third-party experts,
-  suites (e.g. `infometa/workbuddyskills`, `nexscope-ai/Amazon-Skills`), and MCP server
-  entries in `catalog/index.json` are external references (`origin: "third-party"`,
-  `license: "SEE UPSTREAM"`) and are not redistributed inside this repository.
+  suites (e.g. `infometa/workbuddyskills`, `nexscope-ai/Amazon-Skills`), e-commerce skill
+  catalog pointers (`xjli360/sealeap-ecommerce-skills`, 195 entries indexed from upstream
+  collection `sealeap-amazon-skills` at commit `914f920b368fd73f867e3d03af7e48b9ab1e18ed`,
+  MIT License, Copyright (c) 2026 SeaLeap; upstream notices also credit Nexscope AI
+  `eCommerce-Skills` MIT and Meta `Robyn` MIT methodology references without code
+  redistribution), and MCP server entries in `catalog/index.json` are external references
+  (`origin: "third-party"`, `license: "SEE UPSTREAM"` or `"MIT"`) and are not redistributed
+  inside this repository.
 
 ## 上游同步策略
 
