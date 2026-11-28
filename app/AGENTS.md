@@ -17,7 +17,7 @@ This repository owns the desktop product around an unmodified DeepSeek Harness c
 - Run unit tests with `corepack yarn test`.
 - Run type checking with `corepack yarn typecheck`.
 - Run the complete headless gate with `corepack yarn check`.
-- `dsh-desktop-next/` is the OmniMux product shell, branded in-tree from the upstream Next shell. It carries the shipped identity (`OmniMux` / `ai.omnimux.desktop` / `~/.omnimux`) through `src/product-identity.ts`, participates in root `build` / `typecheck` / `test` and in `corepack yarn check`, and has its own release entries (`dist:mac:next`, `dist:win:next`, `check:next`). `dsh-plugin-desktop` remains the shipped line until the shell swap is cut over; both are gated. Upstream's `dsh-plugin-desktop-beta` variant stays deliberately absent.
+- `dsh-desktop-next/` is the OmniMux product shell, branded in-tree from the upstream Next shell. It carries the shipped identity (`OmniMux` / `ai.omnimux.desktop` / `~/.omnimux`) through `src/product-identity.ts` and is now the active target across root `dev` / `start` / `build` / `typecheck` / `test` / `check` / `package:dir` / `dist:*` commands and release workflows (keeping `:next` aliases until Phase 3 cleanup). Frozen `dsh-plugin-desktop/` has zero active callers pending Phase 3 deletion; upstream's `dsh-plugin-desktop-beta` variant stays deliberately absent.
 - Run upstream operations through the root scripts, such as `corepack yarn upstream:build`.
 
 
@@ -31,17 +31,16 @@ This fork is the **main ops entry** for OmniMux plugin develop / browser QA / sy
 | `yarn omnimux:restart dev` | Reload the Dev app after syncing the merged build |
 | `yarn omnimux:profile upgrade-dev --app <app> --recovery-dir <batch>` | Rebuild the shared macOS Dev Profile and install a frozen Dev App with NAS recovery |
 | `yarn omnimux:doctor` | Compliance check (prod must not link, etc.) |
-| `yarn omnimux:stage` | Materialize into `preset/plugins/` before packaging |
 | `yarn omnimux:path` | Print resolved product/plugin paths |
 | `yarn omnimux:prod-reset` | Dry-run wipe of local **production** install (`OmniMux.app` + `~/.omnimux`); add `--yes` to execute. Never touches Dev. For clean user-scenario retests. |
 | `yarn omnimux:dev-reset` | Reset **Dev** to first-run state so the runtime guide reappears; auto-backs up `~/.omnimux-dev/profiles/omnimux/cordis.patch.yml`; `--dry-run` previews, `--restart` quits/reopens Dev. |
 
-MUST NOT hand-`rsync`/`cp` into any profile. Use `omnimux:sync` and, when a reload is needed, `omnimux:restart dev` for shared Dev verification after merge. Packaging uses `omnimux:stage` then `package:dir` / `dist:*`.
+MUST NOT hand-`rsync`/`cp` into any profile. Use `omnimux:sync` and, when a reload is needed, `omnimux:restart dev` for shared Dev verification after merge. Packaging uses `package:dir` / `package:dev` / `dist:*` directly (local plugins are bundled automatically).
 For a shared macOS Dev rebuild with NAS recovery, use the [Dev upgrade procedure](../plugins/README.md#重建并升级共享-macos-dev).
-**Packaging Pre-requisite Rule**: Direct packaging or running `package-dir.mjs` without staging will cause startup crash (`missing dsh-better-sidebar` recovery window). When rebuilding `/Applications/OmniMux.app` or packaging distribution bundles, ALWAYS ensure `OMNIMUX_PLUGINS_DIR` is set and run `stage-preset-profile` (`node ./dsh-plugin-desktop/scripts/stage-preset-profile.ts` or `yarn omnimux:stage`) before packaging. Before `yarn package:dir` / `dist:*`, also run `corepack yarn install --immutable` at the repo root when `node_modules` may be stale: a hollow tree (declared `@deepseek-ai/*` missing from workspace `node_modules`) fails `tsc --emitDeclarationOnly` and makes electron-builder abort on missing production deps such as `@deepseek-ai/dsh-api-session-controller`.
+**Packaging Pre-requisite Rule**: Before `yarn package:dir` / `package:dev` / `dist:*`, build product plugins (`corepack pnpm --dir ../plugins run build:all` if needed — `dsh-desktop-next` packaging invokes `prepare-local-plugins.mjs` automatically and no longer uses legacy `stage-preset-profile` / `omnimux:stage`) and run `corepack yarn install --immutable` at the repo root when `node_modules` may be stale: a hollow tree (declared `@deepseek-ai/*` missing from workspace `node_modules`) fails `tsc --emitDeclarationOnly` and makes electron-builder abort on missing production deps such as `@deepseek-ai/dsh-api-session-controller`.
 
 - `deepseek-harness/` is a pinned upstream Git submodule. Never edit files inside it from a desktop feature branch.
-- `dsh-plugin-desktop/` owns the Cordis Host and Client faces, Electron bootstrap, packaging, and release tests.
+- `dsh-plugin-desktop/` is the frozen legacy Cordis shell retained with zero active callers until Phase 3 deletion.
 - `dsh-desktop-next/` owns the OmniMux Desktop shell, Profiles and recovery, and adapters for the existing AA bridge and Community Market. Keep its upstream reference and published runtime versions aligned; do not fork the official main frontend. Its product identity lives in `src/product-identity.ts` and must keep the shipped appId and `.omnimux` home so an upgrade stays one application.
 - `dsh-community-fabric/` owns the community interoperability RFC. Until schemas and a reviewed reference adapter exist, it remains a private documentation scaffold and must not declare loadable DSH or package entry points.
 - `dsh-community-market/` owns the community-market shell. Until its runtime is implemented, it remains a private documentation scaffold and must not declare loadable DSH or package entry points.

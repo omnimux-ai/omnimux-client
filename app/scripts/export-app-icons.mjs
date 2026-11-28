@@ -129,7 +129,7 @@ function developerDirectory() {
  * @param {string} output - absolute path of the PNG to write.
  */
 async function renderSquareIcon(source, size, output) {
-  const sharp = createRequire(join(root, 'dsh-plugin-desktop/package.json'))('sharp')
+  const sharp = createRequire(join(root, 'dsh-desktop-next/package.json'))('sharp')
   let pipeline = sharp(source, { failOn: 'warning' })
     .resize({ width: size, height: size, fit: 'fill', kernel: sharp.kernel.lanczos3 })
     .toColourspace('srgb')
@@ -155,7 +155,7 @@ async function generateLinuxIconSet(source, directory) {
  * @param {string} directory - the package's assets directory.
  */
 async function generateTrayIcons(source, directory) {
-  const sharp = createRequire(join(root, 'dsh-plugin-desktop/package.json'))('sharp')
+  const sharp = createRequire(join(root, 'dsh-desktop-next/package.json'))('sharp')
   const vector = readFileSync(source, 'utf8')
   if (vector.split(TRAY_COLOR).length !== 2) throw new Error(`${source} must draw the whale in ${TRAY_COLOR} exactly once`)
   for (const [name, color, size] of TRAY_ICONS) {
@@ -228,10 +228,10 @@ async function main() {
   // Scoped to this command and its children; do not change xcode-select globally.
   process.env.DEVELOPER_DIR = developer
   process.env.PATH = `${join(developer, 'usr/bin')}${delimiter}${process.env.PATH ?? ''}`
-  const require = createRequire(join(root, 'dsh-plugin-desktop/package.json'))
+  const require = createRequire(join(root, 'dsh-desktop-next/package.json'))
   const { generateAssetCatalogForIcon } = require('app-builder-lib/out/util/macosIconComposer.js')
-  const { generateMacAppIcon } = await import('../dsh-plugin-desktop/scripts/generate-mac-app-icon.mjs')
-  const { generateWindowsAppIcon } = await import('../dsh-plugin-desktop/scripts/generate-windows-app-icon.mjs')
+  const { generateMacAppIcon } = await import('../dsh-desktop-next/scripts/generate-mac-app-icon.mjs')
+  const { generateWindowsAppIcon } = await import('../dsh-desktop-next/scripts/generate-windows-app-icon.mjs')
 
   for (const [channel, name] of selected) {
     for (const set of iconSets(channel, join(root, name, 'build'))) {

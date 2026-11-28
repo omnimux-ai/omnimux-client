@@ -13,7 +13,6 @@ on:
       - '.github/workflows/release.yml'
       - '.github/actions/prepare-desktop-package/**'
       - 'app/dsh-desktop-next/scripts/**'
-      - 'app/dsh-plugin-desktop/scripts/**'
       - 'app/scripts/*package*'
       - 'app/scripts/*release*'
       - 'app/scripts/prepare-dsh-market.mjs'

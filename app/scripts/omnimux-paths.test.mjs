@@ -315,3 +315,64 @@ test('app/scripts/ops/guard-worktree.mjs allows confirmed non-Git targets across
     rmSync(scratch, { recursive: true, force: true })
   }
 })
+
+test('default app scripts, omnimux ops entry, and plugins cli cut over to dsh-desktop-next without retired preset commands', () => {
+  const pkg = JSON.parse(readFileSync(join(appDir, 'package.json'), 'utf8'))
+  const scripts = pkg.scripts ?? {}
+
+  const cutoverScripts = [
+    'build',
+    'typecheck',
+    'test',
+    'check',
+    'dev',
+    'start',
+    'package:dir',
+    'preflight:mac-signing',
+    'dist:mac',
+    'dist:mac-smoke',
+    'dist:win',
+    'dist:win-portable',
+    'dist:linux',
+  ]
+  for (const name of cutoverScripts) {
+    assert.match(scripts[name] ?? '', /dsh-desktop-next/u, `${name} must target dsh-desktop-next`)
+    assert.doesNotMatch(scripts[name] ?? '', /dsh-plugin-desktop/u, `${name} must not invoke dsh-plugin-desktop`)
+  }
+
+  for (const retired of ['package:dev:legacy', 'dist:win-release', 'omnimux:stage', 'omnimux:verify']) {
+    assert.equal(retired in scripts, false, `retired script ${retired} must not remain in app/package.json`)
+  }
+
+  const appOmnimux = readFileSync(join(appDir, 'scripts', 'omnimux.mjs'), 'utf8')
+  assert.ok(appOmnimux.includes('dsh-desktop-next/scripts/rebuild-managed-profile.ts'))
+  assert.equal(appOmnimux.includes('dsh-plugin-desktop'), false)
+  assert.equal(appOmnimux.includes('stage:preset'), false)
+  assert.equal(appOmnimux.includes('verify:distribution'), false)
+
+  const pluginsOmnimux = readFileSync(join(repoRoot, 'plugins', 'scripts', 'omnimux.mjs'), 'utf8')
+  assert.equal(pluginsOmnimux.includes('omnimux:stage'), false)
+})
+
+test('dsh-desktop-next rebuild-managed-profile.ts runs under plain Node strip-only TypeScript mode', () => {
+  const importResult = spawnSync(
+    process.execPath,
+    [
+      '--input-type=module',
+      '-e',
+      "const m = await import('./dsh-desktop-next/scripts/rebuild-managed-profile.ts'); if (typeof m.runManagedProfileRebuild !== 'function') process.exit(2)",
+    ],
+    { cwd: appDir, encoding: 'utf8' },
+  )
+  assert.equal(importResult.status, 0, `${importResult.stdout}\n${importResult.stderr}`)
+  assert.doesNotMatch(importResult.stderr, /ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX|SyntaxError/u)
+
+  const cliResult = spawnSync(
+    process.execPath,
+    [join(appDir, 'dsh-desktop-next', 'scripts', 'rebuild-managed-profile.ts')],
+    { cwd: appDir, encoding: 'utf8' },
+  )
+  assert.equal(cliResult.status, 1, `${cliResult.stdout}\n${cliResult.stderr}`)
+  assert.match(cliResult.stderr, /omnimux profile rebuild failed:/u)
+  assert.doesNotMatch(cliResult.stderr, /ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX|SyntaxError/u)
+})

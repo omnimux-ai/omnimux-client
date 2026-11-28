@@ -24,7 +24,6 @@
     "registry": "node scripts/omnimux.mjs registry",
     "registry:build": "node scripts/registry-tool.mjs build",
     "registry:verify": "node scripts/registry-tool.mjs verify",
-    "stage": "node scripts/omnimux.mjs stage",
     "package:dev": "node scripts/omnimux.mjs package:dev",
     "omnimux": "node scripts/omnimux.mjs",
     "wt": "bash scripts/worktree.sh",
