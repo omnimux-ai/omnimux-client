@@ -118,9 +118,17 @@ export function syncWelcomeGreeting(doc = hostDocument()) {
       existing = createWelcomeHeaderElement(doc, userName)
       heroShell.prepend(existing)
     } else {
+      const win = doc.defaultView || hostWindow()
+      const en = isEnLocale(win)
+      const expectedGreeting = en ? `Hi, ${userName}` : `你好，${userName}`
+      const expectedSubtitle = en ? 'AI Social Creation Workspace' : 'AI 社媒内容创作助手'
       const titleEl = existing.querySelector('.omnimux-welcome-title')
-      if (titleEl && titleEl.textContent !== `你好，${userName}`) {
-        titleEl.textContent = `你好，${userName}`
+      if (titleEl && titleEl.textContent !== expectedGreeting) {
+        titleEl.textContent = expectedGreeting
+      }
+      const subtitleEl = existing.querySelector('.omnimux-welcome-subtitle')
+      if (subtitleEl && subtitleEl.textContent !== expectedSubtitle) {
+        subtitleEl.textContent = expectedSubtitle
       }
       existing.style.display = ''
     }

@@ -59,7 +59,16 @@ export function parseSkillSlugInput(raw) {
   if (!text) return { ok: false, reason: 'empty' };
   if (/\.(zip|md)$/i.test(text)) return { ok: false, reason: 'local-file-unsupported' };
   const urlMatch = text.match(/^https?:\/\/[^/]+\/(?:skills\/)?([^/?#]+)/i);
-  const candidate = (urlMatch ? decodeURIComponent(urlMatch[1]) : text).replace(/^\/+/, '').trim();
+  let candidate = text;
+  if (urlMatch) {
+    try {
+      candidate = decodeURIComponent(urlMatch[1]);
+    } catch {
+      return { ok: false, reason: 'invalid-slug' };
+    }
+  }
+  candidate = candidate.replace(/^\/+/, '').trim();
+  if (/\.(zip|md)$/i.test(candidate)) return { ok: false, reason: 'local-file-unsupported' };
   if (!/^[a-z0-9][a-z0-9._-]{0,127}$/i.test(candidate)) {
     return { ok: false, reason: 'invalid-slug' };
   }
@@ -139,7 +148,9 @@ function resolveOverlayComp(props) {
   return 'div';
 }
 
-function resolveTrLookup() {
+function resolveTrLookup(safeProps) {
+  if (safeProps && typeof safeProps.tr === 'function') return safeProps.tr;
+  if (typeof useTr === 'function') return useTr();
   if (typeof lookup === 'function') return lookup;
   return (k) => k;
 }
@@ -165,7 +176,7 @@ export function InstallModal(props) {
 
   if (!open) return null;
 
-  const trLookup = resolveTrLookup();
+  const trLookup = resolveTrLookup(safeProps);
   const en = isEnLocale(trLookup);
   const apiFn = resolveApi(apiProp);
 

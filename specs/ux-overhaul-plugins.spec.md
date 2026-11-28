@@ -4,15 +4,15 @@
 
 如果在保留 `#429` 统一动效体系（`--omnimux-motion-*`、`IconSwap`、`usePresence`）和既有安全/契约边界的前提下，按「复杂留给系统，体验留给用户」八条原则完成 PR 2A 三层重构：
 1. **共享层（`plugins/packages/dsh-ui-kit`）**：补齐语言检测与组件本地化默认文案、窄屏横向滚动工具栏、`SearchField` Esc 清空不误关外层抽屉及跨平台 `Mod+K`、破坏性 `ConfirmModal` 默认聚焦取消并在 `confirmLoading` 期间锁住关闭、`Tabs`/`DropdownSelect`/`DataTable` 键盘导航、禁用态 `IconButton` 悬浮提示、抽屉捕获期 Esc 与侧边栏 `:focus-visible`/原生 `title`、`SocialSearchToolView` 隐藏原始 JSON 并内联报错重试、支持关闭伪 `0→96%` 假进度百分比；
-2. **中枢层（`plugins/plugins/omnimux`）**：清除 `welcome-greeting.js` 兜底「老钟」与 `innerHTML` 拼接、发送防丢续发、完整双语与键盘可控的 `ModelPicker`、去冗余宣传并补复制/锁遮罩的 `LoginGate`、退出与断连危险二次确认、`CreativePresetsModal`/`ProductPicker`/`AssetAddModal` 状态重置与 4 字分类、折叠设置技术细节与未启用 S3 表单、清除 `ClipContextChip` 与 `composer-add` 中点 `·` 与成功 Toast 噪音、窗口聚焦自动重查额度与裸域名自动补全 `https://`；
+2. **中枢层（`plugins/plugins/omnimux`）**：清除 `welcome-greeting.js` 私有开发昵称兜底与 `innerHTML` 拼接、发送防丢续发、完整双语与键盘可控的 `ModelPicker`、去冗余宣传并补复制/锁遮罩的 `LoginGate`、退出与断连危险二次确认、`CreativePresetsModal`/`ProductPicker`/`AssetAddModal` 状态重置与 4 字分类、折叠设置技术细节与未启用 S3 表单、清除 `ClipContextChip` 与 `composer-add` 中点 `·` 与成功 Toast 噪音、窗口聚焦自动重查额度与裸域名自动补全 `https://`；
 3. **市场层（`plugins/plugins/omnimux-market`）**：对无后端持久化路由的假控件（`InstallModal` 本地上传假吞字节、`skills-ui` 假停用开关、`plugins-column` 仅 `localStorage` 开关、`autoUpdate` 易失开关）如实下线或改为真实状态展示，隔离发现/我的筛选与搜索状态，为卸载补齐危险 `ConfirmModal`，修复 `SKILL.md` 伪造文件树、修复半译中文说明、统一定界四字类目并清除所有 `·` 与冗余 Toast；
 
 则插件主入口的误触风险、静默假动作与跨插件交互割裂感会显著下降，且全部包构建、工作区契约与回归测试均保持全绿。
 
 ## 证伪方式
 
-1. **静态与契约门禁**：在 `.worktrees/ux-overhaul-plugins` 运行 `corepack pnpm --dir plugins run build:all`、`node scripts/bundle-lock.mjs`、`node scripts/workspace-check.mjs --check`、`verify:dsw-tokens`、`test:ui`、`verify:stages`、`verify:stage-scroll`、`verify:stage-inset`、`verify:slots`、`verify:silent-catch`、`verify:product-baseline`、`verify:plugin-load`、`verify:model-contracts`、`doc-lint.mjs`、`verify-plugin-agent-tools.mjs`、`verify-test-standard-declarations.mjs`、`verify-fix-regression-test.mjs` 与 `auto-qa-gate.mjs` 全部通过；用户可见文案不再出现 `·` 与「老钟」兜底。
-2. **包级单测与双向证伪**：`dsh-ui-kit`、`omnimux` 与 `omnimux-market` 全量单测及新增 UX 回归测试全绿；临时撤销关键修复（例如在 `SearchField` 的 `Escape` 清空分支去掉 `e.stopPropagation()`，或在 `welcome-greeting.js` 恢复 `'老钟'` / `innerHTML`）后，对应回归断言明确失败，恢复后全绿。
+1. **静态与契约门禁**：在 `.worktrees/ux-overhaul-plugins` 运行 `corepack pnpm --dir plugins run build:all`、`node scripts/bundle-lock.mjs`、`node scripts/workspace-check.mjs --check`、`verify:dsw-tokens`、`test:ui`、`verify:stages`、`verify:stage-scroll`、`verify:stage-inset`、`verify:slots`、`verify:silent-catch`、`verify:product-baseline`、`verify:plugin-load`、`verify:model-contracts`、`doc-lint.mjs`、`verify-plugin-agent-tools.mjs`、`verify-test-standard-declarations.mjs`、`verify-fix-regression-test.mjs` 与 `auto-qa-gate.mjs` 全部通过；用户可见文案不再出现 `·` 与私有开发昵称兜底。
+2. **包级单测与双向证伪**：`dsh-ui-kit`、`omnimux` 与 `omnimux-market` 全量单测及新增 UX 回归测试全绿；临时撤销关键修复（例如在 `SearchField` 的 `Escape` 清空分支去掉 `e.stopPropagation()`，或在 `welcome-greeting.js` 恢复私有兜底昵称）后，对应回归断言明确失败，恢复后全绿。
 3. **真实浏览器交互验收**：通过 `ego-browser` 打开 `ui-demo/ux-overhaul-plugins-demo.html` 及 Worktree Web/UI 视图，在亮/暗双主题与 390 px 窄屏下实测无横向溢出、焦距陷阱与键盘切换正确、浮层开关与破坏性确认关闭锁按预期生效并留存截图。
 
 ## 范围与保留边界
@@ -39,8 +39,8 @@
   - 原正则断言遮罩点击直接无条件 `cancel()`。
   - 变更理由：`starting`/`waiting` 授权等待期锁定 `Escape` 与背景遮罩防误关，显式点击关闭按钮仍随时可取消，按 `allowBackdropDismiss` 精确校验。
 - `plugins/plugins/omnimux/src/client/welcome-greeting.test.js` :: `resolveGreetingUserName returns profile name or falls back to 老钟`
-  - 原断言未登录或无用户名时兜底返回开发者昵称 `'老钟'`。
-  - 变更理由：改为通用中性称呼 `'创作者'`（英文 `'Creator'`），保留已登录用户真实昵称优先逻辑。
+  - 原断言未登录或无用户名时兜底返回私有开发昵称。
+  - 变更理由：改为通用中性称呼 `'创作者'`（英文 `'Creator'`），保留已登录用户真实昵称优先逻辑。（注：上一条引号内为 `main` 基线既有测试原名，CI 旧测试标准声明门禁强制要求精确匹配该原名。）
 - `plugins/plugins/omnimux/src/client/welcome-greeting.test.js` :: `createWelcomeHeaderElement creates well-formed header element`
   - 原断言匹配 `'属于你的AI社媒运营团队'`。
   - 变更理由：改为产品实际定位文案 `'AI 社媒内容创作助手'` 并采用 DOM `textContent` 安全渲染以消除 XSS 拼接风险。
@@ -113,3 +113,9 @@
 - `plugins/plugins/omnimux-market/tests/e2e/suite-marketplace.spec.js` :: `E2E 旅程三（分支）：projectDir 解析不到时不发请求，留在确认框并提示`
   - 原用例直接点击确认按钮。
   - 变更理由：无 `projectDir` 时确认框默认选中「个人全局」，测试显式点选「当前项目」后再点击确认，继续验证无项目目录时的请求拦截与提示。
+- `plugins/plugins/omnimux/tests/e2e/retire-forms-social-harvest.e2e.test.js` :: `E2E: retired plugins have zero active UI/runtime entry while session-prefill stays operational`
+  - 原断言预期 `'手机管理'`。
+  - 变更理由：同步侧边栏与探索菜单模块命名统一为 4 字名词 `'移动设备'`。
+- `plugins/plugins/omnimux/tests/e2e/session-compact-welcome.spec.js` :: `e2e: session compact welcome header mounts on split mode and unmounts on exit`
+  - 原断言匹配未登录兜底私有昵称与 `'属于你的AI社媒运营团队'`。
+  - 变更理由：移除私有兜底昵称，改为中性 `'你好，创作者'` 与 `'AI 社媒内容创作助手'`。

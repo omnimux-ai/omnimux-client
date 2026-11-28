@@ -53,12 +53,27 @@ function collectNodes(node, predicate, out = []) {
 }
 
 describe('PR 2A Layer 3: omnimux-market UX overhaul regressions', () => {
-  it('M-01: InstallModal parses skill slugs/URLs honestly and rejects fake local .zip/.md filenames', async () => {
+  it('M-01: InstallModal parses skill slugs/URLs honestly, handles malformed/encoded inputs, and respects tr locale', async () => {
     const { parseSkillSlugInput, InstallModal } = loadPlazaJsx('./plaza/InstallModal.jsx')
     assert.deepEqual(parseSkillSlugInput('video-hook-analysis'), { ok: true, slug: 'video-hook-analysis' })
     assert.deepEqual(parseSkillSlugInput('https://skillhub.cn/skills/demo-skill?tab=overview'), { ok: true, slug: 'demo-skill' })
     assert.deepEqual(parseSkillSlugInput('my-skill.zip'), { ok: false, reason: 'local-file-unsupported' })
     assert.deepEqual(parseSkillSlugInput('SKILL.md'), { ok: false, reason: 'local-file-unsupported' })
+    assert.deepEqual(parseSkillSlugInput('https://skillhub.cn/skills/demo%2ezip'), { ok: false, reason: 'local-file-unsupported' })
+    assert.deepEqual(parseSkillSlugInput('https://skillhub.cn/skills/%E0%A4%A'), { ok: false, reason: 'invalid-slug' })
+
+    let enStateIdx = 0
+    const enSlots = ['', false, '']
+    const enTree = InstallModal({
+      open: true,
+      tr: (k) => (k === 'locale' ? 'en' : k),
+      h,
+      hooks: {
+        useState: (init) => [enSlots[enStateIdx++] ?? init, () => {}],
+        useRef: () => ({ current: null }),
+      },
+    })
+    assert.equal(collectNodes(enTree, (n) => n.props?.className === 'modal-title')[0].children[0], 'Install by Slug')
 
     const calls = []
     let closeCalls = 0
@@ -284,5 +299,9 @@ describe('PR 2A Layer 3: omnimux-market UX overhaul regressions', () => {
     assert.ok(!i18nSrc.includes('"cfg.updateHint": "当前 {cur} ·'))
     assert.ok(!i18nSrc.includes('"suite.receipt.failed": "未完成 ·'))
     assert.ok(!i18nSrc.includes('"skill.name.bggg-data-amazon": "BGGG Amazon Data ·'))
+
+    const plazaSrc = readFileSync(join(here, 'skill-plaza.js'), 'utf8')
+    assert.doesNotMatch(plazaSrc, /renderCategoryBar[\s\S]{0,400}setMineCategory\(/)
+    assert.doesNotMatch(plazaSrc, /mineFilterCategory\s*=\s*state\.category/)
   })
 })

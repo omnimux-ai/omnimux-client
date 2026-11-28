@@ -63,8 +63,8 @@ function matchesShortcut(event: globalThis.KeyboardEvent, shortcut: string): boo
 
 /**
  * Search field: leading search icon, optional shortcut kbd, and a clear control.
- * Uncontrolled `debounceMs` defaults to 200ms; controlled `value` defaults to 0ms
- * (immediate) unless an explicit `debounceMs` > 0 is passed.
+ * Uncontrolled `debounceMs` (default 200) batches `onValueChange`. Pass `0`
+ * (or a controlled `value`) to emit immediately.
  */
 export const SearchField = forwardRef<SearchFieldHandle, SearchFieldProps>(function SearchField(
   {
@@ -72,7 +72,7 @@ export const SearchField = forwardRef<SearchFieldHandle, SearchFieldProps>(funct
     defaultValue = "",
     onValueChange,
     onClear,
-    debounceMs: debounceMsProp,
+    debounceMs = 200,
     shortcut,
     stretch = false,
     clearLabel,
@@ -92,28 +92,18 @@ export const SearchField = forwardRef<SearchFieldHandle, SearchFieldProps>(funct
   const inputRef = useRef<HTMLInputElement>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const controlled = value !== undefined;
-  const resolvedDebounceMs = debounceMsProp ?? (controlled ? 0 : 200);
   const [inner, setInner] = useState(defaultValue);
-  const [draft, setDraft] = useState(value ?? "");
+  const current = controlled ? value : inner;
+  const immediate = controlled || debounceMs <= 0 || !onValueChange;
 
-  useEffect(() => {
-    if (controlled) {
-      if (timerRef.current) {
-        clearTimeout(timerRef.current);
-        timerRef.current = null;
-      }
-      setDraft(value ?? "");
+  function clearPendingEmit(): void {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
     }
-  }, [controlled, value]);
+  }
 
-  const immediate = resolvedDebounceMs <= 0 || !onValueChange;
-  const current = controlled ? (immediate ? value : draft) : inner;
-
-  useEffect(() => {
-    return () => {
-      if (timerRef.current) clearTimeout(timerRef.current);
-    };
-  }, []);
+  useEffect(() => clearPendingEmit, [immediate, onValueChange]);
 
   useEffect(() => {
     if (!shortcut || disabled) return;
@@ -130,20 +120,19 @@ export const SearchField = forwardRef<SearchFieldHandle, SearchFieldProps>(funct
   }, [shortcut, disabled]);
 
   function emit(next: string): void {
+    clearPendingEmit();
     if (immediate) {
       onValueChange?.(next);
       return;
     }
-    if (timerRef.current) clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => {
       timerRef.current = null;
       onValueChange?.(next);
-    }, resolvedDebounceMs);
+    }, debounceMs);
   }
 
   function apply(next: string): void {
     if (!controlled) setInner(next);
-    else if (!immediate) setDraft(next);
     emit(next);
   }
 
@@ -152,12 +141,8 @@ export const SearchField = forwardRef<SearchFieldHandle, SearchFieldProps>(funct
   }
 
   function handleClear(): void {
-    if (timerRef.current) {
-      clearTimeout(timerRef.current);
-      timerRef.current = null;
-    }
+    clearPendingEmit();
     if (!controlled) setInner("");
-    else setDraft("");
     onValueChange?.("");
     onClear?.();
     inputRef.current?.focus();

@@ -125,10 +125,12 @@ function AccountAnalysisService({ t, onOpen }) {
       <p className="omnimux-profile-message">{t('profile.analysis.description')}</p>
       {view ? (
         <>
-          <p className="omnimux-profile-message" role="status">
-            {view.source === 'explicit' && view.configured ? t('profile.analysis.explicit')
-              : view.configured ? t('profile.analysis.configured') : t('profile.analysis.unconfigured')}
-          </p>
+          {phase !== 'saved' ? (
+            <p className="omnimux-profile-message" role="status">
+              {view.source === 'explicit' && view.configured ? t('profile.analysis.explicit')
+                : view.configured ? t('profile.analysis.configured') : t('profile.analysis.unconfigured')}
+            </p>
+          ) : null}
           {view.source !== 'explicit' && view.items.length > 0 ? (
             <>
               <DropdownSelect id="omnimux-account-model-key" aria-label={t('profile.analysis.key')}

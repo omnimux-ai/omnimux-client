@@ -1246,6 +1246,60 @@ const PLACEMENT_CLASS = {
 	top: cssClass(Drawer_module_css_default.placementTop, "placementTop"),
 	bottom: cssClass(Drawer_module_css_default.placementBottom, "placementBottom")
 };
+const openDrawerStack = [];
+const scrollLockMap = /* @__PURE__ */ new WeakMap();
+function acquireScrollLock(target) {
+	const existing = scrollLockMap.get(target);
+	if (existing) {
+		existing.count += 1;
+		return;
+	}
+	const previousOverflow = target.style.overflow;
+	scrollLockMap.set(target, {
+		count: 1,
+		previousOverflow
+	});
+	target.style.overflow = "hidden";
+}
+function releaseScrollLock(target) {
+	const existing = scrollLockMap.get(target);
+	if (!existing) return;
+	existing.count -= 1;
+	if (existing.count <= 0) {
+		const previousOverflow = existing.previousOverflow;
+		scrollLockMap.delete(target);
+		target.style.overflow = previousOverflow;
+	}
+}
+function isActiveModalElement(el) {
+	if (!el) return false;
+	if (el.getAttribute("data-phase") === "exiting") return false;
+	if (el.closest("[aria-hidden=\"true\"], [hidden]")) return false;
+	return true;
+}
+function isRegisteredDrawerElement(el) {
+	return openDrawerStack.some((entry) => entry.node === el);
+}
+function indexOfDrawerElement(el) {
+	if (!el) return -1;
+	return openDrawerStack.findIndex((entry) => entry.node === el);
+}
+function hasExternalNonDrawerModal(drawerEl) {
+	if (typeof document === "undefined") return false;
+	const dialogs = document.querySelectorAll("[role=\"dialog\"][aria-modal=\"true\"], [role=\"alertdialog\"][aria-modal=\"true\"]");
+	for (const el of Array.from(dialogs)) {
+		if (drawerEl && (el === drawerEl || drawerEl.contains(el))) continue;
+		if (!isActiveModalElement(el)) continue;
+		if (!isRegisteredDrawerElement(el)) return true;
+	}
+	return false;
+}
+function hasBlockingModalAbove(drawerEl) {
+	if (typeof document === "undefined" || !drawerEl) return false;
+	const topEntry = openDrawerStack.length > 0 ? openDrawerStack[openDrawerStack.length - 1] : null;
+	if (topEntry && topEntry.node !== drawerEl) return true;
+	return hasExternalNonDrawerModal(drawerEl);
+}
 /**
 * Accessible slide-in drawer panel with multi-directional animation,
 * FocusTrap, Escape key handling, and scroll lock prevention.
@@ -1253,39 +1307,100 @@ const PLACEMENT_CLASS = {
 function Drawer({ open, onClose, title, description, children, footer, placement = "right", width = 400, height = 320, closable = true, closeOnOverlayClick = true, closeOnEsc = true, container, closeLabel, className }) {
 	const drawerRef = useRef(null);
 	const previousActiveElementRef = useRef(null);
+	const stackEntryRef = useRef(null);
+	const focusTimerRef = useRef(null);
+	const latestOpenRef = useRef(open);
+	latestOpenRef.current = open;
 	const { mounted, phase } = usePresence(open, 190);
+	const resolvedContainer = mounted || open ? resolvePortalContainer(container) : null;
 	const resolvedCloseLabel = closeLabel ?? (resolveKitLocale() === "en" ? "Close drawer" : "关闭抽屉");
 	const titleId = useId();
 	const descriptionId = useId();
-	useEffect(() => {
-		if (!open) return;
-		const target = resolvePortalContainer(container);
-		if (!target) return;
-		const previousOverflow = target.style.overflow;
-		target.style.overflow = "hidden";
-		return () => {
-			target.style.overflow = previousOverflow;
-		};
-	}, [open, container]);
-	useEffect(() => {
-		if (!open) return;
-		previousActiveElementRef.current = document.activeElement;
-		const timer = setTimeout(() => {
-			if (drawerRef.current) focusFirstDescendant(drawerRef.current);
+	const clearFocusTimer = useCallback(() => {
+		if (focusTimerRef.current !== null) {
+			clearTimeout(focusTimerRef.current);
+			focusTimerRef.current = null;
+		}
+	}, []);
+	const scheduleFocusIntoNode = useCallback((el) => {
+		clearFocusTimer();
+		focusTimerRef.current = setTimeout(() => {
+			focusTimerRef.current = null;
+			const current = drawerRef.current;
+			if (!current || current !== el || !latestOpenRef.current || hasBlockingModalAbove(current)) return;
+			const rawActiveDialog = document.activeElement instanceof Element ? document.activeElement.closest("[role=\"dialog\"], [role=\"alertdialog\"]") : null;
+			const activeDialog = rawActiveDialog && isActiveModalElement(rawActiveDialog) ? rawActiveDialog : null;
+			if (activeDialog && activeDialog !== current && !isRegisteredDrawerElement(activeDialog)) return;
+			focusFirstDescendant(current);
 		}, 16);
+	}, [clearFocusTimer]);
+	const setDrawerNode = useCallback((el) => {
+		drawerRef.current = el;
+		if (stackEntryRef.current) stackEntryRef.current.node = el;
+		if (!el) {
+			clearFocusTimer();
+			return;
+		}
+		if (latestOpenRef.current && stackEntryRef.current) scheduleFocusIntoNode(el);
+	}, [clearFocusTimer, scheduleFocusIntoNode]);
+	useEffect(() => {
+		if (!open) return;
+		const target = resolvedContainer;
+		if (!target) return;
+		acquireScrollLock(target);
 		return () => {
-			clearTimeout(timer);
-			if (previousActiveElementRef.current && typeof previousActiveElementRef.current.focus === "function") previousActiveElementRef.current.focus();
+			releaseScrollLock(target);
 		};
-	}, [open]);
+	}, [open, resolvedContainer]);
+	useEffect(() => {
+		if (!open) return;
+		if (typeof document !== "undefined") previousActiveElementRef.current = document.activeElement;
+		const entry = { node: drawerRef.current };
+		stackEntryRef.current = entry;
+		openDrawerStack.push(entry);
+		if (entry.node) scheduleFocusIntoNode(entry.node);
+		return () => {
+			clearFocusTimer();
+			const idx = openDrawerStack.indexOf(entry);
+			const wasTopDrawer = idx >= 0 && idx === openDrawerStack.length - 1;
+			if (idx >= 0) openDrawerStack.splice(idx, 1);
+			if (stackEntryRef.current === entry) stackEntryRef.current = null;
+			if (wasTopDrawer && !hasExternalNonDrawerModal(entry.node)) {
+				if (previousActiveElementRef.current && typeof previousActiveElementRef.current.focus === "function" && (typeof document === "undefined" || document.contains(previousActiveElementRef.current) && isActiveModalElement(previousActiveElementRef.current))) previousActiveElementRef.current.focus();
+				else if (openDrawerStack.length > 0) {
+					const nextTop = openDrawerStack[openDrawerStack.length - 1]?.node;
+					if (nextTop) focusFirstDescendant(nextTop);
+				}
+			}
+		};
+	}, [
+		open,
+		clearFocusTimer,
+		scheduleFocusIntoNode
+	]);
+	const isEscapeBlockedByNestedSurface = (target) => {
+		if (target instanceof Element) {
+			const targetMenu = target.closest("[role=\"menu\"]");
+			if (targetMenu && isActiveModalElement(targetMenu)) return true;
+			const targetDialog = target.closest("[role=\"dialog\"], [role=\"alertdialog\"]");
+			if (targetDialog && targetDialog !== drawerRef.current && isActiveModalElement(targetDialog)) {
+				const selfIdx = indexOfDrawerElement(drawerRef.current);
+				const targetIdx = indexOfDrawerElement(targetDialog);
+				if (!(selfIdx >= 0 && targetIdx >= 0 && targetIdx < selfIdx)) return true;
+			}
+		}
+		if (typeof document !== "undefined") {
+			const menus = document.querySelectorAll("[role=\"menu\"]");
+			for (const menu of Array.from(menus)) if (isActiveModalElement(menu)) return true;
+		}
+		return hasBlockingModalAbove(drawerRef.current);
+	};
 	useEffect(() => {
 		if (!open || !closeOnEsc || typeof document === "undefined") return;
 		const onDocumentKeyDown = (e) => {
 			if (e.defaultPrevented) return;
 			if (e.key !== "Escape" || !closeOnEsc) return;
-			if (e.target instanceof Element && e.target.closest("[role=\"menu\"]")) return;
-			const modals = document.querySelectorAll("[role=\"dialog\"][aria-modal=\"true\"]");
-			if (modals.length > 0 && modals[modals.length - 1] !== drawerRef.current) return;
+			if (isEscapeBlockedByNestedSurface(e.target)) return;
 			e.preventDefault();
 			e.stopPropagation();
 			onClose();
@@ -1302,6 +1417,8 @@ function Drawer({ open, onClose, title, description, children, footer, placement
 	const handleKeyDown = (e) => {
 		if (!open || e.defaultPrevented) return;
 		if (e.key === "Escape" && closeOnEsc) {
+			if (e.target instanceof Node && drawerRef.current && !drawerRef.current.contains(e.target)) return;
+			if (isEscapeBlockedByNestedSurface(e.target)) return;
 			e.preventDefault();
 			e.stopPropagation();
 			onClose();
@@ -1315,7 +1432,7 @@ function Drawer({ open, onClose, title, description, children, footer, placement
 	if (!mounted) return null;
 	const sizeStyle = placement === "top" || placement === "bottom" ? { height: typeof height === "number" ? `${height}px` : height } : { width: typeof width === "number" ? `${width}px` : width };
 	return /* @__PURE__ */ jsx(DrawerPortal, {
-		container,
+		container: resolvedContainer,
 		children: /* @__PURE__ */ jsxs("div", {
 			className: cssClass(Drawer_module_css_default.root, "root"),
 			"data-phase": phase,
@@ -1327,7 +1444,7 @@ function Drawer({ open, onClose, title, description, children, footer, placement
 				onClick: handleMaskClick,
 				"aria-hidden": "true"
 			}), /* @__PURE__ */ jsxs("div", {
-				ref: drawerRef,
+				ref: setDrawerNode,
 				role: "dialog",
 				"aria-modal": "true",
 				"aria-labelledby": title ? titleId : void 0,
@@ -1417,10 +1534,10 @@ function matchesShortcut(event, shortcut) {
 }
 /**
 * Search field: leading search icon, optional shortcut kbd, and a clear control.
-* Uncontrolled `debounceMs` defaults to 200ms; controlled `value` defaults to 0ms
-* (immediate) unless an explicit `debounceMs` > 0 is passed.
+* Uncontrolled `debounceMs` (default 200) batches `onValueChange`. Pass `0`
+* (or a controlled `value`) to emit immediately.
 */
-const SearchField = forwardRef(function SearchField({ value, defaultValue = "", onValueChange, onClear, debounceMs: debounceMsProp, shortcut, stretch = false, clearLabel, className, disabled, id, placeholder, ...rest }, ref) {
+const SearchField = forwardRef(function SearchField({ value, defaultValue = "", onValueChange, onClear, debounceMs = 200, shortcut, stretch = false, clearLabel, className, disabled, id, placeholder, ...rest }, ref) {
 	const isEn = resolveKitLocale() === "en";
 	const resolvedClearLabel = clearLabel ?? (isEn ? "Clear search" : "清空搜索");
 	const resolvedPlaceholder = placeholder ?? (isEn ? "Search" : "搜索");
@@ -1429,25 +1546,16 @@ const SearchField = forwardRef(function SearchField({ value, defaultValue = "", 
 	const inputRef = useRef(null);
 	const timerRef = useRef(null);
 	const controlled = value !== void 0;
-	const resolvedDebounceMs = debounceMsProp ?? (controlled ? 0 : 200);
 	const [inner, setInner] = useState(defaultValue);
-	const [draft, setDraft] = useState(value ?? "");
-	useEffect(() => {
-		if (controlled) {
-			if (timerRef.current) {
-				clearTimeout(timerRef.current);
-				timerRef.current = null;
-			}
-			setDraft(value ?? "");
+	const current = controlled ? value : inner;
+	const immediate = controlled || debounceMs <= 0 || !onValueChange;
+	function clearPendingEmit() {
+		if (timerRef.current) {
+			clearTimeout(timerRef.current);
+			timerRef.current = null;
 		}
-	}, [controlled, value]);
-	const immediate = resolvedDebounceMs <= 0 || !onValueChange;
-	const current = controlled ? immediate ? value : draft : inner;
-	useEffect(() => {
-		return () => {
-			if (timerRef.current) clearTimeout(timerRef.current);
-		};
-	}, []);
+	}
+	useEffect(() => clearPendingEmit, [immediate, onValueChange]);
 	useEffect(() => {
 		if (!shortcut || disabled) return;
 		const onKey = (event) => {
@@ -1464,31 +1572,26 @@ const SearchField = forwardRef(function SearchField({ value, defaultValue = "", 
 		};
 	}, [shortcut, disabled]);
 	function emit(next) {
+		clearPendingEmit();
 		if (immediate) {
 			onValueChange?.(next);
 			return;
 		}
-		if (timerRef.current) clearTimeout(timerRef.current);
 		timerRef.current = setTimeout(() => {
 			timerRef.current = null;
 			onValueChange?.(next);
-		}, resolvedDebounceMs);
+		}, debounceMs);
 	}
 	function apply(next) {
 		if (!controlled) setInner(next);
-		else if (!immediate) setDraft(next);
 		emit(next);
 	}
 	function onChange(event) {
 		apply(event.target.value);
 	}
 	function handleClear() {
-		if (timerRef.current) {
-			clearTimeout(timerRef.current);
-			timerRef.current = null;
-		}
+		clearPendingEmit();
 		if (!controlled) setInner("");
-		else setDraft("");
 		onValueChange?.("");
 		onClear?.();
 		inputRef.current?.focus();

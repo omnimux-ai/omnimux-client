@@ -202,7 +202,7 @@
     }
 
     function renderCategoryBar(opts) {
-      const { category, setCategory, setPlatformFilter, setMineCategory, setPage, workshopCategories, tr } = opts;
+      const { category, setCategory, setPlatformFilter, setPage, workshopCategories, tr } = opts;
       return h("div", { className: "category-bar", "aria-label": tr("workshop.category") },
         h("span", { className: "category-label" }, tr("workshop.scenarioLabel") || "场景分类"),
         workshopCategories.map((c) => {
@@ -210,7 +210,6 @@
           const onCatClick = () => {
             setCategory(c.id);
             if (setPlatformFilter) setPlatformFilter("");
-            setMineCategory("");
             setPage(1);
           };
           // exempt-ui01 category selector button
@@ -340,8 +339,7 @@
       const isDiscoverTab = state.mainTab === "discover";
       const { introHeading, introSubtitle, placeholderText } = resolveIntroTexts(state, tr, isEn, isExpertTab, isPluginsTab);
       const displayedExperts = filterDisplayedExperts(state.expertMarketItems, isExpertTab, state.searchQuery, state.expertStage);
-      const mineFilterCategory = state.category === "featured" ? "featured" : "";
-      const filteredMine = filterMineItems(state.installedItems, { category: mineFilterCategory, presetBinding, mineCategory: state.mineCategory, mineSource: state.mineSource, searchQuery: state.searchQuery });
+      const filteredMine = filterMineItems(state.installedItems, { category: "", presetBinding, mineCategory: state.mineCategory, mineSource: state.mineSource, searchQuery: state.searchQuery });
       const availableSources = Array.from(new Set(state.installedItems.map(extractItemSourceKey).filter(Boolean)));
       const workshopCategories = buildWorkshopCategories(presetBinding, tr);
       const onOpenInstall = () => state.setOpenInstallModal(true);
@@ -384,7 +382,7 @@
         isDiscoverTab,
         introOpts: { introHeading, introSubtitle, isExpertTab, isPluginsTab, isEn, tr, onOpenInstall },
         navBarOpts: { mainTab: state.mainTab, setMainTab: state.setMainTab, setPage: state.setPage, searchQuery: state.searchQuery, setSearchQuery: state.setSearchQuery, setSubmitted: state.setSubmitted, placeholderText, onSearchSubmit, tr, isEn },
-        categoryBarOpts: { category: state.category, setCategory: state.setCategory, setPlatformFilter: state.setPlatformFilter, setMineCategory: state.setMineCategory, setPage: state.setPage, workshopCategories, tr },
+        categoryBarOpts: { category: state.category, setCategory: state.setCategory, setPlatformFilter: state.setPlatformFilter, setPage: state.setPage, workshopCategories, tr },
         tabContentOpts,
       };
     }
@@ -515,8 +513,8 @@
           ? h(SuiteDetailModal, { item: openItem, tr, projectDir, onClose: onDrawerClose, onInstalled: onDrawerInstalled, onUninstalled: onDrawerUninstalled })
           : h(Drawer, { item: openItem, onClose: onDrawerClose, onInstalled: onDrawerInstalled, onUninstalled: onDrawerUninstalled }))
         : null;
-      const installNode = h(InstallModal, { open: state.openInstallModal, onClose: () => state.setOpenInstallModal(false), onInstalled: (it) => { mark(it, true); loadInstalled(); } });
-      const confirmNode = h(ConfirmInstallModal, { item: state.confirmInstallItem, onConfirm, error: state.confirmInstallError, installing: state.confirmInstalling, onClose: onCloseModal });
+      const installNode = h(InstallModal, { open: state.openInstallModal, tr, onClose: () => state.setOpenInstallModal(false), onInstalled: (it) => { mark(it, true); loadInstalled(); } });
+      const confirmNode = h(ConfirmInstallModal, { item: state.confirmInstallItem, tr, onConfirm, error: state.confirmInstallError, installing: state.confirmInstalling, onClose: onCloseModal });
       const confirmUninstallNode = h(ConfirmUninstallDialog, {
         item: state.confirmUninstallItem,
         onConfirm: onConfirmUninstall,

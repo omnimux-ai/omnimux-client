@@ -13,7 +13,7 @@ import { createAttachmentStore } from './attachments/store.ts'
 import { createLinkReference, normalizeUserLinkInput, validLinkUrl } from './attachments/linkReference.ts'
 import { createComposerAddController } from './composer-add/controller.js'
 import { en, zh } from './locales.js'
-import { createWelcomeHeaderElement, resolveGreetingUserName } from './welcome-greeting.js'
+import { createWelcomeHeaderElement, resolveGreetingUserName, syncWelcomeGreeting } from './welcome-greeting.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const repo = resolve(here, '../../../..')
@@ -76,6 +76,19 @@ describe('PR 2A Layer 2: omnimux UX overhaul regressions', () => {
       const el = createWelcomeHeaderElement(dom.window.document, '<img src=x onerror=1>Creator')
       assert.equal(el.querySelectorAll('.omnimux-welcome-texts img').length, 0)
       assert.match(el.querySelector('.omnimux-welcome-title').textContent, /<img src=x onerror=1>Creator/)
+
+      // Verify existing split-mode header updates in English instead of mixing 你好 into EN UI
+      const heroShell = dom.window.document.createElement('div')
+      heroShell.innerHTML = '<div data-phase="hero"><div class="composerHero"><div></div></div></div>'
+      const splitPanel = dom.window.document.createElement('aside')
+      splitPanel.setAttribute('data-sidebar-right-open', '')
+      splitPanel.setAttribute('data-sidebar-right-panel', 'split')
+      dom.window.document.body.append(heroShell, splitPanel)
+      const targetShell = heroShell.querySelector('.composerHero > :first-child')
+      const existing = createWelcomeHeaderElement(dom.window.document, 'Alice')
+      targetShell.append(existing)
+      syncWelcomeGreeting(dom.window.document)
+      assert.equal(existing.querySelector('.omnimux-welcome-title').textContent, 'Hi, Creator')
     } finally {
       globalThis.document = prevDocument
     }
@@ -289,10 +302,546 @@ describe('PR 2A Layer 2: omnimux UX overhaul regressions', () => {
     assert.match(pickerSrc, /if \(!open\)[\s\S]*setSelectedProduct\(null\)[\s\S]*setSearchQuery\(''\)/)
     assert.ok(!/if\s*\(\s*e\.key\s*===\s*'Enter'[\s\S]{0,160}custom-/.test(pickerSrc), 'Enter key must never create synthetic custom-* product')
 
+    const bridgeSrc = readFileSync(join(here, 'composer-add/AttachmentSubmitBridge.jsx'), 'utf8')
+    assert.match(bridgeSrc, /blockedPointerRef\.current = false\s+const before = armedCountRef\.current\s+btn\.click\(\)\s+return armedCountRef\.current > before/)
+    assert.match(profileSrc, /phase !== 'saved'/)
+    const catalogSrc = readFileSync(join(here, 'session-guide/catalog.js'), 'utf8')
+    assert.ok(!catalogSrc.includes('BGGG Amazon Data · Review Scraper'))
+
     const presetsSrc = readFileSync(join(here, 'presets/CreativePresetsModal.jsx'), 'utf8')
     assert.match(presetsSrc, /if \(!isOpen\)\s*\{\s*setSearchQuery\(''\)\s*setSelectedSubCategory\('all'\)/)
     assert.match(presetsSrc, /黄金钩子/)
     assert.ok(!presetsSrc.includes('黄金亮点 / Hook'))
     assert.ok(!presetsSrc.includes('全部 ({currentList.length})'))
+  })
+
+  it('H-02: AttachmentSubmitBridge auto-resumes after pointerdown interception without swallowing the synthetic send click', async () => {
+    const out = await build({
+      stdin: { contents: `export { AttachmentSubmitBridge } from './AttachmentSubmitBridge.jsx';`, resolveDir: join(here, 'composer-add'), loader: 'js' },
+      bundle: true, write: false, format: 'cjs', platform: 'node', external: ['react'],
+    })
+    const mod = { exports: {} }
+    new Function('require', 'module', 'exports', out.outputFiles[0].text)(require, mod, mod.exports)
+    const { AttachmentSubmitBridge } = mod.exports
+
+    const dom = new JSDOM('<div data-phase="hero"><div data-composer-card><div id="bridge"></div><div data-composer-input="true"></div><button data-send-button>Send</button></div></div>', { url: 'http://127.0.0.1/' })
+    const saved = { window: globalThis.window, document: globalThis.document, CustomEvent: globalThis.CustomEvent, Event: globalThis.Event, IS_REACT_ACT_ENVIRONMENT: globalThis.IS_REACT_ACT_ENVIRONMENT }
+    Object.assign(globalThis, { window: dom.window, document: dom.window.document, CustomEvent: dom.window.CustomEvent, Event: dom.window.Event, IS_REACT_ACT_ENVIRONMENT: true })
+    let snapshot = { draft: 'hi', draftRev: 1, phase: 'plain', occurrences: [] }
+    const insertions = []
+    const arms = []
+    let sends = 0
+    const attachmentStore = { getSnapshot: () => [] }
+    const attachmentAdmission = { arm: (...args) => arms.push(args) }
+    const getCurrentSessionId = () => 'stable-sid'
+    const inputActions = { setDraft: () => {} }
+    const insertText = (text, span) => { insertions.push({ text, span }); return true }
+    const root = createRoot(dom.window.document.getElementById('bridge'))
+    try {
+      const chip = dom.window.document.createElement('span')
+      chip.setAttribute('data-omx-product-token', 'true')
+      const inp = dom.window.document.createElement('input')
+      inp.value = 'prod_9'
+      chip.appendChild(inp)
+      dom.window.document.querySelector('[data-composer-input]').appendChild(chip)
+
+      const sendBtn = dom.window.document.querySelector('[data-send-button]')
+      sendBtn.addEventListener('click', () => { sends += 1 })
+      const render = () => act(async () => root.render(React.createElement(AttachmentSubmitBridge, {
+        sessionId: 'stable-sid',
+        useInput: (sel) => sel(snapshot),
+        t: (k) => k,
+        inputActions,
+        insertText,
+        attachmentStore,
+        attachmentAdmission,
+        getCurrentSessionId,
+      })))
+      await render()
+      await act(async () => {
+        sendBtn.dispatchEvent(new dom.window.Event('pointerdown', { bubbles: true, cancelable: true }))
+      })
+      assert.equal(insertions.length, 1)
+      assert.equal(sends, 0)
+
+      snapshot = { draft: snapshot.draft + insertions[0].text, draftRev: 2, phase: 'plain', occurrences: [] }
+      await render()
+      assert.equal(sends, 1, 'confirmed draft after pointerdown must auto-resume synthetic send')
+      assert.equal(arms.length, 1)
+      assert.equal(dom.window.document.querySelector('[role="status"]'), null)
+    } finally {
+      await act(async () => root.unmount())
+      dom.window.close()
+      Object.assign(globalThis, saved)
+    }
+  })
+
+  it('Drawer + ConfirmModal JSDOM: simultaneous mount never steals focus or lets Escape close outer Drawer during loading or alertdialog', async () => {
+    const out = await build({
+      stdin: {
+        contents: `export { Drawer } from './drawer/Drawer.tsx'; export { ConfirmModal } from './dialog/Dialog.tsx';`,
+        resolveDir: join(repo, 'packages/dsh-ui-kit/src'),
+        loader: 'ts',
+      },
+      bundle: true,
+      write: false,
+      format: 'cjs',
+      platform: 'node',
+      jsx: 'automatic',
+      nodePaths: [resolve(repo, 'packages/dsh-ui-kit/node_modules'), resolve(repo, '../node_modules')],
+      external: ['react', 'react-dom'],
+      plugins: [{
+        name: 'css-module-stub',
+        setup(b) {
+          b.onLoad({ filter: /\.css$/ }, () => ({ contents: 'export default new Proxy({}, { get: (_, k) => String(k) })', loader: 'js' }))
+        },
+      }],
+    })
+    const kitMod = { exports: {} }
+    new Function('require', 'module', 'exports', out.outputFiles[0].text)((id) => {
+      if (id === 'react') return React
+      if (id === 'react-dom') return require('react-dom')
+      return require(id)
+    }, kitMod, kitMod.exports)
+    const { Drawer, ConfirmModal } = kitMod.exports
+
+    const dom = new JSDOM('<!doctype html><html><body><div id="root"></div></body></html>', { url: 'http://127.0.0.1/' })
+    const saved = {
+      window: globalThis.window,
+      document: globalThis.document,
+      HTMLElement: globalThis.HTMLElement,
+      Element: globalThis.Element,
+      Node: globalThis.Node,
+      KeyboardEvent: globalThis.KeyboardEvent,
+      requestAnimationFrame: globalThis.requestAnimationFrame,
+      cancelAnimationFrame: globalThis.cancelAnimationFrame,
+      matchMedia: globalThis.matchMedia,
+      IS_REACT_ACT_ENVIRONMENT: globalThis.IS_REACT_ACT_ENVIRONMENT,
+    }
+    Object.assign(globalThis, { window: dom.window, document: dom.window.document, HTMLElement: dom.window.HTMLElement, Element: dom.window.Element, Node: dom.window.Node, KeyboardEvent: dom.window.KeyboardEvent, IS_REACT_ACT_ENVIRONMENT: true })
+    const root = createRoot(dom.window.document.getElementById('root'))
+    let drawerCloses = 0
+    let confirmCloses = 0
+    try {
+      // Mount external alertdialog BEFORE Drawer in DOM order + simultaneous loading ConfirmModal inside Drawer
+      const preAlert = dom.window.document.createElement('div')
+      preAlert.setAttribute('role', 'alertdialog')
+      preAlert.setAttribute('aria-modal', 'true')
+      const alertBtn = dom.window.document.createElement('button')
+      alertBtn.textContent = 'Alert Action'
+      preAlert.appendChild(alertBtn)
+      dom.window.document.body.prepend(preAlert)
+
+      await act(async () => {
+        root.render(React.createElement(Drawer, {
+          open: true,
+          title: 'Details',
+          onClose: () => { drawerCloses += 1 },
+        },
+          React.createElement('button', { type: 'button', id: 'drawer-inner-btn' }, 'Inner'),
+          React.createElement(ConfirmModal, {
+            open: true,
+            title: 'Confirm Delete',
+            message: 'Sure?',
+            confirmVariant: 'danger',
+            confirmLoading: true,
+            onConfirm: () => {},
+            onClose: () => { confirmCloses += 1 },
+          }),
+        ))
+      })
+      // Let Drawer's 16ms startup timer fire
+      await new Promise((r) => setTimeout(r, 35))
+
+      // Drawer startup timer must NOT steal focus away into #drawer-inner-btn while modal/alertdialog exists
+      assert.notEqual(dom.window.document.activeElement?.id, 'drawer-inner-btn')
+
+      // Escape inside pre-DOM-order alertdialog must NOT close Drawer
+      alertBtn.focus()
+      await act(async () => {
+        alertBtn.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+      })
+      assert.equal(drawerCloses, 0)
+
+      // Escape inside portaled loading ConfirmModal must NOT close Drawer OR ConfirmModal
+      const modalBtns = dom.window.document.querySelectorAll('[role="dialog"][aria-modal="true"] button')
+      const targetInConfirm = modalBtns[modalBtns.length - 1]
+      targetInConfirm.focus()
+      await act(async () => {
+        targetInConfirm.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+      })
+      assert.equal(drawerCloses, 0)
+      assert.equal(confirmCloses, 0)
+
+      // Remove alertdialog and close ConfirmModal -> Escape now closes Drawer cleanly
+      preAlert.remove()
+      await act(async () => {
+        root.render(React.createElement(Drawer, {
+          open: true,
+          title: 'Details',
+          onClose: () => { drawerCloses += 1 },
+        }, React.createElement('button', { type: 'button', id: 'drawer-inner-btn' }, 'Inner')))
+      })
+      const innerBtn = dom.window.document.getElementById('drawer-inner-btn')
+      innerBtn.focus()
+      await act(async () => {
+        innerBtn.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+      })
+      assert.equal(drawerCloses, 1)
+    } finally {
+      await act(async () => root.unmount())
+      dom.window.close()
+      Object.assign(globalThis, saved)
+    }
+  })
+
+  it('Drawer stacked JSDOM: false->true upper Drawer takes focus/Escape and closing upper restores lower Drawer trigger focus', async () => {
+    const out = await build({
+      stdin: {
+        contents: `export { Drawer } from './drawer/Drawer.tsx';`,
+        resolveDir: join(repo, 'packages/dsh-ui-kit/src'),
+        loader: 'ts',
+      },
+      bundle: true,
+      write: false,
+      format: 'cjs',
+      platform: 'node',
+      jsx: 'automatic',
+      nodePaths: [resolve(repo, 'packages/dsh-ui-kit/node_modules'), resolve(repo, '../node_modules')],
+      external: ['react', 'react-dom'],
+      plugins: [{
+        name: 'css-module-stub',
+        setup(b) {
+          b.onLoad({ filter: /\.css$/ }, () => ({ contents: 'export default new Proxy({}, { get: (_, k) => String(k) })', loader: 'js' }))
+        },
+      }],
+    })
+    const kitMod = { exports: {} }
+    new Function('require', 'module', 'exports', out.outputFiles[0].text)((id) => {
+      if (id === 'react') return React
+      if (id === 'react-dom') return require('react-dom')
+      return require(id)
+    }, kitMod, kitMod.exports)
+    const { Drawer } = kitMod.exports
+
+    const dom = new JSDOM('<!doctype html><html><body><div id="root"></div></body></html>', { url: 'http://127.0.0.1/' })
+    const saved = {
+      window: globalThis.window,
+      document: globalThis.document,
+      HTMLElement: globalThis.HTMLElement,
+      Element: globalThis.Element,
+      Node: globalThis.Node,
+      KeyboardEvent: globalThis.KeyboardEvent,
+      requestAnimationFrame: globalThis.requestAnimationFrame,
+      cancelAnimationFrame: globalThis.cancelAnimationFrame,
+      matchMedia: globalThis.matchMedia,
+      IS_REACT_ACT_ENVIRONMENT: globalThis.IS_REACT_ACT_ENVIRONMENT,
+    }
+    Object.assign(globalThis, { window: dom.window, document: dom.window.document, HTMLElement: dom.window.HTMLElement, Element: dom.window.Element, Node: dom.window.Node, KeyboardEvent: dom.window.KeyboardEvent, IS_REACT_ACT_ENVIRONMENT: true })
+    const root = createRoot(dom.window.document.getElementById('root'))
+    let lowerCloses = 0
+    let upperCloses = 0
+    const renderBoth = (upperOpen, triggerId) => act(async () => {
+      root.render(React.createElement(React.Fragment, null,
+        React.createElement(Drawer, {
+          open: true,
+          title: 'Lower',
+          closable: false,
+          onClose: () => { lowerCloses += 1 },
+        }, React.createElement('button', { type: 'button', id: triggerId }, 'Lower Trigger')),
+        React.createElement(Drawer, {
+          open: upperOpen,
+          title: 'Upper',
+          closable: false,
+          onClose: () => { upperCloses += 1 },
+        }, React.createElement('button', { type: 'button', id: 'upper-btn' }, 'Upper Action')),
+      ))
+    })
+    try {
+      // Flow A: upper Drawer transitions false -> true over already-open lower Drawer
+      await renderBoth(false, 'lower-trigger')
+      await new Promise((r) => setTimeout(r, 35))
+      const lowerTrigger = dom.window.document.getElementById('lower-trigger')
+      lowerTrigger.focus()
+      assert.equal(dom.window.document.activeElement?.id, 'lower-trigger')
+
+      await renderBoth(true, 'lower-trigger')
+      // Even before 16ms startup focus timer runs (focus still on #lower-trigger), 1st Escape closes ONLY upper Drawer
+      await act(async () => {
+        lowerTrigger.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+      })
+      assert.equal(upperCloses, 1, 'Escape while focus still inside lower Drawer must target upper Drawer')
+      assert.equal(lowerCloses, 0)
+
+      await new Promise((r) => setTimeout(r, 35))
+      const upperDialog = [...dom.window.document.querySelectorAll('[role="dialog"]')].find((d) => d.textContent?.includes('Upper Action'))
+      assert.ok(upperDialog && upperDialog.contains(dom.window.document.activeElement), 'upper Drawer transition false->true must take focus')
+
+      // Escape inside upper Drawer closes ONLY upper Drawer
+      await act(async () => {
+        dom.window.document.getElementById('upper-btn').dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+      })
+      assert.equal(upperCloses, 2)
+      assert.equal(lowerCloses, 0)
+
+      // Closing upper restores lower trigger focus, and 2nd Escape closes lower Drawer
+      await renderBoth(false, 'lower-trigger')
+      assert.equal(dom.window.document.activeElement?.id, 'lower-trigger', 'closing transitioned upper Drawer restores lower trigger focus')
+      await act(async () => {
+        dom.window.document.getElementById('lower-trigger').dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+      })
+      assert.equal(lowerCloses, 1)
+
+      // Flow B: remount clean stack where lower Drawer is open with #lower-trigger-2 focused and upper mounts already open={true}
+      await act(async () => root.render(null))
+      await act(async () => {
+        root.render(React.createElement(Drawer, {
+          open: true,
+          title: 'Lower2',
+          closable: false,
+          onClose: () => { lowerCloses += 1 },
+        }, React.createElement('button', { type: 'button', id: 'lower-trigger-2' }, 'Lower Trigger 2')))
+      })
+      await new Promise((r) => setTimeout(r, 35))
+      const lowerTrigger2 = dom.window.document.getElementById('lower-trigger-2')
+      lowerTrigger2.focus()
+      assert.equal(dom.window.document.activeElement?.id, 'lower-trigger-2')
+
+      await renderBoth(true, 'lower-trigger-2')
+      await new Promise((r) => setTimeout(r, 35))
+      const upperDialogB = [...dom.window.document.querySelectorAll('[role="dialog"]')].find((d) => d.textContent?.includes('Upper Action'))
+      assert.ok(upperDialogB && upperDialogB.contains(dom.window.document.activeElement), 'upper Drawer mounted open=true must take focus')
+
+      await renderBoth(false, 'lower-trigger-2')
+      assert.equal(dom.window.document.activeElement?.id, 'lower-trigger-2', 'closing upper Drawer mounted over lower Drawer must restore #lower-trigger-2 focus')
+
+      // Flow C: exiting upper Drawer when trigger was detached + container swap while open + exiting external dialog startup focus
+      await act(async () => root.render(null))
+      const containerA = dom.window.document.createElement('div')
+      const containerB = dom.window.document.createElement('div')
+      dom.window.document.body.append(containerA, containerB)
+
+      // Enable rAF & matchMedia so usePresence retains upper Drawer in data-phase="exiting" on close
+      const fakeRaf = (cb) => setTimeout(() => cb(Date.now()), 0)
+      const fakeCancelRaf = (id) => clearTimeout(id)
+      const fakeMatchMedia = () => ({ matches: false, addEventListener: () => {}, removeEventListener: () => {} })
+      dom.window.requestAnimationFrame = fakeRaf
+      dom.window.cancelAnimationFrame = fakeCancelRaf
+      dom.window.matchMedia = fakeMatchMedia
+      globalThis.requestAnimationFrame = fakeRaf
+      globalThis.cancelAnimationFrame = fakeCancelRaf
+      globalThis.matchMedia = fakeMatchMedia
+
+      let flowCLowerCloses = 0
+      let flowCUpperCloses = 0
+      const renderFlowC = (showTrigger, upperOpen, upperContainer) => act(async () => {
+        root.render(React.createElement(React.Fragment, null,
+          React.createElement(Drawer, {
+            open: true,
+            title: 'LowerC',
+            closable: false,
+            onClose: () => { flowCLowerCloses += 1 },
+          },
+            React.createElement('button', { type: 'button', id: 'lower-c-btn' }, 'Lower C Action'),
+            showTrigger ? React.createElement('button', { type: 'button', id: 'ephemeral-trigger' }, 'Ephemeral') : null,
+          ),
+          React.createElement(Drawer, {
+            open: upperOpen,
+            title: 'UpperC',
+            closable: false,
+            container: upperContainer,
+            onClose: () => { flowCUpperCloses += 1 },
+          }, React.createElement('button', { type: 'button', id: 'upper-c-btn' }, 'Upper C Action')),
+        ))
+      })
+
+      await renderFlowC(true, false, containerA)
+      await act(async () => new Promise((r) => setTimeout(r, 35)))
+      dom.window.document.getElementById('ephemeral-trigger').focus()
+      await renderFlowC(true, true, containerA)
+      await act(async () => new Promise((r) => setTimeout(r, 35)))
+      assert.ok(containerA.contains(dom.window.document.activeElement), 'upper Drawer starts in containerA')
+
+      // Change container while upper Drawer remains open
+      await renderFlowC(true, true, containerB)
+      await act(async () => new Promise((r) => setTimeout(r, 35)))
+      assert.ok(containerB.contains(dom.window.document.activeElement), 'moving open Drawer to containerB re-registers and focuses new node')
+      await act(async () => {
+        dom.window.document.getElementById('upper-c-btn').dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+      })
+      assert.equal(flowCUpperCloses, 1, 'Escape must still close upper Drawer after container change')
+      assert.equal(flowCLowerCloses, 0)
+
+      // Detach trigger before closing upper Drawer while exit animation keeps exiting DOM alive
+      await renderFlowC(false, false, containerB)
+      assert.ok(containerB.querySelector('[data-phase="exiting"]'), 'exiting upper Drawer DOM stays mounted during 190ms exit')
+      // Even if an exiting overlay node receives Escape directly, LowerC still closes immediately
+      const exitingUpperBtn = containerB.querySelector('#upper-c-btn')
+      await act(async () => {
+        exitingUpperBtn.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+      })
+      assert.equal(flowCLowerCloses, 1, '2nd Escape during upper exit animation with detached trigger must close lower Drawer')
+      // Also activeElement was safely moved back to LowerC instead of remaining in exiting aria-hidden DOM
+      await act(async () => {
+        dom.window.document.activeElement.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+      })
+      assert.equal(flowCLowerCloses, 2, 'activeElement after detached-trigger exit also closes LowerC on Escape')
+
+      // Startup focus guard ignores an exiting external dialog holding activeElement
+      await act(async () => root.render(null))
+      const exitingExt = dom.window.document.createElement('div')
+      exitingExt.setAttribute('role', 'dialog')
+      exitingExt.setAttribute('aria-modal', 'true')
+      exitingExt.setAttribute('data-phase', 'exiting')
+      const exitingBtn = dom.window.document.createElement('button')
+      exitingBtn.id = 'exiting-ext-btn'
+      exitingBtn.textContent = 'Exiting'
+      exitingExt.appendChild(exitingBtn)
+      dom.window.document.body.appendChild(exitingExt)
+      exitingBtn.focus()
+      let soloCloses = 0
+      await act(async () => {
+        root.render(React.createElement(Drawer, {
+          open: true,
+          title: 'Solo',
+          closable: false,
+          onClose: () => { soloCloses += 1 },
+        }, React.createElement('button', { type: 'button', id: 'solo-btn' }, 'Solo Action')))
+      })
+      await act(async () => new Promise((r) => setTimeout(r, 35)))
+      const soloDialog = [...dom.window.document.querySelectorAll('[role="dialog"]')].find((d) => d.textContent?.includes('Solo Action'))
+      assert.ok(soloDialog && soloDialog.contains(dom.window.document.activeElement), 'Drawer startup focus must not be stranded in an exiting external dialog')
+      assert.equal(soloCloses, 0)
+
+      // Flow D: moving lower Drawer container preserves stack order, and stable getter container switching target works cleanly
+      await act(async () => root.render(null))
+      exitingExt.remove()
+      const lowerC1 = dom.window.document.createElement('div')
+      const lowerC2 = dom.window.document.createElement('div')
+      const upperHost = dom.window.document.createElement('div')
+      const getterHost1 = dom.window.document.createElement('div')
+      const getterHost2 = dom.window.document.createElement('div')
+      dom.window.document.body.append(lowerC1, lowerC2, upperHost, getterHost1, getterHost2)
+
+      let activeGetterTarget = getterHost1
+      const getStableContainer = () => activeGetterTarget
+      let dLowerCloses = 0
+      let dUpperCloses = 0
+      let getterCloses = 0
+
+      const renderFlowD = (lowerHost, upperOpen) => act(async () => {
+        root.render(React.createElement(React.Fragment, null,
+          React.createElement(Drawer, {
+            open: true,
+            title: 'LowerD',
+            closable: false,
+            container: lowerHost,
+            onClose: () => { dLowerCloses += 1 },
+          }, React.createElement('button', { type: 'button', id: 'lower-d-btn' }, 'Lower D')),
+          React.createElement(Drawer, {
+            open: upperOpen,
+            title: 'UpperD',
+            closable: false,
+            container: upperHost,
+            onClose: () => { dUpperCloses += 1 },
+          }, React.createElement('button', { type: 'button', id: 'upper-d-btn' }, 'Upper D')),
+        ))
+      })
+
+      await renderFlowD(lowerC1, true)
+      await act(async () => new Promise((r) => setTimeout(r, 35)))
+      assert.ok(upperHost.contains(dom.window.document.activeElement), 'UpperD starts on top')
+
+      // Move LOWER Drawer container while UpperD is on top -> UpperD must retain focus and 1st Escape
+      await renderFlowD(lowerC2, true)
+      await act(async () => new Promise((r) => setTimeout(r, 35)))
+      assert.ok(upperHost.contains(dom.window.document.activeElement), 'moving lower Drawer container must NOT steal focus from UpperD')
+      await act(async () => {
+        dom.window.document.activeElement.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+      })
+      assert.equal(dUpperCloses, 1, '1st Escape after lower Drawer container move must close UpperD only')
+      assert.equal(dLowerCloses, 0)
+
+      // Close UpperD -> 2nd Escape closes moved LowerD inside lowerC2
+      await renderFlowD(lowerC2, false)
+      await act(async () => new Promise((r) => setTimeout(r, 35)))
+      await act(async () => {
+        dom.window.document.activeElement.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+      })
+      assert.equal(dLowerCloses, 1, '2nd Escape must close LowerD in its new container')
+
+      // Stable getter container function switching return element mid-open
+      await act(async () => root.render(null))
+      const renderGetterDrawer = (tick) => act(async () => {
+        root.render(React.createElement(Drawer, {
+          open: true,
+          title: `Getter-${tick}`,
+          closable: false,
+          container: getStableContainer,
+          onClose: () => { getterCloses += 1 },
+        }, React.createElement('button', { type: 'button', id: 'getter-btn' }, 'Getter Action')))
+      })
+      await renderGetterDrawer(1)
+      await act(async () => new Promise((r) => setTimeout(r, 35)))
+      assert.ok(getterHost1.contains(dom.window.document.activeElement), 'getter Drawer mounts & focuses in getterHost1')
+
+      activeGetterTarget = getterHost2
+      await renderGetterDrawer(2)
+      await act(async () => new Promise((r) => setTimeout(r, 35)))
+      assert.ok(getterHost2.contains(dom.window.document.activeElement), 'stable getter container switching target moves focus to getterHost2')
+      await act(async () => {
+        dom.window.document.activeElement.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+      })
+      assert.equal(getterCloses, 1, 'Escape closes getter Drawer after target element switch')
+
+      // Shared container ref-counted scroll lock: two Drawers on hostA (overflow: auto); lower moves to hostB, upper closes
+      await act(async () => root.render(null))
+      const sharedHostA = dom.window.document.createElement('div')
+      const sharedHostB = dom.window.document.createElement('div')
+      sharedHostA.style.overflow = 'auto'
+      sharedHostB.style.overflow = 'scroll'
+      dom.window.document.body.append(sharedHostA, sharedHostB)
+      let lockLowerTarget = sharedHostA
+      const getLockLowerContainer = () => lockLowerTarget
+      const renderSharedLock = (lowerOpen, upperOpen) => act(async () => {
+        root.render(React.createElement(React.Fragment, null,
+          React.createElement(Drawer, {
+            open: lowerOpen,
+            title: 'LockLower',
+            closable: false,
+            container: getLockLowerContainer,
+            onClose: () => {},
+          }, React.createElement('button', { type: 'button' }, 'LL')),
+          React.createElement(Drawer, {
+            open: upperOpen,
+            title: 'LockUpper',
+            closable: false,
+            container: sharedHostA,
+            onClose: () => {},
+          }, React.createElement('button', { type: 'button' }, 'LU')),
+        ))
+      })
+      await renderSharedLock(true, true)
+      assert.equal(sharedHostA.style.overflow, 'hidden')
+
+      // Lower moves off sharedHostA -> sharedHostB while LockUpper remains open on sharedHostA
+      lockLowerTarget = sharedHostB
+      await renderSharedLock(true, true)
+      assert.equal(sharedHostA.style.overflow, 'hidden', 'sharedHostA stays locked while LockUpper remains open')
+      assert.equal(sharedHostB.style.overflow, 'hidden', 'sharedHostB locks when LockLower moves there')
+
+      // Close LockUpper -> sharedHostA restores original 'auto' (not 'hidden')
+      await renderSharedLock(true, false)
+      assert.equal(sharedHostA.style.overflow, 'auto', 'closing last Drawer on sharedHostA restores original overflow')
+      assert.equal(sharedHostB.style.overflow, 'hidden')
+
+      // Close LockLower -> sharedHostB restores original 'scroll'
+      await renderSharedLock(false, false)
+      assert.equal(sharedHostB.style.overflow, 'scroll', 'closing moved LockLower restores sharedHostB original overflow')
+    } finally {
+      await act(async () => root.unmount())
+      dom.window.close()
+      Object.assign(globalThis, saved)
+    }
   })
 })

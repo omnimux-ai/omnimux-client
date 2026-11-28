@@ -388,8 +388,8 @@ interface SearchFieldHandle {
 }
 /**
  * Search field: leading search icon, optional shortcut kbd, and a clear control.
- * Uncontrolled `debounceMs` defaults to 200ms; controlled `value` defaults to 0ms
- * (immediate) unless an explicit `debounceMs` > 0 is passed.
+ * Uncontrolled `debounceMs` (default 200) batches `onValueChange`. Pass `0`
+ * (or a controlled `value`) to emit immediately.
  */
 declare const SearchField: import("react").ForwardRefExoticComponent<SearchFieldProps & import("react").RefAttributes<SearchFieldHandle>>;
 interface InputFieldProps extends Omit<InputHTMLAttributes<HTMLInputElement>, "size" | "prefix"> {

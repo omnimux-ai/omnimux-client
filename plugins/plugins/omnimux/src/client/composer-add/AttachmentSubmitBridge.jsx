@@ -36,6 +36,8 @@ export function AttachmentSubmitBridge({ sessionId, useInput, inputActions, inse
   const anchor = useRef(null)
   const pending = useRef(null)
   const pendingResumeRef = useRef(null)
+  const blockedPointerRef = useRef(false)
+  const armedCountRef = useRef(0)
   const [notice, setNotice] = useState(null)
   live.current = { input, inputActions, insertText }
 
@@ -70,6 +72,7 @@ export function AttachmentSubmitBridge({ sessionId, useInput, inputActions, inse
     clearTimeout(pending.current?.timer)
     pending.current = null
     pendingResumeRef.current = null
+    blockedPointerRef.current = false
     setNotice(null)
   }, [sessionId])
 
@@ -191,7 +194,6 @@ export function AttachmentSubmitBridge({ sessionId, useInput, inputActions, inse
     const root = anchor.current?.closest('[data-phase]')
     if (!root) return
     const doc = root.ownerDocument
-    let blockedPointer = false
     const sendSelector = 'button[aria-label="Send message"],button[aria-label="发送消息"],[data-send-button]'
     const send = target => target?.closest?.(sendSelector)
     const belongs = target => root.contains(target) && getCurrentSessionId() === sessionId
@@ -200,8 +202,12 @@ export function AttachmentSubmitBridge({ sessionId, useInput, inputActions, inse
       if (getCurrentSessionId() !== sessionId) return false
       const btn = root.querySelector?.(sendSelector)
       if (!btn || btn.disabled) return false
+      // Clear any pointerdown block from the intercepted initial tap so the
+      // programmatic resend re-evaluates check() cleanly and verifies real arm().
+      blockedPointerRef.current = false
+      const before = armedCountRef.current
       btn.click()
-      return true
+      return armedCountRef.current > before
     }
     const check = () => {
       const { input: value, inputActions: actions } = live.current
@@ -315,6 +321,7 @@ export function AttachmentSubmitBridge({ sessionId, useInput, inputActions, inse
       return true
     }
     const arm = () => {
+      armedCountRef.current += 1
       try {
         const attList = attachmentStore.getSnapshot(sessionId)
         if (attList && attList.length > 0) {
@@ -332,12 +339,13 @@ export function AttachmentSubmitBridge({ sessionId, useInput, inputActions, inse
     }
     const pointer = event => {
       if (!belongs(event.target) || !send(event.target)) return
-      blockedPointer = !check()
-      if (blockedPointer) stop(event)
+      blockedPointerRef.current = !check()
+      if (blockedPointerRef.current) stop(event)
     }
     const click = event => {
       if (!belongs(event.target) || !send(event.target)) return
-      const blocked = blockedPointer; blockedPointer = false
+      const blocked = blockedPointerRef.current
+      blockedPointerRef.current = false
       if (blocked || !check()) stop(event)
       else arm()
     }

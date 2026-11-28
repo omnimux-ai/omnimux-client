@@ -8,6 +8,7 @@ function getH(opts) {
 }
 
 function resolveTr(opts) {
+  if (opts && typeof opts.tr === 'function') return opts.tr;
   if (typeof useTr === 'function') return useTr();
   if (typeof lookup === 'function') return lookup;
   return (k) => k;

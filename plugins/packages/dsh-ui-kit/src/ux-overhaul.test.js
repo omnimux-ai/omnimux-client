@@ -37,15 +37,15 @@ describe('Layer 1 dsh-ui-kit UX overhaul', () => {
     }
   })
 
-  it('SearchField stops Esc propagation when clearing, preserves immediate controlled input by default, and supports Mod/⌘ cross-platform shortcuts', () => {
+  it('SearchField stops Esc propagation when clearing, preserves immediate controlled input, clears pending timers on mode switch, and supports Mod/⌘ cross-platform shortcuts', () => {
     const src = read('search/SearchField.tsx')
     assert.match(src, /event\.stopPropagation\(\)/)
     assert.match(src, /isApplePlatform\(\)/)
     assert.match(src, /wantsMod = \/\\bmod\\b\/\.test\(lower\) \|\| \(hasCmdGlyph && !hasExplicitMeta && !hasExplicitCtrl\)/)
     assert.match(src, /event\.defaultPrevented \|\| event\.isComposing/)
-    assert.match(src, /const resolvedDebounceMs = debounceMsProp \?\? \(controlled \? 0 : 200\)/)
-    assert.match(src, /const \[draft, setDraft\] = useState\(value \?\? ""\)/)
-    assert.match(src, /if \(controlled\) \{\s*if \(timerRef\.current\) \{\s*clearTimeout\(timerRef\.current\);\s*timerRef\.current = null;\s*\}/s)
+    assert.match(src, /const immediate = controlled \|\| debounceMs <= 0 \|\| !onValueChange/)
+    assert.match(src, /useEffect\(\(\) => clearPendingEmit, \[immediate, onValueChange\]\)/)
+    assert.match(src, /function emit\(next: string\): void \{\s*clearPendingEmit\(\);/s)
     assert.match(src, /resolveKitLocale\(\) === "en"/)
   })
 
@@ -91,12 +91,14 @@ describe('Layer 1 dsh-ui-kit UX overhaul', () => {
     assert.match(dataTableCss, /\.clickableRow:focus-visible/)
   })
 
-  it('Drawer listens at document level without eating SearchField Esc and localizes close label', () => {
+  it('Drawer listens at document level without eating SearchField Esc, blocks portaled modal Esc/focus steal, and localizes close label', () => {
     const drawer = read('drawer/Drawer.tsx')
     assert.match(drawer, /document\.addEventListener\("keydown", onDocumentKeyDown\)/)
     assert.match(drawer, /if \(e\.defaultPrevented\) return;/)
     assert.match(drawer, /closest\('\[role="menu"\]'\)/)
-    assert.match(drawer, /modals\[modals\.length - 1\] !== drawerRef\.current/)
+    assert.match(drawer, /hasBlockingModalAbove\(drawerRef\.current\)/)
+    assert.match(drawer, /if \(!current \|\| current !== el \|\| !latestOpenRef\.current \|\| hasBlockingModalAbove\(current\)\) return;/)
+    assert.match(drawer, /!drawerRef\.current\.contains\(e\.target\)/)
     assert.match(drawer, /closeLabel\?: string/)
   })
 
