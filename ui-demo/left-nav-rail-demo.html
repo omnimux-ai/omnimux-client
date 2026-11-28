@@ -307,6 +307,38 @@
       width: 100%;
     }
 
+    .rail-pinned-section {
+      flex: 0 1 auto;
+      min-height: 0;
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      margin-top: 6px;
+      overflow: hidden;
+    }
+
+    .rail-pinned-section[hidden] {
+      display: none;
+    }
+
+    .rail-pinned-list {
+      flex: 1 1 auto;
+      min-height: 0;
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+      padding: 2px 0;
+      overflow-y: auto;
+      scrollbar-width: none;
+    }
+
+    .rail-pinned-list::-webkit-scrollbar {
+      display: none;
+    }
+
     .rail-bottom {
       margin-top: auto;
       display: flex;
@@ -389,6 +421,11 @@
     .rail-btn[data-tooltip]:focus-visible::after {
       opacity: 1;
       transform: translateY(-50%) translateX(0);
+    }
+
+    .rail-btn[aria-expanded="true"][data-tooltip]::after {
+      opacity: 0 !important;
+      pointer-events: none !important;
     }
 
     .update-dot {
@@ -1174,7 +1211,7 @@
       left: 60px;
       top: 224px;
       z-index: 400;
-      width: 224px;
+      width: 244px;
       max-height: calc(100% - 24px);
       overflow-y: auto;
       padding: 6px;
@@ -1193,10 +1230,16 @@
       top: 240px;
     }
 
+    .menu-row-wrap {
+      position: relative;
+      display: flex;
+      align-items: center;
+    }
+
     .menu-row {
       width: 100%;
       height: 36px;
-      padding: 0 10px;
+      padding: 0 34px 0 10px;
       border: none;
       border-radius: 8px;
       background: transparent;
@@ -1210,6 +1253,7 @@
       text-align: left;
     }
 
+    .menu-row-wrap:hover .menu-row,
     .menu-row:hover {
       background: var(--dsw-alias-interactive-bg-hover);
     }
@@ -1224,6 +1268,81 @@
       align-items: center;
       gap: 8px;
       min-width: 0;
+    }
+
+    .menu-pin-btn {
+      position: absolute;
+      right: 6px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 22px;
+      height: 22px;
+      padding: 0;
+      border: none;
+      border-radius: 6px;
+      background: transparent;
+      color: var(--dsw-alias-label-tertiary);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity var(--omnimux-motion-dur-fast) var(--omnimux-motion-ease-out),
+                  background-color var(--omnimux-motion-dur-fast) var(--omnimux-motion-ease-out),
+                  color var(--omnimux-motion-dur-fast) var(--omnimux-motion-ease-out);
+    }
+
+    .menu-row-wrap:hover .menu-pin-btn,
+    .menu-row-wrap:focus-within .menu-pin-btn,
+    .menu-row-wrap[data-pinned="true"] .menu-pin-btn {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .menu-row-wrap[data-pinned="true"] .menu-pin-btn {
+      color: var(--dsw-alias-label-secondary);
+    }
+
+    .menu-pin-btn:hover {
+      background: var(--dsw-alias-interactive-bg-hover);
+      color: var(--dsw-alias-label-primary);
+    }
+
+    .pin-context-menu {
+      position: absolute;
+      left: 60px;
+      z-index: 420;
+      min-width: 140px;
+      padding: 4px;
+      border-radius: 10px;
+      background: var(--dsw-alias-bg-layer-2);
+      border: 1px solid var(--dsw-alias-border-l2);
+      box-shadow: var(--popover-shadow);
+    }
+
+    .pin-context-menu[hidden] {
+      display: none;
+    }
+
+    .pin-context-item {
+      width: 100%;
+      height: 32px;
+      padding: 0 10px;
+      border: none;
+      border-radius: 7px;
+      background: transparent;
+      color: var(--dsw-alias-label-primary);
+      font-size: 13px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+      text-align: left;
+    }
+
+    .pin-context-item:hover {
+      background: var(--dsw-alias-interactive-bg-hover);
     }
 
     .menu-sep {
@@ -1412,6 +1531,11 @@
               <circle cx="14" cy="9" r="1.4"/>
             </svg>
           </button>
+        </div>
+
+        <div class="rail-pinned-section" id="railPinnedSection" hidden>
+          <div class="rail-divider" aria-hidden="true"></div>
+          <div class="rail-pinned-list" id="railPinnedList" role="group" aria-label="已固定快捷入口"></div>
         </div>
 
         <div class="rail-bottom">
@@ -1635,6 +1759,9 @@
       <!-- ── 「更多」右侧弹出菜单 ── -->
       <div class="more-popover" id="morePopover" role="menu" aria-label="更多功能" hidden></div>
 
+      <!-- ── 左侧固定入口右键取消固定菜单 ── -->
+      <div class="pin-context-menu" id="pinContextMenu" role="menu" aria-label="快捷入口操作" hidden></div>
+
       <!-- ── 底部系统动作浮层（更新 / 远程控制 / 设置） ── -->
       <div class="system-popover" id="systemPopover" role="dialog" aria-modal="false" aria-labelledby="sysPopTitle" hidden>
         <div class="system-pop-head">
@@ -1726,18 +1853,21 @@
         },
       };
 
+      const PIN_OUTLINE_SVG = '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.6 2.4 13.6 6.4l-1.3 1.3-1-.2-2.7 2.7.2 1.8-1.2 1.2L5.3 10.9 2.5 13.7l-.2-.2 2.8-2.8L2.8 8.4 4 7.2l1.8.2 2.7-2.7-.2-1 1.3-1.3Z"/></svg>';
+      const PIN_FILL_SVG = '<svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M9.6 2.1a.65.65 0 0 1 .92 0l3.38 3.38a.65.65 0 0 1 0 .92l-1.15 1.15-.95-.2-2.45 2.45.22 1.68a.65.65 0 0 1-.18.55l-1.1 1.1a.65.65 0 0 1-.92 0L5.3 11.06 2.66 13.7a.55.55 0 1 1-.78-.78l2.64-2.64-2.07-2.07a.65.65 0 0 1 0-.92l1.1-1.1a.65.65 0 0 1 .55-.18l1.68.22 2.45-2.45-.2-.95 1.15-1.15Z"/></svg>';
+
       const MORE_ITEMS = [
-        { id: "plugins", group: "official", label: "插件", splitTab: "插件" },
-        { id: "schedules", group: "official", label: "自动化任务", splitTab: "自动化任务", dividerAfter: true },
-        { id: "apps", group: "tools", label: "应用", splitTab: "应用" },
-        { id: "image-generation", group: "tools", label: "图像生成", splitTab: "图像生成" },
-        { id: "clip", group: "tools", label: "视频剪辑", splitTab: "视频剪辑", dividerAfter: true },
-        { id: "pibrowse", group: "tools", label: "指纹浏览器", splitTab: "指纹浏览器" },
-        { id: "tiktok-selection", group: "tools", label: "跟爆选品", splitTab: "跟爆选品", dividerAfter: true },
-        { id: "publish", group: "alpha", label: "发布", alpha: true, splitTab: "发布" },
-        { id: "accounts", group: "alpha", label: "账号", alpha: true, splitTab: "账号" },
-        { id: "device", group: "alpha", label: "设备终端", alpha: true, splitTab: "设备终端" },
-        { id: "analytics", group: "alpha", label: "数据分析", alpha: true, splitTab: "数据分析" },
+        { id: "plugins", group: "official", label: "插件", splitTab: "插件", iconSvg: '<svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><rect x="1.75" y="2.25" width="12.5" height="11.5" rx="2"/><path d="M1.75 6.25h12.5"/></svg>' },
+        { id: "schedules", group: "official", label: "自动化任务", splitTab: "自动化任务", dividerAfter: true, iconSvg: '<svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><rect x="1.75" y="2.25" width="12.5" height="11.5" rx="2"/><path d="M1.75 6.25h12.5"/></svg>' },
+        { id: "apps", group: "tools", label: "应用", splitTab: "应用", iconSvg: '<svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><rect x="1.5" y="1.5" width="5" height="5" rx="1"/><rect x="9.5" y="1.5" width="5" height="5" rx="1"/><rect x="1.5" y="9.5" width="5" height="5" rx="1"/><rect x="9.5" y="9.5" width="5" height="5" rx="1"/></svg>' },
+        { id: "image-generation", group: "tools", label: "图像生成", splitTab: "图像生成", iconSvg: '<svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="1.75" y="2.25" width="12.5" height="11.5" rx="2"/><circle cx="5.5" cy="6" r="1.2"/><path d="m2.5 12 3.8-3.8 2.6 2.6 2.2-2.2 2.4 2.4"/></svg>' },
+        { id: "clip", group: "tools", label: "视频剪辑", splitTab: "视频剪辑", dividerAfter: true, iconSvg: '<svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><rect x="1.75" y="3.25" width="12.5" height="9.5" rx="1.75"/><path d="M6.4 5.6v4.8L10.6 8 6.4 5.6Z" fill="currentColor" stroke="none"/></svg>' },
+        { id: "pibrowse", group: "tools", label: "指纹浏览器", splitTab: "指纹浏览器", iconSvg: '<svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><circle cx="8" cy="8" r="5.5"/><path d="M2.5 8h11M8 2.5a7 7 0 0 1 0 11M8 2.5a7 7 0 0 0 0 11"/></svg>' },
+        { id: "tiktok-selection", group: "tools", label: "跟爆选品", splitTab: "跟爆选品", dividerAfter: true, iconSvg: '<svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 5.5h10l-.8 8a1.5 1.5 0 0 1-1.5 1.3H5.3a1.5 1.5 0 0 1-1.5-1.3L3 5.5Z"/><path d="M5.5 5.5V4.2a2.5 2.5 0 0 1 5 0v1.3"/></svg>' },
+        { id: "publish", group: "alpha", label: "发布", alpha: true, splitTab: "发布", iconSvg: '<svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.5 1.5 7 9M14.5 1.5 10 14.5l-3-4.5-4.5-3 12-5.5z"/></svg>' },
+        { id: "accounts", group: "alpha", label: "账号", alpha: true, splitTab: "账号", iconSvg: '<svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="5" r="3"/><path d="M2.5 14a5.5 5.5 0 0 1 11 0"/></svg>' },
+        { id: "device", group: "alpha", label: "手机管理", alpha: true, splitTab: "手机管理", iconSvg: '<svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><rect x="4" y="1.5" width="8" height="13" rx="2"/><circle cx="8" cy="11.5" r="0.75" fill="currentColor" stroke="none"/></svg>' },
+        { id: "analytics", group: "alpha", label: "数据分析", alpha: true, splitTab: "数据分析", iconSvg: '<svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 14h12"/><path d="M4 11l3-4 3 2 4-5"/></svg>' },
       ];
 
       const state = {
@@ -1747,6 +1877,8 @@
         channel: "prod",         // "prod" | "dev"
         activeNav: "home",       // "home" | "projects" | "market" | "assets" | "inspiration" | "more"
         activeMoreId: null,      // id inside MORE_ITEMS
+        pinnedMoreIds: ["image-generation"],
+        pinContextTargetId: null,
         sessionSidebarOpen: true,
         beforeCollapsed: false,
         splitOpen: false,
@@ -1774,9 +1906,94 @@
       const elRightbarTabText = document.getElementById("rightbarTabText");
       const elSplitGrid = document.getElementById("splitCanvasGrid");
       const elMorePopover = document.getElementById("morePopover");
+      const elPinContextMenu = document.getElementById("pinContextMenu");
       const elRailMore = document.getElementById("railMore");
+      const elRailPinnedSection = document.getElementById("railPinnedSection");
+      const elRailPinnedList = document.getElementById("railPinnedList");
       const elSysPopover = document.getElementById("systemPopover");
       const elProjModal = document.getElementById("newProjectModal");
+
+      function visibleMoreItems() {
+        return MORE_ITEMS.filter((it) => state.channel === "dev" || !it.alpha);
+      }
+
+      function togglePinMoreItem(id) {
+        const idx = state.pinnedMoreIds.indexOf(id);
+        if (idx >= 0) {
+          state.pinnedMoreIds.splice(idx, 1);
+        } else {
+          state.pinnedMoreIds.push(id);
+        }
+        render();
+      }
+
+      function renderPinnedRail() {
+        const available = visibleMoreItems();
+        const pinnedItems = state.pinnedMoreIds
+          .map((id) => available.find((it) => it.id === id))
+          .filter(Boolean);
+        elRailPinnedList.innerHTML = "";
+        elRailPinnedSection.hidden = pinnedItems.length === 0;
+        pinnedItems.forEach((item) => {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "rail-btn";
+          btn.dataset.pinnedId = item.id;
+          btn.dataset.tooltip = item.label;
+          btn.setAttribute("aria-label", item.label);
+          btn.dataset.active = state.activeNav === "more" && state.activeMoreId === item.id ? "true" : "false";
+          btn.innerHTML = item.iconSvg;
+          btn.addEventListener("click", () => {
+            state.moreMenuOpen = false;
+            state.pinContextTargetId = null;
+            state.sysPopoverKind = null;
+            state.activeNav = "more";
+            state.activeMoreId = item.id;
+            state.activeFilterIdx = 0;
+            state.splitOpen = false;
+            state.sessionSidebarOpen = false;
+            render();
+          });
+          btn.addEventListener("contextmenu", (ev) => {
+            ev.preventDefault();
+            ev.stopPropagation();
+            state.moreMenuOpen = false;
+            state.sysPopoverKind = null;
+            state.pinContextTargetId = item.id;
+            renderMoreMenu();
+            renderSystemPopover();
+            renderPinContextMenu(btn);
+          });
+          elRailPinnedList.appendChild(btn);
+        });
+      }
+
+      function renderPinContextMenu(anchorBtn) {
+        elPinContextMenu.innerHTML = "";
+        const targetId = state.pinContextTargetId;
+        if (!targetId) {
+          elPinContextMenu.hidden = true;
+          return;
+        }
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "pin-context-item";
+        btn.setAttribute("role", "menuitem");
+        btn.innerHTML = `${PIN_OUTLINE_SVG}<span>取消固定</span>`;
+        btn.addEventListener("click", () => {
+          state.pinnedMoreIds = state.pinnedMoreIds.filter((id) => id !== targetId);
+          state.pinContextTargetId = null;
+          render();
+        });
+        elPinContextMenu.appendChild(btn);
+        elPinContextMenu.hidden = false;
+        if (anchorBtn) {
+          const winRect = elWindow.getBoundingClientRect();
+          const btnRect = anchorBtn.getBoundingClientRect();
+          const rawTop = Math.round(btnRect.top - winRect.top);
+          elPinContextMenu.style.top = `${Math.max(12, Math.min(rawTop, winRect.height - 52))}px`;
+        }
+      }
 
       function renderSessionLists() {
         const pinnedEl = document.getElementById("pinnedSessions");
@@ -1818,8 +2035,14 @@
 
       function renderMoreMenu() {
         elMorePopover.innerHTML = "";
-        const visibleItems = MORE_ITEMS.filter((it) => state.channel === "dev" || !it.alpha);
+        const visibleItems = visibleMoreItems();
         visibleItems.forEach((item, index) => {
+          const isPinned = state.pinnedMoreIds.includes(item.id);
+          const wrap = document.createElement("div");
+          wrap.className = "menu-row-wrap";
+          wrap.dataset.moreItem = item.id;
+          wrap.dataset.pinned = isPinned ? "true" : "false";
+
           const row = document.createElement("button");
           row.type = "button";
           row.className = "menu-row";
@@ -1828,9 +2051,7 @@
           row.dataset.current = isCurrent ? "true" : "false";
           row.innerHTML = `
             <span class="menu-row-left">
-              <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
-                ${isCurrent ? '<path d="m3.5 8.5 3 3 6-6.5"/>' : '<rect x="2.5" y="2.5" width="11" height="11" rx="2"/>'}
-              </svg>
+              ${item.iconSvg}
               <span class="menu-label"></span>
             </span>
           `;
@@ -1843,6 +2064,7 @@
           }
           row.addEventListener("click", () => {
             state.moreMenuOpen = false;
+            state.pinContextTargetId = null;
             state.activeNav = "more";
             state.activeMoreId = item.id;
             state.activeFilterIdx = 0;
@@ -1852,7 +2074,22 @@
             }
             render();
           });
-          elMorePopover.appendChild(row);
+
+          const pinBtn = document.createElement("button");
+          pinBtn.type = "button";
+          pinBtn.className = "menu-pin-btn";
+          pinBtn.setAttribute("aria-pressed", isPinned ? "true" : "false");
+          pinBtn.setAttribute("aria-label", isPinned ? `取消固定${item.label}` : `固定${item.label}到左侧边栏`);
+          pinBtn.title = isPinned ? "取消固定" : "固定到左侧边栏";
+          pinBtn.innerHTML = isPinned ? PIN_FILL_SVG : PIN_OUTLINE_SVG;
+          pinBtn.addEventListener("click", (ev) => {
+            ev.preventDefault();
+            ev.stopPropagation();
+            togglePinMoreItem(item.id);
+          });
+
+          wrap.append(row, pinBtn);
+          elMorePopover.appendChild(wrap);
 
           const next = visibleItems[index + 1];
           if (item.dividerAfter && next) {
@@ -2083,10 +2320,17 @@
         document.getElementById("btnChannelDev").setAttribute("aria-pressed", String(state.channel === "dev"));
         elStateLabel.textContent = computeStatusLabel();
 
-        // 固定轨激活位
+        // 固定轨激活位：若当前页已固定在左侧栏，则直接高亮对应固定图标，互斥取消「更多」高亮
+        const availableIds = new Set(visibleMoreItems().map((it) => it.id));
+        const activeIsPinnedShortcut = state.activeNav === "more"
+          && state.activeMoreId
+          && availableIds.has(state.activeMoreId)
+          && state.pinnedMoreIds.includes(state.activeMoreId);
         document.querySelectorAll(".rail-btn[data-nav]").forEach((btn) => {
-          btn.dataset.active = btn.dataset.nav === state.activeNav ? "true" : "false";
+          const isMatch = btn.dataset.nav === state.activeNav && !(btn.dataset.nav === "more" && activeIsPinnedShortcut);
+          btn.dataset.active = isMatch ? "true" : "false";
         });
+        renderPinnedRail();
 
         // 改前旧侧栏激活位
         document.querySelectorAll(".legacy-nav-item[data-legacy-nav]").forEach((btn) => {
@@ -2125,6 +2369,7 @@
         if (!isHome) renderBusinessPage();
         if (showSplit) renderSplitCards();
         renderMoreMenu();
+        renderPinContextMenu();
         renderSystemPopover();
       }
 
@@ -2342,6 +2587,10 @@
           state.moreMenuOpen = false;
           renderMoreMenu();
         }
+        if (state.pinContextTargetId && !elPinContextMenu.contains(ev.target)) {
+          state.pinContextTargetId = null;
+          renderPinContextMenu();
+        }
         if (state.sysPopoverKind && !elSysPopover.contains(ev.target) && !ev.target.closest(".rail-bottom")) {
           state.sysPopoverKind = null;
           renderSystemPopover();
@@ -2352,6 +2601,11 @@
         if (ev.key === "Escape") {
           if (!elProjModal.hidden) {
             closeNewProjectModal();
+            return;
+          }
+          if (state.pinContextTargetId) {
+            state.pinContextTargetId = null;
+            renderPinContextMenu();
             return;
           }
           if (state.moreMenuOpen) {

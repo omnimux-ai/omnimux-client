@@ -20,6 +20,8 @@
  *   - 材质覆盖只落在官方「更多」菜单这一个实例上，不外溢到其它官方浮层。
  */
 
+import { EXPLORE_MORE_PIN_CSS } from './nav-rail-pins.js'
+
 /** 注入样式节点 id（幂等安装）。 */
 export const PANEL_CHROME_STYLE_ID = 'omnimux-sidebar-panel-chrome'
 
@@ -159,6 +161,8 @@ ${MORE_MENU_SELECTOR} [aria-current="page"] {
   color: var(--dsw-alias-label-primary) !important;
   font-weight: 500 !important;
 }
+
+${EXPLORE_MORE_PIN_CSS}
 `
 
 /**

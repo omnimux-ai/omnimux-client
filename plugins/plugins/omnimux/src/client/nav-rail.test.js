@@ -1,16 +1,27 @@
 import assert from 'node:assert/strict'
 import { afterEach, describe, it } from 'node:test'
 import { JSDOM } from 'jsdom'
-import { installSidebarGlobal, resetSidebarCoordinatorForTests, SIDEBAR_GLOBAL } from './sidebar-coordinator.js'
+import {
+  installSidebarGlobal,
+  resetSidebarCoordinatorForTests,
+  setReleaseChannelForTests,
+  SIDEBAR_GLOBAL,
+} from './sidebar-coordinator.js'
 import { installSidebarPanelChrome, MORE_MENU_SELECTOR } from './sidebar-panel-chrome.js'
 import { installSidebarToggleTopbar } from './sidebar-toggle-topbar.js'
 import { installSidebarActivation, resetSidebarActivationForTests } from './workbench/sidebar-activation.js'
 import { bindWorkbenchDeps, resetWorkbenchHostAdapter } from './workbench/host-adapter.js'
 import {
+  NAV_RAIL_PINNED_MORE_STORAGE_KEY,
+  resetNavRailPinsForTests,
+  setPinnedMoreItem,
+} from './nav-rail-pins.js'
+import {
   NAV_RAIL_ACTIVE_ATTR,
   NAV_RAIL_BOTTOM_ITEMS,
   NAV_RAIL_ID,
   NAV_RAIL_MORE_FALLBACK_ID,
+  NAV_RAIL_PIN_CONTEXT_MENU_ID,
   NAV_RAIL_TOP_ITEMS,
   NAV_RAIL_VIEW_ATTR,
   NAV_RAIL_WIDTH_VAR,
@@ -27,6 +38,7 @@ let dom
 const savedGlobals = {
   window: globalThis.window,
   document: globalThis.document,
+  localStorage: globalThis.localStorage,
   HTMLElement: globalThis.HTMLElement,
   HTMLButtonElement: globalThis.HTMLButtonElement,
   Element: globalThis.Element,
@@ -40,6 +52,8 @@ const savedGlobals = {
 }
 
 afterEach(() => {
+  setReleaseChannelForTests(null)
+  resetNavRailPinsForTests()
   resetSidebarCoordinatorForTests()
   resetSidebarActivationForTests()
   resetWorkbenchHostAdapter()
@@ -108,6 +122,7 @@ function setupDom({
   const doc = win.document
   globalThis.window = win
   globalThis.document = doc
+  globalThis.localStorage = win.localStorage
   globalThis.HTMLElement = win.HTMLElement
   globalThis.HTMLButtonElement = win.HTMLButtonElement
   globalThis.Element = win.Element
@@ -560,6 +575,148 @@ describe('nav-rail 固定左侧导航轨', () => {
       updateRailBtn.click()
       assert.equal(settingsOpened, 1)
       assert.equal(desktopTabClicks, 1)
+    } finally {
+      disposeRail()
+    }
+  })
+
+  it('固定「更多」菜单入口至左侧栏：条件显示分隔线、一键直达、互斥高亮、异步插件、渠道过滤与右键取消固定', () => {
+    const { win, doc } = setupDom()
+    const openedTabs = []
+    win.__omnimuxWorkbench = {
+      open: (options) => {
+        openedTabs.push(options)
+        doc.querySelector('#session-1')?.setAttribute('aria-selected', 'false')
+        const right = doc.getElementById('official-right-panel')
+        right.setAttribute('data-sidebar-right-panel', 'fullscreen')
+        right.setAttribute('data-sidebar-right-open', 'true')
+        return true
+      },
+    }
+    let activeTabKey = 'omnimux-clip:studio'
+    let activePanelId = null
+    const panelListeners = new Set()
+    const selectedPanels = []
+    bindWorkbenchDeps({
+      sidebarRight: {
+        isExpanded: () => Boolean(activeTabKey),
+        active: () => (activeTabKey ? { id: activeTabKey, kind: activeTabKey } : null),
+      },
+      layout: {
+        panelInfo: {
+          getSnapshot: () => ({ activePanelId }),
+          subscribe: (fn) => {
+            panelListeners.add(fn)
+            return () => panelListeners.delete(fn)
+          },
+        },
+        selectPanel: (id) => {
+          selectedPanels.push(id)
+          activePanelId = id
+          for (const fn of panelListeners) fn({ activePanelId: id })
+        },
+      },
+    })
+
+    const coordinator = installSidebarGlobal()
+    const disposeActivation = installSidebarActivation({ document: doc, notify: () => {} })
+    const disposeRail = installNavRail(doc)
+    try {
+      const section = doc.querySelector('[data-omnimux-rail-pinned-section="1"]')
+      assert.ok(section)
+      assert.equal(section.hidden, true, '无固定项时隐藏分隔线与快捷区')
+
+      // 预写入已固定：clip（内置工具）、async-tool（晚到动态插件）、panel:schedules（官方面板）、publish（Alpha）
+      setReleaseChannelForTests('development')
+      setPinnedMoreItem('clip', true)
+      setPinnedMoreItem('async-tool', true)
+      setPinnedMoreItem('panel:schedules', true)
+      setPinnedMoreItem('publish', true)
+
+      const listButtons = () => [...doc.querySelectorAll('.omnimux-nav-rail-pinned-list [data-omnimux-rail-pinned]')]
+      assert.deepEqual(
+        listButtons().map((b) => b.getAttribute('data-omnimux-rail-pinned')),
+        ['clip', 'panel:schedules', 'publish'],
+        '未注册的异步插件暂不渲染空白占位按钮',
+      )
+      assert.equal(section.hidden, false)
+
+      // 异步插件延迟挂载 → 自动出现在既定保存顺位
+      const unregisterAsync = coordinator.registerExploreItem({
+        id: 'async-tool',
+        label: '异步新工具',
+        iconSvg: '<svg viewBox="0 0 16 16" width="14" height="14"><rect x="2" y="2" width="12" height="12"/></svg>',
+        tabId: 'async-tool:home',
+      })
+      assert.deepEqual(
+        listButtons().map((b) => b.getAttribute('data-omnimux-rail-pinned')),
+        ['clip', 'async-tool', 'panel:schedules', 'publish'],
+      )
+
+      // 正式版过滤 Alpha 项，但保留持久化记录
+      setReleaseChannelForTests('production')
+      win.dispatchEvent(new win.Event('dsh-product-stage'))
+      assert.deepEqual(
+        listButtons().map((b) => b.getAttribute('data-omnimux-rail-pinned')),
+        ['clip', 'async-tool', 'panel:schedules'],
+      )
+      assert.ok(JSON.parse(win.localStorage.getItem(NAV_RAIL_PINNED_MORE_STORAGE_KEY)).includes('publish'))
+
+      // 点击已固定 clip → 一键打开并直接高亮左侧栏 clip 图标，互斥熄灭「更多」
+      const clipBtn = doc.querySelector('[data-omnimux-rail-pinned="clip"]')
+      clipBtn.click()
+      assert.equal(openedTabs.at(-1)?.tabId, 'omnimux-clip:studio')
+      assert.equal(doc.querySelector('[data-omnimux-rail-pinned="clip"]')?.getAttribute('data-active'), 'true')
+      assert.equal(doc.querySelector('[data-omnimux-rail-item="more"]')?.getAttribute('data-active'), 'false')
+
+      // 点击已固定 panel:schedules → 调用 layout.selectPanel('schedules') 并高亮该固定按钮
+      const schedBtn = doc.querySelector('[data-omnimux-rail-pinned="panel:schedules"]')
+      schedBtn.click()
+      assert.deepEqual(selectedPanels, ['schedules'])
+      assert.equal(doc.querySelector('[data-omnimux-rail-pinned="panel:schedules"]')?.getAttribute('data-active'), 'true')
+      assert.equal(doc.querySelector('[data-omnimux-rail-item="more"]')?.getAttribute('data-active'), 'false')
+
+      // 右键已固定 panel:schedules → 弹出实底「取消固定」菜单 → 点击移除后高亮平稳交还「更多」
+      schedBtn.dispatchEvent(new win.MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
+      const ctxMenu = doc.getElementById(NAV_RAIL_PIN_CONTEXT_MENU_ID)
+      assert.ok(ctxMenu, '右键固定入口应弹出取消固定菜单')
+      ctxMenu.querySelector('.omnimux-nav-rail-pin-context-item').click()
+      assert.equal(doc.getElementById(NAV_RAIL_PIN_CONTEXT_MENU_ID), null)
+      assert.equal(doc.querySelector('[data-omnimux-rail-pinned="panel:schedules"]'), null)
+      assert.equal(doc.querySelector('[data-omnimux-rail-item="more"]')?.getAttribute('data-active'), 'true')
+
+      unregisterAsync()
+      setPinnedMoreItem('clip', false)
+      setPinnedMoreItem('async-tool', false)
+      setPinnedMoreItem('publish', false)
+      assert.equal(section.hidden, true, '全部取消固定后自动隐藏分隔线与快捷区')
+    } finally {
+      delete win.__omnimuxWorkbench
+      disposeRail()
+      disposeActivation()
+    }
+  })
+
+  it('降级「更多」菜单同样支持点击图钉固定/取消固定，且保持菜单不关闭并同步左侧栏', () => {
+    const { doc } = setupDom({ withOfficialMore: false })
+    const disposeRail = installNavRail(doc)
+    try {
+      const moreBtn = doc.querySelector('[data-omnimux-rail-item="more"]')
+      moreBtn.click()
+      const menu = doc.getElementById(NAV_RAIL_MORE_FALLBACK_ID)
+      assert.ok(menu)
+      const clipPinBtn = menu.querySelector('[data-omnimux-pin-toggle="clip"]')
+      assert.ok(clipPinBtn)
+      assert.equal(clipPinBtn.getAttribute('aria-pressed'), 'false')
+
+      clipPinBtn.click()
+      assert.ok(doc.getElementById(NAV_RAIL_MORE_FALLBACK_ID), '降级菜单点击图钉后不得关闭')
+      assert.equal(clipPinBtn.getAttribute('aria-pressed'), 'true')
+      assert.ok(doc.querySelector('[data-omnimux-rail-pinned="clip"]'), '左侧栏应即时出现固定入口')
+
+      clipPinBtn.click()
+      assert.equal(clipPinBtn.getAttribute('aria-pressed'), 'false')
+      assert.equal(doc.querySelector('[data-omnimux-rail-pinned="clip"]'), null)
     } finally {
       disposeRail()
     }

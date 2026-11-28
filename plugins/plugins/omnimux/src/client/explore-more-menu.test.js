@@ -320,6 +320,42 @@ describe('官方「更多」菜单内容', () => {
     }
   })
 
+  it('每行渲染固定图钉按钮：点击仅切换固定态且保持菜单不关闭（不调用 onDismiss）', async () => {
+    let dismissCount = 0
+    let selectCount = 0
+    const menu = await renderMoreMenu({
+      onDismiss: () => { dismissCount += 1 },
+      entries: [{ id: 'schedules', label: '自动化任务', active: false }],
+      onOpen: () => { selectCount += 1 },
+    })
+    try {
+      menu.dom.window.localStorage.clear()
+      const clipPinBtn = menu.container.querySelector('[data-omnimux-pin-toggle="clip"]')
+      const schedulePinBtn = menu.container.querySelector('[data-omnimux-pin-toggle="panel:schedules"]')
+      assert.ok(clipPinBtn, '探索入口必须渲染右侧固定图钉按钮')
+      assert.ok(schedulePinBtn, '官方面板白名单项必须渲染右侧固定图钉按钮')
+      assert.equal(clipPinBtn.getAttribute('aria-pressed'), 'false')
+      assert.equal(schedulePinBtn.getAttribute('aria-pressed'), 'false')
+
+      await menu.api.React.act(async () => {
+        clipPinBtn.click()
+      })
+      assert.equal(dismissCount, 0, '点击固定图钉不得关闭「更多」菜单')
+      assert.equal(selectCount, 0, '点击固定图钉不得触发菜单行跳转')
+      assert.equal(clipPinBtn.getAttribute('aria-pressed'), 'true')
+      assert.equal(menu.container.querySelector('[data-omnimux-more-item="clip"]')?.getAttribute('data-pinned'), 'true')
+
+      await menu.api.React.act(async () => {
+        schedulePinBtn.click()
+      })
+      assert.equal(dismissCount, 0)
+      assert.equal(schedulePinBtn.getAttribute('aria-pressed'), 'true')
+    } finally {
+      menu.dom.window.localStorage.clear()
+      menu.cleanup()
+    }
+  })
+
   it('点击：先 onDismiss 关菜单，再走 activateExploreItem 的 tabId 委托', async () => {
     const order = []
     const menu = await renderMoreMenu({ onDismiss: () => order.push('dismiss') })

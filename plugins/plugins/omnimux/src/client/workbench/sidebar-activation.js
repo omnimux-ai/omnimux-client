@@ -184,15 +184,35 @@ function matchExploreItemId(key, exploreItems) {
  *   officialPanelId?: string | null,
  *   productStageId?: string | null,
  *   exploreItems?: readonly { id?: string, label?: string, tabId?: string, pluginId?: string, entryId?: string }[],
+ *   pinnedMoreIds?: Iterable<string> | null,
  * }} [input]
- * @returns {{ railId: 'home' | 'projects' | 'market' | 'assets' | 'inspiration' | 'more', view: 'home' | 'business', activeMoreItemId: string | null, isSplit: boolean }}
+ * @returns {{ railId: 'home' | 'projects' | 'market' | 'assets' | 'inspiration' | 'more' | 'pinned', pinnedRailId?: string | null, view: 'home' | 'business', activeMoreItemId: string | null, isSplit: boolean }}
  */
 export function resolveFixedRailState(input = {}) {
-  const { verdict, signals, officialPanelId, productStageId, exploreItems } = input && typeof input === 'object' ? input : {}
+  const { verdict, signals, officialPanelId, productStageId, exploreItems, pinnedMoreIds } = input && typeof input === 'object' ? input : {}
+  const pinnedSet = pinnedMoreIds ? new Set(pinnedMoreIds) : null
+
+  const resolveMoreOrPinned = (activeMoreId, candidatePinId = activeMoreId) => {
+    if (candidatePinId && pinnedSet?.has(candidatePinId)) {
+      return {
+        railId: 'pinned',
+        pinnedRailId: candidatePinId,
+        view: 'business',
+        activeMoreItemId: activeMoreId,
+        isSplit: false,
+      }
+    }
+    return {
+      railId: 'more',
+      view: 'business',
+      activeMoreItemId: activeMoreId,
+      isSplit: false,
+    }
+  }
 
   const panelKey = typeof officialPanelId === 'string' ? officialPanelId.trim() : ''
   if (panelKey) {
-    return { railId: 'more', view: 'business', activeMoreItemId: panelKey, isSplit: false }
+    return resolveMoreOrPinned(panelKey, `panel:${panelKey}`)
   }
 
   const stageKey = typeof productStageId === 'string' ? productStageId.trim() : ''
@@ -201,12 +221,7 @@ export function resolveFixedRailState(input = {}) {
     if (pinnedStage) {
       return { railId: pinnedStage, view: 'business', activeMoreItemId: null, isSplit: false }
     }
-    return {
-      railId: 'more',
-      view: 'business',
-      activeMoreItemId: matchExploreItemId(stageKey, exploreItems),
-      isSplit: false,
-    }
+    return resolveMoreOrPinned(matchExploreItemId(stageKey, exploreItems))
   }
 
   const isFullscreenWorkbench = Boolean(
@@ -223,12 +238,7 @@ export function resolveFixedRailState(input = {}) {
     if (pinnedId) {
       return { railId: pinnedId, view: 'business', activeMoreItemId: null, isSplit: false }
     }
-    return {
-      railId: 'more',
-      view: 'business',
-      activeMoreItemId: matchExploreItemId(tabKey, exploreItems),
-      isSplit: false,
-    }
+    return resolveMoreOrPinned(matchExploreItemId(tabKey, exploreItems))
   }
 
   const isSplit = Boolean(
