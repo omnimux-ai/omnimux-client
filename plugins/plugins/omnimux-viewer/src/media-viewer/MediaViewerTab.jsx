@@ -213,6 +213,44 @@ export function MediaViewerTab({ scope, sessions, imageUrl, readFile, t }) {
   const viewerRootRef = useRef(null);
   const stageRef = useRef(null);
   const [draftText, setDraftText] = useState('');
+  const hasThumbnails = thumbnailsList.length > 1;
+
+  // 动态同步舞台净可用宽高与底部悬浮输入框避让区（不设 container-type，避免破坏 fixed 浮层包含块）
+  useLayoutEffect(() => {
+    const stage = stageRef.current;
+    if (!stage) return undefined;
+    const composerEl = stage.parentElement?.querySelector?.('.omx-mv-composer-outer') || null;
+    const syncStageBudget = () => {
+      const stageRect = stage.getBoundingClientRect?.();
+      if (!stageRect || stageRect.width <= 0 || stageRect.height <= 0) return;
+      const composerRect = composerEl?.getBoundingClientRect?.();
+      const composerReserve = (
+        composerRect &&
+        composerRect.height > 0 &&
+        composerRect.top < stageRect.bottom
+      )
+        ? Math.ceil(stageRect.bottom - composerRect.top + 16)
+        : (compactLayout ? 156 : 164);
+      const padTop = compactLayout ? 12 : 16;
+      const padLeft = hasThumbnails ? (compactLayout ? 76 : 84) : (compactLayout ? 16 : 24);
+      const padRight = compactLayout ? 12 : 24;
+      const padBottom = Math.max(compactLayout ? 156 : 164, composerReserve);
+      const maxW = Math.max(120, Math.floor(stageRect.width - padLeft - padRight));
+      const maxH = Math.max(120, Math.floor(stageRect.height - padTop - padBottom));
+      stage.style.setProperty('--omx-mv-stage-pad-top', `${padTop}px`);
+      stage.style.setProperty('--omx-mv-stage-pad-right', `${padRight}px`);
+      stage.style.setProperty('--omx-mv-stage-pad-bottom', `${padBottom}px`);
+      stage.style.setProperty('--omx-mv-stage-pad-left', `${padLeft}px`);
+      stage.style.setProperty('--omx-mv-stage-max-w', `${maxW}px`);
+      stage.style.setProperty('--omx-mv-stage-max-h', `${maxH}px`);
+    };
+    syncStageBudget();
+    if (typeof ResizeObserver !== 'function') return undefined;
+    const observer = new ResizeObserver(syncStageBudget);
+    observer.observe(stage);
+    if (composerEl) observer.observe(composerEl);
+    return () => observer.disconnect();
+  }, [hasThumbnails, compactLayout]);
 
   // 重试中的失败任务集合：按钮提交返回前保持 disabled（文字不变）
   const [retryingIds, setRetryingIds] = useState(() => new Set());
@@ -621,6 +659,7 @@ export function MediaViewerTab({ scope, sessions, imageUrl, readFile, t }) {
             <div
               className="omx-mv-single-stage"
               ref={stageRef}
+              data-has-thumbnails={hasThumbnails ? 'true' : 'false'}
               onMouseDown={handleMouseDown}
               onMouseMove={handleMouseMove}
               onMouseUp={handleMouseUp}
@@ -733,20 +772,14 @@ export function MediaViewerTab({ scope, sessions, imageUrl, readFile, t }) {
                     <FailureCard item={activeItem} retryingIds={retryingIds} onRetry={handleRetryFailure} />
                   </div>
                 ) : activeItem?.type === 'video' ? (
-                  <div
-                    className="omx-media-slot"
-                    data-ratio={activeItem?.aspectRatio || '1:1'}
-                  >
-                    <div className="omx-media-result active">
+                  <div className="omx-media-slot omx-media-slot--media">
+                    <div className="omx-media-result omx-media-result--media active">
                       <video src={activeItem.url} controls playsInline />
                     </div>
                   </div>
                 ) : activeItem?.url ? (
-                  <div
-                    className="omx-media-slot"
-                    data-ratio={activeItem?.aspectRatio || '1:1'}
-                  >
-                    <div className="omx-media-result active">
+                  <div className="omx-media-slot omx-media-slot--media">
+                    <div className="omx-media-result omx-media-result--media active">
                       <img
                         ref={imageRef}
                         src={activeItem?.url}
