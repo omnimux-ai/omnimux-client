@@ -40,9 +40,8 @@ test('TextStage CSS 设计系统契约: 100% 消费 --dsw-* Token, 0 裸色硬�
   assert.ok(css.includes('--dsw-alias-border-l1'), '应使用 --dsw-alias-border-l1');
   assert.ok(css.includes('--dsw-alias-primary'), '应使用 --dsw-alias-primary');
 
-  // 严禁私有非法的 --omx-* 岛屿命名（仅放行 dsh-ui-kit 标准 --omx-* 动效变量）
-  const nonMotionOmx = css.match(/--omx-(?!(?:ease-(?:out|spatial|exit|linear)|dur-(?:press|fast|base|sheet)|press-scale(?:-subtle)?)\b)[a-z0-9_-]*/g);
-  assert.equal(nonMotionOmx, null, `不得包含非标准动效的 --omx-* 变量: ${nonMotionOmx}`);
+  // 严禁私有非法的 --omx-* 岛屿命名
+  assert.equal(css.includes('--omx-'), false, '不得包含 --omx-* 废弃变量');
 
   // 严禁除 var(--dsw-*, <fallback>) 以外的裸色违规
   const lines = css.split('\n');

@@ -139,7 +139,7 @@ export const STYLES = `
   padding: 10px 12px;
   vertical-align: middle;
   border-bottom: 1px solid var(--dsw-alias-border-l2, var(--dsw-alias-border-subtle));
-  transition: background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .omnimux-ttsel-table tr:last-child td {
   border-bottom: none;
@@ -197,15 +197,15 @@ export const STYLES = `
   flex-direction: column;
   gap: 6px;
   font: inherit;
-  transition: background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-              border-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-              transform var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              border-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              transform var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .omnimux-ttsel-step:hover {
   border-color: var(--dsw-alias-border-l3, var(--dsw-alias-border-l2));
 }
 .omnimux-ttsel-step:active {
-  transform: scale(var(--omx-press-scale-subtle, 0.985));
+  transform: scale(var(--omnimux-motion-press-scale-subtle, 0.985));
 }
 .omnimux-ttsel-step[data-active="true"] {
   border-color: var(--dsw-alias-brand-primary);
@@ -251,7 +251,7 @@ export const STYLES = `
   display: flex;
   flex-direction: column;
   gap: 4px;
-  animation: omnimux-ttsel-popover-enter var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
+  animation: omnimux-ttsel-popover-enter var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
 }
 .omnimux-ttsel-menu-item {
   display: flex;
@@ -261,7 +261,7 @@ export const STYLES = `
   border-radius: 6px;
   font-size: 13px;
   cursor: pointer;
-  transition: background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .omnimux-ttsel-menu-item:hover {
   background: var(--dsw-alias-interactive-bg-hover, var(--dsw-alias-bg-hover));
@@ -335,7 +335,7 @@ export const STYLES = `
   box-shadow: var(--dsw-specific-shadow-popover, var(--dsw-shadow-popover));
   font-size: 13px;
   font-variant-numeric: tabular-nums;
-  animation: omnimux-ttsel-toast-enter var(--omx-dur-base, 200ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
+  animation: omnimux-ttsel-toast-enter var(--omnimux-motion-dur-base, 200ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
 }
 .omnimux-ttsel-error-banner {
   padding: 10px 12px;
@@ -344,7 +344,7 @@ export const STYLES = `
   background: var(--dsw-alias-bg-secondary, var(--dsw-alias-bg-subtle));
   color: var(--dsw-alias-state-danger, var(--dsw-alias-label-primary));
   font-size: 13px;
-  animation: omnimux-ttsel-toast-enter var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
+  animation: omnimux-ttsel-toast-enter var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
 }
 @keyframes omnimux-ttsel-popover-enter {
   from { opacity: 0.94; transform: translateY(-4px) scale(0.985); }

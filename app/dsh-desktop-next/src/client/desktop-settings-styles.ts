@@ -128,11 +128,11 @@ const CSS = `
   border: 0.5px solid var(--dsw-alias-settings-card-stroke);
   border-radius: var(--dsw-radius-xl);
   background: var(--dsw-alias-settings-card-fill);
-  transition: border-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), transform var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: border-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), transform var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .dshDesktopSettings .dshDesktopSettingsChoice[data-actionable="true"]:active:not([aria-disabled="true"]),
 .dshDesktopSettings .dshDesktopSettingsChoice[role="radio"]:active:not([aria-disabled="true"]) {
-  transform: scale(var(--omx-press-scale-subtle, 0.985));
+  transform: scale(var(--omnimux-motion-press-scale-subtle, 0.985));
 }
 .dshDesktopSettings .dshDesktopSettingsChoice[data-selected="true"] {
   border-color: var(--dsw-alias-border-selected);
@@ -238,7 +238,7 @@ const CSS = `
   color: var(--dsw-alias-label-primary);
   font: inherit;
   font-size: 13px;
-  transition: border-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), box-shadow var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: border-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), box-shadow var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .dshDesktopSettingsInput:focus-visible {
   border-color: var(--dsw-alias-brand-primary);
@@ -266,7 +266,7 @@ button.dshDesktopSettingsButton {
   font-weight: 400;
   line-height: 22px;
   white-space: nowrap;
-  transition: background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), border-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), box-shadow var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), transform var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), border-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), box-shadow var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), transform var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .dshDesktopSettingsGroup > .dshDesktopSettingsButton {
   align-self: flex-start;
@@ -306,7 +306,7 @@ button.dshDesktopSettingsButton:hover:not(:disabled) {
 }
 .dshDesktopSettingsButton:active:not(:disabled),
 button.dshDesktopSettingsButton:active:not(:disabled) {
-  transform: scale(var(--omx-press-scale, 0.96));
+  transform: scale(var(--omnimux-motion-press-scale, 0.96));
 }
 a.dshDesktopSettingsButton,
 a.dshDesktopSettingsButton:hover {
@@ -397,7 +397,7 @@ button.dshDesktopSettingsButtonPrimary:hover:not(:disabled) {
 .dshUpdateProgress::-webkit-progress-value {
   border-radius: 999px;
   background: var(--dsw-alias-brand-primary);
-  transition: width var(--omx-dur-base, 200ms) var(--omx-ease-spatial, cubic-bezier(0.32, 0.72, 0, 1));
+  transition: width var(--omnimux-motion-dur-base, 200ms) var(--omnimux-motion-ease-spatial, cubic-bezier(0.32, 0.72, 0, 1));
 }
 .dshUpdateNotes {
   margin: 0;
@@ -459,10 +459,10 @@ button.dshDesktopSettingsButtonPrimary:hover:not(:disabled) {
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
-  transition: background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), border-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), transform var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), border-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), transform var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .dshUpdatePill:hover { background: var(--dsw-alias-interactive-bg-hover); }
-.dshUpdatePill:active { transform: scale(var(--omx-press-scale, 0.96)); }
+.dshUpdatePill:active { transform: scale(var(--omnimux-motion-press-scale, 0.96)); }
 .dshUpdatePillLeft {
   display: inline-flex;
   align-items: center;
@@ -519,7 +519,7 @@ body [class*="collapsed"] .dshUpdatePillVer {
   color: var(--dsw-alias-label-primary);
   pointer-events: auto;
   -webkit-app-region: no-drag;
-  animation: dshSettingsNoticeIn var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
+  animation: dshSettingsNoticeIn var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
 }
 .dshPostUpdateCopy {
   display: flex;
@@ -547,10 +547,10 @@ body [class*="collapsed"] .dshUpdatePillVer {
   cursor: pointer;
   font-size: 16px;
   line-height: 1;
-  transition: background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), transform var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), transform var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .dshUpdateNoticeDismiss:hover { background: var(--dsw-alias-interactive-bg-hover); }
-.dshUpdateNoticeDismiss:active { transform: scale(var(--omx-press-scale, 0.96)); }
+.dshUpdateNoticeDismiss:active { transform: scale(var(--omnimux-motion-press-scale, 0.96)); }
 .dshMandatoryBackdrop {
   position: fixed;
   z-index: 2147483003;
@@ -561,7 +561,7 @@ body [class*="collapsed"] .dshUpdatePillVer {
   background: var(--dsw-alias-bg-mask-1);
   pointer-events: auto;
   -webkit-app-region: no-drag;
-  animation: dshSettingsFadeIn var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
+  animation: dshSettingsFadeIn var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
 }
 .dshMandatoryCard {
   width: min(460px, 100%);
@@ -578,7 +578,7 @@ body [class*="collapsed"] .dshUpdatePillVer {
   gap: 12px;
   pointer-events: auto;
   -webkit-app-region: no-drag;
-  animation: dshSettingsDialogIn var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
+  animation: dshSettingsDialogIn var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
 }
 .dshMandatoryCard h4 {
   margin: 0;
@@ -629,7 +629,7 @@ button.dshDesktopSettingsButton:disabled {
   background: var(--dsw-alias-bg-layer-1);
   box-shadow: 0 12px 32px color-mix(in srgb, #000 28%, transparent);
   -webkit-app-region: no-drag;
-  animation: dshSettingsMenuIn var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
+  animation: dshSettingsMenuIn var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
 }
 .dshDesktopNativeActions[data-placement="settings"] .dshDesktopActionMenuItem {
   display: flex;
@@ -647,10 +647,10 @@ button.dshDesktopSettingsButton:disabled {
   font-size: 12px;
   text-align: start;
   white-space: nowrap;
-  transition: background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), transform var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), transform var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .dshDesktopNativeActions[data-placement="settings"] .dshDesktopActionMenuItem:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); }
-.dshDesktopNativeActions[data-placement="settings"] .dshDesktopActionMenuItem:active:not(:disabled) { transform: scale(var(--omx-press-scale-subtle, 0.985)); }
+.dshDesktopNativeActions[data-placement="settings"] .dshDesktopActionMenuItem:active:not(:disabled) { transform: scale(var(--omnimux-motion-press-scale-subtle, 0.985)); }
 .dshDesktopNativeActions[data-placement="settings"] .dshDesktopActionMenuItem:disabled { cursor: default; opacity: .45; }
 .dshDesktopNativeActions[data-placement="settings"] .dshDesktopActionMenuItem svg { width: 14px; height: 14px; stroke-width: 1.8; }
 .dshDesktopNativeActions[data-placement="settings"] .dshDesktopActionMenuItem span { flex: 1; }
@@ -668,12 +668,12 @@ button.dshDesktopSettingsButton:disabled {
   font: inherit;
   font-size: 12px;
   line-height: 18px;
-  transition: background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), border-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), transform var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), border-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), transform var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
-.dshDesktopSettingsHeaderButton svg { width: 14px; height: 14px; margin-left: 5px; transition: transform var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)); }
+.dshDesktopSettingsHeaderButton svg { width: 14px; height: 14px; margin-left: 5px; transition: transform var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)); }
 .dshDesktopSettingsHeaderButton[aria-expanded="true"] svg { transform: rotate(180deg); }
 .dshDesktopSettingsHeaderButton:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); }
-.dshDesktopSettingsHeaderButton:active:not(:disabled) { transform: scale(var(--omx-press-scale, 0.96)); }
+.dshDesktopSettingsHeaderButton:active:not(:disabled) { transform: scale(var(--omnimux-motion-press-scale, 0.96)); }
 .dshDesktopSettingsHeaderButton:disabled { cursor: not-allowed; opacity: .4; }
 .dshDesktopNativeActionError {
   max-width: 260px;
@@ -700,7 +700,7 @@ button.dshDesktopSettingsSelect {
   line-height: 22px;
   cursor: pointer;
   white-space: nowrap;
-  transition: background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), transform var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), transform var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .dshDesktopSettingsSelect:hover:not(:disabled),
 button.dshDesktopSettingsSelect:hover:not(:disabled) {
@@ -708,7 +708,7 @@ button.dshDesktopSettingsSelect:hover:not(:disabled) {
 }
 .dshDesktopSettingsSelect:active:not(:disabled),
 button.dshDesktopSettingsSelect:active:not(:disabled) {
-  transform: scale(var(--omx-press-scale-subtle, 0.985));
+  transform: scale(var(--omnimux-motion-press-scale-subtle, 0.985));
 }
 .dshDesktopSettingsSelect:disabled,
 button.dshDesktopSettingsSelect:disabled {
@@ -720,7 +720,7 @@ button.dshDesktopSettingsSelect:disabled {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  transition: transform var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: transform var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .dshDesktopSettingsSelect[aria-expanded="true"] .dshDesktopSettingsSelectChevron {
   transform: rotate(180deg);
@@ -733,7 +733,7 @@ button.dshDesktopSettingsSelect:disabled {
   border-radius: 8px;
   font-size: 12px;
   line-height: 1.55;
-  animation: dshSettingsNoticeIn var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
+  animation: dshSettingsNoticeIn var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
 }
 .dshDesktopSettingsNotice { background: var(--dsw-alias-bg-layer-2); color: var(--dsw-alias-label-secondary); }
 .dshDesktopSettingsError { color: var(--dsw-alias-state-error-primary); background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 10%, transparent); }
@@ -761,20 +761,20 @@ button.dshDesktopSettingsSelect:disabled {
   background: transparent;
   color: var(--dsw-alias-label-tertiary);
   cursor: pointer;
-  transition: background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), transform var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), transform var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .dshDesktopSettingsExpander:hover {
   background: var(--dsw-alias-interactive-bg-hover);
 }
 .dshDesktopSettingsExpander:active {
-  transform: scale(var(--omx-press-scale, 0.96));
+  transform: scale(var(--omnimux-motion-press-scale, 0.96));
 }
 .dshDesktopSettingsExpander:focus-visible {
   outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
   outline-offset: 2px;
 }
 .dshDesktopSettingsExpander svg {
-  transition: transform var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: transform var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .dshDesktopSettingsExpander[aria-expanded="true"] svg {
   transform: rotate(180deg);
@@ -791,7 +791,7 @@ button.dshDesktopSettingsSelect:disabled {
   corner-shape: round;
   background: var(--dsw-alias-border-l3);
   cursor: pointer;
-  transition: background-color var(--omx-dur-base, 200ms) var(--omx-ease-spatial, cubic-bezier(0.32, 0.72, 0, 1));
+  transition: background-color var(--omnimux-motion-dur-base, 200ms) var(--omnimux-motion-ease-spatial, cubic-bezier(0.32, 0.72, 0, 1));
 }
 .dshDesktopSettingsToggle[aria-checked="true"] {
   background: var(--dsw-alias-brand-primary);
@@ -808,7 +808,7 @@ button.dshDesktopSettingsSelect:disabled {
   border-radius: 50%;
   corner-shape: round;
   background: var(--dsw-alias-label-primary-foreground);
-  transition: transform var(--omx-dur-base, 200ms) var(--omx-ease-spatial, cubic-bezier(0.32, 0.72, 0, 1)), background-color var(--omx-dur-base, 200ms) var(--omx-ease-spatial, cubic-bezier(0.32, 0.72, 0, 1));
+  transition: transform var(--omnimux-motion-dur-base, 200ms) var(--omnimux-motion-ease-spatial, cubic-bezier(0.32, 0.72, 0, 1)), background-color var(--omnimux-motion-dur-base, 200ms) var(--omnimux-motion-ease-spatial, cubic-bezier(0.32, 0.72, 0, 1));
 }
 .dshDesktopSettingsToggle[aria-checked="false"] .dshDesktopSettingsToggleKnob {
   background: var(--dsw-alias-switch-thumb);
@@ -886,12 +886,12 @@ button.dshDesktopSettingsSelect:disabled {
   background: transparent;
   color: inherit;
   cursor: pointer;
-  transition: background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), transform var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), transform var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .dshDesktopSettingsUrlCopy:hover { background: var(--dsw-alias-bg-layer-2); }
-.dshDesktopSettingsUrlCopy:active:not(:disabled) { transform: scale(var(--omx-press-scale, 0.96)); }
+.dshDesktopSettingsUrlCopy:active:not(:disabled) { transform: scale(var(--omnimux-motion-press-scale, 0.96)); }
 .dshDesktopSettingsUrlCopy[data-copied="true"] { color: var(--dsw-alias-state-success-primary); }
-.dshDesktopSettingsUrlCopy[data-copied="true"] svg { animation: dshSettingsCopyPop var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards; }
+.dshDesktopSettingsUrlCopy[data-copied="true"] svg { animation: dshSettingsCopyPop var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards; }
 .dshDesktopSettingsUrlCopy:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: 2px; }
 .dshDesktopSettingsUrlCopy:disabled { opacity: 0.5; cursor: wait; }
 .dshDesktopSettingsDialogBackdrop {
@@ -902,7 +902,7 @@ button.dshDesktopSettingsSelect:disabled {
   place-items: center;
   padding: 24px;
   background: color-mix(in srgb, #000 55%, transparent);
-  animation: dshSettingsFadeIn var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
+  animation: dshSettingsFadeIn var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
 }
 .dshDesktopSettingsDialog {
   width: min(440px, 100%);
@@ -912,7 +912,7 @@ button.dshDesktopSettingsSelect:disabled {
   border-radius: 14px;
   background: var(--dsw-alias-bg-layer-1);
   box-shadow: 0 24px 64px color-mix(in srgb, #000 38%, transparent);
-  animation: dshSettingsDialogIn var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
+  animation: dshSettingsDialogIn var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
 }
 .dshDesktopSettingsDialog h3 { margin: 0; color: var(--dsw-alias-state-error-primary); font-size: 16px; }
 .dshDesktopSettingsDialog p { margin: 12px 0 0; color: var(--dsw-alias-label-secondary); font-size: 13px; line-height: 1.65; }

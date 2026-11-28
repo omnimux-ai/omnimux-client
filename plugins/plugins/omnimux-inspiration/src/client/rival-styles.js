@@ -33,7 +33,7 @@ export const RIVAL_CSS = `
   gap: 8px;
   padding: 8px;
   border-radius: 6px;
-  transition: background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .omnimux-rival-filter-select {
   display: flex;
@@ -70,8 +70,8 @@ export const RIVAL_CSS = `
   opacity: 0;
   pointer-events: none;
   color: var(--dsw-alias-label-tertiary);
-  transition: opacity var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-              background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: opacity var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .omnimux-rival-filter-row:hover .omnimux-rival-filter-more,
 .omnimux-rival-filter-row:focus-within .omnimux-rival-filter-more {
@@ -144,10 +144,10 @@ export const RIVAL_CSS = `
   pointer-events: none;
   transform: scale(0.9);
   color: var(--dsw-alias-label-tertiary);
-  transition: opacity var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-              transform var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-              background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-              color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: opacity var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              transform var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .omnimux-rival-filter-row:hover .omnimux-rival-filter-jump:not(:disabled),
 .omnimux-rival-filter-row:focus-within .omnimux-rival-filter-jump:not(:disabled) {
@@ -241,7 +241,7 @@ export const RIVAL_CSS = `
   pointer-events: none;
   transform: translate(-50%, -100%);
   box-shadow: var(--dsw-specific-shadow-pop);
-  animation: omnimux-rival-tip-enter var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
+  animation: omnimux-rival-tip-enter var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
 }
 @keyframes omnimux-rival-tip-enter {
   from { opacity: 0.92; transform: translate(-50%, calc(-100% + 4px)); }
@@ -471,7 +471,7 @@ export const RIVAL_CSS = `
   font-size: 12px;
   line-height: 1.6;
   color: var(--dsw-alias-label-secondary);
-  animation: omnimux-rival-popover-enter var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
+  animation: omnimux-rival-popover-enter var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
 }
 .omnimux-rival-refresh.is-fresh {
   opacity: 0.75;
@@ -541,8 +541,8 @@ export const RIVAL_CSS = `
   cursor: pointer;
   background: var(--dsw-alias-bg-layer-1);
   border: 1px solid var(--dsw-alias-border-l1);
-  transition: border-color var(--omx-dur-base, 200ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-              box-shadow var(--omx-dur-base, 200ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: border-color var(--omnimux-motion-dur-base, 200ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              box-shadow var(--omnimux-motion-dur-base, 200ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .omnimux-rival-card:hover {
   border-color: var(--dsw-alias-border-l3);
@@ -571,9 +571,9 @@ export const RIVAL_CSS = `
   object-fit: cover;
   background: var(--dsw-specific-media-ink);
   border: none;
-  transition: transform var(--omx-dur-sheet, 260ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-              filter var(--omx-dur-base, 200ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-              opacity var(--omx-dur-base, 200ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: transform var(--omnimux-motion-dur-sheet, 260ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              filter var(--omnimux-motion-dur-base, 200ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              opacity var(--omnimux-motion-dur-base, 200ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 /* 无封面兜底（#3428）：占位沿用媒体块的几何与暗底，只把「没有封面」讲清楚；
    绝不渲染空 src 的 <img>，否则 9:16 区域就是一块黑板。 */
@@ -1102,7 +1102,7 @@ export const RIVAL_CSS = `
   border-radius: 8px;
   background: var(--dsw-alias-bg-elevated, var(--dsw-specific-media-pill-bg));
   box-shadow: var(--dsw-specific-shadow-pop, 0 8px 24px rgba(0, 0, 0, .35));
-  animation: omnimux-rival-popover-enter var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
+  animation: omnimux-rival-popover-enter var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
 }
 .omnimux-rival-menu-item {
   width: 100%;
@@ -1151,7 +1151,7 @@ export const RIVAL_CSS = `
   padding: 16px;
   border-bottom: 1px solid var(--dsw-alias-border-l1);
   cursor: pointer;
-  transition: background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .omnimux-rival-timeline-item:last-child {
   border-bottom: none;
@@ -1347,7 +1347,7 @@ export const RIVAL_CSS = `
   align-items: center;
   gap: 2px;
   opacity: 0;
-  transition: opacity var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: opacity var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .omnimux-rival-timeline-item:hover .omnimux-rival-timeline-actions,
 .omnimux-rival-timeline-item:focus-within .omnimux-rival-timeline-actions {

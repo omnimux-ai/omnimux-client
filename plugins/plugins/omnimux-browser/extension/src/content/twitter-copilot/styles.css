@@ -18,10 +18,10 @@
   flex-shrink: 0;
   align-self: center;
   position: relative;
-  transition: background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-    border-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-    box-shadow var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-    transform var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+    border-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+    box-shadow var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+    transform var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
   user-select: none;
   z-index: 99999;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
@@ -36,7 +36,7 @@
 }
 
 .omnimux-copilot-anchor-btn:active {
-  transform: scale(var(--omx-press-scale, 0.96));
+  transform: scale(var(--omnimux-motion-press-scale, 0.96));
   background: #121214;
 }
 
@@ -45,7 +45,7 @@
   height: 19px;
   display: block;
   fill: #ffffff;
-  transition: transform var(--omx-dur-base, 200ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: transform var(--omnimux-motion-dur-base, 200ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 
 .omnimux-copilot-anchor-btn--loading svg {
@@ -77,8 +77,8 @@
   color: #f3f4f6;
   opacity: 0;
   transform: scale(0.96) translateY(-4px);
-  transition: opacity var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-    transform var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: opacity var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+    transform var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
   pointer-events: none;
 }
 
@@ -134,7 +134,7 @@
   border-radius: 8px;
   cursor: pointer;
   background: transparent;
-  transition: background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
   border: none;
   text-align: left;
   outline: none;
@@ -179,8 +179,8 @@
   opacity: 0;
   pointer-events: none;
   z-index: 1000000;
-  transition: transform var(--omx-dur-base, 200ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-    opacity var(--omx-dur-base, 200ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: transform var(--omnimux-motion-dur-base, 200ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+    opacity var(--omnimux-motion-dur-base, 200ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 
 .omnimux-copilot-toast--visible {

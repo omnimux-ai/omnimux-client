@@ -1586,8 +1586,8 @@ button[data-sidebar-right-expand] {
   box-sizing: border-box !important;
   z-index: 30 !important;
   border-left: 0.5px solid var(--dsw-alias-border-l4) !important;
-  transition: left var(--omx-dur-base, 200ms) var(--omx-ease-spatial, cubic-bezier(0.32, 0.72, 0, 1)),
-              width var(--omx-dur-base, 200ms) var(--omx-ease-spatial, cubic-bezier(0.32, 0.72, 0, 1)) !important;
+  transition: left var(--omnimux-motion-dur-base, 200ms) var(--omnimux-motion-ease-spatial, cubic-bezier(0.32, 0.72, 0, 1)),
+              width var(--omnimux-motion-dur-base, 200ms) var(--omnimux-motion-ease-spatial, cubic-bezier(0.32, 0.72, 0, 1)) !important;
 }
 @media (prefers-reduced-motion: reduce) {
   [data-sidebar-right-panel="fullscreen"],

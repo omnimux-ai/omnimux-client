@@ -11,11 +11,11 @@
   user-select: none;
   cursor: pointer;
   transition:
-    background-color var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-    border-color var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-    box-shadow var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-    transform var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-    opacity var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+    background-color var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+    border-color var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+    box-shadow var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+    transform var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+    opacity var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 
 .card:hover:not(.disabled):not(.loading) {
@@ -24,7 +24,7 @@
 }
 
 .card:active:not(.disabled):not(.loading) {
-  transform: scale(var(--omx-press-scale-subtle, 0.985));
+  transform: scale(var(--omnimux-motion-press-scale-subtle, 0.985));
 }
 
 .card:focus {
@@ -81,7 +81,7 @@
   height: 100%;
   object-fit: cover;
   display: block;
-  transition: transform var(--omx-dur-base, 200ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: transform var(--omnimux-motion-dur-base, 200ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 
 .card:hover:not(.disabled):not(.loading) .coverImage {
@@ -121,8 +121,8 @@
   transform: translateY(4px);
   pointer-events: none;
   transition:
-    opacity var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-    transform var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+    opacity var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+    transform var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
   z-index: 3;
 }
 

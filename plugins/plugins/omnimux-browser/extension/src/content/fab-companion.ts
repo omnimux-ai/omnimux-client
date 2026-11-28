@@ -82,16 +82,16 @@ export function initFabCompanion(): void {
     <style>
       :host {
         all: initial;
-        --omx-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
-        --omx-ease-spatial: cubic-bezier(0.32, 0.72, 0, 1);
-        --omx-ease-exit: cubic-bezier(0.32, 0, 0.67, 0);
-        --omx-ease-linear: linear;
-        --omx-dur-press: 90ms;
-        --omx-dur-fast: 140ms;
-        --omx-dur-base: 200ms;
-        --omx-dur-sheet: 260ms;
-        --omx-press-scale: 0.96;
-        --omx-press-scale-subtle: 0.985;
+        --omnimux-motion-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+        --omnimux-motion-ease-spatial: cubic-bezier(0.32, 0.72, 0, 1);
+        --omnimux-motion-ease-exit: cubic-bezier(0.32, 0, 0.67, 0);
+        --omnimux-motion-ease-linear: linear;
+        --omnimux-motion-dur-press: 90ms;
+        --omnimux-motion-dur-fast: 140ms;
+        --omnimux-motion-dur-base: 200ms;
+        --omnimux-motion-dur-sheet: 260ms;
+        --omnimux-motion-press-scale: 0.96;
+        --omnimux-motion-press-scale-subtle: 0.985;
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI Variable Text", "Segoe UI", "PingFang SC", sans-serif;
       }
 
@@ -117,11 +117,11 @@ export function initFabCompanion(): void {
         z-index: 2147483647;
         opacity: 1;
         transform: scale(1);
-        transition: transform var(--omx-dur-base, 200ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-                    opacity var(--omx-dur-base, 200ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-                    box-shadow var(--omx-dur-base, 200ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-                    background-color var(--omx-dur-base, 200ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-                    border-color var(--omx-dur-base, 200ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+        transition: transform var(--omnimux-motion-dur-base, 200ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+                    opacity var(--omnimux-motion-dur-base, 200ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+                    box-shadow var(--omnimux-motion-dur-base, 200ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+                    background-color var(--omnimux-motion-dur-base, 200ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+                    border-color var(--omnimux-motion-dur-base, 200ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
       }
 
       .omnimux-fab:hover {
@@ -133,7 +133,7 @@ export function initFabCompanion(): void {
 
       .omnimux-fab:active {
         cursor: grabbing;
-        transform: scale(var(--omx-press-scale, 0.96));
+        transform: scale(var(--omnimux-motion-press-scale, 0.96));
       }
 
       .omnimux-fab.fab-hidden {
@@ -170,8 +170,8 @@ export function initFabCompanion(): void {
         opacity: 0;
         transform: translateX(40px) scale(0.98);
         pointer-events: none;
-        transition: transform var(--omx-dur-sheet, 260ms) var(--omx-ease-spatial, cubic-bezier(0.32, 0.72, 0, 1)),
-                    opacity var(--omx-dur-base, 200ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+        transition: transform var(--omnimux-motion-dur-sheet, 260ms) var(--omnimux-motion-ease-spatial, cubic-bezier(0.32, 0.72, 0, 1)),
+                    opacity var(--omnimux-motion-dur-base, 200ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
       }
 
       @media (prefers-color-scheme: light) {
@@ -198,12 +198,12 @@ export function initFabCompanion(): void {
 
       @media (prefers-reduced-motion: reduce) {
         :host {
-          --omx-dur-press: 0ms;
-          --omx-dur-fast: 0ms;
-          --omx-dur-base: 0ms;
-          --omx-dur-sheet: 0ms;
-          --omx-press-scale: 1;
-          --omx-press-scale-subtle: 1;
+          --omnimux-motion-dur-press: 0ms;
+          --omnimux-motion-dur-fast: 0ms;
+          --omnimux-motion-dur-base: 0ms;
+          --omnimux-motion-dur-sheet: 0ms;
+          --omnimux-motion-press-scale: 1;
+          --omnimux-motion-press-scale-subtle: 1;
         }
 
         .omnimux-fab,

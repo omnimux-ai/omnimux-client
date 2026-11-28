@@ -14,7 +14,7 @@
   inset: 0;
   background: var(--dsw-alias-bg-mask-1);
   opacity: 0;
-  transition: opacity var(--omx-dur-base, 200ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: opacity var(--omnimux-motion-dur-base, 200ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 
 .mask[data-phase="entered"] {
@@ -22,7 +22,7 @@
 }
 
 .mask[data-phase="exiting"] {
-  transition-duration: var(--omx-dur-fast, 140ms);
+  transition-duration: var(--omnimux-motion-dur-fast, 140ms);
 }
 
 .drawer {
@@ -33,11 +33,11 @@
   background-color: var(--dsw-alias-bg-layer-2);
   box-shadow: var(--dsw-shadow-lv3);
   z-index: 1;
-  transition: transform var(--omx-dur-sheet, 260ms) var(--omx-ease-spatial, cubic-bezier(0.32, 0.72, 0, 1));
+  transition: transform var(--omnimux-motion-dur-sheet, 260ms) var(--omnimux-motion-ease-spatial, cubic-bezier(0.32, 0.72, 0, 1));
 }
 
 .drawer[data-phase="exiting"] {
-  transition-duration: var(--omx-dur-base, 200ms);
+  transition-duration: var(--omnimux-motion-dur-base, 200ms);
 }
 
 /* Placements */

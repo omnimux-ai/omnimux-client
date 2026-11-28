@@ -27,7 +27,7 @@ const STYLES = `
   color: var(--dsw-alias-label-primary, inherit);
   font: var(--dsw-font-s-14, inherit); font-size: 14px; line-height: 20px;
   cursor: pointer; text-align: left;
-  transition: background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .omnimux-app-tab:hover { background: var(--dsw-alias-interactive-bg-hover, rgba(128,128,128,.12)); }
 .omnimux-app-tab[data-active="true"] { background: var(--dsw-alias-interactive-bg-active, rgba(128,128,128,.18)); font-weight: 500; }
@@ -37,7 +37,7 @@ const STYLES = `
 .omnimux-app-tab-pin { flex: none; font-size: 10px; line-height: 1; }
 .omnimux-app-tab-actions {
   position: absolute; top: 0; right: 6px; height: 32px; display: flex; align-items: center; gap: 2px; opacity: 0;
-  transition: opacity var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: opacity var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .omnimux-app-tab:hover .omnimux-app-tab-actions,
 .omnimux-app-tab:focus-within .omnimux-app-tab-actions { opacity: 1; }
@@ -46,8 +46,8 @@ const STYLES = `
   width: 22px; height: 22px; padding: 0; border: none; border-radius: 6px;
   background: transparent; color: var(--dsw-alias-label-secondary, inherit);
   font: inherit; font-size: 12px; line-height: 1; cursor: pointer;
-  transition: background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-              color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .omnimux-app-tab-action:hover { background: var(--dsw-alias-interactive-bg-hover, rgba(128,128,128,.12)); color: var(--dsw-alias-label-primary, inherit); }
 .omnimux-app-tab[data-pinned="true"] .omnimux-app-tab-action[data-kind="pin"] { color: var(--dsw-alias-state-business-primary, #4c8dff); }

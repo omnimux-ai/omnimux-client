@@ -9,7 +9,7 @@ const root = join(here, '..')
 const libIndexPath = join(root, '..', 'lib', 'index.js')
 
 describe('dsh-ui-kit motion language and state-change primitives', () => {
-  it('defines unified --omx-* motion tokens with 3 physical curves + linear and reduced-motion collapse', () => {
+  it('defines unified --omnimux-motion-* motion tokens with 3 physical curves + linear and reduced-motion collapse', () => {
     const tokensSrc = readFileSync(join(here, 'tokens.ts'), 'utf8')
     const builtLib = readFileSync(libIndexPath, 'utf8')
 
@@ -20,18 +20,18 @@ describe('dsh-ui-kit motion language and state-change primitives', () => {
     assert.match(tokensSrc, /durFast:\s*["']140ms["']/)
     assert.match(tokensSrc, /durBase:\s*["']200ms["']/)
     assert.match(tokensSrc, /durSheet:\s*["']260ms["']/)
-    assert.match(tokensSrc, /--omx-dur-press:\s*\$\{MOTION_VARS\.durPress\}/)
-    assert.match(tokensSrc, /--omx-dur-fast:\s*\$\{MOTION_VARS\.durFast\}/)
-    assert.match(tokensSrc, /--omx-dur-base:\s*\$\{MOTION_VARS\.durBase\}/)
-    assert.match(tokensSrc, /--omx-dur-sheet:\s*\$\{MOTION_VARS\.durSheet\}/)
+    assert.match(tokensSrc, /--omnimux-motion-dur-press:\s*\$\{MOTION_VARS\.durPress\}/)
+    assert.match(tokensSrc, /--omnimux-motion-dur-fast:\s*\$\{MOTION_VARS\.durFast\}/)
+    assert.match(tokensSrc, /--omnimux-motion-dur-base:\s*\$\{MOTION_VARS\.durBase\}/)
+    assert.match(tokensSrc, /--omnimux-motion-dur-sheet:\s*\$\{MOTION_VARS\.durSheet\}/)
     assert.match(tokensSrc, /@media\s*\(prefers-reduced-motion:\s*reduce\)/)
-    assert.match(tokensSrc, /--omx-dur-press:\s*0ms/)
-    assert.match(tokensSrc, /--omx-press-scale:\s*1/)
+    assert.match(tokensSrc, /--omnimux-motion-dur-press:\s*0ms/)
+    assert.match(tokensSrc, /--omnimux-motion-press-scale:\s*1/)
 
-    assert.match(builtLib, /omx-motion-tokens/)
-    assert.match(builtLib, /--omx-ease-out:/)
-    assert.match(builtLib, /--omx-ease-spatial:/)
-    assert.match(builtLib, /--omx-ease-exit:/)
+    assert.match(builtLib, /omnimux-motion-tokens/)
+    assert.match(builtLib, /--omnimux-motion-ease-out:/)
+    assert.match(builtLib, /--omnimux-motion-ease-spatial:/)
+    assert.match(builtLib, /--omnimux-motion-ease-exit:/)
     for (const sym of ['MOTION_VARS', 'MOTION_TOKENS_CSS', 'ensureMotionTokens', 'usePresence', 'IconSwap', 'AnimatedNumber']) {
       assert.ok(builtLib.includes(sym), `missing export ${sym} in built lib/index.js`)
     }

@@ -25,8 +25,8 @@ declare const IconRightUpOutline14: IconComponent;
 declare const IconSearchOutline16: IconComponent;
 declare const IconTrashOutline16: IconComponent;
 /**
- * Unified OmniMux motion language (--omx-* CSS custom properties).
- * Intentionally uses `--omx-*` instead of `--dsw-*` because upstream runtime
+ * Unified OmniMux motion language (--omnimux-motion-* CSS custom properties).
+ * Intentionally uses `--omnimux-motion-*` instead of `--dsw-*` because upstream runtime
  * `--dsw-*` tokens are strictly allowlist-locked by verify-dsw-tokens.mjs.
  */
 declare const MOTION_VARS: {

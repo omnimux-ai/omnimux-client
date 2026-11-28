@@ -134,7 +134,7 @@ export const ANALYTICS_CSS = `
   background: var(--dsw-alias-bg-layer-1, rgba(128,128,128,.06));
   font-size: 13px;
   color: var(--dsw-alias-label-secondary, inherit);
-  animation: omnimux-analytics-banner-enter var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
+  animation: omnimux-analytics-banner-enter var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
 }
 @keyframes omnimux-analytics-banner-enter {
   from { opacity: 0.94; transform: translateY(-4px); }
@@ -170,7 +170,7 @@ export const ANALYTICS_CSS = `
   border-radius: 10px;
   border: 1px solid var(--dsw-alias-border-l2, rgba(128,128,128,.16));
   background: var(--dsw-alias-bg-layer-1, rgba(128,128,128,.04));
-  transition: border-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: border-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .omnimux-analytics-kpi:hover {
   border-color: var(--dsw-alias-border-l3, rgba(128,128,128,.24));
@@ -366,15 +366,15 @@ export const ANALYTICS_CSS = `
   color: var(--dsw-alias-label-secondary, rgba(128,128,128,.72));
   cursor: pointer;
   user-select: none;
-  transition: color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-              background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-              transform var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              transform var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .omnimux-analytics-pill:hover {
   color: var(--dsw-alias-label-primary, inherit);
 }
 .omnimux-analytics-pill:active {
-  transform: scale(var(--omx-press-scale, 0.96));
+  transform: scale(var(--omnimux-motion-press-scale, 0.96));
 }
 .omnimux-analytics-pill.is-on { color: var(--dsw-alias-label-primary, inherit); }
 .omnimux-analytics-pill-dot {
@@ -415,8 +415,8 @@ export const ANALYTICS_CSS = `
   border-radius: 2px;
   background: var(--omnimux-analytics-heat-0);
   cursor: pointer;
-  transition: transform var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-              opacity var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: transform var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              opacity var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .omnimux-analytics-heatcell[data-level="1"] { background: var(--omnimux-analytics-heat-1); }
 .omnimux-analytics-heatcell[data-level="2"] { background: var(--omnimux-analytics-heat-2); }
@@ -539,7 +539,7 @@ export const ANALYTICS_CSS = `
   color: var(--dsw-alias-label-primary, inherit);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
-  transition: background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .omnimux-analytics-table td.is-num { text-align: right; }
 .omnimux-analytics-table tbody tr:hover td {

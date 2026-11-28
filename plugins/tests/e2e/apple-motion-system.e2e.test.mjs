@@ -343,7 +343,7 @@ describe('Apple motion system real-browser E2E', () => {
 
       // Reduced motion OS feature check
       await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] })
-      const reducedDur = await evaluate(`getComputedStyle(document.documentElement).getPropertyValue('--omx-dur-fast').trim()`)
+      const reducedDur = await evaluate(`getComputedStyle(document.documentElement).getPropertyValue('--omnimux-motion-dur-fast').trim()`)
       assert.equal(reducedDur, '0ms')
 
       // --- Target B: Real compiled dsh-ui-kit React components ---
@@ -353,7 +353,7 @@ describe('Apple motion system real-browser E2E', () => {
       await new Promise((r) => setTimeout(r, 350))
 
       const kitLive = await evaluate(`(async function() {
-        const styleNode = document.querySelector('style[data-dsh-ui-kit="omx-motion-tokens"]');
+        const styleNode = document.querySelector('style[data-dsh-ui-kit="omnimux-motion-tokens"]');
         const rootStyle = getComputedStyle(document.documentElement);
         const underline = document.getElementById('live-tabs-underline');
         const pill = document.getElementById('live-tabs-pill');
@@ -424,9 +424,9 @@ describe('Apple motion system real-browser E2E', () => {
 
         return {
           hasTokenNode: Boolean(styleNode),
-          easeOut: rootStyle.getPropertyValue('--omx-ease-out').trim(),
-          easeSpatial: rootStyle.getPropertyValue('--omx-ease-spatial').trim(),
-          easeExit: rootStyle.getPropertyValue('--omx-ease-exit').trim(),
+          easeOut: rootStyle.getPropertyValue('--omnimux-motion-ease-out').trim(),
+          easeSpatial: rootStyle.getPropertyValue('--omnimux-motion-ease-spatial').trim(),
+          easeExit: rootStyle.getPropertyValue('--omnimux-motion-ease-exit').trim(),
           underlineReady: underline.getAttribute('data-indicator'),
           pillReady: pill.getAttribute('data-indicator'),
           tabTexts,
@@ -464,7 +464,7 @@ describe('Apple motion system real-browser E2E', () => {
       assert.equal(kitLive.scrollFps >= 55, true, `500-row scroll FPS=${kitLive.scrollFps}`)
 
       await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] })
-      const kitReducedDur = await evaluate(`getComputedStyle(document.documentElement).getPropertyValue('--omx-dur-fast').trim()`)
+      const kitReducedDur = await evaluate(`getComputedStyle(document.documentElement).getPropertyValue('--omnimux-motion-dur-fast').trim()`)
       assert.equal(kitReducedDur, '0ms')
     } finally {
       if (chrome?.ws) {

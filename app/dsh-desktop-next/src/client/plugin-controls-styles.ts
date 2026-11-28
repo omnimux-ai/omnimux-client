@@ -12,7 +12,7 @@ const STYLES = `
 .dshNextMarketHeader > [role="switch"], .dshNextMarketHeader > .dshNextPluginActions { flex: none; flex-wrap: nowrap; }
 .dshNextMarketChoices { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 .dshNextPluginSections { display: grid; gap: 2px; }
-.dshNextPluginCard { position: relative; display: flex; align-items: center; min-width: 0; gap: 14px; margin: 0 -8px; padding: 8px; border-radius: 12px; transition: background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)); }
+.dshNextPluginCard { position: relative; display: flex; align-items: center; min-width: 0; gap: 14px; margin: 0 -8px; padding: 8px; border-radius: 12px; transition: background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)); }
 .dshNextPluginCard:hover { background: var(--dsw-alias-interactive-bg-hover); }
 .dshNextPluginIcon { display: inline-flex; flex: none; align-items: center; justify-content: center; width: 48px; height: 48px; border: .5px solid var(--dsw-alias-border-l3); border-radius: 10px; color: var(--dsw-alias-label-secondary); }
 .dshNextPluginCardMain { display: grid; flex: 1; min-width: 0; gap: 4px; }
@@ -39,7 +39,7 @@ button.dshNextSettingsGear { width: 28px; padding: 0; }
 .dshNextPluginSettingsNotice > span { flex: 1 1 220px; }
 .dshNextPluginSettingsNotice > button { flex-shrink: 0; }
 .dshNextPluginControls p { margin: 0; }
-.dshNextPermissionsDialog[role="dialog"] { width: min(620px, calc(100vw - 48px)); max-height: calc(100dvh - 48px); overflow: hidden; --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2); --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2); animation: dshNextDialogIn var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards; }
+.dshNextPermissionsDialog[role="dialog"] { width: min(620px, calc(100vw - 48px)); max-height: calc(100dvh - 48px); overflow: hidden; --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2); --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2); animation: dshNextDialogIn var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards; }
 .dshNextPermissionsDialog[role="dialog"] > div:first-child { min-height: 0; flex: 1; overflow: hidden; }
 .dshNextPermissionsDialog[role="dialog"] > div:first-child > div:last-child { min-height: 0; flex: 1; overflow-y: auto; overscroll-behavior: contain; }
 .dshNextPermissionList { display: grid; gap: 0; }
@@ -73,9 +73,9 @@ button.dshNextSettingsGear { width: 28px; padding: 0; }
 .dshNextMarketSourceItem { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 10px; border-radius: 8px; border: .5px solid var(--dsw-alias-border-l2); background: var(--dsw-alias-bg-module-platform); }
 .dshNextMarketSourceItemMain { display: grid; gap: 4px; flex: 1; min-width: 0; }
 .dshNextMarketSourceUrl { font-family: var(--ds-font-family-code); font-size: 12px; line-height: 18px; color: var(--dsw-alias-label-secondary); overflow-wrap: anywhere; }
-button.dshNextMarketRemoveBtn { border-color: color-mix(in srgb, var(--dsw-alias-state-error-primary) 35%, transparent); background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 10%, transparent); color: var(--dsw-alias-state-error-primary); transition: background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), border-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), transform var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)); }
+button.dshNextMarketRemoveBtn { border-color: color-mix(in srgb, var(--dsw-alias-state-error-primary) 35%, transparent); background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 10%, transparent); color: var(--dsw-alias-state-error-primary); transition: background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), border-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), transform var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)); }
 button.dshNextMarketRemoveBtn:hover:not(:disabled) { background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 16%, transparent); }
-button.dshNextMarketRemoveBtn:active:not(:disabled) { transform: scale(var(--omx-press-scale, 0.96)); }
+button.dshNextMarketRemoveBtn:active:not(:disabled) { transform: scale(var(--omnimux-motion-press-scale, 0.96)); }
 .dshNextMarketSourceNotice { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 8px; padding: 10px 12px; border-radius: var(--dsw-radius-md, 8px); background: var(--dsw-alias-state-warn-tertiary); font-size: 12px; line-height: 18px; color: var(--dsw-alias-label-secondary); }
 .dshNextMarketSourceNoticeCopy { display: flex; align-items: flex-start; gap: 8px; flex: 1; min-width: 0; }
 .dshNextMarketSourceNoticeCopy > svg { flex: none; margin-top: 2px; color: var(--dsw-alias-state-warn-primary); }

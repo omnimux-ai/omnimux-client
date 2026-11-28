@@ -27,25 +27,25 @@ export const QUICK_SHORTCUTS_STYLE_ID = 'omnimux-quick-shortcuts-style';
 
 export const QUICK_SHORTCUTS_CSS = `
 :root {
-  --omx-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
-  --omx-ease-spatial: cubic-bezier(0.32, 0.72, 0, 1);
-  --omx-ease-exit: cubic-bezier(0.32, 0, 0.67, 0);
-  --omx-ease-linear: linear;
-  --omx-dur-press: 90ms;
-  --omx-dur-fast: 140ms;
-  --omx-dur-base: 200ms;
-  --omx-dur-sheet: 260ms;
-  --omx-press-scale: 0.96;
-  --omx-press-scale-subtle: 0.985;
+  --omnimux-motion-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --omnimux-motion-ease-spatial: cubic-bezier(0.32, 0.72, 0, 1);
+  --omnimux-motion-ease-exit: cubic-bezier(0.32, 0, 0.67, 0);
+  --omnimux-motion-ease-linear: linear;
+  --omnimux-motion-dur-press: 90ms;
+  --omnimux-motion-dur-fast: 140ms;
+  --omnimux-motion-dur-base: 200ms;
+  --omnimux-motion-dur-sheet: 260ms;
+  --omnimux-motion-press-scale: 0.96;
+  --omnimux-motion-press-scale-subtle: 0.985;
 }
 @media (prefers-reduced-motion: reduce) {
   :root {
-    --omx-dur-press: 0ms;
-    --omx-dur-fast: 0ms;
-    --omx-dur-base: 0ms;
-    --omx-dur-sheet: 0ms;
-    --omx-press-scale: 1;
-    --omx-press-scale-subtle: 1;
+    --omnimux-motion-dur-press: 0ms;
+    --omnimux-motion-dur-fast: 0ms;
+    --omnimux-motion-dur-base: 0ms;
+    --omnimux-motion-dur-sheet: 0ms;
+    --omnimux-motion-press-scale: 1;
+    --omnimux-motion-press-scale-subtle: 1;
   }
 }
 @keyframes sh-model-picker-in {
@@ -87,8 +87,8 @@ export const QUICK_SHORTCUTS_CSS = `
   line-height: 18px;
   white-space: nowrap;
   cursor: pointer;
-  transition: color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-              transform var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              transform var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 
 .omx-quick-shortcut-btn:hover {
@@ -96,7 +96,7 @@ export const QUICK_SHORTCUTS_CSS = `
 }
 
 .omx-quick-shortcut-btn:active {
-  transform: scale(var(--omx-press-scale, 0.96));
+  transform: scale(var(--omnimux-motion-press-scale, 0.96));
 }
 
 .omx-quick-shortcut-btn:focus-visible {
@@ -120,7 +120,7 @@ export const QUICK_SHORTCUTS_CSS = `
 
 .omx-quick-shortcut-arrow {
   opacity: 0.5;
-  transition: opacity var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: opacity var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 
 .omx-quick-shortcut-btn:hover .omx-quick-shortcut-arrow,
@@ -213,9 +213,9 @@ export const QUICK_SHORTCUTS_CSS = `
   font-weight: 500;
   cursor: pointer;
   user-select: none;
-  transition: background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-              border-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-              color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              border-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
   white-space: nowrap;
 }
 .sh-picker-trigger:hover,
@@ -243,9 +243,9 @@ export const QUICK_SHORTCUTS_CSS = `
   font-weight: 500;
   line-height: 18px;
   cursor: pointer;
-  transition: background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-              border-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-              color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              border-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
   white-space: nowrap;
 }
 .sh-model-capsule-btn:hover,
@@ -275,7 +275,7 @@ export const QUICK_SHORTCUTS_CSS = `
   box-shadow: 0 18px 50px var(--dsw-alias-bg-mask-3);
   padding: 16px;
   overflow: hidden;
-  animation: sh-model-picker-in var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
+  animation: sh-model-picker-in var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
 }
 .sh-model-picker-header {
   display: flex;
@@ -307,7 +307,7 @@ export const QUICK_SHORTCUTS_CSS = `
   border: none;
   padding: 0;
   cursor: pointer;
-  transition: background-color var(--omx-dur-base, 200ms) var(--omx-ease-spatial, cubic-bezier(0.32, 0.72, 0, 1));
+  transition: background-color var(--omnimux-motion-dur-base, 200ms) var(--omnimux-motion-ease-spatial, cubic-bezier(0.32, 0.72, 0, 1));
   outline: none;
 }
 .sh-model-switch.on {
@@ -322,7 +322,7 @@ export const QUICK_SHORTCUTS_CSS = `
   border-radius: 50%;
   background: var(--dsw-alias-bg-elevated, #ffffff);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25); /* exempt-ui03: 开关滑块立体阴影 */
-  transition: transform var(--omx-dur-base, 200ms) var(--omx-ease-spatial, cubic-bezier(0.32, 0.72, 0, 1));
+  transition: transform var(--omnimux-motion-dur-base, 200ms) var(--omnimux-motion-ease-spatial, cubic-bezier(0.32, 0.72, 0, 1));
 }
 .sh-model-switch.on .sh-model-switch-thumb {
   transform: translateX(16px);
@@ -347,8 +347,8 @@ export const QUICK_SHORTCUTS_CSS = `
   font-weight: 500;
   color: var(--dsw-alias-label-secondary);
   cursor: pointer;
-  transition: background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-              color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .sh-model-tab:hover {
   color: var(--dsw-alias-label-primary);
@@ -381,8 +381,8 @@ export const QUICK_SHORTCUTS_CSS = `
   padding: 8px 10px;
   border-radius: 8px;
   cursor: pointer;
-  transition: background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-              border-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              border-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
   user-select: none;
   border: 1px solid transparent;
   background: transparent;
@@ -509,8 +509,8 @@ export const QUICK_SHORTCUTS_CSS = `
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: border-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-              background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: border-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
   box-sizing: border-box;
   background: transparent;
 }
@@ -696,8 +696,8 @@ html[data-omnimux-rightbar-open="true"]:not([data-omnimux-rightbar-fullscreen="t
   background: transparent;
   color: var(--dsw-alias-label-tertiary);
   cursor: pointer;
-  transition: color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-              background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 
 .omx-link-chip__remove:hover {

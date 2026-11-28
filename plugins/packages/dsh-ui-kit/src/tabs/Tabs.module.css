@@ -53,8 +53,8 @@
 .pill[data-indicator="ready"] .indicator {
   opacity: 1;
   transition:
-    transform var(--omx-dur-base, 200ms) var(--omx-ease-spatial, cubic-bezier(0.32, 0.72, 0, 1)),
-    width var(--omx-dur-base, 200ms) var(--omx-ease-spatial, cubic-bezier(0.32, 0.72, 0, 1));
+    transform var(--omnimux-motion-dur-base, 200ms) var(--omnimux-motion-ease-spatial, cubic-bezier(0.32, 0.72, 0, 1)),
+    width var(--omnimux-motion-dur-base, 200ms) var(--omnimux-motion-ease-spatial, cubic-bezier(0.32, 0.72, 0, 1));
 }
 
 .pill .tabItem {
@@ -78,9 +78,9 @@
   white-space: nowrap;
   box-sizing: border-box;
   transition:
-    background-color var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-    color var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-    box-shadow var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+    background-color var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+    color var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+    box-shadow var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 
 .pill.sm .tabItem {
@@ -145,8 +145,8 @@
   background: var(--dsw-alias-interactive-bg-hover);
   color: var(--dsw-alias-label-secondary);
   transition:
-    background-color var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-    color var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+    background-color var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+    color var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 
 .pill.sm .badge {
@@ -197,8 +197,8 @@
 .underline[data-indicator="ready"] .indicator {
   opacity: 1;
   transition:
-    transform var(--omx-dur-base, 200ms) var(--omx-ease-spatial, cubic-bezier(0.32, 0.72, 0, 1)),
-    width var(--omx-dur-base, 200ms) var(--omx-ease-spatial, cubic-bezier(0.32, 0.72, 0, 1));
+    transform var(--omnimux-motion-dur-base, 200ms) var(--omnimux-motion-ease-spatial, cubic-bezier(0.32, 0.72, 0, 1)),
+    width var(--omnimux-motion-dur-base, 200ms) var(--omnimux-motion-ease-spatial, cubic-bezier(0.32, 0.72, 0, 1));
 }
 
 .underline .tabItem {
@@ -221,7 +221,7 @@
   cursor: pointer;
   white-space: nowrap;
   box-sizing: border-box;
-  transition: color var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: color var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 
 .underline.sm .tabItem {
@@ -287,8 +287,8 @@
   background: var(--dsw-alias-interactive-bg-hover);
   color: var(--dsw-alias-label-secondary);
   transition:
-    background-color var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-    color var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+    background-color var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+    color var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 
 .underline.sm .badge {

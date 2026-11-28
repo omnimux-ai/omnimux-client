@@ -33,18 +33,18 @@
     --dsw-shadow-lv2: 0 8px 24px rgba(0, 0, 0, 0.12);
     --dsw-shadow-lv3: 0 18px 48px rgba(0, 0, 0, 0.2);
 
-    /* 统一 --omx-* 动效语义语言 */
+    /* 统一 --omnimux-motion-* 动效语义语言 */
     --demo-speed: 1;
-    --omx-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
-    --omx-ease-spatial: cubic-bezier(0.32, 0.72, 0, 1);
-    --omx-ease-exit: cubic-bezier(0.32, 0, 0.67, 0);
-    --omx-ease-linear: linear;
-    --omx-dur-press: calc(90ms * var(--demo-speed));
-    --omx-dur-fast: calc(140ms * var(--demo-speed));
-    --omx-dur-base: calc(200ms * var(--demo-speed));
-    --omx-dur-sheet: calc(260ms * var(--demo-speed));
-    --omx-press-scale: 0.96;
-    --omx-press-scale-subtle: 0.985;
+    --omnimux-motion-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+    --omnimux-motion-ease-spatial: cubic-bezier(0.32, 0.72, 0, 1);
+    --omnimux-motion-ease-exit: cubic-bezier(0.32, 0, 0.67, 0);
+    --omnimux-motion-ease-linear: linear;
+    --omnimux-motion-dur-press: calc(90ms * var(--demo-speed));
+    --omnimux-motion-dur-fast: calc(140ms * var(--demo-speed));
+    --omnimux-motion-dur-base: calc(200ms * var(--demo-speed));
+    --omnimux-motion-dur-sheet: calc(260ms * var(--demo-speed));
+    --omnimux-motion-press-scale: 0.96;
+    --omnimux-motion-press-scale-subtle: 0.985;
   }
 
   @media (prefers-color-scheme: dark) {
@@ -134,22 +134,22 @@
   }
 
   html[data-reduced-motion="true"] body {
-    --omx-dur-press: 0ms;
-    --omx-dur-fast: 0ms;
-    --omx-dur-base: 0ms;
-    --omx-dur-sheet: 0ms;
-    --omx-press-scale: 1;
-    --omx-press-scale-subtle: 1;
+    --omnimux-motion-dur-press: 0ms;
+    --omnimux-motion-dur-fast: 0ms;
+    --omnimux-motion-dur-base: 0ms;
+    --omnimux-motion-dur-sheet: 0ms;
+    --omnimux-motion-press-scale: 1;
+    --omnimux-motion-press-scale-subtle: 1;
   }
 
   @media (prefers-reduced-motion: reduce) {
     :root, body {
-      --omx-dur-press: 0ms;
-      --omx-dur-fast: 0ms;
-      --omx-dur-base: 0ms;
-      --omx-dur-sheet: 0ms;
-      --omx-press-scale: 1;
-      --omx-press-scale-subtle: 1;
+      --omnimux-motion-dur-press: 0ms;
+      --omnimux-motion-dur-fast: 0ms;
+      --omnimux-motion-dur-base: 0ms;
+      --omnimux-motion-dur-sheet: 0ms;
+      --omnimux-motion-press-scale: 1;
+      --omnimux-motion-press-scale-subtle: 1;
     }
   }
 
@@ -237,9 +237,9 @@
     cursor: pointer;
     white-space: nowrap;
     transition:
-      background-color var(--omx-dur-press) var(--omx-ease-out),
-      color var(--omx-dur-press) var(--omx-ease-out),
-      transform var(--omx-dur-press) var(--omx-ease-out);
+      background-color var(--omnimux-motion-dur-press) var(--omnimux-motion-ease-out),
+      color var(--omnimux-motion-dur-press) var(--omnimux-motion-ease-out),
+      transform var(--omnimux-motion-dur-press) var(--omnimux-motion-ease-out);
   }
 
   .seg-btn:hover {
@@ -248,7 +248,7 @@
   }
 
   .seg-btn:active {
-    transform: scale(var(--omx-press-scale));
+    transform: scale(var(--omnimux-motion-press-scale));
   }
 
   .seg-btn[aria-pressed="true"] {
@@ -290,7 +290,7 @@
     display: flex;
     flex-direction: column;
     gap: 24px;
-    transition: max-width var(--omx-dur-base) var(--omx-ease-spatial);
+    transition: max-width var(--omnimux-motion-dur-base) var(--omnimux-motion-ease-spatial);
   }
 
   html[data-viewport="narrow"] .page {
@@ -429,10 +429,10 @@
 
   .btn-after {
     transition:
-      background-color var(--omx-dur-press) var(--omx-ease-out),
-      border-color var(--omx-dur-press) var(--omx-ease-out),
-      color var(--omx-dur-press) var(--omx-ease-out),
-      transform var(--omx-dur-press) var(--omx-ease-out);
+      background-color var(--omnimux-motion-dur-press) var(--omnimux-motion-ease-out),
+      border-color var(--omnimux-motion-dur-press) var(--omnimux-motion-ease-out),
+      color var(--omnimux-motion-dur-press) var(--omnimux-motion-ease-out),
+      transform var(--omnimux-motion-dur-press) var(--omnimux-motion-ease-out);
   }
 
   .btn-after:hover {
@@ -445,7 +445,7 @@
   }
 
   .btn-after:active {
-    transform: scale(var(--omx-press-scale));
+    transform: scale(var(--omnimux-motion-press-scale));
   }
 
   .icon-btn {
@@ -464,9 +464,9 @@
 
   .icon-btn.after {
     transition:
-      background-color var(--omx-dur-press) var(--omx-ease-out),
-      border-color var(--omx-dur-press) var(--omx-ease-out),
-      transform var(--omx-dur-press) var(--omx-ease-out);
+      background-color var(--omnimux-motion-dur-press) var(--omnimux-motion-ease-out),
+      border-color var(--omnimux-motion-dur-press) var(--omnimux-motion-ease-out),
+      transform var(--omnimux-motion-dur-press) var(--omnimux-motion-ease-out);
   }
 
   .icon-btn.after:hover {
@@ -474,7 +474,7 @@
   }
 
   .icon-btn.after:active {
-    transform: scale(var(--omx-press-scale));
+    transform: scale(var(--omnimux-motion-press-scale));
   }
 
   /* 1. Drawer 舞台 */
@@ -505,7 +505,7 @@
   .drawer-mask-after {
     opacity: 0;
     pointer-events: none;
-    transition: opacity var(--omx-dur-fast) var(--omx-ease-out);
+    transition: opacity var(--omnimux-motion-dur-fast) var(--omnimux-motion-ease-out);
   }
 
   .drawer-mask-after[data-phase="entered"] {
@@ -542,7 +542,7 @@
     flex-direction: column;
     justify-content: space-between;
     transform: translate3d(100%, 0, 0);
-    transition: transform var(--omx-dur-sheet) var(--omx-ease-spatial);
+    transition: transform var(--omnimux-motion-dur-sheet) var(--omnimux-motion-ease-spatial);
   }
 
   .drawer-panel-after[data-phase="entered"] {
@@ -591,7 +591,7 @@
   }
 
   .tab-after {
-    transition: color var(--omx-dur-press) var(--omx-ease-out);
+    transition: color var(--omnimux-motion-dur-press) var(--omnimux-motion-ease-out);
   }
 
   .tab-after[aria-selected="true"] {
@@ -633,8 +633,8 @@
 
   .tabs-after-pill[data-ready="true"] .pill-indicator {
     transition:
-      transform var(--omx-dur-base) var(--omx-ease-spatial),
-      width var(--omx-dur-base) var(--omx-ease-spatial);
+      transform var(--omnimux-motion-dur-base) var(--omnimux-motion-ease-spatial),
+      width var(--omnimux-motion-dur-base) var(--omnimux-motion-ease-spatial);
   }
 
   .tabs-after-underline {
@@ -659,8 +659,8 @@
 
   .tabs-after-underline[data-ready="true"] .underline-indicator {
     transition:
-      transform var(--omx-dur-base) var(--omx-ease-spatial),
-      width var(--omx-dur-base) var(--omx-ease-spatial);
+      transform var(--omnimux-motion-dur-base) var(--omnimux-motion-ease-spatial),
+      width var(--omnimux-motion-dur-base) var(--omnimux-motion-ease-spatial);
   }
 
   .metric-line {
@@ -701,8 +701,8 @@
     grid-area: 1 / 1;
     display: inline-flex;
     transition:
-      transform var(--omx-dur-fast) var(--omx-ease-out),
-      opacity var(--omx-dur-fast) var(--omx-ease-out);
+      transform var(--omnimux-motion-dur-fast) var(--omnimux-motion-ease-out),
+      opacity var(--omnimux-motion-dur-fast) var(--omnimux-motion-ease-out);
   }
 
   .icon-swap > span[data-active="false"] {
@@ -716,7 +716,7 @@
   }
 
   .spin-active svg {
-    animation: omxDemoSpin 700ms var(--omx-ease-linear) infinite;
+    animation: omxDemoSpin 700ms var(--omnimux-motion-ease-linear) infinite;
   }
 
   html[data-reduced-motion="true"] .spin-active svg {
@@ -755,9 +755,9 @@
     text-align: left;
     font: inherit;
     transition:
-      background-color var(--omx-dur-press) var(--omx-ease-out),
-      border-color var(--omx-dur-press) var(--omx-ease-out),
-      transform var(--omx-dur-press) var(--omx-ease-out);
+      background-color var(--omnimux-motion-dur-press) var(--omnimux-motion-ease-out),
+      border-color var(--omnimux-motion-dur-press) var(--omnimux-motion-ease-out),
+      transform var(--omnimux-motion-dur-press) var(--omnimux-motion-ease-out);
   }
 
   .tile:hover {
@@ -765,7 +765,7 @@
   }
 
   .tile.after:active {
-    transform: scale(var(--omx-press-scale-subtle));
+    transform: scale(var(--omnimux-motion-press-scale-subtle));
   }
 
   .tile[aria-checked="true"] {
@@ -784,8 +784,8 @@
     justify-content: center;
     flex-shrink: 0;
     transition:
-      background-color var(--omx-dur-fast) var(--omx-ease-out),
-      border-color var(--omx-dur-fast) var(--omx-ease-out);
+      background-color var(--omnimux-motion-dur-fast) var(--omnimux-motion-ease-out),
+      border-color var(--omnimux-motion-dur-fast) var(--omnimux-motion-ease-out);
   }
 
   .tile[aria-checked="true"] .check-box {
@@ -806,7 +806,7 @@
   .tile.after .check-svg path {
     stroke-dasharray: 14;
     stroke-dashoffset: 14;
-    transition: stroke-dashoffset calc(180ms * var(--demo-speed)) var(--omx-ease-out);
+    transition: stroke-dashoffset calc(180ms * var(--demo-speed)) var(--omnimux-motion-ease-out);
   }
 
   .tile.after[aria-checked="true"] .check-svg path {
@@ -843,12 +843,12 @@
   }
 
   .popover-card.after {
-    animation: omxDemoPopIn var(--omx-dur-fast) var(--omx-ease-out) both;
+    animation: omxDemoPopIn var(--omnimux-motion-dur-fast) var(--omnimux-motion-ease-out) both;
   }
 
   .popover-card.after.exiting {
     pointer-events: none;
-    animation: omxDemoPopOut calc(100ms * var(--demo-speed)) var(--omx-ease-out) forwards;
+    animation: omxDemoPopOut calc(100ms * var(--demo-speed)) var(--omnimux-motion-ease-out) forwards;
   }
 
   @keyframes omxDemoPopIn {
@@ -887,7 +887,7 @@
   }
 
   .toast-pill.after {
-    animation: fixedCenterToastIn var(--omx-dur-fast) var(--omx-ease-out) both;
+    animation: fixedCenterToastIn var(--omnimux-motion-dur-fast) var(--omnimux-motion-ease-out) both;
   }
 
   @keyframes fixedCenterToastIn {
@@ -900,8 +900,8 @@
     grid-template-rows: 0fr;
     opacity: 0;
     transition:
-      grid-template-rows var(--omx-dur-fast) var(--omx-ease-spatial),
-      opacity var(--omx-dur-fast) var(--omx-ease-out);
+      grid-template-rows var(--omnimux-motion-dur-fast) var(--omnimux-motion-ease-spatial),
+      opacity var(--omnimux-motion-dur-fast) var(--omnimux-motion-ease-out);
   }
 
   .error-fold[data-open="true"] {
@@ -949,7 +949,7 @@
 
   .group-box.after {
     /* 直接操纵宽度 0ms 跟手 */
-    transition: border-color var(--omx-dur-press) var(--omx-ease-out);
+    transition: border-color var(--omnimux-motion-dur-press) var(--omnimux-motion-ease-out);
   }
 
   .resize-knob {
@@ -970,7 +970,7 @@
   }
 
   .resize-knob.after {
-    transition: transform var(--omx-dur-press) var(--omx-ease-out);
+    transition: transform var(--omnimux-motion-dur-press) var(--omnimux-motion-ease-out);
   }
 
   .resize-knob.after:hover {

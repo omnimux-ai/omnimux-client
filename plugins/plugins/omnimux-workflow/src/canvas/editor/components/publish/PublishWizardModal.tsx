@@ -553,7 +553,7 @@ export const PublishWizardModal: React.FC<PublishWizardModalProps> = memo(({
                   transform: isExposed ? 'translateX(16px)' : 'translateX(0)',
                   transition: prefersReducedMotion
                     ? 'none'
-                    : 'transform var(--omx-dur-fast, 140ms) var(--omx-ease-spatial, cubic-bezier(0.32, 0.72, 0, 1))',
+                    : 'transform var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-spatial, cubic-bezier(0.32, 0.72, 0, 1))',
                 }}
               />
             </button>

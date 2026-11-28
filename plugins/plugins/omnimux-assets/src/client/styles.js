@@ -406,7 +406,7 @@ html body .omnimux-assets-stage:has(> .omnimux-products-subscreen) > .dshUk-Page
   flex-direction: column;
   gap: 2px;
   box-sizing: border-box;
-  animation: omnimux-assets-menu-enter var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
+  animation: omnimux-assets-menu-enter var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
 }
 .omnimux-assets-list-more-menu .omnimux-assets-list-menu-item {
   width: 100%;
@@ -448,7 +448,7 @@ html body .omnimux-assets-stage:has(> .omnimux-products-subscreen) > .dshUk-Page
   flex-direction: column;
   gap: 6px;
   box-sizing: border-box;
-  animation: omnimux-assets-menu-enter var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
+  animation: omnimux-assets-menu-enter var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
 }
 .omnimux-assets-list-preview-img {
   display: block;
@@ -493,7 +493,7 @@ html body .omnimux-assets-stage:has(> .omnimux-products-subscreen) > .dshUk-Page
   font-size: 13px;
   background: var(--dsw-alias-bg-module-platform);
   border-bottom: 1px solid var(--dsw-alias-border-l2);
-  animation: omnimux-assets-fade-in var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
+  animation: omnimux-assets-fade-in var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
 }
 .omnimux-assets-selection-actions {
   margin-left: auto;
@@ -506,7 +506,7 @@ html body .omnimux-assets-stage:has(> .omnimux-products-subscreen) > .dshUk-Page
   padding: 6px 20px;
   font-size: 12px;
   color: var(--dsw-alias-state-error-primary);
-  animation: omnimux-assets-fade-in var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
+  animation: omnimux-assets-fade-in var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
 }
 .omnimux-assets-body {
   width: 100%;
@@ -1607,7 +1607,7 @@ html body .omnimux-assets-stage:has(> .omnimux-products-subscreen) > .dshUk-Page
 .omnimux-assets-cloud-dimension-caret {
   color: var(--dsw-alias-label-tertiary);
   transform: rotate(90deg);
-  transition: transform var(--omx-dur-fast, 140ms) var(--omx-ease-spatial, cubic-bezier(0.32, 0.72, 0, 1));
+  transition: transform var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-spatial, cubic-bezier(0.32, 0.72, 0, 1));
 }
 .omnimux-assets-cloud-dimension-btn[aria-expanded="true"] .omnimux-assets-cloud-dimension-caret {
   transform: rotate(-90deg);
@@ -1632,7 +1632,7 @@ html body .omnimux-assets-stage:has(> .omnimux-products-subscreen) > .dshUk-Page
   border-radius: 8px;
   background: var(--dsw-alias-bg-elevated, var(--dsw-alias-bg-layer-2));
   box-shadow: 0 12px 28px var(--dsw-alias-shadow-strong);
-  animation: omnimux-assets-menu-enter var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
+  animation: omnimux-assets-menu-enter var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
 }
 /* 面板里的选项是同一套胶囊文字的列表行：左标签右计数，选中反白。 */
 .omnimux-assets-cloud-dimension-menu .omnimux-assets-cloud-dimension-option {
@@ -1925,7 +1925,7 @@ html body .omnimux-assets-stage:has(> .omnimux-products-subscreen) > .dshUk-Page
   text-overflow: ellipsis;
   white-space: nowrap;
   pointer-events: none;
-  animation: omnimux-assets-notice-enter var(--omx-dur-base, 200ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
+  animation: omnimux-assets-notice-enter var(--omnimux-motion-dur-base, 200ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
 }
 
 /* ---- cloud assets category rows layout (All category stream) ---- */
@@ -1987,14 +1987,14 @@ html body .omnimux-assets-stage:has(> .omnimux-products-subscreen) > .dshUk-Page
   border: 1px solid var(--dsw-alias-border) !important;
   background: var(--dsw-alias-bg-layer-1) !important;
   flex-shrink: 0;
-  transition: color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-              background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-              border-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-              transform var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              border-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              transform var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 
 .omnimux-assets-cloud-row-view-all svg {
-  transition: transform var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: transform var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 
 .omnimux-assets-cloud-row-view-all:hover:not(:disabled):not([aria-disabled="true"]) {
@@ -2009,7 +2009,7 @@ html body .omnimux-assets-stage:has(> .omnimux-products-subscreen) > .dshUk-Page
 }
 
 .omnimux-assets-cloud-row-view-all:active:not(:disabled):not([aria-disabled="true"]) {
-  transform: scale(var(--omx-press-scale, 0.96));
+  transform: scale(var(--omnimux-motion-press-scale, 0.96));
 }
 
 .omnimux-assets-cloud-row-wrapper {
@@ -2234,10 +2234,10 @@ html body .omnimux-assets-stage:has(> .omnimux-products-subscreen) > .dshUk-Page
   box-shadow: 0 4px 12px var(--dsw-alias-bg-mask-1);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
-  transition: background-color var(--omx-dur-base, 200ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-              border-color var(--omx-dur-base, 200ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-              transform var(--omx-dur-base, 200ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-              opacity var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: background-color var(--omnimux-motion-dur-base, 200ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              border-color var(--omnimux-motion-dur-base, 200ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              transform var(--omnimux-motion-dur-base, 200ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              opacity var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 
 .omnimux-assets-cloud-row-arrow:hover:not(:disabled):not([aria-disabled="true"]) {
@@ -2247,8 +2247,8 @@ html body .omnimux-assets-stage:has(> .omnimux-products-subscreen) > .dshUk-Page
 }
 
 .omnimux-assets-cloud-row-arrow:active:not(:disabled):not([aria-disabled="true"]) {
-  transform: translateY(-50%) scale(var(--omx-press-scale, 0.96));
-  transition-duration: var(--omx-dur-press, 90ms);
+  transform: translateY(-50%) scale(var(--omnimux-motion-press-scale, 0.96));
+  transition-duration: var(--omnimux-motion-dur-press, 90ms);
 }
 
 .omnimux-assets-cloud-row-arrow--left {

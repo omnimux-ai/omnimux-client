@@ -1,8 +1,8 @@
 import { injectCss } from "../internal/injectCss.ts";
 
 /**
- * Unified OmniMux motion language (--omx-* CSS custom properties).
- * Intentionally uses `--omx-*` instead of `--dsw-*` because upstream runtime
+ * Unified OmniMux motion language (--omnimux-motion-* CSS custom properties).
+ * Intentionally uses `--omnimux-motion-*` instead of `--dsw-*` because upstream runtime
  * `--dsw-*` tokens are strictly allowlist-locked by verify-dsw-tokens.mjs.
  */
 export const MOTION_VARS = {
@@ -19,32 +19,32 @@ export const MOTION_VARS = {
 } as const;
 
 export const MOTION_TOKENS_CSS = `:root {
-  --omx-ease-out: ${MOTION_VARS.easeOut};
-  --omx-ease-spatial: ${MOTION_VARS.easeSpatial};
-  --omx-ease-exit: ${MOTION_VARS.easeExit};
-  --omx-ease-linear: ${MOTION_VARS.easeLinear};
-  --omx-dur-press: ${MOTION_VARS.durPress};
-  --omx-dur-fast: ${MOTION_VARS.durFast};
-  --omx-dur-base: ${MOTION_VARS.durBase};
-  --omx-dur-sheet: ${MOTION_VARS.durSheet};
-  --omx-press-scale: ${MOTION_VARS.pressScale};
-  --omx-press-scale-subtle: ${MOTION_VARS.pressScaleSubtle};
+  --omnimux-motion-ease-out: ${MOTION_VARS.easeOut};
+  --omnimux-motion-ease-spatial: ${MOTION_VARS.easeSpatial};
+  --omnimux-motion-ease-exit: ${MOTION_VARS.easeExit};
+  --omnimux-motion-ease-linear: ${MOTION_VARS.easeLinear};
+  --omnimux-motion-dur-press: ${MOTION_VARS.durPress};
+  --omnimux-motion-dur-fast: ${MOTION_VARS.durFast};
+  --omnimux-motion-dur-base: ${MOTION_VARS.durBase};
+  --omnimux-motion-dur-sheet: ${MOTION_VARS.durSheet};
+  --omnimux-motion-press-scale: ${MOTION_VARS.pressScale};
+  --omnimux-motion-press-scale-subtle: ${MOTION_VARS.pressScaleSubtle};
 }
 
 @media (prefers-reduced-motion: reduce) {
   :root {
-    --omx-dur-press: 0ms;
-    --omx-dur-fast: 0ms;
-    --omx-dur-base: 0ms;
-    --omx-dur-sheet: 0ms;
-    --omx-press-scale: 1;
-    --omx-press-scale-subtle: 1;
+    --omnimux-motion-dur-press: 0ms;
+    --omnimux-motion-dur-fast: 0ms;
+    --omnimux-motion-dur-base: 0ms;
+    --omnimux-motion-dur-sheet: 0ms;
+    --omnimux-motion-press-scale: 1;
+    --omnimux-motion-press-scale-subtle: 1;
   }
 }
 `;
 
 export function ensureMotionTokens(): void {
-  injectCss("omx-motion-tokens", MOTION_TOKENS_CSS);
+  injectCss("omnimux-motion-tokens", MOTION_TOKENS_CSS);
 }
 
 ensureMotionTokens();

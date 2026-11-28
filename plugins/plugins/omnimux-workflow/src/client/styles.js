@@ -2,25 +2,25 @@ export const STYLES_ID = 'omnimux-workflow-styles'
 
 export const WORKFLOW_CSS = `
 :root {
-  --omx-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
-  --omx-ease-spatial: cubic-bezier(0.32, 0.72, 0, 1);
-  --omx-ease-exit: cubic-bezier(0.32, 0, 0.67, 0);
-  --omx-ease-linear: linear;
-  --omx-dur-press: 90ms;
-  --omx-dur-fast: 140ms;
-  --omx-dur-base: 200ms;
-  --omx-dur-sheet: 260ms;
-  --omx-press-scale: 0.96;
-  --omx-press-scale-subtle: 0.985;
+  --omnimux-motion-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --omnimux-motion-ease-spatial: cubic-bezier(0.32, 0.72, 0, 1);
+  --omnimux-motion-ease-exit: cubic-bezier(0.32, 0, 0.67, 0);
+  --omnimux-motion-ease-linear: linear;
+  --omnimux-motion-dur-press: 90ms;
+  --omnimux-motion-dur-fast: 140ms;
+  --omnimux-motion-dur-base: 200ms;
+  --omnimux-motion-dur-sheet: 260ms;
+  --omnimux-motion-press-scale: 0.96;
+  --omnimux-motion-press-scale-subtle: 0.985;
 }
 @media (prefers-reduced-motion: reduce) {
   :root {
-    --omx-dur-press: 0ms;
-    --omx-dur-fast: 0ms;
-    --omx-dur-base: 0ms;
-    --omx-dur-sheet: 0ms;
-    --omx-press-scale: 1;
-    --omx-press-scale-subtle: 1;
+    --omnimux-motion-dur-press: 0ms;
+    --omnimux-motion-dur-fast: 0ms;
+    --omnimux-motion-dur-base: 0ms;
+    --omnimux-motion-dur-sheet: 0ms;
+    --omnimux-motion-press-scale: 1;
+    --omnimux-motion-press-scale-subtle: 1;
   }
 }
 .omx-stage-scroll {
@@ -523,7 +523,7 @@ export const WORKFLOW_CSS = `
   border-radius: 10px;
   background: var(--dsw-alias-bg-layer-1);
   overflow: hidden;
-  transition: border-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), box-shadow var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: border-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), box-shadow var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .omnimux-new-project-name:focus-within {
   border-color: var(--dsw-alias-brand-primary);
@@ -1006,7 +1006,7 @@ export const WORKFLOW_CSS = `
   background: var(--dsw-alias-bg-layer-2);
   border: 1px solid var(--dsw-alias-border-l2);
   cursor: pointer;
-  transition: background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), border-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), border-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
   user-select: none;
 }
 .omx-apptab-edit-btn:hover:not(:disabled) {
@@ -1030,7 +1030,7 @@ export const WORKFLOW_CSS = `
   background: transparent;
   border: 1px solid var(--dsw-alias-border-l1);
   cursor: pointer;
-  transition: color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), border-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), border-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
   user-select: none;
 }
 .omx-apptab-restore-btn:hover:not(:disabled) {
@@ -1077,7 +1077,7 @@ export const WORKFLOW_CSS = `
   border-radius: 8px;
   line-height: 16px;
   box-shadow: var(--dsw-shadow-lv2);
-  animation: omx-apptab-notice-in var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
+  animation: omx-apptab-notice-in var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
 }
 .omx-apptab-notice--info {
   background: var(--dsw-alias-bg-layer-2);
@@ -1227,7 +1227,7 @@ export const WORKFLOW_CSS = `
   font-weight: 500;
   cursor: pointer;
   outline: none;
-  transition: background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), border-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), border-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .omx-apptab-ratio-card:hover {
   background: var(--dsw-alias-interactive-bg-hover);
@@ -1266,7 +1266,7 @@ export const WORKFLOW_CSS = `
   justify-content: space-between;
   cursor: pointer;
   user-select: none;
-  transition: border-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: border-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .omx-apptab-select-trigger:hover {
   border-color: var(--dsw-alias-border-l3);
@@ -1301,7 +1301,7 @@ export const WORKFLOW_CSS = `
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6) !important; /* exempt-ui03 issue-2622 dropdown solid shadow */
   z-index: 100;
   transform-origin: top center;
-  animation: omx-apptab-dropdown-in var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
+  animation: omx-apptab-dropdown-in var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
 }
 .omx-apptab-select-option {
   padding: 8px 12px;
@@ -1367,7 +1367,7 @@ export const WORKFLOW_CSS = `
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), box-shadow var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), box-shadow var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .omx-apptab-seg-tab:hover {
   color: var(--dsw-alias-label-primary);
@@ -1403,7 +1403,7 @@ export const WORKFLOW_CSS = `
   align-items: center;
   gap: 4px;
   cursor: pointer;
-  transition: background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), border-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), border-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .omx-apptab-mtag:hover:not(:disabled) {
   background: var(--dsw-alias-interactive-bg-hover);
@@ -1513,7 +1513,7 @@ export const WORKFLOW_CSS = `
   font-size: 13px;
   cursor: pointer;
   box-sizing: border-box;
-  transition: border-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: border-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .omx-apptab-library-trigger:hover {
   border-color: var(--dsw-alias-brand-primary);
@@ -1587,7 +1587,7 @@ export const WORKFLOW_CSS = `
   gap: 4px;
   cursor: pointer;
   box-sizing: border-box;
-  transition: border-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: border-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .omx-apptab-uploader:hover {
   border-color: var(--dsw-alias-brand-primary);
@@ -1636,7 +1636,7 @@ export const WORKFLOW_CSS = `
   align-items: center;
   justify-content: center;
   z-index: 1000;
-  animation: omx-apptab-mask-in var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
+  animation: omx-apptab-mask-in var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
 }
 .omx-apptab-modal {
   width: 360px;
@@ -1647,7 +1647,7 @@ export const WORKFLOW_CSS = `
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  animation: omx-apptab-modal-in var(--omx-dur-base, 200ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
+  animation: omx-apptab-modal-in var(--omnimux-motion-dur-base, 200ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
 }
 .omx-apptab-modal-header {
   height: 48px;
@@ -1713,7 +1713,7 @@ export const WORKFLOW_CSS = `
   border: 1px solid var(--dsw-alias-border-l2);
   background: var(--dsw-alias-bg-layer-2);
   cursor: pointer;
-  transition: border-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: border-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
   user-select: none;
 }
 .omx-apptab-product-item:hover {
@@ -1796,14 +1796,14 @@ export const WORKFLOW_CSS = `
   align-items: center;
   justify-content: center;
   gap: 8px;
-  transition: background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-    transform var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+    transform var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .omx-apptab-cta-btn:hover:not(:disabled) {
   background: var(--dsw-alias-button-primary-hover);
 }
 .omx-apptab-cta-btn:active:not(:disabled) {
-  transform: scale(var(--omx-press-scale, 0.96));
+  transform: scale(var(--omnimux-motion-press-scale, 0.96));
 }
 .omx-apptab-cta-btn:disabled {
   background: var(--dsw-alias-button-primary-dimmed);
@@ -2040,7 +2040,7 @@ export const WORKFLOW_CSS = `
   font-weight: 500;
   padding: 0 6px;
   height: 28px;
-  transition: color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 
 .omnimux-project-crumb-link:hover {
@@ -2086,7 +2086,7 @@ export const WORKFLOW_CSS = `
   display: inline-flex;
   align-items: center;
   user-select: none;
-  transition: opacity var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: opacity var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .omnimux-tab-info-icon:hover {
   opacity: 1;
@@ -2113,7 +2113,7 @@ export const WORKFLOW_CSS = `
   border-radius: 16px;
   padding: 10px 10px 14px 10px;
   cursor: pointer;
-  transition: border-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), transform var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), box-shadow var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: border-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), transform var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), box-shadow var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
@@ -2227,7 +2227,7 @@ export const WORKFLOW_CSS = `
   border-radius: 12px;
   overflow: hidden;
   cursor: pointer;
-  transition: border-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), transform var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), box-shadow var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: border-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), transform var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), box-shadow var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
   display: flex;
   flex-direction: column;
   min-height: 180px;
@@ -2324,7 +2324,7 @@ export const WORKFLOW_CSS = `
   border: 1px solid var(--dsw-alias-border-l1);
   border-radius: 10px;
   cursor: pointer;
-  transition: background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), border-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), transform var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), border-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), transform var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
   user-select: none;
 }
 
@@ -2498,7 +2498,7 @@ export const WORKFLOW_CSS = `
   background: transparent;
   cursor: pointer;
   user-select: none;
-  transition: border-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: border-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
   outline: none;
 }
 .omx-fork-mode-card:focus-visible {

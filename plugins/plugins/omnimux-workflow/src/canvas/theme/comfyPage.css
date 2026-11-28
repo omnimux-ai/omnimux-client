@@ -194,7 +194,7 @@
   height: 100%;
   border-radius: 999px;
   background: var(--dsw-alias-brand-primary, var(--wb-accent));
-  transition: width var(--omx-dur-base, 200ms) var(--omx-ease-spatial, cubic-bezier(0.32, 0.72, 0, 1));
+  transition: width var(--omnimux-motion-dur-base, 200ms) var(--omnimux-motion-ease-spatial, cubic-bezier(0.32, 0.72, 0, 1));
 }
 
 .wf-comfy-page-panel__progress-value {

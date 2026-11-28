@@ -36,7 +36,7 @@ function injectCss(id, css) {
 	if (style.textContent !== css) style.textContent = css;
 }
 // \0dsh-ui-kit-css:src/motion/IconSwap.module.css.mjs
-injectCss("IconSwap.module.css", ".dshUk-IconSwap-root {\n  display: inline-grid;\n  place-items: center;\n  flex-shrink: 0;\n}\n\n.dshUk-IconSwap-layer {\n  grid-area: 1 / 1;\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  transition:\n    transform var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),\n    opacity var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));\n}\n\n.dshUk-IconSwap-active {\n  opacity: 1;\n  transform: scale(1);\n}\n\n.dshUk-IconSwap-inactive {\n  opacity: 0;\n  transform: scale(0.65);\n  pointer-events: none;\n}\n\n@media (prefers-reduced-motion: reduce) {\n  .dshUk-IconSwap-layer {\n    transition: none;\n  }\n\n  .dshUk-IconSwap-inactive {\n    transform: none;\n  }\n}\n");
+injectCss("IconSwap.module.css", ".dshUk-IconSwap-root {\n  display: inline-grid;\n  place-items: center;\n  flex-shrink: 0;\n}\n\n.dshUk-IconSwap-layer {\n  grid-area: 1 / 1;\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  transition:\n    transform var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),\n    opacity var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));\n}\n\n.dshUk-IconSwap-active {\n  opacity: 1;\n  transform: scale(1);\n}\n\n.dshUk-IconSwap-inactive {\n  opacity: 0;\n  transform: scale(0.65);\n  pointer-events: none;\n}\n\n@media (prefers-reduced-motion: reduce) {\n  .dshUk-IconSwap-layer {\n    transition: none;\n  }\n\n  .dshUk-IconSwap-inactive {\n    transform: none;\n  }\n}\n");
 var IconSwap_module_css_default = {
 	"root": "dshUk-IconSwap-root",
 	"layer": "dshUk-IconSwap-layer",
@@ -69,4 +69,4 @@ function IconSwap({ active, primary, secondary, className }) {
 }
 export { cssClass as i, injectCss as n, cx as r, IconSwap as t };
 
-//# sourceMappingURL=IconSwap-BbF3ZTXG.js.map
+//# sourceMappingURL=IconSwap-DwWlHmhh.js.map

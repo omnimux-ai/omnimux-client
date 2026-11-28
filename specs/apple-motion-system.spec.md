@@ -14,35 +14,35 @@
    - 全仓存在 7 处未定义或冲突 `@keyframes`（`omx-pop`、`omx-fade-in`、`wf-fade-in`、`wfCustomSelectFadeIn`、`omni-fade-in`、`omnimux-rival-skel-pulse`、重复 `wf-popover-in`）、居中 Toast 位移覆盖（`.omnimux-toast-pill`）、全屏背景遮罩被 `scale` 缩放（`CreativeDimensionModal`）、`AuthorizeModal` 折翼图标硬切、发布表行过渡挂在 `tr` 而背景色改在 `td` 等缺陷。
 4. **`prefers-reduced-motion` 覆盖断裂与假死**：多个业务插件、`dsh-plugin-desktop` native-ui 主题与 `welcome.css` 缺失减弱动态规则；`omnimux-browser/extension/src/panel/styles.css` 在第 3530 行的全局 `reduced-motion` 规则被后续 7 条 `!important` 声明覆盖；`Button.module.css` 在减弱动态下将加载转圈设成 `animation: none` 导致加载态看似卡死。
 
-## 统一动效语言（`--omx-*` 单一真源）
+## 统一动效语言（`--omnimux-motion-*` 单一真源）
 
-严禁定义或发明未在宿主注册的 `--dsw-*` Token；全仓统一通过 `dsh-ui-kit` 注入与跨边界 CSS 变量回退使用 `--omx-*`（所有无状态/孤立上下文携带字面量 fallback）：
+严禁定义或发明未在宿主注册的 `--dsw-*` Token；全仓统一通过 `dsh-ui-kit` 注入与跨边界 CSS 变量回退使用 `--omnimux-motion-*`（所有无状态/孤立上下文携带字面量 fallback）：
 
 | Token | 值 | 物理职责 |
 |---|---|---|
-| `--omx-ease-out` | `cubic-bezier(0.16, 1, 0.3, 1)` | 瞬发微交互、悬停/按下、浮层/菜单/弹窗/提示入场及原地淡出 |
-| `--omx-ease-spatial` | `cubic-bezier(0.32, 0.72, 0, 1)` | 临界阻尼空间位移（Tabs 滑块、Drawer 抽屉、Switch 拇指、折叠展开、轮播） |
-| `--omx-ease-exit` | `cubic-bezier(0.32, 0, 0.67, 0)` | 仅限 Drawer / Toast 离开视口边缘的加速退场（禁用于原地淡出） |
-| `--omx-ease-linear` | `linear` | 连续旋转加载圈与线性进度条 |
-| `--omx-dur-press` | `90ms` | 按下缩放、悬停色彩/描边、单复选响应、右键/下拉菜单快速收起（`90–100ms`） |
-| `--omx-dur-fast` | `140ms` | Popover/Menu/Tooltip 入场、`IconSwap`（`150ms`）、开关/按钮过渡、Modal 退场 |
-| `--omx-dur-base` | `200ms` | Tabs 滑块、Modal 入场、手风琴展开、Drawer 退场（`190ms`） |
-| `--omx-dur-sheet` | `260ms` | Drawer 与大面板入场（桌面交互硬上限 `280ms`） |
-| `--omx-press-scale` | `0.96` | 按钮与图标按钮按压反馈（下限不低于 `0.95`） |
-| `--omx-press-scale-subtle` | `0.985` | 大型可选卡片按压反馈 |
+| `--omnimux-motion-ease-out` | `cubic-bezier(0.16, 1, 0.3, 1)` | 瞬发微交互、悬停/按下、浮层/菜单/弹窗/提示入场及原地淡出 |
+| `--omnimux-motion-ease-spatial` | `cubic-bezier(0.32, 0.72, 0, 1)` | 临界阻尼空间位移（Tabs 滑块、Drawer 抽屉、Switch 拇指、折叠展开、轮播） |
+| `--omnimux-motion-ease-exit` | `cubic-bezier(0.32, 0, 0.67, 0)` | 仅限 Drawer / Toast 离开视口边缘的加速退场（禁用于原地淡出） |
+| `--omnimux-motion-ease-linear` | `linear` | 连续旋转加载圈与线性进度条 |
+| `--omnimux-motion-dur-press` | `90ms` | 按下缩放、悬停色彩/描边、单复选响应、右键/下拉菜单快速收起（`90–100ms`） |
+| `--omnimux-motion-dur-fast` | `140ms` | Popover/Menu/Tooltip 入场、`IconSwap`（`150ms`）、开关/按钮过渡、Modal 退场 |
+| `--omnimux-motion-dur-base` | `200ms` | Tabs 滑块、Modal 入场、手风琴展开、Drawer 退场（`190ms`） |
+| `--omnimux-motion-dur-sheet` | `260ms` | Drawer 与大面板入场（桌面交互硬上限 `280ms`） |
+| `--omnimux-motion-press-scale` | `0.96` | 按钮与图标按钮按压反馈（下限不低于 `0.95`） |
+| `--omnimux-motion-press-scale-subtle` | `0.985` | 大型可选卡片按压反馈 |
 
-- **`prefers-reduced-motion: reduce` 策略**：将 `--omx-dur-press/fast/base/sheet` 折叠为 `0ms`，`--omx-press-scale` / `--omx-press-scale-subtle` 折叠为 `1`；严禁任何 `infinite` 动画引用会被折叠为 `0ms` 的时长变量；不定长加载圈由旋转降级为低频柔和呼吸（`1.6s ease-in-out infinite`，`opacity: 0.42 <-> 1`），绝不冻死；禁用位移、缩放、模糊、背景飘动与 JS 平滑滚动。
+- **`prefers-reduced-motion: reduce` 策略**：将 `--omnimux-motion-dur-press/fast/base/sheet` 折叠为 `0ms`，`--omnimux-motion-press-scale` / `--omnimux-motion-press-scale-subtle` 折叠为 `1`；严禁任何 `infinite` 动画引用会被折叠为 `0ms` 的时长变量；不定长加载圈由旋转降级为低频柔和呼吸（`1.6s ease-in-out infinite`，`opacity: 0.42 <-> 1`），绝不冻死；禁用位移、缩放、模糊、背景飘动与 JS 平滑滚动。
 
 ## 12 类状态变化编排与禁动红线
 
-1. **出现**：Popover/Menu 用 `@starting-style` 或 `@keyframes`（带 `--omx-origin` 锚向微位移 `4px` + `scale(0.96 -> 1)`，`140ms --omx-ease-out`）；Modal 遮罩淡入 `140ms`、面板 `scale(0.97 -> 1)` `200ms`；Drawer `translate3d` `260ms --omx-ease-spatial`。浮层稳态严禁 `opacity < 1` 或 `backdrop-filter`（遵守 `guard-no-transparent-popover.mjs`）。
+1. **出现**：Popover/Menu 用 `@starting-style` 或 `@keyframes`（带 `--omnimux-motion-origin` 锚向微位移 `4px` + `scale(0.96 -> 1)`，`140ms --omnimux-motion-ease-out`）；Modal 遮罩淡入 `140ms`、面板 `scale(0.97 -> 1)` `200ms`；Drawer `translate3d` `260ms --omnimux-motion-ease-spatial`。浮层稳态严禁 `opacity < 1` 或 `backdrop-filter`（遵守 `guard-no-transparent-popover.mjs`）。
 2. **消失**：退场时长 `<= 75%` 入场；Popover/Menu 用 `@keyframes ... forwards` `100ms` 退场；Drawer 在 `open=false` 首帧即置 `pointer-events: none` 并立即归还焦点与滚动锁（焦点与滚动锁绑定 `open` 而非 `mounted`），退场 `190ms`。
 3. **移动**：Tabs 滑块使用 `translate3d(var(--ind-x), 0, 0)` + `width`（禁用 `scaleX` 防圆角变形）及 `data-indicator="ready"` 下一帧开启动画（防止首帧飞入并保留隐藏态/`JSDOM` 兜底）；画布拖拽/节点移动/视口平移缩放 **0ms 零过渡**。
 4. **变大小**：折叠区用 `grid-template-rows` 过渡；所有鼠标拖拽改尺寸（`.wf-group-node`、可拖宽 `AssetsDrawer`、停靠输入框、分割栏拖拽）**严禁对几何属性写 `transition`**。
 5. **换内容**：轻提示淡入 `120ms`；高频 Tab 主体、流式文本、实时搜索过滤 **0ms 直出**；文案切换通过 CSS Grid 幽灵槽锁定宽度，防按钮左右跳动。
-6. **换图标**：`IconSwap` 双层叠放纯 GPU 合成 `scale(0.65 -> 1) + opacity`（`150ms --omx-ease-out`，**禁止 `blur()`**）；`PageHeader` 刷新保持单图标连续旋转，不切静态图标。
+6. **换图标**：`IconSwap` 双层叠放纯 GPU 合成 `scale(0.65 -> 1) + opacity`（`150ms --omnimux-motion-ease-out`，**禁止 `blur()`**）；`PageHeader` 刷新保持单图标连续旋转，不切静态图标。
 7. **数值跳动**：全仓指标、表格数值、倒计时/步数与徽标计数统一加 `font-variant-numeric: tabular-nums`；`AnimatedNumber` 仅限同指标实时增量显式 Opt-in（`180ms`），普通筛选与静态看板直接刷新。
-8. **按下**：按钮与图标按钮 `:active` `scale(var(--omx-press-scale))` `90ms`（提供 `staticScale` 退出开关）；表格整行、纯文本链接、Tab 项、拖拽手柄与画布节点本体**不缩放**。
+8. **按下**：按钮与图标按钮 `:active` `scale(var(--omnimux-motion-press-scale))` `90ms`（提供 `staticScale` 退出开关）；表格整行、纯文本链接、Tab 项、拖拽手柄与画布节点本体**不缩放**。
 9. **悬停**：仅限 `background-color`、`border-color`、`color` 与浮现按钮 `opacity`（`90–140ms`）；键盘方向键列表导航高亮必须 **0ms 瞬切**。
 10. **加载**：保留几何占位；无旋转冻死，旋转图标与 GPU `transform` 进度波在 `reduced-motion` 下均有对应安全降级；`omnimux-market` / `omnimux-pibrowse` 进度条改用合成层 `transform`。
 11. **完成**：`SelectableTile` / `DataTable` 复选框 SVG `stroke-dashoffset` 描边（`180ms`）+ 单选圆点缩放（`160ms`）；`CopyButton` 原地切换绿勾与等宽文案 `2000ms` 回弹，UI 已直观呈现变化时不叠成功 Toast（遵守 Show, Don't Tell）。
@@ -50,7 +50,7 @@
 
 ## 假设
 
-1. 将动效语言收敛为 `--omx-*` 语义变量（3 条物理曲线 + `linear`、4 档时长）并在 `dsh-ui-kit` 提供可打断原语（`usePresence`、`IconSwap`、`AnimatedNumber`、防抖动滑块 `Tabs`、连续旋转刷新按钮与无 width 跳动的 `CopyButton`）后，真实 Chromium 实测在 `1440×900` 与 `390×844`、亮暗双主题下的状态切换均可达到 `CLS === 0`、交互中位帧率 `>= 55fps`，且 `Tabs` 切换激活标签宽度变化 `<= 0.5px`、`CopyButton` 复制态按钮宽度变化为 `0px`。
+1. 将动效语言收敛为 `--omnimux-motion-*` 语义变量（3 条物理曲线 + `linear`、4 档时长）并在 `dsh-ui-kit` 提供可打断原语（`usePresence`、`IconSwap`、`AnimatedNumber`、防抖动滑块 `Tabs`、连续旋转刷新按钮与无 width 跳动的 `CopyButton`）后，真实 Chromium 实测在 `1440×900` 与 `390×844`、亮暗双主题下的状态切换均可达到 `CLS === 0`、交互中位帧率 `>= 55fps`，且 `Tabs` 切换激活标签宽度变化 `<= 0.5px`、`CopyButton` 复制态按钮宽度变化为 `0px`。
 2. 全仓清除所有受管源码中的 `transition: all` / `transition-all`、修复 7 处失效/冲突 `@keyframes`、消除拖拽缩放热路径（`.wf-group-node`、`.omx-mv-display`、`AssetsDrawer`、进度条 `margin-left`/`width`）的布局过渡，并修复 `prefers-reduced-motion: reduce` 覆盖失效后，可在保持全部现有门禁（`verify-dsw-tokens`、`guard-no-transparent-popover`、`guard-ui-rules`）与单测契约全绿的前提下，通过新增自动化静态门禁校验且无新增性能或可访问性回退。
 
 ## 证伪方式

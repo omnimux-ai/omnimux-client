@@ -19,13 +19,13 @@ const OFFICIAL_PROVIDER = '@deepseek-ai/dsh-experimental-cua-macos'
 const COMPUTER_USE_SETTINGS_ROUTE = '/api/desktop-next/computer-use'
 
 const STYLES = `
-.dshNextComponentRow[data-opens] .dshNextComponentRowLine { position: relative; margin: -6px -8px; padding: 6px 8px; border-radius: 10px; transition: background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)); }
+.dshNextComponentRow[data-opens] .dshNextComponentRowLine { position: relative; margin: -6px -8px; padding: 6px 8px; border-radius: 10px; transition: background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)); }
 .dshNextComponentRow[data-opens] .dshNextComponentRowLine:hover { background: var(--dsw-alias-interactive-bg-hover); }
 .dshNextComponentRowOpen { display: inline-flex; align-items: center; gap: 2px; width: max-content; max-width: 100%; padding: 0; border: 0; background: transparent; color: inherit; text-align: left; font: inherit; cursor: pointer; }
 .dshNextComponentRowOpen::after { content: ''; position: absolute; inset: 0; border-radius: 10px; }
 .dshNextComponentRowOpen:focus-visible { outline: none; }
 .dshNextComponentRowOpen:focus-visible::after { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: 2px; }
-.dshNextComponentRowOpenIcon { flex: none; color: var(--dsw-alias-label-tertiary); transition: color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), transform var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)); }
+.dshNextComponentRowOpenIcon { flex: none; color: var(--dsw-alias-label-tertiary); transition: color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), transform var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)); }
 .dshNextComponentRowLine:hover .dshNextComponentRowOpenIcon { color: var(--dsw-alias-label-primary); transform: translateX(2px); }
 .dshNextComponentRowSwitch { position: relative; z-index: 1; display: inline-flex; flex: none; }
 @media (prefers-reduced-motion: reduce) {

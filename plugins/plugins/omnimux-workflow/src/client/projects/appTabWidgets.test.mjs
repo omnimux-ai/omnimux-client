@@ -649,8 +649,8 @@ describe('AppTab Form Widgets Engine (Issue #2607)', () => {
       assert.match(css, /\.omx-apptab-extractor\s*\{/)
       assert.match(css, /\.omx-apptab-uploader\s*\{/)
 
-      // 验证无任何私造变量与裸硬编码色（仅放行 dsh-ui-kit 标准 --omx-* 动效变量）
-      assert.doesNotMatch(css, /--omx-(?!(?:ease-(?:out|spatial|exit|linear)|dur-(?:press|fast|base|sheet)|press-scale(?:-subtle)?)\b)[a-z0-9_-]+/, '禁止私造 --omx-* 变量')
+      // 验证无任何私造变量与裸硬编码色
+      assert.doesNotMatch(css, /--omx-[a-z0-9_-]+/, '禁止私造 --omx-* 变量')
     })
 
     it('AppTab.jsx thoroughly eliminates "(工程默认 · 作者推荐)" and robustly resolves default model (Issue #2647)', () => {

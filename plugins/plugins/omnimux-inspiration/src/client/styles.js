@@ -199,8 +199,8 @@ export const INSPIRATION_CSS = `
   color: var(--dsw-alias-label-primary, #ffffff);
   font: 400 13px/18px inherit;
   outline: none;
-  transition: border-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-              background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: border-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .omnimux-inspiration-search:focus {
   border-color: var(--dsw-alias-border-hover, rgba(255, 255, 255, 0.4));
@@ -225,8 +225,8 @@ export const INSPIRATION_CSS = `
   font: 500 12px/16px inherit;
   cursor: pointer;
   outline: none;
-  transition: border-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-              background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: border-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .omnimux-inspiration-select:hover {
   border-color: var(--dsw-alias-border-l4, #3d3d3d);
@@ -275,9 +275,9 @@ export const INSPIRATION_CSS = `
   font-size: 13px;
   font-weight: 500;
   color: var(--dsw-alias-label-primary, #ffffff);
-  transition: border-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-              background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-              color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: border-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 
 .omnimux-inspiration-subfilter-select .dshUk-DropdownSelect-trigger:hover,
@@ -343,7 +343,7 @@ export const INSPIRATION_CSS = `
 .omnimux-inspiration-grid {
   isolation: isolate;
   z-index: 1;
-  animation: omni-fade-in var(--omx-dur-base, 200ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
+  animation: omni-fade-in var(--omnimux-motion-dur-base, 200ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
 }
 
 /* 批量多选操作栏 */
@@ -358,7 +358,7 @@ export const INSPIRATION_CSS = `
   background: var(--dsw-alias-bg-layer-1, #181818);
   border: 1px solid var(--dsw-alias-border-l4, #333333);
   border-radius: 12px;
-  animation: omni-fade-in var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
+  animation: omni-fade-in var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
   box-shadow: 0 4px 16px var(--dsw-alias-bg-mask-1, rgba(0, 0, 0, 0.4));
 }
 .omnimux-inspiration-selection-count {
@@ -382,8 +382,8 @@ export const INSPIRATION_CSS = `
   font: 500 13px/18px inherit;
   padding: 4px 10px;
   border-radius: 9999px;
-  transition: color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-              background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .omnimux-inspiration-btn-ghost:hover {
   color: var(--dsw-alias-label-primary, #ffffff);
@@ -397,16 +397,16 @@ export const INSPIRATION_CSS = `
   padding: 5px 14px;
   cursor: pointer;
   font: 600 13px/18px inherit;
-  transition: background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-              transform var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              transform var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .omnimux-inspiration-btn-danger:hover {
   background: var(--dsw-alias-state-error-primary, #dc2626);
   transform: translateY(-1px);
 }
 .omnimux-inspiration-btn-danger:active:not(:disabled) {
-  transform: scale(var(--omx-press-scale, 0.96));
-  transition-duration: var(--omx-dur-press, 90ms);
+  transform: scale(var(--omnimux-motion-press-scale, 0.96));
+  transition-duration: var(--omnimux-motion-dur-press, 90ms);
 }
 
 .omnimux-inspiration-card-pure {
@@ -418,9 +418,9 @@ export const INSPIRATION_CSS = `
   cursor: pointer;
   background: var(--dsw-alias-bg-module-platform, #131313);
   border: 1px solid var(--dsw-alias-border-l2, #242424);
-  transition: transform var(--omx-dur-base, 200ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-              border-color var(--omx-dur-base, 200ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-              box-shadow var(--omx-dur-base, 200ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: transform var(--omnimux-motion-dur-base, 200ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              border-color var(--omnimux-motion-dur-base, 200ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              box-shadow var(--omnimux-motion-dur-base, 200ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .omnimux-inspiration-card-pure[aria-selected="true"] {
   border-color: var(--dsw-alias-label-secondary, rgba(255, 255, 255, 0.7));
@@ -459,10 +459,10 @@ export const INSPIRATION_CSS = `
   color: var(--dsw-alias-bg-base, #000000);
   opacity: 0;
   transform: scale(0.9);
-  transition: opacity var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-              transform var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-              background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-              border-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: opacity var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              transform var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              border-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .omnimux-inspiration-stage .omnimux-inspiration-card-pure:hover .omnimux-inspiration-card-check,
 .omnimux-inspiration-stage .omnimux-inspiration-card-pure:focus-within .omnimux-inspiration-card-check,
@@ -782,7 +782,7 @@ export const INSPIRATION_CSS = `
   object-fit: cover;
   background: var(--dsw-alias-bg-layer-1, #181818);
   opacity: 0;
-  transition: opacity var(--omx-dur-sheet, 260ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: opacity var(--omnimux-motion-dur-sheet, 260ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .omnimux-inspiration-cover-img.is-loaded {
   opacity: 1;
@@ -797,7 +797,7 @@ export const INSPIRATION_CSS = `
   object-fit: cover;
   background: var(--dsw-alias-bg-layer-1, #181818);
   opacity: 0;
-  transition: opacity var(--omx-dur-sheet, 260ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: opacity var(--omnimux-motion-dur-sheet, 260ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
   pointer-events: none;
 }
 .omnimux-inspiration-cover-video.is-loaded {
@@ -1230,9 +1230,9 @@ export const INSPIRATION_CSS = `
   line-height: 1.5;
   /* 只报信，不拦截点击：气泡盖住的控件仍然可点。 */
   pointer-events: none;
-  animation: omnimux-inspiration-toast-in var(--omx-dur-base, 180ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
-  transition: opacity var(--omx-dur-base, 180ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-              transform var(--omx-dur-base, 180ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  animation: omnimux-inspiration-toast-in var(--omnimux-motion-dur-base, 180ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
+  transition: opacity var(--omnimux-motion-dur-base, 180ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              transform var(--omnimux-motion-dur-base, 180ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .omnimux-inspiration-toast.is-leaving {
   opacity: 0;
@@ -1268,7 +1268,7 @@ export const INSPIRATION_CSS = `
   border: 1px solid var(--dsw-alias-border-l2, #242424);
   box-shadow: 0 8px 24px var(--dsw-alias-bg-mask-1, rgba(0,0,0,.48));
   overflow: hidden;
-  animation: omnimux-dialog-enter var(--omx-dur-base, 200ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
+  animation: omnimux-dialog-enter var(--omnimux-motion-dur-base, 200ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
 }
 .omnimux-inspiration-import-header {
   padding: 16px 20px;
@@ -1432,7 +1432,7 @@ export const INSPIRATION_CSS = `
   font-size: 12px;
   line-height: 1;
   transform: rotate(-90deg);
-  transition: transform var(--omx-dur-fast, 140ms) var(--omx-ease-spatial, cubic-bezier(0.32, 0.72, 0, 1));
+  transition: transform var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-spatial, cubic-bezier(0.32, 0.72, 0, 1));
 }
 .omnimux-inspiration-tags-toggle-chevron.is-open {
   transform: rotate(0deg);
@@ -1547,9 +1547,9 @@ export const INSPIRATION_CSS = `
 }
 
 /* Original post and scoped analysis share one reading surface. */
-.omnimux-inspiration-modal-backdrop { position: fixed; inset: 0; z-index: 200; display: flex; align-items: center; justify-content: center; padding: 24px; background: var(--dsw-alias-bg-mask-1); overscroll-behavior: contain; animation: omnimux-backdrop-fade var(--omx-dur-base, 200ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards; }
+.omnimux-inspiration-modal-backdrop { position: fixed; inset: 0; z-index: 200; display: flex; align-items: center; justify-content: center; padding: 24px; background: var(--dsw-alias-bg-mask-1); overscroll-behavior: contain; animation: omnimux-backdrop-fade var(--omnimux-motion-dur-base, 200ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards; }
 .omnimux-inspiration-modal-wrapper { position: relative; width: min(1200px, 100%); height: min(88vh, 900px); display: flex; }
-.omnimux-inspiration-modal-container { position: relative; display: flex; flex-direction: column; width: 100%; min-height: 0; border-radius: 16px; border: 1px solid var(--dsw-alias-border-l2); background: var(--dsw-alias-bg-elevated, var(--dsw-alias-bg-base)); color: var(--dsw-alias-label-primary); overflow: hidden; isolation: isolate; animation: omnimux-dialog-enter var(--omx-dur-base, 200ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards; }
+.omnimux-inspiration-modal-container { position: relative; display: flex; flex-direction: column; width: 100%; min-height: 0; border-radius: 16px; border: 1px solid var(--dsw-alias-border-l2); background: var(--dsw-alias-bg-elevated, var(--dsw-alias-bg-base)); color: var(--dsw-alias-label-primary); overflow: hidden; isolation: isolate; animation: omnimux-dialog-enter var(--omnimux-motion-dur-base, 200ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards; }
 .omnimux-inspiration-modal-close { position: absolute; top: 14px; right: 16px; z-index: 5; width: 32px; height: 32px; padding: 0; }
 .omnimux-inspiration-modal-header { display: flex; flex: 0 0 auto; align-items: center; gap: 16px; padding: 20px 60px 20px 28px; min-height: 72px; border-bottom: 1px solid var(--dsw-alias-border-l1); }
 .omnimux-inspiration-modal-heading { display: flex; align-items: center; min-width: 0; flex: 1; gap: 8px; }
@@ -1588,20 +1588,20 @@ export const INSPIRATION_CSS = `
 .omnimux-post-carousel-viewport { position: relative; width: 100%; height: min(400px, 48vh); min-height: 220px; border-radius: 12px; overflow: hidden; background: var(--dsw-alias-bg-base); outline: none; touch-action: pan-y; cursor: grab; }
 .omnimux-post-carousel-viewport:active { cursor: grabbing; }
 .omnimux-post-carousel-viewport:focus-visible { box-shadow: 0 0 0 2px var(--dsw-alias-brand-primary); }
-.omnimux-post-carousel-track { display: flex; height: 100%; transition: transform var(--omx-dur-sheet, 260ms) var(--omx-ease-spatial, cubic-bezier(0.32, 0.72, 0, 1)); will-change: transform; }
+.omnimux-post-carousel-track { display: flex; height: 100%; transition: transform var(--omnimux-motion-dur-sheet, 260ms) var(--omnimux-motion-ease-spatial, cubic-bezier(0.32, 0.72, 0, 1)); will-change: transform; }
 .omnimux-post-carousel-track.is-dragging { transition: none; }
 .omnimux-post-carousel-slide { flex: 0 0 100%; height: 100%; display: flex; align-items: center; justify-content: center; }
 .omnimux-post-carousel-slide .omnimux-post-image-open { width: 100%; height: 100%; padding: 0; border: 0; border-radius: 0; }
 .omnimux-post-carousel-slide img { display: block; width: 100%; height: 100%; object-fit: contain; }
-.omnimux-post-carousel-nav { position: absolute; top: 50%; z-index: 3; width: 34px; height: 34px; padding: 0; border-radius: 50%; transform: translateY(-50%); background: var(--dsw-alias-bg-layer-1); border: 1px solid var(--dsw-alias-border-l2); color: var(--dsw-alias-label-primary); opacity: .88; transition: opacity var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), transform var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)); }
+.omnimux-post-carousel-nav { position: absolute; top: 50%; z-index: 3; width: 34px; height: 34px; padding: 0; border-radius: 50%; transform: translateY(-50%); background: var(--dsw-alias-bg-layer-1); border: 1px solid var(--dsw-alias-border-l2); color: var(--dsw-alias-label-primary); opacity: .88; transition: opacity var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), transform var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)); }
 .omnimux-post-carousel-nav:hover:not(:disabled) { opacity: 1; }
-.omnimux-post-carousel-nav:active:not(:disabled) { transform: translateY(-50%) scale(var(--omx-press-scale, 0.96)); }
+.omnimux-post-carousel-nav:active:not(:disabled) { transform: translateY(-50%) scale(var(--omnimux-motion-press-scale, 0.96)); }
 .omnimux-post-carousel-nav:disabled { opacity: .3; }
 .omnimux-post-carousel-nav.is-prev { left: 10px; }
 .omnimux-post-carousel-nav.is-next { right: 10px; }
 .omnimux-post-carousel-counter { position: absolute; top: 12px; right: 12px; z-index: 3; padding: 4px 9px; border-radius: 999px; background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary); font-size: 11px; }
 .omnimux-post-carousel-dots { position: absolute; left: 50%; bottom: 12px; z-index: 3; display: flex; align-items: center; gap: 6px; padding: 5px 9px; border-radius: 999px; background: var(--dsw-alias-bg-layer-1); transform: translateX(-50%); }
-.omnimux-post-carousel-dot { width: 6px; height: 6px; min-width: 0; min-height: 0; padding: 0; border-radius: 50%; background: var(--dsw-alias-label-secondary); opacity: .6; transition: width var(--omx-dur-fast, 140ms) var(--omx-ease-spatial, cubic-bezier(0.32, 0.72, 0, 1)), background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), opacity var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)); }
+.omnimux-post-carousel-dot { width: 6px; height: 6px; min-width: 0; min-height: 0; padding: 0; border-radius: 50%; background: var(--dsw-alias-label-secondary); opacity: .6; transition: width var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-spatial, cubic-bezier(0.32, 0.72, 0, 1)), background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), opacity var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)); }
 .omnimux-post-carousel-dot.is-active { width: 16px; border-radius: 3px; background: var(--dsw-alias-label-primary); opacity: 1; }
 .omnimux-post-lightbox-counter { min-width: 34px; text-align: center; color: var(--dsw-alias-label-secondary); font-size: 11px; }
 .omnimux-post-asset-footer { display: flex; gap: 10px; align-items: center; justify-content: space-between; padding: 14px 0 4px; font-size: 13px; }
@@ -1690,17 +1690,17 @@ dialog.omnimux-inspiration-preview-layer::backdrop { background: transparent; ba
   background: var(--dsw-alias-bg-secondary, rgba(255, 255, 255, 0.05));
   color: var(--dsw-alias-label-primary, #ffffff);
   cursor: pointer;
-  transition: background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-              border-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-              color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-              transform var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              border-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              transform var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .omnimux-inspiration-share-trigger-btn:hover {
   background: var(--dsw-alias-interactive-bg-hover, rgba(255, 255, 255, 0.1));
   border-color: var(--dsw-alias-border-l3, #383838);
 }
 .omnimux-inspiration-share-trigger-btn:active:not(:disabled) {
-  transform: scale(var(--omx-press-scale, 0.96));
+  transform: scale(var(--omnimux-motion-press-scale, 0.96));
 }
 .omnimux-inspiration-share-trigger-btn.is-active {
   background: var(--dsw-alias-interactive-bg-active, rgba(255, 255, 255, 0.14));
@@ -1718,7 +1718,7 @@ dialog.omnimux-inspiration-preview-layer::backdrop { background: transparent; ba
   box-shadow: 0 16px 36px -8px var(--dsw-alias-bg-mask-1, rgba(0, 0, 0, 0.5));
   padding: 14px;
   z-index: 100;
-  animation: omnimuxShareFadeIn var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
+  animation: omnimuxShareFadeIn var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
 }
 @keyframes omnimuxShareFadeIn {
   from { opacity: 0.94; transform: translateY(-4px) scale(0.985); }
@@ -2049,7 +2049,7 @@ dialog.omnimux-inspiration-preview-layer::backdrop { background: transparent; ba
   color: var(--dsw-alias-label-primary, inherit);
   overflow: hidden;
   isolation: isolate;
-  animation: omnimux-drawer-enter var(--omx-dur-sheet, 260ms) var(--omx-ease-spatial, cubic-bezier(0.32, 0.72, 0, 1)) forwards;
+  animation: omnimux-drawer-enter var(--omnimux-motion-dur-sheet, 260ms) var(--omnimux-motion-ease-spatial, cubic-bezier(0.32, 0.72, 0, 1)) forwards;
 }
 .omnimux-inspiration-detail-sidebar .omnimux-inspiration-share-popover {
   width: min(280px, calc(100vw - 48px));
@@ -2666,7 +2666,7 @@ dialog.omnimux-inspiration-preview-layer::backdrop { background: transparent; ba
   border: 1px solid var(--dsw-alias-border-l3);
   box-shadow: 0 12px 32px var(--dsw-alias-bg-mask-1);
   border-radius: 10px;
-  animation: omnimux-popover-enter var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
+  animation: omnimux-popover-enter var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
 }
 body:has([role="menu"].omx-card-context-menu) [role="menu"][style*="--dsh-submenu-parent"] {
   min-width: 196px;
@@ -2676,7 +2676,7 @@ body:has([role="menu"].omx-card-context-menu) [role="menu"][style*="--dsh-submen
   border: 1px solid var(--dsw-alias-border-l3);
   box-shadow: 0 12px 32px var(--dsw-alias-bg-mask-1);
   border-radius: 10px;
-  animation: omnimux-popover-enter var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
+  animation: omnimux-popover-enter var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
 }
 body:not([data-ds-dark-theme]) .omnimux-inspiration-stage {
   --wf-shimmer-stage-bg: var(--dsw-alias-bg-layer-2);

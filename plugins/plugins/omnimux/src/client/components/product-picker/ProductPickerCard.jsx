@@ -158,7 +158,7 @@ export const PRODUCT_CARD_CSS = `
   display: flex; align-items: center; justify-content: center;
   color: var(--dsw-alias-label-tertiary); overflow: hidden;
   border: 1.5px solid transparent;
-  transition: border-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), transform var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: border-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), transform var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .omx-product-pick-card:hover .omx-product-pick-card__thumb { transform: translateY(-2px); }
 .omx-product-pick-card[data-selected="true"] .omx-product-pick-card__thumb {
@@ -178,7 +178,7 @@ export const PRODUCT_CARD_CSS = `
   display: inline-flex; align-items: center; justify-content: center; z-index: 2;
   border: 1.5px solid var(--dsw-alias-border-l4);
   background: var(--dsw-alias-bg-layer-2);
-  transition: background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), border-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), border-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .omx-product-pick-card__check[data-selected="true"] {
   border-color: var(--dsw-alias-button-primary-fill);
@@ -228,7 +228,7 @@ export const PRODUCT_CARD_CSS = `
   display: flex; align-items: center; justify-content: center;
   box-sizing: border-box; cursor: pointer;
   align-self: start;
-  transition: border-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), transform var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: border-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), transform var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .omx-product-pick-card--add:hover {
   border-color: var(--dsw-alias-button-primary-fill);

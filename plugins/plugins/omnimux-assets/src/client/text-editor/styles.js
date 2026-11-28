@@ -11,7 +11,7 @@ export const ASSET_TEXT_EDITOR_CSS = `
   justify-content: center;
   padding: 20px;
   box-sizing: border-box;
-  animation: omnimuxAteFadeIn var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
+  animation: omnimuxAteFadeIn var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
 }
 
 @keyframes omnimuxAteFadeIn {
@@ -49,7 +49,7 @@ export const ASSET_TEXT_EDITOR_CSS = `
   flex-direction: column;
   overflow: hidden;
   font-family: var(--dsw-font-family);
-  animation: omnimuxAteDialogIn var(--omx-dur-base, 200ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
+  animation: omnimuxAteDialogIn var(--omnimux-motion-dur-base, 200ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
 }
 
 /* ---- Topbar ---- */
@@ -267,7 +267,7 @@ export const ASSET_TEXT_EDITOR_CSS = `
   border-radius: var(--dsw-radius-md);
   box-shadow: var(--dsw-shadow-lv2);
   max-width: calc(100% - 32px);
-  animation: omnimuxAtePopoverIn var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
+  animation: omnimuxAtePopoverIn var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
 }
 
 .omnimux-ate-search-panel:focus-within {
@@ -409,7 +409,7 @@ export const ASSET_TEXT_EDITOR_CSS = `
   flex-shrink: 0;
   z-index: 20;
   overflow: hidden;
-  animation: omnimuxAteDrawerIn var(--omx-dur-sheet, 260ms) var(--omx-ease-spatial, cubic-bezier(0.32, 0.72, 0, 1)) forwards;
+  animation: omnimuxAteDrawerIn var(--omnimux-motion-dur-sheet, 260ms) var(--omnimux-motion-ease-spatial, cubic-bezier(0.32, 0.72, 0, 1)) forwards;
 }
 
 .omnimux-ate-drawer-header {
@@ -482,8 +482,8 @@ export const ASSET_TEXT_EDITOR_CSS = `
   display: flex;
   flex-direction: column;
   gap: 8px;
-  transition: border-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-              background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: border-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 
 .omnimux-ate-version-card:hover {
@@ -602,7 +602,7 @@ export const ASSET_TEXT_EDITOR_CSS = `
   justify-content: center;
   padding: 24px;
   box-sizing: border-box;
-  animation: omnimuxAteFadeIn var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
+  animation: omnimuxAteFadeIn var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
 }
 
 .omnimux-ate-diff-modal {
@@ -616,7 +616,7 @@ export const ASSET_TEXT_EDITOR_CSS = `
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  animation: omnimuxAteDialogIn var(--omx-dur-base, 200ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
+  animation: omnimuxAteDialogIn var(--omnimux-motion-dur-base, 200ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
 }
 
 .omnimux-ate-diff-header {

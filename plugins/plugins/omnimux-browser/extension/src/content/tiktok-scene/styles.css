@@ -32,16 +32,16 @@
   --omx-panel: rgba(24, 26, 31, 0.97);
   --omx-line: rgba(255, 255, 255, 0.16);
   --omx-fg: rgba(255, 255, 255, 0.94);
-  --omx-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
-  --omx-ease-spatial: cubic-bezier(0.32, 0.72, 0, 1);
-  --omx-ease-exit: cubic-bezier(0.32, 0, 0.67, 0);
-  --omx-ease-linear: linear;
-  --omx-dur-press: 90ms;
-  --omx-dur-fast: 140ms;
-  --omx-dur-base: 200ms;
-  --omx-dur-sheet: 260ms;
-  --omx-press-scale: 0.96;
-  --omx-press-scale-subtle: 0.985;
+  --omnimux-motion-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --omnimux-motion-ease-spatial: cubic-bezier(0.32, 0.72, 0, 1);
+  --omnimux-motion-ease-exit: cubic-bezier(0.32, 0, 0.67, 0);
+  --omnimux-motion-ease-linear: linear;
+  --omnimux-motion-dur-press: 90ms;
+  --omnimux-motion-dur-fast: 140ms;
+  --omnimux-motion-dur-base: 200ms;
+  --omnimux-motion-dur-sheet: 260ms;
+  --omnimux-motion-press-scale: 0.96;
+  --omnimux-motion-press-scale-subtle: 0.985;
 
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI Variable Text", "Segoe UI",
     "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;

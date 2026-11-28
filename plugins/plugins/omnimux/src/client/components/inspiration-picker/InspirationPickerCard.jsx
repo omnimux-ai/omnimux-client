@@ -110,7 +110,7 @@ export const INSPIRATION_CARD_CSS = `
   display: flex; align-items: center; justify-content: center;
   color: var(--dsw-alias-label-tertiary); overflow: hidden;
   border: 1.5px solid transparent;
-  transition: border-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), transform var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: border-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), transform var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .omx-inspiration-pick-card__thumb[data-ratio="pending"] { aspect-ratio: 1 / 1; }
 .omx-inspiration-pick-card:hover .omx-inspiration-pick-card__thumb { transform: translateY(-2px); }

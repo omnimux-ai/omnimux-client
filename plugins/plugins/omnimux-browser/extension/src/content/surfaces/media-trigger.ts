@@ -214,8 +214,8 @@ function stylesheet(size: number, corner: string): string {
     opacity: 0;
     transform: scale(0.88);
     pointer-events: none;
-    transition: opacity var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-      transform var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+    transition: opacity var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+      transform var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
     -webkit-appearance: none;
     appearance: none;
   }
@@ -247,9 +247,9 @@ function stylesheet(size: number, corner: string): string {
     opacity: 0;
     visibility: hidden;
     pointer-events: none;
-    transition: opacity var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-      transform var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-      visibility 0s linear var(--omx-dur-fast, 140ms);
+    transition: opacity var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+      transform var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+      visibility 0s linear var(--omnimux-motion-dur-fast, 140ms);
   }
   .omt-entry.is-open .omt-toolbar {
     opacity: 1;
@@ -283,12 +283,12 @@ function stylesheet(size: number, corner: string): string {
     cursor: pointer;
     -webkit-appearance: none;
     appearance: none;
-    transition: background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-      color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-      transform var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+    transition: background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+      color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+      transform var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
   }
   .omt-action:hover { background: rgba(255, 255, 255, 0.12); color: #fff; }
-  .omt-action:active { transform: scale(var(--omx-press-scale, 0.96)); }
+  .omt-action:active { transform: scale(var(--omnimux-motion-press-scale, 0.96)); }
   .omt-action:focus-visible { outline: 2px solid rgba(255, 255, 255, 0.9); outline-offset: -2px; }
   .omt-action svg { width: 15px; height: 15px; }
   @media (prefers-reduced-motion: reduce) {

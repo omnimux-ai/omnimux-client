@@ -198,10 +198,10 @@ html:not([data-dsh-product-stage]) .omnimux-clip-stage[data-clip-mode="canvas"][
   background: var(--dsw-alias-bg-layer-1, rgba(255, 255, 255, 0.06));
   border: 1px solid var(--dsw-alias-border-l2, rgba(255, 255, 255, 0.14));
   color: var(--dsw-alias-label-primary, #ffffff);
-  transition: background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-              border-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-              opacity var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-              transform var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              border-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              opacity var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              transform var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
   user-select: none;
 }
 .omnimux-clip-stage-save-btn:hover:not(:disabled) {
@@ -209,7 +209,7 @@ html:not([data-dsh-product-stage]) .omnimux-clip-stage[data-clip-mode="canvas"][
   border-color: var(--dsw-alias-border-l3, rgba(255, 255, 255, 0.22));
 }
 .omnimux-clip-stage-save-btn:active:not(:disabled) {
-  transform: scale(var(--omx-press-scale, 0.96));
+  transform: scale(var(--omnimux-motion-press-scale, 0.96));
 }
 .omnimux-clip-stage-save-btn:disabled {
   opacity: 0.5;

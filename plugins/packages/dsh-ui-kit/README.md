@@ -353,9 +353,9 @@ node --test src/kit-export.test.js
 
 ## 统一动效语言与状态原语
 
-- **`--omx-*` 动效 Token**（`src/motion/tokens.ts`，首次导入自动注入 `<style data-dsh-ui-kit="omx-motion-tokens">`）：
-  - 曲线：`--omx-ease-out`（`cubic-bezier(0.16, 1, 0.3, 1)`，微交互/浮层入场与原地淡出）、`--omx-ease-spatial`（`cubic-bezier(0.32, 0.72, 0, 1)`，Tabs 滑块/抽屉/开关）、`--omx-ease-exit`（`cubic-bezier(0.32, 0, 0.67, 0)`，视口边缘退场）、`--omx-ease-linear`（旋转加载与线性进度条）。
-  - 时长：`--omx-dur-press`（`90ms`）、`--omx-dur-fast`（`140ms`）、`--omx-dur-base`（`200ms`）、`--omx-dur-sheet`（`260ms`）；在 `prefers-reduced-motion: reduce` 下自动折叠为 `0ms` 与 `scale = 1`，加载态保持低频轻呼吸而不冻死。
+- **`--omnimux-motion-*` 动效 Token**（`src/motion/tokens.ts`，首次导入自动注入 `<style data-dsh-ui-kit="omnimux-motion-tokens">`）：
+  - 曲线：`--omnimux-motion-ease-out`（`cubic-bezier(0.16, 1, 0.3, 1)`，微交互/浮层入场与原地淡出）、`--omnimux-motion-ease-spatial`（`cubic-bezier(0.32, 0.72, 0, 1)`，Tabs 滑块/抽屉/开关）、`--omnimux-motion-ease-exit`（`cubic-bezier(0.32, 0, 0.67, 0)`，视口边缘退场）、`--omnimux-motion-ease-linear`（旋转加载与线性进度条）。
+  - 时长：`--omnimux-motion-dur-press`（`90ms`）、`--omnimux-motion-dur-fast`（`140ms`）、`--omnimux-motion-dur-base`（`200ms`）、`--omnimux-motion-dur-sheet`（`260ms`）；在 `prefers-reduced-motion: reduce` 下自动折叠为 `0ms` 与 `scale = 1`，加载态保持低频轻呼吸而不冻死。
 - **共享原语**：
   - `usePresence(open, exitMs)`：可打断双帧入场与定时退场生命周期（滚动锁、焦点陷阱与 `Escape` 必须绑定 `open` 而非 `mounted`）。
   - `IconSwap`：纯合成层 `scale(0.65 -> 1) + opacity` 原地双态切换（无 `blur` 滤镜，零宽度跳动）。

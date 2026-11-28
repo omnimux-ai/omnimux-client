@@ -138,8 +138,8 @@ export const COLLECTION_CSS = `
   opacity: 0;
   pointer-events: none;
   transform: translateY(4px);
-  transition: opacity var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-              transform var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: opacity var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              transform var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .omnimux-inspiration-collection-card:hover .omnimux-inspiration-collection-actions,
 .omnimux-inspiration-collection-card:focus-within .omnimux-inspiration-collection-actions {
@@ -271,7 +271,7 @@ export const COLLECTION_CSS = `
 }
 .omnimux-inspiration-collection-dialog {
   border-radius: 16px;
-  animation: omnimux-collection-dialog-in var(--omx-dur-base, 200ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
+  animation: omnimux-collection-dialog-in var(--omnimux-motion-dur-base, 200ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
 }
 @keyframes omnimux-collection-dialog-in {
   from { opacity: 0.92; transform: translateY(6px) scale(0.985); }

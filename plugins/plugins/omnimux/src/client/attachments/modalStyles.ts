@@ -16,7 +16,7 @@ export const MODAL_STYLES = `
   justify-content: center;
   pointer-events: none;
   background-color: var(--dsw-alias-bg-mask-drop, var(--dsw-alias-bg-mask-1));
-  animation: omx-att-fade-in var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
+  animation: omx-att-fade-in var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
 }
 .omx-att-drop-wrap {
   display: flex;
@@ -51,7 +51,7 @@ export const MODAL_STYLES = `
   position: absolute;
   inset: 0;
   background: var(--dsw-alias-bg-mask-1);
-  animation: omx-att-fade-in var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
+  animation: omx-att-fade-in var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
 }
 .omx-att-preview__image {
   position: relative;
@@ -61,7 +61,7 @@ export const MODAL_STYLES = `
   border-radius: 12px;
   background: var(--dsw-specific-input-major, var(--dsw-alias-bg-elevated));
   box-shadow: var(--dsw-shadow-lv3);
-  animation: omx-att-modal-scale-in var(--omx-dur-base, 200ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
+  animation: omx-att-modal-scale-in var(--omnimux-motion-dur-base, 200ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
 }
 .omx-att-preview__close {
   position: fixed;
@@ -77,10 +77,10 @@ export const MODAL_STYLES = `
   background: var(--dsw-specific-input-major, var(--dsw-alias-bg-elevated));
   color: var(--dsw-alias-label-primary);
   cursor: pointer;
-  transition: background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), transform var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), transform var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .omx-att-preview__close:active {
-  transform: scale(var(--omx-press-scale, 0.96));
+  transform: scale(var(--omnimux-motion-press-scale, 0.96));
 }
 @media (prefers-reduced-motion: reduce) {
   .omx-att-drop-mask,

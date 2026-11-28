@@ -250,9 +250,9 @@ body[data-dsh-desktop-platform="win32"] .dshDesktopConversationSurface > header 
   pointer-events: auto;
   white-space: nowrap;
   -webkit-app-region: no-drag;
-  transition: background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), transform var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), transform var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
-.dshDesktopFrameVersion:active { transform: scale(var(--omx-press-scale, 0.96)); }
+.dshDesktopFrameVersion:active { transform: scale(var(--omnimux-motion-press-scale, 0.96)); }
 .dshDesktopFrameVersion:hover,
 .dshDesktopFrameVersion[data-popup-open],
 .dshDesktopFrameVersion:focus-visible {
@@ -270,7 +270,7 @@ body[data-dsh-desktop-platform="win32"] .dshDesktopConversationSurface > header 
 }
 .dshShadcnHoverCardContent {
   transform-origin: var(--transform-origin);
-  transition: opacity var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), transform var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: opacity var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), transform var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .dshShadcnHoverCardContent[data-starting-style],
 .dshShadcnHoverCardContent[data-ending-style] {
@@ -318,10 +318,10 @@ body[data-dsh-desktop-platform="win32"] .dshDesktopConversationSurface > header 
   font: inherit;
   font-size: 12px;
   -webkit-app-region: no-drag;
-  transition: background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), border-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), transform var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), border-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), transform var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .dshDesktopVersionCheckButton:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); }
-.dshDesktopVersionCheckButton:active:not(:disabled) { transform: scale(var(--omx-press-scale, 0.96)); }
+.dshDesktopVersionCheckButton:active:not(:disabled) { transform: scale(var(--omnimux-motion-press-scale, 0.96)); }
 .dshDesktopVersionCheckButton:focus-visible {
   outline: 2px solid var(--dsw-alias-brand-primary);
   outline-offset: 1px;
@@ -348,9 +348,9 @@ body[data-dsh-desktop-platform="win32"] .dshDesktopConversationSurface > header 
   pointer-events: auto;
   white-space: nowrap;
   -webkit-app-region: no-drag;
-  transition: background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), border-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), transform var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), border-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), transform var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
-.dshDesktopFrameMode:active { transform: scale(var(--omx-press-scale, 0.96)); }
+.dshDesktopFrameMode:active { transform: scale(var(--omnimux-motion-press-scale, 0.96)); }
 .dshDesktopFrameMode:hover,
 .dshDesktopFrameMode[data-popup-open],
 .dshDesktopFrameMode:focus-visible {
@@ -391,10 +391,10 @@ body[data-dsh-desktop-platform="win32"] .dshDesktopConversationSurface > header 
   text-align: left;
   white-space: normal;
   -webkit-app-region: no-drag;
-  transition: background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), transform var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), transform var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .dshDesktopVersionPopover .dshDesktopModeOption:active:not(:disabled) {
-  transform: scale(var(--omx-press-scale-subtle, 0.985));
+  transform: scale(var(--omnimux-motion-press-scale-subtle, 0.985));
 }
 .dshDesktopVersionPopover .dshDesktopModeOption:hover:not(:disabled) {
   background: var(--dsw-alias-interactive-bg-hover);
@@ -456,7 +456,7 @@ body[data-dsh-desktop-platform="win32"] .dshDesktopConversationSurface > header 
   color: var(--dsw-alias-label-secondary);
   cursor: pointer;
   -webkit-app-region: no-drag;
-  transition: background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), border-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), transform var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), border-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), transform var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .dshDesktopTitlebarIconButton:hover:not(:disabled),
 .dshDesktopTitlebarIconButton[aria-expanded="true"] {
@@ -465,7 +465,7 @@ body[data-dsh-desktop-platform="win32"] .dshDesktopConversationSurface > header 
   color: var(--dsw-alias-label-primary);
 }
 .dshDesktopTitlebarIconButton:active:not(:disabled) {
-  transform: scale(var(--omx-press-scale, 0.96));
+  transform: scale(var(--omnimux-motion-press-scale, 0.96));
 }
 .dshDesktopTitlebarIconButton:focus-visible {
   outline: 2px solid var(--dsw-alias-brand-primary);
@@ -487,7 +487,7 @@ body[data-dsh-desktop-platform="win32"] .dshDesktopConversationSurface > header 
   background: var(--dsw-alias-bg-layer-1);
   box-shadow: 0 12px 32px color-mix(in srgb, #000 28%, transparent);
   -webkit-app-region: no-drag;
-  animation: dshDesktopMenuIn var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
+  animation: dshDesktopMenuIn var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
 }
 .dshDesktopFrameTitlebar[data-platform="darwin"] .dshDesktopActionMenu { right: 0; }
 .dshDesktopFrameTitlebar[data-platform="win32"] .dshDesktopActionMenu { left: 0; }
@@ -505,10 +505,10 @@ body[data-dsh-desktop-platform="win32"] .dshDesktopConversationSurface > header 
   font: inherit;
   font-size: 12px;
   text-align: start;
-  transition: background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), transform var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), transform var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .dshDesktopActionMenuItem:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); }
-.dshDesktopActionMenuItem:active:not(:disabled) { transform: scale(var(--omx-press-scale-subtle, 0.985)); }
+.dshDesktopActionMenuItem:active:not(:disabled) { transform: scale(var(--omnimux-motion-press-scale-subtle, 0.985)); }
 .dshDesktopActionMenuItem:disabled { cursor: default; opacity: .45; }
 .dshDesktopActionMenuItem span { flex: 1; }
 .dshDesktopNativeActions[data-placement="titlebar"] .dshDesktopNativeActionError {
@@ -544,12 +544,12 @@ body[data-dsh-desktop-platform="win32"] .dshDesktopConversationSurface > header 
 }
 @media (prefers-reduced-motion: reduce) {
   :root {
-    --omx-dur-press: 0ms;
-    --omx-dur-fast: 0ms;
-    --omx-dur-base: 0ms;
-    --omx-dur-sheet: 0ms;
-    --omx-press-scale: 1;
-    --omx-press-scale-subtle: 1;
+    --omnimux-motion-dur-press: 0ms;
+    --omnimux-motion-dur-fast: 0ms;
+    --omnimux-motion-dur-base: 0ms;
+    --omnimux-motion-dur-sheet: 0ms;
+    --omnimux-motion-press-scale: 1;
+    --omnimux-motion-press-scale-subtle: 1;
   }
   .dshDesktopFrameVersion,
   .dshShadcnHoverCardContent,

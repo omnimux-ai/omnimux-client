@@ -142,19 +142,19 @@ describe('Apple motion system static contract gate', () => {
     )
   })
 
-  it('defines unified --omx-* motion tokens in dsh-ui-kit and propagates them across isolated roots', () => {
+  it('defines unified --omnimux-motion-* motion tokens in dsh-ui-kit and propagates them across isolated roots', () => {
     const tokensFile = join(pluginsRoot, 'packages', 'dsh-ui-kit', 'src', 'motion', 'tokens.ts')
     assert.ok(existsSync(tokensFile), 'dsh-ui-kit/src/motion/tokens.ts must exist')
     const tokensText = readFileSync(tokensFile, 'utf8')
     for (const token of [
-      '--omx-ease-out',
-      '--omx-ease-spatial',
-      '--omx-ease-exit',
-      '--omx-dur-press',
-      '--omx-dur-fast',
-      '--omx-dur-base',
-      '--omx-dur-sheet',
-      '--omx-press-scale',
+      '--omnimux-motion-ease-out',
+      '--omnimux-motion-ease-spatial',
+      '--omnimux-motion-ease-exit',
+      '--omnimux-motion-dur-press',
+      '--omnimux-motion-dur-fast',
+      '--omnimux-motion-dur-base',
+      '--omnimux-motion-dur-sheet',
+      '--omnimux-motion-press-scale',
       '@media (prefers-reduced-motion: reduce)',
     ]) {
       assert.ok(tokensText.includes(token), `Missing ${token} in dsh-ui-kit tokens.ts`)
@@ -169,8 +169,8 @@ describe('Apple motion system static contract gate', () => {
       const full = join(repoRoot, isolatedCss)
       assert.ok(existsSync(full), `Expected isolated stylesheet ${isolatedCss}`)
       const content = readFileSync(full, 'utf8')
-      assert.match(content, /--omx-ease-out\s*:/, `${isolatedCss} must declare --omx-ease-out`)
-      assert.match(content, /--omx-ease-spatial\s*:/, `${isolatedCss} must declare --omx-ease-spatial`)
+      assert.match(content, /--omnimux-motion-ease-out\s*:/, `${isolatedCss} must declare --omnimux-motion-ease-out`)
+      assert.match(content, /--omnimux-motion-ease-spatial\s*:/, `${isolatedCss} must declare --omnimux-motion-ease-spatial`)
       assert.match(content, /@media\s*\(prefers-reduced-motion:\s*reduce\)/, `${isolatedCss} must handle prefers-reduced-motion`)
     }
   })
@@ -251,16 +251,16 @@ describe('Apple motion system static contract gate', () => {
 
       for (const file of files) {
         const rel = relative(repoRoot, file)
-        // Skip small component CSS modules whose transitions solely consume --omx-dur-* vars (auto-zeroed in tokens.ts) unless they run keyframes
+        // Skip small component CSS modules whose transitions solely consume --omnimux-motion-dur-* vars (auto-zeroed in tokens.ts) unless they run keyframes
         const content = readStyleContent(file)
         const hasKeyframe = /@keyframes\s+/.test(content)
         const hasAnimOrLiteralTrans =
           /\banimation(?:-name)?\s*:/.test(content) ||
-          /\btransition\s*:\s*(?!none\b)(?!all\b)(?!.*--omx-dur-)[^;]+;/.test(content)
+          /\btransition\s*:\s*(?!none\b)(?!all\b)(?!.*--omnimux-motion-dur-)[^;]+;/.test(content)
         if ((hasKeyframe || hasAnimOrLiteralTrans) && !/prefers-reduced-motion\s*:\s*reduce/.test(content)) {
-          // If the file strictly uses --omx-dur-* variables for every non-none transition and defines no keyframes, tokens collapse them.
+          // If the file strictly uses --omnimux-motion-dur-* variables for every non-none transition and defines no keyframes, tokens collapse them.
           const hasNonTokenTransition = /\btransition\s*:\s*(?!none\b)[^;]*(?:ms|s)\b/.test(
-            content.replace(/var\(--omx-[^)]+\)/g, ''),
+            content.replace(/var\(--omnimux-motion-[^)]+\)/g, ''),
           )
           if (hasKeyframe || /\banimation(?:-name)?\s*:/.test(content) || hasNonTokenTransition) {
             missingReduce.push(rel)

@@ -19,7 +19,7 @@ export const LINK_POPOVER_STYLES = `
   font-size: 13px;
   line-height: 18px;
   container-type: inline-size;
-  animation: omx-link-popover-in var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
+  animation: omx-link-popover-in var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
 }
 .omx-link-popover-header, .omx-link-popover-title, .omx-link-popover-form {
   display: flex;
@@ -33,19 +33,19 @@ export const LINK_POPOVER_STYLES = `
 .omx-link-popover .omx-link-popover-close {
   width: 32px; height: 32px; padding: 0; flex-shrink: 0; border-radius: 8px;
   background: transparent; color: var(--dsw-alias-label-secondary);
-  transition: background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .omx-link-popover input {
   flex: 1; min-width: 0; width: 100%; height: 32px; box-sizing: border-box;
   padding: 0 10px; border-radius: 8px; border: 1px solid var(--dsw-alias-border-l2);
   background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary); font: inherit;
-  transition: border-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: border-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .omx-link-popover input:focus-visible { outline: 2px solid var(--dsw-alias-state-business-tertiary); border-color: var(--dsw-alias-brand-primary); }
 .omx-link-popover .omx-link-popover-add {
   height: 32px; flex-shrink: 0; border-radius: 8px; padding: 0 12px;
   background: var(--dsw-alias-button-primary-fill); color: var(--dsw-alias-label-primary-inverted);
-  transition: opacity var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), transform var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: opacity var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), transform var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .omx-link-popover .omx-link-popover-add:disabled { opacity: 0.45; }
 .omx-link-popover p { margin: 0; color: var(--dsw-alias-label-secondary); font-size: 12px; line-height: 16px; }

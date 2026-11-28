@@ -92,17 +92,17 @@ export const STYLES = `
   cursor: pointer !important;
   user-select: none !important;
   box-shadow: none !important;
-  transition: background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-              border-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-              transform var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-              box-shadow var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) !important;
+  transition: background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              border-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              transform var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              box-shadow var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) !important;
 }
 .omnimux-accounts-stat:hover {
   background: var(--dsw-alias-interactive-bg-hover, rgba(128,128,128,0.12)) !important;
   border-color: var(--dsw-alias-border-l3, var(--dsw-alias-border-hover, rgba(255,255,255,0.22))) !important;
 }
 .omnimux-accounts-stat:active {
-  transform: scale(var(--omx-press-scale-subtle, 0.985)) !important;
+  transform: scale(var(--omnimux-motion-press-scale-subtle, 0.985)) !important;
   background: var(--dsw-alias-interactive-bg-active, rgba(128,128,128,0.18)) !important;
 }
 .omnimux-accounts-stat:focus {
@@ -196,9 +196,9 @@ export const STYLES = `
   color: inherit;
   font: inherit;
   font-size: 13px;
-  transition: border-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-              background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-              box-shadow var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: border-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              box-shadow var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .omnimux-accounts-search:hover {
   border-color: var(--dsw-alias-border-hover, rgba(255,255,255,0.22));
@@ -235,9 +235,9 @@ export const STYLES = `
   cursor: pointer;
   white-space: nowrap;
   user-select: none;
-  transition: background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-              border-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-              box-shadow var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              border-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              box-shadow var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .omnimux-accounts-dropdown-trigger:not(:disabled):hover {
   background-color: var(--dsw-alias-interactive-bg-hover, rgba(255,255,255,0.08));
@@ -258,8 +258,8 @@ export const STYLES = `
 .omnimux-accounts-dropdown-chevron {
   flex-shrink: 0;
   opacity: 0.55;
-  transition: transform var(--omx-dur-fast, 140ms) var(--omx-ease-spatial, cubic-bezier(0.32, 0.72, 0, 1)),
-              opacity var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: transform var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-spatial, cubic-bezier(0.32, 0.72, 0, 1)),
+              opacity var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .omnimux-accounts-dropdown-trigger:hover .omnimux-accounts-dropdown-chevron {
   opacity: 0.85;
@@ -287,7 +287,7 @@ export const STYLES = `
   border-radius: 10px;
   background: var(--dsw-alias-bg-layer-2, var(--dsw-alias-bg-base));
   box-shadow: 0 10px 28px var(--dsw-alias-bg-mask-1, rgba(0, 0, 0, 0.5)), 0 2px 8px var(--dsw-alias-bg-mask-1, rgba(0, 0, 0, 0.3));
-  animation: omnimux-accounts-menu-pop var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
+  animation: omnimux-accounts-menu-pop var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
 }
 @keyframes omnimux-accounts-menu-pop {
   from {
@@ -357,9 +357,9 @@ export const STYLES = `
   font: inherit;
   font-size: 13px;
   cursor: pointer;
-  transition: background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-              border-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-              box-shadow var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              border-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              box-shadow var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .omnimux-accounts-select:hover {
   background-color: var(--dsw-alias-interactive-bg-hover, rgba(255,255,255,0.08));
@@ -393,16 +393,16 @@ export const STYLES = `
   border: 1px solid var(--dsw-alias-border, rgba(255,255,255,0.08));
   border-radius: 12px;
   background: var(--dsw-alias-bg-secondary, rgba(255,255,255,0.04));
-  transition: background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-              border-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-              transform var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              border-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              transform var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .omnimux-accounts-card:hover {
   background: var(--dsw-alias-interactive-bg-hover, rgba(128,128,128,0.08));
   border-color: var(--dsw-alias-border-l3, rgba(255,255,255,0.18));
 }
 .omnimux-accounts-card:active {
-  transform: scale(var(--omx-press-scale-subtle, 0.985));
+  transform: scale(var(--omnimux-motion-press-scale-subtle, 0.985));
 }
 .omnimux-accounts-card[data-busy="true"] { opacity: 0.6; }
 .omnimux-accounts-card-head {
@@ -550,7 +550,7 @@ export const STYLES = `
   background: var(--dsw-alias-interactive-bg-hover, rgba(128,128,128,0.30));
   cursor: pointer;
   transform: none;
-  transition: background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
   overflow: visible;
 }
 .omnimux-accounts-stage .omnimux-accounts-switch[aria-checked="true"],
@@ -566,7 +566,7 @@ export const STYLES = `
   height: 16px;
   border-radius: 999px;
   background: var(--dsw-alias-label-primary-foreground, var(--dsw-alias-label-primary-inverted));
-  transition: transform var(--omx-dur-base, 200ms) var(--omx-ease-spatial, cubic-bezier(0.32, 0.72, 0, 1));
+  transition: transform var(--omnimux-motion-dur-base, 200ms) var(--omnimux-motion-ease-spatial, cubic-bezier(0.32, 0.72, 0, 1));
   pointer-events: none;
 }
 .omnimux-accounts-stage .omnimux-accounts-switch[aria-checked="true"] .omnimux-accounts-switch-knob {
@@ -597,14 +597,14 @@ export const STYLES = `
   font-size: 16px;
   line-height: 1;
   cursor: pointer;
-  transition: background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-              transform var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              transform var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .omnimux-accounts-more:not(:disabled):hover {
   background: var(--dsw-alias-interactive-bg-hover, rgba(128,128,128,0.12));
 }
 .omnimux-accounts-more:not(:disabled):active {
-  transform: scale(var(--omx-press-scale, 0.96));
+  transform: scale(var(--omnimux-motion-press-scale, 0.96));
 }
 .omnimux-accounts-popover {
   position: absolute;
@@ -621,7 +621,7 @@ export const STYLES = `
   border-radius: 10px;
   background: var(--dsw-alias-bg-primary, var(--dsw-bg, #16181d));
   box-shadow: 0 8px 24px var(--dsw-alias-bg-mask-1, rgba(0,0,0,0.35));
-  animation: omnimux-accounts-menu-pop var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
+  animation: omnimux-accounts-menu-pop var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
 }
 .omnimux-accounts-menuitem {
   display: flex;
@@ -637,7 +637,7 @@ export const STYLES = `
   font-size: 13px;
   text-align: left;
   cursor: pointer;
-  transition: background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .omnimux-accounts-menuitem:not(:disabled):hover {
   background: var(--dsw-alias-interactive-bg-hover, rgba(128,128,128,0.12));
@@ -763,7 +763,7 @@ export const STYLES = `
   border-bottom: 1px solid var(--dsw-alias-border, rgba(255,255,255,0.06));
   vertical-align: middle;
   white-space: nowrap;
-  transition: background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .omnimux-accounts-table tr:last-child td { border-bottom: none; }
 .omnimux-accounts-table tbody tr:hover {
@@ -833,7 +833,7 @@ export const STYLES = `
   border-radius: 10px;
   background: var(--dsw-alias-bg-primary, var(--dsw-bg, #16181d));
   box-shadow: 0 -4px 16px var(--dsw-alias-bg-mask-1, rgba(0,0,0,0.25));
-  animation: omnimux-accounts-bulk-enter var(--omx-dur-base, 200ms) var(--omx-ease-spatial, cubic-bezier(0.32, 0.72, 0, 1)) forwards;
+  animation: omnimux-accounts-bulk-enter var(--omnimux-motion-dur-base, 200ms) var(--omnimux-motion-ease-spatial, cubic-bezier(0.32, 0.72, 0, 1)) forwards;
 }
 @keyframes omnimux-accounts-bulk-enter {
   from { opacity: 0.94; transform: translateY(8px); }
@@ -882,7 +882,7 @@ export const STYLES = `
   place-items: center;
   padding: 24px;
   background: var(--dsw-alias-bg-mask-1, rgba(0,0,0,0.55));
-  animation: omnimux-accounts-fade var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
+  animation: omnimux-accounts-fade var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
 }
 .omnimux-accounts-modal {
   width: min(480px, 100%);
@@ -894,7 +894,7 @@ export const STYLES = `
   border-radius: 12px;
   background: var(--dsw-alias-bg-primary, var(--dsw-bg, #16181d));
   box-shadow: 0 16px 48px var(--dsw-alias-bg-mask-1, rgba(0,0,0,0.45));
-  animation: omnimux-accounts-dialog-enter var(--omx-dur-base, 200ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
+  animation: omnimux-accounts-dialog-enter var(--omnimux-motion-dur-base, 200ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
 }
 .omnimux-accounts-modal-head {
   display: flex;
@@ -975,9 +975,9 @@ export const STYLES = `
   cursor: pointer;
   text-align: left;
   white-space: normal;
-  transition: background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-              border-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-              transform var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              border-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              transform var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
   justify-content: flex-start;
   font: inherit;
 }
@@ -987,8 +987,8 @@ export const STYLES = `
   transform: translateY(-1px);
 }
 .omnimux-accounts-platform-btn:active {
-  transform: scale(var(--omx-press-scale-subtle, 0.985));
-  transition-duration: var(--omx-dur-press, 90ms);
+  transform: scale(var(--omnimux-motion-press-scale-subtle, 0.985));
+  transition-duration: var(--omnimux-motion-dur-press, 90ms);
   background: var(--dsw-alias-interactive-bg-active, rgba(128,128,128,0.18));
 }
 .omnimux-accounts-platform-btn:disabled { cursor: default; opacity: 0.5; }
@@ -1117,9 +1117,9 @@ export const STYLES = `
   color: var(--dsw-alias-label-tertiary, rgba(255,255,255,0.48));
   opacity: 0;
   transform: translateX(-4px);
-  transition: opacity var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-              transform var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
-              color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: opacity var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              transform var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
   display: flex;
   align-items: center;
   justify-content: center;

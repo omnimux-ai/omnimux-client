@@ -126,7 +126,7 @@ export const GroupHeader: React.FC<GroupHeaderProps> = memo(({
           size={14}
           style={{
             transform: isCollapsed ? 'rotate(180deg)' : 'rotate(0deg)',
-            transition: 'transform var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1))',
+            transition: 'transform var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1))',
           }}
         />
       </button>

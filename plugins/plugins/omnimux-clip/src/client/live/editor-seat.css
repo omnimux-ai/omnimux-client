@@ -8,7 +8,7 @@
   text-align: center;
   color: var(--dsw-alias-label-secondary);
   background: var(--dsw-alias-bg-base);
-  animation: omnimux-clip-opening-enter var(--omx-dur-base, 200ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
+  animation: omnimux-clip-opening-enter var(--omnimux-motion-dur-base, 200ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
 }
 
 .omnimux-clip-opening-actions,
@@ -36,7 +36,7 @@
   box-shadow: 0 4px 16px var(--dsw-alias-bg-mask-1);
   font-size: 13px;
   -webkit-app-region: no-drag;
-  animation: omnimux-clip-notice-enter var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
+  animation: omnimux-clip-notice-enter var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
 }
 
 .omnimux-clip-conflict-options > * {
@@ -78,7 +78,7 @@
   border-radius: 8px;
   color: var(--dsw-alias-label-primary);
   background: var(--dsw-alias-bg-layer-1);
-  transition: border-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: border-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 
 .omnimux-clip-studio-entry .openreel-studio-body {

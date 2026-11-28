@@ -44,7 +44,7 @@ const CSS = `
 .omx-asset-pick__tab {
   appearance: none; background: transparent; border: none; cursor: pointer;
   font: inherit; font-size: 16px; font-weight: 500; color: var(--dsw-alias-label-tertiary);
-  padding: 4px 0 10px; position: relative; transition: color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  padding: 4px 0 10px; position: relative; transition: color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
   white-space: nowrap;
 }
 .omx-asset-pick__tab:hover,
@@ -68,7 +68,7 @@ const CSS = `
   border: 1px solid var(--dsw-alias-border-l2); border-radius: 999px;
   padding: 4px 12px; font-size: 13px; line-height: 18px;
   color: var(--dsw-alias-label-secondary); cursor: pointer; white-space: nowrap;
-  transition: background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), border-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), border-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .omx-asset-pick__pill:hover {
   background: var(--dsw-alias-interactive-bg-hover);
@@ -92,7 +92,7 @@ const CSS = `
   border: 1px solid var(--dsw-alias-border-l2);
   background: transparent;
   padding: 0 30px 0 32px; font-size: 13px; color: var(--dsw-alias-label-primary);
-  outline: none; transition: border-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), box-shadow var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  outline: none; transition: border-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), box-shadow var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
   box-sizing: border-box;
 }
 .omx-asset-pick__search-input::placeholder { color: var(--dsw-alias-label-tertiary); }

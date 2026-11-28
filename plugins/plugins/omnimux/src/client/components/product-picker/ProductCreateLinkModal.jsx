@@ -57,7 +57,7 @@ const CSS = `
   padding: 0 18px;
   font-size: 14px; color: var(--dsw-alias-label-primary);
   outline: none;
-  transition: border-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), box-shadow var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: border-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), box-shadow var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .omx-pcl__input::placeholder { color: var(--dsw-alias-label-tertiary); }
 .omx-pcl__input:focus {

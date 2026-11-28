@@ -111,7 +111,7 @@ export const STYLES = `
   color: var(--dsw-alias-label-primary);
   font-size: 13px;
   flex-wrap: wrap;
-  animation: omnimux-pibrowse-notice-enter var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
+  animation: omnimux-pibrowse-notice-enter var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
 }
 .omnimux-pibrowse-notice[data-tone="error"] {
   border-color: var(--dsw-alias-state-error-primary);
@@ -152,7 +152,7 @@ export const STYLES = `
   vertical-align: middle;
   border-bottom: 1px solid var(--dsw-alias-border-l1);
   font-variant-numeric: tabular-nums;
-  transition: background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .omnimux-pibrowse-table tr:last-child td {
   border-bottom: none;
@@ -235,7 +235,7 @@ export const STYLES = `
   border-radius: 999px;
   transform-origin: left;
   transform: scaleX(var(--pb-progress, 0));
-  transition: transform var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  transition: transform var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .omnimux-pibrowse-verify-box {
   display: flex;
@@ -286,7 +286,7 @@ export const STYLES = `
   box-shadow: var(--dsw-shadow-lv2);
   font-size: 13px;
   font-variant-numeric: tabular-nums;
-  animation: omnimux-pibrowse-toast-enter var(--omx-dur-base, 200ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
+  animation: omnimux-pibrowse-toast-enter var(--omnimux-motion-dur-base, 200ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
 }
 .omnimux-pibrowse-toast[data-error="true"] {
   border-color: var(--dsw-alias-state-error-primary);
