@@ -202,14 +202,19 @@
     }
 
     function renderCategoryBar(opts) {
-      const { category, setCategory, setMineCategory, setPage, workshopCategories, tr } = opts;
+      const { category, setCategory, setPlatformFilter, setMineCategory, setPage, workshopCategories, tr } = opts;
       const isZh = tr("locale") === "zh";
       return h("div", { className: "category-bar", "aria-label": tr("workshop.category") },
         h("span", { className: "category-label" }, tr("workshop.scenarioLabel") || "场景分类"),
         workshopCategories.map((c) => {
           const isDrama = c.id === "短剧漫剧" && isZh;
           const label = isDrama ? "短剧/漫剧" : c.label;
-          const onCatClick = () => { setCategory(c.id); setMineCategory(""); setPage(1); };
+          const onCatClick = () => {
+            setCategory(c.id);
+            if (setPlatformFilter) setPlatformFilter("");
+            setMineCategory("");
+            setPage(1);
+          };
           // exempt-ui01 category selector button
           return h("button", { key: c.id, type: "button", className: "cat-btn" + (category === c.id ? " active" : ""), "aria-pressed": category === c.id, onClick: onCatClick },
             label,
@@ -313,7 +318,7 @@
     }
 
     function resolvePlazaSectionsData(opts) {
-      const { state, tr, onToggleSwitch, onToggleExp } = opts;
+      const { state, tr, onToggleSwitch, onToggleExp, onInstallExternal } = opts;
       const sessions = marketRuntime.plazaSessions ?? null;
       const activePreset = SkillShelf.resolveActivePreset({ sessions });
       const presetBinding = SkillShelf.getPresetSkillBinding(activePreset, undefined, {
@@ -343,24 +348,44 @@
       const onOpenInstall = () => state.setOpenInstallModal(true);
       const onSearchSubmit = () => { state.setSubmitted(state.searchQuery); state.setPage(1); };
       const onDismissExpertError = () => { if (typeof state.setExpertMarketError === "function") state.setExpertMarketError(""); };
+      const isScenario = SkillShelf.isScenarioTag(state.category);
+      const effectiveHasMore = hasQuery
+        ? state.hasMore
+        : Boolean(state.category && !isScenario && state.category !== "featured" && state.category !== "套件" && state.hasMore);
       const tabContentOpts = {
         isExpertTab, isPluginsTab, searchQuery: state.searchQuery, displayedExperts,
         expertStage: state.expertStage, setExpertStage: state.setExpertStage,
         expertMarketError: state.expertMarketError, onDismissExpertError,
         tr, isEn, expertMarketToggling: state.expertMarketToggling, onToggleExpert: onToggleExp,
-        mainTab: state.mainTab, filteredMine, setOpen: state.setOpen, handleSwitchToggle: onToggleSwitch, category: state.category, hasQuery, hasMore: state.hasMore,
+        mainTab: state.mainTab, filteredMine, setOpen: state.setOpen, handleSwitchToggle: onToggleSwitch, category: state.category, hasQuery, hasMore: effectiveHasMore,
         onMore: () => state.setPage(state.page + 1),
         featuredItems,
         mineToolbarOpts: { mineCategory: state.mineCategory, setMineCategory: state.setMineCategory, mineSource: state.mineSource, setMineSource: state.setMineSource, availableSources, autoUpdate: state.autoUpdate, setAutoUpdate: state.setAutoUpdate, tr },
         featuredSectionOpts: { featuredItems, tr, setOpen: state.setOpen },
-        regularSectionOpts: { category: state.category, hasQuery, regularItems: displayedRegular, uninstalledOnly: state.uninstalledOnly, setUninstalledOnly: state.setUninstalledOnly, status: state.status, page: state.page, err: state.err, tr, setOpen: state.setOpen, onToggle: onToggleSwitch },
+        regularSectionOpts: {
+          category: state.category,
+          hasQuery,
+          regularItems: displayedRegular,
+          uninstalledOnly: state.uninstalledOnly,
+          setUninstalledOnly: state.setUninstalledOnly,
+          status: state.status,
+          page: state.page,
+          err: state.err,
+          tr,
+          setOpen: state.setOpen,
+          onToggle: onToggleSwitch,
+          platformFilter: state.platformFilter,
+          setPlatformFilter: state.setPlatformFilter,
+          onInstallExternal,
+          installingSlugs: state.installingSlugs,
+        },
       };
       return {
         isExpertTab,
         isDiscoverTab,
         introOpts: { introHeading, introSubtitle, isExpertTab, isPluginsTab, isEn, tr, onOpenInstall },
         navBarOpts: { mainTab: state.mainTab, setMainTab: state.setMainTab, setPage: state.setPage, searchQuery: state.searchQuery, setSearchQuery: state.setSearchQuery, placeholderText, onSearchSubmit, tr, isEn },
-        categoryBarOpts: { category: state.category, setCategory: state.setCategory, setMineCategory: state.setMineCategory, setPage: state.setPage, workshopCategories, tr },
+        categoryBarOpts: { category: state.category, setCategory: state.setCategory, setPlatformFilter: state.setPlatformFilter, setMineCategory: state.setMineCategory, setPage: state.setPage, workshopCategories, tr },
         tabContentOpts,
       };
     }
@@ -459,14 +484,39 @@
 
       const apiFn = typeof api === "function" ? api : null;
       const mark = (item, installed) => updatePlazaItemInstalled(item, installed, state, updateInstalledItemsList);
-      const onToggleSwitch = (item) => handleSwitchToggle(item, state, updateInstalledItemsList);
+      const onToggleSwitch = (item) => handleSwitchToggle(item, state, updateInstalledItemsList, apiFn);
       const onToggleExp = (item) => executeToggleExpert(item, state, apiFn);
+      const onInstallExternal = async (item) => {
+        if (!item || !apiFn) return;
+        const slugKey = item.slug || item.id || "";
+        const slug = item.slug || item.skill || item.token || "";
+        if (!slugKey || !slug || state.installingSlugs?.[slugKey]) return;
+        state.setInstallError("");
+        state.setInstallingSlugs((cur) => ({ ...cur, [slugKey]: true }));
+        try {
+          await apiFn("install", { slug, catalogId: item.catalogId || item.id });
+          mark(item, true);
+          loadInstalled();
+        } catch (err) {
+          state.setInstallError(err ? (err.message || String(err)) : "安装失败");
+        } finally {
+          state.setInstallingSlugs((cur) => {
+            const next = { ...cur };
+            delete next[slugKey];
+            return next;
+          });
+        }
+      };
       const onConfirm = () => handleConfirmInstall(state.confirmInstallItem, state, mark, apiFn);
-      const sections = resolvePlazaSectionsData({ state, tr, onToggleSwitch, onToggleExp, apiFn });
+      const sections = resolvePlazaSectionsData({ state, tr, onToggleSwitch, onToggleExp, onInstallExternal, apiFn });
       const onCloseModal = () => { if (!state.confirmInstalling) { state.setConfirmInstallItem(null); state.setConfirmInstallError(""); } };
       const workspaces = marketRuntime.plazaWorkspaces ?? null;
       const projectDir = resolveProjectDir(marketRuntime.plazaSessions ?? null, workspaces);
       const [drawerNode, installNode, confirmNode] = renderPlazaModals({ state, mark, loadInstalled, onCloseModal, onConfirm, tr, projectDir });
+
+      hooks.useEffect(() => {
+        state.setPlatformFilter("");
+      }, [state.category]);
 
       // 滚动归属（骨架契约 §二·补）：整页滚动，标题/动作行随页面滚走，一级/二级 Tab 到顶吸附。
       const [stickyNode, setStickyNode] = hooks.useState(null);
@@ -481,6 +531,20 @@
         if (el) el.scrollTop = 0;
       }, [stickyNode, state.mainTab, state.category, state.mineCategory]);
 
+      const isEnUi = tr("locale") === "en";
+      const installErrorToast = state.installError
+        ? h("div", { className: "expert-error-toast", role: "alert" },
+            h("span", { className: "expert-error-dot", "aria-hidden": "true" }),
+            h("span", { className: "expert-error-msg" }, state.installError),
+            // exempt-ui01 dismiss skill install error toast
+            h("button", { type: "button", className: "expert-error-close", "aria-label": isEnUi ? "Dismiss" : "关闭", onClick: () => state.setInstallError("") },
+              h("svg", { width: 14, height: 14, viewBox: "0 0 16 16", fill: "none", "aria-hidden": "true" },
+                h("path", { d: "M4 4l8 8M12 4l-8 8", stroke: "currentColor", strokeWidth: "1.6", strokeLinecap: "round" }),
+              ),
+            ),
+          )
+        : null;
+
       return h("div", { className: "sh-mkt" },
         renderWorkshopIntro(sections.introOpts),
         h("div", { className: "omx-stage-sticky", ref: setStickyNode },
@@ -491,6 +555,7 @@
         drawerNode,
         installNode,
         confirmNode,
+        installErrorToast,
       );
     }
 

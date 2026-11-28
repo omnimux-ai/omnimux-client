@@ -326,6 +326,7 @@
       const [copied, setCopied] = useState(false);
       const [moreMenuOpen, setMoreMenuOpen] = useState(false);
       const [refDirOpen, setRefDirOpen] = useState(false);
+      const [contentNonce, setContentNonce] = useState(0);
 
       useEffect(() => { setView(item); }, [item]);
 
@@ -333,7 +334,7 @@
         let live = true;
         const slug = item.slug || item.token || item.skillKey || item.skill || "";
         if (!slug) return undefined;
-        api("detail", { slug })
+        api("detail", { slug, catalogId: item.catalogId || item.id })
           .then((d) => {
             if (!live || !d) return;
             const card = (d.card && typeof d.card === "object") ? d.card : {};
@@ -344,11 +345,18 @@
               preinstalled: d.preinstalled ?? card.preinstalled ?? cur.preinstalled,
               version: d.version || card.version || cur.version,
               description: card.description || cur.description,
-              source: d.source || cur.source,
+              source: card.source || d.source || cur.source,
             }));
           })
           .catch(() => {});
+        return () => { live = false; };
+      }, [item.slug, item.token, item.skillKey, item.skill, item.catalogId, item.id]);
 
+      useEffect(() => {
+        let live = true;
+        const slug = item.slug || item.token || item.skillKey || item.skill || "";
+        if (!slug) return undefined;
+        const isExternal = Boolean(view.origin === "third-party" || (view.source && view.source.type === "git"));
         api("skillContent", { slug })
           .then((d) => {
             if (!live || !d) return;
@@ -356,7 +364,13 @@
               setFileTree(d.tree || []);
               setSkillMd(d.skillMd || "");
               setMetaYaml(d.metaYaml || "");
+            } else if (isExternal || d.external) {
+              setSkillMd("");
+              setMetaYaml("");
+              setFileTree([{ name: "SKILL.md", isDir: false }]);
             } else {
+              setSkillMd("");
+              setMetaYaml("");
               setFileTree([
                 { name: "references", isDir: true, children: ["overview.md"] },
                 { name: "meta.yaml", isDir: false },
@@ -366,7 +380,7 @@
           })
           .catch(() => {});
         return () => { live = false; };
-      }, [item.slug, item.token, item.skillKey, item.skill]);
+      }, [item.slug, item.token, item.skillKey, item.skill, view.installed, view.origin, contentNonce]);
 
       const handleInstall = async () => {
         setWorking("install");
@@ -396,9 +410,8 @@
           setView((cur) => ({ ...cur, installed: true, enabled: true }));
           item.installed = true;
           item.enabled = true;
+          setContentNonce((n) => n + 1);
           onInstalled?.(item);
-          const displayName = typeof skillTitle === "function" ? skillTitle(view, tr) : (view.name || view.title || item.name || slug);
-          setToast(tr("toast.installed", { name: displayName }));
         } catch (e) {
           setToast(e.message || String(e));
         } finally {
@@ -413,9 +426,10 @@
           await api("uninstall", { slug });
           setView((cur) => ({ ...cur, installed: false }));
           item.installed = false;
+          setSkillMd("");
+          setMetaYaml("");
+          setContentNonce((n) => n + 1);
           onUninstalled?.(item);
-          const displayName = typeof skillTitle === "function" ? skillTitle(view, tr) : (view.name || view.title || item.name || slug);
-          setToast(tr("toast.uninstalled", { name: displayName }));
           setConfirmUninstall(false);
           setMoreMenuOpen(false);
         } catch (e) {
@@ -466,6 +480,9 @@
         badges.push(category);
       }
 
+      const isExternalSkill = Boolean(view.origin === "third-party" || (view.source && view.source.type === "git"));
+      const isExternalUninstalled = isExternalSkill && !isInstalled && !skillMd;
+
       // 解析 YAML frontmatter 和 Markdown 正文
       let yamlText = metaYaml;
       let markdownBody = skillMd;
@@ -476,11 +493,11 @@
           markdownBody = match[2].trim();
         }
       }
-      if (!yamlText) {
+      if (!yamlText && !isExternalUninstalled) {
         yamlText = "name: " + slug + "\ndescription: |\n  " + (view.summaryEn || view.summary || desc).slice(0, 160) + "\ntrigger-words: [" + (view.tags || []).join(", ") + "]";
       }
-      if (!markdownBody) {
-        markdownBody = "# " + (view.titleEn || title) + "\n\n" + (view.summaryEn || desc) + "\n\n### STEP 1: Intake and Lock the Core Brief\nConfirm the premise, target length, aspect ratio, and audio mode before creating assets.";
+      if (!markdownBody && !isExternalUninstalled) {
+        markdownBody = "# " + title + "\n\n" + desc;
       }
 
       const handleCopyYaml = () => {
@@ -513,62 +530,64 @@
 
       // 文件列表
       const treeItems = [];
-      // 文件夹 references
-      treeItems.push(
-        h("div", {
-          key: "tree-ref-dir",
-          className: "ws-tree-node",
-          onClick: () => setRefDirOpen(!refDirOpen),
-        },
-          h("svg", {
-            width: "12",
-            height: "12",
-            viewBox: "0 0 24 24",
-            fill: "none",
-            stroke: "currentColor",
-            strokeWidth: "2",
-            style: { transform: refDirOpen ? "rotate(90deg)" : "none", transition: "transform .15s" },
-          }, h("polyline", { points: "9 18 15 12 9 6" })),
-          h("svg", { width: "14", height: "14", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2" },
-            h("path", { d: "M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" }),
-          ),
-          h("span", null, "references"),
-        ),
-      );
-      if (refDirOpen) {
+      if (!isExternalUninstalled) {
+        // 文件夹 references
         treeItems.push(
           h("div", {
-            key: "tree-ref-sub",
-            className: "ws-tree-node ws-tree-sub" + (selectedFile === "overview.md" ? " active" : ""),
-            onClick: () => setSelectedFile("overview.md"),
+            key: "tree-ref-dir",
+            className: "ws-tree-node",
+            onClick: () => setRefDirOpen(!refDirOpen),
           },
-            h("svg", { width: "13", height: "13", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2" },
+            h("svg", {
+              width: "12",
+              height: "12",
+              viewBox: "0 0 24 24",
+              fill: "none",
+              stroke: "currentColor",
+              strokeWidth: "2",
+              style: { transform: refDirOpen ? "rotate(90deg)" : "none", transition: "transform .15s" },
+            }, h("polyline", { points: "9 18 15 12 9 6" })),
+            h("svg", { width: "14", height: "14", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2" },
+              h("path", { d: "M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" }),
+            ),
+            h("span", null, "references"),
+          ),
+        );
+        if (refDirOpen) {
+          treeItems.push(
+            h("div", {
+              key: "tree-ref-sub",
+              className: "ws-tree-node ws-tree-sub" + (selectedFile === "overview.md" ? " active" : ""),
+              onClick: () => setSelectedFile("overview.md"),
+            },
+              h("svg", { width: "13", height: "13", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2" },
+                h("path", { d: "M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" }),
+                h("polyline", { points: "14 2 14 8 20 8" }),
+              ),
+              h("span", null, "overview.md"),
+            ),
+          );
+        }
+        // meta.yaml
+        treeItems.push(
+          h("div", {
+            key: "tree-meta-yaml",
+            className: "ws-tree-node" + (selectedFile === "meta.yaml" ? " active" : ""),
+            onClick: () => setSelectedFile("meta.yaml"),
+          },
+            h("svg", { width: "14", height: "14", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2" },
               h("path", { d: "M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" }),
               h("polyline", { points: "14 2 14 8 20 8" }),
             ),
-            h("span", null, "overview.md"),
+            h("span", null, "meta.yaml"),
           ),
         );
       }
-      // meta.yaml
-      treeItems.push(
-        h("div", {
-          key: "tree-meta-yaml",
-          className: "ws-tree-node" + (selectedFile === "meta.yaml" ? " active" : ""),
-          onClick: () => setSelectedFile("meta.yaml"),
-        },
-          h("svg", { width: "14", height: "14", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2" },
-            h("path", { d: "M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" }),
-            h("polyline", { points: "14 2 14 8 20 8" }),
-          ),
-          h("span", null, "meta.yaml"),
-        ),
-      );
       // SKILL.md
       treeItems.push(
         h("div", {
           key: "tree-skill-md",
-          className: "ws-tree-node" + (selectedFile === "SKILL.md" ? " active" : ""),
+          className: "ws-tree-node" + (selectedFile === "SKILL.md" || isExternalUninstalled ? " active" : ""),
           onClick: () => setSelectedFile("SKILL.md"),
         },
           h("svg", { width: "14", height: "14", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2" },
@@ -578,6 +597,57 @@
           h("span", null, "SKILL.md"),
         ),
       );
+
+      const externalRepoText = view.source?.repo
+        ? ("github.com/" + view.source.repo + (view.source.path ? " (" + view.source.path + ")" : ""))
+        : (view.author || "SeaLeap");
+      const requiresMpstats = Array.isArray(view.tags) && view.tags.includes("MPstats");
+      const mainPreviewNode = isExternalUninstalled
+        ? h("div", { className: "omx-external-preview-card" },
+            h("h4", { className: "omx-external-preview-title" }, tr("workshop.externalPreviewTitle")),
+            h("p", { className: "omx-external-preview-hint" }, tr("workshop.externalPreviewHint")),
+            requiresMpstats ? h("p", { className: "omx-external-preview-note" }, tr("workshop.externalMpstatsHint")) : null,
+            h("div", { className: "omx-external-preview-meta" },
+              view.subtitle ? h("div", { className: "omx-external-preview-row" },
+                h("span", { className: "omx-external-preview-label" }, tr("workshop.externalPlatformLabel")),
+                h("span", { className: "omx-external-preview-value" }, view.subtitle),
+              ) : null,
+              h("div", { className: "omx-external-preview-row" },
+                h("span", { className: "omx-external-preview-label" }, tr("workshop.externalSourceLabel")),
+                h("span", { className: "omx-external-preview-value" }, externalRepoText),
+              ),
+              h("div", { className: "omx-external-preview-row" },
+                h("span", { className: "omx-external-preview-label" }, tr("workshop.externalLicenseLabel")),
+                h("span", { className: "omx-external-preview-value" }, view.license || "MIT"),
+              ),
+            ),
+          )
+        : (selectedFile === "meta.yaml" ? (
+            h("div", { className: "ws-code-card" },
+              h("div", { className: "ws-code-header" },
+                h("span", { className: "ws-code-lang" }, "YAML"),
+                h("button", { type: "button", className: "ws-code-copy", onClick: handleCopyYaml },
+                  copied ? h("svg", { width: "13", height: "13", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2.5" }, h("polyline", { points: "20 6 9 17 4 12" })) : h("svg", { width: "13", height: "13", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2" }, h("rect", { x: "9", y: "9", width: "13", height: "13", rx: "2", ry: "2" }), h("path", { d: "M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" })),
+                  h("span", null, copied ? "已复制" : "复制"),
+                ),
+              ),
+              h("pre", { className: "ws-code-pre" }, yamlText),
+            )
+          ) : (
+            h("div", null,
+              h("div", { className: "ws-code-card" },
+                h("div", { className: "ws-code-header" },
+                  h("span", { className: "ws-code-lang" }, "YAML"),
+                  h("button", { type: "button", className: "ws-code-copy", onClick: handleCopyYaml },
+                    copied ? h("svg", { width: "13", height: "13", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2.5" }, h("polyline", { points: "20 6 9 17 4 12" })) : h("svg", { width: "13", height: "13", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2" }, h("rect", { x: "9", y: "9", width: "13", height: "13", rx: "2", ry: "2" }), h("path", { d: "M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" })),
+                    h("span", null, copied ? "已复制" : "复制"),
+                  ),
+                ),
+                h("pre", { className: "ws-code-pre" }, yamlText),
+              ),
+              h("div", { className: "ws-markdown-body" }, mdElements),
+            )
+          ));
 
       return h("div", { className: "modal-dialog ws-detail-dialog", role: "dialog", "aria-modal": "true" },
         // 顶部 Header 栏（关闭按钮已统一移至外侧右上方）
@@ -594,41 +664,15 @@
         // 主体分栏：左树右内容
         h("div", { className: "ws-detail-main" },
           h("div", { className: "ws-detail-tree" }, treeItems),
-          h("div", { className: "ws-detail-content" },
-            selectedFile === "meta.yaml" ? (
-              h("div", { className: "ws-code-card" },
-                h("div", { className: "ws-code-header" },
-                  h("span", { className: "ws-code-lang" }, "YAML"),
-                  h("button", { type: "button", className: "ws-code-copy", onClick: handleCopyYaml },
-                    copied ? h("svg", { width: "13", height: "13", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2.5" }, h("polyline", { points: "20 6 9 17 4 12" })) : h("svg", { width: "13", height: "13", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2" }, h("rect", { x: "9", y: "9", width: "13", height: "13", rx: "2", ry: "2" }), h("path", { d: "M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" })),
-                    h("span", null, copied ? "已复制" : "复制"),
-                  ),
-                ),
-                h("pre", { className: "ws-code-pre" }, yamlText),
-              )
-            ) : (
-              h("div", null,
-                h("div", { className: "ws-code-card" },
-                  h("div", { className: "ws-code-header" },
-                    h("span", { className: "ws-code-lang" }, "YAML"),
-                    h("button", { type: "button", className: "ws-code-copy", onClick: handleCopyYaml },
-                      copied ? h("svg", { width: "13", height: "13", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2.5" }, h("polyline", { points: "20 6 9 17 4 12" })) : h("svg", { width: "13", height: "13", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2" }, h("rect", { x: "9", y: "9", width: "13", height: "13", rx: "2", ry: "2" }), h("path", { d: "M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" })),
-                      h("span", null, copied ? "已复制" : "复制"),
-                    ),
-                  ),
-                  h("pre", { className: "ws-code-pre" }, yamlText),
-                ),
-                h("div", { className: "ws-markdown-body" }, mdElements),
-              )
-            ),
-          ),
+          h("div", { className: "ws-detail-content" }, mainPreviewNode),
         ),
         // 底部状态与操作栏
         h("div", { className: "ws-detail-footer" },
           h("div", { className: "ws-footer-status" },
             h(DetailSwitch, {
               checked: isInstalled && isEnabled,
-              onChange: isInstalled ? handleToggleEnable : handleInstall,
+              disabled: Boolean(view.preinstalled) || Boolean(working),
+              onChange: isInstalled ? (view.preinstalled ? undefined : handleUninstall) : handleInstall,
             }),
             h("span", null, isInstalled ? (isEnabled ? "已启用" : "已停用") : "未安装"),
           ),

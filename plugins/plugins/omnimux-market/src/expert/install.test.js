@@ -1,11 +1,11 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { loadCatalog, parseCatalog } from './catalog.js'
-import { formatMcpRow, installItem, readCatalogSkillMarkdown, removeMcpRow, spliceManaged, withConnectorPatchLock } from './install.js'
+import { formatMcpRow, installGitBundleAsync, installItem, readCatalogSkillMarkdown, removeMcpRow, spliceManaged, withConnectorPatchLock } from './install.js'
 
 const PACKAGE_ROOT = join(import.meta.dirname, '..', '..')
 
@@ -24,6 +24,71 @@ test('installs a bundled skill once', () => {
   assert.equal(first.already, undefined)
   assert.equal(second.already, true)
   assert.equal(existsSync(join(env.home, 'skills', 'replicate-viral-video', 'SKILL.md')), true)
+})
+
+test('installGitBundleAsync serializes concurrent installs from the same git repo and rejects symlinks/unsafe args', async () => {
+  const env = roots()
+  const repoDir = join(env.home, 'async-fixture-repo')
+  try {
+    spawnSync('git', ['init', '-b', 'main', repoDir])
+    const alphaDir = join(repoDir, 'pack', 'alpha')
+    const betaDir = join(repoDir, 'pack', 'beta')
+    const evilDir = join(repoDir, 'pack', 'evil')
+    mkdirSync(alphaDir, { recursive: true })
+    mkdirSync(betaDir, { recursive: true })
+    mkdirSync(evilDir, { recursive: true })
+    writeFileSync(join(alphaDir, 'SKILL.md'), '---\nname: git-alpha\n---\n\n# Alpha Skill\n')
+    writeFileSync(join(betaDir, 'SKILL.md'), '---\nname: git-beta\n---\n\n# Beta Skill\n')
+    writeFileSync(join(evilDir, 'SKILL.md'), '---\nname: git-evil\n---\n\n# Evil Skill\n')
+    symlinkSync('/etc/hosts', join(evilDir, 'bad-link'))
+    spawnSync('git', ['-C', repoDir, 'add', '.'])
+    spawnSync('git', ['-C', repoDir, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-m', 'init'])
+
+    const itemA = {
+      id: 'sk-git-alpha',
+      skill: 'git-alpha',
+      title: 'Git Alpha',
+      summary: 'alpha',
+      source: { type: 'git', repo: 'owner/async-fixture', path: 'pack/alpha', ref: 'main' },
+    }
+    const itemB = {
+      id: 'sk-git-beta',
+      skill: 'git-beta',
+      title: 'Git Beta',
+      summary: 'beta',
+      source: { type: 'git', repo: 'owner/async-fixture', path: 'pack/beta', ref: 'main' },
+    }
+    const evilItem = {
+      id: 'sk-git-evil',
+      skill: 'git-evil',
+      title: 'Git Evil',
+      summary: 'evil',
+      source: { type: 'git', repo: 'owner/async-fixture', path: 'pack/evil', ref: 'main' },
+    }
+
+    await Promise.all([
+      installGitBundleAsync(env.home, itemA, { remoteUrl: repoDir }),
+      installGitBundleAsync(env.home, itemB, { remoteUrl: repoDir }),
+    ])
+    assert.match(readFileSync(join(env.home, 'skills', 'git-alpha', 'SKILL.md'), 'utf8'), /Alpha Skill/)
+    assert.match(readFileSync(join(env.home, 'skills', 'git-beta', 'SKILL.md'), 'utf8'), /Beta Skill/)
+
+    await assert.rejects(
+      installGitBundleAsync(env.home, evilItem, { remoteUrl: repoDir }),
+      /symbolic link/,
+    )
+    assert.equal(existsSync(join(env.home, 'skills', 'git-evil')), false)
+
+    await assert.rejects(
+      installGitBundleAsync(env.home, {
+        skill: 'bad-flag',
+        source: { type: 'git', repo: 'owner/async-fixture', path: '--upload-pack=evil', ref: 'main' },
+      }, { remoteUrl: repoDir }),
+      /unsafe git path/,
+    )
+  } finally {
+    rmSync(env.home, { recursive: true, force: true })
+  }
 })
 
 test('installs a git-source skill from a local fixture remote (no network)', () => {

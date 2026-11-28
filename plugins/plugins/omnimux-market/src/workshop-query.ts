@@ -150,6 +150,7 @@ function collectWorkshopDiscovery(
   for (const channel of ['custom', 'workbuddy'] as const) {
     for (const item of input.catalog.items) {
       if (catalogSkillChannel(item) !== channel) continue
+      if (!includeRemote && item.origin === 'third-party' && item.source?.type === 'git') continue
       const token = skillToken({ slug: catalogSkillSlug(item) }).toLowerCase()
       if (!token || winners.has(token)) continue
       if (isOfficialShelfItem(item)) {
