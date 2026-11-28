@@ -193,7 +193,7 @@ export function splitClip(draft: NativeDraft, operation: Fields) {
   return { clipId: id, rightClipId: plan.rightClipId, atSec }
 }
 
-function preserveTransitions(project: Project, reference: Project): Project {
+export function preserveTransitions(project: Project, reference: Project): Project {
   const pruned = pruneTransitions(project, reference)
   return {
     ...pruned,

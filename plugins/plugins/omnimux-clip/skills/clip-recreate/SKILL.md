@@ -16,15 +16,15 @@ disable-model-invocation: true
 ## 五步复刻闭环
 
 ### 1. 读取参考与品牌真源
-- 已有 `omnimux-inspiration` 条目先调 `inspiration_get`；有本地参考视频先用 `omnimux-video` 调 `media_metadata`、`video_analyze` 与 `video_scene_detect`（开启 `extractFrames` 取真实切点与关键帧）。绝不凭文字描述臆测切点秒数。
+- 已有 `omnimux-inspiration` 条目先调 `inspiration_get`；有本地参考视频先用 `omnimux-video` 调 `media_metadata`、`video_analyze` 与 `video_scene_detect`（开启 `extractFrames` 取真实切点与关键帧）。需要逐词字幕与口播节奏时，调用 `omnimux_speech_to_text` 并设 `response_format: "verbose_json"` 提取词级时间戳；绝不凭文字描述臆测切点或节奏秒数。
 - 查询用户指定的商品（`products_get`）与风格或素材资产（`assets_search` / `assets_get`），固定品牌色、字体、产品图与真实卖点；绝不沿用参考片的第三方品牌数据、口号或未核实宣称。
 
 ### 2. 输出精简 MotionSpec
 动手装配前先给出一张简明分镜映射表：
-- 每镜起止秒数与时长（来自真实切点）
-- 保留项（开场钩子节奏、镜头运动方向、转场与停留时长）
-- 替换项（用户的画面、录屏、文案、品牌色、配音）
-- 实现手段（实拍或生成素材 / GraphicTemplate / EditingTemplate / `set_keyframes` + `set_text_animation`）
+- 每镜起止秒数与时长（来自真实切点或 `clip_analyze(mode: "beats" | "highlights")` 分析出的真实重拍与高光点）
+- 保留项（开场钩子节奏、镜头运动方向、转场与停留时长、字幕动态风格）
+- 替换项（用户的画面、录屏、文案、品牌色、配音与背景乐）
+- 实现手段（实拍或生成素材 / GraphicTemplate / EditingTemplate / `import_subtitles` + `set_caption_style` / `sync_clips_to_beats` / `set_audio_ducking` / `set_keyframes` + `set_text_animation`）
 
 ### 3. 盘点模板并补齐缺口素材
 - 调用 `clip_templates` 检索内置与受管资产库模板，只使用真实返回的 `templateId` 与参数 `id`。
@@ -33,11 +33,12 @@ disable-model-invocation: true
 ### 4. 在 omnimux-clip 原子装配
 - 先用 `clip_list`、`clip_create`、`clip_get` 获取有效 `projectId`、`revision` 与 `revisionEpoch`。
 - 将同阶段意图收成清晰批次（大改前先 `validateOnly: true` 预演，通过后再落盘为单个可读 Undo 步）：
-  1. `import_media` 铺主视频、录屏与音轨；
-  2. `add_graphic_instance` 落开场标题、标注卡、下三分之一与结尾 CTA，直接绑定品牌色与文案参数；
-  3. `apply_editing_template` 套用进度条、露脸框或质感滤镜包装；
-  4. `set_keyframes` 做克制的推拉缩放（避免全片晃动）与 `set_text_animation` 做关键词强调；
-  5. 修改已建图形实例的参数或时长时走 `update_graphic_params`，不直接篡改其展开后的成员图层。
+  1. `import_media` 铺主视频、录屏、配音与背景音轨；
+  2. 导入用户音频与字幕：对配音用 `import_subtitles` 导入词级 `transcriptJson` 或 `srt`，用 `clip_analyze(mode: "transcript")` 检查停顿与口癖并用 `cut_transcript_ranges` 做口播精剪；
+  3. 节拍分析与音画对齐：对实时打开工程中的 BGM 跑 `clip_analyze(mode: "beats")`（或 `highlights`），用 `set_marker` 标出重拍切换点，再用 `sync_clips_to_beats` 对齐 B-roll / 分镜片段，并用 `set_audio_ducking` 配置人声与背景乐实时闪避；
+  4. `add_graphic_instance` 落开场标题、标注卡、下三分之一与结尾 CTA，绑定品牌色与文案参数；
+  5. `apply_editing_template` 套用进度条、露脸框或质感滤镜包装，`set_caption_style` 套用逐词高亮/卡拉OK等动态字幕风格，再配合克制的 `set_keyframes` 推拉与 `set_text_animation` 做关键词强调；
+  6. 修改已建图形实例的参数或时长时走 `update_graphic_params`，不直接篡改其展开后的成员图层。
 
 ### 5. 双帧对照与诚实交付
 - 必跑 `clip_diagnostics`，清零时间轴黑场缝隙、片段重叠、片段越界与缺失素材问题。

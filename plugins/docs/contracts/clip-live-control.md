@@ -5,7 +5,7 @@ type: "contract"
 status: "living"
 authority: "L1"
 date: "2026-11-21"
-updated: "2026-11-23"
+updated: "2026-11-28"
 ---
 
 # 画布剪辑归属与实时控制
@@ -50,22 +50,23 @@ Clip 编辑器和 Host 使用同一 OpenReel `Project`。Host 保存含 `project
 
 以 [Host 工具注册](../../plugins/omnimux-clip/src/tools.js) 的 JSON Schema 为准。以下 `?` 表示可选。实时工具共用 `projectId?`、`windowInstanceId?`、`requestId?`，其中 `clip_open` 必须传 `projectId`。`clip_edit` 和 `clip_export` 接收 `baseRevision?` 与 `baseRevisionEpoch?`。编辑前用实时 `clip_get` 读取 `revision` 和 `revisionEpoch`，对同工程和窗口分别传入这两个版本字段。省略数字版本时采用当前租约。省略世代时，编辑和指定版本的导出核对同一会话与目标最后一次实时读取的世代。旧世代即使数字版本相同也返回 `REVISION_CONFLICT`。仅确认导出当前可见工程时可省略两个版本字段。写入与导出宜提供稳定的 `requestId`，供结果不明时复查。
 
-十个工具的输入和输出 schema 均使用 DSH Host 支持的 JSON Schema 子集。Clip 执行时继续校验数值范围、字符串长度、批次数量及窗口身份。
+十一个工具的输入和输出 schema 均使用 DSH Host 支持的 JSON Schema 子集。Clip 执行时继续校验数值范围、字符串长度、批次数量及窗口身份。
 
 | 工具 | 其他参数与结果 |
 | --- | --- |
 | `clip_list` | `limit?` 为 1–100，默认 50。返回 `projects`、`count`、`unavailableProjects`、`unavailableCount`。已保存列表与异常列表各自截取，异常总数另报。 |
 | `clip_templates` | 只读查询 `kind?`（`all` / `graphic` / `editing` / `text_animation`）、`category?`、`templateId?`、`includeAssetLibrary?`，与 `GET /omnimux-clip/api/templates` 共用目录服务。未知 `templateId` 报 `template-not-found`。 |
+| `clip_analyze` | 必填 `mode`（`transcript` / `beats` / `highlights`）。`transcript` 模式与 `GET /omnimux-clip/api/projects/:id/transcript` 共用纯分析逻辑（支持 Saved 回退），返回 `sentences`、`pauses`、`fillers` 与关键词 `matches`；`beats` 与 `highlights` 仅限实时可见编辑器执行本地 PCM/WebAudio 解码与真实计算，缺少音频报 `audio-analysis-failed`。 |
 | `clip_create` | 必填 `name`。`resolution?` 为 `landscape`、`portrait`、`square`，默认 `landscape`。`fps?` 默认 30。生成独立原生空工程并保存，返回 `projectId` 与初始 `revision`。 |
 | `clip_open` | 打开尚未物化的画布工程时同时带 `workspaceId`、`nodeId` 和 `projectId`。已有画布工程可从保存记录解析绑定。只在用户要求打开时调用。 |
-| `clip_get` | `view?` 为 `summary`、`tracks`、`clips`、`full`，默认 `summary`。可带 `trackId`、`clipId`、`fromSec`、`toSec`。返回必填整数 `revision` 和 `revisionEpoch`，实时读取另返回可选字符串 `windowInstanceId`。指定 ID 时也可读保存工程。`summary` 含 `graphicInstanceCount`，`full` 附轨道、片段、转场、素材、字幕与 `graphicInstances`。 |
+| `clip_get` | `view?` 为 `summary`、`tracks`、`clips`、`full`，默认 `summary`。可带 `trackId`、`clipId`、`fromSec`、`toSec`。返回必填整数 `revision` 和 `revisionEpoch`，实时读取另返回可选字符串 `windowInstanceId`。指定 ID 时也可读保存工程。`summary` 含 `markerCount` 与 `graphicInstanceCount`，`full` 附轨道、片段（媒体含 `audioType` / `liveDucking`）、转场、素材、`markers[]`、词级 `subtitles[]`（含 `animationStyle`、`speaker`、`language`、`words[]` 与扩展 `style`）及 `graphicInstances`。 |
 | `clip_diagnostics` | 必填 `projectId`，查 Host 已保存版本并复用 `reconcileProjectMedia` 做离线归因。报告 `timeline_gap`（可见视频空档 ≥0.08 秒）、`clip_overlap`、`media_missing`（附 `reason`：`cache_miss_recoverable` / `legacy_unsigned_exact` / `source_drifted` / `legacy_ambiguous` / `missing_unlinked`、`recoverable`、可选 `suggestedSourceNodeId` 与 `scope`）及 `clip_out_of_bounds`。`ok` 表示有无问题，跨工作区越权或存储错误仍抛领域错误。 |
 | `clip_edit` | 必填可读的 `description` 和 1–100 条 `operations`。`validateOnly: true` 预演。删除非空整轨或清空已有时间轴需明确授权并传 `confirmDestructive: true`。 |
 | `clip_view` | 必填 `action`。`seek` 使用 `toSec`，`play` 可用 `fromSec`，`select_clips` 需 `clipIds`，传空数组清除选段。`pause` 直接暂停。返回原生播放头、播放状态、选段 ID 与版本。 |
 | `clip_snapshot` | `times` 为 1–6 个时间点，或用 `fromSec`、`toSec` 和可选 `count` 等距采样。区间默认 6 帧。都省略时截当前播放头。Host 校验并保存真实合成 PNG，可附图片附件。 |
 | `clip_export` | 必填 `confirm: true`，仅在用户要求渲染成片时传入。`confirm: false` 会抛 `CONFIRMATION_REQUIRED`。`resolution?` 支持 `720p`、`1080p`、`4k` 并保持画幅，`fps?` 覆盖项目帧率。返回原任务实际落盘和画布提交状态。 |
 
-`clip_edit` 的 `operations[].type` 支持 `add_track`、`remove_track`、`set_track_state`、`import_media`、`relink_media`、`add_clip`、`trim_clip`、`split_clip`、`move_clip`、`remove_clip`、`remove_range`、`cut_silences`、`set_volume`、`set_speed`、`add_text`、`set_text`、`set_subtitle_style`、`add_transition`、`remove_transition`、静态参数 `set_clip_effect`，以及声明式动效操作 `add_graphic_instance`、`update_graphic_params`、`remove_graphic_instance`、`apply_editing_template`、`set_keyframes`、`set_text_animation`。`add_graphic_instance` 支持内置 `templateId` 或受管资产库 `libraryAssetId`（经 Host `validateGraphicTemplate` 校验后注入），直接编辑模板展开成员报 `graphic-member-readonly`，关键帧越界报 `keyframe-out-of-range`。`import_media` 接受恰好一种已授权媒体来源：`path`/`sourceUrl`（当前会话工作目录）、`libraryAssetId`（加可选 `fileId`，全局资产库）、`canvasNodeId`（加可选 `outputIndex`，画布上游节点）或 `projectAssetId`（当前绑定项目资产）。句柄类来源由 Host 经 `mediaResolver` 校验后签发会话绑定的短时 `/omnimux-clip/api/media-transfer/:token` 传流，跨工作区或越权统一返回 `path-denied`。`relink_media` 接受 `mediaId`、`source`（同上四种来源）与可选 `allowVersionUpdate`（默认 `false`，摘要漂移时拒绝并报 `media-version-mismatch`；显式 `true` 时更新版本并收敛引用该素材的片段入出点，返回 `adjustedClips` 诊断，整体纳入同一 Undo 步）。素材已在项目中时，可用 `add_clip` 的 `mediaId` 和 `trackId` 上轨。[Host 授权](../../plugins/omnimux-clip/src/media/authorizeToolMedia.js) · [原生批次](../../plugins/omnimux-clip/src/client/live/native-edit.ts) · [原生模板桥接](../../plugins/omnimux-clip/src/client/live/native-templates.ts)
+`clip_edit` 的 `operations[].type` 支持 `add_track`、`remove_track`、`set_track_state`、`import_media`、`relink_media`、`add_clip`、`trim_clip`、`split_clip`、`move_clip`、`remove_clip`、`remove_range`、`cut_silences`、`set_volume`、`set_speed`、`add_text`、`set_text`、`set_subtitle_style`、`add_transition`、`remove_transition`、静态参数 `set_clip_effect`，以及声明式动效与音视频节奏操作 `add_graphic_instance`、`update_graphic_params`、`remove_graphic_instance`、`apply_editing_template`、`set_keyframes`、`set_text_animation`、`import_subtitles`、`set_caption_style`、`cut_transcript_ranges`、`set_marker`、`remove_marker`、`set_audio_ducking`、`sync_clips_to_beats`。`add_graphic_instance` 支持内置 `templateId` 或受管资产库 `libraryAssetId`（经 Host `validateGraphicTemplate` 校验后注入），直接编辑模板展开成员报 `graphic-member-readonly`，关键帧越界报 `keyframe-out-of-range`，非法字幕输入报 `subtitle-invalid`。`import_media` 接受恰好一种已授权媒体来源：`path`/`sourceUrl`（当前会话工作目录）、`libraryAssetId`（加可选 `fileId`，全局资产库）、`canvasNodeId`（加可选 `outputIndex`，画布上游节点）或 `projectAssetId`（当前绑定项目资产）。句柄类来源由 Host 经 `mediaResolver` 校验后签发会话绑定的短时 `/omnimux-clip/api/media-transfer/:token` 传流，跨工作区或越权统一返回 `path-denied`。`relink_media` 接受 `mediaId`、`source`（同上四种来源）与可选 `allowVersionUpdate`（默认 `false`，摘要漂移时拒绝并报 `media-version-mismatch`；显式 `true` 时更新版本并收敛引用该素材的片段入出点，返回 `adjustedClips` 诊断，整体纳入同一 Undo 步）。素材已在项目中时，可用 `add_clip` 的 `mediaId` 和 `trackId` 上轨。[Host 授权](../../plugins/omnimux-clip/src/media/authorizeToolMedia.js) · [原生批次](../../plugins/omnimux-clip/src/client/live/native-edit.ts) · [原生模板桥接](../../plugins/omnimux-clip/src/client/live/native-templates.ts) · [原生分析与节奏桥接](../../plugins/omnimux-clip/src/client/live/native-rhythm.ts)
 
 整批在草稿副本上校验，所有操作通过后才以 `description` 为标签入一条原生撤销记录。校验或任一操作失败时保留原时间轴、历史和版本。`validateOnly` 不生成历史或保存。手动编辑、Agent 编辑、撤销和重做共用原生历史。播放和截图走原生预览，均不入历史。Agent 编辑、截帧和导出遵守 Motion 表达式限制，导入或工具不得替用户批准或写入脚本。[原生播放与截帧](../../plugins/omnimux-clip/src/client/live/native-view.ts) · [Motion 边界](../../plugins/omnimux-clip/src/client/live/native-motion.ts)
 

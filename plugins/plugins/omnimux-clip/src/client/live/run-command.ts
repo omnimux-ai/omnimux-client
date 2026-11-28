@@ -6,7 +6,7 @@ import { mediaDigest } from './media-source'
 import { useProjectStore } from '../openreel/web/stores/project-store'
 
 interface Command {
-  operation: 'clip_get' | 'clip_view' | 'clip_edit' | 'clip_snapshot' | 'clip_export'
+  operation: 'clip_analyze' | 'clip_get' | 'clip_view' | 'clip_edit' | 'clip_snapshot' | 'clip_export'
   projectId: string
   args: Record<string, unknown>
   binding?: { workspaceId: string; nodeId: string; projectId: string }
@@ -99,6 +99,11 @@ function exportSettings(args: Command['args'], width: number, height: number) {
 
 export async function runNativeCommand(command: Command, run: Execution) {
   const { operation, args } = command
+  if (operation === 'clip_analyze') {
+    const { executeNativeAnalyze } = await import('./native-analyze')
+    run.assertCurrent()
+    return executeNativeAnalyze(args, { assertCurrent: run.assertCurrent })
+  }
   if (operation === 'clip_get') {
     const { readNativeSnapshot } = await import('./native-view')
     run.assertCurrent()

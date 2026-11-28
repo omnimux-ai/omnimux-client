@@ -155,7 +155,7 @@ describe('clip_* tools', () => {
     const { specs: tools } = fixture(t)
     assert.deepEqual(
       tools.map((item) => item.name),
-      ['clip_list', 'clip_templates', 'clip_create', 'clip_open', 'clip_get', 'clip_edit', 'clip_view', 'clip_snapshot', 'clip_diagnostics', 'clip_export'],
+      ['clip_list', 'clip_templates', 'clip_analyze', 'clip_create', 'clip_open', 'clip_get', 'clip_edit', 'clip_view', 'clip_snapshot', 'clip_diagnostics', 'clip_export'],
     )
   })
 
@@ -434,7 +434,7 @@ describe('apply() host entry', () => {
       inject: () => {},
     })
     assert.deepEqual(registered, [
-      'clip_list', 'clip_templates', 'clip_create', 'clip_open',
+      'clip_list', 'clip_templates', 'clip_analyze', 'clip_create', 'clip_open',
       'clip_get', 'clip_edit', 'clip_view', 'clip_snapshot', 'clip_diagnostics', 'clip_export',
     ])
     assert.deepEqual(sections, ['clip:ops'])
@@ -463,7 +463,7 @@ test('registers the ten Clip tools and forwards the Cordis execution identity', 
   const registered = []
   registerClipTools({ tools: { register: tool => registered.push(tool) } }, h.specs)
   assert.deepEqual(registered.map(tool => tool.name), [
-    'clip_list', 'clip_templates', 'clip_create', 'clip_open', 'clip_get', 'clip_edit', 'clip_view', 'clip_snapshot', 'clip_diagnostics', 'clip_export',
+    'clip_list', 'clip_templates', 'clip_analyze', 'clip_create', 'clip_open', 'clip_get', 'clip_edit', 'clip_view', 'clip_snapshot', 'clip_diagnostics', 'clip_export',
   ])
   const clientA = h.connect('one')
   const clientB = h.connect('two', 'chat-b')
@@ -1392,4 +1392,319 @@ test('clip_templates and GET /templates enforce auth, parity, and Host custom te
   const editRes = await validEditPromise
   assert.equal(editRes.results[0].instanceId, 'g1')
   assert.deepEqual(editRes.results[0].memberClipIds, ['g1__label'])
+})
+
+test('clip_analyze, GET /projects/:id/transcript, Phase 2 clip_edit schemas, and clip_get full projections (#phase2)', async (t) => {
+  const h = fixture(t)
+  const seeded = createNativeProject('demo', 'Transcript Demo')
+  seeded.timeline.duration = 8
+  seeded.mediaLibrary.items.push({
+    id: 'm-bgm',
+    name: 'bgm.mp3',
+    type: 'audio',
+    fileHandle: null,
+    blob: null,
+    metadata: { duration: 12, fileSize: 1024, codec: 'aac', sampleRate: 44100, channels: 2 },
+    thumbnailUrl: null,
+    waveformData: null,
+  })
+  seeded.timeline.tracks.push({
+    id: 'a-bgm',
+    name: 'BGM',
+    type: 'audio',
+    locked: false,
+    muted: false,
+    clips: [{
+      id: 'c-bgm',
+      mediaId: 'm-bgm',
+      trackId: 'a-bgm',
+      startTime: 0,
+      duration: 6,
+      inPoint: 0,
+      outPoint: 6,
+      speed: 1,
+      volume: 1,
+      audioType: 'music',
+      effects: [],
+      audioEffects: [],
+      keyframes: [],
+      metadata: {
+        liveDucking: { enabled: true, amountDb: 14, attackMs: 250, releaseMs: 350, holdMs: 200 },
+      },
+    }],
+    transitions: [],
+  })
+  seeded.timeline.markers.push({
+    id: 'mk-1',
+    time: 1.5,
+    duration: 0.5,
+    label: 'Hook Beat',
+    color: '#ef4444',
+    kind: 'chapter',
+    comment: 'Drop visual hook',
+  })
+  seeded.timeline.subtitles.push(
+    {
+      id: 'sub-1',
+      text: 'Um hello world.',
+      startTime: 0.2,
+      endTime: 1.4,
+      speaker: 'Host',
+      language: 'en',
+      animationStyle: 'word-highlight',
+      style: {
+        fontFamily: 'Inter',
+        fontSize: 42,
+        color: '#ffffff',
+        backgroundColor: 'rgba(0,0,0,0.6)',
+        position: 'bottom',
+        highlightColor: '#facc15',
+        boxRadius: 8,
+        safeMargin: 0.08,
+      },
+      words: [
+        { text: 'Um', startTime: 0.2, endTime: 0.5 },
+        { text: 'hello', startTime: 0.6, endTime: 1.0 },
+        { text: 'world.', startTime: 1.0, endTime: 1.4 },
+      ],
+    },
+    {
+      id: 'sub-2',
+      text: 'Awesome product demo.',
+      startTime: 2.3,
+      endTime: 4.0,
+      speaker: 'Host',
+      language: 'en',
+      animationStyle: 'karaoke',
+      words: [
+        { text: 'Awesome', startTime: 2.3, endTime: 2.9 },
+        { text: 'product', startTime: 3.0, endTime: 3.5 },
+        { text: 'demo.', startTime: 3.5, endTime: 4.0 },
+      ],
+    },
+  )
+  h.store.create('demo', seeded)
+
+  // Saved clip_get full projection returns markers, word-level subtitles, audioType, liveDucking, extended style
+  const fullSaved = await h.execute('clip_get', { projectId: 'demo', view: 'full' })
+  assert.equal(fullSaved.markerCount, 1)
+  assert.equal(fullSaved.markers.length, 1)
+  assert.equal(fullSaved.markers[0].label, 'Hook Beat')
+  assert.equal(fullSaved.clips[0].audioType, 'music')
+  assert.deepEqual(fullSaved.clips[0].liveDucking, { enabled: true, amountDb: 14, attackMs: 250, releaseMs: 350, holdMs: 200 })
+  assert.equal(fullSaved.subtitles[0].animationStyle, 'word-highlight')
+  assert.equal(fullSaved.subtitles[0].wordCount, 3)
+  assert.equal(fullSaved.subtitles[0].words.length, 3)
+  assert.equal(fullSaved.subtitles[0].style.highlightColor, '#facc15')
+  assert.equal(fullSaved.subtitles[0].style.boxRadius, 8)
+
+  // Auth & fail-closed 503 guards on GET /projects/:id/transcript
+  const denied = await h.http('GET', '/projects/demo/transcript', undefined, undefined, { 'deny-request': '1' })
+  assert.equal(denied.status, 401)
+  const badParam = await h.http('GET', '/projects/demo/transcript?minPauseSec=abc')
+  assert.equal(badParam.status, 400)
+  const emptyFillerParam = await h.http('GET', '/projects/demo/transcript?fillerPhrases=')
+  assert.equal(emptyFillerParam.status, 400)
+
+  let noConnHandler
+  const isolatedDispatcher = createClipDispatcher({ paths: h.paths, store: h.store, broker: undefined })
+  registerClipRoutes({ register(route) { noConnHandler = route.handler; return () => {} } }, isolatedDispatcher, {
+    getConnection: () => undefined,
+  })
+  const noConnRes = {}
+  await noConnHandler(Object.assign(Readable.from([]), { method: 'GET', url: `${prefix}/projects/demo/transcript`, headers: { host: '127.0.0.1:45812' } }), {
+    writeHead(status) { noConnRes.status = status },
+    end(text) { noConnRes.body = text ? JSON.parse(text) : null },
+  })
+  assert.equal(noConnRes.status, 503)
+
+  // Exact parity between clip_analyze(mode: 'transcript') and GET /projects/:id/transcript
+  const toolTranscript = await h.execute('clip_analyze', {
+    projectId: 'demo', mode: 'transcript', minPauseSec: 0.5, keepPauseSec: 0.2, query: 'Awesome',
+  })
+  const httpTranscript = await h.http('GET', '/projects/demo/transcript?minPauseSec=0.5&keepPauseSec=0.2&query=Awesome')
+  assert.equal(httpTranscript.status, 200)
+  assert.deepEqual(httpTranscript.body, toolTranscript)
+  assert.equal(toolTranscript.subtitleCount, 2)
+  assert.equal(toolTranscript.wordCount, 6)
+  assert.equal(toolTranscript.pauses.length, 1)
+  assert.equal(toolTranscript.fillers.length, 1)
+  assert.equal(toolTranscript.matches.length, 1)
+
+  // Cross-mode parameter checks & EDITOR_OFFLINE for beats/highlights
+  await rejectsCode(h.execute('clip_analyze', { projectId: 'demo', mode: 'transcript', minBpm: 100 }), 'invalid-json')
+  await rejectsCode(h.execute('clip_analyze', { mode: 'beats', query: 'Um' }), 'invalid-json')
+  await rejectsCode(h.execute('clip_analyze', { mode: 'beats' }), 'EDITOR_OFFLINE')
+
+  // Live dispatch for clip_analyze (beats & highlights) + INVALID_RECEIPT guard
+  const client = h.connect('analyze-win')
+  const leaseId = await acquire(h, client, 'demo')
+
+  const beatsPromise = h.execute('clip_analyze', {
+    requestId: 'an-beats-1', mode: 'beats', clipId: 'c-bgm', minBpm: 80, maxBpm: 160, subdivision: 2,
+  })
+  const beatsClaim = await h.post(client, 'claim', { leaseId, requestId: 'an-beats-1' })
+  assert.equal(beatsClaim.status, 200)
+  assert.equal(beatsClaim.body.command.operation, 'clip_analyze')
+  await h.post(client, 'receipt', {
+    leaseId,
+    requestId: 'an-beats-1',
+    receiptToken: beatsClaim.body.command.receiptToken,
+    result: {
+      projectId: 'demo',
+      mode: 'beats',
+      clipId: 'c-bgm',
+      mediaId: 'm-bgm',
+      bpm: 120,
+      confidence: 0.92,
+      audioDurationSec: 6,
+      beatCount: 2,
+      downbeatCount: 1,
+      beats: [
+        { timeSec: 0.5, sourceTimeSec: 0.5, strength: 0.95, index: 0, isDownbeat: true, isSubdivision: false },
+        { timeSec: 0.75, sourceTimeSec: 0.75, strength: 0.5, index: 1, isDownbeat: false, isSubdivision: true },
+      ],
+      downbeats: [0.5],
+      mediaPath: '/private/leak.wav',
+    },
+  })
+  const beatsRes = await beatsPromise
+  assert.equal(beatsRes.bpm, 120)
+  assert.equal(beatsRes.beats.length, 2)
+  assert.equal(Object.hasOwn(beatsRes, 'mediaPath'), false)
+
+  const forgedPromise = h.execute('clip_analyze', { requestId: 'an-beats-bad', mode: 'beats' })
+  const forgedClaim = await h.post(client, 'claim', { leaseId, requestId: 'an-beats-bad' })
+  await h.post(client, 'receipt', {
+    leaseId,
+    requestId: 'an-beats-bad',
+    receiptToken: forgedClaim.body.command.receiptToken,
+    result: { projectId: 'demo', mode: 'beats', beatCount: 0, beats: [] },
+  })
+  await rejectsCode(forgedPromise, 'INVALID_RECEIPT')
+
+  // Live highlights dispatch & live clip_get(view: 'full') receipt projection (markers >160 chars, liveDucking, word-level subtitles)
+  const hiPromise = h.execute('clip_analyze', { requestId: 'an-hi-1', mode: 'highlights', clipId: 'c-bgm', targetClipCount: 2 })
+  const hiClaim = await h.post(client, 'claim', { leaseId, requestId: 'an-hi-1' })
+  await h.post(client, 'receipt', {
+    leaseId,
+    requestId: 'an-hi-1',
+    receiptToken: hiClaim.body.command.receiptToken,
+    result: {
+      projectId: 'demo',
+      mode: 'highlights',
+      clipId: 'c-bgm',
+      mediaId: 'm-bgm',
+      audioDurationSec: 6,
+      highlightCount: 1,
+      highlights: [{ startSec: 1.5, endSec: 4.5, durationSec: 3, score: 8.5, title: 'Highlight 1', reason: 'Strong local audio energy' }],
+    },
+  })
+  const hiRes = await hiPromise
+  assert.equal(hiRes.highlightCount, 1)
+  assert.equal(hiRes.highlights[0].score, 8.5)
+
+  const longComment = 'C'.repeat(260)
+  const liveFullPromise = h.execute('clip_get', { requestId: 'get-full-p2', view: 'full' })
+  const liveFullClaim = await h.post(client, 'claim', { leaseId, requestId: 'get-full-p2' })
+  await h.post(client, 'receipt', {
+    leaseId,
+    requestId: 'get-full-p2',
+    receiptToken: liveFullClaim.body.command.receiptToken,
+    result: {
+      projectId: 'demo',
+      view: 'full',
+      revision: 1,
+      revisionEpoch: 0,
+      durationSec: 8,
+      playheadSec: 0,
+      isPlaying: false,
+      title: 'Live Demo',
+      fps: 30,
+      width: 1920,
+      height: 1080,
+      aspectRatio: '16:9',
+      trackCount: 1,
+      clipCount: 1,
+      mediaCount: 1,
+      missingMediaCount: 0,
+      subtitleCount: 1,
+      markerCount: 1,
+      graphicInstanceCount: 0,
+      selectedClips: [],
+      tracks: [{ id: 'a-bgm', index: 0, name: 'BGM', type: 'audio', locked: false, syncLock: true, hidden: false, muted: false, solo: false, soloSafe: false, clipCount: 1, clips: [], transitions: [] }],
+      clips: [{
+        id: 'c-bgm', name: 'bgm.mp3', trackId: 'a-bgm', trackIndex: 0, trackType: 'audio', kind: 'media',
+        startSec: 0, endSec: 6, durationSec: 6, mediaId: 'm-bgm', mediaType: 'audio', sourceInSec: 0, sourceOutSec: 6,
+        speed: 1, volume: 1, audioType: 'music',
+        liveDucking: { enabled: true, amountDb: 14, attackMs: 250, releaseMs: 350, holdMs: 200 },
+        keyframeCount: 0, hasEffects: false, hasColorGrading: false,
+      }],
+      media: [{ id: 'm-bgm', mediaId: 'm-bgm', name: 'bgm.mp3', type: 'audio', missing: false, durationSec: 12 }],
+      markers: [{ id: 'mk-1', timeSec: 1.5, durationSec: 0.5, label: 'Hook Beat', color: '#ef4444', comment: longComment, kind: 'chapter' }],
+      subtitles: [{
+        id: 'sub-1', text: 'Hello world', startSec: 0.2, endSec: 1.2, hidden: false,
+        animationStyle: 'word-highlight', speaker: 'Host', language: 'en', wordCount: 2,
+        words: [{ text: 'Hello', startSec: 0.2, endSec: 0.6 }, { text: 'world', startSec: 0.7, endSec: 1.2 }],
+        style: { fontFamily: 'Inter', fontSize: 42, color: '#ffffff', backgroundColor: '#000000', position: 'bottom', highlightColor: '#facc15', boxRadius: 8, safeMargin: 0.08 },
+      }],
+    },
+  })
+  const liveFull = await liveFullPromise
+  assert.equal(liveFull.markerCount, 1)
+  assert.equal(liveFull.markers[0].comment.length, 260)
+  assert.equal(liveFull.clips[0].liveDucking.amountDb, 14)
+  assert.equal(liveFull.subtitles[0].words.length, 2)
+
+  // Phase 2 clip_edit operations reject motion expression injection & validate schemas cleanly
+  await rejectsCode(
+    h.execute('clip_edit', {
+      requestId: 'p2-expr-deny',
+      description: 'Reject expression on subtitle style',
+      operations: [{ type: 'set_caption_style', animationStyle: 'karaoke', expression: 'bad()' }],
+    }),
+    'motion-expression-denied',
+  )
+
+  const rhythmEditPromise = h.execute('clip_edit', {
+    requestId: 'p2-edit-ok',
+    description: 'Apply Phase 2 rhythm edits',
+    operations: [
+      { type: 'import_subtitles', srt: '1\n00:00:00,000 --> 00:00:01,500\nHi there', animationStyle: 'word-highlight', highlightColor: '#facc15' },
+      { type: 'cut_transcript_ranges', mode: 'pauses', minPauseSec: 0.5, keepPauseSec: 0.2 },
+      { type: 'set_marker', timeSec: 1.2, durationSec: 0.4, label: 'Cut Point', color: '#22c55e', kind: 'chapter' },
+      { type: 'remove_marker', markerId: 'mk-old' },
+      { type: 'set_audio_ducking', clipId: 'c-bgm', audioType: 'music', enabled: true, amountDb: 15, attackMs: 200, releaseMs: 300, holdMs: 150 },
+      { type: 'sync_clips_to_beats', clipIds: ['c-bgm'], beats: [0.5, 1.0, 1.5, 2.0, 2.5], syncMode: 'preserve-duration' },
+    ],
+  })
+  const rhythmClaim = await h.post(client, 'claim', { leaseId, requestId: 'p2-edit-ok' })
+  assert.equal(rhythmClaim.status, 200)
+  await h.post(client, 'receipt', {
+    leaseId,
+    requestId: 'p2-edit-ok',
+    receiptToken: rhythmClaim.body.command.receiptToken,
+    result: {
+      projectId: 'demo',
+      revision: 2,
+      undoStep: true,
+      persisted: true,
+      synchronized: true,
+      results: [
+        { type: 'import_subtitles', mode: 'append', count: 1, subtitleCount: 3, createdClipIds: ['sub-new'] },
+        { type: 'cut_transcript_ranges', mode: 'pauses', count: 1, cutDurationSec: 0.4, removedClipIds: [], createdClipIds: [] },
+        { type: 'set_marker', markerId: 'mk-cut', timeSec: 1.2, durationSec: 0.4, label: 'Cut Point', color: '#22c55e', kind: 'chapter', created: true },
+        { type: 'remove_marker', markerId: 'mk-old' },
+        { type: 'set_audio_ducking', clipId: 'c-bgm', audioType: 'music', liveDucking: { enabled: true, amountDb: 15, attackMs: 200, releaseMs: 300, holdMs: 150 } },
+        { type: 'sync_clips_to_beats', syncMode: 'preserve-duration', bpm: 120, beatCount: 5, count: 1, syncedClips: [{ clipId: 'c-bgm', startSec: 0.5, durationSec: 6 }] },
+      ],
+    },
+  })
+  const rhythmRes = await rhythmEditPromise
+  assert.equal(rhythmRes.results[0].subtitleCount, 3)
+  assert.equal(rhythmRes.results[1].cutDurationSec, 0.4)
+  assert.equal(rhythmRes.results[2].markerId, 'mk-cut')
+  assert.equal(rhythmRes.results[3].markerId, 'mk-old')
+  assert.deepEqual(rhythmRes.results[4].liveDucking, { enabled: true, amountDb: 15, attackMs: 200, releaseMs: 300, holdMs: 150 })
+  assert.equal(rhythmRes.results[5].syncedClips[0].startSec, 0.5)
 })

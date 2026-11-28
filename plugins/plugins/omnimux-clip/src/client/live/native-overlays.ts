@@ -2,7 +2,8 @@ import { FILTER_PRESETS } from '../openreel/core/video/filter-presets'
 import { getTimelineItemCapabilities } from '../openreel/core/timeline/timeline-items'
 import { graphicInstanceOfClip } from '../openreel/core/graphic-templates/instances'
 import { createDefaultAnimation, TEXT_ANIMATION_PRESETS } from '../openreel/core/text/text-animation-presets'
-import { EASING_TYPES, type EasingType, type Effect, type Keyframe, type Subtitle, type Transform } from '../openreel/core/types/timeline'
+import { CAPTION_ANIMATION_STYLES } from '../openreel/core/text/caption-animation-renderer'
+import { EASING_TYPES, type CaptionAnimationStyle, type EasingType, type Effect, type Keyframe, type Subtitle, type SubtitleStyle, type Transform } from '../openreel/core/types/timeline'
 import { TitleEngine } from '../openreel/core/text/title-engine'
 import { SUBTITLE_STYLE_PRESETS } from '../openreel/core/text/subtitle-engine'
 import type { TextAnimation, TextAnimationPreset, TextStyle } from '../openreel/core/text/types'
@@ -11,60 +12,133 @@ import { ClipDomainError } from '../../errors.js'
 import { fields, invalid, number, onlyKeys, seconds, text, type Fields } from './native-input'
 import { addTrack, requireItem, requireNewItemId, requirePlacement, requireTrack, type NativeDraft } from './native-timeline'
 
-const styleKeys = ['fontSize', 'fontFamily', 'fontWeight', 'color', 'strokeColor', 'strokeWidth', 'backgroundColor', 'textAlign', 'position', 'presetId', 'preset', 'content'] as const
+const styleKeys = [
+  'fontSize', 'fontFamily', 'fontWeight', 'color', 'strokeColor', 'strokeWidth', 'backgroundColor', 'textAlign',
+  'position', 'presetId', 'preset', 'content',
+  'highlightColor', 'upcomingColor', 'shadowColor', 'shadowBlur', 'boxPaddingX', 'boxPaddingY', 'boxRadius', 'safeMargin',
+  'animationStyle',
+] as const
 
-function color(value: unknown, key: string): string {
+const captionNestedKeys = [
+  'fontSize', 'fontFamily', 'color', 'backgroundColor', 'position', 'presetId', 'preset',
+  'highlightColor', 'upcomingColor', 'strokeColor', 'strokeWidth',
+  'shadowColor', 'shadowBlur', 'boxPaddingX', 'boxPaddingY', 'boxRadius', 'safeMargin', 'animationStyle',
+] as const
+
+const captionOnlyKeys = [
+  'highlightColor', 'upcomingColor', 'shadowColor', 'shadowBlur', 'boxPaddingX', 'boxPaddingY', 'boxRadius', 'safeMargin',
+] as const
+
+export function normalizeColor(value: unknown, key: string): string {
   const cssColor = text(value, key, 80)
   if (!/^(?:#[0-9a-f]{3,8}|[a-z]+|(?:rgba?|hsla?)\([\d.%, +/\-]+\))$/i.test(cssColor)) invalid(`${key} must be a CSS color`)
   return cssColor
 }
 
-function textStyle(operation: Fields): { style: Partial<TextStyle>; content: unknown; position?: Transform['position'] } {
+function parseFontFamily(value: unknown): string {
+  const family = text(value, 'fontFamily', 96)
+  if (!/^[\p{L}\p{N}_ ,.'"-]+$/u.test(family)) invalid('Choose a font family name')
+  return family
+}
+
+function resolveSubtitlePreset(presetValue: unknown): SubtitleStyle | undefined {
+  if (presetValue === undefined) return undefined
+  const presetName = presetValue === 'subtitle' ? 'default' : presetValue
+  if (typeof presetName !== 'string' || !Object.hasOwn(SUBTITLE_STYLE_PRESETS, presetName)) {
+    invalid('Choose an OpenReel subtitle preset')
+  }
+  return SUBTITLE_STYLE_PRESETS[presetName]
+}
+
+export function parseCaptionStylePatch(operation: Fields, allowedKeys: readonly string[] = captionNestedKeys): {
+  stylePatch: { -readonly [K in keyof SubtitleStyle]?: SubtitleStyle[K] }
+  animationStyle?: CaptionAnimationStyle
+  positionPoint?: Transform['position']
+} {
+  const rawNested = operation.textStyle ?? operation.style
+  const nested = rawNested === undefined ? {} : fields(rawNested, 'caption style')
+  onlyKeys(nested, allowedKeys, 'caption style')
+  const input: Fields = { ...operation, ...nested }
+  const preset = resolveSubtitlePreset(input.presetId ?? input.preset)
+  const stylePatch: { -readonly [K in keyof SubtitleStyle]?: SubtitleStyle[K] } = preset ? { ...preset } : {}
+
+  if (input.fontFamily !== undefined) stylePatch.fontFamily = parseFontFamily(input.fontFamily)
+  if (input.fontSize !== undefined) stylePatch.fontSize = number(input.fontSize, 'fontSize', 1, 800)
+  for (const key of ['color', 'backgroundColor', 'highlightColor', 'upcomingColor', 'strokeColor', 'shadowColor'] as const) {
+    if (input[key] !== undefined) stylePatch[key] = normalizeColor(input[key], key)
+  }
+  if (input.strokeWidth !== undefined) stylePatch.strokeWidth = number(input.strokeWidth, 'strokeWidth', 0, 64)
+  if (input.shadowBlur !== undefined) stylePatch.shadowBlur = number(input.shadowBlur, 'shadowBlur', 0, 64)
+  if (input.boxPaddingX !== undefined) stylePatch.boxPaddingX = number(input.boxPaddingX, 'boxPaddingX', 0, 120)
+  if (input.boxPaddingY !== undefined) stylePatch.boxPaddingY = number(input.boxPaddingY, 'boxPaddingY', 0, 120)
+  if (input.boxRadius !== undefined) stylePatch.boxRadius = number(input.boxRadius, 'boxRadius', 0, 120)
+  if (input.safeMargin !== undefined) stylePatch.safeMargin = number(input.safeMargin, 'safeMargin', 0, 0.25)
+
+  let positionPoint: Transform['position'] | undefined
+  const placement = input.position
+  if (placement === 'top' || placement === 'center' || placement === 'bottom') {
+    stylePatch.position = placement
+  } else if (placement !== undefined) {
+    const point = fields(placement, 'position')
+    onlyKeys(point, ['x', 'y'], 'position')
+    positionPoint = { x: number(point.x, 'position.x', 0.05, 0.95), y: number(point.y, 'position.y', 0.05, 0.95) }
+  }
+
+  let animationStyle: CaptionAnimationStyle | undefined
+  if (input.animationStyle !== undefined) {
+    const candidate = input.animationStyle as CaptionAnimationStyle
+    if (!(CAPTION_ANIMATION_STYLES as readonly string[]).includes(candidate)) {
+      invalid('Choose an OpenReel caption animationStyle')
+    }
+    animationStyle = candidate
+  }
+
+  return { stylePatch, animationStyle, positionPoint }
+}
+
+function textStyle(operation: Fields): {
+  style: Partial<TextStyle>
+  captionPatch: ReturnType<typeof parseCaptionStylePatch>['stylePatch']
+  animationStyle?: CaptionAnimationStyle
+  content: unknown
+  position?: Transform['position']
+  hasCaptionOnlyFields: boolean
+} {
   const options = operation.textStyle ?? operation.style
   const nested = options === undefined ? {} : fields(options, 'text style')
   onlyKeys(nested, styleKeys, 'text style')
-  const input = { ...operation, ...nested }
-  const presetValue = input.presetId ?? input.preset
-  const presetName = presetValue === 'subtitle' ? 'default' : presetValue
-  if (presetName !== undefined && (typeof presetName !== 'string' || !Object.hasOwn(SUBTITLE_STYLE_PRESETS, presetName))) invalid('Choose an OpenReel subtitle preset')
-  const preset = presetName === undefined ? undefined : SUBTITLE_STYLE_PRESETS[presetName as string]
-  const style: { -readonly [K in keyof TextStyle]?: TextStyle[K] } = preset ? {
-    fontFamily: preset.fontFamily, fontSize: preset.fontSize, color: preset.color, backgroundColor: preset.backgroundColor,
-  } : {}
-  if (input.fontFamily !== undefined) {
-    const family = text(input.fontFamily, 'fontFamily', 96)
-    if (!/^[\p{L}\p{N}_ ,.'"-]+$/u.test(family)) invalid('Choose a font family name')
-    style.fontFamily = family
+  const input: Fields = { ...operation, ...nested }
+  const { stylePatch, animationStyle, positionPoint } = parseCaptionStylePatch(operation, styleKeys)
+  const hasCaptionOnlyFields = animationStyle !== undefined || captionOnlyKeys.some((key) => input[key] !== undefined)
+
+  const style: { -readonly [K in keyof TextStyle]?: TextStyle[K] } = {
+    ...(stylePatch.fontFamily !== undefined ? { fontFamily: stylePatch.fontFamily } : {}),
+    ...(stylePatch.fontSize !== undefined ? { fontSize: stylePatch.fontSize } : {}),
+    ...(stylePatch.color !== undefined ? { color: stylePatch.color } : {}),
+    ...(stylePatch.strokeColor !== undefined ? { strokeColor: stylePatch.strokeColor } : {}),
+    ...(stylePatch.strokeWidth !== undefined ? { strokeWidth: stylePatch.strokeWidth } : {}),
+    ...(stylePatch.backgroundColor !== undefined ? { backgroundColor: stylePatch.backgroundColor } : {}),
   }
-  if (input.fontSize !== undefined) style.fontSize = number(input.fontSize, 'fontSize', 1, 800)
   if (input.fontWeight !== undefined) {
     const weight = typeof input.fontWeight === 'string' && /^\d00$/.test(input.fontWeight) ? Number(input.fontWeight) : input.fontWeight
     if (weight === 'normal' || weight === 'bold' || (typeof weight === 'number' && weight >= 100 && weight <= 900 && weight % 100 === 0)) {
       style.fontWeight = weight as TextStyle['fontWeight']
     } else invalid('Choose a supported font weight')
   }
-  for (const key of ['color', 'strokeColor', 'backgroundColor'] as const) {
-    if (input[key] !== undefined) style[key] = color(input[key], key)
-  }
-  if (input.strokeWidth !== undefined) style.strokeWidth = number(input.strokeWidth, 'strokeWidth', 0, 64)
   if (input.textAlign !== undefined) {
     const alignment = input.textAlign as TextStyle['textAlign']
     if (!['left', 'center', 'right', 'justify'].includes(alignment)) invalid('Choose a text alignment')
     style.textAlign = alignment
   }
-  const placement = input.position ?? preset?.position
-  let position: Transform['position'] | undefined
-  if (placement === 'top' || placement === 'center' || placement === 'bottom') {
-    position = { x: 0.5, y: placement === 'top' ? 0.15 : placement === 'center' ? 0.5 : 0.85 }
-  } else if (placement !== undefined) {
-    const point = fields(placement, 'position')
-    onlyKeys(point, ['x', 'y'], 'position')
-    position = { x: number(point.x, 'position.x', 0.05, 0.95), y: number(point.y, 'position.y', 0.05, 0.95) }
-  }
-  return { style, content: input.content ?? operation.text, position }
+  const presetPlacement = stylePatch.position
+  const position = positionPoint ?? (presetPlacement
+    ? { x: 0.5, y: presetPlacement === 'top' ? 0.15 : presetPlacement === 'center' ? 0.5 : 0.85 }
+    : undefined)
+  return { style, captionPatch: stylePatch, animationStyle, content: input.content ?? operation.text, position, hasCaptionOnlyFields }
 }
 
-async function editCue(draft: NativeDraft, cue: Subtitle, operation: Fields, { style, content, position }: ReturnType<typeof textStyle>,
+async function editCue(draft: NativeDraft, cue: Subtitle, operation: Fields,
+  { style, captionPatch, animationStyle, content, position }: ReturnType<typeof textStyle>,
   { start, duration, end }: { start?: number; duration?: number; end?: number }) {
   if (cue.captionTrackId && draft.project.timeline.tracks.some(track => track.id === cue.captionTrackId)) requireTrack(draft.project, cue.captionTrackId)
   if (operation.trackId !== undefined && operation.trackId !== cue.captionTrackId) invalid('Use the captions editor to move this cue to another caption track')
@@ -72,7 +146,7 @@ async function editCue(draft: NativeDraft, cue: Subtitle, operation: Fields, { s
   const length = end !== undefined ? end - startTime : duration ?? cue.endTime - cue.startTime
   if (!(length > 0) || !Number.isFinite(startTime + length)) invalid('Provide a valid subtitle interval')
   if (end !== undefined && duration !== undefined && Math.abs(length - duration) > 1e-7) invalid('Duration must match the text interval')
-  const { textAlign, fontWeight, ...stylePatch } = style
+  const { textAlign, fontWeight } = style
   if (fontWeight !== undefined || textAlign === 'justify') invalid('The native caption style does not support this font weight or alignment')
   const subtitleText = content === undefined ? cue.text : text(content, 'content', 8192)
   const endTime = startTime + length
@@ -85,7 +159,8 @@ async function editCue(draft: NativeDraft, cue: Subtitle, operation: Fields, { s
   const subtitle: Subtitle = {
     ...cue, text: subtitleText, startTime, endTime, cueSettings,
     ...(changedWords ? { words: undefined } : {}),
-    ...(Object.keys(stylePatch).length ? { style: { ...SUBTITLE_STYLE_PRESETS.default, ...cue.style, ...stylePatch } } : {}),
+    ...(animationStyle !== undefined ? { animationStyle } : {}),
+    ...(Object.keys(captionPatch).length ? { style: { ...SUBTITLE_STYLE_PRESETS.default, ...cue.style, ...captionPatch } } : {}),
   }
   await draft.action('subtitle/replace', { subtitleId: cue.id, subtitle })
   return { clipId: cue.id, trackId: cue.captionTrackId, startSec: startTime, durationSec: length }
@@ -95,13 +170,14 @@ export async function editText(draft: NativeDraft, operation: Fields) {
   const { project } = draft
   const create = operation.type === 'add_text' || operation.type === 'add_clip' || operation.clipId === undefined
   const options = textStyle(operation)
-  const { style, content, position } = options
+  const { style, content, position, hasCaptionOnlyFields } = options
   const start = seconds(operation, 'startSec', 'startTimeMs')
   const duration = seconds(operation, 'durationSec', 'durationMs')
   const end = seconds(operation, 'endSec', 'endTimeMs')
   if (operation.kind !== undefined && operation.kind !== 'title' && operation.kind !== 'subtitle' && operation.kind !== 'caption') invalid('kind must be title or subtitle')
   const title = operation.kind === 'title'
   if (create) {
+    if (hasCaptionOnlyFields) invalid('Use import_subtitles or set_caption_style for caption animation and highlight styling')
     const id = requireNewItemId(project, operation.clipId)
     const textValue = text(content ?? operation.name, 'content', 8192)
     if (!textValue.trim()) invalid('Text content is required')
@@ -123,6 +199,7 @@ export async function editText(draft: NativeDraft, operation: Fields) {
   }
   const cue = project.timeline.subtitles.find(item => item.id === operation.clipId)
   if (cue) return editCue(draft, cue, operation, options, { start, duration, end })
+  if (hasCaptionOnlyFields) invalid('Use import_subtitles or set_caption_style for caption animation and highlight styling')
   const target = requireItem(project, operation.clipId)
   if (target.kind !== 'text') invalid('Choose an editable subtitle or title clip')
   if (graphicInstanceOfClip(project, target.item.id)) {
