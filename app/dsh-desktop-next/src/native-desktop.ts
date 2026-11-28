@@ -106,7 +106,20 @@ export class NativeDesktop {
     ))
     if (!this.available) return
     const state = this.options.state()
-    this.tray!.setToolTip(`OmniMux · ${state.selected} · ${state.phase}${state.updates && state.updates.phase !== 'idle' ? ` · ${updateLabel(state.updates, this.options.language())}` : ''}`)
+    const language = this.options.language()
+    const zh = language.toLowerCase().startsWith('zh')
+    const phaseLabel = {
+      starting: zh ? '启动中' : 'Starting',
+      ready: zh ? '运行中' : 'Running',
+      recovery: zh ? '恢复模式' : 'Recovery',
+      error: zh ? '异常' : 'Error',
+    }[state.phase] ?? state.phase
+    const updateSuffix = state.updates && state.updates.phase !== 'idle'
+      ? ` - ${updateLabel(state.updates, language)}`
+      : ''
+    this.tray!.setToolTip(zh
+      ? `OmniMux - ${state.selected}（${phaseLabel}）${updateSuffix}`
+      : `OmniMux - ${state.selected} (${phaseLabel})${updateSuffix}`)
     if (process.platform === 'darwin') {
       const progress = state.updates
       this.tray!.setTitle(progress?.phase === 'downloading'

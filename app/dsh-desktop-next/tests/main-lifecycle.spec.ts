@@ -188,7 +188,7 @@ vi.mock('electron', async () => {
   return { app, BrowserWindow, Tray, autoUpdater: Object.assign(new EventEmitter(), { setFeedURL: vi.fn(), checkForUpdates: vi.fn(), quitAndInstall: vi.fn() }), net: { fetch: vi.fn() },
     crashReporter: { start: fixture.crashStart },
     Notification: class { static isSupported() { return false } },
-    clipboard: {}, dialog: { showErrorBox: vi.fn(), showMessageBox: vi.fn(async () => ({ response: 0 })), showMessageBoxSync: vi.fn(() => 0), showOpenDialog: vi.fn(async () => ({ canceled: true, filePaths: [] })) }, shell: { showItemInFolder: vi.fn(), openExternal: vi.fn(async () => {}) }, safeStorage: {}, nativeTheme: Object.assign(new EventEmitter(), { shouldUseDarkColors: true, shouldUseDarkColorsForSystemIntegratedUI: false }),
+    clipboard: {}, dialog: { showErrorBox: vi.fn(), showMessageBox: vi.fn(async () => ({ response: 0 })), showMessageBoxSync: vi.fn(() => 0), showOpenDialog: vi.fn(async () => ({ canceled: true, filePaths: [] })), showSaveDialog: vi.fn(async () => ({ canceled: true, filePath: undefined as string | undefined })) }, shell: { showItemInFolder: vi.fn(), openExternal: vi.fn(async () => {}) }, safeStorage: {}, nativeTheme: Object.assign(new EventEmitter(), { shouldUseDarkColors: true, shouldUseDarkColorsForSystemIntegratedUI: false }),
     nativeImage: { createFromPath: (path: string) => ({ path, isEmpty: () => false, setTemplateImage() {} }), createEmpty: () => ({ path: '', isEmpty: () => true }) },
     // Templates stay plain arrays for tray assertions; the popup spy is non-enumerable.
     Menu: { buildFromTemplate: (items: any) => Object.defineProperty(items, 'popup', { value: (options: unknown) => fixture.popup(items, options), configurable: true }), setApplicationMenu() {} },
@@ -1419,7 +1419,8 @@ it('boots recovery in the preferred OS language even when the app locale is Engl
     const sender = { sender: controls.webContents, senderFrame: controls.webContents.mainFrame }
     // The recovery assistant in the shell window is the one view that shows the recent log.
     expect(fixture.handlers.get('dsh-next:state')!(sender)).toMatchObject({ phase: 'recovery', logs: 'fixture log' })
-    expect(fixture.trays[0].tooltip).toContain('recovery')
+    expect(fixture.trays[0].tooltip).toContain('恢复模式')
+    expect(fixture.trays[0].tooltip).not.toContain('·')
     expect(fixture.start).not.toHaveBeenCalled()
     fixture.trays[0].menu[0].click()
     expect(fixture.windows).toHaveLength(1)
@@ -1990,43 +1991,61 @@ it('relaunches into Desktop setup after Profile repair and shows where the previ
   } finally { process.argv.splice(0, process.argv.length, ...argv); vi.unstubAllEnvs(); await removeTemporaryDirectory(home) }
 })
 
-it.each(['--next-safe-mode', '--next-recovery'])('restarts the whole app in normal mode from the recovery footer after %s', async mode => {
-  const home = mkdtempSync(join(tmpdir(), 'next-recovery-footer-restart-'))
-  vi.stubEnv('DSH_DESKTOP_NEXT_HOME', home)
-  const argv = [...process.argv]
-  process.argv.push(mode, '--next-onboarding')
-  try {
-    await import('../src/main.ts')
-    await vi.waitFor(() => expect(fixture.windows).toHaveLength(1))
-    const initial = fixture.windows[0]
-    const command = fixture.handlers.get('dsh-next:command')!
-    await command({ sender: initial.webContents, senderFrame: initial.webContents.mainFrame }, { type: 'controls', page: 'recovery' })
-    const recovery = fixture.windows.at(-1)
-    const sender = { sender: recovery.webContents, senderFrame: recovery.webContents.mainFrame }
-    const { app, dialog } = await import('electron')
-    vi.mocked(dialog.showMessageBox).mockResolvedValueOnce({ response: 1, checkboxChecked: false })
-    await command(sender, { type: 'recovery-action', action: 'restart' })
-    expect(app.quit).not.toHaveBeenCalled()
-    let finishClose!: () => void
-    fixture.windows.forEach(window => { window.visible = true })
-    const navigations = fixture.windows.map(window => [...window.loadedUrls])
-    fixture.close.mockImplementationOnce(() => {
-      expect(fixture.windows.every(window => !window.visible)).toBe(true)
-      return new Promise<void>(resolve => { finishClose = resolve })
-    })
-    await command(sender, { type: 'recovery-action', action: 'restart' })
-    expect(fixture.close).toHaveBeenCalledOnce()
-    expect(fixture.restart).not.toHaveBeenCalled()
-    expect(fixture.windows.map(window => window.loadedUrls)).toEqual(navigations)
-    expect(app.relaunch).not.toHaveBeenCalled()
-    finishClose()
-    await vi.waitFor(() => expect(app.relaunch).toHaveBeenCalledOnce())
-    const args = vi.mocked(app.relaunch).mock.calls[0]![0]!.args!
-    expect(args).not.toContain('--next-safe-mode')
-    expect(args).not.toContain('--next-recovery')
-    expect(args).not.toContain('--next-onboarding')
-    expect(new NextProfiles(home).active).toBe('desktop')
-  } finally { process.argv.splice(0, process.argv.length, ...argv); vi.unstubAllEnvs(); await removeTemporaryDirectory(home) }
+it('confirms exiting Safe Mode from the recovery footer and restarts directly from recovery mode', async () => {
+  for (const mode of ['--next-safe-mode', '--next-recovery'] as const) {
+    const home = mkdtempSync(join(tmpdir(), 'next-recovery-footer-restart-'))
+    vi.stubEnv('DSH_DESKTOP_NEXT_HOME', home)
+    const argv = [...process.argv]
+    process.argv.push(mode, '--next-onboarding')
+    try {
+      vi.resetModules()
+      fixture.windows.length = 0
+      fixture.handlers.clear()
+      fixture.close.mockClear()
+      fixture.restart.mockClear()
+      const electron = await import('electron')
+      vi.mocked(electron.app.quit).mockClear()
+      vi.mocked(electron.app.relaunch).mockClear()
+      vi.mocked(electron.dialog.showMessageBox).mockClear()
+      await import('../src/main.ts')
+      await vi.waitFor(() => expect(fixture.windows).toHaveLength(1))
+      const initial = fixture.windows[0]
+      const command = fixture.handlers.get('dsh-next:command')!
+      await command({ sender: initial.webContents, senderFrame: initial.webContents.mainFrame }, { type: 'controls', page: 'recovery' })
+      const recovery = fixture.windows.at(-1)
+      const sender = { sender: recovery.webContents, senderFrame: recovery.webContents.mainFrame }
+      if (mode === '--next-safe-mode') {
+        vi.mocked(electron.dialog.showMessageBox).mockResolvedValueOnce({ response: 1, checkboxChecked: false })
+        await command(sender, { type: 'recovery-action', action: 'restart' })
+        expect(electron.app.quit).not.toHaveBeenCalled()
+        expect(vi.mocked(electron.dialog.showMessageBox).mock.calls[0]!.at(-1)).toMatchObject({
+          buttons: ['退出并重启', '取消'],
+          defaultId: 1,
+          cancelId: 1,
+        })
+      }
+      let finishClose!: () => void
+      fixture.windows.forEach(window => { window.visible = true })
+      const navigations = fixture.windows.map(window => [...window.loadedUrls])
+      fixture.close.mockImplementationOnce(() => {
+        expect(fixture.windows.every(window => !window.visible)).toBe(true)
+        return new Promise<void>(resolve => { finishClose = resolve })
+      })
+      await command(sender, { type: 'recovery-action', action: 'restart' })
+      if (mode === '--next-recovery') expect(electron.dialog.showMessageBox).not.toHaveBeenCalled()
+      expect(fixture.close).toHaveBeenCalledOnce()
+      expect(fixture.restart).not.toHaveBeenCalled()
+      expect(fixture.windows.map(window => window.loadedUrls)).toEqual(navigations)
+      expect(electron.app.relaunch).not.toHaveBeenCalled()
+      finishClose()
+      await vi.waitFor(() => expect(electron.app.relaunch).toHaveBeenCalledOnce())
+      const args = vi.mocked(electron.app.relaunch).mock.calls[0]![0]!.args!
+      expect(args).not.toContain('--next-safe-mode')
+      expect(args).not.toContain('--next-recovery')
+      expect(args).not.toContain('--next-onboarding')
+      expect(new NextProfiles(home).active).toBe('desktop')
+    } finally { process.argv.splice(0, process.argv.length, ...argv); vi.unstubAllEnvs(); await removeTemporaryDirectory(home) }
+  }
 })
 
 
@@ -2465,4 +2484,58 @@ it('refuses data-directory changes and backups from Safe Mode', async () => {
     expect(dialog.showOpenDialog).not.toHaveBeenCalled()
     expect(existsSync(join(fixture.locationRoot, 'desktop-next-last-home.json'))).toBe(false)
   } finally { process.argv.splice(0, process.argv.length, ...argv); vi.unstubAllEnvs(); await removeTemporaryDirectory(home) }
+})
+
+it('uses explicit confirm labels, omnimux export filenames, and offers show-in-folder after diagnostics export', async () => {
+  const home = mkdtempSync(join(tmpdir(), 'next-ux-dialogs-'))
+  vi.stubEnv('DSH_DESKTOP_NEXT_HOME', home)
+  try {
+    await import('../src/main.ts')
+    await vi.waitFor(() => expect(fixture.windows).toHaveLength(1))
+    const window = fixture.windows[0]
+    const sender = { sender: window.webContents, senderFrame: window.webContents.mainFrame }
+    const command = fixture.handlers.get('dsh-next:command')!
+    const manager = new NextProfiles(home)
+    manager.create('scratch')
+    const { dialog, shell } = await import('electron')
+
+    vi.mocked(dialog.showMessageBox).mockClear().mockResolvedValueOnce({ response: 1, checkboxChecked: false })
+    await command(sender, { type: 'delete', name: 'scratch' })
+    expect(vi.mocked(dialog.showMessageBox).mock.calls[0]!.at(-1)).toMatchObject({
+      buttons: ['移除环境', '取消'],
+      defaultId: 1,
+      cancelId: 1,
+    })
+
+    const exportedPath = join(home, 'exported-diagnostics.json')
+    ;(fixture.runtime as unknown as { diagnostics: { exportTo?: unknown } }).diagnostics.exportTo = vi.fn(async () => {})
+    vi.mocked(dialog.showSaveDialog).mockClear().mockResolvedValueOnce({ canceled: false, filePath: exportedPath })
+    let resolveReceipt!: (value: { response: number; checkboxChecked: boolean }) => void
+    const heldReceipt = new Promise<{ response: number; checkboxChecked: boolean }>(resolve => { resolveReceipt = resolve })
+    vi.mocked(dialog.showMessageBox).mockClear().mockImplementationOnce(async () => {
+      expect((fixture.runtime as unknown as { busy: boolean }).busy).toBe(false)
+      return heldReceipt
+    })
+    await command(sender, { type: 'diagnostics' })
+    expect((fixture.runtime as unknown as { busy: boolean }).busy).toBe(false)
+    expect(vi.mocked(dialog.showSaveDialog).mock.calls[0]!.at(-1)).toMatchObject({
+      defaultPath: expect.stringMatching(/^omnimux-diagnostics-\d+\.json$/),
+    })
+    expect(vi.mocked(dialog.showMessageBox).mock.calls[0]!.at(-1)).toMatchObject({
+      message: '诊断信息已导出',
+      buttons: ['在文件夹中显示', '完成'],
+    })
+
+    // A queued follow-up command finishes immediately while the export completion dialog remains open.
+    manager.create('queued-after-export')
+    vi.mocked(dialog.showMessageBox).mockResolvedValueOnce({ response: 1, checkboxChecked: false })
+    await expect(command(sender, { type: 'delete', name: 'queued-after-export' })).resolves.toBeUndefined()
+
+    resolveReceipt({ response: 0, checkboxChecked: false })
+    await vi.waitFor(() => expect(shell.showItemInFolder).toHaveBeenCalledWith(exportedPath))
+
+    vi.mocked(dialog.showSaveDialog).mockClear().mockResolvedValueOnce({ canceled: false, filePath: exportedPath })
+    vi.mocked(dialog.showMessageBox).mockClear().mockRejectedValueOnce(new Error('dialog closed'))
+    await expect(command(sender, { type: 'diagnostics' })).resolves.toBeUndefined()
+  } finally { vi.unstubAllEnvs(); await removeTemporaryDirectory(home) }
 })

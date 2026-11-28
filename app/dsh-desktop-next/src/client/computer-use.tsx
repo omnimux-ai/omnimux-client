@@ -119,11 +119,6 @@ export function ComputerUseSettings({ context, zh, mode = 'overview' }: { contex
       cache.commandMode = resolved
       cache.commandModeLoaded = true
       setCommandMode(resolved)
-      setNotice(
-        resolved
-          ? t('已开启按需命令加载（/computer-use）。', 'On-demand command loading (/computer-use) enabled.')
-          : t('已关闭按需命令加载，Computer Use（Next）工具将在所有会话中常驻。', 'On-demand command loading disabled; Computer Use (Next) tools remain active across sessions.'),
-      )
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : String(failure))
     } finally {
@@ -151,8 +146,8 @@ export function ComputerUseSettings({ context, zh, mode = 'overview' }: { contex
           <h4 className="dshNextComponentSectionTitle">{t('包含的组件', 'Components')}</h4>
           <span className="dshNextComponentSectionCount">
             {official?.componentCount(commandActive) ?? (commandActive
-              ? t('共 1 个 · 1 运行中', '1 total · 1 running')
-              : t('共 1 个 · 1 已停用', '1 total · 1 off'))}
+              ? t('共 1 个，1 运行中', '1 total, 1 running')
+              : t('共 1 个，1 已停用', '1 total, 1 off'))}
           </span>
         </div>
         <ul className="dshNextComponentRows">
@@ -194,10 +189,10 @@ export function ComputerUseSettings({ context, zh, mode = 'overview' }: { contex
         </ul>
       </section>
       {window.desktopNext?.permissions ? <PermissionDetails service={window.desktopNext.permissions} language={zh ? 'zh' : 'en'} />
-        : <p>{t('请在运行 DSH 的桌面应用中管理系统权限。', 'Manage system permissions in the desktop app running DSH.')}</p>}
+        : <p>{t('请在 OmniMux 桌面应用中管理系统权限。', 'Manage system permissions in the OmniMux desktop app.')}</p>}
     </>}
     {notice && <Toast text={notice} onDone={() => { setNotice('') }} />}
-    {error && <Toast text={error} onDone={() => { setError('') }} />}
+    {error && <p role="alert" className="dshDesktopSettingsError">{error}</p>}
     {error && <div className="dshNextPluginActions"><Button variant="outline" size="sm" onClick={() => { setError(''); refresh(value => value + 1) }}>{t('重试', 'Retry')}</Button></div>}
   </div>
 }

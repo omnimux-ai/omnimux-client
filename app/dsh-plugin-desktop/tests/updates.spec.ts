@@ -602,7 +602,7 @@ describe('desktop update Host plugin', () => {
     expect(harness.tray.label()).toBe('Check for Updates…')
   })
 
-  it('shares one pending download and silently restores availability after failure', async () => {
+  it('shares one pending download, notifies on failure, and restores availability', async () => {
     let rejectDownload!: (cause: Error) => void
     const download = new Promise<void>((_resolve, reject) => { rejectDownload = reject })
     const harness = await createHarness({
@@ -620,7 +620,9 @@ describe('desktop update Host plugin', () => {
     await Promise.all([first, second])
 
     expect(harness.downloadAndOpen).toHaveBeenCalledOnce()
-    expect(harness.notifications).toEqual([])
+    expect(harness.notifications).toEqual([
+      expect.objectContaining({ title: 'Update Download Failed' }),
+    ])
     expect(harness.warnings).toEqual([])
     expect(harness.tray.label()).toBe('DSH Desktop 2.1.0 Available')
   })

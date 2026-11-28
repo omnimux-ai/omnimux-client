@@ -71,7 +71,15 @@ export function installAppDownloads(session: Pick<Session, 'on'>, options: {
     if (!response.ok || !body) {
       // Host route failures are short plain-text explanations ("session not found").
       const reason = body ? (await response.text().catch(() => '')).trim().slice(0, 300) : ''
-      throw new Error(`Host responded with HTTP ${response.status}${reason ? `: ${reason}` : ''}`)
+      const zh = options.language().startsWith('zh')
+      const summary = response.status === 404
+        ? (zh ? '请求的文件或会话已不存在' : 'The requested file or session was not found')
+        : response.status === 401 || response.status === 403
+          ? (zh ? '当前登录或访问权限已失效' : 'Access permission is unavailable or expired')
+          : response.status >= 500
+            ? (zh ? '后台服务暂时不可用，请稍后重试' : 'The background service is temporarily unavailable')
+            : (zh ? `下载请求未通过（${response.status}）` : `Download request failed (${response.status})`)
+      throw new Error(reason ? `${summary}（${reason}）` : summary)
     }
     const filename = downloadFilename(response.headers.get('content-disposition'), fallback)
     if (owner.isDestroyed()) { await body.cancel(); return }

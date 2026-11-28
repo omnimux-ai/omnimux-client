@@ -15,6 +15,7 @@ import {
   desktopLanExposureAvailable,
   desktopBrowserAccessEnabled,
 } from '../desktop-network.ts'
+import { installDialogKeyboardIsolation } from './modal-keyboard.ts'
 
 /** Browser view of the Host `dsh-desktop` settings namespace. */
 export interface DesktopShellSettings {
@@ -567,6 +568,33 @@ export function DesktopSettingsSection({
       await persistDesktopNetworkExposureHot(desktopSettings, exposure, refreshView)
     })
   }
+  const cancelLanRef = useRef<HTMLButtonElement>(null)
+  const dialogRef = useRef<HTMLDivElement>(null)
+  const webGroupRef = useRef<HTMLHeadingElement>(null)
+  const pendingLanTriggerRef = useRef<HTMLElement | null>(null)
+  const onDismissLanRef = useRef<() => void>(() => {})
+  onDismissLanRef.current = () => {
+    resolveDesktopLanConfirmation(false, () => { setConfirmLan(false) }, () => { setNetworkExposure('lan') })
+  }
+  useEffect(() => {
+    if (!confirmLan) return
+    return installDialogKeyboardIsolation(
+      dialogRef.current,
+      cancelLanRef.current,
+      () => { onDismissLanRef.current() },
+      (target) => {
+        pendingLanTriggerRef.current = target
+        webGroupRef.current?.focus()
+      },
+    )
+  }, [confirmLan])
+  useEffect(() => {
+    if (busy !== undefined || confirmLan) return
+    const target = pendingLanTriggerRef.current
+    if (!target) return
+    pendingLanTriggerRef.current = null
+    if (target.isConnected && !target.hasAttribute('disabled')) target.focus()
+  }, [busy, confirmLan])
 
   return (
     <div className="dshDesktopSettings">
@@ -802,7 +830,7 @@ export function DesktopSettingsSection({
 
       <section className="dshDesktopSettingsGroup" aria-labelledby="dsh-desktop-web-title">
         <div>
-          <h3 id="dsh-desktop-web-title">{t('webTitle')}</h3>
+          <h3 id="dsh-desktop-web-title" ref={webGroupRef} tabIndex={-1}>{t('webTitle')}</h3>
           <p className="dshDesktopSettingsGroupIntro">{t('webIntro')}</p>
         </div>
         <DesktopSettingsToggleRow
@@ -812,29 +840,33 @@ export function DesktopSettingsSection({
           onChange={setBrowserAccess}
         />
         <p className="dshDesktopSettingsNotice">{t('browserCompatibilityNotice')}</p>
-        <DesktopSettingsToggleRow
-          label={t('lanAccess')}
-          badge={t('beta')}
-          checked={networkExposure === 'lan'}
-          disabled={!desktopLanExposureAvailable(mode) || !browserAccess || !settingsWritable || busy !== undefined}
-          onChange={(checked) => {
-            if (checked && capabilities?.nativeLanConfirmation !== true) setConfirmLan(true)
-            else if (checked) setNetworkExposure('lan')
-            else setNetworkExposure('loopback')
-          }}
-        />
-        {view !== undefined && (
-          <div className="dshDesktopSettingsLanStatus" data-state={view.web.lanState} role="status">
-            <span className="dshDesktopSettingsChoiceTitle">
-              {t('lanStatus')}
-              <span className="dshDesktopSettingsBadge">{t(LAN_STATE_LOCALE_KEYS[view.web.lanState])}</span>
-            </span>
-            {view.web.lanError !== null && (
-              <span className="dshDesktopSettingsChoiceBody">
-                {t('lanError')}: <code>{view.web.lanError}</code>
-              </span>
+        {browserAccess && (
+          <>
+            <DesktopSettingsToggleRow
+              label={t('lanAccess')}
+              badge={t('beta')}
+              checked={networkExposure === 'lan'}
+              disabled={!desktopLanExposureAvailable(mode) || !browserAccess || !settingsWritable || busy !== undefined}
+              onChange={(checked) => {
+                if (checked && capabilities?.nativeLanConfirmation !== true) setConfirmLan(true)
+                else if (checked) setNetworkExposure('lan')
+                else setNetworkExposure('loopback')
+              }}
+            />
+            {view !== undefined && (
+              <div className="dshDesktopSettingsLanStatus" data-state={view.web.lanState} role="status">
+                <span className="dshDesktopSettingsChoiceTitle">
+                  {t('lanStatus')}
+                  <span className="dshDesktopSettingsBadge">{t(LAN_STATE_LOCALE_KEYS[view.web.lanState])}</span>
+                </span>
+                {view.web.lanError !== null && (
+                  <span className="dshDesktopSettingsChoiceBody">
+                    {t('lanError')}: <code>{view.web.lanError}</code>
+                  </span>
+                )}
+              </div>
             )}
-          </div>
+          </>
         )}
         {desktopBrowserUrlsShouldRender(browserAccess, networkExposure) && view !== undefined && view.web.localUrl !== '' && (
           <div className="dshDesktopSettingsUrls">
@@ -952,18 +984,30 @@ export function DesktopSettingsSection({
           <span>{t('logLevel')}</span>
           <select value={desktop.value?.logLevel ?? 'info'} disabled={!settingsWritable || busy !== undefined}
             onChange={event => { const value = event.target.value as DesktopShellSettings['logLevel']; void run('logging', async () => { await desktopSettings.set('logLevel', value) }) }}>
-            <option value="debug">Debug</option><option value="info">Info</option><option value="warn">Warn</option><option value="error">Error</option>
+            <option value="debug">{t('language') === 'zh' ? '调试' : 'Debug'}</option>
+            <option value="info">{t('language') === 'zh' ? '信息' : 'Info'}</option>
+            <option value="warn">{t('language') === 'zh' ? '警告' : 'Warn'}</option>
+            <option value="error">{t('language') === 'zh' ? '错误' : 'Error'}</option>
           </select>
         </label>
       </section>}
       {extraSections}
       {confirmLan && (
-        <div className="dshDesktopSettingsDialogBackdrop" role="presentation">
-          <div className="dshDesktopSettingsDialog" role="alertdialog" aria-modal="true" aria-labelledby="dsh-desktop-lan-warning-title" aria-describedby="dsh-desktop-lan-warning-body">
+        <div
+          className="dshDesktopSettingsDialogBackdrop"
+          role="presentation"
+          onClick={(event) => {
+            if (event.target === event.currentTarget) {
+              resolveDesktopLanConfirmation(false, () => { setConfirmLan(false) }, () => { setNetworkExposure('lan') })
+            }
+          }}
+        >
+          <div ref={dialogRef} className="dshDesktopSettingsDialog" role="alertdialog" aria-modal="true" aria-labelledby="dsh-desktop-lan-warning-title" aria-describedby="dsh-desktop-lan-warning-body">
             <h3 id="dsh-desktop-lan-warning-title">{t('lanWarningTitle')}</h3>
             <p id="dsh-desktop-lan-warning-body">{t('lanWarningBody')}</p>
             <div className="dshDesktopSettingsDialogActions">
               <button
+                ref={cancelLanRef}
                 type="button"
                 className="dshDesktopSettingsButton dshDesktopSettingsButtonSecondary"
                 onClick={() => {

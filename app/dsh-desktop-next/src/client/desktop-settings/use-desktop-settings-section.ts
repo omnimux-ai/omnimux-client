@@ -56,6 +56,7 @@ export function useDesktopSettingsSection({
   const [busy, setBusy] = useState<BusyOperation | undefined>('load')
   const [loadFailed, setLoadFailed] = useState(false)
   const [operationFailed, setOperationFailed] = useState(false)
+  const [operationError, setOperationError] = useState<string | null>(null)
   const [aaStatus, setAaStatus] = useState<'idle' | 'saving' | 'failed' | 'saved'>('idle')
   const [restart, setRestart] = useState<RestartState>('none')
   const [pendingProfileDelete, setPendingProfileDelete] = useState<string>()
@@ -86,6 +87,7 @@ export function useDesktopSettingsSection({
     setBusy('load')
     setLoadFailed(false)
     setOperationFailed(false)
+    setOperationError(null)
     try {
       await refreshView()
     } catch (cause) {
@@ -106,11 +108,14 @@ export function useDesktopSettingsSection({
   const run = useCallback(async (operation: BusyOperation, invoke: () => Promise<void>) => {
     setBusy(operation)
     setOperationFailed(false)
+    setOperationError(null)
     if (operation !== 'select-aa') setAaStatus('idle')
     try {
       await invoke()
-    } catch {
+    } catch (error) {
       setOperationFailed(true)
+      const message = error instanceof Error ? error.message.trim() : ''
+      setOperationError(message || null)
     } finally {
       setBusy(current => current === operation ? undefined : current)
     }
@@ -118,10 +123,13 @@ export function useDesktopSettingsSection({
 
   const runPreference = useCallback(async (invoke: () => Promise<void>) => {
     setOperationFailed(false)
+    setOperationError(null)
     try {
       await invoke()
-    } catch {
+    } catch (error) {
       setOperationFailed(true)
+      const message = error instanceof Error ? error.message.trim() : ''
+      setOperationError(message || null)
     }
   }, [])
 
@@ -266,7 +274,7 @@ export function useDesktopSettingsSection({
 
   return {
     t, api, platform, version, desktopSettings, capabilities, browserActions, presentationRows, tabSections, desktop,
-    notifications, tabsId, tab, setTab, view, profileName, setProfileName, busy, loadFailed, operationFailed,
+    notifications, tabsId, tab, setTab, view, profileName, setProfileName, busy, loadFailed, operationFailed, operationError,
     aaStatus, restart, pendingProfileDelete, setPendingProfileDelete, confirmLan, setConfirmLan, sidebarFooterOpen,
     setSidebarFooterOpen, sidebarFooterRegionId, notificationsOpen, setNotificationsOpen, notificationsRegionId,
     updateCheck, load, runPreference, profileBusy, settingsWritable, notificationsWritable, browserAccess, mode,

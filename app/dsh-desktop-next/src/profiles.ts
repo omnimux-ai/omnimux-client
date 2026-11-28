@@ -85,10 +85,12 @@ function applyFeatures(manifest: ProfileManifest, features: Features): void {
   manifest.dsh.desktopNextPlugins = 1
 }
 
-export function profileName(value: unknown): string {
+export function profileName(value: unknown, locale: 'zh' | 'en' = 'zh'): string {
   if (typeof value !== 'string' || !/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/u.test(value)
     || /^(?:node_modules|con|prn|aux|nul|com[1-9]|lpt[1-9])$/iu.test(value)) {
-    throw new Error('Profile 名称需为 1–64 个英文字母、数字、下划线或连字符，且不能是系统保留名称。')
+    throw new Error(locale === 'zh'
+      ? 'Profile 名称需为 1–64 个英文字母、数字、下划线或连字符，需以字母或数字开头，且不能是系统保留名称。'
+      : 'Profile names must use 1–64 letters, numbers, underscores, or hyphens, start with a letter or number, and avoid reserved system names.')
   }
   return value
 }

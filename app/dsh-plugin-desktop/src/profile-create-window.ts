@@ -129,11 +129,12 @@ export class ProfileCreateWindow {
       await this.options.onSubmit(name)
       this.accepted = true
       this.close()
-    } catch {
+    } catch (cause) {
       this.busy = false
       const window = this.window
       if (window === undefined || window.isDestroyed()) return
-      const message = JSON.stringify(desktopProfileCreateCopy(this.options.locale).failed)
+      const detail = cause instanceof Error ? cause.message.trim() : ''
+      const message = JSON.stringify(detail || desktopProfileCreateCopy(this.options.locale).failed)
       await window.webContents.executeJavaScript(
         `window.dispatchEvent(new CustomEvent('dsh-profile-create-error', { detail: ${message} }))`,
         true,

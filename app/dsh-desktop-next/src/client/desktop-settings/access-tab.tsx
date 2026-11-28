@@ -1,6 +1,6 @@
 /** The Browser access tab of the Desktop settings page. */
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type RefObject } from 'react'
 import { Check, Copy } from 'lucide-react'
 import type {
   DesktopSettingsApi,
@@ -53,17 +53,38 @@ function DesktopBrowserUrl({ url, api, t, onOpen }: {
   </>
 }
 
+function formatLanErrorSummary(raw: string, zh: boolean): string {
+  const lower = raw.toLowerCase()
+  if (lower.includes('timeout') || lower.includes('timed out')) {
+    return zh ? '局域网服务启动超时，请重试' : 'LAN service timed out starting, try again'
+  }
+  if (lower.includes('cert') || lower.includes('certificate') || lower.includes('openssl')) {
+    return zh ? '局域网证书初始化失败' : 'Could not initialize the LAN HTTPS certificate'
+  }
+  if (lower.includes('eaddrinuse') || lower.includes('in use') || lower.includes('port')) {
+    return zh ? '局域网端口被占用，请更改端口后重试' : 'LAN port is in use; change the port and retry'
+  }
+  if (lower.includes('eacces') || lower.includes('permission') || lower.includes('denied')) {
+    return zh ? '缺少绑定局域网端口的网络权限' : 'Permission denied while binding the LAN port'
+  }
+  return zh ? '局域网访问未能就绪' : 'LAN access could not become ready'
+}
+
 /** The Browser access tab: browser and LAN access, their URLs and the LAN certificate. */
-export function DesktopSettingsAccessTab({ model }: { model: DesktopSettingsModel }) {
+export function DesktopSettingsAccessTab({ model, webGroupRef }: {
+  model: DesktopSettingsModel
+  webGroupRef?: RefObject<HTMLHeadingElement>
+}) {
   const {
     t, api, capabilities, browserActions, tabSections, view, setConfirmLan, settingsWritable, browserAccess, mode,
     networkExposure, openBrowser, setBrowserAccess, setNetworkExposure,
   } = model
+  const zh = t('language') === 'zh'
   return (
     <>
       <section className="dshDesktopSettingsGroup" aria-labelledby="dsh-desktop-web-title">
         <div>
-          <h3 id="dsh-desktop-web-title">{t('webTitle')}</h3>
+          <h3 id="dsh-desktop-web-title" ref={webGroupRef} tabIndex={-1}>{t('webTitle')}</h3>
           <p className="dshDesktopSettingsGroupIntro">{t('webIntro')}</p>
         </div>
         <DesktopSettingsToggleRow
@@ -73,29 +94,33 @@ export function DesktopSettingsAccessTab({ model }: { model: DesktopSettingsMode
           onChange={setBrowserAccess}
         />
         <p className="dshDesktopSettingsNotice">{t('browserCompatibilityNotice')}</p>
-        <DesktopSettingsToggleRow
-          label={t('lanAccess')}
-          badge={t('beta')}
-          checked={networkExposure === 'lan'}
-          disabled={!desktopLanExposureAvailable(mode) || !browserAccess || !settingsWritable}
-          onChange={(checked) => {
-            if (checked && capabilities?.nativeLanConfirmation !== true) setConfirmLan(true)
-            else if (checked) setNetworkExposure('lan')
-            else setNetworkExposure('loopback')
-          }}
-        />
-        {view !== undefined && (
-          <div className="dshDesktopSettingsLanStatus" data-state={view.web.lanState} role="status">
-            <span className="dshDesktopSettingsChoiceTitle">
-              {t('lanStatus')}
-              <span className="dshDesktopSettingsBadge">{t(LAN_STATE_LOCALE_KEYS[view.web.lanState])}</span>
-            </span>
-            {view.web.lanError !== null && (
-              <span className="dshDesktopSettingsChoiceBody">
-                {t('lanError')}: <code>{view.web.lanError}</code>
-              </span>
+        {browserAccess && (
+          <>
+            <DesktopSettingsToggleRow
+              label={t('lanAccess')}
+              badge={t('beta')}
+              checked={networkExposure === 'lan'}
+              disabled={!desktopLanExposureAvailable(mode) || !browserAccess || !settingsWritable}
+              onChange={(checked) => {
+                if (checked && capabilities?.nativeLanConfirmation !== true) setConfirmLan(true)
+                else if (checked) setNetworkExposure('lan')
+                else setNetworkExposure('loopback')
+              }}
+            />
+            {view !== undefined && (
+              <div className="dshDesktopSettingsLanStatus" data-state={view.web.lanState} role="status">
+                <span className="dshDesktopSettingsChoiceTitle">
+                  {t('lanStatus')}
+                  <span className="dshDesktopSettingsBadge">{t(LAN_STATE_LOCALE_KEYS[view.web.lanState])}</span>
+                </span>
+                {view.web.lanError !== null && (
+                  <span className="dshDesktopSettingsChoiceBody">
+                    {formatLanErrorSummary(view.web.lanError, zh)}（<code>{view.web.lanError}</code>）
+                  </span>
+                )}
+              </div>
             )}
-          </div>
+          </>
         )}
         {desktopBrowserUrlsShouldRender(browserAccess, networkExposure) && view !== undefined && view.web.localUrl !== '' && (
           <div className="dshDesktopSettingsUrls">

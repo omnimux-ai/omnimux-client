@@ -1,4 +1,21 @@
+import { createElement } from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, expect, it, vi } from 'vitest'
+vi.mock('@deepseek-ai/dsh-client-ui-primitives', () => ({
+  Button: 'button',
+  SegmentedTabs: 'div',
+  Toast: 'aside',
+  IconChevronDownOutlineRegular: 'span',
+  Menu: ({ anchor, items }: { anchor?: unknown; items?: Array<{ id: string; label: unknown }> }) => createElement(
+    'div',
+    null,
+    anchor as never,
+    createElement('ul', null, ...(items ?? []).map(item => createElement('li', { key: item.id, 'data-value': item.id }, item.label as never))),
+  ),
+}))
+import { DesktopSettingsAccessTab } from '../src/client/desktop-settings/access-tab.tsx'
+import type { DesktopSettingsModel } from '../src/client/desktop-settings/use-desktop-settings-section.ts'
+import { desktopTranslate, NextDiagnosticsOptions } from '../src/client/settings.tsx'
 import { NextSettingsAdapter, projectSettings } from '../src/client/settings-adapter.ts'
 import {
   balanceSidebarFooterSlot,
@@ -251,4 +268,69 @@ it('balances multi-row compact footer items into equal-split columns and keeps l
     expect(compact.getAttribute('data-dsh-footer-item')).toBe('compact')
   }
   expect(styleProps.get('--dsh-footer-grid-columns')).toBe('repeat(3, minmax(0, 1fr))')
+})
+
+it('uses 4-char CJK tab labels and progressively discloses LAN settings only when browser access is on', () => {
+  const t = desktopTranslate('zh')
+  expect([t('tabGeneral'), t('tabProfiles'), t('tabAccess'), t('tabDiagnostics')]).toEqual(['通用', '环境数据', '远程访问', '诊断恢复'])
+  for (const label of [t('tabProfiles'), t('tabAccess'), t('tabDiagnostics')]) {
+    expect(label).not.toContain('与')
+    expect(label.length).toBeLessThanOrEqual(4)
+  }
+
+  const baseModel = (browserAccess: boolean): DesktopSettingsModel => ({
+    t,
+    api: { read: vi.fn(), openBrowser: vi.fn() } as unknown as DesktopSettingsModel['api'],
+    capabilities: undefined,
+    browserActions: undefined,
+    tabSections: undefined,
+    view: {
+      web: {
+        localUrl: 'http://127.0.0.1:43120/?token=abc',
+        lanUrls: [],
+        lanState: 'failed',
+        lanError: 'EADDRINUSE: port already in use',
+        lanCaFingerprint: null,
+        lanCaUrls: [],
+      },
+      profiles: [],
+      current: 'desktop',
+      aa: null,
+      market: null,
+    } as unknown as DesktopSettingsModel['view'],
+    setConfirmLan: vi.fn(),
+    settingsWritable: true,
+    browserAccess,
+    mode: 'compatibility',
+    networkExposure: 'loopback',
+    openBrowser: vi.fn(),
+    setBrowserAccess: vi.fn(),
+    setNetworkExposure: vi.fn(),
+  } as unknown as DesktopSettingsModel)
+
+  const hiddenLan = renderToStaticMarkup(createElement(DesktopSettingsAccessTab, { model: baseModel(false) }))
+  expect(hiddenLan).not.toContain(t('lanAccess'))
+  expect(hiddenLan).not.toContain('dshDesktopSettingsLanStatus')
+
+  const shownLan = renderToStaticMarkup(createElement(DesktopSettingsAccessTab, { model: baseModel(true) }))
+  expect(shownLan).toContain(t('lanAccess'))
+  expect(shownLan).toContain('局域网端口被占用')
+})
+
+it('localizes live NextDiagnosticsOptions log-level labels for zh and en', () => {
+  const { adapter, state } = fixture()
+
+  const zhHtml = renderToStaticMarkup(createElement(NextDiagnosticsOptions, { adapter, state, language: 'zh' }))
+  expect(zhHtml).toContain('>调试<')
+  expect(zhHtml).toContain('>信息<')
+  expect(zhHtml).toContain('>警告<')
+  expect(zhHtml).toContain('>错误<')
+  expect(zhHtml).not.toContain('>debug<')
+
+  const enHtml = renderToStaticMarkup(createElement(NextDiagnosticsOptions, { adapter, state, language: 'en' }))
+  expect(enHtml).toContain('>Debug<')
+  expect(enHtml).toContain('>Info<')
+  expect(enHtml).toContain('>Warn<')
+  expect(enHtml).toContain('>Error<')
+  expect(enHtml).not.toContain('>debug<')
 })

@@ -99,19 +99,34 @@ export function DesktopNativeActions({ api, t, placement, terminalAvailable = tr
   useEffect(() => {
     if (restartMenuOpen) restartMenuRef.current?.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus()
   }, [restartMenuOpen])
-  const restartKeys = (event: ReactKeyboardEvent<HTMLDivElement>): void => {
-    const trigger = restartMenuRef.current?.querySelector<HTMLButtonElement>('[aria-haspopup="menu"]')
-    if (event.key === 'Escape' && restartMenuOpen) {
-      event.preventDefault(); event.stopPropagation(); setRestartMenuOpen(false); trigger?.focus(); return
+  useEffect(() => {
+    if (developerMenuOpen) developerMenuRef.current?.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus()
+  }, [developerMenuOpen])
+  const handleMenuKeyDown = (
+    container: HTMLDivElement | null,
+    open: boolean,
+    setOpen: (next: boolean) => void,
+    event: ReactKeyboardEvent<HTMLDivElement>,
+  ): void => {
+    const trigger = container?.querySelector<HTMLButtonElement>('[aria-haspopup="menu"]')
+    if (event.key === 'Escape' && open) {
+      event.preventDefault(); event.stopPropagation(); setOpen(false); trigger?.focus(); return
     }
-    if (event.key === 'Tab') { setRestartMenuOpen(false); return }
+    if (event.key === 'Tab') { setOpen(false); return }
     if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
     event.preventDefault(); event.stopPropagation()
-    if (!restartMenuOpen) { setRestartMenuOpen(true); return }
-    const items = [...(restartMenuRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not(:disabled)') ?? [])]
+    if (!open) { setOpen(true); return }
+    const items = [...(container?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not(:disabled)') ?? [])]
+    if (items.length === 0) return
     const index = items.indexOf(document.activeElement as HTMLButtonElement)
     const next = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1 : (index + (event.key === 'ArrowUp' ? -1 : 1) + items.length) % items.length
     items[next]?.focus()
+  }
+  const restartKeys = (event: ReactKeyboardEvent<HTMLDivElement>): void => {
+    handleMenuKeyDown(restartMenuRef.current, restartMenuOpen, setRestartMenuOpen, event)
+  }
+  const developerKeys = (event: ReactKeyboardEvent<HTMLDivElement>): void => {
+    handleMenuKeyDown(developerMenuRef.current, developerMenuOpen, setDeveloperMenuOpen, event)
   }
 
   const busy = exportingDiagnostics || opening || restarting || rendererAction !== undefined
@@ -226,7 +241,7 @@ export function DesktopNativeActions({ api, t, placement, terminalAvailable = tr
       {failed !== undefined && (
         <span className="dshDesktopNativeActionError" role="alert">{t(failureKey)}</span>
       )}
-      <button
+      {terminalAvailable && <button
         type="button"
         className="dshDesktopTitlebarIconButton"
         aria-label={t('openTerminal')}
@@ -235,7 +250,7 @@ export function DesktopNativeActions({ api, t, placement, terminalAvailable = tr
         onClick={open}
       >
         <SquareTerminal aria-hidden="true" />
-      </button>
+      </button>}
       <div className="dshDesktopNativeActionMenuAnchor" ref={restartMenuRef} onKeyDown={restartKeys}>
         <button
           type="button"
@@ -264,7 +279,7 @@ export function DesktopNativeActions({ api, t, placement, terminalAvailable = tr
           </div>
         )}
       </div>
-      <div className="dshDesktopNativeActionMenuAnchor" ref={developerMenuRef}>
+      <div className="dshDesktopNativeActionMenuAnchor" ref={developerMenuRef} onKeyDown={developerKeys}>
         <button
           type="button"
           className="dshDesktopTitlebarIconButton"

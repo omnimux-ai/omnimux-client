@@ -116,7 +116,7 @@ it('switches the official Computer Use bundle on the Computer Use (Next) page on
   expect(view.toggle!.props.disabled).toBe(false)
   expect(view.toggle!.props.title).toBeUndefined()
   expect(view.state).toContain('已关闭')
-  expect(view.count).toBe('共 2 个 · 1 运行中 · 1 已停用')
+  expect(view.count).toBe('共 2 个，1 运行中，1 已停用')
   expect(view.open).toBeUndefined()
   expect(view.row!.props['data-opens']).toBeUndefined()
 
@@ -140,7 +140,7 @@ it('switches the official Computer Use bundle on the Computer Use (Next) page on
   view = app.view()
   expect(view.row!.props['data-state']).toBeUndefined()
   expect(view.state).toContain('运行中')
-  expect(view.count).toBe('共 2 个 · 2 运行中')
+  expect(view.count).toBe('共 2 个，2 运行中')
 
   view.toggle!.props.onChange(false)
   await new Promise(resolve => setTimeout(resolve, 0))
@@ -160,7 +160,7 @@ it('greys out the official Computer Use switch, off and locked, where it cannot 
   expect(view.toggle!.props.disabled).toBe(true)
   expect(view.toggle!.props.title).toBe('macOS Computer Use 仅支持 macOS 14 及以上')
   expect(view.state).toContain('当前系统不支持')
-  expect(view.count).toBe('共 2 个 · 1 运行中 · 1 已停用')
+  expect(view.count).toBe('共 2 个，1 运行中，1 已停用')
   expect(view.open).toBeUndefined()
   expect(view.row!.props['data-opens']).toBeUndefined()
 })
@@ -181,7 +181,7 @@ it('installs the official Computer Use when switched on while the current Profil
   expect(view.toggle!.props.checked).toBe(false)
   expect(view.toggle!.props.disabled).toBe(false)
   expect(view.open).toBeUndefined()
-  expect(view.count).toBe('共 2 个 · 1 运行中 · 1 已停用')
+  expect(view.count).toBe('共 2 个，1 运行中，1 已停用')
   expect(nodes(view.row).some(node => typeof node.props.children === 'string' && node.props.children.includes('首次开启时会下载并安装官方插件'))).toBe(true)
 
   view.toggle!.props.onChange(true)

@@ -532,7 +532,7 @@ export function SetupWizardWelcome({
           className="mb-0.5 px-1.5 py-0 text-[10px] leading-4"
           data-beta-placement="title-bottom-right"
           variant="secondary"
-        >{copy.beta} · v{appVersion}</Badge>
+        >{copy.beta} v{appVersion}</Badge>
       </div>
       <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{copy.welcomeBody}</p>
       </header>

@@ -26,14 +26,14 @@ export function desktopTranslate(language: string): (key: string) => string {
     if (key === 'browserCompatibilityNotice') return language.startsWith('zh') ? '开关即时生效；关闭访问会断开已有的浏览器连接。' : 'Changes take effect immediately. Disabling access disconnects existing browser connections.'
     if (key === 'tabs') return language.startsWith('zh') ? '桌面设置分类' : 'Desktop settings categories'
     if (key === 'tabGeneral') return language.startsWith('zh') ? '通用' : 'General'
-    if (key === 'tabProfiles') return language.startsWith('zh') ? 'Profile 与数据' : 'Profiles & data'
-    if (key === 'tabAccess') return language.startsWith('zh') ? '浏览器与局域网' : 'Browser access'
-    if (key === 'tabDiagnostics') return language.startsWith('zh') ? '诊断与恢复' : 'Diagnostics'
+    if (key === 'tabProfiles') return language.startsWith('zh') ? '环境数据' : 'Profiles'
+    if (key === 'tabAccess') return language.startsWith('zh') ? '远程访问' : 'Web access'
+    if (key === 'tabDiagnostics') return language.startsWith('zh') ? '诊断恢复' : 'Diagnostics'
     return Object.hasOwn(copy, key) ? copy[key as DesktopSettingsLocaleKey] : key
   }
 }
 
-export function NextDesktopSettings({ adapter, language, onOpenPlugins }: { adapter: NextSettingsAdapter; language: string; onOpenPlugins(): void }) {
+export function NextDesktopSettings({ adapter, language }: { adapter: NextSettingsAdapter; language: string; onOpenPlugins?: () => void }) {
   const state = useDesktopState(adapter)
   const t = desktopTranslate(language)
   return <div data-next-desktop-settings=""><DesktopSettingsSection
@@ -46,10 +46,6 @@ export function NextDesktopSettings({ adapter, language, onOpenPlugins }: { adap
     tabSections={{
       general: state && <NextGeneralOptions adapter={adapter} state={state} language={language} />,
       profiles: state && <NextDataOptions adapter={adapter} state={state} language={language} />,
-      access: <div className="dshDesktopSettingsNotice dshNextPluginSettingsNotice" data-next-plugin-settings-notice>
-        <span>{language.startsWith('zh') ? '插件市场和远程控制设置已移至插件页面。' : 'Plugin market and remote control settings have moved to the Plugins page.'}</span>
-        <Button variant="outline" size="sm" className="dshDesktopSettingsButton" onClick={onOpenPlugins}>{language.startsWith('zh') ? '前往插件页面' : 'Go to Plugins'}</Button>
-      </div>,
       diagnostics: state && <NextDiagnosticsOptions adapter={adapter} state={state} language={language} />,
     }}
   /></div>
@@ -194,7 +190,7 @@ function NextDataOptions({ adapter, state, language }: { adapter: NextSettingsAd
 }
 
 /** Diagnostics: logging and developer tools, then the Host startup limit and the recovery assistant. */
-function NextDiagnosticsOptions({ adapter, state, language }: { adapter: NextSettingsAdapter; state: DesktopState; language: string }) {
+export function NextDiagnosticsOptions({ adapter, state, language }: { adapter: NextSettingsAdapter; state: DesktopState; language: string }) {
   const { t, command, savePreference, action, failureLine } = useDesktopOptions(adapter, state, language)
   return <>
     {failureLine}
@@ -205,7 +201,15 @@ function NextDiagnosticsOptions({ adapter, state, language }: { adapter: NextSet
           ariaLabel={t('日志级别', 'Log level')}
           value={state.preferences.logLevel}
           disabled={state.safeMode}
-          options={(['debug', 'info', 'warn', 'error'] as const).map(value => ({ value, label: value }))}
+          options={(['debug', 'info', 'warn', 'error'] as const).map(value => ({
+            value,
+            label: ({
+              debug: t('调试', 'Debug'),
+              info: t('信息', 'Info'),
+              warn: t('警告', 'Warn'),
+              error: t('错误', 'Error'),
+            })[value],
+          }))}
           onChange={logLevel => { void savePreference({ logLevel }) }}
         />
       </div>

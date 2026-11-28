@@ -24,10 +24,10 @@ export function DesktopSettingsDiagnosticsTab({ model }: { model: DesktopSetting
             ariaLabel={t('logLevel')}
             disabled={!settingsWritable}
             options={[
-              { value: 'debug', label: 'Debug' },
-              { value: 'info', label: 'Info' },
-              { value: 'warn', label: 'Warn' },
-              { value: 'error', label: 'Error' },
+              { value: 'debug', label: t('language') === 'zh' ? '调试' : 'Debug' },
+              { value: 'info', label: t('language') === 'zh' ? '信息' : 'Info' },
+              { value: 'warn', label: t('language') === 'zh' ? '警告' : 'Warn' },
+              { value: 'error', label: t('language') === 'zh' ? '错误' : 'Error' },
             ]}
             onChange={(value) => { void runPreference(async () => { await desktopSettings.set('logLevel', value) }) }}
           />

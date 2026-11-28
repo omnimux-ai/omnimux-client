@@ -423,7 +423,7 @@ export class DesktopStartupRecoveryWindow {
         await this.requireController().openCheckpoint(action.id as `slot-${1 | 2 | 3}`)
       } else if (action.action === 'export-diagnostics') {
         this.activeTab = 'diagnostics'
-        await this.startDiagnosticExport().catch(() => {})
+        await this.startDiagnosticExport(true).catch(() => {})
       } else if (action.action === 'show-diagnostics' && this.diagnosticPath !== undefined) {
         this.activeTab = 'diagnostics'
         shell.showItemInFolder(this.diagnosticPath)
@@ -794,21 +794,23 @@ export class DesktopStartupRecoveryWindow {
     }
   }
 
-  private startDiagnosticExport(): Promise<string> {
-    if (this.diagnostics.status === 'saved' && this.diagnosticPath !== undefined) {
+  private startDiagnosticExport(force = false): Promise<string> {
+    if (!force && this.diagnostics.status === 'saved' && this.diagnosticPath !== undefined) {
       return Promise.resolve(this.diagnosticPath)
     }
     if (this.diagnosticTask !== undefined) return this.diagnosticTask
 
     const task = this.saveDiagnostics()
     this.diagnosticTask = task
-    void task.catch(() => {
+    const clear = (): void => {
       if (this.diagnosticTask === task) this.diagnosticTask = undefined
-    })
+    }
+    void task.then(clear, clear)
     return task
   }
 
   private async saveDiagnostics(): Promise<string> {
+    this.diagnosticPath = undefined
     this.diagnostics = { status: 'saving' }
     await this.render()
     try {
