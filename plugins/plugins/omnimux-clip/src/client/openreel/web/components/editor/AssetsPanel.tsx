@@ -1265,9 +1265,14 @@ export const AssetsPanel: React.FC = () => {
               <AssetBridgeShortcuts {...bridgeActions} />
               <div className="workspace-chips">{[["all","All"],["video","Video"],["audio","Audio"],["image","Images"]].map(([value,label]) => <ShadcnButton key={value} variant="ghost" aria-pressed={mediaFilter===value} onClick={() => setMediaFilter(value)}>{t(label)}</ShadcnButton>)}</div>
             </div>
-            <ProjectPanelBar data={panelData} selectionCount={mediaSelectionCount} />
-            <ProxyIngestPanel />
-            <SequencesSection
+            <div className="shrink-0" data-clip-pro-only="true">
+              <ProjectPanelBar data={panelData} selectionCount={mediaSelectionCount} />
+            </div>
+            <div className="shrink-0" data-clip-pro-only="true">
+              <ProxyIngestPanel />
+            </div>
+            <div className="shrink-0" data-clip-pro-only={missingAssetsCount === 0 ? "true" : undefined}>
+              <SequencesSection
               data={panelData}
               trailing={missingAssetsCount > 0 ? (
                 <div className="flex min-w-0 items-center gap-1" data-testid="missing-assets-bar">
@@ -1301,6 +1306,7 @@ export const AssetsPanel: React.FC = () => {
                 </div>
               ) : null}
             />
+            </div>
 
             <AssetBridgeFeedback
               progress={bridgeImport.progress}
@@ -1401,9 +1407,9 @@ export const AssetsPanel: React.FC = () => {
                     {!mediaItems.length && <div className="workspace-other-starts">
                       <h3>{t("OTHER WAYS TO START")}</h3>
                       <AssetBridgeShortcuts {...bridgeActions} empty />
-                      <ShadcnButton variant="secondary" className="workspace-start-link" onClick={() => openModal("recorder")}><span className="workspace-start-icon"><MediaLibraryIcon name="record-start" /></span><span>{t("Record screen or camera")}<small>{t("Webcam, screen, or both")}</small></span></ShadcnButton>
-                      <ShadcnButton variant="secondary" className="workspace-start-link" onClick={() => setMediaSource("stock")}><span className="workspace-start-icon"><MediaLibraryIcon name="stock-start" /></span><span>{t("Browse stock footage")}<small>{t("Free clips, music and SFX")}</small></span></ShadcnButton>
-                      <ShadcnButton variant="secondary" className="workspace-start-link" onClick={() => setActiveTab("recipes")}><span className="workspace-start-icon"><MediaLibraryIcon name="recipe-start" /></span><span>{t("Start from a recipe")}<small>{t("Podcast clip, montage, explainer")}</small></span></ShadcnButton>
+                      <ShadcnButton variant="secondary" data-clip-pro-only="true" className="workspace-start-link" onClick={() => openModal("recorder")}><span className="workspace-start-icon"><MediaLibraryIcon name="record-start" /></span><span>{t("Record screen or camera")}<small>{t("Webcam, screen, or both")}</small></span></ShadcnButton>
+                      <ShadcnButton variant="secondary" data-clip-pro-only="true" className="workspace-start-link" onClick={() => setMediaSource("stock")}><span className="workspace-start-icon"><MediaLibraryIcon name="stock-start" /></span><span>{t("Browse stock footage")}<small>{t("Free clips, music and SFX")}</small></span></ShadcnButton>
+                      <ShadcnButton variant="secondary" data-clip-pro-only="true" className="workspace-start-link" onClick={() => setActiveTab("recipes")}><span className="workspace-start-icon"><MediaLibraryIcon name="recipe-start" /></span><span>{t("Start from a recipe")}<small>{t("Podcast clip, montage, explainer")}</small></span></ShadcnButton>
                     </div>}
                   </>
                 ) : null}

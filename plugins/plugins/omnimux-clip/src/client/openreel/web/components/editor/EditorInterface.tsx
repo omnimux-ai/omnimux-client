@@ -20,6 +20,13 @@ import { SpotlightTour, MoGraphTour } from "./tour";
 import { useProjectStore, registerSmoothKeyframeRefresh } from "../../stores/project-store";
 import { useUIStore } from "../../stores/ui-store";
 import { useAudioChannelsStore } from "../../stores/audio-channels-store";
+import { useColorMonitorStore } from "../../stores/color-monitor-store";
+import { useEditorWorkspaceStore } from "../../stores/editor-workspace-store";
+import {
+  useClipUiMode,
+  registerSimpleModeStores,
+  reconcileSimpleModeState,
+} from "../../../../simple-mode/uiModeStore.js";
 import {
   useDockSize,
   MIN_MEDIA_W, MAX_MEDIA_W, MIN_INSPECTOR_W, MAX_INSPECTOR_W, MIN_TIMELINE_VH, MAX_TIMELINE_VH,
@@ -195,7 +202,22 @@ function EditorWorkspace({ canvasMode, rootRef, compact, phone, compactPanel, se
   useAutoSave();
   useAudioOutputDevice();
   // Onboarding Pro row: apply the workspace picked on the welcome screen, once.
-  useEffect(() => { applyPendingWorkspace(); }, []);
+  const { mode: uiMode, drawerOpen } = useClipUiMode();
+  const isSimple = uiMode === "simple";
+  useEffect(() => {
+    applyPendingWorkspace();
+    const stores = {
+      workspaceStore: useEditorWorkspaceStore,
+      uiStore: useUIStore,
+      sourceMonitorStore: useSourceMonitorStore,
+      colorMonitorStore: useColorMonitorStore,
+    };
+    const unregister = registerSimpleModeStores(stores);
+    if (uiMode === "simple") {
+      reconcileSimpleModeState(stores);
+    }
+    return unregister;
+  }, []);
   usePreviewProxyPreference();
   useEffect(() => startProxyIngest(), []);
   useMediaWaveforms(initialized);
@@ -369,12 +391,20 @@ function EditorWorkspace({ canvasMode, rootRef, compact, phone, compactPanel, se
 
   const mediaRef = useRef(mediaWidth);
   const inspectorRef = useRef(inspectorWidth);
+  const isSimpleRef = useRef(isSimple);
+  const drawerOpenRef = useRef(drawerOpen);
+  const hasSelectionRef = useRef(hasSelection);
   useEffect(() => {
     mediaRef.current = mediaWidth;
   }, [mediaWidth]);
   useEffect(() => {
     inspectorRef.current = inspectorWidth;
   }, [inspectorWidth]);
+  useEffect(() => {
+    isSimpleRef.current = isSimple;
+    drawerOpenRef.current = drawerOpen;
+    hasSelectionRef.current = hasSelection;
+  }, [isSimple, drawerOpen, hasSelection]);
   const beginResize = useCallback(
     (target: ResizeTarget) => (e: React.MouseEvent) => {
       e.preventDefault();
@@ -394,17 +424,26 @@ function EditorWorkspace({ canvasMode, rootRef, compact, phone, compactPanel, se
       const target = resizeRef.current;
       if (!root || !target) return;
       const rect = root.getBoundingClientRect();
+      const railOffset = isSimpleRef.current ? 0 : RAIL_WIDTH;
+      const inspectorReserve =
+        isSimpleRef.current && !hasSelectionRef.current
+          ? 0
+          : inspectorRef.current + RESIZE_HANDLE;
+      const mediaReserve =
+        isSimpleRef.current && !drawerOpenRef.current
+          ? 0
+          : mediaRef.current + RESIZE_HANDLE;
       if (target === "media") {
         const maxByStage =
-          rect.width - RAIL_WIDTH - inspectorRef.current - 2 * RESIZE_HANDLE - MIN_STAGE_W;
+          rect.width - railOffset - inspectorReserve - RESIZE_HANDLE - MIN_STAGE_W;
         setMediaWidth(
-          clamp(e.clientX - rect.left - RAIL_WIDTH, MIN_MEDIA_W, Math.min(MAX_MEDIA_W, maxByStage)),
+          clamp(e.clientX - rect.left - railOffset, MIN_MEDIA_W, Math.min(MAX_MEDIA_W, maxByStage)),
         );
         return;
       }
       if (target === "inspector") {
         const maxByStage =
-          rect.width - RAIL_WIDTH - mediaRef.current - 2 * RESIZE_HANDLE - MIN_STAGE_W;
+          rect.width - railOffset - mediaReserve - RESIZE_HANDLE - MIN_STAGE_W;
         setInspectorWidth(
           clamp(
             rect.right - e.clientX,
@@ -481,6 +520,8 @@ function EditorWorkspace({ canvasMode, rootRef, compact, phone, compactPanel, se
   const effectiveTimelineVh = timelineMaximized
     ? COMPACT_TIMELINE_VH
     : timelineVh;
+  const showSimpleDrawer = !compact && isSimple && drawerOpen;
+  const showSimpleInspector = !compact && isSimple && hasSelection;
   const gridStyle: React.CSSProperties = compact
     ? {
         gridTemplateColumns: "minmax(0, 1fr)",
@@ -489,11 +530,35 @@ function EditorWorkspace({ canvasMode, rootRef, compact, phone, compactPanel, se
           : compactPanel === "media" ? "minmax(180px, 40%) 48px minmax(0, 1fr)" : "minmax(220px, 48%) minmax(0, 1fr)",
         gridTemplateAreas: compactPanel === "media" ? "'stage' 'rail' 'media'" : `'stage' '${compactPanel}'`,
       }
-    : {
-        gridTemplateColumns: `${RAIL_WIDTH}px min(${mediaWidth}px, 34%) ${RESIZE_HANDLE}px minmax(0, 1fr) ${RESIZE_HANDLE}px min(${inspectorWidth}px, 32%)`,
-        gridTemplateRows: `minmax(0, 1fr) ${RESIZE_HANDLE}px ${effectiveTimelineVh}%`,
-        gridTemplateAreas: "'rail media mh stage ih inspector' 'th th th th th th' 'timeline timeline timeline timeline timeline timeline'",
-      };
+    : isSimple
+      ? showSimpleDrawer && showSimpleInspector
+        ? {
+            gridTemplateColumns: `min(${mediaWidth}px, 34%) ${RESIZE_HANDLE}px minmax(0, 1fr) ${RESIZE_HANDLE}px min(${inspectorWidth}px, 32%)`,
+            gridTemplateRows: `38px minmax(0, 1fr) ${RESIZE_HANDLE}px ${effectiveTimelineVh}%`,
+            gridTemplateAreas: "'rail mh stage ih inspector' 'media mh stage ih inspector' 'th th th th th' 'timeline timeline timeline timeline timeline'",
+          }
+        : showSimpleDrawer
+          ? {
+              gridTemplateColumns: `min(${mediaWidth}px, 34%) ${RESIZE_HANDLE}px minmax(0, 1fr)`,
+              gridTemplateRows: `38px minmax(0, 1fr) ${RESIZE_HANDLE}px ${effectiveTimelineVh}%`,
+              gridTemplateAreas: "'rail mh stage' 'media mh stage' 'th th th' 'timeline timeline timeline'",
+            }
+          : showSimpleInspector
+            ? {
+                gridTemplateColumns: `minmax(0, 1fr) ${RESIZE_HANDLE}px min(${inspectorWidth}px, 32%)`,
+                gridTemplateRows: `minmax(0, 1fr) ${RESIZE_HANDLE}px ${effectiveTimelineVh}%`,
+                gridTemplateAreas: "'stage ih inspector' 'th th th' 'timeline timeline timeline'",
+              }
+            : {
+                gridTemplateColumns: "minmax(0, 1fr)",
+                gridTemplateRows: `minmax(0, 1fr) ${RESIZE_HANDLE}px ${effectiveTimelineVh}%`,
+                gridTemplateAreas: "'stage' 'th' 'timeline'",
+              }
+      : {
+          gridTemplateColumns: `${RAIL_WIDTH}px min(${mediaWidth}px, 34%) ${RESIZE_HANDLE}px minmax(0, 1fr) ${RESIZE_HANDLE}px min(${inspectorWidth}px, 32%)`,
+          gridTemplateRows: `minmax(0, 1fr) ${RESIZE_HANDLE}px ${effectiveTimelineVh}%`,
+          gridTemplateAreas: "'rail media mh stage ih inspector' 'th th th th th th' 'timeline timeline timeline timeline timeline timeline'",
+        };
 
   return (
     <>
@@ -513,10 +578,10 @@ function EditorWorkspace({ canvasMode, rootRef, compact, phone, compactPanel, se
           className="editor-workspace flex-1 min-w-0 min-h-0 grid gap-0 bg-bg"
           style={gridStyle}
         >
-        <div className="editor-rail" style={{ gridArea: "rail" }} hidden={compact && compactPanel !== "media"}><EditorActionRail /></div>
+        <div className="editor-rail" style={{ gridArea: "rail" }} hidden={compact ? compactPanel !== "media" : isSimple && !drawerOpen}><EditorActionRail /></div>
         <div
           id="editor-panel-media"
-          hidden={compact && compactPanel !== "media"}
+          hidden={compact ? compactPanel !== "media" : isSimple && !drawerOpen}
           className="editor-panel bg-bg-1 min-w-0 min-h-0 overflow-hidden workspace-surface"
           style={{ gridArea: "media" }}
         >
@@ -526,7 +591,7 @@ function EditorWorkspace({ canvasMode, rootRef, compact, phone, compactPanel, se
         </div>
 
         <div
-          hidden={compact}
+          hidden={compact || (isSimple && !drawerOpen)}
           className="editor-resizer grid place-items-center cursor-col-resize group/h"
           style={{ gridArea: "mh" }}
           onMouseDown={beginResize("media")}
@@ -556,7 +621,7 @@ function EditorWorkspace({ canvasMode, rootRef, compact, phone, compactPanel, se
         </div>
 
         <><div
-          hidden={compact}
+          hidden={compact || (isSimple && !hasSelection)}
           className="editor-resizer grid place-items-center cursor-col-resize group/h"
           style={{ gridArea: "ih" }}
           onMouseDown={beginResize("inspector")}
@@ -566,7 +631,7 @@ function EditorWorkspace({ canvasMode, rootRef, compact, phone, compactPanel, se
 
         <div
           id="editor-panel-inspector"
-          hidden={compact && compactPanel !== "inspector"}
+          hidden={compact ? compactPanel !== "inspector" : isSimple && !hasSelection}
           className="editor-panel bg-bg-1 min-w-0 min-h-0 overflow-hidden workspace-surface"
           style={{ gridArea: "inspector" }}
         >
@@ -630,7 +695,7 @@ function EditorWorkspace({ canvasMode, rootRef, compact, phone, compactPanel, se
       </div>
 
       {!phone && (
-        <footer data-testid="editor-status-bar" className="flex h-7 shrink-0 items-center justify-between border-t border-border bg-bg-1 px-1">
+        <footer data-testid="editor-status-bar" data-clip-pro-only="true" className="flex h-7 shrink-0 items-center justify-between border-t border-border bg-bg-1 px-1">
           <BackgroundTasksIndicator />
         </footer>
       )}

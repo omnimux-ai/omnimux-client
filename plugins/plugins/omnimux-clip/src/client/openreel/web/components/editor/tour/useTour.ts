@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect, useSyncExternalStore } from "react";
 import { useEditorPortalRoot } from "@openreel/ui/lib/portal-root";
 import { isEditorShortcutEvent } from "../../../services/keyboard-shortcuts";
 import { TOUR_STEPS, ONBOARDING_KEY } from "./tour-steps";
+import { getClipUiModeSnapshot } from "../../../../../simple-mode/uiModeStore.js";
 
 interface TourState {
   isActive: boolean;
@@ -57,6 +58,7 @@ function writeTourCompleted(): void {
  */
 export function shouldAutoStartTour(): boolean {
   if (typeof window !== "undefined" && window.openreel?.platform === "desktop") return false;
+  if (getClipUiModeSnapshot().mode === "simple") return false;
   return !readTourCompleted();
 }
 

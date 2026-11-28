@@ -45,7 +45,7 @@
       "version": "0.1.2",
       "path": "plugins/plugins/omnimux-clip",
       "spec": "link:../../plugins/plugins/omnimux-clip",
-      "contentHash": "sha256:0bd9f350f16912be1662c07f685624746bdc2590cdb31959eae00f54da2258ba"
+      "contentHash": "sha256:829820cb5ecada9df407784d907a06a34cc5dddb2e80bc16bc8160058932f83d"
     },
     {
       "name": "omnimux-inspiration",

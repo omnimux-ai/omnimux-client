@@ -30,6 +30,20 @@ Clip 路由保存在编辑器内部。构建脚本将导入的样式限定在 `.
 
 上游实现位于 `plugins/omnimux-clip/src/client/openreel/`（相对插件工作区）。已清理的旧版 `src/client/engine/openreel/` 目录已从源码树移除，[插件静态扫描](../../scripts/auto-qa-scan.mjs)仍保留对这两条路径的识别规则以向后兼容既有扫描用例。宿主桥、应用入口和宿主 token 映射仍按产品规则检查。
 
+### 3.1 简易模式 (`data-clip-ui-mode`) 五处声明式接缝
+
+桌面独立工坊与工作流画布共用一套正交双轴契约：入口轴 `data-clip-mode="standalone" | "canvas"`，复杂度轴 `data-clip-ui-mode="simple" | "pro"`（默认 `simple`，持久化键 `omnimux.clip.uiMode`）。状态、持久化、专业态收敛 (`reconcileSimpleModeState`) 与样式全部位于 `openreel/` 外部适配器 `src/client/simple-mode/`（`uiModeStore.js`、`ClipModeToggle.jsx`、`ClipDrawerToggle.jsx`、`SimpleInspectorChrome.jsx`、`simple-mode.css`），入口壳 `OpenReelStudioTab.jsx` 与 `ClipStage.jsx` 同步挂载 `data-clip-ui-mode`。
+
+`openreel/web/components/editor/` 仅保留以下 5 处最小声明式接缝，升级上游 `UPSTREAM_SHA` 时只需对照清单与 `simple-mode-contract.test.js` 逐项复核：
+
+1. **布局壳层 (`EditorInterface.tsx`、`tour/useTour.ts`)**：订阅 `useClipUiMode()`，在 `!compact && isSimple` 时将左抽屉四项导航横置于 38px 顶部栏并支持折叠、无选区自动折叠右侧属性栏、隐藏底栏 (`data-clip-pro-only="true"`)，同时向 `registerSimpleModeStores` 注册实时 store 以便从 `pro` 切回 `simple` 时收敛状态（切模式不卸载 `<OpenReelApp />`）；`tour/useTour.ts` (`shouldAutoStartTour`) 在 `uiMode === "simple"` 时跳过自动弹出被动引导弹窗。
+2. **顶栏 (`Toolbar.tsx`)**：外置 `<ClipDrawerToggle />`，给仅专业菜单/切换器/规格/队列/备份打上 `data-clip-pro-only="true"` 与 `.openreel-toolbar-brand-block`，并在右段 `<EditorExportControl>` 前接入 `<ClipModeToggle />`（严格保持画布导出与纯文本退出按钮契约）。
+3. **左侧导航 (`EditorActionRail.tsx`)**：按 `SIMPLE_RAIL_SECTIONS` 为四项核心分区（`media` / `text` / `recipes` / `versions`）渲染 `.clip-rail-label` 并加 `data-clip-section`，其余分区打 `data-clip-pro-only="true"`。
+4. **预览监看 (`Preview.tsx`、`PreviewTransportControls.tsx`、`preview/ProgramMonitorOverlays.tsx`)**：隐藏扩展头部栏、技术信息条、逐帧/出入点、循环钮与虚假色叠加触发器 (`data-clip-pro-only="true"`)。
+5. **时间轴、素材与属性 (`Timeline.tsx`、`timeline/TrackHeader.tsx`、`AssetsPanel.tsx`、`InspectorPanel.tsx`、`inspector/shell/InspectorClipHeader.tsx`)**：时间轴保留 6 项核心操作并将扩展工具/序列Tab/声道表标记为 `data-clip-pro-only`；轨道头保留编号/名称与显隐或静音；素材面板在 `missingAssetsCount === 0` 时折叠顶部排序/代理/序列区、存在断链时继续透出重连；属性面板接入 `<SimpleInspectorCloseButton />` 与 `<SimpleInspectorFooter />`。
+
+上游同步核对命令：`corepack pnpm --dir plugins --filter omnimux-clip test`、`corepack pnpm --dir plugins run verify:dsw-tokens`、`node scripts/workspace-check.mjs --check`。
+
 ## 4. 验收
 
 合入前以工作树候选构建验证宿主样式、亮暗菜单和弹窗、窄屏、中英文切换、旧工程加载、空时间轴首个视频入轨和画布导出。时间轴调整、拖动和修剪期间检查宿主 `body` 的内联样式。画布分别核对源流重封装和逐帧编码输出，检查浏览器播放、`moov`、回执及关联节点。真实浏览器结果、构建和单测分别记录。[插件开发与交付](../../README.md#本地开发与交付)

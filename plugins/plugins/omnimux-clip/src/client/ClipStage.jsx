@@ -8,8 +8,10 @@ import { injectClipStyles } from './styles.js'
 import { computeHeaderPadLeft, computeStandaloneBox, readHostSidebarInset } from './stage-box.js'
 import { useCanvasIngestion } from './hooks/useCanvasIngestion.ts'
 import { findCanvasHost } from './findCanvasHost.js'
+import { useClipUiMode } from './simple-mode/uiModeStore.js'
 import './openreel/web/index.css'
 import './theme/dsw-map.css'
+import './simple-mode/simple-mode.css'
 
 class ClipErrorBoundary extends Component {
   constructor(props) {
@@ -110,6 +112,7 @@ export function ClipStage({ t, stage, locale, runtime }) {
 
   const stageRef = useRef(null)
   const visible = open && (!isCanvasMode || canvasHostVisible)
+  const { mode: uiMode } = useClipUiMode()
   const view = useEditorSeat(runtime, {
     mode: 'canvas', root: stageRef,
     isVisible: () => Boolean(visible && stageRef.current?.isConnected && stageRef.current.dataset.visible === 'true'
@@ -229,6 +232,7 @@ export function ClipStage({ t, stage, locale, runtime }) {
       className="omnimux-clip-stage"
       data-visible={visible ? 'true' : 'false'}
       data-clip-mode={isCanvasMode ? 'canvas' : 'standalone'}
+      data-clip-ui-mode={uiMode}
       data-clip-workspace-id={activeSession?.workspaceId}
       data-clip-node-id={activeSession?.nodeId}
       data-clip-project-id={activeSession?.projectId}
@@ -244,7 +248,7 @@ export function ClipStage({ t, stage, locale, runtime }) {
         '--clip-header-pad-left': `${headerPadLeft}px`,
       }}
     >
-      <div className="omnimux-clip-stage-body openreel-studio-root">
+      <div className="omnimux-clip-stage-body openreel-studio-root" data-clip-ui-mode={uiMode} data-clip-editing={(!runtime || view.phase === 'editing') ? 'true' : 'false'}>
         {runtime && visible && view.phase !== 'blocked' && (view.phase !== 'editing' || view.ingesting) && (
           <EditorOpening view={view} runtime={runtime} t={t} onExit={closeCanvas} />
         )}

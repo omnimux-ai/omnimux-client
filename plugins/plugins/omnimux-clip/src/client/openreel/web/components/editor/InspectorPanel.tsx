@@ -60,6 +60,10 @@ import { selectedGraphicInstance } from "../../services/graphic-commands";
 import { linkedInstanceOfBakedClip } from "@openreel/core";
 import { clipNow } from "../../../../i18n/index.js";
 import { useClipT } from "../../../../i18n/index.js";
+import {
+  SimpleInspectorCloseButton,
+  SimpleInspectorFooter,
+} from "../../../../simple-mode/SimpleInspectorChrome.jsx";
 
 const MultiCameraPanel = React.lazy(
   () => import("./inspector/MultiCameraPanel"),
@@ -976,9 +980,13 @@ const InspectorPanelBody = React.memo(function InspectorPanelBody({ selectedItem
   if (graphicInstance) {
     return (
       <div data-tour="inspector" data-clip-type="graphic" className="w-full min-w-0 bg-bg-1 flex flex-col h-full overflow-hidden">
+        <div className="clip-simple-inspector-topbar" data-clip-simple-only="true">
+          <SimpleInspectorCloseButton onClose={clearSelection} />
+        </div>
         <ScrollArea className="flex-1 min-h-0">
           <GraphicInspector key={graphicInstance.id} instance={graphicInstance} />
         </ScrollArea>
+        <SimpleInspectorFooter />
       </div>
     );
   }
@@ -989,13 +997,27 @@ const InspectorPanelBody = React.memo(function InspectorPanelBody({ selectedItem
       data-clip-type={clipType ?? undefined}
       className="w-full min-w-0 bg-bg-1 flex flex-col h-full overflow-hidden"
     >
-      {selectedTransition ? <h2 className="workspace-transition-heading">{t("Transition")}</h2> : selectedClip && (
-        <WorkspaceTabs
-          label={t("Inspector sections")}
-          value={visibleInspectorTab}
-          onChange={selectInspectorTab}
-          options={inspectorTabs}
-        />
+      {selectedTransition ? (
+        <div className="flex items-center justify-between pr-2">
+          <h2 className="workspace-transition-heading">{t("Transition")}</h2>
+          <SimpleInspectorCloseButton onClose={clearSelection} />
+        </div>
+      ) : (
+        <>
+          {(selectedClipIds.length > 1 || selectedSubtitle || (selectedClip && tabIds.length === 0)) && (
+            <div className="clip-simple-inspector-topbar" data-clip-simple-only="true">
+              <SimpleInspectorCloseButton onClose={clearSelection} />
+            </div>
+          )}
+          {selectedClip && (
+            <WorkspaceTabs
+              label={t("Inspector sections")}
+              value={visibleInspectorTab}
+              onChange={selectInspectorTab}
+              options={inspectorTabs}
+            />
+          )}
+        </>
       )}
       {selectedClip && tabIds.length > 0 && (
         <InspectorClipHeader
@@ -1021,6 +1043,7 @@ const InspectorPanelBody = React.memo(function InspectorPanelBody({ selectedItem
           timeRange={`${formatFrameTimecode(selectedClip.startTime ?? 0, project.settings.frameRate)} → ${formatFrameTimecode((selectedClip.startTime ?? 0) + selectedClip.duration, project.settings.frameRate)}`}
           sourceRange={clipSourceTimecodeRange(project.mediaLibrary.items.find((m) => m.id === selectedClip.mediaId), selectedClip)}
           onReset={clipType === "text" || clipType === "audio" ? undefined : () => { void resetClipTransform(selectedClip.id); }}
+          trailing={<SimpleInspectorCloseButton onClose={clearSelection} />}
         />
       )}
 
@@ -1186,6 +1209,7 @@ const InspectorPanelBody = React.memo(function InspectorPanelBody({ selectedItem
           )}
         </div>
       </ScrollArea>
+      {selectedItems.length > 0 && <SimpleInspectorFooter />}
     </div>
   );
 });

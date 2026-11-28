@@ -1,0 +1,175 @@
+{
+  "task": "clip-simple-mode",
+  "spaceId": 140,
+  "spaceName": "clip-simple-mode-wt-verify-1795865897131",
+  "verifiedAt": "2026-11-28T11:47:10.638Z",
+  "styleInjection": {
+    "count": 12,
+    "hasDsw": true,
+    "hasSimple": true,
+    "simpleAfterDsw": true
+  },
+  "standaloneSimpleDark": {
+    "clipMode": "standalone",
+    "uiMode": "simple",
+    "editing": "true",
+    "rootDataTheme": "dark",
+    "rootBg": "rgb(19, 20, 23)",
+    "hostbarVisible": false,
+    "brandBlockVisible": false,
+    "assetsSubTabsVisible": false,
+    "assetsRecordVisible": false,
+    "assetsFooterVisible": false,
+    "spotlightTourPresent": false,
+    "aiEditHeightPx": 30,
+    "railHeightPx": 38,
+    "visibleTabs": [
+      {
+        "section": "media",
+        "label": "素材",
+        "active": true
+      },
+      {
+        "section": "text",
+        "label": "文字",
+        "active": false
+      },
+      {
+        "section": "recipes",
+        "label": "模板",
+        "active": false
+      },
+      {
+        "section": "versions",
+        "label": "版本",
+        "active": false
+      }
+    ],
+    "inspectorHidden": true,
+    "previewHeaderVisible": false,
+    "previewMetaVisible": false,
+    "statusBarVisible": false,
+    "visibleTimelineToolsCount": 5,
+    "visibleTimelineTools": [
+      "选择工具(V)",
+      "吸附已开启 (N)",
+      "分割 (S)",
+      "删除 (Del)",
+      "轨道"
+    ],
+    "overflowPx": 0
+  },
+  "standaloneSimpleSelected": {
+    "inspectorWidthPx": 320,
+    "hasCloseButton": true,
+    "closeSvgPaths": 2,
+    "transformInputHeightsPx": [
+      24,
+      24,
+      24,
+      24,
+      24,
+      24,
+      24
+    ],
+    "maxTransformInputHeightPx": 24,
+    "expandProLabel": "展开专业参数",
+    "collapsedAfterClose": true
+  },
+  "standaloneProAndConvergence": {
+    "sameOpenReelShell": true,
+    "hostbarVisible": true,
+    "statusBarVisible": true,
+    "previewHeaderVisible": true,
+    "spotlightTourOpenedOnSwitch": false,
+    "visibleSectionsCount": 11,
+    "visibleSections": [
+      "media",
+      "audio",
+      "text",
+      "effects",
+      "transitions",
+      "graphics",
+      "recipes",
+      "markers",
+      "comments",
+      "versions",
+      "settings"
+    ],
+    "clickedProTool": "刀锋工具(B)",
+    "sameOpenReelShellAfterReturn": true,
+    "convergedSection": "media",
+    "pressedToolsAfterReturn": [
+      "选择工具(V)",
+      "吸附已开启 (N)",
+      "音频擦洗",
+      "链接选择"
+    ],
+    "drawerCollapsed": {
+      "mediaHidden": true,
+      "railHidden": true
+    },
+    "drawerReopened": {
+      "mediaHidden": false,
+      "mediaWidthPx": 300
+    }
+  },
+  "standaloneSimpleLightMenu": {
+    "theme": "light",
+    "rootDataTheme": "light",
+    "rootBg": "rgb(255, 255, 255)",
+    "menuBackground": "color(srgb 1 1 1)",
+    "menuItems": [
+      "本地文件…",
+      "从资产库导入…",
+      "去画布生成素材…",
+      "从画布同步与重连…"
+    ],
+    "hasAssetsEntry": true,
+    "hasCanvasEntry": true
+  },
+  "canvasSimpleDark": {
+    "stageMode": "canvas",
+    "uiMode": "simple",
+    "rootUiMode": "simple",
+    "rootDataTheme": "dark",
+    "rootBg": "rgb(19, 20, 23)",
+    "hasDrawerToggle": true,
+    "exitButtonText": "退出编辑",
+    "exitButtonHasSvg": false,
+    "visibleTabs": [
+      "素材",
+      "文字",
+      "模板",
+      "版本"
+    ],
+    "rightButtons": [
+      "简易",
+      "专业",
+      "AI 剪辑",
+      "导出",
+      "退出编辑"
+    ],
+    "inspectorHidden": true,
+    "stageVisibleAfterExit": "false",
+    "closedEventsCount": 1,
+    "canvasMarkerVisible": true
+  },
+  "standaloneSimpleNarrow": {
+    "viewportWidth": 820,
+    "overflowPx": 0,
+    "drawerLeft": 12,
+    "toggleRight": 634,
+    "exportRight": 810,
+    "topbarFitsViewport": true
+  },
+  "screenshots": [
+    "docs/evidence/clip-simple-mode/01-standalone-simple-dark.png",
+    "docs/evidence/clip-simple-mode/02-standalone-simple-selected.png",
+    "docs/evidence/clip-simple-mode/03-standalone-pro-dark.png",
+    "docs/evidence/clip-simple-mode/04-standalone-simple-light.png",
+    "docs/evidence/clip-simple-mode/05-canvas-simple-dark.png",
+    "docs/evidence/clip-simple-mode/06-standalone-simple-narrow.png"
+  ],
+  "runtimeErrors": []
+}

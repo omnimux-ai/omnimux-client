@@ -1,0 +1,282 @@
+/**
+ * OmniMux Clip Simple Mode stylesheet.
+ * Strictly scoped under .openreel-studio-root using only host DSW and OpenReel semantic tokens.
+ */
+
+.openreel-studio-root .clip-rail-label {
+  display: none;
+}
+
+.openreel-studio-root[data-clip-ui-mode="pro"] [data-clip-simple-only="true"] {
+  display: none !important;
+}
+
+/* Segmented Simple / Pro toggle in topbar */
+.openreel-studio-root .clip-ui-mode-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 30px;
+  padding: 2px;
+  border: 1px solid var(--dsw-alias-border-l2, var(--border));
+  border-radius: 7px;
+  background: var(--dsw-alias-bg-layer-2, var(--bg-2));
+  box-sizing: border-box;
+  flex-shrink: 0;
+  pointer-events: auto;
+  -webkit-app-region: no-drag;
+}
+
+.openreel-studio-root .clip-ui-mode-toggle button {
+  height: 24px;
+  min-height: 24px;
+  min-width: 0;
+  padding: 0 9px;
+  border-radius: 5px;
+  border: 1px solid transparent;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  color: var(--dsw-alias-label-secondary, var(--fg-3));
+  background: transparent;
+  white-space: nowrap;
+  -webkit-app-region: no-drag;
+}
+
+.openreel-studio-root .clip-ui-mode-toggle button:hover {
+  color: var(--dsw-alias-label-primary, var(--fg));
+  background: var(--dsw-alias-interactive-bg-hover, var(--hover));
+}
+
+.openreel-studio-root .clip-ui-mode-toggle button[aria-pressed="true"] {
+  background: var(--dsw-alias-button-ghost-active-fill, var(--accent-soft));
+  border-color: var(--dsw-alias-button-ghost-active-border, var(--border-strong));
+  color: var(--dsw-alias-brand-text, var(--accent));
+  font-weight: 600;
+}
+
+.openreel-studio-root .clip-drawer-toggle {
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  min-height: 28px;
+  flex-shrink: 0;
+  border-radius: 6px;
+  color: var(--dsw-alias-label-secondary, var(--fg-2));
+  pointer-events: auto;
+  -webkit-app-region: no-drag;
+}
+
+.openreel-studio-root .clip-drawer-toggle:hover {
+  color: var(--dsw-alias-label-primary, var(--fg));
+  background: var(--dsw-alias-interactive-bg-hover, var(--hover));
+}
+
+.openreel-studio-root .clip-drawer-toggle[aria-pressed="true"] {
+  color: var(--dsw-alias-brand-text, var(--accent));
+  background: var(--dsw-alias-button-ghost-active-fill, var(--accent-soft));
+}
+
+/* Simple Mode hides redundant Standalone hostbar while editing (controls live in single topbar) */
+.openreel-studio-root[data-clip-ui-mode="simple"][data-clip-editing="true"] > .openreel-studio-hostbar {
+  display: none;
+}
+
+/* Universal Pro-only hiding inside Simple Mode */
+.openreel-studio-root[data-clip-ui-mode="simple"] [data-clip-pro-only="true"] {
+  display: none !important;
+}
+
+/* Override styles.js standalone flex rule for Pro brand + menu block */
+.openreel-studio-root[data-clip-ui-mode="simple"] .workspace-topbar .openreel-toolbar-brand-block,
+.openreel-studio-root[data-clip-ui-mode="simple"] .workspace-topbar [data-clip-pro-only="true"] {
+  display: none !important;
+}
+
+/* Keep topbar center & actions balanced when Pro items are hidden in Simple Mode */
+.openreel-studio-root[data-clip-ui-mode="simple"] .workspace-topbar {
+  gap: 8px;
+  padding: 0 10px 0 12px;
+}
+
+.openreel-studio-root[data-clip-ui-mode="simple"] .workspace-project {
+  justify-content: flex-start;
+  padding: 0 6px;
+}
+
+.openreel-studio-root[data-clip-ui-mode="simple"] .workspace-project input {
+  text-align: left;
+}
+
+.openreel-studio-root[data-clip-ui-mode="simple"] .workspace-history {
+  gap: 4px;
+  padding-left: 10px;
+}
+
+/* Canvas Simple Mode preserves macOS traffic-light padding when drawer toggle sits on left */
+.omnimux-clip-stage[data-clip-mode="canvas"][data-clip-ui-mode="simple"] .workspace-topbar {
+  padding-left: max(12px, var(--clip-header-pad-left, 12px));
+}
+
+/* Narrow viewports in Simple Mode remain flexible instead of forcing 1024px horizontal scroll */
+.openreel-studio-root[data-clip-ui-mode="simple"] .editor-shell:not(.editor-compact) .editor-workspace {
+  min-width: 0;
+}
+
+/* Left drawer: 38px horizontal 4-tab bar above media panel */
+.openreel-studio-root[data-clip-ui-mode="simple"] .editor-rail {
+  min-width: 0;
+  overflow: hidden;
+  border-right: 0;
+}
+
+.openreel-studio-root[data-clip-ui-mode="simple"] .workspace-rail {
+  width: 100%;
+  height: 38px;
+  min-height: 38px;
+  flex-direction: row;
+  align-items: stretch;
+  justify-content: flex-start;
+  padding: 0 8px;
+  gap: 2px;
+  border-right: 0;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-1);
+}
+
+.openreel-studio-root[data-clip-ui-mode="simple"] .workspace-rail-scroll {
+  width: 100%;
+  height: 100%;
+  flex-direction: row;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 2px;
+  padding-bottom: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.openreel-studio-root[data-clip-ui-mode="simple"] .workspace-rail-button {
+  flex: 1 1 0;
+  width: auto;
+  min-width: 0;
+  height: 100%;
+  padding: 0 8px;
+  border-radius: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--fg-3);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.openreel-studio-root[data-clip-ui-mode="simple"] .workspace-rail-button svg {
+  display: none;
+}
+
+.openreel-studio-root[data-clip-ui-mode="simple"] .workspace-rail-button .clip-rail-label {
+  display: inline;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.openreel-studio-root[data-clip-ui-mode="simple"] .workspace-rail-button:hover {
+  background: var(--hover);
+  color: var(--fg);
+}
+
+.openreel-studio-root[data-clip-ui-mode="simple"] .workspace-rail-button.is-active,
+.openreel-studio-root[data-clip-ui-mode="simple"] .workspace-rail-button:first-child.is-active {
+  background: transparent;
+  color: var(--fg);
+  border-bottom-color: var(--accent);
+}
+
+.openreel-studio-root[data-clip-ui-mode="simple"] .workspace-rail-button.is-active .clip-rail-label {
+  font-weight: 600;
+}
+
+.openreel-studio-root[data-clip-ui-mode="simple"] .editor-compact .workspace-rail {
+  height: 48px;
+  min-height: 48px;
+}
+
+/* Assets panel streamlining in Simple Mode */
+.openreel-studio-root[data-clip-ui-mode="simple"] .workspace-media-panel .workspace-panel-tabs,
+.openreel-studio-root[data-clip-ui-mode="simple"] .workspace-media-browser > .clip-media-bridge-shortcuts,
+.openreel-studio-root[data-clip-ui-mode="simple"] .workspace-media-browser > .workspace-chips,
+.openreel-studio-root[data-clip-ui-mode="simple"] .workspace-media-panel .workspace-media-toolbar [data-media-action="record"],
+.openreel-studio-root[data-clip-ui-mode="simple"] .workspace-media-panel .workspace-panel-footer {
+  display: none !important;
+}
+
+/* Preview header & technical meta hidden in Simple Mode */
+.openreel-studio-root[data-clip-ui-mode="simple"] .workspace-preview-header,
+.openreel-studio-root[data-clip-ui-mode="simple"] .workspace-preview-meta {
+  display: none !important;
+}
+
+.openreel-studio-root[data-clip-ui-mode="simple"] .editor-shell:not(.editor-phone) .workspace-preview-area {
+  padding: 12px 18px !important;
+}
+
+/* Simple Inspector close button & bottom Expand Pro button */
+.openreel-studio-root[data-clip-ui-mode="simple"] .clip-simple-inspector-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 8px 0;
+  flex-shrink: 0;
+}
+
+.openreel-studio-root[data-clip-ui-mode="simple"] .clip-simple-inspector-close {
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  min-height: 24px;
+  margin-left: auto;
+  color: var(--fg-3);
+}
+
+.openreel-studio-root[data-clip-ui-mode="simple"] .clip-simple-inspector-close:hover {
+  color: var(--fg);
+  background: var(--hover);
+}
+
+.openreel-studio-root[data-clip-ui-mode="simple"] .clip-simple-inspector-footer {
+  flex-shrink: 0;
+  padding: 8px 10px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-1);
+}
+
+.openreel-studio-root[data-clip-ui-mode="simple"] .clip-simple-inspector-pro-btn {
+  width: 100%;
+  justify-content: center;
+  color: var(--fg-2);
+  border: 1px solid var(--border);
+  background: var(--bg-2);
+}
+
+.openreel-studio-root[data-clip-ui-mode="simple"] .clip-simple-inspector-pro-btn:hover {
+  color: var(--fg);
+  background: var(--hover);
+}
+
+.openreel-studio-root[data-clip-ui-mode="simple"] .workspace-inspector-value input {
+  height: 24px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+/* Narrow container polish so topbar never clips mode toggle or Export/Exit */
+@container clip-stage (width < 560px) {
+  .openreel-studio-root .clip-ui-mode-toggle button {
+    padding: 0 7px;
+    font-size: 11px;
+  }
+}

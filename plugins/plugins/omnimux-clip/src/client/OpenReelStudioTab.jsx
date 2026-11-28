@@ -5,8 +5,11 @@ import OpenReelApp from './openreel/web/App.tsx'
 import { useProjectStore } from './openreel/web/stores/project-store.ts'
 import { resetOpenReelRouter } from './openreel/web/hooks/use-router.ts'
 import { ClipEditorActions, EditorOpening, EditorSyncNotice, useEditorInert, useEditorSeat } from './live/EditorSeat.jsx'
+import { injectClipStyles } from './styles.js'
+import { useClipUiMode } from './simple-mode/uiModeStore.js'
 import './openreel/web/index.css'
 import './theme/dsw-map.css'
+import './simple-mode/simple-mode.css'
 
 const PRESETS = [
   ['1920x1080', 'tab.landscape'],
@@ -55,6 +58,9 @@ function StudioCreateForm({ t, onCreated, onWelcome }) {
 
 export function OpenReelStudioTab({ t, store, tab, sessionId, locale, runtime, visible = true }) {
   useHostLocale(locale)
+  useEffect(() => {
+    injectClipStyles()
+  }, [])
   const root = useRef(null)
   const [showWelcome, setShowWelcome] = useState(false)
   const clip = tab?.meta?.clip
@@ -74,12 +80,14 @@ export function OpenReelStudioTab({ t, store, tab, sessionId, locale, runtime, v
   }, [store])
 
   const editorRootRef = useEditorInert(view.resolving)
+  const { mode: uiMode } = useClipUiMode()
   const editing = view.phase === 'editing'
   const welcome = view.phase === 'welcome'
   const active = visible && (editing || welcome && showWelcome)
   return (
     <div className="openreel-studio-root omnimux-clip-studio-entry" aria-hidden={!visible || undefined} ref={root}
-      data-visible={visible ? 'true' : 'false'} data-clip-mode="standalone" data-clip-project-id={view.projectId}>
+      data-visible={visible ? 'true' : 'false'} data-clip-mode="standalone" data-clip-ui-mode={uiMode}
+      data-clip-editing={editing ? 'true' : 'false'} data-clip-project-id={view.projectId}>
       <div className="openreel-studio-hostbar">
         <div className="openreel-studio-hostbar-title">{editing && view.title || t('tab.title')}</div>
         <div className="openreel-studio-hostbar-status" role="status">{editing && view.status ? t(`tab.${view.status}`) : ''}</div>
