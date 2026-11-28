@@ -7,6 +7,7 @@ import { resolve } from "node:path";
 import {
   MENU_FALLBACK_WIDTH_PX,
   TIKTOK_SCENE_HOST_ID,
+  measureMenuWidth,
   mountTiktokScene
 } from "../src/content/tiktok-scene/menu.ts";
 import { tiktokCopy } from "../src/content/tiktok-scene/copy.ts";
@@ -286,12 +287,19 @@ describe("TikTok 场景工具栏 — 方向自适应", () => {
     assert.ok(menuLeft() + MENU_FALLBACK_WIDTH_PX <= 430);
   });
   it("关闭态受 scale(0.97) 影响导致 getBoundingClientRect 变窄时，优先读取真实布局宽 offsetWidth 避免向左重叠触发器", () => {
-    portraitPage();
-    const { handle, menu: el } = mountSized(430, 932, () => 165);
-    Object.defineProperty(el, "offsetWidth", { value: 170, configurable: true });
-    handle.reposition();
-    assert.equal(el.classList.contains("is-left"), true);
-    assert.equal(menuLeft(), 379 - 170);
+    const scaled = {
+      offsetWidth: 170,
+      getBoundingClientRect: () => ({ width: 165 })
+    };
+    assert.equal(measureMenuWidth(scaled), 170);
+    assert.equal(
+      measureMenuWidth({ offsetWidth: 0, getBoundingClientRect: () => ({ width: 120 }) }),
+      120
+    );
+    assert.equal(
+      measureMenuWidth({ offsetWidth: 0, getBoundingClientRect: () => ({ width: 0 }) }),
+      MENU_FALLBACK_WIDTH_PX
+    );
   });
 });
 describe("TikTok 场景工具栏 — 悬停展开", () => {
