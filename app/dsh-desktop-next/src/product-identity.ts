@@ -58,6 +58,13 @@ export function desktopIdentity(channel: DesktopReleaseChannel = 'stable'): Desk
 /** OmniMux stable identity, aligned with electron-builder's `build` block. */
 export const DESKTOP_PRODUCT_IDENTITY = DESKTOP_RELEASE_IDENTITIES.stable
 export const DESKTOP_DEV_IDENTITY = DESKTOP_RELEASE_IDENTITIES.development
+export const DESKTOP_PACKAGE_NAME = DESKTOP_PRODUCT_IDENTITY.packageName
+/** Launcher packages owned by Electron shells across Next and legacy lines; never valid Profile plugins. */
+export const DESKTOP_PACKAGE_NAMES: ReadonlySet<string> = new Set([
+  DESKTOP_PACKAGE_NAME,
+  'dsh-plugin-desktop',
+  'dsh-plugin-desktop-beta',
+])
 export const DESKTOP_PRODUCT_NAME = DESKTOP_PRODUCT_IDENTITY.productName
 export const DESKTOP_APP_ID = DESKTOP_PRODUCT_IDENTITY.appId
 export const DESKTOP_DEV_APP_ID = DESKTOP_DEV_IDENTITY.appId

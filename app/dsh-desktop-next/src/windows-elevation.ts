@@ -13,7 +13,7 @@
  */
 import { createRequire } from 'node:module'
 import { win32 as windowsPath } from 'node:path'
-import { isDesktopInstallerQuitRequest } from '../../dsh-plugin-desktop/src/desktop-installer-quit.ts'
+import { isDesktopInstallerQuitRequest } from './desktop-installer-quit.ts'
 import { DE_ELEVATED_ARGUMENT } from './relaunch.ts'
 
 type Koffi = typeof import('koffi').default

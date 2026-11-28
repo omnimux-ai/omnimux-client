@@ -9,6 +9,8 @@ export const NEXT_MAC_REQUIRED_ENTITLEMENTS = [
   'com.apple.security.device.audio-input',
 ] as const
 
+export const MAC_REQUIRED_ENTITLEMENTS = NEXT_MAC_REQUIRED_ENTITLEMENTS
+
 type ReadEntitlements = (path: string, arch: string) => Record<string, unknown>
 
 const readEntitlements: ReadEntitlements = (path, arch) => {
@@ -30,6 +32,20 @@ export function verifyNextMacEntitlements(appPath: string, read: ReadEntitlement
     for (const arch of slices) {
       const entitlements = read(target, arch)
       for (const key of NEXT_MAC_REQUIRED_ENTITLEMENTS) {
+        if (entitlements[key] !== true) throw new Error(`Missing macOS entitlement ${key} in ${target} (${arch})`)
+      }
+    }
+  }
+}
+
+/** Both Universal slices and every Electron Helper must retain microphone access. */
+export function verifyMacEntitlements(appPath: string, productName: string, read: ReadEntitlements = readEntitlements): void {
+  const targets = [appPath, ...['', ' (Renderer)', ' (GPU)', ' (Plugin)']
+    .map(suffix => join(appPath, 'Contents', 'Frameworks', `${productName} Helper${suffix}.app`))]
+  for (const target of targets) {
+    for (const arch of ['arm64', 'x86_64']) {
+      const entitlements = read(target, arch)
+      for (const key of MAC_REQUIRED_ENTITLEMENTS) {
         if (entitlements[key] !== true) throw new Error(`Missing macOS entitlement ${key} in ${target} (${arch})`)
       }
     }

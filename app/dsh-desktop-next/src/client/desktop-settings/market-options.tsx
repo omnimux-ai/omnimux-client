@@ -1,8 +1,8 @@
 /** The plugin market choices with their titles and descriptions, shared by the settings page and the Plugins page. */
 
 import type { ReactNode } from 'react'
-import type { DesktopMarketProvider } from '../../../../dsh-plugin-desktop/src/client/desktop-settings-api.ts'
-import type { DesktopSettingsLocaleKey } from '../../../../dsh-plugin-desktop/src/client/desktop-settings-locales.ts'
+import type { DesktopMarketProvider } from '../desktop-settings-api.ts'
+import type { DesktopSettingsLocaleKey } from '../desktop-settings-locales.ts'
 import type { Translate } from './model.ts'
 
 function RepositoryLink({ href, children }: { href: string; children: ReactNode }) {

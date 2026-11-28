@@ -1,6 +1,6 @@
 /** The Profiles & data tab of the Desktop settings page. */
 
-import type { DesktopProfileView } from '../../../../dsh-plugin-desktop/src/client/desktop-settings-api.ts'
+import type { DesktopProfileView } from '../desktop-settings-api.ts'
 import type { Translate } from './model.ts'
 import type { DesktopSettingsModel } from './use-desktop-settings-section.ts'
 import { Choice } from './controls.tsx'

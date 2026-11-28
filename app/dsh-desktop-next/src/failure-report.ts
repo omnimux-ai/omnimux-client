@@ -6,7 +6,7 @@
 import { appendFile, readdir, unlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { inspect } from 'node:util'
-import type { DesktopFailureStage } from '../../dsh-plugin-desktop/src/recovery-copy.ts'
+import type { DesktopFailureStage } from './recovery-copy.ts'
 import { outsidePackage, stackPackages, type HostCrash } from './host-crash.ts'
 import { startupEntriesSection, type DesktopStartupTimeoutFailure } from './host-startup-limit.ts'
 import { maskSecrets } from './mask-secrets.ts'

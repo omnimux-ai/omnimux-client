@@ -2,7 +2,7 @@
  * Port of deepseek-harness apps/desktop/scripts/windows-directory-installer.mjs: the pinned NSIS template
  * extracts the new application beside the installation, skips the old uninstaller for same-path updates,
  * and replaces the installation by renaming complete directories on one volume. The transaction itself
- * lives in ../../dsh-plugin-desktop/build/installer-directories.nsh.
+ * lives in ../build/installer-directories.nsh.
  */
 import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'

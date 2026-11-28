@@ -3,7 +3,7 @@
  * the archive against the sealed payload, the interpreter payloads, the fuses and the packaged Host boot.
  * Only the installer containers, whose own checks read their headers, are optional.
  */
-import type { MacSmokeArchitecture } from '../../dsh-plugin-desktop/scripts/mac-universal.ts'
+import type { MacSmokeArchitecture } from './mac-universal.ts'
 
 export type LinuxPackageTarget = 'AppImage' | 'deb'
 

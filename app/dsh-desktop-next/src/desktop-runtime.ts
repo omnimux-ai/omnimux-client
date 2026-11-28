@@ -1,7 +1,7 @@
 /** Headless owner of the Host, desktop preferences, Profiles and recovery. */
 import { randomBytes } from 'node:crypto'
 import { mkdtempSync } from 'node:fs'
-import { cleanupDisposableTree } from '../../dsh-plugin-desktop/src/disposable-tree.ts'
+import { cleanupDisposableTree } from './disposable-tree.ts'
 import { dirname, join } from 'node:path'
 import type { PlatformSession } from '@deepseek-ai/dsh-deepseek-account'
 import { DesktopBackendController } from './backend-controller.ts'
@@ -27,7 +27,7 @@ import type { DesktopLanHttpsCertificate } from './lan-https-certificate.ts'
 import type { DesktopPermission, DesktopPermissionAction, DesktopPermissionSnapshot } from './permissions.ts'
 import { SYSTEM_PROXY_ENV, type DesktopSystemProxyProbe } from './system-proxy.ts'
 import { createOperationHistory } from './upstream-family.ts'
-import type { DesktopFailureStage } from '../../dsh-plugin-desktop/src/recovery-copy.ts'
+import type { DesktopFailureStage } from './recovery-copy.ts'
 
 interface RuntimeOptions {
   home: string

@@ -118,7 +118,7 @@ it('builds the installer from adapted templates and a copied, signed Windows 7-Z
 })
 
 it('vendors the upstream directory transaction and only inserts the Desktop hooks', () => {
-  const vendored = readFileSync(new URL('../../dsh-plugin-desktop/build/installer-directories.nsh', import.meta.url), 'utf8')
+  const vendored = readFileSync(new URL('../build/installer-directories.nsh', import.meta.url), 'utf8')
   const upstream = readFileSync(new URL('../../deepseek-harness/apps/desktop/scripts/installer-directories.nsh', import.meta.url), 'utf8')
   const inserted = vendored.match(/^ *; dsh-desktop:start\n[\s\S]*?^ *; dsh-desktop:end\n/gmu) ?? []
   expect(inserted.map(block => /!insertmacro (\w+)/u.exec(block)?.[1])).toEqual(['customInstallerStageFailed', 'customInstallerStaged'])

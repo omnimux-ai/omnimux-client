@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { DESKTOP_FILE_PICKER_CHANNEL, type NativeFilePickerBridge } from '../../dsh-plugin-desktop/src/native-file-picker-contract.ts'
+import { DESKTOP_FILE_PICKER_CHANNEL, type NativeFilePickerBridge } from '../src/native-file-picker-contract.ts'
 
 const electron = vi.hoisted(() => ({
   contextBridge: { exposeInMainWorld: vi.fn<(name: string, api: unknown) => void>() },

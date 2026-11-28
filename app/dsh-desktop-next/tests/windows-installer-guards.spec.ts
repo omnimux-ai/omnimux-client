@@ -2,7 +2,7 @@
 import { readFileSync } from 'node:fs'
 import { expect, it } from 'vitest'
 
-const script = readFileSync(new URL('../../dsh-plugin-desktop/build/installer.nsh', import.meta.url), 'utf8')
+const script = readFileSync(new URL('../build/installer.nsh', import.meta.url), 'utf8')
 const macro = (name: string): string => {
   const body = new RegExp(`^!macro ${name}(?: .*)?\\n([\\s\\S]*?)^!macroend`, 'mu').exec(script)?.[1]
   expect(body, name).toBeDefined()

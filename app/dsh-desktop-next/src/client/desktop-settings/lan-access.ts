@@ -1,10 +1,10 @@
 /** Browser and LAN access: following a hot LAN transition, and persisting access changes to the running edge. */
 
-import type { DesktopSettingsForm } from '../../../../dsh-plugin-desktop/src/client/settings-bridge.ts'
+import type { DesktopSettingsForm } from '../settings-bridge.ts'
 import type {
   DesktopSettingsApi,
   DesktopSettingsView,
-} from '../../../../dsh-plugin-desktop/src/client/desktop-settings-api.ts'
+} from '../desktop-settings-api.ts'
 import type { DesktopShellSettings } from './model.ts'
 
 type LanPollWait = (signal: AbortSignal) => Promise<void>
