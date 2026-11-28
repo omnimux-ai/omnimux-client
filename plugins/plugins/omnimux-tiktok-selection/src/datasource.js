@@ -887,7 +887,7 @@ function normalizeHubShopItem(rawInput, idx, region, source, sourceDetail) {
       totalSales: salesTotal,
       sales7d,
       sales28d,
-      periodSales: sales7d ?? salesTotal,
+      periodSales: sales7d,
       gmv7d: raw.gmv_7d ?? raw.period_gmv ?? null,
       totalGmv: raw.total_gmv ?? null,
       commissionRate,
@@ -981,9 +981,17 @@ function normalizeHubVideos(res) {
 
 function sortProducts(list, sortField = 'periodSales', sortDir = 'desc') {
   const mult = sortDir === 'asc' ? 1 : -1
+  let effectiveField = sortField
+  if (
+    (sortField === 'periodSales' || sortField === 'sales7d') &&
+    list.length > 0 &&
+    list.every((item) => item[sortField] === null || item[sortField] === undefined)
+  ) {
+    effectiveField = 'totalSales'
+  }
   const valOf = (item) => {
-    const v = item[sortField]
-    if (v === null || v === undefined) return -Infinity
+    const v = item[effectiveField]
+    if (v === null || v === undefined) return mult > 0 ? Infinity : -Infinity
     return Number(v)
   }
   return [...list].sort((a, b) => (valOf(a) - valOf(b)) * mult)
@@ -1054,10 +1062,117 @@ function formatSocialDataErrorMessage(err, fallback, { suggestSnapshot = false }
   return err?.message || fallback
 }
 
+const DEFAULT_CACHE_LIMITS = Object.freeze({
+  maxEntries: 100,
+  listTtlMs: 15 * 60 * 1000,
+  detailTtlMs: 15 * 60 * 1000,
+  detailInvalidTtlMs: 5 * 60 * 1000,
+  videosTtlMs: 30 * 60 * 1000,
+  reviewsTtlMs: 30 * 60 * 1000,
+})
+
+function createTtlCache(maxEntries = 100, nowFn = () => Date.now()) {
+  const entries = new Map()
+  return {
+    get(key) {
+      const entry = entries.get(key)
+      if (!entry) return null
+      if (nowFn() >= entry.expiresAt) {
+        entries.delete(key)
+        return null
+      }
+      // Refresh LRU insertion order
+      entries.delete(key)
+      entries.set(key, entry)
+      return entry.value
+    },
+    set(key, value, ttlMs) {
+      if (ttlMs <= 0) return
+      entries.delete(key)
+      while (entries.size >= maxEntries) {
+        const oldestKey = entries.keys().next().value
+        if (oldestKey === undefined) break
+        entries.delete(oldestKey)
+      }
+      entries.set(key, {
+        value,
+        expiresAt: nowFn() + ttlMs,
+      })
+    },
+    delete(key) {
+      entries.delete(key)
+    },
+    clear() {
+      entries.clear()
+    },
+  }
+}
+
+function dedupeInFlight(inFlightMap, key, runner) {
+  const existing = inFlightMap.get(key)
+  if (existing) return existing
+  const promise = Promise.resolve().then(runner).finally(() => {
+    if (inFlightMap.get(key) === promise) {
+      inFlightMap.delete(key)
+    }
+  })
+  inFlightMap.set(key, promise)
+  return promise
+}
+
+function computeUnavailableFields(items = []) {
+  if (!Array.isArray(items) || items.length === 0) {
+    return ['sales7d', 'sales28d', 'commissionRate', 'channelMetrics']
+  }
+  const missing = []
+  if (items.every((p) => p.sales7d === null || p.sales7d === undefined)) missing.push('sales7d')
+  if (items.every((p) => p.sales28d === null || p.sales28d === undefined)) missing.push('sales28d')
+  if (items.every((p) => p.periodGmv === null || p.periodGmv === undefined)) missing.push('periodGmv')
+  if (items.every((p) => p.commissionRate === null || p.commissionRate === undefined)) missing.push('commissionRate')
+  if (items.every((p) => p.creatorsCount === null || p.creatorsCount === undefined)) missing.push('creatorsCount')
+  if (items.every((p) => !p.channelMetrics)) missing.push('channelMetrics')
+  return missing
+}
+
+function mergeProductWithLive(baseProduct, liveNormalized) {
+  if (!liveNormalized) return baseProduct
+  if (!baseProduct) return liveNormalized
+  return {
+    ...liveNormalized,
+    ...baseProduct,
+    priceMin: liveNormalized.priceMin ?? baseProduct.priceMin,
+    priceMax: liveNormalized.priceMax ?? baseProduct.priceMax,
+    currency: liveNormalized.priceMin !== null ? liveNormalized.currency : baseProduct.currency,
+    priceDisplay: liveNormalized.priceMin !== null ? liveNormalized.priceDisplay : baseProduct.priceDisplay,
+    shopName: liveNormalized.shopName || baseProduct.shopName,
+    shopId: liveNormalized.shopId || baseProduct.shopId,
+    category: baseProduct.category || liveNormalized.category,
+    rating: liveNormalized.rating ?? baseProduct.rating,
+    reviewCount: liveNormalized.reviewCount ?? baseProduct.reviewCount,
+    totalSales: liveNormalized.totalSales ?? baseProduct.totalSales,
+    skuCount: liveNormalized.skuCount ?? baseProduct.skuCount,
+    coverUrl: baseProduct.coverUrl || liveNormalized.coverUrl,
+  }
+}
+
 /**
  * Create the dual-mode DataSource adapter (Hub live socialData + imported CSV/JSON snapshots).
  */
-export function createDataSourceAdapter({ store, getService, logger }) {
+export function createDataSourceAdapter({ store, getService, logger, cacheConfig = {} }) {
+  const nowFn = typeof cacheConfig.now === 'function' ? cacheConfig.now : () => Date.now()
+  const maxEntries = Math.max(10, Number(cacheConfig.maxEntries) || DEFAULT_CACHE_LIMITS.maxEntries)
+  const listTtlMs = Number(cacheConfig.listTtlMs ?? DEFAULT_CACHE_LIMITS.listTtlMs)
+  const detailTtlMs = Number(cacheConfig.detailTtlMs ?? DEFAULT_CACHE_LIMITS.detailTtlMs)
+  const detailInvalidTtlMs = Number(cacheConfig.detailInvalidTtlMs ?? DEFAULT_CACHE_LIMITS.detailInvalidTtlMs)
+  const videosTtlMs = Number(cacheConfig.videosTtlMs ?? DEFAULT_CACHE_LIMITS.videosTtlMs)
+  const reviewsTtlMs = Number(cacheConfig.reviewsTtlMs ?? DEFAULT_CACHE_LIMITS.reviewsTtlMs)
+
+  const listCache = createTtlCache(maxEntries, nowFn)
+  const detailCache = createTtlCache(maxEntries, nowFn)
+  const videosCache = createTtlCache(maxEntries, nowFn)
+  const reviewsCache = createTtlCache(maxEntries, nowFn)
+  const inFlight = new Map()
+
   function attachLibraryFlags(items) {
     const inLib = store.getLibraryKeySet()
     return items.map((item) => ({
@@ -1078,12 +1193,13 @@ export function createDataSourceAdapter({ store, getService, logger }) {
   async function queryRank(params = {}) {
     const region = String(params.region || 'US').trim().toUpperCase()
     const granularity = String(params.granularity || 'daily')
-    const period = String(params.period || new Date(Date.now() - 86400000).toISOString().slice(0, 10))
+    const period = String(params.period || new Date(nowFn() - 86400000).toISOString().slice(0, 10))
     const category = String(params.category || '').trim()
     const sortField = String(params.sortField || 'periodSales')
     const sortDir = params.sortDir === 'asc' ? 'asc' : 'desc'
     const page = Math.max(1, Number.parseInt(String(params.page || '1'), 10) || 1)
     const pageSize = Math.min(50, Math.max(1, Number.parseInt(String(params.pageSize || OPERATIONAL_LIMITS.pageSize), 10) || OPERATIONAL_LIMITS.pageSize))
+    const forceRefresh = Boolean(params.forceRefresh)
 
     const snap = resolveSnapshot(params.snapshotId)
     if (snap) {
@@ -1105,7 +1221,9 @@ export function createDataSourceAdapter({ store, getService, logger }) {
         pageSize,
         total: sorted.length,
         totalPages: Math.max(1, Math.ceil(sorted.length / pageSize)),
-        unavailableFields: [],
+        unavailableFields: computeUnavailableFields(sorted),
+        cached: false,
+        fetchedAt: null,
         items: attachLibraryFlags(slice),
       }
     }
@@ -1118,49 +1236,62 @@ export function createDataSourceAdapter({ store, getService, logger }) {
       )
     }
 
-    const candidateQueries = category ? [category] : DEFAULT_RANK_QUERIES
-    let rawRes = null
-    let normalized = []
-    let lastError = null
+    const cacheKey = `rank::${region}::${category.toLowerCase()}`
+    let entry = !forceRefresh ? listCache.get(cacheKey) : null
+    let cached = Boolean(entry)
 
-    for (let qIdx = 0; qIdx < candidateQueries.length; qIdx += 1) {
-      const queryKeyword = candidateQueries[qIdx]
-      try {
-        const res = await socialData.fetch({
-          platform: 'tiktok',
-          capability: 'shop_search_v2',
-          query: queryKeyword,
-          region,
-        })
-        const rawList = extractItemsFromHubResponse(res)
-        const sourceDetail = `${region} ${granularity} ${period} ${category || '全部类目'}`
-        const items = rawList
-          .map((item, idx) => normalizeHubShopItem(item, idx, region, 'rank', sourceDetail))
-          .filter(Boolean)
-        rawRes = res
-        normalized = items
-        if (items.length > 0) break
-      } catch (err) {
-        logger?.warn?.('omnimux-tiktok-selection: rank query failed', {
-          query: queryKeyword,
-          code: err?.code,
-          error: err?.message,
-        })
-        if (TERMINAL_SOCIAL_ERROR_CODES.has(err?.code) || category || qIdx === candidateQueries.length - 1) {
-          const code = err?.code === 'needs-omnimux' ? 'needs-omnimux' : 'upstream-failed'
-          const message = formatSocialDataErrorMessage(err, 'TikTok Shop rank query failed', { suggestSnapshot: true })
+    if (!entry) {
+      entry = await dedupeInFlight(inFlight, cacheKey, async () => {
+        const candidateQueries = category ? [category] : DEFAULT_RANK_QUERIES
+        let rawRes = null
+        let normalized = []
+        let lastError = null
+
+        for (let qIdx = 0; qIdx < candidateQueries.length; qIdx += 1) {
+          const queryKeyword = candidateQueries[qIdx]
+          try {
+            const res = await socialData.fetch({
+              platform: 'tiktok',
+              capability: 'shop_search_v2',
+              query: queryKeyword,
+              region,
+            })
+            const rawList = extractItemsFromHubResponse(res)
+            const sourceDetail = `${region} ${granularity} ${period} ${category || '全部'}`
+            const items = rawList
+              .map((item, idx) => normalizeHubShopItem(item, idx, region, 'rank', sourceDetail))
+              .filter(Boolean)
+            rawRes = res
+            normalized = items
+            if (items.length > 0) break
+          } catch (err) {
+            logger?.warn?.('omnimux-tiktok-selection: rank query failed', {
+              query: queryKeyword,
+              code: err?.code,
+              error: err?.message,
+            })
+            if (TERMINAL_SOCIAL_ERROR_CODES.has(err?.code) || category || qIdx === candidateQueries.length - 1) {
+              const code = err?.code === 'needs-omnimux' ? 'needs-omnimux' : 'upstream-failed'
+              const message = formatSocialDataErrorMessage(err, 'TikTok Shop rank query failed', { suggestSnapshot: true })
+              throw new SelectionError(code, message)
+            }
+            lastError = err
+          }
+        }
+        if (!rawRes && lastError) {
+          const code = lastError?.code === 'needs-omnimux' ? 'needs-omnimux' : 'upstream-failed'
+          const message = formatSocialDataErrorMessage(lastError, 'TikTok Shop rank query failed', { suggestSnapshot: true })
           throw new SelectionError(code, message)
         }
-        lastError = err
-      }
-    }
-    if (!rawRes && lastError) {
-      const code = lastError?.code === 'needs-omnimux' ? 'needs-omnimux' : 'upstream-failed'
-      const message = formatSocialDataErrorMessage(lastError, 'TikTok Shop rank query failed', { suggestSnapshot: true })
-      throw new SelectionError(code, message)
+
+        const freshEntry = { items: normalized, fetchedAt: new Date(nowFn()).toISOString() }
+        listCache.set(cacheKey, freshEntry, listTtlMs)
+        return freshEntry
+      })
+      cached = false
     }
 
-    const sorted = sortProducts(normalized, sortField, sortDir)
+    const sorted = sortProducts(entry.items, sortField, sortDir)
     const slice = sorted.slice((page - 1) * pageSize, page * pageSize).map((item, i) => ({
       ...item,
       rank: (page - 1) * pageSize + i + 1,
@@ -1175,7 +1306,9 @@ export function createDataSourceAdapter({ store, getService, logger }) {
       pageSize,
       total: sorted.length,
       totalPages: Math.max(1, Math.ceil(sorted.length / pageSize)),
-      unavailableFields: ['sales28d', 'commissionRate', 'channelMetrics'],
+      unavailableFields: computeUnavailableFields(entry.items),
+      cached,
+      fetchedAt: entry.fetchedAt,
       items: attachLibraryFlags(slice),
     }
   }
@@ -1188,6 +1321,7 @@ export function createDataSourceAdapter({ store, getService, logger }) {
     const sortDir = params.sortDir === 'asc' ? 'asc' : 'desc'
     const page = Math.max(1, Number.parseInt(String(params.page || '1'), 10) || 1)
     const pageSize = Math.min(50, Math.max(1, Number.parseInt(String(params.pageSize || OPERATIONAL_LIMITS.pageSize), 10) || OPERATIONAL_LIMITS.pageSize))
+    const forceRefresh = Boolean(params.forceRefresh)
 
     const snap = resolveSnapshot(params.snapshotId)
     if (snap) {
@@ -1204,6 +1338,9 @@ export function createDataSourceAdapter({ store, getService, logger }) {
         pageSize,
         total: sorted.length,
         totalPages: Math.max(1, Math.ceil(sorted.length / pageSize)),
+        unavailableFields: computeUnavailableFields(sorted),
+        cached: false,
+        fetchedAt: null,
         items: attachLibraryFlags(slice),
       }
     }
@@ -1219,27 +1356,41 @@ export function createDataSourceAdapter({ store, getService, logger }) {
       )
     }
 
-    let rawRes
-    try {
-      rawRes = await socialData.fetch({
-        platform: 'tiktok',
-        capability: 'shop_search_v2',
-        query: keyword || category,
-        region,
+    const queryText = keyword || category
+    const cacheKey = `search::${region}::${queryText.toLowerCase()}`
+    let entry = !forceRefresh ? listCache.get(cacheKey) : null
+    let cached = Boolean(entry)
+
+    if (!entry) {
+      entry = await dedupeInFlight(inFlight, cacheKey, async () => {
+        let rawRes
+        try {
+          rawRes = await socialData.fetch({
+            platform: 'tiktok',
+            capability: 'shop_search_v2',
+            query: queryText,
+            region,
+          })
+        } catch (err) {
+          logger?.warn?.('omnimux-tiktok-selection: search query failed', { code: err?.code, error: err?.message })
+          const code = err?.code === 'needs-omnimux' ? 'needs-omnimux' : 'upstream-failed'
+          const message = formatSocialDataErrorMessage(err, 'TikTok Shop search failed', { suggestSnapshot: true })
+          throw new SelectionError(code, message)
+        }
+
+        const rawList = extractItemsFromHubResponse(rawRes)
+        const sourceDetail = `${region} 关键词 ${queryText}`
+        const normalized = rawList
+          .map((item, idx) => normalizeHubShopItem(item, idx, region, 'search', sourceDetail))
+          .filter(Boolean)
+        const freshEntry = { items: normalized, fetchedAt: new Date(nowFn()).toISOString() }
+        listCache.set(cacheKey, freshEntry, listTtlMs)
+        return freshEntry
       })
-    } catch (err) {
-      logger?.warn?.('omnimux-tiktok-selection: search query failed', { code: err?.code, error: err?.message })
-      const code = err?.code === 'needs-omnimux' ? 'needs-omnimux' : 'upstream-failed'
-      const message = formatSocialDataErrorMessage(err, 'TikTok Shop search failed', { suggestSnapshot: true })
-      throw new SelectionError(code, message)
+      cached = false
     }
 
-    const rawList = extractItemsFromHubResponse(rawRes)
-    const sourceDetail = `${region} 关键词 ${keyword || category}`
-    const normalized = rawList
-      .map((item, idx) => normalizeHubShopItem(item, idx, region, 'search', sourceDetail))
-      .filter(Boolean)
-    const filtered = applyProductFilters(normalized, { ...params, keyword: '', category })
+    const filtered = applyProductFilters(entry.items, { ...params, keyword: '', category })
     const sorted = sortProducts(filtered, sortField, sortDir)
     const slice = sorted.slice((page - 1) * pageSize, page * pageSize)
 
@@ -1251,105 +1402,156 @@ export function createDataSourceAdapter({ store, getService, logger }) {
       pageSize,
       total: sorted.length,
       totalPages: Math.max(1, Math.ceil(sorted.length / pageSize)),
+      unavailableFields: computeUnavailableFields(entry.items),
+      cached,
+      fetchedAt: entry.fetchedAt,
       items: attachLibraryFlags(slice),
     }
   }
 
-  async function getProductDetail({ productId, region = 'US', loadVideos = false, loadReviews = false, productHint = null }) {
+  async function getProductDetail({
+    productId,
+    region = 'US',
+    includeDetail = true,
+    loadVideos = false,
+    loadReviews = false,
+    forceRefresh = false,
+    productHint = null,
+  }) {
     const pid = String(productId || '').trim()
     if (!pid) throw new SelectionError('invalid-request', 'productId is required')
     const reg = String(region || 'US').trim().toUpperCase()
+    const cacheKey = normalizeProductKey(pid, reg)
 
     const localItem = store.getLibraryItem(pid)
     let product = localItem || (productHint ? normalizeProductInput({ ...productHint, productId: pid, region: reg }) : null)
 
     const socialData = getService?.('socialData')
+    const hasSocialData = Boolean(socialData && typeof socialData.fetch === 'function')
+    const isSnapshotSource = product?.source === 'snapshot'
+
+    const cacheFlags = { detail: false, videos: false, reviews: false }
     let detailWarning = ''
-    if (socialData && typeof socialData.fetch === 'function') {
-      const mergeLiveDetail = (rawObj) => {
-        if (!rawObj || typeof rawObj !== 'object' || !(rawObj.title || rawObj.product_name || rawObj.name)) {
-          return false
-        }
-        const liveNormalized = normalizeHubShopItem(rawObj, 0, reg, product?.source || 'detail', product?.sourceDetail || '')
-        if (!liveNormalized) return false
-        product = product
-          ? {
-              ...liveNormalized,
-              ...product,
-              priceMin: liveNormalized.priceMin ?? product.priceMin,
-              priceMax: liveNormalized.priceMax ?? product.priceMax,
-              currency: liveNormalized.priceMin !== null ? liveNormalized.currency : product.currency,
-              priceDisplay: liveNormalized.priceMin !== null ? liveNormalized.priceDisplay : product.priceDisplay,
-              shopName: liveNormalized.shopName || product.shopName,
-              shopId: liveNormalized.shopId || product.shopId,
-              category: product.category || liveNormalized.category,
-              rating: liveNormalized.rating ?? product.rating,
-              reviewCount: liveNormalized.reviewCount ?? product.reviewCount,
-              totalSales: liveNormalized.totalSales ?? product.totalSales,
-              coverUrl: product.coverUrl || liveNormalized.coverUrl,
-            }
-          : liveNormalized
-        return true
-      }
+    let detailStatus = 'skipped'
 
-      let needV1Fallback = false
-      let invalidReason = ''
-      try {
-        const res = await socialData.fetch({
-          platform: 'tiktok',
-          capability: 'shop_product',
-          id: pid,
-          region: reg,
-        })
-        const status = inspectShopDetailStatus(res)
-        if (status.invalid) {
-          invalidReason = status.reason
-          needV1Fallback = true
-        } else if (!mergeLiveDetail(extractHubProductDetail(res))) {
-          needV1Fallback = true
-        }
-      } catch (err) {
-        if (TERMINAL_SOCIAL_ERROR_CODES.has(err?.code)) {
-          detailWarning = formatSocialDataErrorMessage(err, 'Live product detail unavailable')
-          logger?.warn?.('omnimux-tiktok-selection: detail lookup fallback to local', {
-            productId: pid,
-            code: err?.code,
-            error: detailWarning,
-          })
+    const cachedDetail = !forceRefresh ? detailCache.get(cacheKey) : null
+    if (isSnapshotSource && !forceRefresh) {
+      detailStatus = 'snapshot'
+    } else if (includeDetail !== false) {
+      if (cachedDetail) {
+        cacheFlags.detail = true
+        if (cachedDetail.ok) {
+          product = mergeProductWithLive(product, cachedDetail.liveNormalized)
+          detailStatus = 'cached'
         } else {
-          logger?.warn?.('omnimux-tiktok-selection: v3 detail failed, retrying shop_product_v1', {
-            productId: pid,
-            code: err?.code,
-            error: err?.message,
-          })
-          needV1Fallback = true
+          detailWarning = cachedDetail.warning
+          detailStatus = 'unavailable'
         }
-      }
+      } else if (hasSocialData) {
+        const fetchedDetail = await dedupeInFlight(inFlight, `detail::${cacheKey}`, async () => {
+          let liveNormalized = null
+          let invalidReason = ''
+          let needV1Fallback = false
+          let warning = ''
+          let status = 'live'
+          let shouldNegativeCache = false
 
-      if (needV1Fallback) {
-        try {
-          const v1Res = await socialData.fetch({
-            platform: 'tiktok',
-            capability: 'shop_product_v1',
-            id: pid,
-            region: reg,
-          })
-          const v1Status = inspectShopDetailStatus(v1Res)
-          if (v1Status.invalid || !mergeLiveDetail(extractHubProductDetail(v1Res))) {
-            detailWarning = '实时商品详情暂不可用或站点不匹配'
-            logger?.warn?.('omnimux-tiktok-selection: v1 detail returned invalid or empty payload', {
-              productId: pid,
-              reason: v1Status.reason || invalidReason || 'empty',
-            })
+          const tryNormalize = (rawObj) => {
+            if (!rawObj || typeof rawObj !== 'object' || !(rawObj.title || rawObj.product_name || rawObj.name)) {
+              return null
+            }
+            return normalizeHubShopItem(rawObj, 0, reg, product?.source || 'detail', product?.sourceDetail || '')
           }
-        } catch (v1Err) {
-          detailWarning = formatSocialDataErrorMessage(v1Err, 'Live product detail unavailable')
-          logger?.warn?.('omnimux-tiktok-selection: v1 detail lookup fallback to local', {
-            productId: pid,
-            code: v1Err?.code,
-            error: detailWarning,
-          })
+
+          try {
+            const res = await socialData.fetch({
+              platform: 'tiktok',
+              capability: 'shop_product',
+              id: pid,
+              region: reg,
+            })
+            const st = inspectShopDetailStatus(res)
+            if (st.invalid) {
+              invalidReason = st.reason
+              needV1Fallback = true
+            } else {
+              liveNormalized = tryNormalize(extractHubProductDetail(res))
+              if (!liveNormalized) needV1Fallback = true
+            }
+          } catch (err) {
+            if (TERMINAL_SOCIAL_ERROR_CODES.has(err?.code)) {
+              warning = formatSocialDataErrorMessage(err, 'Live product detail unavailable')
+              status = 'error'
+              logger?.warn?.('omnimux-tiktok-selection: detail lookup fallback to local', {
+                productId: pid,
+                code: err?.code,
+                error: warning,
+              })
+            } else {
+              logger?.warn?.('omnimux-tiktok-selection: v3 detail failed, retrying shop_product_v1', {
+                productId: pid,
+                code: err?.code,
+                error: err?.message,
+              })
+              needV1Fallback = true
+            }
+          }
+
+          if (needV1Fallback) {
+            try {
+              const v1Res = await socialData.fetch({
+                platform: 'tiktok',
+                capability: 'shop_product_v1',
+                id: pid,
+                region: reg,
+              })
+              const v1Status = inspectShopDetailStatus(v1Res)
+              liveNormalized = v1Status.invalid ? null : tryNormalize(extractHubProductDetail(v1Res))
+              if (v1Status.invalid || !liveNormalized) {
+                warning = '实时商品详情暂不可用或站点不匹配'
+                status = 'unavailable'
+                shouldNegativeCache = true
+                logger?.warn?.('omnimux-tiktok-selection: v1 detail returned invalid or empty payload', {
+                  productId: pid,
+                  reason: v1Status.reason || invalidReason || 'empty',
+                })
+              }
+            } catch (v1Err) {
+              warning = formatSocialDataErrorMessage(v1Err, 'Live product detail unavailable')
+              status = 'error'
+              logger?.warn?.('omnimux-tiktok-selection: v1 detail lookup fallback to local', {
+                productId: pid,
+                code: v1Err?.code,
+                error: warning,
+              })
+            }
+          }
+
+          if (liveNormalized) {
+            detailCache.set(cacheKey, { ok: true, liveNormalized, fetchedAt: new Date(nowFn()).toISOString() }, detailTtlMs)
+          } else if (shouldNegativeCache) {
+            detailCache.set(cacheKey, { ok: false, warning, fetchedAt: new Date(nowFn()).toISOString() }, detailInvalidTtlMs)
+          }
+
+          return { liveNormalized, warning, status }
+        })
+
+        if (fetchedDetail.liveNormalized) {
+          product = mergeProductWithLive(product, fetchedDetail.liveNormalized)
         }
+        detailWarning = fetchedDetail.warning
+        detailStatus = fetchedDetail.status
+      } else {
+        detailStatus = 'error'
+      }
+    } else if (cachedDetail) {
+      cacheFlags.detail = true
+      if (cachedDetail.ok) {
+        product = mergeProductWithLive(product, cachedDetail.liveNormalized)
+        detailStatus = 'cached'
+      } else {
+        detailWarning = cachedDetail.warning
+        detailStatus = 'unavailable'
       }
     }
 
@@ -1359,50 +1561,83 @@ export function createDataSourceAdapter({ store, getService, logger }) {
 
     let referenceVideos = Array.isArray(product.referenceVideos) ? product.referenceVideos : []
     let videosWarning = ''
-    if (loadVideos) {
-      if (socialData && typeof socialData.fetch === 'function') {
-        try {
-          const searchTerms = product.title.split(/\s+/).slice(0, 5).join(' ')
-          const vRes = await socialData.fetch({
-            platform: 'tiktok',
-            capability: 'creator_search_videos',
-            query: searchTerms,
-            region: reg,
-          })
-          const parsed = normalizeHubVideos(vRes)
-          if (parsed.length > 0) {
-            referenceVideos = parsed
-            if (localItem) {
-              store.updateLibraryItem(localItem.id, { referenceVideos })
+    let videosStatus = referenceVideos.length > 0 ? 'loaded' : 'idle'
+
+    const cachedVideos = !forceRefresh ? videosCache.get(cacheKey) : null
+    if (cachedVideos) {
+      referenceVideos = cachedVideos.videos
+      cacheFlags.videos = true
+      videosStatus = referenceVideos.length > 0 ? 'loaded' : 'empty'
+    } else if (loadVideos) {
+      if (!forceRefresh && referenceVideos.length > 0) {
+        videosCache.set(cacheKey, { videos: referenceVideos, fetchedAt: new Date(nowFn()).toISOString() }, videosTtlMs)
+        cacheFlags.videos = true
+        videosStatus = 'loaded'
+      } else if (hasSocialData) {
+        const videoOutcome = await dedupeInFlight(inFlight, `videos::${cacheKey}`, async () => {
+          try {
+            const searchTerms = product.title.split(/\s+/).slice(0, 5).join(' ')
+            const vRes = await socialData.fetch({
+              platform: 'tiktok',
+              capability: 'creator_search_videos',
+              query: searchTerms,
+              region: reg,
+            })
+            const parsed = normalizeHubVideos(vRes)
+            videosCache.set(cacheKey, { videos: parsed, fetchedAt: new Date(nowFn()).toISOString() }, videosTtlMs)
+            if (parsed.length > 0 && localItem) {
+              store.updateLibraryItem(localItem.id, { referenceVideos: parsed })
             }
+            return { videos: parsed, warning: '', status: parsed.length > 0 ? 'loaded' : 'empty' }
+          } catch (err) {
+            const warnMsg = formatSocialDataErrorMessage(err, 'Failed to load TikTok reference videos')
+            logger?.warn?.('omnimux-tiktok-selection: reference video lookup failed', { productId: pid, code: err?.code, error: warnMsg })
+            return { videos: referenceVideos, warning: warnMsg, status: 'error' }
           }
-        } catch (err) {
-          videosWarning = formatSocialDataErrorMessage(err, 'Failed to load TikTok reference videos')
-          logger?.warn?.('omnimux-tiktok-selection: reference video lookup failed', { productId: pid, code: err?.code, error: videosWarning })
-        }
+        })
+        referenceVideos = videoOutcome.videos
+        videosWarning = videoOutcome.warning
+        videosStatus = videoOutcome.status
       } else {
         videosWarning = 'Hub socialData 未挂载，无法在线拉取带货视频'
+        videosStatus = 'error'
       }
     }
 
     let reviews = []
     let reviewsWarning = ''
-    if (loadReviews) {
-      if (socialData && typeof socialData.fetch === 'function') {
-        try {
-          const rRes = await socialData.fetch({
-            platform: 'tiktok',
-            capability: 'shop_reviews_v2',
-            id: pid,
-            region: reg,
-          })
-          reviews = normalizeHubReviews(rRes)
-        } catch (err) {
-          reviewsWarning = formatSocialDataErrorMessage(err, 'Failed to load product reviews')
-          logger?.warn?.('omnimux-tiktok-selection: reviews lookup failed', { productId: pid, code: err?.code, error: reviewsWarning })
-        }
+    let reviewsStatus = 'idle'
+
+    const cachedReviews = !forceRefresh ? reviewsCache.get(cacheKey) : null
+    if (cachedReviews) {
+      reviews = cachedReviews.reviews
+      cacheFlags.reviews = true
+      reviewsStatus = reviews.length > 0 ? 'loaded' : 'empty'
+    } else if (loadReviews) {
+      if (hasSocialData) {
+        const reviewOutcome = await dedupeInFlight(inFlight, `reviews::${cacheKey}`, async () => {
+          try {
+            const rRes = await socialData.fetch({
+              platform: 'tiktok',
+              capability: 'shop_reviews_v2',
+              id: pid,
+              region: reg,
+            })
+            const parsed = normalizeHubReviews(rRes)
+            reviewsCache.set(cacheKey, { reviews: parsed, fetchedAt: new Date(nowFn()).toISOString() }, reviewsTtlMs)
+            return { reviews: parsed, warning: '', status: parsed.length > 0 ? 'loaded' : 'empty' }
+          } catch (err) {
+            const warnMsg = formatSocialDataErrorMessage(err, 'Failed to load product reviews')
+            logger?.warn?.('omnimux-tiktok-selection: reviews lookup failed', { productId: pid, code: err?.code, error: warnMsg })
+            return { reviews: [], warning: warnMsg, status: 'error' }
+          }
+        })
+        reviews = reviewOutcome.reviews
+        reviewsWarning = reviewOutcome.warning
+        reviewsStatus = reviewOutcome.status
       } else {
         reviewsWarning = 'Hub socialData 未挂载，无法在线拉取商品评价'
+        reviewsStatus = 'error'
       }
     }
 
@@ -1415,6 +1650,13 @@ export function createDataSourceAdapter({ store, getService, logger }) {
       referenceVideos,
       reviews,
       warnings: [detailWarning, videosWarning, reviewsWarning].filter(Boolean),
+      detailStatus,
+      detailError: detailWarning,
+      videosStatus,
+      videosError: videosWarning,
+      reviewsStatus,
+      reviewsError: reviewsWarning,
+      cache: cacheFlags,
     }
   }
 

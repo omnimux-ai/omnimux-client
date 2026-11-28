@@ -77,6 +77,23 @@ test('locales have complete zh/en keys without middle dots', () => {
   }
   assert.equal(zh.nav, '跟爆选品')
   assert.equal(en.nav, 'TikTok Selection')
+  const topTabs = [
+    zh.tabDiscovery,
+    zh.tabThreeGate,
+    zh.tabLibrary,
+    zh.tabAssets,
+    zh.tabAutomation,
+    zh.tabRiskSettings,
+  ]
+  assert.deepEqual(topTabs, ['选品发现', '三闸筛选', '选品库', '商品素材', '自动选品', '风控配置'])
+  for (const label of topTabs) {
+    assert.ok(label.length >= 2 && label.length <= 5, `top tab "${label}" must stay 2-5 CJK chars`)
+    assert.equal(/[与和及、/]/.test(label), false, `top tab "${label}" must not concatenate themes`)
+    assert.equal(label.includes('中心'), false, `top tab "${label}" must not include container filler 中心`)
+  }
+  assert.equal(Object.hasOwn(zh, 'loadVideos'), false)
+  assert.equal(Object.hasOwn(zh, 'loadReviews'), false)
+  assert.equal(Object.hasOwn(zh, 'detailAndVideos'), false)
 })
 
 test('styles.js defines canonical stage scroll and sticky rules without backdrop-filter', () => {
@@ -211,6 +228,12 @@ test('built lib/client.js wraps omnimux-tiktok-selection factory and registers M
   )
   const discoverySource = readFileSync(join(PKG_ROOT, 'src', 'client', 'DiscoveryPanel.jsx'), 'utf8')
   assert.equal(discoverySource.includes('·'), false, 'DiscoveryPanel copy must not contain middle dot separators')
+  assert.equal(discoverySource.includes("t('loadVideos')"), false, 'DiscoveryPanel must not render manual loadVideos button')
+  assert.equal(discoverySource.includes("t('loadReviews')"), false, 'DiscoveryPanel must not render manual loadReviews button')
+  assert.equal(discoverySource.includes('全部类目'), false, 'Category dropdown first option must be 全部, not 全部类目')
+  assert.equal(discoverySource.includes('数据源快照'), false, 'DiscoveryPanel must not duplicate snapshot source dropdown')
+  assert.equal(discoverySource.includes('榜单粒度'), false, 'DiscoveryPanel must not render ineffective rank granularity control')
+  assert.ok(discoverySource.includes('includeDetail: false'), 'Drawer tab fetches must decouple detail lookup')
 
   const dom = new JSDOM('<!doctype html><html><body></body></html>', {
     runScripts: 'dangerously',
@@ -283,5 +306,24 @@ test('built lib/client.js wraps omnimux-tiktok-selection factory and registers M
     assert.equal(unregisteredCount, 1)
   } finally {
     dom.window.close()
+  }
+})
+
+test('portal drawer and modal text blocks declare --dsw-alias-label-primary to preserve dark-mode contrast', () => {
+  for (const selector of [
+    '.omnimux-ttsel-drawer-hero',
+    '.omnimux-ttsel-kv',
+    '.omnimux-ttsel-kv-v',
+    '.omnimux-ttsel-video-item',
+    '.omnimux-ttsel-evidence-pre',
+  ]) {
+    const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const match = STYLES.match(new RegExp(`${escaped}\\s*\\{([^}]*)\\}`))
+    assert.ok(match, `Missing CSS rule for ${selector}`)
+    assert.match(
+      match[1],
+      /color:\s*var\(--dsw-alias-label-primary\)/,
+      `${selector} must declare explicit primary label color for portal containers`,
+    )
   }
 })

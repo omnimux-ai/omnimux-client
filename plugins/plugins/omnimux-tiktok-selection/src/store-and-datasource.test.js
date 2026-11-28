@@ -962,4 +962,183 @@ describe('DataSourceAdapter CSV/JSON snapshot parsing & live socialData', () => 
       cleanup()
     }
   })
+
+  it('caches list queries across pagination/sorting, decouples detail/video/review scopes, negative-caches invalid products, and protects snapshot & sales7d integrity (#453)', async () => {
+    const { store, cleanup } = makeTempStore()
+    try {
+      let nowMs = 1_700_000_000_000
+      const fetched = []
+      const fakeSocialData = {
+        fetch: async (req) => {
+          fetched.push(req)
+          if (req.capability === 'shop_search_v2') {
+            return {
+              data: {
+                products: Array.from({ length: 12 }, (_, idx) => ({
+                  product_id: `p_${idx + 1}`,
+                  title: `Beauty Stick #${idx + 1}`,
+                  price: 10 + idx,
+                  sold_count: (idx + 1) * 10,
+                  rating: 4.5,
+                })),
+              },
+            }
+          }
+          if (req.capability === 'shop_product' || req.capability === 'shop_product_v1') {
+            if (req.id === 'p_invalid') {
+              return { data: { exists: false, error_code: 23002002 } }
+            }
+            return {
+              data: {
+                product_info: {
+                  product_model: { product_id: req.id, name: `Live ${req.id}` },
+                  seller_model: { shop_name: 'BeautyLab' },
+                  sold_count: 88,
+                },
+              },
+            }
+          }
+          if (req.capability === 'creator_search_videos') {
+            return {
+              data: {
+                search_item_list: [
+                  {
+                    aweme_info: {
+                      aweme_id: 'v_100',
+                      desc: 'Body stick demo',
+                      author: { unique_id: 'creator1' },
+                      statistics: { play_count: 5000, digg_count: 300, collect_count: 40 },
+                    },
+                  },
+                ],
+              },
+            }
+          }
+          if (req.capability === 'shop_reviews_v2') {
+            return {
+              data: {
+                product_reviews: [{ review_rating: 5, review_text: 'Smooth and waterproof', reviewer_name: 'A***n' }],
+              },
+            }
+          }
+          return {}
+        },
+      }
+
+      const adapter = createDataSourceAdapter({
+        store,
+        getService: (name) => (name === 'socialData' ? fakeSocialData : null),
+        cacheConfig: {
+          now: () => nowMs,
+          listTtlMs: 10_000,
+          detailTtlMs: 10_000,
+          detailInvalidTtlMs: 5_000,
+          videosTtlMs: 10_000,
+          reviewsTtlMs: 10_000,
+        },
+      })
+
+      // 1. Live rank query keeps sales7d === null when upstream only returns sold_count, and sorts by totalSales desc
+      const page1 = await adapter.queryRank({ region: 'US', category: 'Beauty & Personal Care', page: 1 })
+      assert.equal(page1.cached, false)
+      assert.equal(page1.items.length, 10)
+      assert.equal(page1.items[0].productId, 'p_12')
+      assert.equal(page1.items[0].totalSales, 120)
+      assert.equal(page1.items[0].sales7d, null)
+      assert.equal(page1.items[0].periodSales, null)
+      assert.ok(page1.unavailableFields.includes('sales7d'))
+
+      // 2. Pagination & sort reuse list cache (0 additional shop_search_v2 calls)
+      const page2 = await adapter.queryRank({ region: 'US', category: 'Beauty & Personal Care', page: 2 })
+      assert.equal(page2.cached, true)
+      assert.equal(page2.items.length, 2)
+      const priceSorted = await adapter.queryRank({
+        region: 'US',
+        category: 'Beauty & Personal Care',
+        sortField: 'priceMin',
+        sortDir: 'asc',
+        page: 1,
+      })
+      assert.equal(priceSorted.cached, true)
+      assert.equal(priceSorted.items[0].productId, 'p_1')
+      assert.equal(fetched.filter((r) => r.capability === 'shop_search_v2').length, 1)
+
+      // 3. Search also reuses cache across local filters/pagination, and forceRefresh bypasses cache
+      await adapter.searchProducts({ keyword: 'Stick', region: 'US', page: 1 })
+      await adapter.searchProducts({ keyword: 'Stick', region: 'US', page: 2, sortField: 'priceMin', sortDir: 'asc' })
+      assert.equal(fetched.filter((r) => r.capability === 'shop_search_v2').length, 2)
+      const refreshed = await adapter.queryRank({ region: 'US', category: 'Beauty & Personal Care', forceRefresh: true })
+      assert.equal(refreshed.cached, false)
+      assert.equal(fetched.filter((r) => r.capability === 'shop_search_v2').length, 3)
+
+      // 4. Independent detail/video/review scopes: video tab & review tab do NOT re-trigger shop_product/v1
+      fetched.length = 0
+      const invalidHint = { productId: 'p_invalid', region: 'US', title: 'Glow Stick' }
+      const d1 = await adapter.getProductDetail({ productId: 'p_invalid', region: 'US', productHint: invalidHint })
+      assert.equal(d1.detailStatus, 'unavailable')
+      assert.deepEqual(fetched.map((r) => r.capability), ['shop_product', 'shop_product_v1'])
+
+      // Re-opening within negative cache TTL costs 0 upstream calls
+      const d2 = await adapter.getProductDetail({ productId: 'p_invalid', region: 'US', productHint: invalidHint })
+      assert.equal(d2.detailStatus, 'unavailable')
+      assert.equal(d2.cache.detail, true)
+      assert.equal(fetched.length, 2)
+
+      // Switching to videos tab (includeDetail: false, loadVideos: true) makes ONLY creator_search_videos call
+      const v1 = await adapter.getProductDetail({
+        productId: 'p_invalid',
+        region: 'US',
+        includeDetail: false,
+        loadVideos: true,
+        productHint: invalidHint,
+      })
+      assert.equal(v1.videosStatus, 'loaded')
+      assert.equal(v1.referenceVideos.length, 1)
+      assert.deepEqual(fetched.map((r) => r.capability), ['shop_product', 'shop_product_v1', 'creator_search_videos'])
+
+      // Re-visiting videos costs 0 upstream calls
+      const v2 = await adapter.getProductDetail({
+        productId: 'p_invalid',
+        region: 'US',
+        includeDetail: false,
+        loadVideos: true,
+        productHint: invalidHint,
+      })
+      assert.equal(v2.cache.videos, true)
+      assert.equal(fetched.length, 3)
+
+      // Switching to reviews tab (includeDetail: false, loadReviews: true) makes ONLY shop_reviews_v2 call
+      const r1 = await adapter.getProductDetail({
+        productId: 'p_invalid',
+        region: 'US',
+        includeDetail: false,
+        loadReviews: true,
+        productHint: invalidHint,
+      })
+      assert.equal(r1.reviewsStatus, 'loaded')
+      assert.equal(r1.reviews.length, 1)
+      assert.deepEqual(fetched.map((r) => r.capability), [
+        'shop_product',
+        'shop_product_v1',
+        'creator_search_videos',
+        'shop_reviews_v2',
+      ])
+
+      // 5. After negative cache TTL expires, detail retries upstream
+      nowMs += 6_000
+      await adapter.getProductDetail({ productId: 'p_invalid', region: 'US', productHint: invalidHint })
+      assert.equal(fetched.filter((r) => r.capability === 'shop_product').length, 2)
+
+      // 6. Snapshot source skips live detail lookup unless forceRefresh is true
+      fetched.length = 0
+      const snapHint = { productId: 'snap_1', region: 'US', title: 'Snapshot Item', source: 'snapshot' }
+      const snapDetail = await adapter.getProductDetail({ productId: 'snap_1', region: 'US', productHint: snapHint })
+      assert.equal(snapDetail.detailStatus, 'snapshot')
+      assert.equal(fetched.length, 0)
+      await adapter.getProductDetail({ productId: 'snap_1', region: 'US', productHint: snapHint, forceRefresh: true })
+      assert.equal(fetched.length, 1)
+    } finally {
+      cleanup()
+    }
+  })
 })

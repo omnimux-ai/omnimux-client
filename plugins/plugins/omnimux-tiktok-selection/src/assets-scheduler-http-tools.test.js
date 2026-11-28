@@ -136,8 +136,18 @@ function makeStack(services = {}, externalTools = {}, registryOpts = {}) {
 describe('AssetsPipeline (script rewrite, image/video batch caps, omnimux-products sync)', () => {
   it('rewrites video script via headlessSkill, generates images & videos via Hub seams, and syncs to omnimux-products', async () => {
     const syncedPayloads = []
+    const socialCalls = []
     let capturedVideoPrompt = ''
     const services = {
+      socialData: {
+        fetch: async (req) => {
+          socialCalls.push(req.capability)
+          if (req.capability === 'creator_search_videos') {
+            return { data: { video_list: [{ aweme_id: 'ref_1', desc: 'Spray demo', author: { unique_id: 'hairtok' } }] } }
+          }
+          return {}
+        },
+      },
       modelCatalog: {
         list: () => ({ defaults: { image: 'test/image-pro', video: 'test/video-i2v' } }),
       },
@@ -200,6 +210,7 @@ describe('AssetsPipeline (script rewrite, image/video batch caps, omnimux-produc
 
       const scriptRes = await assetsPipeline.generateVideoScript({ productIds: [id], extraSellingPoints: 'Organic rosemary' })
       assert.equal(scriptRes.succeeded, 1)
+      assert.deepEqual(socialCalls, ['creator_search_videos'])
       assert.equal(store.getLibraryItem(id).videoScript.hook, 'Stop wasting money on heavy serums!')
 
       const imgRes = await assetsPipeline.generateImages({ productIds: [id], countPerProduct: 2 })

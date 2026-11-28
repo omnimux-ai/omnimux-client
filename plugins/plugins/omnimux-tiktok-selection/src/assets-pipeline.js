@@ -131,6 +131,7 @@ export function createAssetsPipeline({ store, dataSource, getService, resolveToo
           const detail = await dataSource.getProductDetail({
             productId: item.productId,
             region: item.region,
+            includeDetail: false,
             loadVideos: true,
             productHint: item,
           })

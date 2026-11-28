@@ -348,10 +348,10 @@ superseded_by: null
 
 | 业务功能描述 | 对应 UI 交互 / HTTP 路由 | Agent 工具名称 (`Tool Name`) | 分级 | 状态 | 破坏性 confirm |
 |---|---|---|---|---|---|
-| 按站点、粒度与类目查询热销榜候选商品 | 选品发现热销榜 / `POST /omnimux/tiktok-selection/discovery/rank` | `tiktok_selection_query_rank` | L2 | `Implemented` | 否 |
-| 按关键词、销量、佣金率与达人数检索商品 | 选品发现关键词检索 / `POST /omnimux/tiktok-selection/discovery/search` | `tiktok_selection_search_products` | L2 | `Implemented` | 否 |
-| 导入外部 CSV 或 JSON 选品快照 | 导入快照面板 / `POST /omnimux/tiktok-selection/discovery/import` | `tiktok_selection_import_snapshot` | L1 | `Implemented` | 否 |
-| 查询商品完整指标、评价与 Top-10 带货视频 | 商品详情抽屉 / `POST /omnimux/tiktok-selection/discovery/detail` | `tiktok_selection_get_product_detail` | L2 | `Implemented` | 否 |
+| 按站点、类目与本地排序查询热销榜候选商品（支持会话缓存与强制刷新） | 选品发现热销榜 / `POST /omnimux/tiktok-selection/discovery/rank` | `tiktok_selection_query_rank` | L2 | `Implemented` | 否 |
+| 按关键词、销量、佣金率与达人数检索商品（支持会话缓存与强制刷新） | 选品发现关键词 / `POST /omnimux/tiktok-selection/discovery/search` | `tiktok_selection_search_products` | L2 | `Implemented` | 否 |
+| 导入外部 CSV 或 JSON 选品快照 | 导入快照弹窗 / `POST /omnimux/tiktok-selection/discovery/import` | `tiktok_selection_import_snapshot` | L1 | `Implemented` | 否 |
+| 按独立作用域查询商品详情、Top-10 带货视频或商品评价（带会话缓存） | 商品详情抽屉分页签 / `POST /omnimux/tiktok-selection/discovery/detail` | `tiktok_selection_get_product_detail` | L2 | `Implemented` | 否 |
 | 执行三闸 1 页试拉与成本/截断预估 | 三闸试拉弹窗 / `POST /omnimux/tiktok-selection/gate/dry-run` | `tiktok_selection_gate_dry_run` | L2 | `Implemented` | 否 |
 | 创建并执行三闸批量选品任务（G1→G2→G3） | 新建三闸任务 / `POST /omnimux/tiktok-selection/tasks` | `tiktok_selection_create_task` | L1 | `Implemented` | 否 |
 | 查询三闸选品任务列表与漏斗统计 | 三闸任务列表 / `GET /omnimux/tiktok-selection/tasks` | `tiktok_selection_list_tasks` | L2 | `Implemented` | 否 |
