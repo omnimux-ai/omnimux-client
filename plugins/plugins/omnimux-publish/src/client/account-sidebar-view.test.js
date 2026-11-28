@@ -237,6 +237,20 @@ describe('seat billing pure view helpers (#412)', () => {
       'acct.seat.err.quota:{"credits":20}',
     )
     assert.equal(
+      seatErrorMessage(
+        t,
+        { error: 'quota-exceeded', code: 'SOCIAL_SEAT_QUOTA' },
+        402,
+        () => 'fb',
+        { billing_mode: 'seat', seats_purchased: 1, seats_occupied: 1, seats_vacant: 0, seats_cap: 20, seat_price_credits: 25, max_validity_days: 90, vacant_seats: [] },
+      ),
+      'acct.seat.err.quota:{"credits":25}',
+    )
+    assert.equal(
+      seatErrorMessage(t, { error: 'quota-exceeded', message: 'legacy quota msg' }, 402, (b) => String(b.message)),
+      'legacy quota msg',
+    )
+    assert.equal(
       seatErrorMessage(t, { error: 'SOCIAL_SEAT_CAP', code: 'SOCIAL_SEAT_CAP' }, 409, () => 'fb'),
       'acct.seat.err.cap:{}',
     )

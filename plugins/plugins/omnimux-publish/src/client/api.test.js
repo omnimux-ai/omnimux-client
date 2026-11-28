@@ -150,4 +150,63 @@ describe('getHubSeats & renewHubAccountSeat (#412)', () => {
       globalThis.fetch = originalFetch
     }
   })
+
+  it('bypasses local quota precheck on list/connect/disconnect when ensureQuota reports zero balance while still notifying on real 402', async () => {
+    const originalFetch = globalThis.fetch
+    const hadWindow = Object.hasOwn(globalThis, 'window')
+    const previousWindow = globalThis.window
+    const notified = []
+    const calls = []
+    globalThis.window = {
+      __omnimuxQuota: {
+        async ensureQuota() { return { ok: false, reason: 'quota' } },
+        notify(payload) { notified.push(payload) },
+      },
+    }
+    globalThis.fetch = async (path, init = {}) => {
+      const url = String(path)
+      const method = init.method || 'GET'
+      calls.push({ url, method })
+      if (url.startsWith('/omnimux/accounts?') && method === 'GET') {
+        return new Response(JSON.stringify({
+          accounts: [{ id: 'acc-1', provider: 'tiktok_direct', platform: 'tiktok', display_name: 'ZeroBal' }],
+        }), { status: 200 })
+      }
+      if (url === '/omnimux/accounts' && method === 'POST') {
+        if (calls.filter((c) => c.method === 'POST').length === 1) {
+          return new Response(JSON.stringify({ auth_url: 'https://www.tiktok.com/v2/auth/authorize/' }), { status: 200 })
+        }
+        return new Response(JSON.stringify({ error: 'quota-exceeded', code: 'SOCIAL_SEAT_QUOTA', need_credits: 20 }), { status: 402 })
+      }
+      if (url === '/omnimux/accounts/acc-1?provider=tiktok_direct' && method === 'DELETE') {
+        return new Response(JSON.stringify({ disconnected: true }), { status: 200 })
+      }
+      return new Response(JSON.stringify({ error: 'unexpected' }), { status: 500 })
+    }
+    try {
+      const listed = await listHubAccounts()
+      assert.equal(listed.ok, true)
+      assert.equal(listed.body.accounts.length, 1)
+
+      const connectFree = await connectTikTokAccount()
+      assert.equal(connectFree.ok, true)
+      assert.equal(connectFree.body.auth_url, 'https://www.tiktok.com/v2/auth/authorize/')
+      assert.equal(notified.length, 0)
+
+      const connectQuota = await connectTikTokAccount()
+      assert.equal(connectQuota.ok, false)
+      assert.equal(connectQuota.status, 402)
+      assert.equal(connectQuota.body.code, 'SOCIAL_SEAT_QUOTA')
+      assert.equal(connectQuota.body.need_credits, 20)
+      assert.equal(notified.length, 1)
+
+      const disc = await disconnectHubAccount('acc-1')
+      assert.equal(disc.ok, true)
+      assert.equal(calls.length, 4)
+    } finally {
+      globalThis.fetch = originalFetch
+      if (hadWindow) globalThis.window = previousWindow
+      else delete globalThis.window
+    }
+  })
 })

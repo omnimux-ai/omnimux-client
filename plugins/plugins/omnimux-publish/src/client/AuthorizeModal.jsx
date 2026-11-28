@@ -7,10 +7,12 @@ import {
   extractAccounts,
   findNewAccount,
   isNeedsLogin,
+  isSeatBillingActive,
   pickAuthUrl,
   seatErrorMessage,
   snapshotAccountIds,
 } from './account-sidebar-view.js'
+import { extractSocialSeatError } from '../shared/social-seat.js'
 import { IconChevronOutline16, IconWarningOutline16 } from './icons/accounts.js'
 
 /** 授权结果轮询间隔（ms）。 */
@@ -117,7 +119,10 @@ export function AuthorizeModal({ t, seats = null, baselineIds, onClose, onNeedLo
         return
       }
       if (!result.ok) {
-        setError(seatErrorMessage(t, result.body, result.status, errorText))
+        const message = isSeatBillingActive(seats) || extractSocialSeatError(result.body) !== null
+          ? seatErrorMessage(t, result.body, result.status, errorText, seats)
+          : errorText(result.body, result.status)
+        setError(message)
         setPhase('error')
         return
       }

@@ -1375,9 +1375,15 @@ th[style*="--pub-min-w"] { min-width: var(--pub-min-w); }
   justify-content: space-between;
   gap: 8px;
   padding-left: 46px;
+  min-width: 0;
   font-size: 12px;
 }
+.omnimux-publish-accounts-seat-subrow button {
+  flex-shrink: 0;
+}
 .omnimux-publish-accounts-seat-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
   color: var(--dsw-alias-label-tertiary);
   font-variant-numeric: tabular-nums;
 }
@@ -1455,7 +1461,7 @@ th[style*="--pub-min-w"] { min-width: var(--pub-min-w); }
 }
 .omnimux-publish-seat-renew-card {
   display: grid;
-  grid-template-columns: auto 1fr;
+  grid-template-columns: auto minmax(0, 1fr);
   gap: 6px 14px;
   padding: 12px;
   border-radius: var(--dsw-radius-md);
@@ -1467,6 +1473,8 @@ th[style*="--pub-min-w"] { min-width: var(--pub-min-w); }
   color: var(--dsw-alias-label-secondary);
 }
 .omnimux-publish-seat-renew-val {
+  min-width: 0;
+  overflow-wrap: anywhere;
   color: var(--dsw-alias-label-primary);
   font-weight: 600;
   font-variant-numeric: tabular-nums;

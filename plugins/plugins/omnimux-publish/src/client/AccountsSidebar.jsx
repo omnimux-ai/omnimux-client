@@ -131,9 +131,11 @@ function AccountItem({ t, row, seatBillingOn, maxValidityDays, onRenew, onDiscon
               ? t('acct.seat.frozenGrace', { days: seat.graceDays })
               : t('acct.seat.frozenGraceEnding')}
           </span>
-          <Button type="button" variant="outline" size="xs" onClick={handleRenew}>
-            {t('acct.seat.renewInline', { credits: seat.priceCredits })}
-          </Button>
+          {seat.canRenew ? (
+            <Button type="button" variant="outline" size="xs" onClick={handleRenew}>
+              {t('acct.seat.renewInline', { credits: seat.priceCredits })}
+            </Button>
+          ) : null}
         </div>
       )
       : isSeatUnactivatedRow
@@ -144,9 +146,11 @@ function AccountItem({ t, row, seatBillingOn, maxValidityDays, onRenew, onDiscon
                 ? t('acct.seat.unactivatedGrace', { days: seat.graceDays })
                 : t('acct.seat.unactivatedGraceEnding')}
             </span>
-            <Button type="button" variant="outline" size="xs" onClick={handleRenew}>
-              {t('acct.seat.activateInline', { credits: seat.priceCredits })}
-            </Button>
+            {seat.canRenew ? (
+              <Button type="button" variant="outline" size="xs" onClick={handleRenew}>
+                {t('acct.seat.activateInline', { credits: seat.priceCredits })}
+              </Button>
+            ) : null}
           </div>
         )
         : seat.expiresDate !== ''
@@ -272,6 +276,10 @@ export function AccountsSidebar({ t }) {
   const [renewingId, setRenewingId] = useState('')
   const [renewError, setRenewError] = useState('')
   const mountedRef = useRef(true)
+  const tRef = useRef(t)
+  tRef.current = t
+  const seatsRef = useRef(seats)
+  seatsRef.current = seats
   const disconnectControllerRef = useRef(null)
   const renewControllerRef = useRef(null)
 
@@ -401,7 +409,7 @@ export function AccountsSidebar({ t }) {
         reload: loadAccounts,
         isMounted: () => mountedRef.current,
         isNeedsLogin,
-        formatError: (body, status) => seatErrorMessage(t, body, status, errorText),
+        formatError: (body, status) => seatErrorMessage(tRef.current, body, status, errorText, seatsRef.current),
         onStart: (id) => {
           setRenewingId(id)
           setRenewError('')
@@ -416,7 +424,7 @@ export function AccountsSidebar({ t }) {
       })
     }
     void renewControllerRef.current.confirm(accountId)
-  }, [loadAccounts, pendingRenew, t])
+  }, [loadAccounts, pendingRenew])
 
   const pendingDisconnectName = accountDisplayName(pendingDisconnect ?? {})
   const pendingDisconnectId = String(pendingDisconnect?.id ?? '')

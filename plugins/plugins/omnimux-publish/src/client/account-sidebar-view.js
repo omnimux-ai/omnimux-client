@@ -266,28 +266,36 @@ export function accountSeatDisplay(row, nowMs = Date.now()) {
 }
 
 /**
- * 将席位相关 HTTP 错误体映射为可读本地化文案，未知错误交由 fallback 处理。
+ * 将席位相关 HTTP 错误体映射为可读本地化文案，未知或非席位错误交由 fallback 处理。
  * @param {(key: string, vars?: Record<string, unknown>) => string} t
  * @param {unknown} body
  * @param {number} status
  * @param {(body: unknown, status?: number) => string} fallback
+ * @param {import('../shared/social-seat.js').SeatsSummaryView | null} [seats]
  */
-export function seatErrorMessage(t, body, status, fallback) {
+export function seatErrorMessage(t, body, status, fallback, seats = null) {
   const obj = body && typeof body === 'object' && !Array.isArray(body)
     ? /** @type {Record<string, unknown>} */ (body)
     : null
   const seatErr = extractSocialSeatError(obj)
-  const isQuota = status === 402
-    || obj?.error === 'quota-exceeded'
-    || seatErr?.code === SOCIAL_SEAT_CODES.QUOTA
-  if (isQuota) {
-    const credits = seatErr?.need_credits ?? (typeof obj?.need_credits === 'number' ? obj.need_credits : 20)
-    return t('acct.seat.err.quota', { credits })
+  const explicitCredits = seatErr?.need_credits
+    ?? (typeof obj?.need_credits === 'number' && obj.need_credits > 0 ? obj.need_credits : null)
+  const isSeatQuota = seatErr?.code === SOCIAL_SEAT_CODES.QUOTA || explicitCredits !== null
+  if (isSeatQuota) {
+    const credits = explicitCredits
+      ?? (typeof seats?.seat_price_credits === 'number' && seats.seat_price_credits > 0
+        ? seats.seat_price_credits
+        : null)
+    if (credits !== null) return t('acct.seat.err.quota', { credits })
+    return fallback(body, status)
   }
   if (seatErr?.code === SOCIAL_SEAT_CODES.CAP) return t('acct.seat.err.cap')
   if (seatErr?.code === SOCIAL_SEAT_CODES.EXPIRED) return t('acct.seat.err.expired')
   if (seatErr?.code === SOCIAL_SEAT_CODES.RENEW_LIMIT) {
-    const days = seatErr.max_validity_days ?? 90
+    const days = seatErr.max_validity_days
+      ?? (typeof seats?.max_validity_days === 'number' && seats.max_validity_days > 0
+        ? seats.max_validity_days
+        : 90)
     return t('acct.seat.err.renewLimit', { days })
   }
   if (seatErr?.code === SOCIAL_SEAT_CODES.SWAP_LIMIT) return t('acct.seat.err.swapLimit')

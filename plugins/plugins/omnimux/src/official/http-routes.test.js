@@ -1072,6 +1072,17 @@ describe('official social seat billing routes (#412)', () => {
     assert.equal(crossOrigin.status, 403)
     assert.equal(calls.length, 0)
 
+    assert.equal(renewIdFromPath('/omnimux/accounts/./renew'), '')
+    assert.equal(renewIdFromPath('/omnimux/accounts/%2e/renew'), '')
+    const encodedDotPath = await dispatcher.dispatch({
+      method: 'POST',
+      url: '/omnimux/accounts/%2e/renew?provider=tiktok_direct',
+      origin: LOCAL_ORIGIN,
+      body: { provider: 'tiktok_direct' },
+    })
+    assert.equal(encodedDotPath.status, 400)
+    assert.equal(calls.length, 0)
+
     const ok = await dispatcher.dispatch({
       method: 'POST',
       url: '/omnimux/accounts/12/renew?provider=tiktok_direct',

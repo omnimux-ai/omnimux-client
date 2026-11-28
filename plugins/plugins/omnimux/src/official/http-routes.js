@@ -93,10 +93,10 @@ export function avatarIdFromPath(pathname) {
 export function renewIdFromPath(pathname) {
   if (!pathname.startsWith(ACCOUNTS_PREFIX) || !pathname.endsWith('/renew')) return ''
   const raw = pathname.slice(ACCOUNTS_PREFIX.length, -'/renew'.length)
-  if (!raw || raw.includes('/') || raw === '..') return ''
+  if (!raw || raw.includes('/') || raw === '.' || raw === '..') return ''
   try {
     const decoded = decodeURIComponent(raw)
-    if (decoded === '..') return ''
+    if (decoded === '.' || decoded === '..') return ''
     return decoded
   } catch {
     return ''

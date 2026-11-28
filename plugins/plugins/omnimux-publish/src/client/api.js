@@ -153,7 +153,12 @@ export function retryTask(taskId) {
  */
 export async function listHubAccounts(filters = {}) {
   const query = new URLSearchParams({ provider: PUBLISH_PROVIDER, platform: 'tiktok' })
-  const result = await quotaGuard(() => publishRequest(`/omnimux/accounts?${query}`), { capability: 'publish' })()
+  // 读取账号列表跳过本地余额预检，确保 0 积分用户仍可看到冻结/待激活账号并执行续费或解绑。
+  const result = await quotaGuard(
+    () => publishRequest(`/omnimux/accounts?${query}`),
+    { capability: 'publish' },
+    { precheck: false },
+  )()
   if (result.ok && Array.isArray(result.body?.accounts)) {
     return { ...result, body: { ...result.body, accounts: result.body.accounts.filter(isPublishingAccount) } }
   }
@@ -164,18 +169,22 @@ export async function listHubAccounts(filters = {}) {
 /**
  * 发起 TikTok 授权：hub `POST /omnimux/accounts`（中枢 withPat → 网关
  * /api/social/v1/connect，pickConnectView 保证仅 https auth_url 透出）。
+ * 跳过本地余额预检，允许 0 积分复用空余席位并由网关返回真实 402/409 语义；
+ * 若网关返回 402，quotaGuard 仍会自动唤起原生充值弹窗。
  * 成功响应体 { auth_url }；401/needs-omnimux 走登录引导。
  */
 export function connectTikTokAccount() {
   return quotaGuard(
     () => publishRequest('/omnimux/accounts', { method: 'POST', body: { platform: 'tiktok', provider: PUBLISH_PROVIDER } }),
     { capability: 'publish', userInitiated: true },
+    { precheck: false },
   )()
 }
 
 /**
  * 断开一个已连接账号。该请求只移除 OmniMux 中的账号连接，不宣称撤销
  * TikTok 的全局 token；Host 仍负责同源写入保护与上游协议转换。
+ * 解绑不扣费，跳过本地余额预检以免 0 积分用户无法释放账号。
  * @param {string} accountId
  * @returns {Promise<{ ok: boolean, status: number, body: any }>}
  */
@@ -190,6 +199,7 @@ export function disconnectHubAccount(accountId) {
   return quotaGuard(
     () => publishRequest(`/omnimux/accounts/${encodeURIComponent(id)}?provider=${PUBLISH_PROVIDER}`, { method: 'DELETE' }),
     { capability: 'publish', userInitiated: true },
+    { precheck: false },
   )()
 }
 

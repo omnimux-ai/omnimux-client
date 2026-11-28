@@ -78,12 +78,20 @@ function buttonByText(container, text) {
 }
 
 describe('AccountsSidebar seat billing interactions (#412)', () => {
-  it('renders zero seat UI when billing_mode is off', async () => {
+  it('renders zero seat UI and preserves legacy 402 error text when billing_mode is off', async () => {
     const { container, restore } = setupDom()
     const originalFetch = globalThis.fetch
-    globalThis.fetch = async (path) => {
-      if (String(path) === '/omnimux/accounts/seats') {
+    window.__omnimuxQuota = {
+      async ensureQuota() { return { ok: false, reason: 'quota' } },
+      notify() {},
+    }
+    globalThis.fetch = async (path, init = {}) => {
+      const url = String(path)
+      if (url === '/omnimux/accounts/seats') {
         return response({ billing_mode: 'off', seats_purchased: 0, seats_occupied: 0, seats_vacant: 0, seats_cap: 20, vacant_seats: [] })
+      }
+      if (url === '/omnimux/accounts' && init.method === 'POST') {
+        return response({ error: 'quota-exceeded', message: 'Legacy billing error message' }, 402)
       }
       return response({
         accounts: [{ id: '1', platform: 'tiktok', provider: 'tiktok_direct', display_name: 'OffAcct', status: 'active' }],
@@ -100,6 +108,13 @@ describe('AccountsSidebar seat billing interactions (#412)', () => {
       await click(more)
       const menuLabels = [...container.querySelectorAll('[role="menuitem"]')].map((el) => el.textContent?.trim())
       assert.deepEqual(menuLabels, ['Disconnect'])
+
+      await click(buttonByText(container, 'Add Account'))
+      assert.equal(container.querySelector('[data-testid="authorize-seat-notice"]'), null)
+      await click(buttonByText(container, 'Authorize'))
+      await flush()
+      assert.ok(container.textContent.includes('Legacy billing error message'))
+      assert.equal(container.textContent.includes('20 required'), false)
     } finally {
       await act(async () => { root.unmount() })
       globalThis.fetch = originalFetch
@@ -107,11 +122,12 @@ describe('AccountsSidebar seat billing interactions (#412)', () => {
     }
   })
 
-  it('supports manual seat renewal with sync lock, 402 quota notify/retry, disabled 90d limit item, and cap-blocked authorize', async () => {
+  it('supports zero-credit account loading, manual seat renewal with sync lock, 402 quota notify/retry, disabled 90d limit item, non-renewable frozen guard, and cap-blocked authorize', async () => {
     const { container, restore } = setupDom()
     const originalFetch = globalThis.fetch
     const quotaEvents = []
     window.__omnimuxQuota = {
+      async ensureQuota() { return { ok: false, reason: 'quota' } },
       notify(payload, ctx) { quotaEvents.push({ payload, ctx }) },
     }
     const pendingRenew = deferred()
@@ -175,6 +191,24 @@ describe('AccountsSidebar seat billing interactions (#412)', () => {
               ? { id: 12, status: 'active', expires_at: renewedExpiry, swaps_remaining: 2, can_renew: true, price_credits: 20 }
               : { id: 12, status: 'frozen', expires_at: '2026-11-20T00:00:00Z', grace_until: graceUntil, swaps_remaining: 2, can_renew: true, price_credits: 20 },
           },
+          {
+            id: '3',
+            platform: 'tiktok',
+            provider: 'tiktok_direct',
+            display_name: 'GraceElapsedAcct',
+            username: 'elapsed',
+            status: 'active',
+            seat: {
+              id: 13,
+              status: 'frozen',
+              expires_at: '2026-11-10T00:00:00Z',
+              grace_until: '2026-11-17T00:00:00Z',
+              swaps_remaining: 0,
+              can_renew: false,
+              renew_blocked_reason: 'SOCIAL_SEAT_EXPIRED',
+              price_credits: 20,
+            },
+          },
         ],
       })
     }
@@ -187,6 +221,11 @@ describe('AccountsSidebar seat billing interactions (#412)', () => {
       assert.ok(container.querySelector('[data-testid="seat-summary"]')?.textContent?.includes('Seats 3/20'))
       assert.ok(container.querySelector('[data-testid="seat-summary"]')?.textContent?.includes('1 open'))
       assert.ok(container.textContent.includes('Seat Frozen'))
+      assert.equal(
+        [...container.ownerDocument.querySelectorAll('button')].filter((b) => b.textContent?.trim() === 'Renew 20 cr').length,
+        1,
+        'only renewable frozen account renders inline Renew button',
+      )
 
       const moreCapped = container.querySelector('button[aria-label="More actions for CappedAcct"]')
       assert.ok(moreCapped)
@@ -224,7 +263,10 @@ describe('AccountsSidebar seat billing interactions (#412)', () => {
       await flush()
       assert.equal(renewCalls, 2)
       assert.equal(container.querySelector('[role="dialog"]'), null)
-      assert.equal(container.textContent.includes('Seat Frozen'), false)
+      const renewedRow = [...container.querySelectorAll('.omnimux-publish-accounts-item')].find((el) => el.textContent?.includes('FrozenAcct'))
+      assert.ok(renewedRow)
+      assert.equal(renewedRow.textContent.includes('Seat Frozen'), false)
+      assert.equal(buttonByText(container, 'Renew 20 cr'), undefined)
       assert.ok(container.querySelector('[data-testid="seat-summary"]')?.textContent?.includes('Cap reached'))
 
       await click(buttonByText(container, 'Add Account'))

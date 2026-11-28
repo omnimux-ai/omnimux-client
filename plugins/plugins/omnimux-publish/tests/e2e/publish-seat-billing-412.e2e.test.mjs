@@ -48,6 +48,7 @@ describe('Social account seat billing E2E (Issue #412)', () => {
     try {
       let presignCalls = 0
       let createCalls = 0
+      let creatorInfoCalls = 0
       const handlers = {
         omnimux_accounts_list: () => ({
           success: true,
@@ -70,9 +71,30 @@ describe('Social account seat billing E2E (Issue #412)', () => {
                   price_credits: 20,
                 },
               },
+              {
+                id: 'acc-frozen-direct',
+                provider: 'tiktok_direct',
+                platform: 'tiktok',
+                display_name: 'Frozen Direct Creator',
+                username: 'frozen_direct',
+                status: 'active',
+                capabilities: { upload_draft: true, publish_direct: true },
+                seat: {
+                  id: 10,
+                  status: 'frozen',
+                  expires_at: '2026-11-20T00:00:00Z',
+                  grace_until: '2026-11-27T00:00:00Z',
+                  can_renew: true,
+                  price_credits: 20,
+                },
+              },
             ],
           },
         }),
+        omnimux_tiktok_creator_info: () => {
+          creatorInfoCalls += 1
+          return { success: true, data: { privacy_level_options: ['SELF_ONLY'], max_video_post_duration_sec: 600 } }
+        },
         omnimux_publish_presign: () => {
           presignCalls += 1
           return { success: true, data: { upload_url: 'https://up/a.mp4', public_url: 'https://pub/a.mp4' } }
@@ -132,6 +154,27 @@ describe('Social account seat billing E2E (Issue #412)', () => {
       assert.equal(submitReq.captured.status, 409)
       assert.equal(submitReq.captured.body.error, 'SOCIAL_SEAT_EXPIRED')
       assert.equal(submitReq.captured.body.code, 'SOCIAL_SEAT_EXPIRED')
+      assert.equal(presignCalls, 0)
+      assert.equal(createCalls, 0)
+      assert.equal(creatorInfoCalls, 0)
+
+      const directDraft = store.create({
+        type: 'video',
+        description: 'Frozen direct seat publish check',
+        media_ids: [vid.id],
+        account_ids: ['acc-frozen-direct'],
+      })
+      const directReq = mockReqRes({
+        method: 'POST',
+        url: '/omnimux/publish/records/submit',
+        headers: { origin: 'http://127.0.0.1:65432', 'sec-fetch-site': 'same-origin' },
+        body: { record_id: directDraft.id },
+      })
+      await routeHandler(directReq.req, directReq.res)
+      assert.equal(directReq.captured.status, 409)
+      assert.equal(directReq.captured.body.error, 'SOCIAL_SEAT_EXPIRED')
+      assert.equal(directReq.captured.body.code, 'SOCIAL_SEAT_EXPIRED')
+      assert.equal(creatorInfoCalls, 0)
       assert.equal(presignCalls, 0)
       assert.equal(createCalls, 0)
     } finally {
