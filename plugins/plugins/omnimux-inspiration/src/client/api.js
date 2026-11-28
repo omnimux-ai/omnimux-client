@@ -346,7 +346,16 @@ export async function ensureLocalInspiration(row, options = {}) {
   let response = row?.is_local !== false && row?.id ? await getLocalInspiration(row.id) : null
   if (!response?.ok) {
     if (!row?.source_url) throw new Error('该内容尚未保存本地，且缺少原帖链接')
-    response = await authGuard(() => importLocalInspiration({ url: row.source_url, tags: Array.isArray(row.tags) ? row.tags : [], auto_analyze: false, return_existing: true }))()
+    const cloudId = row?.is_local === false && row?.id != null && String(row.id).trim() !== ''
+      ? String(row.id).trim()
+      : ''
+    response = await authGuard(() => importLocalInspiration({
+      url: row.source_url,
+      ...(cloudId ? { cloud_id: cloudId } : {}),
+      tags: Array.isArray(row.tags) ? row.tags : [],
+      auto_analyze: false,
+      return_existing: true,
+    }))()
   }
   let saved = response?.body?.data
   if (!response?.ok || !saved?.id) throw new Error(response?.body?.error || '保存原帖失败，请重试')
@@ -543,7 +552,7 @@ export function coverGlyph(title) {
   return text.slice(0, 1) || '灵'
 }
 
-const TIKTOK_VIDEO_RE = /tiktok\.com\/@?[^/]+\/video\/(\d{15,25})/i
+const TIKTOK_VIDEO_RE = /tiktok\.com\/(?:@?[^/]+\/)?(?:video|photo)\/(\d{15,25})/i
 const TIKTOK_V_RE = /tiktok\.com\/v\/(\d{15,25})/i
 const TIKTOK_PLAYER_RE = /tiktok\.com\/player\/v1\/(\d{15,25})/i
 

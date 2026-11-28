@@ -568,6 +568,15 @@ test('source: getInspirationFingerprints 稳健提取真实 TikTok ID、作者�
   assert.ok(fpsA.includes('av:kobstudys:16200000'))
   assert.ok(fpsA.includes('cov:omnimux/inspiration/media/covers/kob.jpg'))
 
+  const rowPhoto = {
+    id: '340',
+    source_url: 'https://www.tiktok.com/@kob.studys/photo/7558617674939452703?is_from_webapp=1',
+    stats: { views: 16200000 },
+    cover_url: '/omnimux/inspiration/media/covers/kob.jpg',
+  }
+  const fpsPhoto = getInspirationFingerprints(rowPhoto)
+  assert.ok(fpsPhoto.includes('tt:7558617674939452703'))
+
   // 镜像换皮行：带 gxgen 虚拟 URL 和被污染的 base64 handle，同播放量同封面
   const rowB = {
     id: '641',

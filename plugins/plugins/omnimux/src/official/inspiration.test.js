@@ -3,10 +3,12 @@ import { describe, it } from 'node:test'
 import {
   collectCategoryCounts,
   createCategoryCache,
+  createInspirationCatalogApi,
   createInspirationShare,
   listQueryString,
   listInspirations,
   mediaKeyFromHostPath,
+  normalizeCloudMediaKey,
   publishBody,
   publishInspirationShare,
   rewriteMediaUrlsForHost,
@@ -55,6 +57,70 @@ describe('inspiration query + rewrite', () => {
   it('pulls the media key from the Host path', () => {
     assert.equal(mediaKeyFromHostPath('/omnimux/inspiration/media/covers/a.jpg'), 'covers/a.jpg')
     assert.equal(mediaKeyFromHostPath('/omnimux/inspiration/status'), '')
+  })
+
+  it('normalizes safe cloud media keys and rejects traversal, query, or third-party hosts', () => {
+    assert.equal(normalizeCloudMediaKey('slides/a.jpg'), 'slides/a.jpg')
+    assert.equal(normalizeCloudMediaKey('/omnimux/inspiration/media/slides/a.jpg'), 'slides/a.jpg')
+    assert.equal(normalizeCloudMediaKey('/api/inspiration/v1/media/slides/a.jpg'), 'slides/a.jpg')
+    assert.equal(normalizeCloudMediaKey('https://omnimux.ai/api/inspiration/v1/media/slides/a.jpg'), 'slides/a.jpg')
+    assert.equal(normalizeCloudMediaKey('https://www.omnimux.ai/api/inspiration/v1/media/slides/a.jpg'), 'slides/a.jpg')
+
+    for (const unsafe of [
+      '',
+      '../secret.jpg',
+      'slides/../secret.jpg',
+      'slides/%2e%2e/secret.jpg',
+      'slides\\secret.jpg',
+      '/etc/passwd',
+      'slides/a.jpg?token=1',
+      'slides/a.jpg#frag',
+      'https://evil.example/api/inspiration/v1/media/a.jpg',
+      'https://omnimux.ai/other/path/a.jpg',
+      'https://user@omnimux.ai/api/inspiration/v1/media/a.jpg',
+    ]) {
+      assert.equal(normalizeCloudMediaKey(unsafe), '', `expected ${unsafe} to be rejected`)
+    }
+  })
+
+  it('provides read-only inspirationCatalog seam with id/key validation and signal forwarding', async () => {
+    const calls = []
+    const signal = new AbortController().signal
+    const fakeResponse = { ok: true, status: 200 }
+    const api = createInspirationCatalogApi({
+      client: {
+        withPat: async (path, opts) => {
+          calls.push({ kind: 'withPat', path, opts })
+          return {
+            success: true,
+            data: {
+              item: {
+                id: 'cloud_1',
+                media_keys: ['https://omnimux.ai/api/inspiration/v1/media/slides/1.jpg'],
+              },
+            },
+          }
+        },
+        withPatRaw: async (path, opts) => {
+          calls.push({ kind: 'withPatRaw', path, opts })
+          return fakeResponse
+        },
+      },
+    })
+
+    const item = await api.getItem('cloud_1', { signal })
+    assert.equal(item.id, 'cloud_1')
+    assert.equal(item.media_keys[0], '/omnimux/inspiration/media/slides/1.jpg')
+    assert.equal(calls[0].path, '/api/inspiration/v1/inspirations/cloud_1')
+    assert.equal(calls[0].opts.signal, signal)
+
+    const fetched = await api.fetchMedia('/omnimux/inspiration/media/slides/1.jpg', { signal })
+    assert.equal(fetched, fakeResponse)
+    assert.equal(calls[1].path, '/api/inspiration/v1/media/slides/1.jpg')
+    assert.equal(calls[1].opts.signal, signal)
+
+    await assert.rejects(() => api.getItem('../bad'), { code: 'omnimux-invalid-request' })
+    await assert.rejects(() => api.fetchMedia('../bad'), { code: 'omnimux-invalid-request' })
   })
 
   it('lists through the official client', async () => {

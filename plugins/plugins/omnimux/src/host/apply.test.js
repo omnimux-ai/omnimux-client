@@ -123,7 +123,7 @@ describe('hub apply composition', () => {
     assert.ok(names.includes('workbench_open_tab'))
     assert.ok(names.includes('omnimux_marketing_presets_search'))
 
-    assert.deepEqual(provided, ['identity', 'hubEvents', 'workbenchMailbox', 'composerAttachments', 'videoGenerate', 'imageGenerate', 'audioGenerate', 'speechToText', 'textComplete', 'headlessSkill', 'inspirationShare', 'socialData', 'youtube', 'tiktok', 'instagram', 'x', 'omnimuxAccounts', 'omnimuxAnalytics', 'pageFetch', 'decisions', 'modelCatalog', 'generationProducts', 'mediaInspect', 'nativeFilePicker', 'mediaResolver'])
+    assert.deepEqual(provided, ['identity', 'hubEvents', 'workbenchMailbox', 'composerAttachments', 'videoGenerate', 'imageGenerate', 'audioGenerate', 'speechToText', 'textComplete', 'headlessSkill', 'inspirationShare', 'inspirationCatalog', 'socialData', 'youtube', 'tiktok', 'instagram', 'x', 'omnimuxAccounts', 'omnimuxAnalytics', 'pageFetch', 'decisions', 'modelCatalog', 'generationProducts', 'mediaInspect', 'nativeFilePicker', 'mediaResolver'])
   })
 
   it('disables all gated capabilities when gate.enabled is false', () => {
@@ -138,7 +138,7 @@ describe('hub apply composition', () => {
 
     // Local attachment preparation, workbench, presets and templates do not invoke gated providers.
     assert.equal(names.length, 5)
-    assert.deepEqual(provided, ['identity', 'hubEvents', 'workbenchMailbox', 'composerAttachments', 'inspirationShare', 'socialData', 'youtube', 'tiktok', 'instagram', 'x', 'decisions', 'modelCatalog', 'generationProducts', 'mediaInspect', 'nativeFilePicker', 'mediaResolver'])
+    assert.deepEqual(provided, ['identity', 'hubEvents', 'workbenchMailbox', 'composerAttachments', 'inspirationShare', 'inspirationCatalog', 'socialData', 'youtube', 'tiktok', 'instagram', 'x', 'decisions', 'modelCatalog', 'generationProducts', 'mediaInspect', 'nativeFilePicker', 'mediaResolver'])
     assert.equal(typeof attachments.registerSource, 'function')
     assert.equal(typeof attachments.materializeProduced, 'function')
   })
@@ -170,7 +170,7 @@ describe('hub apply composition', () => {
     assert.ok(tools.omnimux_page_fetch)
     assert.ok(tools.omnimux_accounts_list)
 
-    assert.deepEqual(provided, ['identity', 'hubEvents', 'workbenchMailbox', 'composerAttachments', 'imageGenerate', 'audioGenerate', 'speechToText', 'textComplete', 'headlessSkill', 'inspirationShare', 'socialData', 'youtube', 'tiktok', 'instagram', 'x', 'omnimuxAccounts', 'omnimuxAnalytics', 'pageFetch', 'decisions', 'modelCatalog', 'generationProducts', 'mediaInspect', 'nativeFilePicker', 'mediaResolver'])
+    assert.deepEqual(provided, ['identity', 'hubEvents', 'workbenchMailbox', 'composerAttachments', 'imageGenerate', 'audioGenerate', 'speechToText', 'textComplete', 'headlessSkill', 'inspirationShare', 'inspirationCatalog', 'socialData', 'youtube', 'tiktok', 'instagram', 'x', 'omnimuxAccounts', 'omnimuxAnalytics', 'pageFetch', 'decisions', 'modelCatalog', 'generationProducts', 'mediaInspect', 'nativeFilePicker', 'mediaResolver'])
 
     // The local model is hidden; the gateway-only text model remains offered.
     const textEnum = tools.omnimux_text_complete.parameters.properties.model.enum

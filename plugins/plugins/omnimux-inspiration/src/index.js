@@ -281,6 +281,9 @@ export function apply(ctx) {
     // publish). Resolved at request time: this plugin must not hold the gateway
     // key, build a publish payload, or fall back to a link of its own.
     inspirationShare: () => (typeof ctx.get === 'function' ? ctx.get('inspirationShare') : undefined),
+    // Hub capability `inspirationCatalog` owns authenticated reads of cloud catalog
+    // rows and media objects when promoting a cloud item into the local vault.
+    inspirationCatalog: () => (typeof ctx.get === 'function' ? ctx.get('inspirationCatalog') : undefined),
   })
 
   if (typeof ctx.effect === 'function') {

@@ -2,7 +2,7 @@ import { spawnSync } from 'node:child_process'
 import { existsSync, lstatSync, realpathSync, statSync, unlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path'
-import { alignMediaExtension, downloadMedia, isKnownUnrenderableCover } from './downloader.js'
+import { alignMediaExtension, detectExt, downloadMedia, isKnownUnrenderableCover, saveMediaResponse } from './downloader.js'
 import { analyzeInspirationVideo } from './analyzer.js'
 import {
   handleBodyTranslation,
@@ -45,7 +45,7 @@ import {
   defaultCategoryForMediaType,
   defaultModelForMediaType,
 } from './prompt-generator.js'
-import { getCanonicalItemKey, normalizeUrl } from './url-normalizer.js'
+import { detectPlatformFromUrl, getCanonicalItemKey, normalizeUrl } from './url-normalizer.js'
 import { extractVideoPoster } from './media-export.js'
 import { isDownloadableHttpUrl, isPublicHttpUrl } from './url-policy.js'
 import { localMediaPaths } from './local-store.js'
@@ -426,9 +426,49 @@ function articleFromLayer(layer) {
   return { isArticle: Boolean(node || layer.content_shape === 'article'), title, excerpt, cover_url, text }
 }
 
+function isStandardRasterPath(url) {
+  return /\.(?:jpe?g|png|webp|gif|avif)$/i.test(urlPathname(url))
+}
+
+function isHeicImagePath(url) {
+  return /\.(?:heic|heif)\b/i.test(urlPathname(url))
+}
+
+/** Prefer browser-renderable raster URLs (JPEG/PNG/WebP) over HEIC entries in TikTok `url_list`s. */
+function pickRenderableImageUrl(values) {
+  const candidates = []
+  for (const value of values) {
+    const url = httpText(value)
+    if (url && isPublicHttpUrl(url)) candidates.push(url)
+  }
+  if (candidates.length === 0) return ''
+  return candidates.find(isStandardRasterPath)
+    || candidates.find((url) => !isHeicImagePath(url))
+    || candidates[0]
+}
+
+function imagePostUrlsFromLayer(layer) {
+  const out = []
+  for (const raw of asArray(asObject(layer.image_post_info).images)) {
+    if (!isPlainObject(raw)) continue
+    const url = pickRenderableImageUrl([
+      ...asArray(asObject(raw.display_image).url_list),
+      ...asArray(asObject(raw.owner_watermark_image).url_list),
+      ...asArray(asObject(raw.user_watermark_image).url_list),
+      ...asArray(asObject(raw.image_URL).url_list),
+      ...asArray(asObject(raw.thumbnail).url_list),
+      raw.url,
+      raw.src,
+    ])
+    if (url) out.push(url)
+  }
+  return out
+}
+
 function coverUrlFromLayer(layer) {
   const articleCover = articleFromLayer(layer)?.cover_url || ''
-  return firstHttpUrl([
+  const imagePostFirst = imagePostUrlsFromLayer(layer)[0] || ''
+  const rawCoverCandidates = [
     layer.cover_url,
     articleCover,
     layer.cover,
@@ -447,10 +487,13 @@ function coverUrlFromLayer(layer) {
     layer.image_url,
     instagramCandidateUrl(layer.image_versions2),
     lastThumbnailUrl(layer.thumbnails),
-    firstHttpUrl(asArray(asObject(layer.cover).url_list)),
-    firstHttpUrl(asArray(asObject(asObject(layer.video).cover).url_list)),
-    firstHttpUrl(asArray(asObject(asObject(layer.video).origin_cover).url_list)),
-  ])
+    pickRenderableImageUrl(asArray(asObject(layer.cover).url_list)),
+    pickRenderableImageUrl(asArray(asObject(asObject(layer.video).cover).url_list)),
+    pickRenderableImageUrl(asArray(asObject(asObject(layer.video).origin_cover).url_list)),
+  ]
+  const primaryCover = firstHttpUrl(rawCoverCandidates)
+  if (primaryCover && (!imagePostFirst || !isHeicImagePath(primaryCover))) return primaryCover
+  return imagePostFirst || primaryCover
 }
 
 function textFromLayer(layer) {
@@ -525,11 +568,12 @@ function authorFromLayer(layer) {
 function statsFromLayer(layer) {
   const stats = isPlainObject(layer.stats) ? { ...layer.stats } : {}
   const engagement = asObject(layer.engagement)
-  assignMissing(stats, 'likes', firstNumber([engagement.likes, layer.favorite_count, layer.like_count, layer.digg_count, layer.likes]))
-  assignMissing(stats, 'comments', firstNumber([engagement.replies, layer.reply_count, layer.comment_count, layer.comments]))
-  assignMissing(stats, 'shares', firstNumber([engagement.retweets, layer.retweet_count, layer.share_count, layer.shares]))
-  assignMissing(stats, 'views', firstNumber([engagement.views, layer.view_count, layer.play_count, layer.views]))
-  assignMissing(stats, 'bookmarks', firstNumber([engagement.bookmarks, layer.bookmark_count]))
+  const statistics = asObject(layer.statistics)
+  assignMissing(stats, 'likes', firstNumber([engagement.likes, statistics.digg_count, layer.favorite_count, layer.like_count, layer.digg_count, layer.likes]))
+  assignMissing(stats, 'comments', firstNumber([engagement.replies, statistics.comment_count, layer.reply_count, layer.comment_count, layer.comments]))
+  assignMissing(stats, 'shares', firstNumber([engagement.retweets, statistics.share_count, layer.retweet_count, layer.share_count, layer.shares]))
+  assignMissing(stats, 'views', firstNumber([engagement.views, statistics.play_count, layer.view_count, layer.play_count, layer.views]))
+  assignMissing(stats, 'bookmarks', firstNumber([engagement.bookmarks, statistics.collect_count, layer.bookmark_count, layer.collect_count]))
   return stats
 }
 
@@ -555,6 +599,7 @@ function publishedAtFromLayer(layer) {
   return parsePublishedAt(normalizeDateValue(layer.create_time))
     || parsePublishedAt(normalizeDateValue(layer.createTime))
     || parsePublishedAt(normalizeDateValue(layer.published_at))
+    || parsePublishedAt(normalizeDateValue(layer.posted_at))
     || parsePublishedAt(normalizeDateValue(layer.upload_date))
     || parsePublishedAt(normalizeDateValue(layer.publishDate))
     || parsePublishedAt(normalizeDateValue(layer.timestamp))
@@ -604,9 +649,10 @@ function sameMediaReference(left, right) {
  * Read post-owned media in the order provided by the richest list. The other
  * supported fields are mirrors, not another set of attachments.
  * @param {Record<string, any>} layer
+ * @param {{ suppressVideo?: boolean }} [options]
  * @returns {{ items: SocialMediaItem[], available: MediaReference[], missing: MediaReference[], posters: string[] }}
  */
-function mediaItemsFromLayer(layer) {
+function mediaItemsFromLayer(layer, { suppressVideo = false } = {}) {
   /** @type {SocialMediaItem[]} */
   const items = []
   const posters = []
@@ -641,17 +687,24 @@ function mediaItemsFromLayer(layer) {
       } else missing.push(mediaReference(media, 'image'))
     }
   }
+  const imagePostUrls = imagePostUrlsFromLayer(layer)
+  for (const url of imagePostUrls) {
+    items.push({ type: 'image', url })
+    available.push(mediaReference({}, 'image', url))
+  }
   for (const list of [layer.mediaDetails, asObject(layer.extended_entities).media, asObject(layer.entities).media]) {
     for (const raw of asArray(list)) append(raw)
   }
   for (const raw of asArray(asObject(layer.media).video)) append(raw, 'video')
   for (const raw of [...asArray(asObject(layer.media).photo), ...asArray(asObject(layer.media).photos), ...asArray(layer.photos)]) append(raw, 'image')
-  const singleVideo = videoUrlFromLayer(layer) || firstPublicHttpUrl([bestVariantUrl(asObject(layer.video).variants)])
-  if (singleVideo) {
-    items.push({ type: 'video', url: singleVideo })
-    available.push(mediaReference(layer.video, 'video', singleVideo))
-    const poster = firstPublicHttpUrl([asObject(layer.video).poster])
-    if (poster) posters.push(poster)
+  if (!suppressVideo && imagePostUrls.length === 0) {
+    const singleVideo = videoUrlFromLayer(layer) || firstPublicHttpUrl([bestVariantUrl(asObject(layer.video).variants)])
+    if (singleVideo) {
+      items.push({ type: 'video', url: singleVideo })
+      available.push(mediaReference(layer.video, 'video', singleVideo))
+      const poster = firstPublicHttpUrl([asObject(layer.video).poster])
+      if (poster) posters.push(poster)
+    }
   }
   for (const url of imagesFromLayer(layer)) {
     if (isPublicHttpUrl(url)) {
@@ -691,12 +744,15 @@ function collectMediaItems(layers) {
   const indices = new Map()
   const posters = new Set()
   const orderedLayers = [...layers].sort((left, right) => mediaListPriority(right) - mediaListPriority(left))
+  // TikTok photo/carousel posts put background music (often `.mp3`) in `video.play_addr`.
+  // Suppress `singleVideo` across all layers whenever any layer carries `image_post_info` slides.
+  const hasTikTokImagePost = orderedLayers.some((layer) => imagePostUrlsFromLayer(layer).length > 0)
   /** @type {MediaReference[]} */
   const available = []
   /** @type {MediaReference[]} */
   const missing = []
   for (const layer of orderedLayers) {
-    const collection = mediaItemsFromLayer(layer)
+    const collection = mediaItemsFromLayer(layer, { suppressVideo: hasTikTokImagePost })
     for (const url of collection.posters) posters.add(mediaIdentity({ type: 'image', url }))
     available.push(...collection.available)
     missing.push(...collection.missing)
@@ -753,7 +809,9 @@ export function socialPayloadLayers(data) {
     nested ? nested.result : null,
     firstLayerItem(nested, 'aweme_list'),
     firstLayerItem(nested, 'contents'),
+    isPlainObject(nested?.aweme_detail) ? nested.aweme_detail : null,
     root.aweme_detail,
+    firstLayerItem(root, 'aweme_list'),
     firstLayerItem(root, 'item_list'),
   ]
   const layers = [root]
@@ -1460,11 +1518,15 @@ export function handleCreate({ req, store }) {
   return { status: 201, body: { data: created } }
 }
 
+const SAFE_CLOUD_ID_RE = /^[A-Za-z0-9_-]{1,128}$/
+
 function parseImportBody(ctx) {
   const body = ctx.req.body || {}
   const rawUrl = String(body.url || '').trim()
+  const rawCloudId = typeof body.cloud_id === 'string' ? body.cloud_id.trim() : ''
   return {
     rawUrl,
+    cloudId: SAFE_CLOUD_ID_RE.test(rawCloudId) ? rawCloudId : '',
     platform: body.platform || ctx.detectPlatformFromUrl(rawUrl),
     autoAnalyze: body.auto_analyze !== false,
     customTags: Array.isArray(body.tags) ? body.tags : [],
@@ -1786,8 +1848,342 @@ async function withImportLock(rawUrl, work) {
   }
 }
 
+function isCloudAuthError(err) {
+  return err?.code === 'needs-omnimux' || err?.httpStatus === 401 || err?.status === 401
+}
+
+function cloudAuthFailure(args, err) {
+  const detail = typeof args.formatErrorMessage === 'function' ? args.formatErrorMessage(err) : ''
+  return {
+    status: 401,
+    body: {
+      error: detail || '需要登录 OmniMux 账号，请在 设置 → 个人资料 中登录',
+      code: 'needs-omnimux',
+    },
+  }
+}
+
+function isCloudCatalogMediaPath(value) {
+  if (typeof value !== 'string') return false
+  if (value.startsWith('/omnimux/inspiration/media/') || value.startsWith('/api/inspiration/v1/media/')) {
+    return true
+  }
+  if (!/^https?:\/\//i.test(value) || !URL.canParse(value)) return false
+  const parsed = new URL(value)
+  const host = parsed.hostname.toLowerCase()
+  return (host === 'omnimux.ai' || host === 'www.omnimux.ai')
+    && parsed.pathname.startsWith('/api/inspiration/v1/media/')
+}
+
+function normalizeCloudMediaAddress(raw) {
+  if (typeof raw !== 'string') return ''
+  const value = raw.trim()
+  if (!value || /[\u0000-\u001f\u007f\\]/.test(value) || value.includes('..')) return ''
+  if (/^https?:\/\//i.test(value)) {
+    if (isCloudCatalogMediaPath(value)) {
+      const parsed = new URL(value)
+      if (parsed.username || parsed.password || parsed.search || parsed.hash) return ''
+      return value
+    }
+    return isPublicHttpUrl(value) ? value : ''
+  }
+  if (/[?#]/.test(value)) return ''
+  if (value.startsWith('/omnimux/inspiration/media/')) return value
+  if (value.startsWith('/api/inspiration/v1/media/')) {
+    return `/omnimux/inspiration/media/${value.slice('/api/inspiration/v1/media/'.length)}`
+  }
+  if (value.startsWith('/') || /^[a-z][a-z\d+.-]*:/i.test(value)) return ''
+  return `/omnimux/inspiration/media/${value}`
+}
+
+function resolveCloudMediaAssets(item) {
+  const rawMediaItems = Array.isArray(item?.media_items) ? item.media_items : []
+  const rawMediaUrls = Array.isArray(item?.media_urls) ? item.media_urls : []
+  const rawMediaKeys = Array.isArray(item?.media_keys) ? item.media_keys : []
+  const declaredSources = rawMediaItems.length > 0
+    ? rawMediaItems.map((entry) => entry?.url)
+    : rawMediaUrls.length > 0
+      ? rawMediaUrls
+      : rawMediaKeys
+  if (declaredSources.some((entry) => !normalizeCloudMediaAddress(entry))) {
+    return { assets: [], invalidDeclared: true }
+  }
+
+  const analyzed = analysisMediaItems(item)
+  if (rawMediaItems.length > 0 || analyzed.length > 0) {
+    const normalized = analyzed
+      .map((entry) => ({
+        type: entry?.type === 'video' ? 'video' : 'image',
+        url: normalizeCloudMediaAddress(entry?.url),
+      }))
+      .filter((entry) => Boolean(entry.url))
+    return { assets: normalized, invalidDeclared: false }
+  }
+
+  const isImage = item?.type !== 'video' && (
+    ['image', 'photo', 'gallery'].includes(String(item?.type || ''))
+    || ['photo', 'gallery'].includes(String(item?.content_shape || ''))
+    || item?.media_kind === 'image'
+  )
+  const assets = []
+  const seen = new Set()
+  if (!isImage) {
+    for (const candidate of [item?.video_url, item?.video_key, ...rawMediaUrls, ...rawMediaKeys]) {
+      const url = normalizeCloudMediaAddress(candidate)
+      if (!url || seen.has(url)) continue
+      seen.add(url)
+      assets.push({ type: 'video', url })
+    }
+    if (assets.length > 0) return { assets, invalidDeclared: false }
+  }
+  for (const candidate of [...rawMediaUrls, ...rawMediaKeys]) {
+    const url = normalizeCloudMediaAddress(candidate)
+    if (!url || seen.has(url)) continue
+    seen.add(url)
+    assets.push({ type: item?.type === 'video' ? 'video' : 'image', url })
+  }
+  return { assets, invalidDeclared: false }
+}
+
+async function downloadCloudAsset(assetUrl, destDir, opts, catalog, args) {
+  const extHint = detectExt(
+    assetUrl.startsWith('/') ? `https://omnimux.invalid${assetUrl}` : assetUrl,
+    opts.defaultExt,
+  )
+  if (isCloudCatalogMediaPath(assetUrl)) {
+    const response = await catalog.fetchMedia(assetUrl, { signal: args.signal })
+    return saveMediaResponse(response, assetUrl, destDir, {
+      prefix: opts.prefix,
+      ext: extHint,
+      signal: args.signal,
+    })
+  }
+  return downloadMedia(assetUrl, destDir, {
+    prefix: opts.prefix,
+    fetcher: args.fetcher,
+    resolver: args.resolver,
+    signal: args.signal,
+  })
+}
+
+async function downloadCloudCoverBestEffort(args, meta, localPaths, catalog) {
+  if (args.signal?.aborted) {
+    if (localPaths?.video) removeQuietly(localPaths.video)
+    throw createAbortError()
+  }
+  if (!meta.cover_url) return { path: '', renderable: null }
+  try {
+    const saved = await downloadCloudAsset(
+      meta.cover_url,
+      args.paths.coversDir,
+      { prefix: 'cover_', defaultExt: '.jpg' },
+      catalog,
+      args,
+    )
+    const aligned = alignMediaExtension(saved)
+    if (isKnownUnrenderableCover(aligned)) {
+      removeQuietly(aligned)
+      return { path: '', renderable: false }
+    }
+    localPaths.cover = aligned
+    return { path: aligned, renderable: true }
+  } catch (err) {
+    if (err?.name === 'AbortError' || err?.code === 'ABORT_ERR' || args.signal?.aborted) {
+      for (const path of localMediaPaths(localPaths)) removeQuietly(path)
+      throw (err?.name === 'AbortError' || err?.code === 'ABORT_ERR')
+        ? err
+        : createAbortError('This operation was aborted', err)
+    }
+    if (isCloudAuthError(err)) throw err
+    console.warn?.('[omnimux-inspiration] cloud cover download best-effort failed:', err?.message || err)
+    return { path: '', renderable: null }
+  }
+}
+
+async function downloadCloudMediaBundle(args, meta, catalog) {
+  if (args.signal?.aborted) throw createAbortError()
+  /** @type {Record<string, string>} */
+  const localPaths = {}
+  /** @type {SocialMediaItem[]} */
+  const mediaItems = []
+  let localVideoPath = ''
+  let firstImagePath = ''
+  let videoCount = 0
+  let imageCount = 0
+  try {
+    for (const item of meta.media_items) {
+      if (args.signal?.aborted) throw createAbortError()
+      const isVideo = item.type === 'video'
+      const number = isVideo ? ++videoCount : ++imageCount
+      const key = isVideo ? (number === 1 ? 'video' : `video_${number}`) : `image_${number}`
+      const folder = isVideo ? 'videos' : 'images'
+      let saved = await downloadCloudAsset(
+        item.url,
+        isVideo ? args.paths.videosDir : args.paths.imagesDir,
+        { prefix: isVideo ? 'video_' : 'image_', defaultExt: isVideo ? '.mp4' : '.jpg' },
+        catalog,
+        args,
+      )
+      localPaths[key] = saved
+      if (!isVideo) {
+        saved = alignMediaExtension(saved)
+        localPaths[key] = saved
+        if (isKnownUnrenderableCover(saved)) throw new Error('该图片格式暂不支持预览')
+        firstImagePath ||= saved
+      } else {
+        localVideoPath ||= saved
+      }
+      mediaItems.push({ type: item.type, url: `/omnimux/inspiration/local/media/${folder}/${basename(saved)}` })
+    }
+    if (args.signal?.aborted) throw createAbortError()
+    let cover = { path: '', renderable: null }
+    const imageCover = meta.media_items.findIndex((item) => item.type === 'image' && item.url === meta.cover_url)
+    if (imageCover >= 0) {
+      const imageIndex = meta.media_items.slice(0, imageCover + 1).filter((item) => item.type === 'image').length
+      cover = { path: localPaths[`image_${imageIndex}`], renderable: true }
+      localPaths.cover = cover.path
+    } else {
+      cover = await downloadCloudCoverBestEffort(args, meta, localPaths, catalog)
+    }
+    if (!cover.path && localVideoPath) {
+      const poster = await extractVideoPosterBestEffort(args, localVideoPath, localPaths)
+      if (poster.path) cover = poster
+    }
+    if (!cover.path && firstImagePath) {
+      cover = { path: firstImagePath, renderable: true }
+      localPaths.cover = firstImagePath
+    }
+    if (args.signal?.aborted) throw createAbortError()
+    return { media: { localPaths, mediaItems, localVideoPath, localCoverPath: cover.path, coverRenderable: cover.renderable } }
+  } catch (err) {
+    for (const path of localMediaPaths(localPaths)) removeQuietly(path)
+    if (err?.name === 'AbortError' || err?.code === 'ABORT_ERR' || args.signal?.aborted) {
+      throw (err?.name === 'AbortError' || err?.code === 'ABORT_ERR')
+        ? err
+        : createAbortError('This operation was aborted', err)
+    }
+    if (isCloudAuthError(err)) return { error: cloudAuthFailure(args, err) }
+    console.warn?.('[omnimux-inspiration] cloud media localization failed, falling back:', err?.message || err)
+    return { error: null }
+  }
+}
+
+async function localizeFromCloudCatalog(args) {
+  const catalog = typeof args.inspirationCatalog === 'function'
+    ? args.inspirationCatalog()
+    : args.inspirationCatalog
+  if (!catalog || typeof catalog.getItem !== 'function' || typeof catalog.fetchMedia !== 'function') {
+    return null
+  }
+  let item
+  try {
+    item = await catalog.getItem(args.cloudId, { signal: args.signal })
+  } catch (err) {
+    if (args.signal?.aborted || err?.name === 'AbortError' || err?.code === 'ABORT_ERR') {
+      throw (err?.name === 'AbortError' || err?.code === 'ABORT_ERR')
+        ? err
+        : createAbortError('This operation was aborted', err)
+    }
+    if (isCloudAuthError(err)) return cloudAuthFailure(args, err)
+    console.warn?.('[omnimux-inspiration] cloud catalog lookup failed, falling back:', err?.message || err)
+    return null
+  }
+  if (!item || typeof item !== 'object') return null
+
+  const { assets: mediaAssets, invalidDeclared } = resolveCloudMediaAssets(item)
+  if (invalidDeclared) return null
+
+  const rawCover = item.cover_key ?? item.cover_url ?? ''
+  const coverUrl = normalizeCloudMediaAddress(rawCover)
+  const resolvedUrl = resolvedUrlFromLayer(item) || asText(item.source_url)
+  const effectiveSourceUrl = args.rawUrl || resolvedUrl
+  const platform = args.platform
+    || asText(item.source_platform || item.platform)
+    || (typeof args.detectPlatformFromUrl === 'function'
+      ? args.detectPlatformFromUrl(effectiveSourceUrl)
+      : detectPlatformFromUrl(effectiveSourceUrl))
+  const title = firstText([item.title, item.caption, item.content])
+  const text = firstText([item.content, item.caption, item.body, item.text])
+  const meta = {
+    title,
+    excerpt: firstText([item.excerpt]).slice(0, 600),
+    content_shape: asText(item.content_shape),
+    favicon_url: firstPublicHttpUrl([item.favicon_url, item.favicon]),
+    text,
+    cover_url: coverUrl,
+    video_url: mediaAssets.find((entry) => entry.type === 'video')?.url || '',
+    images: mediaAssets.filter((entry) => entry.type === 'image').map((entry) => entry.url),
+    media_items: mediaAssets,
+    author: authorFromLayer(item),
+    stats: statsFromLayer(item),
+    duration: durationFromLayer(item),
+    published_at: publishedAtFromLayer(item),
+    resolvedUrl,
+    has_metadata: Boolean(mediaAssets.length > 0 || coverUrl || title || text),
+    unavailable_media: false,
+  }
+  if (!meta.has_metadata) return null
+
+  if (args.signal?.aborted) throw createAbortError()
+  const dup = checkResolvedDuplicate(args, meta)
+  if (dup) return dup
+
+  const hasMedia = meta.media_items.length > 0
+  if (hasMedia) await reportStage(args, IMPORT_STAGES.DOWNLOADING)
+
+  let media
+  if (hasMedia) {
+    const downloaded = await downloadCloudMediaBundle(args, meta, catalog)
+    if (!downloaded.media) return downloaded.error || null
+    media = downloaded.media
+  } else {
+    /** @type {Record<string, string>} */
+    const coverLocalPaths = {}
+    let cover
+    try {
+      cover = await downloadCloudCoverBestEffort(args, meta, coverLocalPaths, catalog)
+    } catch (err) {
+      if (isCloudAuthError(err)) return cloudAuthFailure(args, err)
+      throw err
+    }
+    media = {
+      localPaths: coverLocalPaths,
+      mediaItems: [],
+      localVideoPath: '',
+      localCoverPath: cover.path,
+      coverRenderable: cover.renderable,
+    }
+  }
+
+  const scopedArgs = { ...args, platform, rawUrl: effectiveSourceUrl }
+  try {
+    if (args.signal?.aborted) throw createAbortError()
+    const analysis = await maybeAnalyze(scopedArgs, media, meta)
+    if (args.signal?.aborted) throw createAbortError()
+
+    await reportStage(scopedArgs, IMPORT_STAGES.PERSISTING)
+    const record = await persistImportedRecord(scopedArgs, buildImportRecord(scopedArgs, meta, media, analysis))
+    if (hasMedia) return { status: 200, body: { data: record } }
+    return {
+      status: 200,
+      body: {
+        data: record,
+        media_degraded: true,
+        degrade_reason: DEGRADE_REASON,
+      },
+    }
+  } catch (err) {
+    for (const path of localMediaPaths(media.localPaths)) removeQuietly(path)
+    throw err
+  }
+}
+
 async function runImport(args) {
   if (args.signal?.aborted) throw createAbortError()
+  if (args.cloudId) {
+    const localized = await localizeFromCloudCatalog(args)
+    if (localized) return localized
+  }
   if (!args.socialFetcher) {
     return fail(500, '未注入 OmniMux 社媒解析能力 (socialFetcher 未就绪)')
   }

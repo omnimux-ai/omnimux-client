@@ -16,16 +16,31 @@ describe('URL Normalizer & Canonical Key Extraction', () => {
     assert.equal(isSameSocialContent(raw1, raw2), true)
   })
 
-  it('extracts canonical key from TikTok video URLs', () => {
+  it('extracts canonical key from TikTok video, photo carousel, and share URLs', () => {
     const urlA = 'https://www.tiktok.com/@userA/video/7234567890123456789?is_from_webapp=1'
     const urlB = 'https://m.tiktok.com/v/7234567890123456789.html'
+    const photoAt = 'https://www.tiktok.com/@kateestills/photo/7234567890123456789?is_from_webapp=1'
+    const photoNoUser = 'https://www.tiktok.com/photo/7234567890123456789'
+    const photoNoAt = 'https://www.tiktok.com/kateestills/photo/7234567890123456789'
+    const playerUrl = 'https://www.tiktok.com/player/v1/7234567890123456789?autoplay=1'
+    const shareUrl = 'https://www.tiktok.com/@kateestills?share_item_id=7234567890123456789'
+    const spoofed = 'https://evil.example/tiktok.com/@kateestills/photo/7234567890123456789'
+
     const keyA = getCanonicalItemKey(urlA)
     const keyB = getCanonicalItemKey(urlB)
 
     assert.equal(keyA.platform, 'tiktok')
     assert.equal(keyA.key, 'tiktok:video:7234567890123456789')
     assert.equal(keyB.key, 'tiktok:video:7234567890123456789')
+    assert.equal(getCanonicalItemKey(photoAt).key, 'tiktok:video:7234567890123456789')
+    assert.equal(getCanonicalItemKey(photoNoUser).key, 'tiktok:video:7234567890123456789')
+    assert.equal(getCanonicalItemKey(photoNoAt).key, 'tiktok:video:7234567890123456789')
+    assert.equal(getCanonicalItemKey(playerUrl).key, 'tiktok:video:7234567890123456789')
+    assert.equal(getCanonicalItemKey(shareUrl).key, 'tiktok:video:7234567890123456789')
+    assert.notEqual(getCanonicalItemKey(spoofed).platform, 'tiktok')
     assert.equal(isSameSocialContent(urlA, urlB), true)
+    assert.equal(isSameSocialContent(photoAt, urlA), true)
+    assert.equal(isSameSocialContent(photoNoAt, photoNoUser), true)
   })
 
   it('extracts canonical key from Instagram Reel/Post URLs', () => {

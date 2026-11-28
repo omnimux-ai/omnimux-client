@@ -58,11 +58,11 @@ const BROWSER_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36
  * @param {number} deadline epoch ms after which no request may start
  * @returns {Promise<Record<string, any> | null>}
  */
-async function fetchJson(endpoint, deadline) {
+async function fetchJson(endpoint, deadline, fetchImpl = fetch) {
   const budget = Math.min(OEMBED_TIMEOUT_MS, deadline - Date.now())
   if (budget <= 0) return null
   try {
-    const resp = await fetch(endpoint, {
+    const resp = await fetchImpl(endpoint, {
       headers: { 'User-Agent': BROWSER_UA },
       signal: AbortSignal.timeout(budget),
     })
@@ -119,10 +119,40 @@ function resolvePlatform(platform, url) {
  * @param {number} deadline
  * @returns {Promise<Record<string, any> | null>}
  */
-async function resolveTikTok(url, deadline) {
-  const tikwm = await fetchJson(`https://www.tikwm.com/api/?url=${encodeURIComponent(url)}`, deadline)
+async function resolveTikTok(url, deadline, fetchImpl = fetch) {
+  const tikwm = await fetchJson(`https://www.tikwm.com/api/?url=${encodeURIComponent(url)}`, deadline, fetchImpl)
   const payload = tikwm && tikwm.data ? tikwm.data : null
   if (payload) {
+    const author = payload.author ? {
+      id: String(payload.author.id || ''),
+      handle: String(payload.author.unique_id || ''),
+      name: String(payload.author.nickname || ''),
+      avatar: String(payload.author.avatar || ''),
+    } : {}
+    const stats = {
+      likes: Number(payload.digg_count) || 0,
+      comments: Number(payload.comment_count) || 0,
+      shares: Number(payload.share_count) || 0,
+      views: Number(payload.play_count) || 0,
+    }
+    const images = Array.isArray(payload.images)
+      ? payload.images.map((entry) => asText(entry)).filter((entry) => isPublicHttpUrl(entry))
+      : []
+    if (images.length > 0) {
+      return {
+        platform: 'tiktok',
+        capability: 'video',
+        data: {
+          title: payload.title || url,
+          text: payload.title || '',
+          cover_url: asText(payload.cover) || asText(payload.origin_cover) || images[0],
+          video_url: '',
+          images,
+          author,
+          stats,
+        },
+      }
+    }
     const videoUrl = payload.play || payload.wmplay || payload.hdplay || (Array.isArray(payload.videos) ? payload.videos[0] : '')
     if (videoUrl) {
       return {
@@ -133,24 +163,14 @@ async function resolveTikTok(url, deadline) {
           text: payload.title || '',
           cover_url: payload.cover || payload.origin_cover || '',
           video_url: videoUrl,
-          author: payload.author ? {
-            id: String(payload.author.id || ''),
-            handle: String(payload.author.unique_id || ''),
-            name: String(payload.author.nickname || ''),
-            avatar: String(payload.author.avatar || ''),
-          } : {},
-          stats: {
-            likes: Number(payload.digg_count) || 0,
-            comments: Number(payload.comment_count) || 0,
-            shares: Number(payload.share_count) || 0,
-            views: Number(payload.play_count) || 0,
-          },
+          author,
+          stats,
         },
       }
     }
   }
 
-  const oembed = await fetchJson(`https://www.tiktok.com/oembed?url=${encodeURIComponent(url)}`, deadline)
+  const oembed = await fetchJson(`https://www.tiktok.com/oembed?url=${encodeURIComponent(url)}`, deadline, fetchImpl)
   if (oembed && oembed.title) {
     return {
       platform: 'tiktok',
@@ -175,10 +195,11 @@ async function resolveTikTok(url, deadline) {
  * which is a normal outcome that degrades the import to a link item.
  * @param {string} url
  * @param {number} deadline
+ * @param {typeof fetch} [fetchImpl]
  * @returns {Promise<Record<string, any> | null>}
  */
-async function resolveYouTube(url, deadline) {
-  const oembed = await fetchJson(`https://www.youtube.com/oembed?url=${encodeURIComponent(url)}&format=json`, deadline)
+async function resolveYouTube(url, deadline, fetchImpl = fetch) {
+  const oembed = await fetchJson(`https://www.youtube.com/oembed?url=${encodeURIComponent(url)}&format=json`, deadline, fetchImpl)
   if (!oembed) return null
   const title = asText(oembed.title)
   const coverUrl = asText(oembed.thumbnail_url)
@@ -204,10 +225,11 @@ async function resolveYouTube(url, deadline) {
  * X / Twitter: publish oEmbed returns author and post text (no media stream).
  * @param {string} url
  * @param {number} deadline
+ * @param {typeof fetch} [fetchImpl]
  * @returns {Promise<Record<string, any> | null>}
  */
-async function resolveTweet(url, deadline) {
-  const oembed = await fetchJson(`https://publish.twitter.com/oembed?url=${encodeURIComponent(url)}&format=json`, deadline)
+async function resolveTweet(url, deadline, fetchImpl = fetch) {
+  const oembed = await fetchJson(`https://publish.twitter.com/oembed?url=${encodeURIComponent(url)}&format=json`, deadline, fetchImpl)
   if (!oembed) return null
   const authorName = asText(oembed.author_name)
   const tweetText = asText(oembed.text) || textFromHtml(oembed.html)
@@ -429,8 +451,8 @@ export async function fallbackResolveSocial({ platform, capability = 'video', ur
   }
 
   const deadline = Date.now() + FALLBACK_BUDGET_MS
-  if (resolved === 'tiktok') return resolveTikTok(url, deadline)
-  if (resolved === 'youtube') return resolveYouTube(url, deadline)
-  if (resolved === 'x') return resolveTweet(url, deadline)
+  if (resolved === 'tiktok') return resolveTikTok(url, deadline, fetchImpl)
+  if (resolved === 'youtube') return resolveYouTube(url, deadline, fetchImpl)
+  if (resolved === 'x') return resolveTweet(url, deadline, fetchImpl)
   return fetchWebOgMetadata(url, { signal, fetchImpl, resolver, deadline })
 }

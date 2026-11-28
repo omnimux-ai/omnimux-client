@@ -68,7 +68,8 @@
     "seamsConsumed": [
       "reader",
       "headlessSkill",
-      "hubEvents"
+      "hubEvents",
+      "inspirationCatalog"
     ],
     "slots": [
       {
