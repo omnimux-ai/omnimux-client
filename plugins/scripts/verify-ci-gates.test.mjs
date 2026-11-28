@@ -5,6 +5,7 @@ import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { gitBlobHash } from './verify-bilingual-docs.mjs'
 import { checkSourceFileBoundaries } from './verify-plugin-boundaries.mjs'
+import { auditManifestTools } from './verify-plugin-agent-tools.mjs'
 import { walkAgentNoteTree } from './lib/agent-note-tree.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -249,6 +250,77 @@ test('verify-plugin-boundaries blocks non-Hub direct ctx.llm and llm.stream call
     content: 'export function run(ctx) { return ctx.tools.get("omnimux_page_fetch").execute({ url }) }',
   })
   strictEqual(hubToolReadAllowed.length, 0)
+
+  // Escaping closure wrappers around ctx.tools.get/executable must be blocked,
+  // while same-file existence checks remain allowed.
+  for (const content of [
+    'export function apply(ctx) { const getTool = (name) => ctx.tools?.get?.(name); return createPipeline({ getTool }) }',
+    'export function apply(ctx) { return createPipeline({ getTool: (name) => ctx.tools?.get?.(name) }) }',
+    'export function apply(ctx) { const getTool = (name) => ctx.tools?.get?.(name); return getTool("products_create").execute({}) }',
+    'export function apply(ctx) { const getTool = (name) => ctx.tools?.executable?.(name); const t = getTool("x"); return t.execute({}) }',
+    'export function makeGetter(ctx) { return (name) => ctx.tools.get(name) }',
+  ]) {
+    const blocked = checkSourceFileBoundaries({
+      rel: 'plugins/omnimux-tiktok-selection/src/index.js',
+      plugin: 'omnimux-tiktok-selection',
+      content,
+    })
+    ok(blocked.some((msg) => msg.includes('tool dispatch boundary violation')), content)
+  }
+
+  const localProbeHelperAllowed = checkSourceFileBoundaries({
+    rel: 'plugins/omnimux-publish/src/hubtools.js',
+    plugin: 'omnimux-publish',
+    content: [
+      'function resolveToolDefinition(tools, name) {',
+      '  const executable = typeof tools.executable === "function" ? tools.executable(name) : undefined',
+      '  if (executable) return executable',
+      '  return typeof tools.get === "function" ? tools.get(name) : undefined',
+      '}',
+      'export async function exec(tools, name, args) {',
+      '  const tool = resolveToolDefinition(tools, name)',
+      '  if (!tool) throw new Error("missing")',
+      '  return tools.execute({ calls: [{ type: "tool-call", id: "1", name, arguments: JSON.stringify(args) }] })',
+      '}',
+    ].join('\n'),
+  })
+  strictEqual(localProbeHelperAllowed.length, 0)
+})
+
+test('verify-plugin-agent-tools auditManifestTools catches missing and phantom manifest tools', () => {
+  const missing = auditManifestTools({
+    plugin: 'omnimux-products',
+    codeTools: ['products_list', 'products_delete'],
+    manifest: { capabilities: { tools: [{ name: 'products_list' }] } },
+    ratchet: {},
+  })
+  ok(missing.errors.some((msg) => msg.includes('products_delete')), 'must report missing manifest tool')
+
+  const phantom = auditManifestTools({
+    plugin: 'omnimux-products',
+    codeTools: ['products_list'],
+    manifest: { capabilities: { tools: [{ name: 'products_list' }, { name: 'products_ghost' }] } },
+    ratchet: {},
+  })
+  ok(phantom.errors.some((msg) => msg.includes('products_ghost')), 'must report phantom manifest tool')
+
+  const aligned = auditManifestTools({
+    plugin: 'omnimux-products',
+    codeTools: ['products_list', 'products_delete'],
+    manifest: { capabilities: { tools: [{ name: 'products_list' }, { name: 'products_delete' }] } },
+    ratchet: {},
+  })
+  strictEqual(aligned.errors.length, 0)
+  strictEqual(aligned.warnings.length, 0)
+})
+
+test('cross-plugin tiktok-selection sync passes through ctx.tools.execute batch contract', () => {
+  const res = spawnSync('node', ['--test', resolve(here, 'verify-cross-plugin-tool-sync.test.mjs')], {
+    cwd: repoRoot,
+    encoding: 'utf8',
+    env: nestedTestEnv,
+  })
+  strictEqual(res.status, 0, `cross-plugin tool sync tests failed: ${res.stderr}\n${res.stdout}`)
 })
 
 test('verify-stage-contracts passes on all first-level Stage and StageStore files', () => {

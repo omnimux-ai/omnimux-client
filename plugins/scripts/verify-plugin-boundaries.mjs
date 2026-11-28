@@ -64,16 +64,24 @@ export const DIRECT_LLM_ACCESS_ALLOWLIST = new Set([
   'plugins/omnimux-viewer/src/display-file.ts',
 ])
 
+/**
+ * Ratchet allowlist for pre-existing tool-lookup closure wrappers outside #414 scope.
+ * Only removals are permitted; any new file fails verify-plugin-boundaries immediately.
+ */
+export const LEGACY_TOOL_LOOKUP_CLOSURE_RATCHET = new Set([
+  'plugins/omnimux-workflow/src/workflow/index.ts',
+])
+
 const DIRECT_LLM_STREAM_RE = /\b(?:ctx\s*\??\.\s*|subCtx\s*\??\.\s*)?llm\s*\??\.\s*stream\s*\(/
 const DIRECT_LLM_ACCESS_RE = /\b(?:ctx|subCtx)\s*\??\.\s*llm\b|\b(?:ctx|subCtx)\s*\??\.\s*get(?:\?\.)?\(\s*['"]llm['"]\s*\)|\breadSeat\s*\([^,]+,\s*['"]llm['"]\s*\)/
 
 /**
  * A tool registry expression: `tools`, `toolsService`, `toolRegistry`,
- * `toolsRegistry`, `ctx.tools`, `this.tools`, or the legacy
+ * `toolsRegistry`, `ctx.tools`, `(ctx as any).tools`, `this.tools`, or the legacy
  * `ctx.get('tools')` seat lookup. Anchoring on these exact names keeps an
  * unrelated helper such as `myTools` out of the rule.
  */
-const TOOL_REGISTRY_RECEIVER = String.raw`\b(?:(?:[A-Za-z_$][\w$]*\s*\.\s*)*(?:tools|Tools|toolsService|toolRegistry|toolsRegistry)|(?:ctx|subCtx|this)\s*\.\s*get\s*\(\s*['"]tools['"]\s*\))`
+const TOOL_REGISTRY_RECEIVER = String.raw`(?:(?:\(\s*(?:ctx|subCtx|this)\s+as\s+[^)]+\s*\)\s*\.\s*(?:tools|Tools|toolsService|toolRegistry|toolsRegistry))|\b(?:(?:[A-Za-z_$][\w$]*\s*\.\s*)*(?:tools|Tools|toolsService|toolRegistry|toolsRegistry)|(?:ctx|subCtx|this)\s*\.\s*get\s*\(\s*['"]tools['"]\s*\)))`
 
 /** Optional call syntax on either the lookup or `execute`. */
 const TOOL_LOOKUP_CALL = String.raw`(?:get|executable)\s*\??\.?\s*\([^()]*\)`
@@ -95,6 +103,93 @@ const TOOL_DEFINITION_DESTRUCTURE_RE = new RegExp(
   `(?:const|let|var)\\s*\\{([^}]*)\\}\\s*=[^;]*${TOOL_REGISTRY_RECEIVER}\\s*\\??\\.\\s*${TOOL_LOOKUP_CALL}`,
   'g',
 )
+
+/** `const getTool = (name) => ctx.tools?.get?.(name)` — local wrapper arrow/fn. */
+const TOOL_LOOKUP_ARROW_WRAPPER_RE = new RegExp(
+  `(?:const|let|var)\\s+([A-Za-z_$][\\w$]*)\\s*=\\s*(?:async\\s*)?(?:\\([^)]*\\)|[A-Za-z_$][\\w$]*)\\s*=>[^\\n;]*${TOOL_REGISTRY_RECEIVER}\\s*\\??\\.\\s*${TOOL_LOOKUP_CALL}`,
+  'g',
+)
+
+/** `const getTool = ctx.tools?.get` — bare method reference alias. */
+const TOOL_LOOKUP_METHOD_ALIAS_RE = new RegExp(
+  `(?:const|let|var)\\s+([A-Za-z_$][\\w$]*)\\s*=[^;\\n]*${TOOL_REGISTRY_RECEIVER}\\s*\\??\\.\\s*(?:get|executable)(?:\\s*;|$|\\n)`,
+  'g',
+)
+
+/** `function resolveToolDefinition(...) { ... tools.get(...) }` */
+const TOOL_LOOKUP_FN_WRAPPER_RE = new RegExp(
+  `\\bfunction\\s+([A-Za-z_$][\\w$]*)\\s*\\([^)]*\\)\\s*\\{[^{}]*${TOOL_REGISTRY_RECEIVER}\\s*\\??\\.\\s*${TOOL_LOOKUP_CALL}[^{}]*\\}`,
+  'g',
+)
+
+/** Inline closure in object property or call argument: `{ getTool: (n) => ctx.tools?.get?.(n) }` */
+const INLINE_TOOL_LOOKUP_CLOSURE_RE = new RegExp(
+  `[\\{\\(,]\\s*([A-Za-z_$][\\w$]*)\\s*:\\s*(?:async\\s*)?(?:\\([^)]*\\)|[A-Za-z_$][\\w$]*)\\s*=>[^\\n,;]*${TOOL_REGISTRY_RECEIVER}\\s*\\??\\.\\s*${TOOL_LOOKUP_CALL}`,
+  'g',
+)
+
+/** Returned closure: `return (n) => ctx.tools?.get?.(n)` */
+const RETURN_TOOL_LOOKUP_CLOSURE_RE = new RegExp(
+  `\\breturn\\s+(?:async\\s*)?(?:\\([^)]*\\)|[A-Za-z_$][\\w$]*)\\s*=>[^\\n;]*${TOOL_REGISTRY_RECEIVER}\\s*\\??\\.\\s*${TOOL_LOOKUP_CALL}`,
+  'g',
+)
+
+function escapeRegExp(str) {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function collectToolLookupWrappers(code) {
+  const wrappers = new Set()
+  for (const re of [TOOL_LOOKUP_ARROW_WRAPPER_RE, TOOL_LOOKUP_METHOD_ALIAS_RE, TOOL_LOOKUP_FN_WRAPPER_RE]) {
+    re.lastIndex = 0
+    for (const match of code.matchAll(re)) {
+      if (match[1]) wrappers.add(match[1])
+    }
+  }
+  return wrappers
+}
+
+function isWrapperExportedOrPassed(code, wrapperName) {
+  const esc = escapeRegExp(wrapperName)
+  // Exported at declaration site
+  if (new RegExp(`\\bexport\\s+(?:const|let|var|function)\\s+${esc}\\b`).test(code)) return true
+  if (new RegExp(`\\bexport\\s*\\{[^}]*\\b${esc}\\b[^}]*\\}`).test(code)) return true
+  // Returned as a value: `return getTool` or `return { getTool }`
+  if (new RegExp(`\\breturn\\s+${esc}\\s*(?:[;\\n}]|$)`).test(code)) return true
+  if (new RegExp(`\\breturn\\s*\\{[^}]*\\b${esc}\\b(?![\\s?]*\\.\\s*\\(|\\s*\\()`).test(code)) return true
+  // Passed in object literal `{ getTool }` or `{ prop: getTool }`
+  if (new RegExp(`[\\{,]\\s*(?:[A-Za-z_$][\\w$]*\\s*:\\s*)?${esc}\\s*(?=[,\\}])`).test(code)) return true
+  // Passed as function argument `fn(..., getTool, ...)` (not `getTool(...)`)
+  if (new RegExp(`[\\(,]\\s*${esc}\\s*(?=[,\\)])`).test(code)) return true
+  return false
+}
+
+/**
+ * Detect wrapper closures / aliases around `ctx.tools.get` / `ctx.tools.executable`
+ * that escape the local file (e.g. `const getTool = (n) => ctx.tools?.get?.(n); createPipeline({ getTool })`).
+ * A purely local existence check helper that stays inside the same module and is never
+ * invoked with `.execute()` remains allowed.
+ * @param {string} code source with comments removed
+ * @returns {string[]}
+ */
+export function findToolLookupClosureLeaks(code) {
+  const leaks = []
+  INLINE_TOOL_LOOKUP_CLOSURE_RE.lastIndex = 0
+  for (const match of code.matchAll(INLINE_TOOL_LOOKUP_CLOSURE_RE)) {
+    const label = match[1] ? `inline:${match[1]}` : 'inline-closure'
+    if (!leaks.includes(label)) leaks.push(label)
+  }
+  RETURN_TOOL_LOOKUP_CLOSURE_RE.lastIndex = 0
+  if (RETURN_TOOL_LOOKUP_CLOSURE_RE.test(code) && !leaks.includes('return-closure')) {
+    leaks.push('return-closure')
+  }
+  for (const wrapper of collectToolLookupWrappers(code)) {
+    if (isWrapperExportedOrPassed(code, wrapper) && !leaks.includes(wrapper)) {
+      leaks.push(wrapper)
+    }
+  }
+  return leaks
+}
 
 /**
  * Collect the identifiers a destructuring pattern binds for `execute`
@@ -133,14 +228,28 @@ export function findToolDefinitionInvokes(code) {
   for (const match of code.matchAll(TOOL_DEFINITION_DESTRUCTURE_RE)) {
     for (const name of destructuredNames(match[1] ?? '')) bareIdentifiers.add(name)
   }
+  for (const wrapper of collectToolLookupWrappers(code)) {
+    const esc = escapeRegExp(wrapper)
+    if (new RegExp(`\\b${esc}\\s*\\??\\.?\\s*\\([^()]*\\)\\s*${EXECUTE_CALL}`).test(code)) {
+      if (!hits.includes(`wrapper:${wrapper}`)) hits.push(`wrapper:${wrapper}`)
+    }
+    const assignRe = new RegExp(`(?:const|let|var)\\s+([A-Za-z_$][\\w$]*)\\s*=[^;]*\\b${esc}\\s*\\??\\.?\\s*\\([^()]*\\)`, 'g')
+    for (const match of code.matchAll(assignRe)) {
+      if (match[1]) memberIdentifiers.add(match[1])
+    }
+    const destructRe = new RegExp(`(?:const|let|var)\\s*\\{([^}]*)\\}\\s*=[^;]*\\b${esc}\\s*\\??\\.?\\s*\\([^()]*\\)`, 'g')
+    for (const match of code.matchAll(destructRe)) {
+      for (const name of destructuredNames(match[1] ?? '')) bareIdentifiers.add(name)
+    }
+  }
   for (const identifier of memberIdentifiers) {
     if (hits.includes(identifier)) continue
-    const escaped = identifier.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const escaped = escapeRegExp(identifier)
     if (new RegExp(`\\b${escaped}\\s*\\??\\.\\s*execute\\s*\\??\\.?\\s*\\(`).test(code)) hits.push(identifier)
   }
   for (const identifier of bareIdentifiers) {
     if (hits.includes(identifier)) continue
-    const escaped = identifier.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const escaped = escapeRegExp(identifier)
     if (new RegExp(`\\b${escaped}\\s*\\??\\.?\\s*\\(`).test(code)) hits.push(identifier)
   }
   return hits
@@ -303,11 +412,18 @@ export function checkSourceFileBoundaries({
     } else if (!DIRECT_LLM_ACCESS_ALLOWLIST.has(posixRel) && DIRECT_LLM_ACCESS_RE.test(codeOnly)) {
       fileErrors.push(`headless execution boundary violation in ${posixRel}: non-Hub plugins must not access ctx.llm directly. Use Hub ctx.get('headlessSkill') per docs/contracts/headless-skill-execution.md.`)
     }
-    // 5. A registry-read tool definition must not be executed in place: dispatch
-    //    through ctx.tools.execute (pipeline), or consume a Hub seam.
+    // 5. A registry-read tool definition must not be executed in place or wrapped
+    //    into an escaping lookup closure: dispatch through ctx.tools.execute
+    //    (pipeline), or consume a Hub seam.
     const definitionInvokes = findToolDefinitionInvokes(codeOnly)
     if (definitionInvokes.length > 0) {
       fileErrors.push(`tool dispatch boundary violation in ${posixRel}: non-Hub plugins must not call execute() on a tool definition read from ctx.tools.get/executable (${definitionInvokes.join(', ')}). Consume a Hub seam or dispatch through ctx.tools.execute per docs/contracts/headless-skill-execution.md.`)
+    }
+    if (!LEGACY_TOOL_LOOKUP_CLOSURE_RATCHET.has(posixRel)) {
+      const lookupLeaks = findToolLookupClosureLeaks(codeOnly)
+      if (lookupLeaks.length > 0) {
+        fileErrors.push(`tool dispatch boundary violation in ${posixRel}: non-Hub plugins must not wrap ctx.tools.get/executable into an escaping closure or alias (${lookupLeaks.join(', ')}). Dispatch through ctx.tools.execute or consume a Hub seam per docs/contracts/headless-skill-execution.md.`)
+      }
     }
   }
 

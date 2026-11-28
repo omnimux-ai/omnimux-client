@@ -23,7 +23,7 @@
     "seamsConsumed": ["identity"],
     "slots": [
       { "target": "sidebar.extra", "componentPath": "src/client/sidebar-entry.js" },
-      { "target": "shell.overlay", "componentPath": "src/client/PublishStage.jsx" }
+      { "target": "betterSidebar.registerTab", "componentPath": "src/client/PublishStage.jsx" }
     ],
     "storageDomains": ["$DSH_HOME/publish/"]
   },

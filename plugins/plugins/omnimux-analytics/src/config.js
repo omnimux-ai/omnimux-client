@@ -11,14 +11,26 @@
  */
 
 export const DEFAULT_PLUGIN_MAP = Object.freeze({
-  video_: 'omnimux-video',
+  accounts_: 'omnimux-accounts',
+  analytics_: 'omnimux-analytics',
   assets_: 'omnimux-assets',
+  browser_: 'omnimux-browser',
+  canvas_: 'omnimux-workflow',
+  clip_: 'omnimux-clip',
+  connector_: 'omnimux-market',
+  display_file: 'omnimux-viewer',
+  inspiration_: 'omnimux-inspiration',
+  omnimux_: 'omnimux',
+  pibrowse_: 'omnimux-pibrowse',
   plaza_: 'omnimux-market',
   plugin_: 'omnimux-market',
-  connector_: 'omnimux-market',
-  workflow_: 'omnimux-workflow',
+  products_: 'omnimux-products',
+  publish_: 'omnimux-publish',
   skillhub: 'omnimux-market', // matches `skillhub` and `skillhub_*`
-  omnimux_: 'omnimux',
+  tiktok_selection_: 'omnimux-tiktok-selection',
+  video_: 'omnimux-video',
+  workbench_: 'omnimux',
+  workflow_: 'omnimux-workflow',
 })
 
 /**

@@ -8,12 +8,27 @@
   "description": "连接和管理多平台社交账号，查看授权状态与分组。",
   "tags": ["accounts", "social-media", "identity", "platforms", "matrix"],
   "capabilities": {
-    "tools": [],
+    "tools": [
+      {
+        "name": "accounts_list",
+        "summary": "列出已连接的社媒账号及其本地分组与 Agent 可用状态",
+        "category": "accounts",
+        "isWriteOperation": false,
+        "requiresAuth": false
+      },
+      {
+        "name": "accounts_update_group",
+        "summary": "更新指定社媒账号的业务分组名称",
+        "category": "accounts",
+        "isWriteOperation": true,
+        "requiresAuth": false
+      }
+    ],
     "seamsProvided": [],
     "seamsConsumed": ["identity", "omnimuxAccounts"],
     "slots": [
       { "target": "sidebar.extra", "componentPath": "src/client/sidebar-entry.js" },
-      { "target": "shell.overlay", "componentPath": "src/client/AccountsStage.jsx" }
+      { "target": "betterSidebar.registerTab", "componentPath": "src/client/AccountsStage.jsx" }
     ],
     "storageDomains": ["$DSH_HOME/omnimux/accounts/"]
   },

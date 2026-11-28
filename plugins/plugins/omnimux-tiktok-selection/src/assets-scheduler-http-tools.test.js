@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, it } from 'node:test'
-import { createAssetsPipeline } from './assets-pipeline.js'
+import { createAssetsPipeline, normalizeProductSyncName, PRODUCT_NAME_MAX } from './assets-pipeline.js'
 import { createDataSourceAdapter } from './datasource.js'
 import { createSelectionDispatcher } from './dispatcher.js'
 import { assertLocalWrite, createHttpHandler, ROUTE_PREFIX } from './http-routes.js'
@@ -13,20 +13,112 @@ import { createSelectionStore } from './store.js'
 import { resolveSelectionPaths, resolveWithin, safePathSegment } from './paths.js'
 import { createThreeGateEngine } from './three-gate.js'
 
-function makeStack(services = {}, externalTools = {}) {
+function createToolRegistryHarness(externalTools = {}, opts = {}) {
+  const registered = new Map(Object.entries(externalTools))
+  const batchCalls = []
+  const legacyCalls = []
+  const directExecuteCalls = []
+  const wrapped = new Map()
+  for (const [name, def] of registered.entries()) {
+    if (!def) continue
+    wrapped.set(name, {
+      ...def,
+      execute: async (args, exec) => {
+        directExecuteCalls.push({ name, args })
+        return def.execute(args, exec)
+      },
+    })
+  }
+  const registry = {
+    register: (def) => {
+      registered.set(def.name, def)
+      wrapped.set(def.name, {
+        ...def,
+        execute: async (args, exec) => {
+          directExecuteCalls.push({ name: def.name, args })
+          return def.execute(args, exec)
+        },
+      })
+    },
+    get: (name) => wrapped.get(name),
+    executable: (name) => wrapped.get(name),
+    ...(opts.legacySingle
+      ? {
+          executionMode: () => 'single',
+          execute: async (input) => {
+            legacyCalls.push(input)
+            const def = registered.get(input.name)
+            if (!def) {
+              return { isError: true, content: [{ type: 'text', text: `UNKNOWN_TOOL: ${input.name}` }], error: { message: `UNKNOWN_TOOL: ${input.name}` } }
+            }
+            const value = await def.execute(input.arguments || {}, { signal: input.signal })
+            return { isError: false, content: [{ type: 'text', text: JSON.stringify(value) }], value }
+          },
+        }
+      : {
+          execute: async (batchInput) => {
+            batchCalls.push(batchInput)
+            const results = []
+            for (const call of batchInput.calls || []) {
+              const def = registered.get(call.name)
+              if (!def) {
+                results.push({
+                  callId: call.id,
+                  result: {
+                    isError: true,
+                    content: [{ type: 'text', text: `UNKNOWN_TOOL: ${call.name}` }],
+                    error: { message: `UNKNOWN_TOOL: ${call.name}`, info: { code: 'UNKNOWN_TOOL' } },
+                  },
+                })
+                continue
+              }
+              try {
+                const parsedArgs = typeof call.arguments === 'string' ? JSON.parse(call.arguments) : (call.arguments || {})
+                const value = await def.execute(parsedArgs, { signal: batchInput.signal })
+                results.push({
+                  callId: call.id,
+                  result: {
+                    isError: false,
+                    content: [{ type: 'text', text: JSON.stringify(value) }],
+                    value,
+                  },
+                })
+              } catch (err) {
+                results.push({
+                  callId: call.id,
+                  result: {
+                    isError: true,
+                    content: [{ type: 'text', text: err?.message || 'tool error' }],
+                    error: { message: err?.message || 'tool error', info: { code: err?.code || 'ERR' } },
+                  },
+                })
+              }
+            }
+            return { results }
+          },
+        }),
+    _batchCalls: batchCalls,
+    _legacyCalls: legacyCalls,
+    _directExecuteCalls: directExecuteCalls,
+  }
+  return registry
+}
+
+function makeStack(services = {}, externalTools = {}, registryOpts = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'omnimux-ttsel-full-'))
   const store = createSelectionStore({ rootDir: dir })
   const getService = (name) => services[name] || null
-  const getTool = (name) => externalTools[name] || null
+  const toolRegistry = createToolRegistryHarness(externalTools, registryOpts)
   const dataSource = createDataSourceAdapter({ store, getService })
   const threeGate = createThreeGateEngine({ store, dataSource, getService })
-  const assetsPipeline = createAssetsPipeline({ store, dataSource, getService, getTool })
+  const assetsPipeline = createAssetsPipeline({ store, dataSource, getService, resolveTools: () => toolRegistry })
   const scheduler = createSelectionScheduler({ store, dataSource, threeGate, assetsPipeline })
   const dispatcher = createSelectionDispatcher({ store, dataSource, threeGate, assetsPipeline, scheduler })
   const http = createHttpHandler(dispatcher)
   return {
     dir,
     store,
+    toolRegistry,
     dataSource,
     threeGate,
     assetsPipeline,
@@ -89,7 +181,7 @@ describe('AssetsPipeline (script rewrite, image/video batch caps, omnimux-produc
       },
     }
 
-    const { store, assetsPipeline, cleanup } = makeStack(services, externalTools)
+    const { store, toolRegistry, assetsPipeline, cleanup } = makeStack(services, externalTools)
     try {
       const { added } = store.ingestProducts([
         {
@@ -124,9 +216,86 @@ describe('AssetsPipeline (script rewrite, image/video batch caps, omnimux-produc
       const syncRes = await assetsPipeline.syncToOmnimuxProducts({ productIds: [id] })
       assert.equal(syncRes.succeeded, 1)
       assert.equal(syncedPayloads.length, 1)
+      assert.equal(toolRegistry._batchCalls.length, 1, 'must dispatch via ctx.tools.execute batch contract')
+      assert.equal(toolRegistry._directExecuteCalls.length, 0, 'must not call toolDefinition.execute directly')
       assert.equal(store.getLibraryItem(id).syncedProductId, 'prod_synced_1')
     } finally {
       cleanup()
+    }
+  })
+
+  it('normalizes >40-char slash titles to satisfy NAME_MAX=40 and dispatches through ctx.tools.execute without direct-execute bypass', async () => {
+    const syncedPayloads = []
+    const { store, toolRegistry, assetsPipeline, cleanup } = makeStack(
+      {},
+      {
+        products_create: {
+          execute: async (payload) => {
+            if (!payload.name || payload.name.length > 40 || /[\\/\u0000-\u001f\u007f]/.test(payload.name)) {
+              throw Object.assign(new Error('display name must be at most 40 characters and contain no slashes'), { code: 'name-invalid' })
+            }
+            syncedPayloads.push(payload)
+            return { product: { id: 'prd_real_contract_1', name: payload.name } }
+          },
+        },
+      },
+    )
+
+    try {
+      const longTitle = 'Ultra Soft Travel Makeup Brush Set / 14-Piece Vegan Bristle Kit With Case Pro'
+      const { added } = store.ingestProducts([
+        {
+          productId: 'tt_long_001',
+          region: 'US',
+          title: longTitle,
+          category: 'Beauty & Personal Care -> Makeup Tools',
+          priceMin: 18.9,
+          sales7d: 420,
+          commissionRate: 15,
+        },
+      ])
+      const item = added[0]
+      const syncRes = await assetsPipeline.syncToOmnimuxProducts({ productIds: [item.id] })
+      assert.equal(syncRes.succeeded, 1, JSON.stringify(syncRes))
+      assert.equal(toolRegistry._batchCalls.length, 1)
+      assert.equal(toolRegistry._batchCalls[0].calls[0].name, 'products_create')
+      assert.equal(toolRegistry._directExecuteCalls.length, 0)
+
+      assert.equal(syncedPayloads.length, 1)
+      assert.ok(syncedPayloads[0].name.length <= PRODUCT_NAME_MAX)
+      assert.equal(syncedPayloads[0].name.includes('/'), false)
+      assert.equal(syncedPayloads[0].name, normalizeProductSyncName(longTitle, item.productId))
+      assert.equal(store.getLibraryItem(item.id).syncedProductId, 'prd_real_contract_1')
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('supports frozen 0.2.1-rc.3 single-call tools.execute and fails loudly when products_create is absent', async () => {
+    const legacy = makeStack(
+      {},
+      { products_create: { execute: async (payload) => ({ product: { id: 'prd_legacy', name: payload.name } }) } },
+      { legacySingle: true },
+    )
+    try {
+      const { added } = legacy.store.ingestProducts([{ productId: 'leg_1', region: 'US', title: 'Legacy Shell Product' }])
+      const res = await legacy.assetsPipeline.syncToOmnimuxProducts({ productIds: [added[0].id] })
+      assert.equal(res.succeeded, 1)
+      assert.equal(legacy.toolRegistry._legacyCalls.length, 1)
+      assert.equal(legacy.toolRegistry._directExecuteCalls.length, 0)
+    } finally {
+      legacy.cleanup()
+    }
+
+    const missing = makeStack({}, {})
+    try {
+      const { added } = missing.store.ingestProducts([{ productId: 'miss_1', region: 'US', title: 'Missing Tool Product' }])
+      await assert.rejects(
+        () => missing.assetsPipeline.syncToOmnimuxProducts({ productIds: [added[0].id] }),
+        (err) => err.code === 'needs-provider',
+      )
+    } finally {
+      missing.cleanup()
     }
   })
 

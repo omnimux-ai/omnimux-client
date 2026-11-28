@@ -268,6 +268,125 @@ function inventoryProblems(tree, cache) {
   ];
 }
 
+/**
+ * Pre-existing `dsh.manifest.json#capabilities.tools` drift outside #414 scope.
+ * Ratchet allows removals only; any newly missing or phantom tool fails immediately.
+ */
+export const MANIFEST_TOOLS_RATCHET = Object.freeze({
+  omnimux: {
+    missing: new Set([
+      'omnimux_video_submit',
+      'omnimux_image_submit',
+      'omnimux_audio_submit',
+      'omnimux_audio_voices',
+      'omnimux_social_data',
+      'omnimux_tiktok_video',
+      'omnimux_tiktok_user',
+      'omnimux_tiktok_posts',
+      'omnimux_tiktok_search',
+      'omnimux_tiktok_shop_search',
+      'omnimux_tiktok_shop_product',
+      'omnimux_instagram_post',
+      'omnimux_instagram_user',
+      'omnimux_instagram_posts',
+      'omnimux_instagram_search',
+      'omnimux_x_tweet',
+      'omnimux_x_user',
+      'omnimux_x_posts',
+      'omnimux_x_search',
+      'omnimux_youtube_video',
+      'omnimux_youtube_channel',
+      'omnimux_youtube_posts',
+      'omnimux_youtube_search',
+      'omnimux_accounts_list',
+      'omnimux_accounts_connect',
+      'omnimux_accounts_disconnect',
+      'omnimux_publish_presign',
+      'omnimux_accounts_creator_info',
+      'omnimux_publish_create',
+      'omnimux_publish_get',
+      'omnimux_inspiration_list',
+      'omnimux_inspiration_get',
+      'omnimux_inspiration_create',
+      'omnimux_inspiration_update',
+      'omnimux_inspiration_delete',
+      'omnimux_inspiration_upload_media',
+      'omnimux_inspiration_tags',
+      'omnimux_inspiration_status',
+      'omnimux_analytics_daily_metrics',
+      'omnimux_analytics_best_time',
+      'omnimux_analytics_frequency',
+      'omnimux_analytics_content_decay',
+      'omnimux_analytics_follower_stats',
+      'omnimux_analytics_posts',
+      'omnimux_analytics_sync_external',
+      'omnimux_analytics_inbox',
+      'omnimux_marketing_presets_search',
+      'omnimux_creative_templates_search',
+      'omnimux_creative_template_get',
+      'workbench_get_active_view',
+      'workbench_open_tab',
+    ]),
+    extra: new Set(['omnimux_page_fetch', 'omnimux_jev_decision']),
+  },
+  'omnimux-assets': {
+    missing: new Set(['assets_create', 'assets_update', 'assets_delete']),
+    extra: new Set(),
+  },
+  'omnimux-workflow': {
+    missing: new Set(['canvas_write_table_node', 'canvas_get_table_node']),
+    extra: new Set(),
+  },
+})
+
+/**
+ * Audit alignment between source-registered tools and `dsh.manifest.json#capabilities.tools`.
+ * @param {{
+ *   plugin: string,
+ *   codeTools: string[],
+ *   manifest: { capabilities?: { tools?: Array<string | { name?: string }> } } | null,
+ *   ratchet?: Record<string, { missing?: Set<string>, extra?: Set<string> }>,
+ * }} input
+ * @returns {{ errors: string[], warnings: string[], manifestToolCount: number }}
+ */
+export function auditManifestTools({ plugin, codeTools, manifest, ratchet = MANIFEST_TOOLS_RATCHET }) {
+  const errors = []
+  const warnings = []
+  if (!manifest) {
+    errors.push(`[${plugin}] 缺少或无法解析 dsh.manifest.json`)
+    return { errors, warnings, manifestToolCount: 0 }
+  }
+  const declaredList = Array.isArray(manifest.capabilities?.tools) ? manifest.capabilities.tools : []
+  const manifestSet = new Set(
+    declaredList.map((entry) => (typeof entry === 'string' ? entry : entry?.name)).filter(Boolean),
+  )
+  const codeSet = new Set(codeTools)
+  const pluginRatchet = ratchet?.[plugin]
+
+  const missingInManifest = [...codeSet].filter((t) => !manifestSet.has(t)).sort()
+  const extraInManifest = [...manifestSet].filter((t) => !codeSet.has(t)).sort()
+
+  const newMissing = missingInManifest.filter((t) => !pluginRatchet?.missing?.has(t))
+  const ratchetedMissing = missingInManifest.filter((t) => pluginRatchet?.missing?.has(t))
+  const newExtra = extraInManifest.filter((t) => !pluginRatchet?.extra?.has(t))
+  const ratchetedExtra = extraInManifest.filter((t) => pluginRatchet?.extra?.has(t))
+
+  if (newMissing.length > 0) {
+    errors.push(`[${plugin}] dsh.manifest.json#capabilities.tools 漏列已注册工具: ${newMissing.join(', ')}`)
+  }
+  if (newExtra.length > 0) {
+    errors.push(`[${plugin}] dsh.manifest.json#capabilities.tools 包含源码未注册工具: ${newExtra.join(', ')}`)
+  }
+  if (ratchetedMissing.length > 0) {
+    warnings.push(`[${plugin}] 存量 dsh.manifest.json 漏列工具 (${ratchetedMissing.length}): ${ratchetedMissing.join(', ')}`)
+  }
+  if (ratchetedExtra.length > 0) {
+    warnings.push(`[${plugin}] 存量 dsh.manifest.json 多列工具 (${ratchetedExtra.length}): ${ratchetedExtra.join(', ')}`)
+  }
+
+  return { errors, warnings, manifestToolCount: manifestSet.size }
+}
+
 // 主体审计流程
 async function runAudits() {
   console.log(`${colors.bold}${colors.cyan}🚀 启动 OmniMux 全量插件 Agent 工具与双面交付静态扫描${colors.reset}`);
@@ -361,6 +480,32 @@ async function runAudits() {
       totalWarnings++;
     } else if (codeTools.length > 0) {
       log.pass(`[${plugin}] 实装工具与 inventory.md 登记 100% 对齐`);
+    }
+
+    // E. dsh.manifest.json#capabilities.tools 与源码注册工具对齐校验
+    const manifestPath = join(pluginDir, 'dsh.manifest.json');
+    if (existsSync(manifestPath)) {
+      let manifest = null;
+      try {
+        manifest = JSON.parse(readFileSync(manifestPath, 'utf-8'));
+      } catch (err) {
+        log.fail(`[${plugin}] dsh.manifest.json 解析失败: ${err.message}`);
+        totalErrors++;
+      }
+      if (manifest) {
+        const manifestAudit = auditManifestTools({ plugin, codeTools, manifest });
+        for (const msg of manifestAudit.errors) {
+          log.fail(msg);
+          totalErrors++;
+        }
+        for (const msg of manifestAudit.warnings) {
+          log.warn(msg);
+          totalWarnings++;
+        }
+        if (manifestAudit.errors.length === 0 && manifestAudit.warnings.length === 0) {
+          log.pass(`[${plugin}] dsh.manifest.json 工具清单 (${manifestAudit.manifestToolCount} 个) 与源码 100% 对齐`);
+        }
+      }
     }
   }
 

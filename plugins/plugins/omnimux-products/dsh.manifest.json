@@ -57,6 +57,13 @@
         "category": "ecommerce",
         "isWriteOperation": false,
         "requiresAuth": false
+      },
+      {
+        "name": "products_delete",
+        "summary": "删除指定商品记录（破坏性操作需 confirm=true，不删除磁盘原文件）",
+        "category": "ecommerce",
+        "isWriteOperation": true,
+        "requiresAuth": false
       }
     ],
     "seamsProvided": [],

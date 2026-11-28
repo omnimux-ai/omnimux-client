@@ -160,7 +160,7 @@
         "componentPath": "src/client/sidebar-entry.js"
       },
       {
-        "target": "shell.overlay",
+        "target": "betterSidebar.registerTab",
         "componentPath": "src/client/TiktokSelectionStage.jsx"
       }
     ],

@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0.0",
-  "updatedAt": "2026-11-26T12:31:18.607Z",
+  "updatedAt": "2026-11-28T03:01:15.442Z",
   "topology": {
     "tiers": [
       {
@@ -24,7 +24,7 @@
     ],
     "summary": {
       "totalPlugins": 15,
-      "totalTools": 112,
+      "totalTools": 121,
       "totalSeams": 10
     }
   },
@@ -117,6 +117,10 @@
           {
             "target": "shell.overlay",
             "componentPath": "src/client/AppsStage.jsx"
+          },
+          {
+            "target": "tool.call.toolview",
+            "componentPath": "src/client/social-toolview/index.js"
           }
         ],
         "storageDomains": [
@@ -129,49 +133,6 @@
         "systemBinaries": []
       },
       "path": "plugins/omnimux"
-    },
-    {
-      "id": "omnimux-analytics",
-      "name": "omnimux-analytics",
-      "version": "0.2.2",
-      "tier": "tier-0-hub",
-      "entrypoint": "src/index.js",
-      "status": "active",
-      "description": "统计使用数据，提供社媒发布效果与互动趋势看板。",
-      "tags": [
-        "analytics",
-        "telemetry",
-        "umami",
-        "dashboard",
-        "social",
-        "tracking",
-        "metrics"
-      ],
-      "capabilities": {
-        "tools": [],
-        "seamsProvided": [],
-        "seamsConsumed": [
-          "omnimuxAnalytics"
-        ],
-        "slots": [
-          {
-            "target": "sidebar.extra",
-            "componentPath": "src/client/sidebar-entry.js"
-          },
-          {
-            "target": "shell.overlay",
-            "componentPath": "src/client/AnalyticsStage.jsx"
-          }
-        ],
-        "storageDomains": []
-      },
-      "dependencies": {
-        "requiredPlugins": [
-          "omnimux"
-        ],
-        "systemBinaries": []
-      },
-      "path": "plugins/omnimux-analytics"
     },
     {
       "id": "omnimux-accounts",
@@ -189,7 +150,22 @@
         "matrix"
       ],
       "capabilities": {
-        "tools": [],
+        "tools": [
+          {
+            "name": "accounts_list",
+            "summary": "列出已连接的社媒账号及其本地分组与 Agent 可用状态",
+            "category": "accounts",
+            "isWriteOperation": false,
+            "requiresAuth": false
+          },
+          {
+            "name": "accounts_update_group",
+            "summary": "更新指定社媒账号的业务分组名称",
+            "category": "accounts",
+            "isWriteOperation": true,
+            "requiresAuth": false
+          }
+        ],
         "seamsProvided": [],
         "seamsConsumed": [
           "identity",
@@ -201,7 +177,7 @@
             "componentPath": "src/client/sidebar-entry.js"
           },
           {
-            "target": "shell.overlay",
+            "target": "betterSidebar.registerTab",
             "componentPath": "src/client/AccountsStage.jsx"
           }
         ],
@@ -216,6 +192,64 @@
         "systemBinaries": []
       },
       "path": "plugins/omnimux-accounts"
+    },
+    {
+      "id": "omnimux-analytics",
+      "name": "omnimux-analytics",
+      "version": "0.2.2",
+      "tier": "tier-1-app",
+      "entrypoint": "src/index.js",
+      "status": "active",
+      "description": "统计使用数据，提供社媒发布效果与互动趋势看板。",
+      "tags": [
+        "analytics",
+        "telemetry",
+        "umami",
+        "dashboard",
+        "social",
+        "tracking",
+        "metrics"
+      ],
+      "capabilities": {
+        "tools": [
+          {
+            "name": "analytics_query_metrics",
+            "summary": "按时间窗口、平台或账号获取上游社媒分析原始载荷",
+            "category": "analytics",
+            "isWriteOperation": false,
+            "requiresAuth": true
+          },
+          {
+            "name": "analytics_get_summary",
+            "summary": "获取含逐源可用性状态的社媒分析汇总原始载荷",
+            "category": "analytics",
+            "isWriteOperation": false,
+            "requiresAuth": true
+          }
+        ],
+        "seamsProvided": [],
+        "seamsConsumed": [
+          "omnimuxAnalytics"
+        ],
+        "slots": [
+          {
+            "target": "sidebar.extra",
+            "componentPath": "src/client/sidebar-entry.js"
+          },
+          {
+            "target": "betterSidebar.registerTab",
+            "componentPath": "src/client/AnalyticsStage.jsx"
+          }
+        ],
+        "storageDomains": []
+      },
+      "dependencies": {
+        "requiredPlugins": [
+          "omnimux"
+        ],
+        "systemBinaries": []
+      },
+      "path": "plugins/omnimux-analytics"
     },
     {
       "id": "omnimux-assets",
@@ -590,6 +624,18 @@
             "summary": "Create and crawl inspiration from social media URLs (TikTok, Instagram, YouTube, X), download media and trigger AI analysis."
           },
           {
+            "name": "inspiration_update",
+            "summary": "Update inspiration item metadata including title, content, tags, or favorite status."
+          },
+          {
+            "name": "inspiration_delete",
+            "summary": "Delete an inspiration item and recycle its local media cache (destructive; requires confirm=true)."
+          },
+          {
+            "name": "inspiration_favorite",
+            "summary": "Set the favorite status of an inspiration item."
+          },
+          {
             "name": "inspiration_rival_accounts",
             "summary": "List monitored rival accounts with platform, handle, followers, refresh state and potential post count."
           },
@@ -626,8 +672,12 @@
             "componentPath": "src/client/sidebar-entry.js"
           },
           {
-            "target": "shell.overlay",
+            "target": "betterSidebar.registerTab",
             "componentPath": "src/client/InspirationStage.jsx"
+          },
+          {
+            "target": "tool.call.toolview",
+            "componentPath": "src/client/social-toolview.js"
           }
         ],
         "storageDomains": [
@@ -1032,7 +1082,7 @@
             "componentPath": "src/client/sidebar-entry.js"
           },
           {
-            "target": "shell.overlay",
+            "target": "betterSidebar.registerTab",
             "componentPath": "src/client/PibrowseStage.jsx"
           }
         ],
@@ -1107,6 +1157,13 @@
             "summary": "读取商品关联的多模态素材",
             "category": "ecommerce",
             "isWriteOperation": false,
+            "requiresAuth": false
+          },
+          {
+            "name": "products_delete",
+            "summary": "删除指定商品记录（破坏性操作需 confirm=true，不删除磁盘原文件）",
+            "category": "ecommerce",
+            "isWriteOperation": true,
             "requiresAuth": false
           }
         ],
@@ -1307,7 +1364,7 @@
             "componentPath": "src/client/sidebar-entry.js"
           },
           {
-            "target": "shell.overlay",
+            "target": "betterSidebar.registerTab",
             "componentPath": "src/client/TiktokSelectionStage.jsx"
           }
         ],
@@ -1543,6 +1600,13 @@
             "requiresAuth": false
           },
           {
+            "name": "video_depth",
+            "summary": "为本地或远程视频生成灰度深度视频（Depth Anything 快捷入口）",
+            "category": "video",
+            "isWriteOperation": true,
+            "requiresAuth": false
+          },
+          {
             "name": "video_analyze",
             "summary": "解析视频结构并输出结构化五维拆解与分镜数组（Skill 真源 + JSON Schema）",
             "category": "video",
@@ -1686,7 +1750,7 @@
             "componentPath": "src/client/sidebar-entry.js"
           },
           {
-            "target": "shell.overlay",
+            "target": "betterSidebar.registerTab",
             "componentPath": "src/client/PublishStage.jsx"
           }
         ],
