@@ -644,6 +644,7 @@ function pipeRange(opts) {
  *   analyzeInspiration?: Function,
  *   rivalDispatcher?: { owns: (pathname: string) => boolean, dispatch: Function },
  *   inspirationShare?: () => { publishLocal: Function } | undefined,
+ *   inspirationCatalog?: () => { getItem: Function, fetchMedia: Function } | undefined,
  * }} deps
  */
 export function createLocalInspirationDispatcher(deps) {
@@ -680,6 +681,7 @@ export function createLocalInspirationDispatcher(deps) {
     // this one still gets picked up, and a missing one is reported instead of
     // silently skipping the share.
     inspirationShare: deps.inspirationShare,
+    inspirationCatalog: deps.inspirationCatalog,
     detectPlatformFromUrl,
     formatErrorMessage,
   }

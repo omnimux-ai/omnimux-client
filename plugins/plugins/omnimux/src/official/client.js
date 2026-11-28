@@ -141,7 +141,7 @@ export function createOfficialClient(deps) {
    * JSON-parses the body. 401/403 still throw needs-omnimux so the Host
    * surface can open the login gate.
    * @param {string} path
-   * @param {{ method?: string, headers?: Record<string, string> }} [opts]
+   * @param {{ method?: string, headers?: Record<string, string>, signal?: AbortSignal }} [opts]
    */
   async function withPatRaw(path, opts = {}) {
     const access = await deps.resolveAccess()
@@ -156,6 +156,7 @@ export function createOfficialClient(deps) {
     const method = opts.method || 'GET'
     const response = await fetcher(`${siteBaseUrl}${path}`, {
       method,
+      ...(opts.signal ? { signal: opts.signal } : {}),
       headers: { ...headers, ...opts.headers },
     })
     if (response.status === 402) {

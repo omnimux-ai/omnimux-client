@@ -6,6 +6,7 @@ import {
   SOCIAL_DATA_CATALOG,
   SOCIAL_DATA_CHANNEL_UNAVAILABLE_MESSAGE,
   SOCIAL_DATA_GROUP,
+  extractTikTokAwemeId,
   extractTweetId,
   extractTikTokShopProductId,
   extractYouTubeVideoId,
@@ -254,6 +255,14 @@ describe('social data catalog', () => {
     assert.equal(resolveSocialDataModel({ platform: 'tiktok', capability: 'video', url: 'https://tiktok.com/@a/video/7123' }).model, 'tiktok-video')
     assert.equal(resolveSocialDataModel({ platform: 'tiktok', capability: 'video', url: 'https://tiktok.com/@a/video/7123' }).field, 'aweme_id')
     assert.equal(resolveSocialDataModel({ platform: 'tiktok', capability: 'video', url: 'https://tiktok.com/@a/video/7123' }).value, '7123')
+    assert.equal(resolveSocialDataModel({ platform: 'tiktok', capability: 'video', url: 'https://www.tiktok.com/@kateestills/photo/7555186216296008990?is_from_webapp=1' }).value, '7555186216296008990')
+    assert.equal(extractTikTokAwemeId('https://www.tiktok.com/@kateestills/photo/7555186216296008990'), '7555186216296008990')
+    assert.equal(extractTikTokAwemeId('https://www.tiktok.com/photo/7555186216296008990'), '7555186216296008990')
+    assert.equal(extractTikTokAwemeId('https://m.tiktok.com/v/7555186216296008990.html'), '7555186216296008990')
+    assert.equal(extractTikTokAwemeId('https://www.tiktok.com/player/v1/7555186216296008990?autoplay=1'), '7555186216296008990')
+    assert.equal(extractTikTokAwemeId('https://www.tiktok.com/@kateestills?share_item_id=7555186216296008990'), '7555186216296008990')
+    assert.equal(extractTikTokAwemeId('https://www.tiktok.com/@kateestills'), '')
+    assert.equal(extractTikTokAwemeId('https://www.tiktok.com/about'), '')
     assert.equal(resolveSocialDataModel({ platform: 'tiktok', capability: 'user', id: 'ada' }).model, 'tiktok-user')
     assert.equal(resolveSocialDataModel({ platform: 'tiktok', capability: 'user', id: 'ada' }).field, 'uniqueId')
     assert.equal(resolveSocialDataModel({ platform: 'tiktok', capability: 'posts', id: 'ada' }).field, 'unique_id')

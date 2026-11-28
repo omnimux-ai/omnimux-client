@@ -10,6 +10,7 @@ import { FALLBACK_SWITCH_ENV, fallbackResolveSocial, isSocialFallbackEnabled } f
 import { parseSocialMeta } from './http-handlers.js'
 import { formatPlatformName } from './client/feed-helpers.js'
 import { en, zh } from './client/locales.js'
+import { resolveSocialDataModel } from '../../omnimux/src/official/social-data.js'
 
 const X_VIDEO_ENVELOPE = {
   platform: 'x',
@@ -71,12 +72,13 @@ function makePaths(tmp) {
   }
 }
 
-async function importUrl({ socialFetcher, paths, url, body = {}, fetcher = mockFetcher }) {
+async function importUrl({ socialFetcher, inspirationCatalog, paths, url, body = {}, fetcher = mockFetcher }) {
   const store = createLocalStore({ paths })
   const dispatcher = createLocalInspirationDispatcher({
     resolver: offlineResolver,
     localStore: store,
     socialFetcher,
+    inspirationCatalog,
     fetcher,
   })
   const res = await dispatcher.dispatch({
@@ -945,5 +947,312 @@ describe('social import — upstream abort is not caller cancellation (#3369)', 
     })
     await assert.rejects(fetcher({ platform: 'x', url: 'https://x.com/a/status/12345', signal: controller.signal }), { name: 'AbortError' })
     assert.equal(fallbackCalls, 0)
+  })
+})
+
+describe('TikTok photo carousel & cloud catalog localization (#454)', () => {
+  const JPEG_BYTES = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01])
+  let tmp
+  let paths
+
+  beforeEach(() => {
+    tmp = mkdtempSync(join(tmpdir(), 'omnimux-tiktok-carousel-'))
+    paths = makePaths(tmp)
+  })
+
+  after(() => {
+    rmSync(tmp, { recursive: true, force: true })
+  })
+
+  it('imports TikTok /photo/ carousel through real createSocialFetcher + resolveSocialDataModel, skipping HEIC and BGM', async () => {
+    const resolvedModels = []
+    const socialFetcher = createSocialFetcher({
+      resolveSocialData: () => ({
+        fetch: async ({ platform, capability, url }) => {
+          const model = resolveSocialDataModel({ platform, capability, url })
+          resolvedModels.push(model)
+          return {
+            platform,
+            capability,
+            data: {
+              data: {
+                aweme_detail: {
+                  aweme_type: 150,
+                  desc: 'Relationship Mindset Shift carousel',
+                  author: { nickname: 'Kate', unique_id: 'kateestills' },
+                  statistics: { digg_count: 8800, comment_count: 190, share_count: 420, play_count: 54000 },
+                  video: {
+                    play_addr: { url_list: ['https://v16-webapp.tiktokcdn.com/bgm-audio.mp3'] },
+                    cover: { url_list: ['https://p16-sign.tiktokcdn.com/cover.heic', 'https://p16-sign.tiktokcdn.com/cover.jpeg'] },
+                  },
+                  image_post_info: {
+                    images: [
+                      { display_image: { url_list: ['https://p16-sign.tiktokcdn.com/slide1.heic', 'https://p16-sign.tiktokcdn.com/slide1.jpeg'] } },
+                      { display_image: { url_list: ['https://p16-sign.tiktokcdn.com/slide2.jpeg'] } },
+                    ],
+                  },
+                },
+              },
+            },
+          }
+        },
+      }),
+    })
+
+    const { res } = await importUrl({
+      socialFetcher,
+      paths,
+      url: 'https://www.tiktok.com/@kateestills/photo/7555186216296008990?is_from_webapp=1',
+      fetcher: async () => ({ ok: true, status: 200, arrayBuffer: async () => JPEG_BYTES }),
+    })
+
+    assert.equal(resolvedModels.length, 1)
+    assert.deepEqual(resolvedModels[0], {
+      model: 'tiktok-video',
+      platform: 'tiktok',
+      capability: 'video',
+      field: 'aweme_id',
+      value: '7555186216296008990',
+      extras: {},
+    })
+    assert.equal(res.status, 200)
+    assert.equal(res.body.data.type, 'image')
+    assert.equal(res.body.data.content_shape, 'gallery')
+    assert.equal(res.body.data.media_items.length, 2)
+    assert.ok(res.body.data.media_items.every((entry) => entry.type === 'image'))
+    assert.equal(readdirSync(paths.imagesDir).length, 2)
+    assert.equal(readdirSync(paths.videosDir).length, 0)
+    assert.equal(res.body.data.local_paths.video, undefined)
+  })
+
+  it('localizes 6-slide cloud carousel via inspirationCatalog without socialFetcher even when source_url lacks aweme_id', async () => {
+    const fetchMediaKeys = []
+    const getItemIds = []
+    const slideKeys = Array.from({ length: 6 }, (_, i) => `/omnimux/inspiration/media/slides/slide_${i + 1}`)
+    const inspirationCatalog = () => ({
+      getItem: async (id) => {
+        getItemIds.push(id)
+        return {
+          id,
+          type: 'image',
+          content_shape: 'gallery',
+          title: 'Cloud 6-slide Carousel',
+          content: 'Slide body text',
+          source_platform: 'tiktok',
+          source_url: 'https://www.tiktok.com/@kateestills',
+          cover_key: slideKeys[0],
+          media_keys: slideKeys,
+          author: { name: 'Kate', handle: 'kateestills' },
+        }
+      },
+      fetchMedia: async (key) => {
+        fetchMediaKeys.push(key)
+        return new Response(JPEG_BYTES, { status: 200, headers: { 'Content-Type': 'image/jpeg' } })
+      },
+    })
+
+    const { res } = await importUrl({
+      inspirationCatalog,
+      paths,
+      url: 'https://www.tiktok.com/@kateestills',
+      body: { cloud_id: 'cloud_tt_6slides', return_existing: true },
+    })
+
+    assert.equal(res.status, 200)
+    assert.deepEqual(getItemIds, ['cloud_tt_6slides'])
+    assert.equal(fetchMediaKeys.length, 6)
+    assert.equal(res.body.data.type, 'image')
+    assert.equal(res.body.data.content_shape, 'gallery')
+    assert.equal(res.body.data.media_items.length, 6)
+    assert.equal(readdirSync(paths.imagesDir).length, 6)
+    assert.equal(res.body.data.local_paths.cover, res.body.data.local_paths.image_1)
+  })
+
+  it('checks resolved duplicate before downloading cloud catalog media', async () => {
+    const store = createLocalStore({ paths })
+    store.add({
+      title: 'Already Localized',
+      type: 'image',
+      content_shape: 'gallery',
+      source_platform: 'tiktok',
+      source_url: 'https://www.tiktok.com/@kateestills/photo/7555186216296008990',
+      media_items: [{ type: 'image', url: '/omnimux/inspiration/local/media/images/existing.jpg' }],
+      local_paths: { image_1: join(paths.imagesDir, 'existing.jpg') },
+      import_status: 'ready',
+    })
+    let mediaDownloads = 0
+    const dispatcher = createLocalInspirationDispatcher({
+      resolver: offlineResolver,
+      localStore: store,
+      inspirationCatalog: () => ({
+        getItem: async () => ({
+          id: 'cloud_dup',
+          type: 'image',
+          content_shape: 'gallery',
+          title: 'Cloud Duplicate',
+          source_url: 'https://www.tiktok.com/@kateestills/photo/7555186216296008990',
+          media_keys: ['/omnimux/inspiration/media/s1.jpg'],
+        }),
+        fetchMedia: async () => {
+          mediaDownloads += 1
+          return new Response(JPEG_BYTES, { status: 200 })
+        },
+      }),
+    })
+
+    const res = await dispatcher.dispatch({
+      method: 'POST',
+      url: '/omnimux/inspiration/local/import-url',
+      body: {
+        url: 'https://www.tiktok.com/@kateestills',
+        cloud_id: 'cloud_dup',
+        return_existing: true,
+        auto_analyze: false,
+      },
+    })
+
+    assert.equal(res.status, 200)
+    assert.equal(res.body.existing, true)
+    assert.equal(mediaDownloads, 0)
+  })
+
+  it('falls back to fetchSocialMeta when catalog fails with non-auth error or declares invalid media path', async () => {
+    const cases = [
+      {
+        suffix: '991',
+        catalog: () => ({
+          getItem: async () => { throw new Error('cloud catalog timeout') },
+          fetchMedia: async () => { throw new Error('unreachable') },
+        }),
+      },
+      {
+        suffix: '993',
+        catalog: () => ({
+          getItem: async () => ({
+            id: 'cloud_encoded_traversal',
+            type: 'image',
+            content_shape: 'gallery',
+            media_keys: ['/omnimux/inspiration/media/%2e%2e/secret.jpg'],
+          }),
+          fetchMedia: async () => new Response(JPEG_BYTES, { status: 200 }),
+        }),
+      },
+      {
+        suffix: '994',
+        catalog: () => ({
+          getItem: async () => ({
+            id: 'cloud_empty_prefix',
+            type: 'image',
+            content_shape: 'gallery',
+            media_keys: ['/omnimux/inspiration/media/'],
+          }),
+          fetchMedia: async () => new Response(JPEG_BYTES, { status: 200 }),
+        }),
+      },
+    ]
+    for (const entry of cases) {
+      let socialCalls = 0
+      const { res } = await importUrl({
+        inspirationCatalog: entry.catalog,
+        socialFetcher: async () => {
+          socialCalls += 1
+          return {
+            platform: 'tiktok',
+            capability: 'video',
+            data: {
+              title: 'Fallback slide',
+              images: [`https://p16-sign.tiktokcdn.com/fallback-${entry.suffix}.jpg`],
+            },
+          }
+        },
+        fetcher: async () => ({ ok: true, status: 200, arrayBuffer: async () => JPEG_BYTES }),
+        paths,
+        url: `https://www.tiktok.com/@kateestills/photo/7555186216296008${entry.suffix}`,
+        body: { cloud_id: `cloud_fallback_${entry.suffix}` },
+      })
+      assert.equal(res.status, 200)
+      assert.equal(socialCalls, 1)
+      assert.equal(res.body.data.media_items.length, 1)
+    }
+  })
+
+  it('propagates 401 needs-omnimux without fallback and cleans partial files on auth or download failure', async () => {
+    let socialCalls = 0
+    const authRes = await importUrl({
+      inspirationCatalog: () => ({
+        getItem: async () => {
+          throw Object.assign(new Error('not logged in'), { code: 'needs-omnimux', status: 401 })
+        },
+        fetchMedia: async () => new Response(JPEG_BYTES, { status: 200 }),
+      }),
+      socialFetcher: async () => {
+        socialCalls += 1
+        return { platform: 'tiktok', data: {} }
+      },
+      paths,
+      url: 'https://www.tiktok.com/@kateestills/photo/7555186216296008990',
+      body: { cloud_id: 'cloud_401' },
+    })
+    assert.equal(authRes.res.status, 401)
+    assert.equal(authRes.res.body.code, 'needs-omnimux')
+    assert.equal(socialCalls, 0)
+
+    let mediaAttempt = 0
+    const partialRes = await importUrl({
+      inspirationCatalog: () => ({
+        getItem: async () => ({
+          id: 'cloud_partial',
+          type: 'image',
+          content_shape: 'gallery',
+          media_keys: ['/omnimux/inspiration/media/s1.jpg', '/omnimux/inspiration/media/s2.jpg'],
+        }),
+        fetchMedia: async () => {
+          mediaAttempt += 1
+          if (mediaAttempt === 1) return new Response(JPEG_BYTES, { status: 200 })
+          throw new Error('slide 2 stream failed')
+        },
+      }),
+      socialFetcher: async () => ({
+        platform: 'tiktok',
+        data: { text: 'metadata only after cloud rollback', title: 'Rollback Check' },
+      }),
+      paths,
+      url: 'https://www.tiktok.com/@kateestills/photo/7555186216296008990',
+      body: { cloud_id: 'cloud_partial' },
+    })
+    assert.equal(partialRes.res.status, 200)
+    assert.equal(partialRes.res.body.media_degraded, true)
+    assert.equal(existsSync(paths.imagesDir) ? readdirSync(paths.imagesDir).length : 0, 0)
+  })
+
+  it('resolves TikWM photo carousel images cleanly in fallbackResolveSocial', async () => {
+    const resolved = await fallbackResolveSocial({
+      platform: 'tiktok',
+      url: 'https://www.tiktok.com/@kateestills/photo/7555186216296008990',
+      allowNetwork: true,
+      fetchImpl: async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          data: {
+            title: 'TikWM Carousel',
+            cover: 'https://p16-sign.tiktokcdn.com/cover.jpg',
+            play: 'https://v16.tiktokcdn.com/bgm.mp3',
+            images: [
+              'https://p16-sign.tiktokcdn.com/slide1.jpg',
+              'https://p16-sign.tiktokcdn.com/slide2.jpg',
+              'https://p16-sign.tiktokcdn.com/slide3.jpg',
+            ],
+          },
+        }),
+      }),
+    })
+    assert.equal(resolved.platform, 'tiktok')
+    assert.equal(resolved.data.video_url, '')
+    assert.deepEqual(resolved.data.images, [
+      'https://p16-sign.tiktokcdn.com/slide1.jpg',
+      'https://p16-sign.tiktokcdn.com/slide2.jpg',
+      'https://p16-sign.tiktokcdn.com/slide3.jpg',
+    ])
   })
 })

@@ -21,7 +21,8 @@
       { "name": "decisions", "interfaceDoc": "ctx.get('decisions').evaluate(params)" },
       { "name": "pageFetch", "interfaceDoc": "ctx.get('pageFetch').fetch({ url }) → { mode, model, url, title, pageContent }" },
       { "name": "omnimuxAccounts", "interfaceDoc": "ctx.get('omnimuxAccounts').list({ provider }) → { accounts }" },
-      { "name": "omnimuxAnalytics", "interfaceDoc": "ctx.get('omnimuxAnalytics').dailyMetrics({ fromDate, toDate, platform, timezone, account_ids }) / .posts({ post_id, platform, sortBy, sortOrder, page, limit })" }
+      { "name": "omnimuxAnalytics", "interfaceDoc": "ctx.get('omnimuxAnalytics').dailyMetrics({ fromDate, toDate, platform, timezone, account_ids }) / .posts({ post_id, platform, sortBy, sortOrder, page, limit })" },
+      { "name": "inspirationCatalog", "interfaceDoc": "ctx.get('inspirationCatalog').getItem(id, opts?) / .fetchMedia(keyOrPath, opts?)" }
     ],
     "seamsConsumed": [],
     "slots": [

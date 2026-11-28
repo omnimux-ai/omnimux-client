@@ -3,6 +3,8 @@
  * Verticals must not import this file; they hit Host `/omnimux/inspiration`.
  */
 
+import { OmnimuxError } from '../media/errors.js'
+
 const API = '/api/inspiration/v1'
 const HOST_MEDIA = '/omnimux/inspiration/media/'
 const SITE_MEDIA = '/api/inspiration/v1/media/'
@@ -491,4 +493,104 @@ export function mediaKeyFromHostPath(pathname) {
   const prefix = '/omnimux/inspiration/media/'
   if (!pathname.startsWith(prefix)) return ''
   return pathname.slice(prefix.length)
+}
+
+/**
+ * Normalize a cloud inspiration media address or key into a safe relative storage key.
+ * Rejects traversal segments, backslashes, query/fragment injection, and third-party origins.
+ * @param {unknown} raw
+ * @returns {string}
+ */
+export function normalizeCloudMediaKey(raw) {
+  if (typeof raw !== 'string') return ''
+  const value = raw.trim()
+  if (
+    !value
+    || /[\u0000-\u001f\u007f\\?#]/.test(value)
+    || value.includes('..')
+    || /(?:^|\/)(?:\.|%2e){1,2}(?:\/|$)/i.test(value)
+  ) {
+    return ''
+  }
+  let key = ''
+  if (value.startsWith(HOST_MEDIA)) {
+    key = value.slice(HOST_MEDIA.length)
+  } else if (value.startsWith(SITE_MEDIA)) {
+    key = value.slice(SITE_MEDIA.length)
+  } else if (/^https?:\/\//i.test(value)) {
+    try {
+      const parsed = new URL(value)
+      const host = parsed.hostname.toLowerCase()
+      if (
+        (host !== 'omnimux.ai' && host !== 'www.omnimux.ai')
+        || parsed.username
+        || parsed.password
+        || parsed.search
+        || parsed.hash
+        || !parsed.pathname.startsWith(SITE_MEDIA)
+      ) {
+        return ''
+      }
+      key = parsed.pathname.slice(SITE_MEDIA.length)
+    } catch (err) {
+      console.debug?.('[omnimux] normalizeCloudMediaKey invalid URL:', err?.message || err)
+      return ''
+    }
+  } else if (value.startsWith('/') || /^[a-z][a-z\d+.-]*:/i.test(value)) {
+    return ''
+  } else {
+    key = value
+  }
+  if (!key || key.startsWith('/')) return ''
+  const segments = key.split('/')
+  if (segments.some((segment) => !segment || segment === '.' || segment === '..')) return ''
+  try {
+    const decoded = decodeURIComponent(key)
+    if (/[\u0000-\u001f\u007f\\]/.test(decoded)) return ''
+    if (decoded.split('/').some((segment) => segment === '.' || segment === '..')) return ''
+  } catch (err) {
+    console.debug?.('[omnimux] normalizeCloudMediaKey invalid encoding:', err?.message || err)
+    return ''
+  }
+  return key
+}
+
+/**
+ * Read-only cloud inspiration catalog seam exposed to domain plugins (`ctx.get('inspirationCatalog')`).
+ * Keeps gateway/PAT credentials and cloud URL shapes confined inside the Hub.
+ * @param {{ client: { withPat: Function, withPatRaw: Function } }} deps
+ */
+export function createInspirationCatalogApi({ client }) {
+  return {
+    /**
+     * @param {string | number} id
+     * @param {{ signal?: AbortSignal }} [opts]
+     */
+    async getItem(id, opts = {}) {
+      const cleanId = String(id ?? '').trim()
+      if (!/^[A-Za-z0-9_-]{1,128}$/.test(cleanId)) {
+        throw new OmnimuxError('omnimux-invalid-request', 'invalid cloud inspiration id')
+      }
+      const raw = await client.withPat(
+        `${API}/inspirations/${encodeURIComponent(cleanId)}`,
+        opts?.signal ? { signal: opts.signal } : {},
+      )
+      const data = responseData(rewriteMediaUrlsForHost(raw))
+      return data && typeof data.item === 'object' && !Array.isArray(data.item) && !data.id ? data.item : data
+    },
+    /**
+     * @param {string} keyOrPath
+     * @param {{ signal?: AbortSignal }} [opts]
+     */
+    async fetchMedia(keyOrPath, opts = {}) {
+      const key = normalizeCloudMediaKey(keyOrPath)
+      if (!key) {
+        throw new OmnimuxError('omnimux-invalid-request', 'invalid cloud media key')
+      }
+      return client.withPatRaw(
+        `${SITE_MEDIA}${key}`,
+        opts?.signal ? { signal: opts.signal } : {},
+      )
+    },
+  }
 }

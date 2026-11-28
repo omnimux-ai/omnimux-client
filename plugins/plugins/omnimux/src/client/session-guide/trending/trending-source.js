@@ -237,7 +237,7 @@ export function getInspirationFingerprints(row) {
 
   // 1. 真实数字 TikTok ID
   const sourceUrl = typeof row.source_url === 'string' ? row.source_url.trim() : ''
-  const urlMatch = sourceUrl.match(/\/video\/(\d{15,22})/)
+  const urlMatch = sourceUrl.match(/\/(?:video|photo)\/(\d{15,22})/)
   if (urlMatch) {
     fingerprints.push(`tt:${urlMatch[1]}`)
   }

@@ -15,6 +15,7 @@ import { createOfficialClient } from './client.js'
 import { formatSocialSeatToolError } from './provider.js'
 import {
   createInspiration,
+  createInspirationCatalogApi,
   deleteInspiration,
   getInspiration,
   inspirationStatus,
@@ -82,6 +83,7 @@ export function mountOfficial(ctx, deps) {
       siteBaseUrl: deps.siteBaseUrl,
       resolveApiKey: deps.resolveApiKey ?? (() => env.OMNIMUX_API_KEY || env.OMNIMUX_TOKEN),
     }))
+    ctx.provide('inspirationCatalog', createInspirationCatalogApi({ client }))
     ctx.provide('socialData', {
       // Same capability assertion the tool wrapper runs, so a consumer of the
       // seam cannot reach the upstream while `omnimux_social_data` is disabled.

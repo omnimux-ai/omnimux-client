@@ -490,32 +490,9 @@ async function writeBody(response, tempPath, maxBytes, url, signal) {
   throw new Error('Unsupported response body for media download')
 }
 
-/**
- * Download a remote URL into a target local destination safely.
- *
- * The target must be a public http(s) URL whose host resolves only to public
- * addresses, every redirect hop is re-validated, the response must look like
- * media, the transfer is bounded by a wall-clock timeout and a byte ceiling, and
- * no partial file is left behind on any failure.
- * @param {string} url
- * @param {string} destDir
- * @param {{
- *   prefix?: string,
- *   ext?: string,
- *   fetcher?: typeof fetch,
- *   maxBytes?: number,
- *   timeoutMs?: number,
- *   resolver?: Function,
- *   signal?: AbortSignal,
- *   headers?: Record<string, string>,
- * }} [opts] `resolver` overrides the DNS lookup used by the target check;
- * `headers` is an already-sanitized request-header set (capture route only)
- * @returns {Promise<string>} absolute path of saved file
- */
-export async function downloadMedia(url, destDir, opts = {}) {
+async function runTimedMediaTransfer(sourceUrl, destDir, opts, obtainResponse) {
   if (!existsSync(destDir)) mkdirSync(destDir, { recursive: true })
-  const fetcher = opts.fetcher
-  const ext = opts.ext || detectExt(url, '.mp4')
+  const ext = opts.ext || detectExt(sourceUrl, '.mp4')
   const prefix = opts.prefix || 'insp_'
   const maxBytes = opts.maxBytes ?? MAX_DOWNLOAD_BYTES
   const timeoutMs = opts.timeoutMs ?? DOWNLOAD_TIMEOUT_MS
@@ -535,18 +512,11 @@ export async function downloadMedia(url, destDir, opts = {}) {
       timeoutErr.code = 'ETIMEDOUT'
       throw timeoutErr
     }
-    const deps = {}
-    if (opts.resolver) deps.resolver = opts.resolver
-    if (opts.requestImpl) deps.requestImpl = opts.requestImpl
-    // 只透传调用方已清洗的 header；未提供时请求参数与旧行为完全一致。
-    if (opts.headers && typeof opts.headers === 'object') deps.headers = opts.headers
-    const { response, url: finalUrl } = await fetchValidated(
-      fetcher,
-      url,
-      combinedSignal,
-      deps,
-    )
+    const { response, finalUrl } = await obtainResponse(combinedSignal)
     if (!response.ok) {
+      await response.body?.cancel?.().catch((err) => {
+        console.debug?.('[omnimux-inspiration] error body cancel:', err?.message || err)
+      })
       throw new Error(`Failed to download media: HTTP ${response.status} from ${finalUrl}`)
     }
     await writeBody(response, tempPath, maxBytes, finalUrl, combinedSignal)
@@ -576,4 +546,63 @@ export async function downloadMedia(url, destDir, opts = {}) {
     }
     throw err
   }
+}
+
+/**
+ * Save an already-fetched HTTP Response safely into `destDir` with size limits,
+ * magic-byte/document sniffing, timeout enforcement, and atomic rename.
+ * @param {Response} response
+ * @param {string} sourceUrl
+ * @param {string} destDir
+ * @param {{ prefix?: string, ext?: string, maxBytes?: number, timeoutMs?: number, signal?: AbortSignal }} [opts]
+ * @returns {Promise<string>}
+ */
+export async function saveMediaResponse(response, sourceUrl, destDir, opts = {}) {
+  const extSource = typeof sourceUrl === 'string' && sourceUrl.startsWith('/')
+    ? `https://omnimux.invalid${sourceUrl}`
+    : sourceUrl
+  return runTimedMediaTransfer(extSource, destDir, opts, async () => ({
+    response,
+    finalUrl: sourceUrl,
+  }))
+}
+
+/**
+ * Download a remote URL into a target local destination safely.
+ *
+ * The target must be a public http(s) URL whose host resolves only to public
+ * addresses, every redirect hop is re-validated, the response must look like
+ * media, the transfer is bounded by a wall-clock timeout and a byte ceiling, and
+ * no partial file is left behind on any failure.
+ * @param {string} url
+ * @param {string} destDir
+ * @param {{
+ *   prefix?: string,
+ *   ext?: string,
+ *   fetcher?: typeof fetch,
+ *   maxBytes?: number,
+ *   timeoutMs?: number,
+ *   resolver?: Function,
+ *   signal?: AbortSignal,
+ *   headers?: Record<string, string>,
+ * }} [opts] `resolver` overrides the DNS lookup used by the target check;
+ * `headers` is an already-sanitized request-header set (capture route only)
+ * @returns {Promise<string>} absolute path of saved file
+ */
+export async function downloadMedia(url, destDir, opts = {}) {
+  const fetcher = opts.fetcher
+  return runTimedMediaTransfer(url, destDir, opts, async (combinedSignal) => {
+    const deps = {}
+    if (opts.resolver) deps.resolver = opts.resolver
+    if (opts.requestImpl) deps.requestImpl = opts.requestImpl
+    // 只透传调用方已清洗的 header；未提供时请求参数与旧行为完全一致。
+    if (opts.headers && typeof opts.headers === 'object') deps.headers = opts.headers
+    const { response, url: finalUrl } = await fetchValidated(
+      fetcher,
+      url,
+      combinedSignal,
+      deps,
+    )
+    return { response, finalUrl }
+  })
 }

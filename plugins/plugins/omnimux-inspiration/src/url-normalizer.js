@@ -228,13 +228,24 @@ export function getCanonicalItemKey(rawUrl) {
   const clean = normalizeUrl(rawUrl)
   if (!clean) return { platform: 'unknown', key: '', canonicalUrl: '' }
 
-  // 1. TikTok video: /@user/video/(\d+) or /v/(\d+)
-  const tiktokMatch = clean.match(/tiktok\.com\/(?:@[^/]+\/video|v)\/(\d{15,25})/i)
-  if (tiktokMatch && tiktokMatch[1]) {
-    return {
-      platform: 'tiktok',
-      key: `tiktok:video:${tiktokMatch[1]}`,
-      canonicalUrl: `https://www.tiktok.com/@creator/video/${tiktokMatch[1]}`,
+  // 1. TikTok video/photo post: /@user/video/(\d+), /user/video/(\d+), /@user/photo/(\d+), /video/(\d+), /photo/(\d+), /v/(\d+), /player/v1/(\d+), or ?share_item_id=
+  if (detectPlatformFromUrl(clean) === 'tiktok') {
+    const tiktokMatch = clean.match(/tiktok\.com\/(?:(?:@?[^/]+\/)?(video|photo)|v|player\/v1)\/(\d{15,25})/i)
+    if (tiktokMatch && tiktokMatch[2]) {
+      const kind = tiktokMatch[1]?.toLowerCase() === 'photo' ? 'photo' : 'video'
+      return {
+        platform: 'tiktok',
+        key: `tiktok:video:${tiktokMatch[2]}`,
+        canonicalUrl: `https://www.tiktok.com/@creator/${kind}/${tiktokMatch[2]}`,
+      }
+    }
+    const shareMatch = rawUrl.match(/[?&]share_item_id=(\d{15,25})/i)
+    if (shareMatch && shareMatch[1]) {
+      return {
+        platform: 'tiktok',
+        key: `tiktok:video:${shareMatch[1]}`,
+        canonicalUrl: `https://www.tiktok.com/@creator/video/${shareMatch[1]}`,
+      }
     }
   }
 
