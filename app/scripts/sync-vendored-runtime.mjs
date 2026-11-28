@@ -18,10 +18,10 @@ const workspacePath = join(root, 'package.json')
 const mode = process.argv[2]
 const channelFlag = process.argv.indexOf('--channel')
 const requestedChannel = channelFlag === -1 ? undefined : process.argv[channelFlag + 1]
-const CHANNELS = ['stable', 'next']
+const CHANNELS = ['next']
 
 if (mode !== '--write' && mode !== '--check') {
-  throw new Error('usage: node scripts/sync-vendored-runtime.mjs <--write|--check> [--channel stable|beta|next]')
+  throw new Error('usage: node scripts/sync-vendored-runtime.mjs <--write|--check> [--channel next]')
 }
 
 const readJson = path => JSON.parse(readFileSync(path, 'utf8'))

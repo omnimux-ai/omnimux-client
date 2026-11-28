@@ -5,7 +5,7 @@
  */
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { test } from 'node:test'
@@ -376,4 +376,20 @@ test('dsh-desktop-next rebuild-managed-profile.ts runs under plain Node strip-on
   assert.equal(cliResult.status, 1, `${cliResult.stdout}\n${cliResult.stderr}`)
   assert.match(cliResult.stderr, /omnimux profile rebuild failed:/u)
   assert.doesNotMatch(cliResult.stderr, /ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX|SyntaxError/u)
+})
+
+test('legacy dsh-plugin-desktop shell and 0.2.1-rc.3 runtime artifacts are physically removed', () => {
+  assert.equal(existsSync(join(appDir, 'dsh-plugin-desktop')), false)
+  assert.equal(existsSync(join(appDir, 'vendor', 'dsh-runtime', '0.2.1-rc.3')), false)
+  const upstream = JSON.parse(readFileSync(join(appDir, 'upstream.json'), 'utf8'))
+  assert.equal(upstream.activeChannel, 'next')
+  assert.equal(upstream.channels?.stable, undefined)
+  const pkg = JSON.parse(readFileSync(join(appDir, 'package.json'), 'utf8'))
+  assert.equal(pkg.workspaces.includes('dsh-plugin-desktop'), false)
+  assert.equal('test:stable-shared' in (pkg.scripts ?? {}), false)
+  const patches = readdirSync(join(appDir, 'patches'))
+  assert.deepEqual(
+    patches.filter(name => name.endsWith('@0.2.1-rc.3.patch') || name === 'pi-ai@1.1.0.patch'),
+    [],
+  )
 })

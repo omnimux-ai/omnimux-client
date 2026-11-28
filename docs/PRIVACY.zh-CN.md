@@ -112,7 +112,7 @@ GET https://dl.omnimux.ai/api/desktop/version-stable.json
 
 ### 5.5 可选桌面统计与上游遥测
 
-- **可选 OmniMux 桌面统计：** 仅当启动环境中同时配置了 `OMNIMUX_ANALYTICS_ENDPOINT` 与 `OMNIMUX_ANALYTICS_WEBSITE_ID` 时，OmniMux 桌面端才会使用本地伪匿名安装 UUID 向配置的 Umami 站点发送事件，包括启动事件（`desktop_app_launch`：首次启动标记、应用版本、操作系统及版本），以及当前交付的 `dsh-plugin-desktop` 壳中的启动阶段耗时事件（`app-startup`：应用版本、平台、架构、最终阶段、渲染进程状态与各阶段耗时）和会话生命周期事件（`app-session`：每小时心跳与正常退出时长、应用版本、平台与架构）。在启动环境中设置 `OMNIMUX_ANALYTICS_DISABLED=1`（或 `true`）即可全部关闭。
+- **可选 OmniMux 桌面统计：** 仅当启动环境中同时配置了 `OMNIMUX_ANALYTICS_ENDPOINT` 与 `OMNIMUX_ANALYTICS_WEBSITE_ID` 时，OmniMux 桌面端才会使用本地伪匿名安装 UUID 向配置的 Umami 站点发送启动事件（`desktop_app_launch`：首次启动标记、应用版本、操作系统及版本）。在启动环境中设置 `OMNIMUX_ANALYTICS_DISABLED=1`（或 `true`）即可全部关闭。
 - **可选上游 DSH 遥测：** 上游 DeepSeek Harness 会话遥测保持默认 `FEEDBACK_ONLY` 模式——日常使用不会上传会话内容，仅在你主动提交会话反馈时才会将该会话日志发送至上游配置的遥测端点；设置 `DSH_TELEMETRY_DISABLED=1` 可完全关闭。上游桌面产品分析（`product-analytics` 与 `desktop-product-telemetry`）已在启动时关闭。
 
 ---

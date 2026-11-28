@@ -112,7 +112,7 @@ Upstream DeepSeek Harness also maintains a separate `.anonymous-user-id` in its 
 
 ### 5.5 Optional desktop analytics and upstream telemetry
 
-- **Optional OmniMux desktop analytics:** Only when both `OMNIMUX_ANALYTICS_ENDPOINT` and `OMNIMUX_ANALYTICS_WEBSITE_ID` are configured in the launch environment, OmniMux Desktop sends telemetry events to the configured Umami site using a local pseudonymous installation UUID: launch events (`desktop_app_launch`: first-launch flag, app version, OS, and OS version), and in the shipped `dsh-plugin-desktop` shell, startup diagnostics (`app-startup`: app version, platform, arch, final stage, renderer status, and startup stage durations) and session lifecycle events (`app-session`: hourly heartbeat and clean-exit duration, app version, platform, and arch). Set `OMNIMUX_ANALYTICS_DISABLED=1` (or `true`) to disable all of these events.
+- **Optional OmniMux desktop analytics:** Only when both `OMNIMUX_ANALYTICS_ENDPOINT` and `OMNIMUX_ANALYTICS_WEBSITE_ID` are configured in the launch environment, OmniMux Desktop sends launch events (`desktop_app_launch`: first-launch flag, app version, OS, and OS version) to the configured Umami site using a local pseudonymous installation UUID. Set `OMNIMUX_ANALYTICS_DISABLED=1` (or `true`) to disable these events.
 - **Optional upstream DSH telemetry:** Upstream DeepSeek Harness session telemetry keeps its default `FEEDBACK_ONLY` mode — ordinary usage uploads no session content; a session log is sent to the configured upstream telemetry endpoint only if you explicitly submit session feedback. Set `DSH_TELEMETRY_DISABLED=1` to disable it completely. Upstream desktop product analytics (`product-analytics` and `desktop-product-telemetry`) are turned off at startup.
 
 ---

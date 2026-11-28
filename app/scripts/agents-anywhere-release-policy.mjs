@@ -1,4 +1,4 @@
-/** Validate the AA artifact selected by Stable, Beta and Next. */
+/** Validate the AA artifact selected by the active Next Desktop channel. */
 import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
@@ -6,10 +6,10 @@ import { basename, join } from 'node:path'
 export const AA_REPOSITORY = 'https://github.com/anywhere-labs/Agents-Anywhere.git'
 export const AA_PACKAGE = '@agents-anywhere/dsh-bridge-next'
 /**
- * Desktop workspaces that consume the AA bridge. OmniMux keeps a single shell
- * line, so the upstream `dsh-plugin-desktop-beta` variant is intentionally absent.
+ * Desktop workspaces that consume the AA bridge. OmniMux keeps a single
+ * Next shell line after retiring `dsh-plugin-desktop`.
  */
-export const AA_WORKSPACES = ['dsh-plugin-desktop', 'dsh-desktop-next']
+export const AA_WORKSPACES = ['dsh-desktop-next']
 export const AA_PEERS = ['@deepseek-ai/dsh-typert-protocol', '@deepseek-ai/dsh-llm', '@deepseek-ai/dsh-session']
 
 export function aaArtifactResolution(artifact) {
@@ -17,6 +17,36 @@ export function aaArtifactResolution(artifact) {
 }
 
 const json = path => JSON.parse(readFileSync(path, 'utf8'))
+
+function peerAlternatives(range) {
+  return typeof range === 'string'
+    ? range.split('||').map(part => part.trim()).filter(Boolean)
+    : []
+}
+
+/**
+ * Check whether every runtime peer range required by active workspaces is
+ * satisfied by the committed AA artifact provenance (allowing superset peers).
+ */
+export function runtimePeersSatisfy(provenancePeers, requiredPeers) {
+  if (provenancePeers === null || typeof provenancePeers !== 'object' || Array.isArray(provenancePeers)) {
+    return false
+  }
+  if (requiredPeers === null || typeof requiredPeers !== 'object' || Array.isArray(requiredPeers)) {
+    return false
+  }
+  const requiredEntries = Object.entries(requiredPeers)
+  if (requiredEntries.length === 0) return false
+  const provided = new Map(Object.entries(provenancePeers))
+  for (const [name, requiredRange] of requiredEntries) {
+    const required = peerAlternatives(requiredRange)
+    const available = new Set(peerAlternatives(provided.get(name)))
+    if (required.length === 0 || required.some(version => !available.has(version))) {
+      return false
+    }
+  }
+  return true
+}
 
 export function runtimePeerRanges(root) {
   const manifests = AA_WORKSPACES.map(workspace => json(join(root, workspace, 'package.json')))
@@ -36,7 +66,7 @@ export function assertPreparedAaRelease(root, expectedCommit, { installed = true
   const artifact = provenance.artifact
   if (typeof artifact !== 'string' || basename(artifact) !== artifact || !artifact.endsWith('.tgz')) fail('invalid artifact path')
   if (json(join(root, 'package.json')).resolutions?.[AA_PACKAGE] !== aaArtifactResolution(artifact)) fail('root resolution references a different AA artifact')
-  if (JSON.stringify(provenance.runtimePeers) !== JSON.stringify(runtimePeerRanges(root))) fail('runtime peers have changed')
+  if (!runtimePeersSatisfy(provenance.runtimePeers, runtimePeerRanges(root))) fail('runtime peers have changed')
   // Stable source versions start their prerelease with "-desktop"; existing
   // source prereleases append ".desktop". Both carry the same commit marker.
   const commitMarker = new RegExp(`(?:-|\\.)desktop\\.c${expectedCommit.slice(0, 12)}\\.`)

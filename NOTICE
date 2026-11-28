@@ -9,7 +9,7 @@ GNU Affero General Public License, version 3 only (AGPL-3.0-only). See LICENSE.
 
 Third-party and upstream components under `app/` and `plugins/` retain their
 original licenses and copyright notices. See `app/LICENSE`,
-`app/dsh-plugin-desktop/THIRD_PARTY_NOTICES.md`, `plugins/NOTICE`,
+`app/dsh-desktop-next/THIRD_PARTY_NOTICES.md`, `plugins/NOTICE`,
 `plugins/ACKNOWLEDGEMENTS.md`, and per-package license files for exact scope.
 
 

@@ -87,9 +87,9 @@
 | 参与统一插件 contract 讨论 | [DSH Community Fabric Draft](dsh-community-fabric/README.zh.md) |
 | 了解统一插件框架为什么这样设计 | [成熟框架与真实插件调研](dsh-community-fabric/docs/research/mature-plugin-frameworks.zh.md) |
 | 查看插件市场的产品与安全设计 | [DSH Community Market](dsh-community-market/README.zh.md) |
-| 了解桌面插件可以使用的能力 | [桌面插件接口说明](dsh-plugin-desktop/docs/plugin-services.zh.md) |
+| 了解桌面插件可以使用的能力 | [桌面插件接口说明](dsh-desktop-next/docs/plugin-services.zh.md) |
 | 了解桌面应用如何工作 | [架构说明](docs/architecture.md) |
-| 查阅包级构建与发布细节 | [`dsh-plugin-desktop/README.md`](dsh-plugin-desktop/README.md) |
+| 查阅包级构建与发布细节 | [`dsh-desktop-next/README.md`](dsh-desktop-next/README.md) |
 
 ## 主要功能
 
@@ -136,7 +136,7 @@ OmniMux Desktop 没有修改上游 DeepSeek Harness 源码，也不是一个固�
 
 ### 给开发者
 
-与许多其他项目不同，这个项目本身就是一个 DSH [插件](docs/plugin-development.md)：桌面壳与第三方插件使用相同的插件组合机制。Desktop 的插件能力已经可以使用。我们提供了 Desktop 服务，让插件开发者能够把插件与桌面能力集成起来：例如查看和切换工作配置，或在当前配置中安装、更新和移除插件。完整用法见[桌面插件接口说明](dsh-plugin-desktop/docs/plugin-services.zh.md)。为什么选择这样的边界、哪些能力不会暴露给第三方插件，见[为什么做 Desktop](docs/why-desktop.md)和[插件开发指南](docs/plugin-development.md)。
+与许多其他项目不同，这个项目本身就是一个 DSH [插件](docs/plugin-development.md)：桌面壳与第三方插件使用相同的插件组合机制。Desktop 的插件能力已经可以使用。我们提供了 Desktop 服务，让插件开发者能够把插件与桌面能力集成起来：例如查看和切换工作配置，或在当前配置中安装、更新和移除插件。完整用法见[桌面插件接口说明](dsh-desktop-next/docs/plugin-services.zh.md)。为什么选择这样的边界、哪些能力不会暴露给第三方插件，见[为什么做 Desktop](docs/why-desktop.md)和[插件开发指南](docs/plugin-development.md)。
 
 ## 与 DeepSeek Harness 及 DSH Desktop 的关系
 
@@ -170,7 +170,7 @@ OmniMux Desktop 是基于 [DeepSeek Harness](https://github.com/deepseek-ai/deep
 
 ## 开发
 
-桌面端代码位于 `dsh-plugin-desktop/` 与 `dsh-desktop-next/`，外层仓库使用 Yarn，固定的 `deepseek-harness/` 子模块继续使用自己的 pnpm workspace。从仓库根目录执行：
+桌面端代码位于 `dsh-desktop-next/`，外层仓库使用 Yarn，固定的 `deepseek-harness/` 子模块继续使用自己的 pnpm workspace。从仓库根目录执行：
 
 ```sh
 git submodule update --init --recursive
@@ -178,14 +178,14 @@ corepack yarn install --immutable
 corepack yarn dev
 ```
 
-headless 检查使用 `corepack yarn check`；完整的构建、测试和发布边界见[架构说明](docs/architecture.md)和包级 [`README`](dsh-plugin-desktop/README.md)。如何参与贡献见 [CONTRIBUTING.md](CONTRIBUTING.md)。
+headless 检查使用 `corepack yarn check`；完整的构建、测试和发布边界见[架构说明](docs/architecture.md)和包级 [`README`](dsh-desktop-next/README.md)。如何参与贡献见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
 ### macOS 麦克风权限
 
-Stable、Beta、Next 的主应用和 Electron Helper 签名直接使用固定上游 checkout 中的
+`dsh-desktop-next` 的主应用和 Electron Helper 签名直接使用固定上游 checkout 中的
 `deepseek-harness/apps/desktop/scripts/macos-entitlements.plist`。更新子模块版本后，打包会自动使用对应的权限文件，无需维护本地副本；打包前须初始化子模块。各版本的 macOS 配置保留产品自己的麦克风用途说明。
 
-语音输入沿用上游录音流程触发系统授权，语音插件旁不再提供额外权限按钮，Stable/Beta 也不再安装麦克风权限请求桥接或拦截器。
+语音输入沿用上游录音流程触发系统授权，语音插件旁不再提供额外权限按钮，也不再安装单独的麦克风权限请求桥接或拦截器。
 
 ## 社区与链接
 

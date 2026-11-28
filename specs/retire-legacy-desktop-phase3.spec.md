@@ -1,0 +1,280 @@
+# Phase 3 计划：物理移除旧版桌面壳 `app/dsh-plugin-desktop/` 与 `0.2.1-rc.3` 运行时
+
+## 目标与范围
+
+1. 物理删除零调用方的冻结旧桌面壳目录 `app/dsh-plugin-desktop/`、`app/vendor/dsh-runtime/0.2.1-rc.3/` 及 25 个 `@0.2.1-rc.3.patch` 补丁，收敛 `app/` 为单一桌面壳 `app/dsh-desktop-next/`。
+2. 迁出仍被活跃产品消费的资产与契约至 `app/dsh-desktop-next/`：
+   - 双语服务契约文档 `app/dsh-desktop-next/docs/plugin-services.{md,zh.md,i18n.yaml}`；
+   - 第三方许可校验与通知生成脚本 `app/dsh-desktop-next/scripts/verify-licenses.mjs` 与产物 `app/dsh-desktop-next/THIRD_PARTY_NOTICES.md`（跳过 AGPL-3.0-only 首方工作区插件 `link:../../plugins/plugins/*`）。
+3. 清理 `app/upstream.json`（移除 `channels.stable`）、`app/package.json`（移除 `dsh-plugin-desktop` 工作区、688 条 `0.2.1-rc.3` resolutions 及 `test:stable-shared`）、`app/dsh-community-market/package.json`（peer 范围收敛至 `0.2.2-rc.5`）及刷新 `app/yarn.lock`。
+4. 将 `verify-layout.mjs`、`verify-version.mjs`、`sync-vendored-runtime.mjs`、`prepare-dsh-market.mjs`、`classify-ci-changes.mjs`、`export-app-icons.mjs` 收敛为单桌面壳口径，并将 `agents-anywhere-release-policy.mjs` / `prepare-agents-anywhere-release.mjs` 的 AA peer 校验放宽为超集兼容（已签入 AA `.tgz` 覆盖 `0.2.1-rc.3 || 0.2.2-rc.5` 满足单壳 `0.2.2-rc.5` 要求）。
+5. 更新 `docs/desktop-patches.md`（退役 `DP-006`）、外部许可证入口及 `app/docs/*` 双语文档配对哈希。
+
+## 旧标准变更
+
+以下旧测试文件与用例随 `app/dsh-plugin-desktop`（DSH `0.2.1-rc.3`）整体退役而被删除或收敛至 `dsh-desktop-next` 单桌面壳；原跨壳共享的 38 个规范及 9 个 `rebuild-managed-profile` 规范已分别在 Phase 1（PR #439）与 Phase 2（PR #447）完整迁入 `app/dsh-desktop-next/tests/shared/` 并继续全量运行，新壳单测与三端打包 preflight 已替代旧壳门禁。
+
+### 1. 随 `app/dsh-plugin-desktop` 与退役脚本整体删除的测试
+
+- `app/dsh-plugin-desktop/scripts/runtime-closure.spec.mjs` :: `*`
+- `app/dsh-plugin-desktop/tests/agent-error-logging.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/agent-preset-rows.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/better-sidebar/browser/index.html` :: `*`
+- `app/dsh-plugin-desktop/tests/better-sidebar/sidebar-layout-lifecycle.spec.tsx.fixture` :: `*`
+- `app/dsh-plugin-desktop/tests/bin.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/client-boot-health.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/client-desktop-settings.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/client-desktop-update-settings.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/client-directory-picker.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/client-environment.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/client-launch-workspace.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/client-layout-service.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/client-modules-startup.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/client-narrow-breakpoint.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/client-shell-settings.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/client-sidebar-dom-anchor.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/compatibility-chrome-ui.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/compatibility-shell.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/context-menu.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/crash-evidence.spec.ts` :: `desktop crash evidence`
+- `app/dsh-plugin-desktop/tests/crash-evidence.spec.ts` :: `does not read or overwrite a linked marker`
+- `app/dsh-plugin-desktop/tests/crash-evidence.spec.ts` :: `does not report a run that marked its shutdown clean`
+- `app/dsh-plugin-desktop/tests/crash-evidence.spec.ts` :: `only clears the marker owned by the current run`
+- `app/dsh-plugin-desktop/tests/crash-evidence.spec.ts` :: `reports an unreadable previous marker without blocking the next run`
+- `app/dsh-plugin-desktop/tests/crash-evidence.spec.ts` :: `reports the previous run when it did not shut down cleanly`
+- `app/dsh-plugin-desktop/tests/crash-evidence.spec.ts` :: `starts Electron crash reporting without uploading dumps`
+- `app/dsh-plugin-desktop/tests/desktop-actions.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/desktop-analytics.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/desktop-boot-recovery.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/desktop-browser-access.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/desktop-channel-home.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/desktop-cli.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/desktop-copy.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/desktop-data-directory.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/desktop-dialog-native-ui.spec.ts` :: `Desktop dialog native UI`
+- `app/dsh-plugin-desktop/tests/desktop-dialog-native-ui.spec.ts` :: `omits the leading tone icon for the centered Profile compatibility surface`
+- `app/dsh-plugin-desktop/tests/desktop-dialog-native-ui.spec.ts` :: `renders each compatibility advisory line as its own block`
+- `app/dsh-plugin-desktop/tests/desktop-dialog-native-ui.spec.ts` :: `tones the advisory for both color schemes`
+- `app/dsh-plugin-desktop/tests/desktop-dialog-native-ui.spec.ts` :: `uses the shared ScrollArea for long default dialog details`
+- `app/dsh-plugin-desktop/tests/desktop-dialog-window.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/desktop-factory-reset.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/desktop-first-run.spec.ts` :: `allows explicitly forcing first-run setup via environment flag`
+- `app/dsh-plugin-desktop/tests/desktop-first-run.spec.ts` :: `first-run policy`
+- `app/dsh-plugin-desktop/tests/desktop-first-run.spec.ts` :: `is wired into main.ts ahead of the wizard and records Setup as settled`
+- `app/dsh-plugin-desktop/tests/desktop-first-run.spec.ts` :: `leaves the upstream wizard reachable through the explicit force flag`
+- `app/dsh-plugin-desktop/tests/desktop-first-run.spec.ts` :: `release first-run wiring (merged setup state machine)`
+- `app/dsh-plugin-desktop/tests/desktop-first-run.spec.ts` :: `settles Setup only when upstream says Setup is required`
+- `app/dsh-plugin-desktop/tests/desktop-first-run.spec.ts` :: `ships the platform default mode with loopback browser access on`
+- `app/dsh-plugin-desktop/tests/desktop-first-run.spec.ts` :: `suppresses first-run setup across all standard channels to settle deterministic defaults`
+- `app/dsh-plugin-desktop/tests/desktop-identity.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/desktop-installation-id.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/desktop-installer-quit.spec.ts` :: `Desktop installer quit request`
+- `app/dsh-plugin-desktop/tests/desktop-installer-quit.spec.ts` :: `accepts only the dedicated flag on Windows`
+- `app/dsh-plugin-desktop/tests/desktop-installer-quit.spec.ts` :: `distinguishes background Node re-entry from an explicit application launch`
+- `app/dsh-plugin-desktop/tests/desktop-installer-quit.spec.ts` :: `handles first- and second-instance requests without showing a window`
+- `app/dsh-plugin-desktop/tests/desktop-logger.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/desktop-market.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/desktop-office.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/desktop-plugins.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/desktop-runtime-environment.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/desktop-settings-api.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/desktop-terminal.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/dev-package.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/dev-upgrade-transaction.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/developer-logging.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/diagnostic-export.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/diagnostics.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/directory-picker-route.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/dshmarket-compat.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/electron-platform.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/electron-runtime.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/host-developer-logging.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/host-directory-picker-browse.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/host-process-entry.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/host-process-integration.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/host-process.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/host-rpc.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/host-runtime-bridge.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/installer-nsh.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/lan-addresses.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/lan-https-certificate.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/lan-https-ingress.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/lan-https-runtime.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/launch-environment.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/launch-workspace-path.spec.ts` :: `Desktop launch workspace path`
+- `app/dsh-plugin-desktop/tests/launch-workspace-path.spec.ts` :: `accepts a bare absolute folder using the launching platform semantics`
+- `app/dsh-plugin-desktop/tests/launch-workspace-path.spec.ts` :: `drops the hand-off without disturbing the rest of the command line`
+- `app/dsh-plugin-desktop/tests/launch-workspace-path.spec.ts` :: `leaves no shape of the hand-off readable in a relaunch command line`
+- `app/dsh-plugin-desktop/tests/launch-workspace-path.spec.ts` :: `marks the launcher flag as an explicit hand-off`
+- `app/dsh-plugin-desktop/tests/launch-workspace-path.spec.ts` :: `names the launcher hand-off flag`
+- `app/dsh-plugin-desktop/tests/launch-workspace-path.spec.ts` :: `never reads the executable slot`
+- `app/dsh-plugin-desktop/tests/launch-workspace-path.spec.ts` :: `prefers the explicit flag over a bare folder`
+- `app/dsh-plugin-desktop/tests/launch-workspace-path.spec.ts` :: `reads nothing from a background Node re-entry command line`
+- `app/dsh-plugin-desktop/tests/launch-workspace-path.spec.ts` :: `reads the folder attached to the flag`
+- `app/dsh-plugin-desktop/tests/launch-workspace-path.spec.ts` :: `refuses a flag that carries no usable value`
+- `app/dsh-plugin-desktop/tests/launch-workspace-path.spec.ts` :: `rejects a path that is absolute only on another platform`
+- `app/dsh-plugin-desktop/tests/launch-workspace-path.spec.ts` :: `skips switches and Node entry scripts when scanning for a bare folder`
+- `app/dsh-plugin-desktop/tests/launch-workspace-path.spec.ts` :: `still reads the hand-off after a command line rebuild moved the value`
+- `app/dsh-plugin-desktop/tests/lifecycle-events.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/link-projections.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/local-window-policy.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/log-files.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/logging-integration.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/mac-entitlements.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/mac-signing-probe.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/mac-tcc-usage-descriptions.spec.ts` :: `declares macOS TCC folder usage descriptions in build.mac.extendInfo`
+- `app/dsh-plugin-desktop/tests/mac-universal.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/macos-signing-walk.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/managed-profile-dev-upgrade.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/managed-profile.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/market-plugin-manager-integration.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/market-toggle.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/module-resolution.integration.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/module-resolution.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/native-file-picker.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/native-menu.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/next-profile-last-home.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/next-profile-upgrade.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/next-transition-notice.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/notifications-live.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/notifications.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/onboarding-runtime-slot.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/optional-bundles.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/package-dir.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/package-linux.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/package-mac.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/package-overlay.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/package-win.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/package.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/platform-login-window.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/platform-login.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/plugin-packages.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/plugin.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/pnpm.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/preload.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/prepare-fs-ext.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/prepare-runtime.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/preset-distribution.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/preset-profile.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/preset-resolution.spec.ts` :: `checks preset dependencies through the real Desktop resolver without importing plugins`
+- `app/dsh-plugin-desktop/tests/primary-runtime.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/profile-channel-admission.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/profile-checkpoint.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/profile-context.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/profile-create-window.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/profile-manager.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/profile-materializer.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/profile-preferences.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/profile-schedule.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/profile-selection-window.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/profile-service.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/profile.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/profiles.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/prune-python-tests.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/rebuild-managed-profile-cli.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/recovery-native-ui.spec.ts` :: `Recovery native terminal action`
+- `app/dsh-plugin-desktop/tests/recovery-native-ui.spec.ts` :: `Recovery plugin row actions`
+- `app/dsh-plugin-desktop/tests/recovery-native-ui.spec.ts` :: `does not invent a title-row action without Desktop frame controls`
+- `app/dsh-plugin-desktop/tests/recovery-native-ui.spec.ts` :: `keeps the destructive action last and both toggles behind the toggle field`
+- `app/dsh-plugin-desktop/tests/recovery-native-ui.spec.ts` :: `orders Quick recovery guidance and adds data management before diagnostics`
+- `app/dsh-plugin-desktop/tests/recovery-native-ui.spec.ts` :: `places the optional contact action before Terminal without attaching logs`
+- `app/dsh-plugin-desktop/tests/recovery-native-ui.spec.ts` :: `renders a labelled pill opposite each platform native-control group`
+- `app/dsh-plugin-desktop/tests/recovery-native-ui.spec.ts` :: `shares the Recovery footer layout while keeping a leading action on the left`
+- `app/dsh-plugin-desktop/tests/recovery-navigation.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/recovery-plugin-uninstall.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/recovery-profile-ux.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/relaunch-arguments.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/release-mac.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/release-preflight.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/release-win.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/remote-control-offer.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/renderer-actions-dispatch.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/renderer-boot.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/renderer-health.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/renderer-recovery.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/renderer-surface-watchdog.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/request-inventory-resolution.spec.ts` :: `prepares request inventory for Desktop-owned entries and private-manifest plugins`
+- `app/dsh-plugin-desktop/tests/safe-mode.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/settings-bridge-port.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/setup-wizard-copy.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/setup-wizard-native-ui.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/setup-wizard-settings.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/setup-wizard-state.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/setup-wizard-window.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/shell-environment.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/shutdown.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/sign-runtime.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/skill-filesystem-permission.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/stage-preset-profile.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/startup-generation.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/startup-recovery-controller.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/startup-recovery-window.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/system-proxy-egress.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/system-proxy.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/theme-presenter.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/titlebar-double-click.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/tray-icons.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/update-checker.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/update-download.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/updater-security.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/updates.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/upstream-session-migration.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/verify-build-info.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/verify-distribution.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/verify-electron-fuses.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/verify-linux-artifacts.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/verify-mac-release.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/verify-mac-smoke.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/verify-packaged-runtime.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/verify-win-installer.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/verify-win-portable.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/verify-win-signature.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/webserver.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/window-options.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/windows-pwsh-sandbox.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/windows-release-preflight.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/windows-volume-diagnostics.spec.ts` :: `*`
+- `app/dsh-plugin-desktop/tests/workspace-admission.spec.ts` :: `*`
+- `app/scripts/test-stable-shared.test.mjs` :: `ignores specs of Next and Beta and Stable code nothing reaches`
+- `app/scripts/test-stable-shared.test.mjs` :: `selects the Stable specs whose Stable imports all lie in the closure Next and Beta reach`
+- `app/scripts/conversation-draft-compat.test.mjs` :: `*`
+- `app/scripts/inspector-compat.test.mjs` :: `*`
+
+### 2. 收敛为单桌面壳口径的既有测试变更
+
+- `app/dsh-community-market/tests/contracts.spec.ts` :: `loads the Client through the official settings, sidebar, and shell features`
+  - 原断言：`peerDependencies` 声明 `'0.2.1-rc.3 || 0.2.2-rc.5'`；修改理由：冻结 `0.2.1-rc.3` 运行时与 `dsh-plugin-desktop` 已退役；新期望：`peerDependencies` 声明 `'0.2.2-rc.5'`。
+- `app/dsh-community-market/tests/contracts.spec.ts` :: `keeps durable storage an optional peer so market still starts without it`
+  - 原断言：`@deepseek-ai/dsh-storage-domain` peer 为 `'0.2.1-rc.3 || 0.2.2-rc.5'`；修改理由：冻结 `0.2.1-rc.3` 已退役；新期望：`'0.2.2-rc.5'`。
+- `app/scripts/agents-anywhere-release-policy.test.mjs` :: `accepts the latest AA across Stable, Beta and Next runtime peers`
+  - 原断言：三壳 fixture 精确比较 AA peer 字符串；修改理由：单壳收敛后改测单壳超集兼容策略；新期望：单壳 `dsh-desktop-next` 下 `runtimePeersSatisfy` 通过（含超集 `'0.2.1-rc.3 || 0.2.2-rc.5'`）。
+- `app/scripts/agents-anywhere-release-policy.test.mjs` :: `rejects the former stable-old/beta-new split even if the tarball is valid`
+  - 原断言：篡改 `dsh-plugin-desktop/package.json` 的 AA dependency 报错；修改理由：`dsh-plugin-desktop` 目录已删除，单壳 `dsh-desktop-next` 覆盖错误包检验；新期望：保留等价的错误产物拒绝测试与缺失 peer 拒绝测试。
+- `app/scripts/agents-anywhere-release-policy.test.mjs` :: `rejects stale installed code despite updated manifests and provenance`
+  - 原断言：修改 `dsh-plugin-desktop/node_modules/.../package.json` 版本报错；修改理由：单壳收敛后切换测试对象至 `dsh-desktop-next/node_modules/...`；新期望：仍以 `/outdated installed AA package/` 拒收陈旧安装产物。
+- `app/scripts/agents-anywhere-release-policy.test.mjs` :: `accepts the generated artifact version for AA 0.1.0-dev.0`
+- `app/scripts/agents-anywhere-release-policy.test.mjs` :: `accepts the generated artifact version for AA 2.0.1`
+- `app/scripts/agents-anywhere-release-policy.test.mjs` :: `accepts the generated artifact version for AA 2.0.1+build.1`
+- `app/scripts/agents-anywhere-release-policy.test.mjs` :: `rejects a version identifying a different commit even when provenance matches`
+- `app/scripts/agents-anywhere-release-policy.test.mjs` :: `rejects a root resolution pinned to a previous AA artifact`
+- `app/scripts/agents-anywhere-release-policy.test.mjs` :: `rejects the retired Desktop compatibility patch`
+- `app/scripts/agents-anywhere-release-policy.test.mjs` :: `rejects a Next install left on the old AA artifact`
+- `app/scripts/agents-anywhere-release-policy.test.mjs` :: `rejects a prepared artifact after AA main advances`
+- `app/scripts/agents-anywhere-release-policy.test.mjs` :: `requires rebuilding the AA peer patch after a Desktop runtime update`
+- `app/scripts/agents-anywhere-release-policy.test.mjs` :: `rejects corrupted or replaced vendor bytes`
+- `app/scripts/agents-anywhere-release-policy.test.mjs` :: `repairs the 0644 uv payload for both Mac architectures in all channels`
+- `app/scripts/agents-anywhere-release-policy.test.mjs` :: `*`
+- `app/scripts/export-app-icons.test.mjs` :: `Beta and Next export a classic set beside the default one, which alone has a Dark rendition; Stable keeps only its own`
+  - 原断言：校验 `classic.trayCopy === 'dsh-plugin-desktop/build'` 与 `iconSets('stable', ...)`；修改理由：冻结 `dsh-plugin-desktop/` 已删除，classic tray 资源改以 `dsh-desktop-next/assets` 为源并移除 `stable` 频道导出；新期望：`classic.trayCopy === 'dsh-desktop-next/assets'` 且保留 Next 默认与经典图标校验。
+- `app/scripts/storage-json-compat.test.mjs` :: `*`
+  - 原断言：遍历 `['dsh-plugin-desktop-beta', 'dsh-plugin-desktop', 'dsh-desktop-next']`；修改理由：`dsh-plugin-desktop` 已物理删除；新期望：在 `dsh-desktop-next` 验证 JSON storage BOM 兼容性。
+- `plugins/scripts/legacy-paths-242.test.mjs` :: `historical nested workflow directory is removed`
+  - 原断言：读取 `app/dsh-plugin-desktop/tests/package.spec.ts` 检查不存在旧 workflow URL；修改理由：`app/dsh-plugin-desktop` 已删除；新期望：显式断言 `app/dsh-plugin-desktop` 目录不存在，且继续校验 `app/dsh-desktop-next/tests/package.spec.ts`。
+- `plugins/scripts/verify-motion-contract.test.mjs` :: `forbids transition: all and Tailwind transition-all across all governed UI sources`
+  - 原断言：包含 `app/dsh-plugin-desktop/src`；修改理由：目录已物理删除；新期望：覆盖 `dsh-ui-kit`、`plugins/` 与 `app/dsh-desktop-next/src`。
+- `plugins/scripts/verify-motion-contract.test.mjs` :: `defines unified --omnimux-motion-* motion tokens in dsh-ui-kit and propagates them across isolated roots`
+  - 原断言：检查 `app/dsh-plugin-desktop/src/native-ui/shared/theme.css` 存在性；修改理由：目录已物理删除；新期望：保持检查插件扩展样式与 `app/dsh-desktop-next/src/native-ui/theme.css`。
+- `plugins/scripts/verify-motion-contract.test.mjs` :: `has zero undefined @keyframes references across governed CSS stylesheets`
+  - 原断言：包含 `app/dsh-plugin-desktop/src`；修改理由：目录已物理删除；新期望：继续校验 `plugins/` 与 `app/dsh-desktop-next/src`。
+- `plugins/scripts/verify-motion-contract.test.mjs` :: `requires prefers-reduced-motion handling in animated governed stylesheets and keeps panel reduced-motion un-overridden`
+  - 原断言：包含 `app/dsh-plugin-desktop/src`；修改理由：目录已物理删除；新期望：继续校验 `plugins/` 与 `app/dsh-desktop-next/src`。

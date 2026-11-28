@@ -26,7 +26,7 @@ const productChanged = changedPaths.length === 0 || changedPaths.some((path) => 
  * otherwise wait until the release lane, the one place universal is always
  * built, to surface.
  */
-const macOSPackagingPath = /^(?:dsh-plugin-desktop|dsh-desktop-next)\/(?:scripts\/(?:mac-universal|package-mac|verify-mac-smoke|prepare-fs-ext|prepare-runtime|mac-runtime|package)\.ts|package\.json)$/u
+const macOSPackagingPath = /^dsh-desktop-next\/(?:scripts\/(?:mac-universal|package-mac|verify-mac-smoke|prepare-fs-ext|prepare-runtime|mac-runtime|package)\.ts|package\.json)$/u
 const ciWorkflowPath = /^\.github\/workflows\/ci\.ya?ml$/u
 
 // An empty path list means a manual dispatch or an undiffable push: no diff can

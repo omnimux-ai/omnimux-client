@@ -50,7 +50,8 @@
     "check:linux-package": "yarn workspace dsh-community-market build && yarn build && yarn verify:frontend",
     "release:mac:all": "node scripts/release-mac-all.ts",
     "dist:mac-arm64": "DSH_MAC_RELEASE_ARCH=arm64 node scripts/package.ts mac",
-    "dist:mac-x64": "DSH_MAC_RELEASE_ARCH=x64 node scripts/package.ts mac"
+    "dist:mac-x64": "DSH_MAC_RELEASE_ARCH=x64 node scripts/package.ts mac",
+    "verify:notices": "node scripts/verify-licenses.mjs --notices THIRD_PARTY_NOTICES.md"
   },
   "dependencies": {
     "@agents-anywhere/dsh-bridge-next": "file:../vendor/agents-anywhere/agents-anywhere-dsh-bridge-next-2.2.0-desktop.cb364f42d2f3f.r2afb7d8b.tgz",
