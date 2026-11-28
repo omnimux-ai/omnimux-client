@@ -620,8 +620,21 @@ describe('non-Git targets and Git read failures', () => {
       'allow',
     )
 
-    assert.equal(hook(join(mainRepoRoot, 'package.json'), { PATH: mountBin }).permissionDecision, 'deny')
-    assert.equal(hook(join(brokenMount, 'notes.txt'), { PATH: mountBin }).permissionDecision, 'deny')
+    const crlfBin = join(fixture, 'mount-boundary-crlf-bin')
+    mkdirSync(crlfBin)
+    writeFileSync(
+      join(crlfBin, 'git'),
+      '#!/bin/sh\nprintf "fatal: not a git repository (or any parent up to mount point /Volumes)\\r\\nStopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).\\r\\n" >&2\nexit 128\n',
+      { mode: 0o755 },
+    )
+    assert.equal(hook(mountCleanTarget, { PATH: crlfBin }).permissionDecision, 'allow')
+
+    const repoOut = hook(join(mainRepoRoot, 'package.json'), { PATH: mountBin })
+    assert.equal(repoOut.permissionDecision, 'deny')
+    assert.match(repoOut.permissionDecisionReason, /仓库 Hook.*Git.*读取/)
+    const brokenOut = hook(join(brokenMount, 'notes.txt'), { PATH: mountBin })
+    assert.equal(brokenOut.permissionDecision, 'deny')
+    assert.match(brokenOut.permissionDecisionReason, /仓库 Hook.*Git.*读取/)
 
     const extraErrorBin = join(fixture, 'mount-boundary-extra-bin')
     mkdirSync(extraErrorBin)

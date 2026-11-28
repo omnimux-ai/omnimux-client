@@ -251,14 +251,21 @@ test('app/scripts/worktree.sh cmd_remove no longer suggests ship', () => {
 
 test('app/scripts/ops/guard-worktree.mjs allows confirmed non-Git targets across mount boundaries', () => {
   const guardScriptPath = join(appDir, 'scripts', 'ops', 'guard-worktree.mjs')
-  const scratch = mkdtempSync(join(tmpdir(), 'app-guard-mount-'))
+  // app/scripts/ops/guard-worktree.mjs treats any `tmp` path segment (e.g. Linux /tmp) as ephemeral before gitFileState.
+  const scratchParent = [process.env.RUNNER_TEMP, tmpdir(), '/dev/shm'].find(
+    candidate => candidate && existsSync(candidate) && !candidate.split(/[\\/]/u).includes('tmp'),
+  )
+  assert.ok(scratchParent, 'expected a writable temp parent without a `tmp` segment')
+  const scratch = mkdtempSync(join(scratchParent, 'app-guard-mount-'))
   try {
     const mountBin = join(scratch, 'mount-bin')
     const extraErrorBin = join(scratch, 'extra-error-bin')
     const nonGitDir = join(scratch, 'external/backups/agent/batch-1')
     const nonGitFile = join(nonGitDir, 'backup.zip')
+    const brokenMount = join(scratch, 'broken-mount')
     mkdirSync(mountBin, { recursive: true })
     mkdirSync(extraErrorBin, { recursive: true })
+    mkdirSync(join(brokenMount, '.git'), { recursive: true })
     writeFileSync(
       join(mountBin, 'git'),
       '#!/bin/sh\necho "fatal: not a git repository (or any parent up to mount point /Volumes)" >&2\necho "Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set)." >&2\nexit 128\n',
@@ -295,11 +302,12 @@ test('app/scripts/ops/guard-worktree.mjs allows confirmed non-Git targets across
       ).permissionDecision,
       'allow',
     )
-    assert.equal(
-      runGuard({ tool_name: 'write', tool_input: { file_path: join(appDir, 'package.json') } }, mountBin)
-        .permissionDecision,
-      'deny',
-    )
+    const repoOut = runGuard({ tool_name: 'write', tool_input: { file_path: join(appDir, 'package.json') } }, mountBin)
+    assert.equal(repoOut.permissionDecision, 'deny')
+    assert.match(repoOut.permissionDecisionReason, /Git 状态读取失败/)
+    const brokenOut = runGuard({ tool_name: 'write', tool_input: { file_path: join(brokenMount, 'notes.txt') } }, mountBin)
+    assert.equal(brokenOut.permissionDecision, 'deny')
+    assert.match(brokenOut.permissionDecisionReason, /Git 状态读取失败/)
     const extraOut = runGuard({ tool_name: 'write', tool_input: { file_path: nonGitFile } }, extraErrorBin)
     assert.equal(extraOut.permissionDecision, 'deny')
     assert.match(extraOut.permissionDecisionReason, /Git 状态读取失败/)
