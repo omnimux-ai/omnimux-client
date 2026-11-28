@@ -295,3 +295,64 @@ test('the declared waiver is exactly what admits the shipped transcription defau
   assert.equal(admitted.modelId, model)
   assert.equal(admitted.operationId, 'speech_to_text')
 })
+
+test('STT verbose_json preserves sanitized language, duration, segments, and words while other formats keep slim output', async () => {
+  const verboseBody = {
+    text: 'Hello OmniMux',
+    language: 'en',
+    duration: 2.4,
+    words: [
+      { word: 'Hello', start: 0.1, end: 0.6 },
+      { word: 'bad-negative', start: -1, end: 0.5 },
+      { word: 'OmniMux', start: 0.7, end: 1.4 },
+    ],
+    segments: [
+      {
+        id: 0,
+        start: 0.1,
+        end: 1.4,
+        text: ' Hello OmniMux ',
+        words: [
+          { word: 'Hello', start: 0.1, end: 0.6 },
+          { word: 'OmniMux', start: 0.7, end: 1.4 },
+        ],
+      },
+      { id: 1, start: 2.0, end: 1.0, text: 'inverted times ignored' },
+    ],
+  }
+  const verbose = await executeOmnimuxSpeechToText({
+    ...request,
+    response_format: 'verbose_json',
+    fetcher: sttFetcher({}, verboseBody),
+  })
+  assert.deepEqual(verbose, {
+    mode: 'live',
+    model: 'whisper-1',
+    text: 'Hello OmniMux',
+    language: 'en',
+    duration: 2.4,
+    words: [
+      { word: 'Hello', start: 0.1, end: 0.6 },
+      { word: 'OmniMux', start: 0.7, end: 1.4 },
+    ],
+    segments: [
+      {
+        id: 0,
+        start: 0.1,
+        end: 1.4,
+        text: 'Hello OmniMux',
+        words: [
+          { word: 'Hello', start: 0.1, end: 0.6 },
+          { word: 'OmniMux', start: 0.7, end: 1.4 },
+        ],
+      },
+    ],
+  })
+
+  const slimJson = await executeOmnimuxSpeechToText({
+    ...request,
+    response_format: 'json',
+    fetcher: sttFetcher({}, verboseBody),
+  })
+  assert.deepEqual(slimJson, { mode: 'live', model: 'whisper-1', text: 'Hello OmniMux' })
+})

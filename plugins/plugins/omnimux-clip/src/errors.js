@@ -186,6 +186,8 @@ export const CLIP_STATUS_BY_CODE = {
   'graphic-param-invalid': 400,
   'graphic-member-readonly': 409,
   'keyframe-out-of-range': 400,
+  'subtitle-invalid': 400,
+  'audio-analysis-failed': 422,
 }
 
 /**

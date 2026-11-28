@@ -36,15 +36,15 @@ description: "OmniMux Clip 专业剪辑判断层。用于剪视频、修时间�
 - 花字预设走 caption：描边要够，浅底深描边 / 深底浅描边。不要纯白无描边扣在天空上。
 - 竖屏 9:16 字幕放中下，避开平台原生胶囊与进度条（大约底边 12–18%）。
 - 一句一条；单条时长跟口播，不要把整段旁白糊在一条 10s 字幕上。
-- 用 `add_text` 的 `kind` 选择 `subtitle` 或 `title`。用 `set_text` 和 `set_subtitle_style` 调整已有文字。用关键帧截图核对遮挡与边距。
+- 语音转字幕优先调 `omnimux_speech_to_text` 并设 `response_format: "verbose_json"` 取词级 `words[]` 与 `segments[]`，再通过 `clip_edit` 的 `import_subtitles`（支持 `transcriptJson` / `srt` / `cues`）一次性导入原生词级字幕。
+- 全局或指定轨/条字幕样式与动态逐词特效（`none` / `word-highlight` / `word-by-word` / `karaoke` / `bounce` / `typewriter`）统一走 `set_caption_style`，它会保留已有词级时间戳；单个 Title 或单条文字/位置调整继续用 `add_text` / `set_text` / `set_subtitle_style`。
 
-## 自动切片策略
+## 台本、节拍与自动剪辑
 
-- 去停顿用 `cut_silences`。有明确区间时传 `silences: [{ fromSec, toSec }]`。省略区间时按 `minSilenceSec`（默认 0.3 秒）收拢轨道空档。已有片段里停顿的位置需要先确定。
-- 用户要从 3.2 秒切开时，用 `split_clip` 的 `atSec`。切点离片段两端至少 0.08 秒。
-- 只保留 12–18 秒那句时，用 `trim_clip` 保留所需片段，或用 `remove_range` 移除多余区间。
-- 用 `import_media` 导入媒体（支持会话工作区 `path`、全局资产库 `libraryAssetId`、画布上游 `canvasNodeId` 或项目资产 `projectAssetId`），默认同时上轨。只入素材池时传 `placeOnTimeline: false`，之后用 `mediaId` 安排落点。空工程先铺视频或音频，再补文字。
-- 转场克制：硬切优先。交叉溶解 ≤400ms，黑场 ≤600ms，且只用在段落换场。连续两条都 fade 就是业余。
+- **台本分析与气口精剪**：先用 `clip_analyze(mode: "transcript")` 读出分句、`pauses` 停顿与 `fillers` 口癖区间（或用 `query` 搜索关键词），再用 `cut_transcript_ranges`（`pauses` / `fillers` / `ranges`）连同画面、音频、Marker 与词级字幕整体一步涟漪裁切；无台本时的单纯轨间空隙用 `cut_silences`。
+- **节拍分析、高光与音乐卡点**：需卡点或抽高光时，先用 `clip_analyze(mode: "beats")` 读取真实 `bpm`、`beats[]` 与 `downbeats[]`，或 `clip_analyze(mode: "highlights")` 抽取高能量口播片段。拿到真实节拍点后，用 `set_marker` 标出关键卡点/章节，再通过 `sync_clips_to_beats`（推荐 `cut-to-beats` 截长对齐或 `preserve-duration` 重排起点）完成音画对齐。切勿猜测或编造 `bpm` 与节拍时间戳。
+- **人声闪避**：背景音乐与人声并存时，先用 `set_audio_ducking` 将人声片段标为 `audioType: "dialogue"`、将音乐片段标为 `audioType: "music"` 并开启实时闪避（`enabled: true`, `amountDb`, `attackMs`, `releaseMs`, `holdMs`）。
+- **切片与导入边界**：从指定秒数切开用 `split_clip`（距两端 ≥0.08 秒）；保留所需片段用 `trim_clip` 或 `remove_range`。媒体导入用 `import_media`（`path` / `libraryAssetId` / `canvasNodeId` / `projectAssetId`）；转场克制（交叉溶解 ≤400ms，黑场 ≤600ms）。
 
 ## 禁止
 

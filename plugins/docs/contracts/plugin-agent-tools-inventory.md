@@ -212,16 +212,17 @@ superseded_by: null
 ### 3.7 `omnimux-clip`（OpenReel 视频剪辑）
 
 - OpenReel v1 的多轨剪辑、播放与 WebCodecs 导出共用原生编辑器。入口为画布节点 Portal 和独立「视频剪辑」Tab。Host 在 `$DSH_HOME/omnimux/clip/projects/` 保存原生工程，兼容识别旧 `TimelineSchema` 与原生 UUID 工程。[阶段 2 实现](clip-live-control.md#阶段-2-实现) · [上游引入契约](openreel-vendor-contract.md)
-- 已注册 10 个工具。实时工具针对本会话的可见租约，查询可读取保存版本或模板目录。工具时间用秒。完整参数以[实际注册](../../plugins/omnimux-clip/src/tools.js)为准。
+- 已注册 11 个工具。实时工具针对本会话的可见租约，查询可读取保存版本或模板目录。工具时间用秒。完整参数以[实际注册](../../plugins/omnimux-clip/src/tools.js)为准。
 
 | 当前 Agent 行为 | 对应 UI 交互 / HTTP 路由 | Agent 工具名称 (`Tool Name`) | 分级 | 状态 | 破坏性 confirm |
 |---|---|---|---|---|---|
 | 列出保存工程与无法读取的条目 | `GET /omnimux-clip/api/projects` | `clip_list` | L1 | `Implemented` | 否 |
 | 查询内置与资产库可用图形模板、包装模板与文字动效预设 | `GET /omnimux-clip/api/templates` | `clip_templates` | L2 | `Implemented` | 否 |
+| 分析工程台本（分句/停顿/口癖/关键词）及实时音频节拍与高光点 | `GET /omnimux-clip/api/projects/:id/transcript` / 编辑器本地分析 | `clip_analyze` | L2 | `Implemented` | 否 |
+| 创建保存的独立原生空工程 | 新建工程 / Host 工程 Store | `clip_create` | L1 | `Implemented` | 否 |
 | 优先读可见原生投影，亦可按工程 ID 查档 | 编辑器原生快照 / `GET /omnimux-clip/api/projects/:id` | `clip_get` | L1 | `Implemented` | 否 |
 | 诊断保存版本的黑场、重叠、素材缺失（含 Host 恢复归因）和越界 | Host 工程 Store / `POST /omnimux-clip/api/projects/:id/media/reconcile` | `clip_diagnostics` | L2 | `Implemented` | 否 |
-| 创建保存的独立原生空工程 | 新建工程 / Host 工程 Store | `clip_create` | L1 | `Implemented` | 否 |
-| 原子执行一批原生剪辑（含 `import_media` / `relink_media`、图形模板实例、包装模板、关键帧与文字动画），整批入一次 Undo，可预演 | OpenReel 原生时间轴 / 实时命令 / `GET /omnimux-clip/api/media-transfer/:token` | `clip_edit` | L1 | `Implemented` | 删除非空轨或清空时间轴需 `confirmDestructive: true`；版本漂移重连需 `allowVersionUpdate: true` |
+| 原子执行一批原生剪辑（含 `import_media` / `relink_media`、图形与包装模板、关键帧/文字动画、词级动态字幕、台本气口裁切、标记点、音频闪避与节拍卡点），整批入一次 Undo，可预演 | OpenReel 原生时间轴 / 实时命令 / `GET /omnimux-clip/api/media-transfer/:token` | `clip_edit` | L1 | `Implemented` | 删除非空轨或清空时间轴需 `confirmDestructive: true`；版本漂移重连需 `allowVersionUpdate: true` |
 | 打开明确指定的工程并等待可见租约 | 画布 Portal 或独立 Tab | `clip_open` | L1 | `Implemented` | 用户要求打开时调用 |
 | 控制播放头、播放和选段 | 编辑器播放控制 / 实时命令 | `clip_view` | L1 | `Implemented` | 否 |
 | 从预览读取并保存最多六帧真实合成 PNG | 编辑器预览 / 实时命令 | `clip_snapshot` | L2 | `Implemented` | 否 |
@@ -230,7 +231,7 @@ superseded_by: null
 
 查询和操作都保持当前画布工作面，显式导航用 `clip_open`。未物化节点报告 `project-not-materialized`。按 `AMBIGUOUS_TARGET` 的候选定位，可用 `windowInstanceId` 消歧。同窗保活画布的候选标记 `visible: false`。无认证窗口报告 `EDITOR_OFFLINE`，入口不可见或预览尚未就绪按实际状态返回 `EDITOR_NOT_VISIBLE` 或 `PREVIEW_NOT_READY`。实时 `clip_get` 提供 `revision` 和 `revisionEpoch`，供同目标的 `clip_edit` 或指定版本的 `clip_export` 作为 `baseRevision` 和 `baseRevisionEpoch`。世代变更后，旧规划返回 `REVISION_CONFLICT`，可用原 `requestId` 查已执行请求。画布手工导出和 `clip_export` 共用 Host 的导出世代和任务号，文件落盘与画布回写各有独立状态。[错误与工具参数](clip-live-control.md#租约命令与失败)
 
-九个工具的 schema 使用 DSH Host 支持的子集。`clip_get` 的 `revision` 和 `revisionEpoch` 是必填整数，实时读取另返回可选字符串 `windowInstanceId`。实时工具在执行时校验领域范围和窗口身份。[工具入参与编辑行为](clip-live-control.md#工具入参与编辑行为)
+十一个工具的 schema 使用 DSH Host 支持的子集。`clip_get` 的 `revision` 和 `revisionEpoch` 是必填整数，实时读取另返回可选字符串 `windowInstanceId`。实时工具在执行时校验领域范围和窗口身份。[工具入参与编辑行为](clip-live-control.md#工具入参与编辑行为)
 
 ---
 

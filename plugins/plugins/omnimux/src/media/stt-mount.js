@@ -65,7 +65,7 @@ export function mountSpeechToText(ctx, opts) {
       language: { type: 'string', description: 'ISO language hint (e.g. zh, en). Optional.' },
       response_format: {
         type: 'string', enum: ['json', 'text', 'verbose_json', 'srt', 'vtt'],
-        description: 'Transcript output format. Defaults to json; srt/vtt retain subtitle timestamps.',
+        description: 'Transcript output format. Defaults to json; srt/vtt retain subtitle timestamps; verbose_json also preserves optional language, duration, segments, and words timestamps.',
       },
     }),
     output: jsonOut,

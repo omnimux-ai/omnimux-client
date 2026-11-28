@@ -25,7 +25,28 @@ function textStyleView(style) {
     strokeWidth: finite(style.strokeWidth),
     textAlign: safeText(style.textAlign),
     position: safeText(style.position),
+    ...(safeText(style.highlightColor) ? { highlightColor: safeText(style.highlightColor) } : {}),
+    ...(safeText(style.upcomingColor) ? { upcomingColor: safeText(style.upcomingColor) } : {}),
+    ...(safeText(style.shadowColor) ? { shadowColor: safeText(style.shadowColor) } : {}),
+    ...(finite(style.shadowBlur) !== undefined ? { shadowBlur: finite(style.shadowBlur) } : {}),
+    ...(finite(style.boxPaddingX) !== undefined ? { boxPaddingX: finite(style.boxPaddingX) } : {}),
+    ...(finite(style.boxPaddingY) !== undefined ? { boxPaddingY: finite(style.boxPaddingY) } : {}),
+    ...(finite(style.boxRadius) !== undefined ? { boxRadius: finite(style.boxRadius) } : {}),
+    ...(finite(style.safeMargin) !== undefined ? { safeMargin: finite(style.safeMargin) } : {}),
   }
+}
+
+const VALID_AUDIO_TYPES = new Set(['dialogue', 'music', 'sfx', 'ambience'])
+
+function liveDuckingView(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined
+  if (typeof raw.enabled !== 'boolean') return undefined
+  const amountDb = finite(raw.amountDb)
+  const attackMs = finite(raw.attackMs)
+  const releaseMs = finite(raw.releaseMs)
+  const holdMs = finite(raw.holdMs)
+  if (amountDb === undefined || attackMs === undefined || releaseMs === undefined || holdMs === undefined) return undefined
+  return { enabled: raw.enabled, amountDb, attackMs, releaseMs, holdMs }
 }
 
 function mediaView(item) {
@@ -44,6 +65,7 @@ function mediaView(item) {
 
 function clipView({ clip, kind }, track, trackIndex, media) {
   const source = media.get(clip.mediaId)
+  const liveDucking = kind === 'media' ? liveDuckingView(clip.metadata?.liveDucking) : undefined
   return {
     id: clip.id,
     name: safeText(clip.name ?? source?.name ?? clip.text, 160) || clip.id,
@@ -61,6 +83,8 @@ function clipView({ clip, kind }, track, trackIndex, media) {
       sourceOutSec: finite(clip.outPoint),
       speed: finite(clip.speed, 1),
       volume: finite(clip.volume, 1),
+      ...(VALID_AUDIO_TYPES.has(clip.audioType) ? { audioType: clip.audioType } : {}),
+      ...(liveDucking ? { liveDucking } : {}),
     } : {}),
     ...(kind === 'text' ? {
       text: safeText(clip.text, 4000),
@@ -72,6 +96,35 @@ function clipView({ clip, kind }, track, trackIndex, media) {
     hasEffects: items(clip.effects).length > 0,
     hasColorGrading: clip.colorGrading != null,
   }
+}
+
+function markerView(marker) {
+  const durationSec = finite(marker.duration)
+  const comment = safeText(marker.comment, 1000)
+  const kind = safeText(marker.kind, 32)
+  return {
+    id: isReferenceId(marker.id) ? marker.id : undefined,
+    timeSec: finite(marker.time, 0),
+    ...(durationSec !== undefined && durationSec > 0 ? { durationSec } : {}),
+    label: safeText(marker.label, 120) ?? '',
+    color: safeText(marker.color, 32) ?? '#f59e0b',
+    ...(comment ? { comment } : {}),
+    ...(kind ? { kind } : {}),
+  }
+}
+
+function subtitleWordsView(rawWords) {
+  if (!Array.isArray(rawWords) || rawWords.length === 0) return undefined
+  const out = []
+  for (const word of rawWords) {
+    if (out.length >= 200) break
+    const text = safeText(word?.text, 80)
+    const startSec = finite(word?.startTime)
+    const endSec = finite(word?.endTime)
+    if (!text || startSec === undefined || endSec === undefined || endSec < startSec) continue
+    out.push({ text, startSec, endSec })
+  }
+  return out.length > 0 ? out : undefined
 }
 
 function sanitizeGraphicValues(values) {
@@ -160,6 +213,7 @@ export function nativeProjectView(envelope, opts = {}) {
         trackId: cue.captionTrackId, startSec: cue.startTime, endSec: cue.endTime })
     }
   }
+  const markers = items(timeline.markers)
   const base = {
     projectId,
     mode: projectMode(envelope),
@@ -182,6 +236,7 @@ export function nativeProjectView(envelope, opts = {}) {
     mediaCount: media.size,
     missingMediaCount: [...media.values()].filter(mediaIsMissing).length,
     subtitleCount: subtitles.length,
+    markerCount: markers.length,
     graphicInstanceCount: items(project.graphicInstances).length,
   }
   if (view === 'summary') return base
@@ -216,16 +271,34 @@ export function nativeProjectView(envelope, opts = {}) {
       )).map(transitionView),
     })),
     clips,
+    markers: markers
+      .filter((marker) => {
+        if (!marker || !Number.isFinite(marker.time)) return false
+        const end = marker.time + (finite(marker.duration, 0) || 0)
+        return end >= fromSec && marker.time <= toSec
+      })
+      .map(markerView),
     subtitles: subtitles.filter((cue) => cue && (!opts.clipId || cue.id === opts.clipId)
       && (!opts.trackId || cue.captionTrackId === opts.trackId) && cue.endTime >= fromSec && cue.startTime <= toSec)
-      .map((cue) => ({
-        id: isReferenceId(cue.id) ? cue.id : undefined,
-        trackId: isReferenceId(cue.captionTrackId) ? cue.captionTrackId : undefined,
-        text: safeText(cue.text, 4000),
-        startSec: cue.startTime,
-        endSec: cue.endTime,
-        hidden: cue.hidden === true,
-        style: textStyleView(cue.style),
-      })),
+      .map((cue) => {
+        const animationStyle = safeText(cue.animationStyle, 32)
+        const speaker = safeText(cue.speaker, 80)
+        const language = safeText(cue.language, 32)
+        const words = subtitleWordsView(cue.words)
+        return {
+          id: isReferenceId(cue.id) ? cue.id : undefined,
+          trackId: isReferenceId(cue.captionTrackId) ? cue.captionTrackId : undefined,
+          text: safeText(cue.text, 4000),
+          startSec: cue.startTime,
+          endSec: cue.endTime,
+          hidden: cue.hidden === true,
+          style: textStyleView(cue.style),
+          ...(animationStyle ? { animationStyle } : {}),
+          ...(speaker ? { speaker } : {}),
+          ...(language ? { language } : {}),
+          wordCount: items(cue.words).length,
+          ...(words ? { words } : {}),
+        }
+      }),
   }
 }

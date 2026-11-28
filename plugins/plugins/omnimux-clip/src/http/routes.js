@@ -10,6 +10,7 @@ import { assertProjectId, ensureClipDirs, exportMp4Path } from '../paths.js'
 import { inspectStagedMedia, persistToClipVault } from '../media/clipVault.js'
 import { mapResolverError, reconcileProjectMedia, resolveProjectMediaStream } from '../media/reconcile.js'
 import { isReferenceId } from '../timeline/nativeProjectFields.js'
+import { analyzeProjectTranscript } from '../timeline/analyzeTranscript.js'
 import { createProjectStore } from '../store/projectStore.js'
 import { listClipTemplates } from '../templates/catalog.js'
 import { requestRejection } from './request-authorization.js'
@@ -471,6 +472,39 @@ export function createClipDispatcher({ paths, store, fs = DEFAULT_FS, broker, ex
           { projectId: id, ...objectBody(req.body), sessionId, signal: req.signal },
         )
         return { status: 200, body }
+      }
+
+      const transcriptRoute = path.match(/^\/projects\/([^/]+)\/transcript$/)
+      if (transcriptRoute && method === 'GET') {
+        const id = assertProjectId(decodeURIComponent(transcriptRoute[1]))
+        const parseOptNumber = (key) => {
+          if (!searchParams.has(key)) return undefined
+          const raw = searchParams.get(key)
+          if (raw === null || !raw.trim()) throw ClipDomainError.invalidJson(`${key} must be a finite number.`)
+          const value = Number(raw)
+          if (!Number.isFinite(value)) throw ClipDomainError.invalidJson(`${key} must be a finite number.`)
+          return value
+        }
+        const loaded = store.load(id)
+        const fillers = searchParams.getAll('fillerPhrases').filter(Boolean)
+        const analysis = analyzeProjectTranscript(loaded.project, {
+          ...(searchParams.has('captionTrackId') ? { captionTrackId: searchParams.get('captionTrackId') } : {}),
+          minPauseSec: parseOptNumber('minPauseSec'),
+          keepPauseSec: parseOptNumber('keepPauseSec'),
+          ...(fillers.length > 0 ? { fillerPhrases: fillers } : {}),
+          ...(searchParams.has('query') ? { query: searchParams.get('query') } : {}),
+        })
+        return {
+          status: 200,
+          body: {
+            projectId: id,
+            revision: loaded.revision,
+            revisionEpoch: 0,
+            mode: 'transcript',
+            durationSec: loaded.project.timeline.duration,
+            ...analysis,
+          },
+        }
       }
 
       const project = path.match(/^\/projects\/([^/]+)(?:\/(save-export|materialize))?$/)
