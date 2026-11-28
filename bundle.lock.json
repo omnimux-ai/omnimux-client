@@ -59,7 +59,7 @@
       "version": "0.2.13-omni.2",
       "path": "plugins/plugins/omnimux-market",
       "spec": "link:../../plugins/plugins/omnimux-market",
-      "contentHash": "sha256:8f16d8a96fcbe176f8b8f2315b5c9cc447b6337c8db165ed2a1782302bdd87fc"
+      "contentHash": "sha256:542a230e4ebf44e5ab01b95ac33f064404dbe55d0dc9377771031269ab23d541"
     },
     {
       "name": "omnimux-products",

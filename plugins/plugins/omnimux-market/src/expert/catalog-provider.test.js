@@ -254,3 +254,20 @@ test('host.ts declares skills in inject so ctx.skills is safely readable', () =>
   assert.match(injectArr, /'skills'/, 'host.ts inject must declare "skills" so ctx.skills is inject-required-safe')
   assert.match(injectArr, /'tools'/, 'host.ts inject must still declare "tools"')
 })
+
+test('catalog provider exposes bundled community playbook ugc-unboxing-hook (#405)', async () => {
+  const roots = env()
+  const provider = createCatalogSkillProvider({ catalog: loadCatalog(), home: roots.home })
+  const candidate = await listedCandidate(provider, 'ugc-unboxing-hook')
+  validateCandidate(candidate, provider.name)
+  assert.equal(candidate.invocation.modelInvocable, false)
+  assert.equal(candidate.invocation.userInvocable, true)
+
+  const definition = await provider.get(candidate, { cwd: undefined })
+  assert.ok(definition, 'provider.get must resolve ugc-unboxing-hook SKILL.md')
+  validateDefinition(definition)
+  assert.equal(definition.name, 'ugc-unboxing-hook')
+  assert.match(definition.content, /products_get/)
+  assert.match(definition.content, /workflow_create/)
+  assert.match(definition.content, /clip_export/)
+})
