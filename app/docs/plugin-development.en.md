@@ -190,7 +190,7 @@ Arguments are passed as argv. Do not concatenate shell strings or depend on Wind
 
 ## Minimal dual-surface Cordis plugin (UI + Agent tool)
 
-Every OmniMux feature should keep a **UI surface** (`dsh-ui-kit`) and an **Agent tool surface** (`ctx.tools`) backed by the **same local store/service**, with a strict `confirm: true` guard on destructive actions. See [`plugins/packages/dsh-ui-kit/README.md`](../../plugins/packages/dsh-ui-kit/README.md), [`plugins/docs/contracts/plugin-agent-tools-inventory.md`](../../plugins/docs/contracts/plugin-agent-tools-inventory.md), and [`CONTRIBUTING.md`](../../CONTRIBUTING.md) before authoring a new plugin.
+Every OmniMux feature should keep a **UI surface** (`dsh-ui-kit`) and an **Agent tool surface** (`ctx.tools`) backed by the **same local store/service**, with a strict `confirm: true` guard on destructive actions. See [`plugins/packages/dsh-ui-kit/README.md`](../../plugins/packages/dsh-ui-kit/README.md), [`plugins/docs/contracts/plugin-agent-tools-inventory.md`](../../plugins/docs/contracts/plugin-agent-tools-inventory.md), [`plugins/docs/contracts/plugin-security-boundaries.md`](../../plugins/docs/contracts/plugin-security-boundaries.md), and [`CONTRIBUTING.md`](../../CONTRIBUTING.md) before authoring a new plugin.
 
 ### 1. Package metadata and Cordis patch (`package.json` + `cordis.patch.yml`)
 
@@ -200,9 +200,21 @@ Every OmniMux feature should keep a **UI surface** (`dsh-ui-kit`) and an **Agent
   "version": "0.1.0",
   "type": "module",
   "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-renderer",
+        "@deepseek-ai/dsh-client-ui-primitives"
+      ],
+      "platform": "web"
     }
   },
   "dependencies": {
@@ -231,12 +243,14 @@ export function createNotesStore() {
     list() {
       return [...items.values()]
     },
-    create({ id, title }) {
-      const entry = { id: String(id), title: String(title || '').trim() }
+    create(args = {}) {
+      const { id, title } = args ?? {}
+      const entry = { id: String(id ?? ''), title: String(title ?? '').trim() }
       items.set(entry.id, entry)
       return { ok: true, item: entry }
     },
-    remove({ id, confirm }) {
+    remove(args = {}) {
+      const { id, confirm } = args ?? {}
       if (confirm !== true) {
         return {
           ok: false,
@@ -244,41 +258,67 @@ export function createNotesStore() {
           message: 'Pass confirm: true to delete this note.',
         }
       }
-      const deleted = items.delete(String(id))
+      const deleted = items.delete(String(id ?? ''))
       return { ok: true, deleted }
     },
   }
 }
 ```
 
-### 3. Host plugin registering paired routes and `ctx.tools` (`src/index.js`)
+### 3. Host plugin registering `webServer.register` and `ctx.tools` (`src/index.js`)
+
+Declare `inject = ['tools']` at the root and inject `webServer` lazily so headless sessions without HTTP still register tools cleanly, and declare `output: { schema, render }` plus `additionalProperties: false` on every registered tool:
 
 ```js
 import { createNotesStore } from './store.js'
 
 export const name = 'omnimux-notes'
-export const inject = ['tools', 'webServer']
+export const inject = ['tools']
+
+const jsonOut = {
+  schema: { type: 'object', additionalProperties: true },
+  render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }],
+}
 
 export function apply(ctx) {
   const store = createNotesStore()
 
-  // Human UI HTTP surface delegates directly to the shared store
-  ctx.webServer?.route?.('/omnimux-notes/api/notes', async (req) => {
-    if (req.method === 'GET') return { items: store.list() }
-    const body = await req.json()
-    if (req.method === 'DELETE') return store.remove(body)
-    return store.create(body)
+  // Human UI HTTP surface mounts on webServer.register when a Host HTTP server is active.
+  // In production, also check connection.requestRejection(req) when peer is absent.
+  ctx.inject(['webServer'], (inner) => {
+    inner.effect(() => inner.webServer.register({
+      kind: 'prefix',
+      path: '/omnimux/notes',
+      auth: 'required',
+      async handler(req, res) {
+        const send = (status, body) => {
+          res.writeHead(status, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify(body))
+        }
+        if (req.method === 'GET') return send(200, { items: store.list() })
+        const chunks = []
+        for await (const chunk of req) chunks.push(chunk)
+        const body = chunks.length ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : {}
+        if (req.method === 'DELETE') {
+          const out = store.remove(body)
+          return send(out.ok ? 200 : 400, out)
+        }
+        return send(200, store.create(body))
+      },
+    }), 'omnimux-notes: routes')
   })
 
-  // Agent tool surface uses the exact same store and confirmation guard
+  // Agent tool surface uses the exact same store, schema contract, and confirmation guard.
   ctx.tools.register({
     name: 'notes_create',
     description: 'Create a note item in the shared store.',
     parameters: {
       type: 'object',
       required: ['id', 'title'],
+      additionalProperties: false,
       properties: { id: { type: 'string' }, title: { type: 'string' } },
     },
+    output: jsonOut,
     execute: async (args) => store.create(args),
   })
 
@@ -288,21 +328,24 @@ export function apply(ctx) {
     parameters: {
       type: 'object',
       required: ['id', 'confirm'],
+      additionalProperties: false,
       properties: { id: { type: 'string' }, confirm: { type: 'boolean' } },
     },
+    output: jsonOut,
     execute: async (args) => store.remove(args),
   })
 }
 ```
 
-### 4. Client panel consuming `dsh-ui-kit` and `--dsw-*` tokens (`src/client/Panel.jsx`)
+### 4. Client entry and panel using `dsh-ui-kit` and `--dsw-*` tokens (`src/client/`)
 
 ```jsx
+// src/client/Panel.jsx
 import { Button, PageHeader } from 'dsh-ui-kit'
 
 export function NotesPanel({ items, onCreate }) {
   return (
-    <section style={{ background: 'var(--dsw-alias-bg-secondary)' }}>
+    <section style={{ background: 'var(--dsw-alias-bg-layer-1)' }}>
       <PageHeader
         title="Notes"
         subtitle="Backed by the same local store as Agent tools"
@@ -316,7 +359,29 @@ export function NotesPanel({ items, onCreate }) {
 }
 ```
 
-Keep plugin `dsh.manifest.json` (`capabilities.tools` and client slots) and [`plugins/docs/contracts/plugin-agent-tools-inventory.md`](../../plugins/docs/contracts/plugin-agent-tools-inventory.md) in sync whenever adding tools.
+```js
+// src/client/index.js (built to lib/client.js for the "./client" export)
+import { createElement } from 'react'
+import { NotesPanel } from './Panel.jsx'
+
+export const name = 'omnimux-notes'
+
+export function apply(ctx) {
+  ctx.inject(['betterSidebar'], (inner) => {
+    const sidebar = inner.betterSidebar ?? inner.get?.('betterSidebar')
+    if (!sidebar || typeof sidebar.registerTab !== 'function') return
+    inner.effect(() => sidebar.registerTab({
+      id: 'omnimux-notes:main',
+      title: () => 'Notes',
+      order: 20,
+      single: true,
+      component: (props) => createElement(NotesPanel, { ...props, items: [] }),
+    }), 'omnimux-notes: tab')
+  })
+}
+```
+
+For in-repo OmniMux plugins, keep `dsh.manifest.json` (`capabilities.tools` and client slots) and [`plugins/docs/contracts/plugin-agent-tools-inventory.md`](../../plugins/docs/contracts/plugin-agent-tools-inventory.md) in sync whenever adding or changing tools.
 
 ## Testing and release checks
 

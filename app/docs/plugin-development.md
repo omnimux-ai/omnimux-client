@@ -190,7 +190,7 @@ desktopPnpm.runPlugin(['install', '--no-frozen-lockfile'], invokingDir, signal)
 
 ## 最小双面 Cordis 插件示例（UI 与 Agent 工具同源）
 
-OmniMux 插件遵循双面交付铁律：面向用户的 **UI 交互面**（`dsh-ui-kit`）与面向智能体的 **Agent 工具面**（`ctx.tools`）必须调用**同一个领域 Store/Service**，且涉及删除或覆写的破坏性操作必须带 `confirm: true` 守卫。开发前请先核对 [`plugins/packages/dsh-ui-kit/README.md`](../../plugins/packages/dsh-ui-kit/README.md)、[`plugins/docs/contracts/plugin-agent-tools-inventory.md`](../../plugins/docs/contracts/plugin-agent-tools-inventory.md) 与 [`CONTRIBUTING.md`](../../CONTRIBUTING.md)。
+OmniMux 插件遵循双面交付铁律：面向用户的 **UI 交互面**（`dsh-ui-kit`）与面向智能体的 **Agent 工具面**（`ctx.tools`）必须调用**同一个领域 Store/Service**，且涉及删除或覆写的破坏性操作必须带 `confirm: true` 守卫。开发前请先核对 [`plugins/packages/dsh-ui-kit/README.md`](../../plugins/packages/dsh-ui-kit/README.md)、[`plugins/docs/contracts/plugin-agent-tools-inventory.md`](../../plugins/docs/contracts/plugin-agent-tools-inventory.md)、[`plugins/docs/contracts/plugin-security-boundaries.md`](../../plugins/docs/contracts/plugin-security-boundaries.md) 与 [`CONTRIBUTING.md`](../../CONTRIBUTING.md)。
 
 ### 1. 包清单与 Cordis Patch（`package.json` + `cordis.patch.yml`）
 
@@ -200,9 +200,21 @@ OmniMux 插件遵循双面交付铁律：面向用户的 **UI 交互面**（`dsh
   "version": "0.1.0",
   "type": "module",
   "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-renderer",
+        "@deepseek-ai/dsh-client-ui-primitives"
+      ],
+      "platform": "web"
     }
   },
   "dependencies": {
@@ -231,12 +243,14 @@ export function createNotesStore() {
     list() {
       return [...items.values()]
     },
-    create({ id, title }) {
-      const entry = { id: String(id), title: String(title || '').trim() }
+    create(args = {}) {
+      const { id, title } = args ?? {}
+      const entry = { id: String(id ?? ''), title: String(title ?? '').trim() }
       items.set(entry.id, entry)
       return { ok: true, item: entry }
     },
-    remove({ id, confirm }) {
+    remove(args = {}) {
+      const { id, confirm } = args ?? {}
       if (confirm !== true) {
         return {
           ok: false,
@@ -244,41 +258,66 @@ export function createNotesStore() {
           message: '请显式传入 confirm: true 后再执行删除。',
         }
       }
-      const deleted = items.delete(String(id))
+      const deleted = items.delete(String(id ?? ''))
       return { ok: true, deleted }
     },
   }
 }
 ```
 
-### 3. 宿主入口同时挂接路由与 `ctx.tools`（`src/index.js`）
+### 3. 宿主入口挂载 `webServer.register` 与 `ctx.tools`（`src/index.js`）
+
+根级只声明 `inject = ['tools']` 并按需注入 `webServer`，使无 HTTP 的 headless 会话也能正常装载工具；同时每个工具都须声明 `output: { schema, render }` 与 `additionalProperties: false`：
 
 ```js
 import { createNotesStore } from './store.js'
 
 export const name = 'omnimux-notes'
-export const inject = ['tools', 'webServer']
+export const inject = ['tools']
+
+const jsonOut = {
+  schema: { type: 'object', additionalProperties: true },
+  render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }],
+}
 
 export function apply(ctx) {
   const store = createNotesStore()
 
-  // 人类交互 UI 路由直接复用同一 Store
-  ctx.webServer?.route?.('/omnimux-notes/api/notes', async (req) => {
-    if (req.method === 'GET') return { items: store.list() }
-    const body = await req.json()
-    if (req.method === 'DELETE') return store.remove(body)
-    return store.create(body)
+  // 人类交互 UI 路由通过 webServer.register 挂载；生产路由还应在 peer 缺席时校验 connection.requestRejection(req)
+  ctx.inject(['webServer'], (inner) => {
+    inner.effect(() => inner.webServer.register({
+      kind: 'prefix',
+      path: '/omnimux/notes',
+      auth: 'required',
+      async handler(req, res) {
+        const send = (status, body) => {
+          res.writeHead(status, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify(body))
+        }
+        if (req.method === 'GET') return send(200, { items: store.list() })
+        const chunks = []
+        for await (const chunk of req) chunks.push(chunk)
+        const body = chunks.length ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : {}
+        if (req.method === 'DELETE') {
+          const out = store.remove(body)
+          return send(out.ok ? 200 : 400, out)
+        }
+        return send(200, store.create(body))
+      },
+    }), 'omnimux-notes: routes')
   })
 
-  // Agent 工具面走同一 Store 与 confirm 守卫
+  // Agent 工具面复用同一 Store、Schema 契约与 confirm 守卫
   ctx.tools.register({
     name: 'notes_create',
     description: '在共享 Store 中创建条目。',
     parameters: {
       type: 'object',
       required: ['id', 'title'],
+      additionalProperties: false,
       properties: { id: { type: 'string' }, title: { type: 'string' } },
     },
+    output: jsonOut,
     execute: async (args) => store.create(args),
   })
 
@@ -288,21 +327,24 @@ export function apply(ctx) {
     parameters: {
       type: 'object',
       required: ['id', 'confirm'],
+      additionalProperties: false,
       properties: { id: { type: 'string' }, confirm: { type: 'boolean' } },
     },
+    output: jsonOut,
     execute: async (args) => store.remove(args),
   })
 }
 ```
 
-### 4. 客户端视图消费 `dsh-ui-kit` 与语义 Token（`src/client/Panel.jsx`）
+### 4. 客户端入口与视图消费 `dsh-ui-kit` 和语义 Token（`src/client/`）
 
 ```jsx
+// src/client/Panel.jsx
 import { Button, PageHeader } from 'dsh-ui-kit'
 
 export function NotesPanel({ items, onCreate }) {
   return (
-    <section style={{ background: 'var(--dsw-alias-bg-secondary)' }}>
+    <section style={{ background: 'var(--dsw-alias-bg-layer-1)' }}>
       <PageHeader
         title="Notes"
         subtitle="与 Agent 工具共享同一本地数据源"
@@ -316,7 +358,29 @@ export function NotesPanel({ items, onCreate }) {
 }
 ```
 
-新增或变更工具时，请同步更新插件 `dsh.manifest.json`（`capabilities.tools` 与客户端 Slot）以及 [`plugins/docs/contracts/plugin-agent-tools-inventory.md`](../../plugins/docs/contracts/plugin-agent-tools-inventory.md)。
+```js
+// src/client/index.js（构建至 lib/client.js 供 "./client" 导出消费）
+import { createElement } from 'react'
+import { NotesPanel } from './Panel.jsx'
+
+export const name = 'omnimux-notes'
+
+export function apply(ctx) {
+  ctx.inject(['betterSidebar'], (inner) => {
+    const sidebar = inner.betterSidebar ?? inner.get?.('betterSidebar')
+    if (!sidebar || typeof sidebar.registerTab !== 'function') return
+    inner.effect(() => sidebar.registerTab({
+      id: 'omnimux-notes:main',
+      title: () => 'Notes',
+      order: 20,
+      single: true,
+      component: (props) => createElement(NotesPanel, { ...props, items: [] }),
+    }), 'omnimux-notes: tab')
+  })
+}
+```
+
+本仓产品插件在新增或变更工具时，还须同步更新插件的 `dsh.manifest.json`（`capabilities.tools` 与客户端 Slot）以及 [`plugins/docs/contracts/plugin-agent-tools-inventory.md`](../../plugins/docs/contracts/plugin-agent-tools-inventory.md)。
 
 ## 测试与发布检查
 
