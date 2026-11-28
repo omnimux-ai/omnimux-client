@@ -72,15 +72,6 @@ export function splitUpdateNote(line: string): { title?: string; separator?: str
   return { body: trimmed }
 }
 
-function ExternalLinkIcon() {
-  return (
-    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-      <path d="M6 3.5H12.5V10" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M12.5 3.5L5.5 10.5" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" />
-    </svg>
-  )
-}
-
 function UpdateSpinnerIcon() {
   return (
     <svg className="dshUpdateSpinner" width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -149,8 +140,7 @@ export function NextUpdateSettings({ state, language, run }: { state: DesktopSta
         target="_blank"
         rel="noopener noreferrer"
       >
-        <span>{t('更新公告', 'Release notes')}</span>
-        <ExternalLinkIcon />
+        {t('更新公告', 'Release notes')}
       </a>
     </div>
 

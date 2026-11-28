@@ -353,20 +353,22 @@ button.dshDesktopSettingsButtonPrimary:hover:not(:disabled) {
 .dshUpdateNotesLink {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
   min-height: 36px;
   padding: 0 10px;
   border-radius: var(--dsw-radius-sm, 8px);
   color: var(--dsw-alias-label-secondary);
   font-size: 13px;
   font-weight: 500;
-  text-decoration: none;
+  text-decoration: underline;
+  text-decoration-color: var(--dsw-alias-border-l2);
+  text-underline-offset: 4px;
   white-space: nowrap;
   transition: background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), transform var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .dshUpdateNotesLink:hover {
   background: var(--dsw-alias-interactive-bg-hover);
   color: var(--dsw-alias-label-primary);
+  text-decoration: none;
 }
 .dshUpdateNotesLink:active {
   transform: scale(var(--omnimux-motion-press-scale, 0.96));
