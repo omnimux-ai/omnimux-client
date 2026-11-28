@@ -106,7 +106,9 @@ export function ExpertBootstrapBar(props) {
     setActiveId(null)
   }, [presetId, sessionId])
 
-  const ownedPrompt = useOwnedPrompt(input, sessionId, props?.mutatePrompt)
+  const ownedPrompt = useOwnedPrompt(input, sessionId, props?.mutatePrompt, () => {
+    setActiveId(null)
+  })
   const writePrompt = useCallback((text) => {
     if (input && typeof props?.mutatePrompt === 'function') {
       return ownedPrompt(text)

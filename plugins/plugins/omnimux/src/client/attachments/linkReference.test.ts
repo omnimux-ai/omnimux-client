@@ -86,7 +86,7 @@ describe('link identity and reference payload', () => {
   it('preserves the full URL and purpose in independent video/product reference payloads', () => {
     const url = 'https://example.com/path?id=2593#details';
     for (const [kind, purpose, source] of [['video', '参考视频', 'omnimux-video-link'], ['product', '商品页面', 'omnimux-product-link']] as const) {
-      assert.deepEqual(createLinkReference(kind, url), { source, ref: url, label: `${purpose} · example.com`, clipboardText: `${purpose}：${url}` });
+      assert.deepEqual(createLinkReference(kind, url), { source, ref: url, label: `${purpose}：example.com`, clipboardText: `${purpose}：${url}` });
       assert.equal(linkClipboardText(kind, url), `${purpose}：${url}`);
     }
   });

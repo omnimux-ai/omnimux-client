@@ -1,10 +1,18 @@
-    import { Button, IconButton, React, h, useEffect, useState } from "./boot.js";
+    import { Button, ConfirmModal, IconButton, React, h, useEffect, useState } from "./boot.js";
     import { fmt, fmtTime, iconSrc, initials } from "./format.js";
     import { catLabel, lookup, skillDesc, skillTitle, useTr } from "./i18n.js";
     import { DETAIL_TABS, TRACE } from "./constants.js";
     import { api } from "./api.js";
     import { trySkillInSession } from "./session-create.js";
     import { createPortal, fallbackPortal } from "./portal.js";
+
+    function tSafe(tr, key, fallback, params) {
+      if (typeof tr === "function") {
+        const res = tr(key, params);
+        if (res && res !== key) return res;
+      }
+      return fallback;
+    }
 
     function Toast({ text, onDone }) {
       useEffect(() => {
@@ -31,7 +39,7 @@
             catLabel(item, tr),
             item.downloads ? tr("meta.downloads", { n: fmt(item.downloads, tr) }) : null,
             item.version ? "v" + item.version : null,
-          ].filter(Boolean).join(" · ");
+          ].filter(Boolean).join(" / ");
           const rawTitle = typeof skillTitle === "function" ? skillTitle(item, tr) : (item.name || item.slug);
           const title = rawTitle && typeof rawTitle === "object"
             ? (rawTitle.name || rawTitle.title || item.slug || "")
@@ -279,7 +287,7 @@
           return h("div", { key: d[0], className: "sh-eval-item", style: barStyle },
             h("div", { className: "sh-eval-top" },
               h("div", { className: "sh-eval-ico" }, h(DimIcon, { letter: d[1] })),
-              h("div", { className: "sh-eval-name" }, d[1] + " · " + d[2] + " " + tr("dim." + d[0])),
+              h("div", { className: "sh-eval-name" }, d[1] + " " + d[2] + " " + tr("dim." + d[0])),
               h("div", { className: "sh-eval-sc" }, (score == null ? "-" : score) + " / 5"),
             ),
             h("div", { className: "sh-eval-bar" }, h("span")),
@@ -375,6 +383,20 @@
       }, [item.slug, item.token, item.skillKey, item.skill, item.catalogId, item.id]);
 
       useEffect(() => {
+        if (!moreMenuOpen || typeof document === "undefined") return undefined;
+        const onDocClick = () => setMoreMenuOpen(false);
+        const onKey = (e) => {
+          if (e.key === "Escape") setMoreMenuOpen(false);
+        };
+        document.addEventListener("click", onDocClick);
+        document.addEventListener("keydown", onKey);
+        return () => {
+          document.removeEventListener("click", onDocClick);
+          document.removeEventListener("keydown", onKey);
+        };
+      }, [moreMenuOpen]);
+
+      useEffect(() => {
         let live = true;
         const slug = item.slug || item.token || item.skillKey || item.skill || "";
         if (!slug) return undefined;
@@ -393,11 +415,7 @@
             } else {
               setSkillMd("");
               setMetaYaml("");
-              setFileTree([
-                { name: "references", isDir: true, children: ["overview.md"] },
-                { name: "meta.yaml", isDir: false },
-                { name: "SKILL.md", isDir: false },
-              ]);
+              setFileTree([]);
             }
           })
           .catch(() => {});
@@ -461,35 +479,30 @@
         }
       };
 
-      const handleToggleEnable = () => {
-        const next = view.enabled === false;
-        setView((cur) => ({ ...cur, enabled: next }));
-        item.enabled = next;
-      };
-
       const handleTry = () => {
         trySkillInSession(view);
         onClose();
       };
 
+      const isEnUi = tr("locale") === "en";
       const handleShare = () => {
         const slug = view.slug || view.skill || view.id || "";
         if (typeof navigator !== "undefined" && navigator.clipboard) {
           navigator.clipboard.writeText("/" + slug).catch(() => {});
         }
-        setToast("已复制技能指令: /" + slug);
+        setToast(tSafe(tr, "workshop.copiedCmd", (isEnUi ? "Copied command: /" : "已复制技能指令: /") + slug, { slug }));
       };
 
       const rawTitle = typeof skillTitle === "function" ? skillTitle(view, tr) : (view.name || view.title || item.slug || "");
       const title = typeof rawTitle === "object" ? (rawTitle.name || rawTitle.title || item.slug || "") : String(rawTitle || "");
-      const rawDesc = typeof skillDesc === "function" ? skillDesc(view, tr) : (view.description || view.summary || "暂无描述");
-      const desc = typeof rawDesc === "object" ? JSON.stringify(rawDesc) : String(rawDesc || "暂无描述");
-      const category = catLabel(view, tr) || "通用";
+      const emptyDesc = tSafe(tr, "overview.empty", isEnUi ? "No description" : "暂无描述");
+      const rawDesc = typeof skillDesc === "function" ? skillDesc(view, tr) : (view.description || view.summary || emptyDesc);
+      const desc = typeof rawDesc === "object" ? JSON.stringify(rawDesc) : String(rawDesc || emptyDesc);
+      const category = catLabel(view, tr) || tSafe(tr, "workshop.catGeneral", isEnUi ? "General" : "通用");
       const isInstalled = Boolean(view.installed);
-      const isEnabled = view.enabled !== false;
       const slug = view.slug || view.token || view.skillKey || view.skill || "";
 
-      // 提取阶段标签 Badges (如: 动画 / 计划制定)
+      // 提取阶段标签 Badges
       const badges = [];
       if (Array.isArray(view.tags) && view.tags.length) {
         for (const t of view.tags) {
@@ -514,9 +527,6 @@
           if (!yamlText) yamlText = match[1].trim();
           markdownBody = match[2].trim();
         }
-      }
-      if (!yamlText && !isExternalUninstalled) {
-        yamlText = "name: " + slug + "\ndescription: |\n  " + (view.summaryEn || view.summary || desc).slice(0, 160) + "\ntrigger-words: [" + (view.tags || []).join(", ") + "]";
       }
       if (!markdownBody && !isExternalUninstalled) {
         markdownBody = "# " + title + "\n\n" + desc;
@@ -550,80 +560,84 @@
         }
       }
 
-      // 文件列表
+      // 仅基于真实文件列表构建目录树（无多文件时不伪造虚拟子节点）
       const treeItems = [];
-      if (!isExternalUninstalled) {
-        // 文件夹 references
-        treeItems.push(
-          h("div", {
-            key: "tree-ref-dir",
-            className: "ws-tree-node",
-            onClick: () => setRefDirOpen(!refDirOpen),
-          },
-            h("svg", {
-              width: "12",
-              height: "12",
-              viewBox: "0 0 24 24",
-              fill: "none",
-              stroke: "currentColor",
-              strokeWidth: "2",
-              style: { transform: refDirOpen ? "rotate(90deg)" : "none", transition: "transform .15s" },
-            }, h("polyline", { points: "9 18 15 12 9 6" })),
-            h("svg", { width: "14", height: "14", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2" },
-              h("path", { d: "M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" }),
-            ),
-            h("span", null, "references"),
-          ),
-        );
-        if (refDirOpen) {
+      const fileIcon = () => h("svg", { width: "14", height: "14", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2" },
+        h("path", { d: "M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" }),
+        h("polyline", { points: "14 2 14 8 20 8" }),
+      );
+      for (const entry of Array.isArray(fileTree) ? fileTree : []) {
+        if (!entry || !entry.name) continue;
+        if (entry.isDir) {
+          const children = Array.isArray(entry.children) ? entry.children : [];
           treeItems.push(
             h("div", {
-              key: "tree-ref-sub",
-              className: "ws-tree-node ws-tree-sub" + (selectedFile === "overview.md" ? " active" : ""),
-              onClick: () => setSelectedFile("overview.md"),
+              key: "tree-dir-" + entry.name,
+              className: "ws-tree-node",
+              onClick: () => setRefDirOpen(!refDirOpen),
             },
-              h("svg", { width: "13", height: "13", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2" },
-                h("path", { d: "M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" }),
-                h("polyline", { points: "14 2 14 8 20 8" }),
+              h("svg", {
+                width: "12",
+                height: "12",
+                viewBox: "0 0 24 24",
+                fill: "none",
+                stroke: "currentColor",
+                strokeWidth: "2",
+                style: { transform: refDirOpen ? "rotate(90deg)" : "none", transition: "transform .15s" },
+              }, h("polyline", { points: "9 18 15 12 9 6" })),
+              h("svg", { width: "14", height: "14", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2" },
+                h("path", { d: "M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" }),
               ),
-              h("span", null, "overview.md"),
+              h("span", null, entry.name),
+            ),
+          );
+          if (refDirOpen) {
+            for (const sub of children) {
+              treeItems.push(
+                h("div", {
+                  key: "tree-sub-" + entry.name + "-" + sub,
+                  className: "ws-tree-node ws-tree-sub" + (selectedFile === sub ? " active" : ""),
+                  onClick: () => setSelectedFile(sub),
+                },
+                  fileIcon(),
+                  h("span", null, sub),
+                ),
+              );
+            }
+          }
+        } else {
+          treeItems.push(
+            h("div", {
+              key: "tree-file-" + entry.name,
+              className: "ws-tree-node" + (selectedFile === entry.name ? " active" : ""),
+              onClick: () => setSelectedFile(entry.name),
+            },
+              fileIcon(),
+              h("span", null, entry.name),
             ),
           );
         }
-        // meta.yaml
-        treeItems.push(
-          h("div", {
-            key: "tree-meta-yaml",
-            className: "ws-tree-node" + (selectedFile === "meta.yaml" ? " active" : ""),
-            onClick: () => setSelectedFile("meta.yaml"),
-          },
-            h("svg", { width: "14", height: "14", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2" },
-              h("path", { d: "M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" }),
-              h("polyline", { points: "14 2 14 8 20 8" }),
-            ),
-            h("span", null, "meta.yaml"),
-          ),
-        );
       }
-      // SKILL.md
-      treeItems.push(
-        h("div", {
-          key: "tree-skill-md",
-          className: "ws-tree-node" + (selectedFile === "SKILL.md" || isExternalUninstalled ? " active" : ""),
-          onClick: () => setSelectedFile("SKILL.md"),
-        },
-          h("svg", { width: "14", height: "14", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2" },
-            h("path", { d: "M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" }),
-            h("polyline", { points: "14 2 14 8 20 8" }),
-          ),
-          h("span", null, "SKILL.md"),
-        ),
-      );
+      const showFileTree = treeItems.length > 1;
 
       const externalRepoText = view.source?.repo
         ? ("github.com/" + view.source.repo + (view.source.path ? " (" + view.source.path + ")" : ""))
         : (view.author || "SeaLeap");
       const requiresMpstats = Array.isArray(view.tags) && view.tags.includes("MPstats");
+      const copyLabel = tSafe(tr, "workshop.copy", isEnUi ? "Copy" : "复制");
+      const copiedLabel = tSafe(tr, "workshop.copied", isEnUi ? "Copied" : "已复制");
+      const yamlBlock = yamlText
+        ? h("div", { className: "ws-code-card" },
+            h("div", { className: "ws-code-header" },
+              h("span", { className: "ws-code-lang" }, "YAML"),
+              h("button", { type: "button", className: "ws-code-copy", onClick: handleCopyYaml },
+                copied ? h("svg", { width: "13", height: "13", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2.5" }, h("polyline", { points: "20 6 9 17 4 12" })) : h("svg", { width: "13", height: "13", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2" }, h("rect", { x: "9", y: "9", width: "13", height: "13", rx: "2", ry: "2" }), h("path", { d: "M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" })),
+                h("span", null, copied ? copiedLabel : copyLabel),
+              ),
+            ),
+            h("pre", { className: "ws-code-pre" }, yamlText),
+          )
+        : null;
       const mainPreviewNode = isExternalUninstalled
         ? h("div", { className: "omx-external-preview-card" },
             h("h4", { className: "omx-external-preview-title" }, tr("workshop.externalPreviewTitle")),
@@ -644,32 +658,48 @@
               ),
             ),
           )
-        : (selectedFile === "meta.yaml" ? (
-            h("div", { className: "ws-code-card" },
-              h("div", { className: "ws-code-header" },
-                h("span", { className: "ws-code-lang" }, "YAML"),
-                h("button", { type: "button", className: "ws-code-copy", onClick: handleCopyYaml },
-                  copied ? h("svg", { width: "13", height: "13", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2.5" }, h("polyline", { points: "20 6 9 17 4 12" })) : h("svg", { width: "13", height: "13", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2" }, h("rect", { x: "9", y: "9", width: "13", height: "13", rx: "2", ry: "2" }), h("path", { d: "M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" })),
-                  h("span", null, copied ? "已复制" : "复制"),
-                ),
-              ),
-              h("pre", { className: "ws-code-pre" }, yamlText),
-            )
-          ) : (
+        : (selectedFile === "meta.yaml" && yamlBlock ? yamlBlock : (
             h("div", null,
-              h("div", { className: "ws-code-card" },
-                h("div", { className: "ws-code-header" },
-                  h("span", { className: "ws-code-lang" }, "YAML"),
-                  h("button", { type: "button", className: "ws-code-copy", onClick: handleCopyYaml },
-                    copied ? h("svg", { width: "13", height: "13", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2.5" }, h("polyline", { points: "20 6 9 17 4 12" })) : h("svg", { width: "13", height: "13", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2" }, h("rect", { x: "9", y: "9", width: "13", height: "13", rx: "2", ry: "2" }), h("path", { d: "M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" })),
-                    h("span", null, copied ? "已复制" : "复制"),
-                  ),
-                ),
-                h("pre", { className: "ws-code-pre" }, yamlText),
-              ),
+              yamlBlock,
               h("div", { className: "ws-markdown-body" }, mdElements),
             )
           ));
+
+      const statusLabel = isInstalled
+        ? tSafe(tr, "workshop.enabled", isEnUi ? "Enabled" : "已启用")
+        : tSafe(tr, "workshop.uninstalled", isEnUi ? "Uninstalled" : "未安装");
+      const shareLabel = tSafe(tr, "workshop.share", isEnUi ? "Share" : "分享");
+      const moreLabel = tSafe(tr, "workshop.moreActions", isEnUi ? "More actions" : "更多操作");
+      const copySlugLabel = tSafe(tr, "workshop.copySlug", isEnUi ? "Copy ID" : "复制标识");
+      const uninstallActionLabel = tSafe(tr, "workshop.uninstallSkill", isEnUi ? "Uninstall skill" : "卸载技能");
+      const uninstallTitle = tSafe(tr, "workshop.uninstall", isEnUi ? "Uninstall" : "卸载");
+      const uninstallMsg = tSafe(tr, "workshop.confirmUninstall", isEnUi ? "Uninstall this skill?" : "确定卸载此 Skill 吗？");
+      const cancelLabel = tSafe(tr, "suite.install.cancel", isEnUi ? "Cancel" : "取消");
+
+      const confirmNode = confirmUninstall
+        ? (typeof ConfirmModal === "function"
+          ? h(ConfirmModal, {
+              open: true,
+              onClose: () => { if (working !== "uninstall") setConfirmUninstall(false); },
+              title: uninstallTitle,
+              message: uninstallMsg,
+              cancelLabel,
+              confirmLabel: uninstallTitle,
+              confirmVariant: "danger",
+              confirmLoading: working === "uninstall",
+              onConfirm: handleUninstall,
+            })
+          : h(Overlay, { onClose: () => { if (working !== "uninstall") setConfirmUninstall(false); } },
+              h("div", { className: "modal-dialog", role: "dialog", "aria-modal": "true" },
+                h("div", { className: "modal-header" }, h("h3", { className: "modal-title" }, uninstallTitle)),
+                h("p", null, uninstallMsg),
+                h("div", { style: { display: "flex", gap: "8px", justifyContent: "flex-end" } },
+                  h(Button, { size: "sm", variant: "outline", disabled: working === "uninstall", onClick: () => setConfirmUninstall(false) }, cancelLabel),
+                  h(Button, { size: "sm", variant: "danger", loading: working === "uninstall", onClick: handleUninstall }, uninstallTitle),
+                ),
+              ),
+            ))
+        : null;
 
       return h("div", { className: "modal-dialog ws-detail-dialog", role: "dialog", "aria-modal": "true" },
         // 顶部 Header 栏（关闭按钮已统一移至外侧右上方）
@@ -683,20 +713,15 @@
         ),
         // 简短描述段落
         h("p", { className: "ws-detail-desc" }, desc),
-        // 主体分栏：左树右内容
+        // 主体分栏：左树（仅多文件真实存在时显示）右内容
         h("div", { className: "ws-detail-main" },
-          h("div", { className: "ws-detail-tree" }, treeItems),
+          showFileTree ? h("div", { className: "ws-detail-tree" }, treeItems) : null,
           h("div", { className: "ws-detail-content" }, mainPreviewNode),
         ),
         // 底部状态与操作栏
         h("div", { className: "ws-detail-footer" },
           h("div", { className: "ws-footer-status" },
-            h(DetailSwitch, {
-              checked: isInstalled && isEnabled,
-              disabled: Boolean(view.preinstalled) || Boolean(working),
-              onChange: isInstalled ? (view.preinstalled ? undefined : handleUninstall) : handleInstall,
-            }),
-            h("span", null, isInstalled ? (isEnabled ? "已启用" : "已停用") : "未安装"),
+            h("span", { className: "sh-tag" + (isInstalled ? " green" : "") }, statusLabel),
           ),
           h("div", { className: "ws-footer-actions" },
             h(Button, {
@@ -711,7 +736,7 @@
                 h("line", { x1: "15.41", y1: "6.51", x2: "8.59", y2: "10.49" }),
               ),
               onClick: handleShare,
-            }, "分享"),
+            }, shareLabel),
             h(Button, {
               size: "sm",
               variant: "primary",
@@ -722,13 +747,14 @@
               onClick: isInstalled ? handleTry : handleInstall,
               loading: working === "install",
             }, isInstalled ? tr("workshop.try") : tr("action.install")),
-            h("div", { className: "ws-more-menu-wrap" },
+            h("div", { className: "ws-more-menu-wrap", onClick: (e) => e.stopPropagation() },
               h(typeof IconButton !== "undefined" ? IconButton : Button, {
                 size: "sm",
                 variant: "outline",
                 className: "ws-footer-btn ws-footer-more-btn",
-                "aria-label": "更多操作",
-                title: "更多操作",
+                "aria-label": moreLabel,
+                "aria-expanded": moreMenuOpen,
+                title: moreLabel,
                 onClick: () => setMoreMenuOpen(!moreMenuOpen),
               },
                 h("svg", { width: "14", height: "14", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", "aria-hidden": "true" },
@@ -738,30 +764,36 @@
                 ),
               ),
               moreMenuOpen ? (
-                h("div", { className: "ws-more-menu" },
+                h("div", { className: "ws-more-menu", role: "menu" },
                   h("button", {
                     type: "button",
+                    role: "menuitem",
                     className: "ws-more-item",
                     onClick: () => {
                       if (typeof navigator !== "undefined" && navigator.clipboard) {
                         navigator.clipboard.writeText(slug).catch(() => {});
                       }
-                      setToast("已复制标识: " + slug);
+                      setToast(tSafe(tr, "workshop.copiedId", (isEnUi ? "Copied ID: " : "已复制标识: ") + slug, { slug }));
                       setMoreMenuOpen(false);
                     },
-                  }, "复制标识"),
+                  }, copySlugLabel),
                   isInstalled && !view.preinstalled ? (
                     h("button", {
                       type: "button",
+                      role: "menuitem",
                       className: "ws-more-item danger",
-                      onClick: handleUninstall,
-                    }, "卸载技能")
+                      onClick: () => {
+                        setMoreMenuOpen(false);
+                        setConfirmUninstall(true);
+                      },
+                    }, uninstallActionLabel)
                   ) : null,
                 )
               ) : null,
             ),
           ),
         ),
+        confirmNode,
         toast ? h(Toast, { text: toast, onDone: () => setToast("") }) : null,
       );
     }

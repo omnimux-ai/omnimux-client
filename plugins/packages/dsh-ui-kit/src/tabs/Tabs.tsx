@@ -1,5 +1,5 @@
 import { forwardRef, useEffect, useLayoutEffect, useRef } from 'react'
-import type { HTMLAttributes, MutableRefObject, ReactNode } from 'react'
+import type { HTMLAttributes, KeyboardEvent, MutableRefObject, ReactNode } from 'react'
 import { cssClass } from '../internal/cssClass.ts'
 import { cx } from '../internal/cx.ts'
 import '../motion/tokens.ts'
@@ -125,6 +125,38 @@ export const Tabs = forwardRef<HTMLDivElement, TabsProps>(function Tabs(
     }
   }, [activeId, isPill, size, items])
 
+  const enabledItems = items.filter((item) => !item.disabled)
+  const focusableTabId = enabledItems.some((item) => item.id === activeId)
+    ? activeId
+    : (enabledItems[0]?.id ?? '')
+
+  const handleTabKeyDown = (event: KeyboardEvent<HTMLButtonElement>, currentId: string) => {
+    if (enabledItems.length === 0) return
+    const currentIndex = enabledItems.findIndex((item) => item.id === currentId)
+    if (currentIndex === -1) return
+
+    let nextIndex = -1
+    if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+      nextIndex = (currentIndex + 1) % enabledItems.length
+    } else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+      nextIndex = (currentIndex - 1 + enabledItems.length) % enabledItems.length
+    } else if (event.key === 'Home') {
+      nextIndex = 0
+    } else if (event.key === 'End') {
+      nextIndex = enabledItems.length - 1
+    } else {
+      return
+    }
+
+    const target = enabledItems[nextIndex]
+    if (!target) return
+    event.preventDefault()
+    buttonRefs.current.get(target.id)?.focus()
+    if (target.id !== activeId) {
+      onChange(target.id)
+    }
+  }
+
   return (
     <div
       {...rest}
@@ -152,6 +184,7 @@ export const Tabs = forwardRef<HTMLDivElement, TabsProps>(function Tabs(
             type="button"
             role="tab"
             aria-selected={isActive}
+            tabIndex={item.disabled ? -1 : item.id === focusableTabId ? 0 : -1}
             disabled={item.disabled}
             className={cx(TAB_ITEM_CLASS, isActive && ACTIVE_CLASS)}
             onClick={() => {
@@ -159,6 +192,7 @@ export const Tabs = forwardRef<HTMLDivElement, TabsProps>(function Tabs(
                 onChange(item.id)
               }
             }}
+            onKeyDown={(event) => handleTabKeyDown(event, item.id)}
           >
             <span
               className={LABEL_CLASS}

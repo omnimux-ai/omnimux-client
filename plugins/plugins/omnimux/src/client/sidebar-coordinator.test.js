@@ -367,7 +367,7 @@ test('开发版：Alpha 内测项不挂 DOM，核心常驻项挂回侧栏', asyn
 test('发布渠道过滤：开发版保留全部入口，正式版只过滤 Alpha 测试版', () => {
   const dev = filterExploreItemsForChannel(EXPLORE_MENU_ITEMS, 'development')
   assert.deepEqual(dev.map((item) => item.label), [
-    '应用', '图像生成', '视频剪辑', '发布', '账号', '手机管理', '数据分析',
+    '应用', '图像生成', '视频剪辑', '发布', '账号', '移动设备', '数据分析',
   ])
   const prod = filterExploreItemsForChannel(EXPLORE_MENU_ITEMS, 'production')
   assert.deepEqual(prod.map((item) => item.label), ['应用', '图像生成', '视频剪辑'])

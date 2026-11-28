@@ -45,6 +45,11 @@
   opacity: 0.4;
 }
 
+.button[aria-busy="true"] {
+  cursor: wait;
+  opacity: 0.72;
+}
+
 .button:active:not(:disabled):not([aria-disabled="true"]) {
   transform: scale(var(--omnimux-motion-press-scale, 0.96));
 }

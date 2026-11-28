@@ -63,6 +63,13 @@ const t = (key, params) => {
 
 const stub = {
   Button: ({ children, variant: _variant, loading: _loading, ...rest }) => React.createElement('button', rest, children),
+  ConfirmModal: ({ open, title, message, onConfirm, onClose, cancelLabel, confirmLabel }) => (
+    open ? React.createElement('div', { role: 'dialog', 'aria-label': title },
+      message,
+      React.createElement('button', { type: 'button', onClick: onClose }, cancelLabel || 'Cancel'),
+      React.createElement('button', { type: 'button', onClick: onConfirm }, confirmLabel || 'Confirm'),
+    ) : null
+  ),
   InputField: ({ value, onChange, type = 'text', suffix: _suffix, ...rest }) => React.createElement('input', { ...rest, type, value, onChange }),
   DropdownSelect: ({ value, options, onChange, ...rest }) => React.createElement('select', {
     ...rest, value, onChange: (event) => onChange?.(event.target.value),

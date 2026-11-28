@@ -1,6 +1,7 @@
 import React from "react";
 import {
   Button,
+  ConfirmModal,
   FilterBar,
   IconButton,
   IconCloseOutline16,
@@ -23,6 +24,7 @@ export {
   useRef,
   useState,
   Button,
+  ConfirmModal,
   FilterBar,
   IconButton,
   IconCloseOutline16,

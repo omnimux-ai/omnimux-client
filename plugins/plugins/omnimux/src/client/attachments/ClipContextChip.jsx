@@ -13,18 +13,17 @@ export function ClipContextChip({ bridge, sessionId, t }) {
   const snapshot = useSyncExternalStore(bridge.subscribe, bridge.getSnapshot, bridge.getSnapshot)
   const clip = snapshot?.anchor === anchor ? snapshot.clip : null
   const closeLabel = t('clipComposer.remove')
+  const modeLabel = clip ? t(clip.mode === 'canvas' ? 'clipComposer.canvas' : 'clipComposer.studio') : ''
+  const titleText = clip?.title ? `${modeLabel} ${clip.title}` : modeLabel
   return <>
     <span ref={setAnchor} hidden />
     {clip && <div className="omx-clip-context-chip" role="group" aria-label={t('clipComposer.context')}>
       <span className="omx-clip-context-icon"><IconSparkleMedium size={16} aria-hidden="true" /></span>
       <div className="omx-clip-context-copy">
         <div className="omx-clip-context-heading">
-          <strong>{t(clip.mode === 'canvas' ? 'clipComposer.canvas' : 'clipComposer.studio')} · {clip.title || clip.projectId}</strong>
-          <span title={t('clipComposer.epoch', { epoch: clip.revisionEpoch })}>r{clip.revision}{clip.revisionEpoch > 0 && ` · ${t('clipComposer.epoch', { epoch: clip.revisionEpoch })}`}</span>
+          <strong>{titleText}</strong>
         </div>
         <div className="omx-clip-context-meta">
-          <span>{clip.projectId}</span>
-          {clip.mode === 'canvas' && <span>{clip.workspaceId}/{clip.nodeId}</span>}
           <span>{t('clipComposer.playhead')} {timecode(clip.playheadSec)} / {timecode(clip.durationSec)}</span>
         </div>
         <div className="omx-clip-context-meta">

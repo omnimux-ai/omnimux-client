@@ -76,7 +76,7 @@ test('useLinkReference requires a strict true receipt and a subsequent newer mat
   const result = h.add('video', ` ${URL} `);
   assert.equal(h.calls.length, 1);
   assert.deepEqual(h.calls[0], {
-    reference: { source: 'omnimux-video-link', ref: URL, label: '参考视频 · example.com', clipboardText: `参考视频：${URL}` },
+    reference: { source: 'omnimux-video-link', ref: URL, label: '参考视频：example.com', clipboardText: `参考视频：${URL}` },
     span: { start: 13, end: 13, draftRev: 4 },
   });
   await assertPending(result);

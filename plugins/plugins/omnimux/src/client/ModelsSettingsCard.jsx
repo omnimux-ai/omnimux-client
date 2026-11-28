@@ -48,8 +48,19 @@ const GROUPS = [
 
 const cap = (kind) => `${kind[0].toUpperCase()}${kind.slice(1)}`
 
+function formatSyncTimestamp(raw) {
+  if (!raw || typeof raw !== 'string') return ''
+  const parsed = Date.parse(raw)
+  if (Number.isNaN(parsed)) return raw
+  try {
+    return new Date(parsed).toLocaleString()
+  } catch {
+    return raw
+  }
+}
+
 /**
- * Read-only gateway-sync status with one explicit refresh action.
+ * Secondary gateway-sync status panel with one explicit refresh action.
  * A successful refresh emits the same event every catalog consumer listens to.
  */
 function CatalogSyncPanel({ t }) {
@@ -100,6 +111,7 @@ function CatalogSyncPanel({ t }) {
 
   const snapshot = state?.snapshot
   const refreshState = state?.refresh
+  const updatedText = snapshot?.generatedAt ? formatSyncTimestamp(snapshot.generatedAt) : t('models.syncUnknown')
   return (
     <div className="omnimux-models-card" data-section="catalog-sync">
       <div className="omnimux-models-card__head">
@@ -112,7 +124,7 @@ function CatalogSyncPanel({ t }) {
           <div className="omnimux-models-card__row-body">
             <span className="omnimux-models-card__status" role="status">
               {snapshot
-                ? `${snapshot.source || 'none'} · ${snapshot.generatedAt || t('models.syncUnknown')}${snapshot.stale ? ` · ${t('models.syncStale')}` : ''}`
+                ? `${updatedText}${snapshot.stale ? ` (${t('models.syncStale')})` : ''}`
                 : t('models.syncLoading')}
             </span>
             <Button type="button" size="sm" variant="secondary" disabled={busy} loading={busy ? true : undefined} onClick={() => { void refresh() }}>
@@ -120,7 +132,9 @@ function CatalogSyncPanel({ t }) {
             </Button>
           </div>
         </div>
-        {refreshState?.errorCode ? <p className="omnimux-models-card__error" role="status">{refreshState.errorCode}</p> : null}
+        {refreshState?.errorCode ? (
+          <p className="omnimux-models-card__error" role="status">{t('runtime.error')}</p>
+        ) : null}
         {syncError ? <p className="omnimux-models-card__error" role="status">{syncError}</p> : null}
       </div>
     </div>
@@ -236,7 +250,7 @@ export function ModelsSettingsCard({ t, scope }) {
         .map((op) => ({ value: op.id, label: op.label || op.id }))
       const stored = value[row.key]
       if (typeof stored === 'string' && stored && stored !== DEFAULT_OPERATION_AUTO
-        && !options.some((option) => option.value === stored)) options.push({ value: stored, label: `${stored} · ${t('runtime.needsConfirmation')}` })
+        && !options.some((option) => option.value === stored)) options.push({ value: stored, label: `${stored} (${t('runtime.needsConfirmation')})` })
       return options
     }
     if (row.tool) {
@@ -262,7 +276,7 @@ export function ModelsSettingsCard({ t, scope }) {
     for (const item of filtered) options.push({ value: item.id, label: item.label || item.id })
     const stored = value[row.key]
     if (typeof stored === 'string' && stored && !options.some((option) => option.value === stored)) {
-      options.push({ value: stored, label: `${stored} · ${t('runtime.needsConfirmation')}` })
+      options.push({ value: stored, label: `${stored} (${t('runtime.needsConfirmation')})` })
     }
     return options
   }, [catalog, currentModelIdFor, listedOperationsFor, reasoningOptionsFor, t, value])
@@ -363,7 +377,6 @@ export function ModelsSettingsCard({ t, scope }) {
           </Button>
         </div>
       ) : null}
-      <CatalogSyncPanel t={t} />
       {/* 栏目一：对话与媒体生成模型 */}
       <div className="omnimux-models-card" data-section="runtime">
         <div className="omnimux-models-card__head">
@@ -444,6 +457,7 @@ export function ModelsSettingsCard({ t, scope }) {
         </div>
         {error ? <p className="omnimux-models-card__error" role="status">{error}</p> : null}
       </div>
+      <CatalogSyncPanel t={t} />
     </div>
   )
 }

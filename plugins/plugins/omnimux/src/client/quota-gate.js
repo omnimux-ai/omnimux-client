@@ -38,11 +38,20 @@ export function openWallet() {
   if (typeof window !== 'undefined' && typeof window.open === 'function') window.open(currentWalletUrl(), '_blank', 'noopener,noreferrer')
 }
 export function close() { setState({ phase: 'closed', failure: null, cooldownUntil: Date.now() + COOLDOWN_MS }) }
+export async function recheckQuota() {
+  if (state.phase !== 'open') return false
+  const res = await ensureQuota({ userInitiated: true }).catch(() => ({ ok: false }))
+  if (res && res.ok) {
+    close()
+    return true
+  }
+  return false
+}
 
 export function installQuotaGlobal(target) {
   if (!target) return undefined
   if (target[QUOTA_GLOBAL_KEY]) return target[QUOTA_GLOBAL_KEY]
-  const api = { notify, subscribe, getSnapshot, walletUrl, openWallet, close, ensureQuota }
+  const api = { notify, subscribe, getSnapshot, walletUrl, openWallet, close, recheckQuota, ensureQuota }
   Object.defineProperty(target, QUOTA_GLOBAL_KEY, { value: api, configurable: true })
   return api
 }

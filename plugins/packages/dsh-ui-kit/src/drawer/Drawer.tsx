@@ -6,6 +6,7 @@ import { IconButton } from "../button/Button.tsx";
 import { focusFirstDescendant, trapFocus } from "../internal/a11y.ts";
 import { cssClass } from "../internal/cssClass.ts";
 import { cx } from "../internal/cx.ts";
+import { resolveKitLocale } from "../internal/locale.ts";
 import type { PortalContainer } from "../internal/portal.ts";
 import { resolvePortalContainer } from "../internal/portal.ts";
 import { usePresence } from "../motion/usePresence.ts";
@@ -42,6 +43,8 @@ export interface DrawerProps {
   closeOnEsc?: boolean;
   /** Target portal mount container, defaults to document.body. */
   container?: PortalContainer;
+  /** Accessible label for the close button. */
+  closeLabel?: string;
   /** Custom class name for the drawer panel. */
   className?: string;
 }
@@ -71,11 +74,13 @@ export function Drawer({
   closeOnOverlayClick = true,
   closeOnEsc = true,
   container,
+  closeLabel,
   className,
 }: DrawerProps): JSX.Element | null {
   const drawerRef = useRef<HTMLDivElement>(null);
   const previousActiveElementRef = useRef<HTMLElement | null>(null);
   const { mounted, phase } = usePresence(open, 190);
+  const resolvedCloseLabel = closeLabel ?? (resolveKitLocale() === "en" ? "Close drawer" : "关闭抽屉");
 
   const titleId = useId();
   const descriptionId = useId();
@@ -114,10 +119,31 @@ export function Drawer({
     };
   }, [open]);
 
+  // Global Escape fallback when focus is outside or hasn't entered the drawer yet;
+  // skips events handled by children (e.g. SearchField) or owned by an open menu / nested top modal.
+  useEffect(() => {
+    if (!open || !closeOnEsc || typeof document === "undefined") return;
+    const onDocumentKeyDown = (e: globalThis.KeyboardEvent) => {
+      if (e.defaultPrevented) return;
+      if (e.key !== "Escape" || !closeOnEsc) return;
+      if (e.target instanceof Element && e.target.closest('[role="menu"]')) return;
+      const modals = document.querySelectorAll('[role="dialog"][aria-modal="true"]');
+      if (modals.length > 0 && modals[modals.length - 1] !== drawerRef.current) return;
+      e.preventDefault();
+      e.stopPropagation();
+      onClose();
+    };
+    document.addEventListener("keydown", onDocumentKeyDown);
+    return () => {
+      document.removeEventListener("keydown", onDocumentKeyDown);
+    };
+  }, [open, closeOnEsc, onClose]);
+
   // Keyboard navigation (Escape & Tab trap)
   const handleKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-    if (!open) return;
+    if (!open || e.defaultPrevented) return;
     if (e.key === "Escape" && closeOnEsc) {
+      e.preventDefault();
       e.stopPropagation();
       onClose();
       return;
@@ -191,7 +217,7 @@ export function Drawer({
 
               {closable ? (
                 <IconButton
-                  aria-label="关闭抽屉"
+                  aria-label={resolvedCloseLabel}
                   size="sm"
                   variant="ghost"
                   onClick={onClose}

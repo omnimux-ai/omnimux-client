@@ -1,0 +1,609 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>OmniMux 插件体验重构对比</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f5f6f8;
+      --surface: #ffffff;
+      --surface-2: #eef1f5;
+      --text: #14171f;
+      --muted: #586070;
+      --border: #dce1ea;
+      --primary: #14171f;
+      --primary-fg: #ffffff;
+      --danger: #b42318;
+      --danger-fg: #ffffff;
+      --danger-soft: rgba(180, 35, 24, 0.12);
+      --danger-text: #b42318;
+      --ok: #146c35;
+      --ok-soft: rgba(20, 108, 53, 0.12);
+      --focus: #2563eb;
+      --shadow: 0 16px 36px rgba(15, 23, 42, 0.14);
+    }
+    html[data-theme="dark"] {
+      color-scheme: dark;
+      --bg: #101216;
+      --surface: #181b21;
+      --surface-2: #222630;
+      --text: #eef1f6;
+      --muted: #9ea8b8;
+      --border: #2c313d;
+      --primary: #f1f5f9;
+      --primary-fg: #101216;
+      --danger: #dc2626;
+      --danger-fg: #ffffff;
+      --danger-soft: rgba(248, 113, 113, 0.18);
+      --danger-text: #fca5a5;
+      --ok: #86efac;
+      --ok-soft: rgba(74, 222, 128, 0.18);
+      --focus: #60a5fa;
+      --shadow: 0 20px 44px rgba(0, 0, 0, 0.52);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font: 14px/1.5 -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      -webkit-font-smoothing: antialiased;
+    }
+    .shell {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 14px;
+    }
+    h1 {
+      margin: 0;
+      font-size: 20px;
+      font-weight: 600;
+      line-height: 28px;
+    }
+    .btn {
+      appearance: none;
+      -webkit-appearance: none;
+      height: 34px;
+      padding: 0 12px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+      font: inherit;
+      font-weight: 500;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      white-space: nowrap;
+      transition: background-color 140ms cubic-bezier(0.16, 1, 0.3, 1), transform 80ms cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .btn:hover:not(:disabled) { background: var(--surface-2); }
+    .btn:active:not(:disabled) { transform: scale(0.96); }
+    .btn:disabled { opacity: 0.55; cursor: not-allowed; }
+    .btn:focus-visible, input:focus-visible, .seg-tab:focus-visible {
+      outline: 2px solid var(--focus);
+      outline-offset: 2px;
+    }
+    .btn-primary {
+      background: var(--primary);
+      color: var(--primary-fg);
+      border-color: var(--primary);
+    }
+    .btn-primary:hover:not(:disabled) { opacity: 0.92; background: var(--primary); }
+    .btn-danger {
+      background: var(--danger);
+      color: var(--danger-fg);
+      border-color: var(--danger);
+    }
+    .btn-danger:hover:not(:disabled) { opacity: 0.92; background: var(--danger); }
+    .tabs {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 16px;
+    }
+    .tab[aria-selected="true"] {
+      background: var(--primary);
+      color: var(--primary-fg);
+      border-color: var(--primary);
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
+    @media (max-width: 820px) {
+      .grid { grid-template-columns: 1fr; }
+    }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px;
+      min-width: 0;
+    }
+    .card-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .surface-box {
+      background: var(--surface-2);
+      border-radius: 10px;
+      padding: 14px;
+      display: grid;
+      gap: 10px;
+      min-width: 0;
+    }
+    .row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+      padding: 8px 10px;
+      border-radius: 8px;
+      background: var(--surface);
+      min-width: 0;
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      min-height: 22px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 500;
+      line-height: 1.35;
+      background: var(--surface-2);
+      color: var(--muted);
+    }
+    .badge-bad { background: var(--danger-soft); color: var(--danger-text); }
+    .badge-good { background: var(--ok-soft); color: var(--ok); }
+    .muted { color: var(--muted); font-size: 13px; margin: 0; }
+    .toolbar-scroll {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 6px 8px;
+      overflow: hidden;
+    }
+    .toolbar-left {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex: 1 1 auto;
+      min-width: 0;
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+    .toolbar-left::-webkit-scrollbar { display: none; }
+    .seg {
+      display: inline-flex;
+      gap: 4px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 3px;
+    }
+    .seg-tab {
+      appearance: none;
+      -webkit-appearance: none;
+      border: 0;
+      background: transparent;
+      color: var(--muted);
+      padding: 5px 10px;
+      border-radius: 6px;
+      font: inherit;
+      cursor: pointer;
+    }
+    .seg-tab[aria-selected="true"] {
+      background: var(--surface-2);
+      color: var(--text);
+      font-weight: 600;
+    }
+    .search-input {
+      height: 30px;
+      min-width: 120px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 0 8px;
+      background: var(--surface);
+      color: var(--text);
+      font: inherit;
+    }
+    .backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.5);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      z-index: 40;
+    }
+    .backdrop[data-open="true"] { display: flex; }
+    .dialog {
+      width: min(440px, 100%);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 18px;
+      box-shadow: var(--shadow);
+      display: grid;
+      gap: 12px;
+    }
+    .dialog-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+    .drawer-box {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px;
+      background: var(--surface);
+      display: grid;
+      gap: 8px;
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar">
+      <h1>OmniMux 插件体验重构对比（PR 2A）</h1>
+      <button type="button" class="btn" id="themeToggle">切换深色主题</button>
+    </header>
+
+    <div class="tabs" role="tablist" aria-label="改造分层场景">
+      <button type="button" class="btn tab" role="tab" aria-selected="true" data-scene="kit">共享组件</button>
+      <button type="button" class="btn tab" role="tab" aria-selected="false" data-scene="hub">中枢对话</button>
+      <button type="button" class="btn tab" role="tab" aria-selected="false" data-scene="market">扩展市场</button>
+    </div>
+
+    <main id="stage" class="grid"></main>
+  </div>
+
+  <div class="backdrop" id="confirmBackdrop" data-open="false" role="presentation">
+    <div class="dialog" id="confirmDialog" role="alertdialog" aria-modal="true" aria-labelledby="confirmTitle">
+      <h2 id="confirmTitle" style="margin:0;font-size:16px;"></h2>
+      <p id="confirmBody" class="muted"></p>
+      <div class="dialog-actions">
+        <button type="button" class="btn" id="confirmCancel">取消</button>
+        <button type="button" class="btn btn-danger" id="confirmAction">卸载技能</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const state = {
+      scene: 'kit',
+      theme: 'light',
+      drawerOpen: true,
+      searchValue: '视频剪辑',
+      activeTab: 'all',
+      discoverFilter: '设计',
+      mineFilter: '全部',
+      mineSearch: '',
+      skills: [
+        { slug: 'clip-craft', title: '视频精剪指南', files: ['SKILL.md', 'references/timing.md'], installed: true },
+        { slug: 'product-shoot', title: '商品拍摄分镜', files: ['SKILL.md'], installed: true },
+      ],
+      selectedSkill: 'clip-craft',
+      confirmLoading: false,
+      lastLog: '等待操作',
+    };
+
+    const backdrop = document.getElementById('confirmBackdrop');
+    const confirmCancel = document.getElementById('confirmCancel');
+    const confirmAction = document.getElementById('confirmAction');
+    const themeToggle = document.getElementById('themeToggle');
+    let confirmResolver = null;
+    let triggerId = '';
+
+    themeToggle.onclick = () => {
+      state.theme = state.theme === 'light' ? 'dark' : 'light';
+      document.documentElement.dataset.theme = state.theme;
+      themeToggle.textContent = state.theme === 'light' ? '切换深色主题' : '切换浅色主题';
+    };
+
+    document.querySelectorAll('.tab').forEach((tab) => {
+      tab.onclick = () => {
+        state.scene = tab.dataset.scene;
+        document.querySelectorAll('.tab').forEach((item) => item.setAttribute('aria-selected', String(item === tab)));
+        render();
+      };
+    });
+
+    function openDangerConfirm({ title, body, actionLabel, onConfirm }) {
+      triggerId = document.activeElement?.id || '';
+      document.getElementById('confirmTitle').textContent = title;
+      document.getElementById('confirmBody').textContent = body;
+      confirmAction.textContent = actionLabel;
+      state.confirmLoading = false;
+      confirmCancel.disabled = false;
+      confirmAction.disabled = false;
+      confirmResolver = onConfirm;
+      backdrop.dataset.open = 'true';
+      confirmCancel.focus();
+    }
+
+    function closeDangerConfirm(force) {
+      if (state.confirmLoading && !force) return;
+      backdrop.dataset.open = 'false';
+      confirmResolver = null;
+      if (triggerId) {
+        const el = document.getElementById(triggerId);
+        if (el && !el.disabled) el.focus();
+      }
+    }
+
+    confirmCancel.onclick = () => closeDangerConfirm(false);
+    backdrop.onclick = (e) => {
+      if (e.target === backdrop) closeDangerConfirm(false);
+    };
+    confirmAction.onclick = () => {
+      if (state.confirmLoading || !confirmResolver) return;
+      state.confirmLoading = true;
+      confirmCancel.disabled = true;
+      confirmAction.disabled = true;
+      setTimeout(() => {
+        const fn = confirmResolver;
+        state.confirmLoading = false;
+        closeDangerConfirm(true);
+        fn();
+      }, 240);
+    };
+
+    document.addEventListener('keydown', (e) => {
+      if (backdrop.dataset.open !== 'true') return;
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        closeDangerConfirm(false);
+      } else if (e.key === 'Tab') {
+        const list = [confirmCancel, confirmAction].filter((el) => !el.disabled);
+        if (list.length === 0) {
+          e.preventDefault();
+          return;
+        }
+        const first = list[0];
+        const last = list[list.length - 1];
+        if (e.shiftKey && (document.activeElement === first || !backdrop.contains(document.activeElement))) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && (document.activeElement === last || !backdrop.contains(document.activeElement))) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
+    }, true);
+
+    function render() {
+      const stage = document.getElementById('stage');
+      const activeId = document.activeElement instanceof HTMLElement && stage.contains(document.activeElement) ? document.activeElement.id : '';
+      if (state.scene === 'kit') {
+        const tabItems = [
+          { id: 'all', label: '全部' },
+          { id: 'video', label: '影音制作' },
+          { id: 'disabled', label: '维护中', disabled: true },
+          { id: 'social', label: '社媒运营' },
+        ];
+        stage.innerHTML = `
+          <section class="card">
+            <div class="card-head">
+              <strong>改造前（dsh-ui-kit）</strong>
+              <span class="badge badge-bad">溢出裁剪 / Esc 穿透 / 误删聚焦</span>
+            </div>
+            <div class="surface-box">
+              <div class="row"><span>窄屏 Toolbar</span><span class="badge">overflow: hidden 直接裁断按钮</span></div>
+              <div class="row"><span>搜索框按 Esc</span><span class="badge">冒泡关闭外层抽屉</span></div>
+              <div class="row"><span>危险 ConfirmModal</span><span class="badge">提交中仍可点遮罩关闭</span></div>
+              <div class="row"><span>工具输出摘要</span><code>搜索工具 ×0，JSON 默认显示</code></div>
+            </div>
+          </section>
+          <section class="card">
+            <div class="card-head">
+              <strong>改造后（dsh-ui-kit）</strong>
+              <span class="badge badge-good">安全默认 + 全键盘导航</span>
+            </div>
+            <div class="surface-box">
+              <div class="toolbar-scroll" aria-label="可横向滚动工具栏">
+                <div class="toolbar-left">
+                  <div class="seg" role="tablist" id="kitTabs">
+                    ${tabItems.map((it) => `<button type="button" class="seg-tab" id="kit-tab-${it.id}" role="tab" aria-selected="${state.activeTab === it.id}" ${it.disabled ? 'disabled' : ''}>${it.label}</button>`).join('')}
+                  </div>
+                </div>
+                <button type="button" class="btn" id="btnReopenDrawer">${state.drawerOpen ? '抽屉已展开' : '重开抽屉'}</button>
+              </div>
+              ${state.drawerOpen ? `
+                <div class="drawer-box" id="demoDrawer" role="dialog" aria-label="内含搜索框的抽屉">
+                  <div class="row">
+                    <span>抽屉内搜索（第 1 次按 Esc 只清空，不关抽屉）</span>
+                    <input id="drawerSearch" class="search-input" value="${state.searchValue}" placeholder="搜索..." />
+                  </div>
+                </div>
+              ` : `<div class="row"><span>抽屉已通过外层 Esc 安全收起</span><span class="badge badge-good">closed</span></div>`}
+              <div class="row">
+                <span>搜索结果 12 条（隐藏裸 JSON）</span>
+                <button type="button" class="btn btn-danger" id="btnDangerGuard">卸载高风险组件</button>
+              </div>
+              <p class="muted" id="kitStatus">${state.lastLog}</p>
+            </div>
+          </section>
+        `;
+        const tabs = [...document.querySelectorAll('#kitTabs .seg-tab:not(:disabled)')];
+        tabs.forEach((btn, idx) => {
+          btn.onclick = () => { state.activeTab = btn.id.replace('kit-tab-', ''); render(); };
+          btn.onkeydown = (e) => {
+            if (e.key === 'ArrowRight') {
+              e.preventDefault();
+              const next = tabs[(idx + 1) % tabs.length];
+              state.activeTab = next.id.replace('kit-tab-', '');
+              render();
+              document.getElementById(next.id)?.focus();
+            } else if (e.key === 'ArrowLeft') {
+              e.preventDefault();
+              const prev = tabs[(idx - 1 + tabs.length) % tabs.length];
+              state.activeTab = prev.id.replace('kit-tab-', '');
+              render();
+              document.getElementById(prev.id)?.focus();
+            } else if (e.key === 'Home') {
+              e.preventDefault();
+              state.activeTab = tabs[0].id.replace('kit-tab-', '');
+              render();
+              document.getElementById(tabs[0].id)?.focus();
+            } else if (e.key === 'End') {
+              e.preventDefault();
+              const last = tabs[tabs.length - 1];
+              state.activeTab = last.id.replace('kit-tab-', '');
+              render();
+              document.getElementById(last.id)?.focus();
+            }
+          };
+        });
+        document.getElementById('btnReopenDrawer').onclick = () => { state.drawerOpen = true; render(); };
+        const drawer = document.getElementById('demoDrawer');
+        if (drawer) {
+          drawer.onkeydown = (e) => {
+            if (e.key === 'Escape') {
+              state.drawerOpen = false;
+              state.lastLog = '空输入或抽屉层 Esc 已安全关闭抽屉';
+              render();
+            }
+          };
+        }
+        const search = document.getElementById('drawerSearch');
+        if (search) {
+          search.oninput = (e) => { state.searchValue = e.target.value; };
+          search.onkeydown = (e) => {
+            if (e.key === 'Escape' && state.searchValue) {
+              e.preventDefault();
+              e.stopPropagation();
+              state.searchValue = '';
+              state.lastLog = '首次 Esc 清空了搜索内容，抽屉保持打开';
+              render();
+              document.getElementById('drawerSearch')?.focus();
+            }
+          };
+        }
+        document.getElementById('btnDangerGuard').onclick = () => {
+          openDangerConfirm({
+            title: '卸载示例插件？',
+            body: '加载中遮罩与 Esc 均自动锁定；打开时默认聚焦取消键以防误删。',
+            actionLabel: '卸载插件',
+            onConfirm: () => {
+              state.lastLog = '已完成确认动作，关闭锁已自动解除并恢复焦点。';
+              render();
+            },
+          });
+        };
+      } else if (state.scene === 'hub') {
+        stage.innerHTML = `
+          <section class="card">
+            <div class="card-head">
+              <strong>改造前（omnimux 中枢）</strong>
+              <span class="badge badge-bad">兜底人名 / 中点拼接 / 技术暴露</span>
+            </div>
+            <div class="surface-box">
+              <div class="row"><span>欢迎语</span><code>老钟（innerHTML 拼接）</code></div>
+              <div class="row"><span>片段芯片</span><code>视频片段 · r12 · 世代 3 · f98c...</code></div>
+              <div class="row"><span>存储设置</span><span>开关关闭仍展开全套 S3 Endpoint/AK/SK</span></div>
+              <div class="row"><span>退出/断连</span><span>无确认直接退出或断连</span></div>
+            </div>
+          </section>
+          <section class="card">
+            <div class="card-head">
+              <strong>改造后（omnimux 中枢）</strong>
+              <span class="badge badge-good">系统代劳 + 安全降噪</span>
+            </div>
+            <div class="surface-box">
+              <div class="row"><span>欢迎语</span><span>纯净 DOM 文本渲染（无写死人名）</span></div>
+              <div class="row"><span>片段芯片</span><span class="badge badge-good">已引用片段：开箱对比（2 个镜头）</span></div>
+              <div class="row"><span>裸域名粘贴</span><span>example.com/clip 自动补全 https://</span></div>
+              <div class="row"><span>探索菜单与预设</span><span>移动设备（去「手机管理」），四字分类保留查询词</span></div>
+            </div>
+          </section>
+        `;
+      } else {
+        const selected = state.skills.find((s) => s.slug === state.selectedSkill) || state.skills[0] || null;
+        stage.innerHTML = `
+          <section class="card">
+            <div class="card-head">
+              <strong>改造前（omnimux-market）</strong>
+              <span class="badge badge-bad">假开关 / 假文件树 / 筛串页</span>
+            </div>
+            <div class="surface-box">
+              <div class="row"><span>本地上传包</span><span class="badge">读文件名丢字节调线上接口</span></div>
+              <div class="row"><span>Skill 停用/插件开关</span><span class="badge">仅内存或 localStorage 假状态</span></div>
+              <div class="row"><span>详情目录树</span><code>伪造 references/overview.md + meta.yaml</code></div>
+              <div class="row"><span>发现页分类</span><span class="badge">切回「我的」仍悄悄生效</span></div>
+            </div>
+          </section>
+          <section class="card">
+            <div class="card-head">
+              <strong>改造后（omnimux-market）</strong>
+              <span class="badge badge-good">所见即真实，状态严格隔离</span>
+            </div>
+            <div class="surface-box">
+              <div class="row">
+                <span>发现筛选「${state.discoverFilter}」不污染我的：${state.mineFilter}</span>
+                <button type="button" class="btn" id="btnResetMarket">切至全部</button>
+              </div>
+              <div class="row">
+                <span>已安装技能（共 ${state.skills.length} 个）</span>
+                ${selected ? `<button type="button" class="btn btn-danger" id="btnUninstallSkill">卸载技能「${selected.title}」</button>` : '<span class="badge">已清空</span>'}
+              </div>
+              <div class="row">
+                <span>真实文件树</span>
+                <code>${selected ? selected.files.join(', ') : '未选择技能'}</code>
+              </div>
+            </div>
+          </section>
+        `;
+        document.getElementById('btnResetMarket').onclick = () => {
+          state.mineFilter = '全部';
+          render();
+        };
+        const btnUninstall = document.getElementById('btnUninstallSkill');
+        if (btnUninstall && selected) {
+          btnUninstall.onclick = () => {
+            openDangerConfirm({
+              title: `卸载技能「${selected.title}」？`,
+              body: '卸载后可随时在发现页重新安装。',
+              actionLabel: '卸载技能',
+              onConfirm: () => {
+                state.skills = state.skills.filter((s) => s.slug !== selected.slug);
+                state.selectedSkill = state.skills[0]?.slug || '';
+                render();
+              },
+            });
+          };
+        }
+      }
+      if (activeId) {
+        const el = document.getElementById(activeId);
+        if (el && !el.disabled) el.focus();
+      }
+    }
+
+    render();
+  </script>
+</body>
+</html>

@@ -157,7 +157,7 @@ const DEFAULT_STRINGS = {
   'inspirationPicker.tab.public': '云端',
   'inspirationPicker.pill.all': '全部',
   'inspirationPicker.searchPlaceholder': '搜索灵感标题…',
-  'inspirationPicker.selectedMeta': '已选 {n} 项 · 还可添加 {m} 项',
+  'inspirationPicker.selectedMeta': '已选 {n} 项，还可添加 {m} 项',
   'inspirationPicker.selectedMetaUnbounded': '已选 {n} 项',
   'inspirationPicker.loading': '正在加载灵感库…',
   'inspirationPicker.empty': '灵感库还是空的。先去导入作品，再回到这里添加。',

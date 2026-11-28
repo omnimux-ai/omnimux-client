@@ -85,7 +85,7 @@ function ensureMotionTokens() {
 }
 ensureMotionTokens();
 // \0dsh-ui-kit-css:src/button/Button.module.css.mjs
-injectCss("Button.module.css", ".dshUk-Button-button {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  flex-shrink: 0;\n  gap: 6px;\n  box-sizing: border-box;\n  margin: 0;\n  border: 1px solid transparent;\n  border-radius: 8px;\n  cursor: pointer;\n  font: inherit;\n  font-size: 13px;\n  font-weight: 500;\n  line-height: 18px;\n  letter-spacing: 0;\n  white-space: nowrap;\n  color: var(--dsw-alias-label-primary);\n  background: transparent;\n  padding: 0 12px;\n  height: 32px;\n  vertical-align: middle;\n  user-select: none;\n  transition:\n    background-color var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),\n    border-color var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),\n    color var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),\n    transform var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),\n    box-shadow var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),\n    opacity var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));\n}\n\n.dshUk-Button-button:focus {\n  outline: none;\n}\n\n.dshUk-Button-button:focus-visible {\n  outline: 2px solid var(--dsw-alias-brand-primary);\n  outline-offset: 2px;\n}\n\n.dshUk-Button-button:disabled,\n.dshUk-Button-button[aria-disabled=\"true\"] {\n  cursor: not-allowed;\n  opacity: 0.4;\n}\n\n.dshUk-Button-button:active:not(:disabled):not([aria-disabled=\"true\"]) {\n  transform: scale(var(--omnimux-motion-press-scale, 0.96));\n}\n\n.dshUk-Button-staticScale:active:not(:disabled):not([aria-disabled=\"true\"]) {\n  transform: none;\n}\n\n.dshUk-Button-sm {\n  height: 28px;\n  padding: 0 10px;\n  border-radius: 6px;\n  font-size: 12px;\n  line-height: 16px;\n}\n\n.dshUk-Button-xs {\n  height: 24px;\n  padding: 0 8px;\n  border-radius: 6px;\n  font-size: 12px;\n  line-height: 16px;\n  gap: 4px;\n}\n\n.dshUk-Button-iconOnly {\n  padding: 0;\n  width: 32px;\n}\n\n.dshUk-Button-iconOnly.dshUk-Button-sm {\n  width: 28px;\n}\n\n.dshUk-Button-iconOnly.dshUk-Button-xs {\n  width: 24px;\n}\n\n.dshUk-Button-primary {\n  background: var(--dsw-alias-button-primary-fill);\n  color: var(--dsw-alias-label-primary-foreground);\n}\n\n.dshUk-Button-primary:hover:not(:disabled):not([aria-disabled=\"true\"]) {\n  background: var(--dsw-alias-button-primary-hover);\n}\n\n.dshUk-Button-secondary {\n  background: var(--dsw-alias-bg-layer-1);\n  border-color: var(--dsw-alias-border-l2);\n  color: var(--dsw-alias-label-primary);\n}\n\n.dshUk-Button-secondary:hover:not(:disabled):not([aria-disabled=\"true\"]) {\n  background: var(--dsw-alias-interactive-bg-hover);\n  border-color: var(--dsw-alias-border-l3);\n}\n\n.dshUk-Button-ghost {\n  background: transparent;\n  color: var(--dsw-alias-label-primary);\n}\n\n.dshUk-Button-ghost:hover:not(:disabled):not([aria-disabled=\"true\"]) {\n  background: var(--dsw-alias-interactive-bg-hover);\n}\n\n.dshUk-Button-ghost:active:not(:disabled):not([aria-disabled=\"true\"]) {\n  background: var(--dsw-alias-interactive-bg-active);\n}\n\n.dshUk-Button-outline {\n  background: transparent;\n  border-color: var(--dsw-alias-border-l2);\n  color: var(--dsw-alias-label-primary);\n}\n\n.dshUk-Button-outline:hover:not(:disabled):not([aria-disabled=\"true\"]) {\n  background: var(--dsw-alias-interactive-bg-hover);\n  border-color: var(--dsw-alias-border-l3);\n}\n\n.dshUk-Button-danger {\n  background: var(--dsw-alias-state-error-primary);\n  color: var(--dsw-alias-label-primary-foreground);\n}\n\n.dshUk-Button-danger:hover:not(:disabled):not([aria-disabled=\"true\"]) {\n  background: var(--dsw-alias-state-error-secondary);\n}\n\n.dshUk-Button-ghost[aria-pressed=\"true\"],\n.dshUk-Button-secondary[aria-pressed=\"true\"] {\n  background: var(--dsw-alias-button-ghost-active-fill);\n  box-shadow: inset 0 0 0 1px var(--dsw-alias-button-ghost-active-border);\n}\n\n/* Outline already owns a real 1px border. Keep pressed fill/border as\n * declarations — do not share the ghost/secondary inset box-shadow or the\n * pressed state would double-stroke. */\n.dshUk-Button-outline[aria-pressed=\"true\"] {\n  background: var(--dsw-alias-button-ghost-active-fill);\n  border-color: var(--dsw-alias-button-ghost-active-border);\n  color: var(--dsw-alias-label-primary);\n}\n\n/* Hover specificity defense: `.dshUk-Button-outline:hover` (and ghost/secondary hover)\n * would otherwise wash the pressed fill/border back to the idle hover tokens. */\n.dshUk-Button-ghost[aria-pressed=\"true\"]:hover:not(:disabled):not([aria-disabled=\"true\"]),\n.dshUk-Button-secondary[aria-pressed=\"true\"]:hover:not(:disabled):not([aria-disabled=\"true\"]),\n.dshUk-Button-outline[aria-pressed=\"true\"]:hover:not(:disabled):not([aria-disabled=\"true\"]) {\n  background: var(--dsw-alias-button-ghost-active-hover);\n}\n\n.dshUk-Button-outline[aria-pressed=\"true\"]:hover:not(:disabled):not([aria-disabled=\"true\"]) {\n  border-color: var(--dsw-alias-button-ghost-active-border);\n}\n\n.dshUk-Button-slot {\n  display: inline-flex;\n  width: 16px;\n  height: 16px;\n  align-items: center;\n  justify-content: center;\n  flex: none;\n}\n\n.dshUk-Button-xs .dshUk-Button-slot {\n  width: 14px;\n  height: 14px;\n}\n\n.dshUk-Button-spinner {\n  animation: dshUkSpin 0.7s linear infinite;\n}\n\n.dshUk-Button-label {\n  min-width: 0;\n}\n\n.dshUk-Button-loadingLabel {\n  opacity: 0.84;\n}\n\n@media (prefers-reduced-motion: reduce) {\n  .dshUk-Button-button {\n    transition: none;\n  }\n\n  .dshUk-Button-button:active:not(:disabled):not([aria-disabled=\"true\"]) {\n    transform: none;\n  }\n\n  .dshUk-Button-spinner {\n    animation: dshUkPulseReduced 1.6s ease-in-out infinite;\n  }\n}\n\n@keyframes dshUkSpin {\n  from {\n    transform: rotate(0deg);\n  }\n  to {\n    transform: rotate(360deg);\n  }\n}\n\n@keyframes dshUkPulseReduced {\n  0%,\n  100% {\n    opacity: 1;\n  }\n  50% {\n    opacity: 0.42;\n  }\n}\n");
+injectCss("Button.module.css", ".dshUk-Button-button {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  flex-shrink: 0;\n  gap: 6px;\n  box-sizing: border-box;\n  margin: 0;\n  border: 1px solid transparent;\n  border-radius: 8px;\n  cursor: pointer;\n  font: inherit;\n  font-size: 13px;\n  font-weight: 500;\n  line-height: 18px;\n  letter-spacing: 0;\n  white-space: nowrap;\n  color: var(--dsw-alias-label-primary);\n  background: transparent;\n  padding: 0 12px;\n  height: 32px;\n  vertical-align: middle;\n  user-select: none;\n  transition:\n    background-color var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),\n    border-color var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),\n    color var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),\n    transform var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),\n    box-shadow var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),\n    opacity var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));\n}\n\n.dshUk-Button-button:focus {\n  outline: none;\n}\n\n.dshUk-Button-button:focus-visible {\n  outline: 2px solid var(--dsw-alias-brand-primary);\n  outline-offset: 2px;\n}\n\n.dshUk-Button-button:disabled,\n.dshUk-Button-button[aria-disabled=\"true\"] {\n  cursor: not-allowed;\n  opacity: 0.4;\n}\n\n.dshUk-Button-button[aria-busy=\"true\"] {\n  cursor: wait;\n  opacity: 0.72;\n}\n\n.dshUk-Button-button:active:not(:disabled):not([aria-disabled=\"true\"]) {\n  transform: scale(var(--omnimux-motion-press-scale, 0.96));\n}\n\n.dshUk-Button-staticScale:active:not(:disabled):not([aria-disabled=\"true\"]) {\n  transform: none;\n}\n\n.dshUk-Button-sm {\n  height: 28px;\n  padding: 0 10px;\n  border-radius: 6px;\n  font-size: 12px;\n  line-height: 16px;\n}\n\n.dshUk-Button-xs {\n  height: 24px;\n  padding: 0 8px;\n  border-radius: 6px;\n  font-size: 12px;\n  line-height: 16px;\n  gap: 4px;\n}\n\n.dshUk-Button-iconOnly {\n  padding: 0;\n  width: 32px;\n}\n\n.dshUk-Button-iconOnly.dshUk-Button-sm {\n  width: 28px;\n}\n\n.dshUk-Button-iconOnly.dshUk-Button-xs {\n  width: 24px;\n}\n\n.dshUk-Button-primary {\n  background: var(--dsw-alias-button-primary-fill);\n  color: var(--dsw-alias-label-primary-foreground);\n}\n\n.dshUk-Button-primary:hover:not(:disabled):not([aria-disabled=\"true\"]) {\n  background: var(--dsw-alias-button-primary-hover);\n}\n\n.dshUk-Button-secondary {\n  background: var(--dsw-alias-bg-layer-1);\n  border-color: var(--dsw-alias-border-l2);\n  color: var(--dsw-alias-label-primary);\n}\n\n.dshUk-Button-secondary:hover:not(:disabled):not([aria-disabled=\"true\"]) {\n  background: var(--dsw-alias-interactive-bg-hover);\n  border-color: var(--dsw-alias-border-l3);\n}\n\n.dshUk-Button-ghost {\n  background: transparent;\n  color: var(--dsw-alias-label-primary);\n}\n\n.dshUk-Button-ghost:hover:not(:disabled):not([aria-disabled=\"true\"]) {\n  background: var(--dsw-alias-interactive-bg-hover);\n}\n\n.dshUk-Button-ghost:active:not(:disabled):not([aria-disabled=\"true\"]) {\n  background: var(--dsw-alias-interactive-bg-active);\n}\n\n.dshUk-Button-outline {\n  background: transparent;\n  border-color: var(--dsw-alias-border-l2);\n  color: var(--dsw-alias-label-primary);\n}\n\n.dshUk-Button-outline:hover:not(:disabled):not([aria-disabled=\"true\"]) {\n  background: var(--dsw-alias-interactive-bg-hover);\n  border-color: var(--dsw-alias-border-l3);\n}\n\n.dshUk-Button-danger {\n  background: var(--dsw-alias-state-error-primary);\n  color: var(--dsw-alias-label-primary-foreground);\n}\n\n.dshUk-Button-danger:hover:not(:disabled):not([aria-disabled=\"true\"]) {\n  background: var(--dsw-alias-state-error-secondary);\n}\n\n.dshUk-Button-ghost[aria-pressed=\"true\"],\n.dshUk-Button-secondary[aria-pressed=\"true\"] {\n  background: var(--dsw-alias-button-ghost-active-fill);\n  box-shadow: inset 0 0 0 1px var(--dsw-alias-button-ghost-active-border);\n}\n\n/* Outline already owns a real 1px border. Keep pressed fill/border as\n * declarations — do not share the ghost/secondary inset box-shadow or the\n * pressed state would double-stroke. */\n.dshUk-Button-outline[aria-pressed=\"true\"] {\n  background: var(--dsw-alias-button-ghost-active-fill);\n  border-color: var(--dsw-alias-button-ghost-active-border);\n  color: var(--dsw-alias-label-primary);\n}\n\n/* Hover specificity defense: `.dshUk-Button-outline:hover` (and ghost/secondary hover)\n * would otherwise wash the pressed fill/border back to the idle hover tokens. */\n.dshUk-Button-ghost[aria-pressed=\"true\"]:hover:not(:disabled):not([aria-disabled=\"true\"]),\n.dshUk-Button-secondary[aria-pressed=\"true\"]:hover:not(:disabled):not([aria-disabled=\"true\"]),\n.dshUk-Button-outline[aria-pressed=\"true\"]:hover:not(:disabled):not([aria-disabled=\"true\"]) {\n  background: var(--dsw-alias-button-ghost-active-hover);\n}\n\n.dshUk-Button-outline[aria-pressed=\"true\"]:hover:not(:disabled):not([aria-disabled=\"true\"]) {\n  border-color: var(--dsw-alias-button-ghost-active-border);\n}\n\n.dshUk-Button-slot {\n  display: inline-flex;\n  width: 16px;\n  height: 16px;\n  align-items: center;\n  justify-content: center;\n  flex: none;\n}\n\n.dshUk-Button-xs .dshUk-Button-slot {\n  width: 14px;\n  height: 14px;\n}\n\n.dshUk-Button-spinner {\n  animation: dshUkSpin 0.7s linear infinite;\n}\n\n.dshUk-Button-label {\n  min-width: 0;\n}\n\n.dshUk-Button-loadingLabel {\n  opacity: 0.84;\n}\n\n@media (prefers-reduced-motion: reduce) {\n  .dshUk-Button-button {\n    transition: none;\n  }\n\n  .dshUk-Button-button:active:not(:disabled):not([aria-disabled=\"true\"]) {\n    transform: none;\n  }\n\n  .dshUk-Button-spinner {\n    animation: dshUkPulseReduced 1.6s ease-in-out infinite;\n  }\n}\n\n@keyframes dshUkSpin {\n  from {\n    transform: rotate(0deg);\n  }\n  to {\n    transform: rotate(360deg);\n  }\n}\n\n@keyframes dshUkPulseReduced {\n  0%,\n  100% {\n    opacity: 1;\n  }\n  50% {\n    opacity: 0.42;\n  }\n}\n");
 var Button_module_css_default = {
 	"button": "dshUk-Button-button",
 	"staticScale": "dshUk-Button-staticScale",
@@ -175,8 +175,13 @@ const IconButton = forwardRef(function IconButton({ variant = "ghost", size = "d
 		label: tooltip,
 		side: tooltipSide,
 		delayMs: 280,
-		disabled: isDisabled,
-		children: button
+		children: /* @__PURE__ */ jsx("span", {
+			style: {
+				display: "inline-flex",
+				cursor: isDisabled ? "not-allowed" : void 0
+			},
+			children: button
+		})
 	});
 });
 // src/internal/clipboard.ts
@@ -208,6 +213,20 @@ async function copyToClipboard(text) {
 		return false;
 	}
 }
+// src/internal/locale.ts
+/**
+* Resolve UI kit default copy language from explicit locale, `<html lang>`, or navigator language.
+* Falls back to Simplified Chinese when no English tag is present.
+*/
+function resolveKitLocale(explicit) {
+	const explicitTrimmed = explicit?.trim();
+	if (explicitTrimmed) return explicitTrimmed.toLowerCase().startsWith("en") ? "en" : "zh";
+	const docLang = typeof document !== "undefined" ? document.documentElement?.lang?.trim() : "";
+	if (docLang) return docLang.toLowerCase().startsWith("en") ? "en" : "zh";
+	const navLang = typeof navigator !== "undefined" ? navigator.language?.trim() : "";
+	if (navLang) return navLang.toLowerCase().startsWith("en") ? "en" : "zh";
+	return "zh";
+}
 // \0dsh-ui-kit-css:src/button/CopyButton.module.css.mjs
 injectCss("CopyButton.module.css", ".dshUk-CopyButton-copySuccessIcon {\n  color: var(--dsw-alias-state-success-primary);\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n}\n\n.dshUk-CopyButton-copyErrorIcon {\n  color: var(--dsw-alias-state-error-primary);\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n}\n\n.dshUk-CopyButton-copyButtonSuccess {\n  color: var(--dsw-alias-state-success-primary);\n}\n\n.dshUk-CopyButton-copyButtonError {\n  color: var(--dsw-alias-state-error-primary);\n}\n\n.dshUk-CopyButton-labelSlot {\n  display: inline-grid;\n  align-items: center;\n  justify-items: center;\n  vertical-align: middle;\n}\n\n.dshUk-CopyButton-labelSlot[data-idle-label]::before {\n  content: attr(data-idle-label);\n  grid-area: 1 / 1;\n  visibility: hidden;\n  overflow: hidden;\n  user-select: none;\n  pointer-events: none;\n  white-space: nowrap;\n}\n\n.dshUk-CopyButton-labelSlot[data-copied-label]::after {\n  content: attr(data-copied-label);\n  grid-area: 1 / 1;\n  visibility: hidden;\n  overflow: hidden;\n  user-select: none;\n  pointer-events: none;\n  white-space: nowrap;\n}\n\n.dshUk-CopyButton-labelCurrent {\n  grid-area: 1 / 1;\n  white-space: nowrap;\n}\n");
 var CopyButton_module_css_default = {
@@ -222,11 +241,18 @@ var CopyButton_module_css_default = {
 /**
 * One-click copy button with 2s automatic reset state machine and clipboard fallback.
 */
-const CopyButton = forwardRef(function CopyButton({ text, timeout = 2e3, label = "复制", copiedLabel = "已复制", errorLabel = "复制失败", size = "sm", variant = "ghost", onCopy, onError, showIcon = true, onClick, className, disabled, ...rest }, ref) {
+const CopyButton = forwardRef(function CopyButton({ text, timeout = 2e3, label, copiedLabel, errorLabel, size = "sm", variant = "ghost", onCopy, onError, showIcon = true, onClick, className, disabled, ...rest }, ref) {
+	const isEn = resolveKitLocale() === "en";
+	const resolvedLabel = label !== void 0 ? label : isEn ? "Copy" : "复制";
+	const resolvedCopiedLabel = copiedLabel !== void 0 ? copiedLabel : isEn ? "Copied" : "已复制";
+	const resolvedErrorLabel = errorLabel !== void 0 ? errorLabel : isEn ? "Copy failed" : "复制失败";
 	const [state, setState] = useState("idle");
 	const timerRef = useRef(null);
+	const mountedRef = useRef(true);
 	useEffect(() => {
+		mountedRef.current = true;
 		return () => {
+			mountedRef.current = false;
 			if (timerRef.current) clearTimeout(timerRef.current);
 		};
 	}, []);
@@ -236,22 +262,27 @@ const CopyButton = forwardRef(function CopyButton({ text, timeout = 2e3, label =
 		if (timerRef.current) clearTimeout(timerRef.current);
 		try {
 			const resolvedText = typeof text === "function" ? await text() : text;
-			if (await copyToClipboard(resolvedText)) {
+			if (!mountedRef.current) return;
+			const success = await copyToClipboard(resolvedText);
+			if (!mountedRef.current) return;
+			if (success) {
 				setState("copied");
 				onCopy?.(resolvedText);
 			} else throw new Error("Clipboard copy failed");
 		} catch (err) {
+			if (!mountedRef.current) return;
 			const error = err instanceof Error ? err : new Error(String(err));
 			setState("error");
 			onError?.(error);
 		}
+		if (!mountedRef.current) return;
 		timerRef.current = setTimeout(() => {
-			setState("idle");
+			if (mountedRef.current) setState("idle");
 		}, timeout);
 	};
-	let currentLabel = label;
-	if (state === "copied") currentLabel = copiedLabel;
-	else if (state === "error") currentLabel = errorLabel;
+	let currentLabel = resolvedLabel;
+	if (state === "copied") currentLabel = resolvedCopiedLabel;
+	else if (state === "error") currentLabel = resolvedErrorLabel;
 	const iconSize = size === "xs" ? 14 : 16;
 	const iconNode = showIcon ? /* @__PURE__ */ jsx(IconSwap, {
 		active: state === "copied",
@@ -277,8 +308,8 @@ const CopyButton = forwardRef(function CopyButton({ text, timeout = 2e3, label =
 		"aria-live": "polite",
 		children: currentLabel != null && currentLabel !== "" ? /* @__PURE__ */ jsx("span", {
 			className: cssClass(CopyButton_module_css_default.labelSlot, "labelSlot"),
-			"data-idle-label": label || void 0,
-			"data-copied-label": copiedLabel || void 0,
+			"data-idle-label": resolvedLabel || void 0,
+			"data-copied-label": resolvedCopiedLabel || void 0,
 			children: /* @__PURE__ */ jsx("span", {
 				className: cssClass(CopyButton_module_css_default.labelCurrent, "labelCurrent"),
 				children: currentLabel
@@ -430,7 +461,7 @@ const SelectableTile = forwardRef(function SelectableTile({ id, selected = false
 	});
 });
 // \0dsh-ui-kit-css:src/table/Table.module.css.mjs
-injectCss("Table.module.css", ".dshUk-Table-table {\n  width: 100%;\n  border-collapse: collapse;\n  box-sizing: border-box;\n  font-family: inherit;\n  font-size: 13px;\n  line-height: 18px;\n  color: var(--dsw-alias-label-primary);\n  background-color: var(--dsw-alias-bg-layer-1);\n  text-align: left;\n}\n\n.dshUk-Table-bordered {\n  border: 1px solid var(--dsw-alias-border-l1);\n}\n\n.dshUk-Table-bordered th,\n.dshUk-Table-bordered td {\n  border: 1px solid var(--dsw-alias-border-l1);\n}\n\n.dshUk-Table-tableHeader {\n  background-color: var(--dsw-alias-bg-layer-2);\n}\n\n.dshUk-Table-stickyHeader .dshUk-Table-headCell {\n  position: sticky;\n  top: 0;\n  z-index: 2;\n  background-color: var(--dsw-alias-bg-layer-2);\n}\n\n.dshUk-Table-headCell {\n  padding: 10px 12px;\n  font-size: 12px;\n  font-weight: 500;\n  line-height: 16px;\n  color: var(--dsw-alias-label-secondary);\n  border-bottom: 1px solid var(--dsw-alias-border-l2);\n  user-select: none;\n  box-sizing: border-box;\n  white-space: nowrap;\n}\n\n.dshUk-Table-dense .dshUk-Table-headCell {\n  padding: 6px 8px;\n}\n\n.dshUk-Table-headCellSortable {\n  cursor: pointer;\n  transition:\n    background-color var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),\n    color var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));\n}\n\n.dshUk-Table-headCellSortable:hover {\n  background-color: var(--dsw-alias-interactive-bg-hover);\n  color: var(--dsw-alias-label-primary);\n}\n\n.dshUk-Table-headCellContent {\n  display: inline-flex;\n  align-items: center;\n  gap: 4px;\n}\n\n.dshUk-Table-sortIcon {\n  display: inline-grid;\n  place-items: center;\n  width: 14px;\n  height: 14px;\n  flex-shrink: 0;\n  color: var(--dsw-alias-label-tertiary);\n  transition: color var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));\n}\n\n.dshUk-Table-sortGlyph {\n  grid-area: 1 / 1;\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  transition:\n    transform var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),\n    opacity var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));\n}\n\n.dshUk-Table-sortGlyphHidden {\n  opacity: 0;\n  transform: scale(0.75);\n}\n\n.dshUk-Table-sortGlyphDesc {\n  transform: rotate(180deg);\n}\n\n.dshUk-Table-sortIconActive {\n  color: var(--dsw-alias-brand-primary);\n}\n\n.dshUk-Table-tableBody {\n  background-color: var(--dsw-alias-bg-layer-1);\n}\n\n.dshUk-Table-row {\n  border-bottom: 1px solid var(--dsw-alias-border-l1);\n  transition: background-color var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));\n}\n\n.dshUk-Table-row:hover {\n  background-color: var(--dsw-alias-interactive-bg-hover);\n}\n\n.dshUk-Table-rowSelected {\n  background-color: var(--dsw-alias-interactive-bg-active);\n}\n\n.dshUk-Table-rowSelected:hover {\n  background-color: var(--dsw-alias-interactive-bg-active);\n}\n\n.dshUk-Table-cell {\n  padding: 10px 12px;\n  font-size: 13px;\n  line-height: 18px;\n  color: var(--dsw-alias-label-primary);\n  box-sizing: border-box;\n  font-variant-numeric: tabular-nums;\n}\n\n.dshUk-Table-dense .dshUk-Table-cell {\n  padding: 6px 8px;\n}\n\n.dshUk-Table-alignLeft {\n  text-align: left;\n}\n\n.dshUk-Table-alignCenter {\n  text-align: center;\n}\n\n.dshUk-Table-alignRight {\n  text-align: right;\n}\n\n@media (prefers-reduced-motion: reduce) {\n  .dshUk-Table-headCellSortable,\n  .dshUk-Table-sortIcon,\n  .dshUk-Table-sortGlyph,\n  .dshUk-Table-row {\n    transition: none;\n  }\n}\n");
+injectCss("Table.module.css", ".dshUk-Table-table {\n  width: 100%;\n  border-collapse: collapse;\n  box-sizing: border-box;\n  font-family: inherit;\n  font-size: 13px;\n  line-height: 18px;\n  color: var(--dsw-alias-label-primary);\n  background-color: var(--dsw-alias-bg-layer-1);\n  text-align: left;\n}\n\n.dshUk-Table-bordered {\n  border: 1px solid var(--dsw-alias-border-l1);\n}\n\n.dshUk-Table-bordered th,\n.dshUk-Table-bordered td {\n  border: 1px solid var(--dsw-alias-border-l1);\n}\n\n.dshUk-Table-tableHeader {\n  background-color: var(--dsw-alias-bg-layer-2);\n}\n\n.dshUk-Table-stickyHeader .dshUk-Table-headCell {\n  position: sticky;\n  top: 0;\n  z-index: 2;\n  background-color: var(--dsw-alias-bg-layer-2);\n}\n\n.dshUk-Table-headCell {\n  padding: 10px 12px;\n  font-size: 12px;\n  font-weight: 500;\n  line-height: 16px;\n  color: var(--dsw-alias-label-secondary);\n  border-bottom: 1px solid var(--dsw-alias-border-l2);\n  user-select: none;\n  box-sizing: border-box;\n  white-space: nowrap;\n}\n\n.dshUk-Table-dense .dshUk-Table-headCell {\n  padding: 6px 8px;\n}\n\n.dshUk-Table-headCellSortable {\n  cursor: pointer;\n  transition:\n    background-color var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),\n    color var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));\n}\n\n.dshUk-Table-headCellSortable:hover {\n  background-color: var(--dsw-alias-interactive-bg-hover);\n  color: var(--dsw-alias-label-primary);\n}\n\n.dshUk-Table-headCellSortable:focus-visible {\n  outline: 2px solid var(--dsw-alias-brand-primary);\n  outline-offset: -2px;\n}\n\n.dshUk-Table-headCellContent {\n  display: inline-flex;\n  align-items: center;\n  gap: 4px;\n}\n\n.dshUk-Table-sortIcon {\n  display: inline-grid;\n  place-items: center;\n  width: 14px;\n  height: 14px;\n  flex-shrink: 0;\n  color: var(--dsw-alias-label-tertiary);\n  transition: color var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));\n}\n\n.dshUk-Table-sortGlyph {\n  grid-area: 1 / 1;\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  transition:\n    transform var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),\n    opacity var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));\n}\n\n.dshUk-Table-sortGlyphHidden {\n  opacity: 0;\n  transform: scale(0.75);\n}\n\n.dshUk-Table-sortGlyphDesc {\n  transform: rotate(180deg);\n}\n\n.dshUk-Table-sortIconActive {\n  color: var(--dsw-alias-brand-primary);\n}\n\n.dshUk-Table-tableBody {\n  background-color: var(--dsw-alias-bg-layer-1);\n}\n\n.dshUk-Table-row {\n  border-bottom: 1px solid var(--dsw-alias-border-l1);\n  transition: background-color var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));\n}\n\n.dshUk-Table-row:hover {\n  background-color: var(--dsw-alias-interactive-bg-hover);\n}\n\n.dshUk-Table-rowSelected {\n  background-color: var(--dsw-alias-interactive-bg-active);\n}\n\n.dshUk-Table-rowSelected:hover {\n  background-color: var(--dsw-alias-interactive-bg-active);\n}\n\n.dshUk-Table-cell {\n  padding: 10px 12px;\n  font-size: 13px;\n  line-height: 18px;\n  color: var(--dsw-alias-label-primary);\n  box-sizing: border-box;\n  font-variant-numeric: tabular-nums;\n}\n\n.dshUk-Table-dense .dshUk-Table-cell {\n  padding: 6px 8px;\n}\n\n.dshUk-Table-alignLeft {\n  text-align: left;\n}\n\n.dshUk-Table-alignCenter {\n  text-align: center;\n}\n\n.dshUk-Table-alignRight {\n  text-align: right;\n}\n\n@media (prefers-reduced-motion: reduce) {\n  .dshUk-Table-headCellSortable,\n  .dshUk-Table-sortIcon,\n  .dshUk-Table-sortGlyph,\n  .dshUk-Table-row {\n    transition: none;\n  }\n}\n");
 var Table_module_css_default = {
 	"table": "dshUk-Table-table",
 	"bordered": "dshUk-Table-bordered",
@@ -500,12 +531,23 @@ const TableCell = forwardRef(function TableCell({ align = "left", className, chi
 		children
 	});
 });
-const TableHead = forwardRef(function TableHead({ align = "left", sortable = false, sortDirection = null, className, children, ...rest }, ref) {
+const TableHead = forwardRef(function TableHead({ align = "left", sortable = false, sortDirection = null, className, children, onClick, onKeyDown, tabIndex, ...rest }, ref) {
 	const ariaSort = sortDirection === "asc" ? "ascending" : sortDirection === "desc" ? "descending" : sortable ? "none" : void 0;
+	const handleKeyDown = (e) => {
+		onKeyDown?.(e);
+		if (e.defaultPrevented) return;
+		if (sortable && onClick && (e.key === "Enter" || e.key === " ")) {
+			e.preventDefault();
+			e.currentTarget.click();
+		}
+	};
 	return /* @__PURE__ */ jsx("th", {
 		...rest,
 		ref,
 		"aria-sort": ariaSort,
+		tabIndex: tabIndex ?? (sortable && onClick ? 0 : void 0),
+		onClick,
+		onKeyDown: onKeyDown || sortable && onClick ? handleKeyDown : void 0,
 		className: cx(cssClass(Table_module_css_default.headCell, "headCell"), sortable && cssClass(Table_module_css_default.headCellSortable, "headCellSortable"), ALIGN_CLASS[align], className),
 		children: /* @__PURE__ */ jsxs("div", {
 			className: cssClass(Table_module_css_default.headCellContent, "headCellContent"),
@@ -579,7 +621,7 @@ const EmptyState = forwardRef(function EmptyState({ icon, title, description, ac
 	});
 });
 // \0dsh-ui-kit-css:src/table/DataTable.module.css.mjs
-injectCss("DataTable.module.css", ".dshUk-DataTable-tableWrap {\n  position: relative;\n  width: 100%;\n  box-sizing: border-box;\n  background-color: var(--dsw-alias-bg-layer-1);\n  border: 1px solid var(--dsw-alias-border-l1);\n  border-radius: 8px;\n  overflow: hidden;\n}\n\n/* Horizontal scroll indicators via pseudo-elements */\n.dshUk-DataTable-tableWrap::before {\n  content: \"\";\n  position: absolute;\n  top: 0;\n  bottom: 0;\n  left: 0;\n  width: 16px;\n  background: linear-gradient(90deg, var(--dsw-alias-border-l2), transparent);\n  opacity: 0;\n  pointer-events: none;\n  z-index: 3;\n  transition: opacity var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));\n}\n\n.dshUk-DataTable-tableWrap::after {\n  content: \"\";\n  position: absolute;\n  top: 0;\n  bottom: 0;\n  right: 0;\n  width: 16px;\n  background: linear-gradient(270deg, var(--dsw-alias-border-l2), transparent);\n  opacity: 0;\n  pointer-events: none;\n  z-index: 3;\n  transition: opacity var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));\n}\n\n.dshUk-DataTable-hasScrollLeft::before {\n  opacity: 1;\n}\n\n.dshUk-DataTable-hasScrollRight::after {\n  opacity: 1;\n}\n\n.dshUk-DataTable-scrollContainer {\n  width: 100%;\n  overflow-x: auto;\n  box-sizing: border-box;\n}\n\n.dshUk-DataTable-clickableRow {\n  cursor: pointer;\n}\n\n/* Custom accessible checkbox/radio indicator for table rows */\n.dshUk-DataTable-selectCell {\n  width: 40px;\n  min-width: 40px;\n  max-width: 40px;\n  text-align: center;\n  padding: 10px 8px;\n  vertical-align: middle;\n}\n\n.dshUk-DataTable-checkboxIndicator {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  width: 16px;\n  height: 16px;\n  border: 1px solid var(--dsw-alias-border-l3);\n  border-radius: 4px;\n  background-color: var(--dsw-alias-bg-layer-2);\n  cursor: pointer;\n  box-sizing: border-box;\n  transition:\n    background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),\n    border-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));\n}\n\n.dshUk-DataTable-radioIndicator {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  width: 16px;\n  height: 16px;\n  border: 1px solid var(--dsw-alias-border-l3);\n  border-radius: 9999px;\n  background-color: var(--dsw-alias-bg-layer-2);\n  cursor: pointer;\n  box-sizing: border-box;\n  transition:\n    background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),\n    border-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));\n}\n\n.dshUk-DataTable-checkboxIndicator:focus-visible,\n.dshUk-DataTable-radioIndicator:focus-visible {\n  outline: 2px solid var(--dsw-alias-brand-primary);\n  outline-offset: 1px;\n}\n\n.dshUk-DataTable-checkboxSelected,\n.dshUk-DataTable-radioSelected {\n  background-color: var(--dsw-alias-brand-primary);\n  border-color: var(--dsw-alias-brand-primary);\n}\n\n.dshUk-DataTable-checkboxIndeterminate {\n  background-color: var(--dsw-alias-brand-primary);\n  border-color: var(--dsw-alias-brand-primary);\n}\n\n.dshUk-DataTable-checkmark {\n  width: 10px;\n  height: 10px;\n  stroke: var(--dsw-alias-label-primary-foreground);\n  stroke-width: 2;\n  fill: none;\n  stroke-linecap: round;\n  stroke-linejoin: round;\n}\n\n.dshUk-DataTable-checkmark path {\n  stroke-dasharray: 14;\n  stroke-dashoffset: 14;\n  transition: stroke-dashoffset var(--omnimux-motion-dur-base, 200ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));\n}\n\n.dshUk-DataTable-checkboxSelected .dshUk-DataTable-checkmark path {\n  stroke-dashoffset: 0;\n}\n\n.dshUk-DataTable-minusMark {\n  width: 8px;\n  height: 2px;\n  background-color: var(--dsw-alias-label-primary-foreground);\n  border-radius: 1px;\n}\n\n.dshUk-DataTable-radioDot {\n  width: 6px;\n  height: 6px;\n  border-radius: 9999px;\n  background-color: var(--dsw-alias-label-primary-foreground);\n  transform: scale(0);\n  opacity: 0;\n  transition:\n    transform var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),\n    opacity var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));\n}\n\n.dshUk-DataTable-radioSelected .dshUk-DataTable-radioDot {\n  transform: scale(1);\n  opacity: 1;\n}\n\n/* Empty container */\n.dshUk-DataTable-emptyContainer {\n  padding: 32px 16px;\n  text-align: center;\n}\n\n/* Skeleton loader */\n.dshUk-DataTable-skeletonRow td {\n  padding: 12px;\n}\n\n.dshUk-DataTable-skeletonBar {\n  height: 14px;\n  border-radius: 4px;\n  background: var(--dsw-alias-bg-layer-2);\n  animation: pulse 1.5s ease-in-out infinite;\n}\n\n@keyframes pulse {\n  0% {\n    opacity: 0.5;\n  }\n  50% {\n    opacity: 0.9;\n  }\n  100% {\n    opacity: 0.5;\n  }\n}\n\n@media (prefers-reduced-motion: reduce) {\n  .dshUk-DataTable-tableWrap::before,\n  .dshUk-DataTable-tableWrap::after,\n  .dshUk-DataTable-checkboxIndicator,\n  .dshUk-DataTable-radioIndicator,\n  .dshUk-DataTable-checkmark path,\n  .dshUk-DataTable-radioDot {\n    transition: none;\n  }\n\n  .dshUk-DataTable-skeletonBar {\n    animation: none;\n    opacity: 0.7;\n  }\n}\n");
+injectCss("DataTable.module.css", ".dshUk-DataTable-tableWrap {\n  position: relative;\n  width: 100%;\n  box-sizing: border-box;\n  background-color: var(--dsw-alias-bg-layer-1);\n  border: 1px solid var(--dsw-alias-border-l1);\n  border-radius: 8px;\n  overflow: hidden;\n}\n\n/* Horizontal scroll indicators via pseudo-elements */\n.dshUk-DataTable-tableWrap::before {\n  content: \"\";\n  position: absolute;\n  top: 0;\n  bottom: 0;\n  left: 0;\n  width: 16px;\n  background: linear-gradient(90deg, var(--dsw-alias-border-l2), transparent);\n  opacity: 0;\n  pointer-events: none;\n  z-index: 3;\n  transition: opacity var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));\n}\n\n.dshUk-DataTable-tableWrap::after {\n  content: \"\";\n  position: absolute;\n  top: 0;\n  bottom: 0;\n  right: 0;\n  width: 16px;\n  background: linear-gradient(270deg, var(--dsw-alias-border-l2), transparent);\n  opacity: 0;\n  pointer-events: none;\n  z-index: 3;\n  transition: opacity var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));\n}\n\n.dshUk-DataTable-hasScrollLeft::before {\n  opacity: 1;\n}\n\n.dshUk-DataTable-hasScrollRight::after {\n  opacity: 1;\n}\n\n.dshUk-DataTable-scrollContainer {\n  width: 100%;\n  overflow-x: auto;\n  box-sizing: border-box;\n}\n\n.dshUk-DataTable-clickableRow {\n  cursor: pointer;\n}\n\n.dshUk-DataTable-clickableRow:focus-visible {\n  outline: 2px solid var(--dsw-alias-brand-primary);\n  outline-offset: -2px;\n}\n\n/* Custom accessible checkbox/radio indicator for table rows */\n.dshUk-DataTable-selectCell {\n  width: 40px;\n  min-width: 40px;\n  max-width: 40px;\n  text-align: center;\n  padding: 10px 8px;\n  vertical-align: middle;\n}\n\n.dshUk-DataTable-checkboxIndicator {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  width: 16px;\n  height: 16px;\n  border: 1px solid var(--dsw-alias-border-l3);\n  border-radius: 4px;\n  background-color: var(--dsw-alias-bg-layer-2);\n  cursor: pointer;\n  box-sizing: border-box;\n  transition:\n    background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),\n    border-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));\n}\n\n.dshUk-DataTable-radioIndicator {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  width: 16px;\n  height: 16px;\n  border: 1px solid var(--dsw-alias-border-l3);\n  border-radius: 9999px;\n  background-color: var(--dsw-alias-bg-layer-2);\n  cursor: pointer;\n  box-sizing: border-box;\n  transition:\n    background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),\n    border-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));\n}\n\n.dshUk-DataTable-checkboxIndicator:focus-visible,\n.dshUk-DataTable-radioIndicator:focus-visible {\n  outline: 2px solid var(--dsw-alias-brand-primary);\n  outline-offset: 1px;\n}\n\n.dshUk-DataTable-checkboxSelected,\n.dshUk-DataTable-radioSelected {\n  background-color: var(--dsw-alias-brand-primary);\n  border-color: var(--dsw-alias-brand-primary);\n}\n\n.dshUk-DataTable-checkboxIndeterminate {\n  background-color: var(--dsw-alias-brand-primary);\n  border-color: var(--dsw-alias-brand-primary);\n}\n\n.dshUk-DataTable-checkmark {\n  width: 10px;\n  height: 10px;\n  stroke: var(--dsw-alias-label-primary-foreground);\n  stroke-width: 2;\n  fill: none;\n  stroke-linecap: round;\n  stroke-linejoin: round;\n}\n\n.dshUk-DataTable-checkmark path {\n  stroke-dasharray: 14;\n  stroke-dashoffset: 14;\n  transition: stroke-dashoffset var(--omnimux-motion-dur-base, 200ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));\n}\n\n.dshUk-DataTable-checkboxSelected .dshUk-DataTable-checkmark path {\n  stroke-dashoffset: 0;\n}\n\n.dshUk-DataTable-minusMark {\n  width: 8px;\n  height: 2px;\n  background-color: var(--dsw-alias-label-primary-foreground);\n  border-radius: 1px;\n}\n\n.dshUk-DataTable-radioDot {\n  width: 6px;\n  height: 6px;\n  border-radius: 9999px;\n  background-color: var(--dsw-alias-label-primary-foreground);\n  transform: scale(0);\n  opacity: 0;\n  transition:\n    transform var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),\n    opacity var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));\n}\n\n.dshUk-DataTable-radioSelected .dshUk-DataTable-radioDot {\n  transform: scale(1);\n  opacity: 1;\n}\n\n/* Empty container */\n.dshUk-DataTable-emptyContainer {\n  padding: 32px 16px;\n  text-align: center;\n}\n\n/* Skeleton loader */\n.dshUk-DataTable-skeletonRow td {\n  padding: 12px;\n}\n\n.dshUk-DataTable-skeletonBar {\n  height: 14px;\n  border-radius: 4px;\n  background: var(--dsw-alias-bg-layer-2);\n  animation: pulse 1.5s ease-in-out infinite;\n}\n\n@keyframes pulse {\n  0% {\n    opacity: 0.5;\n  }\n  50% {\n    opacity: 0.9;\n  }\n  100% {\n    opacity: 0.5;\n  }\n}\n\n@media (prefers-reduced-motion: reduce) {\n  .dshUk-DataTable-tableWrap::before,\n  .dshUk-DataTable-tableWrap::after,\n  .dshUk-DataTable-checkboxIndicator,\n  .dshUk-DataTable-radioIndicator,\n  .dshUk-DataTable-checkmark path,\n  .dshUk-DataTable-radioDot {\n    transition: none;\n  }\n\n  .dshUk-DataTable-skeletonBar {\n    animation: none;\n    opacity: 0.7;\n  }\n}\n");
 var DataTable_module_css_default = {
 	"tableWrap": "dshUk-DataTable-tableWrap",
 	"hasScrollLeft": "dshUk-DataTable-hasScrollLeft",
@@ -605,7 +647,11 @@ const CHECKMARK_PATH = "M2 5.5 L4.5 8 L8.5 2.5";
 * Generic declarative high-level data table with sorting, multi-selection,
 * horizontal scroll indicators, and EmptyState integration.
 */
-function DataTable({ data, columns, rowKey, selectedRowKeys = [], onSelectionChange, selectionMode = "none", sortKey = null, sortDirection = null, onSortChange, loading = false, emptyContent, stickyHeader = false, scrollX = true, className, rowClassName, onRowClick }) {
+function DataTable({ data, columns, rowKey, selectedRowKeys = [], onSelectionChange, selectionMode = "none", sortKey = null, sortDirection = null, onSortChange, loading = false, emptyContent, emptyTitle, selectAllLabel, selectRowLabel, stickyHeader = false, scrollX = true, className, rowClassName, onRowClick }) {
+	const isEn = resolveKitLocale() === "en";
+	const emptyTitleText = emptyTitle ?? (isEn ? "No data" : "暂无数据");
+	const selectAllAriaLabel = selectAllLabel ?? (isEn ? "Select all rows" : "全选所有行");
+	const selectRowAriaLabel = selectRowLabel ?? ((rowIndex) => isEn ? `Select row ${rowIndex + 1}` : `选择第 ${rowIndex + 1} 行`);
 	const scrollContainerRef = useRef(null);
 	const [hasScrollLeft, setHasScrollLeft] = useState(false);
 	const [hasScrollRight, setHasScrollRight] = useState(false);
@@ -709,7 +755,7 @@ function DataTable({ data, columns, rowKey, selectedRowKeys = [], onSelectionCha
 					children: selectionMode === "multiple" ? /* @__PURE__ */ jsx("span", {
 						role: "checkbox",
 						"aria-checked": isAllSelected ? "true" : isPartiallySelected ? "mixed" : "false",
-						"aria-label": "全选所有行",
+						"aria-label": selectAllAriaLabel,
 						tabIndex: 0,
 						className: cx(cssClass(DataTable_module_css_default.checkboxIndicator, "checkboxIndicator"), isAllSelected && cssClass(DataTable_module_css_default.checkboxSelected, "checkboxSelected"), isPartiallySelected && cssClass(DataTable_module_css_default.checkboxIndeterminate, "checkboxIndeterminate")),
 						onClick: (e) => handleSelectAll(e),
@@ -753,21 +799,29 @@ function DataTable({ data, columns, rowKey, selectedRowKeys = [], onSelectionCha
 				}, `skeleton-${idx}`)) : data.length === 0 ? /* @__PURE__ */ jsx(TableRow, { children: /* @__PURE__ */ jsx(TableCell, {
 					colSpan: columns.length + (showSelection ? 1 : 0),
 					className: cssClass(DataTable_module_css_default.emptyContainer, "emptyContainer"),
-					children: emptyContent ?? /* @__PURE__ */ jsx(EmptyState, { title: "暂无数据" })
+					children: emptyContent ?? /* @__PURE__ */ jsx(EmptyState, { title: emptyTitleText })
 				}) }) : data.map((row, rowIndex) => {
 					const key = getRowKey(row);
 					const isSelected = selectedKeySet.has(key);
 					const customRowClass = typeof rowClassName === "function" ? rowClassName(row, rowIndex) : rowClassName;
 					return /* @__PURE__ */ jsxs(TableRow, {
 						selected: isSelected,
+						tabIndex: onRowClick ? 0 : void 0,
 						className: cx(onRowClick && cssClass(DataTable_module_css_default.clickableRow, "clickableRow"), customRowClass),
 						onClick: () => onRowClick?.(row, rowIndex),
+						onKeyDown: onRowClick ? (e) => {
+							if (e.target !== e.currentTarget) return;
+							if (e.key === "Enter" || e.key === " ") {
+								e.preventDefault();
+								onRowClick(row, rowIndex);
+							}
+						} : void 0,
 						children: [showSelection ? /* @__PURE__ */ jsx(TableCell, {
 							className: cssClass(DataTable_module_css_default.selectCell, "selectCell"),
 							children: /* @__PURE__ */ jsx("span", {
 								role: selectionMode === "single" ? "radio" : "checkbox",
 								"aria-checked": isSelected,
-								"aria-label": `选择第 ${rowIndex + 1} 行`,
+								"aria-label": selectRowAriaLabel(rowIndex),
 								tabIndex: 0,
 								className: cx(selectionMode === "single" ? cssClass(DataTable_module_css_default.radioIndicator, "radioIndicator") : cssClass(DataTable_module_css_default.checkboxIndicator, "checkboxIndicator"), isSelected && (selectionMode === "single" ? cssClass(DataTable_module_css_default.radioSelected, "radioSelected") : cssClass(DataTable_module_css_default.checkboxSelected, "checkboxSelected"))),
 								onClick: (e) => handleRowSelect(row, key, e),
@@ -1196,10 +1250,11 @@ const PLACEMENT_CLASS = {
 * Accessible slide-in drawer panel with multi-directional animation,
 * FocusTrap, Escape key handling, and scroll lock prevention.
 */
-function Drawer({ open, onClose, title, description, children, footer, placement = "right", width = 400, height = 320, closable = true, closeOnOverlayClick = true, closeOnEsc = true, container, className }) {
+function Drawer({ open, onClose, title, description, children, footer, placement = "right", width = 400, height = 320, closable = true, closeOnOverlayClick = true, closeOnEsc = true, container, closeLabel, className }) {
 	const drawerRef = useRef(null);
 	const previousActiveElementRef = useRef(null);
 	const { mounted, phase } = usePresence(open, 190);
+	const resolvedCloseLabel = closeLabel ?? (resolveKitLocale() === "en" ? "Close drawer" : "关闭抽屉");
 	const titleId = useId();
 	const descriptionId = useId();
 	useEffect(() => {
@@ -1223,9 +1278,31 @@ function Drawer({ open, onClose, title, description, children, footer, placement
 			if (previousActiveElementRef.current && typeof previousActiveElementRef.current.focus === "function") previousActiveElementRef.current.focus();
 		};
 	}, [open]);
+	useEffect(() => {
+		if (!open || !closeOnEsc || typeof document === "undefined") return;
+		const onDocumentKeyDown = (e) => {
+			if (e.defaultPrevented) return;
+			if (e.key !== "Escape" || !closeOnEsc) return;
+			if (e.target instanceof Element && e.target.closest("[role=\"menu\"]")) return;
+			const modals = document.querySelectorAll("[role=\"dialog\"][aria-modal=\"true\"]");
+			if (modals.length > 0 && modals[modals.length - 1] !== drawerRef.current) return;
+			e.preventDefault();
+			e.stopPropagation();
+			onClose();
+		};
+		document.addEventListener("keydown", onDocumentKeyDown);
+		return () => {
+			document.removeEventListener("keydown", onDocumentKeyDown);
+		};
+	}, [
+		open,
+		closeOnEsc,
+		onClose
+	]);
 	const handleKeyDown = (e) => {
-		if (!open) return;
+		if (!open || e.defaultPrevented) return;
 		if (e.key === "Escape" && closeOnEsc) {
+			e.preventDefault();
 			e.stopPropagation();
 			onClose();
 			return;
@@ -1274,7 +1351,7 @@ function Drawer({ open, onClose, title, description, children, footer, placement
 								children: description
 							}) : null]
 						}), closable ? /* @__PURE__ */ jsx(IconButton, {
-							"aria-label": "关闭抽屉",
+							"aria-label": resolvedCloseLabel,
 							size: "sm",
 							variant: "ghost",
 							onClick: onClose,
@@ -1312,15 +1389,25 @@ function isTypingTarget(target) {
 	if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
 	return target.isContentEditable;
 }
+function isApplePlatform() {
+	if (typeof navigator === "undefined") return false;
+	const nav = navigator;
+	const platform = nav.userAgentData?.platform || nav.platform || nav.userAgent || "";
+	return /mac|iphone|ipad|ipod/i.test(platform);
+}
 function matchesShortcut(event, shortcut) {
 	const raw = shortcut.trim();
 	if (!raw) return false;
 	const lower = raw.toLowerCase();
-	const wantsMeta = /⌘|cmd|meta/.test(lower);
-	const wantsCtrl = /\bctrl\b|⌃/.test(lower);
+	const hasExplicitMeta = /\b(cmd|meta)\b/.test(lower);
+	const hasCmdGlyph = /⌘/.test(lower);
+	const hasExplicitCtrl = /\bctrl\b|⌃/.test(lower);
+	const wantsMod = /\bmod\b/.test(lower) || hasCmdGlyph && !hasExplicitMeta && !hasExplicitCtrl;
+	const wantsMeta = wantsMod ? isApplePlatform() : hasExplicitMeta || hasCmdGlyph;
+	const wantsCtrl = wantsMod ? !isApplePlatform() : hasExplicitCtrl;
 	const wantsAlt = /\balt\b|⌥/.test(lower);
 	const wantsShift = /\bshift\b|⇧/.test(lower);
-	const key = raw.replace(/⌘|⌃|⌥|⇧|cmd|meta|ctrl|alt|shift|\+/gi, "").trim().toLowerCase();
+	const key = raw.replace(/⌘|⌃|⌥|⇧|mod|cmd|meta|ctrl|alt|shift|\+/gi, "").trim().toLowerCase();
 	if (!key) return false;
 	if (Boolean(event.metaKey) !== wantsMeta) return false;
 	if (Boolean(event.ctrlKey) !== wantsCtrl) return false;
@@ -1330,18 +1417,32 @@ function matchesShortcut(event, shortcut) {
 }
 /**
 * Search field: leading search icon, optional shortcut kbd, and a clear control.
-* Uncontrolled `debounceMs` (default 200) batches `onValueChange`. Pass `0`
-* (or a controlled `value`) to emit immediately.
+* Uncontrolled `debounceMs` defaults to 200ms; controlled `value` defaults to 0ms
+* (immediate) unless an explicit `debounceMs` > 0 is passed.
 */
-const SearchField = forwardRef(function SearchField({ value, defaultValue = "", onValueChange, onClear, debounceMs = 200, shortcut, stretch = false, clearLabel = "Clear", className, disabled, id, placeholder = "Search", ...rest }, ref) {
+const SearchField = forwardRef(function SearchField({ value, defaultValue = "", onValueChange, onClear, debounceMs: debounceMsProp, shortcut, stretch = false, clearLabel, className, disabled, id, placeholder, ...rest }, ref) {
+	const isEn = resolveKitLocale() === "en";
+	const resolvedClearLabel = clearLabel ?? (isEn ? "Clear search" : "清空搜索");
+	const resolvedPlaceholder = placeholder ?? (isEn ? "Search" : "搜索");
 	const generatedId = useId();
 	const inputId = id ?? generatedId;
 	const inputRef = useRef(null);
 	const timerRef = useRef(null);
 	const controlled = value !== void 0;
+	const resolvedDebounceMs = debounceMsProp ?? (controlled ? 0 : 200);
 	const [inner, setInner] = useState(defaultValue);
-	const current = controlled ? value : inner;
-	const immediate = controlled || debounceMs <= 0;
+	const [draft, setDraft] = useState(value ?? "");
+	useEffect(() => {
+		if (controlled) {
+			if (timerRef.current) {
+				clearTimeout(timerRef.current);
+				timerRef.current = null;
+			}
+			setDraft(value ?? "");
+		}
+	}, [controlled, value]);
+	const immediate = resolvedDebounceMs <= 0 || !onValueChange;
+	const current = controlled ? immediate ? value : draft : inner;
 	useEffect(() => {
 		return () => {
 			if (timerRef.current) clearTimeout(timerRef.current);
@@ -1350,7 +1451,7 @@ const SearchField = forwardRef(function SearchField({ value, defaultValue = "", 
 	useEffect(() => {
 		if (!shortcut || disabled) return;
 		const onKey = (event) => {
-			if (event.defaultPrevented) return;
+			if (event.defaultPrevented || event.isComposing) return;
 			if (isTypingTarget(event.target)) return;
 			if (!matchesShortcut(event, shortcut)) return;
 			event.preventDefault();
@@ -1371,10 +1472,11 @@ const SearchField = forwardRef(function SearchField({ value, defaultValue = "", 
 		timerRef.current = setTimeout(() => {
 			timerRef.current = null;
 			onValueChange?.(next);
-		}, debounceMs);
+		}, resolvedDebounceMs);
 	}
 	function apply(next) {
 		if (!controlled) setInner(next);
+		else if (!immediate) setDraft(next);
 		emit(next);
 	}
 	function onChange(event) {
@@ -1386,6 +1488,7 @@ const SearchField = forwardRef(function SearchField({ value, defaultValue = "", 
 			timerRef.current = null;
 		}
 		if (!controlled) setInner("");
+		else setDraft("");
 		onValueChange?.("");
 		onClear?.();
 		inputRef.current?.focus();
@@ -1401,6 +1504,7 @@ const SearchField = forwardRef(function SearchField({ value, defaultValue = "", 
 		if (event.defaultPrevented) return;
 		if (event.key === "Escape" && current) {
 			event.preventDefault();
+			event.stopPropagation();
 			handleClear();
 		}
 	}
@@ -1420,7 +1524,7 @@ const SearchField = forwardRef(function SearchField({ value, defaultValue = "", 
 				className: SearchField_module_css_default.input,
 				value: current,
 				disabled,
-				placeholder,
+				placeholder: resolvedPlaceholder,
 				autoComplete: "off",
 				spellCheck: false,
 				onChange,
@@ -1429,8 +1533,8 @@ const SearchField = forwardRef(function SearchField({ value, defaultValue = "", 
 			current ? /* @__PURE__ */ jsx("button", {
 				type: "button",
 				className: SearchField_module_css_default.clear,
-				"aria-label": clearLabel,
-				title: clearLabel,
+				"aria-label": resolvedClearLabel,
+				title: resolvedClearLabel,
 				disabled,
 				onClick: handleClear,
 				children: /* @__PURE__ */ jsx(IconCloseFill14, { size: 14 })
@@ -1536,8 +1640,10 @@ const Menu = primitives.Menu;
 /**
 * 32px select built on the official Menu. Never renders a native `<select>`.
 */
-function DropdownSelect({ value, options, onChange, placeholder = "Select", disabled = false, className, "aria-label": ariaLabel, id, align = "start" }) {
+function DropdownSelect({ value, options, onChange, placeholder, disabled = false, className, "aria-label": ariaLabel, id, align = "start" }) {
+	const resolvedPlaceholder = placeholder ?? (resolveKitLocale() === "en" ? "Select" : "请选择");
 	const [open, setOpen] = useState(false);
+	const triggerRef = useRef(null);
 	const generatedId = useId();
 	const triggerId = id ?? generatedId;
 	const selected = options.find((option) => option.value === value);
@@ -1551,11 +1657,21 @@ function DropdownSelect({ value, options, onChange, placeholder = "Select", disa
 		if (option.danger === true) item.danger = true;
 		return item;
 	}), [options]);
+	const handleTriggerKeyDown = (event) => {
+		if (disabled || open) return;
+		if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+			event.preventDefault();
+			setOpen(true);
+		}
+	};
 	return /* @__PURE__ */ jsx(Menu, {
 		open: open && !disabled,
 		portal: true,
 		compact: true,
+		autoFocus: true,
 		align,
+		anchorRef: triggerRef,
+		returnFocus: () => triggerRef.current,
 		selectedId: value,
 		items,
 		onSelect: (next) => {
@@ -1567,6 +1683,7 @@ function DropdownSelect({ value, options, onChange, placeholder = "Select", disa
 		},
 		className: cx(DropdownSelect_module_css_default.anchor, className),
 		anchor: /* @__PURE__ */ jsxs("button", {
+			ref: triggerRef,
 			type: "button",
 			id: triggerId,
 			className: cx(DropdownSelect_module_css_default.trigger, open && DropdownSelect_module_css_default.open),
@@ -1577,9 +1694,10 @@ function DropdownSelect({ value, options, onChange, placeholder = "Select", disa
 			onClick: () => {
 				if (!disabled) setOpen((prev) => !prev);
 			},
+			onKeyDown: handleTriggerKeyDown,
 			children: [/* @__PURE__ */ jsx("span", {
 				className: cx(DropdownSelect_module_css_default.label, !selected && DropdownSelect_module_css_default.placeholder),
-				children: selected ? selected.label : placeholder
+				children: selected ? selected.label : resolvedPlaceholder
 			}), /* @__PURE__ */ jsx("span", {
 				className: cx(DropdownSelect_module_css_default.chevron, open && DropdownSelect_module_css_default.chevronOpen),
 				"aria-hidden": "true",
@@ -1589,7 +1707,7 @@ function DropdownSelect({ value, options, onChange, placeholder = "Select", disa
 	});
 }
 // \0dsh-ui-kit-css:src/toolbar/Toolbar.module.css.mjs
-injectCss("Toolbar.module.css", ".dshUk-Toolbar-bar {\n  display: flex;\n  flex-wrap: nowrap;\n  align-items: center;\n  gap: 8px;\n  box-sizing: border-box;\n  height: 48px;\n  min-height: 44px;\n  max-height: 48px;\n  overflow: hidden;\n  white-space: nowrap;\n}\n\n/* 默认水平内边距走 :where() 的零优先级。使用方常在自己的类上声明 padding\n   来跟所在页面的内容基准线对齐（如 .dshUk-Toolbar-omnimux-assets-stage-toolbar 的 0 24px）。\n   两边同为单类选择器时由文档顺序决定胜负，而本包样式随各消费方打包、在文档中\n   后注入（同一规则实测有 10 份副本），使用方的声明会被静默吃掉，整行左右两侧\n   一起外扩。降到零优先级后使用方声明即可胜出；未声明的使用方仍是 12px。 */\n:where(.dshUk-Toolbar-bar) {\n  padding: 0 12px;\n}\n\n.dshUk-Toolbar-compact {\n  height: 44px;\n  min-height: 44px;\n}\n\n.dshUk-Toolbar-left,\n.dshUk-Toolbar-right {\n  display: flex;\n  flex-wrap: nowrap;\n  align-items: center;\n  gap: 8px;\n  min-width: 0;\n}\n\n.dshUk-Toolbar-left {\n  flex: 1 1 auto;\n  overflow: hidden;\n}\n\n.dshUk-Toolbar-right {\n  flex: 0 0 auto;\n  margin-left: auto;\n}\n\n.dshUk-Toolbar-right > * {\n  flex-shrink: 0;\n}\n\n.dshUk-Toolbar-filters {\n  display: flex;\n  flex-wrap: nowrap;\n  align-items: center;\n  gap: 8px;\n  flex: 0 0 auto;\n}\n\n.dshUk-Toolbar-filters > * {\n  flex-shrink: 0;\n}\n");
+injectCss("Toolbar.module.css", ".dshUk-Toolbar-bar {\n  display: flex;\n  flex-wrap: nowrap;\n  align-items: center;\n  gap: 8px;\n  box-sizing: border-box;\n  height: 48px;\n  min-height: 44px;\n  max-height: 48px;\n  overflow: hidden;\n  white-space: nowrap;\n}\n\n/* 默认水平内边距走 :where() 的零优先级。使用方常在自己的类上声明 padding\n   来跟所在页面的内容基准线对齐（如 .dshUk-Toolbar-omnimux-assets-stage-toolbar 的 0 24px）。\n   两边同为单类选择器时由文档顺序决定胜负，而本包样式随各消费方打包、在文档中\n   后注入（同一规则实测有 10 份副本），使用方的声明会被静默吃掉，整行左右两侧\n   一起外扩。降到零优先级后使用方声明即可胜出；未声明的使用方仍是 12px。 */\n:where(.dshUk-Toolbar-bar) {\n  padding: 0 12px;\n}\n\n.dshUk-Toolbar-compact {\n  height: 44px;\n  min-height: 44px;\n}\n\n.dshUk-Toolbar-left,\n.dshUk-Toolbar-right {\n  display: flex;\n  flex-wrap: nowrap;\n  align-items: center;\n  gap: 8px;\n  min-width: 0;\n}\n\n.dshUk-Toolbar-left {\n  flex: 1 1 auto;\n  min-width: 0;\n  overflow-x: auto;\n  scrollbar-width: none;\n}\n\n.dshUk-Toolbar-left::-webkit-scrollbar {\n  display: none;\n}\n\n.dshUk-Toolbar-right {\n  flex: 0 0 auto;\n  margin-left: auto;\n}\n\n.dshUk-Toolbar-right > * {\n  flex-shrink: 0;\n}\n\n.dshUk-Toolbar-filters {\n  display: flex;\n  flex-wrap: nowrap;\n  align-items: center;\n  gap: 8px;\n  flex: 0 0 auto;\n}\n\n.dshUk-Toolbar-filters > * {\n  flex-shrink: 0;\n}\n");
 var Toolbar_module_css_default = {
 	"bar": "dshUk-Toolbar-bar",
 	"omnimux-assets-stage-toolbar": "dshUk-Toolbar-omnimux-assets-stage-toolbar",
@@ -1681,7 +1799,7 @@ const Divider = forwardRef(function Divider({ orientation = "horizontal", classN
 	});
 });
 // \0dsh-ui-kit-css:src/dialog/Dialog.module.css.mjs
-injectCss("Dialog.module.css", ".dshUk-Dialog-dialog {\n  width: min(480px, 100%);\n  max-height: min(80vh, 720px);\n  border-radius: 16px;\n}\n\n.dshUk-Dialog-sm {\n  width: min(380px, 100%);\n}\n\n.dshUk-Dialog-lg {\n  width: min(640px, 100%);\n}\n\n.dshUk-Dialog-body {\n  overflow: auto;\n  max-height: min(56vh, 480px);\n}\n\n.dshUk-Dialog-iconContent {\n  display: flex;\n  flex-direction: column;\n  min-height: 0;\n}\n\n.dshUk-Dialog-header {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 8px;\n  padding: 22px 18px 0 24px;\n}\n\n.dshUk-Dialog-title {\n  display: flex;\n  align-items: center;\n  gap: 8px;\n  min-width: 0;\n  margin: 0;\n  color: var(--dsw-alias-label-primary);\n  font-size: 16px;\n  font-weight: 600;\n  line-height: 24px;\n  overflow-wrap: anywhere;\n}\n\n.dshUk-Dialog-titleIcon {\n  display: inline-flex;\n  flex: none;\n  align-items: center;\n}\n\n.dshUk-Dialog-description {\n  margin: 8px 0 0;\n  padding: 0 24px;\n  color: var(--dsw-alias-label-primary);\n  font-size: 14px;\n  line-height: 22px;\n}\n\n.dshUk-Dialog-iconBody {\n  min-height: 0;\n  margin-top: 16px;\n  padding: 0 24px;\n}\n\n.dshUk-Dialog-footer {\n  display: flex;\n  align-items: center;\n  justify-content: flex-end;\n  gap: 8px;\n  width: 100%;\n}\n\n.dshUk-Dialog-iconFooter {\n  box-sizing: border-box;\n  flex: none;\n  padding: 0 24px;\n}\n\n.dshUk-Dialog-message {\n  margin: 0;\n  font-size: 14px;\n  line-height: 22px;\n  color: var(--dsw-alias-label-primary);\n}\n");
+injectCss("Dialog.module.css", ".dshUk-Dialog-dialog {\n  width: min(480px, 100%);\n  max-height: min(80vh, 720px);\n  border-radius: 16px;\n}\n\n.dshUk-Dialog-sm {\n  width: min(380px, 100%);\n}\n\n.dshUk-Dialog-lg {\n  width: min(640px, 100%);\n}\n\n.dshUk-Dialog-body {\n  overflow: auto;\n  max-height: min(56vh, 480px);\n}\n\n.dshUk-Dialog-iconContent {\n  display: flex;\n  flex-direction: column;\n  min-height: 0;\n}\n\n.dshUk-Dialog-header {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 8px;\n  padding: 22px 18px 0 24px;\n}\n\n.dshUk-Dialog-title {\n  display: flex;\n  align-items: center;\n  gap: 8px;\n  min-width: 0;\n  margin: 0;\n  color: var(--dsw-alias-label-primary);\n  font-size: 16px;\n  font-weight: 600;\n  line-height: 24px;\n  overflow-wrap: anywhere;\n}\n\n.dshUk-Dialog-titleIcon {\n  display: inline-flex;\n  flex: none;\n  align-items: center;\n}\n\n.dshUk-Dialog-description {\n  margin: 8px 0 0;\n  padding: 0 24px;\n  color: var(--dsw-alias-label-secondary);\n  font-size: 14px;\n  line-height: 22px;\n}\n\n.dshUk-Dialog-iconBody {\n  min-height: 0;\n  margin-top: 16px;\n  padding: 0 24px;\n}\n\n.dshUk-Dialog-footer {\n  display: flex;\n  align-items: center;\n  justify-content: flex-end;\n  gap: 8px;\n  width: 100%;\n}\n\n.dshUk-Dialog-iconFooter {\n  box-sizing: border-box;\n  flex: none;\n  padding: 12px 24px 20px;\n}\n\n.dshUk-Dialog-message {\n  margin: 0;\n  font-size: 14px;\n  line-height: 22px;\n  color: var(--dsw-alias-label-primary);\n}\n");
 var Dialog_module_css_default = {
 	"dialog": "dshUk-Dialog-dialog",
 	"sm": "dshUk-Dialog-sm",
@@ -1707,7 +1825,8 @@ const SIZE_CLASS = {
 * Official Modal with kit geometry: 16px radius, scrollable body, right-aligned
 * action footer. Icon headings use the primitive's headless surface.
 */
-function ModalDialog({ open, onClose, title, titleIcon, description, children, footer, size = "md", closeLabel = "Close", className, contentClassName }) {
+function ModalDialog({ open, onClose, title, titleIcon, description, children, footer, size = "md", closeLabel, className, contentClassName }) {
+	const resolvedCloseLabel = closeLabel ?? (resolveKitLocale() === "en" ? "Close" : "关闭");
 	const modalProps = {
 		open,
 		onClose,
@@ -1732,7 +1851,7 @@ function ModalDialog({ open, onClose, title, titleIcon, description, children, f
 					}), /* @__PURE__ */ jsx(IconButton, {
 						variant: "ghost",
 						size: "sm",
-						"aria-label": closeLabel,
+						"aria-label": resolvedCloseLabel,
 						onClick: onClose,
 						children: /* @__PURE__ */ jsx(IconCloseOutline16, { size: 14 })
 					})]
@@ -1753,7 +1872,7 @@ function ModalDialog({ open, onClose, title, titleIcon, description, children, f
 	});
 	return /* @__PURE__ */ jsx(Modal, {
 		...modalProps,
-		closeLabel,
+		closeLabel: resolvedCloseLabel,
 		contentClassName: cx(Dialog_module_css_default.body, contentClassName),
 		...description !== void 0 ? { description } : {},
 		...footer !== void 0 ? { footer } : {},
@@ -1761,23 +1880,39 @@ function ModalDialog({ open, onClose, title, titleIcon, description, children, f
 	});
 }
 /** Two-button confirm dialog. Destructive flows should pass `confirmVariant="danger"`. */
-function ConfirmModal({ message, children, confirmLabel = "Confirm", cancelLabel = "Cancel", confirmVariant = "primary", confirmLoading = false, onConfirm, onClose, size = "sm", ...rest }) {
+function ConfirmModal({ message, children, confirmLabel, cancelLabel, confirmVariant = "primary", confirmLoading = false, onConfirm, onClose, size = "sm", ...rest }) {
+	const isEn = resolveKitLocale() === "en";
+	const resolvedConfirmLabel = confirmLabel ?? (isEn ? "Confirm" : "确认");
+	const resolvedCancelLabel = cancelLabel ?? (isEn ? "Cancel" : "取消");
+	const cancelRef = useRef(null);
+	useEffect(() => {
+		if (!rest.open || confirmVariant !== "danger") return;
+		const raf = typeof requestAnimationFrame === "function" ? requestAnimationFrame(() => cancelRef.current?.focus()) : 0;
+		if (!raf) cancelRef.current?.focus();
+		return () => {
+			if (raf && typeof cancelAnimationFrame === "function") cancelAnimationFrame(raf);
+		};
+	}, [rest.open, confirmVariant]);
+	const guardedOnClose = () => {
+		if (!confirmLoading) onClose();
+	};
 	return /* @__PURE__ */ jsx(ModalDialog, {
 		...rest,
 		size,
-		onClose,
+		onClose: guardedOnClose,
 		footer: /* @__PURE__ */ jsxs("div", {
 			className: Dialog_module_css_default.footer,
 			children: [/* @__PURE__ */ jsx(Button, {
+				ref: cancelRef,
 				variant: "outline",
-				onClick: onClose,
+				onClick: guardedOnClose,
 				disabled: confirmLoading,
-				children: cancelLabel
+				children: resolvedCancelLabel
 			}), /* @__PURE__ */ jsx(Button, {
 				variant: confirmVariant,
 				loading: confirmLoading,
 				onClick: onConfirm,
-				children: confirmLabel
+				children: resolvedConfirmLabel
 			})]
 		}),
 		children: message != null ? /* @__PURE__ */ jsx("p", {
@@ -1928,6 +2063,24 @@ const Tabs = forwardRef(function Tabs({ items, activeId, onChange, size = "defau
 		size,
 		items
 	]);
+	const enabledItems = items.filter((item) => !item.disabled);
+	const focusableTabId = enabledItems.some((item) => item.id === activeId) ? activeId : enabledItems[0]?.id ?? "";
+	const handleTabKeyDown = (event, currentId) => {
+		if (enabledItems.length === 0) return;
+		const currentIndex = enabledItems.findIndex((item) => item.id === currentId);
+		if (currentIndex === -1) return;
+		let nextIndex = -1;
+		if (event.key === "ArrowRight" || event.key === "ArrowDown") nextIndex = (currentIndex + 1) % enabledItems.length;
+		else if (event.key === "ArrowLeft" || event.key === "ArrowUp") nextIndex = (currentIndex - 1 + enabledItems.length) % enabledItems.length;
+		else if (event.key === "Home") nextIndex = 0;
+		else if (event.key === "End") nextIndex = enabledItems.length - 1;
+		else return;
+		const target = enabledItems[nextIndex];
+		if (!target) return;
+		event.preventDefault();
+		buttonRefs.current.get(target.id)?.focus();
+		if (target.id !== activeId) onChange(target.id);
+	};
 	return /* @__PURE__ */ jsxs("div", {
 		...rest,
 		ref: setListRef,
@@ -1947,11 +2100,13 @@ const Tabs = forwardRef(function Tabs({ items, activeId, onChange, size = "defau
 				type: "button",
 				role: "tab",
 				"aria-selected": isActive,
+				tabIndex: item.disabled ? -1 : item.id === focusableTabId ? 0 : -1,
 				disabled: item.disabled,
 				className: cx(TAB_ITEM_CLASS, isActive && ACTIVE_CLASS),
 				onClick: () => {
 					if (!item.disabled && item.id !== activeId) onChange(item.id);
 				},
+				onKeyDown: (event) => handleTabKeyDown(event, item.id),
 				children: [/* @__PURE__ */ jsx("span", {
 					className: LABEL_CLASS$1,
 					"data-label": isPrimitiveLabel ? String(item.label) : void 0,
@@ -1992,7 +2147,10 @@ const REFRESH_SPIN_CLASS = cssClass(PageHeader_module_css_default.refreshSpin, "
 * Typography single source of truth: 20px / 600 / 28px.
 * Layout: heading (breadcrumb + title + subtitle) | tabs | controls (actions + refresh + close).
 */
-const PageHeader = forwardRef(function PageHeader({ title, subtitle, badge, tabs, actions, onRefresh, refreshing = false, refreshTitle = "Refresh", onClose, closeTitle = "Close", breadcrumb, className, ...rest }, ref) {
+const PageHeader = forwardRef(function PageHeader({ title, subtitle, badge, tabs, actions, onRefresh, refreshing = false, refreshTitle, onClose, closeTitle, breadcrumb, className, ...rest }, ref) {
+	const isEn = resolveKitLocale() === "en";
+	const resolvedRefreshTitle = refreshTitle ?? (isEn ? "Refresh" : "刷新");
+	const resolvedCloseTitle = closeTitle ?? (isEn ? "Close" : "关闭");
 	return /* @__PURE__ */ jsxs("header", {
 		...rest,
 		ref,
@@ -2034,21 +2192,21 @@ const PageHeader = forwardRef(function PageHeader({ title, subtitle, badge, tabs
 					onRefresh && /* @__PURE__ */ jsx(IconButton, {
 						variant: "ghost",
 						size: "sm",
-						"aria-label": refreshTitle,
-						title: refreshTitle,
+						"aria-label": resolvedRefreshTitle,
+						title: resolvedRefreshTitle,
 						"aria-busy": refreshing || void 0,
 						className: refreshing ? REFRESH_SPIN_CLASS : void 0,
 						disabled: refreshing,
 						onClick: () => {
-							onRefresh();
+							if (!refreshing) onRefresh();
 						},
 						children: /* @__PURE__ */ jsx(IconRefreshOutline16, {})
 					}),
 					onClose && /* @__PURE__ */ jsx(IconButton, {
 						variant: "ghost",
 						size: "sm",
-						"aria-label": closeTitle,
-						title: closeTitle,
+						"aria-label": resolvedCloseTitle,
+						title: resolvedCloseTitle,
 						onClick: () => {
 							onClose();
 						},
@@ -2303,9 +2461,12 @@ const THEME_VARS = {
 * 点距取水平/垂直两个方向可容点距的较小值，点阵在画布内双向居中；
 * prefers-reduced-motion 定格参考帧。
 */
-const GenWaveCard = forwardRef(function GenWaveCard({ statusText, progress, autoProgress, className, style, ...rest }, ref) {
+const GenWaveCard = forwardRef(function GenWaveCard({ statusText, progress, autoProgress = false, className, style, ...rest }, ref) {
 	const canvasRef = useRef(null);
 	const badgeRef = useRef(null);
+	const shouldShowBadge = progress !== void 0 || autoProgress === true;
+	const showBadgeRef = useRef(shouldShowBadge);
+	showBadgeRef.current = shouldShowBadge;
 	/** reduced-motion 下外部更新进度时触发的单帧重绘钩子。 */
 	const redrawRef = useRef(null);
 	const setProgressText = (n) => {
@@ -2377,19 +2538,21 @@ const GenWaveCard = forwardRef(function GenWaveCard({ statusText, progress, auto
 				ctx.arc(x, y, radius, 0, Math.PI * 2);
 				ctx.fill();
 			}
-			const bw = C.BADGE_W;
-			const bh = C.BADGE_H;
-			const bx = cssW - (statusText ? C.BADGE_X_OFF : 12) - bw;
-			const by = cssH - (statusText ? C.BADGE_BOTTOM_GAP : 12) - bh;
-			ctx.fillStyle = GEN_WAVE_COLORS.badgeBg;
-			ctx.beginPath();
-			ctx.ellipse(bx + bw / 2, by + bh / 2, bw / 2, bh / 2, 0, 0, Math.PI * 2);
-			ctx.fill();
-			ctx.fillStyle = GEN_WAVE_COLORS.badgeFg;
-			ctx.font = `500 ${C.BADGE_FONT}px ${GEN_WAVE_BADGE_FONT_FAMILY}`;
-			ctx.textAlign = "center";
-			ctx.textBaseline = "middle";
-			ctx.fillText(badgeEl.textContent ?? "", bx + bw / 2, by + bh / 2 + .5);
+			if (showBadgeRef.current) {
+				const bw = C.BADGE_W;
+				const bh = C.BADGE_H;
+				const bx = cssW - (statusText ? C.BADGE_X_OFF : 12) - bw;
+				const by = cssH - (statusText ? C.BADGE_BOTTOM_GAP : 12) - bh;
+				ctx.fillStyle = GEN_WAVE_COLORS.badgeBg;
+				ctx.beginPath();
+				ctx.ellipse(bx + bw / 2, by + bh / 2, bw / 2, bh / 2, 0, 0, Math.PI * 2);
+				ctx.fill();
+				ctx.fillStyle = GEN_WAVE_COLORS.badgeFg;
+				ctx.font = `500 ${C.BADGE_FONT}px ${GEN_WAVE_BADGE_FONT_FAMILY}`;
+				ctx.textAlign = "center";
+				ctx.textBaseline = "middle";
+				ctx.fillText(badgeEl.textContent ?? "", bx + bw / 2, by + bh / 2 + .5);
+			}
 		};
 		const frame = (now) => {
 			const phi = now / C.SIZE_PERIOD_MS * C.SIZE_LAMBDA + GEN_WAVE_FREEZE.PHI;
@@ -2429,6 +2592,9 @@ const GenWaveCard = forwardRef(function GenWaveCard({ statusText, progress, auto
 		};
 	}, []);
 	useEffect(() => {
+		redrawRef.current?.();
+	}, [shouldShowBadge]);
+	useEffect(() => {
 		if (progress === void 0) return;
 		setProgressText(progress);
 		redrawRef.current?.();
@@ -2455,7 +2621,7 @@ const GenWaveCard = forwardRef(function GenWaveCard({ statusText, progress, auto
 		ref,
 		role: "status",
 		"aria-live": "polite",
-		"aria-label": "Generation in progress",
+		"aria-label": resolveKitLocale() === "en" ? "Generation in progress" : "正在生成",
 		className: cx(cssClass(GenWaveCard_module_css_default.card, "card"), statusText ? "" : cssClass(GenWaveCard_module_css_default.cardFull, "cardFull"), className),
 		style: {
 			...THEME_VARS,
@@ -2491,7 +2657,7 @@ const GenWaveCard = forwardRef(function GenWaveCard({ statusText, progress, auto
 			/* @__PURE__ */ jsx("span", {
 				ref: badgeRef,
 				className: cssClass(GenWaveCard_module_css_default.badge, "badge"),
-				children: "0%"
+				children: shouldShowBadge ? "0%" : ""
 			})
 		]
 	});
@@ -2666,6 +2832,7 @@ const SIDEBAR_ENTRY_COMMON_STYLES = `
   color: var(--dsw-alias-label-primary, inherit);
   font: var(--dsw-font-s-14, inherit); font-size: 14px; line-height: 20px;
   cursor: pointer; text-align: left;
+  transition: background-color var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), transform var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .omnimux-sidebar-nav-entry[data-hidden="true"],
 .omnimux-sidebar-nav-entry.omnimux-sidebar-nav-entry-hidden {
@@ -2673,6 +2840,17 @@ const SIDEBAR_ENTRY_COMMON_STYLES = `
 }
 .omnimux-sidebar-nav-entry:hover {
   background: var(--dsw-alias-interactive-bg-hover);
+}
+.omnimux-sidebar-nav-entry:focus-visible {
+  outline: 2px solid var(--dsw-alias-brand-primary);
+  outline-offset: 1px;
+}
+.omnimux-sidebar-nav-entry:active {
+  transform: scale(var(--omnimux-motion-press-scale, 0.96));
+}
+@media (prefers-reduced-motion: reduce) {
+  .omnimux-sidebar-nav-entry { transition: none; }
+  .omnimux-sidebar-nav-entry:active { transform: none; }
 }
 .omnimux-sidebar-nav-entry[data-active="true"] {
   background: var(--dsw-alias-interactive-bg-active);
@@ -2691,7 +2869,7 @@ const SIDEBAR_ENTRY_COMMON_STYLES = `
 function resolveLabel(label) {
 	return typeof label === "function" ? label() : label;
 }
-function paintLabel(entry, labelText, titleAttr = false) {
+function paintLabel(entry, labelText, titleAttr = true) {
 	entry.setAttribute("aria-label", labelText);
 	if (titleAttr) entry.title = labelText;
 	const node = entry.querySelector(".omnimux-sidebar-nav-entry-label");
@@ -2720,7 +2898,7 @@ function registerWhenCoordinatorReady(row) {
 * Uses idempotent activation (stageStore.open()) to guarantee persistent selection.
 */
 function createSidebarEntry(options) {
-	const { id, rank, label, iconSvg, stageStore, locale, customClassName, datasetKey, extraDatasetKeys, titleAttr = false, access = "offline", requireAuth, authReason } = options;
+	const { id, rank, label, iconSvg, stageStore, locale, customClassName, datasetKey, extraDatasetKeys, titleAttr = true, access = "offline", requireAuth, authReason } = options;
 	const entry = document.createElement("button");
 	entry.type = "button";
 	if (datasetKey) entry.setAttribute(datasetKey, "");

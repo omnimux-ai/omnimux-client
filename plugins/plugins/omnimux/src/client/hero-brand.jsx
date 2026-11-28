@@ -25,8 +25,14 @@ export function HeroBrandWelcome({ size = 34, className, win = typeof window !==
   const [isSplit, setIsSplit] = useState(false)
 
   const profile = auth?.state?.profile
-  const displayName = profile?.display_name || profile?.username || '创作者'
-  const greeting = `你好，${displayName}`
+  const en = typeof win?.__omnimuxLocale?.active === 'string'
+    ? win.__omnimuxLocale.active.toLowerCase().startsWith('en')
+    : Boolean(win?.document?.documentElement?.lang?.toLowerCase().startsWith('en'))
+  const displayName = (typeof profile?.display_name === 'string' && profile.display_name.trim() && profile.display_name.trim() !== 'admin' ? profile.display_name.trim() : '')
+    || (typeof profile?.username === 'string' && profile.username.trim() && profile.username.trim() !== 'admin' ? profile.username.trim() : '')
+    || (en ? 'Creator' : '创作者')
+  const greeting = en ? `Hi, ${displayName}` : `你好，${displayName}`
+  const subtitle = en ? 'AI Social Creation Workspace' : 'AI 社媒内容创作助手'
 
   useEffect(() => {
     if (!win || !win.document) return
@@ -57,7 +63,7 @@ export function HeroBrandWelcome({ size = 34, className, win = typeof window !==
       />
       <div className="omnimux-welcome-meta">
         <h1 className="omnimux-welcome-title">{greeting}</h1>
-        <p className="omnimux-welcome-subtitle">属于你的AI社媒运营团队</p>
+        <p className="omnimux-welcome-subtitle">{subtitle}</p>
       </div>
     </div>
   )

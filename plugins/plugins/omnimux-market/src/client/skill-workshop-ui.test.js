@@ -337,7 +337,8 @@ describe('Skill Workshop UI & Session Contract (Issue #773 / #776)', () => {
   it('install modal provides drag & drop and requirements notice', () => {
     assert.match(skillPlazaSrc, /function InstallModal/)
     assert.match(skillPlazaSrc, /from "\.\/plaza\/InstallModal\.jsx"/)
-    assert.match(installModalSrc, /drop-zone/)
+    assert.match(installModalSrc, /omx-install-slug-box/)
+    assert.match(installModalSrc, /parseSkillSlugInput/)
     assert.match(installModalSrc, /req-section/)
     assert.match(installModalSrc, /btn-modal-install/)
   })
@@ -360,11 +361,10 @@ describe('Skill Workshop UI & Session Contract (Issue #773 / #776)', () => {
   })
 
   it('Issue #773: top bar strictly aligns with reference mock and featured card metadata is complete', () => {
-    // 移除大 Header
+    // 移除大 Header 与多余 Tab 装饰图标
     assert.ok(!skillPlazaSrc.includes('className: "page-header"'), 'page-header DOM should be removed')
-    // 激活 Tab 带 ⓘ 图标
-    assert.match(skillPlazaSrc, /className:\s*"tab-info-icon"/)
-    assert.match(cssSrc, /\.tab-info-icon/)
+    assert.ok(!skillPlazaSrc.includes('tab-info-icon'), 'decorative tab-info-icon should be removed')
+    assert.ok(!cssSrc.includes('.tab-info-icon'), 'unused .tab-info-icon CSS should be removed')
     // 官方精选卡片支持真实图片封面，彻底移除 MiniMax Design、冗余底栏以及 H3 角标
     assert.ok(!skillPlazaSrc.includes('className: "h3-badge"'), 'h3-badge should be removed')
     assert.match(featuredCardSrc, /resolveSkillAuroraStyle/)

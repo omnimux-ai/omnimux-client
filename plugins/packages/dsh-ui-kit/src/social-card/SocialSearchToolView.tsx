@@ -312,7 +312,11 @@ export function SocialSearchToolView({
   }, [isReady, parsed.items, showAll, initialVisibleCount]);
 
   const remainingCount = Math.max(0, parsed.items.length - Math.max(1, initialVisibleCount));
-  const countLabel = isReady || isEmpty ? `×${parsed.totalCount}` : null;
+  const countLabel = isReady && parsed.totalCount > 0
+    ? lang === "en"
+      ? `${parsed.totalCount} ${parsed.totalCount === 1 ? "result" : "results"}`
+      : `${parsed.totalCount} 条`
+    : null;
   const singleCard = isReady && parsed.items.length === 1;
 
   return (
@@ -353,7 +357,7 @@ export function SocialSearchToolView({
         </div>
 
         <div className={c("headerActions")}>
-          {parsed.rawOutputText ? (
+          {(Boolean(inspect) || isPassthrough || isError) && parsed.rawOutputText ? (
             <button
               type="button"
               className={c("headerActionBtn")}
@@ -431,31 +435,44 @@ export function SocialSearchToolView({
                           type="button"
                           className={c("hoverPillBtn")}
                           data-save-state={saveStatus}
+                          aria-busy={saveStatus === "saving" || undefined}
                           disabled={saveStatus === "saving" || saveStatus === "saved"}
                           aria-label={
                             saveStatus === "saved"
                               ? lang === "en" ? "Saved to inspiration" : "已保存到灵感库"
-                              : saveStatus === "error"
-                                ? saveErr || (lang === "en" ? "Retry save" : "重试保存")
-                                : lang === "en" ? "Save to inspiration" : "存为灵感"
+                              : saveStatus === "saving"
+                                ? lang === "en" ? "Saving to inspiration" : "正在保存灵感"
+                                : saveStatus === "error"
+                                  ? saveErr || (lang === "en" ? "Save failed, click to retry" : "保存失败，点击重试")
+                                  : lang === "en" ? "Save to inspiration" : "存为灵感"
                           }
                           title={
                             saveStatus === "saved"
                               ? lang === "en" ? "Saved" : "已存为灵感"
-                              : saveStatus === "error"
-                                ? saveErr || (lang === "en" ? "Save failed" : "保存失败")
-                                : lang === "en" ? "Save to inspiration" : "存为灵感"
+                              : saveStatus === "saving"
+                                ? lang === "en" ? "Saving..." : "保存中"
+                                : saveStatus === "error"
+                                  ? saveErr || (lang === "en" ? "Save failed, click to retry" : "保存失败，点击重试")
+                                  : lang === "en" ? "Save to inspiration" : "存为灵感"
                           }
                           onClick={(e) => {
                             e.stopPropagation();
                             void handleSave(item);
                           }}
                         >
-                          <IconSwap
-                            active={saveStatus === "saved"}
-                            primary={<BookmarkGlyph />}
-                            secondary={<CheckGlyph />}
-                          />
+                          {saveStatus === "saving" ? (
+                            <span className={c("hoverSpinner")} aria-hidden="true" />
+                          ) : saveStatus === "error" ? (
+                            <span className={c("hoverRetryLabel")}>
+                              {lang === "en" ? "Retry" : "重试"}
+                            </span>
+                          ) : (
+                            <IconSwap
+                              active={saveStatus === "saved"}
+                              primary={<BookmarkGlyph />}
+                              secondary={<CheckGlyph />}
+                            />
+                          )}
                         </button>
                       ) : null}
                     </>
@@ -473,6 +490,12 @@ export function SocialSearchToolView({
               }}
             />
           </div>
+
+          {saveErrors.size > 0 ? (
+            <div className={c("errorBox")} role="status">
+              {Array.from(saveErrors.values())[0]}
+            </div>
+          ) : null}
 
           {remainingCount > 0 ? (
             <button

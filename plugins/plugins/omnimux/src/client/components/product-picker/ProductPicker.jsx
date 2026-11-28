@@ -203,6 +203,11 @@ export function ProductPicker({
 
   useEffect(() => {
     if (!open) {
+      setSelectedProduct(null);
+      setActiveCategory('all');
+      setActiveTag('all');
+      setSearchQuery('');
+      setError(null);
       setCreateOpen(false);
       return undefined;
     }
@@ -371,13 +376,14 @@ export function ProductPicker({
             value={searchQuery}
             onChange={setSearchQuery}
             onKeyDown={(e) => {
-              if (e.key === 'Enter' && searchQuery.trim() && !selectedProduct) {
-                e.preventDefault();
-                handleConfirm({
-                  id: `custom-${Date.now()}`,
-                  name: searchQuery.trim(),
-                  title: searchQuery.trim(),
-                });
+              if (e.key === 'Enter') {
+                if (selectedProduct) {
+                  e.preventDefault();
+                  handleConfirm(selectedProduct);
+                } else if (filteredProducts.length === 1) {
+                  e.preventDefault();
+                  handleConfirm(filteredProducts[0]);
+                }
               }
             }}
             placeholder={safeT('productPicker.searchPlaceholder')}
@@ -434,6 +440,7 @@ export function ProductPicker({
                             view: { filterType: 'product' },
                             title: '产品库',
                           });
+                          onClose();
                         } catch (error) {
                           console.warn('[ProductPicker] open assets library failed:', error);
                         }

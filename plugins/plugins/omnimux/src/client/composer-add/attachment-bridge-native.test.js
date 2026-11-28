@@ -130,7 +130,8 @@ test('confirmed void legacy setter consumes only on exact subsequent snapshot', 
     await env.send(); assert.equal(chip.isConnected, true)
     await env.publish({ draft: env.wholeDrafts[0], occurrences: [] })
     assert.equal(chip.isConnected, false); assert.equal(clock.size, 0)
-    assert.equal(env.status(), 'translated:attachments.submit.prepare.ready')
+    assert.equal(env.sends, 1)
+    assert.equal(env.status(), '')
   } finally { await env.close(); clock.restore() }
 })
 
@@ -175,7 +176,6 @@ test('marketing appends only directives, then waits for advanced matching metada
     await env.publish({ ...before, draft: before.draft + text, draftRev: 8 })
     assert.deepEqual(env.state.occurrences, before.occurrences)
     assert.equal(env.presets.getSnapshot(env.sessionId).hook, null)
-    await env.send()
     assert.equal(env.sends, 1); assert.equal(env.arms.length, 1)
     assert.equal(env.insertions.length, 1)
   } finally { await env.close() }
@@ -208,7 +208,6 @@ test('product library ID keeps its marker and chip is consumed only after public
     assert.equal(env.sends, 0)
     await env.publish({ ...before, draft: before.draft + env.insertions[0].text, draftRev: 8 })
     assert.equal(chip.isConnected, false)
-    await env.send()
     assert.equal(env.sends, 1); assert.equal(env.insertions.length, 1)
   } finally { await env.close() }
 })

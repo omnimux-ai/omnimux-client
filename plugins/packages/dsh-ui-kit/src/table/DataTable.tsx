@@ -4,6 +4,7 @@ import type { KeyboardEvent, MouseEvent, ReactNode } from "react";
 import { EmptyState } from "../empty/EmptyState.tsx";
 import { cssClass } from "../internal/cssClass.ts";
 import { cx } from "../internal/cx.ts";
+import { resolveKitLocale } from "../internal/locale.ts";
 import "../motion/tokens.ts";
 import {
   Table,
@@ -75,6 +76,12 @@ export interface DataTableProps<T> {
   loading?: boolean;
   /** Custom empty state content. Defaults to EmptyState. */
   emptyContent?: ReactNode;
+  /** Localized fallback empty state title when emptyContent is omitted. */
+  emptyTitle?: string;
+  /** Accessible label for select-all checkbox in multiple selection mode. */
+  selectAllLabel?: string;
+  /** Accessible label builder for row selection checkboxes/radios. */
+  selectRowLabel?: (rowIndex: number) => string;
   /** Sticky header styling. */
   stickyHeader?: boolean;
   /** Whether horizontal scroll indicators are enabled, defaults to true. */
@@ -105,12 +112,19 @@ export function DataTable<T>({
   onSortChange,
   loading = false,
   emptyContent,
+  emptyTitle,
+  selectAllLabel,
+  selectRowLabel,
   stickyHeader = false,
   scrollX = true,
   className,
   rowClassName,
   onRowClick,
 }: DataTableProps<T>): JSX.Element {
+  const isEn = resolveKitLocale() === "en";
+  const emptyTitleText = emptyTitle ?? (isEn ? "No data" : "暂无数据");
+  const selectAllAriaLabel = selectAllLabel ?? (isEn ? "Select all rows" : "全选所有行");
+  const selectRowAriaLabel = selectRowLabel ?? ((rowIndex: number) => (isEn ? `Select row ${rowIndex + 1}` : `选择第 ${rowIndex + 1} 行`));
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [hasScrollLeft, setHasScrollLeft] = useState(false);
   const [hasScrollRight, setHasScrollRight] = useState(false);
@@ -258,7 +272,7 @@ export function DataTable<T>({
                       aria-checked={
                         isAllSelected ? "true" : isPartiallySelected ? "mixed" : "false"
                       }
-                      aria-label="全选所有行"
+                      aria-label={selectAllAriaLabel}
                       tabIndex={0}
                       className={cx(
                         cssClass(css.checkboxIndicator, "checkboxIndicator"),
@@ -342,7 +356,7 @@ export function DataTable<T>({
                   colSpan={columns.length + (showSelection ? 1 : 0)}
                   className={cssClass(css.emptyContainer, "emptyContainer")}
                 >
-                  {emptyContent ?? <EmptyState title="暂无数据" />}
+                  {emptyContent ?? <EmptyState title={emptyTitleText} />}
                 </TableCell>
               </TableRow>
             ) : (
@@ -358,18 +372,26 @@ export function DataTable<T>({
                   <TableRow
                     key={key}
                     selected={isSelected}
+                    tabIndex={onRowClick ? 0 : undefined}
                     className={cx(
                       onRowClick && cssClass(css.clickableRow, "clickableRow"),
                       customRowClass,
                     )}
                     onClick={() => onRowClick?.(row, rowIndex)}
+                    onKeyDown={onRowClick ? (e) => {
+                      if (e.target !== e.currentTarget) return;
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        onRowClick(row, rowIndex);
+                      }
+                    } : undefined}
                   >
                     {showSelection ? (
                       <TableCell className={cssClass(css.selectCell, "selectCell")}>
                         <span
                           role={selectionMode === "single" ? "radio" : "checkbox"}
                           aria-checked={isSelected}
-                          aria-label={`选择第 ${rowIndex + 1} 行`}
+                          aria-label={selectRowAriaLabel(rowIndex)}
                           tabIndex={0}
                           className={cx(
                             selectionMode === "single"

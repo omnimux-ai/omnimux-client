@@ -199,7 +199,7 @@ function renderReceipt(h, tr, receipt) {
     h('ul', { className: 'ws-suite-receipt-list' },
       lines,
       failed.map((row, idx) => h('li', { key: 'failed-' + idx, className: 'ws-suite-receipt-item failed' },
-        t(tr, 'suite.receipt.failed', '未完成 · {name}：{error}', {
+        t(tr, 'suite.receipt.failed', '未完成：{name}（{error}）', {
           name: String((row && (row.name || row.part)) || ''),
           error: String((row && row.error) || ''),
         }),
@@ -226,7 +226,7 @@ export function SuiteDetailModal(opts) {
   const initialAction = item && item.initialAction;
   const [confirmOpen, setConfirmOpen] = stateFn(initialAction === 'install');
   const [confirmUninstallOpen, setConfirmUninstallOpen] = stateFn(initialAction === 'uninstall');
-  const [ruleTarget, setRuleTarget] = stateFn('project');
+  const [ruleTarget, setRuleTarget] = stateFn(projectDir ? 'project' : 'global');
   const [installing, setInstalling] = stateFn(false);
   const [uninstalling, setUninstalling] = stateFn(false);
   const [error, setError] = stateFn('');
@@ -381,18 +381,23 @@ export function SuiteDetailModal(opts) {
     h('div', { className: 'ws-detail-actions' },
       h(buttonComp, { size: 'sm', variant: 'outline', disabled: uninstalling, onClick: closeUninstallConfirm },
         t(tr, 'suite.install.cancel', '取消')),
-      h(buttonComp, { size: 'sm', variant: 'primary', disabled: uninstalling, onClick: confirmUninstallAction },
+      h(buttonComp, { size: 'sm', variant: 'danger', disabled: uninstalling, onClick: confirmUninstallAction },
         uninstalling ? t(tr, 'suite.uninstall.uninstalling', '正在卸载…') : t(tr, 'suite.uninstall.confirm', '确认卸载')),
     ),
   ) : null;
 
+  const safeCloseDetail = () => {
+    if (installing || uninstalling) return;
+    if (onClose) onClose();
+  };
+
   const detailWrapped = h('div', { className: 'ws-detail-wrapper', onClick: (e) => e && e.stopPropagation && e.stopPropagation() },
-    renderCloseButton(h, tr, onClose),
+    renderCloseButton(h, tr, safeCloseDetail),
     detail,
   );
 
   return [
-    h(overlayComp, { key: 'suite-detail', onClose }, detailWrapped),
+    h(overlayComp, { key: 'suite-detail', onClose: safeCloseDetail }, detailWrapped),
     confirm ? h(overlayComp, { key: 'suite-install-confirm', onClose: closeConfirm }, confirm) : null,
     confirmUninstall ? h(overlayComp, { key: 'suite-uninstall-confirm', onClose: closeUninstallConfirm }, confirmUninstall) : null,
   ];

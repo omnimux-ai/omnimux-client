@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Button, DropdownSelect } from 'dsh-ui-kit'
+import { Button, ConfirmModal, DropdownSelect } from 'dsh-ui-kit'
 import { jsonRequest } from './api-json.js'
 import { walletUrl } from './quota-failure.js'
 import { useOmnimuxAuth } from './use-omnimux-auth.js'
@@ -54,11 +54,16 @@ function AccountAnalysisService({ t, onOpen }) {
   const [error, setError] = useState('')
   const mounted = useRef(false)
   const pending = useRef(false)
+  const autoLoaded = useRef(false)
   const busy = phase === 'loading' || phase === 'saving'
   const selected = view?.items.find((item) => String(item.id) === selectedId)
 
   useEffect(() => {
     mounted.current = true
+    if (!autoLoaded.current) {
+      autoLoaded.current = true
+      void load()
+    }
     return () => { mounted.current = false }
   }, [])
 
@@ -72,7 +77,11 @@ function AccountAnalysisService({ t, onOpen }) {
       if (!mounted.current) return
       if (!result.ok || !result.body.valid) throw new Error(result.body.error || t('profile.analysis.readError'))
       setView(result.body)
-      setSelectedId(result.body.selectedId == null ? '' : String(result.body.selectedId))
+      const availableKeys = result.body.items.filter(modelKeyAvailable)
+      const autoPickId = result.body.selectedId == null && !result.body.configured && result.body.source !== 'explicit' && availableKeys.length === 1
+        ? String(availableKeys[0].id)
+        : (result.body.selectedId == null ? '' : String(result.body.selectedId))
+      setSelectedId(autoPickId)
       setPhase('idle')
     } catch (caught) {
       if (mounted.current) {
@@ -126,7 +135,7 @@ function AccountAnalysisService({ t, onOpen }) {
                 placeholder={t('profile.analysis.key')} value={selectedId} disabled={busy}
                 options={view.items.map((item) => ({
                   value: String(item.id),
-                  label: `${item.name || t('profile.analysis.key')} · #${item.id}${modelKeyAvailable(item) ? '' : ` · ${t('profile.analysis.unavailable')}`}`,
+                  label: `${item.name || t('profile.analysis.key')} #${item.id}${modelKeyAvailable(item) ? '' : ` (${t('profile.analysis.unavailable')})`}`,
                   disabled: !modelKeyAvailable(item),
                 }))}
                 onChange={(next) => { setSelectedId(next); setPhase('idle'); setError('') }} />
@@ -179,6 +188,8 @@ function SignedIn({ t, profile, onTopUp, onSignOut, onOpen }) {
   const [avatarError, setAvatarError] = useState('')
   const [busy, setBusy] = useState(false)
   const [editing, setEditing] = useState(false)
+  const [confirmLogoutOpen, setConfirmLogoutOpen] = useState(false)
+  const [signingOut, setSigningOut] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -253,18 +264,36 @@ function SignedIn({ t, profile, onTopUp, onSignOut, onOpen }) {
         </Button>
       </div>
 
-      <div className="omnimux-profile-card omnimux-profile-card--details">
-        <DetailRow name={t('profile.username')}>{profile.username || '—'}</DetailRow>
-        <DetailRow name={t('profile.displayName')}>{profile.display_name || '—'}</DetailRow>
-        <DetailRow name={t('profile.group')}>{profile.group || '—'}</DetailRow>
-        <DetailRow name={t('profile.site')} last>{profile.base_url || '—'}</DetailRow>
-      </div>
+      {profile.group ? (
+        <div className="omnimux-profile-card omnimux-profile-card--details">
+          <DetailRow name={t('profile.group')} last>{profile.group}</DetailRow>
+        </div>
+      ) : null}
 
       <AccountAnalysisService key={`${profile.base_url || ''}:${profile.id || ''}`} t={t} onOpen={onOpen} />
 
-      <Button variant="outline" className="omnimux-profile-logout" onClick={onSignOut}>
+      <Button variant="outline" className="omnimux-profile-logout" onClick={() => setConfirmLogoutOpen(true)}>
         {t('profile.logout')}
       </Button>
+
+      <ConfirmModal
+        open={confirmLogoutOpen}
+        onClose={() => { if (!signingOut) setConfirmLogoutOpen(false) }}
+        title={t('profile.logout')}
+        message={t('profile.confirmLogout')}
+        cancelLabel={t('auth.gate.cancel')}
+        confirmLabel={t('profile.logout')}
+        confirmVariant="danger"
+        confirmLoading={signingOut}
+        onConfirm={() => {
+          if (signingOut) return
+          setSigningOut(true)
+          Promise.resolve(onSignOut?.()).finally(() => {
+            setSigningOut(false)
+            setConfirmLogoutOpen(false)
+          })
+        }}
+      />
 
       {editing ? (
         <AvatarModal

@@ -3,6 +3,7 @@ import type { ChangeEvent, InputHTMLAttributes, KeyboardEvent } from "react";
 import { IconCloseFill14, IconSearchOutline16 } from "../icons/compat-icons.tsx";
 
 import { cx } from "../internal/cx.ts";
+import { resolveKitLocale } from "../internal/locale.ts";
 import "../motion/tokens.ts";
 import css from "./SearchField.module.css";
 
@@ -32,15 +33,26 @@ function isTypingTarget(target: EventTarget | null): boolean {
   return target.isContentEditable;
 }
 
+function isApplePlatform(): boolean {
+  if (typeof navigator === "undefined") return false;
+  const nav = navigator as Navigator & { userAgentData?: { platform?: string } };
+  const platform = nav.userAgentData?.platform || nav.platform || nav.userAgent || "";
+  return /mac|iphone|ipad|ipod/i.test(platform);
+}
+
 function matchesShortcut(event: globalThis.KeyboardEvent, shortcut: string): boolean {
   const raw = shortcut.trim();
   if (!raw) return false;
   const lower = raw.toLowerCase();
-  const wantsMeta = /⌘|cmd|meta/.test(lower);
-  const wantsCtrl = /\bctrl\b|⌃/.test(lower);
+  const hasExplicitMeta = /\b(cmd|meta)\b/.test(lower);
+  const hasCmdGlyph = /⌘/.test(lower);
+  const hasExplicitCtrl = /\bctrl\b|⌃/.test(lower);
+  const wantsMod = /\bmod\b/.test(lower) || (hasCmdGlyph && !hasExplicitMeta && !hasExplicitCtrl);
+  const wantsMeta = wantsMod ? isApplePlatform() : hasExplicitMeta || hasCmdGlyph;
+  const wantsCtrl = wantsMod ? !isApplePlatform() : hasExplicitCtrl;
   const wantsAlt = /\balt\b|⌥/.test(lower);
   const wantsShift = /\bshift\b|⇧/.test(lower);
-  const key = raw.replace(/⌘|⌃|⌥|⇧|cmd|meta|ctrl|alt|shift|\+/gi, "").trim().toLowerCase();
+  const key = raw.replace(/⌘|⌃|⌥|⇧|mod|cmd|meta|ctrl|alt|shift|\+/gi, "").trim().toLowerCase();
   if (!key) return false;
   if (Boolean(event.metaKey) !== wantsMeta) return false;
   if (Boolean(event.ctrlKey) !== wantsCtrl) return false;
@@ -51,8 +63,8 @@ function matchesShortcut(event: globalThis.KeyboardEvent, shortcut: string): boo
 
 /**
  * Search field: leading search icon, optional shortcut kbd, and a clear control.
- * Uncontrolled `debounceMs` (default 200) batches `onValueChange`. Pass `0`
- * (or a controlled `value`) to emit immediately.
+ * Uncontrolled `debounceMs` defaults to 200ms; controlled `value` defaults to 0ms
+ * (immediate) unless an explicit `debounceMs` > 0 is passed.
  */
 export const SearchField = forwardRef<SearchFieldHandle, SearchFieldProps>(function SearchField(
   {
@@ -60,26 +72,42 @@ export const SearchField = forwardRef<SearchFieldHandle, SearchFieldProps>(funct
     defaultValue = "",
     onValueChange,
     onClear,
-    debounceMs = 200,
+    debounceMs: debounceMsProp,
     shortcut,
     stretch = false,
-    clearLabel = "Clear",
+    clearLabel,
     className,
     disabled,
     id,
-    placeholder = "Search",
+    placeholder,
     ...rest
   },
   ref,
 ) {
+  const isEn = resolveKitLocale() === "en";
+  const resolvedClearLabel = clearLabel ?? (isEn ? "Clear search" : "清空搜索");
+  const resolvedPlaceholder = placeholder ?? (isEn ? "Search" : "搜索");
   const generatedId = useId();
   const inputId = id ?? generatedId;
   const inputRef = useRef<HTMLInputElement>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const controlled = value !== undefined;
+  const resolvedDebounceMs = debounceMsProp ?? (controlled ? 0 : 200);
   const [inner, setInner] = useState(defaultValue);
-  const current = controlled ? value : inner;
-  const immediate = controlled || debounceMs <= 0;
+  const [draft, setDraft] = useState(value ?? "");
+
+  useEffect(() => {
+    if (controlled) {
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
+      setDraft(value ?? "");
+    }
+  }, [controlled, value]);
+
+  const immediate = resolvedDebounceMs <= 0 || !onValueChange;
+  const current = controlled ? (immediate ? value : draft) : inner;
 
   useEffect(() => {
     return () => {
@@ -90,7 +118,7 @@ export const SearchField = forwardRef<SearchFieldHandle, SearchFieldProps>(funct
   useEffect(() => {
     if (!shortcut || disabled) return;
     const onKey = (event: globalThis.KeyboardEvent) => {
-      if (event.defaultPrevented) return;
+      if (event.defaultPrevented || event.isComposing) return;
       if (isTypingTarget(event.target)) return;
       if (!matchesShortcut(event, shortcut)) return;
       event.preventDefault();
@@ -110,11 +138,12 @@ export const SearchField = forwardRef<SearchFieldHandle, SearchFieldProps>(funct
     timerRef.current = setTimeout(() => {
       timerRef.current = null;
       onValueChange?.(next);
-    }, debounceMs);
+    }, resolvedDebounceMs);
   }
 
   function apply(next: string): void {
     if (!controlled) setInner(next);
+    else if (!immediate) setDraft(next);
     emit(next);
   }
 
@@ -128,6 +157,7 @@ export const SearchField = forwardRef<SearchFieldHandle, SearchFieldProps>(funct
       timerRef.current = null;
     }
     if (!controlled) setInner("");
+    else setDraft("");
     onValueChange?.("");
     onClear?.();
     inputRef.current?.focus();
@@ -143,6 +173,7 @@ export const SearchField = forwardRef<SearchFieldHandle, SearchFieldProps>(funct
     if (event.defaultPrevented) return;
     if (event.key === "Escape" && current) {
       event.preventDefault();
+      event.stopPropagation();
       handleClear();
     }
   }
@@ -160,7 +191,7 @@ export const SearchField = forwardRef<SearchFieldHandle, SearchFieldProps>(funct
         className={css.input}
         value={current}
         disabled={disabled}
-        placeholder={placeholder}
+        placeholder={resolvedPlaceholder}
         autoComplete="off"
         spellCheck={false}
         onChange={onChange}
@@ -171,8 +202,8 @@ export const SearchField = forwardRef<SearchFieldHandle, SearchFieldProps>(funct
           <button
             type="button"
             className={css.clear}
-            aria-label={clearLabel}
-            title={clearLabel}
+            aria-label={resolvedClearLabel}
+            title={resolvedClearLabel}
             disabled={disabled}
             onClick={handleClear}
           >

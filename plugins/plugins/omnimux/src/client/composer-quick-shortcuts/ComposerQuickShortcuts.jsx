@@ -116,7 +116,12 @@ export function ComposerQuickShortcuts(props) {
     getGlobalAttachmentStore().getActiveSessionId(),
   );
 
-  const ownedPrompt = useOwnedPrompt(input, sessionId, props.mutatePrompt);
+  const ownedPrompt = useOwnedPrompt(input, sessionId, props.mutatePrompt, () => {
+    const current = store.getSnapshot(sessionId);
+    if (current.activeId) {
+      store.set(sessionId, { activeId: null, links: current.links, skill: current.skill });
+    }
+  });
   const writePrompt = useCallback((text) => {
     if (input && typeof props?.mutatePrompt === 'function') {
       return ownedPrompt(text);

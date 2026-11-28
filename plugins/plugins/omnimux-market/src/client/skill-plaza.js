@@ -1,4 +1,4 @@
-    import { Button, SearchField, SkillShelf, Tabs, h, useCallback, useEffect, useRef, useState } from "./boot.js";
+    import { Button, ConfirmModal, SearchField, SkillShelf, Tabs, h, useCallback, useEffect, useRef, useState } from "./boot.js";
     import { Drawer, Overlay } from "./skills-ui.js";
     import { API_CACHE_TTL_MS, api, apiCache, apiCacheKey } from "./api.js";
     import { createSkillSession } from "./session-create.js";
@@ -49,6 +49,7 @@
       updatePlazaItemInstalled,
       handleSwitchToggle,
       handleConfirmInstall,
+      executeConfirmUninstall,
     } = plazaUtils;
 
     function renderPlazaIcon(size = 16) {
@@ -111,14 +112,17 @@
     }
 
     function renderPlazaNavBar(opts) {
-      const { mainTab, setMainTab, setPage, searchQuery, setSearchQuery, placeholderText, onSearchSubmit, tr, isEn } = opts;
-      const iconProps = { className: "tab-info-icon", width: "14", height: "14", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": "true" };
+      const { mainTab, setMainTab, setPage, searchQuery, setSearchQuery, setSubmitted, placeholderText, onSearchSubmit, tr, isEn } = opts;
       const defaultExpertTab = isEn ? "Experts Market" : "专家市场";
       const defaultPluginsTab = isEn ? "Plugins" : "插件专栏";
-      const onTabDiscover = () => { setMainTab("discover"); setPage(1); };
-      const onTabMine = () => setMainTab("mine");
-      const onTabExperts = () => setMainTab("experts-market");
-      const onTabPlugins = () => setMainTab("plugins");
+      const resetTabSearch = () => {
+        setSearchQuery("");
+        if (typeof setSubmitted === "function") setSubmitted("");
+      };
+      const onTabDiscover = () => { if (mainTab !== "discover") resetTabSearch(); setMainTab("discover"); setPage(1); };
+      const onTabMine = () => { if (mainTab !== "mine") resetTabSearch(); setMainTab("mine"); };
+      const onTabExperts = () => { if (mainTab !== "experts-market") resetTabSearch(); setMainTab("experts-market"); };
+      const onTabPlugins = () => { if (mainTab !== "plugins") resetTabSearch(); setMainTab("plugins"); };
       const onInputKeyDown = (e) => { if (e.key === "Enter") onSearchSubmit(); };
 
       const TabsComp = typeof Tabs !== "undefined" ? Tabs : null;
@@ -127,10 +131,7 @@
       const tabItems = [
         {
           id: "discover",
-          label: h("span", { style: { display: "inline-flex", alignItems: "center", gap: "6px" } },
-            tr("workshop.tabSkill") || "Skill",
-            h("svg", iconProps, h("circle", { cx: "12", cy: "12", r: "10" }), h("line", { x1: "12", y1: "16", x2: "12", y2: "12" }), h("line", { x1: "12", y1: "8", x2: "12.01", y2: "8" })),
-          ),
+          label: tr("workshop.tabSkill") || "Skill",
         },
         {
           id: "mine",
@@ -164,7 +165,6 @@
         : h("div", { className: "nav-tabs" },
             h("button", { type: "button", "aria-pressed": mainTab === "discover", className: "nav-tab" + (mainTab === "discover" ? " active" : ""), onClick: onTabDiscover },
               h("span", null, tr("workshop.tabSkill") || "Skill"),
-              h("svg", iconProps, h("circle", { cx: "12", cy: "12", r: "10" }), h("line", { x1: "12", y1: "16", x2: "12", y2: "12" }), h("line", { x1: "12", y1: "8", x2: "12.01", y2: "8" })),
             ),
             h("button", { type: "button", "aria-pressed": mainTab === "mine", className: "nav-tab" + (mainTab === "mine" ? " active" : ""), onClick: onTabMine },
               h("span", null, tr("workshop.tabMine") || "我的 Skill"),
@@ -203,12 +203,10 @@
 
     function renderCategoryBar(opts) {
       const { category, setCategory, setPlatformFilter, setMineCategory, setPage, workshopCategories, tr } = opts;
-      const isZh = tr("locale") === "zh";
       return h("div", { className: "category-bar", "aria-label": tr("workshop.category") },
         h("span", { className: "category-label" }, tr("workshop.scenarioLabel") || "场景分类"),
         workshopCategories.map((c) => {
-          const isDrama = c.id === "短剧漫剧" && isZh;
-          const label = isDrama ? "短剧/漫剧" : c.label;
+          const label = c.label;
           const onCatClick = () => {
             setCategory(c.id);
             if (setPlatformFilter) setPlatformFilter("");
@@ -342,7 +340,8 @@
       const isDiscoverTab = state.mainTab === "discover";
       const { introHeading, introSubtitle, placeholderText } = resolveIntroTexts(state, tr, isEn, isExpertTab, isPluginsTab);
       const displayedExperts = filterDisplayedExperts(state.expertMarketItems, isExpertTab, state.searchQuery, state.expertStage);
-      const filteredMine = filterMineItems(state.installedItems, { category: state.category, presetBinding, mineCategory: state.mineCategory, mineSource: state.mineSource, searchQuery: state.searchQuery });
+      const mineFilterCategory = state.category === "featured" ? "featured" : "";
+      const filteredMine = filterMineItems(state.installedItems, { category: mineFilterCategory, presetBinding, mineCategory: state.mineCategory, mineSource: state.mineSource, searchQuery: state.searchQuery });
       const availableSources = Array.from(new Set(state.installedItems.map(extractItemSourceKey).filter(Boolean)));
       const workshopCategories = buildWorkshopCategories(presetBinding, tr);
       const onOpenInstall = () => state.setOpenInstallModal(true);
@@ -384,7 +383,7 @@
         isExpertTab,
         isDiscoverTab,
         introOpts: { introHeading, introSubtitle, isExpertTab, isPluginsTab, isEn, tr, onOpenInstall },
-        navBarOpts: { mainTab: state.mainTab, setMainTab: state.setMainTab, setPage: state.setPage, searchQuery: state.searchQuery, setSearchQuery: state.setSearchQuery, placeholderText, onSearchSubmit, tr, isEn },
+        navBarOpts: { mainTab: state.mainTab, setMainTab: state.setMainTab, setPage: state.setPage, searchQuery: state.searchQuery, setSearchQuery: state.setSearchQuery, setSubmitted: state.setSubmitted, placeholderText, onSearchSubmit, tr, isEn },
         categoryBarOpts: { category: state.category, setCategory: state.setCategory, setPlatformFilter: state.setPlatformFilter, setMineCategory: state.setMineCategory, setPage: state.setPage, workshopCategories, tr },
         tabContentOpts,
       };
@@ -456,8 +455,56 @@
       };
     }
 
+    function ConfirmUninstallDialog({ item, onConfirm, onClose, error, uninstalling, tr }) {
+      if (!item) return null;
+      const isEn = typeof tr === "function" && tr("locale") === "en";
+      const tSafe = (key, fallback, params) => {
+        if (typeof tr === "function") {
+          const val = tr(key, params);
+          if (val && val !== key) return val;
+        }
+        return fallback;
+      };
+      const name = resolveItemTitle(item, tr) || item.slug || "";
+      const title = tSafe("workshop.uninstall", isEn ? "Uninstall" : "卸载");
+      const msg = tSafe(
+        "workshop.confirmUninstallNamed",
+        isEn ? `Uninstall "${name}"? It will no longer appear in your chat slash menu.` : `确定卸载「${name}」吗？卸载后对话中将无法直接调用该技能。`,
+        { name },
+      );
+      const cancelLabel = tSafe("suite.install.cancel", isEn ? "Cancel" : "取消");
+      const body = error ? `${msg}\n${error}` : msg;
+      const safeClose = () => { if (!uninstalling && onClose) onClose(); };
+      if (typeof ConfirmModal === "function") {
+        return h(ConfirmModal, {
+          open: true,
+          onClose: safeClose,
+          title,
+          message: body,
+          cancelLabel,
+          confirmLabel: title,
+          confirmVariant: "danger",
+          confirmLoading: Boolean(uninstalling),
+          onConfirm,
+        });
+      }
+      const btn = typeof Button !== "undefined" ? Button : "button";
+      const ov = typeof Overlay !== "undefined" ? Overlay : "div";
+      return h(ov, { onClose: safeClose },
+        h("div", { className: "modal-dialog", role: "dialog", "aria-modal": "true" },
+          h("div", { className: "modal-header" }, h("h3", { className: "modal-title" }, title)),
+          h("p", null, msg),
+          error ? h("p", { className: "sh-err", role: "alert" }, error) : null,
+          h("div", { style: { display: "flex", gap: "8px", justifyContent: "flex-end" } },
+            h(btn, { size: "sm", variant: "outline", disabled: Boolean(uninstalling), onClick: safeClose }, cancelLabel),
+            h(btn, { size: "sm", variant: "danger", disabled: Boolean(uninstalling), onClick: onConfirm }, title),
+          ),
+        ),
+      );
+    }
+
     function renderPlazaModals(opts) {
-      const { state, mark, loadInstalled, onCloseModal, onConfirm, tr, projectDir } = opts;
+      const { state, mark, loadInstalled, onCloseModal, onConfirm, onCloseUninstallModal, onConfirmUninstall, tr, projectDir } = opts;
       const openItem = state.open;
       const onDrawerClose = () => state.setOpen(null);
       const onDrawerInstalled = (it) => { mark(it, true); if (typeof loadInstalled === "function") loadInstalled(); };
@@ -470,7 +517,15 @@
         : null;
       const installNode = h(InstallModal, { open: state.openInstallModal, onClose: () => state.setOpenInstallModal(false), onInstalled: (it) => { mark(it, true); loadInstalled(); } });
       const confirmNode = h(ConfirmInstallModal, { item: state.confirmInstallItem, onConfirm, error: state.confirmInstallError, installing: state.confirmInstalling, onClose: onCloseModal });
-      return [drawerNode, installNode, confirmNode];
+      const confirmUninstallNode = h(ConfirmUninstallDialog, {
+        item: state.confirmUninstallItem,
+        onConfirm: onConfirmUninstall,
+        onClose: onCloseUninstallModal,
+        error: state.confirmUninstallError,
+        uninstalling: state.confirmUninstalling,
+        tr,
+      });
+      return [drawerNode, installNode, confirmNode, confirmUninstallNode];
     }
 
     function SkillPlaza(props) {
@@ -508,11 +563,15 @@
         }
       };
       const onConfirm = () => handleConfirmInstall(state.confirmInstallItem, state, mark, apiFn);
+      const onConfirmUninstall = () => executeConfirmUninstall(state.confirmUninstallItem, state, updateInstalledItemsList, apiFn);
       const sections = resolvePlazaSectionsData({ state, tr, onToggleSwitch, onToggleExp, onInstallExternal, apiFn });
       const onCloseModal = () => { if (!state.confirmInstalling) { state.setConfirmInstallItem(null); state.setConfirmInstallError(""); } };
+      const onCloseUninstallModal = () => { if (!state.confirmUninstalling) { state.setConfirmUninstallItem(null); state.setConfirmUninstallError(""); } };
       const workspaces = marketRuntime.plazaWorkspaces ?? null;
       const projectDir = resolveProjectDir(marketRuntime.plazaSessions ?? null, workspaces);
-      const [drawerNode, installNode, confirmNode] = renderPlazaModals({ state, mark, loadInstalled, onCloseModal, onConfirm, tr, projectDir });
+      const [drawerNode, installNode, confirmNode, confirmUninstallNode] = renderPlazaModals({
+        state, mark, loadInstalled, onCloseModal, onConfirm, onCloseUninstallModal, onConfirmUninstall, tr, projectDir,
+      });
 
       hooks.useEffect(() => {
         state.setPlatformFilter("");
@@ -555,6 +614,7 @@
         drawerNode,
         installNode,
         confirmNode,
+        confirmUninstallNode,
         installErrorToast,
       );
     }

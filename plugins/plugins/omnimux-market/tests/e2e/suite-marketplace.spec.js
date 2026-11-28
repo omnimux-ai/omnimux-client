@@ -233,7 +233,7 @@ test('E2E 旅程一：套件分类只列真实套件，8 张卡与目录一致',
     const card = findSuiteCard(tree, suite)
     assert.ok(card, `card for ${suite.id}`)
     const counts = plazaUtils.resolveSuiteCounts(suite)
-    assert.equal(plazaUtils.suiteCompositionText(suite, lookup), `技能 ${counts.skills} · 规则 ${counts.rules} · Agent ${counts.agents}`)
+    assert.equal(plazaUtils.suiteCompositionText(suite, lookup), `技能 ${counts.skills}、规则 ${counts.rules}、Agent ${counts.agents}`)
   }
 })
 
@@ -350,7 +350,9 @@ test('E2E 旅程三（分支）：projectDir 解析不到时不发请求，留�
   const { ui, confirmView } = await openInstallConfirm(SOCIAL, { sessions: null, workspaces: null })
   assert.equal(findModal(ui.draw()).props.projectDir, '')
 
-  byClass(confirmView, 'ws-detail-actions')[0].children[1].props.onClick()
+  byClass(confirmView, 'ws-suite-target-option')[0].props.onClick()
+  const projectConfirmView = ui.mountModal(findModal(ui.draw()))
+  byClass(projectConfirmView, 'ws-detail-actions')[0].children[1].props.onClick()
   await ui.settle()
 
   assert.equal(ui.installCalls().length, 0)

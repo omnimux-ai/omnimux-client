@@ -35,6 +35,7 @@ export function AttachmentSubmitBridge({ sessionId, useInput, inputActions, inse
   const live = useRef(null)
   const anchor = useRef(null)
   const pending = useRef(null)
+  const pendingResumeRef = useRef(null)
   const [notice, setNotice] = useState(null)
   live.current = { input, inputActions, insertText }
 
@@ -68,6 +69,7 @@ export function AttachmentSubmitBridge({ sessionId, useInput, inputActions, inse
   useLayoutEffect(() => () => {
     clearTimeout(pending.current?.timer)
     pending.current = null
+    pendingResumeRef.current = null
     setNotice(null)
   }, [sessionId])
 
@@ -77,6 +79,7 @@ export function AttachmentSubmitBridge({ sessionId, useInput, inputActions, inse
     if (!operation) return
     if (operation.sessionId !== sessionId) {
       pending.current = null
+      pendingResumeRef.current = null
       setNotice(null)
       return
     }
@@ -87,10 +90,26 @@ export function AttachmentSubmitBridge({ sessionId, useInput, inputActions, inse
     pending.current = null
     if ((!revisioned || input.draftRev > operation.revision) && input.draft === operation.draft
       && JSON.stringify(input.occurrences || []) === operation.occurrences) {
+      const canAutoResume = !operation.unconfirmed && typeof operation.resumeSubmit === 'function'
       operation.consume()
-      setNotice('ready')
+      if (canAutoResume) {
+        setNotice(null)
+        pendingResumeRef.current = { sessionId, resumeSubmit: operation.resumeSubmit }
+      } else {
+        setNotice('ready')
+      }
     } else {
       setNotice('changed')
+    }
+  })
+
+  // Run auto-resume after all layout effects commit so capture listeners are active.
+  useEffect(() => {
+    const queued = pendingResumeRef.current
+    if (!queued) return
+    pendingResumeRef.current = null
+    if (queued.sessionId !== sessionId || !queued.resumeSubmit()) {
+      setNotice('ready')
     }
   })
 
@@ -173,9 +192,17 @@ export function AttachmentSubmitBridge({ sessionId, useInput, inputActions, inse
     if (!root) return
     const doc = root.ownerDocument
     let blockedPointer = false
-    const send = target => target?.closest?.('button[aria-label="Send message"],button[aria-label="发送消息"],[data-send-button]')
+    const sendSelector = 'button[aria-label="Send message"],button[aria-label="发送消息"],[data-send-button]'
+    const send = target => target?.closest?.(sendSelector)
     const belongs = target => root.contains(target) && getCurrentSessionId() === sessionId
     const stop = event => { event.preventDefault(); event.stopImmediatePropagation() }
+    const resumeSubmit = () => {
+      if (getCurrentSessionId() !== sessionId) return false
+      const btn = root.querySelector?.(sendSelector)
+      if (!btn || btn.disabled) return false
+      btn.click()
+      return true
+    }
     const check = () => {
       const { input: value, inputActions: actions } = live.current
       const attachments = attachmentStore.getSnapshot(sessionId)
@@ -243,7 +270,7 @@ export function AttachmentSubmitBridge({ sessionId, useInput, inputActions, inse
       if (draft !== value.draft) {
         const operation = {
           sessionId, draft, before: value.draft, revision: value.draftRev,
-          occurrences: JSON.stringify(value.occurrences || []), accepted: false, consume,
+          occurrences: JSON.stringify(value.occurrences || []), accepted: false, consume, resumeSubmit,
           revisionBound: typeof live.current.insertText === 'function' && Number.isSafeInteger(value.draftRev),
         }
         pending.current = operation
