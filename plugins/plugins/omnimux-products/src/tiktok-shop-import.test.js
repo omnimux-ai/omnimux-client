@@ -1,9 +1,15 @@
 import assert from 'node:assert/strict'
+import { EventEmitter } from 'node:events'
+import { existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { Readable } from 'node:stream'
 import { describe, it } from 'node:test'
 import {
   extractShopProductId,
   extractShopRegion,
   fetchTikTokShopProductViaHub,
+  isTikTokShopCdnHost,
   isTikTokShopProductUrl,
   mapShopDetailToFields,
 } from './tiktok-shop-import.js'
@@ -272,5 +278,165 @@ describe('importProductFromUrl tiktok shop path', () => {
       (err) => err.name === 'LinkImportError' && err.code === 'link-import-empty',
     )
     assert.equal(htmlFetched, false)
+  })
+
+  it('falls through an empty global_data.product_info stub to populated components_map data', () => {
+    const fields = mapShopDetailToFields(
+      {
+        global_data: {
+          product_info: {
+            error_code: 0,
+            product_info: {
+              product_model: { product_id: '1732501600694931888' },
+            },
+          },
+        },
+        product_data: {
+          page_config: {
+            components_map: [
+              {
+                component_name: 'product_info',
+                component_data: {
+                  product_info: {
+                    product_id: '1732501600694931888',
+                    product_model: {
+                      product_id: '1732501600694931888',
+                      name: 'Hydrating Serum Mask',
+                      images: [{ url_list: ['https://p16-oec.example/mask~tplv.jpg'] }],
+                    },
+                    seller_model: { shop_name: 'Glow Studio' },
+                    promotion_model: {
+                      promotion_product_price: {
+                        min_price: { sale_price_format: '19.99', currency_symbol: '$' },
+                      },
+                    },
+                  },
+                },
+              },
+            ],
+          },
+        },
+      },
+      {
+        url: 'https://shop.tiktok.com/view/product/1732501600694931888?region=US',
+        productId: '1732501600694931888',
+        region: 'US',
+      },
+    )
+    assert.equal(fields.valid, true)
+    assert.equal(fields.name, 'Hydrating Serum Mask')
+    assert.equal(fields.brand, 'Glow Studio')
+    assert.equal(fields.price, '$19.99')
+    assert.deepEqual(fields.images, ['https://p16-oec.example/mask~tplv.jpg'])
+  })
+
+  it('approves only compiled-in official TikTok Shop CDN hostnames for synthetic proxy IP exemption', () => {
+    for (const host of [
+      'p16-oec-general.ttcdn-us.com',
+      'p19-oec-general-useast5.ttcdn-us.com',
+      'p16-oec-va.ibyteimg.com',
+      'p16-sign-va.tiktokcdn.com.',
+    ]) {
+      assert.equal(isTikTokShopCdnHost(host), true, host)
+    }
+    for (const host of [
+      'evil.ttcdn-us.com.attacker.com',
+      'fakettcdn-us.com',
+      '.ttcdn-us.com',
+      'a..ttcdn-us.com',
+      '198.18.52.164',
+      'localhost',
+      'example.com',
+      '',
+    ]) {
+      assert.equal(isTikTokShopCdnHost(host), false, host)
+    }
+  })
+
+  it('persists TikTok Shop images via default shopImageFetcher + publicFetch under 198.18.x.x fake-IP and enforces redirect SSRF bounds', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'products-tt-cdn-e2e-'))
+    const dialed = []
+    const webpBytes = Buffer.from([0x52, 0x49, 0x46, 0x46, 0x0c, 0x00, 0x00, 0x00, 0x57, 0x45, 0x42, 0x50])
+    const makeFakeRequest = () => (target, options, done) => {
+      const req = new EventEmitter()
+      req.destroy = () => {}
+      req.end = () => options.lookup(target.hostname, {}, (err, address, family) => {
+        if (err) {
+          req.emit('error', err)
+          return
+        }
+        dialed.push({ href: target.href, host: target.hostname, address, family })
+        let statusCode = 200
+        let headers = { 'content-type': 'image/webp' }
+        let chunks = [webpBytes]
+        if (target.pathname === '/redir-cdn') {
+          statusCode = 302
+          headers = { location: 'https://p19-oec-va.tiktokcdn.com/final.webp' }
+          chunks = []
+        } else if (target.pathname === '/redir-evil-host') {
+          statusCode = 302
+          headers = { location: 'https://tracker.example.com/evil.webp' }
+          chunks = []
+        } else if (target.pathname === '/redir-literal-ip') {
+          statusCode = 302
+          headers = { location: 'https://198.18.52.164/evil.webp' }
+          chunks = []
+        }
+        const incoming = Readable.from(chunks)
+        incoming.statusCode = statusCode
+        incoming.headers = headers
+        done(incoming)
+      })
+      return req
+    }
+
+    try {
+      const draft = await importProductFromUrl({
+        url: 'https://shop.tiktok.com/view/product/1731770029266276688?region=US',
+        kind: 'physical',
+        paths: { mediaDir: join(dir, 'media') },
+        publicFetchDeps: {
+          lookup: async (hostname) => [{ address: hostname.includes('tiktokcdn') ? '198.18.9.10' : '198.18.52.164', family: 4 }],
+          request: makeFakeRequest(),
+        },
+        hub: {
+          socialData: async () => ({
+            data: {
+              global_data: {
+                product_info: {
+                  error_code: 0,
+                  product_info: {
+                    product_id: '1731770029266276688',
+                    product_model: {
+                      product_id: '1731770029266276688',
+                      name: 'Proxy Fake-IP Test Blender',
+                      images: [
+                        { url_list: ['https://p16-oec-general.ttcdn-us.com/direct.webp'] },
+                        { url_list: ['https://p16-oec-general.ttcdn-us.com/redir-cdn'] },
+                        { url_list: ['https://p16-oec-general.ttcdn-us.com/redir-evil-host'] },
+                        { url_list: ['https://p16-oec-general.ttcdn-us.com/redir-literal-ip'] },
+                      ],
+                    },
+                    seller_model: { shop_name: 'HydroBlend Direct' },
+                    promotion_model: { promotion_product_price: { min_price: { sale_price_format: '29.99', currency_symbol: '$' } } },
+                  },
+                },
+              },
+            },
+          }),
+        },
+      })
+
+      assert.equal(draft.name, 'Proxy Fake-IP Test Blender')
+      assert.equal(draft.media.length, 2)
+      assert.equal(draft.cover_media_id, draft.media[0].id)
+      assert.ok(existsSync(draft.media[0].real_path))
+      assert.ok(existsSync(draft.media[1].real_path))
+      assert.equal(dialed.some((entry) => entry.host === 'tracker.example.com'), false, 'must block non-TikTok redirect host on 198.18.x.x')
+      assert.equal(dialed.some((entry) => entry.host === '198.18.52.164'), false, 'must block literal 198.18.x.x redirect target')
+      assert.equal(dialed.some((entry) => entry.host === 'p19-oec-va.tiktokcdn.com' && entry.address === '198.18.9.10'), true)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 })

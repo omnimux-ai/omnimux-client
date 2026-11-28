@@ -104,7 +104,7 @@ test('Submission Context Assembly: compiles presets into system prompt and clear
   assert.ok(compiledPrompt.includes(hook.titleZh || hook.title))
   assert.ok(compiledPrompt.includes(style.titleZh || style.title))
   assert.ok(compiledPrompt.includes(rawDraft))
-  assert.ok(compiledPrompt.includes('【营销视频创意指令 · 工业级分镜与视听规范】'))
+  assert.ok(compiledPrompt.includes('【营销视频创意指令】'))
 
   // 模拟发送成功后消费清空
   store.clearPresets(sid)

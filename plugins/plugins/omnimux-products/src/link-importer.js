@@ -3,6 +3,7 @@ export { isPrivateHost, normalizeHostname } from './public-host.js'
 import { publicFetch } from './public-fetch.js'
 import {
   fetchTikTokShopProductViaHub,
+  isTikTokShopCdnHost,
   isTikTokShopProductUrl,
 } from './tiktok-shop-import.js'
 /**
@@ -1771,10 +1772,16 @@ export async function importProductFromUrl(args) {
         throw new LinkImportError('link-import-empty', 'no product information was found on the page')
       }
       const paths = args?.paths ?? null
+      const shopImageFetcher = args?.fetcher
+        ? fetcher
+        : (target, init) => publicFetch(target, init, {
+            ...(args?.publicFetchDeps && typeof args.publicFetchDeps === 'object' ? args.publicFetchDeps : {}),
+            allowSyntheticProxyForHostname: isTikTokShopCdnHost,
+          })
       const gallery = await assembleProductImageDraft(draft.images, {
         url,
         paths,
-        fetcher,
+        fetcher: shopImageFetcher,
         persist: args?.persistProductImages,
       })
       return { ...draft, ...gallery }

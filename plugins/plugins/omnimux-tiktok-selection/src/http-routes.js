@@ -2,10 +2,13 @@ import { SelectionError, httpStatusForError } from './errors.js'
 
 export const ROUTE_PREFIX = '/omnimux/tiktok-selection'
 const LOCAL_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]', '::1'])
-// Only block actual secret-looking values, not the mere presence of a field
-// name like "access_token" in a legitimate payload.
-const SECRET_PATTERN =
-  /sk-[A-Za-z0-9_-]{16,}|(?:access_token|refresh_token|api[_-]?key|client_secret|authorization)\s*["']?\s*[:=]\s*["']?[A-Za-z0-9._-]{16,}/i
+// Block actual secret values without false-positiving on ordinary product titles
+// or TikTok Shop URL slugs such as "...mask-hyaluronic-acid-serum..." or "sk-ii-facial-treatment-...".
+export const SECRET_PATTERNS = [
+  /(?:^|[^A-Za-z0-9_-])sk-(?:(?:ant-api\d+|or-v\d+|proj|live|test|svcacct|admin)-[A-Za-z0-9_-]{16,}|[A-Za-z0-9_]{16,})/,
+  /\b(?:access_token|refresh_token|api[_-]?key|client_secret|authorization)\s*\\?["']?\s*[:=]\s*\\?["']?(?:Bearer\s+)?[A-Za-z0-9._-]{16,}/i,
+  /\bBearer\s+[A-Za-z0-9._-]{16,}/i,
+]
 
 function isLocalOrigin(raw) {
   if (!raw) return true
@@ -32,7 +35,7 @@ export function assertLocalWrite(req) {
 
 export function sendJson(res, status, body) {
   const text = JSON.stringify(body)
-  if (SECRET_PATTERN.test(text)) {
+  if (SECRET_PATTERNS.some((pattern) => pattern.test(text))) {
     res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' })
     res.end(JSON.stringify({ error: 'refused to emit a secret' }))
     return

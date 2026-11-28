@@ -297,8 +297,8 @@ async function run() {
       edit('runtime.keyField', 'synthetic-preserved-draft')
       const trigger = document.getElementById('omnimux-scenario-text')
       flushSync(() => trigger.click())
-      await until(() => Array.from(document.querySelectorAll('button')).some((item) => item.textContent === 'custom · saved-unknown-model'), 'scenario menu')
-      click('custom · saved-unknown-model')
+      await until(() => Array.from(document.querySelectorAll('button')).some((item) => item.textContent === 'custom / saved-unknown-model'), 'scenario menu')
+      click('custom / saved-unknown-model')
       await until(() => idle() && document.getElementById('omnimux-scenario-text').textContent.includes('custom'), 'scenario write')
       config = snapshot(3, 1, 'https://saved.example/v1', 'saved-unknown-model')
       conflictNext = true
@@ -414,7 +414,7 @@ test('F2: an older completed refresh cannot decrease the confirmed revision afte
 
 test('F3: scenario change and a 409 check refresh the revision and allow an explicit retry without saving', async () => {
   const result = await probe('conflict')
-  assert.equal(result.selected, 'custom · saved-unknown-model')
+  assert.equal(result.selected, 'custom / saved-unknown-model')
   assert.equal(result.firstRevision, 2)
   assert.equal(result.conflict, 'synthetic-conflict-409')
   assert.equal(result.afterConflictKey, 'synthetic-preserved-draft')
@@ -426,16 +426,16 @@ test('F3: scenario change and a 409 check refresh the revision and allow an expl
 
 test('F5: stored unknown defaults and operations remain visible in the actual dropdown controls', async () => {
   const result = await probe('unknown')
-  assert.equal(result.text, 'retired-text · runtime.needsConfirmation')
-  assert.equal(result.audio, 'retired-audio · runtime.needsConfirmation')
-  assert.equal(result.imageOperation, 'retired-image-op · runtime.needsConfirmation')
-  assert.equal(result.videoOperation, 'retired-video-op · runtime.needsConfirmation')
+  assert.equal(result.text, 'retired-text (runtime.needsConfirmation)')
+  assert.equal(result.audio, 'retired-audio (runtime.needsConfirmation)')
+  assert.equal(result.imageOperation, 'retired-image-op (runtime.needsConfirmation)')
+  assert.equal(result.videoOperation, 'retired-video-op (runtime.needsConfirmation)')
   assert.equal(result.writes, 0)
 })
 
 test('F5: unknown saved image and video models remain visible without replacing stored preferences', async () => {
   const result = await probe('unknown-models')
-  assert.equal(result.image, 'retired-image · runtime.needsConfirmation')
-  assert.equal(result.video, 'retired-video · runtime.needsConfirmation')
+  assert.equal(result.image, 'retired-image (runtime.needsConfirmation)')
+  assert.equal(result.video, 'retired-video (runtime.needsConfirmation)')
   assert.equal(result.writes, 0)
 })

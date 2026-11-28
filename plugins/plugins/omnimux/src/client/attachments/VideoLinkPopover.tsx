@@ -1,7 +1,7 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Button } from 'dsh-ui-kit';
-import { validLinkUrl, type LinkKind } from './linkReference.ts';
+import { normalizeUserLinkInput, validLinkUrl, type LinkKind } from './linkReference.ts';
 import { ensureStylesInjected } from './trayStyles.ts';
 
 export type LinkPopoverCloseReason = 'cancel' | 'outside' | 'replaced' | 'unmounted' | 'success';
@@ -122,7 +122,7 @@ export const VideoLinkPopover: React.FC<VideoLinkPopoverProps> = ({ isOpen, anch
 
   const confirm = async () => {
     if (locked.current || composing.current || !url.trim()) return;
-    const value = validLinkUrl(url);
+    const value = validLinkUrl(normalizeUserLinkInput(url));
     if (!value) { setError(invalidUrlError); return; }
     locked.current = true;
     setBusy(true);

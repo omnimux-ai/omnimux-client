@@ -2,7 +2,7 @@ import { useEffect, useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom'
 import { Button } from 'dsh-ui-kit'
 import { ModalCloseButton } from './components/ModalCloseButton.jsx'
-import { close, getSnapshot, openWallet, subscribe } from './quota-gate.js'
+import { close, getSnapshot, openWallet, recheckQuota, subscribe } from './quota-gate.js'
 import { injectHubStyles } from './styles.js'
 
 export function QuotaGate({ t }) {
@@ -11,8 +11,20 @@ export function QuotaGate({ t }) {
   useEffect(() => {
     if (snapshot.phase !== 'open') return undefined
     const handler = (event) => { if (event.key === 'Escape') close() }
+    const onFocus = () => { void recheckQuota() }
+    const onVisibility = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        void recheckQuota()
+      }
+    }
     window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
+    window.addEventListener('focus', onFocus)
+    document?.addEventListener?.('visibilitychange', onVisibility)
+    return () => {
+      window.removeEventListener('keydown', handler)
+      window.removeEventListener('focus', onFocus)
+      document?.removeEventListener?.('visibilitychange', onVisibility)
+    }
   }, [snapshot.phase])
   if (snapshot.phase !== 'open' || typeof document === 'undefined' || !document.body) return null
   return createPortal(

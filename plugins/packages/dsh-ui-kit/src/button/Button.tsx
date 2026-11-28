@@ -149,8 +149,8 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(functio
 
   if (!tooltip) return button;
   return (
-    <Tooltip label={tooltip} side={tooltipSide} delayMs={280} disabled={isDisabled}>
-      {button}
+    <Tooltip label={tooltip} side={tooltipSide} delayMs={280}>
+      <span style={{ display: "inline-flex", cursor: isDisabled ? "not-allowed" : undefined }}>{button}</span>
     </Tooltip>
   );
 });

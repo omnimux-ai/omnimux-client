@@ -37,7 +37,8 @@ describe('Drawer component contract', () => {
 
   it('uses IconButton with IconCloseOutline16 conforming to UI01 gate', () => {
     assert.match(tsx, /<IconButton/)
-    assert.match(tsx, /aria-label="关闭抽屉"/)
+    assert.match(tsx, /closeLabel \?\? \(resolveKitLocale\(\) === "en" \? "Close drawer" : "关闭抽屉"\)/)
+    assert.match(tsx, /aria-label=\{resolvedCloseLabel\}/)
     assert.match(tsx, /IconCloseOutline16/)
     assert.doesNotMatch(tsx, /<button(?:\s|>)/)
   })

@@ -20,7 +20,7 @@ export const WORKBENCH_TAB_TITLE_FALLBACKS = Object.freeze({
   'omnimux-clip:studio': '视频剪辑',
   'omnimux-assets:library': '资产库',
   'omnimux-accounts:library': '账号',
-  'omnimux-device:library': '手机管理',
+  'omnimux-device:library': '移动设备',
   'omnimux-inspiration:library': '灵感社区',
   'omnimux-publish:library': '发布',
   'omnimux-analytics:library': '数据分析',

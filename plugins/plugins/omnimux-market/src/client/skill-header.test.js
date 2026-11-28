@@ -80,7 +80,7 @@ test('failed installation retains dialog and reports error without installed cal
       './boot.js': {
         h,
         SkillShelf,
-        useState: (value) => [state++ === 0 ? { name: 'example.zip' } : value, (next) => writes.push(next)],
+        useState: (value) => [state++ === 0 ? 'example-skill' : value, (next) => writes.push(next)],
         useRef: () => ({ current: null }),
         useCallback: (fn) => fn,
         useEffect: () => {},

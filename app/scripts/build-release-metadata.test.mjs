@@ -222,3 +222,21 @@ test('cf-purge-cache includes Manifest v2 JSON and signature URLs for all channe
   assert.ok(urls.includes('https://dl.omnimux.ai/api/desktop/v2/next.json.sig'))
   assert.ok(urls.includes('https://dl.omnimux.ai/api/desktop/version-stable.json'))
 })
+
+test('cf-purge-cache includes all releases/latest/* aliases uploaded and verified by r2-dist-sync without duplicates', () => {
+  const urls = releaseUrls('2.0.26', 'https://dl.omnimux.ai')
+  const expectedAliases = [
+    'https://dl.omnimux.ai/releases/latest/OmniMux-arm64.dmg',
+    'https://dl.omnimux.ai/releases/latest/OmniMux-x64.dmg',
+    'https://dl.omnimux.ai/releases/latest/OmniMux-mac.dmg',
+    'https://dl.omnimux.ai/releases/latest/OmniMux-universal.dmg',
+    'https://dl.omnimux.ai/releases/latest/DSH-Desktop.dmg',
+    'https://dl.omnimux.ai/releases/latest/OmniMux-Setup.exe',
+    'https://dl.omnimux.ai/releases/latest/OmniMux-x64-Setup.exe',
+    'https://dl.omnimux.ai/releases/latest/DSH-Desktop-Setup.exe',
+  ]
+  for (const alias of expectedAliases) {
+    assert.ok(urls.includes(alias), `missing releases/latest alias from purge list: ${alias}`)
+  }
+  assert.equal(new Set(urls).size, urls.length, 'purge URL list must not contain duplicates')
+})

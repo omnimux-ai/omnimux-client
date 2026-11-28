@@ -757,4 +757,28 @@ describe('nav-rail 固定左侧导航轨', () => {
       disposeActivation()
     }
   })
+
+  it('fallback 更多菜单按 Esc 关闭时消费按键事件，避免误触底层的 Drawer Escape', () => {
+    const { win, doc } = setupDom({ withOfficialMore: false })
+    const disposeRail = installNavRail(doc)
+    let leakedEscapes = 0
+    const onBubbleEscape = (e) => {
+      if (e.key === 'Escape' && !e.defaultPrevented) leakedEscapes += 1
+    }
+    doc.addEventListener('keydown', onBubbleEscape)
+    try {
+      const moreBtn = doc.querySelector('[data-omnimux-rail-item="more"]')
+      moreBtn.click()
+      assert.ok(doc.getElementById(NAV_RAIL_MORE_FALLBACK_ID), '兜底更多菜单应已打开')
+      moreBtn.focus()
+      const esc = new win.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
+      moreBtn.dispatchEvent(esc)
+      assert.equal(doc.getElementById(NAV_RAIL_MORE_FALLBACK_ID), null, '按 Esc 应关闭兜底更多菜单')
+      assert.equal(esc.defaultPrevented, true, '兜底更多菜单按 Esc 应调用 preventDefault')
+      assert.equal(leakedEscapes, 0, '兜底更多菜单消费 Esc 后不得穿透到底层监听')
+    } finally {
+      doc.removeEventListener('keydown', onBubbleEscape)
+      disposeRail()
+    }
+  })
 })

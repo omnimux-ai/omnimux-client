@@ -106,7 +106,7 @@
         if (status.currentPackage) bits.push(status.currentPackage);
         if (Number(status.done) > 0) bits.push(tr("mkt.packagesDone", { n: status.done }));
         if (Number(status.seconds) > 0) bits.push(status.seconds + "s");
-        return bits.filter(Boolean).join(" · ");
+        return bits.filter(Boolean).join(" / ");
       }
       const line = status && status.lastLine;
       if (line) return line + (status.seconds ? "  (" + status.seconds + "s)" : "");

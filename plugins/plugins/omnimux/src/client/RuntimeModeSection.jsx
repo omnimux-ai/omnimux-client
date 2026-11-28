@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
-import { Button, DropdownSelect, InputField } from 'dsh-ui-kit'
+import { Button, ConfirmModal, DropdownSelect, InputField } from 'dsh-ui-kit'
 import { openAuthUrl, useOmnimuxAuth } from './use-omnimux-auth.js'
 import { ScenarioSelection } from './ScenarioSelection.jsx'
 import { ProviderConfigPanel } from './ProviderConfigPanel.jsx'
@@ -86,6 +86,8 @@ export function RuntimeModeSection({ t, scope }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+  const [confirmLogoutOpen, setConfirmLogoutOpen] = useState(false)
+  const [signingOut, setSigningOut] = useState(false)
 
   // Official Cloud Auth integration via standard useOmnimuxAuth hook
   const auth = useOmnimuxAuth({ t })
@@ -99,7 +101,7 @@ export function RuntimeModeSection({ t, scope }) {
 
   const handleCloudAction = useCallback(() => {
     if (cloudLogged) {
-      void auth.signOut()
+      setConfirmLogoutOpen(true)
     } else {
       void auth.beginLogin()
     }
@@ -116,6 +118,25 @@ export function RuntimeModeSection({ t, scope }) {
           {cloudLogged ? t('runtime.logout') : t('runtime.loginOrRegister')}
         </Button>
       </div>
+
+      <ConfirmModal
+        open={confirmLogoutOpen}
+        onClose={() => { if (!signingOut) setConfirmLogoutOpen(false) }}
+        title={t('runtime.logout')}
+        message={t('profile.confirmLogout')}
+        cancelLabel={t('auth.gate.cancel')}
+        confirmLabel={t('runtime.logout')}
+        confirmVariant="danger"
+        confirmLoading={signingOut}
+        onConfirm={() => {
+          if (signingOut) return
+          setSigningOut(true)
+          Promise.resolve(auth.signOut()).finally(() => {
+            setSigningOut(false)
+            setConfirmLogoutOpen(false)
+          })
+        }}
+      />
 
       <ScenarioSelection t={t} scope={scope} value={value} busy={busy} setBusy={setBusy} setError={setError} />
       <div className="omx-segmented-tabs" role="tablist">
@@ -191,6 +212,7 @@ function AgentPanel({ t, scope, value, busy, setBusy, error, setError, notice, s
   const [updatingId, setUpdatingId] = useState('')
   const [importingId, setImportingId] = useState('')
   const [disconnectingId, setDisconnectingId] = useState('')
+  const [confirmDisconnectTarget, setConfirmDisconnectTarget] = useState(null)
   const [oauthAttempt, setOAuthAttempt] = useState(null)
   const [manualInput, setManualInput] = useState('')
   const [submittingManual, setSubmittingManual] = useState(false)
@@ -868,7 +890,7 @@ function AgentPanel({ t, scope, value, busy, setBusy, error, setError, notice, s
               <Button
                 variant="ghost"
                 disabled={busy || disconnectingId === selected.id}
-                onClick={() => { void disconnectAgent(selected) }}
+                onClick={() => setConfirmDisconnectTarget(selected)}
               >
                 {disconnectingId === selected.id ? t('runtime.oauthDisconnecting') : t('runtime.oauthDisconnectCta')}
               </Button>
@@ -894,6 +916,24 @@ function AgentPanel({ t, scope, value, busy, setBusy, error, setError, notice, s
           </Button>
         </div>
       ) : null}
+
+      <ConfirmModal
+        open={Boolean(confirmDisconnectTarget)}
+        onClose={() => { if (!disconnectingId) setConfirmDisconnectTarget(null) }}
+        title={t('runtime.oauthDisconnectCta')}
+        message={confirmDisconnectTarget ? t('runtime.confirmDisconnect', { name: confirmDisconnectTarget.name || confirmDisconnectTarget.id }) : ''}
+        cancelLabel={t('auth.gate.cancel')}
+        confirmLabel={t('runtime.oauthDisconnectCta')}
+        confirmVariant="danger"
+        confirmLoading={Boolean(disconnectingId)}
+        onConfirm={() => {
+          if (!confirmDisconnectTarget || disconnectingId) return
+          const target = confirmDisconnectTarget
+          void disconnectAgent(target).finally(() => {
+            if (aliveRef.current) setConfirmDisconnectTarget(null)
+          })
+        }}
+      />
     </div>
   )
 }

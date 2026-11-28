@@ -23,6 +23,13 @@ export function CreativePresetsModal({
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedSubCategory, setSelectedSubCategory] = useState('all')
 
+  React.useEffect(() => {
+    if (!isOpen) {
+      setSearchQuery('')
+      setSelectedSubCategory('all')
+    }
+  }, [isOpen])
+
   const [selectedHook, setSelectedHook] = useState(null)
   const [selectedStyle, setSelectedStyle] = useState(null)
   const [selectedFormat, setSelectedFormat] = useState(null)
@@ -233,9 +240,8 @@ export function CreativePresetsModal({
     <SplitModalDialog
       isOpen={isOpen}
       onClose={onClose}
-      ariaLabel="营销视频创意预设与Prompt编译器"
+      ariaLabel="营销视频创意预设"
       leftTitle="营销视频创意预设"
-      leftSubtitle="积木式装配爆款格式、黄金亮点与视觉风格，自动编译为工业级分镜 Prompt"
       leftContent={leftContent}
       className="omnimux-creative-presets-modal"
       footer={footerNode}
@@ -244,17 +250,17 @@ export function CreativePresetsModal({
         {/* 一级选项卡 */}
         <div className="omnimux-presets-tabs-bar" role="tablist">
           <button type="button" role="tab" aria-selected={activeTab === 'hooks'} className={`omnimux-presets-tab ${activeTab === 'hooks' ? 'is-active' : ''}`} onClick={() => { setActiveTab('hooks'); setSelectedSubCategory('all') }}> {/* // exempt-ui01: preset category tab */}
-            黄金亮点 / Hook
+            黄金钩子
             <span className="omnimux-presets-tab-badge">{CREATIVE_HOOKS.length}</span>
           </button>
 
           <button type="button" role="tab" aria-selected={activeTab === 'styles'} className={`omnimux-presets-tab ${activeTab === 'styles' ? 'is-active' : ''}`} onClick={() => { setActiveTab('styles'); setSelectedSubCategory('all') }}> {/* // exempt-ui01: preset category tab */}
-            视觉风格 / Style
+            视觉风格
             <span className="omnimux-presets-tab-badge">{CREATIVE_VISUAL_STYLES.length}</span>
           </button>
 
           <button type="button" role="tab" aria-selected={activeTab === 'formats'} className={`omnimux-presets-tab ${activeTab === 'formats' ? 'is-active' : ''}`} onClick={() => { setActiveTab('formats'); setSelectedSubCategory('all') }}> {/* // exempt-ui01: preset category tab */}
-            广告格式 / Format
+            广告格式
             <span className="omnimux-presets-tab-badge">{CREATIVE_VIDEO_FORMATS.length}</span>
           </button>
         </div>
@@ -284,7 +290,7 @@ export function CreativePresetsModal({
           {/* 二级胶囊筛选 */}
           <div className="omnimux-presets-subcats" role="toolbar" aria-label="二级分类">
             <button type="button" className={`omnimux-presets-subcat-btn ${selectedSubCategory === 'all' ? 'is-active' : ''}`} onClick={() => setSelectedSubCategory('all')}> {/* // exempt-ui01: subcategory filter pill */}
-              全部 ({currentList.length})
+              全部
             </button>
             {subCategories.map(({ slug, label }) => (
               <button key={slug} type="button" className={`omnimux-presets-subcat-btn ${selectedSubCategory === slug ? 'is-active' : ''}`} onClick={() => setSelectedSubCategory(slug)}> {/* // exempt-ui01: subcategory filter pill */}

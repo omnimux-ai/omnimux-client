@@ -16,7 +16,12 @@ function sameSnapshot(left: Snapshot, right: Snapshot): boolean {
 }
 
 /** Only unchanged, observed text ranges remain eligible for removal. */
-export function useOwnedPrompt(input: LinkInputState | undefined, sessionId: string, mutate?: Mutation) {
+export function useOwnedPrompt(
+  input: LinkInputState | undefined,
+  sessionId: string,
+  mutate?: Mutation,
+  onOwnershipLost?: () => void,
+) {
   const owned = useRef<Owned | null>(null);
   const pending = useRef<Pending | null>(null);
   const calling = useRef(false);
@@ -24,22 +29,29 @@ export function useOwnedPrompt(input: LinkInputState | undefined, sessionId: str
   const latest = useRef<{ input: LinkInputState | undefined; snapshot: Snapshot | null }>({ input: undefined, snapshot: null });
   const highestRevision = useRef(-1);
   const blockedThrough = useRef(-1);
+  const onOwnershipLostRef = useRef(onOwnershipLost);
+  onOwnershipLostRef.current = onOwnershipLost;
 
   function invalidate() {
+    const hadOwned = owned.current !== null;
     owned.current = null;
     pending.current = null;
     // A returning old snapshot is not evidence that the editor has refreshed.
     blockedThrough.current = highestRevision.current;
+    if (hadOwned) onOwnershipLostRef.current?.();
   }
 
   function settle(current: Snapshot) {
     const operation = pending.current;
     if (operation) {
       if (sameSnapshot(current, operation.before)) return;
+      const hadOwned = owned.current !== null;
       owned.current = sameSnapshot(current, operation.after) && operation.after.text ? operation.after : null;
       pending.current = null;
+      if (hadOwned && !owned.current) onOwnershipLostRef.current?.();
     } else if (owned.current && !sameSnapshot(current, owned.current)) {
       owned.current = null;
+      onOwnershipLostRef.current?.();
     }
   }
 

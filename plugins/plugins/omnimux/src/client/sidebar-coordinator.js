@@ -33,7 +33,7 @@ import releaseChannel from '../release-channel.json' with { type: 'json' }
 import { triggerClick } from './sidebar-toggle-topbar.js'
 
 /** Alpha 内测说明：侧栏行与官方「更多」菜单行共用同一份文案真源。 */
-export const ALPHA_DESCRIPTION = 'Alpha · 内测：开发阶段优先完善非 Alpha 功能；正式版不包含此功能。'
+export const ALPHA_DESCRIPTION = 'Alpha 内测：开发阶段优先完善非 Alpha 功能；正式版不包含此功能。'
 const ALPHA_STYLES = `
 .omnimux-sidebar-alpha-badge {
   flex: none; margin-left: auto; padding: 0 5px;
@@ -85,7 +85,7 @@ function markAlphaEntry(id, element) {
   const badge = document.createElement('span')
   badge.className = 'omnimux-sidebar-alpha-badge'
   badge.textContent = 'Alpha'
-  badge.setAttribute('aria-label', 'Alpha · 内测')
+  badge.setAttribute('aria-label', 'Alpha 内测')
   element.append(badge)
 }
 
@@ -257,7 +257,7 @@ export const EXPLORE_MENU_ITEMS = [
     id: 'device',
     pluginId: 'omnimux-device',
     entryId: 'omnimux-device-entry',
-    label: '手机管理',
+    label: '移动设备',
     tabId: 'omnimux-device:library',
     iconSvg: '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="1.5" width="8" height="13" rx="2"/><circle cx="8" cy="11.5" r="0.75" fill="currentColor" stroke="none"/></svg>',
     dividerAfter: true,

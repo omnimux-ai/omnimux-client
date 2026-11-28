@@ -55,9 +55,22 @@ export function renderMineCard(item, ...args) {
   const { tr, onOpen, onToggle, h: customH } = normalizeCardArgs(...args);
   const h = customH || getH();
   const { title, desc } = resolveCardMeta(item, tr);
-  const isChecked = item.enabled !== false;
+  const isEn = typeof tr === 'function' ? tr('locale') === 'en' : false;
+  const tSafe = (key, fallback) => {
+    if (typeof tr === 'function') {
+      const val = tr(key);
+      if (val && val !== key) return val;
+    }
+    return fallback;
+  };
+  const isPreinstalled = item.preinstalled === true;
+  const badgeLabel = tSafe('workshop.builtin', isEn ? 'Built-in' : '内置');
+  const uninstallLabel = tSafe('workshop.uninstall', isEn ? 'Uninstall' : '卸载');
   const onCardClick = () => { if (onOpen) onOpen(item); };
-  const onSwitchChange = () => { if (onToggle) onToggle(item); };
+  const onUninstallClick = (e) => {
+    e && e.stopPropagation();
+    if (onToggle) onToggle(item);
+  };
 
   return h('div', { key: item.slug || item.id, className: 'regular-card', onClick: onCardClick },
     h('div', { className: 'regular-card-info' },
@@ -66,7 +79,15 @@ export function renderMineCard(item, ...args) {
       ),
       h('div', { className: 'regular-card-desc' }, desc),
     ),
-    h(WorkshopSwitch, { checked: isChecked, onChange: onSwitchChange }),
+    isPreinstalled
+      ? h('span', { className: 'sh-tag green' }, badgeLabel)
+      // exempt-ui01 mine card uninstall action trigger
+      : h('button', {
+          type: 'button',
+          className: 'omx-mine-uninstall-btn',
+          'aria-label': uninstallLabel + ' ' + title,
+          onClick: onUninstallClick,
+        }, uninstallLabel),
   );
 }
 
@@ -391,15 +412,15 @@ export function MineToolbar(props) {
 
   const defaultCatText = tr ? (tr('workshop.category') || '分类') : '分类';
   const catPrefix = tr ? (tr('workshop.catPrefix') || '分类 ') : '分类 ';
-  const catDisplay = mineCategory === '短剧漫剧' && isZh ? '短剧/漫剧' : mineCategory;
+  const catDisplay = mineCategory;
   const catBtnText = mineCategory ? (catPrefix + catDisplay) : defaultCatText;
 
   const defaultSrcText = tr ? (tr('workshop.source') || '来源') : '来源';
   const srcPrefix = tr ? (tr('workshop.sourcePrefix') || '来源 ') : '来源 ';
   const srcBtnText = mineSource ? (srcPrefix + mineSource) : defaultSrcText;
 
-  const allCatLabel = isZh ? '全部分类' : (tr ? (tr('workshop.catAll') || 'All') : 'All');
-  const allSrcLabel = isZh ? '全部来源' : (tr ? (tr('workshop.catAll') || 'All') : 'All');
+  const allCatLabel = isZh ? '全部' : (tr ? (tr('workshop.catAll') || 'All') : 'All');
+  const allSrcLabel = isZh ? '全部' : (tr ? (tr('workshop.catAll') || 'All') : 'All');
 
   const isAllCatActive = !mineCategory;
   const isAllSrcActive = !mineSource;
@@ -431,7 +452,7 @@ export function MineToolbar(props) {
         ),
         WORKSHOP_DOMAIN_ORDER.map((c) => {
           const isSelected = mineCategory === c;
-          const label = (c === '短剧漫剧' && isZh) ? '短剧/漫剧' : c;
+          const label = c;
           return h('button', {
             key: c,
             type: 'button',
@@ -480,10 +501,6 @@ export function MineToolbar(props) {
           }),
         ) : null,
       ) : null,
-    h('div', { className: 'auto-update-wrap' },
-      h('span', null, tr ? (tr('workshop.autoUpdate') || '自动更新') : '自动更新'),
-      h(WorkshopSwitch, { checked: autoUpdate, onChange: setAutoUpdate }),
-    ),
   );
 }
 

@@ -98,13 +98,13 @@ if [ ! -x "$MANAGED_NODE_BIN/node" ]; then
   MANAGED_NODE_BIN="$(dirname "$NODE_BIN")"
 fi
 env -u NODE_OPTIONS PATH="$MANAGED_NODE_BIN:/usr/bin:/bin:/usr/sbin:/sbin" \
-  sh -c "cd '$REPO_ROOT/dsh-plugin-desktop' && corepack yarn build" 2>&1 | tail -2
+  sh -c "cd '$REPO_ROOT/dsh-desktop-next' && corepack yarn build" 2>&1 | tail -2
 
 say "── [7/7] typecheck + test ──"
-(cd "$REPO_ROOT/dsh-plugin-desktop" && corepack yarn typecheck >/dev/null 2>&1) \
+(cd "$REPO_ROOT/dsh-desktop-next" && corepack yarn typecheck >/dev/null 2>&1) \
   && ok "typecheck 通过" || { stop "typecheck 失败 —— 人工判断（非机械原因属 C 级）"; exit 3; }
 
-TEST_OUT="$(cd "$REPO_ROOT/dsh-plugin-desktop" && corepack yarn vitest run 2>&1 | grep -E 'Tests +[0-9]' | tail -1 || true)"
+TEST_OUT="$(cd "$REPO_ROOT/dsh-desktop-next" && corepack yarn vitest run 2>&1 | grep -E 'Tests +[0-9]' | tail -1 || true)"
 if [ -z "$TEST_OUT" ]; then
   TEST_OUT="（未抓到输出——请人工跑 yarn test 确认）"
 fi

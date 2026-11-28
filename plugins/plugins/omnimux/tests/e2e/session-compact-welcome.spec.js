@@ -35,8 +35,8 @@ test('e2e: session compact welcome header mounts on split mode and unmounts on e
   // 1. In split mode, the welcome header is mounted and old headline hidden
   const welcome = doc.querySelector(WELCOME_HEADER_SELECTOR)
   assert.ok(welcome, 'welcome header should be mounted in split mode')
-  assert.match(welcome.textContent, /你好，老钟/)
-  assert.match(welcome.textContent, /属于你的AI社媒运营团队/)
+  assert.match(welcome.textContent, /你好，创作者/)
+  assert.match(welcome.textContent, /AI 社媒内容创作助手/)
   assert.equal(doc.querySelector('.headline').style.display, 'none')
 
   // Verify CSS contains absolute positioning and top-left alignment contracts

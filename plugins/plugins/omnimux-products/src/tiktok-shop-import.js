@@ -6,6 +6,9 @@
  * only hub.socialData (omnimux_social_data) with OMNIMUX_API_KEY.
  */
 
+import { isIP } from 'node:net'
+import { normalizeHostname } from './public-host.js'
+
 const SHOP_HOST_RE = /(?:^|\.)shop\.tiktok\.com$/i
 const PRODUCT_PATH_RE = /\/(?:pdp|product)(?:\/[^/?#]+)?\/(\d{5,})/i
 const RECOMMENDATION_BLOCK_RE =
@@ -13,6 +16,28 @@ const RECOMMENDATION_BLOCK_RE =
 const RECOMMENDATION_TITLE_RE =
   /^(?:you may also like|explore more|top reviewed|more from this shop|related products|similar products|customers also viewed)$/i
 const TERMINAL_HUB_ERROR_CODES = new Set(['needs-omnimux', 'quota-exceeded'])
+
+export const TIKTOK_SHOP_CDN_SUFFIXES = Object.freeze([
+  'ttcdn-us.com',
+  'tiktokcdn.com',
+  'tiktokcdn-us.com',
+  'tiktokcdn-eu.com',
+  'ibyteimg.com',
+  'byteimg.com',
+  'ibytedtos.com',
+])
+
+/**
+ * Compiled-in official TikTok Shop static media CDN hosts, eligible for
+ * transparent TUN fake-IP (198.18.0.0/15) DNS exemption during image download.
+ * @param {unknown} hostname
+ * @returns {boolean}
+ */
+export function isTikTokShopCdnHost(hostname) {
+  const host = normalizeHostname(hostname)
+  if (!host || host.startsWith('.') || host.includes('..') || isIP(host)) return false
+  return TIKTOK_SHOP_CDN_SUFFIXES.some((suffix) => host === suffix || host.endsWith(`.${suffix}`))
+}
 
 /**
  * @param {string} url
@@ -198,6 +223,23 @@ function isRecommendationComponent(comp) {
 }
 
 /**
+ * Check whether an unwrapped product_info node actually carries product title signal
+ * rather than being an empty stub wrapper.
+ * @param {unknown} pinfo
+ * @returns {boolean}
+ */
+function hasProductInfoSignal(pinfo) {
+  if (!isPlainObj(pinfo)) return false
+  const pm = isPlainObj(pinfo.product_model)
+    ? pinfo.product_model
+    : isPlainObj(pinfo.product_base)
+      ? pinfo.product_base
+      : null
+  const nodes = pm ? [pm, pinfo] : [pinfo]
+  return nodes.some((node) => Boolean(asText(node.name) || asText(node.title) || asText(node.product_name)))
+}
+
+/**
  * Locate the canonical `product_info` node for both v1 double-nested and v3 component layouts.
  * @param {Record<string, unknown>} root
  * @returns {{ pinfo: Record<string, unknown> | null, categories: unknown[] }}
@@ -205,6 +247,8 @@ function isRecommendationComponent(comp) {
 function locateProductInfo(root) {
   const dataObj = isPlainObj(root.data) ? root.data : null
   const dataDataObj = dataObj && isPlainObj(dataObj.data) ? dataObj.data : null
+  /** @type {{ pinfo: Record<string, unknown> | null, categories: unknown[] } | null} */
+  let stubFallback = null
   const v1Candidates = [
     isPlainObj(root.global_data) ? root.global_data.product_info : null,
     dataObj && isPlainObj(dataObj.global_data) ? dataObj.global_data.product_info : null,
@@ -213,7 +257,10 @@ function locateProductInfo(root) {
   for (const candidate of v1Candidates) {
     if (isPlainObj(candidate)) {
       const unwrapped = unwrapProductInfo(candidate)
-      if (unwrapped.pinfo) return unwrapped
+      if (unwrapped.pinfo) {
+        if (hasProductInfoSignal(unwrapped.pinfo)) return unwrapped
+        stubFallback ||= unwrapped
+      }
     }
   }
 
@@ -234,7 +281,10 @@ function locateProductInfo(root) {
       const candidate = isPlainObj(comp) && isPlainObj(comp.component_data) ? comp.component_data.product_info : null
       if (isPlainObj(candidate)) {
         const unwrapped = unwrapProductInfo(candidate)
-        if (unwrapped.pinfo) return unwrapped
+        if (unwrapped.pinfo) {
+          if (hasProductInfoSignal(unwrapped.pinfo)) return unwrapped
+          stubFallback ||= unwrapped
+        }
       }
     }
   }
@@ -248,14 +298,14 @@ function locateProductInfo(root) {
     if (isPlainObj(value.product_info)) {
       const unwrapped = unwrapProductInfo(value.product_info)
       if (!unwrapped.pinfo) return
-      if (isPlainObj(unwrapped.pinfo.product_model) || isPlainObj(unwrapped.pinfo.product_base)) {
+      if (hasProductInfoSignal(unwrapped.pinfo)) {
         preferred = unwrapped
       } else if (!fallback) {
         fallback = unwrapped
       }
     }
   })
-  return preferred || fallback || { pinfo: null, categories: [] }
+  return preferred || fallback || stubFallback || { pinfo: null, categories: [] }
 }
 
 /**

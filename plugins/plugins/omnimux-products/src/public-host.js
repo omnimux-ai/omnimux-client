@@ -1,3 +1,5 @@
+import { isIP } from 'node:net'
+
 /**
  * Canonical form of a url host, so two spellings of the same address cannot
  * pass as two different hosts: surrounding brackets, trailing root dots, a
@@ -170,4 +172,19 @@ export function isPrivateHost(hostname) {
   if (!numeric) return false
   if (!numeric.canonical) return true
   return isBlockedIpv4(numeric.bytes)
+}
+
+/**
+ * RFC 2544 benchmark range (198.18.0.0/15) used by transparent TUN/fake-IP proxies.
+ * Only canonical dotted-quad IPv4 answers match; IPv6-mapped forms are excluded.
+ *
+ * @param {unknown} address
+ * @returns {boolean}
+ */
+export function isSyntheticProxyIpv4(address) {
+  if (typeof address !== 'string' || isIP(address) !== 4) return false
+  const numeric = numericIpv4(address)
+  if (!numeric || !numeric.canonical) return false
+  const [a, b] = numeric.bytes
+  return a === 198 && (b === 18 || b === 19)
 }

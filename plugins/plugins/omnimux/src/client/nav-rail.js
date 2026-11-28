@@ -1045,6 +1045,8 @@ export function installNavRail(doc = resolveDoc()) {
     }
     const onKeyDownDoc = (event) => {
       if (event.key === 'Escape') {
+        event.preventDefault()
+        event.stopPropagation()
         closePinContextMenu()
         anchorBtn.focus?.()
       }
@@ -1175,6 +1177,8 @@ export function installNavRail(doc = resolveDoc()) {
     }
     const onKeyDownDoc = (event) => {
       if (event.key === 'Escape') {
+        event.preventDefault()
+        event.stopPropagation()
         closeFallbackMoreMenu()
         syncAll()
         anchorBtn.focus?.()

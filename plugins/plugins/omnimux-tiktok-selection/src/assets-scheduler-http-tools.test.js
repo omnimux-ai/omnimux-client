@@ -6,7 +6,7 @@ import { describe, it } from 'node:test'
 import { createAssetsPipeline, normalizeProductSyncName, PRODUCT_NAME_MAX } from './assets-pipeline.js'
 import { createDataSourceAdapter } from './datasource.js'
 import { createSelectionDispatcher } from './dispatcher.js'
-import { assertLocalWrite, createHttpHandler, ROUTE_PREFIX } from './http-routes.js'
+import { assertLocalWrite, createHttpHandler, ROUTE_PREFIX, sendJson } from './http-routes.js'
 import { apply, TIKTOK_SELECTION_TOOL_NAMES } from './index.js'
 import { createSelectionScheduler } from './scheduler.js'
 import { createSelectionStore } from './store.js'
@@ -504,6 +504,77 @@ describe('Asset path sanitization (untrusted productId must not escape assetsDir
       assert.equal(rel.split('/').length, 2, `expected <safeSegment>/<file>, got: ${rel}`)
     } finally {
       rmSync(dir, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('HTTP secret guard (sendJson)', () => {
+  function fakeRes() {
+    const out = { status: 0, body: '' }
+    return {
+      out,
+      writeHead: (status) => {
+        out.status = status
+      },
+      end: (text) => {
+        out.body = text
+      },
+    }
+  }
+
+  it('allows TikTok Shop titles and URL slugs containing "...sk-<words>" without false-positive HTTP 500', () => {
+    const payload = {
+      source: 'omnimux_social_data',
+      items: [
+        {
+          productId: '1731547070032089440',
+          title: 'Bio-Collagen Face Mask - Deep Hydrating Desk Organizer Set (risk-free)',
+          tiktokUrl:
+            'https://shop.tiktok.com/us/pdp/bio-collagen-face-mask-hyaluronic-acid-serum-set/1731547070032089440',
+        },
+        {
+          productId: '1729489890662520636',
+          title: 'SK-II Facial Treatment Essence Clear Lotion',
+          tiktokUrl:
+            'https://shop.tiktok.com/us/pdp/sk-ii-facial-treatment-essence-clear-lotion/1729489890662520636',
+        },
+        {
+          productId: '1730000000000000001',
+          title: 'Insulated Travel Flask - Leakproof Cap',
+          tiktokUrl:
+            'https://shop.tiktok.com/us/pdp/desk-organizer-stand-with-usb-ports-holder/1730000000000000001',
+        },
+      ],
+    }
+    const res = fakeRes()
+    sendJson(res, 200, payload)
+    assert.equal(res.out.status, 200)
+    const parsed = JSON.parse(res.out.body)
+    assert.equal(parsed.items.length, 3)
+  })
+
+  it('still rejects actual API keys and bearer/access token pairs with HTTP 500', () => {
+    // Construct synthetic credential values dynamically with zero-entropy fillers to avoid scanner false positives.
+    const filler16 = '0'.repeat(16)
+    const fillerHalf = '0'.repeat(8)
+    const secrets = [
+      { key: ['sk', filler16].join('-') },
+      { key: ['sk', 'proj', `${fillerHalf}-${filler16}`].join('-') },
+      { key: ['sk', 'ant', 'api03', `${fillerHalf}-${filler16}`].join('-') },
+      { key: ['sk', 'or', 'v1', `${fillerHalf}-${filler16}`].join('-') },
+      { note: `access_token: "${filler16}"` },
+      { access_token: `tok_${filler16}` },
+      { refresh_token: `ref_${filler16}` },
+      { api_key: `ak_${filler16}` },
+      { client_secret: `cs_${filler16}` },
+      { headers: { Authorization: ['Bearer', `jwt_${filler16}`].join(' ') } },
+      { note: ['Bearer', `tok_${filler16}`].join(' ') },
+    ]
+    for (const payload of secrets) {
+      const res = fakeRes()
+      sendJson(res, 200, payload)
+      assert.equal(res.out.status, 500, JSON.stringify(payload))
+      assert.deepEqual(JSON.parse(res.out.body), { error: 'refused to emit a secret' })
     }
   })
 })

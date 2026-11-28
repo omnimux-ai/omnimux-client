@@ -12,9 +12,19 @@ import { resolveHeroLogoSvg } from './hero-brand.js'
 export const WELCOME_HEADER_CLASS = 'omnimux-welcome-header'
 export const WELCOME_HEADER_SELECTOR = `.${WELCOME_HEADER_CLASS}`
 
+function isEnLocale(win) {
+  try {
+    const active = win?.__omnimuxLocale?.active || win?.__omnimuxLocale?.getLocale?.()?.active
+    if (typeof active === 'string' && active.trim()) return active.trim().toLowerCase().startsWith('en')
+    const docLang = win?.document?.documentElement?.lang || (typeof document !== 'undefined' ? document.documentElement?.lang : '')
+    if (typeof docLang === 'string' && docLang.trim()) return docLang.trim().toLowerCase().startsWith('en')
+  } catch {}
+  return false
+}
+
 /**
  * 解析当前问候对象名称：优先从中枢鉴权缓存中获取 display_name / username，
- * 未登录或为空时友好兜底为「老钟」（符合用户定制预期）或「创作者」。
+ * 未登录或为空时按语言环境兜底为「创作者」或 "Creator"。
  * @param {Window} [win]
  * @returns {string}
  */
@@ -27,7 +37,7 @@ export function resolveGreetingUserName(win = hostWindow()) {
       return name.trim()
     }
   } catch {}
-  return '老钟'
+  return isEnLocale(win) ? 'Creator' : '创作者'
 }
 
 /**
@@ -61,16 +71,30 @@ export function createWelcomeHeaderElement(doc, userName) {
   const container = doc.createElement('div')
   container.className = WELCOME_HEADER_CLASS
 
-  const logoSvg = resolveHeroLogoSvg(doc.defaultView || hostWindow())
-  const greeting = `你好，${userName}`
+  const win = doc.defaultView || hostWindow()
+  const en = isEnLocale(win)
+  const logoSvg = resolveHeroLogoSvg(win)
+  const greeting = en ? `Hi, ${userName}` : `你好，${userName}`
+  const subtitle = en ? 'AI Social Creation Workspace' : 'AI 社媒内容创作助手'
 
-  container.innerHTML = `
-    <div class="omnimux-welcome-logo" aria-hidden="true">${logoSvg}</div>
-    <div class="omnimux-welcome-texts">
-      <div class="omnimux-welcome-title">${greeting}</div>
-      <div class="omnimux-welcome-subtitle">属于你的AI社媒运营团队</div>
-    </div>
-  `
+  const logoDiv = doc.createElement('div')
+  logoDiv.className = 'omnimux-welcome-logo'
+  logoDiv.setAttribute('aria-hidden', 'true')
+  logoDiv.innerHTML = logoSvg
+
+  const textsDiv = doc.createElement('div')
+  textsDiv.className = 'omnimux-welcome-texts'
+
+  const titleDiv = doc.createElement('div')
+  titleDiv.className = 'omnimux-welcome-title'
+  titleDiv.textContent = greeting
+
+  const subtitleDiv = doc.createElement('div')
+  subtitleDiv.className = 'omnimux-welcome-subtitle'
+  subtitleDiv.textContent = subtitle
+
+  textsDiv.append(titleDiv, subtitleDiv)
+  container.append(logoDiv, textsDiv)
   return container
 }
 
@@ -94,9 +118,17 @@ export function syncWelcomeGreeting(doc = hostDocument()) {
       existing = createWelcomeHeaderElement(doc, userName)
       heroShell.prepend(existing)
     } else {
+      const win = doc.defaultView || hostWindow()
+      const en = isEnLocale(win)
+      const expectedGreeting = en ? `Hi, ${userName}` : `你好，${userName}`
+      const expectedSubtitle = en ? 'AI Social Creation Workspace' : 'AI 社媒内容创作助手'
       const titleEl = existing.querySelector('.omnimux-welcome-title')
-      if (titleEl && titleEl.textContent !== `你好，${userName}`) {
-        titleEl.textContent = `你好，${userName}`
+      if (titleEl && titleEl.textContent !== expectedGreeting) {
+        titleEl.textContent = expectedGreeting
+      }
+      const subtitleEl = existing.querySelector('.omnimux-welcome-subtitle')
+      if (subtitleEl && subtitleEl.textContent !== expectedSubtitle) {
+        subtitleEl.textContent = expectedSubtitle
       }
       existing.style.display = ''
     }

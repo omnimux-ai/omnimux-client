@@ -196,7 +196,7 @@ const DEFAULT_STRINGS = {
   'composerAdd.cat.knowledge': '知识包',
   'composerAdd.cat.custom': '自定义',
   'composerAdd.searchPlaceholder': '搜索资产名称、描述、标签…',
-  'composerAdd.selectedMeta': '已选 {n} 项 · 还可添加 {m} 项',
+  'composerAdd.selectedMeta': '已选 {n} 项，还可添加 {m} 项',
   'composerAdd.selectedMetaUnbounded': '已选 {n} 项',
   'composerAdd.loading': '正在加载资产库…',
   'composerAdd.empty': '资产库还是空的。先去导入素材，再回到这里添加。',
