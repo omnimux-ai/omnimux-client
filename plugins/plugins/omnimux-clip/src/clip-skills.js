@@ -3,13 +3,14 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 export const CLIP_CRAFT_SKILL = 'clip-craft'
+export const CLIP_RECREATE_SKILL = 'clip-recreate'
 export const BUNDLED_SKILL_RANK = 600
 export const PROVIDER_NAME = 'omnimux-clip'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const skillsRoot = join(here, '..', 'skills')
 
-const BUNDLED_SKILL_NAMES = [CLIP_CRAFT_SKILL]
+const BUNDLED_SKILL_NAMES = [CLIP_CRAFT_SKILL, CLIP_RECREATE_SKILL]
 
 function resolvePhysicalDir(dir) {
   const unpacked = dir.replace(/(^|[\\/])([^\\/]*\.asar)(?=[\\/]|$)/iu, '$1$2.unpacked')

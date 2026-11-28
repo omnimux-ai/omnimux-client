@@ -42,7 +42,7 @@ export function apply(ctx) {
   const mediaTransfers = createMediaTransferRegistry()
   const broker = createClipCommandBroker({ getHubEvents, getWorkflowClip })
   const exportJobs = createExportJobs({ paths, getWorkflowClip })
-  const dispatcher = createClipDispatcher({ paths, store, broker, exportJobs, getWorkflowClip, getMediaResolver, mediaTransfers })
+  const dispatcher = createClipDispatcher({ paths, store, broker, exportJobs, getWorkflowClip, getMediaResolver, getAssetLibrary, mediaTransfers })
   const tools = createClipTools({
     store,
     broker,

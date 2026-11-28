@@ -8,6 +8,8 @@ import { authorizeClipEditOperations } from './media/authorizeToolMedia.js'
 import { reconcileProjectMedia } from './media/reconcile.js'
 import { assertProjectId } from './paths.js'
 import { createNativeProject } from './store/nativeProject.js'
+import { EASING_TYPES, TEXT_ANIMATION_PRESETS } from '../lib/openreel-templates.js'
+import { listClipTemplates } from './templates/catalog.js'
 import { MEDIA_HANDLE_SCOPES, TRACK_TYPES, isRecord, isReferenceId, safeText, sourceProjection } from './timeline/nativeProjectFields.js'
 import { diagnoseNativeProject, enrichDiagnosticsWithReconcile, nativeProjectView } from './timeline/nativeProjectView.js'
 
@@ -78,6 +80,17 @@ const mediaSourceFields = {
   workspaceId: string(131),
 }
 const transformFields = { opacity: { ...seconds, maximum: 1 }, position: point, scale: oneOf(positive, point), rotation: { type: 'number' } }
+const paramEntry = objectParams({
+  id: required(string(80)),
+  value: required(oneOf({ type: 'string', maxLength: 4000 }, { type: 'number' }, boolean, point)),
+})
+const controlEntry = objectParams({
+  id: required(string(80)),
+  value: required(oneOf({ type: 'string', maxLength: 4000 }, { type: 'number' }, boolean)),
+})
+const KEYFRAME_PROPS = ['position.x', 'position.y', 'scale.x', 'scale.y', 'rotation', 'opacity']
+const KEYFRAME_EASINGS = EASING_TYPES.filter((easing) => easing !== 'bezier')
+const TEXT_ANIM_PRESETS = TEXT_ANIMATION_PRESETS.map((preset) => preset.id)
 const EDIT_FIELDS = {
   add_track: { trackType: required(choices(...TRACK_TYPES)), name: string(256), trackId: string(256), position: integer },
   remove_track: { trackId },
@@ -101,6 +114,42 @@ const EDIT_FIELDS = {
   remove_transition: { transitionId: string(256), clipId: string(256), edge: choices('in', 'out') },
   set_clip_effect: { clipId, ...transformFields, transform: objectParams(transformFields), filterId: string(100), strength: { ...seconds, maximum: 1 },
     filterIntensity: { ...seconds, maximum: 100 } },
+  add_graphic_instance: {
+    templateId: string(128), libraryAssetId: string(256), fileId: string(256),
+    instanceId: string(128), name: string(120), trackId: string(256),
+    startSec: required(seconds), durationSec: positive,
+    params: arrayOf(paramEntry, 64),
+  },
+  update_graphic_params: {
+    instanceId: required(string(128)),
+    params: arrayOf(paramEntry, 64),
+    startSec: seconds, durationSec: positive, trackId: string(256),
+  },
+  remove_graphic_instance: { instanceId: required(string(128)), ungroup: boolean },
+  apply_editing_template: {
+    clipId: required(string(256)),
+    templateId: required(string(128)),
+    controls: arrayOf(controlEntry, 32),
+  },
+  set_keyframes: {
+    clipId: required(string(256)),
+    mode: choices('merge', 'replace'),
+    keyframes: required(arrayOf(objectParams({
+      property: required(choices(...KEYFRAME_PROPS)),
+      timeSec: required(seconds),
+      value: required({ type: 'number' }),
+      easing: choices(...KEYFRAME_EASINGS),
+    }), 64, 1)),
+  },
+  set_text_animation: {
+    clipId: required(string(256)),
+    preset: required(choices(...TEXT_ANIM_PRESETS)),
+    inDurationSec: positive,
+    outDurationSec: seconds,
+    unit: choices('character', 'word', 'line'),
+    staggerSec: seconds,
+    outPreset: choices(...TEXT_ANIM_PRESETS),
+  },
 }
 const editUnion = oneOf(...Object.entries(EDIT_FIELDS).map(([type, fields]) => objectParams({ type: required(choices(type)), ...fields })))
 
@@ -176,7 +225,7 @@ function sessionOf(exec) {
 }
 
 const TRACK_FIELDS = 'id index name type locked syncLock hidden muted solo soloSafe clipCount'
-const CLIP_FIELDS = 'id name trackId trackIndex trackType kind startSec endSec durationSec mediaId mediaType sourceInSec sourceOutSec speed volume text hasEffects hasColorGrading'
+const CLIP_FIELDS = 'id name trackId trackIndex trackType kind startSec endSec durationSec mediaId mediaType sourceInSec sourceOutSec speed volume text graphicInstanceId keyframeCount textAnimationPreset hasEffects hasColorGrading'
 const STYLE_FIELDS = 'fontFamily fontSize fontWeight color backgroundColor strokeColor strokeWidth textAlign position'
 
 function readFields(row, keys) {
@@ -207,7 +256,7 @@ function validateRead(result, command) {
     || revisionEpoch !== (command.revisionEpoch ?? 0) || !Number.isFinite(result.durationSec) || !Number.isFinite(result.playheadSec)) {
     throw new ClipDomainError('INVALID_RECEIPT', 'The editor did not return the requested native Clip projection.')
   }
-  const snapshot = { ...readFields(result, 'title durationSec fps width height aspectRatio playheadSec isPlaying trackCount clipCount mediaCount missingMediaCount subtitleCount'),
+  const snapshot = { ...readFields(result, 'title durationSec fps width height aspectRatio playheadSec isPlaying trackCount clipCount mediaCount missingMediaCount subtitleCount graphicInstanceCount'),
     view, revision, revisionEpoch, mode: command.mode, selectedClips: readItems(result.selectedClips, 'id name trackId startSec endSec').slice(0, 3) }
   if (Number.isFinite(result.updatedAt)) snapshot.updatedAt = result.updatedAt
   if (command.binding) Object.assign(snapshot, { workspaceId: command.binding.workspaceId, nodeId: command.binding.nodeId })
@@ -223,7 +272,29 @@ function validateRead(result, command) {
     const source = sourceProjection(result.media[index].omnimuxSource)
     return source ? { ...item, omnimuxSource: source } : item
   })
-  return { ...snapshot, tracks, clips, media, subtitles: readItems(result.subtitles, 'id trackId text startSec endSec hidden', true) }
+  const graphicInstances = Array.isArray(result.graphicInstances)
+    ? readItems(result.graphicInstances, 'id name templateId category trackId startSec durationSec').map((row, index) => {
+        const rawValues = result.graphicInstances[index]?.values
+        const values = {}
+        if (isRecord(rawValues)) {
+          for (const [k, v] of Object.entries(rawValues)) {
+            if (!isReferenceId(k)) continue
+            if (typeof v === 'string') values[k] = safeText(v, 4000) ?? ''
+            else if (typeof v === 'boolean' || Number.isFinite(v)) values[k] = v
+            else if (isRecord(v) && Number.isFinite(v.x) && Number.isFinite(v.y)) values[k] = { x: v.x, y: v.y }
+          }
+        }
+        return { ...row, values }
+      })
+    : undefined
+  return {
+    ...snapshot,
+    tracks,
+    clips,
+    media,
+    ...(graphicInstances ? { graphicInstances } : {}),
+    subtitles: readItems(result.subtitles, 'id trackId text startSec endSec hidden', true),
+  }
 }
 
 function validateView(result, command) {
@@ -236,11 +307,11 @@ function validateView(result, command) {
   return { action, durationSec, playheadSec, isPlaying, selectedClipIds, revision }
 }
 
-const EDIT_RESULT_FIELDS = 'type trackId clipId mediaId rightClipId transitionId startSec durationSec sourceInSec sourceOutSec atSec fromSec toSec created reused relinked versionUpdated clampedClipCount speed volume muted mode count closed minSilenceSec'
+const EDIT_RESULT_FIELDS = 'type trackId clipId mediaId rightClipId transitionId instanceId templateId applicationId startSec durationSec sourceInSec sourceOutSec atSec fromSec toSec created reused relinked versionUpdated ungrouped keyframeCount preset clampedClipCount speed volume muted mode count closed minSilenceSec'
 
 function projectEditResult(row) {
   const result = readFields(row, EDIT_RESULT_FIELDS)
-  for (const key of ['createdClipIds', 'removedClipIds']) {
+  for (const key of ['createdClipIds', 'removedClipIds', 'memberClipIds', 'addedOverlayClipIds']) {
     if (Array.isArray(row[key])) result[key] = row[key].filter(isReferenceId)
   }
   if (MEDIA_HANDLE_SCOPES.includes(row.scope)) result.scope = row.scope
@@ -344,6 +415,13 @@ export function createClipTools({
         const rows = projects.map(({ durationMs, ...item }) => ({ ...item, durationSec: durationMs / 1000 }))
         return { count: rows.length, projects: rows, unavailableProjects, unavailableCount }
       }),
+    tool('clip_templates', 'List built-in and validated asset-library graphic templates, editing templates, and text animation presets.', 10_000,
+      {
+        kind: choices('all', 'graphic', 'editing', 'text_animation'),
+        category: string(64),
+        templateId: string(128),
+        includeAssetLibrary: boolean,
+      }, (args) => listClipTemplates(args, { getAssetLibrary })),
     tool('clip_create', 'Create a saved, empty standalone OpenReel project. Use clip_open to show it when the user asks.', 15_000,
       { name: required(string(80)), resolution: choices('landscape', 'portrait', 'square'), fps: positive }, ({ name, resolution = 'landscape', fps = 30 }) => {
         name = name.trim()
@@ -493,6 +571,6 @@ export function registerClipTools(ctx, tools) {
 }
 
 export const CLIP_PROMPT = `Use OmniMux Clip tools to read or operate the right-side OpenReel editor. Before editing, read the target with live clip_get and reuse its revision and revisionEpoch as baseRevision and baseRevisionEpoch for the same project and window. All tool times are seconds.
-Use clip_get or clip_diagnostics to read saved projects and diagnose offline/drifted media reasons. When AMBIGUOUS_TARGET lists multiple projects or windows, resolve the target from the user's instruction or ask which one they mean. Use clip_open only when asked to open a specific editor.
-Use clip_edit for the requested changes (including import_media from workspace path, libraryAssetId, canvasNodeId, or projectAssetId, and relink_media to rebind offline or drifted media with optional allowVersionUpdate), optionally with validateOnly first. Set confirmDestructive only with explicit user intent to delete a populated track or clear the timeline. Use clip_export only on an explicit export request, with confirm=true.
-On REVISION_CONFLICT, read the current revision and reconsider the edit. For outcome-unknown, recheck the same request ID. Follow skills/clip-craft/SKILL.md for editing decisions.`
+Use clip_get or clip_diagnostics to read saved projects and diagnose offline/drifted media reasons. Use clip_templates to discover built-in or asset-library graphic templates, editing templates, and text animation presets before applying them. When AMBIGUOUS_TARGET lists multiple projects or windows, resolve the target from the user's instruction or ask which one they mean. Use clip_open only when asked to open a specific editor.
+Use clip_edit for the requested changes (including import_media, relink_media, add_graphic_instance/update_graphic_params/remove_graphic_instance, apply_editing_template, set_keyframes, and set_text_animation), optionally with validateOnly first. Set confirmDestructive only with explicit user intent to delete a populated track or clear the timeline. Use clip_export only on an explicit export request, with confirm=true.
+On REVISION_CONFLICT, read the current revision and reconsider the edit. For outcome-unknown, recheck the same request ID. Follow skills/clip-craft/SKILL.md for editing decisions and skills/clip-recreate/SKILL.md for reference recreation workflows.`

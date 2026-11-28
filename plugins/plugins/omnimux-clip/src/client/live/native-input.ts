@@ -54,12 +54,13 @@ export function assertSafeFields(operation: Fields): void {
   const mayResolveMedia = operation.type === 'import_media'
     || operation.type === 'relink_media'
     || (operation.type === 'add_clip' && operation.mediaId === undefined && operation.mediaType !== 'text')
+  const mayCarryResolvedTemplate = operation.type === 'add_graphic_instance'
   // Even nested input is data. Only the resolver receives an explicit media
   // reference, and none of the supplied objects are merged into a project.
-  function visit(value: unknown, depth: number, inReference: boolean): void {
+  function visit(value: unknown, depth: number, inReference: boolean, inResolvedTemplate: boolean): void {
     if (depth > 12) invalid('Edit options are nested too deeply')
     if (Array.isArray(value)) {
-      for (const item of value) visit(item, depth + 1, inReference)
+      for (const item of value) visit(item, depth + 1, inReference, inResolvedTemplate)
       return
     }
     if (!value || typeof value !== 'object') return
@@ -67,12 +68,13 @@ export function assertSafeFields(operation: Fields): void {
       const normalized = key.toLowerCase().replace(/[_-]/g, '')
       if (motionFields.has(normalized)) throw new ClipDomainError('motion-expression-denied', 'Motion code and approval fields are unavailable in Clip tools')
       if (['__proto__', 'constructor', 'prototype'].includes(key)) invalid('Unsupported edit option')
+      const templateField = inResolvedTemplate || (depth === 0 && mayCarryResolvedTemplate && (key === 'resolvedTemplate' || key === 'customSource'))
       const isReference = inReference || (depth === 0 && mayResolveMedia && sourceFields.has(normalized))
-      if (sourceFields.has(normalized) && (!isReference || ['file', 'filehandle', 'blob'].includes(normalized))) {
+      if (!templateField && sourceFields.has(normalized) && (!isReference || ['file', 'filehandle', 'blob'].includes(normalized))) {
         throw ClipDomainError.pathDenied('Media must be resolved from a verified Host reference')
       }
-      visit(child, depth + 1, isReference)
+      visit(child, depth + 1, isReference, templateField)
     }
   }
-  visit(operation, 0, false)
+  visit(operation, 0, false, false)
 }

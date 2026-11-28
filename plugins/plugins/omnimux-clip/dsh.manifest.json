@@ -15,13 +15,21 @@
     "sidebar-tab"
   ],
   "skills": [
-    "skills/clip-craft/SKILL.md"
+    "skills/clip-craft/SKILL.md",
+    "skills/clip-recreate/SKILL.md"
   ],
   "capabilities": {
     "tools": [
       {
         "name": "clip_list",
         "summary": "列出已有剪辑项目（编号、名称、更新时间、时长）",
+        "category": "clip",
+        "isWriteOperation": false,
+        "requiresAuth": false
+      },
+      {
+        "name": "clip_templates",
+        "summary": "列出内置及资产库图形模板、一键包装模板与文字动效预设",
         "category": "clip",
         "isWriteOperation": false,
         "requiresAuth": false
@@ -111,6 +119,11 @@
   },
   "skillMetadata": {
     "clip-craft": {
+      "origin": "first-party",
+      "license": "SEE LICENSE IN LICENSE",
+      "owner": "omnimux-clip"
+    },
+    "clip-recreate": {
       "origin": "first-party",
       "license": "SEE LICENSE IN LICENSE",
       "owner": "omnimux-clip"
