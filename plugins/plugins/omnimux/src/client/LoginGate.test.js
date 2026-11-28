@@ -20,11 +20,11 @@ const locales = readFileSync(join(here, 'locales.js'), 'utf8')
 
 const LOCKED_ZH = {
   'auth.gate.brandTitle': 'OmniMux Studio',
-  'auth.gate.headline': 'OmniMux 全面接入商业 Agent 矩阵',
-  'auth.gate.subdeck': '最强多模态创作引擎 + 顶尖社媒运营专家团队',
-  'auth.gate.feature1': '理解、拆解并全自动执行多平台商业内容生产',
-  'auth.gate.feature2': '专业创作画布与 Skill，释放十倍出片生产力',
-  'auth.gate.feature3': '从一个创意灵感开始，OmniMux 陪你全链路出海落地',
+  'auth.gate.headline': '登录 OmniMux Studio',
+  'auth.gate.subdeck': '连接云端模型、账户额度与跨设备配置同步',
+  'auth.gate.feature1': '统一调度多平台内容创作与执行任务',
+  'auth.gate.feature2': '同步云端灵感库、创作预设与扩展技能',
+  'auth.gate.feature3': '按账号权限访问云端推理额度与工作台工具',
   'auth.gate.cta': '立即登录',
   'auth.gate.waitingDeviceCode': '已在新窗口打开授权页，请输入设备码：',
   'auth.gate.tag': 'Studio Suite',
@@ -180,7 +180,8 @@ describe('LoginGate.jsx 1:1 structure', () => {
   it('closes on Escape and on backdrop click', () => {
     assert.match(source, /event\.key === 'Escape'/)
     assert.match(source, /window\.addEventListener\('keydown'/)
-    assert.match(source, /onClick=\{\(\) => \{ cancel\(\) \}\}/)
+    assert.match(source, /const allowBackdropDismiss = view\.phase !== 'starting' && view\.phase !== 'waiting'/)
+    assert.match(source, /onClick=\{\(\) => \{ if \(allowBackdropDismiss\) cancel\(\) \}\}/)
     assert.match(source, /event\.stopPropagation\(\)/)
   })
 

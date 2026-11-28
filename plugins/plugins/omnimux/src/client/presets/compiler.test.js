@@ -83,7 +83,7 @@ test('compileCreativePrompt: supports english output', () => {
     language: 'en-US'
   })
 
-  assert.ok(result.includes('[CREATIVE DIRECTIVE · CINEMATIC COMMERCIAL PRODUCTION]'))
+  assert.ok(result.includes('[CREATIVE DIRECTIVE - CINEMATIC COMMERCIAL PRODUCTION]'))
   assert.ok(result.includes('FIRST 3-SECOND HOOK (Attention Retention: Sudden Glass Drop)'))
   assert.ok(!result.includes('黄金前 3 秒'))
 })

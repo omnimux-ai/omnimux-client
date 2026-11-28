@@ -1,6 +1,7 @@
 import { forwardRef } from "react";
 import type {
   HTMLAttributes,
+  KeyboardEvent,
   TableHTMLAttributes,
   TdHTMLAttributes,
   ThHTMLAttributes,
@@ -140,6 +141,9 @@ export const TableHead = forwardRef<HTMLTableCellElement, TableHeadProps>(
       sortDirection = null,
       className,
       children,
+      onClick,
+      onKeyDown,
+      tabIndex,
       ...rest
     },
     ref,
@@ -153,11 +157,23 @@ export const TableHead = forwardRef<HTMLTableCellElement, TableHeadProps>(
             ? "none"
             : undefined;
 
+    const handleKeyDown = (e: KeyboardEvent<HTMLTableCellElement>) => {
+      onKeyDown?.(e);
+      if (e.defaultPrevented) return;
+      if (sortable && onClick && (e.key === "Enter" || e.key === " ")) {
+        e.preventDefault();
+        e.currentTarget.click();
+      }
+    };
+
     return (
       <th
         {...rest}
         ref={ref}
         aria-sort={ariaSort}
+        tabIndex={tabIndex ?? (sortable && onClick ? 0 : undefined)}
+        onClick={onClick}
+        onKeyDown={onKeyDown || (sortable && onClick) ? handleKeyDown : undefined}
         className={cx(
           cssClass(css.headCell, "headCell"),
           sortable && cssClass(css.headCellSortable, "headCellSortable"),

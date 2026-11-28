@@ -6,15 +6,28 @@ function getH(props) {
   return React.createElement;
 }
 
-function renderCloseButton(onClose, trLookup, h) {
-  const closeLabel = trLookup ? trLookup('action.close') : 'Close';
+function t(trLookup, key, fallback) {
+  if (typeof trLookup === 'function') {
+    const val = trLookup(key);
+    if (val && val !== key) return val;
+  }
+  return fallback;
+}
+
+function isEnLocale(trLookup) {
+  return typeof trLookup === 'function' && trLookup('locale') === 'en';
+}
+
+function renderCloseButton(onClose, trLookup, h, disabled) {
+  const closeLabel = t(trLookup, 'action.close', isEnLocale(trLookup) ? 'Close' : '关闭');
   // exempt-ui01 modal close icon button
   return h('button', {
     type: 'button',
     className: 'omnimux-modal-close-btn is-external ws-detail-external-close',
     'aria-label': closeLabel,
     title: closeLabel,
-    onClick: onClose,
+    disabled: Boolean(disabled),
+    onClick: () => { if (!disabled && onClose) onClose(); },
   },
     h('svg', {
       width: '14',
@@ -34,71 +47,87 @@ function renderCloseButton(onClose, trLookup, h) {
 }
 
 function renderModalHeader(trLookup, h) {
-  const title = trLookup ? (trLookup('workshop.installModalTitle') || '安装Skill') : '安装Skill';
+  const fallback = isEnLocale(trLookup) ? 'Install by Slug' : '按标识安装 Skill';
+  const title = t(trLookup, 'workshop.installModalTitle', fallback);
   return h('div', { className: 'modal-header' },
     h('h3', { className: 'modal-title' }, title),
   );
 }
 
-function renderDropZone(opts, h) {
-  const { file, fileInputRef, onFileChange, onDrop, trLookup } = opts;
-  const defaultDrop = trLookup ? (trLookup('workshop.dropText') || '拖放 .zip 或 SKILL.md 文件，或点击选择') : '拖放 .zip 或 SKILL.md 文件，或点击选择';
-  const dropText = file ? ('已选择: ' + file.name) : defaultDrop;
-  const onZoneClick = () => {
-    if (fileInputRef.current) fileInputRef.current.click();
-  };
-  const onDragOver = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-  };
-  return h('div', {
-    className: 'drop-zone',
-    onClick: onZoneClick,
-    onDragOver,
-    onDrop,
-  },
+export function parseSkillSlugInput(raw) {
+  const text = String(raw || '').trim();
+  if (!text) return { ok: false, reason: 'empty' };
+  if (/\.(zip|md)$/i.test(text)) return { ok: false, reason: 'local-file-unsupported' };
+  const urlMatch = text.match(/^https?:\/\/[^/]+\/(?:skills\/)?([^/?#]+)/i);
+  let candidate = text;
+  if (urlMatch) {
+    try {
+      candidate = decodeURIComponent(urlMatch[1]);
+    } catch {
+      return { ok: false, reason: 'invalid-slug' };
+    }
+  }
+  candidate = candidate.replace(/^\/+/, '').trim();
+  if (/\.(zip|md)$/i.test(candidate)) return { ok: false, reason: 'local-file-unsupported' };
+  if (!/^[a-z0-9][a-z0-9._-]{0,127}$/i.test(candidate)) {
+    return { ok: false, reason: 'invalid-slug' };
+  }
+  return { ok: true, slug: candidate };
+}
+
+function renderSlugInputSection(opts, h) {
+  const { slugInput, inputRef, uploading, onInputChange, onKeyDown, trLookup } = opts;
+  const en = isEnLocale(trLookup);
+  const placeholder = t(trLookup, 'workshop.installSlugPlaceholder', en ? 'Enter skill slug or catalog link (e.g. my-skill)' : '输入 Skill 标识或详情链接（如 video-hook-analysis）');
+  const label = t(trLookup, 'workshop.installSlugLabel', en ? 'Skill identifier or link' : 'Skill 标识或详情链接');
+  return h('div', { className: 'omx-install-slug-box', style: { marginBottom: '14px' } },
     h('input', {
-      ref: fileInputRef,
-      type: 'file',
-      accept: '.zip,.md',
-      style: { display: 'none' },
-      onChange: onFileChange,
+      ref: inputRef,
+      type: 'text',
+      value: slugInput,
+      disabled: uploading,
+      placeholder,
+      'aria-label': label,
+      onChange: onInputChange,
+      onKeyDown,
+      style: {
+        width: '100%',
+        boxSizing: 'border-box',
+        height: '38px',
+        padding: '0 12px',
+        borderRadius: '8px',
+        border: '1px solid var(--dsw-alias-border-l2)',
+        background: 'var(--dsw-alias-bg-layer-2)',
+        color: 'var(--dsw-alias-label-primary)',
+        fontSize: '13px',
+      },
     }),
-    h('div', { className: 'drop-icon-box' },
-      h('svg', { width: '24', height: '24', viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: '1.8' },
-        h('path', { d: 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z' }),
-        h('polyline', { points: '14 2 14 8 20 8' }),
-        h('line', { x1: '12', y1: '18', x2: '12', y2: '12' }),
-        h('line', { x1: '9', y1: '15', x2: '15', y2: '15' }),
-      ),
-    ),
-    h('p', { className: 'drop-text' }, dropText),
   );
 }
 
 function renderReqSection(trLookup, h) {
-  const reqTitle = trLookup ? (trLookup('workshop.reqTitle') || '文件要求') : '文件要求';
-  const reqZip = trLookup ? (trLookup('workshop.reqZip') || '包含 SKILL.md 文件的 .zip 压缩包') : '包含 SKILL.md 文件的 .zip 压缩包';
-  const reqMd = trLookup ? (trLookup('workshop.reqMd') || '或直接拖入 SKILL.md 文件') : '或直接拖入 SKILL.md 文件';
+  const en = isEnLocale(trLookup);
+  const reqTitle = t(trLookup, 'workshop.reqTitle', en ? 'How it works' : '安装说明');
+  const reqSlug = t(trLookup, 'workshop.reqSlug', en ? 'Enter a SkillHub slug or skill detail URL' : '填写社区 Skill 标识或完整链接即可拉取安装');
+  const reqCreator = t(trLookup, 'workshop.reqCreator', en ? 'Need a local custom skill? Use /skill-creator in chat' : '如需新建自定义技能，可在对话中运行 /skill-creator');
   return h('div', { className: 'req-section' },
     h('h4', { className: 'req-title' }, reqTitle),
     h('ul', { className: 'req-list' },
-      h('li', { className: 'req-item' }, reqZip),
-      h('li', { className: 'req-item' }, reqMd),
+      h('li', { className: 'req-item' }, reqSlug),
+      h('li', { className: 'req-item' }, reqCreator),
     ),
   );
 }
 
-async function executeSkillInstall(file, onInstalled, onClose, apiFn) {
-  const name = file.name.replace(/\.(zip|md)$/i, '');
+async function executeSkillInstall(slug, onInstalled, onClose, apiFn) {
   const callApi = apiFn || (typeof api === 'function' ? api : null);
   if (callApi) {
-    await callApi('install', { slug: name });
+    await callApi('install', { slug });
   }
   if (onInstalled) {
-    onInstalled({ name, slug: name, installed: true, enabled: true });
+    onInstalled({ name: slug, slug, installed: true, enabled: true });
   }
-  onClose();
+  if (onClose) onClose();
 }
 
 function resolveStateHook(hooks) {
@@ -119,15 +148,9 @@ function resolveOverlayComp(props) {
   return 'div';
 }
 
-function getSelectedFile(e) {
-  return e.target.files && e.target.files[0] ? e.target.files[0] : null;
-}
-
-function getDroppedFile(e) {
-  return e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0] ? e.dataTransfer.files[0] : null;
-}
-
-function resolveTrLookup() {
+function resolveTrLookup(safeProps) {
+  if (safeProps && typeof safeProps.tr === 'function') return safeProps.tr;
+  if (typeof useTr === 'function') return useTr();
   if (typeof lookup === 'function') return lookup;
   return (k) => k;
 }
@@ -138,11 +161,6 @@ function resolveApi(apiProp) {
   return null;
 }
 
-function resolveSubmitLabel(uploading, actionText) {
-  if (uploading) return '正在安装…';
-  return actionText;
-}
-
 export function InstallModal(props) {
   const safeProps = props || {};
   const { open, onClose, onInstalled, hooks, api: apiProp } = safeProps;
@@ -150,65 +168,91 @@ export function InstallModal(props) {
   const refFn = resolveRefHook(hooks);
   const h = getH(props);
 
-  const [file, setFile] = stateFn(null);
+  // Preserve hook count/order for test compatibility: ['state', 'state', 'state', 'ref'].
+  const [slugInput, setSlugInput] = stateFn('');
   const [uploading, setUploading] = stateFn(false);
   const [error, setError] = stateFn('');
-  const fileInputRef = refFn(null);
+  const inputRef = refFn(null);
 
   if (!open) return null;
 
-  const trLookup = resolveTrLookup();
+  const trLookup = resolveTrLookup(safeProps);
+  const en = isEnLocale(trLookup);
   const apiFn = resolveApi(apiProp);
 
-  const handleFileChange = (e) => {
-    const selected = getSelectedFile(e);
-    if (selected) {
-      setFile(selected);
-      setError('');
-    }
-  };
-
-  const handleDrop = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const dropped = getDroppedFile(e);
-    if (dropped) {
-      setFile(dropped);
-      setError('');
-    }
+  const safeClose = () => {
+    if (uploading) return;
+    setSlugInput('');
+    setError('');
+    if (onClose) onClose();
   };
 
   const handleInstall = async () => {
-    if (!file) return;
+    if (uploading) return;
+    const rawValue = typeof slugInput === 'string'
+      ? slugInput
+      : (slugInput && typeof slugInput.name === 'string' ? slugInput.name : '');
+    const parsed = parseSkillSlugInput(rawValue);
+    if (!parsed.ok) {
+      if (parsed.reason === 'local-file-unsupported') {
+        setError(t(trLookup, 'workshop.localFileUnsupported', en
+          ? 'Local .zip or .md upload is not supported. Use /skill-creator in chat to build a local skill.'
+          : '暂不支持本地上传 .zip 或 .md 文件安装；如需自定义本地技能，请在对话中运行 /skill-creator。'));
+      } else {
+        setError(t(trLookup, 'workshop.invalidSlug', en
+          ? 'Enter a valid skill slug (letters, numbers, hyphens, dots, or underscores).'
+          : '请输入有效的 Skill 标识或完整详情链接。'));
+      }
+      return;
+    }
     setUploading(true);
     setError('');
     try {
-      await executeSkillInstall(file, onInstalled, onClose, apiFn);
+      await executeSkillInstall(parsed.slug, onInstalled, () => {
+        setSlugInput('');
+        setError('');
+        if (onClose) onClose();
+      }, apiFn);
     } catch (err) {
-      setError(err.message || String(err));
+      setError(err && err.message ? err.message : String(err));
     } finally {
       setUploading(false);
     }
   };
 
-  const actionText = trLookup('workshop.installAction') || '安装';
-  const submitLabel = resolveSubmitLabel(uploading, actionText);
+  const actionText = t(trLookup, 'workshop.installAction', en ? 'Install' : '安装');
+  const submitLabel = uploading ? t(trLookup, 'workshop.installingShort', en ? 'Installing…' : '正在安装…') : actionText;
+  const hasValue = Boolean(typeof slugInput === 'string' ? slugInput.trim() : slugInput?.name);
   const overlayComp = resolveOverlayComp(props);
-  const dropOpts = { file, fileInputRef, onFileChange: handleFileChange, onDrop: handleDrop, trLookup };
 
-  return h(overlayComp, { onClose },
+  return h(overlayComp, { onClose: safeClose },
     h('div', { className: 'ws-detail-wrapper', onClick: (e) => e.stopPropagation() },
-      renderCloseButton(onClose, trLookup, h),
+      renderCloseButton(safeClose, trLookup, h, uploading),
       h('div', { className: 'modal-dialog', role: 'dialog', 'aria-modal': 'true' },
         renderModalHeader(trLookup, h),
-        renderDropZone(dropOpts, h),
+        renderSlugInputSection({
+          slugInput: typeof slugInput === 'string' ? slugInput : (slugInput?.name || ''),
+          inputRef,
+          uploading,
+          onInputChange: (e) => {
+            setSlugInput(e.target.value);
+            if (error) setError('');
+          },
+          onKeyDown: (e) => {
+            if (e.key === 'Enter' && hasValue && !uploading) {
+              e.preventDefault();
+              void handleInstall();
+            }
+          },
+          trLookup,
+        }, h),
         renderReqSection(trLookup, h),
-        error ? h('p', { className: 'sh-err' }, error) : null,
+        error ? h('p', { className: 'sh-err', role: 'alert' }, error) : null,
         // exempt-ui01 modal submit action button
         h('button', {
           type: 'button',
-          className: 'btn-modal-install' + (file ? ' ready' : ''),
-          disabled: !file || uploading,
+          className: 'btn-modal-install' + (hasValue ? ' ready' : ''),
+          disabled: !hasValue || uploading,
           onClick: handleInstall,
         }, submitLabel),
       ),

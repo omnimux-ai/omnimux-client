@@ -25,7 +25,7 @@ test('E2E: retired plugins have zero active UI/runtime entry while session-prefi
 
   assert.equal(EXPLORE_MENU_ITEMS.some((item) => item.pluginId === 'omnimux-forms' || item.pluginId === 'omnimux-social-harvest'), false)
   assert.deepEqual(filterExploreItemsForChannel(EXPLORE_MENU_ITEMS, 'development').map((item) => item.label), [
-    '应用', '图像生成', '视频剪辑', '发布', '账号', '手机管理', '数据分析',
+    '应用', '图像生成', '视频剪辑', '发布', '账号', '移动设备', '数据分析',
   ])
   assert.deepEqual(filterExploreItemsForChannel(EXPLORE_MENU_ITEMS, 'production').map((item) => item.label), ['应用', '图像生成', '视频剪辑'])
   assert.equal(resolveExploreMenuItems().some((item) => item.pluginId === 'omnimux-forms' || item.pluginId === 'omnimux-social-harvest'), false)

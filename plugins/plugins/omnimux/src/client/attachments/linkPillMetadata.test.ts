@@ -45,19 +45,19 @@ test('linkPillMetadata: inferLinkMetadata resolves multiple video platforms accu
   // YouTube
   const ytMeta = inferLinkMetadata('https://www.youtube.com/watch?v=dQw4w9WgXcQ');
   assert.equal(ytMeta.platform, 'YouTube');
-  assert.equal(ytMeta.title, 'YouTube · 视频');
+  assert.equal(ytMeta.title, 'YouTube 视频');
   assert.equal(ytMeta.iconSvg, YOUTUBE_ICON_SVG);
 
   // Bilibili
   const biliMeta = inferLinkMetadata('https://www.bilibili.com/video/BV1xx411c7mD');
   assert.equal(biliMeta.platform, 'B站');
-  assert.equal(biliMeta.title, '哔哩哔哩 · 视频');
+  assert.equal(biliMeta.title, '哔哩哔哩 视频');
   assert.equal(biliMeta.iconSvg, BILIBILI_ICON_SVG);
 
   // Xiaohongshu
   const xhsMeta = inferLinkMetadata('https://www.xiaohongshu.com/explore/123456');
   assert.equal(xhsMeta.platform, '小红书');
-  assert.equal(xhsMeta.title, '小红书 · 笔记');
+  assert.equal(xhsMeta.title, '小红书 笔记');
   assert.equal(xhsMeta.iconSvg, XIAOHONGSHU_ICON_SVG);
 
   // Generic website

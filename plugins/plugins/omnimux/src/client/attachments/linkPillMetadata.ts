@@ -94,7 +94,7 @@ const PLATFORM_RULES: readonly {
     pattern: /(?:youtube\.com|youtu\.be)/i,
     config: {
       platform: 'YouTube',
-      defaultTitle: 'YouTube · 视频',
+      defaultTitle: 'YouTube 视频',
       iconSvg: YOUTUBE_ICON_SVG,
     },
   },
@@ -102,7 +102,7 @@ const PLATFORM_RULES: readonly {
     pattern: /(?:bilibili\.com|b23\.tv)/i,
     config: {
       platform: 'B站',
-      defaultTitle: '哔哩哔哩 · 视频',
+      defaultTitle: '哔哩哔哩 视频',
       iconSvg: BILIBILI_ICON_SVG,
     },
   },
@@ -110,7 +110,7 @@ const PLATFORM_RULES: readonly {
     pattern: /(?:xiaohongshu\.com|xhslink\.com)/i,
     config: {
       platform: '小红书',
-      defaultTitle: '小红书 · 笔记',
+      defaultTitle: '小红书 笔记',
       iconSvg: XIAOHONGSHU_ICON_SVG,
     },
   },

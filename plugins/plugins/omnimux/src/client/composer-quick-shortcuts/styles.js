@@ -253,6 +253,32 @@ export const QUICK_SHORTCUTS_CSS = `
   background: var(--dsw-alias-interactive-bg-hover-solid);
   border-color: var(--dsw-alias-border-l2);
 }
+.sh-model-capsule-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.sh-model-capsule-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 9999px;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+}
+.sh-model-capsule-clear:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+.sh-model-capsule-clear:focus-visible {
+  outline: 2px solid var(--dsw-alias-brand-primary);
+  outline-offset: 1px;
+}
 .sh-model-capsule-name {
   white-space: nowrap;
   overflow: hidden;
@@ -390,6 +416,10 @@ export const QUICK_SHORTCUTS_CSS = `
 }
 .sh-model-row:hover {
   background: var(--dsw-alias-interactive-bg-hover);
+}
+.sh-model-row:focus-visible {
+  outline: 2px solid var(--dsw-alias-brand-primary);
+  outline-offset: -1px;
 }
 .sh-model-row.selected {
   background: var(--dsw-alias-interactive-bg-active);
@@ -553,13 +583,65 @@ html [data-composer-card][data-omnimux-inline-density='icon'] .sh-picker-trigger
   width: 28px!important; min-width: 28px!important; max-width: 28px!important; padding: 0!important; justify-content: center!important;
 }
 html [data-composer-card][data-omnimux-inline-density='icon'] .sh-picker-trigger-label { display: none!important; }
-html [data-composer-card][data-omnimux-inline-density='short'] .sh-model-capsule-btn .sh-model-capsule-name {
+html [data-composer-card][data-omnimux-inline-density='short'] .sh-model-capsule-btn .sh-model-capsule-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.sh-model-capsule-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 9999px;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+}
+.sh-model-capsule-clear:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+.sh-model-capsule-clear:focus-visible {
+  outline: 2px solid var(--dsw-alias-brand-primary);
+  outline-offset: 1px;
+}
+.sh-model-capsule-name {
   max-width: 72px!important;
 }
 html [data-composer-card][data-omnimux-inline-density='icon'] .sh-model-capsule-btn {
   width: 28px!important; min-width: 28px!important; max-width: 28px!important; padding: 0!important; justify-content: center!important;
 }
-html [data-composer-card][data-omnimux-inline-density='icon'] .sh-model-capsule-btn .sh-model-capsule-name { display: none!important; }
+html [data-composer-card][data-omnimux-inline-density='icon'] .sh-model-capsule-btn .sh-model-capsule-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.sh-model-capsule-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 9999px;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+}
+.sh-model-capsule-clear:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+.sh-model-capsule-clear:focus-visible {
+  outline: 2px solid var(--dsw-alias-brand-primary);
+  outline-offset: 1px;
+}
+.sh-model-capsule-name { display: none!important; }
 
 
 /* 位置：这一排挂在官方「输入框停靠槽」上，而 hero 栈把该槽排在输入框**之前**，

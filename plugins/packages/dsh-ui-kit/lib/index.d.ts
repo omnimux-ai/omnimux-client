@@ -245,6 +245,12 @@ interface DataTableProps<T> {
   loading?: boolean;
   /** Custom empty state content. Defaults to EmptyState. */
   emptyContent?: ReactNode;
+  /** Localized fallback empty state title when emptyContent is omitted. */
+  emptyTitle?: string;
+  /** Accessible label for select-all checkbox in multiple selection mode. */
+  selectAllLabel?: string;
+  /** Accessible label builder for row selection checkboxes/radios. */
+  selectRowLabel?: (rowIndex: number) => string;
   /** Sticky header styling. */
   stickyHeader?: boolean;
   /** Whether horizontal scroll indicators are enabled, defaults to true. */
@@ -260,7 +266,7 @@ interface DataTableProps<T> {
  * Generic declarative high-level data table with sorting, multi-selection,
  * horizontal scroll indicators, and EmptyState integration.
  */
-declare function DataTable<T>({ data, columns, rowKey, selectedRowKeys, onSelectionChange, selectionMode, sortKey, sortDirection, onSortChange, loading, emptyContent, stickyHeader, scrollX, className, rowClassName, onRowClick }: DataTableProps<T>): JSX.Element;
+declare function DataTable<T>({ data, columns, rowKey, selectedRowKeys, onSelectionChange, selectionMode, sortKey, sortDirection, onSortChange, loading, emptyContent, emptyTitle, selectAllLabel, selectRowLabel, stickyHeader, scrollX, className, rowClassName, onRowClick }: DataTableProps<T>): JSX.Element;
 type MediaAspectRatio = "16:9" | "4:3" | "1:1" | "9:16";
 interface MediaCardProps {
   /** Card title text or node. */
@@ -348,6 +354,8 @@ interface DrawerProps {
   closeOnEsc?: boolean;
   /** Target portal mount container, defaults to document.body. */
   container?: PortalContainer;
+  /** Accessible label for the close button. */
+  closeLabel?: string;
   /** Custom class name for the drawer panel. */
   className?: string;
 }
@@ -355,7 +363,7 @@ interface DrawerProps {
  * Accessible slide-in drawer panel with multi-directional animation,
  * FocusTrap, Escape key handling, and scroll lock prevention.
  */
-declare function Drawer({ open, onClose, title, description, children, footer, placement, width, height, closable, closeOnOverlayClick, closeOnEsc, container, className }: DrawerProps): JSX.Element | null;
+declare function Drawer({ open, onClose, title, description, children, footer, placement, width, height, closable, closeOnOverlayClick, closeOnEsc, container, closeLabel, className }: DrawerProps): JSX.Element | null;
 interface DrawerPortalProps {
   children: ReactNode;
   container?: PortalContainer;
@@ -605,7 +613,7 @@ interface GenWaveCardProps extends HTMLAttributes<HTMLDivElement> {
   statusText?: string;
   /** 0–100；传入后由外部接管进度显示并停用内置演示缓动。 */
   progress?: number;
-  /** 是否启用内置 0→96% 演示缓动；默认 progress 未提供时为 true。 */
+  /** 是否启用内置 0→96% 演示缓动；默认 false，仅在明确传入 true 或提供真实 progress 时显示百分比胶囊。 */
   autoProgress?: boolean;
   /** Custom class name. */
   className?: string;

@@ -26,12 +26,12 @@ export function compileCreativePrompt(options = {}) {
   // 1. 系统角色与导演指令头
   if (isZh) {
     sections.push(
-      '【营销视频创意指令 · 工业级分镜与视听规范】\n' +
+      '【营销视频创意指令】\n' +
       '你是一位资深短视频商业导演与 AI 视频生成大师。请根据以下指定的结构化创意框架、黄金开场抓手及视觉风格，将目标产品/主题进行专业分镜拆解与 Prompt 生成。'
     )
   } else {
     sections.push(
-      '[CREATIVE DIRECTIVE · CINEMATIC COMMERCIAL PRODUCTION]\n' +
+      '[CREATIVE DIRECTIVE - CINEMATIC COMMERCIAL PRODUCTION]\n' +
       'You are an expert commercial video director and AI video generator. Synthesize the target subject into structured scene shots and keyframe prompts according to the creative blueprint below.'
     )
   }

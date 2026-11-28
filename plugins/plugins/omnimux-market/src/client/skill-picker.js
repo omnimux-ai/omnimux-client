@@ -806,8 +806,10 @@
           activeSkill ? h("div", {
             className: "sh-active-skill-chip",
             title: activeSkill.name || activeSkill.title || activeSkill.slug
-              ? `技能：${activeSkill.name || activeSkill.title || activeSkill.slug}${activeSkill.description || activeSkill.summary ? ` · ${activeSkill.description || activeSkill.summary}` : ""}（点击可移除）`
-              : (activeSkill.description || activeSkill.summary || "当前技能（点击可移除）"),
+              ? (tr("locale") === "en"
+                ? `Skill: ${activeSkill.name || activeSkill.title || activeSkill.slug}${activeSkill.description || activeSkill.summary ? ` — ${activeSkill.description || activeSkill.summary}` : ""} (Click to remove)`
+                : `技能：${activeSkill.name || activeSkill.title || activeSkill.slug}${activeSkill.description || activeSkill.summary ? ` — ${activeSkill.description || activeSkill.summary}` : ""}（点击可移除）`)
+              : (activeSkill.description || activeSkill.summary || (tr("locale") === "en" ? "Active skill (Click to remove)" : "当前技能（点击可移除）")),
             onClick: (e) => {
               const doc = typeof document !== "undefined" ? document.documentElement : null;
               const density = doc ? doc.getAttribute("data-omnimux-composer-density") : "";

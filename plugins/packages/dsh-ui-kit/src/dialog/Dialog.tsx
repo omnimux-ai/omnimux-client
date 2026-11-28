@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import type { ReactNode } from "react";
 import { Modal } from "@deepseek-ai/dsh-client-ui-primitives";
 
@@ -6,6 +7,7 @@ import type { ButtonVariant } from "../button/Button.tsx";
 import { IconCloseOutline16 } from "../icons/compat-icons.tsx";
 import { cssClass } from "../internal/cssClass.ts";
 import { cx } from "../internal/cx.ts";
+import { resolveKitLocale } from "../internal/locale.ts";
 import css from "./Dialog.module.css";
 
 export type DialogSize = "sm" | "md" | "lg";
@@ -44,10 +46,11 @@ export function ModalDialog({
   children,
   footer,
   size = "md",
-  closeLabel = "Close",
+  closeLabel,
   className,
   contentClassName,
 }: ModalDialogProps) {
+  const resolvedCloseLabel = closeLabel ?? (resolveKitLocale() === "en" ? "Close" : "关闭");
   const modalProps = { open, onClose, title, className: cx(css.dialog, SIZE_CLASS[size], className) };
 
   if (titleIcon != null && titleIcon !== false) {
@@ -59,7 +62,7 @@ export function ModalDialog({
               <span className={css.titleIcon} aria-hidden="true">{titleIcon}</span>
               {title}
             </h2>
-            <IconButton variant="ghost" size="sm" aria-label={closeLabel} onClick={onClose}>
+            <IconButton variant="ghost" size="sm" aria-label={resolvedCloseLabel} onClick={onClose}>
               <IconCloseOutline16 size={14} />
             </IconButton>
           </div>
@@ -76,7 +79,7 @@ export function ModalDialog({
   return (
     <Modal
       {...modalProps}
-      closeLabel={closeLabel}
+      closeLabel={resolvedCloseLabel}
       contentClassName={cx(css.body, contentClassName)}
       {...(description !== undefined ? { description } : {})}
       {...(footer !== undefined ? { footer } : {})}
@@ -100,8 +103,8 @@ export interface ConfirmModalProps extends Omit<ModalDialogProps, "footer" | "ch
 export function ConfirmModal({
   message,
   children,
-  confirmLabel = "Confirm",
-  cancelLabel = "Cancel",
+  confirmLabel,
+  cancelLabel,
   confirmVariant = "primary",
   confirmLoading = false,
   onConfirm,
@@ -109,18 +112,38 @@ export function ConfirmModal({
   size = "sm",
   ...rest
 }: ConfirmModalProps) {
+  const isEn = resolveKitLocale() === "en";
+  const resolvedConfirmLabel = confirmLabel ?? (isEn ? "Confirm" : "确认");
+  const resolvedCancelLabel = cancelLabel ?? (isEn ? "Cancel" : "取消");
+  const cancelRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!rest.open || confirmVariant !== "danger") return;
+    const raf = typeof requestAnimationFrame === "function"
+      ? requestAnimationFrame(() => cancelRef.current?.focus())
+      : 0;
+    if (!raf) cancelRef.current?.focus();
+    return () => {
+      if (raf && typeof cancelAnimationFrame === "function") cancelAnimationFrame(raf);
+    };
+  }, [rest.open, confirmVariant]);
+
+  const guardedOnClose = () => {
+    if (!confirmLoading) onClose();
+  };
+
   return (
     <ModalDialog
       {...rest}
       size={size}
-      onClose={onClose}
+      onClose={guardedOnClose}
       footer={(
         <div className={css.footer}>
-          <Button variant="outline" onClick={onClose} disabled={confirmLoading}>
-            {cancelLabel}
+          <Button ref={cancelRef} variant="outline" onClick={guardedOnClose} disabled={confirmLoading}>
+            {resolvedCancelLabel}
           </Button>
           <Button variant={confirmVariant} loading={confirmLoading} onClick={onConfirm}>
-            {confirmLabel}
+            {resolvedConfirmLabel}
           </Button>
         </div>
       )}

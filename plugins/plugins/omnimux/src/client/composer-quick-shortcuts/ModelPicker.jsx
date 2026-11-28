@@ -202,6 +202,26 @@ export function BrandIcon({
   );
 }
 
+function isPickerEn() {
+  try {
+    const active = typeof window !== 'undefined'
+      ? (window.__omnimuxLocale?.active || window.__omnimuxLocale?.getLocale?.()?.active)
+      : '';
+    if (typeof active === 'string' && active.trim()) {
+      return active.trim().toLowerCase().startsWith('en');
+    }
+    const docLang = typeof document !== 'undefined' ? document.documentElement?.lang : '';
+    if (typeof docLang === 'string' && docLang.trim()) {
+      return docLang.trim().toLowerCase().startsWith('en');
+    }
+    const navLang = typeof navigator !== 'undefined' ? navigator.language : '';
+    if (typeof navLang === 'string' && navLang.trim()) {
+      return navLang.trim().toLowerCase().startsWith('en');
+    }
+  } catch {}
+  return false;
+}
+
 /**
  * 方案 B 浮层面板
  */
@@ -217,9 +237,38 @@ function ModelPickerPanel({
   onSelectModel,
   onClose,
 }) {
+  const en = isPickerEn();
+  const labels = en
+    ? {
+        title: 'Models',
+        auto: 'Auto',
+        video: 'Video',
+        image: 'Image',
+        loading: 'Loading models…',
+        empty: 'No models available',
+      }
+    : {
+        title: '模型',
+        auto: '自动',
+        video: '视频',
+        image: '图像',
+        loading: '正在加载模型…',
+        empty: '当前没有可用模型',
+      };
   const panelRef = useRef(null);
   const [tab, setTab] = useState('video');
   const [pos, setPos] = useState({ left: 0, top: 0, width: 480 });
+
+  useEffect(() => {
+    if (!open) return;
+    const curItems = (modelsData && modelsData[tab]) || [];
+    if (curItems.length === 0) {
+      const alt = tab === 'video' ? 'image' : 'video';
+      if (((modelsData && modelsData[alt]) || []).length > 0) {
+        setTab(alt);
+      }
+    }
+  }, [open, modelsData, tab]);
 
   useLayoutEffect(() => {
     if (!open) return undefined;
@@ -328,19 +377,19 @@ function ModelPickerPanel({
       ref={panelRef}
       className="sh-model-picker"
       role="dialog"
-      aria-label="模型"
+      aria-label={labels.title}
       aria-modal="true"
       tabIndex={-1}
       style={{ left: `${pos.left}px`, top: `${pos.top}px`, width: `${pos.width}px` }}
     >
       <div className="sh-model-picker-header">
-        <div className="sh-model-picker-title">模型</div>
+        <div className="sh-model-picker-title">{labels.title}</div>
         <div className="sh-model-auto-row">
-          <span className="sh-model-auto-label">自动</span>
+          <span className="sh-model-auto-label">{labels.auto}</span>
           <button // exempt-ui01: 模型选择器顶部自动决策切换开关
             type="button"
             role="switch"
-            aria-label="自动"
+            aria-label={labels.auto}
             aria-checked={auto ? 'true' : 'false'}
             className={`sh-model-switch${auto ? ' on' : ''}`}
             onClick={() => onToggleAuto(!auto)}
@@ -358,7 +407,7 @@ function ModelPickerPanel({
           aria-selected={tab === 'video'}
           onClick={() => setTab('video')}
         >
-          视频
+          {labels.video}
         </button>
         <button // exempt-ui01: 模态切换 Tab 图像
           type="button"
@@ -367,21 +416,46 @@ function ModelPickerPanel({
           aria-selected={tab === 'image'}
           onClick={() => setTab('image')}
         >
-          图像
+          {labels.image}
         </button>
       </div>
 
       <div className="sh-model-list" role="listbox">
         {items.length ? (
-          items.map((model) => {
+          items.map((model, idx) => {
             const isSelected = !auto && selectedModel && selectedModel.id === model.id;
+            const handleRowKeyDown = (e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                onSelectModel(model);
+                return;
+              }
+              const list = e.currentTarget.parentElement;
+              const rows = list ? Array.from(list.querySelectorAll('.sh-model-row')) : [];
+              if (!rows.length) return;
+              if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                rows[(idx + 1) % rows.length]?.focus();
+              } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                rows[(idx - 1 + rows.length) % rows.length]?.focus();
+              } else if (e.key === 'Home') {
+                e.preventDefault();
+                rows[0]?.focus();
+              } else if (e.key === 'End') {
+                e.preventDefault();
+                rows[rows.length - 1]?.focus();
+              }
+            };
             return (
               <div
                 key={model.id}
                 className={`sh-model-row${isSelected ? ' selected' : ''}`}
                 role="option"
+                tabIndex={0}
                 aria-selected={isSelected ? 'true' : 'false'}
                 onClick={() => onSelectModel(model)}
+                onKeyDown={handleRowKeyDown}
               >
                 <div className="sh-model-row-left">
                   <div className="sh-model-icon-box">
@@ -425,7 +499,7 @@ function ModelPickerPanel({
           })
         ) : (
           <div className="sh-model-empty" role="status">
-            {catalogLoading ? '正在加载模型…' : (catalogError || '当前没有可用模型')}
+            {catalogLoading ? labels.loading : (catalogError || labels.empty)}
           </div>
         )}
       </div>
@@ -500,7 +574,7 @@ export function ModelPicker({ sessionId }) {
         const res = await fetch('/omnimux/model-catalog');
         if (!res.ok) {
           console.error('[omnimux:model-picker] 加载模型目录网络错误:', res.status, res.statusText);
-          setCatalogError(`模型目录加载失败（${res.status}）`);
+          setCatalogError(isPickerEn() ? `Failed to load models (${res.status})` : `模型目录加载失败（${res.status}）`);
           setCatalogLoading(false);
           return;
         }
@@ -538,7 +612,7 @@ export function ModelPicker({ sessionId }) {
             name,
             capsuleName,
             subtitle: '',
-            pro: typeof row.pro === 'boolean' ? row.pro : true,
+            pro: typeof row.pro === 'boolean' ? row.pro : false,
             badge: typeof row.badge === 'string'
               ? { text: row.badge, type: 'purple' }
               : (row.badge && typeof row.badge === 'object' ? row.badge : undefined),
@@ -602,12 +676,12 @@ export function ModelPicker({ sessionId }) {
             };
           });
         } else {
-          setCatalogError('当前没有可用模型');
+          setCatalogError(isPickerEn() ? 'No models available' : '当前没有可用模型');
           setCatalogLoading(false);
         }
       } catch (err) {
         console.error('[omnimux:model-picker] 加载或解析模型目录异常:', err);
-        setCatalogError('模型目录加载失败');
+        setCatalogError(isPickerEn() ? 'Failed to load models' : '模型目录加载失败');
         setCatalogLoading(false);
       }
     };
@@ -637,22 +711,33 @@ export function ModelPicker({ sessionId }) {
     };
   }, [sessionId]);
 
-  // 切换自动开关
+  // 切换自动开关（关闭自动且暂无显式选择时自动命中首个可用模型，防止状态自相矛盾）
   const handleToggleAuto = useCallback((nextAuto) => {
     setAuto(nextAuto);
-    const nextModel = nextAuto ? null : selectedModel;
+    let nextModel = nextAuto ? null : selectedModel;
     if (nextAuto) {
       setSelectedModel(null);
+    } else if (!nextModel) {
+      nextModel = modelsData?.video?.[0] || modelsData?.image?.[0] || null;
+      if (nextModel) {
+        setSelectedModel(nextModel);
+      }
     }
     publishSessionModel({
       sessionId,
       auto: nextAuto,
       model: nextModel,
     });
-  }, [sessionId, selectedModel]);
+  }, [sessionId, selectedModel, modelsData]);
 
-  // 选中特定模型
+  // 选中或再次点击已选模型切换回自动
   const handleSelectModel = useCallback((model) => {
+    if (!auto && selectedModel && selectedModel.id === model.id) {
+      handleToggleAuto(true);
+      setOpen(false);
+      btnRef.current?.focus?.();
+      return;
+    }
     setAuto(false);
     setSelectedModel(model);
     publishSessionModel({
@@ -664,53 +749,67 @@ export function ModelPicker({ sessionId }) {
     if (btnRef.current && typeof btnRef.current.focus === 'function') {
       btnRef.current.focus();
     }
-  }, [sessionId]);
+  }, [sessionId, auto, selectedModel, handleToggleAuto]);
 
+  const en = isPickerEn();
   const isModelChosen = !auto && Boolean(selectedModel);
 
   return (
     <div className="sh-model-picker-wrap">
       {isModelChosen ? (
-        <button // exempt-ui01: 选中模型时显示的品牌图标与模型名称胶囊
-          ref={btnRef}
-          type="button"
-          className={`sh-model-capsule-btn${open ? ' on' : ''}`}
-          aria-label={selectedModel.name}
-          title={selectedModel.name}
-          aria-haspopup="dialog"
-          aria-expanded={open ? 'true' : 'false'}
-          data-omnimux-model-capsule=""
-          onClick={() => setOpen((v) => !v)}
-        >
-          <BrandIcon
-            modelId={selectedModel.id}
-            brandId={selectedModel.brandId}
-            brandName={selectedModel.brandName}
-            brandIconPath={selectedModel.brandIconPath}
-            family={selectedModel.family}
-            label={selectedModel.name}
-            brands={modelsData?.brands}
-            iconOrId={selectedModel.icon}
-            size={14}
-          />
-          <span className="sh-model-capsule-name">
-            {selectedModel.capsuleName || selectedModel.name}
-          </span>
-        </button>
+        <div className="sh-model-capsule-group">
+          <button // exempt-ui01: 选中模型时显示的品牌图标与模型名称胶囊
+            ref={btnRef}
+            type="button"
+            className={`sh-model-capsule-btn${open ? ' on' : ''}`}
+            aria-label={selectedModel.name}
+            title={selectedModel.name}
+            aria-haspopup="dialog"
+            aria-expanded={open ? 'true' : 'false'}
+            data-omnimux-model-capsule=""
+            onClick={() => setOpen((v) => !v)}
+          >
+            <BrandIcon
+              modelId={selectedModel.id}
+              brandId={selectedModel.brandId}
+              brandName={selectedModel.brandName}
+              brandIconPath={selectedModel.brandIconPath}
+              family={selectedModel.family}
+              label={selectedModel.name}
+              brands={modelsData?.brands}
+              iconOrId={selectedModel.icon}
+              size={14}
+            />
+            <span className="sh-model-capsule-name">
+              {selectedModel.capsuleName || selectedModel.name}
+            </span>
+          </button>
+          <button // exempt-ui01: 胶囊清除按钮一键恢复自动推荐
+            type="button"
+            className="sh-model-capsule-clear"
+            aria-label={en ? 'Reset to Auto' : '恢复自动模型'}
+            title={en ? 'Reset to Auto' : '恢复自动模型'}
+            onClick={() => handleToggleAuto(true)}
+          >
+            <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" aria-hidden="true">
+              <path d="M2.5 2.5 9.5 9.5M9.5 2.5 2.5 9.5" />
+            </svg>
+          </button>
+        </div>
       ) : (
         <button // exempt-ui01: 自动推荐时显示的立体层级模型触发按钮
           ref={btnRef}
           type="button"
           className={`sh-picker-trigger sh-model-picker-trigger${open ? ' on' : ''}`}
-          aria-label="模型"
-          title="模型"
+          aria-label={en ? 'Model' : '模型'}
+          title={en ? 'Model' : '模型'}
           aria-haspopup="dialog"
           aria-expanded={open ? 'true' : 'false'}
           data-omnimux-model-picker=""
           onClick={() => setOpen((v) => !v)}
         >
           <ModelLayersIcon size={16} />
-          <span className="sh-picker-trigger-label">模型</span>
+          <span className="sh-picker-trigger-label">{en ? 'Model' : '模型'}</span>
         </button>
       )}
 

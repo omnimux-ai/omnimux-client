@@ -1,34 +1,31 @@
     /**
      * @file plugins-column.js
-     * OmniMux 插件专栏：分类栅格展示、名称与描述检索、可开启/禁用开关与状态持久化。
+     * OmniMux 插件专栏：分类栅格展示、名称与描述检索及真实内置状态呈现。
      * 100% 遵循 design.md 视觉规范与 UI04 零 Unicode/Emoji 门禁。
      */
 
-    import { h, useState } from "./boot.js";
-    import { DetailSwitch } from "./skills-ui.js";
-
-    const OMNIMUX_PLUGINS_STORAGE_KEY = "omnimux:plugins-enabled-state";
+    import { h } from "./boot.js";
 
     const OMNIMUX_PLUGIN_CATEGORIES = [
       {
         id: "content-creation",
-        titleZh: "内容与创作",
-        titleEn: "Content & Creation",
+        titleZh: "内容创作",
+        titleEn: "Content",
       },
       {
         id: "video-visuals",
-        titleZh: "视频与媒体",
-        titleEn: "Video & Visuals",
+        titleZh: "视频媒体",
+        titleEn: "Video & Media",
       },
       {
         id: "social-marketing",
-        titleZh: "社媒与运营",
-        titleEn: "Social & Marketing",
+        titleZh: "社媒运营",
+        titleEn: "Social Ops",
       },
       {
         id: "agents-automation",
-        titleZh: "智能体与系统",
-        titleEn: "Agents & System",
+        titleZh: "系统能力",
+        titleEn: "System",
       },
     ];
 
@@ -206,18 +203,18 @@
         iconKey: "core",
         titleZh: "核心执行中枢",
         titleEn: "Core Hub",
-        descZh: "运行时网关、多模型渠道与调度底座（系统受保护）。",
-        descEn: "OmniMux execution hub: chrome, multi-model routing, and system core (Protected).",
+        descZh: "运行时网关、多模型渠道与调度底座。",
+        descEn: "OmniMux execution hub: multi-model routing and runtime core.",
         isProtected: true,
       },
       {
         id: "omnimux-market",
         categoryId: "agents-automation",
         iconKey: "market",
-        titleZh: "技能与专家市场",
+        titleZh: "技能专家市场",
         titleEn: "Skills & Experts Market",
-        descZh: "技能套件、专家与插件市场管理中枢（系统受保护）。",
-        descEn: "Marketplace center for skills, expert agents, and plugins (Protected).",
+        descZh: "技能套件、专家与插件市场管理中枢。",
+        descEn: "Marketplace center for skills, expert agents, and plugins.",
         isProtected: true,
       },
     ];
@@ -363,42 +360,26 @@
       }
     }
 
-    function readStoredPluginsEnabled() {
-      try {
-        if (typeof window === "undefined" || !window.localStorage) return {};
-        const raw = window.localStorage.getItem(OMNIMUX_PLUGINS_STORAGE_KEY);
-        if (!raw) return {};
-        const parsed = JSON.parse(raw);
-        return parsed && typeof parsed === "object" ? parsed : {};
-      } catch {
-        return {};
-      }
-    }
-
-    function writeStoredPluginsEnabled(map) {
-      try {
-        if (typeof window === "undefined" || !window.localStorage) return;
-        window.localStorage.setItem(OMNIMUX_PLUGINS_STORAGE_KEY, JSON.stringify(map));
-      } catch {}
-    }
-
     function renderPluginRowCard(plugin, opts) {
-      const { isEn, tr, enabled, onToggle } = opts;
+      const { isEn, tr } = opts;
       const isZh = !isEn;
       const title = isZh ? plugin.titleZh : plugin.titleEn;
       const desc = isZh ? plugin.descZh : plugin.descEn;
-      const isLocked = plugin.isProtected;
-      const protectedTitle = tr("pluginsColumn.protectedHint") || (isEn ? "Core system plugin, cannot be disabled" : "核心中枢插件，保持系统稳定不可禁用");
-
-      const handleToggle = (nextVal) => {
-        if (isLocked) return;
-        if (onToggle) onToggle(plugin.id, nextVal);
+      const isLocked = Boolean(plugin.isProtected);
+      const tSafe = (key, fallback) => {
+        if (typeof tr === "function") {
+          const v = tr(key);
+          if (v && v !== key) return v;
+        }
+        return fallback;
       };
+      const statusText = isLocked
+        ? tSafe("pluginsColumn.coreBadge", isEn ? "Core" : "核心内置")
+        : tSafe("pluginsColumn.builtinBadge", isEn ? "Built-in" : "已内置");
 
       return h("div", {
         key: plugin.id,
         className: "sh-plugin-card" + (isLocked ? " is-locked" : ""),
-        title: isLocked ? protectedTitle : undefined,
       },
         h("div", { className: "sh-plugin-icon-wrap" },
           renderPluginIconSvg(plugin.iconKey),
@@ -408,32 +389,13 @@
           h("div", { className: "sh-plugin-desc" }, desc),
         ),
         h("div", { className: "sh-plugin-switch-cell" },
-          h(DetailSwitch, {
-            checked: isLocked ? true : Boolean(enabled),
-            disabled: isLocked,
-            onChange: handleToggle,
-          }),
+          h("span", { className: "sh-tag" + (isLocked ? " blue" : " green") }, statusText),
         ),
       );
     }
 
     function PluginsColumnTab(opts) {
       const { searchQuery = "", tr, isEn } = opts;
-      const [enabledMap, setEnabledMap] = useState(() => readStoredPluginsEnabled());
-
-      const handleToggle = (id, nextState) => {
-        setEnabledMap((prev) => {
-          const next = { ...prev, [id]: nextState };
-          writeStoredPluginsEnabled(next);
-          try {
-            if (typeof window !== "undefined" && typeof window.dispatchEvent === "function") {
-              window.dispatchEvent(new CustomEvent("omnimux:plugin-status-changed", { detail: { id, enabled: nextState } }));
-            }
-          } catch {}
-          return next;
-        });
-      };
-
       const q = String(searchQuery || "").trim().toLowerCase();
 
       // 按分类分组过滤
@@ -465,15 +427,7 @@
           return h("div", { key: grp.id, className: "sh-plugins-category-group" },
             h("div", { className: "sh-plugins-category-title" }, catTitle),
             h("div", { className: "sh-plugins-grid" },
-              grp.plugins.map((it) => {
-                const isEnabled = enabledMap[it.id] !== false; // 默认 true
-                return renderPluginRowCard(it, {
-                  isEn,
-                  tr,
-                  enabled: isEnabled,
-                  onToggle: handleToggle,
-                });
-              }),
+              grp.plugins.map((it) => renderPluginRowCard(it, { isEn, tr })),
             ),
           );
         }),

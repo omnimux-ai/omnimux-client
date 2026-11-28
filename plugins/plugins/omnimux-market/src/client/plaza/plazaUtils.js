@@ -148,15 +148,22 @@ export function resolveSuiteCounts(item) {
   return { skills: count(suite.skills), rules: count(suite.rules), agents: count(suite.agents) };
 }
 
-/** 套件卡构成行文案：「技能 N · 规则 N · Agent N」。 */
+/** 套件卡构成行文案。 */
 export function suiteCompositionText(item, tr) {
   const { skills, rules, agents } = resolveSuiteCounts(item);
-  const label = (key, fallback) => (typeof tr === 'function' ? (tr(key) || fallback) : fallback);
+  const label = (key, fallback) => {
+    if (typeof tr === 'function') {
+      const val = tr(key);
+      if (val && val !== key) return val;
+    }
+    return fallback;
+  };
+  const sep = getIsLocaleEn(tr) ? ', ' : '、';
   return [
     label('suite.count.skills', '技能') + ' ' + skills,
     label('suite.count.rules', '规则') + ' ' + rules,
     label('suite.count.agents', 'Agent') + ' ' + agents,
-  ].join(' · ');
+  ].join(sep);
 }
 
 export const EXPERT_STAGE_OPTIONS = [
@@ -600,6 +607,11 @@ export {
 export function handleSwitchToggle(item, state, updater, apiFn) {
   if (item.installed) {
     if (item.preinstalled === true) return;
+    if (typeof state.setConfirmUninstallItem === 'function') {
+      if (typeof state.setConfirmUninstallError === 'function') state.setConfirmUninstallError('');
+      state.setConfirmUninstallItem(item);
+      return;
+    }
     const runApi = apiFn || (typeof api === 'function' ? api : null);
     const slug = resolveItemSlug(item);
     if (runApi && updater && slug) {
@@ -622,6 +634,26 @@ export function handleSwitchToggle(item, state, updater, apiFn) {
   }
   state.setConfirmInstallError('');
   state.setConfirmInstallItem(item);
+}
+
+export async function executeConfirmUninstall(item, state, updater, apiFn) {
+  if (!item || item.preinstalled === true || state.confirmUninstalling) return;
+  const runApi = apiFn || (typeof api === 'function' ? api : null);
+  const slug = resolveItemSlug(item);
+  if (!runApi || !slug) return;
+  state.setConfirmUninstalling(true);
+  if (typeof state.setConfirmUninstallError === 'function') state.setConfirmUninstallError('');
+  try {
+    await runApi('uninstall', { slug });
+    updatePlazaItemInstalled(item, false, state, updater);
+    state.setConfirmUninstallItem(null);
+  } catch (err) {
+    if (typeof state.setConfirmUninstallError === 'function') {
+      state.setConfirmUninstallError(err ? (err.message || String(err)) : '卸载失败');
+    }
+  } finally {
+    state.setConfirmUninstalling(false);
+  }
 }
 
 export function resolveItemSlug(item) {

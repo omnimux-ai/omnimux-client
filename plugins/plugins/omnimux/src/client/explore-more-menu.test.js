@@ -310,7 +310,7 @@ describe('官方「更多」菜单内容', () => {
           assert.equal(typeof row.children, 'string', '非 Alpha 行内容仍是纯字符串（零变化）')
         }
       })
-      assert.deepEqual(alphaLabels, ['发布', '账号', '手机管理', '数据分析'], 'Alpha 项按菜单顺序命中')
+      assert.deepEqual(alphaLabels, ['发布', '账号', '移动设备', '数据分析'], 'Alpha 项按菜单顺序命中')
       assert.deepEqual(plainLabels, ['应用', '图像生成', '视频剪辑'], '仅应用、图像生成与视频剪辑保持非 Alpha 纯文本')
       assert.deepEqual(alphaLabels, TRUTH.filter((item) => isAlphaEntry(item.entryId)).map((item) => item.label), 'Alpha 项按菜单顺序命中')
       assert.deepEqual(plainLabels, TRUTH.filter((item) => !isAlphaEntry(item.entryId)).map((item) => item.label), '其余项不带标识')

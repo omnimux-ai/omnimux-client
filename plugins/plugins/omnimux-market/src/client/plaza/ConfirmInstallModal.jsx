@@ -8,6 +8,7 @@ function getH(opts) {
 }
 
 function resolveTr(opts) {
+  if (opts && typeof opts.tr === 'function') return opts.tr;
   if (typeof useTr === 'function') return useTr();
   if (typeof lookup === 'function') return lookup;
   return (k) => k;
@@ -25,21 +26,33 @@ function resolveButton(opts) {
   return 'button';
 }
 
-function getModalPrompt() {
-  if (typeof lookup === 'function') {
-    return lookup('workshop.confirmInstall') || '是否安装并启用此 Skill？';
+function tSafe(tr, key, fallback, params) {
+  if (typeof tr === 'function') {
+    const val = tr(key, params);
+    if (val && val !== key) return val;
   }
-  return '是否安装并启用此 Skill？';
+  if (!params) return fallback;
+  let out = String(fallback || '');
+  for (const k of Object.keys(params)) {
+    out = out.split('{' + k + '}').join(String(params[k]));
+  }
+  return out;
 }
 
-function renderCloseButton(onClose, h) {
+function getModalPrompt(tr) {
+  return tSafe(tr, 'workshop.confirmInstall', '是否安装并启用此 Skill？');
+}
+
+function renderCloseButton(onClose, h, tr, disabled) {
+  const closeLabel = tSafe(tr, 'action.close', tr && tr('locale') === 'en' ? 'Close' : '关闭');
   // exempt-ui01 modal close icon button
   return h('button', {
     type: 'button',
     className: 'omnimux-modal-close-btn is-external ws-detail-external-close',
-    'aria-label': 'Close',
-    title: 'Close',
-    onClick: onClose,
+    'aria-label': closeLabel,
+    title: closeLabel,
+    disabled: Boolean(disabled),
+    onClick: () => { if (!disabled && onClose) onClose(); },
   },
     h('svg', {
       width: '14',
@@ -64,25 +77,36 @@ export function ConfirmInstallModal(opts) {
 
   const h = getH(opts);
   const tr = resolveTr(opts);
+  const isEn = tr('locale') === 'en';
   const title = resolveItemTitle(item, tr);
   const overlayComp = resolveOverlay(opts);
   const buttonComp = resolveButton(opts);
-  const modalPrompt = getModalPrompt();
-  const confirmText = installing ? '正在安装…' : '确认安装';
+  const modalPrompt = getModalPrompt(tr);
+  const safeClose = () => { if (!installing && onClose) onClose(); };
+  const confirmText = installing
+    ? tSafe(tr, 'workshop.installingShort', isEn ? 'Installing…' : '正在安装…')
+    : tSafe(tr, 'suite.install.confirm', isEn ? 'Install' : '确认安装');
+  const cancelText = tSafe(tr, 'suite.install.cancel', isEn ? 'Cancel' : '取消');
+  const descText = tSafe(
+    tr,
+    'workshop.confirmInstallDetail',
+    isEn ? `Installing "${title}" will enable it immediately.` : `即将安装「${title}」，安装完成后将自动为您启用。`,
+    { title },
+  );
 
-  return h(overlayComp, { onClose },
+  return h(overlayComp, { onClose: safeClose },
     h('div', { className: 'ws-detail-wrapper', onClick: (e) => e.stopPropagation() },
-      renderCloseButton(onClose, h),
+      renderCloseButton(safeClose, h, tr, installing),
       h('div', { className: 'modal-dialog', style: { width: '400px' }, role: 'dialog', 'aria-modal': 'true' },
         h('div', { className: 'modal-header' },
           h('h3', { className: 'modal-title' }, modalPrompt),
         ),
         h('p', { style: { fontSize: '13px', color: 'var(--dsw-alias-label-secondary, #d1d5db)', margin: '0 0 20px' } },
-          '即将安装「' + title + '」，安装完成后将自动为您启用。',
+          descText,
         ),
         error ? h('p', { className: 'sh-err', role: 'alert' }, error) : null,
         h('div', { style: { display: 'flex', gap: '8px', justifyContent: 'flex-end' } },
-          h(buttonComp, { size: 'sm', variant: 'outline', onClick: onClose, disabled: installing }, '取消'),
+          h(buttonComp, { size: 'sm', variant: 'outline', onClick: safeClose, disabled: installing }, cancelText),
           h(buttonComp, { size: 'sm', variant: 'primary', onClick: onConfirm, disabled: installing }, confirmText),
         ),
       ),

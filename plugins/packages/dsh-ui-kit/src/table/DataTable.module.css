@@ -55,6 +55,11 @@
   cursor: pointer;
 }
 
+.clickableRow:focus-visible {
+  outline: 2px solid var(--dsw-alias-brand-primary);
+  outline-offset: -2px;
+}
+
 /* Custom accessible checkbox/radio indicator for table rows */
 .selectCell {
   width: 40px;
