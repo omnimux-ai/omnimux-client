@@ -3,12 +3,16 @@ import { Button, ModalDialog } from 'dsh-ui-kit'
 import { connectTikTokAccount, errorText, listHubAccounts } from './api.js'
 import {
   ACCOUNT_PLATFORM,
+  authorizeSeatNotice,
   extractAccounts,
   findNewAccount,
   isNeedsLogin,
+  isSeatBillingActive,
   pickAuthUrl,
+  seatErrorMessage,
   snapshotAccountIds,
 } from './account-sidebar-view.js'
+import { extractSocialSeatError } from '../shared/social-seat.js'
 import { IconChevronOutline16, IconWarningOutline16 } from './icons/accounts.js'
 
 /** 授权结果轮询间隔（ms）。 */
@@ -25,17 +29,19 @@ const AUTH_POLL_MS = 3000
  * Esc 关闭；轮询定时器在关闭/完成/检测/卸载四条路径上全部清理。
  * @param {{
  *   t: (key: string, vars?: Record<string, unknown>) => string,
+ *   seats?: import('../shared/social-seat.js').SeatsSummaryView | null,
  *   baselineIds: Set<string>,
  *   onClose: () => void,
  *   onNeedLogin: () => void,
  *   onConnected: (row: Record<string, unknown> | null) => void,
  * }} props
  */
-export function AuthorizeModal({ t, baselineIds, onClose, onNeedLogin, onConnected }) {
+export function AuthorizeModal({ t, seats = null, baselineIds, onClose, onNeedLogin, onConnected }) {
   const [phase, setPhase] = useState('confirm') // confirm | opening | waiting | error
   const [expanded, setExpanded] = useState(true)
   const [authUrl, setAuthUrl] = useState('')
   const [error, setError] = useState('')
+  const seatNotice = authorizeSeatNotice(seats)
   /** @type {import('react').MutableRefObject<(() => void) | null>} */
   const stopRef = useRef(null)
   const baselineRef = useRef(baselineIds instanceof Set ? baselineIds : new Set())
@@ -113,7 +119,10 @@ export function AuthorizeModal({ t, baselineIds, onClose, onNeedLogin, onConnect
         return
       }
       if (!result.ok) {
-        setError(errorText(result.body, result.status))
+        const message = isSeatBillingActive(seats) || extractSocialSeatError(result.body) !== null
+          ? seatErrorMessage(t, result.body, result.status, errorText, seats)
+          : errorText(result.body, result.status)
+        setError(message)
         setPhase('error')
         return
       }
@@ -159,13 +168,30 @@ export function AuthorizeModal({ t, baselineIds, onClose, onNeedLogin, onConnect
     </div>
   )
 
+  const seatNoticeBanner = seatNotice === null
+    ? null
+    : (
+      <div className={`omnimux-publish-seat-callout ${seatNotice.tone}`} data-testid="authorize-seat-notice">
+        {t(`auth.seat.${seatNotice.kind}`, {
+          credits: seatNotice.priceCredits,
+          purchased: seatNotice.purchased,
+          cap: seatNotice.cap,
+        })}
+      </div>
+    )
+
   const footer = phase === 'confirm' || phase === 'opening'
     ? (
       <>
         <Button variant="outline" onClick={handleClose} disabled={phase === 'opening'}>
           {t('auth.cancel')}
         </Button>
-        <Button variant="primary" loading={phase === 'opening'} onClick={() => { void startAuthorize() }}>
+        <Button
+          variant="primary"
+          loading={phase === 'opening'}
+          disabled={seatNotice?.blocked === true}
+          onClick={() => { void startAuthorize() }}
+        >
           {t('auth.go')}
         </Button>
       </>
@@ -193,7 +219,12 @@ export function AuthorizeModal({ t, baselineIds, onClose, onNeedLogin, onConnect
       size="md"
       footer={footer}
     >
-      {phase === 'confirm' || phase === 'opening' ? warnBanner : null}
+      {phase === 'confirm' || phase === 'opening' ? (
+        <>
+          {warnBanner}
+          {seatNoticeBanner}
+        </>
+      ) : null}
 
       {phase === 'opening' ? (
         <p className="omnimux-publish-accounts-modal-hint">{t('auth.opening')}</p>

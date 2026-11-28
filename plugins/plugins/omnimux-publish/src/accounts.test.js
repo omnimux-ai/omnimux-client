@@ -96,6 +96,59 @@ describe('accountAvailability', () => {
     assert.equal(accountAvailability({ ...account, status: 'active', capabilities: { upload_draft: false, publish_direct: true } }).ok, true)
     for (const provider of [undefined, 'unknown', 'zernio']) assert.equal(accountAvailability({ ...account, provider, status: 'active' }).ok, false)
   })
+
+  it('passes through seat whitelist and rejects frozen or unactivated seats with SOCIAL_SEAT_EXPIRED (#412)', () => {
+    const picked = pickAccount({
+      id: 21,
+      platform: 'tiktok',
+      provider: 'tiktok_direct',
+      status: 'active',
+      seat: {
+        id: 8,
+        status: 'frozen',
+        expires_at: '2026-11-20T00:00:00Z',
+        grace_until: '2026-11-27T00:00:00Z',
+        swaps_remaining: 2,
+        can_renew: true,
+        price_credits: 20,
+        secret: 'dropped',
+      },
+    })
+    assert.deepEqual(picked.seat, {
+      id: 8,
+      status: 'frozen',
+      expires_at: '2026-11-20T00:00:00Z',
+      grace_until: '2026-11-27T00:00:00Z',
+      swaps_remaining: 2,
+      can_renew: true,
+      price_credits: 20,
+    })
+    assert.equal('seat' in pickAccount({ id: 22, platform: 'tiktok', provider: 'tiktok_direct' }), false)
+
+    const frozen = accountAvailability(picked)
+    assert.equal(frozen.ok, false)
+    assert.equal(frozen.code, 'SOCIAL_SEAT_EXPIRED')
+    assert.match(frozen.reason, /手动续费/)
+
+    const unactivated = accountAvailability({
+      id: '23',
+      platform: 'tiktok',
+      provider: 'tiktok_direct',
+      status: 'active',
+      seat: { status: 'unactivated' },
+    })
+    assert.equal(unactivated.ok, false)
+    assert.equal(unactivated.code, 'SOCIAL_SEAT_EXPIRED')
+
+    const active = accountAvailability({
+      id: '24',
+      platform: 'tiktok',
+      provider: 'tiktok_direct',
+      status: 'active',
+      seat: { status: 'active', expires_at: '2026-12-27T00:00:00Z' },
+    })
+    assert.equal(active.ok, true)
+  })
 })
 
 describe('AccountSource.list 三分支', () => {

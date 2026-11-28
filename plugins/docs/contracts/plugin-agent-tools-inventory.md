@@ -64,9 +64,11 @@ superseded_by: null
 | 业务功能描述 | 对应 UI 交互 / HTTP 路由 | Agent 工具名称 (`Tool Name`) | 分级 | 状态 | 破坏性 confirm |
 |---|---|---|---|---|---|
 | 查询社媒平台与平台对数据 | 中枢内部 API | `omnimux_social_data` | L1 | `Implemented` | 否 |
-| 获取已授权账号列表（透传 `capabilities: { upload_draft, publish_direct }`） | 账号管理 / 中枢设置 | `omnimux_accounts_list` | L1 | `Implemented` | 否 |
-| 获取账号授权连接 URL | 连接弹窗 | `omnimux_accounts_connect` | L2 | `Implemented` | 否 |
+| 获取已授权账号列表（透传 `capabilities: { upload_draft, publish_direct }` 与可选 `seat` 席位状态） | 账号管理 / 中枢设置 | `omnimux_accounts_list` | L1 | `Implemented` | 否 |
+| 获取账号授权连接 URL（透传 `SOCIAL_SEAT_QUOTA` / `SOCIAL_SEAT_CAP` / `SOCIAL_SEAT_SWAP_LIMIT` 错误码） | 连接弹窗 | `omnimux_accounts_connect` | L2 | `Implemented` | 否 |
 | 解除账号授权关联 | 解绑按钮 | `omnimux_accounts_disconnect` | L1 | `Implemented` | 是 (`confirm: true`) |
+| 查询社媒账号席位汇总与空席状态 | 发布中心账号侧栏 / `GET /omnimux/accounts/seats` | — | UI-Only | `UI-Only` | 豁免（UI 计费状态展示；Agent 经 `omnimux_accounts_list` 读单账号 `seat` 状态） |
+| 手动续费/激活账号席位（+30 天，20 积分） | 发布中心账号侧栏续费确认弹窗 / `POST /omnimux/accounts/:id/renew` | — | UI-Only | `UI-Only` | 豁免（显式人工计费确认，严禁暴露 Agent 自动扣费工具） |
 | 社媒发布媒体文件预签名 | 发布中心上传 | `omnimux_publish_presign` | L2 | `Implemented` | 否 |
 | 向指定社媒平台创建发布任务（支持 TikTok 草稿上传与直发；透传 `tiktok_options`、`title`、`description`、`photo_cover_index`、`is_aigc`） | 发布中心一键发布 / 上传到草稿箱 | `omnimux_publish_create` | L1 | `Implemented` | 否 |
 | 查询社媒发布任务状态与流水（兼容 `sent_to_inbox` / `SEND_TO_USER_INBOX` 草稿送达态） | 发布中心状态卡片 / 手动同步 | `omnimux_publish_get` | L1 | `Implemented` | 否 |
@@ -169,9 +171,9 @@ superseded_by: null
 | 新建图文/视频发布草稿 | 新建草稿表单 | `publish_create_draft` | L1 | `Implemented` | 否 |
 | 修改草稿标题、文案、媒体与话题 | 编辑草稿弹窗 | `publish_update_draft` | L1 | `Implemented` | 否 |
 | 删除指定草稿 | 草稿行删除操作 | `publish_delete_draft` | L1 | `Implemented` | 是 (`confirm: true`) |
-| 查询可用于发布的授权账号（含 `capabilities`） | 账号选择器多选下拉 | `publish_list_accounts` | L1 | `Implemented` | 否 |
-| 为草稿分配分发账号（拦截无发布权限账号与图文格式/混发冲突） | 矩阵账号分配勾选 | `publish_assign_accounts` | L2 | `Implemented` | 否 |
-| 正式提交草稿执行多账号分发（按账号能力路由草稿上传或直发） | 立即发布 / 上传到 TikTok 草稿箱按钮 | `publish_submit` | L1 | `Implemented` | 否 |
+| 查询可用于发布的授权账号（含 `capabilities` 与可选 `seat` 席位状态） | 账号选择器多选下拉 | `publish_list_accounts` | L1 | `Implemented` | 否 |
+| 为草稿分配分发账号（拦截无发布权限账号、过期/待激活席位 `SOCIAL_SEAT_EXPIRED` 与图文格式/混发冲突） | 矩阵账号分配勾选 | `publish_assign_accounts` | L2 | `Implemented` | 否 |
+| 正式提交草稿执行多账号分发（按账号能力路由草稿上传或直发；过期席位以 `SOCIAL_SEAT_EXPIRED` 拦截并指引人工续费） | 立即发布 / 上传到 TikTok 草稿箱按钮 | `publish_submit` | L1 | `Implemented` | 否 |
 | 获取单条发布记录与全账号子任务（含 `sent_to_inbox` 已送达草稿箱状态与手动同步） | 发布任务详情抽屉 | `publish_get_record` | L1 | `Implemented` | 否 |
 | 重试指定失败的账号分发子任务 | 单子任务重试按钮 | `publish_retry_task` | L2 | `Implemented` | 否 |
 | 表格列宽拖拽与排序偏好 | 发布记录表头 | — | UI-Only | `UI-Only` | 豁免 (前端交互) |

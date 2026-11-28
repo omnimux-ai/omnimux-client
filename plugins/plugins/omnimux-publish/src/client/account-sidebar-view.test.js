@@ -3,13 +3,18 @@ import { describe, it } from 'node:test'
 import {
   accountDisplayName,
   accountHandle,
+  accountSeatDisplay,
   accountStatusTone,
+  authorizeSeatNotice,
   extractAccounts,
   filterAccounts,
   findNewAccount,
   isNeedsLogin,
+  isSeatBillingActive,
+  isSeatCapReached,
   matchesAccountQuery,
   pickAuthUrl,
+  seatErrorMessage,
   snapshotAccountIds,
 } from './account-sidebar-view.js'
 
@@ -130,5 +135,129 @@ describe('轮询检测（findNewAccount / snapshotAccountIds）', () => {
     assert.deepEqual(findNewAccount(null, [null, ROW_A]), ROW_A)
     assert.deepEqual(findNewAccount(new Set(), null), null)
     assert.deepEqual(snapshotAccountIds(null), new Set())
+  })
+})
+
+describe('seat billing pure view helpers (#412)', () => {
+  const NOW = Date.parse('2026-11-28T00:00:00Z')
+
+  it('derives authorizeSeatNotice for all 4 seat states and returns null when billing_mode=off', () => {
+    assert.equal(isSeatBillingActive({ billing_mode: 'off', vacant_seats: [] }), false)
+    assert.equal(authorizeSeatNotice({ billing_mode: 'off', vacant_seats: [] }), null)
+
+    const swappable = authorizeSeatNotice({
+      billing_mode: 'seat',
+      seats_purchased: 3,
+      seats_vacant: 1,
+      seats_cap: 20,
+      seat_price_credits: 20,
+      vacant_seats: [{ id: 1, swaps_remaining: 2, same_account_only: false }],
+    })
+    assert.equal(swappable.kind, 'vacantSwappable')
+    assert.equal(swappable.blocked, false)
+
+    const sameOnly = authorizeSeatNotice({
+      billing_mode: 'seat',
+      seats_purchased: 3,
+      seats_vacant: 1,
+      seats_cap: 20,
+      seat_price_credits: 20,
+      vacant_seats: [{ id: 1, swaps_remaining: 0, same_account_only: true }],
+    })
+    assert.equal(sameOnly.kind, 'vacantSameOnly')
+    assert.equal(sameOnly.blocked, false)
+
+    const cap = authorizeSeatNotice({
+      billing_mode: 'seat',
+      seats_purchased: 20,
+      seats_vacant: 0,
+      seats_cap: 20,
+      seat_price_credits: 20,
+      vacant_seats: [],
+    })
+    assert.equal(isSeatCapReached({ billing_mode: 'seat', seats_purchased: 20, seats_vacant: 0, seats_cap: 20, vacant_seats: [] }), true)
+    assert.equal(cap.kind, 'capReached')
+    assert.equal(cap.blocked, true)
+
+    const newSeat = authorizeSeatNotice({
+      billing_mode: 'seat',
+      seats_purchased: 2,
+      seats_vacant: 0,
+      seats_cap: 20,
+      seat_price_credits: 20,
+      vacant_seats: [],
+    })
+    assert.equal(newSeat.kind, 'newSeat')
+    assert.equal(newSeat.blocked, false)
+  })
+
+  it('computes accountSeatDisplay renewal previews (+30d from expires_at when active, from now when frozen)', () => {
+    const active = accountSeatDisplay({
+      id: '1',
+      seat: {
+        status: 'active',
+        expires_at: '2026-12-27T00:00:00Z',
+        can_renew: true,
+        price_credits: 20,
+      },
+    }, NOW)
+    assert.equal(active.expiresDate, '2026-12-27')
+    assert.deepEqual(active.preview, { fromDate: '2026-12-27', toDate: '2027-01-26' })
+    assert.equal(active.isRenewLimit, false)
+
+    const frozen = accountSeatDisplay({
+      id: '2',
+      seat: {
+        status: 'frozen',
+        expires_at: '2026-11-20T00:00:00Z',
+        grace_until: '2026-12-03T00:00:00Z',
+        can_renew: true,
+        price_credits: 20,
+      },
+    }, NOW)
+    assert.equal(frozen.graceDays, 5)
+    assert.deepEqual(frozen.preview, { fromDate: '2026-11-28', toDate: '2026-12-28' })
+
+    const capped = accountSeatDisplay({
+      id: '3',
+      seat: {
+        status: 'active',
+        expires_at: '2027-02-20T00:00:00Z',
+        can_renew: false,
+        renew_blocked_reason: 'SOCIAL_SEAT_RENEW_LIMIT',
+      },
+    }, NOW)
+    assert.equal(capped.isRenewLimit, true)
+  })
+
+  it('maps structured seat error codes via seatErrorMessage', () => {
+    const t = (key, vars = {}) => `${key}:${JSON.stringify(vars)}`
+    assert.equal(
+      seatErrorMessage(t, { error: 'quota-exceeded', code: 'SOCIAL_SEAT_QUOTA', need_credits: 20 }, 402, () => 'fb'),
+      'acct.seat.err.quota:{"credits":20}',
+    )
+    assert.equal(
+      seatErrorMessage(
+        t,
+        { error: 'quota-exceeded', code: 'SOCIAL_SEAT_QUOTA' },
+        402,
+        () => 'fb',
+        { billing_mode: 'seat', seats_purchased: 1, seats_occupied: 1, seats_vacant: 0, seats_cap: 20, seat_price_credits: 25, max_validity_days: 90, vacant_seats: [] },
+      ),
+      'acct.seat.err.quota:{"credits":25}',
+    )
+    assert.equal(
+      seatErrorMessage(t, { error: 'quota-exceeded', message: 'legacy quota msg' }, 402, (b) => String(b.message)),
+      'legacy quota msg',
+    )
+    assert.equal(
+      seatErrorMessage(t, { error: 'SOCIAL_SEAT_CAP', code: 'SOCIAL_SEAT_CAP' }, 409, () => 'fb'),
+      'acct.seat.err.cap:{}',
+    )
+    assert.equal(
+      seatErrorMessage(t, { error: 'SOCIAL_SEAT_RENEW_LIMIT', max_validity_days: 90 }, 409, () => 'fb'),
+      'acct.seat.err.renewLimit:{"days":90}',
+    )
+    assert.equal(seatErrorMessage(t, { error: 'other' }, 500, () => 'fallback'), 'fallback')
   })
 })

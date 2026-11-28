@@ -9,6 +9,8 @@ export const ACCOUNT_KEYS = Object.freeze([
 
 /** Statuses the UI knows how to render. Anything else normalizes to error. */
 const STATUS_VALUES = new Set(['active', 'expiring', 'expired', 'error'])
+const SEAT_STATUS_VALUES = new Set(['active', 'frozen', 'unactivated'])
+const SEAT_BILLING_MODES = new Set(['off', 'seat'])
 
 /** An expires_at inside this window counts as expiring (D7). */
 const EXPIRING_WINDOW_MS = 24 * 60 * 60 * 1000
@@ -59,6 +61,103 @@ export function pickCapabilities(raw) {
 }
 
 /**
+ * Whitelist-copy account seat billing view attached when `billing_mode === 'seat'`.
+ * Omitted completely when absent or malformed so `billing_mode === 'off'` stays clean.
+ * @param {unknown} raw
+ */
+export function pickSeat(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined
+  const src = /** @type {Record<string, unknown>} */ (raw)
+  const status = typeof src.status === 'string' ? src.status.trim().toLowerCase() : ''
+  if (!SEAT_STATUS_VALUES.has(status)) return undefined
+  /** @type {Record<string, unknown>} */
+  const out = { status }
+  if (typeof src.id === 'number' && Number.isInteger(src.id) && src.id > 0) out.id = src.id
+  if (typeof src.expires_at === 'string' && src.expires_at.trim() !== '') out.expires_at = src.expires_at.trim()
+  if (typeof src.grace_until === 'string' && src.grace_until.trim() !== '') out.grace_until = src.grace_until.trim()
+  if (typeof src.swap_count === 'number' && Number.isInteger(src.swap_count) && src.swap_count >= 0) out.swap_count = src.swap_count
+  if (typeof src.swaps_remaining === 'number' && Number.isInteger(src.swaps_remaining) && src.swaps_remaining >= 0) {
+    out.swaps_remaining = src.swaps_remaining
+  }
+  if (typeof src.can_renew === 'boolean') out.can_renew = src.can_renew
+  if (typeof src.renew_blocked_reason === 'string') out.renew_blocked_reason = src.renew_blocked_reason.trim()
+  if (typeof src.price_credits === 'number' && Number.isFinite(src.price_credits) && src.price_credits > 0) {
+    out.price_credits = src.price_credits
+  }
+  return out
+}
+
+/**
+ * Whitelist one vacant seat entry from `GET /api/social/v1/seats`.
+ * @param {unknown} raw
+ */
+function pickVacantSeat(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
+  const src = /** @type {Record<string, unknown>} */ (raw)
+  /** @type {Record<string, unknown>} */
+  const out = {}
+  if (typeof src.id === 'number' && Number.isInteger(src.id) && src.id > 0) out.id = src.id
+  if (typeof src.expires_at === 'string' && src.expires_at.trim() !== '') out.expires_at = src.expires_at.trim()
+  if (typeof src.swaps_remaining === 'number' && Number.isInteger(src.swaps_remaining) && src.swaps_remaining >= 0) {
+    out.swaps_remaining = src.swaps_remaining
+  }
+  if (typeof src.same_account_only === 'boolean') out.same_account_only = src.same_account_only
+  return Object.keys(out).length > 0 ? out : null
+}
+
+/**
+ * Whitelist-copy the browser-safe seats summary from `GET /api/social/v1/seats`.
+ * Returns null if the upstream payload lacks a valid `billing_mode`.
+ * @param {unknown} raw
+ */
+export function pickSeatsView(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
+  const envelope = /** @type {Record<string, unknown>} */ (raw)
+  const src = envelope.data && typeof envelope.data === 'object' && !Array.isArray(envelope.data)
+    ? /** @type {Record<string, unknown>} */ (envelope.data)
+    : envelope
+  const mode = typeof src.billing_mode === 'string' ? src.billing_mode.trim().toLowerCase() : ''
+  if (!SEAT_BILLING_MODES.has(mode)) return null
+  /** @type {Record<string, unknown>} */
+  const out = { billing_mode: mode }
+  for (const key of [
+    'seats_purchased', 'seats_occupied', 'seats_vacant', 'seats_cap',
+    'seat_price_usd', 'seat_price_credits', 'max_validity_days', 'max_swaps_per_window', 'grace_days',
+  ]) {
+    const val = src[key]
+    if (typeof val === 'number' && Number.isFinite(val) && val >= 0) out[key] = val
+  }
+  if (typeof src.wallet_ok === 'boolean') out.wallet_ok = src.wallet_ok
+  if (typeof src.next_expiry === 'string') out.next_expiry = src.next_expiry.trim()
+  if (typeof src.grandfather_until === 'string') out.grandfather_until = src.grandfather_until.trim()
+  if (Array.isArray(src.vacant_seats)) {
+    out.vacant_seats = src.vacant_seats.map(pickVacantSeat).filter((entry) => entry !== null)
+  } else {
+    out.vacant_seats = []
+  }
+  return out
+}
+
+/**
+ * Whitelist-copy the response from `POST /api/social/v1/accounts/:id/renew`.
+ * @param {unknown} raw
+ */
+export function pickRenewView(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
+  const envelope = /** @type {Record<string, unknown>} */ (raw)
+  const src = envelope.data && typeof envelope.data === 'object' && !Array.isArray(envelope.data)
+    ? /** @type {Record<string, unknown>} */ (envelope.data)
+    : envelope
+  const seat = pickSeat(src.seat)
+  if (!seat) return null
+  /** @type {Record<string, unknown>} */
+  const out = { seat }
+  if (typeof src.account_id === 'number' && Number.isFinite(src.account_id)) out.account_id = String(src.account_id)
+  else if (typeof src.account_id === 'string' && src.account_id.trim() !== '') out.account_id = src.account_id.trim()
+  return out
+}
+
+/**
  * @param {unknown} raw
  */
 export function pickAccount(raw) {
@@ -79,6 +178,8 @@ export function pickAccount(raw) {
   if (typeof avatar === 'string' && isAllowedAvatarUrl(avatar, out.id)) out.avatar_url = avatar
   const capabilities = pickCapabilities(row.capabilities)
   if (capabilities) out.capabilities = capabilities
+  const seat = pickSeat(row.seat)
+  if (seat) out.seat = seat
   return out
 }
 

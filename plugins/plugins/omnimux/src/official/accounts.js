@@ -1,5 +1,5 @@
 import { OmnimuxError } from '../media/errors.js'
-import { listFromPayload, pickAccount } from './public-account.js'
+import { listFromPayload, pickAccount, pickRenewView, pickSeatsView } from './public-account.js'
 import { assertSocialSuccess, matchesSocialProvider, requireSocialProvider } from './provider.js'
 
 /**
@@ -49,4 +49,41 @@ export async function disconnectAccount(client, args) {
     throw new OmnimuxError('omnimux-request-failed', message)
   }
   return result
+}
+
+/**
+ * Fetch current social seat billing summary and vacant seats list.
+ * @param {{ withPat: Function }} client
+ */
+export async function getSeats(client) {
+  const raw = assertSocialSuccess(await client.withPat('/api/social/v1/seats'))
+  const view = pickSeatsView(raw)
+  if (!view) {
+    throw new OmnimuxError('omnimux-invalid-response', 'social seats payload is invalid')
+  }
+  return view
+}
+
+/**
+ * Manually renew (or activate) a connected account's seat by +30 days.
+ * UI-Only route: never registered as an autonomous Agent tool.
+ * @param {{ withPat: Function }} client
+ * @param {{ id?: string | number, provider?: unknown }} args
+ */
+export async function renewAccountSeat(client, args = {}) {
+  const provider = requireSocialProvider(args.provider)
+  const rawId = typeof args.id === 'number' ? String(args.id) : String(args.id ?? '').trim()
+  if (!rawId) {
+    throw new OmnimuxError('invalid-account-id', 'account id is required', { status: 400 })
+  }
+  const id = encodeURIComponent(rawId)
+  const raw = assertSocialSuccess(await client.withPat(`/api/social/v1/accounts/${id}/renew?provider=${provider}`, {
+    method: 'POST',
+    body: { provider },
+  }))
+  const view = pickRenewView(raw)
+  if (!view) {
+    throw new OmnimuxError('omnimux-invalid-response', 'social seat renew payload is invalid')
+  }
+  return view
 }

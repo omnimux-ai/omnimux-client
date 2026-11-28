@@ -170,4 +170,54 @@ describe('official client', () => {
       (error) => error instanceof OmnimuxError && error.code === 'omnimux-unconfigured',
     )
   })
+
+  it('preserves structured SOCIAL_SEAT_* conflict codes and 402 SOCIAL_SEAT_QUOTA metadata', async () => {
+    const conflictCases = [
+      { code: 'SOCIAL_SEAT_CAP', message: '社媒绑定席位已达上限，请先解绑一个账号' },
+      { code: 'SOCIAL_SEAT_EXPIRED', message: '社媒绑定席位已过期，请续费或解绑' },
+      { code: 'SOCIAL_SEAT_RENEW_LIMIT', message: '社媒绑定席位已达最长有效期上限', max_validity_days: 90 },
+      { code: 'SOCIAL_SEAT_SWAP_LIMIT', message: '当前空席已达本周期跨号换绑上限' },
+    ]
+    for (const payload of conflictCases) {
+      const client = createOfficialClient({
+        siteBaseUrl: 'https://omnimux.ai',
+        resolveApiKey: () => 'sk-x',
+        resolveAccess: async () => ({ token: 'pat-x', userId: 7 }),
+        fetcher: async () => ({ ok: false, status: 409, json: async () => ({ success: false, ...payload }) }),
+      })
+      await assert.rejects(
+        () => client.withPat('/api/social/v1/posts', { method: 'POST', body: {} }),
+        (error) => error instanceof OmnimuxError
+          && error.code === payload.code
+          && error.status === 409
+          && error.message === payload.message
+          && error.details?.code === payload.code
+          && (payload.max_validity_days === undefined || error.details?.max_validity_days === payload.max_validity_days),
+      )
+    }
+
+    const quotaClient = createOfficialClient({
+      siteBaseUrl: 'https://omnimux.ai',
+      resolveApiKey: () => 'sk-x',
+      resolveAccess: async () => ({ token: 'pat-x', userId: 7 }),
+      fetcher: async () => ({
+        ok: false,
+        status: 402,
+        json: async () => ({
+          success: false,
+          code: 'SOCIAL_SEAT_QUOTA',
+          message: '社媒绑定席位不足或余额不够',
+          need_credits: 20,
+        }),
+      }),
+    })
+    await assert.rejects(
+      () => quotaClient.withPat('/api/social/v1/accounts/12/renew?provider=tiktok_direct', { method: 'POST', body: {} }),
+      (error) => error instanceof OmnimuxError
+        && error.code === 'quota-exceeded'
+        && error.status === 402
+        && error.details?.code === 'SOCIAL_SEAT_QUOTA'
+        && error.details?.need_credits === 20,
+    )
+  })
 })

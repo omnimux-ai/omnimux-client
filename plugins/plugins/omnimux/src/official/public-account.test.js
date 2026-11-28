@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import { computeStatus, filterAccounts, pickAccount, pickAccountsView, pickConnectView } from './public-account.js'
+import { computeStatus, filterAccounts, pickAccount, pickAccountsView, pickConnectView, pickRenewView, pickSeat, pickSeatsView } from './public-account.js'
 
 describe('pickAccount', () => {
   it('preserves provider identity for same-name accounts without inventing missing providers', () => {
@@ -198,5 +198,108 @@ describe('pickConnectView', () => {
   it('keeps only an https auth_url', () => {
     assert.equal(pickConnectView({ data: { auth_url: 'https://omnimux.ai/connect' } }).auth_url, 'https://omnimux.ai/connect')
     assert.equal(pickConnectView({ auth_url: 'http://evil' }).auth_url, '')
+  })
+})
+
+describe('pickSeat / pickSeatsView / pickRenewView (#412)', () => {
+  it('whitelists seat fields on pickAccount and omits seat when absent or malformed', () => {
+    const active = pickAccount({
+      id: 12,
+      platform: 'tiktok',
+      provider: 'tiktok_direct',
+      seat: {
+        id: 7,
+        status: 'active',
+        expires_at: '2026-12-27T11:00:00Z',
+        grace_until: '2027-01-03T11:00:00Z',
+        swap_count: 1,
+        swaps_remaining: 1,
+        can_renew: true,
+        renew_blocked_reason: '',
+        price_credits: 20,
+        internal_ledger_id: 'secret-drop',
+      },
+    })
+    assert.deepEqual(active.seat, {
+      id: 7,
+      status: 'active',
+      expires_at: '2026-12-27T11:00:00Z',
+      grace_until: '2027-01-03T11:00:00Z',
+      swap_count: 1,
+      swaps_remaining: 1,
+      can_renew: true,
+      renew_blocked_reason: '',
+      price_credits: 20,
+    })
+    assert.equal('seat' in pickAccount({ id: 13, platform: 'tiktok', provider: 'tiktok_direct' }), false)
+    assert.equal(pickSeat({ status: 'bogus', id: 1 }), undefined)
+    assert.equal(pickSeat(['frozen']), undefined)
+  })
+
+  it('whitelists GET /seats view and vacant seats, rejecting payloads without valid billing_mode', () => {
+    const view = pickSeatsView({
+      success: true,
+      data: {
+        billing_mode: 'seat',
+        seats_purchased: 3,
+        seats_occupied: 2,
+        seats_vacant: 1,
+        seats_cap: 20,
+        next_expiry: '2026-12-27T11:00:00Z',
+        seat_price_usd: 2,
+        seat_price_credits: 20,
+        wallet_ok: true,
+        grandfather_until: '',
+        max_validity_days: 90,
+        max_swaps_per_window: 2,
+        grace_days: 7,
+        vacant_seats: [
+          { id: 14, expires_at: '2026-12-27T11:00:00Z', swaps_remaining: 2, same_account_only: false, hidden: 'nope' },
+        ],
+        secret_field: 'drop',
+      },
+    })
+    assert.deepEqual(view, {
+      billing_mode: 'seat',
+      seats_purchased: 3,
+      seats_occupied: 2,
+      seats_vacant: 1,
+      seats_cap: 20,
+      next_expiry: '2026-12-27T11:00:00Z',
+      seat_price_usd: 2,
+      seat_price_credits: 20,
+      wallet_ok: true,
+      grandfather_until: '',
+      max_validity_days: 90,
+      max_swaps_per_window: 2,
+      grace_days: 7,
+      vacant_seats: [
+        { id: 14, expires_at: '2026-12-27T11:00:00Z', swaps_remaining: 2, same_account_only: false },
+      ],
+    })
+    assert.equal(pickSeatsView({ data: { billing_mode: 'unknown' } }), null)
+    assert.equal(pickSeatsView(null), null)
+  })
+
+  it('whitelists POST /accounts/:id/renew view', () => {
+    const renewed = pickRenewView({
+      success: true,
+      data: {
+        account_id: 12,
+        seat: { id: 7, status: 'active', expires_at: '2027-01-26T11:00:00Z', can_renew: false, renew_blocked_reason: 'SOCIAL_SEAT_RENEW_LIMIT', price_credits: 20 },
+      },
+    })
+    assert.deepEqual(renewed, {
+      account_id: '12',
+      seat: {
+        id: 7,
+        status: 'active',
+        expires_at: '2027-01-26T11:00:00Z',
+        can_renew: false,
+        renew_blocked_reason: 'SOCIAL_SEAT_RENEW_LIMIT',
+        price_credits: 20,
+      },
+    })
+    assert.equal(pickRenewView({ data: { account_id: 12 } }), null)
   })
 })
