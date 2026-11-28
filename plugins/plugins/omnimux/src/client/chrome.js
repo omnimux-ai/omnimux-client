@@ -75,8 +75,11 @@ export function installHubChrome(ctx) {
       workbench.bind({ layout: inner.layout, sessions: inner.sessions })
       // layout 异步就绪时立即对齐外壳 panels.rightbar，避免首开与刷新后分隔线把手停在 45% 默认位。
       reconcileRightbarFromRatio(undefined, { doc: document })
-      if (typeof inner.layout?.subscribe === 'function') {
-        inner.effect(() => inner.layout.subscribe(() => {
+      const layoutObservable = typeof inner.layout?.panelInfo?.subscribe === 'function'
+        ? inner.layout.panelInfo
+        : (typeof inner.layout?.subscribe === 'function' ? inner.layout : null)
+      if (layoutObservable) {
+        inner.effect(() => layoutObservable.subscribe(() => {
           requestRailActivationSync()
           notifyWorkbenchChange()
         }), 'omnimux: layout panel change listener')

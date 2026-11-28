@@ -294,7 +294,7 @@ function buildE2eHtml() {
     menu.id = 'e2e-more-popup'
     menu.setAttribute('data-menu-material', 'translucent')
     menu.className = 'SidebarRoot_moreMenu__e2e'
-    menu.innerHTML = '<div class="MenuSurface_material">视频剪辑</div>'
+    menu.innerHTML = '<div class="MenuSurface_material"><button type="button" role="menuitem" aria-current="page">视频剪辑</button></div>'
     document.body.append(menu)
   })
 })()
@@ -354,16 +354,45 @@ test('Chromium E2E：固定导航轨 52px 布局、避让红绿灯、业务全�
       const popupMaterial = popup.querySelector('.MenuSurface_material')
       const popupRect = rect(popup)
       const popupBg = getComputedStyle(popupMaterial).backgroundColor
+      const moreCurrentBg = getComputedStyle(popup.querySelector('[aria-current="page"]')).backgroundColor
 
-      // 切回首页后模拟 drawer 模式下的次级栏定位（必须从 52px 右侧滑出）
+      // 切回首页后模拟真实 SidebarRoot drawer 模态（role="dialog" + aria-modal="true" + data-shortcut-modal="sidebar"）
       window.__e2eResetHome()
       rail.querySelector('[data-omnimux-rail-item="home"]').click()
       frame.removeAttribute('data-sidebar-collapsed')
       frame.setAttribute('data-sidebar-drawer', '')
+      const sidebarRoot = document.querySelector('.SidebarRoot_root__e2e')
+      sidebarRoot.setAttribute('role', 'dialog')
+      sidebarRoot.setAttribute('aria-modal', 'true')
+      sidebarRoot.setAttribute('data-shortcut-modal', 'sidebar')
       const drawerHomeView = document.documentElement.getAttribute('data-omnimux-nav-view')
+      const drawerRootLeft = rect(rootEl).left
       const drawerSidebarLeft = rect(sidebarCol).left
 
-      return { homeExpanded, projectsBusiness, popupRect, popupBg, drawerHomeView, drawerSidebarLeft }
+      // 真实业务设置模态弹出（非抽屉）时 #root 恢复全宽铺底避免模态被裁切
+      frame.removeAttribute('data-sidebar-drawer')
+      sidebarRoot.removeAttribute('role')
+      sidebarRoot.removeAttribute('aria-modal')
+      sidebarRoot.removeAttribute('data-shortcut-modal')
+      const settingsDialog = document.createElement('div')
+      settingsDialog.setAttribute('role', 'dialog')
+      settingsDialog.setAttribute('aria-modal', 'true')
+      settingsDialog.setAttribute('data-shortcut-modal', 'settings')
+      rootEl.append(settingsDialog)
+      const modalRootRect = rect(rootEl)
+      settingsDialog.remove()
+
+      return {
+        homeExpanded,
+        projectsBusiness,
+        popupRect,
+        popupBg,
+        moreCurrentBg,
+        drawerHomeView,
+        drawerRootLeft,
+        drawerSidebarLeft,
+        modalRootRect,
+      }
     },
   })
 
@@ -392,10 +421,14 @@ test('Chromium E2E：固定导航轨 52px 布局、避让红绿灯、业务全�
   // 3. 更多浮层定位与材质验证
   assert.equal(metrics.popupRect.left, 60, '更多浮层必须紧贴 52px 固定轨右侧（52 + 8 = 60px）')
   assert.doesNotMatch(metrics.popupBg, /rgba\([^,]+,[^,]+,[^,]+,\s*0\)/, '更多菜单背景必须实底不透明')
+  assert.equal(metrics.moreCurrentBg, 'rgba(255, 255, 255, 0.14)', '官方更多菜单激活子项必须呈现激活态底色')
 
-  // 4. 窄屏抽屉验证
+  // 4. 窄屏抽屉与非抽屉模态验证
   assert.equal(metrics.drawerHomeView, 'home', '切回首页后固定轨视图必须回到 home')
+  assert.equal(metrics.drawerRootLeft, 52, '窄屏抽屉携带 dialog+sidebar 标识时 #root 必须保持 52px 左基准')
   assert.equal(metrics.drawerSidebarLeft, 52, '窄屏抽屉次级会话栏必须从 52px 固定轨右侧滑出')
+  assert.equal(metrics.modalRootRect.left, 0, '非抽屉设置模态开启时 #root 必须扩至视口全宽以防模态被裁切')
+  assert.equal(metrics.modalRootRect.width, 1600)
 
   // 5. Token 白名单完整性确认
   assert.ok(allowlist.includes('--dsw-alias-bg-layer-2'))

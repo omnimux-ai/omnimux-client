@@ -153,6 +153,12 @@ html[data-omnimux-nav-rail-active="1"] ${MORE_MENU_SELECTOR} {
   box-shadow: var(--dsw-shadow-lv2) !important;
   z-index: 1100 !important;
 }
+
+${MORE_MENU_SELECTOR} [aria-current="page"] {
+  background: var(--dsw-alias-interactive-bg-active) !important;
+  color: var(--dsw-alias-label-primary) !important;
+  font-weight: 500 !important;
+}
 `
 
 /**

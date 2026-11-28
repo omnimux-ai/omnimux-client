@@ -421,13 +421,145 @@ describe('nav-rail 固定左侧导航轨', () => {
       settingsBtn.click()
       assert.equal(settingsClicks, 1)
 
-      // 首次引导态出现 → 自动隐藏固定轨并清零偏移变量
+      // 业务模态（如 Agents Anywhere）设置 #root[inert] 时不得误隐固定轨
       const rootEl = doc.getElementById('root')
       rootEl.setAttribute('inert', '')
+      const modal = doc.createElement('div')
+      modal.setAttribute('role', 'dialog')
+      modal.textContent = '远程控制'
+      doc.body.append(modal)
+      win.dispatchEvent(new win.Event('dsh-product-stage'))
+      assert.equal(doc.documentElement.getAttribute(NAV_RAIL_ACTIVE_ATTR), '1')
+      assert.equal(doc.getElementById(NAV_RAIL_ID).hidden, false)
+      modal.remove()
+
+      // 首次引导态出现 → 自动隐藏固定轨并清零偏移变量
+      const guide = doc.createElement('div')
+      guide.setAttribute('data-desktop-onboarding-surface', 'true')
+      doc.body.append(guide)
       win.dispatchEvent(new win.Event('dsh-product-stage'))
       assert.equal(doc.documentElement.hasAttribute(NAV_RAIL_ACTIVE_ATTR), false)
       assert.equal(doc.documentElement.style.getPropertyValue(NAV_RAIL_WIDTH_VAR), '0px')
       assert.equal(doc.getElementById(NAV_RAIL_ID).hidden, true)
+    } finally {
+      disposeRail()
+    }
+  })
+
+  it('通过 layout.panelInfo 读取与订阅官方全局主面板（含 schedules），点首页调用 selectPanel(null) 退出', () => {
+    const { doc } = setupDom()
+    let activePanelId = 'schedules'
+    const listeners = new Set()
+    const selectedPanels = []
+    const panelInfo = {
+      getSnapshot: () => ({ activePanelId }),
+      subscribe: (fn) => {
+        listeners.add(fn)
+        return () => listeners.delete(fn)
+      },
+    }
+    bindWorkbenchDeps({
+      layout: {
+        panelInfo,
+        selectPanel: (id) => {
+          selectedPanels.push(id)
+          activePanelId = id
+          for (const fn of listeners) fn({ activePanelId: id })
+        },
+      },
+    })
+    doc.querySelector('#session-1')?.setAttribute('aria-selected', 'false')
+    const mainEl = doc.createElement('div')
+    mainEl.setAttribute('data-global-panel', 'true')
+    doc.getElementById('root').append(mainEl)
+
+    const disposeActivation = installSidebarActivation({ document: doc, notify: () => {} })
+    const disposeRail = installNavRail(doc)
+    try {
+      const state = computeCurrentNavRailState(doc)
+      assert.equal(state.railId, 'more')
+      assert.equal(state.view, 'business')
+      assert.equal(state.activeMoreItemId, 'schedules')
+      assert.equal(doc.querySelector('[data-omnimux-rail-item="more"]')?.getAttribute('data-active'), 'true')
+
+      doc.querySelector('[data-omnimux-rail-item="home"]').click()
+      assert.deepEqual(selectedPanels, [null])
+      assert.equal(doc.querySelector('[data-omnimux-rail-item="home"]')?.getAttribute('data-active'), 'true')
+    } finally {
+      disposeRail()
+      disposeActivation()
+    }
+  })
+
+  it('settings.launcher（AccountMenu）场景下更新自动穿透菜单进入桌面设置，设置按钮重锚弹出层且支持防抖切换', () => {
+    const { win, doc } = setupDom()
+    doc.querySelector('[data-slot="sidebar.settings"]')?.remove()
+    const footer = doc.querySelector('.SidebarRoot_footArea__qa')
+    const launcherSlot = doc.createElement('div')
+    launcherSlot.setAttribute('data-slot', 'settings.launcher')
+    const launcherBtn = doc.createElement('button')
+    launcherBtn.type = 'button'
+    launcherBtn.setAttribute('aria-haspopup', 'menu')
+    launcherBtn.setAttribute('aria-expanded', 'false')
+    launcherSlot.append(launcherBtn)
+    footer.append(launcherSlot)
+
+    let settingsOpened = 0
+    let desktopTabClicks = 0
+    launcherBtn.addEventListener('click', () => {
+      const existing = doc.getElementById('fake-account-menu')
+      if (existing) {
+        existing.remove()
+        launcherBtn.setAttribute('aria-expanded', 'false')
+        return
+      }
+      launcherBtn.setAttribute('aria-expanded', 'true')
+      const menu = doc.createElement('div')
+      menu.id = 'fake-account-menu'
+      menu.setAttribute('role', 'menu')
+      const item = doc.createElement('button')
+      item.type = 'button'
+      item.setAttribute('role', 'menuitem')
+      item.textContent = '设置'
+      item.addEventListener('click', () => {
+        settingsOpened += 1
+        menu.remove()
+        launcherBtn.setAttribute('aria-expanded', 'false')
+        const dialog = doc.createElement('div')
+        dialog.setAttribute('data-shortcut-modal', 'settings')
+        const nav = doc.createElement('nav')
+        const tabBtn = doc.createElement('button')
+        tabBtn.type = 'button'
+        tabBtn.textContent = '桌面设置'
+        tabBtn.addEventListener('click', () => { desktopTabClicks += 1 })
+        nav.append(tabBtn)
+        dialog.append(nav)
+        doc.body.append(dialog)
+      })
+      menu.append(item)
+      doc.body.append(menu)
+    })
+
+    const disposeRail = installNavRail(doc)
+    try {
+      const settingsRailBtn = doc.querySelector('[data-omnimux-rail-item="settings"]')
+      settingsRailBtn.click()
+      const menu = doc.getElementById('fake-account-menu')
+      assert.ok(menu, '点击设置轨图标应通过 launcher 打开账号菜单')
+      assert.equal(menu.getAttribute('data-omnimux-rail-anchored'), 'settings', '账号菜单必须打上固定轨锚定标记')
+
+      // 再次点击（模拟 Menu 外部 pointerdown 关掉后不得二次重开）
+      settingsRailBtn.dispatchEvent(new win.Event('pointerdown', { bubbles: true }))
+      menu.remove()
+      launcherBtn.setAttribute('aria-expanded', 'false')
+      settingsRailBtn.click()
+      assert.equal(doc.getElementById('fake-account-menu'), null, '已打开状态下二次点击不得重开账号菜单')
+
+      // 无更新 pill 时点更新 → 穿透 launcher 菜单进入桌面设置页签
+      const updateRailBtn = doc.querySelector('[data-omnimux-rail-item="updates"]')
+      updateRailBtn.click()
+      assert.equal(settingsOpened, 1)
+      assert.equal(desktopTabClicks, 1)
     } finally {
       disposeRail()
     }

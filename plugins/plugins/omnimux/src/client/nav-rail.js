@@ -25,7 +25,6 @@ import {
   findOfficialSidebarToggle,
   findVisibleOfficialSidebarToggle,
   isLeftSidebarCollapsed,
-  isOnboardingGuideActive,
   LEFT_COLLAPSED_HTML_ATTR,
   setExplicitLeftCollapseIntent,
   SIDEBAR_ORIGINAL_TOGGLE_ATTR,
@@ -133,9 +132,12 @@ export const NAV_RAIL_BOTTOM_ITEMS = Object.freeze([
 
 /** 白名单令牌 CSS：严格避免裸色值、transition: all，并与 Next/Legacy 双壳配对。 */
 export const NAV_RAIL_CSS = `
-html[${NAV_RAIL_ACTIVE_ATTR}="1"] #root:not(:has([role="dialog"][aria-modal="true"])) {
+html[${NAV_RAIL_ACTIVE_ATTR}="1"] #root:not(:has([role="dialog"][aria-modal="true"]:not([data-shortcut-modal="sidebar"]))) {
   margin-left: var(${NAV_RAIL_WIDTH_VAR}, ${NAV_RAIL_WIDTH_PX}px) !important;
   width: calc(100vw - var(${NAV_RAIL_WIDTH_VAR}, ${NAV_RAIL_WIDTH_PX}px)) !important;
+  left: auto !important;
+  right: auto !important;
+  z-index: auto !important;
   box-sizing: border-box !important;
 }
 
@@ -409,15 +411,65 @@ html[${NAV_RAIL_ACTIVE_ATTR}="1"][data-omnimux-conversation-collapsed][${LEFT_CO
   line-height: 16px;
   color: var(--dsw-alias-label-secondary);
 }
+
+/* 账号设置 Launcher 菜单：锚点位于已隐藏的 .footArea 内，弹出后重锚到固定轨设置按钮右侧 */
+html[${NAV_RAIL_ACTIVE_ATTR}="1"] [role="menu"][data-omnimux-rail-anchored="settings"] {
+  position: fixed !important;
+  position-anchor: none !important;
+  left: calc(var(${NAV_RAIL_WIDTH_VAR}, ${NAV_RAIL_WIDTH_PX}px) + 8px) !important;
+  bottom: 12px !important;
+  top: auto !important;
+  right: auto !important;
+  translate: none !important;
+  border: 1px solid var(--dsw-alias-border-l2) !important;
+  --dsw-menu-surface-fill: var(--dsw-alias-bg-layer-2, var(--dsw-alias-bg-base));
+  --dsw-menu-backdrop-filter: none;
+  box-shadow: var(--dsw-shadow-lv2) !important;
+  z-index: 1100 !important;
+}
 `
 
 function resolveDoc(doc) {
   return doc || hostDocument()
 }
 
+/**
+ * 判断当前是否处于首启引导态：仅存在显式引导标记，或 #root[inert] 且尚未挂载工作区与模态框时隐藏固定轨。
+ * Agents Anywhere（远程控制）与设置弹窗等业务模态也会标记 #root[inert]，不得误判为引导。
+ * @param {Document | null | undefined} doc
+ * @returns {boolean}
+ */
+export function isNavRailOnboardingActive(doc) {
+  if (!doc) return false
+  try {
+    if (doc.querySelector?.('[data-omnimux-runtime-guide], [data-omnimux-native-runtime], [data-desktop-onboarding-surface]')) {
+      return true
+    }
+    const rootEl = typeof doc.getElementById === 'function' ? doc.getElementById('root') : null
+    const rootInert = Boolean(
+      rootEl && (rootEl.inert === true || (typeof rootEl.hasAttribute === 'function' && rootEl.hasAttribute('inert'))),
+    )
+    if (!rootInert) return false
+    if (doc.querySelector?.('[role="dialog"], [data-shortcut-modal]')) return false
+    if (doc.querySelector?.('[data-pane="sidebar"], [class*="sidebarCol"], .dshDesktopSidebarSurface')) return false
+    return true
+  } catch (error) {
+    console.debug('[omnimux-nav-rail] onboarding check failed', error)
+    return false
+  }
+}
+
 function readOfficialGlobalPanelId(doc) {
   try {
-    const snap = getWorkbenchLayout()?.getSnapshot?.()
+    const layout = getWorkbenchLayout()
+    if (typeof layout?.panelInfo?.getSnapshot === 'function') {
+      const info = layout.panelInfo.getSnapshot()
+      if (info && typeof info === 'object' && 'activePanelId' in info) {
+        const panelId = info.activePanelId
+        return typeof panelId === 'string' && panelId && panelId !== 'conversation' ? panelId : null
+      }
+    }
+    const snap = layout?.getSnapshot?.()
     if (typeof snap?.activePanel === 'string' && OFFICIAL_PANEL_IDS.includes(snap.activePanel)) {
       return snap.activePanel
     }
@@ -448,6 +500,9 @@ function readOfficialGlobalPanelId(doc) {
       const label = String(activeRow.getAttribute?.('aria-label') || activeRow.textContent || '').trim()
       if (/^(插件|Plugins)$/i.test(label)) return 'plugins'
       if (/^(自动化任务|自动化|Schedules|Automations)$/i.test(label)) return 'schedules'
+    }
+    if (activePanelEl && attrPanel !== 'false') {
+      return 'global-panel'
     }
   } catch (error) {
     console.debug('[omnimux-nav-rail] read DOM official panel state failed', error)
@@ -558,14 +613,33 @@ export function activateHomeView(doc = resolveDoc()) {
   return { closedGlobalPanel, releasedStage, exitedFullscreen, expandedSidebar }
 }
 
-function findSettingsTrigger(doc) {
+function findDirectSettingsTrigger(doc) {
   const insideTrigger = doc.querySelector('[data-slot="settings.trigger"]')
   const btn = insideTrigger?.closest?.('button')
   if (btn && !btn.closest?.('[role="dialog"]')) return btn
+  const slotBtn = Array.from(doc.querySelectorAll?.('[data-slot="sidebar.settings"] button') || [])
+    .find((el) => !el.closest?.('[role="dialog"]') && !el.closest?.('[data-slot="settings.launcher"]'))
+  return slotBtn || null
+}
+
+function findSettingsLauncherTrigger(doc) {
   const launcherBtn = doc.querySelector('[data-slot="settings.launcher"] button')
   if (launcherBtn && !launcherBtn.closest?.('[role="dialog"]')) return launcherBtn
-  const slotBtn = doc.querySelector('[data-slot="sidebar.settings"] button')
-  if (slotBtn && !slotBtn.closest?.('[role="dialog"]')) return slotBtn
+  return null
+}
+
+function findSettingsTrigger(doc) {
+  return findDirectSettingsTrigger(doc) || findSettingsLauncherTrigger(doc)
+}
+
+function findAccountMenuElement(doc) {
+  const menus = doc?.querySelectorAll?.('[role="menu"]') || []
+  for (const menu of menus) {
+    if (menu.id === NAV_RAIL_MORE_FALLBACK_ID) continue
+    if (menu.closest?.(`#${NAV_RAIL_MORE_FALLBACK_ID}`)) continue
+    if (menu.matches?.(MORE_MENU_SELECTOR) || menu.closest?.(MORE_MENU_SELECTOR)) continue
+    return menu
+  }
   return null
 }
 
@@ -685,7 +759,9 @@ export function installNavRail(doc = resolveDoc()) {
   let fallbackMenu = null
   let fallbackMenuCleanup = null
   let updatesWaitCleanup = null
+  let settingsAnchorCleanup = null
   let wasMoreMenuOpenOnPointerDown = false
+  let wasSettingsMenuOpenOnPointerDown = false
   let prevView = null
   let prevSplit = false
 
@@ -788,13 +864,14 @@ export function installNavRail(doc = resolveDoc()) {
   }
 
   const syncOnboardingMode = () => {
-    const onboarding = isOnboardingGuideActive(doc)
+    const onboarding = isNavRailOnboardingActive(doc)
     if (onboarding) {
       root.removeAttribute(NAV_RAIL_ACTIVE_ATTR)
       root.removeAttribute(NAV_RAIL_VIEW_ATTR)
       root.style.setProperty(NAV_RAIL_WIDTH_VAR, '0px')
       rail.hidden = true
       closeFallbackMoreMenu()
+      settingsAnchorCleanup?.()
       hideTooltip()
       return true
     }
@@ -895,16 +972,32 @@ export function installNavRail(doc = resolveDoc()) {
       return
     }
     if (selectDesktopUpdatesSettingsTab(doc)) return
-    const trigger = findSettingsTrigger(doc)
+    const directTrigger = findDirectSettingsTrigger(doc)
+    const launcherTrigger = directTrigger ? null : findSettingsLauncherTrigger(doc)
+    const trigger = directTrigger || launcherTrigger
     if (!trigger) return
     updatesWaitCleanup?.()
+    let menuOpened = Boolean(launcherTrigger)
+    const stepThroughLauncher = () => {
+      if (selectDesktopUpdatesSettingsTab(doc)) return true
+      if (menuOpened) {
+        const menu = findAccountMenuElement(doc)
+        const entry = menu?.querySelector?.('button[role="menuitem"], [role="menuitem"]')
+        if (entry) {
+          menuOpened = false
+          triggerClick(entry)
+          if (selectDesktopUpdatesSettingsTab(doc)) return true
+        }
+      }
+      return false
+    }
     const Observer = win?.MutationObserver || globalThis.MutationObserver
     if (typeof Observer === 'function') {
       let done = false
       let timer = null
       const observer = new Observer(() => {
         if (done) return
-        if (selectDesktopUpdatesSettingsTab(doc)) {
+        if (stepThroughLauncher()) {
           finishWait()
         }
       })
@@ -920,6 +1013,9 @@ export function installNavRail(doc = resolveDoc()) {
       timer = setTimeout(finishWait, 4000)
     }
     triggerClick(trigger)
+    if (stepThroughLauncher()) {
+      updatesWaitCleanup?.()
+    }
   }
 
   const handleRemoteControlClick = () => {
@@ -933,9 +1029,49 @@ export function installNavRail(doc = resolveDoc()) {
     if (settingsBtn) triggerClick(settingsBtn)
   }
 
+  const stampAccountSettingsMenuAnchor = () => {
+    const menu = findAccountMenuElement(doc)
+    if (!menu) return false
+    if (menu.getAttribute('data-omnimux-rail-anchored') !== 'settings') {
+      menu.setAttribute('data-omnimux-rail-anchored', 'settings')
+    }
+    return true
+  }
+
   const handleSettingsClick = () => {
-    const settingsBtn = findSettingsTrigger(doc)
-    if (settingsBtn) triggerClick(settingsBtn)
+    if (wasSettingsMenuOpenOnPointerDown) {
+      wasSettingsMenuOpenOnPointerDown = false
+      settingsAnchorCleanup?.()
+      return
+    }
+    const directTrigger = findDirectSettingsTrigger(doc)
+    if (directTrigger) {
+      triggerClick(directTrigger)
+      return
+    }
+    const launcherTrigger = findSettingsLauncherTrigger(doc)
+    if (!launcherTrigger) return
+    settingsAnchorCleanup?.()
+    const Observer = win?.MutationObserver || globalThis.MutationObserver
+    if (typeof Observer === 'function') {
+      let timer = null
+      const observer = new Observer(() => {
+        stampAccountSettingsMenuAnchor()
+        if (!findAccountMenuElement(doc) && doc.querySelector('[data-shortcut-modal="settings"]')) {
+          finishAnchorWait()
+        }
+      })
+      const finishAnchorWait = () => {
+        observer.disconnect()
+        if (timer !== null) clearTimeout(timer)
+        if (settingsAnchorCleanup === finishAnchorWait) settingsAnchorCleanup = null
+      }
+      settingsAnchorCleanup = finishAnchorWait
+      observer.observe(doc.body, { childList: true, subtree: true })
+      timer = setTimeout(finishAnchorWait, 4000)
+    }
+    triggerClick(launcherTrigger)
+    stampAccountSettingsMenuAnchor()
   }
 
   const onPointerDownMore = () => {
@@ -947,8 +1083,18 @@ export function installNavRail(doc = resolveDoc()) {
     )
   }
 
+  const onPointerDownSettings = () => {
+    const launcherTrigger = findSettingsLauncherTrigger(doc)
+    wasSettingsMenuOpenOnPointerDown = Boolean(
+      findAccountMenuElement(doc)
+      || launcherTrigger?.getAttribute?.('aria-expanded') === 'true',
+    )
+  }
+
   const moreRailBtn = rail.querySelector('[data-omnimux-rail-item="more"]')
   moreRailBtn?.addEventListener('pointerdown', onPointerDownMore)
+  const settingsRailBtn = rail.querySelector('[data-omnimux-rail-item="settings"]')
+  settingsRailBtn?.addEventListener('pointerdown', onPointerDownSettings)
 
   const onRailClick = (event) => {
     const target = event.target
@@ -1101,6 +1247,7 @@ export function installNavRail(doc = resolveDoc()) {
 
   return () => {
     moreRailBtn?.removeEventListener('pointerdown', onPointerDownMore)
+    settingsRailBtn?.removeEventListener('pointerdown', onPointerDownSettings)
     rail.removeEventListener('click', onRailClick)
     rail.removeEventListener('pointerover', onPointerOver)
     rail.removeEventListener('pointerout', onPointerOut)
@@ -1110,6 +1257,7 @@ export function installNavRail(doc = resolveDoc()) {
     unsubWorkbench?.()
     closeFallbackMoreMenu()
     updatesWaitCleanup?.()
+    settingsAnchorCleanup?.()
     for (const observer of observers) observer.disconnect()
     rail.remove()
     tooltip.remove()

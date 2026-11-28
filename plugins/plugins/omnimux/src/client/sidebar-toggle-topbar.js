@@ -1699,10 +1699,10 @@ html[data-omnimux-nav-rail-active="1"][data-omnimux-nav-view="business"] [data-s
 html[data-omnimux-nav-rail-active="1"][data-omnimux-nav-view="business"] [data-sidebar-right-panel="fullscreen"] [class*="_tabStrip"] {
   padding-left: 10px !important;
 }
-html[data-platform="darwin"][data-omnimux-nav-rail-active="1"][data-omnimux-nav-view="business"] [data-sidebar-right-panel="fullscreen"] [data-dockkit-strip],
-html[data-platform="darwin"][data-omnimux-nav-rail-active="1"][data-omnimux-nav-view="business"] [data-sidebar-right-panel="fullscreen"] [class*="_tabStrip"],
-html[data-omnimux-nav-rail-active="1"][data-omnimux-nav-view="business"] body[data-dsh-desktop-platform="darwin"] [data-sidebar-right-panel="fullscreen"] [data-dockkit-strip],
-html[data-omnimux-nav-rail-active="1"][data-omnimux-nav-view="business"] body[data-dsh-desktop-platform="darwin"] [data-sidebar-right-panel="fullscreen"] [class*="_tabStrip"] {
+html[data-platform="darwin"]:not([data-fullscreen])[data-omnimux-nav-rail-active="1"][data-omnimux-nav-view="business"] [data-sidebar-right-panel="fullscreen"] [data-dockkit-strip],
+html[data-platform="darwin"]:not([data-fullscreen])[data-omnimux-nav-rail-active="1"][data-omnimux-nav-view="business"] [data-sidebar-right-panel="fullscreen"] [class*="_tabStrip"],
+html:not([data-fullscreen])[data-omnimux-nav-rail-active="1"][data-omnimux-nav-view="business"] body[data-dsh-desktop-platform="darwin"] [data-sidebar-right-panel="fullscreen"] [data-dockkit-strip],
+html:not([data-fullscreen])[data-omnimux-nav-rail-active="1"][data-omnimux-nav-view="business"] body[data-dsh-desktop-platform="darwin"] [data-sidebar-right-panel="fullscreen"] [class*="_tabStrip"] {
   padding-left: 34px !important;
 }
 `
@@ -1935,6 +1935,11 @@ export function installSidebarToggleTopbar(doc = typeof document !== 'undefined'
   let topbarRetryAttempt = 0
 
   const topbarControlMissing = () => {
+    const root = doc.documentElement
+    if (root?.getAttribute?.('data-omnimux-nav-rail-active') === '1'
+      && root?.getAttribute?.('data-omnimux-nav-view') === 'business') {
+      return false
+    }
     // 存在但不可见（例如落在隐藏 bottomPanel tabBar 里）同样算缺失，继续自愈。
     const toggle = doc.querySelector(`[${SIDEBAR_TOGGLE_TOPBAR_ATTR}="1"]`)
     if (!toggle || !isInjectedControlVisible(toggle, doc)) return true
@@ -2089,7 +2094,14 @@ export function installSidebarToggleTopbar(doc = typeof document !== 'undefined'
     desktopObserver = new ObserverClass(() => {
       scheduleSync()
     })
-    const rootFilter = ['data-dsh-desktop-mode', 'data-dsh-desktop-platform', 'data-platform', 'data-fullscreen']
+    const rootFilter = [
+      'data-dsh-desktop-mode',
+      'data-dsh-desktop-platform',
+      'data-platform',
+      'data-fullscreen',
+      'data-omnimux-nav-rail-active',
+      'data-omnimux-nav-view',
+    ]
     const bodyFilter = ['data-dsh-desktop-mode', 'data-dsh-desktop-platform']
     if (doc.documentElement) {
       desktopObserver.observe(doc.documentElement, {

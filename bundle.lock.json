@@ -10,7 +10,7 @@
       "version": "0.1.8",
       "path": "plugins/plugins/omnimux",
       "spec": "link:../../plugins/plugins/omnimux",
-      "contentHash": "sha256:a67c6fbafecd77bc94ac1b885d6b0139857da76b61a28d26ff45b877a81993fd"
+      "contentHash": "sha256:9f66b606353a1522791130db826fb3cbc402c13e66b68cea5756355fb5ae6b5b"
     },
     {
       "name": "omnimux-accounts",

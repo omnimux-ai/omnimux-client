@@ -2335,7 +2335,7 @@ describe('Nav-rail Chrome offsets and direct new-session trigger', () => {
     const css = doc.getElementById('omnimux-rightbar-chrome-styles')?.textContent || ''
     assert.match(css, /--omnimux-nav-rail-width/)
     assert.match(css, /calc\(100vw\s*-\s*var\(--omnimux-nav-rail-width,\s*52px\)/)
-    assert.match(css, /html\[data-omnimux-nav-rail-active="1"\]\[data-omnimux-nav-view="business"\]\s+body\[data-dsh-desktop-platform="darwin"\]/)
+    assert.match(css, /html:not\(\[data-fullscreen\]\)\[data-omnimux-nav-rail-active="1"\]\[data-omnimux-nav-view="business"\]\s+body\[data-dsh-desktop-platform="darwin"\]/)
   })
 })
 
