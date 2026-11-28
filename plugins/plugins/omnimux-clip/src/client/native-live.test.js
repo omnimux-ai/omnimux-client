@@ -816,10 +816,48 @@ test('Phase 2 subtitles: SRT, Whisper verbose_json, cues with timeOffsetSec, set
     (error) => error.code === 'subtitle-invalid',
   )
   await assert.rejects(
+    edit([{ type: 'import_subtitles', transcriptJson: 'null' }]),
+    (error) => error.code === 'subtitle-invalid',
+  )
+  await assert.rejects(
     edit([{ type: 'import_subtitles', timeOffsetSec: -1, cues: [{ text: 'Bad', startSec: 0.2, endSec: 1.0 }] }]),
     (error) => error.code === 'subtitle-invalid',
   )
 
+  // P1-2: adjacent Whisper segments sharing boundary never duplicate short boundary word
+  const boundarySub = await edit([
+    {
+      type: 'import_subtitles',
+      mode: 'replace',
+      transcriptJson: JSON.stringify({
+        language: 'en',
+        segments: [
+          { start: 0.0, end: 1.0, text: 'Hello world' },
+          { start: 1.0, end: 2.0, text: 'Next line' },
+        ],
+        words: [
+          { word: 'Hello', start: 0.1, end: 0.5 },
+          { word: 'world', start: 0.55, end: 0.9 },
+          { word: 'Next', start: 1.0, end: 1.04 },
+          { word: 'line', start: 1.1, end: 1.8 },
+        ],
+      }),
+    },
+  ])
+  assert.equal(boundarySub.results[0].subtitleCount, 2)
+  const snapBoundary = readNativeSnapshot({ view: 'full', revision: 5 })
+  assert.equal(snapBoundary.subtitles.at(0).text, 'Hello world')
+  assert.equal(snapBoundary.subtitles.at(1).text, 'Next line')
+
+  // P1-4: coordinate position-only set_caption_style update succeeds
+  await edit([
+    { type: 'set_caption_style', position: { x: 0.5, y: 0.8 } },
+  ])
+
+  await store().undo()
+  await store().undo()
+  const afterBoundaryUndo = readNativeSnapshot({ view: 'full', revision: 4 })
+  assert.equal(afterBoundaryUndo.subtitles.at(0).animationStyle, 'karaoke')
   await store().undo()
   const afterUndo = readNativeSnapshot({ view: 'full', revision: 3 })
   assert.equal(afterUndo.subtitles.at(0).animationStyle, 'bounce')
@@ -891,9 +929,19 @@ test('Phase 2 transcript analysis and pause/filler/range cuts with validateOnly,
   assert.equal(restored.durationSec, 6)
   assert.equal(restored.subtitles.at(0).startSec, 0.2)
 
-  // Explicit ranges & TRACK_LOCKED guard
+  // Explicit ranges, filler padding near timeline end (clamped safely), & TRACK_LOCKED guard
   await edit([{ type: 'cut_transcript_ranges', mode: 'ranges', ranges: [{ fromSec: 1.4, toSec: 2.2 }] }])
   assert.equal(Number(readNativeSnapshot({ view: 'summary', revision: 4 }).durationSec.toFixed(2)), 5.2)
+
+  await edit([
+    {
+      type: 'import_subtitles',
+      mode: 'replace',
+      cues: [{ text: 'end um', startSec: 4.5, endSec: 5.2, words: [{ text: 'end', startSec: 4.5, endSec: 4.9 }, { text: 'um', startSec: 4.95, endSec: 5.2 }] }],
+    },
+    { type: 'cut_transcript_ranges', mode: 'fillers', paddingSec: 0.2 },
+  ])
+  assert.ok(readNativeSnapshot({ view: 'summary', revision: 5 }).durationSec < 5.1)
 
   await edit([{ type: 'set_track_state', trackId: 'v-talk', locked: true }])
   await assert.rejects(
@@ -962,15 +1010,36 @@ test('Phase 2 set_marker, remove_marker, and set_audio_ducking full projection a
   const afterRedo = readNativeSnapshot({ view: 'full', revision: 3 })
   assert.equal(afterRedo.markerCount, 1)
   assert.equal(afterRedo.markers[0].label, 'Drop 1 Final')
+
+  // P1-4 / P2: preserve enabled: false when updating amountDb, and omit audioType when cleared via 'none'
+  const disabledUpdate = await edit([
+    { type: 'set_audio_ducking', clipId: 'music-clip', enabled: false },
+  ])
+  assert.equal(disabledUpdate.results[0].liveDucking.enabled, false)
+  const updateAmountWhileDisabled = await edit([
+    { type: 'set_audio_ducking', clipId: 'music-clip', amountDb: 20 },
+  ])
+  assert.equal(updateAmountWhileDisabled.results[0].liveDucking.enabled, false)
+  assert.equal(updateAmountWhileDisabled.results[0].liveDucking.amountDb, 20)
+
+  const clearedAudioType = await edit([
+    { type: 'set_audio_ducking', clipId: 'music-clip', audioType: 'none' },
+  ])
+  assert.equal(Object.hasOwn(clearedAudioType.results[0], 'audioType'), false)
+  const musicAfterClear = readNativeSnapshot({ view: 'full', revision: 6 }).clips.find((row) => row.id === 'music-clip')
+  assert.equal(musicAfterClear.audioType, undefined)
 })
 
-test('Phase 2 real BeatDetectionEngine, extractHighlights, and sync_clips_to_beats on synthetic 120 BPM PCM (#phase2)', async () => {
+test('Phase 2 real BeatDetectionEngine, extractHighlights, and sync_clips_to_beats on synthetic 120 BPM & 96 BPM PCM (#phase2)', async () => {
   // AC-M2-03, AC-M2-07
-  // Missing audio fails closed with audio-analysis-failed
+  // Empty mediaLibrary truly exercises no-audio-source rejection before WebAudio decoding
+  const initialProject = store().project
+  useProjectStore.setState({ project: { ...initialProject, mediaLibrary: { ...initialProject.mediaLibrary, items: [] } } })
   await assert.rejects(
     executeNativeAnalyze({ mode: 'beats' }, { assertCurrent }),
     (error) => error.code === 'audio-analysis-failed',
   )
+  useProjectStore.setState({ project: initialProject })
 
   const bgmFile = new File(['pcm synth'], 'bgm-120bpm.wav', { type: 'audio/wav' })
   const bgmItem = {
@@ -991,10 +1060,18 @@ test('Phase 2 real BeatDetectionEngine, extractHighlights, and sync_clips_to_bea
   await edit([
     { type: 'add_track', trackType: 'audio', trackId: 'a-bgm' },
     { type: 'add_clip', trackId: 'a-bgm', clipId: 'bgm-clip', mediaId: 'bgm-media', startSec: 0, durationSec: 10 },
+    { type: 'add_clip', trackId: 'a-bgm', clipId: 'bgm-trimmed', mediaId: 'bgm-media', startSec: 10, sourceInSec: 5, sourceOutSec: 10, durationSec: 5 },
     { type: 'add_track', trackType: 'video', trackId: 'v-broll' },
     { type: 'add_clip', trackId: 'v-broll', clipId: 'broll-1', mediaId: 'source', startSec: 0, durationSec: 4 },
     { type: 'add_clip', trackId: 'v-broll', clipId: 'broll-2', mediaId: 'source', startSec: 4, durationSec: 4 },
   ])
+
+  // P1-5a: ultra-short audio (< 2048 samples) fails cleanly with audio-analysis-failed instead of RangeError
+  const shortBuf = createSyntheticBeatAudioBuffer({ durationSec: 0.02, sampleRate: 44100, bpm: 120 })
+  await assert.rejects(
+    executeNativeAnalyze({ mode: 'beats', clipId: 'bgm-clip' }, { assertCurrent, decodeAudioBuffer: async () => shortBuf }),
+    (error) => error.code === 'audio-analysis-failed',
+  )
 
   const syntheticAudio = createSyntheticBeatAudioBuffer({ durationSec: 10, sampleRate: 44100, bpm: 120, peakStartSec: 5, peakEndSec: 10 })
   const decodeAudioBuffer = async () => syntheticAudio
@@ -1005,8 +1082,65 @@ test('Phase 2 real BeatDetectionEngine, extractHighlights, and sync_clips_to_bea
   )
   assert.equal(beatRes.mode, 'beats')
   assert.equal(beatRes.clipId, 'bgm-clip')
+  assert.ok(beatRes.confidence > 0.3, `expected genuine beat confidence > 0.3, got ${beatRes.confidence}`)
   assert.ok(beatRes.bpm >= 110 && beatRes.bpm <= 130, `expected BPM near 120, got ${beatRes.bpm}`)
   assert.ok(beatRes.beatCount >= 10, `expected >= 10 real detected beats, got ${beatRes.beatCount}`)
+
+  // P1-5b & non-120 BPM falsification: 96 BPM with soft intro beat aligns downbeats & snapToDownbeats matches downbeats[]
+  const interval96 = 60 / 96
+  const samples96 = Float32Array.from({ length: 10 * 44100 }, (_, sampleIndex) => {
+    const t = sampleIndex / 44100
+    const hum = 0.004 * Math.sin(2 * Math.PI * 60 * t)
+    if (t < interval96) return hum
+    const beatIndex = Math.floor((t - interval96) / interval96 + 1e-9)
+    const beatTime = beatIndex * interval96 + interval96
+    const dt = t - beatTime
+    if (dt < 0 || dt >= 0.055 || beatTime > 9.9) return hum
+    const amp = beatIndex === 0 ? 0.22 : (beatIndex % 4 === 1 ? 0.95 : 0.45)
+    return hum + amp * Math.exp(-dt * 50) * Math.sin(2 * Math.PI * 160 * dt)
+  })
+  const synthetic96 = {
+    sampleRate: 44100,
+    length: samples96.length,
+    numberOfChannels: 1,
+    duration: 10,
+    getChannelData: () => samples96,
+    copyFromChannel: (dest, _ch, start = 0) => { dest.set(samples96.subarray(start, start + dest.length)) },
+    copyToChannel: () => {},
+  }
+  const beat96Downbeats = await executeNativeAnalyze(
+    { mode: 'beats', clipId: 'bgm-clip', minBpm: 70, maxBpm: 140, snapToDownbeats: true },
+    { assertCurrent, decodeAudioBuffer: async () => synthetic96 },
+  )
+  assert.ok(beat96Downbeats.confidence > 0.3, `expected 96 BPM confidence > 0.3, got ${beat96Downbeats.confidence}`)
+  assert.ok(beat96Downbeats.bpm >= 88 && beat96Downbeats.bpm <= 104, `expected BPM near 96, got ${beat96Downbeats.bpm}`)
+  assert.deepEqual(
+    beat96Downbeats.beats.map((b) => Number(b.timeSec.toFixed(3))),
+    beat96Downbeats.downbeats.map((t) => Number(t.toFixed(3))),
+  )
+
+  // P1-5c: minBpm > 200 and minClipDurationSec > 60 without explicit max bounds do not invert
+  const highMinBpm = await executeNativeAnalyze(
+    { mode: 'beats', clipId: 'bgm-clip', minBpm: 210 },
+    { assertCurrent, decodeAudioBuffer },
+  )
+  assert.equal(highMinBpm.mode, 'beats')
+
+  // P1-1: highlights on trimmed clip strictly stay within clip timeline window [10, 15] & positive duration
+  const trimmedHighlight = await executeNativeAnalyze(
+    { mode: 'highlights', clipId: 'bgm-trimmed', targetClipCount: 2, minClipDurationSec: 2, maxClipDurationSec: 4 },
+    { assertCurrent, decodeAudioBuffer },
+  )
+  assert.ok(trimmedHighlight.highlightCount >= 1)
+  for (const h of trimmedHighlight.highlights) {
+    assert.ok(h.durationSec > 0.5, `expected positive trimmed highlight duration, got ${h.durationSec}`)
+    assert.ok(h.startSec >= 10 - 1e-3 && h.endSec <= 15 + 1e-3, `trimmed highlight [${h.startSec}, ${h.endSec}] escaped [10, 15]`)
+  }
+  const longMinHighlight = await executeNativeAnalyze(
+    { mode: 'highlights', clipId: 'bgm-clip', minClipDurationSec: 70 },
+    { assertCurrent, decodeAudioBuffer },
+  )
+  assert.equal(longMinHighlight.mode, 'highlights')
 
   const highlightRes = await executeNativeAnalyze(
     { mode: 'highlights', clipId: 'bgm-clip', targetClipCount: 2, minClipDurationSec: 2, maxClipDurationSec: 4 },

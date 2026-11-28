@@ -5,7 +5,7 @@ type: "contract"
 status: "living"
 authority: "L1"
 date: "2026-11-21"
-updated: "2026-11-23"
+updated: "2026-11-28"
 ---
 
 # 画布剪辑归属与实时控制

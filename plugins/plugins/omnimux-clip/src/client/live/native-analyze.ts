@@ -1,6 +1,6 @@
 import { ClipDomainError } from '../../errors.js'
 import { analyzeTranscriptWith } from '../../timeline/analyzeTranscriptCore.js'
-import { BeatDetectionEngine } from '../openreel/core/audio/beat-detection-engine'
+import { BeatDetectionEngine, type BeatAnalysisResult } from '../openreel/core/audio/beat-detection-engine'
 import {
   DEFAULT_FILLER_PHRASES,
   buildTranscript,
@@ -93,6 +93,14 @@ function selectAudioTarget(project: Project, request: Fields): { mediaItem: Medi
 
 async function resolveBlobForMedia(mediaItem: MediaItem): Promise<Blob> {
   if (mediaItem.blob instanceof Blob) return mediaItem.blob
+  if (mediaItem.fileHandle && typeof mediaItem.fileHandle.getFile === 'function') {
+    try {
+      const file = await mediaItem.fileHandle.getFile()
+      if (file instanceof Blob) return file
+    } catch (error) {
+      console.warn('[omnimux-clip] failed to read fileHandle media for audio analysis:', error)
+    }
+  }
   if (typeof mediaItem.originalUrl === 'string' && mediaItem.originalUrl.startsWith('blob:')) {
     try {
       const response = await fetch(mediaItem.originalUrl, { redirect: 'error' })
@@ -104,32 +112,69 @@ async function resolveBlobForMedia(mediaItem: MediaItem): Promise<Blob> {
   throw new ClipDomainError('audio-analysis-failed', 'Media audio bytes are not loaded in the editor')
 }
 
+export async function analyzeAudioBeatsSafely(
+  audioBuffer: AudioBuffer,
+  config?: { minBpm?: number; maxBpm?: number; sensitivity?: number },
+): Promise<BeatAnalysisResult> {
+  if (audioBuffer.length < 2048) {
+    throw new ClipDomainError('audio-analysis-failed', 'Audio clip is too short for beat detection')
+  }
+  const engine = new BeatDetectionEngine(config)
+  try {
+    return await engine.analyzeAudioBuffer(audioBuffer)
+  } catch (error) {
+    console.warn('[omnimux-clip] BeatDetectionEngine failed:', error)
+    throw new ClipDomainError(
+      'audio-analysis-failed',
+      error instanceof Error ? `Beat analysis failed: ${error.message}` : 'Beat analysis failed',
+    )
+  }
+}
+
 function rankAudioHighlights(
   audioBuffer: AudioBuffer,
   transcript: TranscriptWord[],
   prefs: { targetClipCount: number; minClipDuration: number; maxClipDuration: number },
+  bounds?: { start: number; end: number },
 ) {
   const analysis = analyzeAudioForHighlights(audioBuffer, transcript)
-  const usable = analysis.segments.filter((segment) => !segment.isSilence)
+  const boundStart = bounds ? Math.max(0, bounds.start) : 0
+  const boundEnd = bounds ? Math.min(analysis.duration, bounds.end) : analysis.duration
+  const boundSpan = Math.max(0, boundEnd - boundStart)
+  if (boundSpan <= 1e-3) return []
+
+  const usable = analysis.segments
+    .filter((segment) => !segment.isSilence && segment.end > boundStart + 1e-4 && segment.start < boundEnd - 1e-4)
+    .map((segment) => ({
+      ...segment,
+      start: Math.max(boundStart, segment.start),
+      end: Math.min(boundEnd, segment.end),
+    }))
+    .filter((segment) => segment.end - segment.start > 1e-4)
   if (usable.length === 0) return []
 
-  const windowDuration = Math.min(prefs.maxClipDuration, Math.max(prefs.minClipDuration, 15))
+  const windowDuration = Math.min(prefs.maxClipDuration, Math.max(prefs.minClipDuration, 15), boundSpan)
+  if (!(windowDuration > 1e-3)) return []
+
   const maxRms = Math.max(...usable.map((segment) => segment.rmsDb))
   const minRms = Math.min(...usable.map((segment) => segment.rmsDb))
   const rmsRange = Math.max(maxRms - minRms, 1)
 
-  const candidates = usable.map((anchor) => {
-    const start = Math.min(
-      Math.max(0, anchor.start - windowDuration / 3),
-      Math.max(0, analysis.duration - windowDuration),
-    )
-    const end = Math.min(analysis.duration, start + windowDuration)
-    const windowSegments = usable.filter((segment) => segment.end > start && segment.start < end)
-    const energy = windowSegments.reduce((total, seg) => total + (seg.rmsDb - minRms) / rmsRange, 0) / Math.max(windowSegments.length, 1)
-    const speech = windowSegments.reduce((total, seg) => total + seg.speechRate, 0) / Math.max(windowSegments.length, 1)
-    const score = Math.min(10, Math.max(1, 1 + energy * 7 + Math.min(speech, 2) * 1))
-    return { start, end, score }
-  })
+  const candidates = usable
+    .map((anchor) => {
+      const start = Math.min(
+        Math.max(boundStart, anchor.start - windowDuration / 3),
+        Math.max(boundStart, boundEnd - windowDuration),
+      )
+      const end = Math.min(boundEnd, start + windowDuration)
+      if (end - start <= 1e-3) return null
+      const windowSegments = usable.filter((segment) => segment.end > start && segment.start < end)
+      const energy = windowSegments.reduce((total, seg) => total + (seg.rmsDb - minRms) / rmsRange, 0) / Math.max(windowSegments.length, 1)
+      const speech = windowSegments.reduce((total, seg) => total + seg.speechRate, 0) / Math.max(windowSegments.length, 1)
+      const score = Math.min(10, Math.max(1, 1 + energy * 7 + Math.min(speech, 2) * 1))
+      return { start, end, score }
+    })
+    .filter((entry): entry is { start: number; end: number; score: number } => entry !== null)
 
   const selected: Array<{ start: number; end: number; score: number; title: string; reason: string }> = []
   for (const candidate of candidates.sort((a, b) => b.score - a.score)) {
@@ -222,7 +267,8 @@ export async function executeNativeAnalyze(args: unknown, options: NativeAnalyze
   if (mode === 'beats') {
     onlyKeys(request, BEAT_KEYS, 'clip_analyze beats')
     const minBpm = request.minBpm === undefined ? 60 : number(request.minBpm, 'minBpm', 30, 240)
-    const maxBpm = request.maxBpm === undefined ? 200 : number(request.maxBpm, 'maxBpm', minBpm, 300)
+    const defaultMaxBpm = Math.max(200, minBpm)
+    const maxBpm = request.maxBpm === undefined ? defaultMaxBpm : number(request.maxBpm, 'maxBpm', minBpm, 300)
     const sensitivity = request.sensitivity === undefined ? 0.5 : number(request.sensitivity, 'sensitivity', 0.05, 1)
     const subdivision = request.subdivision === undefined ? 1 : number(request.subdivision, 'subdivision', 1, 4)
     if (subdivision !== 1 && subdivision !== 2 && subdivision !== 4) invalid('subdivision must be 1, 2, or 4')
@@ -231,8 +277,7 @@ export async function executeNativeAnalyze(args: unknown, options: NativeAnalyze
     if (!Number.isInteger(limit)) invalid('limit must be an integer')
 
     const { audioBuffer, mediaItem, clip } = await resolveAudioBufferForClipOrMedia(project, request, options)
-    const engine = new BeatDetectionEngine({ minBpm, maxBpm, sensitivity })
-    const rawAnalysis = await engine.analyzeAudioBuffer(audioBuffer)
+    const rawAnalysis = await analyzeAudioBeatsSafely(audioBuffer, { minBpm, maxBpm, sensitivity })
     options.assertCurrent?.()
 
     const speed = clip?.speed && clip.speed > 0 ? clip.speed : 1
@@ -247,7 +292,7 @@ export async function executeNativeAnalyze(args: unknown, options: NativeAnalyze
         timeSec: Number((clip ? timelineStart + (beat.time - inPoint) / speed : beat.time).toFixed(4)),
         strength: Number(beat.strength.toFixed(4)),
         index: beat.index,
-        isDownbeat: beat.index % 4 === 0,
+        isDownbeat: rawAnalysis.downbeats.some((downbeatTime) => Math.abs(downbeatTime - beat.time) < 1e-3),
       }))
       .filter((beat) => !snapToDownbeats || beat.isDownbeat)
 
@@ -293,39 +338,46 @@ export async function executeNativeAnalyze(args: unknown, options: NativeAnalyze
   const targetClipCount = request.targetClipCount === undefined ? 5 : number(request.targetClipCount, 'targetClipCount', 1, 20)
   if (!Number.isInteger(targetClipCount)) invalid('targetClipCount must be an integer')
   const minClipDuration = request.minClipDurationSec === undefined ? 5 : number(request.minClipDurationSec, 'minClipDurationSec', 1, 120)
-  const maxClipDuration = request.maxClipDurationSec === undefined ? 60 : number(request.maxClipDurationSec, 'maxClipDurationSec', minClipDuration, 300)
+  const defaultMaxClipDuration = Math.max(60, minClipDuration)
+  const maxClipDuration = request.maxClipDurationSec === undefined ? defaultMaxClipDuration : number(request.maxClipDurationSec, 'maxClipDurationSec', minClipDuration, 300)
 
   const { audioBuffer, mediaItem, clip } = await resolveAudioBufferForClipOrMedia(project, request, options)
   const transcript = buildTranscript(project.timeline.subtitles, captionTrackId ? { captionTrackId } : {})
   const speed = clip?.speed && clip.speed > 0 ? clip.speed : 1
   const inPoint = clip?.inPoint ?? 0
+  const outPoint = clip ? Math.min(audioBuffer.duration, clip.outPoint) : audioBuffer.duration
   const timelineStart = clip?.startTime ?? 0
 
-  const transcriptWords = transcript.words.map((word) => ({
-    text: word.text,
-    start: clip ? Math.max(0, (word.start - timelineStart) * speed + inPoint) : word.start,
-    end: clip ? Math.max(0, (word.end - timelineStart) * speed + inPoint) : word.end,
-  }))
+  const transcriptWords = transcript.words
+    .map((word) => ({
+      text: word.text,
+      start: clip ? (word.start - timelineStart) * speed + inPoint : word.start,
+      end: clip ? (word.end - timelineStart) * speed + inPoint : word.end,
+    }))
+    .filter((word) => word.end > inPoint && word.start < outPoint && word.end >= word.start)
 
-  const extracted = rankAudioHighlights(audioBuffer, transcriptWords, {
-    targetClipCount,
-    minClipDuration,
-    maxClipDuration,
-  })
+  const extracted = rankAudioHighlights(
+    audioBuffer,
+    transcriptWords,
+    { targetClipCount, minClipDuration, maxClipDuration },
+    clip ? { start: inPoint, end: outPoint } : undefined,
+  )
   options.assertCurrent?.()
 
-  const highlights = extracted.map((item) => {
-    const startSec = Number((clip ? Math.max(0, timelineStart + (item.start - inPoint) / speed) : item.start).toFixed(3))
-    const endSec = Number((clip ? Math.max(startSec, timelineStart + (item.end - inPoint) / speed) : item.end).toFixed(3))
-    return {
-      startSec,
-      endSec,
-      durationSec: Number((endSec - startSec).toFixed(3)),
-      score: Number(item.score.toFixed(2)),
-      title: item.title,
-      reason: item.reason,
-    }
-  })
+  const highlights = extracted
+    .map((item) => {
+      const startSec = Number((clip ? Math.max(timelineStart, timelineStart + (item.start - inPoint) / speed) : item.start).toFixed(3))
+      const endSec = Number((clip ? Math.max(startSec, timelineStart + (item.end - inPoint) / speed) : item.end).toFixed(3))
+      return {
+        startSec,
+        endSec,
+        durationSec: Number((endSec - startSec).toFixed(3)),
+        score: Number(item.score.toFixed(2)),
+        title: item.title,
+        reason: item.reason,
+      }
+    })
+    .filter((row) => row.durationSec > 1e-3)
 
   return {
     projectId: project.id,

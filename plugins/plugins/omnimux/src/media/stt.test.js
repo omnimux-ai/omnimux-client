@@ -355,4 +355,11 @@ test('STT verbose_json preserves sanitized language, duration, segments, and wor
     fetcher: sttFetcher({}, verboseBody),
   })
   assert.deepEqual(slimJson, { mode: 'live', model: 'whisper-1', text: 'Hello OmniMux' })
+
+  const wrappedVerbose = await executeOmnimuxSpeechToText({
+    ...request,
+    response_format: 'verbose_json',
+    fetcher: sttFetcher({}, { data: verboseBody }),
+  })
+  assert.deepEqual(wrappedVerbose, verbose)
 })

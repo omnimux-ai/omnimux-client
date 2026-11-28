@@ -1,5 +1,4 @@
 import { ClipDomainError } from '../../errors.js'
-import { BeatDetectionEngine } from '../openreel/core/audio/beat-detection-engine'
 import { DEFAULT_ESSENTIAL_SOUND_OPTIONS } from '../openreel/core/audio/essential-sound'
 import { DEFAULT_LIVE_DUCKING, normalizeLiveDucking } from '../openreel/core/audio/live-ducking'
 import {
@@ -25,10 +24,10 @@ import {
   type Subtitle,
   type SubtitleWord,
 } from '../openreel/core/types/timeline'
-import { resolveAudioBufferForClipOrMedia, type NativeAnalyzeOptions } from './native-analyze'
+import { analyzeAudioBeatsSafely, resolveAudioBufferForClipOrMedia, type NativeAnalyzeOptions } from './native-analyze'
 import { boolean, fields, invalid, number, onlyKeys, referenceId, seconds, text, type Fields } from './native-input'
 import { normalizeColor, parseCaptionStylePatch } from './native-overlays'
-import { requireItem, type NativeDraft } from './native-timeline'
+import { preserveTransitions, requireItem, type NativeDraft } from './native-timeline'
 
 const newId = () => crypto.randomUUID()
 const invalidSubtitle = (message: string): never => { throw new ClipDomainError('subtitle-invalid', message) }
@@ -65,6 +64,9 @@ function normalizeTranscriptJsonInput(raw: unknown): string {
     invalidSubtitle('transcriptJson must be a JSON string or object')
   }
 
+  if (!root || typeof root !== 'object') {
+    throw new ClipDomainError('subtitle-invalid', 'transcriptJson must be a JSON object or segments array')
+  }
   if (Array.isArray(root)) return JSON.stringify(root)
   const record = root as { language?: unknown; segments?: unknown; words?: unknown }
   const topWords = Array.isArray(record.words) ? (record.words as RawTranscriptWord[]) : undefined
@@ -72,16 +74,36 @@ function normalizeTranscriptJsonInput(raw: unknown): string {
 
   if (rawSegments && rawSegments.length > 0) {
     if (!topWords || topWords.length === 0) return JSON.stringify(root)
-    const enrichedSegments = rawSegments.map((seg) => {
+    const segBounds = rawSegments.map((seg) => ({
+      start: typeof seg?.start === 'number' && Number.isFinite(seg.start) ? seg.start : NaN,
+      end: typeof seg?.end === 'number' && Number.isFinite(seg.end) ? seg.end : NaN,
+    }))
+    const assignedWords: RawTranscriptWord[][] = rawSegments.map(() => [])
+    for (const word of topWords) {
+      const wStart = typeof word?.start === 'number' && Number.isFinite(word.start) ? word.start : NaN
+      const wEnd = typeof word?.end === 'number' && Number.isFinite(word.end) ? word.end : NaN
+      if (!Number.isFinite(wStart) || !Number.isFinite(wEnd) || wEnd < wStart) continue
+      const midpoint = (wStart + wEnd) / 2
+      let owner = segBounds.findIndex((seg) => Number.isFinite(seg.start) && Number.isFinite(seg.end) && midpoint >= seg.start && midpoint <= seg.end)
+      if (owner < 0) {
+        let bestDist = Infinity
+        segBounds.forEach((seg, idx) => {
+          if (!Number.isFinite(seg.start) || !Number.isFinite(seg.end)) return
+          if (wStart >= seg.start - 0.05 && wEnd <= seg.end + 0.05) {
+            const dist = Math.abs(midpoint - (seg.start + seg.end) / 2)
+            if (dist < bestDist) {
+              bestDist = dist
+              owner = idx
+            }
+          }
+        })
+      }
+      if (owner >= 0) assignedWords[owner].push(word)
+    }
+    const enrichedSegments = rawSegments.map((seg, idx) => {
       if (Array.isArray(seg?.words) && seg.words.length > 0) return seg
-      const segStart = typeof seg?.start === 'number' && Number.isFinite(seg.start) ? seg.start : undefined
-      const segEnd = typeof seg?.end === 'number' && Number.isFinite(seg.end) ? seg.end : undefined
-      if (segStart === undefined || segEnd === undefined) return seg
-      const slice = topWords.filter((word) => (
-        typeof word?.start === 'number' && typeof word?.end === 'number'
-        && word.start >= segStart - 0.05 && word.end <= segEnd + 0.05
-      ))
-      return slice.length > 0 ? { ...seg, words: slice } : seg
+      const slice = assignedWords[idx]
+      return slice && slice.length > 0 ? { ...seg, words: slice } : seg
     })
     return JSON.stringify({ ...record, segments: enrichedSegments })
   }
@@ -284,7 +306,7 @@ export async function importSubtitles(draft: NativeDraft, operation: Fields) {
 
 export async function setCaptionStyle(draft: NativeDraft, operation: Fields) {
   const { stylePatch, animationStyle, positionPoint } = parseCaptionStylePatch(operation)
-  const hasStyleChanges = Object.keys(stylePatch).length > 0 || animationStyle !== undefined
+  const hasStyleChanges = Object.keys(stylePatch).length > 0 || animationStyle !== undefined || positionPoint !== undefined
   if (!hasStyleChanges) invalid('Provide a caption preset, style property, or animationStyle to update')
 
   const captionTrackId = operation.captionTrackId === undefined ? undefined : referenceId(operation.captionTrackId, 'captionTrackId')
@@ -381,10 +403,13 @@ export async function cutTranscriptRanges(draft: NativeDraft, operation: Fields)
         })
       }
       const paddingSec = operation.paddingSec === undefined ? 0 : number(operation.paddingSec, 'paddingSec', 0, 0.3)
-      rawRanges = findFillerWords(transcript.words, fillerPhrases).map((hit) => ({
-        start: Math.max(0, hit.start - paddingSec),
-        end: hit.end + paddingSec,
-      }))
+      const currentDuration = calculateProjectDuration(draft.project)
+      rawRanges = findFillerWords(transcript.words, fillerPhrases)
+        .map((hit) => ({
+          start: Math.max(0, hit.start - paddingSec),
+          end: Math.min(currentDuration, hit.end + paddingSec),
+        }))
+        .filter((range) => range.end > range.start + EPS)
     }
   }
 
@@ -545,7 +570,7 @@ export async function setAudioDucking(draft: NativeDraft, operation: Fields) {
     const releaseMs = operation.releaseMs === undefined ? prior.releaseMs : number(operation.releaseMs, 'releaseMs', 10, 3000)
     const holdMs = operation.holdMs === undefined ? prior.holdMs : number(operation.holdMs, 'holdMs', 0, 3000)
     const config = normalizeLiveDucking({
-      enabled: enabled ?? true,
+      enabled: enabled ?? prior.enabled,
       amountDb,
       attackMs,
       releaseMs,
@@ -555,9 +580,10 @@ export async function setAudioDucking(draft: NativeDraft, operation: Fields) {
     finalDucking = config
   }
 
+  const finalAudioType = requestedAudioType !== undefined ? requestedAudioType : item.item.audioType
   return {
     clipId: item.id,
-    ...(requestedAudioType ? { audioType: requestedAudioType } : item.item.audioType ? { audioType: item.item.audioType } : {}),
+    ...(finalAudioType ? { audioType: finalAudioType } : {}),
     ...(finalDucking ? { liveDucking: finalDucking } : {}),
   }
 }
@@ -609,8 +635,7 @@ export async function syncClipsToBeats(draft: NativeDraft, operation: Fields, op
       operation.audioClipId !== undefined ? { clipId: operation.audioClipId } : {},
       options,
     )
-    const engine = new BeatDetectionEngine()
-    const analyzed = await engine.analyzeAudioBuffer(resolved.audioBuffer)
+    const analyzed = await analyzeAudioBeatsSafely(resolved.audioBuffer)
     if (resolved.clip) {
       const speed = resolved.clip.speed > 0 ? resolved.clip.speed : 1
       const inPoint = resolved.clip.inPoint
@@ -628,11 +653,16 @@ export async function syncClipsToBeats(draft: NativeDraft, operation: Fields, op
       if (operation.audioStartSec === undefined) {
         audioStartSec = resolved.clip.startTime
       }
+      const clipDownbeats = analyzed.downbeats
+        .filter((t) => t >= inPoint - 1e-4 && t <= outPoint + 1e-4)
+        .map((t) => Math.max(0, (t - inPoint) / speed))
       beatAnalysis = {
         ...analyzed,
         duration: resolved.clip.duration,
         beats: clipBeats,
-        downbeats: clipBeats.filter((beat) => beat.index % 4 === 0).map((beat) => beat.time),
+        downbeats: clipDownbeats.length > 0
+          ? clipDownbeats
+          : clipBeats.filter((_, index) => index % 4 === 0).map((beat) => beat.time),
       }
     } else {
       if (analyzed.beats.length < 2) {
@@ -664,14 +694,14 @@ export async function syncClipsToBeats(draft: NativeDraft, operation: Fields, op
 
   if (timings.length === 0) invalid('Not enough beats to synchronize the selected clips')
 
+  const initial = draft.project
   const timingById = new Map(timings.map((item) => [item.clipId, item]))
-  const mediaById = new Map(draft.project.mediaLibrary.items.map((item) => [item.id, item]))
-  const trackById = new Map(draft.project.timeline.tracks.map((track) => [track.id, track]))
+  const mediaById = new Map(initial.mediaLibrary.items.map((item) => [item.id, item]))
+  const trackById = new Map(initial.timeline.tracks.map((track) => [track.id, track]))
   const edits = []
 
   // Validate source bounds & track non-overlap before mutating draft
-  const finalIntervalsByTrack = new Map<string, Array<{ id: string; start: number; end: number }>>()
-  for (const track of draft.project.timeline.tracks) {
+  for (const track of initial.timeline.tracks) {
     const rows = track.clips.map((clip) => {
       const synced = timingById.get(clip.id)
       if (!synced) return { id: clip.id, start: clip.startTime, end: clip.startTime + clip.duration }
@@ -680,7 +710,6 @@ export async function syncClipsToBeats(draft: NativeDraft, operation: Fields, op
     for (let i = 1; i < rows.length; i++) {
       if (rows[i].start < rows[i - 1].end - EPS) throw ClipDomainError.clipOverlap()
     }
-    finalIntervalsByTrack.set(track.id, rows)
   }
 
   for (const entry of targetClips) {
@@ -690,7 +719,9 @@ export async function syncClipsToBeats(draft: NativeDraft, operation: Fields, op
     const speed = clip.speed > 0 ? clip.speed : 1
     const nextOut = clip.inPoint + synced.newDuration * speed
     const mediaItem = mediaById.get(clip.mediaId)
-    const maxSourceEnd = mediaItem?.type === 'image' ? Infinity : (mediaItem?.metadata?.duration ?? clip.outPoint)
+    const maxSourceEnd = mediaItem?.type === 'image'
+      ? Infinity
+      : ((mediaItem?.metadata?.duration ?? 0) > 0 ? mediaItem!.metadata.duration : clip.outPoint)
     if (synced.newStartTime < -1e-6 || synced.newDuration <= EPS || nextOut > maxSourceEnd + 1e-4) {
       invalid(`Beat-synced duration exceeds available source bounds for clip "${clip.id}"`)
     }
@@ -711,6 +742,7 @@ export async function syncClipsToBeats(draft: NativeDraft, operation: Fields, op
   }
 
   draft.plan({ label: 'Sync clips to beats', delta: 0, edits })
+  draft.replace(preserveTransitions(draft.project, initial))
   return {
     syncMode,
     bpm: beatAnalysis.bpm,

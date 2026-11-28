@@ -35,7 +35,7 @@
 - `plugins/plugins/omnimux/src/media/stt.js`、`stt-mount.js`、`stt.test.js`（`verbose_json` 结构化时间戳透传与单测）
 - `plugins/plugins/omnimux-clip/src/templates/openreel-entry.ts`（扩展 Node bundle 导出字幕、音频、台本工具与枚举）
 - `plugins/plugins/omnimux-clip/src/errors.js`（新增 `subtitle-invalid`、`audio-analysis-failed` HTTP 状态映射）
-- `plugins/plugins/omnimux-clip/src/timeline/analyzeTranscript.js`（新增 Host 纯台本分析共享模块）
+- `plugins/plugins/omnimux-clip/src/timeline/analyzeTranscriptCore.js`、`analyzeTranscript.js`（新增 Host 与 Client 共用纯台本分析模块）
 - `plugins/plugins/omnimux-clip/src/timeline/nativeProjectView.js`（扩展 `markerCount`、`markers[]`、词级 `subtitles[]` 与 `audioType`/`liveDucking` 投影）
 - `plugins/plugins/omnimux-clip/src/http/routes.js`（新增 `GET /omnimux-clip/api/projects/:id/transcript`）
 - `plugins/plugins/omnimux-clip/src/client/live/native-analyze.ts`（新增实时 `transcript` / `beats` / `highlights` 分析桥接）
@@ -54,7 +54,7 @@
   - `node scripts/bundle-lock.mjs && node scripts/workspace-check.mjs --check`：`13 plugins` 锁文件与工作区元数据一致（`dsh-version`、`bundle-lock`、`verify-docs-dsh-version`、`workspace-check` 全绿）。
 - **单元与原生集成测试**：
   - `env -u OMNIMUX_API_KEY -u OMNIMUX_TOKEN corepack pnpm --filter omnimux test`：450 个测试文件全绿（Node 测试 `4118 / 4118` 通过、476 suites、0 fail；DOM e2e `93 / 93` 通过、15 suites、0 fail；含 `stt.test.js` 的 `verbose_json` 归一化测试）。注：未清除宿主环境注入变量时，`src/decisions/execute.test.js` 的 `resolveGatewayApiKey` 用例会读取宿主 env。
-  - `corepack pnpm --filter omnimux-clip test`：`312 / 312` 通过（16 suites、0 fail、0 skipped），覆盖 `tools.test.js`（11 工具注册、DSH Schema 校验、`GET /projects/:id/transcript` 401/503 与工具一致性、`clip_analyze` / `clip_edit` / `clip_get` 投影）、`native-live.test.js`（Phase 1 `set_keyframes` 成员只读断言 + `#phase2` 词级字幕/台本裁切/标记与闪避/合成 120 BPM PCM 真实 `BeatDetectionEngine` 与 `analyzeAudioForHighlights` 计算与卡点），以及 `clip-mixed-export.test.mjs` 等 4 项集成测试。
+  - `corepack pnpm --filter omnimux-clip test`：`312 / 312` 通过（16 suites、0 fail、0 skipped），覆盖 `tools.test.js`（11 工具注册、DSH Schema 校验、`GET /projects/:id/transcript` 401/503/400 与工具一致性、`clip_analyze` beats/highlights 实时派发与 `clip_get` 完整投影）、`native-live.test.js`（Phase 1 `set_keyframes` 成员只读断言 + `#phase2` 词级字幕与跨段边界词去重、台本裁切与结尾 padding 收敛、标记与闪避、空库/短音频守卫、合成 120 BPM 与 96 BPM 弱起拍 PCM 真实 `BeatDetectionEngine` 与裁剪范围 `analyzeAudioForHighlights` 计算及卡点），以及 `clip-mixed-export.test.mjs` 等 4 项集成测试。
 - **门禁与契约校验**：
   - `corepack pnpm --dir plugins verify:tools`：`omnimux-clip` 11/11 工具在源码、`inject`、`output`、`dsh.manifest.json` 与 `inventory.md` 间 100% 对齐（0 阻断错误）。
   - `corepack pnpm --dir plugins test:agent-tools`：82 / 82 插件工具通过 JSON Schema、内存隔离调用、离线路由冒烟（8/8）与敏感参数守卫。

@@ -327,7 +327,7 @@ function readFields(row, keys) {
     if (key === 'id' || key.endsWith('Id')) {
       if (isReferenceId(value)) selected[key] = value
     } else if (typeof value === 'string') {
-      selected[key] = safeText(value, key === 'text' ? 4000 : 160)
+      selected[key] = safeText(value, key === 'text' ? 4000 : key === 'comment' ? 1000 : 160)
     } else if (typeof value === 'boolean' || Number.isFinite(value)) {
       selected[key] = value
     }
@@ -363,7 +363,7 @@ function validateAnalyze(result, command) {
       throw new ClipDomainError('INVALID_RECEIPT', 'The editor did not return a valid transcript analysis.')
     }
     return {
-      ...readFields(result, 'projectId mode durationSec subtitleCount wordCount sentenceCount estimatedWordCount'),
+      ...readFields(result, 'projectId revision revisionEpoch mode durationSec subtitleCount wordCount sentenceCount estimatedWordCount'),
       speakers: Array.isArray(result.speakers) ? result.speakers.slice(0, 100).map((speaker) => safeText(speaker, 80)).filter(Boolean) : [],
       sentences: result.sentences.slice(0, 500).filter(isRecord).map((row) => readFields(row, 'index startSec endSec text speaker wordStart wordEnd')),
       pauses: result.pauses.slice(0, 250).filter(isRecord).map((row) => readFields(row, 'startSec endSec gapSec cutFromSec cutToSec')),

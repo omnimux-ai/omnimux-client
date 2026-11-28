@@ -486,12 +486,12 @@ export function createClipDispatcher({ paths, store, fs = DEFAULT_FS, broker, ex
           return value
         }
         const loaded = store.load(id)
-        const fillers = searchParams.getAll('fillerPhrases').filter(Boolean)
+        const fillers = searchParams.has('fillerPhrases') ? searchParams.getAll('fillerPhrases') : undefined
         const analysis = analyzeProjectTranscript(loaded.project, {
           ...(searchParams.has('captionTrackId') ? { captionTrackId: searchParams.get('captionTrackId') } : {}),
           minPauseSec: parseOptNumber('minPauseSec'),
           keepPauseSec: parseOptNumber('keepPauseSec'),
-          ...(fillers.length > 0 ? { fillerPhrases: fillers } : {}),
+          ...(fillers !== undefined ? { fillerPhrases: fillers } : {}),
           ...(searchParams.has('query') ? { query: searchParams.get('query') } : {}),
         })
         return {

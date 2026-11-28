@@ -55,7 +55,7 @@ export function parseCaptionStylePatch(operation: Fields, allowedKeys: readonly 
   animationStyle?: CaptionAnimationStyle
   positionPoint?: Transform['position']
 } {
-  const rawNested = operation.style ?? operation.textStyle
+  const rawNested = operation.textStyle ?? operation.style
   const nested = rawNested === undefined ? {} : fields(rawNested, 'caption style')
   onlyKeys(nested, allowedKeys, 'caption style')
   const input: Fields = { ...operation, ...nested }
@@ -78,7 +78,6 @@ export function parseCaptionStylePatch(operation: Fields, allowedKeys: readonly 
   const placement = input.position
   if (placement === 'top' || placement === 'center' || placement === 'bottom') {
     stylePatch.position = placement
-    positionPoint = { x: 0.5, y: placement === 'top' ? 0.15 : placement === 'center' ? 0.5 : 0.85 }
   } else if (placement !== undefined) {
     const point = fields(placement, 'position')
     onlyKeys(point, ['x', 'y'], 'position')
