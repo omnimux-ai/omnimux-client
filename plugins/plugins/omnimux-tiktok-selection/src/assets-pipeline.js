@@ -4,14 +4,108 @@ import { OPERATIONAL_LIMITS, VIDEO_SCRIPT_OUTPUT_SCHEMA } from './constants.js'
 import { SelectionError } from './errors.js'
 import { ensureDir, resolveWithin, safePathSegment } from './paths.js'
 
+export const PRODUCT_NAME_MAX = 40
+
 function makeSlotId(prefix) {
   return `${prefix}_${Date.now().toString(36)}_${randomBytes(2).toString('hex')}`
+}
+
+function isObject(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
+
+/**
+ * Normalize a product display name so it satisfies `omnimux-products`
+ * (`NAME_MAX = 40`, no `/` / `\` or ASCII control characters).
+ * @param {unknown} title
+ * @param {unknown} [fallback]
+ * @returns {string}
+ */
+export function normalizeProductSyncName(title, fallback = 'TikTok Product') {
+  const sanitize = (raw) =>
+    String(raw ?? '')
+      .replace(/[\u0000-\u001f\u007f]+/g, ' ')
+      .replace(/[\\/]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, PRODUCT_NAME_MAX)
+      .trim()
+  return sanitize(title) || sanitize(fallback) || 'TikTok Product'
+}
+
+/**
+ * Frozen DSH 0.2.1-rc.3 exposes `executionMode()` without `setExecutor()`.
+ * @param {Record<string, any>} tools
+ */
+function usesLegacySingleExecute(tools) {
+  return typeof tools.executionMode === 'function' && typeof tools.setExecutor !== 'function'
+}
+
+function extractBatchResult(batch, callId, toolName) {
+  const results = isObject(batch) && Array.isArray(batch.results) ? batch.results : []
+  if (results.length === 0) {
+    throw new Error(`工具 ${toolName} 未返回有效批次结果`)
+  }
+  const matched = results.find((item) => isObject(item) && item.callId === callId)
+  const entry = matched ?? (results.length === 1 ? results[0] : undefined)
+  if (!isObject(entry) || !isObject(entry.result)) {
+    throw new Error(`工具 ${toolName} 批次结果缺少 callId=${callId} 的条目`)
+  }
+  return entry.result
+}
+
+function extractToolError(result, toolName) {
+  const content = Array.isArray(result.content) ? result.content : []
+  const text = content
+    .map((block) => (isObject(block) && typeof block.text === 'string' ? block.text : ''))
+    .join('\n')
+    .trim()
+  const errorInfo = isObject(result.error) ? result.error : {}
+  const info = isObject(errorInfo.info) ? errorInfo.info : {}
+  const rawMessage = text || String(errorInfo.message || '').trim() || `工具 ${toolName} 执行失败`
+  const errText = `${text}\n${String(errorInfo.message || '')}\n${String(info.code || '')}`
+  if (/UNKNOWN_TOOL|unknown tool/i.test(errText)) {
+    return new SelectionError('needs-provider', 'omnimux-products 插件未启用，无法同步至 OmniMux 产品库。')
+  }
+  return new Error(rawMessage)
 }
 
 /**
  * Create the creative asset generation & OmniMux product-sync pipeline.
  */
-export function createAssetsPipeline({ store, dataSource, getService, getTool, logger }) {
+export function createAssetsPipeline({ store, dataSource, getService, resolveTools, tools, logger }) {
+  async function executeRegisteredTool(toolName, args) {
+    const registry = typeof resolveTools === 'function' ? resolveTools() : tools
+    if (!registry || typeof registry.execute !== 'function') {
+      throw new SelectionError('needs-provider', 'omnimux-products 插件未启用，无法同步至 OmniMux 产品库。')
+    }
+    if (typeof registry.executable === 'function' || typeof registry.get === 'function') {
+      const def =
+        (typeof registry.executable === 'function' ? registry.executable(toolName) : undefined) ??
+        (typeof registry.get === 'function' ? registry.get(toolName) : undefined)
+      if (!def) {
+        throw new SelectionError('needs-provider', 'omnimux-products 插件未启用，无法同步至 OmniMux 产品库。')
+      }
+    }
+
+    const callId = makeSlotId('ttsel_tool')
+    const signal = new AbortController().signal
+    const normalizedArgs = args ?? {}
+    const legacySingle = usesLegacySingleExecute(registry)
+    const input = legacySingle
+      ? { callId, name: toolName, arguments: normalizedArgs, signal }
+      : { calls: [{ type: 'tool-call', id: callId, name: toolName, arguments: JSON.stringify(normalizedArgs) ?? '{}' }], signal }
+
+    const raw = await registry.execute(input)
+    const result = legacySingle ? raw : extractBatchResult(raw, callId, toolName)
+    if (!isObject(result)) {
+      throw new Error(`工具 ${toolName} 未返回有效结果对象`)
+    }
+    if (result.isError) {
+      throw extractToolError(result, toolName)
+    }
+    return result.value
+  }
   async function generateVideoScript({ productIds, extraSellingPoints = '' }) {
     if (!Array.isArray(productIds) || productIds.length === 0) {
       throw new SelectionError('invalid-request', 'productIds array is required')
@@ -301,9 +395,17 @@ export function createAssetsPipeline({ store, dataSource, getService, getTool, l
     if (!Array.isArray(productIds) || productIds.length === 0) {
       throw new SelectionError('invalid-request', 'productIds array is required')
     }
-    const productsCreate = getTool?.('products_create')
-    if (!productsCreate || typeof productsCreate.execute !== 'function') {
+    const registry = typeof resolveTools === 'function' ? resolveTools() : tools
+    if (!registry || typeof registry.execute !== 'function') {
       throw new SelectionError('needs-provider', 'omnimux-products 插件未启用，无法同步至 OmniMux 产品库。')
+    }
+    if (typeof registry.executable === 'function' || typeof registry.get === 'function') {
+      const def =
+        (typeof registry.executable === 'function' ? registry.executable('products_create') : undefined) ??
+        (typeof registry.get === 'function' ? registry.get('products_create') : undefined)
+      if (!def) {
+        throw new SelectionError('needs-provider', 'omnimux-products 插件未启用，无法同步至 OmniMux 产品库。')
+      }
     }
 
     const synced = []
@@ -321,9 +423,9 @@ export function createAssetsPipeline({ store, dataSource, getService, getTool, l
         ...(item.generatedVideos || []).filter((x) => x.status === 'ready' && x.path).map((x) => ({ real_path: x.path })),
       ]
       try {
-        const created = await productsCreate.execute({
+        const created = await executeRegisteredTool('products_create', {
           kind: 'physical',
-          name: item.title.slice(0, 60),
+          name: normalizeProductSyncName(item.title, item.productId),
           selling_points: sellingPoints,
           description: `${item.title}\n类目：${item.category || '未分类'}\n店铺：${item.shopName || '未知'}`,
           price: item.priceDisplay,
@@ -336,6 +438,7 @@ export function createAssetsPipeline({ store, dataSource, getService, getTool, l
         store.updateLibraryItem(item.id, { syncedProductId: String(syncedId) })
         synced.push({ productId: item.productId, id: item.id, ok: true, syncedProductId: syncedId })
       } catch (err) {
+        if (err instanceof SelectionError && err.code === 'needs-provider') throw err
         logger?.warn?.('omnimux-tiktok-selection: sync to omnimux-products failed', { productId: item.productId, error: err?.message })
         synced.push({ productId: item.productId, id: item.id, ok: false, error: err?.message || '同步失败' })
       }

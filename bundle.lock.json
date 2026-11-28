@@ -17,14 +17,14 @@
       "version": "0.1.3",
       "path": "plugins/plugins/omnimux-accounts",
       "spec": "link:../../plugins/plugins/omnimux-accounts",
-      "contentHash": "sha256:96afb99fa3d5b33453d03e45a166df733a523cfd3f1d22ff0af5cf0f441701c8"
+      "contentHash": "sha256:03f27f0382a09c943e075c60178685ebb5abc1e8ec002241a0c7b06370407e9b"
     },
     {
       "name": "omnimux-analytics",
       "version": "0.2.2",
       "path": "plugins/plugins/omnimux-analytics",
       "spec": "link:../../plugins/plugins/omnimux-analytics",
-      "contentHash": "sha256:06f8054e24d73e27a967ccfa07edc18b533ff6d9b08f8aa25fc0a50ce5114852"
+      "contentHash": "sha256:ac2bbf1c3f639dcddfb3f004e5944568ee0da64d24eaedcfe3da64a5a04e0a93"
     },
     {
       "name": "omnimux-assets",
@@ -52,7 +52,7 @@
       "version": "0.1.2",
       "path": "plugins/plugins/omnimux-inspiration",
       "spec": "link:../../plugins/plugins/omnimux-inspiration",
-      "contentHash": "sha256:aa28514c5bf8840911ccb86c0564d8b7b52fcc569b33676627b67c8f8cfacc9f"
+      "contentHash": "sha256:10bce1e6224c926d72ebfa2dce2d65c1325a5323bfdff90e57ddbb208d1239eb"
     },
     {
       "name": "omnimux-market",
@@ -66,21 +66,21 @@
       "version": "0.1.2",
       "path": "plugins/plugins/omnimux-products",
       "spec": "link:../../plugins/plugins/omnimux-products",
-      "contentHash": "sha256:5f70808c020068bae6cb4ad005d0fb2ed8b85ba2d834bea2c4ab8b5180e80bda"
+      "contentHash": "sha256:22cc5b7115754850c03264c110f989448881fb17914970b4655692ac5013e167"
     },
     {
       "name": "omnimux-publish",
       "version": "0.1.2",
       "path": "plugins/plugins/omnimux-publish",
       "spec": "link:../../plugins/plugins/omnimux-publish",
-      "contentHash": "sha256:efa6df36f21feefe04edd30f49d71208e7422ecda22e4ffe76baae6a1c542c70"
+      "contentHash": "sha256:7eb5bb6565618148ef0179bf76a2c852e9e4fed7af946b47815a3b2d2c3da9df"
     },
     {
       "name": "omnimux-video",
       "version": "0.1.2",
       "path": "plugins/plugins/omnimux-video",
       "spec": "link:../../plugins/plugins/omnimux-video",
-      "contentHash": "sha256:c45d2f8d0763590dbaf83be264d4f8c3c695053ef8f5947f2632a9b7305d8672"
+      "contentHash": "sha256:677976ae1945c56592396f524a3cd41c5b573ef4cfc40611fc4cb7fb6de22fa9"
     },
     {
       "name": "omnimux-viewer",

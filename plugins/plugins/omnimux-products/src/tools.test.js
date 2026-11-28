@@ -21,7 +21,7 @@ afterEach(() => {
   rmSync(root, { recursive: true, force: true })
 })
 
-function harness() {
+function harness(promptSections = []) {
   /** @type {Map<string, any>} */
   const tools = new Map()
   const ctx = {
@@ -31,7 +31,9 @@ function harness() {
       },
     },
     systemPrompt: {
-      section() {},
+      section(spec) {
+        promptSections.push(spec)
+      },
     },
     inject() {},
   }
@@ -41,9 +43,14 @@ function harness() {
 
 describe('products tools', () => {
   it('registers all seven tools including products_delete', () => {
-    const tools = harness()
+    const promptSections = []
+    const tools = harness(promptSections)
     assert.deepEqual([...tools.keys()], [...PRODUCT_TOOL_NAMES])
     assert.equal(tools.has('products_delete'), true)
+    assert.equal(promptSections.length, 1)
+    assert.match(promptSections[0].text, /\bproducts_delete\b/)
+    assert.match(promptSections[0].text, /confirm=true/)
+    assert.doesNotMatch(promptSections[0].text, /no products_delete tool/i)
   })
 
   it('create requires content; list/search/get/update/read_media share the store', async () => {
@@ -51,6 +58,15 @@ describe('products tools', () => {
     await assert.rejects(
       () => tools.get('products_create').execute({ name: '空货' }),
       (error) => error.code === 'content-required',
+    )
+
+    await assert.rejects(
+      () => tools.get('products_create').execute({ name: 'a'.repeat(41), selling_points: '超长名称校验' }),
+      (error) => error.code === 'name-invalid',
+    )
+    await assert.rejects(
+      () => tools.get('products_create').execute({ name: 'foo/bar', selling_points: '斜杠校验' }),
+      (error) => error.code === 'name-invalid',
     )
 
     const created = await tools.get('products_create').execute({
@@ -92,6 +108,15 @@ describe('products tools', () => {
         kind: 'digital',
       }),
       (error) => error.code === 'content-required',
+    )
+
+    await assert.rejects(
+      () => tools.get('products_create').execute({ name: 'a'.repeat(41), selling_points: '超长名称校验' }),
+      (error) => error.code === 'name-invalid',
+    )
+    await assert.rejects(
+      () => tools.get('products_create').execute({ name: 'foo/bar', selling_points: '斜杠校验' }),
+      (error) => error.code === 'name-invalid',
     )
 
     const created = await tools.get('products_create').execute({

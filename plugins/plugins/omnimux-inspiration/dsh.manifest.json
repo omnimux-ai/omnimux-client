@@ -28,6 +28,18 @@
         "summary": "Create and crawl inspiration from social media URLs (TikTok, Instagram, YouTube, X), download media and trigger AI analysis."
       },
       {
+        "name": "inspiration_update",
+        "summary": "Update inspiration item metadata including title, content, tags, or favorite status."
+      },
+      {
+        "name": "inspiration_delete",
+        "summary": "Delete an inspiration item and recycle its local media cache (destructive; requires confirm=true)."
+      },
+      {
+        "name": "inspiration_favorite",
+        "summary": "Set the favorite status of an inspiration item."
+      },
+      {
         "name": "inspiration_rival_accounts",
         "summary": "List monitored rival accounts with platform, handle, followers, refresh state and potential post count."
       },
@@ -64,7 +76,7 @@
         "componentPath": "src/client/sidebar-entry.js"
       },
       {
-        "target": "shell.overlay",
+        "target": "betterSidebar.registerTab",
         "componentPath": "src/client/InspirationStage.jsx"
       },
       {

@@ -2,18 +2,33 @@
   "id": "omnimux-analytics",
   "name": "omnimux-analytics",
   "version": "0.2.2",
-  "tier": "tier-0-hub",
+  "tier": "tier-1-app",
   "entrypoint": "src/index.js",
   "status": "active",
   "description": "统计使用数据，提供社媒发布效果与互动趋势看板。",
   "tags": ["analytics", "telemetry", "umami", "dashboard", "social", "tracking", "metrics"],
   "capabilities": {
-    "tools": [],
+    "tools": [
+      {
+        "name": "analytics_query_metrics",
+        "summary": "按时间窗口、平台或账号获取上游社媒分析原始载荷",
+        "category": "analytics",
+        "isWriteOperation": false,
+        "requiresAuth": true
+      },
+      {
+        "name": "analytics_get_summary",
+        "summary": "获取含逐源可用性状态的社媒分析汇总原始载荷",
+        "category": "analytics",
+        "isWriteOperation": false,
+        "requiresAuth": true
+      }
+    ],
     "seamsProvided": [],
     "seamsConsumed": ["omnimuxAnalytics"],
     "slots": [
       { "target": "sidebar.extra", "componentPath": "src/client/sidebar-entry.js" },
-      { "target": "shell.overlay", "componentPath": "src/client/AnalyticsStage.jsx" }
+      { "target": "betterSidebar.registerTab", "componentPath": "src/client/AnalyticsStage.jsx" }
     ],
     "storageDomains": []
   },

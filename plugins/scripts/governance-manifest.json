@@ -343,6 +343,7 @@
     "verify-cordis-propagate.mjs",
     "verify-creatify-panel-redesign.mjs",
     "verify-cross-plugin-model-alignment.test.mjs",
+    "verify-cross-plugin-tool-sync.test.mjs",
     "verify-dev-cdp.test.mjs",
     "verify-dev-smoke.test.mjs",
     "verify-docs-dsh-version.mjs",

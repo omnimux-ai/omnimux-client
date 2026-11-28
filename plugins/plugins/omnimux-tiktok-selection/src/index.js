@@ -59,11 +59,11 @@ const jsonOut = {
 export function apply(ctx, config = {}) {
   const store = createSelectionStore({ home: config.home, rootDir: config.rootDir })
   const getService = (serviceName) => ctx.get?.(serviceName)
-  const getTool = (toolName) => ctx.tools?.get?.(toolName)
+  const resolveTools = () => ctx.tools ?? ctx.get?.('tools')
 
   const dataSource = createDataSourceAdapter({ store, getService, logger: ctx.logger })
   const threeGate = createThreeGateEngine({ store, dataSource, getService, logger: ctx.logger })
-  const assetsPipeline = createAssetsPipeline({ store, dataSource, getService, getTool, logger: ctx.logger })
+  const assetsPipeline = createAssetsPipeline({ store, dataSource, getService, resolveTools, logger: ctx.logger })
   const scheduler = createSelectionScheduler({ store, dataSource, threeGate, assetsPipeline, logger: ctx.logger })
   const dispatcher = createSelectionDispatcher({ store, dataSource, threeGate, assetsPipeline, scheduler })
 

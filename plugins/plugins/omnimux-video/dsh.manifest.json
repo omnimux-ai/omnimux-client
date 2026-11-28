@@ -24,6 +24,13 @@
         "requiresAuth": false
       },
       {
+        "name": "video_depth",
+        "summary": "为本地或远程视频生成灰度深度视频（Depth Anything 快捷入口）",
+        "category": "video",
+        "isWriteOperation": true,
+        "requiresAuth": false
+      },
+      {
         "name": "video_analyze",
         "summary": "解析视频结构并输出结构化五维拆解与分镜数组（Skill 真源 + JSON Schema）",
         "category": "video",
