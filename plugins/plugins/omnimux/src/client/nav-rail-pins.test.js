@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { afterEach, describe, it } from 'node:test'
 import { JSDOM } from 'jsdom'
 import {
+  EXPLORE_MORE_PIN_CSS,
   NAV_RAIL_PINNED_MORE_STORAGE_KEY,
   OFFICIAL_PANEL_ICON_SVG,
   PIN_FILL_ICON_SVG,
@@ -143,5 +144,10 @@ describe('nav-rail-pins 持久化与元信息真源', () => {
     const cleared = getPinnedMoreSnapshot()
     assert.deepEqual(cleared, [])
     assert.equal(cleared, emptyA)
+  })
+
+  it('EXPLORE_MORE_PIN_CSS 默认隐藏未固定图钉且不依赖无鼠标 CI 常失配的 hover: hover 媒体查询', () => {
+    assert.doesNotMatch(EXPLORE_MORE_PIN_CSS, /@media\s*\(\s*hover\s*:\s*hover\s*\)/)
+    assert.match(EXPLORE_MORE_PIN_CSS, /\.omnimux-explore-more-pin-anchor\s*\{[^}]*opacity:\s*0;/)
   })
 })

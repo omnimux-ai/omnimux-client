@@ -48,6 +48,20 @@ export const EXPLORE_MORE_PIN_CSS = `
   display: flex;
   align-items: center;
   z-index: 2;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.omnimux-explore-more-row:hover > [class*="itemWrap"] > button[role="menuitem"],
+.omnimux-explore-more-row:hover > :first-child > button {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.omnimux-explore-more-row:hover .omnimux-explore-more-pin-anchor,
+.omnimux-explore-more-row:focus-within .omnimux-explore-more-pin-anchor,
+.omnimux-explore-more-row[data-pinned="true"] .omnimux-explore-more-pin-anchor {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .omnimux-explore-more-pin-btn {
@@ -92,18 +106,8 @@ export const EXPLORE_MORE_PIN_CSS = `
   outline-offset: 1px;
 }
 
-@media (hover: hover) {
-  .omnimux-explore-more-row:hover > [class*="itemWrap"] > button[role="menuitem"],
-  .omnimux-explore-more-row:hover > :first-child > button {
-    background: var(--dsw-alias-interactive-bg-hover);
-  }
+@media (hover: none) and (pointer: coarse) {
   .omnimux-explore-more-pin-anchor {
-    opacity: 0;
-    pointer-events: none;
-  }
-  .omnimux-explore-more-row:hover .omnimux-explore-more-pin-anchor,
-  .omnimux-explore-more-row:focus-within .omnimux-explore-more-pin-anchor,
-  .omnimux-explore-more-row[data-pinned="true"] .omnimux-explore-more-pin-anchor {
     opacity: 1;
     pointer-events: auto;
   }
