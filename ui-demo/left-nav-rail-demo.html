@@ -389,6 +389,10 @@
                   transform var(--omnimux-motion-dur-press) var(--omnimux-motion-ease-out);
     }
 
+    .rail-btn[hidden] {
+      display: none !important;
+    }
+
     .rail-btn:hover {
       background: var(--dsw-alias-interactive-bg-hover);
       color: var(--dsw-alias-label-primary);
@@ -1487,6 +1491,10 @@
         <button type="button" class="seg-btn" id="btnChannelProd" aria-pressed="true">正式版</button>
         <button type="button" class="seg-btn" id="btnChannelDev" aria-pressed="false">开发版</button>
       </div>
+      <div class="seg-group" role="group" aria-label="更新状态">
+        <button type="button" class="seg-btn" id="btnUpdateNone" aria-pressed="true">无更新</button>
+        <button type="button" class="seg-btn" id="btnUpdateReady" aria-pressed="false">有新版本</button>
+      </div>
     </div>
   </header>
 
@@ -1556,7 +1564,7 @@
 
         <div class="rail-bottom">
           <div class="rail-divider" aria-hidden="true"></div>
-          <button type="button" class="rail-btn" id="railUpdates" data-tooltip="应用更新" aria-label="应用更新">
+          <button type="button" class="rail-btn" id="railUpdates" data-tooltip="应用更新" aria-label="应用更新" hidden>
             <svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M9 3.2v7.8"/>
               <path d="m5.8 8.2 3.2 3.2 3.2-3.2"/>
@@ -1902,6 +1910,7 @@
         activeSessionId: "s1",
         moreMenuOpen: false,
         activeFilterIdx: 0,
+        hasUpdate: false,
         sysPopoverKind: null,    // "updates" | "remote" | "settings" | null
         sessionsList: [...SESSIONS_PINNED, ...SESSIONS_WORKSPACES],
         projectsList: [...PROJECTS_DATA],
@@ -1924,6 +1933,7 @@
       const elMorePopover = document.getElementById("morePopover");
       const elPinContextMenu = document.getElementById("pinContextMenu");
       const elRailMore = document.getElementById("railMore");
+      const elRailUpdates = document.getElementById("railUpdates");
       const elRailPinnedSection = document.getElementById("railPinnedSection");
       const elRailPinnedList = document.getElementById("railPinnedList");
       const elSysPopover = document.getElementById("systemPopover");
@@ -2334,7 +2344,13 @@
         document.getElementById("btnThemeLight").setAttribute("aria-pressed", String(state.theme === "light"));
         document.getElementById("btnChannelProd").setAttribute("aria-pressed", String(state.channel === "prod"));
         document.getElementById("btnChannelDev").setAttribute("aria-pressed", String(state.channel === "dev"));
+        document.getElementById("btnUpdateNone").setAttribute("aria-pressed", String(!state.hasUpdate));
+        document.getElementById("btnUpdateReady").setAttribute("aria-pressed", String(state.hasUpdate));
         elStateLabel.textContent = computeStatusLabel();
+        elRailUpdates.hidden = !state.hasUpdate;
+        if (!state.hasUpdate && state.sysPopoverKind === "updates") {
+          state.sysPopoverKind = null;
+        }
 
         // 固定轨激活位：若当前页已固定在左侧栏，则直接高亮对应固定图标，互斥取消「更多」高亮
         const availableIds = new Set(visibleMoreItems().map((it) => it.id));
@@ -2449,6 +2465,17 @@
 
       document.getElementById("btnChannelDev").addEventListener("click", () => {
         state.channel = "dev";
+        render();
+      });
+
+      document.getElementById("btnUpdateNone").addEventListener("click", () => {
+        state.hasUpdate = false;
+        if (state.sysPopoverKind === "updates") state.sysPopoverKind = null;
+        render();
+      });
+
+      document.getElementById("btnUpdateReady").addEventListener("click", () => {
+        state.hasUpdate = true;
         render();
       });
 
