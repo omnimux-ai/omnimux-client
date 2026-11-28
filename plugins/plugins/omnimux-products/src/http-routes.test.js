@@ -580,6 +580,44 @@ describe('products responses · secret guard', () => {
       assert.match(res.out.body, /refused to emit a secret/)
     }
   })
+
+  it('emits TikTok Shop URL slugs and copy containing "...sk-<words>" without false-positive HTTP 500', () => {
+    for (const payload of [
+      {
+        data: {
+          name: 'Face Mask Serum Set',
+          link: 'https://shop.tiktok.com/us/pdp/face-mask-hyaluronic-acid-serum/1731547070032089440',
+        },
+      },
+      {
+        data: {
+          name: 'SK-II Facial Treatment Essence',
+          link: 'https://shop.tiktok.com/us/pdp/sk-ii-facial-treatment-essence/1731547070032089441',
+        },
+      },
+    ]) {
+      const res = fakeRes()
+      sendJson(res, 200, payload)
+      assert.equal(res.out.status, 200)
+    }
+  })
+
+  it('still refuses bare, hyphenated prefixed, and Bearer credentials without leaking literals', () => {
+    const filler16 = '0'.repeat(16)
+    const fillerHalf = '0'.repeat(8)
+    for (const body of [
+      { data: { note: ['sk', filler16].join('-') } },
+      { data: { note: ['sk', 'proj', `${fillerHalf}-${filler16}`].join('-') } },
+      { data: { note: ['sk', 'ant', 'api03', `${fillerHalf}-${filler16}`].join('-') } },
+      { data: { note: ['sk', 'or', 'v1', `${fillerHalf}-${filler16}`].join('-') } },
+      { data: { note: ['Authorization: Bearer', `jwt_${filler16}`].join(' ') } },
+    ]) {
+      const res = fakeRes()
+      sendJson(res, 200, body)
+      assert.equal(res.out.status, 500, JSON.stringify(body))
+      assert.match(res.out.body, /refused to emit a secret/)
+    }
+  })
 })
 
 describe('products routes · draft media read-only preview', () => {

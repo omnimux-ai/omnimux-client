@@ -418,9 +418,26 @@ function isRecommendationComponent(comp) {
   return RECOMMENDATION_BLOCK_RE.test(name) || RECOMMENDATION_BLOCK_RE.test(type)
 }
 
+function hasProductInfoSignal(pinfo) {
+  if (!isPlainObject(pinfo)) return false
+  const pm = isPlainObject(pinfo.product_model)
+    ? pinfo.product_model
+    : isPlainObject(pinfo.product_base)
+      ? pinfo.product_base
+      : null
+  const nodes = pm ? [pm, pinfo] : [pinfo]
+  for (const node of nodes) {
+    if (pickScalar(node.name) || pickScalar(node.title) || pickScalar(node.product_name)) {
+      return true
+    }
+  }
+  return false
+}
+
 function findProductInfoWithMeta(root, seen = new Set(), depth = 0) {
   if (!root || typeof root !== 'object' || depth > 8 || seen.has(root)) return null
   seen.add(root)
+  let stubFallback = null
   if (depth === 0) {
     const v1Roots = [
       root?.data?.data?.global_data?.product_info,
@@ -430,7 +447,10 @@ function findProductInfoWithMeta(root, seen = new Set(), depth = 0) {
     for (const candidate of v1Roots) {
       if (isPlainObject(candidate)) {
         const unwrapped = unwrapProductInfo(candidate)
-        if (unwrapped.pinfo) return unwrapped
+        if (unwrapped.pinfo) {
+          if (hasProductInfoSignal(unwrapped.pinfo)) return unwrapped
+          stubFallback ||= unwrapped
+        }
       }
     }
     const compMaps = [
@@ -448,7 +468,10 @@ function findProductInfoWithMeta(root, seen = new Set(), depth = 0) {
         const candidate = comp?.component_data?.product_info
         if (isPlainObject(candidate)) {
           const unwrapped = unwrapProductInfo(candidate)
-          if (unwrapped.pinfo) return unwrapped
+          if (unwrapped.pinfo) {
+            if (hasProductInfoSignal(unwrapped.pinfo)) return unwrapped
+            stubFallback ||= unwrapped
+          }
         }
       }
     }
@@ -458,18 +481,14 @@ function findProductInfoWithMeta(root, seen = new Set(), depth = 0) {
       const hit = findProductInfoWithMeta(root[i], seen, depth + 1)
       if (hit) return hit
     }
-    return null
+    return stubFallback
   }
-  if (isRecommendationComponent(root)) return null
+  if (isRecommendationComponent(root)) return stubFallback
   if (isPlainObject(root.product_info)) {
     const unwrapped = unwrapProductInfo(root.product_info)
     if (
       unwrapped.pinfo &&
-      (isPlainObject(unwrapped.pinfo.product_model) ||
-        isPlainObject(unwrapped.pinfo.product_base) ||
-        unwrapped.pinfo.title ||
-        unwrapped.pinfo.name ||
-        unwrapped.pinfo.product_name)
+      hasProductInfoSignal(unwrapped.pinfo)
     ) {
       return unwrapped
     }
@@ -479,7 +498,7 @@ function findProductInfoWithMeta(root, seen = new Set(), depth = 0) {
     const hit = findProductInfoWithMeta(val, seen, depth + 1)
     if (hit) return hit
   }
-  return null
+  return stubFallback
 }
 
 function findProductInfoNode(root, seen = new Set(), depth = 0) {
@@ -526,11 +545,15 @@ function pickImageUrl(candidate) {
 }
 
 function firstImageUrl(candidates) {
+  let heicFallback = ''
   for (const candidate of candidates) {
-    const resolved = pickImageUrl(candidate)
-    if (resolved) return String(resolved)
+    const urls = collectImageUrls(candidate)
+    if (urls.length === 0) continue
+    const renderable = urls.find((u) => !isHeicImageUrl(u))
+    if (renderable) return String(renderable)
+    if (!heicFallback && urls[0]) heicFallback = String(urls[0])
   }
-  return ''
+  return heicFallback
 }
 
 function normalizeHubReviews(rRes) {

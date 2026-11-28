@@ -273,4 +273,54 @@ describe('importProductFromUrl tiktok shop path', () => {
     )
     assert.equal(htmlFetched, false)
   })
+
+  it('falls through an empty global_data.product_info stub to populated components_map data', () => {
+    const fields = mapShopDetailToFields(
+      {
+        global_data: {
+          product_info: {
+            error_code: 0,
+            product_info: {
+              product_model: { product_id: '1732501600694931888' },
+            },
+          },
+        },
+        product_data: {
+          page_config: {
+            components_map: [
+              {
+                component_name: 'product_info',
+                component_data: {
+                  product_info: {
+                    product_id: '1732501600694931888',
+                    product_model: {
+                      product_id: '1732501600694931888',
+                      name: 'Hydrating Serum Mask',
+                      images: [{ url_list: ['https://p16-oec.example/mask~tplv.jpg'] }],
+                    },
+                    seller_model: { shop_name: 'Glow Studio' },
+                    promotion_model: {
+                      promotion_product_price: {
+                        min_price: { sale_price_format: '19.99', currency_symbol: '$' },
+                      },
+                    },
+                  },
+                },
+              },
+            ],
+          },
+        },
+      },
+      {
+        url: 'https://shop.tiktok.com/view/product/1732501600694931888?region=US',
+        productId: '1732501600694931888',
+        region: 'US',
+      },
+    )
+    assert.equal(fields.valid, true)
+    assert.equal(fields.name, 'Hydrating Serum Mask')
+    assert.equal(fields.brand, 'Glow Studio')
+    assert.equal(fields.price, '$19.99')
+    assert.deepEqual(fields.images, ['https://p16-oec.example/mask~tplv.jpg'])
+  })
 })

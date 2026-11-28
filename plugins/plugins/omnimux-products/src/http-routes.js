@@ -67,10 +67,11 @@ export function sendPreview(res, status, stream) {
 
 /**
  * A key shape, not the two letters `sk`. An import now answers page-derived and
- * model-authored copy, where `risk-free` / `task-focused` are ordinary English;
- * matching those would fail a good import with a 500.
+ * model-authored copy, where `risk-free` / `task-focused` and slug segments like
+ * `mask-hyaluronic-acid-serum` are ordinary copy; matching those would fail a good import with a 500.
  */
-const SECRET_PATTERN = /access_token|sk-[A-Za-z0-9_-]{16,}/
+export const SECRET_PATTERN =
+  /\baccess_token\b|\bBearer\s+[A-Za-z0-9._-]{16,}|(?:^|[^A-Za-z0-9_-])sk-(?:(?:ant-api\d+|or-v\d+|proj|live|test|svcacct|admin)-[A-Za-z0-9_-]{16,}|[A-Za-z0-9_]{16,})/
 
 export function sendJson(res, status, body) {
   const text = JSON.stringify(body)

@@ -855,4 +855,111 @@ describe('DataSourceAdapter CSV/JSON snapshot parsing & live socialData', () => 
       cleanup()
     }
   })
+
+  it('skips HEIC-only leading images for later webp images and ignores empty global_data.product_info stubs', async () => {
+    const { store, cleanup } = makeTempStore()
+    try {
+      const adapter = createDataSourceAdapter({
+        store,
+        getService: (name) =>
+          name === 'socialData'
+            ? {
+                fetch: async (req) => {
+                  if (req.capability === 'shop_product') {
+                    return {
+                      data: {
+                        global_data: {
+                          product_info: {
+                            error_code: 0,
+                            product_info: {
+                              product_model: { product_id: '1732501600694931999' },
+                            },
+                          },
+                        },
+                        product_data: {
+                          page_config: {
+                            components_map: [
+                              {
+                                component_name: 'product_info',
+                                component_data: {
+                                  product_info: {
+                                    product_id: '1732501600694931999',
+                                    product_model: {
+                                      product_id: '1732501600694931999',
+                                      name: 'Hydrating Sheet Mask Kit',
+                                      images: [
+                                        { url_list: ['https://p16-oec.example/first~tplv-crop-heic.heic'] },
+                                        { url_list: ['https://p16-oec.example/second~tplv.webp'] },
+                                      ],
+                                    },
+                                    seller_model: { shop_name: 'Glow Studio', seller_id: 'seller_glow' },
+                                  },
+                                },
+                              },
+                            ],
+                          },
+                        },
+                      },
+                    }
+                  }
+                  return {}
+                },
+              }
+            : null,
+      })
+
+      const detail = await adapter.getProductDetail({ productId: '1732501600694931999', region: 'US' })
+      assert.deepEqual(detail.warnings, [])
+      assert.equal(detail.product.title, 'Hydrating Sheet Mask Kit')
+      assert.equal(detail.product.shopName, 'Glow Studio')
+      assert.equal(detail.product.coverUrl, 'https://p16-oec.example/second~tplv.webp')
+
+      // Fallback to HEIC-only when no renderable image exists, and skip empty components_map stubs
+      const heicOnlyAdapter = createDataSourceAdapter({
+        store,
+        getService: (name) =>
+          name === 'socialData'
+            ? {
+                fetch: async (req) => {
+                  if (req.capability === 'shop_product') {
+                    return {
+                      data: {
+                        product_data: {
+                          page_config: {
+                            components_map: [
+                              {
+                                component_name: 'product_info',
+                                component_data: { product_info: { product_id: '1732501600694932000' } },
+                              },
+                              {
+                                component_name: 'product_info',
+                                component_data: {
+                                  product_info: {
+                                    product_id: '1732501600694932000',
+                                    product_model: {
+                                      product_id: '1732501600694932000',
+                                      name: 'HEIC Fallback Mask',
+                                      images: [{ url_list: ['https://p16-oec.example/only~tplv-crop-heic.heic'] }],
+                                    },
+                                  },
+                                },
+                              },
+                            ],
+                          },
+                        },
+                      },
+                    }
+                  }
+                  return {}
+                },
+              }
+            : null,
+      })
+      const heicDetail = await heicOnlyAdapter.getProductDetail({ productId: '1732501600694932000', region: 'US' })
+      assert.equal(heicDetail.product.title, 'HEIC Fallback Mask')
+      assert.equal(heicDetail.product.coverUrl, 'https://p16-oec.example/only~tplv-crop-heic.heic')
+    } finally {
+      cleanup()
+    }
+  })
 })
