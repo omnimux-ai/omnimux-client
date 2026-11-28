@@ -5,8 +5,8 @@ import { createRequire } from 'node:module'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parsePrimaryRuntime, workspaceDependencyPaths, type PrimaryRuntimeManifest } from '@deepseek-ai/dsh-tool-workspace-dependencies'
-import { macSmokeArchitecture } from '../../dsh-plugin-desktop/scripts/mac-universal.ts'
-import { macReleaseArchitecture } from '../../dsh-plugin-desktop/scripts/release-mac.ts'
+import { macSmokeArchitecture } from './mac-universal.ts'
+import { macReleaseArchitecture } from './release-mac.ts'
 import { machOArchitectures, preparePrimaryRuntime, primaryRuntimePayloadDigest, readPrimaryRuntimeLock, rosettaAvailable, smokePrimaryRuntime, type PrimaryRuntimeTarget } from './primary-runtime.ts'
 
 /** CPU of one bundled payload. */

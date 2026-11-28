@@ -1,7 +1,8 @@
 /** Sign the bundled interpreter payloads before electron-builder signs the enclosing application; ported from upstream Desktop. */
 import { execFileSync, spawn, spawnSync } from 'node:child_process'
-import { createHash } from 'node:crypto'
-import { lstatSync, readdirSync } from 'node:fs'
+import { createHash, randomBytes } from 'node:crypto'
+import { chmodSync, lstatSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { primaryRuntimePythonAliases, readPrimaryRuntime } from '@deepseek-ai/dsh-tool-workspace-dependencies'
 import { isMachO } from './primary-runtime.ts'
@@ -193,4 +194,72 @@ export function readSignedEntitlements(file: string): Record<string, unknown> {
   if (result.status !== 0) throw new Error(`Next runtime signing: codesign -d ${result.signal ?? `exited with ${String(result.status)}`}: ${result.stderr.trim()}`)
   if (result.stdout.trim() === '') return {}
   return JSON.parse(execFileSync('/usr/bin/plutil', ['-convert', 'json', '-o', '-', '-'], { input: result.stdout, encoding: 'utf8' })) as Record<string, unknown>
+}
+
+const P12_DATA_PREFIX = 'data:application/x-pkcs12;base64,'
+
+/** Executes one credential-bearing Apple command and returns its standard output. */
+export type RunAppleCommand = (command: string, args: readonly string[]) => string
+
+const executeAppleCommand: RunAppleCommand = (command, args) => {
+  try {
+    return execFileSync(command, args, { stdio: 'pipe', timeout: 120_000, encoding: 'utf8' })
+  } catch {
+    throw new Error(`Next runtime signing: ${command} ${args[0] ?? ''} failed; check certificate, password, and signing access`)
+  }
+}
+
+function readUserKeychains(run: RunAppleCommand): string[] {
+  return run('/usr/bin/security', ['list-keychains', '-d', 'user']).split('\n').map(line => line.trim().replace(/^"|"$/gu, '')).filter(path => path !== '')
+}
+
+/**
+ * Run signing work with the release identity resolvable by codesign, creating an isolated temporary
+ * keychain when a PKCS#12 certificate is provided through `CSC_LINK` and `CSC_KEY_PASSWORD`.
+ */
+export async function withMacSigningIdentity<T>(
+  environment: NodeJS.ProcessEnv, identity: string, action: (signer: MacRuntimeSigningIdentity) => Promise<T>, run: RunAppleCommand = executeAppleCommand,
+  options: { readonly probe?: boolean; readonly cleanup?: RunAppleCommand } = {},
+): Promise<T> {
+  const certificate = environment.CSC_LINK
+  if (certificate === undefined || certificate === '') return action({ identity })
+  const password = environment.CSC_KEY_PASSWORD
+  if (!certificate.startsWith(P12_DATA_PREFIX) || password === undefined) {
+    throw new Error('Next runtime signing: CSC_LINK must carry the PKCS#12 data URL the preflight produced, with CSC_KEY_PASSWORD')
+  }
+  const directory = mkdtempSync(join(tmpdir(), 'dsh-desktop-signing-'))
+  const keychain = join(directory, 'signing.keychain-db')
+  const keychainPassword = randomBytes(32).toString('base64')
+  const security = (args: readonly string[]): string => run('/usr/bin/security', args)
+  let created = false
+  let previousKeychains: string[] | undefined
+  try {
+    const p12 = join(directory, 'certificate.p12')
+    writeFileSync(p12, Buffer.from(certificate.slice(P12_DATA_PREFIX.length), 'base64'))
+    chmodSync(p12, 0o600)
+    security(['create-keychain', '-p', keychainPassword, keychain])
+    created = true
+    security(['unlock-keychain', '-p', keychainPassword, keychain])
+    security(['set-keychain-settings', keychain])
+    security(['import', p12, '-k', keychain, '-P', password, '-T', '/usr/bin/codesign', '-T', '/usr/bin/productbuild'])
+    security(['set-key-partition-list', '-S', 'apple-tool:,apple:', '-s', '-k', keychainPassword, keychain])
+    previousKeychains = readUserKeychains(run)
+    security(['list-keychains', '-d', 'user', '-s', keychain, ...previousKeychains])
+    if (options.probe !== false) {
+      const probe = join(directory, 'probe')
+      run('/bin/cp', ['/usr/bin/true', probe])
+      run('/usr/bin/codesign', ['--force', '--sign', identity, '--keychain', keychain, '--timestamp', '--options', 'runtime', probe])
+      run('/usr/bin/codesign', ['--verify', '--strict', probe])
+    }
+    return await action({ identity, keychain })
+  } finally {
+    const cleanup = options.cleanup ?? run
+    try {
+      if (previousKeychains !== undefined) cleanup('/usr/bin/security', ['list-keychains', '-d', 'user', '-s', ...previousKeychains])
+    } finally {
+      try {
+        if (created) cleanup('/usr/bin/security', ['delete-keychain', keychain])
+      } finally { rmSync(directory, { recursive: true, force: true }) }
+    }
+  }
 }

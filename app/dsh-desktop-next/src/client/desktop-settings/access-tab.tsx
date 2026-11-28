@@ -5,9 +5,9 @@ import { Check, Copy } from 'lucide-react'
 import type {
   DesktopSettingsApi,
   DesktopSettingsView,
-} from '../../../../dsh-plugin-desktop/src/client/desktop-settings-api.ts'
-import type { DesktopSettingsLocaleKey } from '../../../../dsh-plugin-desktop/src/client/desktop-settings-locales.ts'
-import { desktopLanExposureAvailable } from '../../../../dsh-plugin-desktop/src/desktop-network.ts'
+} from '../desktop-settings-api.ts'
+import type { DesktopSettingsLocaleKey } from '../desktop-settings-locales.ts'
+import { desktopLanExposureAvailable } from '../../desktop-network.ts'
 import type { Translate } from './model.ts'
 import type { DesktopSettingsModel } from './use-desktop-settings-section.ts'
 import { DesktopSettingsToggleRow } from './controls.tsx'

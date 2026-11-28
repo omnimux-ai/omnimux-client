@@ -59,7 +59,7 @@ vi.mock('../src/client/desktop-settings/diagnostics-tab.tsx', () => ({ DesktopSe
 
 import { DesktopSettingsSection, type DesktopSettingsSectionProps } from '../src/client/DesktopSettingsSection.tsx'
 import { desktopTranslate } from '../src/client/settings.tsx'
-import { installDialogKeyboardIsolation } from '../../dsh-plugin-desktop/src/client/modal-keyboard.ts'
+import { installDialogKeyboardIsolation } from '../src/client/modal-keyboard.ts'
 
 afterEach(() => {
   state.hooks = []

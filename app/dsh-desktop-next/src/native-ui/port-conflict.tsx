@@ -1,7 +1,7 @@
 /** The recovery assistant's quick-recovery card for a Host port that another program holds. */
 import { Network } from 'lucide-react'
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '../../../dsh-plugin-desktop/src/native-ui/components/ui/card.tsx'
-import { RecoveryActionLink } from '../../../dsh-plugin-desktop/src/native-ui/shared/RecoveryWindowPrimitives.tsx'
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from './components/ui/card.tsx'
+import { RecoveryActionLink } from './shared/RecoveryWindowPrimitives.tsx'
 import type { DesktopPortConflict } from '../port-conflict.ts'
 
 /** Recovery action that lets the Host choose a free port at each start; main.ts writes the Desktop preferences. */

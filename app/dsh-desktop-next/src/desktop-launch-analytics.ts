@@ -2,13 +2,13 @@
 import {
   getOrCreateDesktopInstallationIdentity,
   type DesktopInstallationIdentity,
-} from '../../dsh-plugin-desktop/src/desktop-installation-id.ts'
+} from './desktop-installation-id.ts'
 import {
   DEFAULT_ANALYTICS_HOSTNAME,
   DEFAULT_ANALYTICS_URL,
   DEFAULT_ANALYTICS_USER_AGENT,
   umamiEventRequest,
-} from '../../dsh-plugin-desktop/src/umami-event.ts'
+} from './umami-event.ts'
 import type { LogInput } from './log-record.ts'
 
 const LAUNCH_TIMEOUT_MS = 3_000

@@ -7,7 +7,7 @@ import { expectedNextVersion, verifyPackagedNextRuntime } from './prepare-runtim
 import { DESKTOP_RUNTIME_FILE } from '../src/runtime-tree.ts'
 import { packagingStepSync } from './packaging-step.ts'
 import { verifyWindowsCodeUnpacked } from './windows-asar-unpack.ts'
-import { writeAppBuildInfo } from '../../dsh-plugin-desktop/scripts/build-info.mjs'
+import { writeAppBuildInfo } from './build-info.mjs'
 
 /** Resources directories already cross-checked by afterPack in the current packaging process. */
 export const verifiedPackagedResources = new Set<string>()

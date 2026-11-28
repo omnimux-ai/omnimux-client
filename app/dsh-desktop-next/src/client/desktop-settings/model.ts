@@ -1,13 +1,13 @@
 /** Types of the Desktop settings page: the Host settings it edits, what its host injects, and its tabs. */
 
 import type { ReactNode } from 'react'
-import type { DesktopSettingsForm } from '../../../../dsh-plugin-desktop/src/client/settings-bridge.ts'
+import type { DesktopSettingsForm } from '../settings-bridge.ts'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {
   DesktopMarketProvider,
   DesktopSettingsApi,
-} from '../../../../dsh-plugin-desktop/src/client/desktop-settings-api.ts'
-import type { DesktopClientPlatform } from '../../../../dsh-plugin-desktop/src/client/environment.ts'
+} from '../desktop-settings-api.ts'
+import type { DesktopClientPlatform } from '../environment.ts'
 
 /** Browser view of the Host `dsh-desktop` settings namespace. */
 export interface DesktopShellSettings {

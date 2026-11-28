@@ -26,9 +26,9 @@ import {
   PROBE_URLS,
   type DesktopProxyResolution,
   type DesktopSystemProxyProbe,
-} from '../../dsh-plugin-desktop/src/system-proxy.ts'
+} from './system-proxy-core.ts'
 
-export type { DesktopSystemProxyProbe } from '../../dsh-plugin-desktop/src/system-proxy.ts'
+export type { DesktopSystemProxyProbe } from './system-proxy-core.ts'
 
 /** Environment name carrying the main-process probe to the Host; removed before the Host snapshots its environment. */
 export const SYSTEM_PROXY_ENV = 'DSH_NEXT_SYSTEM_PROXY'

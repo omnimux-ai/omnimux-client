@@ -16,7 +16,7 @@ LoadLanguageFile "${NSISDIR}\Contrib\Language files\English.nlf"
 !macro installApplicationFiles
   !insertmacro dshExtractPayload "${PAYLOAD_FILE}"
 !macroend
-!include "..\..\..\dsh-plugin-desktop\build\installer.nsh"
+!include "..\..\build\installer.nsh"
 !insertmacro customHeader
 
 ; electron-builder inserts preInit first in its own .onInit.
