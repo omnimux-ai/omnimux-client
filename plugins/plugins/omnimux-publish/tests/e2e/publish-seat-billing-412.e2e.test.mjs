@@ -91,7 +91,7 @@ describe('Social account seat billing E2E (Issue #412)', () => {
             ],
           },
         }),
-        omnimux_tiktok_creator_info: () => {
+        omnimux_accounts_creator_info: () => {
           creatorInfoCalls += 1
           return { success: true, data: { privacy_level_options: ['SELF_ONLY'], max_video_post_duration_sec: 600 } }
         },
