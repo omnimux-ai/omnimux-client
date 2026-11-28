@@ -359,7 +359,6 @@ OmniMux develops and ships its Electron desktop shell (`app/`) and product plugi
 omnimux-client/
 ├── app/                     # Electron desktop shell (Yarn 4 workspace, installers & native integration)
 │   ├── dsh-desktop-next/    # Active OmniMux Electron desktop shell (profiles, tray, recovery, updates)
-│   ├── dsh-plugin-desktop/  # Frozen legacy desktop shell (retired pending removal)
 │   ├── config/              # Plugin release tiers (plugin-tiers.json)
 │   └── docs/                # User guide, FAQ, and desktop architecture docs
 ├── plugins/                 # Product plugin workspace (root pnpm workspace)
@@ -466,7 +465,7 @@ Code authored by the OmniMux project is licensed under **[AGPL-3.0](LICENSE)** w
 | Remove `Powered by OmniMux` attribution or ship under a white-label brand | ❌ | ✅ |
 
 - Commercial licensing inquiries: `hello@omnimux.ai`.
-- Third-party open-source components retain their original licenses and copyright notices; see [NOTICE](NOTICE), [`app/LICENSE`](app/LICENSE), [`plugins/ACKNOWLEDGEMENTS.md`](plugins/ACKNOWLEDGEMENTS.md), and [`app/dsh-plugin-desktop/THIRD_PARTY_NOTICES.md`](app/dsh-plugin-desktop/THIRD_PARTY_NOTICES.md).
+- Third-party open-source components retain their original licenses and copyright notices; see [NOTICE](NOTICE), [`app/LICENSE`](app/LICENSE), [`plugins/ACKNOWLEDGEMENTS.md`](plugins/ACKNOWLEDGEMENTS.md), and [`app/dsh-desktop-next/THIRD_PARTY_NOTICES.md`](app/dsh-desktop-next/THIRD_PARTY_NOTICES.md).
 - Companion server repository: [`omnimux-ai/omnimux-gateway`](https://github.com/omnimux-ai/omnimux-gateway).
 
 ---
@@ -481,7 +480,7 @@ OmniMux is built with the help of the global open-source community. Every third-
 - **Desktop Shell & Workbench Subsystems**: [Anywhere Labs / DSH Desktop](https://github.com/anywhere-labs/deepseek-harness-desktop) (desktop shell foundation, MIT), [Augani / OpenReel Video](https://github.com/Augani/openreel-video) (multi-track NLE engine, MIT), [@cocofhu / SkillHub](https://github.com/cocofhu/skillhub) (plugin & skill market base, MIT), [Yuxiang Lin / dsh-browser](https://github.com/omdsh-dev/dsh-browser) (browser companion, MIT), [BeefTV Director](https://github.com/glanderness/BeefTV) (pinned MIT revision `5e2ad602`), [Quaternius](https://quaternius.itch.io/universal-base-characters) (CC0 1.0 3D actor models), and [Crosery / dsh-viewer](https://github.com/Crosery/dsh-viewer) (historical media-renderer attribution, MIT).
 - **Key Open-Source Libraries**: [React Flow](https://github.com/xyflow/xyflow), [Dagre](https://github.com/dagrejs/dagre), [Umami](https://github.com/umami-software/umami), and every community contributor who builds skills, reports bugs, or improves OmniMux.
 
-For full provenance, pinned revisions, and third-party license texts, see [NOTICE](NOTICE), [`plugins/ACKNOWLEDGEMENTS.md`](plugins/ACKNOWLEDGEMENTS.md), and [`app/dsh-plugin-desktop/THIRD_PARTY_NOTICES.md`](app/dsh-plugin-desktop/THIRD_PARTY_NOTICES.md).
+For full provenance, pinned revisions, and third-party license texts, see [NOTICE](NOTICE), [`plugins/ACKNOWLEDGEMENTS.md`](plugins/ACKNOWLEDGEMENTS.md), and [`app/dsh-desktop-next/THIRD_PARTY_NOTICES.md`](app/dsh-desktop-next/THIRD_PARTY_NOTICES.md).
 
 ---
 

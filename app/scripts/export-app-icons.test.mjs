@@ -88,20 +88,16 @@ test('tray resource checks require every tray image in the synced assets directo
   }
 })
 
-test('Beta and Next export a classic set beside the default one, which alone has a Dark rendition; Stable keeps only its own', () => {
+test('Next exports a classic set beside the default one, which alone has a Dark rendition', () => {
   const build = join(tmpdir(), 'build')
-  assert.deepEqual(iconSets('stable', build).map(({ name, directory, linux, tray, preview, dark }) => ({ name, directory, linux, tray, preview, dark })),
-    [{ name: 'default', directory: build, linux: false, tray: false, preview: false, dark: false }])
-  for (const channel of ['beta', 'next']) {
-    const [standard, classic, ...rest] = iconSets(channel, build)
-    assert.deepEqual(rest, [])
-    assert.deepEqual({ ...standard }, { name: 'default', directory: build, linux: true, tray: true, preview: true, dark: true })
-    assert.equal(classic.directory, join(build, CLASSIC_ICON_DIRECTORY))
-    assert.equal(classic.linux, undefined)
-    assert.equal(classic.dark, undefined)
-    assert.equal(classic.trayCopy, 'dsh-plugin-desktop/build')
-    assert.equal(classic.preview, true)
-  }
+  const [standard, classic, ...rest] = iconSets('next', build)
+  assert.deepEqual(rest, [])
+  assert.deepEqual({ ...standard }, { name: 'default', directory: build, linux: true, tray: true, preview: true, dark: true })
+  assert.equal(classic.directory, join(build, CLASSIC_ICON_DIRECTORY))
+  assert.equal(classic.linux, undefined)
+  assert.equal(classic.dark, undefined)
+  assert.equal(classic.trayCopy, 'dsh-desktop-next/assets')
+  assert.equal(classic.preview, true)
 })
 
 test('dark resource checks require the Dark rendition and its preview', () => {

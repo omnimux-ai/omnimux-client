@@ -49,34 +49,33 @@ Platform differences live at the `ElectronPlatformStrategy` seam selected once d
 
 ### Native file selection for plugins
 
-The Legacy and Next product pages use `dshDesktop.filePicker.open` to choose files or a directory. A user action from the trusted top-level page reaches the main process through the preload, and the operating system dialog is attached to that product window. Each window accepts one pending plugin selection at a time. Existing plugin import flows consume the paths, cancellation returns an empty list, and failures return an error code.
+Product pages in Next use `dshDesktop.filePicker.open` to choose files or a directory. A user action from the trusted top-level page reaches the main process through the preload, and the operating system dialog is attached to that product window. Each window accepts one pending plugin selection at a time. Existing plugin import flows consume the paths, cancellation returns an empty list, and failures return an error code.
 
-Browser sessions use the existing Host path. Verify matching shell and plugin builds together. An older shell without the bridge presents an update message for the affected path selectors.
+Browser sessions use the existing Host path; the legacy `dsh-plugin-desktop` shell has been retired and removed. Verify matching shell and plugin builds together, as an older shell without the bridge presents an update message for the affected path selectors.
 
 ## Profile and service boundaries
 
-The profile name and absolute directory come from `desktopProfiles.current`; they must not be inferred from argv, settings, or a URL. `list()` is read-only discovery. `select()` records a pending target and completes the switch through restart.
+The profile name and absolute directory come from `desktopProfiles.current`; they must not be inferred from argv, settings, or a URL. Multi-profile management and switching are coordinated by Next's native profile manager across the process restart boundary.
 
 `desktopPnpm.run()` runs bundled pnpm directly. `runPlugin()` uses packaged DSH CLI semantics so profile initialization, relative sources, and bundle reconciliation remain authoritative. Both operations belong to the current generation and use the subprocess service for complete process-tree ownership.
 
-The launcher-private `desktopRuntime`, `desktopPnpmBootstrap`, Electron executable, Node helpers, and ABI environment are not third-party APIs. OmniMux exposes `dsh-plugin-desktop/profile-service` and `dsh-plugin-desktop/pnpm`.
+The launcher-private `desktopRuntime`, `desktopPnpmBootstrap`, `desktopPermissions`, `desktopActions`, Electron executable, Node helpers, and ABI environment are not third-party APIs. The active shell `dsh-desktop-next` exposes the Host `desktopProfiles` and `desktopPnpm` boundaries.
 
 ## Packaging and runtime closure
 
 Release artifacts use Electron Builder and `app.asar`, while dependencies that must be physical (for example pnpm, node-pty, and Windows ACL/native files) live under `app.asar.unpacked`. The packaged-runtime gate checks both archive entries and physical runtime entries; profile fallback links must not target virtual ASAR paths that Node cannot resolve.
 
-The outer workspace uses Yarn. The pinned `deepseek-harness/` submodule keeps its own pnpm workspace. The active desktop shell `dsh-desktop-next` pins DSH `0.2.2-rc.5` (tracked in `dsh-version.json` and the `next` channel of `upstream.json`), while the legacy shell `dsh-plugin-desktop` remains frozen on DSH `0.2.1-rc.3` (`stable` channel).
+The outer workspace uses Yarn. The pinned `deepseek-harness/` submodule keeps its own pnpm workspace. The active desktop shell `dsh-desktop-next` pins DSH `0.2.2-rc.5` (tracked in `dsh-version.json` and the `next` channel of `upstream.json`); the legacy `dsh-plugin-desktop` shell (previously frozen on DSH `0.2.1-rc.3` under `stable`) has been retired and physically removed.
 
 The physical runtime includes `lib`, `node_modules`, package metadata, and the product preset. CLI and Worker processes use this same tree. Unsigned directory builds disable signing and publishing; final artifact checks verify Electron fuses and execute the packaged CLI and diagnostic Worker.
 
-### Dual-shell built-in Office skill boundary
+### Built-in Office skill boundary
 
-`dsh-desktop-next` and `dsh-plugin-desktop` intentionally differ in whether they ship upstream Office skills and document preview binaries:
+The sole active desktop shell `dsh-desktop-next` excludes upstream Office skills and document preview native binaries (the frozen legacy `dsh-plugin-desktop` shell that retained `0.2.1-rc.3` defaults has been retired and removed):
 
 | Desktop shell | Pinned DSH baseline | Upstream Office skills (`@deepseek-ai/dsh-skill-office`, 7 skills: `office`, `office-docx`, `office-pptx`, `office-xlsx`, `office-export-pdf`, `office-render`, `office-recalculate`) | Rationale & source of truth |
 |---|---|---|---|
-| `app/dsh-desktop-next` (active shell) | `0.2.2-rc.5` | **Not shipped** (disabled by default) | Installer size tradeoff: Office preview pulls `@deepseek-ai/libreoffice-kit-*` (~305 MB across dual CPU architectures). [`cordis.patch.yml`](../dsh-desktop-next/cordis.patch.yml) explicitly disables `office-kit` and `skill-office`, paired with [`runtime-file-policy.ts`](../dsh-desktop-next/scripts/runtime-file-policy.ts) excluding `@deepseek-ai/dsh-skill-office`, `@deepseek-ai/dsh-office-kit`, `@deepseek-ai/dsh-tool-office`, and `@deepseek-ai/libreoffice-kit-*` from the release payload (pinned by `dsh-desktop-next/tests/payload-exclusions.spec.ts`). |
-| `app/dsh-plugin-desktop` (frozen legacy shell) | `0.2.1-rc.3` | **Retained from upstream baseline** | Keeps the frozen `0.2.1-rc.3` upstream composition without excluding `@deepseek-ai/dsh-skill-office`. |
+| `app/dsh-desktop-next` (sole active shell) | `0.2.2-rc.5` | **Not shipped** (disabled by default) | Installer size tradeoff: Office preview pulls `@deepseek-ai/libreoffice-kit-*` (~305 MB across dual CPU architectures). [`cordis.patch.yml`](../dsh-desktop-next/cordis.patch.yml) explicitly disables `office-kit` and `skill-office`, paired with [`runtime-file-policy.ts`](../dsh-desktop-next/scripts/runtime-file-policy.ts) excluding `@deepseek-ai/dsh-skill-office`, `@deepseek-ai/dsh-office-kit`, `@deepseek-ai/dsh-tool-office`, and `@deepseek-ai/libreoffice-kit-*` from the release payload (pinned by `dsh-desktop-next/tests/payload-exclusions.spec.ts`). |
 
 Product plugins must never duplicate those 7 upstream Office skill slugs (enforced by `plugins/scripts/verify-skill-hygiene.mjs`). On `dsh-desktop-next`, users who need `.docx` / `.xlsx` / `.pptx` processing can rely on local scripts/tools or install community/personal skills on demand via DSH Terminal.
 
@@ -90,5 +89,5 @@ Normal startup seeds the `omnimux` Profile. Dev uses `~/.omnimux-dev` and port `
 
 ## Maintainer reading
 
-- [Desktop service contract](../dsh-plugin-desktop/docs/plugin-services.md)
-- [Package README](../dsh-plugin-desktop/README.md)
+- [Desktop service contract](../dsh-desktop-next/docs/plugin-services.md)
+- [Package README](../dsh-desktop-next/README.md)

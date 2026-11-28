@@ -44,7 +44,7 @@ Desktop Host、profile 和 DSH home 位于本机。是否向外部服务发送�
 
 ## 为什么当前桌面版（`dsh-desktop-next`）不包含内置 Office 技能与 LibreOffice 预览？
 
-这是为控制安装包体积所作的有意取舍。上游 DSH 的 `@deepseek-ai/dsh-skill-office`（含 `office`、`office-docx`、`office-pptx`、`office-xlsx`、`office-export-pdf`、`office-render`、`office-recalculate` 7 项技能）与 Office 预览依赖 `@deepseek-ai/libreoffice-kit`，会带来约 305 MB 的双架构原生体积；因此活跃桌面壳 `dsh-desktop-next` 在 [`cordis.patch.yml`](../dsh-desktop-next/cordis.patch.yml) 与 [`runtime-file-policy.ts`](../dsh-desktop-next/scripts/runtime-file-policy.ts) 中默认禁用并排除了该模块，而冻结的旧壳 `dsh-plugin-desktop`（`0.2.1-rc.3`）保留了上游默认挂载。详见[架构说明](architecture.md#双壳内置-office-技能分发边界)。如需处理表格或文档，可直接使用本机脚本能力或按需安装个人/社区技能。
+这是为控制安装包体积所作的有意取舍。上游 DSH 的 `@deepseek-ai/dsh-skill-office`（含 `office`、`office-docx`、`office-pptx`、`office-xlsx`、`office-export-pdf`、`office-render`、`office-recalculate` 7 项技能）与 Office 预览依赖 `@deepseek-ai/libreoffice-kit`，会带来约 305 MB 的双架构原生体积；因此活跃桌面壳 `dsh-desktop-next` 在 [`cordis.patch.yml`](../dsh-desktop-next/cordis.patch.yml) 与 [`runtime-file-policy.ts`](../dsh-desktop-next/scripts/runtime-file-policy.ts) 中默认禁用并排除了该模块（原保留该模块的旧壳 `dsh-plugin-desktop` 已随 `0.2.1-rc.3` 退役移除）。详见[架构说明](architecture.md#内置-office-技能分发边界)。如需处理表格或文档，可直接使用本机脚本能力或按需安装个人/社区技能。
 
 ## 应用如何更新？
 

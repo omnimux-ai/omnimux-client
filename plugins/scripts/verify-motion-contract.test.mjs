@@ -53,7 +53,6 @@ function findGovernedSourceRoots() {
     join(pluginsRoot, 'packages', 'dsh-ui-kit', 'src'),
     join(pluginsRoot, 'plugins'),
     join(repoRoot, 'app', 'dsh-desktop-next', 'src'),
-    join(repoRoot, 'app', 'dsh-plugin-desktop', 'src'),
   ].filter((d) => statSync(d, { throwIfNoEntry: false })?.isDirectory())
 }
 
@@ -164,7 +163,6 @@ describe('Apple motion system static contract gate', () => {
       'plugins/plugins/omnimux-browser/extension/src/panel/styles.css',
       'plugins/plugins/omnimux-browser/extension/welcome/welcome.css',
       'app/dsh-desktop-next/src/native-ui/theme.css',
-      'app/dsh-plugin-desktop/src/native-ui/shared/theme.css',
     ]) {
       const full = join(repoRoot, isolatedCss)
       assert.ok(existsSync(full), `Expected isolated stylesheet ${isolatedCss}`)
@@ -185,10 +183,6 @@ describe('Apple motion system static contract gate', () => {
     cssFiles.push(
       ...collectFiles(
         join(repoRoot, 'app', 'dsh-desktop-next', 'src'),
-        (_f, name) => name.endsWith('.css') || STYLE_FILE_RE.test(name),
-      ),
-      ...collectFiles(
-        join(repoRoot, 'app', 'dsh-plugin-desktop', 'src'),
         (_f, name) => name.endsWith('.css') || STYLE_FILE_RE.test(name),
       ),
     )
@@ -243,8 +237,7 @@ describe('Apple motion system static contract gate', () => {
             (STYLE_FILE_RE.test(name) &&
               (full.includes('/src/client/') ||
                 full.includes('/asset-hub/styles/') ||
-                full.includes('/dsh-desktop-next/src/') ||
-                full.includes('/dsh-plugin-desktop/src/')))) &&
+                full.includes('/dsh-desktop-next/src/')))) &&
           !full.includes('/preset/') &&
           !full.includes('/openreel/'),
       )

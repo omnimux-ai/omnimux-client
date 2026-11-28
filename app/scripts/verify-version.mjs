@@ -3,7 +3,7 @@
  * verify-version.mjs — 版本一致性门禁。
  *
  * 校验：
- *   1. 根 package.json#version === dsh-plugin-desktop/package.json#version === dsh-desktop-next/package.json#version
+ *   1. 根 package.json#version === dsh-desktop-next/package.json#version
  *   2. 可选 --tag <vX.Y.Z>：发布 tag 去掉前缀 v 后必须等于实际发布包 dsh-desktop-next 的版本
  *
  * 用法：
@@ -21,24 +21,13 @@ function readVersion(rel) {
 }
 
 const rootVersion = readVersion('package.json')
-const desktopVersion = readVersion('dsh-plugin-desktop/package.json')
 const nextVersion = readVersion('dsh-desktop-next/package.json')
 
 const errors = []
 
-if (rootVersion !== desktopVersion) {
-  errors.push(
-    `版本不一致: 根 package.json=${rootVersion} ≠ dsh-plugin-desktop/package.json=${desktopVersion}`,
-  )
-}
 if (rootVersion !== nextVersion) {
   errors.push(
     `版本不一致: 根 package.json=${rootVersion} ≠ dsh-desktop-next/package.json=${nextVersion}`,
-  )
-}
-if (desktopVersion !== nextVersion) {
-  errors.push(
-    `版本不一致: dsh-plugin-desktop/package.json=${desktopVersion} ≠ dsh-desktop-next/package.json=${nextVersion}`,
   )
 }
 

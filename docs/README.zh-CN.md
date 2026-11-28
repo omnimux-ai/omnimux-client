@@ -359,7 +359,6 @@ OmniMux 将原生桌面壳（`app/`）与产品插件工作区（`plugins/`）�
 omnimux-client/
 ├── app/                     # Electron 桌面端（Yarn 4 工作区，含打包、签名与原生集成）
 │   ├── dsh-desktop-next/    # OmniMux 活跃桌面产品壳（配置、托盘、恢复与更新）
-│   ├── dsh-plugin-desktop/  # 冻结旧版桌面壳（已停止调用，待阶段 3 移除）
 │   ├── config/              # 插件分级清单（plugin-tiers.json）
 │   └── docs/                # 使用手册、FAQ 与桌面架构文档
 ├── plugins/                 # 产品插件工作区（仓库根单一 pnpm workspace）
@@ -466,7 +465,7 @@ OmniMux 自研代码采用 **[AGPL-3.0](../LICENSE)** 许可（附 [NOTICE](../N
 | 移除 `Powered by OmniMux` 署名或白标化定制发布 | ❌ | ✅ |
 
 - 商业授权咨询：`hello@omnimux.ai`。
-- 本仓库包含的第三方开源组件保留其原始许可证与版权声明，详见 [NOTICE](../NOTICE)、[`app/LICENSE`](../app/LICENSE)、[`plugins/ACKNOWLEDGEMENTS.md`](../plugins/ACKNOWLEDGEMENTS.md) 与 [`app/dsh-plugin-desktop/THIRD_PARTY_NOTICES.md`](../app/dsh-plugin-desktop/THIRD_PARTY_NOTICES.md)。
+- 本仓库包含的第三方开源组件保留其原始许可证与版权声明，详见 [NOTICE](../NOTICE)、[`app/LICENSE`](../app/LICENSE)、[`plugins/ACKNOWLEDGEMENTS.md`](../plugins/ACKNOWLEDGEMENTS.md) 与 [`app/dsh-desktop-next/THIRD_PARTY_NOTICES.md`](../app/dsh-desktop-next/THIRD_PARTY_NOTICES.md)。
 - 配套服务端开源仓库：[`omnimux-ai/omnimux-gateway`](https://github.com/omnimux-ai/omnimux-gateway)。
 
 ---
@@ -481,7 +480,7 @@ OmniMux 的构建离不开全球开源社区的卓越工作。我们在保留原
 - **桌面壳与核心工作台模块**：特别感谢 [Anywhere Labs / DSH Desktop](https://github.com/anywhere-labs/deepseek-harness-desktop)（桌面端底座，MIT）、[Augani / OpenReel Video](https://github.com/Augani/openreel-video)（多轨时间轴剪辑内核，MIT）、[@cocofhu / SkillHub](https://github.com/cocofhu/skillhub)（插件与技能市场底座，MIT）、[Yuxiang Lin / dsh-browser](https://github.com/omdsh-dev/dsh-browser)（浏览器伴侣，MIT）、[BeefTV Director](https://github.com/glanderness/BeefTV)（MIT 锁定基线 `5e2ad602`）、[Quaternius](https://quaternius.itch.io/universal-base-characters)（CC0 1.0 3D 角色模型），以及 [Crosery / dsh-viewer](https://github.com/Crosery/dsh-viewer)（媒体渲染器历史归属，MIT）。
 - **核心开源库与社区贡献**：感谢 [React Flow](https://github.com/xyflow/xyflow)、[Dagre](https://github.com/dagrejs/dagre)、[Umami](https://github.com/umami-software/umami) 等开源项目，以及所有参与测试、反馈、贡献技能和代码的社区成员。
 
-完整的第三方组件清单、上游锁定版本与原始许可证文本见 [NOTICE](../NOTICE)、[`plugins/ACKNOWLEDGEMENTS.md`](../plugins/ACKNOWLEDGEMENTS.md) 及 [`app/dsh-plugin-desktop/THIRD_PARTY_NOTICES.md`](../app/dsh-plugin-desktop/THIRD_PARTY_NOTICES.md)。
+完整的第三方组件清单、上游锁定版本与原始许可证文本见 [NOTICE](../NOTICE)、[`plugins/ACKNOWLEDGEMENTS.md`](../plugins/ACKNOWLEDGEMENTS.md) 及 [`app/dsh-desktop-next/THIRD_PARTY_NOTICES.md`](../app/dsh-desktop-next/THIRD_PARTY_NOTICES.md)。
 
 ---
 

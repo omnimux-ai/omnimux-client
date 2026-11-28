@@ -4,7 +4,7 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, 
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { AA_PACKAGE, AA_REPOSITORY, AA_WORKSPACES, aaArtifactResolution, assertPreparedAaRelease, runtimePeerRanges as readRuntimePeerRanges } from './agents-anywhere-release-policy.mjs'
+import { AA_PACKAGE, AA_REPOSITORY, AA_WORKSPACES, aaArtifactResolution, assertPreparedAaRelease, runtimePeerRanges as readRuntimePeerRanges, runtimePeersSatisfy } from './agents-anywhere-release-policy.mjs'
 import { prepareInstalledAaRuntime } from './prepare-agents-anywhere-runtime.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -175,7 +175,7 @@ function prepare() {
   }
   const packagePaths = AA_WORKSPACES.map(workspace => `${workspace}/package.json`)
   const peerRanges = runtimePeerRanges()
-  if (currentProvenance.commit === commit && JSON.stringify(currentProvenance.runtimePeers) === JSON.stringify(peerRanges)
+  if (currentProvenance.commit === commit && runtimePeersSatisfy(currentProvenance.runtimePeers, peerRanges)
     && packagePaths.every(path => readJson(join(root, path)).dependencies?.['@agents-anywhere/dsh-bridge-next'] === `file:../vendor/agents-anywhere/${currentProvenance.artifact}`)
     && existsSync(join(vendorRoot, currentProvenance.artifact))
     && sha256(join(vendorRoot, currentProvenance.artifact)) === currentProvenance.sha256) {

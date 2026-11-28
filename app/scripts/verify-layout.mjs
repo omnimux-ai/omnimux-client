@@ -13,15 +13,17 @@ const fail = message => { throw new Error(`verify-layout: ${message}`) }
 
 const workspace = readJson('package.json')
 const upstream = readJson('upstream.json')
-const stablePlugin = readJson('dsh-plugin-desktop/package.json')
 const nextDesktop = readJson('dsh-desktop-next/package.json')
 const nextReference = readJson('dsh-desktop-next/upstream-reference.json')
 const fabric = readJson('dsh-community-fabric/package.json')
 const market = readJson('dsh-community-market/package.json')
 const upstreamPackage = readJson('deepseek-harness/package.json')
 
-if (stablePlugin.name !== 'dsh-plugin-desktop') fail('the stable Desktop workspace must retain dsh-plugin-desktop')
-if (!['stable', 'next'].includes(upstream.activeChannel)) fail('the pinned upstream checkout must follow a declared release channel')
+if (existsSync(resolve(root, 'dsh-plugin-desktop'))) {
+  fail('legacy dsh-plugin-desktop workspace has been retired and must not exist')
+}
+if (upstream.activeChannel !== 'next') fail('the pinned upstream checkout must follow the next release channel')
+if (upstream.channels?.stable !== undefined) fail('upstream.json must not retain retired channels.stable')
 const activeUpstream = upstream.channels?.[upstream.activeChannel]
 if (activeUpstream === undefined) fail('the active upstream channel is missing')
 
@@ -29,15 +31,13 @@ if (workspace.packageManager !== 'yarn@4.18.0') {
   fail('the product workspace must pin yarn@4.18.0')
 }
 if (JSON.stringify(workspace.workspaces) !== JSON.stringify([
-  'dsh-plugin-desktop',
   'dsh-desktop-next',
   'dsh-community-fabric',
   'dsh-community-market',
 ])) {
-  fail('the root Yarn workspace must contain the desktop, next, community-fabric, and community-market packages')
+  fail('the root Yarn workspace must contain only dsh-desktop-next, dsh-community-fabric, and dsh-community-market')
 }
 for (const [name, manifest] of [
-  ['dsh-plugin-desktop', stablePlugin],
   ['dsh-desktop-next', nextDesktop],
   ['dsh-community-fabric', fabric],
   ['dsh-community-market', market],
@@ -88,7 +88,6 @@ if (typeof upstreamPackage.packageManager !== 'string' || !upstreamPackage.packa
 
 for (const [owner, manifest] of [
   ['root', workspace],
-  ['stable desktop', stablePlugin],
   ['next desktop', nextDesktop],
   ['fabric', fabric],
   ['market', market],
@@ -124,13 +123,11 @@ if (run('git', ['remote', 'get-url', 'origin'], upstreamDir) !== upstream.reposi
 if (upstreamPackage.version !== activeUpstream.sourceVersion) {
   fail('deepseek-harness package version differs from upstream.json')
 }
-for (const [channel, plugin] of [['stable', stablePlugin], ['next', nextDesktop]]) {
-  const metadata = upstream.channels?.[channel]
-  if (metadata?.package !== plugin.name) fail(`${channel} upstream metadata points at the wrong package`)
-  for (const name of Object.keys(plugin.dependencies).filter(name => name === '@deepseek-ai/dsh' || name.startsWith('@deepseek-ai/dsh-'))) {
-    if (plugin.dependencies[name] !== metadata.runtimePackageVersion) {
-      fail(`${plugin.name} ${name} must use the recorded ${channel} DSH runtime package family`)
-    }
+const nextMetadata = upstream.channels?.next
+if (nextMetadata?.package !== nextDesktop.name) fail('next upstream metadata points at the wrong package')
+for (const name of Object.keys(nextDesktop.dependencies).filter(name => name === '@deepseek-ai/dsh' || name.startsWith('@deepseek-ai/dsh-'))) {
+  if (nextDesktop.dependencies[name] !== nextMetadata.runtimePackageVersion) {
+    fail(`${nextDesktop.name} ${name} must use the recorded next DSH runtime package family`)
   }
 }
 
@@ -143,4 +140,4 @@ for (const [name, version] of Object.entries(nextDesktop.dependencies)) {
   if ((name === '@deepseek-ai/dsh' || name.startsWith('@deepseek-ai/dsh-')) && version !== nextReference.version) fail(`Next ${name} must match the pinned upstream family`)
 }
 
-process.stdout.write(`verify-layout: Desktop workspaces including Next and upstream ${activeUpstream.commit.slice(0, 10)} are consistent\n`)
+process.stdout.write(`verify-layout: Desktop workspace Next and upstream ${activeUpstream.commit.slice(0, 10)} are consistent\n`)

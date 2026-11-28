@@ -8,18 +8,15 @@ import { fileURLToPath } from 'node:url'
 
 const root = resolve(import.meta.dirname, '..')
 export const ICON_PACKAGES = Object.freeze({
-  stable: 'dsh-plugin-desktop',
-  beta: 'dsh-plugin-desktop-beta',
   next: 'dsh-desktop-next',
 })
 /** hicolor theme sizes up to the theme's 512px maximum; Linux packages install each PNG under hicolor/<size>x<size>/apps. */
 export const LINUX_ICON_SIZES = Object.freeze([16, 22, 24, 32, 48, 64, 128, 256, 512])
-// Stable is frozen and keeps the Linux set it committed before these exports covered Linux.
-const LINUX_ICON_CHANNELS = new Set(['beta', 'next'])
+const LINUX_ICON_CHANNELS = new Set(['next'])
 // electron-builder's Linux targets install every file in the set directory named like this.
 const LINUX_SIZED_ICON = /^\d+(?:x\d+)?\.png$/i
-// Beta and Next load these from their synced assets directory; Stable keeps the images its own generator derives.
-const TRAY_ICON_CHANNELS = new Set(['beta', 'next'])
+// Next loads these from its synced assets directory.
+const TRAY_ICON_CHANNELS = new Set(['next'])
 // The composition's whale layer, drawn once in the color the Windows and Linux images keep.
 const TRAY_SOURCE = 'app-icon.icon/Assets/whale-cobalt.svg'
 const TRAY_COLOR = '#3563BF'
@@ -32,12 +29,12 @@ export const TRAY_ICONS = Object.freeze([
   ['tray-icon-blue@1.5x.png', TRAY_COLOR, 24],
   ['tray-icon-blue@2x.png', TRAY_COLOR, 32],
 ])
-// Beta and Next also keep the DeepSeek whale they showed before the whale tail, as a classic set users can
-// switch to at runtime. It has the default set's exports in its own directory below the build directory.
-const CLASSIC_ICON_CHANNELS = new Set(['beta', 'next'])
+// Next also keeps the classic set users can switch to at runtime. It has the default set's exports in its own
+// directory below the build directory.
+const CLASSIC_ICON_CHANNELS = new Set(['next'])
 export const CLASSIC_ICON_DIRECTORY = 'classic'
-// Its tray images are Stable's, copied unchanged: Beta and Next showed exactly those before the whale tail.
-const CLASSIC_TRAY_SOURCE = 'dsh-plugin-desktop/build'
+// Its tray images remain committed in dsh-desktop-next/assets.
+const CLASSIC_TRAY_SOURCE = 'dsh-desktop-next/assets'
 const CLASSIC_TRAY_DIRECTORY = '../../assets/classic'
 /** The thumbnail Desktop settings and setup show for each set users can choose. */
 export const PREVIEW_ICON = Object.freeze(['app-icon-preview.png', 128])
@@ -169,7 +166,7 @@ async function generateTrayIcons(source, directory) {
 }
 
 /**
- * Copy the classic set's tray images unchanged from Stable, which still ships them.
+ * Copy the classic set's tray images unchanged from the Next assets directory.
  * @param {string} directory - the set's tray directory; created when missing.
  */
 function copyClassicTrayIcons(directory) {
@@ -177,7 +174,7 @@ function copyClassicTrayIcons(directory) {
   for (const [name] of TRAY_ICONS) copyFileSync(join(root, CLASSIC_TRAY_SOURCE, name), join(directory, name))
 }
 
-/** Serialize a set's resource record: Beta and Next also record their Linux set, tray images and previews. */
+/** Serialize a set's resource record: Next also records its Linux set, tray images and previews. */
 function resourceRecord(set, sourceSha256) {
   return `${JSON.stringify({
     source: 'app-icon.icon', sourceSha256,
@@ -194,7 +191,7 @@ function resourceRecord(set, sourceSha256) {
 async function main() {
   const args = process.argv.slice(2)
   const requested = args.includes('--channel') ? args[args.indexOf('--channel') + 1] : 'all'
-  if (requested !== 'all' && !Object.hasOwn(ICON_PACKAGES, requested)) throw new Error('Use --channel stable, beta, next, or all')
+  if (requested !== 'all' && !Object.hasOwn(ICON_PACKAGES, requested)) throw new Error('Use --channel next or all')
   const selected = Object.entries(ICON_PACKAGES).filter(([channel]) => requested === 'all' || requested === channel)
   if (args.includes('--check')) {
     for (const [channel, name] of selected) {
@@ -208,7 +205,7 @@ async function main() {
   if (args.includes('--linux')) {
     // Derives only the Linux set and the previews from the committed Composer exports, so no Xcode is needed.
     const linuxSelected = selected.filter(([channel]) => LINUX_ICON_CHANNELS.has(channel))
-    if (linuxSelected.length === 0) throw new Error('--linux exports the Beta and Next sets; Stable keeps its committed one')
+    if (linuxSelected.length === 0) throw new Error('--linux exports the Next set')
     for (const [channel, name] of linuxSelected) {
       for (const set of iconSets(channel, join(root, name, 'build'))) {
         checkIconResources(set.directory, { ...set, linux: false, preview: false })

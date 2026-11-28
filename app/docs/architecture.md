@@ -49,34 +49,33 @@ Desktop 级确认、警告、错误与结果不会进入 Web Client 组件树。
 
 ### 插件的原生文件选择
 
-Legacy 和 Next 的产品主页面可通过 `dshDesktop.filePicker.open` 请求选择文件或目录。可信顶层页面的用户操作沿 preload 进入桌面主进程，选择窗附到该产品窗口。每个窗口只接受一个进行中的插件选择，返回的路径交给原有插件导入流程。取消返回空路径列表，失败返回错误码。
+Next 产品主页面可通过 `dshDesktop.filePicker.open` 请求选择文件或目录。可信顶层页面的用户操作沿 preload 进入桌面主进程，选择窗附到该产品窗口。每个窗口只接受一个进行中的插件选择，返回的路径交给原有插件导入流程。取消返回空路径列表，失败返回错误码。
 
-纯 Web 入口继续由 Host 处理。桌面壳和插件版本配套验证，旧壳缺少此能力时，相关路径选择提示更新客户端。
+纯 Web 入口继续由 Host 处理；旧版 `dsh-plugin-desktop` 壳已退役移除。桌面壳与插件版本需配套验证，缺少原生桥接时，相关路径选择提示更新客户端。
 
 ## Profile 与服务边界
 
-profile 的名字和绝对目录由 `desktopProfiles.current` 提供，不能从 argv、settings 或 URL 猜测。`list()` 是只读发现；`select()` 记录 pending target，并通过重启完成切换。
+profile 的名字和绝对目录由 `desktopProfiles.current` 提供，不能从 argv、settings 或 URL 猜测。多 profile 的管理与切换由 Next 原生 Profile 管理器在重启生命周期内协调完成。
 
 `desktopPnpm.run()` 直接跑内置 pnpm；`runPlugin()` 通过打包的 DSH CLI 维持 profile 初始化、相对 source 和 bundle reconcile。两者都属于当前 generation，并由 subprocess service 管理完整进程树。
 
-Launcher 私有的 `desktopRuntime`、`desktopPnpmBootstrap`、Electron executable、Node helper 和 ABI 环境不是第三方 API。OmniMux 的公开 contract 是 `dsh-plugin-desktop/profile-service` 与 `dsh-plugin-desktop/pnpm`。
+Launcher 私有的 `desktopRuntime`、`desktopPnpmBootstrap`、`desktopPermissions`、`desktopActions`、Electron executable、Node helper 和 ABI 环境不是第三方 API。当前桌面端由 `dsh-desktop-next` 承载并向同进程 Host 插件提供 `desktopProfiles` 与 `desktopPnpm` 服务契约。
 
 ## 打包与运行时闭包
 
 发布包使用 Electron Builder 和 `app.asar`，但需要物理 unpack 的依赖（例如 pnpm、node-pty、Windows ACL/native 文件）会放在 `app.asar.unpacked`。Packaged runtime gate 会检查 ASAR 入口和物理运行时入口，profile fallback 不能把符号链接指向无法被 Node 解析的虚拟 ASAR 路径。
 
-根 workspace 使用 Yarn；固定的 `deepseek-harness/` 子模块保持上游自己的 pnpm workspace。活跃桌面壳 `dsh-desktop-next` 绑定 DSH `0.2.2-rc.5`（由 `dsh-version.json` 与 `upstream.json` 的 `next` 通道锁定）；过渡期旧壳 `dsh-plugin-desktop` 冻结在 DSH `0.2.1-rc.3`（`stable` 通道）。
+根 workspace 使用 Yarn；固定的 `deepseek-harness/` 子模块保持上游自己的 pnpm workspace。活跃桌面壳 `dsh-desktop-next` 绑定 DSH `0.2.2-rc.5`（由 `dsh-version.json` 与 `upstream.json` 的 `next` 通道锁定）；原旧壳 `dsh-plugin-desktop`（曾冻结在 DSH `0.2.1-rc.3` 的 `stable` 通道）已正式退役并物理移除。
 
 物理运行时包含 `lib`、`node_modules`、包元数据和产品 preset；CLI 与 Worker 共用这套路径。Unsigned directory build 禁止签名和发布；最终产物校验检查 Electron Fuse，并执行包内 CLI 和诊断 Worker。
 
-### 双壳内置 Office 技能分发边界
+### 内置 Office 技能分发边界
 
-`dsh-desktop-next` 与 `dsh-plugin-desktop` 在内置上游 Office 技能与文档预览能力上存在有意设计差异：
+活跃桌面壳 `dsh-desktop-next` 默认不随包分发上游 Office 技能与文档预览原生依赖（原曾保留上游默认挂载的旧壳 `dsh-plugin-desktop` 已随 `0.2.1-rc.3` 退役移除）：
 
 | 桌面壳 | DSH 基线 | 上游 Office 技能（`@deepseek-ai/dsh-skill-office` 7 项：`office`、`office-docx`、`office-pptx`、`office-xlsx`、`office-export-pdf`、`office-render`、`office-recalculate`） | 原因与配置位置 |
 |---|---|---|---|
-| `app/dsh-desktop-next`（活跃发布壳） | `0.2.2-rc.5` | **不随包分发**（默认禁用） | 出于安装包体积权衡：Office 预览依赖 `@deepseek-ai/libreoffice-kit-*`（双架构原生二进制约 305 MB）。在 [`cordis.patch.yml`](../dsh-desktop-next/cordis.patch.yml) 中显式禁用 `office-kit` 与 `skill-office`，并由 [`runtime-file-policy.ts`](../dsh-desktop-next/scripts/runtime-file-policy.ts) 在打包阶段排除 `@deepseek-ai/dsh-skill-office`、`@deepseek-ai/dsh-office-kit`、`@deepseek-ai/dsh-tool-office` 与 `@deepseek-ai/libreoffice-kit-*`（由 `dsh-desktop-next/tests/payload-exclusions.spec.ts` 锁定配对）。 |
-| `app/dsh-plugin-desktop`（冻结旧壳） | `0.2.1-rc.3` | **保留上游默认挂载** | 随上游 `0.2.1-rc.3` 基线保留，未排除 `@deepseek-ai/dsh-skill-office`。 |
+| `app/dsh-desktop-next`（唯一活跃发布壳） | `0.2.2-rc.5` | **不随包分发**（默认禁用） | 出于安装包体积权衡：Office 预览依赖 `@deepseek-ai/libreoffice-kit-*`（双架构原生二进制约 305 MB）。在 [`cordis.patch.yml`](../dsh-desktop-next/cordis.patch.yml) 中显式禁用 `office-kit` 与 `skill-office`，并由 [`runtime-file-policy.ts`](../dsh-desktop-next/scripts/runtime-file-policy.ts) 在打包阶段排除 `@deepseek-ai/dsh-skill-office`、`@deepseek-ai/dsh-office-kit`、`@deepseek-ai/dsh-tool-office` 与 `@deepseek-ai/libreoffice-kit-*`（由 `dsh-desktop-next/tests/payload-exclusions.spec.ts` 锁定配对）。 |
 
 所有产品插件严禁自行复制上述 7 个上游 Office 技能 slug（由 `plugins/scripts/verify-skill-hygiene.mjs` 强制拦截）。在 `dsh-desktop-next` 中如需处理 `.docx` / `.xlsx` / `.pptx`，用户可使用内置 Python/Node 依赖或通过 DSH Terminal 按需安装社区/个人技能。
 
@@ -90,5 +89,5 @@ OmniMux 使用 `ai.omnimux.desktop`，通过 `app/dsh-desktop-next/src/omnimux-u
 
 ## 维护者深入阅读
 
-- [Desktop service contract](../dsh-plugin-desktop/docs/plugin-services.md)
-- [Package README](../dsh-plugin-desktop/README.md)
+- [Desktop service contract](../dsh-desktop-next/docs/plugin-services.md)
+- [Package README](../dsh-desktop-next/README.md)

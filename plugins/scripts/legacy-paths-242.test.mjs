@@ -11,10 +11,11 @@ const pluginsRoot = resolve(here, '..')
 const repoRoot = resolve(pluginsRoot, '..')
 const read = (rel) => readFileSync(join(repoRoot, rel), 'utf8')
 
-test('historical nested workflow directory is removed', () => {
+test('historical nested workflow directory and retired legacy shell are removed', () => {
   assert.equal(existsSync(join(repoRoot, 'app', '.github')), false)
   assert.equal(read('.github/workflows/r2-publish.yml').includes('app/.github'), false)
-  assert.equal(read('app/dsh-plugin-desktop/tests/package.spec.ts').includes("new URL('.github/workflows/ci.yml', workspaceRoot)"), false)
+  assert.equal(existsSync(join(repoRoot, 'app', 'dsh-plugin-desktop')), false)
+  assert.equal(read('app/dsh-desktop-next/tests/package.spec.ts').includes("new URL('.github/workflows/ci.yml', workspaceRoot)"), false)
 })
 
 test('sync-upstream uses the current main branch and existing decision log', () => {

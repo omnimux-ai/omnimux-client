@@ -23,7 +23,7 @@ function runtimePath(workspace) {
   }
 }
 
-for (const workspace of ['dsh-plugin-desktop-beta', 'dsh-plugin-desktop', 'dsh-desktop-next']) {
+for (const workspace of ['dsh-desktop-next']) {
   const entry = runtimePath(workspace)
   test(`${workspace}: JSON storage BOM compatibility`, {
     skip: entry === undefined && 'runtime dependencies are not installed; run corepack yarn install',

@@ -4,7 +4,7 @@ import { accessSync, chmodSync, constants, mkdirSync, mkdtempSync, readFileSync,
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { test } from 'node:test'
-import { AA_PACKAGE, AA_PEERS, AA_REPOSITORY, AA_WORKSPACES, aaArtifactResolution, assertPreparedAaRelease } from './agents-anywhere-release-policy.mjs'
+import { AA_PACKAGE, AA_PEERS, AA_REPOSITORY, AA_WORKSPACES, aaArtifactResolution, assertPreparedAaRelease, runtimePeersSatisfy } from './agents-anywhere-release-policy.mjs'
 import { patchManifest, versionForCommit } from './prepare-agents-anywhere-release.mjs'
 import { prepareInstalledAaRuntime } from './prepare-agents-anywhere-runtime.mjs'
 
@@ -44,9 +44,41 @@ function fixture(t, desktopVersion = version) {
   return { root, patch }
 }
 
-test('accepts the latest AA across Stable, Beta and Next runtime peers', t => {
+test('accepts the latest AA for Next runtime peers', t => {
   const { root } = fixture(t)
   assert.equal(assertPreparedAaRelease(root, commit).commit, commit)
+})
+
+test('accepts provenance runtime peers that are a superset of the active shell peers', t => {
+  const supersetPeers = Object.fromEntries(AA_PEERS.map(name => [name, '0.2.1-rc.3 || 0.2.2-rc.5']))
+  const activePeers = Object.fromEntries(AA_PEERS.map(name => [name, '0.2.2-rc.5']))
+  assert.equal(runtimePeersSatisfy(supersetPeers, activePeers), true)
+  const { root, patch } = fixture(t)
+  patch('vendor/agents-anywhere/provenance.json', data => {
+    data.runtimePeers = supersetPeers
+  })
+  patch('dsh-desktop-next/package.json', data => {
+    data.dependencies = { ...data.dependencies, ...activePeers }
+  })
+  patch(`dsh-desktop-next/node_modules/${AA_PACKAGE}/package.json`, data => {
+    data.peerDependencies = supersetPeers
+  })
+  assert.equal(assertPreparedAaRelease(root, commit).commit, commit)
+})
+
+test('rejects provenance runtime peers missing the active shell version', t => {
+  const legacyOnly = Object.fromEntries(AA_PEERS.map(name => [name, '0.2.1-rc.3']))
+  const activePeers = Object.fromEntries(AA_PEERS.map(name => [name, '0.2.2-rc.5']))
+  assert.equal(runtimePeersSatisfy(legacyOnly, activePeers), false)
+  assert.equal(runtimePeersSatisfy(legacyOnly, {}), false)
+  const { root, patch } = fixture(t)
+  patch('vendor/agents-anywhere/provenance.json', data => {
+    data.runtimePeers = legacyOnly
+  })
+  patch('dsh-desktop-next/package.json', data => {
+    data.dependencies = { ...data.dependencies, ...activePeers }
+  })
+  assert.throws(() => assertPreparedAaRelease(root, commit), /runtime peers have changed/)
 })
 
 for (const sourceVersion of ['0.1.0-dev.0', '2.0.1', '2.0.1+build.1']) {
@@ -107,12 +139,6 @@ for (const [schemaVersion, cosmokitVersion] of [['3.18.2', '1.8.3'], ['3.18.4', 
   })
 }
 
-test('rejects the former stable-old/beta-new split even if the tarball is valid', t => {
-  const { root, patch } = fixture(t)
-  patch('dsh-plugin-desktop/package.json', data => { data.dependencies[AA_PACKAGE] = 'file:../vendor/agents-anywhere/old.tgz' })
-  assert.throws(() => assertPreparedAaRelease(root, commit), /dsh-plugin-desktop references a different AA artifact/)
-})
-
 test('rejects a Next install left on the old AA artifact', t => {
   const { root, patch } = fixture(t)
   patch('dsh-desktop-next/package.json', data => { data.dependencies[AA_PACKAGE] = 'file:../vendor/agents-anywhere/old.tgz' })
@@ -126,7 +152,7 @@ test('rejects a prepared artifact after AA main advances', t => {
 
 test('rejects stale installed code despite updated manifests and provenance', t => {
   const { root, patch } = fixture(t)
-  patch(`dsh-plugin-desktop/node_modules/${AA_PACKAGE}/package.json`, data => { data.version = '0.1.0-old' })
+  patch(`dsh-desktop-next/node_modules/${AA_PACKAGE}/package.json`, data => { data.version = '0.1.0-old' })
   assert.throws(() => assertPreparedAaRelease(root, commit), /outdated installed AA package/)
 })
 
