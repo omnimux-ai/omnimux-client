@@ -26,6 +26,32 @@
 export const QUICK_SHORTCUTS_STYLE_ID = 'omnimux-quick-shortcuts-style';
 
 export const QUICK_SHORTCUTS_CSS = `
+:root {
+  --omx-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --omx-ease-spatial: cubic-bezier(0.32, 0.72, 0, 1);
+  --omx-ease-exit: cubic-bezier(0.32, 0, 0.67, 0);
+  --omx-ease-linear: linear;
+  --omx-dur-press: 90ms;
+  --omx-dur-fast: 140ms;
+  --omx-dur-base: 200ms;
+  --omx-dur-sheet: 260ms;
+  --omx-press-scale: 0.96;
+  --omx-press-scale-subtle: 0.985;
+}
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --omx-dur-press: 0ms;
+    --omx-dur-fast: 0ms;
+    --omx-dur-base: 0ms;
+    --omx-dur-sheet: 0ms;
+    --omx-press-scale: 1;
+    --omx-press-scale-subtle: 1;
+  }
+}
+@keyframes sh-model-picker-in {
+  from { opacity: 0; transform: translateY(4px) scale(0.96); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
 .omx-quick-shortcuts {
   box-sizing: border-box;
   display: flex;
@@ -61,7 +87,8 @@ export const QUICK_SHORTCUTS_CSS = `
   line-height: 18px;
   white-space: nowrap;
   cursor: pointer;
-  transition: color 0.15s ease, transform 120ms cubic-bezier(0.16, 1, 0.3, 1);
+  transition: color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              transform var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 
 .omx-quick-shortcut-btn:hover {
@@ -69,7 +96,7 @@ export const QUICK_SHORTCUTS_CSS = `
 }
 
 .omx-quick-shortcut-btn:active {
-  transform: scale(0.97);
+  transform: scale(var(--omx-press-scale, 0.96));
 }
 
 .omx-quick-shortcut-btn:focus-visible {
@@ -93,7 +120,7 @@ export const QUICK_SHORTCUTS_CSS = `
 
 .omx-quick-shortcut-arrow {
   opacity: 0.5;
-  transition: opacity 0.15s ease;
+  transition: opacity var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 
 .omx-quick-shortcut-btn:hover .omx-quick-shortcut-arrow,
@@ -186,7 +213,9 @@ export const QUICK_SHORTCUTS_CSS = `
   font-weight: 500;
   cursor: pointer;
   user-select: none;
-  transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              border-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
   white-space: nowrap;
 }
 .sh-picker-trigger:hover,
@@ -214,7 +243,9 @@ export const QUICK_SHORTCUTS_CSS = `
   font-weight: 500;
   line-height: 18px;
   cursor: pointer;
-  transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              border-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
   white-space: nowrap;
 }
 .sh-model-capsule-btn:hover,
@@ -244,6 +275,7 @@ export const QUICK_SHORTCUTS_CSS = `
   box-shadow: 0 18px 50px var(--dsw-alias-bg-mask-3);
   padding: 16px;
   overflow: hidden;
+  animation: sh-model-picker-in var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
 }
 .sh-model-picker-header {
   display: flex;
@@ -275,7 +307,7 @@ export const QUICK_SHORTCUTS_CSS = `
   border: none;
   padding: 0;
   cursor: pointer;
-  transition: background-color 0.2s;
+  transition: background-color var(--omx-dur-base, 200ms) var(--omx-ease-spatial, cubic-bezier(0.32, 0.72, 0, 1));
   outline: none;
 }
 .sh-model-switch.on {
@@ -290,7 +322,7 @@ export const QUICK_SHORTCUTS_CSS = `
   border-radius: 50%;
   background: var(--dsw-alias-bg-elevated, #ffffff);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25); /* exempt-ui03: 开关滑块立体阴影 */
-  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: transform var(--omx-dur-base, 200ms) var(--omx-ease-spatial, cubic-bezier(0.32, 0.72, 0, 1));
 }
 .sh-model-switch.on .sh-model-switch-thumb {
   transform: translateX(16px);
@@ -315,7 +347,8 @@ export const QUICK_SHORTCUTS_CSS = `
   font-weight: 500;
   color: var(--dsw-alias-label-secondary);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .sh-model-tab:hover {
   color: var(--dsw-alias-label-primary);
@@ -348,7 +381,8 @@ export const QUICK_SHORTCUTS_CSS = `
   padding: 8px 10px;
   border-radius: 8px;
   cursor: pointer;
-  transition: background 0.15s ease;
+  transition: background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              border-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
   user-select: none;
   border: 1px solid transparent;
   background: transparent;
@@ -475,7 +509,8 @@ export const QUICK_SHORTCUTS_CSS = `
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.15s ease;
+  transition: border-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
   box-sizing: border-box;
   background: transparent;
 }
@@ -661,12 +696,34 @@ html[data-omnimux-rightbar-open="true"]:not([data-omnimux-rightbar-fullscreen="t
   background: transparent;
   color: var(--dsw-alias-label-tertiary);
   cursor: pointer;
-  transition: color 0.15s ease, background-color 0.15s ease;
+  transition: color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 
 .omx-link-chip__remove:hover {
   background: var(--dsw-alias-interactive-bg-hover);
   color: var(--dsw-alias-label-primary);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sh-model-picker {
+    animation: none;
+  }
+  .omx-quick-shortcuts .omx-quick-shortcut-btn,
+  .omx-quick-shortcuts .omx-quick-shortcut-arrow,
+  .sh-picker-trigger,
+  .sh-model-capsule-btn,
+  .sh-model-switch,
+  .sh-model-switch-thumb,
+  .sh-model-tab,
+  .sh-model-row,
+  .sh-model-radio,
+  .omx-link-chip__remove {
+    transition: none;
+  }
+  .omx-quick-shortcuts .omx-quick-shortcut-btn:active {
+    transform: none;
+  }
 }
 `;
 

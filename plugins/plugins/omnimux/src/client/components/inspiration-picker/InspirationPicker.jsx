@@ -47,7 +47,7 @@ const CSS = `
 .omx-inspiration-pick__tab {
   appearance: none; background: transparent; border: none; cursor: pointer;
   font: inherit; font-size: 16px; font-weight: 500; color: var(--dsw-alias-label-tertiary);
-  padding: 4px 0 10px; position: relative; transition: color 0.15s ease;
+  padding: 4px 0 10px; position: relative; transition: color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
   white-space: nowrap;
 }
 .omx-inspiration-pick__tab:hover,
@@ -71,7 +71,7 @@ const CSS = `
   border: 1px solid var(--dsw-alias-border-l2); border-radius: 999px;
   padding: 4px 12px; font-size: 13px; line-height: 18px;
   color: var(--dsw-alias-label-secondary); cursor: pointer; white-space: nowrap;
-  transition: all 0.15s ease;
+  transition: background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), border-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .omx-inspiration-pick__pill:hover {
   background: var(--dsw-alias-interactive-bg-hover);
@@ -126,6 +126,10 @@ const CSS = `
 .omx-inspiration-pick__actions { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
 .omx-inspiration-pick__error {
   color: var(--dsw-alias-state-error-primary); font-size: 12px; margin: 0 24px 8px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .omx-inspiration-pick__tab,
+  .omx-inspiration-pick__pill { transition: none; }
 }
 ${INSPIRATION_CARD_CSS}
 `;

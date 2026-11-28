@@ -134,6 +134,11 @@ export const ANALYTICS_CSS = `
   background: var(--dsw-alias-bg-layer-1, rgba(128,128,128,.06));
   font-size: 13px;
   color: var(--dsw-alias-label-secondary, inherit);
+  animation: omnimux-analytics-banner-enter var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
+}
+@keyframes omnimux-analytics-banner-enter {
+  from { opacity: 0.94; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 .omnimux-analytics-banner[data-code="auth_expired"],
 .omnimux-analytics-banner[data-code="network_error"] {
@@ -165,6 +170,10 @@ export const ANALYTICS_CSS = `
   border-radius: 10px;
   border: 1px solid var(--dsw-alias-border-l2, rgba(128,128,128,.16));
   background: var(--dsw-alias-bg-layer-1, rgba(128,128,128,.04));
+  transition: border-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+}
+.omnimux-analytics-kpi:hover {
+  border-color: var(--dsw-alias-border-l3, rgba(128,128,128,.24));
 }
 .omnimux-analytics-kpi-title {
   margin: 0;
@@ -198,6 +207,7 @@ export const ANALYTICS_CSS = `
   line-height: 14px;
   color: var(--dsw-alias-label-tertiary, rgba(128,128,128,.55));
   background: var(--dsw-alias-bg-module-platform, rgba(128,128,128,.08));
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 .omnimux-analytics-kpi-badge.is-up {
@@ -356,6 +366,15 @@ export const ANALYTICS_CSS = `
   color: var(--dsw-alias-label-secondary, rgba(128,128,128,.72));
   cursor: pointer;
   user-select: none;
+  transition: color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              transform var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+}
+.omnimux-analytics-pill:hover {
+  color: var(--dsw-alias-label-primary, inherit);
+}
+.omnimux-analytics-pill:active {
+  transform: scale(var(--omx-press-scale, 0.96));
 }
 .omnimux-analytics-pill.is-on { color: var(--dsw-alias-label-primary, inherit); }
 .omnimux-analytics-pill-dot {
@@ -389,12 +408,15 @@ export const ANALYTICS_CSS = `
   display: flex;
   align-items: center;
   height: 14px;
+  font-variant-numeric: tabular-nums;
 }
 .omnimux-analytics-heatcell {
   height: 14px;
   border-radius: 2px;
   background: var(--omnimux-analytics-heat-0);
   cursor: pointer;
+  transition: transform var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              opacity var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .omnimux-analytics-heatcell[data-level="1"] { background: var(--omnimux-analytics-heat-1); }
 .omnimux-analytics-heatcell[data-level="2"] { background: var(--omnimux-analytics-heat-2); }
@@ -403,6 +425,7 @@ export const ANALYTICS_CSS = `
 .omnimux-analytics-heatcell:hover {
   outline: 2px solid var(--dsw-alias-label-primary, currentColor);
   outline-offset: 1px;
+  transform: scale(1.12);
 }
 .omnimux-analytics-heatmap-legend {
   display: flex;
@@ -416,11 +439,26 @@ export const ANALYTICS_CSS = `
   height: 10px;
   cursor: default;
 }
+.omnimux-analytics-heatmap-legend .omnimux-analytics-heatcell:hover {
+  outline: none;
+  transform: none;
+}
 .omnimux-analytics-heatmap-tip {
-  grid-column: 1 / -1;
-  margin-top: 4px;
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform: translate3d(var(--tip-x, 50%), var(--tip-y, 0px), 0) translate(-50%, calc(-100% - 6px));
+  pointer-events: none;
+  z-index: 10;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--dsw-alias-border-l2, rgba(128,128,128,.22));
+  background: var(--dsw-alias-bg-layer-2, var(--dsw-alias-bg-base));
+  box-shadow: var(--dsw-shadow-lv2);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
   font-size: 11px;
-  color: var(--dsw-alias-label-secondary, rgba(128,128,128,.72));
+  color: var(--dsw-alias-label-primary, inherit);
 }
 
 .omnimux-analytics-chips {
@@ -501,6 +539,7 @@ export const ANALYTICS_CSS = `
   color: var(--dsw-alias-label-primary, inherit);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+  transition: background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .omnimux-analytics-table td.is-num { text-align: right; }
 .omnimux-analytics-table tbody tr:hover td {
@@ -581,6 +620,21 @@ export const ANALYTICS_CSS = `
 }
 @media (max-width: 720px) {
   .omnimux-analytics-kpi-grid { grid-template-columns: 1fr; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .omnimux-analytics-banner {
+    animation: none;
+  }
+  .omnimux-analytics-kpi,
+  .omnimux-analytics-pill,
+  .omnimux-analytics-heatcell,
+  .omnimux-analytics-table td {
+    transition: none;
+  }
+  .omnimux-analytics-pill:active,
+  .omnimux-analytics-heatcell:hover {
+    transform: none;
+  }
 }
 `
 

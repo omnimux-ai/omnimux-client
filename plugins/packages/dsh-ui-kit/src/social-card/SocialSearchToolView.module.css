@@ -46,7 +46,9 @@
   line-height: 20px;
   text-align: left;
   cursor: pointer;
-  transition: background-color 120ms ease, color 120ms ease;
+  transition:
+    background-color var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+    color var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 
 .headerTrigger[data-static="true"] {
@@ -139,7 +141,7 @@
   justify-content: center;
   flex-shrink: 0;
   color: var(--dsw-alias-label-tertiary);
-  transition: transform 140ms ease;
+  transition: transform var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 
 .chevron[data-open="false"] {
@@ -168,7 +170,15 @@
   font-size: 11px;
   line-height: 16px;
   cursor: pointer;
-  transition: background-color 120ms ease, color 120ms ease, border-color 120ms ease;
+  transition:
+    background-color var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+    color var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+    border-color var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+    transform var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+}
+
+.headerActionBtn:active:not(:disabled) {
+  transform: scale(var(--omx-press-scale, 0.96));
 }
 
 .headerActionBtn:hover,
@@ -199,7 +209,15 @@
   justify-content: center;
   padding: 0;
   cursor: pointer;
-  transition: background-color 120ms ease, color 120ms ease, border-color 120ms ease;
+  transition:
+    background-color var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+    color var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+    border-color var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+    transform var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+}
+
+.hoverPillBtn:active:not(:disabled) {
+  transform: scale(var(--omx-press-scale, 0.96));
 }
 
 .hoverPillBtn:hover:not(:disabled) {
@@ -242,7 +260,15 @@
   font-weight: 500;
   line-height: 16px;
   cursor: pointer;
-  transition: background-color 120ms ease, color 120ms ease, border-color 120ms ease;
+  transition:
+    background-color var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+    color var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+    border-color var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+    transform var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+}
+
+.showMoreBtn:active:not(:disabled) {
+  transform: scale(var(--omx-press-scale, 0.96));
 }
 
 .showMoreBtn:hover {
@@ -284,9 +310,19 @@
   word-break: break-word;
 }
 
+@keyframes stvPulseReduced {
+  0%,
+  100% {
+    opacity: 0.4;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .runningDot {
-    animation: none;
+    animation: stvPulseReduced 1.6s ease-in-out infinite;
   }
 
   .headerTrigger,
@@ -295,5 +331,11 @@
   .hoverPillBtn,
   .showMoreBtn {
     transition: none;
+  }
+
+  .headerActionBtn:active:not(:disabled),
+  .hoverPillBtn:active:not(:disabled),
+  .showMoreBtn:active:not(:disabled) {
+    transform: none;
   }
 }

@@ -19,6 +19,7 @@ import type { ApiUpstream } from '../../../shared/api.ts';
 import type { GenerationStatus } from '../utils/nodeVisualMath';
 import { OrganicShimmerOverlay } from './OrganicShimmer';
 import IntermediateFramePreview from './MaterialNode/IntermediateFramePreview';
+import { usePrefersReducedMotion } from '../hooks/usePrefersReducedMotion';
 import {
   shouldRenderIntermediateFrame,
   hasLiveProgress,
@@ -160,6 +161,8 @@ const GenerationStateContainer: React.FC<GenerationStateContainerProps> = ({
   intermediateFrameUrl,
 }) => {
   const t = useT();
+  const prefersReducedMotion = usePrefersReducedMotion();
+  const effectiveTransitionDuration = prefersReducedMotion ? 0 : transitionDuration;
   const prevStatusRef = useRef<GenerationStatus>(status);
 
   // 过渡状态管理（与 Gxgen 原样）
@@ -189,7 +192,7 @@ const GenerationStateContainer: React.FC<GenerationStateContainerProps> = ({
       const timer = setTimeout(() => {
         setTransitionPhase('complete');
         setShowSkeleton(false);
-      }, transitionDuration + 50);
+      }, effectiveTransitionDuration === 0 ? 0 : effectiveTransitionDuration + 50);
 
       return () => clearTimeout(timer);
     }
@@ -222,7 +225,7 @@ const GenerationStateContainer: React.FC<GenerationStateContainerProps> = ({
       setContentOpacity(1);
       setShowSkeleton(false);
     }
-  }, [status, transitionDuration]);
+  }, [status, effectiveTransitionDuration]);
 
   const isLoading = status === 'pending' || status === 'generating';
   const isPaused = status === 'paused';
@@ -251,8 +254,8 @@ const GenerationStateContainer: React.FC<GenerationStateContainerProps> = ({
   }, [isFailed, errorMessage, taskId]);
 
   const transitionStyle = useCallback(
-    () => ({ transition: `opacity ${transitionDuration}ms ease-out` }),
-    [transitionDuration],
+    () => ({ transition: effectiveTransitionDuration === 0 ? 'none' : `opacity ${effectiveTransitionDuration}ms ease-out` }),
+    [effectiveTransitionDuration],
   );
 
   const aspectClass = `wf-gsc__box--${loadingAspectRatio}`;

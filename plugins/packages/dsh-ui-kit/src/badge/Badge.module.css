@@ -10,10 +10,11 @@
   vertical-align: middle;
   user-select: none;
   border: 1px solid transparent;
+  font-variant-numeric: tabular-nums;
   transition:
-    background-color 120ms cubic-bezier(0.16, 1, 0.3, 1),
-    border-color 120ms cubic-bezier(0.16, 1, 0.3, 1),
-    color 120ms cubic-bezier(0.16, 1, 0.3, 1);
+    background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+    border-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+    color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 
 /* Shapes */
@@ -127,4 +128,10 @@
   background-color: var(--dsw-alias-state-business-tertiary);
   border-color: var(--dsw-alias-state-business-primary);
   color: var(--dsw-alias-state-business-primary);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .badge {
+    transition: none;
+  }
 }

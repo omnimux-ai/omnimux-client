@@ -33,7 +33,7 @@ export const RIVAL_CSS = `
   gap: 8px;
   padding: 8px;
   border-radius: 6px;
-  transition: background 120ms ease;
+  transition: background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .omnimux-rival-filter-select {
   display: flex;
@@ -70,7 +70,8 @@ export const RIVAL_CSS = `
   opacity: 0;
   pointer-events: none;
   color: var(--dsw-alias-label-tertiary);
-  transition: opacity 120ms ease, background 120ms ease;
+  transition: opacity var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .omnimux-rival-filter-row:hover .omnimux-rival-filter-more,
 .omnimux-rival-filter-row:focus-within .omnimux-rival-filter-more {
@@ -143,7 +144,10 @@ export const RIVAL_CSS = `
   pointer-events: none;
   transform: scale(0.9);
   color: var(--dsw-alias-label-tertiary);
-  transition: opacity 150ms ease, transform 150ms ease, background 120ms ease, color 120ms ease;
+  transition: opacity var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              transform var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .omnimux-rival-filter-row:hover .omnimux-rival-filter-jump:not(:disabled),
 .omnimux-rival-filter-row:focus-within .omnimux-rival-filter-jump:not(:disabled) {
@@ -237,6 +241,19 @@ export const RIVAL_CSS = `
   pointer-events: none;
   transform: translate(-50%, -100%);
   box-shadow: var(--dsw-specific-shadow-pop);
+  animation: omnimux-rival-tip-enter var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
+}
+@keyframes omnimux-rival-tip-enter {
+  from { opacity: 0.92; transform: translate(-50%, calc(-100% + 4px)); }
+  to { opacity: 1; transform: translate(-50%, -100%); }
+}
+@keyframes omnimux-rival-popover-enter {
+  from { opacity: 0.94; transform: translateY(-4px) scale(0.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes omnimux-rival-skel-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.42; }
 }
 
 /* ── 空态与提示 ─────────────────────────────────────────────────────── */
@@ -448,14 +465,13 @@ export const RIVAL_CSS = `
   z-index: 110;
   padding: 10px 12px;
   border-radius: 10px;
-  background: var(--dsw-alias-bg-elevated);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  background: var(--dsw-alias-bg-elevated, var(--dsw-alias-bg-layer-2));
   border: 1px solid var(--dsw-alias-border-l2);
   box-shadow: var(--dsw-specific-shadow-pop, 0 10px 28px rgba(0, 0, 0, 0.5));
   font-size: 12px;
   line-height: 1.6;
   color: var(--dsw-alias-label-secondary);
+  animation: omnimux-rival-popover-enter var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
 }
 .omnimux-rival-refresh.is-fresh {
   opacity: 0.75;
@@ -525,7 +541,8 @@ export const RIVAL_CSS = `
   cursor: pointer;
   background: var(--dsw-alias-bg-layer-1);
   border: 1px solid var(--dsw-alias-border-l1);
-  transition: border-color 180ms ease, box-shadow 180ms ease;
+  transition: border-color var(--omx-dur-base, 200ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              box-shadow var(--omx-dur-base, 200ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .omnimux-rival-card:hover {
   border-color: var(--dsw-alias-border-l3);
@@ -554,7 +571,9 @@ export const RIVAL_CSS = `
   object-fit: cover;
   background: var(--dsw-specific-media-ink);
   border: none;
-  transition: transform 300ms ease, filter 180ms ease, opacity 180ms ease;
+  transition: transform var(--omx-dur-sheet, 260ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              filter var(--omx-dur-base, 200ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              opacity var(--omx-dur-base, 200ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 /* 无封面兜底（#3428）：占位沿用媒体块的几何与暗底，只把「没有封面」讲清楚；
    绝不渲染空 src 的 <img>，否则 9:16 区域就是一块黑板。 */
@@ -1083,6 +1102,7 @@ export const RIVAL_CSS = `
   border-radius: 8px;
   background: var(--dsw-alias-bg-elevated, var(--dsw-specific-media-pill-bg));
   box-shadow: var(--dsw-specific-shadow-pop, 0 8px 24px rgba(0, 0, 0, .35));
+  animation: omnimux-rival-popover-enter var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
 }
 .omnimux-rival-menu-item {
   width: 100%;
@@ -1131,7 +1151,7 @@ export const RIVAL_CSS = `
   padding: 16px;
   border-bottom: 1px solid var(--dsw-alias-border-l1);
   cursor: pointer;
-  transition: background-color 160ms ease;
+  transition: background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .omnimux-rival-timeline-item:last-child {
   border-bottom: none;
@@ -1327,7 +1347,7 @@ export const RIVAL_CSS = `
   align-items: center;
   gap: 2px;
   opacity: 0;
-  transition: opacity 140ms ease;
+  transition: opacity var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .omnimux-rival-timeline-item:hover .omnimux-rival-timeline-actions,
 .omnimux-rival-timeline-item:focus-within .omnimux-rival-timeline-actions {
@@ -1440,6 +1460,26 @@ export const RIVAL_CSS = `
 }
 .omnimux-rival-timeline-item.is-embed-player .omnimux-rival-timeline-media > :not(.omnimux-rival-timeline-embed) {
   display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .omnimux-rival-timeline-skel {
+    animation: omnimux-rival-skel-pulse 1.6s ease-in-out infinite;
+  }
+  .omnimux-rival-warning-pop,
+  .omnimux-rival-reason,
+  .omnimux-rival-menu {
+    animation: none;
+  }
+  .omnimux-rival-filter-row,
+  .omnimux-rival-filter-more,
+  .omnimux-rival-filter-jump,
+  .omnimux-rival-card,
+  .omnimux-rival-card-media,
+  .omnimux-rival-timeline-item,
+  .omnimux-rival-timeline-actions {
+    transition: none;
+  }
 }
 
 `

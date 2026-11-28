@@ -11,6 +11,28 @@ const LOGIN_GATE_JELLY_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0
 const LOGIN_GATE_JELLY_URI = `url("data:image/svg+xml,${encodeURIComponent(LOGIN_GATE_JELLY_SVG)}")`
 
 export const HUB_CSS = `
+:root {
+  --omx-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --omx-ease-spatial: cubic-bezier(0.32, 0.72, 0, 1);
+  --omx-ease-exit: cubic-bezier(0.32, 0, 0.67, 0);
+  --omx-ease-linear: linear;
+  --omx-dur-press: 90ms;
+  --omx-dur-fast: 140ms;
+  --omx-dur-base: 200ms;
+  --omx-dur-sheet: 260ms;
+  --omx-press-scale: 0.96;
+  --omx-press-scale-subtle: 0.985;
+}
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --omx-dur-press: 0ms;
+    --omx-dur-fast: 0ms;
+    --omx-dur-base: 0ms;
+    --omx-dur-sheet: 0ms;
+    --omx-press-scale: 1;
+    --omx-press-scale-subtle: 1;
+  }
+}
 .omnimux-reference-storage-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin: 16px 0; }
 .omnimux-reference-storage-error { color: var(--dsw-alias-state-error-primary, var(--dsw-alias-label-primary)); }
 @media (max-width: 640px) { .omnimux-reference-storage-fields { grid-template-columns: minmax(0, 1fr); } }
@@ -222,7 +244,8 @@ body[data-ds-dark-theme] {
   background: var(--dsw-specific-selector, rgba(0, 0, 0, 0.06)) !important;
   color: var(--dsw-alias-label-secondary, #71717a) !important;
   opacity: 1 !important;
-  transition: background-color 150ms ease, color 150ms ease !important;
+  transition: background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) !important;
 }
 
 [class*="InputBar"] [class*="trailing"] button[class*="primary"]:not(:disabled),
@@ -321,6 +344,7 @@ body[data-ds-dark-theme] [data-composer-card] [class*="trailing"] button[class*=
   background: var(--dsw-alias-bg-mask-1, rgba(0, 0, 0, 0.75));
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
+  animation: omnimux-backdrop-fade-in var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
 }
 .omnimux-login-gate-dialog {
   /* Locked dark-card CTA: solid white on the deep-sea poster, never ghost-hover tokens. */
@@ -342,6 +366,7 @@ body[data-ds-dark-theme] [data-composer-card] [class*="trailing"] button[class*=
     0 24px 64px -12px var(--dsw-alias-bg-mask-1, rgba(0, 0, 0, 0.75)),
     0 0 40px color-mix(in srgb, var(--dsw-alias-brand-primary, #7c3aed) 18%, transparent);
   color: var(--dsw-alias-label-primary, inherit);
+  animation: omnimux-dialog-in var(--omx-dur-base, 200ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
 }
 .omnimux-runtime-guide-sheet {
   --login-gate-cta-bg: #ffffff;
@@ -556,7 +581,8 @@ body[data-ds-dark-theme] [data-composer-card] [class*="trailing"] button[class*=
   flex-direction: column;
   gap: 10px;
   cursor: pointer;
-  transition: border-color 0.14s ease;
+  transition: border-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .omx-cli-card:hover {
   border-color: var(--dsw-alias-border-l2);
@@ -625,7 +651,8 @@ body[data-ds-dark-theme] [data-composer-card] [class*="trailing"] button[class*=
   padding: 14px;
   text-align: left;
   cursor: pointer;
-  transition: border-color 0.14s ease;
+  transition: border-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .omx-provider-choice:hover {
   border-color: var(--dsw-alias-border-l2);
@@ -759,7 +786,10 @@ body[data-ds-dark-theme] [data-composer-card] [class*="trailing"] button[class*=
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: background 140ms ease, color 140ms ease, transform 120ms ease, border-color 140ms ease;
+  transition: background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              transform var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              border-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
   z-index: 100002;
   pointer-events: auto;
   box-shadow: 0 4px 16px var(--dsw-alias-bg-base);
@@ -773,7 +803,7 @@ body[data-ds-dark-theme] [data-composer-card] [class*="trailing"] button[class*=
   transform: scale(1.08);
 }
 .omnimux-modal-close-btn:active {
-  transform: scale(0.96);
+  transform: scale(var(--omx-press-scale, 0.96));
 }
 .omnimux-modal-close-btn svg {
   pointer-events: none;
@@ -1069,7 +1099,10 @@ body[data-ds-dark-theme] [data-composer-card] [class*="trailing"] button[class*=
   background: var(--login-gate-cta-bg, #ffffff) !important;
   color: var(--login-gate-cta-text, #09090b) !important; /* --dsw- */
   box-shadow: 0 4px 14px rgba(255, 255, 255, 0.15) !important; /* exempt-ui03: CTA发光阴影 */
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  transition: background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              transform var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              box-shadow var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) !important;
   cursor: pointer !important;
   text-decoration: none !important;
 }
@@ -1160,16 +1193,28 @@ body[data-ds-dark-theme] [data-composer-card] [class*="trailing"] button[class*=
   0% { transform: scale(1.02) translateY(0); }
   100% { transform: scale(1.06) translateY(-6px); }
 }
-@keyframes omnimux-login-gate-jelly {
-  0% { transform: translateX(-50%) translateY(0) scale(1); }
-  100% { transform: translateX(-50%) translateY(-8px) scale(1.03); }
-}
 @keyframes omnimux-login-gate-pulse {
   0% { opacity: 0.5; transform: translateX(-50%) scale(0.92); }
   100% { opacity: 0.95; transform: translateX(-50%) scale(1.12); }
 }
 @keyframes omnimux-login-gate-spin {
   to { transform: rotate(360deg); }
+}
+@keyframes omnimux-backdrop-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes omnimux-dialog-in {
+  from { opacity: 0; transform: scale(0.97); }
+  to { opacity: 1; transform: scale(1); }
+}
+@keyframes omnimux-popover-in {
+  from { opacity: 0; transform: translateY(-4px) scale(0.96); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes omnimux-opacity-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.42; }
 }
 @media (max-width: 860px) {
   .omnimux-login-gate-dialog {
@@ -1335,7 +1380,7 @@ body[data-ds-dark-theme] [data-composer-card] [class*="trailing"] button[class*=
   color: var(--dsw-alias-label-primary-inverted, #fff);
   font-size: 11px;
   opacity: 0;
-  transition: opacity .15s ease;
+  transition: opacity var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
   pointer-events: none;
 }
 .omnimux-avatar:hover .omnimux-avatar-edit { opacity: 1; }
@@ -1528,6 +1573,7 @@ body[data-ds-dark-theme] [data-composer-card] [class*="trailing"] button[class*=
   background: var(--dsw-alias-bg-primary, var(--dsw-bg, #16181d));
   border: 1px solid var(--dsw-alias-border, rgba(255,255,255,0.16));
   box-shadow: 0 8px 24px var(--dsw-alias-bg-mask-1, rgba(0,0,0,0.35));
+  animation: omnimux-popover-in var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
 }
 .omnimux-plugins-menu-item {
   width: 100%;
@@ -1742,7 +1788,8 @@ body[data-ds-dark-theme] [data-composer-card] [class*="trailing"] button[class*=
   background: transparent;
   color: var(--dsw-alias-label-secondary, inherit);
   cursor: pointer;
-  transition: color 0.15s ease, background-color 0.15s ease;
+  transition: color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .omnimux-chat-toggle-btn:hover {
   background: var(--dsw-alias-bg-control-hover, rgba(255, 255, 255, 0.08));
@@ -1768,8 +1815,7 @@ body[data-ds-dark-theme] [data-composer-card] [class*="trailing"] button[class*=
   justify-content: center;
   padding: 16px;
   background: var(--dsw-alias-bg-mask-1, rgba(0, 0, 0, 0.75));
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
+  animation: omnimux-backdrop-fade-in var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
 }
 .omnimux-quota-gate-dialog {
   position: relative;
@@ -1780,6 +1826,7 @@ body[data-ds-dark-theme] [data-composer-card] [class*="trailing"] button[class*=
   background: var(--dsw-alias-surface-raised, var(--dsw-alias-bg-elevated, #161618));
   color: var(--dsw-alias-label-primary, inherit);
   box-shadow: 0 16px 48px var(--dsw-alias-bg-mask-1, rgba(0, 0, 0, 0.75));
+  animation: omnimux-dialog-in var(--omx-dur-base, 200ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
 }
 .omnimux-quota-gate-dialog h2 { margin: 0 0 8px; font-size: 20px; }
 .omnimux-quota-gate-dialog p { margin: 0 0 16px; color: var(--dsw-alias-label-secondary); line-height: 1.5; }
@@ -2050,7 +2097,8 @@ ${AGENT_PRESET_AVATAR_CSS}
   font: inherit;
   text-align: left;
   cursor: pointer;
-  transition: border-color 0.14s ease;
+  transition: border-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .omx-agent-card > span {
   display: contents;
@@ -2364,6 +2412,39 @@ ${AGENT_PRESET_AVATAR_CSS}
   }
   .omnimux-native-runtime-cards {
     grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .omnimux-login-gate-backdrop,
+  .omnimux-login-gate-dialog,
+  .omnimux-quota-gate-backdrop,
+  .omnimux-quota-gate-dialog,
+  .omnimux-plugins-popover,
+  .omnimux-login-gate-hero-glow,
+  .omnimux-login-gate-hero-media {
+    animation: none;
+  }
+  .omnimux-login-gate-spinner {
+    border-color: var(--dsw-alias-brand-primary, #a855f7);
+    animation: omnimux-opacity-pulse 1.6s ease-in-out infinite;
+  }
+  .omnimux-login-gate-cta,
+  .omnimux-modal-close-btn,
+  .omx-cli-card,
+  .omx-provider-choice,
+  .omnimux-avatar-edit,
+  .omnimux-chat-toggle-btn,
+  .omx-agent-card,
+  [class*="InputBar"] [class*="trailing"] button[class*="primary"],
+  [data-composer-card] [class*="trailing"] button[class*="primary"] {
+    transition: none !important;
+  }
+  .omnimux-login-gate-cta:hover:not(:disabled):not([aria-disabled="true"]),
+  .omnimux-login-gate-cta:active:not(:disabled):not([aria-disabled="true"]),
+  .omnimux-modal-close-btn:hover,
+  .omnimux-modal-close-btn:active {
+    transform: none !important;
   }
 }
 

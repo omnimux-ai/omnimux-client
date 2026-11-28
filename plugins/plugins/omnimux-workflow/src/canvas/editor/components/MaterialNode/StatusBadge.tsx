@@ -40,7 +40,7 @@ const StatusBadge: React.FC<StatusBadgeProps> = ({
     }
     switch (executionStatus) {
       case 'running':
-        return <span className="wf-material-node__badge wf-material-node__badge--running wf-material-node__badge--spin" />;
+        return <span className="wf-material-node__badge wf-material-node__badge--spin" />;
       case 'completed':
         return <span className="wf-material-node__badge wf-material-node__badge--done" />;
       case 'error':
@@ -54,7 +54,7 @@ const StatusBadge: React.FC<StatusBadgeProps> = ({
     }
     switch (status) {
       case 'generating':
-        return <span className="wf-material-node__badge wf-material-node__badge--running wf-material-node__badge--spin" />;
+        return <span className="wf-material-node__badge wf-material-node__badge--spin" />;
       case 'completed':
         return <span className="wf-material-node__badge wf-material-node__badge--done" />;
       case 'failed':

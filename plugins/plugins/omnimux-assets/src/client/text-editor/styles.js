@@ -11,12 +11,27 @@ export const ASSET_TEXT_EDITOR_CSS = `
   justify-content: center;
   padding: 20px;
   box-sizing: border-box;
-  animation: omnimuxAteFadeIn 0.14s ease-out;
+  animation: omnimuxAteFadeIn var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
 }
 
 @keyframes omnimuxAteFadeIn {
   from { opacity: 0; }
   to { opacity: 1; }
+}
+
+@keyframes omnimuxAteDialogIn {
+  from { opacity: 0.92; transform: translateY(6px) scale(0.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes omnimuxAtePopoverIn {
+  from { opacity: 0.94; transform: translateY(-4px) scale(0.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes omnimuxAteDrawerIn {
+  from { opacity: 0.94; transform: translateX(12px); }
+  to { opacity: 1; transform: translateX(0); }
 }
 
 .omnimux-ate-modal {
@@ -34,6 +49,7 @@ export const ASSET_TEXT_EDITOR_CSS = `
   flex-direction: column;
   overflow: hidden;
   font-family: var(--dsw-font-family);
+  animation: omnimuxAteDialogIn var(--omx-dur-base, 200ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
 }
 
 /* ---- Topbar ---- */
@@ -251,6 +267,7 @@ export const ASSET_TEXT_EDITOR_CSS = `
   border-radius: var(--dsw-radius-md);
   box-shadow: var(--dsw-shadow-lv2);
   max-width: calc(100% - 32px);
+  animation: omnimuxAtePopoverIn var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
 }
 
 .omnimux-ate-search-panel:focus-within {
@@ -392,6 +409,7 @@ export const ASSET_TEXT_EDITOR_CSS = `
   flex-shrink: 0;
   z-index: 20;
   overflow: hidden;
+  animation: omnimuxAteDrawerIn var(--omx-dur-sheet, 260ms) var(--omx-ease-spatial, cubic-bezier(0.32, 0.72, 0, 1)) forwards;
 }
 
 .omnimux-ate-drawer-header {
@@ -464,7 +482,8 @@ export const ASSET_TEXT_EDITOR_CSS = `
   display: flex;
   flex-direction: column;
   gap: 8px;
-  transition: border-color 0.14s ease, background-color 0.14s ease;
+  transition: border-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 
 .omnimux-ate-version-card:hover {
@@ -583,6 +602,7 @@ export const ASSET_TEXT_EDITOR_CSS = `
   justify-content: center;
   padding: 24px;
   box-sizing: border-box;
+  animation: omnimuxAteFadeIn var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
 }
 
 .omnimux-ate-diff-modal {
@@ -596,6 +616,7 @@ export const ASSET_TEXT_EDITOR_CSS = `
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  animation: omnimuxAteDialogIn var(--omx-dur-base, 200ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
 }
 
 .omnimux-ate-diff-header {
@@ -764,6 +785,20 @@ export const ASSET_TEXT_EDITOR_CSS = `
 
   .omnimux-ate-cm-container .cm-content {
     padding: 16px 18px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .omnimux-ate-backdrop,
+  .omnimux-ate-modal,
+  .omnimux-ate-search-panel,
+  .omnimux-ate-drawer,
+  .omnimux-ate-diff-backdrop,
+  .omnimux-ate-diff-modal {
+    animation: none;
+  }
+  .omnimux-ate-version-card {
+    transition: none;
   }
 }
 `

@@ -149,8 +149,11 @@ export function AuthorizeModal({ t, baselineIds, onClose, onNeedLogin, onConnect
       >
         <span className="omnimux-publish-accounts-warn-icon"><IconWarningOutline16 /></span>
         <span className="omnimux-publish-accounts-warn-title">{t('auth.warnTitle')}</span>
-        <span className="omnimux-publish-accounts-warn-chevron">
-          <IconChevronOutline16 direction={expanded ? 'up' : 'down'} />
+        <span
+          className="omnimux-publish-accounts-warn-chevron"
+          data-expanded={expanded ? 'true' : 'false'}
+        >
+          <IconChevronOutline16 direction="down" />
         </span>
       </button>
       {expanded ? (

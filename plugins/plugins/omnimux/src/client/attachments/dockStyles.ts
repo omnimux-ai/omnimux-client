@@ -1,4 +1,26 @@
 export const DOCK_STYLES = `
+:root {
+  --omx-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --omx-ease-spatial: cubic-bezier(0.32, 0.72, 0, 1);
+  --omx-ease-exit: cubic-bezier(0.32, 0, 0.67, 0);
+  --omx-ease-linear: linear;
+  --omx-dur-press: 90ms;
+  --omx-dur-fast: 140ms;
+  --omx-dur-base: 200ms;
+  --omx-dur-sheet: 260ms;
+  --omx-press-scale: 0.96;
+  --omx-press-scale-subtle: 0.985;
+}
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --omx-dur-press: 0ms;
+    --omx-dur-fast: 0ms;
+    --omx-dur-base: 0ms;
+    --omx-dur-sheet: 0ms;
+    --omx-press-scale: 1;
+    --omx-press-scale-subtle: 1;
+  }
+}
 .omx-attachment-dock {
   box-sizing: border-box;
   width: 100%;
@@ -31,7 +53,7 @@ export const DOCK_STYLES = `
   font-weight: 500 !important;
   white-space: nowrap !important;
   cursor: pointer !important;
-  transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  transition: background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), border-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), transform var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) !important;
   user-select: none !important;
   flex-shrink: 0 !important;
 }
@@ -66,7 +88,7 @@ export const DOCK_STYLES = `
   box-shadow: 0 0 0 1px rgba(121, 97, 242, 0.2) !important; /* exempt-ui03: 极光紫微光晕 */
   border-radius: 6px !important;
   padding: 2px 8px !important;
-  transition: all 0.15s ease !important;
+  transition: background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), border-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) !important;
 }
 [data-composer-chip="link"] > span:hover {
   background: rgba(121, 97, 242, 0.25) !important; /* exempt-ui03: 悬浮底色 */
@@ -126,7 +148,7 @@ export const DOCK_STYLES = `
   font-weight: 500 !important;
   white-space: nowrap !important;
   cursor: pointer !important;
-  transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  transition: background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), border-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), transform var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) !important;
   user-select: none !important;
   flex-shrink: 0 !important;
 }
@@ -203,7 +225,7 @@ export const DOCK_STYLES = `
   border: 1px solid var(--dsw-alias-border-l2);
   user-select: none;
   cursor: default;
-  transition: border-color 0.15s ease, background-color 0.15s ease, box-shadow 0.15s ease;
+  transition: border-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), box-shadow var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .omx-att-card:hover {
   background: var(--dsw-alias-bg-layer-2);
@@ -370,7 +392,7 @@ export const DOCK_STYLES = `
   padding: 0;
   opacity: 0;
   transform: scale(0.8);
-  transition: opacity 0.15s ease, transform 0.15s ease, background-color 0.15s ease, color 0.15s ease;
+  transition: opacity var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), transform var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
   z-index: 6;
 }
 .omx-att-card__remove-btn--media {
@@ -404,7 +426,7 @@ export const DOCK_STYLES = `
   box-shadow: var(--dsw-shadow-lv3, 0 12px 36px rgba(0, 0, 0, 0.45)); /* exempt-ui03: 浮层阴影 */
   overflow: hidden;
   font-family: inherit;
-  animation: omx-slot-menu-in 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+  animation: omx-slot-menu-in var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
 }
 @keyframes omx-slot-menu-in {
   from { opacity: 0; transform: scale(0.96) translateY(-4px); }
@@ -436,7 +458,7 @@ export const DOCK_STYLES = `
   cursor: pointer;
   width: 100%;
   text-align: left;
-  transition: background 0.12s ease;
+  transition: background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
   user-select: none;
 }
 .omx-product-slot-menu__product-item:hover {
@@ -535,7 +557,7 @@ export const DOCK_STYLES = `
   cursor: pointer;
   width: 100%;
   text-align: left;
-  transition: background 0.12s ease;
+  transition: background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
   user-select: none;
 }
 .omx-product-slot-menu__action-btn:hover {
@@ -556,5 +578,31 @@ export const DOCK_STYLES = `
   font-size: 13px;
   font-weight: 500;
   color: var(--dsw-alias-label-primary, #ffffff);
+}
+@keyframes omx-att-opacity-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.42; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .omx-att-card--highlight,
+  .omx-product-slot-menu {
+    animation: none;
+  }
+  .omx-att-card__spinner {
+    animation: omx-att-opacity-pulse 1.6s ease-in-out infinite;
+  }
+  .omx-btn-insert-link,
+  [data-composer-chip="link"] > span,
+  .omx-prompt-slot-chip,
+  .omx-att-card,
+  .omx-att-card__remove-btn,
+  .omx-product-slot-menu__product-item,
+  .omx-product-slot-menu__action-btn {
+    transition: none !important;
+  }
+  .omx-btn-insert-link:hover,
+  .omx-prompt-slot-chip:not(.is-disabled):hover {
+    transform: none !important;
+  }
 }
 `;

@@ -82,6 +82,16 @@ export function initFabCompanion(): void {
     <style>
       :host {
         all: initial;
+        --omx-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+        --omx-ease-spatial: cubic-bezier(0.32, 0.72, 0, 1);
+        --omx-ease-exit: cubic-bezier(0.32, 0, 0.67, 0);
+        --omx-ease-linear: linear;
+        --omx-dur-press: 90ms;
+        --omx-dur-fast: 140ms;
+        --omx-dur-base: 200ms;
+        --omx-dur-sheet: 260ms;
+        --omx-press-scale: 0.96;
+        --omx-press-scale-subtle: 0.985;
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI Variable Text", "Segoe UI", "PingFang SC", sans-serif;
       }
 
@@ -107,11 +117,11 @@ export function initFabCompanion(): void {
         z-index: 2147483647;
         opacity: 1;
         transform: scale(1);
-        transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1),
-                    opacity 0.2s ease,
-                    box-shadow 0.2s ease,
-                    background-color 0.2s ease,
-                    border-color 0.2s ease;
+        transition: transform var(--omx-dur-base, 200ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+                    opacity var(--omx-dur-base, 200ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+                    box-shadow var(--omx-dur-base, 200ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+                    background-color var(--omx-dur-base, 200ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+                    border-color var(--omx-dur-base, 200ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
       }
 
       .omnimux-fab:hover {
@@ -123,7 +133,7 @@ export function initFabCompanion(): void {
 
       .omnimux-fab:active {
         cursor: grabbing;
-        transform: scale(0.96);
+        transform: scale(var(--omx-press-scale, 0.96));
       }
 
       .omnimux-fab.fab-hidden {
@@ -150,9 +160,7 @@ export function initFabCompanion(): void {
         height: calc(100vh - 28px);
         max-height: calc(100vh - 28px);
         border-radius: 18px;
-        background: rgba(14, 15, 20, 0.96);
-        backdrop-filter: blur(24px);
-        -webkit-backdrop-filter: blur(24px);
+        background: #0e0f14;
         border: 1px solid rgba(255, 255, 255, 0.1);
         box-shadow: 0 24px 60px rgba(0, 0, 0, 0.8);
         overflow: hidden;
@@ -162,13 +170,13 @@ export function initFabCompanion(): void {
         opacity: 0;
         transform: translateX(40px) scale(0.98);
         pointer-events: none;
-        transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1),
-                    opacity 0.22s ease;
+        transition: transform var(--omx-dur-sheet, 260ms) var(--omx-ease-spatial, cubic-bezier(0.32, 0.72, 0, 1)),
+                    opacity var(--omx-dur-base, 200ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
       }
 
       @media (prefers-color-scheme: light) {
         .omnimux-workstation-container {
-          background: rgba(255, 255, 255, 0.98);
+          background: #ffffff;
           border: 1px solid rgba(0, 0, 0, 0.08);
           box-shadow: 0 20px 50px rgba(0, 0, 0, 0.12);
         }
@@ -186,6 +194,27 @@ export function initFabCompanion(): void {
         border: none;
         background: transparent;
         display: block;
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        :host {
+          --omx-dur-press: 0ms;
+          --omx-dur-fast: 0ms;
+          --omx-dur-base: 0ms;
+          --omx-dur-sheet: 0ms;
+          --omx-press-scale: 1;
+          --omx-press-scale-subtle: 1;
+        }
+
+        .omnimux-fab,
+        .omnimux-workstation-container {
+          transition: none;
+        }
+
+        .omnimux-fab:hover,
+        .omnimux-fab:active {
+          transform: scale(1);
+        }
       }
     </style>
 

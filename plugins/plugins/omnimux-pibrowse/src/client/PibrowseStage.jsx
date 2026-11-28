@@ -294,7 +294,7 @@ export function PibrowseStage({ t, stage, store, visible = true }) {
                   >
                     <div
                       className="omnimux-pibrowse-progress-fill"
-                      style={{ '--pb-progress': `${coreProgress.percent}%` }}
+                      style={{ '--pb-progress': Math.max(0, Math.min(100, Number(coreProgress.percent) || 0)) / 100 }}
                     />
                   </div>
                 )}

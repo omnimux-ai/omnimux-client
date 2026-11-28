@@ -3,6 +3,7 @@ import type { KeyboardEvent, MouseEvent, ReactNode } from "react";
 
 import { cssClass } from "../internal/cssClass.ts";
 import { cx } from "../internal/cx.ts";
+import "../motion/tokens.ts";
 import css from "./SelectableTile.module.css";
 
 export type TileSelectionMode = "checkbox" | "radio";
@@ -101,18 +102,16 @@ export const SelectableTile = forwardRef<HTMLDivElement, SelectableTileProps>(
           )}
           aria-hidden="true"
         >
-          {selected ? (
-            selectionType === "radio" ? (
-              <span className={cssClass(css.radioDot, "radioDot")} />
-            ) : (
-              <svg
-                viewBox="0 0 11 11"
-                className={cssClass(css.checkmark, "checkmark")}
-              >
-                <path d={CHECKMARK_PATH} />
-              </svg>
-            )
-          ) : null}
+          {selectionType === "radio" ? (
+            <span className={cssClass(css.radioDot, "radioDot")} />
+          ) : (
+            <svg
+              viewBox="0 0 11 11"
+              className={cssClass(css.checkmark, "checkmark")}
+            >
+              <path d={CHECKMARK_PATH} />
+            </svg>
+          )}
         </span>
 
         {icon != null ? (

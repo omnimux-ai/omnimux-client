@@ -27,7 +27,9 @@
   filter: drop-shadow(0 0 1px rgba(0, 0, 0, 0.45));
   cursor: pointer;
   box-sizing: border-box;
-  transition: background 0.15s ease, color 0.15s ease;
+  transition: background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+    color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+    transform var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 
 .omnimux-poster-action-button:hover {
@@ -41,7 +43,7 @@
 }
 
 .omnimux-poster-action-button:active {
-  transform: scale(0.94);
+  transform: scale(var(--omx-press-scale, 0.96));
 }
 
 .omnimux-poster-action-button svg {
@@ -61,9 +63,7 @@
   align-items: center;
   justify-content: center;
   padding: 24px;
-  background: var(--dsw-alias-bg-mask-1, rgba(0, 0, 0, 0.55));
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  background: var(--dsw-alias-bg-mask-1, rgba(0, 0, 0, 0.6));
 }
 
 .omnimux-poster-dialog {
@@ -78,6 +78,7 @@
   box-shadow: 0 20px 48px rgba(0, 0, 0, 0.6);
   box-sizing: border-box;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", sans-serif;
+  animation: omnimux-poster-dialog-in var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
 }
 
 .omnimux-poster-head {
@@ -121,11 +122,18 @@
   background: transparent;
   color: var(--dsw-alias-label-secondary, rgba(255, 255, 255, 0.72));
   cursor: pointer;
+  transition: background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+    color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+    transform var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 
 .omnimux-poster-icon-button:hover {
   background: var(--dsw-alias-interactive-bg-hover, rgba(255, 255, 255, 0.08));
   color: var(--dsw-alias-label-primary, #fff);
+}
+
+.omnimux-poster-icon-button:active {
+  transform: scale(var(--omx-press-scale, 0.96));
 }
 
 .omnimux-poster-themes {
@@ -148,10 +156,18 @@
   cursor: pointer;
   font: inherit;
   box-sizing: border-box;
+  transition: border-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+    background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+    box-shadow var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+    transform var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 
 .omnimux-poster-theme:hover:not(:disabled) {
   border-color: var(--dsw-alias-border-hover, rgba(255, 255, 255, 0.3));
+}
+
+.omnimux-poster-theme:active:not(:disabled) {
+  transform: scale(var(--omx-press-scale-subtle, 0.985));
 }
 
 .omnimux-poster-theme--selected {
@@ -297,10 +313,18 @@
   font: 600 12px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", sans-serif;
   cursor: pointer;
   box-sizing: border-box;
+  transition: background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+    border-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+    color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+    transform var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 
 .omnimux-poster-button:hover:not(:disabled) {
   background: var(--dsw-alias-interactive-bg-hover, rgba(255, 255, 255, 0.08));
+}
+
+.omnimux-poster-button:active:not(:disabled) {
+  transform: scale(var(--omx-press-scale, 0.96));
 }
 
 .omnimux-poster-button--primary {
@@ -327,11 +351,12 @@
   max-width: min(420px, calc(100vw - 48px));
   padding: 10px 16px;
   border-radius: 10px;
-  background: rgba(24, 24, 27, 0.94);
+  background: rgba(24, 24, 27, 0.96);
   color: #ffffff;
   font: 500 13px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", sans-serif;
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
   pointer-events: none;
+  animation: omnimux-poster-toast-in var(--omx-dur-base, 200ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
 }
 
 .omnimux-poster-sr-only {
@@ -345,7 +370,47 @@
   border: 0;
 }
 
+@keyframes omnimux-poster-dialog-in {
+  from { opacity: 0; transform: translateY(4px) scale(0.97); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes omnimux-poster-toast-in {
+  from { opacity: 0; transform: translate(-50%, 6px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+
 @keyframes omnimux-poster-pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.35; }
+}
+
+@keyframes omnimux-poster-pulse-calm {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.42; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .omnimux-poster-action-button,
+  .omnimux-poster-icon-button,
+  .omnimux-poster-theme,
+  .omnimux-poster-button {
+    transition: none;
+  }
+
+  .omnimux-poster-dialog,
+  .omnimux-poster-toast {
+    animation: none;
+  }
+
+  .omnimux-poster-action-button:active,
+  .omnimux-poster-icon-button:active,
+  .omnimux-poster-theme:active:not(:disabled),
+  .omnimux-poster-button:active:not(:disabled) {
+    transform: none;
+  }
+
+  .omnimux-poster-step[data-state="active"] .omnimux-poster-step-dot {
+    animation: omnimux-poster-pulse-calm 1.6s ease-in-out infinite;
+  }
 }

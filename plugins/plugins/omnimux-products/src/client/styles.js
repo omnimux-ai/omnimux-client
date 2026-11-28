@@ -67,7 +67,7 @@ export const PRODUCTS_CSS = `
   font-size: 12px;
   line-height: 16px;
   color: var(--dsw-alias-label-secondary);
-  animation: omnimux-products-fade-in 200ms cubic-bezier(0.16, 1, 0.3, 1);
+  animation: omnimux-products-fade-in var(--omx-dur-base, 200ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
 }
 .omnimux-products-url-import-status-success {
   color: var(--dsw-alias-state-success-primary);
@@ -106,7 +106,7 @@ export const PRODUCTS_CSS = `
   border: 1px solid var(--dsw-alias-border-l3);
   border-radius: 12px;
   background: var(--dsw-alias-bg-layer-1);
-  animation: omnimux-products-fade-in 140ms cubic-bezier(0.16, 1, 0.3, 1);
+  animation: omnimux-products-menu-in var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
 }
 .omnimux-products-menu-item {
   width: 100%;
@@ -165,6 +165,7 @@ export const PRODUCTS_CSS = `
   gap: 12px;
   padding: 8px 20px;
   border-bottom: 1px solid var(--dsw-alias-border-l2);
+  animation: omnimux-products-banner-in var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
 }
 .omnimux-products-selection-actions {
   margin-left: auto;
@@ -177,6 +178,7 @@ export const PRODUCTS_CSS = `
   padding: 6px 20px;
   font-size: 12px;
   color: var(--dsw-alias-state-error-primary);
+  animation: omnimux-products-banner-in var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
 }
 .omnimux-products-body {
   min-height: 0;
@@ -208,6 +210,12 @@ export const PRODUCTS_CSS = `
   background: var(--dsw-alias-bg-base, var(--dsw-bg));
   display: flex;
   flex-direction: column;
+  transition: border-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              transform var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              box-shadow var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+}
+.omnimux-products-card:active {
+  transform: scale(var(--omx-press-scale-subtle, 0.985));
 }
 .omnimux-products-card[aria-selected="true"] {
   border-color: var(--dsw-alias-label-primary);
@@ -290,7 +298,7 @@ export const PRODUCTS_CSS = `
   z-index: 1;
   opacity: 0;
   transform: none;
-  transition: opacity 0.15s ease;
+  transition: opacity var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
   border: 1px solid var(--dsw-alias-border-l3);
   background: var(--dsw-alias-bg-base, var(--dsw-bg));
   color: inherit;
@@ -319,7 +327,9 @@ export const PRODUCTS_CSS = `
   z-index: 2;
   opacity: 0;
   transform: none;
-  transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease;
+  transition: opacity var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
   border: 1px solid var(--dsw-alias-border-l3);
   background: var(--dsw-alias-bg-base, var(--dsw-bg));
   color: var(--dsw-alias-label-secondary);
@@ -358,7 +368,7 @@ export const PRODUCTS_CSS = `
   color: var(--dsw-alias-label-primary, inherit);
   pointer-events: auto;
   -webkit-app-region: no-drag;
-  animation: omnimux-products-fade-in 160ms cubic-bezier(0.16, 1, 0.3, 1);
+  animation: omnimux-products-fade-in var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
 }
 .omnimux-products-subscreen > .dshUk-PageHeader-pageHeader,
 .omnimux-products-subscreen .dshUk-PageHeader-breadcrumb,
@@ -643,7 +653,8 @@ html body .omnimux-products-subscreen[data-window-drag-exclude] [role="button"],
   cursor: zoom-in;
   border-radius: 8px;
   overflow: hidden;
-  transition: transform 0.15s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.15s ease;
+  transition: transform var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              box-shadow var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
   line-height: 0;
 }
 .omnimux-products-thumb-button:hover {
@@ -679,9 +690,9 @@ html body .omnimux-products-subscreen[data-window-drag-exclude] [role="button"],
   border-radius: 12px;
   padding: 8px;
   box-shadow: 0 16px 36px var(--dsw-alias-shadow-elevated, rgba(0, 0, 0, 0.45));
-  transition: opacity 0.18s cubic-bezier(0.16, 1, 0.3, 1),
-              transform 0.18s cubic-bezier(0.16, 1, 0.3, 1),
-              visibility 0.18s;
+  transition: opacity var(--omx-dur-base, 200ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              transform var(--omx-dur-base, 200ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              visibility var(--omx-dur-base, 200ms);
   width: 190px;
   box-sizing: border-box;
 }
@@ -720,7 +731,7 @@ html body .omnimux-products-subscreen[data-window-drag-exclude] [role="button"],
   background: var(--dsw-alias-bg-mask-1);
   padding: 24px;
   box-sizing: border-box;
-  animation: omnimux-products-fade-in 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  animation: omnimux-products-fade-in var(--omx-dur-base, 200ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
 }
 .omnimux-products-lightbox-container {
   position: relative;
@@ -760,7 +771,8 @@ html body .omnimux-products-subscreen[data-window-drag-exclude] [role="button"],
   border: 1px solid var(--dsw-alias-border-l2) !important;
   color: var(--dsw-alias-label-primary) !important;
   border-radius: 50% !important;
-  transition: background 0.15s ease, transform 0.15s ease !important;
+  transition: background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              transform var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) !important;
 }
 .omnimux-products-lightbox-close:hover {
   background: var(--dsw-alias-bg-layer-3) !important;
@@ -890,6 +902,37 @@ html body .omnimux-products-subscreen[data-window-drag-exclude] [role="button"],
 @keyframes omnimux-products-fade-in {
   from { opacity: 0; }
   to { opacity: 1; }
+}
+@keyframes omnimux-products-menu-in {
+  from { opacity: 0.94; transform: translateY(-4px) scale(0.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes omnimux-products-banner-in {
+  from { opacity: 0.94; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .omnimux-products-url-import-status,
+  .omnimux-products-menu-card,
+  .omnimux-products-selection,
+  .omnimux-products-error,
+  .omnimux-products-subscreen,
+  .omnimux-products-lightbox-backdrop {
+    animation: none;
+  }
+  .omnimux-products-card,
+  .omnimux-products-card-thumb .omnimux-products-check,
+  .omnimux-products-card-thumb .omnimux-products-chat-btn,
+  .omnimux-products-thumb-button,
+  .omnimux-products-thumb-popover,
+  .omnimux-products-lightbox-close {
+    transition: none;
+  }
+  .omnimux-products-card:active,
+  .omnimux-products-thumb-button:hover,
+  .omnimux-products-lightbox-close:hover {
+    transform: none;
+  }
 }
 `
 

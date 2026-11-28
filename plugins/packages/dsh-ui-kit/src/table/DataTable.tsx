@@ -4,6 +4,7 @@ import type { KeyboardEvent, MouseEvent, ReactNode } from "react";
 import { EmptyState } from "../empty/EmptyState.tsx";
 import { cssClass } from "../internal/cssClass.ts";
 import { cx } from "../internal/cx.ts";
+import "../motion/tokens.ts";
 import {
   Table,
   TableBody,
@@ -273,16 +274,16 @@ export function DataTable<T>({
                         }
                       }}
                     >
-                      {isAllSelected ? (
+                      {isPartiallySelected ? (
+                        <span className={cssClass(css.minusMark, "minusMark")} />
+                      ) : (
                         <svg
                           viewBox="0 0 11 11"
                           className={cssClass(css.checkmark, "checkmark")}
                         >
                           <path d={CHECKMARK_PATH} />
                         </svg>
-                      ) : isPartiallySelected ? (
-                        <span className={cssClass(css.minusMark, "minusMark")} />
-                      ) : null}
+                      )}
                     </span>
                   ) : null}
                 </TableHead>
@@ -387,18 +388,16 @@ export function DataTable<T>({
                             }
                           }}
                         >
-                          {isSelected ? (
-                            selectionMode === "single" ? (
-                              <span className={cssClass(css.radioDot, "radioDot")} />
-                            ) : (
-                              <svg
-                                viewBox="0 0 11 11"
-                                className={cssClass(css.checkmark, "checkmark")}
-                              >
-                                <path d={CHECKMARK_PATH} />
-                              </svg>
-                            )
-                          ) : null}
+                          {selectionMode === "single" ? (
+                            <span className={cssClass(css.radioDot, "radioDot")} />
+                          ) : (
+                            <svg
+                              viewBox="0 0 11 11"
+                              className={cssClass(css.checkmark, "checkmark")}
+                            >
+                              <path d={CHECKMARK_PATH} />
+                            </svg>
+                          )}
                         </span>
                       </TableCell>
                     ) : null}

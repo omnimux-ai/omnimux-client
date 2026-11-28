@@ -69,7 +69,8 @@ export const ASSET_HUB_CSS = `
   border-radius: 6px;
   white-space: nowrap;
   flex-shrink: 0;
-  transition: color 0.15s ease, background 0.15s ease;
+  transition: color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
   user-select: none;
 }
 
@@ -104,7 +105,8 @@ export const ASSET_HUB_CSS = `
   font-weight: 500;
   cursor: pointer;
   border-radius: 6px;
-  transition: all 0.15s ease;
+  transition: color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
   white-space: nowrap;
   flex-shrink: 0;
 }
@@ -139,7 +141,9 @@ export const ASSET_HUB_CSS = `
   background: transparent;
   color: var(--dsw-alias-label-secondary);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              transform var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 
 .omx-hub-header__btn:hover {
@@ -149,7 +153,7 @@ export const ASSET_HUB_CSS = `
 
 .omx-hub-header__btn:active {
   background: var(--dsw-alias-interactive-bg-active);
-  transform: scale(0.96);
+  transform: scale(var(--omx-press-scale, 0.96));
 }
 
 /* 筛选栏 Toolbar (高度 48px，单行不折行) */
@@ -178,7 +182,7 @@ export const ASSET_HUB_CSS = `
   background: var(--dsw-alias-bg-layer-1);
   color: var(--dsw-alias-label-tertiary);
   box-sizing: border-box;
-  transition: border-color 0.15s ease;
+  transition: border-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 
 .omx-hub-toolbar__search:focus-within {
@@ -235,7 +239,9 @@ export const ASSET_HUB_CSS = `
   font-size: 12px;
   white-space: nowrap;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              border-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
   flex-shrink: 0;
 }
 
@@ -264,7 +270,7 @@ export const ASSET_HUB_CSS = `
   cursor: pointer;
   position: relative;
   white-space: nowrap;
-  transition: color 0.15s ease;
+  transition: color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
   flex-shrink: 0;
 }
 
@@ -301,7 +307,9 @@ export const ASSET_HUB_CSS = `
   font-size: 12px;
   white-space: nowrap;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              border-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
   flex-shrink: 0;
 }
 
@@ -332,7 +340,9 @@ export const ASSET_HUB_CSS = `
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              border-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              transform var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 
 .omx-hub-toolbar__action:hover {
@@ -341,7 +351,7 @@ export const ASSET_HUB_CSS = `
 }
 
 .omx-hub-toolbar__action:active {
-  transform: scale(0.97);
+  transform: scale(var(--omx-press-scale-subtle, 0.985));
 }
 
 /* 内容卡片区 */
@@ -376,7 +386,9 @@ export const ASSET_HUB_CSS = `
   background: var(--dsw-alias-bg-layer-1);
   overflow: hidden;
   cursor: pointer;
-  transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+  transition: transform var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              border-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              box-shadow var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
   user-select: none;
 }
 
@@ -386,7 +398,8 @@ export const ASSET_HUB_CSS = `
 }
 
 .omx-asset-card:active {
-  transform: scale(0.98);
+  transform: scale(var(--omx-press-scale-subtle, 0.985));
+  transition-duration: var(--omx-dur-press, 90ms);
 }
 
 .omx-asset-card.is-selected {
@@ -503,12 +516,18 @@ export const ASSET_HUB_CSS = `
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              border-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              transform var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 
 .omx-hub-state__btn:hover {
   background: var(--dsw-alias-interactive-bg-hover);
   border-color: var(--dsw-alias-border-l3);
+}
+
+.omx-hub-state__btn:active {
+  transform: scale(var(--omx-press-scale, 0.96));
 }
 
 /* 骨架屏 */
@@ -551,6 +570,16 @@ export const ASSET_HUB_CSS = `
   100% { opacity: 0.5; }
 }
 
+@keyframes omx-hub-reduced-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.42; }
+}
+
+@keyframes omx-hub-toast-enter {
+  from { opacity: 0.92; transform: translate(-50%, 6px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+
 .omx-hub-notice-toast {
   position: absolute;
   bottom: 24px;
@@ -566,6 +595,37 @@ export const ASSET_HUB_CSS = `
   font-size: 13px;
   font-weight: 500;
   pointer-events: none;
+  animation: omx-hub-toast-enter var(--omx-dur-base, 200ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .omx-hub-skeleton-cover,
+  .omx-hub-skeleton-line,
+  .omx-hub-skeleton-sub {
+    animation: omx-hub-reduced-pulse 1.6s ease-in-out infinite;
+  }
+  .omx-hub-notice-toast {
+    animation: none;
+  }
+  .omx-shared-primary-tab,
+  .omx-hub-header__tab,
+  .omx-hub-header__btn,
+  .omx-hub-toolbar__search,
+  .omx-shared-sub-tab--pill,
+  .omx-shared-sub-tab--underline,
+  .omx-hub-toolbar__pill,
+  .omx-hub-toolbar__action,
+  .omx-asset-card,
+  .omx-hub-state__btn {
+    transition: none;
+  }
+  .omx-hub-header__btn:active,
+  .omx-hub-toolbar__action:active,
+  .omx-asset-card:hover,
+  .omx-asset-card:active,
+  .omx-hub-state__btn:active {
+    transform: none;
+  }
 }
 `
 

@@ -203,7 +203,7 @@ export function DesktopNativeActions({ api, t, placement, terminalAvailable = tr
             onClick={() => { setRestartMenuOpen(value => !value) }}
           >
             {t(restarting ? 'restartingDesktop' : 'restartDesktop')}
-            <ChevronDown aria-hidden="true" />
+            <ChevronDown aria-hidden="true" className="dshDesktopActionChevron" />
           </button>
           {restartMenuOpen && (
             <div className="dshDesktopActionMenu" role="menu">

@@ -43,7 +43,7 @@
   border: 1px solid var(--dsw-alias-border-l2);
   user-select: none;
   cursor: default;
-  transition: border-color 0.15s ease, background-color 0.15s ease, box-shadow 0.15s ease;
+  transition: border-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), box-shadow var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 
 .omx-att-card:hover {
@@ -209,7 +209,7 @@
   padding: 0;
   opacity: 0;
   transform: scale(0.8);
-  transition: opacity 0.15s ease, transform 0.15s ease, background-color 0.15s ease, color 0.15s ease;
+  transition: opacity var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), transform var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
   z-index: 6;
 }
 
@@ -241,6 +241,16 @@
   }
 }
 
+@keyframes omx-att-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes omx-att-modal-scale-in {
+  from { opacity: 0; transform: scale(0.97); }
+  to { opacity: 1; transform: scale(1); }
+}
+
 .omx-att-drop-mask {
   position: fixed;
   inset: 0;
@@ -250,7 +260,7 @@
   justify-content: center;
   pointer-events: none;
   background-color: var(--dsw-alias-bg-mask-drop, var(--dsw-alias-bg-mask-1));
-  backdrop-filter: blur(10px);
+  animation: omx-att-fade-in var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
 }
 
 .omx-att-drop-wrap {
@@ -291,7 +301,7 @@
   position: absolute;
   inset: 0;
   background: var(--dsw-alias-bg-mask-1);
-  backdrop-filter: var(--dsw-mask-blur, blur(8px));
+  animation: omx-att-fade-in var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
 }
 
 .omx-att-preview__image {
@@ -302,6 +312,7 @@
   border-radius: 12px;
   background: var(--dsw-specific-input-major, var(--dsw-alias-bg-elevated));
   box-shadow: var(--dsw-shadow-lv3);
+  animation: omx-att-modal-scale-in var(--omx-dur-base, 200ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
 }
 
 .omx-att-preview__close {
@@ -318,5 +329,27 @@
   background: var(--dsw-specific-input-major, var(--dsw-alias-bg-elevated));
   color: var(--dsw-alias-label-primary);
   cursor: pointer;
+  transition: background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), transform var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+}
+
+.omx-att-preview__close:active {
+  transform: scale(var(--omx-press-scale, 0.96));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .omx-att-card--highlight,
+  .omx-att-drop-mask,
+  .omx-att-preview__mask,
+  .omx-att-preview__image {
+    animation: none;
+  }
+  .omx-att-card,
+  .omx-att-card__remove-btn,
+  .omx-att-preview__close {
+    transition: none;
+  }
+  .omx-att-preview__close:active {
+    transform: none;
+  }
 }
 

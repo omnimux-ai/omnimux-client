@@ -260,6 +260,11 @@ function DiagnosticsPanel({ copy, state }: { readonly copy: DesktopRecoveryCopy;
 export function RecoveryFailureDetails({ locale, detail }: { locale: DesktopLocale; detail: string }) {
   const [copied, setCopied] = useState(false)
   const [copyFailed, setCopyFailed] = useState(false)
+  useEffect(() => {
+    if (!copied) return
+    const timer = setTimeout(() => setCopied(false), 2000)
+    return () => clearTimeout(timer)
+  }, [copied])
   const t = (zh: string, en: string) => locale === 'zh' ? zh : en
   return <details className="mt-3" data-recovery-failure-details>
     <summary className="cursor-pointer text-sm font-medium">{t('完整错误与日志', 'Full error and logs')}</summary>

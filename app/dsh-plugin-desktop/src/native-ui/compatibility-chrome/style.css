@@ -1,4 +1,14 @@
 :root {
+  --omx-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --omx-ease-spatial: cubic-bezier(0.32, 0.72, 0, 1);
+  --omx-ease-exit: cubic-bezier(0.32, 0, 0.67, 0);
+  --omx-ease-linear: linear;
+  --omx-dur-press: 90ms;
+  --omx-dur-fast: 140ms;
+  --omx-dur-base: 200ms;
+  --omx-dur-sheet: 260ms;
+  --omx-press-scale: 0.96;
+  --omx-press-scale-subtle: 0.985;
   --dsw-alias-bg-base: #fff;
   --dsw-alias-bg-layer-1: #f5f5f5;
   --dsw-alias-label-primary: #202020;
@@ -71,10 +81,13 @@ html, body, #root { background: transparent; font-size: 13px; }
   cursor: default;
   font: inherit;
   font-size: 11px;
+  font-variant-numeric: tabular-nums;
   pointer-events: auto;
   white-space: nowrap;
   -webkit-app-region: no-drag;
+  transition: background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), transform var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
+.dshDesktopFrameVersion:active { transform: scale(var(--omx-press-scale, 0.96)); }
 .dshDesktopFrameVersion:hover,
 .dshDesktopFrameVersion[data-popup-open],
 .dshDesktopFrameVersion:focus-visible {
@@ -92,7 +105,7 @@ html, body, #root { background: transparent; font-size: 13px; }
 }
 .dshShadcnHoverCardContent {
   transform-origin: var(--transform-origin);
-  transition: opacity 120ms ease, transform 120ms ease;
+  transition: opacity var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), transform var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .dshShadcnHoverCardContent[data-starting-style],
 .dshShadcnHoverCardContent[data-ending-style] {
@@ -123,6 +136,7 @@ html, body, #root { background: transparent; font-size: 13px; }
   color: var(--dsw-alias-label-primary);
   font-size: 12px;
   font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 .dshDesktopVersionCheckButton {
   display: inline-flex;
@@ -139,8 +153,10 @@ html, body, #root { background: transparent; font-size: 13px; }
   font: inherit;
   font-size: 12px;
   -webkit-app-region: no-drag;
+  transition: background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), border-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), transform var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .dshDesktopVersionCheckButton:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); }
+.dshDesktopVersionCheckButton:active:not(:disabled) { transform: scale(var(--omx-press-scale, 0.96)); }
 .dshDesktopVersionCheckButton:focus-visible {
   outline: 2px solid var(--dsw-alias-brand-primary);
   outline-offset: 1px;
@@ -167,7 +183,9 @@ html, body, #root { background: transparent; font-size: 13px; }
   pointer-events: auto;
   white-space: nowrap;
   -webkit-app-region: no-drag;
+  transition: background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), border-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), transform var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
+.dshDesktopFrameMode:active { transform: scale(var(--omx-press-scale, 0.96)); }
 .dshDesktopFrameMode:hover,
 .dshDesktopFrameMode[data-popup-open],
 .dshDesktopFrameMode:focus-visible {
@@ -208,6 +226,10 @@ html, body, #root { background: transparent; font-size: 13px; }
   text-align: left;
   white-space: normal;
   -webkit-app-region: no-drag;
+  transition: background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), transform var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+}
+.dshDesktopVersionPopover .dshDesktopModeOption:active:not(:disabled) {
+  transform: scale(var(--omx-press-scale-subtle, 0.985));
 }
 .dshDesktopVersionPopover .dshDesktopModeOption:hover:not(:disabled) {
   background: var(--dsw-alias-interactive-bg-hover);
@@ -269,12 +291,16 @@ html, body, #root { background: transparent; font-size: 13px; }
   color: var(--dsw-alias-label-secondary);
   cursor: pointer;
   -webkit-app-region: no-drag;
+  transition: background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), border-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), transform var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .dshDesktopTitlebarIconButton:hover:not(:disabled),
 .dshDesktopTitlebarIconButton[aria-expanded="true"] {
   border-color: var(--dsw-alias-border-l2);
   background: var(--dsw-alias-interactive-bg-hover);
   color: var(--dsw-alias-label-primary);
+}
+.dshDesktopTitlebarIconButton:active:not(:disabled) {
+  transform: scale(var(--omx-press-scale, 0.96));
 }
 .dshDesktopTitlebarIconButton:focus-visible {
   outline: 2px solid var(--dsw-alias-brand-primary);
@@ -296,6 +322,7 @@ html, body, #root { background: transparent; font-size: 13px; }
   background: var(--dsw-alias-bg-layer-1);
   box-shadow: 0 12px 32px color-mix(in srgb, #000 28%, transparent);
   -webkit-app-region: no-drag;
+  animation: dshDesktopMenuIn var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
 }
 .dshDesktopFrameTitlebar[data-platform="darwin"] .dshDesktopActionMenu { right: 0; }
 .dshDesktopFrameTitlebar[data-platform="win32"] .dshDesktopActionMenu { left: 0; }
@@ -313,8 +340,10 @@ html, body, #root { background: transparent; font-size: 13px; }
   font: inherit;
   font-size: 12px;
   text-align: start;
+  transition: background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), transform var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .dshDesktopActionMenuItem:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); }
+.dshDesktopActionMenuItem:active:not(:disabled) { transform: scale(var(--omx-press-scale-subtle, 0.985)); }
 .dshDesktopActionMenuItem:disabled { cursor: default; opacity: .45; }
 .dshDesktopActionMenuItem span { flex: 1; }
 .dshDesktopNativeActions[data-placement="titlebar"] .dshDesktopNativeActionError {
@@ -333,6 +362,45 @@ html, body, #root { background: transparent; font-size: 13px; }
   color: var(--dsw-alias-state-error-primary);
   font-size: 11px;
   line-height: 1.4;
+}
+.dshDesktopSpin {
+  animation: dshDesktopSpin 800ms linear infinite;
+}
+@keyframes dshDesktopMenuIn {
+  from { opacity: 0; transform: translateY(-4px) scale(0.985); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes dshDesktopSpin {
+  to { transform: rotate(360deg); }
+}
+@keyframes dshDesktopPulseCalm {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.42; }
+}
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --omx-dur-press: 0ms;
+    --omx-dur-fast: 0ms;
+    --omx-dur-base: 0ms;
+    --omx-dur-sheet: 0ms;
+    --omx-press-scale: 1;
+    --omx-press-scale-subtle: 1;
+  }
+  .dshDesktopFrameVersion,
+  .dshShadcnHoverCardContent,
+  .dshDesktopVersionCheckButton,
+  .dshDesktopFrameMode,
+  .dshDesktopVersionPopover .dshDesktopModeOption,
+  .dshDesktopTitlebarIconButton,
+  .dshDesktopActionMenuItem { transition: none; }
+  .dshDesktopFrameVersion:active,
+  .dshDesktopVersionCheckButton:active:not(:disabled),
+  .dshDesktopFrameMode:active,
+  .dshDesktopVersionPopover .dshDesktopModeOption:active:not(:disabled),
+  .dshDesktopTitlebarIconButton:active:not(:disabled),
+  .dshDesktopActionMenuItem:active:not(:disabled) { transform: none; }
+  .dshDesktopActionMenu { animation: none; }
+  .dshDesktopSpin { animation: dshDesktopPulseCalm 1.6s ease-in-out infinite; }
 }
 
 .dshDesktopRemoteControl { margin-right: 8px; display: inline-flex; align-items: center; gap: 6px; -webkit-app-region: no-drag; }

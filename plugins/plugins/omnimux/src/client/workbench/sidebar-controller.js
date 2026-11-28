@@ -121,7 +121,8 @@ function tryFocusElement(el) {
       el.focus({ preventScroll: false })
     }
     if (typeof el.scrollIntoView === 'function') {
-      el.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+      const reducedMotion = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches
+      el.scrollIntoView({ block: 'nearest', behavior: reducedMotion ? 'auto' : 'smooth' })
     }
   } catch {
     // ignore

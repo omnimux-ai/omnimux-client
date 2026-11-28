@@ -50,7 +50,8 @@
   font-size: 12px;
   color: var(--muted, #666666);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+    color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 
 .draft-tab.active {
@@ -84,7 +85,8 @@
   resize: vertical;
   box-sizing: border-box;
   outline: none;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  transition: border-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+    box-shadow var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 
 .draft-field-textarea:focus {
@@ -124,11 +126,19 @@
   border: 1px solid var(--line, #e5e5e5);
   background: var(--surface, #ffffff);
   color: var(--ink, #111111);
-  transition: all 0.15s ease;
+  transition: background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+    border-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+    color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+    opacity var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+    transform var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 
 .draft-btn:hover:not(:disabled) {
   background: rgba(0, 0, 0, 0.03);
+}
+
+.draft-btn:active:not(:disabled) {
+  transform: scale(var(--omx-press-scale, 0.96));
 }
 
 .draft-btn:disabled {
@@ -159,4 +169,16 @@
 .draft-btn.draft-fill-btn.error {
   background: var(--danger, #dc2626);
   border-color: var(--danger, #dc2626);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .draft-tab,
+  .draft-field-textarea,
+  .draft-btn {
+    transition: none;
+  }
+
+  .draft-btn:active:not(:disabled) {
+    transform: none;
+  }
 }

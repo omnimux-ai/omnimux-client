@@ -201,17 +201,19 @@ export function ExploreTemplatesSection({
       const scroller = targetEl.closest?.('[data-conversation-scroll]') ||
         (typeof document !== 'undefined' ? document.querySelector('[data-conversation-scroll]') : null);
 
+      const reduceMotion = typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      const scrollBehavior = reduceMotion ? 'auto' : 'smooth';
       if (scroller && typeof scroller.getBoundingClientRect === 'function') {
         const elRect = targetEl.getBoundingClientRect();
         const scrollerRect = scroller.getBoundingClientRect();
         const targetOffset = scroller.scrollTop + (elRect.top - scrollerRect.top);
         if (typeof scroller.scrollTo === 'function') {
-          scroller.scrollTo({ top: Math.max(0, targetOffset), behavior: 'smooth' });
+          scroller.scrollTo({ top: Math.max(0, targetOffset), behavior: scrollBehavior });
         } else {
           scroller.scrollTop = Math.max(0, targetOffset);
         }
       } else if (typeof targetEl.scrollIntoView === 'function') {
-        targetEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        targetEl.scrollIntoView({ behavior: scrollBehavior, block: 'start' });
       }
 
       // 关键：不强制派发 force: true 伪吸底事件！输入框随滚动自然响应，消除菜单腰斩与空载钉底

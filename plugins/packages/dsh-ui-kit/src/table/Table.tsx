@@ -176,19 +176,27 @@ export const TableHead = forwardRef<HTMLTableCellElement, TableHeadProps>(
               )}
               aria-hidden="true"
             >
-              {sortDirection === "asc" ? (
-                <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor">
-                  <path d="M5 2L8.5 7H1.5L5 2Z" />
-                </svg>
-              ) : sortDirection === "desc" ? (
-                <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor">
-                  <path d="M5 8L1.5 3H8.5L5 8Z" />
-                </svg>
-              ) : (
+              <span
+                className={cx(
+                  cssClass(css.sortGlyph, "sortGlyph"),
+                  sortDirection !== null && cssClass(css.sortGlyphHidden, "sortGlyphHidden"),
+                )}
+              >
                 <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor" opacity="0.4">
                   <path d="M5 2L7.5 5H2.5L5 2ZM5 8L2.5 5H7.5L5 8Z" />
                 </svg>
-              )}
+              </span>
+              <span
+                className={cx(
+                  cssClass(css.sortGlyph, "sortGlyph"),
+                  sortDirection === null && cssClass(css.sortGlyphHidden, "sortGlyphHidden"),
+                  sortDirection === "desc" && cssClass(css.sortGlyphDesc, "sortGlyphDesc"),
+                )}
+              >
+                <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor">
+                  <path d="M5 2L8.5 7H1.5L5 2Z" />
+                </svg>
+              </span>
             </span>
           ) : null}
         </div>

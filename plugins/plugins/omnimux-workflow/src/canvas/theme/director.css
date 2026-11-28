@@ -47,7 +47,7 @@
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
-  transition: background 120ms ease, transform 120ms ease;
+  transition: background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), transform var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 
 .wf-director-card__cta:hover {
@@ -55,7 +55,7 @@
 }
 
 .wf-director-card__cta:active {
-  transform: scale(0.97);
+  transform: scale(var(--omx-press-scale, 0.96));
 }
 
 .wf-director-card__cta:focus-visible {
@@ -68,3 +68,13 @@
 .wf-director-panel { position: absolute; inset: 0; z-index: 40; display: flex; flex-direction: column; overflow: hidden; background: var(--dsw-alias-bg-base); color: var(--dsw-alias-label-primary); }
 .wf-director-panel__loading { margin: auto; display: flex; flex-direction: column; align-items: center; gap: 16px; }
 .wf-director-panel__mount { flex: 1; min-height: 0; position: relative; overflow: hidden; }
+
+@media (prefers-reduced-motion: reduce) {
+  .wf-director-card__cta {
+    transition: none;
+  }
+
+  .wf-director-card__cta:active {
+    transform: none;
+  }
+}

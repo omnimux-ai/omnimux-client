@@ -168,8 +168,9 @@ test('样式门禁：新增源码零 raw hex/rgba、零违禁 tokens', () => {
   // Issue #746：外部重叠计数样式已移除，超限高亮收编进 PromptTokenEditor meta-bar
   assert.doesNotMatch(cssSrc, /\.wf-config-panel__char-counter/);
   assert.match(promptEditorCss, /\.wf-prompt-token-meta-count--exceeded/);
-  assert.doesNotMatch(cssSrc, /--omx-/);
-  assert.doesNotMatch(promptEditorCss, /--omx-/);
+  const nonMotionOmxRe = /--omx-(?!(?:ease-(?:out|spatial|exit|linear)|dur-(?:press|fast|base|sheet)|press-scale(?:-subtle)?)\b)[a-z0-9_-]*/;
+  assert.doesNotMatch(cssSrc, nonMotionOmxRe);
+  assert.doesNotMatch(promptEditorCss, nonMotionOmxRe);
 });
 
 test('VoicePickerDialog：四维筛选首项菜单 label 为逐字「全部」，触发器复用 triggerLabel 显示维度名（#3058 PM copy fix）', () => {

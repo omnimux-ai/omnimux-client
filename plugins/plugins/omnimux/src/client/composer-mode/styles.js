@@ -69,9 +69,9 @@ export const COMPOSER_MODE_CSS = `
   font-family: inherit;
   letter-spacing: 0.2px;
   cursor: pointer;
-  transition: color 0.18s cubic-bezier(0.4, 0, 0.2, 1),
-              border-color 0.18s cubic-bezier(0.4, 0, 0.2, 1),
-              box-shadow 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              border-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+              box-shadow var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
   box-sizing: border-box;
   white-space: nowrap;
 }
@@ -128,6 +128,12 @@ html[data-omnimux-composer-density='icon'] .omnimux-composer-mode-wrap {
 html[data-omnimux-composer-mode='marketing'] .sh-picker-wrap:has([data-omnimux-skill-picker]),
 html[data-omnimux-composer-mode='marketing'] button[data-omnimux-skill-picker] {
   display: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .omnimux-composer-mode-tab {
+    transition: none;
+  }
 }
 `
 

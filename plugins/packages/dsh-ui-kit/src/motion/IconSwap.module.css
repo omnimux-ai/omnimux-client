@@ -1,0 +1,36 @@
+.root {
+  display: inline-grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+.layer {
+  grid-area: 1 / 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition:
+    transform var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+    opacity var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+}
+
+.active {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.inactive {
+  opacity: 0;
+  transform: scale(0.65);
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .layer {
+    transition: none;
+  }
+
+  .inactive {
+    transform: none;
+  }
+}

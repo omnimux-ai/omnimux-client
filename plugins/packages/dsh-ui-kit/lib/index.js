@@ -1,4 +1,4 @@
-import { n as cx, r as cssClass, t as injectCss } from "./injectCss-73B9Wi4w.js";
+import { i as cssClass, n as injectCss, r as cx, t as IconSwap } from "./IconSwap-BbF3ZTXG.js";
 import * as primitives from "@deepseek-ai/dsh-client-ui-primitives";
 import { Modal, Tooltip } from "@deepseek-ai/dsh-client-ui-primitives";
 import { forwardRef, useCallback, useEffect, useId, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
@@ -38,10 +38,57 @@ const IconRefreshOutline16 = resolve("IconRefreshOutline16", "IconRefreshOutline
 const IconRightUpOutline14 = resolve("IconRightUpOutline14", "IconRightUpOutlineRegular");
 const IconSearchOutline16 = resolve("IconSearchOutline16", "IconSearchOutlineRegular");
 const IconTrashOutline16 = resolve("IconTrashOutline16", "IconTrashOutlineRegular");
+// src/motion/tokens.ts
+/**
+* Unified OmniMux motion language (--omx-* CSS custom properties).
+* Intentionally uses `--omx-*` instead of `--dsw-*` because upstream runtime
+* `--dsw-*` tokens are strictly allowlist-locked by verify-dsw-tokens.mjs.
+*/
+const MOTION_VARS = {
+	easeOut: "cubic-bezier(0.16, 1, 0.3, 1)",
+	easeSpatial: "cubic-bezier(0.32, 0.72, 0, 1)",
+	easeExit: "cubic-bezier(0.32, 0, 0.67, 0)",
+	easeLinear: "linear",
+	durPress: "90ms",
+	durFast: "140ms",
+	durBase: "200ms",
+	durSheet: "260ms",
+	pressScale: "0.96",
+	pressScaleSubtle: "0.985"
+};
+const MOTION_TOKENS_CSS = `:root {
+  --omx-ease-out: ${MOTION_VARS.easeOut};
+  --omx-ease-spatial: ${MOTION_VARS.easeSpatial};
+  --omx-ease-exit: ${MOTION_VARS.easeExit};
+  --omx-ease-linear: ${MOTION_VARS.easeLinear};
+  --omx-dur-press: ${MOTION_VARS.durPress};
+  --omx-dur-fast: ${MOTION_VARS.durFast};
+  --omx-dur-base: ${MOTION_VARS.durBase};
+  --omx-dur-sheet: ${MOTION_VARS.durSheet};
+  --omx-press-scale: ${MOTION_VARS.pressScale};
+  --omx-press-scale-subtle: ${MOTION_VARS.pressScaleSubtle};
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --omx-dur-press: 0ms;
+    --omx-dur-fast: 0ms;
+    --omx-dur-base: 0ms;
+    --omx-dur-sheet: 0ms;
+    --omx-press-scale: 1;
+    --omx-press-scale-subtle: 1;
+  }
+}
+`;
+function ensureMotionTokens() {
+	injectCss("omx-motion-tokens", MOTION_TOKENS_CSS);
+}
+ensureMotionTokens();
 // \0dsh-ui-kit-css:src/button/Button.module.css.mjs
-injectCss("Button.module.css", ".dshUk-Button-button {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  flex-shrink: 0;\n  gap: 6px;\n  box-sizing: border-box;\n  margin: 0;\n  border: 1px solid transparent;\n  border-radius: 8px;\n  cursor: pointer;\n  font: inherit;\n  font-size: 13px;\n  font-weight: 500;\n  line-height: 18px;\n  letter-spacing: 0;\n  white-space: nowrap;\n  color: var(--dsw-alias-label-primary);\n  background: transparent;\n  padding: 0 12px;\n  height: 32px;\n  vertical-align: middle;\n  user-select: none;\n  transition:\n    background-color 120ms cubic-bezier(0.16, 1, 0.3, 1),\n    border-color 120ms cubic-bezier(0.16, 1, 0.3, 1),\n    color 120ms cubic-bezier(0.16, 1, 0.3, 1),\n    transform 120ms cubic-bezier(0.16, 1, 0.3, 1),\n    box-shadow 120ms cubic-bezier(0.16, 1, 0.3, 1),\n    opacity 120ms cubic-bezier(0.16, 1, 0.3, 1);\n}\n\n.dshUk-Button-button:focus {\n  outline: none;\n}\n\n.dshUk-Button-button:focus-visible {\n  outline: 2px solid var(--dsw-alias-brand-primary);\n  outline-offset: 2px;\n}\n\n.dshUk-Button-button:disabled,\n.dshUk-Button-button[aria-disabled=\"true\"] {\n  cursor: not-allowed;\n  opacity: 0.4;\n}\n\n.dshUk-Button-button:active:not(:disabled):not([aria-disabled=\"true\"]) {\n  transform: scale(0.96);\n}\n\n.dshUk-Button-sm {\n  height: 28px;\n  padding: 0 10px;\n  border-radius: 6px;\n  font-size: 12px;\n  line-height: 16px;\n}\n\n.dshUk-Button-xs {\n  height: 24px;\n  padding: 0 8px;\n  border-radius: 6px;\n  font-size: 12px;\n  line-height: 16px;\n  gap: 4px;\n}\n\n.dshUk-Button-iconOnly {\n  padding: 0;\n  width: 32px;\n}\n\n.dshUk-Button-iconOnly.dshUk-Button-sm {\n  width: 28px;\n}\n\n.dshUk-Button-iconOnly.dshUk-Button-xs {\n  width: 24px;\n}\n\n.dshUk-Button-primary {\n  background: var(--dsw-alias-button-primary-fill);\n  color: var(--dsw-alias-label-primary-foreground);\n}\n\n.dshUk-Button-primary:hover:not(:disabled):not([aria-disabled=\"true\"]) {\n  background: var(--dsw-alias-button-primary-hover);\n}\n\n.dshUk-Button-secondary {\n  background: var(--dsw-alias-bg-layer-1);\n  border-color: var(--dsw-alias-border-l2);\n  color: var(--dsw-alias-label-primary);\n}\n\n.dshUk-Button-secondary:hover:not(:disabled):not([aria-disabled=\"true\"]) {\n  background: var(--dsw-alias-interactive-bg-hover);\n  border-color: var(--dsw-alias-border-l3);\n}\n\n.dshUk-Button-ghost {\n  background: transparent;\n  color: var(--dsw-alias-label-primary);\n}\n\n.dshUk-Button-ghost:hover:not(:disabled):not([aria-disabled=\"true\"]) {\n  background: var(--dsw-alias-interactive-bg-hover);\n}\n\n.dshUk-Button-ghost:active:not(:disabled):not([aria-disabled=\"true\"]) {\n  background: var(--dsw-alias-interactive-bg-active);\n}\n\n.dshUk-Button-outline {\n  background: transparent;\n  border-color: var(--dsw-alias-border-l2);\n  color: var(--dsw-alias-label-primary);\n}\n\n.dshUk-Button-outline:hover:not(:disabled):not([aria-disabled=\"true\"]) {\n  background: var(--dsw-alias-interactive-bg-hover);\n  border-color: var(--dsw-alias-border-l3);\n}\n\n.dshUk-Button-danger {\n  background: var(--dsw-alias-state-error-primary);\n  color: var(--dsw-alias-label-primary-foreground);\n}\n\n.dshUk-Button-danger:hover:not(:disabled):not([aria-disabled=\"true\"]) {\n  background: var(--dsw-alias-state-error-secondary);\n}\n\n.dshUk-Button-ghost[aria-pressed=\"true\"],\n.dshUk-Button-secondary[aria-pressed=\"true\"] {\n  background: var(--dsw-alias-button-ghost-active-fill);\n  box-shadow: inset 0 0 0 1px var(--dsw-alias-button-ghost-active-border);\n}\n\n/* Outline already owns a real 1px border. Keep pressed fill/border as\n * declarations — do not share the ghost/secondary inset box-shadow or the\n * pressed state would double-stroke. */\n.dshUk-Button-outline[aria-pressed=\"true\"] {\n  background: var(--dsw-alias-button-ghost-active-fill);\n  border-color: var(--dsw-alias-button-ghost-active-border);\n  color: var(--dsw-alias-label-primary);\n}\n\n/* Hover specificity defense: `.dshUk-Button-outline:hover` (and ghost/secondary hover)\n * would otherwise wash the pressed fill/border back to the idle hover tokens. */\n.dshUk-Button-ghost[aria-pressed=\"true\"]:hover:not(:disabled):not([aria-disabled=\"true\"]),\n.dshUk-Button-secondary[aria-pressed=\"true\"]:hover:not(:disabled):not([aria-disabled=\"true\"]),\n.dshUk-Button-outline[aria-pressed=\"true\"]:hover:not(:disabled):not([aria-disabled=\"true\"]) {\n  background: var(--dsw-alias-button-ghost-active-hover);\n}\n\n.dshUk-Button-outline[aria-pressed=\"true\"]:hover:not(:disabled):not([aria-disabled=\"true\"]) {\n  border-color: var(--dsw-alias-button-ghost-active-border);\n}\n\n.dshUk-Button-slot {\n  display: inline-flex;\n  width: 16px;\n  height: 16px;\n  align-items: center;\n  justify-content: center;\n  flex: none;\n}\n\n.dshUk-Button-xs .dshUk-Button-slot {\n  width: 14px;\n  height: 14px;\n}\n\n.dshUk-Button-spinner {\n  animation: dshUkSpin 0.7s linear infinite;\n}\n\n.dshUk-Button-label {\n  min-width: 0;\n}\n\n.dshUk-Button-loadingLabel {\n  opacity: 0.84;\n}\n\n@media (prefers-reduced-motion: reduce) {\n  .dshUk-Button-button {\n    transition: none;\n  }\n\n  .dshUk-Button-button:active:not(:disabled):not([aria-disabled=\"true\"]) {\n    transform: none;\n  }\n\n  .dshUk-Button-spinner {\n    animation: none;\n  }\n}\n\n@keyframes dshUkSpin {\n  from {\n    transform: rotate(0deg);\n  }\n  to {\n    transform: rotate(360deg);\n  }\n}\n");
+injectCss("Button.module.css", ".dshUk-Button-button {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  flex-shrink: 0;\n  gap: 6px;\n  box-sizing: border-box;\n  margin: 0;\n  border: 1px solid transparent;\n  border-radius: 8px;\n  cursor: pointer;\n  font: inherit;\n  font-size: 13px;\n  font-weight: 500;\n  line-height: 18px;\n  letter-spacing: 0;\n  white-space: nowrap;\n  color: var(--dsw-alias-label-primary);\n  background: transparent;\n  padding: 0 12px;\n  height: 32px;\n  vertical-align: middle;\n  user-select: none;\n  transition:\n    background-color var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),\n    border-color var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),\n    color var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),\n    transform var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),\n    box-shadow var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),\n    opacity var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));\n}\n\n.dshUk-Button-button:focus {\n  outline: none;\n}\n\n.dshUk-Button-button:focus-visible {\n  outline: 2px solid var(--dsw-alias-brand-primary);\n  outline-offset: 2px;\n}\n\n.dshUk-Button-button:disabled,\n.dshUk-Button-button[aria-disabled=\"true\"] {\n  cursor: not-allowed;\n  opacity: 0.4;\n}\n\n.dshUk-Button-button:active:not(:disabled):not([aria-disabled=\"true\"]) {\n  transform: scale(var(--omx-press-scale, 0.96));\n}\n\n.dshUk-Button-staticScale:active:not(:disabled):not([aria-disabled=\"true\"]) {\n  transform: none;\n}\n\n.dshUk-Button-sm {\n  height: 28px;\n  padding: 0 10px;\n  border-radius: 6px;\n  font-size: 12px;\n  line-height: 16px;\n}\n\n.dshUk-Button-xs {\n  height: 24px;\n  padding: 0 8px;\n  border-radius: 6px;\n  font-size: 12px;\n  line-height: 16px;\n  gap: 4px;\n}\n\n.dshUk-Button-iconOnly {\n  padding: 0;\n  width: 32px;\n}\n\n.dshUk-Button-iconOnly.dshUk-Button-sm {\n  width: 28px;\n}\n\n.dshUk-Button-iconOnly.dshUk-Button-xs {\n  width: 24px;\n}\n\n.dshUk-Button-primary {\n  background: var(--dsw-alias-button-primary-fill);\n  color: var(--dsw-alias-label-primary-foreground);\n}\n\n.dshUk-Button-primary:hover:not(:disabled):not([aria-disabled=\"true\"]) {\n  background: var(--dsw-alias-button-primary-hover);\n}\n\n.dshUk-Button-secondary {\n  background: var(--dsw-alias-bg-layer-1);\n  border-color: var(--dsw-alias-border-l2);\n  color: var(--dsw-alias-label-primary);\n}\n\n.dshUk-Button-secondary:hover:not(:disabled):not([aria-disabled=\"true\"]) {\n  background: var(--dsw-alias-interactive-bg-hover);\n  border-color: var(--dsw-alias-border-l3);\n}\n\n.dshUk-Button-ghost {\n  background: transparent;\n  color: var(--dsw-alias-label-primary);\n}\n\n.dshUk-Button-ghost:hover:not(:disabled):not([aria-disabled=\"true\"]) {\n  background: var(--dsw-alias-interactive-bg-hover);\n}\n\n.dshUk-Button-ghost:active:not(:disabled):not([aria-disabled=\"true\"]) {\n  background: var(--dsw-alias-interactive-bg-active);\n}\n\n.dshUk-Button-outline {\n  background: transparent;\n  border-color: var(--dsw-alias-border-l2);\n  color: var(--dsw-alias-label-primary);\n}\n\n.dshUk-Button-outline:hover:not(:disabled):not([aria-disabled=\"true\"]) {\n  background: var(--dsw-alias-interactive-bg-hover);\n  border-color: var(--dsw-alias-border-l3);\n}\n\n.dshUk-Button-danger {\n  background: var(--dsw-alias-state-error-primary);\n  color: var(--dsw-alias-label-primary-foreground);\n}\n\n.dshUk-Button-danger:hover:not(:disabled):not([aria-disabled=\"true\"]) {\n  background: var(--dsw-alias-state-error-secondary);\n}\n\n.dshUk-Button-ghost[aria-pressed=\"true\"],\n.dshUk-Button-secondary[aria-pressed=\"true\"] {\n  background: var(--dsw-alias-button-ghost-active-fill);\n  box-shadow: inset 0 0 0 1px var(--dsw-alias-button-ghost-active-border);\n}\n\n/* Outline already owns a real 1px border. Keep pressed fill/border as\n * declarations — do not share the ghost/secondary inset box-shadow or the\n * pressed state would double-stroke. */\n.dshUk-Button-outline[aria-pressed=\"true\"] {\n  background: var(--dsw-alias-button-ghost-active-fill);\n  border-color: var(--dsw-alias-button-ghost-active-border);\n  color: var(--dsw-alias-label-primary);\n}\n\n/* Hover specificity defense: `.dshUk-Button-outline:hover` (and ghost/secondary hover)\n * would otherwise wash the pressed fill/border back to the idle hover tokens. */\n.dshUk-Button-ghost[aria-pressed=\"true\"]:hover:not(:disabled):not([aria-disabled=\"true\"]),\n.dshUk-Button-secondary[aria-pressed=\"true\"]:hover:not(:disabled):not([aria-disabled=\"true\"]),\n.dshUk-Button-outline[aria-pressed=\"true\"]:hover:not(:disabled):not([aria-disabled=\"true\"]) {\n  background: var(--dsw-alias-button-ghost-active-hover);\n}\n\n.dshUk-Button-outline[aria-pressed=\"true\"]:hover:not(:disabled):not([aria-disabled=\"true\"]) {\n  border-color: var(--dsw-alias-button-ghost-active-border);\n}\n\n.dshUk-Button-slot {\n  display: inline-flex;\n  width: 16px;\n  height: 16px;\n  align-items: center;\n  justify-content: center;\n  flex: none;\n}\n\n.dshUk-Button-xs .dshUk-Button-slot {\n  width: 14px;\n  height: 14px;\n}\n\n.dshUk-Button-spinner {\n  animation: dshUkSpin 0.7s linear infinite;\n}\n\n.dshUk-Button-label {\n  min-width: 0;\n}\n\n.dshUk-Button-loadingLabel {\n  opacity: 0.84;\n}\n\n@media (prefers-reduced-motion: reduce) {\n  .dshUk-Button-button {\n    transition: none;\n  }\n\n  .dshUk-Button-button:active:not(:disabled):not([aria-disabled=\"true\"]) {\n    transform: none;\n  }\n\n  .dshUk-Button-spinner {\n    animation: dshUkPulseReduced 1.6s ease-in-out infinite;\n  }\n}\n\n@keyframes dshUkSpin {\n  from {\n    transform: rotate(0deg);\n  }\n  to {\n    transform: rotate(360deg);\n  }\n}\n\n@keyframes dshUkPulseReduced {\n  0%,\n  100% {\n    opacity: 1;\n  }\n  50% {\n    opacity: 0.42;\n  }\n}\n");
 var Button_module_css_default = {
 	"button": "dshUk-Button-button",
+	"staticScale": "dshUk-Button-staticScale",
 	"sm": "dshUk-Button-sm",
 	"xs": "dshUk-Button-xs",
 	"iconOnly": "dshUk-Button-iconOnly",
@@ -72,13 +119,13 @@ const SIZE_CLASS$2 = {
 * 32 / 28 / 24 workbench button. Consumes `--dsw-alias-*` tokens so light and
 * dark both follow the host theme (including OmniMux full-shell tint).
 */
-const Button = forwardRef(function Button({ variant = "secondary", size = "default", loading = false, leadingIcon, trailingIcon, type = "button", className, disabled, children, ...rest }, ref) {
+const Button = forwardRef(function Button({ variant = "secondary", size = "default", loading = false, staticScale = false, leadingIcon, trailingIcon, type = "button", className, disabled, children, ...rest }, ref) {
 	const isDisabled = Boolean(disabled) || loading;
 	return /* @__PURE__ */ jsxs("button", {
 		...rest,
 		ref,
 		type,
-		className: cx(Button_module_css_default.button, VARIANT_CLASS$1[variant], SIZE_CLASS$2[size], className),
+		className: cx(Button_module_css_default.button, VARIANT_CLASS$1[variant], SIZE_CLASS$2[size], staticScale && Button_module_css_default.staticScale, className),
 		disabled: isDisabled,
 		"aria-busy": loading || void 0,
 		"aria-disabled": isDisabled || void 0,
@@ -105,14 +152,14 @@ const Button = forwardRef(function Button({ variant = "secondary", size = "defau
 	});
 });
 /** Square icon-only button with an official Tooltip and a required aria-label. */
-const IconButton = forwardRef(function IconButton({ variant = "ghost", size = "default", loading = false, type = "button", className, disabled, children, title, tooltipSide = "bottom", "aria-label": ariaLabel, ...rest }, ref) {
+const IconButton = forwardRef(function IconButton({ variant = "ghost", size = "default", loading = false, staticScale = false, type = "button", className, disabled, children, title, tooltipSide = "bottom", "aria-label": ariaLabel, ...rest }, ref) {
 	const isDisabled = Boolean(disabled) || loading;
 	const tooltip = title ?? ariaLabel;
 	const button = /* @__PURE__ */ jsx("button", {
 		...rest,
 		ref,
 		type,
-		className: cx(Button_module_css_default.button, VARIANT_CLASS$1[variant], SIZE_CLASS$2[size], Button_module_css_default.iconOnly, className),
+		className: cx(Button_module_css_default.button, VARIANT_CLASS$1[variant], SIZE_CLASS$2[size], Button_module_css_default.iconOnly, staticScale && Button_module_css_default.staticScale, className),
 		disabled: isDisabled,
 		"aria-label": ariaLabel,
 		"aria-busy": loading || void 0,
@@ -162,12 +209,14 @@ async function copyToClipboard(text) {
 	}
 }
 // \0dsh-ui-kit-css:src/button/CopyButton.module.css.mjs
-injectCss("CopyButton.module.css", ".dshUk-CopyButton-copySuccessIcon {\n  color: var(--dsw-alias-state-success-primary);\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n}\n\n.dshUk-CopyButton-copyErrorIcon {\n  color: var(--dsw-alias-state-error-primary);\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n}\n\n.dshUk-CopyButton-copyButtonSuccess {\n  color: var(--dsw-alias-state-success-primary);\n}\n\n.dshUk-CopyButton-copyButtonError {\n  color: var(--dsw-alias-state-error-primary);\n}\n");
+injectCss("CopyButton.module.css", ".dshUk-CopyButton-copySuccessIcon {\n  color: var(--dsw-alias-state-success-primary);\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n}\n\n.dshUk-CopyButton-copyErrorIcon {\n  color: var(--dsw-alias-state-error-primary);\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n}\n\n.dshUk-CopyButton-copyButtonSuccess {\n  color: var(--dsw-alias-state-success-primary);\n}\n\n.dshUk-CopyButton-copyButtonError {\n  color: var(--dsw-alias-state-error-primary);\n}\n\n.dshUk-CopyButton-labelSlot {\n  display: inline-flex;\n  flex-direction: column;\n  align-items: center;\n  justify-content: center;\n}\n\n.dshUk-CopyButton-labelSlot[data-idle-label]::before {\n  content: attr(data-idle-label);\n  height: 0;\n  line-height: 0;\n  visibility: hidden;\n  overflow: hidden;\n  user-select: none;\n  pointer-events: none;\n  white-space: nowrap;\n}\n\n.dshUk-CopyButton-labelSlot[data-copied-label]::after {\n  content: attr(data-copied-label);\n  height: 0;\n  line-height: 0;\n  visibility: hidden;\n  overflow: hidden;\n  user-select: none;\n  pointer-events: none;\n  white-space: nowrap;\n}\n\n.dshUk-CopyButton-labelCurrent {\n  white-space: nowrap;\n}\n");
 var CopyButton_module_css_default = {
 	"copySuccessIcon": "dshUk-CopyButton-copySuccessIcon",
 	"copyErrorIcon": "dshUk-CopyButton-copyErrorIcon",
 	"copyButtonSuccess": "dshUk-CopyButton-copyButtonSuccess",
-	"copyButtonError": "dshUk-CopyButton-copyButtonError"
+	"copyButtonError": "dshUk-CopyButton-copyButtonError",
+	"labelSlot": "dshUk-CopyButton-labelSlot",
+	"labelCurrent": "dshUk-CopyButton-labelCurrent"
 };
 // src/button/CopyButton.tsx
 /**
@@ -203,17 +252,18 @@ const CopyButton = forwardRef(function CopyButton({ text, timeout = 2e3, label =
 	let currentLabel = label;
 	if (state === "copied") currentLabel = copiedLabel;
 	else if (state === "error") currentLabel = errorLabel;
-	let iconNode = null;
-	if (showIcon) {
-		if (state === "copied") iconNode = /* @__PURE__ */ jsx("span", {
-			className: cssClass(CopyButton_module_css_default.copySuccessIcon, "copySuccessIcon"),
-			children: /* @__PURE__ */ jsx(IconCheckOutline16, { size: size === "xs" ? 14 : 16 })
-		});
-		else iconNode = /* @__PURE__ */ jsx("span", {
+	const iconSize = size === "xs" ? 14 : 16;
+	const iconNode = showIcon ? /* @__PURE__ */ jsx(IconSwap, {
+		active: state === "copied",
+		primary: /* @__PURE__ */ jsx("span", {
 			className: state === "error" ? cssClass(CopyButton_module_css_default.copyErrorIcon, "copyErrorIcon") : void 0,
-			children: /* @__PURE__ */ jsx(IconCopyOutline16, { size: size === "xs" ? 14 : 16 })
-		});
-	}
+			children: /* @__PURE__ */ jsx(IconCopyOutline16, { size: iconSize })
+		}),
+		secondary: /* @__PURE__ */ jsx("span", {
+			className: cssClass(CopyButton_module_css_default.copySuccessIcon, "copySuccessIcon"),
+			children: /* @__PURE__ */ jsx(IconCheckOutline16, { size: iconSize })
+		})
+	}) : null;
 	const stateClass = state === "copied" ? cssClass(CopyButton_module_css_default.copyButtonSuccess, "copyButtonSuccess") : state === "error" ? cssClass(CopyButton_module_css_default.copyButtonError, "copyButtonError") : void 0;
 	return /* @__PURE__ */ jsx(Button, {
 		...rest,
@@ -225,11 +275,19 @@ const CopyButton = forwardRef(function CopyButton({ text, timeout = 2e3, label =
 		className: cx(stateClass, className),
 		onClick: handleClick,
 		"aria-live": "polite",
-		children: currentLabel
+		children: currentLabel != null && currentLabel !== "" ? /* @__PURE__ */ jsx("span", {
+			className: cssClass(CopyButton_module_css_default.labelSlot, "labelSlot"),
+			"data-idle-label": label || void 0,
+			"data-copied-label": copiedLabel || void 0,
+			children: /* @__PURE__ */ jsx("span", {
+				className: cssClass(CopyButton_module_css_default.labelCurrent, "labelCurrent"),
+				children: currentLabel
+			})
+		}) : null
 	});
 });
 // \0dsh-ui-kit-css:src/badge/Badge.module.css.mjs
-injectCss("Badge.module.css", ".dshUk-Badge-badge {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  box-sizing: border-box;\n  font-family: inherit;\n  font-weight: 500;\n  line-height: 1;\n  white-space: nowrap;\n  vertical-align: middle;\n  user-select: none;\n  border: 1px solid transparent;\n  transition:\n    background-color 120ms cubic-bezier(0.16, 1, 0.3, 1),\n    border-color 120ms cubic-bezier(0.16, 1, 0.3, 1),\n    color 120ms cubic-bezier(0.16, 1, 0.3, 1);\n}\n\n/* Shapes */\n.dshUk-Badge-capsule {\n  border-radius: 9999px;\n}\n\n.dshUk-Badge-square {\n  border-radius: 4px;\n}\n\n.dshUk-Badge-dotShape {\n  border-radius: 9999px;\n  padding: 0;\n  min-width: 0;\n}\n\n/* Sizes for text/capsule/square */\n.dshUk-Badge-sm {\n  height: 16px;\n  padding: 0 6px;\n  font-size: 11px;\n  gap: 3px;\n}\n\n.dshUk-Badge-md {\n  height: 20px;\n  padding: 0 8px;\n  font-size: 12px;\n  gap: 4px;\n}\n\n.dshUk-Badge-lg {\n  height: 24px;\n  padding: 0 10px;\n  font-size: 13px;\n  gap: 6px;\n}\n\n/* Dot sizes when standalone */\n.dshUk-Badge-dotShape.dshUk-Badge-sm {\n  width: 6px;\n  height: 6px;\n}\n\n.dshUk-Badge-dotShape.dshUk-Badge-md {\n  width: 8px;\n  height: 8px;\n}\n\n.dshUk-Badge-dotShape.dshUk-Badge-lg {\n  width: 10px;\n  height: 10px;\n}\n\n/* Inline dot indicator inside badge */\n.dshUk-Badge-statusDot {\n  display: inline-block;\n  width: 6px;\n  height: 6px;\n  border-radius: 9999px;\n  background-color: currentColor;\n  flex-shrink: 0;\n}\n\n.dshUk-Badge-iconSlot {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  flex-shrink: 0;\n}\n\n/* Semantic Variants */\n.dshUk-Badge-default {\n  background-color: var(--dsw-alias-bg-layer-2);\n  border-color: var(--dsw-alias-border-l1);\n  color: var(--dsw-alias-label-secondary);\n}\n\n.dshUk-Badge-neutral {\n  background-color: var(--dsw-alias-bg-layer-1);\n  border-color: var(--dsw-alias-border-l2);\n  color: var(--dsw-alias-label-secondary);\n}\n\n.dshUk-Badge-brand {\n  background-color: var(--dsw-alias-interactive-bg-active);\n  border-color: var(--dsw-alias-brand-primary);\n  color: var(--dsw-alias-brand-primary);\n}\n\n.dshUk-Badge-success {\n  background-color: var(--dsw-alias-state-success-tertiary);\n  border-color: var(--dsw-alias-state-success-primary);\n  color: var(--dsw-alias-state-success-primary);\n}\n\n.dshUk-Badge-warning {\n  background-color: var(--dsw-alias-state-warn-tertiary);\n  border-color: var(--dsw-alias-state-warn-label);\n  color: var(--dsw-alias-state-warn-label);\n}\n\n.dshUk-Badge-error {\n  background-color: var(--dsw-alias-interactive-bg-hover-danger);\n  border-color: var(--dsw-alias-state-error-primary);\n  color: var(--dsw-alias-state-error-primary);\n}\n\n.dshUk-Badge-info {\n  background-color: var(--dsw-alias-state-business-tertiary);\n  border-color: var(--dsw-alias-state-business-primary);\n  color: var(--dsw-alias-state-business-primary);\n}\n");
+injectCss("Badge.module.css", ".dshUk-Badge-badge {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  box-sizing: border-box;\n  font-family: inherit;\n  font-weight: 500;\n  line-height: 1;\n  white-space: nowrap;\n  vertical-align: middle;\n  user-select: none;\n  border: 1px solid transparent;\n  font-variant-numeric: tabular-nums;\n  transition:\n    background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),\n    border-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),\n    color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));\n}\n\n/* Shapes */\n.dshUk-Badge-capsule {\n  border-radius: 9999px;\n}\n\n.dshUk-Badge-square {\n  border-radius: 4px;\n}\n\n.dshUk-Badge-dotShape {\n  border-radius: 9999px;\n  padding: 0;\n  min-width: 0;\n}\n\n/* Sizes for text/capsule/square */\n.dshUk-Badge-sm {\n  height: 16px;\n  padding: 0 6px;\n  font-size: 11px;\n  gap: 3px;\n}\n\n.dshUk-Badge-md {\n  height: 20px;\n  padding: 0 8px;\n  font-size: 12px;\n  gap: 4px;\n}\n\n.dshUk-Badge-lg {\n  height: 24px;\n  padding: 0 10px;\n  font-size: 13px;\n  gap: 6px;\n}\n\n/* Dot sizes when standalone */\n.dshUk-Badge-dotShape.dshUk-Badge-sm {\n  width: 6px;\n  height: 6px;\n}\n\n.dshUk-Badge-dotShape.dshUk-Badge-md {\n  width: 8px;\n  height: 8px;\n}\n\n.dshUk-Badge-dotShape.dshUk-Badge-lg {\n  width: 10px;\n  height: 10px;\n}\n\n/* Inline dot indicator inside badge */\n.dshUk-Badge-statusDot {\n  display: inline-block;\n  width: 6px;\n  height: 6px;\n  border-radius: 9999px;\n  background-color: currentColor;\n  flex-shrink: 0;\n}\n\n.dshUk-Badge-iconSlot {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  flex-shrink: 0;\n}\n\n/* Semantic Variants */\n.dshUk-Badge-default {\n  background-color: var(--dsw-alias-bg-layer-2);\n  border-color: var(--dsw-alias-border-l1);\n  color: var(--dsw-alias-label-secondary);\n}\n\n.dshUk-Badge-neutral {\n  background-color: var(--dsw-alias-bg-layer-1);\n  border-color: var(--dsw-alias-border-l2);\n  color: var(--dsw-alias-label-secondary);\n}\n\n.dshUk-Badge-brand {\n  background-color: var(--dsw-alias-interactive-bg-active);\n  border-color: var(--dsw-alias-brand-primary);\n  color: var(--dsw-alias-brand-primary);\n}\n\n.dshUk-Badge-success {\n  background-color: var(--dsw-alias-state-success-tertiary);\n  border-color: var(--dsw-alias-state-success-primary);\n  color: var(--dsw-alias-state-success-primary);\n}\n\n.dshUk-Badge-warning {\n  background-color: var(--dsw-alias-state-warn-tertiary);\n  border-color: var(--dsw-alias-state-warn-label);\n  color: var(--dsw-alias-state-warn-label);\n}\n\n.dshUk-Badge-error {\n  background-color: var(--dsw-alias-interactive-bg-hover-danger);\n  border-color: var(--dsw-alias-state-error-primary);\n  color: var(--dsw-alias-state-error-primary);\n}\n\n.dshUk-Badge-info {\n  background-color: var(--dsw-alias-state-business-tertiary);\n  border-color: var(--dsw-alias-state-business-primary);\n  color: var(--dsw-alias-state-business-primary);\n}\n\n@media (prefers-reduced-motion: reduce) {\n  .dshUk-Badge-badge {\n    transition: none;\n  }\n}\n");
 var Badge_module_css_default = {
 	"badge": "dshUk-Badge-badge",
 	"capsule": "dshUk-Badge-capsule",
@@ -289,7 +347,7 @@ const Badge = forwardRef(function Badge({ variant = "default", shape = "capsule"
 	});
 });
 // \0dsh-ui-kit-css:src/tile/SelectableTile.module.css.mjs
-injectCss("SelectableTile.module.css", ".dshUk-SelectableTile-tile {\n  display: flex;\n  align-items: flex-start;\n  gap: 12px;\n  box-sizing: border-box;\n  width: 100%;\n  min-height: 48px;\n  padding: 12px 14px;\n  margin: 0;\n  border: 1px solid var(--dsw-alias-border-l2);\n  border-radius: 8px;\n  background-color: var(--dsw-alias-bg-layer-1);\n  color: var(--dsw-alias-label-primary);\n  cursor: pointer;\n  user-select: none;\n  text-align: left;\n  transition:\n    background-color 120ms cubic-bezier(0.16, 1, 0.3, 1),\n    border-color 120ms cubic-bezier(0.16, 1, 0.3, 1),\n    box-shadow 120ms cubic-bezier(0.16, 1, 0.3, 1),\n    opacity 120ms cubic-bezier(0.16, 1, 0.3, 1);\n}\n\n.dshUk-SelectableTile-tile:hover:not(.dshUk-SelectableTile-disabled):not(.dshUk-SelectableTile-loading) {\n  background-color: var(--dsw-alias-interactive-bg-hover);\n  border-color: var(--dsw-alias-border-l3);\n}\n\n.dshUk-SelectableTile-tile:focus {\n  outline: none;\n}\n\n.dshUk-SelectableTile-tile:focus-visible {\n  outline: 2px solid var(--dsw-alias-brand-primary);\n  outline-offset: 2px;\n}\n\n.dshUk-SelectableTile-selected {\n  background-color: var(--dsw-alias-interactive-bg-active);\n  border-color: var(--dsw-alias-brand-primary);\n  box-shadow: inset 0 0 0 1px var(--dsw-alias-brand-primary);\n}\n\n.dshUk-SelectableTile-selected:hover:not(.dshUk-SelectableTile-disabled):not(.dshUk-SelectableTile-loading) {\n  background-color: var(--dsw-alias-interactive-bg-active);\n  border-color: var(--dsw-alias-brand-primary);\n}\n\n.dshUk-SelectableTile-disabled {\n  cursor: not-allowed;\n  opacity: 0.45;\n}\n\n.dshUk-SelectableTile-loading {\n  cursor: wait;\n  opacity: 0.8;\n}\n\n/* Custom indicator icon for radio / checkbox */\n.dshUk-SelectableTile-indicator {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  width: 16px;\n  height: 16px;\n  margin-top: 2px;\n  flex-shrink: 0;\n  border: 1px solid var(--dsw-alias-border-l3);\n  background-color: var(--dsw-alias-bg-layer-2);\n  transition:\n    border-color 120ms cubic-bezier(0.16, 1, 0.3, 1),\n    background-color 120ms cubic-bezier(0.16, 1, 0.3, 1);\n}\n\n.dshUk-SelectableTile-checkboxIndicator {\n  border-radius: 4px;\n}\n\n.dshUk-SelectableTile-radioIndicator {\n  border-radius: 9999px;\n}\n\n.dshUk-SelectableTile-selected .dshUk-SelectableTile-indicator {\n  border-color: var(--dsw-alias-brand-primary);\n  background-color: var(--dsw-alias-brand-primary);\n}\n\n.dshUk-SelectableTile-checkmark {\n  width: 10px;\n  height: 10px;\n  stroke: var(--dsw-alias-label-primary-foreground);\n  stroke-width: 2;\n  fill: none;\n  stroke-linecap: round;\n  stroke-linejoin: round;\n}\n\n.dshUk-SelectableTile-radioDot {\n  width: 6px;\n  height: 6px;\n  border-radius: 9999px;\n  background-color: var(--dsw-alias-label-primary-foreground);\n}\n\n.dshUk-SelectableTile-iconSlot {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  flex-shrink: 0;\n  margin-top: 2px;\n  color: var(--dsw-alias-label-secondary);\n}\n\n.dshUk-SelectableTile-content {\n  display: flex;\n  flex-direction: column;\n  flex: 1;\n  min-width: 0;\n  gap: 4px;\n}\n\n.dshUk-SelectableTile-headerRow {\n  display: flex;\n  align-items: center;\n  gap: 8px;\n  flex-wrap: wrap;\n}\n\n.dshUk-SelectableTile-title {\n  font-size: 13px;\n  font-weight: 500;\n  line-height: 18px;\n  color: var(--dsw-alias-label-primary);\n  word-break: break-word;\n}\n\n.dshUk-SelectableTile-description {\n  font-size: 12px;\n  line-height: 16px;\n  color: var(--dsw-alias-label-secondary);\n  word-break: break-word;\n}\n\n.dshUk-SelectableTile-extraSlot {\n  display: inline-flex;\n  align-items: center;\n  flex-shrink: 0;\n  margin-left: auto;\n}\n");
+injectCss("SelectableTile.module.css", ".dshUk-SelectableTile-tile {\n  display: flex;\n  align-items: flex-start;\n  gap: 12px;\n  box-sizing: border-box;\n  width: 100%;\n  min-height: 48px;\n  padding: 12px 14px;\n  margin: 0;\n  border: 1px solid var(--dsw-alias-border-l2);\n  border-radius: 8px;\n  background-color: var(--dsw-alias-bg-layer-1);\n  color: var(--dsw-alias-label-primary);\n  cursor: pointer;\n  user-select: none;\n  text-align: left;\n  transition:\n    background-color var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),\n    border-color var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),\n    box-shadow var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),\n    transform var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),\n    opacity var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));\n}\n\n.dshUk-SelectableTile-tile:hover:not(.dshUk-SelectableTile-disabled):not(.dshUk-SelectableTile-loading) {\n  background-color: var(--dsw-alias-interactive-bg-hover);\n  border-color: var(--dsw-alias-border-l3);\n}\n\n.dshUk-SelectableTile-tile:active:not(.dshUk-SelectableTile-disabled):not(.dshUk-SelectableTile-loading) {\n  transform: scale(var(--omx-press-scale-subtle, 0.985));\n}\n\n.dshUk-SelectableTile-tile:focus {\n  outline: none;\n}\n\n.dshUk-SelectableTile-tile:focus-visible {\n  outline: 2px solid var(--dsw-alias-brand-primary);\n  outline-offset: 2px;\n}\n\n.dshUk-SelectableTile-selected {\n  background-color: var(--dsw-alias-interactive-bg-active);\n  border-color: var(--dsw-alias-brand-primary);\n  box-shadow: inset 0 0 0 1px var(--dsw-alias-brand-primary);\n}\n\n.dshUk-SelectableTile-selected:hover:not(.dshUk-SelectableTile-disabled):not(.dshUk-SelectableTile-loading) {\n  background-color: var(--dsw-alias-interactive-bg-active);\n  border-color: var(--dsw-alias-brand-primary);\n}\n\n.dshUk-SelectableTile-disabled {\n  cursor: not-allowed;\n  opacity: 0.45;\n}\n\n.dshUk-SelectableTile-loading {\n  cursor: wait;\n  opacity: 0.8;\n}\n\n/* Custom indicator icon for radio / checkbox */\n.dshUk-SelectableTile-indicator {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  width: 16px;\n  height: 16px;\n  margin-top: 2px;\n  flex-shrink: 0;\n  border: 1px solid var(--dsw-alias-border-l3);\n  background-color: var(--dsw-alias-bg-layer-2);\n  transition:\n    border-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),\n    background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));\n}\n\n.dshUk-SelectableTile-checkboxIndicator {\n  border-radius: 4px;\n}\n\n.dshUk-SelectableTile-radioIndicator {\n  border-radius: 9999px;\n}\n\n.dshUk-SelectableTile-selected .dshUk-SelectableTile-indicator {\n  border-color: var(--dsw-alias-brand-primary);\n  background-color: var(--dsw-alias-brand-primary);\n}\n\n.dshUk-SelectableTile-checkmark {\n  width: 10px;\n  height: 10px;\n  stroke: var(--dsw-alias-label-primary-foreground);\n  stroke-width: 2;\n  fill: none;\n  stroke-linecap: round;\n  stroke-linejoin: round;\n}\n\n.dshUk-SelectableTile-checkmark path {\n  stroke-dasharray: 14;\n  stroke-dashoffset: 14;\n  transition: stroke-dashoffset var(--omx-dur-base, 200ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));\n}\n\n.dshUk-SelectableTile-selected .dshUk-SelectableTile-checkmark path {\n  stroke-dashoffset: 0;\n}\n\n.dshUk-SelectableTile-radioDot {\n  width: 6px;\n  height: 6px;\n  border-radius: 9999px;\n  background-color: var(--dsw-alias-label-primary-foreground);\n  transform: scale(0);\n  opacity: 0;\n  transition:\n    transform var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),\n    opacity var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));\n}\n\n.dshUk-SelectableTile-selected .dshUk-SelectableTile-radioDot {\n  transform: scale(1);\n  opacity: 1;\n}\n\n.dshUk-SelectableTile-iconSlot {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  flex-shrink: 0;\n  margin-top: 2px;\n  color: var(--dsw-alias-label-secondary);\n}\n\n.dshUk-SelectableTile-content {\n  display: flex;\n  flex-direction: column;\n  flex: 1;\n  min-width: 0;\n  gap: 4px;\n}\n\n.dshUk-SelectableTile-headerRow {\n  display: flex;\n  align-items: center;\n  gap: 8px;\n  flex-wrap: wrap;\n}\n\n.dshUk-SelectableTile-title {\n  font-size: 13px;\n  font-weight: 500;\n  line-height: 18px;\n  color: var(--dsw-alias-label-primary);\n  word-break: break-word;\n}\n\n.dshUk-SelectableTile-description {\n  font-size: 12px;\n  line-height: 16px;\n  color: var(--dsw-alias-label-secondary);\n  word-break: break-word;\n}\n\n.dshUk-SelectableTile-extraSlot {\n  display: inline-flex;\n  align-items: center;\n  flex-shrink: 0;\n  margin-left: auto;\n}\n\n@media (prefers-reduced-motion: reduce) {\n  .dshUk-SelectableTile-tile,\n  .dshUk-SelectableTile-indicator,\n  .dshUk-SelectableTile-checkmark path,\n  .dshUk-SelectableTile-radioDot {\n    transition: none;\n  }\n\n  .dshUk-SelectableTile-tile:active:not(.dshUk-SelectableTile-disabled):not(.dshUk-SelectableTile-loading) {\n    transform: none;\n  }\n}\n");
 var SelectableTile_module_css_default = {
 	"tile": "dshUk-SelectableTile-tile",
 	"disabled": "dshUk-SelectableTile-disabled",
@@ -340,11 +398,11 @@ const SelectableTile = forwardRef(function SelectableTile({ id, selected = false
 			/* @__PURE__ */ jsx("span", {
 				className: cx(cssClass(SelectableTile_module_css_default.indicator, "indicator"), selectionType === "radio" ? cssClass(SelectableTile_module_css_default.radioIndicator, "radioIndicator") : cssClass(SelectableTile_module_css_default.checkboxIndicator, "checkboxIndicator")),
 				"aria-hidden": "true",
-				children: selected ? selectionType === "radio" ? /* @__PURE__ */ jsx("span", { className: cssClass(SelectableTile_module_css_default.radioDot, "radioDot") }) : /* @__PURE__ */ jsx("svg", {
+				children: selectionType === "radio" ? /* @__PURE__ */ jsx("span", { className: cssClass(SelectableTile_module_css_default.radioDot, "radioDot") }) : /* @__PURE__ */ jsx("svg", {
 					viewBox: "0 0 11 11",
 					className: cssClass(SelectableTile_module_css_default.checkmark, "checkmark"),
 					children: /* @__PURE__ */ jsx("path", { d: CHECKMARK_PATH$1 })
-				}) : null
+				})
 			}),
 			icon != null ? /* @__PURE__ */ jsx("span", {
 				className: cssClass(SelectableTile_module_css_default.iconSlot, "iconSlot"),
@@ -372,7 +430,7 @@ const SelectableTile = forwardRef(function SelectableTile({ id, selected = false
 	});
 });
 // \0dsh-ui-kit-css:src/table/Table.module.css.mjs
-injectCss("Table.module.css", ".dshUk-Table-table {\n  width: 100%;\n  border-collapse: collapse;\n  box-sizing: border-box;\n  font-family: inherit;\n  font-size: 13px;\n  line-height: 18px;\n  color: var(--dsw-alias-label-primary);\n  background-color: var(--dsw-alias-bg-layer-1);\n  text-align: left;\n}\n\n.dshUk-Table-bordered {\n  border: 1px solid var(--dsw-alias-border-l1);\n}\n\n.dshUk-Table-bordered th,\n.dshUk-Table-bordered td {\n  border: 1px solid var(--dsw-alias-border-l1);\n}\n\n.dshUk-Table-tableHeader {\n  background-color: var(--dsw-alias-bg-layer-2);\n}\n\n.dshUk-Table-stickyHeader .dshUk-Table-headCell {\n  position: sticky;\n  top: 0;\n  z-index: 2;\n  background-color: var(--dsw-alias-bg-layer-2);\n}\n\n.dshUk-Table-headCell {\n  padding: 10px 12px;\n  font-size: 12px;\n  font-weight: 500;\n  line-height: 16px;\n  color: var(--dsw-alias-label-secondary);\n  border-bottom: 1px solid var(--dsw-alias-border-l2);\n  user-select: none;\n  box-sizing: border-box;\n  white-space: nowrap;\n}\n\n.dshUk-Table-dense .dshUk-Table-headCell {\n  padding: 6px 8px;\n}\n\n.dshUk-Table-headCellSortable {\n  cursor: pointer;\n  transition:\n    background-color 120ms cubic-bezier(0.16, 1, 0.3, 1),\n    color 120ms cubic-bezier(0.16, 1, 0.3, 1);\n}\n\n.dshUk-Table-headCellSortable:hover {\n  background-color: var(--dsw-alias-interactive-bg-hover);\n  color: var(--dsw-alias-label-primary);\n}\n\n.dshUk-Table-headCellContent {\n  display: inline-flex;\n  align-items: center;\n  gap: 4px;\n}\n\n.dshUk-Table-sortIcon {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  width: 14px;\n  height: 14px;\n  flex-shrink: 0;\n  color: var(--dsw-alias-label-tertiary);\n  transition: color 120ms ease;\n}\n\n.dshUk-Table-sortIconActive {\n  color: var(--dsw-alias-brand-primary);\n}\n\n.dshUk-Table-tableBody {\n  background-color: var(--dsw-alias-bg-layer-1);\n}\n\n.dshUk-Table-row {\n  border-bottom: 1px solid var(--dsw-alias-border-l1);\n  transition: background-color 120ms cubic-bezier(0.16, 1, 0.3, 1);\n}\n\n.dshUk-Table-row:hover {\n  background-color: var(--dsw-alias-interactive-bg-hover);\n}\n\n.dshUk-Table-rowSelected {\n  background-color: var(--dsw-alias-interactive-bg-active);\n}\n\n.dshUk-Table-rowSelected:hover {\n  background-color: var(--dsw-alias-interactive-bg-active);\n}\n\n.dshUk-Table-cell {\n  padding: 10px 12px;\n  font-size: 13px;\n  line-height: 18px;\n  color: var(--dsw-alias-label-primary);\n  box-sizing: border-box;\n}\n\n.dshUk-Table-dense .dshUk-Table-cell {\n  padding: 6px 8px;\n}\n\n.dshUk-Table-alignLeft {\n  text-align: left;\n}\n\n.dshUk-Table-alignCenter {\n  text-align: center;\n}\n\n.dshUk-Table-alignRight {\n  text-align: right;\n}\n");
+injectCss("Table.module.css", ".dshUk-Table-table {\n  width: 100%;\n  border-collapse: collapse;\n  box-sizing: border-box;\n  font-family: inherit;\n  font-size: 13px;\n  line-height: 18px;\n  color: var(--dsw-alias-label-primary);\n  background-color: var(--dsw-alias-bg-layer-1);\n  text-align: left;\n}\n\n.dshUk-Table-bordered {\n  border: 1px solid var(--dsw-alias-border-l1);\n}\n\n.dshUk-Table-bordered th,\n.dshUk-Table-bordered td {\n  border: 1px solid var(--dsw-alias-border-l1);\n}\n\n.dshUk-Table-tableHeader {\n  background-color: var(--dsw-alias-bg-layer-2);\n}\n\n.dshUk-Table-stickyHeader .dshUk-Table-headCell {\n  position: sticky;\n  top: 0;\n  z-index: 2;\n  background-color: var(--dsw-alias-bg-layer-2);\n}\n\n.dshUk-Table-headCell {\n  padding: 10px 12px;\n  font-size: 12px;\n  font-weight: 500;\n  line-height: 16px;\n  color: var(--dsw-alias-label-secondary);\n  border-bottom: 1px solid var(--dsw-alias-border-l2);\n  user-select: none;\n  box-sizing: border-box;\n  white-space: nowrap;\n}\n\n.dshUk-Table-dense .dshUk-Table-headCell {\n  padding: 6px 8px;\n}\n\n.dshUk-Table-headCellSortable {\n  cursor: pointer;\n  transition:\n    background-color var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),\n    color var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));\n}\n\n.dshUk-Table-headCellSortable:hover {\n  background-color: var(--dsw-alias-interactive-bg-hover);\n  color: var(--dsw-alias-label-primary);\n}\n\n.dshUk-Table-headCellContent {\n  display: inline-flex;\n  align-items: center;\n  gap: 4px;\n}\n\n.dshUk-Table-sortIcon {\n  display: inline-grid;\n  place-items: center;\n  width: 14px;\n  height: 14px;\n  flex-shrink: 0;\n  color: var(--dsw-alias-label-tertiary);\n  transition: color var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));\n}\n\n.dshUk-Table-sortGlyph {\n  grid-area: 1 / 1;\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  transition:\n    transform var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),\n    opacity var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));\n}\n\n.dshUk-Table-sortGlyphHidden {\n  opacity: 0;\n  transform: scale(0.75);\n}\n\n.dshUk-Table-sortGlyphDesc {\n  transform: rotate(180deg);\n}\n\n.dshUk-Table-sortIconActive {\n  color: var(--dsw-alias-brand-primary);\n}\n\n.dshUk-Table-tableBody {\n  background-color: var(--dsw-alias-bg-layer-1);\n}\n\n.dshUk-Table-row {\n  border-bottom: 1px solid var(--dsw-alias-border-l1);\n  transition: background-color var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));\n}\n\n.dshUk-Table-row:hover {\n  background-color: var(--dsw-alias-interactive-bg-hover);\n}\n\n.dshUk-Table-rowSelected {\n  background-color: var(--dsw-alias-interactive-bg-active);\n}\n\n.dshUk-Table-rowSelected:hover {\n  background-color: var(--dsw-alias-interactive-bg-active);\n}\n\n.dshUk-Table-cell {\n  padding: 10px 12px;\n  font-size: 13px;\n  line-height: 18px;\n  color: var(--dsw-alias-label-primary);\n  box-sizing: border-box;\n  font-variant-numeric: tabular-nums;\n}\n\n.dshUk-Table-dense .dshUk-Table-cell {\n  padding: 6px 8px;\n}\n\n.dshUk-Table-alignLeft {\n  text-align: left;\n}\n\n.dshUk-Table-alignCenter {\n  text-align: center;\n}\n\n.dshUk-Table-alignRight {\n  text-align: right;\n}\n\n@media (prefers-reduced-motion: reduce) {\n  .dshUk-Table-headCellSortable,\n  .dshUk-Table-sortIcon,\n  .dshUk-Table-sortGlyph,\n  .dshUk-Table-row {\n    transition: none;\n  }\n}\n");
 var Table_module_css_default = {
 	"table": "dshUk-Table-table",
 	"bordered": "dshUk-Table-bordered",
@@ -383,6 +441,9 @@ var Table_module_css_default = {
 	"headCellSortable": "dshUk-Table-headCellSortable",
 	"headCellContent": "dshUk-Table-headCellContent",
 	"sortIcon": "dshUk-Table-sortIcon",
+	"sortGlyph": "dshUk-Table-sortGlyph",
+	"sortGlyphHidden": "dshUk-Table-sortGlyphHidden",
+	"sortGlyphDesc": "dshUk-Table-sortGlyphDesc",
 	"sortIconActive": "dshUk-Table-sortIconActive",
 	"tableBody": "dshUk-Table-tableBody",
 	"row": "dshUk-Table-row",
@@ -448,29 +509,29 @@ const TableHead = forwardRef(function TableHead({ align = "left", sortable = fal
 		className: cx(cssClass(Table_module_css_default.headCell, "headCell"), sortable && cssClass(Table_module_css_default.headCellSortable, "headCellSortable"), ALIGN_CLASS[align], className),
 		children: /* @__PURE__ */ jsxs("div", {
 			className: cssClass(Table_module_css_default.headCellContent, "headCellContent"),
-			children: [/* @__PURE__ */ jsx("span", { children }), sortable ? /* @__PURE__ */ jsx("span", {
+			children: [/* @__PURE__ */ jsx("span", { children }), sortable ? /* @__PURE__ */ jsxs("span", {
 				className: cx(cssClass(Table_module_css_default.sortIcon, "sortIcon"), sortDirection !== null && cssClass(Table_module_css_default.sortIconActive, "sortIconActive")),
 				"aria-hidden": "true",
-				children: sortDirection === "asc" ? /* @__PURE__ */ jsx("svg", {
-					width: "10",
-					height: "10",
-					viewBox: "0 0 10 10",
-					fill: "currentColor",
-					children: /* @__PURE__ */ jsx("path", { d: "M5 2L8.5 7H1.5L5 2Z" })
-				}) : sortDirection === "desc" ? /* @__PURE__ */ jsx("svg", {
-					width: "10",
-					height: "10",
-					viewBox: "0 0 10 10",
-					fill: "currentColor",
-					children: /* @__PURE__ */ jsx("path", { d: "M5 8L1.5 3H8.5L5 8Z" })
-				}) : /* @__PURE__ */ jsx("svg", {
-					width: "10",
-					height: "10",
-					viewBox: "0 0 10 10",
-					fill: "currentColor",
-					opacity: "0.4",
-					children: /* @__PURE__ */ jsx("path", { d: "M5 2L7.5 5H2.5L5 2ZM5 8L2.5 5H7.5L5 8Z" })
-				})
+				children: [/* @__PURE__ */ jsx("span", {
+					className: cx(cssClass(Table_module_css_default.sortGlyph, "sortGlyph"), sortDirection !== null && cssClass(Table_module_css_default.sortGlyphHidden, "sortGlyphHidden")),
+					children: /* @__PURE__ */ jsx("svg", {
+						width: "10",
+						height: "10",
+						viewBox: "0 0 10 10",
+						fill: "currentColor",
+						opacity: "0.4",
+						children: /* @__PURE__ */ jsx("path", { d: "M5 2L7.5 5H2.5L5 2ZM5 8L2.5 5H7.5L5 8Z" })
+					})
+				}), /* @__PURE__ */ jsx("span", {
+					className: cx(cssClass(Table_module_css_default.sortGlyph, "sortGlyph"), sortDirection === null && cssClass(Table_module_css_default.sortGlyphHidden, "sortGlyphHidden"), sortDirection === "desc" && cssClass(Table_module_css_default.sortGlyphDesc, "sortGlyphDesc")),
+					children: /* @__PURE__ */ jsx("svg", {
+						width: "10",
+						height: "10",
+						viewBox: "0 0 10 10",
+						fill: "currentColor",
+						children: /* @__PURE__ */ jsx("path", { d: "M5 2L8.5 7H1.5L5 2Z" })
+					})
+				})]
 			}) : null]
 		})
 	});
@@ -518,7 +579,7 @@ const EmptyState = forwardRef(function EmptyState({ icon, title, description, ac
 	});
 });
 // \0dsh-ui-kit-css:src/table/DataTable.module.css.mjs
-injectCss("DataTable.module.css", ".dshUk-DataTable-tableWrap {\n  position: relative;\n  width: 100%;\n  box-sizing: border-box;\n  background-color: var(--dsw-alias-bg-layer-1);\n  border: 1px solid var(--dsw-alias-border-l1);\n  border-radius: 8px;\n  overflow: hidden;\n}\n\n/* Horizontal scroll indicators via pseudo-elements */\n.dshUk-DataTable-tableWrap::before {\n  content: \"\";\n  position: absolute;\n  top: 0;\n  bottom: 0;\n  left: 0;\n  width: 16px;\n  background: linear-gradient(90deg, var(--dsw-alias-border-l2), transparent);\n  opacity: 0;\n  pointer-events: none;\n  z-index: 3;\n  transition: opacity 150ms ease;\n}\n\n.dshUk-DataTable-tableWrap::after {\n  content: \"\";\n  position: absolute;\n  top: 0;\n  bottom: 0;\n  right: 0;\n  width: 16px;\n  background: linear-gradient(270deg, var(--dsw-alias-border-l2), transparent);\n  opacity: 0;\n  pointer-events: none;\n  z-index: 3;\n  transition: opacity 150ms ease;\n}\n\n.dshUk-DataTable-hasScrollLeft::before {\n  opacity: 1;\n}\n\n.dshUk-DataTable-hasScrollRight::after {\n  opacity: 1;\n}\n\n.dshUk-DataTable-scrollContainer {\n  width: 100%;\n  overflow-x: auto;\n  box-sizing: border-box;\n}\n\n.dshUk-DataTable-clickableRow {\n  cursor: pointer;\n}\n\n/* Custom accessible checkbox/radio indicator for table rows */\n.dshUk-DataTable-selectCell {\n  width: 40px;\n  min-width: 40px;\n  max-width: 40px;\n  text-align: center;\n  padding: 10px 8px;\n  vertical-align: middle;\n}\n\n.dshUk-DataTable-checkboxIndicator {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  width: 16px;\n  height: 16px;\n  border: 1px solid var(--dsw-alias-border-l3);\n  border-radius: 4px;\n  background-color: var(--dsw-alias-bg-layer-2);\n  cursor: pointer;\n  box-sizing: border-box;\n  transition:\n    background-color 120ms cubic-bezier(0.16, 1, 0.3, 1),\n    border-color 120ms cubic-bezier(0.16, 1, 0.3, 1);\n}\n\n.dshUk-DataTable-radioIndicator {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  width: 16px;\n  height: 16px;\n  border: 1px solid var(--dsw-alias-border-l3);\n  border-radius: 9999px;\n  background-color: var(--dsw-alias-bg-layer-2);\n  cursor: pointer;\n  box-sizing: border-box;\n  transition:\n    background-color 120ms cubic-bezier(0.16, 1, 0.3, 1),\n    border-color 120ms cubic-bezier(0.16, 1, 0.3, 1);\n}\n\n.dshUk-DataTable-checkboxIndicator:focus-visible,\n.dshUk-DataTable-radioIndicator:focus-visible {\n  outline: 2px solid var(--dsw-alias-brand-primary);\n  outline-offset: 1px;\n}\n\n.dshUk-DataTable-checkboxSelected,\n.dshUk-DataTable-radioSelected {\n  background-color: var(--dsw-alias-brand-primary);\n  border-color: var(--dsw-alias-brand-primary);\n}\n\n.dshUk-DataTable-checkboxIndeterminate {\n  background-color: var(--dsw-alias-brand-primary);\n  border-color: var(--dsw-alias-brand-primary);\n}\n\n.dshUk-DataTable-checkmark {\n  width: 10px;\n  height: 10px;\n  stroke: var(--dsw-alias-label-primary-foreground);\n  stroke-width: 2;\n  fill: none;\n  stroke-linecap: round;\n  stroke-linejoin: round;\n}\n\n.dshUk-DataTable-minusMark {\n  width: 8px;\n  height: 2px;\n  background-color: var(--dsw-alias-label-primary-foreground);\n  border-radius: 1px;\n}\n\n.dshUk-DataTable-radioDot {\n  width: 6px;\n  height: 6px;\n  border-radius: 9999px;\n  background-color: var(--dsw-alias-label-primary-foreground);\n}\n\n/* Empty container */\n.dshUk-DataTable-emptyContainer {\n  padding: 32px 16px;\n  text-align: center;\n}\n\n/* Skeleton loader */\n.dshUk-DataTable-skeletonRow td {\n  padding: 12px;\n}\n\n.dshUk-DataTable-skeletonBar {\n  height: 14px;\n  border-radius: 4px;\n  background: var(--dsw-alias-bg-layer-2);\n  animation: pulse 1.5s ease-in-out infinite;\n}\n\n@keyframes pulse {\n  0% {\n    opacity: 0.5;\n  }\n  50% {\n    opacity: 0.9;\n  }\n  100% {\n    opacity: 0.5;\n  }\n}\n");
+injectCss("DataTable.module.css", ".dshUk-DataTable-tableWrap {\n  position: relative;\n  width: 100%;\n  box-sizing: border-box;\n  background-color: var(--dsw-alias-bg-layer-1);\n  border: 1px solid var(--dsw-alias-border-l1);\n  border-radius: 8px;\n  overflow: hidden;\n}\n\n/* Horizontal scroll indicators via pseudo-elements */\n.dshUk-DataTable-tableWrap::before {\n  content: \"\";\n  position: absolute;\n  top: 0;\n  bottom: 0;\n  left: 0;\n  width: 16px;\n  background: linear-gradient(90deg, var(--dsw-alias-border-l2), transparent);\n  opacity: 0;\n  pointer-events: none;\n  z-index: 3;\n  transition: opacity var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));\n}\n\n.dshUk-DataTable-tableWrap::after {\n  content: \"\";\n  position: absolute;\n  top: 0;\n  bottom: 0;\n  right: 0;\n  width: 16px;\n  background: linear-gradient(270deg, var(--dsw-alias-border-l2), transparent);\n  opacity: 0;\n  pointer-events: none;\n  z-index: 3;\n  transition: opacity var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));\n}\n\n.dshUk-DataTable-hasScrollLeft::before {\n  opacity: 1;\n}\n\n.dshUk-DataTable-hasScrollRight::after {\n  opacity: 1;\n}\n\n.dshUk-DataTable-scrollContainer {\n  width: 100%;\n  overflow-x: auto;\n  box-sizing: border-box;\n}\n\n.dshUk-DataTable-clickableRow {\n  cursor: pointer;\n}\n\n/* Custom accessible checkbox/radio indicator for table rows */\n.dshUk-DataTable-selectCell {\n  width: 40px;\n  min-width: 40px;\n  max-width: 40px;\n  text-align: center;\n  padding: 10px 8px;\n  vertical-align: middle;\n}\n\n.dshUk-DataTable-checkboxIndicator {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  width: 16px;\n  height: 16px;\n  border: 1px solid var(--dsw-alias-border-l3);\n  border-radius: 4px;\n  background-color: var(--dsw-alias-bg-layer-2);\n  cursor: pointer;\n  box-sizing: border-box;\n  transition:\n    background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),\n    border-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));\n}\n\n.dshUk-DataTable-radioIndicator {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  width: 16px;\n  height: 16px;\n  border: 1px solid var(--dsw-alias-border-l3);\n  border-radius: 9999px;\n  background-color: var(--dsw-alias-bg-layer-2);\n  cursor: pointer;\n  box-sizing: border-box;\n  transition:\n    background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),\n    border-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));\n}\n\n.dshUk-DataTable-checkboxIndicator:focus-visible,\n.dshUk-DataTable-radioIndicator:focus-visible {\n  outline: 2px solid var(--dsw-alias-brand-primary);\n  outline-offset: 1px;\n}\n\n.dshUk-DataTable-checkboxSelected,\n.dshUk-DataTable-radioSelected {\n  background-color: var(--dsw-alias-brand-primary);\n  border-color: var(--dsw-alias-brand-primary);\n}\n\n.dshUk-DataTable-checkboxIndeterminate {\n  background-color: var(--dsw-alias-brand-primary);\n  border-color: var(--dsw-alias-brand-primary);\n}\n\n.dshUk-DataTable-checkmark {\n  width: 10px;\n  height: 10px;\n  stroke: var(--dsw-alias-label-primary-foreground);\n  stroke-width: 2;\n  fill: none;\n  stroke-linecap: round;\n  stroke-linejoin: round;\n}\n\n.dshUk-DataTable-checkmark path {\n  stroke-dasharray: 14;\n  stroke-dashoffset: 14;\n  transition: stroke-dashoffset var(--omx-dur-base, 200ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));\n}\n\n.dshUk-DataTable-checkboxSelected .dshUk-DataTable-checkmark path {\n  stroke-dashoffset: 0;\n}\n\n.dshUk-DataTable-minusMark {\n  width: 8px;\n  height: 2px;\n  background-color: var(--dsw-alias-label-primary-foreground);\n  border-radius: 1px;\n}\n\n.dshUk-DataTable-radioDot {\n  width: 6px;\n  height: 6px;\n  border-radius: 9999px;\n  background-color: var(--dsw-alias-label-primary-foreground);\n  transform: scale(0);\n  opacity: 0;\n  transition:\n    transform var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),\n    opacity var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));\n}\n\n.dshUk-DataTable-radioSelected .dshUk-DataTable-radioDot {\n  transform: scale(1);\n  opacity: 1;\n}\n\n/* Empty container */\n.dshUk-DataTable-emptyContainer {\n  padding: 32px 16px;\n  text-align: center;\n}\n\n/* Skeleton loader */\n.dshUk-DataTable-skeletonRow td {\n  padding: 12px;\n}\n\n.dshUk-DataTable-skeletonBar {\n  height: 14px;\n  border-radius: 4px;\n  background: var(--dsw-alias-bg-layer-2);\n  animation: pulse 1.5s ease-in-out infinite;\n}\n\n@keyframes pulse {\n  0% {\n    opacity: 0.5;\n  }\n  50% {\n    opacity: 0.9;\n  }\n  100% {\n    opacity: 0.5;\n  }\n}\n\n@media (prefers-reduced-motion: reduce) {\n  .dshUk-DataTable-tableWrap::before,\n  .dshUk-DataTable-tableWrap::after,\n  .dshUk-DataTable-checkboxIndicator,\n  .dshUk-DataTable-radioIndicator,\n  .dshUk-DataTable-checkmark path,\n  .dshUk-DataTable-radioDot {\n    transition: none;\n  }\n\n  .dshUk-DataTable-skeletonBar {\n    animation: none;\n    opacity: 0.7;\n  }\n}\n");
 var DataTable_module_css_default = {
 	"tableWrap": "dshUk-DataTable-tableWrap",
 	"hasScrollLeft": "dshUk-DataTable-hasScrollLeft",
@@ -658,11 +719,11 @@ function DataTable({ data, columns, rowKey, selectedRowKeys = [], onSelectionCha
 								handleSelectAll(e);
 							}
 						},
-						children: isAllSelected ? /* @__PURE__ */ jsx("svg", {
+						children: isPartiallySelected ? /* @__PURE__ */ jsx("span", { className: cssClass(DataTable_module_css_default.minusMark, "minusMark") }) : /* @__PURE__ */ jsx("svg", {
 							viewBox: "0 0 11 11",
 							className: cssClass(DataTable_module_css_default.checkmark, "checkmark"),
 							children: /* @__PURE__ */ jsx("path", { d: CHECKMARK_PATH })
-						}) : isPartiallySelected ? /* @__PURE__ */ jsx("span", { className: cssClass(DataTable_module_css_default.minusMark, "minusMark") }) : null
+						})
 					}) : null
 				}) : null, columns.map((column) => {
 					const colSortDir = sortKey === column.id ? sortDirection : null;
@@ -716,11 +777,11 @@ function DataTable({ data, columns, rowKey, selectedRowKeys = [], onSelectionCha
 										handleRowSelect(row, key, e);
 									}
 								},
-								children: isSelected ? selectionMode === "single" ? /* @__PURE__ */ jsx("span", { className: cssClass(DataTable_module_css_default.radioDot, "radioDot") }) : /* @__PURE__ */ jsx("svg", {
+								children: selectionMode === "single" ? /* @__PURE__ */ jsx("span", { className: cssClass(DataTable_module_css_default.radioDot, "radioDot") }) : /* @__PURE__ */ jsx("svg", {
 									viewBox: "0 0 11 11",
 									className: cssClass(DataTable_module_css_default.checkmark, "checkmark"),
 									children: /* @__PURE__ */ jsx("path", { d: CHECKMARK_PATH })
-								}) : null
+								})
 							})
 						}) : null, columns.map((column) => {
 							const value = getCellValue(row, column);
@@ -746,7 +807,7 @@ function DataTable({ data, columns, rowKey, selectedRowKeys = [], onSelectionCha
 	});
 }
 // \0dsh-ui-kit-css:src/card/MediaCard.module.css.mjs
-injectCss("MediaCard.module.css", ".dshUk-MediaCard-card {\n  display: flex;\n  flex-direction: column;\n  box-sizing: border-box;\n  width: 100%;\n  border: 1px solid var(--dsw-alias-border-l1);\n  border-radius: 8px;\n  background-color: var(--dsw-alias-bg-layer-1);\n  color: var(--dsw-alias-label-primary);\n  overflow: hidden;\n  user-select: none;\n  cursor: pointer;\n  transition:\n    background-color 120ms cubic-bezier(0.16, 1, 0.3, 1),\n    border-color 120ms cubic-bezier(0.16, 1, 0.3, 1),\n    box-shadow 120ms cubic-bezier(0.16, 1, 0.3, 1),\n    transform 120ms cubic-bezier(0.16, 1, 0.3, 1),\n    opacity 120ms cubic-bezier(0.16, 1, 0.3, 1);\n}\n\n.dshUk-MediaCard-card:hover:not(.dshUk-MediaCard-disabled):not(.dshUk-MediaCard-loading) {\n  border-color: var(--dsw-alias-border-l3);\n  box-shadow: 0 4px 12px var(--dsw-alias-border-l1);\n}\n\n.dshUk-MediaCard-card:focus {\n  outline: none;\n}\n\n.dshUk-MediaCard-card:focus-visible {\n  outline: 2px solid var(--dsw-alias-brand-primary);\n  outline-offset: 2px;\n}\n\n.dshUk-MediaCard-selected {\n  border-color: var(--dsw-alias-brand-primary);\n  box-shadow: inset 0 0 0 1px var(--dsw-alias-brand-primary);\n  background-color: var(--dsw-alias-interactive-bg-active);\n}\n\n.dshUk-MediaCard-disabled {\n  cursor: not-allowed;\n  opacity: 0.45;\n}\n\n.dshUk-MediaCard-loading {\n  cursor: wait;\n  opacity: 0.8;\n}\n\n/* Media cover wrapper */\n.dshUk-MediaCard-coverWrapper {\n  position: relative;\n  width: 100%;\n  overflow: hidden;\n  background-color: var(--dsw-alias-bg-layer-2);\n}\n\n.dshUk-MediaCard-aspect16x9 {\n  aspect-ratio: 16 / 9;\n}\n\n.dshUk-MediaCard-aspect4x3 {\n  aspect-ratio: 4 / 3;\n}\n\n.dshUk-MediaCard-aspect1x1 {\n  aspect-ratio: 1 / 1;\n}\n\n.dshUk-MediaCard-aspect9x16 {\n  aspect-ratio: 9 / 16;\n}\n\n.dshUk-MediaCard-coverImage {\n  width: 100%;\n  height: 100%;\n  object-fit: cover;\n  display: block;\n  transition: transform 200ms cubic-bezier(0.16, 1, 0.3, 1);\n}\n\n.dshUk-MediaCard-card:hover:not(.dshUk-MediaCard-disabled):not(.dshUk-MediaCard-loading) .dshUk-MediaCard-coverImage {\n  transform: scale(1.03);\n}\n\n.dshUk-MediaCard-coverPlaceholder {\n  width: 100%;\n  height: 100%;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  color: var(--dsw-alias-label-tertiary);\n}\n\n.dshUk-MediaCard-badgeSlot {\n  position: absolute;\n  top: 8px;\n  right: 8px;\n  z-index: 2;\n  pointer-events: none;\n}\n\n/* Hover overlay actions */\n.dshUk-MediaCard-actionsOverlay {\n  position: absolute;\n  bottom: 8px;\n  right: 8px;\n  display: flex;\n  align-items: center;\n  gap: 6px;\n  padding: 4px 6px;\n  border-radius: 6px;\n  background-color: var(--dsw-alias-bg-layer-1);\n  border: 1px solid var(--dsw-alias-border-l2);\n  opacity: 0;\n  transform: translateY(4px);\n  pointer-events: none;\n  transition:\n    opacity 150ms cubic-bezier(0.16, 1, 0.3, 1),\n    transform 150ms cubic-bezier(0.16, 1, 0.3, 1);\n  z-index: 3;\n}\n\n.dshUk-MediaCard-card:hover:not(.dshUk-MediaCard-disabled):not(.dshUk-MediaCard-loading) .dshUk-MediaCard-actionsOverlay,\n.dshUk-MediaCard-card:focus-within .dshUk-MediaCard-actionsOverlay {\n  opacity: 1;\n  transform: translateY(0);\n  pointer-events: auto;\n}\n\n/* Body */\n.dshUk-MediaCard-body {\n  display: flex;\n  flex-direction: column;\n  gap: 4px;\n  padding: 10px 12px 12px;\n  flex: 1;\n}\n\n.dshUk-MediaCard-title {\n  font-size: 13px;\n  font-weight: 500;\n  line-height: 18px;\n  color: var(--dsw-alias-label-primary);\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n\n.dshUk-MediaCard-subtitle {\n  font-size: 12px;\n  line-height: 16px;\n  color: var(--dsw-alias-label-secondary);\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n\n.dshUk-MediaCard-footer {\n  margin-top: auto;\n  padding-top: 8px;\n  font-size: 11px;\n  line-height: 14px;\n  color: var(--dsw-alias-label-tertiary);\n  border-top: 1px solid var(--dsw-alias-border-l1);\n}\n");
+injectCss("MediaCard.module.css", ".dshUk-MediaCard-card {\n  display: flex;\n  flex-direction: column;\n  box-sizing: border-box;\n  width: 100%;\n  border: 1px solid var(--dsw-alias-border-l1);\n  border-radius: 8px;\n  background-color: var(--dsw-alias-bg-layer-1);\n  color: var(--dsw-alias-label-primary);\n  overflow: hidden;\n  user-select: none;\n  cursor: pointer;\n  transition:\n    background-color var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),\n    border-color var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),\n    box-shadow var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),\n    transform var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),\n    opacity var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));\n}\n\n.dshUk-MediaCard-card:hover:not(.dshUk-MediaCard-disabled):not(.dshUk-MediaCard-loading) {\n  border-color: var(--dsw-alias-border-l3);\n  box-shadow: 0 4px 12px var(--dsw-alias-border-l1);\n}\n\n.dshUk-MediaCard-card:active:not(.dshUk-MediaCard-disabled):not(.dshUk-MediaCard-loading) {\n  transform: scale(var(--omx-press-scale-subtle, 0.985));\n}\n\n.dshUk-MediaCard-card:focus {\n  outline: none;\n}\n\n.dshUk-MediaCard-card:focus-visible {\n  outline: 2px solid var(--dsw-alias-brand-primary);\n  outline-offset: 2px;\n}\n\n.dshUk-MediaCard-selected {\n  border-color: var(--dsw-alias-brand-primary);\n  box-shadow: inset 0 0 0 1px var(--dsw-alias-brand-primary);\n  background-color: var(--dsw-alias-interactive-bg-active);\n}\n\n.dshUk-MediaCard-disabled {\n  cursor: not-allowed;\n  opacity: 0.45;\n}\n\n.dshUk-MediaCard-loading {\n  cursor: wait;\n  opacity: 0.8;\n}\n\n/* Media cover wrapper */\n.dshUk-MediaCard-coverWrapper {\n  position: relative;\n  width: 100%;\n  overflow: hidden;\n  background-color: var(--dsw-alias-bg-layer-2);\n}\n\n.dshUk-MediaCard-aspect16x9 {\n  aspect-ratio: 16 / 9;\n}\n\n.dshUk-MediaCard-aspect4x3 {\n  aspect-ratio: 4 / 3;\n}\n\n.dshUk-MediaCard-aspect1x1 {\n  aspect-ratio: 1 / 1;\n}\n\n.dshUk-MediaCard-aspect9x16 {\n  aspect-ratio: 9 / 16;\n}\n\n.dshUk-MediaCard-coverImage {\n  width: 100%;\n  height: 100%;\n  object-fit: cover;\n  display: block;\n  transition: transform var(--omx-dur-base, 200ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));\n}\n\n.dshUk-MediaCard-card:hover:not(.dshUk-MediaCard-disabled):not(.dshUk-MediaCard-loading) .dshUk-MediaCard-coverImage {\n  transform: scale(1.03);\n}\n\n.dshUk-MediaCard-coverPlaceholder {\n  width: 100%;\n  height: 100%;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  color: var(--dsw-alias-label-tertiary);\n}\n\n.dshUk-MediaCard-badgeSlot {\n  position: absolute;\n  top: 8px;\n  right: 8px;\n  z-index: 2;\n  pointer-events: none;\n}\n\n/* Hover overlay actions */\n.dshUk-MediaCard-actionsOverlay {\n  position: absolute;\n  bottom: 8px;\n  right: 8px;\n  display: flex;\n  align-items: center;\n  gap: 6px;\n  padding: 4px 6px;\n  border-radius: 6px;\n  background-color: var(--dsw-alias-bg-layer-1);\n  border: 1px solid var(--dsw-alias-border-l2);\n  opacity: 0;\n  transform: translateY(4px);\n  pointer-events: none;\n  transition:\n    opacity var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),\n    transform var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));\n  z-index: 3;\n}\n\n.dshUk-MediaCard-card:hover:not(.dshUk-MediaCard-disabled):not(.dshUk-MediaCard-loading) .dshUk-MediaCard-actionsOverlay,\n.dshUk-MediaCard-card:focus-within .dshUk-MediaCard-actionsOverlay {\n  opacity: 1;\n  transform: translateY(0);\n  pointer-events: auto;\n}\n\n/* Body */\n.dshUk-MediaCard-body {\n  display: flex;\n  flex-direction: column;\n  gap: 4px;\n  padding: 10px 12px 12px;\n  flex: 1;\n}\n\n.dshUk-MediaCard-title {\n  font-size: 13px;\n  font-weight: 500;\n  line-height: 18px;\n  color: var(--dsw-alias-label-primary);\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n\n.dshUk-MediaCard-subtitle {\n  font-size: 12px;\n  line-height: 16px;\n  color: var(--dsw-alias-label-secondary);\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n\n.dshUk-MediaCard-footer {\n  margin-top: auto;\n  padding-top: 8px;\n  font-size: 11px;\n  line-height: 14px;\n  color: var(--dsw-alias-label-tertiary);\n  border-top: 1px solid var(--dsw-alias-border-l1);\n}\n\n@media (prefers-reduced-motion: reduce) {\n  .dshUk-MediaCard-card,\n  .dshUk-MediaCard-coverImage,\n  .dshUk-MediaCard-actionsOverlay {\n    transition: none;\n  }\n\n  .dshUk-MediaCard-card:active:not(.dshUk-MediaCard-disabled):not(.dshUk-MediaCard-loading),\n  .dshUk-MediaCard-card:hover:not(.dshUk-MediaCard-disabled):not(.dshUk-MediaCard-loading) .dshUk-MediaCard-coverImage {\n    transform: none;\n  }\n}\n");
 var MediaCard_module_css_default = {
 	"card": "dshUk-MediaCard-card",
 	"disabled": "dshUk-MediaCard-disabled",
@@ -966,6 +1027,140 @@ function createPortalSafe(children, container, key) {
 	if (!target) return null;
 	return createPortal(children, target, key);
 }
+// src/motion/usePrefersReducedMotion.ts
+const QUERY = "(prefers-reduced-motion: reduce)";
+function getPrefersReducedMotion() {
+	if (typeof window === "undefined" || typeof window.matchMedia !== "function") return false;
+	return window.matchMedia(QUERY).matches;
+}
+/**
+* Subscribe to the OS/browser `(prefers-reduced-motion: reduce)` media query.
+* Safe in SSR and JSDOM environments lacking `matchMedia`.
+*/
+function usePrefersReducedMotion() {
+	const [reduced, setReduced] = useState(getPrefersReducedMotion);
+	useEffect(() => {
+		if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
+		const mql = window.matchMedia(QUERY);
+		setReduced(mql.matches);
+		const onChange = (event) => {
+			setReduced(event.matches);
+		};
+		if (typeof mql.addEventListener === "function") {
+			mql.addEventListener("change", onChange);
+			return () => mql.removeEventListener("change", onChange);
+		}
+		mql.addListener(onChange);
+		return () => mql.removeListener(onChange);
+	}, []);
+	return reduced;
+}
+// src/motion/usePresence.ts
+/**
+* Interruptible enter/exit lifecycle hook for drawers and overlaid sheets.
+* Callers MUST bind modal side effects (focus trap, scroll lock, Escape) to `open`,
+* keeping `mounted` solely for preserving DOM nodes during exit animation.
+*/
+function usePresence(open, exitMs = 200) {
+	const reducedMotion = usePrefersReducedMotion();
+	const hasRaf = typeof window !== "undefined" && typeof window.requestAnimationFrame === "function" && typeof window.matchMedia === "function";
+	const [state, setState] = useState(() => open ? {
+		mounted: true,
+		phase: reducedMotion || !hasRaf ? "entered" : "entering"
+	} : {
+		mounted: false,
+		phase: "unmounted"
+	});
+	const raf1Ref = useRef(0);
+	const raf2Ref = useRef(0);
+	const timerRef = useRef(null);
+	const stateRef = useRef(state);
+	stateRef.current = state;
+	useEffect(() => {
+		const clearPending = () => {
+			if (raf1Ref.current && typeof cancelAnimationFrame === "function") {
+				cancelAnimationFrame(raf1Ref.current);
+				raf1Ref.current = 0;
+			}
+			if (raf2Ref.current && typeof cancelAnimationFrame === "function") {
+				cancelAnimationFrame(raf2Ref.current);
+				raf2Ref.current = 0;
+			}
+			if (timerRef.current !== null) {
+				clearTimeout(timerRef.current);
+				timerRef.current = null;
+			}
+		};
+		clearPending();
+		if (open) {
+			if (reducedMotion || !hasRaf) {
+				setState({
+					mounted: true,
+					phase: "entered"
+				});
+				return clearPending;
+			}
+			if (stateRef.current.phase === "entered") return clearPending;
+			if (stateRef.current.mounted) {
+				raf1Ref.current = requestAnimationFrame(() => {
+					raf1Ref.current = 0;
+					setState({
+						mounted: true,
+						phase: "entered"
+					});
+				});
+				return clearPending;
+			}
+			setState({
+				mounted: true,
+				phase: "entering"
+			});
+			raf1Ref.current = requestAnimationFrame(() => {
+				raf1Ref.current = 0;
+				raf2Ref.current = requestAnimationFrame(() => {
+					raf2Ref.current = 0;
+					setState({
+						mounted: true,
+						phase: "entered"
+					});
+				});
+			});
+			return clearPending;
+		}
+		if (!stateRef.current.mounted) {
+			setState({
+				mounted: false,
+				phase: "unmounted"
+			});
+			return clearPending;
+		}
+		if (reducedMotion || !hasRaf || exitMs <= 0) {
+			setState({
+				mounted: false,
+				phase: "unmounted"
+			});
+			return clearPending;
+		}
+		setState({
+			mounted: true,
+			phase: "exiting"
+		});
+		timerRef.current = setTimeout(() => {
+			timerRef.current = null;
+			setState({
+				mounted: false,
+				phase: "unmounted"
+			});
+		}, exitMs);
+		return clearPending;
+	}, [
+		open,
+		exitMs,
+		reducedMotion,
+		hasRaf
+	]);
+	return state;
+}
 // src/drawer/DrawerPortal.tsx
 /**
 * Portal wrapper for Drawer with SSR safety and container resolution.
@@ -974,7 +1169,7 @@ function DrawerPortal({ children, container }) {
 	return createPortalSafe(children, container);
 }
 // \0dsh-ui-kit-css:src/drawer/Drawer.module.css.mjs
-injectCss("Drawer.module.css", ".dshUk-Drawer-root {\n  position: fixed;\n  inset: 0;\n  z-index: 1000;\n  overflow: hidden;\n}\n\n.dshUk-Drawer-mask {\n  position: absolute;\n  inset: 0;\n  background: var(--dsw-alias-bg-mask-1);\n  backdrop-filter: var(--dsw-mask-blur);\n  transition: opacity 200ms cubic-bezier(0.16, 1, 0.3, 1);\n}\n\n.dshUk-Drawer-drawer {\n  position: absolute;\n  display: flex;\n  flex-direction: column;\n  box-sizing: border-box;\n  background-color: var(--dsw-alias-bg-layer-2);\n  box-shadow: var(--dsw-shadow-lv3);\n  z-index: 1;\n  transition: transform 240ms cubic-bezier(0.16, 1, 0.3, 1);\n}\n\n/* Placements */\n.dshUk-Drawer-placementRight {\n  top: 0;\n  right: 0;\n  bottom: 0;\n  border-left: 1px solid var(--dsw-alias-border-l2);\n}\n\n.dshUk-Drawer-placementLeft {\n  top: 0;\n  left: 0;\n  bottom: 0;\n  border-right: 1px solid var(--dsw-alias-border-l2);\n}\n\n.dshUk-Drawer-placementTop {\n  top: 0;\n  left: 0;\n  right: 0;\n  border-bottom: 1px solid var(--dsw-alias-border-l2);\n}\n\n.dshUk-Drawer-placementBottom {\n  bottom: 0;\n  left: 0;\n  right: 0;\n  border-top: 1px solid var(--dsw-alias-border-l2);\n}\n\n/* Header */\n.dshUk-Drawer-header {\n  display: flex;\n  align-items: flex-start;\n  justify-content: space-between;\n  gap: 12px;\n  padding: 18px 20px 14px;\n  border-bottom: 1px solid var(--dsw-alias-border-l1);\n  flex-shrink: 0;\n}\n\n.dshUk-Drawer-headerText {\n  display: flex;\n  flex-direction: column;\n  gap: 4px;\n  min-width: 0;\n  flex: 1;\n}\n\n.dshUk-Drawer-title {\n  margin: 0;\n  font-size: 16px;\n  line-height: 22px;\n  font-weight: 500;\n  color: var(--dsw-alias-label-primary);\n}\n\n.dshUk-Drawer-description {\n  margin: 0;\n  font-size: 13px;\n  line-height: 18px;\n  color: var(--dsw-alias-label-secondary);\n}\n\n/* Body */\n.dshUk-Drawer-body {\n  flex: 1;\n  overflow-y: auto;\n  padding: 20px;\n  box-sizing: border-box;\n}\n\n/* Footer */\n.dshUk-Drawer-footer {\n  display: flex;\n  align-items: center;\n  justify-content: flex-end;\n  gap: 8px;\n  padding: 14px 20px;\n  border-top: 1px solid var(--dsw-alias-border-l1);\n  background-color: var(--dsw-alias-bg-layer-2);\n  flex-shrink: 0;\n}\n");
+injectCss("Drawer.module.css", ".dshUk-Drawer-root {\n  position: fixed;\n  inset: 0;\n  z-index: 1000;\n  overflow: hidden;\n}\n\n.dshUk-Drawer-root[data-phase=\"exiting\"] {\n  pointer-events: none;\n}\n\n.dshUk-Drawer-mask {\n  position: absolute;\n  inset: 0;\n  background: var(--dsw-alias-bg-mask-1);\n  opacity: 0;\n  transition: opacity var(--omx-dur-base, 200ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));\n}\n\n.dshUk-Drawer-mask[data-phase=\"entered\"] {\n  opacity: 1;\n}\n\n.dshUk-Drawer-mask[data-phase=\"exiting\"] {\n  transition-duration: var(--omx-dur-fast, 140ms);\n}\n\n.dshUk-Drawer-drawer {\n  position: absolute;\n  display: flex;\n  flex-direction: column;\n  box-sizing: border-box;\n  background-color: var(--dsw-alias-bg-layer-2);\n  box-shadow: var(--dsw-shadow-lv3);\n  z-index: 1;\n  transition: transform var(--omx-dur-sheet, 260ms) var(--omx-ease-spatial, cubic-bezier(0.32, 0.72, 0, 1));\n}\n\n.dshUk-Drawer-drawer[data-phase=\"exiting\"] {\n  transition-duration: var(--omx-dur-base, 200ms);\n}\n\n/* Placements */\n.dshUk-Drawer-placementRight {\n  top: 0;\n  right: 0;\n  bottom: 0;\n  border-left: 1px solid var(--dsw-alias-border-l2);\n  transform: translate3d(100%, 0, 0);\n}\n\n.dshUk-Drawer-placementLeft {\n  top: 0;\n  left: 0;\n  bottom: 0;\n  border-right: 1px solid var(--dsw-alias-border-l2);\n  transform: translate3d(-100%, 0, 0);\n}\n\n.dshUk-Drawer-placementTop {\n  top: 0;\n  left: 0;\n  right: 0;\n  border-bottom: 1px solid var(--dsw-alias-border-l2);\n  transform: translate3d(0, -100%, 0);\n}\n\n.dshUk-Drawer-placementBottom {\n  bottom: 0;\n  left: 0;\n  right: 0;\n  border-top: 1px solid var(--dsw-alias-border-l2);\n  transform: translate3d(0, 100%, 0);\n}\n\n.dshUk-Drawer-drawer[data-phase=\"entered\"] {\n  transform: translate3d(0, 0, 0);\n}\n\n/* Header */\n.dshUk-Drawer-header {\n  display: flex;\n  align-items: flex-start;\n  justify-content: space-between;\n  gap: 12px;\n  padding: 18px 20px 14px;\n  border-bottom: 1px solid var(--dsw-alias-border-l1);\n  flex-shrink: 0;\n}\n\n.dshUk-Drawer-headerText {\n  display: flex;\n  flex-direction: column;\n  gap: 4px;\n  min-width: 0;\n  flex: 1;\n}\n\n.dshUk-Drawer-title {\n  margin: 0;\n  font-size: 16px;\n  line-height: 22px;\n  font-weight: 500;\n  color: var(--dsw-alias-label-primary);\n}\n\n.dshUk-Drawer-description {\n  margin: 0;\n  font-size: 13px;\n  line-height: 18px;\n  color: var(--dsw-alias-label-secondary);\n}\n\n/* Body */\n.dshUk-Drawer-body {\n  flex: 1;\n  overflow-y: auto;\n  padding: 20px;\n  box-sizing: border-box;\n}\n\n/* Footer */\n.dshUk-Drawer-footer {\n  display: flex;\n  align-items: center;\n  justify-content: flex-end;\n  gap: 8px;\n  padding: 14px 20px;\n  border-top: 1px solid var(--dsw-alias-border-l1);\n  background-color: var(--dsw-alias-bg-layer-2);\n  flex-shrink: 0;\n}\n\n@media (prefers-reduced-motion: reduce) {\n  .dshUk-Drawer-mask,\n  .dshUk-Drawer-drawer {\n    transition: none;\n  }\n}\n");
 var Drawer_module_css_default = {
 	"root": "dshUk-Drawer-root",
 	"mask": "dshUk-Drawer-mask",
@@ -1004,6 +1199,7 @@ const PLACEMENT_CLASS = {
 function Drawer({ open, onClose, title, description, children, footer, placement = "right", width = 400, height = 320, closable = true, closeOnOverlayClick = true, closeOnEsc = true, container, className }) {
 	const drawerRef = useRef(null);
 	const previousActiveElementRef = useRef(null);
+	const { mounted, phase } = usePresence(open, 190);
 	const titleId = useId();
 	const descriptionId = useId();
 	useEffect(() => {
@@ -1028,6 +1224,7 @@ function Drawer({ open, onClose, title, description, children, footer, placement
 		};
 	}, [open]);
 	const handleKeyDown = (e) => {
+		if (!open) return;
 		if (e.key === "Escape" && closeOnEsc) {
 			e.stopPropagation();
 			onClose();
@@ -1036,17 +1233,20 @@ function Drawer({ open, onClose, title, description, children, footer, placement
 		if (e.key === "Tab" && drawerRef.current) trapFocus(drawerRef.current, e.nativeEvent);
 	};
 	const handleMaskClick = (e) => {
-		if (e.target === e.currentTarget && closeOnOverlayClick) onClose();
+		if (open && e.target === e.currentTarget && closeOnOverlayClick) onClose();
 	};
-	if (!open) return null;
+	if (!mounted) return null;
 	const sizeStyle = placement === "top" || placement === "bottom" ? { height: typeof height === "number" ? `${height}px` : height } : { width: typeof width === "number" ? `${width}px` : width };
 	return /* @__PURE__ */ jsx(DrawerPortal, {
 		container,
 		children: /* @__PURE__ */ jsxs("div", {
 			className: cssClass(Drawer_module_css_default.root, "root"),
+			"data-phase": phase,
+			"aria-hidden": !open || void 0,
 			onKeyDown: handleKeyDown,
 			children: [/* @__PURE__ */ jsx("div", {
 				className: cssClass(Drawer_module_css_default.mask, "mask"),
+				"data-phase": phase,
 				onClick: handleMaskClick,
 				"aria-hidden": "true"
 			}), /* @__PURE__ */ jsxs("div", {
@@ -1056,6 +1256,7 @@ function Drawer({ open, onClose, title, description, children, footer, placement
 				"aria-labelledby": title ? titleId : void 0,
 				"aria-describedby": description ? descriptionId : void 0,
 				tabIndex: -1,
+				"data-phase": phase,
 				style: sizeStyle,
 				className: cx(cssClass(Drawer_module_css_default.drawer, "drawer"), PLACEMENT_CLASS[placement], className),
 				children: [
@@ -1094,7 +1295,7 @@ function Drawer({ open, onClose, title, description, children, footer, placement
 	});
 }
 // \0dsh-ui-kit-css:src/search/SearchField.module.css.mjs
-injectCss("SearchField.module.css", ".dshUk-SearchField-root {\n  display: inline-flex;\n  align-items: center;\n  gap: 6px;\n  box-sizing: border-box;\n  height: 32px;\n  min-width: 140px;\n  max-width: 260px;\n  width: 100%;\n  padding: 0 8px 0 10px;\n  border: 1px solid var(--dsw-alias-border-l2);\n  border-radius: 8px;\n  background: var(--dsw-alias-bg-layer-1);\n  color: var(--dsw-alias-label-primary);\n  transition:\n    border-color 120ms cubic-bezier(0.16, 1, 0.3, 1),\n    box-shadow 120ms cubic-bezier(0.16, 1, 0.3, 1),\n    background-color 120ms cubic-bezier(0.16, 1, 0.3, 1);\n}\n\n.dshUk-SearchField-stretch {\n  flex: 1 1 200px;\n}\n\n.dshUk-SearchField-root:hover:not(.dshUk-SearchField-disabled) {\n  border-color: var(--dsw-alias-border-l3);\n}\n\n.dshUk-SearchField-root:focus-within {\n  border-color: var(--dsw-alias-brand-primary);\n  box-shadow: 0 0 0 2px var(--dsw-alias-state-business-tertiary);\n}\n\n.dshUk-SearchField-disabled {\n  opacity: 0.4;\n  cursor: not-allowed;\n}\n\n.dshUk-SearchField-icon {\n  display: inline-flex;\n  width: 16px;\n  height: 16px;\n  align-items: center;\n  justify-content: center;\n  flex: none;\n  color: var(--dsw-alias-label-tertiary);\n}\n\n.dshUk-SearchField-input {\n  flex: 1;\n  min-width: 0;\n  height: 100%;\n  border: none;\n  outline: none;\n  background: transparent;\n  font: inherit;\n  font-size: 13px;\n  line-height: 18px;\n  color: var(--dsw-alias-label-primary);\n}\n\n.dshUk-SearchField-input::placeholder {\n  color: var(--dsw-alias-label-dimmed);\n}\n\n.dshUk-SearchField-input:disabled {\n  cursor: not-allowed;\n}\n\n.dshUk-SearchField-input::-webkit-search-decoration,\n.dshUk-SearchField-input::-webkit-search-cancel-button,\n.dshUk-SearchField-input::-webkit-search-results-button,\n.dshUk-SearchField-input::-webkit-search-results-decoration {\n  -webkit-appearance: none;\n  appearance: none;\n}\n\n.dshUk-SearchField-input[type=\"search\"] {\n  -webkit-appearance: none;\n  appearance: none;\n}\n\n.dshUk-SearchField-shortcut {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  flex: none;\n  min-width: 18px;\n  height: 18px;\n  padding: 0 5px;\n  border: 1px solid var(--dsw-alias-border-l2);\n  border-radius: 4px;\n  background: var(--dsw-alias-bg-layer-2);\n  color: var(--dsw-alias-label-tertiary);\n  font-size: 11px;\n  line-height: 16px;\n  font-weight: 500;\n  letter-spacing: 0;\n}\n\n.dshUk-SearchField-clear {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  flex: none;\n  width: 20px;\n  height: 20px;\n  margin: 0;\n  padding: 0;\n  border: none;\n  border-radius: 6px;\n  background: transparent;\n  color: var(--dsw-alias-label-tertiary);\n  cursor: pointer;\n}\n\n.dshUk-SearchField-clear:hover:not(:disabled) {\n  background: var(--dsw-alias-interactive-bg-hover);\n  color: var(--dsw-alias-label-primary);\n}\n\n.dshUk-SearchField-clear:focus {\n  outline: none;\n}\n\n.dshUk-SearchField-clear:focus-visible {\n  outline: 2px solid var(--dsw-alias-brand-primary);\n  outline-offset: 1px;\n}\n\n@media (prefers-reduced-motion: reduce) {\n  .dshUk-SearchField-root {\n    transition: none;\n  }\n}\n");
+injectCss("SearchField.module.css", ".dshUk-SearchField-root {\n  display: inline-flex;\n  align-items: center;\n  gap: 6px;\n  box-sizing: border-box;\n  height: 32px;\n  min-width: 140px;\n  max-width: 260px;\n  width: 100%;\n  padding: 0 8px 0 10px;\n  border: 1px solid var(--dsw-alias-border-l2);\n  border-radius: 8px;\n  background: var(--dsw-alias-bg-layer-1);\n  color: var(--dsw-alias-label-primary);\n  transition:\n    border-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),\n    box-shadow var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),\n    background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));\n}\n\n.dshUk-SearchField-stretch {\n  flex: 1 1 200px;\n}\n\n.dshUk-SearchField-root:hover:not(.dshUk-SearchField-disabled) {\n  border-color: var(--dsw-alias-border-l3);\n}\n\n.dshUk-SearchField-root:focus-within {\n  border-color: var(--dsw-alias-brand-primary);\n  box-shadow: 0 0 0 2px var(--dsw-alias-state-business-tertiary);\n}\n\n.dshUk-SearchField-disabled {\n  opacity: 0.4;\n  cursor: not-allowed;\n}\n\n.dshUk-SearchField-icon {\n  display: inline-flex;\n  width: 16px;\n  height: 16px;\n  align-items: center;\n  justify-content: center;\n  flex: none;\n  color: var(--dsw-alias-label-tertiary);\n  transition: color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));\n}\n\n.dshUk-SearchField-root:focus-within .dshUk-SearchField-icon {\n  color: var(--dsw-alias-label-primary);\n}\n\n.dshUk-SearchField-input {\n  flex: 1;\n  min-width: 0;\n  height: 100%;\n  border: none;\n  outline: none;\n  background: transparent;\n  font: inherit;\n  font-size: 13px;\n  line-height: 18px;\n  color: var(--dsw-alias-label-primary);\n}\n\n.dshUk-SearchField-input::placeholder {\n  color: var(--dsw-alias-label-dimmed);\n}\n\n.dshUk-SearchField-input:disabled {\n  cursor: not-allowed;\n}\n\n.dshUk-SearchField-input::-webkit-search-decoration,\n.dshUk-SearchField-input::-webkit-search-cancel-button,\n.dshUk-SearchField-input::-webkit-search-results-button,\n.dshUk-SearchField-input::-webkit-search-results-decoration {\n  -webkit-appearance: none;\n  appearance: none;\n}\n\n.dshUk-SearchField-input[type=\"search\"] {\n  -webkit-appearance: none;\n  appearance: none;\n}\n\n.dshUk-SearchField-shortcut {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  flex: none;\n  min-width: 18px;\n  height: 18px;\n  padding: 0 5px;\n  border: 1px solid var(--dsw-alias-border-l2);\n  border-radius: 4px;\n  background: var(--dsw-alias-bg-layer-2);\n  color: var(--dsw-alias-label-tertiary);\n  font-size: 11px;\n  line-height: 16px;\n  font-weight: 500;\n  letter-spacing: 0;\n}\n\n.dshUk-SearchField-clear {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  flex: none;\n  width: 20px;\n  height: 20px;\n  margin: 0;\n  padding: 0;\n  border: none;\n  border-radius: 6px;\n  background: transparent;\n  color: var(--dsw-alias-label-tertiary);\n  cursor: pointer;\n  animation: dshUkSearchPopIn var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) both;\n  transition:\n    background-color var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),\n    color var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),\n    transform var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));\n}\n\n.dshUk-SearchField-clear:hover:not(:disabled) {\n  background: var(--dsw-alias-interactive-bg-hover);\n  color: var(--dsw-alias-label-primary);\n}\n\n.dshUk-SearchField-clear:active:not(:disabled) {\n  transform: scale(0.92);\n}\n\n.dshUk-SearchField-clear:focus {\n  outline: none;\n}\n\n.dshUk-SearchField-clear:focus-visible {\n  outline: 2px solid var(--dsw-alias-brand-primary);\n  outline-offset: 1px;\n}\n\n@keyframes dshUkSearchPopIn {\n  from {\n    opacity: 0;\n    transform: scale(0.8);\n  }\n  to {\n    opacity: 1;\n    transform: scale(1);\n  }\n}\n\n@media (prefers-reduced-motion: reduce) {\n  .dshUk-SearchField-root,\n  .dshUk-SearchField-icon,\n  .dshUk-SearchField-clear {\n    transition: none;\n    animation: none;\n  }\n\n  .dshUk-SearchField-clear:active:not(:disabled) {\n    transform: none;\n  }\n}\n");
 var SearchField_module_css_default = {
 	"root": "dshUk-SearchField-root",
 	"stretch": "dshUk-SearchField-stretch",
@@ -1241,7 +1442,7 @@ const SearchField = forwardRef(function SearchField({ value, defaultValue = "", 
 	});
 });
 // \0dsh-ui-kit-css:src/field/InputField.module.css.mjs
-injectCss("InputField.module.css", ".dshUk-InputField-root {\n  display: flex;\n  flex-direction: column;\n  gap: 6px;\n  min-width: 0;\n}\n\n.dshUk-InputField-label {\n  display: block;\n  font-size: 12px;\n  line-height: 16px;\n  font-weight: 500;\n  color: var(--dsw-alias-label-secondary);\n}\n\n.dshUk-InputField-required {\n  margin-left: 2px;\n  color: var(--dsw-alias-state-error-primary);\n}\n\n.dshUk-InputField-control {\n  display: flex;\n  align-items: center;\n  gap: 6px;\n  box-sizing: border-box;\n  height: 32px;\n  padding: 0 10px;\n  border: 1px solid var(--dsw-alias-border-l2);\n  border-radius: 8px;\n  background: var(--dsw-alias-bg-layer-1);\n  transition:\n    border-color 120ms cubic-bezier(0.16, 1, 0.3, 1),\n    box-shadow 120ms cubic-bezier(0.16, 1, 0.3, 1);\n}\n\n.dshUk-InputField-control:hover:not(.dshUk-InputField-disabled) {\n  border-color: var(--dsw-alias-border-l3);\n}\n\n.dshUk-InputField-control:focus-within {\n  border-color: var(--dsw-alias-brand-primary);\n  box-shadow: 0 0 0 2px var(--dsw-alias-state-business-tertiary);\n}\n\n.dshUk-InputField-invalid {\n  border-color: var(--dsw-alias-state-error-primary);\n}\n\n.dshUk-InputField-invalid:focus-within {\n  border-color: var(--dsw-alias-state-error-primary);\n  box-shadow: 0 0 0 2px var(--dsw-alias-interactive-bg-hover-danger);\n}\n\n.dshUk-InputField-disabled {\n  opacity: 0.4;\n  cursor: not-allowed;\n}\n\n.dshUk-InputField-affix {\n  display: inline-flex;\n  align-items: center;\n  flex: none;\n  color: var(--dsw-alias-label-tertiary);\n  font-size: 12px;\n  line-height: 16px;\n}\n\n.dshUk-InputField-input {\n  flex: 1;\n  min-width: 0;\n  height: 100%;\n  border: none;\n  outline: none;\n  background: transparent;\n  font: inherit;\n  font-size: 13px;\n  line-height: 18px;\n  color: var(--dsw-alias-label-primary);\n}\n\n.dshUk-InputField-input::placeholder {\n  color: var(--dsw-alias-label-dimmed);\n}\n\n.dshUk-InputField-input:disabled {\n  cursor: not-allowed;\n}\n\n.dshUk-InputField-meta {\n  min-height: 16px;\n  font-size: 12px;\n  line-height: 16px;\n}\n\n.dshUk-InputField-hint {\n  color: var(--dsw-alias-label-tertiary);\n}\n\n.dshUk-InputField-error {\n  color: var(--dsw-alias-state-error-primary);\n}\n\n@media (prefers-reduced-motion: reduce) {\n  .dshUk-InputField-control {\n    transition: none;\n  }\n}\n");
+injectCss("InputField.module.css", ".dshUk-InputField-root {\n  display: flex;\n  flex-direction: column;\n  gap: 6px;\n  min-width: 0;\n}\n\n.dshUk-InputField-label {\n  display: block;\n  font-size: 12px;\n  line-height: 16px;\n  font-weight: 500;\n  color: var(--dsw-alias-label-secondary);\n}\n\n.dshUk-InputField-required {\n  margin-left: 2px;\n  color: var(--dsw-alias-state-error-primary);\n}\n\n.dshUk-InputField-control {\n  display: flex;\n  align-items: center;\n  gap: 6px;\n  box-sizing: border-box;\n  height: 32px;\n  padding: 0 10px;\n  border: 1px solid var(--dsw-alias-border-l2);\n  border-radius: 8px;\n  background: var(--dsw-alias-bg-layer-1);\n  transition:\n    border-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),\n    box-shadow var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));\n}\n\n.dshUk-InputField-control:hover:not(.dshUk-InputField-disabled) {\n  border-color: var(--dsw-alias-border-l3);\n}\n\n.dshUk-InputField-control:focus-within {\n  border-color: var(--dsw-alias-brand-primary);\n  box-shadow: 0 0 0 2px var(--dsw-alias-state-business-tertiary);\n}\n\n.dshUk-InputField-invalid {\n  border-color: var(--dsw-alias-state-error-primary);\n}\n\n.dshUk-InputField-invalid:focus-within {\n  border-color: var(--dsw-alias-state-error-primary);\n  box-shadow: 0 0 0 2px var(--dsw-alias-interactive-bg-hover-danger);\n}\n\n.dshUk-InputField-disabled {\n  opacity: 0.4;\n  cursor: not-allowed;\n}\n\n.dshUk-InputField-affix {\n  display: inline-flex;\n  align-items: center;\n  flex: none;\n  color: var(--dsw-alias-label-tertiary);\n  font-size: 12px;\n  line-height: 16px;\n}\n\n.dshUk-InputField-input {\n  flex: 1;\n  min-width: 0;\n  height: 100%;\n  border: none;\n  outline: none;\n  background: transparent;\n  font: inherit;\n  font-size: 13px;\n  line-height: 18px;\n  color: var(--dsw-alias-label-primary);\n}\n\n.dshUk-InputField-input::placeholder {\n  color: var(--dsw-alias-label-dimmed);\n}\n\n.dshUk-InputField-input:disabled {\n  cursor: not-allowed;\n}\n\n.dshUk-InputField-meta {\n  min-height: 16px;\n  font-size: 12px;\n  line-height: 16px;\n}\n\n.dshUk-InputField-hint {\n  color: var(--dsw-alias-label-tertiary);\n}\n\n.dshUk-InputField-error {\n  color: var(--dsw-alias-state-error-primary);\n}\n\n@media (prefers-reduced-motion: reduce) {\n  .dshUk-InputField-control {\n    transition: none;\n  }\n}\n");
 var InputField_module_css_default = {
 	"root": "dshUk-InputField-root",
 	"label": "dshUk-InputField-label",
@@ -1320,7 +1521,7 @@ const InputField = forwardRef(function InputField({ label, hint, error, prefix, 
 	});
 });
 // \0dsh-ui-kit-css:src/field/DropdownSelect.module.css.mjs
-injectCss("DropdownSelect.module.css", ".dshUk-DropdownSelect-anchor {\n  display: inline-flex;\n  flex-shrink: 0;\n  min-width: 0;\n}\n\n.dshUk-DropdownSelect-trigger {\n  display: inline-flex;\n  align-items: center;\n  gap: 8px;\n  box-sizing: border-box;\n  width: 100%;\n  min-width: 112px;\n  height: 32px;\n  margin: 0;\n  padding: 0 10px;\n  border: 1px solid var(--dsw-alias-border-l2);\n  border-radius: 8px;\n  background: var(--dsw-alias-bg-layer-1);\n  color: var(--dsw-alias-label-primary);\n  cursor: pointer;\n  font: inherit;\n  font-size: 13px;\n  line-height: 18px;\n  text-align: left;\n  transition:\n    background-color 120ms cubic-bezier(0.16, 1, 0.3, 1),\n    border-color 120ms cubic-bezier(0.16, 1, 0.3, 1);\n}\n\n.dshUk-DropdownSelect-trigger:hover:not(:disabled) {\n  border-color: var(--dsw-alias-border-l3);\n  background: var(--dsw-alias-interactive-bg-hover);\n}\n\n.dshUk-DropdownSelect-trigger:focus {\n  outline: none;\n}\n\n.dshUk-DropdownSelect-trigger:focus-visible {\n  outline: 2px solid var(--dsw-alias-brand-primary);\n  outline-offset: 2px;\n}\n\n.dshUk-DropdownSelect-trigger:disabled {\n  opacity: 0.4;\n  cursor: not-allowed;\n}\n\n.dshUk-DropdownSelect-open {\n  border-color: var(--dsw-alias-brand-primary);\n}\n\n.dshUk-DropdownSelect-label {\n  flex: 1;\n  min-width: 0;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n\n.dshUk-DropdownSelect-placeholder {\n  color: var(--dsw-alias-label-dimmed);\n}\n\n.dshUk-DropdownSelect-chevron {\n  display: inline-flex;\n  width: 14px;\n  height: 14px;\n  align-items: center;\n  justify-content: center;\n  flex: none;\n  color: var(--dsw-alias-label-tertiary);\n  transition: transform 120ms cubic-bezier(0.16, 1, 0.3, 1);\n}\n\n.dshUk-DropdownSelect-chevronOpen {\n  transform: rotate(180deg);\n}\n\n@media (prefers-reduced-motion: reduce) {\n  .dshUk-DropdownSelect-trigger,\n  .dshUk-DropdownSelect-chevron {\n    transition: none;\n  }\n}\n");
+injectCss("DropdownSelect.module.css", ".dshUk-DropdownSelect-anchor {\n  display: inline-flex;\n  flex-shrink: 0;\n  min-width: 0;\n}\n\n.dshUk-DropdownSelect-trigger {\n  display: inline-flex;\n  align-items: center;\n  gap: 8px;\n  box-sizing: border-box;\n  width: 100%;\n  min-width: 112px;\n  height: 32px;\n  margin: 0;\n  padding: 0 10px;\n  border: 1px solid var(--dsw-alias-border-l2);\n  border-radius: 8px;\n  background: var(--dsw-alias-bg-layer-1);\n  color: var(--dsw-alias-label-primary);\n  cursor: pointer;\n  font: inherit;\n  font-size: 13px;\n  line-height: 18px;\n  text-align: left;\n  transition:\n    background-color var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),\n    border-color var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));\n}\n\n.dshUk-DropdownSelect-trigger:hover:not(:disabled) {\n  border-color: var(--dsw-alias-border-l3);\n  background: var(--dsw-alias-interactive-bg-hover);\n}\n\n.dshUk-DropdownSelect-trigger:focus {\n  outline: none;\n}\n\n.dshUk-DropdownSelect-trigger:focus-visible {\n  outline: 2px solid var(--dsw-alias-brand-primary);\n  outline-offset: 2px;\n}\n\n.dshUk-DropdownSelect-trigger:disabled {\n  opacity: 0.4;\n  cursor: not-allowed;\n}\n\n.dshUk-DropdownSelect-open {\n  border-color: var(--dsw-alias-brand-primary);\n}\n\n.dshUk-DropdownSelect-label {\n  flex: 1;\n  min-width: 0;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n\n.dshUk-DropdownSelect-placeholder {\n  color: var(--dsw-alias-label-dimmed);\n}\n\n.dshUk-DropdownSelect-chevron {\n  display: inline-flex;\n  width: 14px;\n  height: 14px;\n  align-items: center;\n  justify-content: center;\n  flex: none;\n  color: var(--dsw-alias-label-tertiary);\n  transition: transform var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));\n}\n\n.dshUk-DropdownSelect-chevronOpen {\n  transform: rotate(180deg);\n}\n\n@media (prefers-reduced-motion: reduce) {\n  .dshUk-DropdownSelect-trigger,\n  .dshUk-DropdownSelect-chevron {\n    transition: none;\n  }\n}\n");
 var DropdownSelect_module_css_default = {
 	"anchor": "dshUk-DropdownSelect-anchor",
 	"trigger": "dshUk-DropdownSelect-trigger",
@@ -1642,9 +1843,10 @@ const StageContainer = forwardRef(function StageContainer({ stageStore, title, c
 	});
 });
 // \0dsh-ui-kit-css:src/tabs/Tabs.module.css.mjs
-injectCss("Tabs.module.css", "/* Base container */\n.dshUk-Tabs-tabs {\n  display: inline-flex;\n  align-items: center;\n  box-sizing: border-box;\n  flex-shrink: 0;\n  user-select: none;\n  background: transparent;\n  border: none;\n  border-radius: 0;\n  box-shadow: none;\n}\n\n/* Pill variant (classic capsule) */\n.dshUk-Tabs-pill {\n  gap: 2px;\n  padding: 2px;\n  height: 32px;\n  background: var(--dsw-alias-bg-layer-1);\n  border: 1px solid var(--dsw-alias-border-l1);\n  border-radius: 8px;\n}\n\n.dshUk-Tabs-pill.dshUk-Tabs-sm {\n  height: 28px;\n  padding: 2px;\n  border-radius: 6px;\n}\n\n.dshUk-Tabs-pill .dshUk-Tabs-tabItem {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  gap: 6px;\n  height: 26px;\n  padding: 0 10px;\n  border-radius: 6px;\n  border: none;\n  background: transparent;\n  color: var(--dsw-alias-label-secondary);\n  font: inherit;\n  font-size: 13px;\n  font-weight: 500;\n  line-height: 18px;\n  cursor: pointer;\n  white-space: nowrap;\n  box-sizing: border-box;\n  transition:\n    background-color 120ms cubic-bezier(0.16, 1, 0.3, 1),\n    color 120ms cubic-bezier(0.16, 1, 0.3, 1),\n    box-shadow 120ms cubic-bezier(0.16, 1, 0.3, 1);\n}\n\n.dshUk-Tabs-pill.dshUk-Tabs-sm .dshUk-Tabs-tabItem {\n  height: 22px;\n  padding: 0 8px;\n  border-radius: 4px;\n  font-size: 12px;\n  line-height: 16px;\n  gap: 4px;\n}\n\n.dshUk-Tabs-pill .dshUk-Tabs-tabItem:hover:not(:disabled):not([aria-selected=\"true\"]) {\n  background: var(--dsw-alias-interactive-bg-hover);\n  color: var(--dsw-alias-label-primary);\n}\n\n.dshUk-Tabs-pill .dshUk-Tabs-tabItem:focus {\n  outline: none;\n}\n\n.dshUk-Tabs-pill .dshUk-Tabs-tabItem:focus-visible {\n  outline: 2px solid var(--dsw-alias-brand-primary);\n  outline-offset: 1px;\n}\n\n.dshUk-Tabs-pill .dshUk-Tabs-tabItem:disabled {\n  cursor: not-allowed;\n  opacity: 0.4;\n}\n\n.dshUk-Tabs-pill .dshUk-Tabs-tabItem.dshUk-Tabs-active {\n  background: var(--dsw-alias-bg-layer-3);\n  color: var(--dsw-alias-label-primary);\n  font-weight: 600;\n  box-shadow: 0 1px 2px var(--dsw-alias-border-l1);\n}\n\n.dshUk-Tabs-pill .dshUk-Tabs-tabItem.dshUk-Tabs-active:hover {\n  background: var(--dsw-alias-bg-layer-3);\n  color: var(--dsw-alias-label-primary);\n}\n\n.dshUk-Tabs-pill .dshUk-Tabs-badge {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  min-width: 16px;\n  height: 16px;\n  padding: 0 4px;\n  box-sizing: border-box;\n  border-radius: 9999px;\n  font-size: 11px;\n  font-weight: 600;\n  line-height: 1;\n  background: var(--dsw-alias-interactive-bg-hover);\n  color: var(--dsw-alias-label-secondary);\n}\n\n.dshUk-Tabs-pill.dshUk-Tabs-sm .dshUk-Tabs-badge {\n  min-width: 14px;\n  height: 14px;\n  padding: 0 3px;\n  font-size: 10px;\n}\n\n.dshUk-Tabs-pill .dshUk-Tabs-tabItem.dshUk-Tabs-active .dshUk-Tabs-badge {\n  background: var(--dsw-alias-interactive-bg-active);\n  color: var(--dsw-alias-label-primary);\n}\n\n/* Underline variant (pure text + 2px bottom highlight line) */\n.dshUk-Tabs-underline {\n  /* 标签左右热区宽度。容器两端用等量负边距抵消它，首末标签的文字才落在容器\n     内容边缘、与所在页面的内容基准线对齐；激活下划线也用同一变量内缩，保证\n     与文字等宽。改热区只改这一个值。 */\n  --underline-tab-pad-x: 4px;\n  display: inline-flex;\n  align-items: center;\n  gap: 24px;\n  padding: 0 !important;\n  margin-inline: calc(-1 * var(--underline-tab-pad-x));\n  height: 44px;\n  background: transparent !important;\n  border: none !important;\n  border-radius: 0 !important;\n  box-shadow: none !important;\n}\n\n.dshUk-Tabs-underline.dshUk-Tabs-sm {\n  height: 36px;\n  gap: 16px;\n}\n\n.dshUk-Tabs-underline .dshUk-Tabs-tabItem {\n  position: relative;\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  gap: 6px;\n  height: 100%;\n  padding: 0 var(--underline-tab-pad-x) !important;\n  border: none !important;\n  border-radius: 0 !important;\n  background: transparent !important;\n  box-shadow: none !important;\n  color: var(--dsw-alias-label-secondary);\n  font: inherit;\n  font-size: 14px;\n  font-weight: 500;\n  line-height: 20px;\n  cursor: pointer;\n  white-space: nowrap;\n  box-sizing: border-box;\n  transition:\n    color 120ms cubic-bezier(0.16, 1, 0.3, 1),\n    font-weight 120ms cubic-bezier(0.16, 1, 0.3, 1);\n}\n\n.dshUk-Tabs-underline.dshUk-Tabs-sm .dshUk-Tabs-tabItem {\n  font-size: 13px;\n  line-height: 18px;\n  gap: 4px;\n}\n\n.dshUk-Tabs-underline .dshUk-Tabs-tabItem:hover {\n  color: var(--dsw-alias-label-primary) !important;\n  background: transparent !important;\n}\n\n.dshUk-Tabs-underline .dshUk-Tabs-tabItem:focus {\n  outline: none;\n}\n\n.dshUk-Tabs-underline .dshUk-Tabs-tabItem:focus-visible {\n  outline: 2px solid var(--dsw-alias-brand-primary);\n  outline-offset: 2px;\n}\n\n.dshUk-Tabs-underline .dshUk-Tabs-tabItem:disabled {\n  cursor: not-allowed;\n  opacity: 0.4;\n}\n\n.dshUk-Tabs-underline .dshUk-Tabs-tabItem.dshUk-Tabs-active {\n  color: var(--dsw-alias-label-primary) !important;\n  font-weight: 600;\n  background: transparent !important;\n  box-shadow: none !important;\n}\n\n.dshUk-Tabs-underline .dshUk-Tabs-tabItem.dshUk-Tabs-active::after {\n  content: \"\";\n  position: absolute;\n  bottom: 0;\n  left: var(--underline-tab-pad-x);\n  right: var(--underline-tab-pad-x);\n  height: 2px;\n  background: var(--dsw-alias-label-primary);\n  border-radius: 1px;\n}\n\n.dshUk-Tabs-underline .dshUk-Tabs-badge {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  min-width: 16px;\n  height: 16px;\n  padding: 0 4px;\n  box-sizing: border-box;\n  border-radius: 9999px;\n  font-size: 11px;\n  font-weight: 600;\n  line-height: 1;\n  background: var(--dsw-alias-interactive-bg-hover);\n  color: var(--dsw-alias-label-secondary);\n  transition:\n    background-color 120ms cubic-bezier(0.16, 1, 0.3, 1),\n    color 120ms cubic-bezier(0.16, 1, 0.3, 1);\n}\n\n.dshUk-Tabs-underline.dshUk-Tabs-sm .dshUk-Tabs-badge {\n  min-width: 14px;\n  height: 14px;\n  padding: 0 3px;\n  font-size: 10px;\n}\n\n.dshUk-Tabs-underline .dshUk-Tabs-tabItem.dshUk-Tabs-active .dshUk-Tabs-badge {\n  background: var(--dsw-alias-interactive-bg-active);\n  color: var(--dsw-alias-label-primary);\n}\n\n/* Shared element styles */\n.dshUk-Tabs-label {\n  min-width: 0;\n  overflow: hidden;\n  text-overflow: ellipsis;\n}\n");
+injectCss("Tabs.module.css", "/* Base container */\n.dshUk-Tabs-tabs {\n  position: relative;\n  display: inline-flex;\n  align-items: center;\n  box-sizing: border-box;\n  flex-shrink: 0;\n  user-select: none;\n  background: transparent;\n  border: none;\n  border-radius: 0;\n  box-shadow: none;\n}\n\n.dshUk-Tabs-indicator {\n  position: absolute;\n  pointer-events: none;\n  opacity: 0;\n}\n\n/* Pill variant (classic capsule) */\n.dshUk-Tabs-pill {\n  gap: 2px;\n  padding: 2px;\n  height: 32px;\n  background: var(--dsw-alias-bg-layer-1);\n  border: 1px solid var(--dsw-alias-border-l1);\n  border-radius: 8px;\n}\n\n.dshUk-Tabs-pill.dshUk-Tabs-sm {\n  height: 28px;\n  padding: 2px;\n  border-radius: 6px;\n}\n\n.dshUk-Tabs-pill .dshUk-Tabs-indicator {\n  top: 2px;\n  left: 0;\n  height: calc(100% - 4px);\n  border-radius: 6px;\n  background: var(--dsw-alias-bg-layer-3);\n  box-shadow: 0 1px 2px var(--dsw-alias-border-l1);\n  transform: translate3d(var(--ind-x, 2px), 0, 0);\n  width: var(--ind-w, 0px);\n  z-index: 0;\n}\n\n.dshUk-Tabs-pill.dshUk-Tabs-sm .dshUk-Tabs-indicator {\n  border-radius: 4px;\n}\n\n.dshUk-Tabs-pill[data-indicator=\"ready\"] .dshUk-Tabs-indicator {\n  opacity: 1;\n  transition:\n    transform var(--omx-dur-base, 200ms) var(--omx-ease-spatial, cubic-bezier(0.32, 0.72, 0, 1)),\n    width var(--omx-dur-base, 200ms) var(--omx-ease-spatial, cubic-bezier(0.32, 0.72, 0, 1));\n}\n\n.dshUk-Tabs-pill .dshUk-Tabs-tabItem {\n  position: relative;\n  z-index: 1;\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  gap: 6px;\n  height: 26px;\n  padding: 0 10px;\n  border-radius: 6px;\n  border: none;\n  background: transparent;\n  color: var(--dsw-alias-label-secondary);\n  font: inherit;\n  font-size: 13px;\n  font-weight: 500;\n  line-height: 18px;\n  cursor: pointer;\n  white-space: nowrap;\n  box-sizing: border-box;\n  transition:\n    background-color var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),\n    color var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),\n    box-shadow var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));\n}\n\n.dshUk-Tabs-pill.dshUk-Tabs-sm .dshUk-Tabs-tabItem {\n  height: 22px;\n  padding: 0 8px;\n  border-radius: 4px;\n  font-size: 12px;\n  line-height: 16px;\n  gap: 4px;\n}\n\n.dshUk-Tabs-pill .dshUk-Tabs-tabItem:hover:not(:disabled):not([aria-selected=\"true\"]) {\n  background: var(--dsw-alias-interactive-bg-hover);\n  color: var(--dsw-alias-label-primary);\n}\n\n.dshUk-Tabs-pill .dshUk-Tabs-tabItem:focus {\n  outline: none;\n}\n\n.dshUk-Tabs-pill .dshUk-Tabs-tabItem:focus-visible {\n  outline: 2px solid var(--dsw-alias-brand-primary);\n  outline-offset: 1px;\n}\n\n.dshUk-Tabs-pill .dshUk-Tabs-tabItem:disabled {\n  cursor: not-allowed;\n  opacity: 0.4;\n}\n\n.dshUk-Tabs-pill .dshUk-Tabs-tabItem.dshUk-Tabs-active {\n  background: var(--dsw-alias-bg-layer-3);\n  color: var(--dsw-alias-label-primary);\n  font-weight: 600;\n  box-shadow: 0 1px 2px var(--dsw-alias-border-l1);\n}\n\n.dshUk-Tabs-pill[data-indicator=\"ready\"] .dshUk-Tabs-tabItem.dshUk-Tabs-active,\n.dshUk-Tabs-pill[data-indicator=\"ready\"] .dshUk-Tabs-tabItem.dshUk-Tabs-active:hover {\n  background: transparent;\n  box-shadow: none;\n}\n\n.dshUk-Tabs-pill .dshUk-Tabs-tabItem.dshUk-Tabs-active:hover {\n  background: var(--dsw-alias-bg-layer-3);\n  color: var(--dsw-alias-label-primary);\n}\n\n.dshUk-Tabs-pill .dshUk-Tabs-badge {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  min-width: 16px;\n  height: 16px;\n  padding: 0 4px;\n  box-sizing: border-box;\n  border-radius: 9999px;\n  font-size: 11px;\n  font-weight: 600;\n  line-height: 1;\n  font-variant-numeric: tabular-nums;\n  background: var(--dsw-alias-interactive-bg-hover);\n  color: var(--dsw-alias-label-secondary);\n  transition:\n    background-color var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),\n    color var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));\n}\n\n.dshUk-Tabs-pill.dshUk-Tabs-sm .dshUk-Tabs-badge {\n  min-width: 14px;\n  height: 14px;\n  padding: 0 3px;\n  font-size: 10px;\n}\n\n.dshUk-Tabs-pill .dshUk-Tabs-tabItem.dshUk-Tabs-active .dshUk-Tabs-badge {\n  background: var(--dsw-alias-interactive-bg-active);\n  color: var(--dsw-alias-label-primary);\n}\n\n/* Underline variant (pure text + 2px bottom highlight line) */\n.dshUk-Tabs-underline {\n  /* 标签左右热区宽度。容器两端用等量负边距抵消它，首末标签的文字才落在容器\n     内容边缘、与所在页面的内容基准线对齐；激活下划线也用同一变量内缩，保证\n     与文字等宽。改热区只改这一个值。 */\n  --underline-tab-pad-x: 4px;\n  display: inline-flex;\n  align-items: center;\n  gap: 24px;\n  padding: 0 !important;\n  margin-inline: calc(-1 * var(--underline-tab-pad-x));\n  height: 44px;\n  background: transparent !important;\n  border: none !important;\n  border-radius: 0 !important;\n  box-shadow: none !important;\n}\n\n.dshUk-Tabs-underline.dshUk-Tabs-sm {\n  height: 36px;\n  gap: 16px;\n}\n\n.dshUk-Tabs-underline .dshUk-Tabs-indicator {\n  bottom: 0;\n  left: 0;\n  height: 2px;\n  border-radius: 1px;\n  background: var(--dsw-alias-label-primary);\n  transform: translate3d(var(--ind-x, 0px), 0, 0);\n  width: var(--ind-w, 0px);\n}\n\n.dshUk-Tabs-underline[data-indicator=\"ready\"] .dshUk-Tabs-indicator {\n  opacity: 1;\n  transition:\n    transform var(--omx-dur-base, 200ms) var(--omx-ease-spatial, cubic-bezier(0.32, 0.72, 0, 1)),\n    width var(--omx-dur-base, 200ms) var(--omx-ease-spatial, cubic-bezier(0.32, 0.72, 0, 1));\n}\n\n.dshUk-Tabs-underline .dshUk-Tabs-tabItem {\n  position: relative;\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  gap: 6px;\n  height: 100%;\n  padding: 0 var(--underline-tab-pad-x) !important;\n  border: none !important;\n  border-radius: 0 !important;\n  background: transparent !important;\n  box-shadow: none !important;\n  color: var(--dsw-alias-label-secondary);\n  font: inherit;\n  font-size: 14px;\n  font-weight: 500;\n  line-height: 20px;\n  cursor: pointer;\n  white-space: nowrap;\n  box-sizing: border-box;\n  transition: color var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));\n}\n\n.dshUk-Tabs-underline.dshUk-Tabs-sm .dshUk-Tabs-tabItem {\n  font-size: 13px;\n  line-height: 18px;\n  gap: 4px;\n}\n\n.dshUk-Tabs-underline .dshUk-Tabs-tabItem:hover {\n  color: var(--dsw-alias-label-primary) !important;\n  background: transparent !important;\n}\n\n.dshUk-Tabs-underline .dshUk-Tabs-tabItem:focus {\n  outline: none;\n}\n\n.dshUk-Tabs-underline .dshUk-Tabs-tabItem:focus-visible {\n  outline: 2px solid var(--dsw-alias-brand-primary);\n  outline-offset: 2px;\n}\n\n.dshUk-Tabs-underline .dshUk-Tabs-tabItem:disabled {\n  cursor: not-allowed;\n  opacity: 0.4;\n}\n\n.dshUk-Tabs-underline .dshUk-Tabs-tabItem.dshUk-Tabs-active {\n  color: var(--dsw-alias-label-primary) !important;\n  font-weight: 600;\n  background: transparent !important;\n  box-shadow: none !important;\n}\n\n.dshUk-Tabs-underline .dshUk-Tabs-tabItem.dshUk-Tabs-active::after {\n  content: \"\";\n  position: absolute;\n  bottom: 0;\n  left: var(--underline-tab-pad-x);\n  right: var(--underline-tab-pad-x);\n  height: 2px;\n  background: var(--dsw-alias-label-primary);\n  border-radius: 1px;\n}\n\n.dshUk-Tabs-underline[data-indicator=\"ready\"] .dshUk-Tabs-tabItem.dshUk-Tabs-active::after {\n  display: none;\n}\n\n.dshUk-Tabs-underline .dshUk-Tabs-badge {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  min-width: 16px;\n  height: 16px;\n  padding: 0 4px;\n  box-sizing: border-box;\n  border-radius: 9999px;\n  font-size: 11px;\n  font-weight: 600;\n  line-height: 1;\n  font-variant-numeric: tabular-nums;\n  background: var(--dsw-alias-interactive-bg-hover);\n  color: var(--dsw-alias-label-secondary);\n  transition:\n    background-color var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),\n    color var(--omx-dur-press, 90ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));\n}\n\n.dshUk-Tabs-underline.dshUk-Tabs-sm .dshUk-Tabs-badge {\n  min-width: 14px;\n  height: 14px;\n  padding: 0 3px;\n  font-size: 10px;\n}\n\n.dshUk-Tabs-underline .dshUk-Tabs-tabItem.dshUk-Tabs-active .dshUk-Tabs-badge {\n  background: var(--dsw-alias-interactive-bg-active);\n  color: var(--dsw-alias-label-primary);\n}\n\n/* Shared element styles — zero bold-weight horizontal width jitter via CSS ::after (no DOM text duplication) */\n.dshUk-Tabs-label {\n  display: inline-block;\n  text-align: center;\n  min-width: 0;\n  max-width: 100%;\n  overflow: hidden;\n  text-overflow: ellipsis;\n}\n\n.dshUk-Tabs-label[data-label]::after {\n  content: attr(data-label);\n  display: block;\n  height: 0;\n  line-height: 0;\n  visibility: hidden;\n  overflow: hidden;\n  user-select: none;\n  pointer-events: none;\n  font-weight: 600;\n  white-space: nowrap;\n}\n\n@media (prefers-reduced-motion: reduce) {\n  .dshUk-Tabs-pill[data-indicator=\"ready\"] .dshUk-Tabs-indicator,\n  .dshUk-Tabs-underline[data-indicator=\"ready\"] .dshUk-Tabs-indicator,\n  .dshUk-Tabs-pill .dshUk-Tabs-tabItem,\n  .dshUk-Tabs-underline .dshUk-Tabs-tabItem,\n  .dshUk-Tabs-pill .dshUk-Tabs-badge,\n  .dshUk-Tabs-underline .dshUk-Tabs-badge {\n    transition: none;\n  }\n}\n");
 var Tabs_module_css_default = {
 	"tabs": "dshUk-Tabs-tabs",
+	"indicator": "dshUk-Tabs-indicator",
 	"pill": "dshUk-Tabs-pill",
 	"sm": "dshUk-Tabs-sm",
 	"tabItem": "dshUk-Tabs-tabItem",
@@ -1658,20 +1860,90 @@ const TABS_CLASS = cssClass(Tabs_module_css_default.tabs, "tabs");
 const PILL_CLASS = cssClass(Tabs_module_css_default.pill, "pill");
 const UNDERLINE_CLASS = cssClass(Tabs_module_css_default.underline, "underline");
 const SM_CLASS = cssClass(Tabs_module_css_default.sm, "sm");
+const INDICATOR_CLASS = cssClass(Tabs_module_css_default.indicator, "indicator");
 const TAB_ITEM_CLASS = cssClass(Tabs_module_css_default.tabItem, "tabItem");
 const ACTIVE_CLASS = cssClass(Tabs_module_css_default.active, "active");
 const BADGE_CLASS = cssClass(Tabs_module_css_default.badge, "badge");
 const LABEL_CLASS$1 = cssClass(Tabs_module_css_default.label, "label");
+const useIsomorphicLayoutEffect = typeof window !== "undefined" ? useLayoutEffect : useEffect;
 const Tabs = forwardRef(function Tabs({ items, activeId, onChange, size = "default", variant = "underline", className, ...rest }, ref) {
 	const isPill = variant === "pill";
-	return /* @__PURE__ */ jsx("div", {
+	const listRef = useRef(null);
+	const buttonRefs = useRef(/* @__PURE__ */ new Map());
+	const setListRef = (node) => {
+		listRef.current = node;
+		if (typeof ref === "function") ref(node);
+		else if (ref) ref.current = node;
+	};
+	useIsomorphicLayoutEffect(() => {
+		const list = listRef.current;
+		if (!list) return;
+		let rafId = 0;
+		const measure = () => {
+			const btn = buttonRefs.current.get(activeId);
+			if (!btn || !listRef.current) {
+				list.removeAttribute("data-indicator");
+				return;
+			}
+			const padX = isPill ? 0 : Number.parseFloat(getComputedStyle(list).getPropertyValue("--underline-tab-pad-x")) || 4;
+			const width = btn.offsetWidth;
+			const x = btn.offsetLeft + padX;
+			const w = Math.max(0, width - padX * 2);
+			if (w <= 0) {
+				list.removeAttribute("data-indicator");
+				return;
+			}
+			list.style.setProperty("--ind-x", `${x}px`);
+			list.style.setProperty("--ind-w", `${w}px`);
+			if (list.getAttribute("data-indicator") !== "ready") {
+				if (typeof requestAnimationFrame === "function") {
+					if (rafId) cancelAnimationFrame(rafId);
+					rafId = requestAnimationFrame(() => {
+						rafId = 0;
+						if (listRef.current === list) list.setAttribute("data-indicator", "ready");
+					});
+				} else list.setAttribute("data-indicator", "ready");
+			}
+		};
+		measure();
+		let observer = null;
+		if (typeof ResizeObserver !== "undefined") {
+			observer = new ResizeObserver(() => measure());
+			observer.observe(list);
+			const activeBtn = buttonRefs.current.get(activeId);
+			if (activeBtn) observer.observe(activeBtn);
+		}
+		let cancelled = false;
+		if (typeof document !== "undefined" && document.fonts?.ready) document.fonts.ready.then(() => {
+			if (!cancelled) measure();
+		});
+		return () => {
+			cancelled = true;
+			if (rafId && typeof cancelAnimationFrame === "function") cancelAnimationFrame(rafId);
+			observer?.disconnect();
+		};
+	}, [
+		activeId,
+		isPill,
+		size,
+		items
+	]);
+	return /* @__PURE__ */ jsxs("div", {
 		...rest,
-		ref,
+		ref: setListRef,
 		role: "tablist",
 		className: cx(TABS_CLASS, isPill ? PILL_CLASS : UNDERLINE_CLASS, size === "sm" && SM_CLASS, className),
-		children: items.map((item) => {
+		children: [/* @__PURE__ */ jsx("span", {
+			className: INDICATOR_CLASS,
+			"aria-hidden": "true"
+		}), items.map((item) => {
 			const isActive = item.id === activeId;
+			const isPrimitiveLabel = typeof item.label === "string" || typeof item.label === "number";
 			return /* @__PURE__ */ jsxs("button", {
+				ref: (el) => {
+					if (el) buttonRefs.current.set(item.id, el);
+					else buttonRefs.current.delete(item.id);
+				},
 				type: "button",
 				role: "tab",
 				"aria-selected": isActive,
@@ -1682,17 +1954,18 @@ const Tabs = forwardRef(function Tabs({ items, activeId, onChange, size = "defau
 				},
 				children: [/* @__PURE__ */ jsx("span", {
 					className: LABEL_CLASS$1,
+					"data-label": isPrimitiveLabel ? String(item.label) : void 0,
 					children: item.label
 				}), item.badge != null && item.badge !== "" ? /* @__PURE__ */ jsx("span", {
 					className: BADGE_CLASS,
 					children: item.badge
 				}) : null]
 			}, item.id);
-		})
+		})]
 	});
 });
 // \0dsh-ui-kit-css:src/stage/PageHeader.module.css.mjs
-injectCss("PageHeader.module.css", ".dshUk-PageHeader-pageHeader {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  padding: 12px 20px;\n  min-height: 56px;\n  box-sizing: border-box;\n  flex: none;\n  gap: 16px;\n  border-bottom: none;\n  -webkit-app-region: drag;\n}\n\n.dshUk-PageHeader-heading {\n  display: flex;\n  flex-direction: column;\n  gap: 2px;\n  min-width: 0;\n  flex: 1 1 auto;\n}\n\n.dshUk-PageHeader-breadcrumb {\n  display: flex;\n  align-items: center;\n  font-size: 12px;\n  line-height: 16px;\n  color: var(--dsw-alias-label-secondary);\n  margin-bottom: 2px;\n  -webkit-app-region: no-drag;\n}\n\n.dshUk-PageHeader-titleRow {\n  display: flex;\n  align-items: center;\n  gap: 8px;\n}\n\n.dshUk-PageHeader-title {\n  margin: 0;\n  font-size: 20px;\n  font-weight: 600;\n  line-height: 28px;\n  color: var(--dsw-alias-label-primary);\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n\n.dshUk-PageHeader-subtitle {\n  margin: 0;\n  font-size: 13px;\n  font-weight: 400;\n  line-height: 18px;\n  color: var(--dsw-alias-label-secondary);\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n\n.dshUk-PageHeader-tabsContainer {\n  display: flex;\n  align-items: center;\n  flex: none;\n  -webkit-app-region: no-drag;\n}\n\n.dshUk-PageHeader-controls {\n  display: flex;\n  align-items: center;\n  gap: 8px;\n  flex: none;\n  -webkit-app-region: no-drag;\n}\n");
+injectCss("PageHeader.module.css", ".dshUk-PageHeader-pageHeader {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  padding: 12px 20px;\n  min-height: 56px;\n  box-sizing: border-box;\n  flex: none;\n  gap: 16px;\n  border-bottom: none;\n  -webkit-app-region: drag;\n}\n\n.dshUk-PageHeader-heading {\n  display: flex;\n  flex-direction: column;\n  gap: 2px;\n  min-width: 0;\n  flex: 1 1 auto;\n}\n\n.dshUk-PageHeader-breadcrumb {\n  display: flex;\n  align-items: center;\n  font-size: 12px;\n  line-height: 16px;\n  color: var(--dsw-alias-label-secondary);\n  margin-bottom: 2px;\n  -webkit-app-region: no-drag;\n}\n\n.dshUk-PageHeader-titleRow {\n  display: flex;\n  align-items: center;\n  gap: 8px;\n}\n\n.dshUk-PageHeader-title {\n  margin: 0;\n  font-size: 20px;\n  font-weight: 600;\n  line-height: 28px;\n  color: var(--dsw-alias-label-primary);\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n\n.dshUk-PageHeader-subtitle {\n  margin: 0;\n  font-size: 13px;\n  font-weight: 400;\n  line-height: 18px;\n  color: var(--dsw-alias-label-secondary);\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n\n.dshUk-PageHeader-tabsContainer {\n  display: flex;\n  align-items: center;\n  flex: none;\n  -webkit-app-region: no-drag;\n}\n\n.dshUk-PageHeader-controls {\n  display: flex;\n  align-items: center;\n  gap: 8px;\n  flex: none;\n  -webkit-app-region: no-drag;\n}\n\n.dshUk-PageHeader-refreshSpin svg {\n  animation: dshUkRefreshSpin 700ms linear infinite;\n}\n\n@media (prefers-reduced-motion: reduce) {\n  .dshUk-PageHeader-refreshSpin svg {\n    animation: dshUkRefreshPulse 1.6s ease-in-out infinite;\n  }\n}\n\n@keyframes dshUkRefreshSpin {\n  from {\n    transform: rotate(0deg);\n  }\n  to {\n    transform: rotate(360deg);\n  }\n}\n\n@keyframes dshUkRefreshPulse {\n  0%,\n  100% {\n    opacity: 1;\n  }\n  50% {\n    opacity: 0.42;\n  }\n}\n");
 var PageHeader_module_css_default = {
 	"pageHeader": "dshUk-PageHeader-pageHeader",
 	"heading": "dshUk-PageHeader-heading",
@@ -1701,7 +1974,8 @@ var PageHeader_module_css_default = {
 	"title": "dshUk-PageHeader-title",
 	"subtitle": "dshUk-PageHeader-subtitle",
 	"tabsContainer": "dshUk-PageHeader-tabsContainer",
-	"controls": "dshUk-PageHeader-controls"
+	"controls": "dshUk-PageHeader-controls",
+	"refreshSpin": "dshUk-PageHeader-refreshSpin"
 };
 // src/stage/PageHeader.tsx
 const PAGE_HEADER_CLASS = cssClass(PageHeader_module_css_default.pageHeader, "pageHeader");
@@ -1712,6 +1986,7 @@ const TITLE_CLASS = cssClass(PageHeader_module_css_default.title, "title");
 const SUBTITLE_CLASS = cssClass(PageHeader_module_css_default.subtitle, "subtitle");
 const TABS_CONTAINER_CLASS = cssClass(PageHeader_module_css_default.tabsContainer, "tabsContainer");
 const CONTROLS_CLASS = cssClass(PageHeader_module_css_default.controls, "controls");
+const REFRESH_SPIN_CLASS = cssClass(PageHeader_module_css_default.refreshSpin, "refreshSpin");
 /**
 * Standard Layer 1 Page Header for OmniMux first-level product stages.
 * Typography single source of truth: 20px / 600 / 28px.
@@ -1761,11 +2036,13 @@ const PageHeader = forwardRef(function PageHeader({ title, subtitle, badge, tabs
 						size: "sm",
 						"aria-label": refreshTitle,
 						title: refreshTitle,
+						"aria-busy": refreshing || void 0,
+						className: refreshing ? REFRESH_SPIN_CLASS : void 0,
 						disabled: refreshing,
 						onClick: () => {
 							onRefresh();
 						},
-						children: refreshing ? /* @__PURE__ */ jsx(IconLoadingOutline16, {}) : /* @__PURE__ */ jsx(IconRefreshOutline16, {})
+						children: /* @__PURE__ */ jsx(IconRefreshOutline16, {})
 					}),
 					onClose && /* @__PURE__ */ jsx(IconButton, {
 						variant: "ghost",
@@ -1795,7 +2072,7 @@ const StageHeader = forwardRef(function StageHeader(props, ref) {
 	});
 });
 // \0dsh-ui-kit-css:src/stat/StatBar.module.css.mjs
-injectCss("StatBar.module.css", ".dshUk-StatBar-statBar {\n  display: flex;\n  align-items: stretch;\n  gap: 12px;\n  width: 100%;\n  box-sizing: border-box;\n  flex-wrap: wrap;\n}\n\n.dshUk-StatBar-item {\n  display: flex;\n  flex-direction: column;\n  gap: 4px;\n  flex: 1 1 0;\n  min-width: 140px;\n  padding: 12px 16px;\n  background: var(--dsw-alias-bg-layer-1);\n  border: 1px solid var(--dsw-alias-border-l1);\n  border-radius: 8px;\n  box-sizing: border-box;\n}\n\n.dshUk-StatBar-label {\n  font-size: 12px;\n  font-weight: 400;\n  line-height: 16px;\n  color: var(--dsw-alias-label-secondary);\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n\n.dshUk-StatBar-valueRow {\n  display: flex;\n  align-items: baseline;\n  gap: 8px;\n  flex-wrap: wrap;\n}\n\n.dshUk-StatBar-value {\n  font-size: 20px;\n  font-weight: 600;\n  line-height: 28px;\n  color: var(--dsw-alias-label-primary);\n  letter-spacing: -0.01em;\n}\n\n.dshUk-StatBar-trend {\n  display: inline-flex;\n  align-items: center;\n  gap: 2px;\n  font-size: 12px;\n  font-weight: 500;\n  line-height: 16px;\n}\n\n.dshUk-StatBar-trendUp {\n  color: var(--dsw-alias-state-success-primary);\n}\n\n.dshUk-StatBar-trendDown {\n  color: var(--dsw-alias-state-error-primary);\n}\n\n.dshUk-StatBar-trendNeutral {\n  color: var(--dsw-alias-label-secondary);\n}\n\n.dshUk-StatBar-trendIcon {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  width: 14px;\n  height: 14px;\n  flex: none;\n}\n\n.dshUk-StatBar-extra {\n  font-size: 12px;\n  font-weight: 400;\n  line-height: 16px;\n  color: var(--dsw-alias-label-tertiary);\n  margin-top: auto;\n}\n");
+injectCss("StatBar.module.css", ".dshUk-StatBar-statBar {\n  display: flex;\n  align-items: stretch;\n  gap: 12px;\n  width: 100%;\n  box-sizing: border-box;\n  flex-wrap: wrap;\n}\n\n.dshUk-StatBar-item {\n  display: flex;\n  flex-direction: column;\n  gap: 4px;\n  flex: 1 1 0;\n  min-width: 140px;\n  padding: 12px 16px;\n  background: var(--dsw-alias-bg-layer-1);\n  border: 1px solid var(--dsw-alias-border-l1);\n  border-radius: 8px;\n  box-sizing: border-box;\n}\n\n.dshUk-StatBar-label {\n  font-size: 12px;\n  font-weight: 400;\n  line-height: 16px;\n  color: var(--dsw-alias-label-secondary);\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n\n.dshUk-StatBar-valueRow {\n  display: flex;\n  align-items: baseline;\n  gap: 8px;\n  flex-wrap: wrap;\n}\n\n.dshUk-StatBar-value {\n  font-size: 20px;\n  font-weight: 600;\n  line-height: 28px;\n  color: var(--dsw-alias-label-primary);\n  letter-spacing: -0.01em;\n  font-variant-numeric: tabular-nums;\n}\n\n.dshUk-StatBar-trend {\n  display: inline-flex;\n  align-items: center;\n  gap: 2px;\n  font-size: 12px;\n  font-weight: 500;\n  line-height: 16px;\n  font-variant-numeric: tabular-nums;\n  transition: color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));\n}\n\n.dshUk-StatBar-trendUp {\n  color: var(--dsw-alias-state-success-primary);\n}\n\n.dshUk-StatBar-trendDown {\n  color: var(--dsw-alias-state-error-primary);\n}\n\n.dshUk-StatBar-trendNeutral {\n  color: var(--dsw-alias-label-secondary);\n}\n\n.dshUk-StatBar-trendIcon {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  width: 14px;\n  height: 14px;\n  flex: none;\n}\n\n.dshUk-StatBar-extra {\n  font-size: 12px;\n  font-weight: 400;\n  line-height: 16px;\n  color: var(--dsw-alias-label-tertiary);\n  margin-top: auto;\n}\n\n@media (prefers-reduced-motion: reduce) {\n  .dshUk-StatBar-trend {\n    transition: none;\n  }\n}\n");
 var StatBar_module_css_default = {
 	"statBar": "dshUk-StatBar-statBar",
 	"item": "dshUk-StatBar-item",
@@ -1814,7 +2091,7 @@ const STAT_BAR_CLASS = cssClass(StatBar_module_css_default.statBar, "statBar");
 const ITEM_CLASS = cssClass(StatBar_module_css_default.item, "item");
 const LABEL_CLASS = cssClass(StatBar_module_css_default.label, "label");
 const VALUE_ROW_CLASS = cssClass(StatBar_module_css_default.valueRow, "valueRow");
-const VALUE_CLASS = cssClass(StatBar_module_css_default.value, "value");
+const VALUE_CLASS$1 = cssClass(StatBar_module_css_default.value, "value");
 const TREND_CLASS = cssClass(StatBar_module_css_default.trend, "trend");
 const TREND_UP_CLASS = cssClass(StatBar_module_css_default.trendUp, "trendUp");
 const TREND_DOWN_CLASS = cssClass(StatBar_module_css_default.trendDown, "trendDown");
@@ -1842,7 +2119,7 @@ const StatBar = forwardRef(function StatBar({ items, className, ...rest }, ref) 
 					/* @__PURE__ */ jsxs("div", {
 						className: VALUE_ROW_CLASS,
 						children: [/* @__PURE__ */ jsx("div", {
-							className: VALUE_CLASS,
+							className: VALUE_CLASS$1,
 							children: item.value
 						}), trend && /* @__PURE__ */ jsxs("div", {
 							className: cx(TREND_CLASS, trend.direction === "up" && TREND_UP_CLASS, trend.direction === "down" && TREND_DOWN_CLASS, trend.direction === "neutral" && TREND_NEUTRAL_CLASS),
@@ -2510,6 +2787,71 @@ function createWorkbenchSidebarEntry(options) {
 		stageStore
 	});
 }
-export { ActionRow, Badge, Button, CardGrid, ConfirmModal, CopyButton, DataTable, Divider, Drawer, DrawerPortal, DropdownSelect, EmptyState, FilterBar, GenWaveCard, IconButton, IconCheckOutline16, IconChevronDownOutline14, IconChevronLeftOutline14, IconChevronUpOutline14, IconCloseFill14, IconCloseOutline16, IconCopyOutline16, IconDownloadOutline16, IconEditOutline16, IconEllipsisOutline16, IconLoadingOutline16, IconPaperclipOutline16, IconPlayOutline16, IconPlusOutline16, IconRefreshOutline14, IconRefreshOutline16, IconRightUpOutline14, IconSearchOutline16, IconTrashOutline16, InputField, MediaCard, ModalDialog, PageHeader, SearchField, SelectableTile, StageContainer, StageHeader, StatBar, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, Tabs, Toolbar, copyToClipboard, createPortalSafe, createSidebarEntry, createStageStore, createWorkbenchSidebarEntry, createWorkbenchStageStore, focusFirstDescendant, resolvePortalContainer, trapFocus };
+// \0dsh-ui-kit-css:src/motion/AnimatedNumber.module.css.mjs
+injectCss("AnimatedNumber.module.css", ".dshUk-AnimatedNumber-value {\n  font-variant-numeric: tabular-nums;\n}\n");
+// src/motion/AnimatedNumber.tsx
+const VALUE_CLASS = cssClass({ "value": "dshUk-AnimatedNumber-value" }.value, "value");
+function defaultFormat(v) {
+	return Math.round(v).toLocaleString("en-US");
+}
+/**
+* Tabular numeric readout with explicit opt-in live-delta interpolation.
+* Skips initial-mount animation, throttles rapid streams, and honors reduced-motion.
+*/
+function AnimatedNumber({ value, animate = false, durationMs = 180, format = defaultFormat, className }) {
+	const reducedMotion = usePrefersReducedMotion();
+	const [display, setDisplay] = useState(value);
+	const prevValueRef = useRef(value);
+	const displayRef = useRef(value);
+	const lastTriggerRef = useRef(0);
+	const rafRef = useRef(0);
+	displayRef.current = display;
+	useEffect(() => {
+		const canRaf = typeof window !== "undefined" && typeof window.requestAnimationFrame === "function";
+		const now = typeof performance !== "undefined" ? performance.now() : Date.now();
+		const rapid = now - lastTriggerRef.current < 100;
+		lastTriggerRef.current = now;
+		if (!animate || reducedMotion || !canRaf || durationMs <= 0 || !Number.isFinite(value) || !Number.isFinite(prevValueRef.current) || value === prevValueRef.current || rapid) {
+			prevValueRef.current = value;
+			setDisplay(value);
+			return;
+		}
+		const from = displayRef.current;
+		const to = value;
+		prevValueRef.current = value;
+		const start = now;
+		if (rafRef.current) {
+			cancelAnimationFrame(rafRef.current);
+			rafRef.current = 0;
+		}
+		const step = (ts) => {
+			const t = Math.min(1, (ts - start) / durationMs);
+			const eased = 1 - Math.pow(1 - t, 3);
+			setDisplay(from + (to - from) * eased);
+			if (t < 1) rafRef.current = requestAnimationFrame(step);
+			else {
+				rafRef.current = 0;
+				setDisplay(to);
+			}
+		};
+		rafRef.current = requestAnimationFrame(step);
+		return () => {
+			if (rafRef.current) {
+				cancelAnimationFrame(rafRef.current);
+				rafRef.current = 0;
+			}
+		};
+	}, [
+		value,
+		animate,
+		durationMs,
+		reducedMotion
+	]);
+	return /* @__PURE__ */ jsx("span", {
+		className: cx(VALUE_CLASS, className),
+		children: format(display)
+	});
+}
+export { ActionRow, AnimatedNumber, Badge, Button, CardGrid, ConfirmModal, CopyButton, DataTable, Divider, Drawer, DrawerPortal, DropdownSelect, EmptyState, FilterBar, GenWaveCard, IconButton, IconCheckOutline16, IconChevronDownOutline14, IconChevronLeftOutline14, IconChevronUpOutline14, IconCloseFill14, IconCloseOutline16, IconCopyOutline16, IconDownloadOutline16, IconEditOutline16, IconEllipsisOutline16, IconLoadingOutline16, IconPaperclipOutline16, IconPlayOutline16, IconPlusOutline16, IconRefreshOutline14, IconRefreshOutline16, IconRightUpOutline14, IconSearchOutline16, IconSwap, IconTrashOutline16, InputField, MOTION_TOKENS_CSS, MOTION_VARS, MediaCard, ModalDialog, PageHeader, SearchField, SelectableTile, StageContainer, StageHeader, StatBar, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, Tabs, Toolbar, copyToClipboard, createPortalSafe, createSidebarEntry, createStageStore, createWorkbenchSidebarEntry, createWorkbenchStageStore, ensureMotionTokens, focusFirstDescendant, getPrefersReducedMotion, resolvePortalContainer, trapFocus, usePrefersReducedMotion, usePresence };
 
 //# sourceMappingURL=index.js.map

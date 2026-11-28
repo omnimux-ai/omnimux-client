@@ -60,9 +60,10 @@ export const TrendingCarousel = React.memo(function TrendingCarousel({ items = [
     if (!el) return
     // 单次平移步长：可视宽度的 75%，确保滑动连贯且上下文不丢失
     const step = Math.max(220, Math.round(el.clientWidth * 0.75))
+    const reduceMotion = typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
     el.scrollBy({
       left: direction === 'left' ? -step : step,
-      behavior: 'smooth',
+      behavior: reduceMotion ? 'auto' : 'smooth',
     })
   }
 

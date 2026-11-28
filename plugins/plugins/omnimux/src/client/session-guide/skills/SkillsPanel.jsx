@@ -199,7 +199,8 @@ export function SkillsPanel({
                   className="omnimux-creatify-see-all-btn"
                   onClick={() => {
                     if (typeof document !== 'undefined') {
-                      document.querySelector('[data-omnimux-section="explore-more"]')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                      const reducedMotion = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches
+                      document.querySelector('[data-omnimux-section="explore-more"]')?.scrollIntoView({ behavior: reducedMotion ? 'auto' : 'smooth', block: 'start' })
                     }
                   }}
                 >

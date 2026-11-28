@@ -110,7 +110,7 @@ export const INSPIRATION_CARD_CSS = `
   display: flex; align-items: center; justify-content: center;
   color: var(--dsw-alias-label-tertiary); overflow: hidden;
   border: 1.5px solid transparent;
-  transition: border-color 0.15s ease, transform 0.15s ease;
+  transition: border-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), transform var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .omx-inspiration-pick-card__thumb[data-ratio="pending"] { aspect-ratio: 1 / 1; }
 .omx-inspiration-pick-card:hover .omx-inspiration-pick-card__thumb { transform: translateY(-2px); }
@@ -153,6 +153,10 @@ export const INSPIRATION_CARD_CSS = `
 .omx-inspiration-pick-card__title {
   font-size: 13px; font-weight: 600; line-height: 18px; overflow: hidden;
   text-overflow: ellipsis; white-space: nowrap; color: var(--dsw-alias-label-primary);
+}
+@media (prefers-reduced-motion: reduce) {
+  .omx-inspiration-pick-card__thumb { transition: none; }
+  .omx-inspiration-pick-card:hover .omx-inspiration-pick-card__thumb { transform: none; }
 }
 `
 

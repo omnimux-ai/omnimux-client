@@ -57,7 +57,7 @@ const CSS = `
   padding: 0 18px;
   font-size: 14px; color: var(--dsw-alias-label-primary);
   outline: none;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  transition: border-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), box-shadow var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .omx-pcl__input::placeholder { color: var(--dsw-alias-label-tertiary); }
 .omx-pcl__input:focus {
@@ -98,11 +98,19 @@ const CSS = `
   display: inline-block; vertical-align: -2px; margin-right: 8px;
 }
 @keyframes omx-pcl-spin { to { transform: rotate(360deg); } }
+@keyframes omx-pcl-opacity-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.42; } }
 .omx-pcl-dialog { width: min(640px, 100%) !important; }
 .omx-pcl-dialog__body { max-height: min(78vh, 640px) !important; }
 .omx-pcl-dialog [data-part="title"],
 .omx-pcl-dialog .dsw-modal-title {
   position: absolute !important; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0);
+}
+@media (prefers-reduced-motion: reduce) {
+  .omx-pcl__input { transition: none; }
+  .omx-pcl__spin {
+    border-color: var(--dsw-alias-label-primary-inverted, #111);
+    animation: omx-pcl-opacity-pulse 1.6s ease-in-out infinite;
+  }
 }
 `;
 

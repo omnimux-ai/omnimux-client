@@ -2,7 +2,6 @@ import { forwardRef } from 'react'
 import type { HTMLAttributes, ReactNode } from 'react'
 import {
   IconCloseOutline16,
-  IconLoadingOutline16,
   IconRefreshOutline16,
 } from '../icons/compat-icons.tsx'
 import { IconButton } from '../button/Button.tsx'
@@ -36,6 +35,7 @@ const TITLE_CLASS = cssClass(css.title, 'title')
 const SUBTITLE_CLASS = cssClass(css.subtitle, 'subtitle')
 const TABS_CONTAINER_CLASS = cssClass(css.tabsContainer, 'tabsContainer')
 const CONTROLS_CLASS = cssClass(css.controls, 'controls')
+const REFRESH_SPIN_CLASS = cssClass(css.refreshSpin, 'refreshSpin')
 
 /**
  * Standard Layer 1 Page Header for OmniMux first-level product stages.
@@ -95,12 +95,14 @@ export const PageHeader = forwardRef<HTMLElement, PageHeaderProps>(function Page
             size="sm"
             aria-label={refreshTitle}
             title={refreshTitle}
+            aria-busy={refreshing || undefined}
+            className={refreshing ? REFRESH_SPIN_CLASS : undefined}
             disabled={refreshing}
             onClick={() => {
               void onRefresh()
             }}
           >
-            {refreshing ? <IconLoadingOutline16 /> : <IconRefreshOutline16 />}
+            <IconRefreshOutline16 />
           </IconButton>
         )}
 

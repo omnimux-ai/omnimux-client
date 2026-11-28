@@ -31,7 +31,8 @@ function BestPostCard({ t, post }) {
       const targetId = href.replace(/^#/, '')
       const el = document.getElementById(targetId)
       if (el) {
-        el.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+        const reduceMotion = typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+        el.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'nearest' })
       }
     }
   }

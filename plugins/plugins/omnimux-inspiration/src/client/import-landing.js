@@ -91,7 +91,8 @@ export function revealLandedCard(id, options = {}) {
     : doc.querySelector(landedCardSelector(id))
   if (!node) return () => {}
   try {
-    node.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' })
+    const reduceMotion = typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    node.scrollIntoView?.({ block: 'nearest', behavior: reduceMotion ? 'auto' : 'smooth' })
   } catch {
     // No layout engine: scrolling is meaningless here, the highlight still applies.
   }

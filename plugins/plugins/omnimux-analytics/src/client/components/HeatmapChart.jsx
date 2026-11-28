@@ -55,7 +55,15 @@ export function HeatmapChart({ t, heatmap, locale = 'zh-CN' }) {
                   className="omnimux-analytics-heatcell"
                   data-level={String(cell.level ?? 0)}
                   title={cellTitle(label, cell)}
-                  onMouseEnter={() => setHover({ label, cell })}
+                  onMouseEnter={(e) => {
+                    const el = e.currentTarget
+                    setHover({
+                      label,
+                      cell,
+                      x: el.offsetLeft + el.offsetWidth / 2,
+                      y: el.offsetTop,
+                    })
+                  }}
                   onMouseLeave={() => setHover(null)}
                 />
               )
@@ -63,7 +71,11 @@ export function HeatmapChart({ t, heatmap, locale = 'zh-CN' }) {
           </div>
         ))}
         {hover ? (
-          <div className="omnimux-analytics-heatmap-tip" role="tooltip">
+          <div
+            className="omnimux-analytics-heatmap-tip"
+            role="tooltip"
+            style={{ '--tip-x': `${hover.x}px`, '--tip-y': `${hover.y}px` }}
+          >
             {cellTitle(hover.label, hover.cell)}
           </div>
         ) : null}

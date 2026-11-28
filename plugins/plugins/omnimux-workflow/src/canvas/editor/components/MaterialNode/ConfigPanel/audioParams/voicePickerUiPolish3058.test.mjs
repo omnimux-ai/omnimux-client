@@ -174,7 +174,7 @@ test('#3058 字典与结构不变量：零新文案、零 badge/icon、试听不
   // 样式门禁：音色块无裸色无违禁 token（注释同样剥离——「#3058」是 issue 号非颜色）
   const voiceBlock = stripComments(cssSrc.slice(cssSrc.indexOf('.wf-voice-picker-modal {')));
   assert.doesNotMatch(voiceBlock, /#[0-9a-fA-F]{3,8}\b|rgba?\(/);
-  assert.doesNotMatch(voiceBlock, /--omx-/);
+  assert.doesNotMatch(voiceBlock, /--omx-(?!(?:ease-(?:out|spatial|exit|linear)|dur-(?:press|fast|base|sheet)|press-scale(?:-subtle)?)\b)[a-z0-9_-]*/);
 });
 
 test('#3058 FE-02：Escape 先菜单后弹窗，弹窗事件与画布失选隔离', () => {

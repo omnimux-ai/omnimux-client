@@ -8,7 +8,23 @@
  * brand blue #4176E6 (--dsw-static-deepseek-500) for standalone runs.
  */
 
+:root,
 .wf-canvas-root {
+  /* canonical motion tokens (synced with dsh-ui-kit) */
+  --omx-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --omx-ease-spatial: cubic-bezier(0.32, 0.72, 0, 1);
+  --omx-ease-exit: cubic-bezier(0.32, 0, 0.67, 0);
+  --omx-ease-linear: linear;
+  --omx-dur-press: 90ms;
+  --omx-dur-fast: 140ms;
+  --omx-dur-base: 200ms;
+  --omx-dur-sheet: 260ms;
+  --omx-press-scale: 0.96;
+  --omx-press-scale-subtle: 0.985;
+}
+
+.wf-canvas-root {
+
   /* brand accent — the single skin switch */
   --wb-accent: var(--dsw-static-deepseek-500, #4176E6);
   --wb-accent-hover: var(--dsw-static-deepseek-400, #679EFE);
@@ -266,7 +282,7 @@ body[data-ds-dark-theme] .wf-canvas-root {
   color: var(--wb-accent);
   background: var(--wb-accent-soft);
   cursor: pointer;
-  transition: all 150ms ease;
+  transition: background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), border-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 
 .wf-canvas-header__button:hover {
@@ -317,7 +333,7 @@ body[data-ds-dark-theme] .wf-canvas-root {
   border-radius: 50%;
   background: var(--wb-surface);
   border: 2px solid var(--wb-node-ring);
-  transition: transform 120ms ease, background 120ms ease;
+  transition: transform var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 
 .wf-canvas-root .react-flow__handle:hover {
@@ -431,7 +447,7 @@ body[data-ds-dark-theme] .wf-canvas-root {
   background: transparent;
   cursor: pointer;
   color: var(--wb-text-secondary);
-  transition: background-color 150ms ease, color 150ms ease, transform 150ms ease;
+  transition: background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), transform var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 
 .wf-canvas-toolbar__item:hover {
@@ -486,13 +502,24 @@ body[data-ds-dark-theme] .wf-canvas-root {
   height: 34px;
   border-radius: 999px;
   color: var(--wb-text-secondary);
-  transition: background-color 150ms ease, color 150ms ease;
+  transition: background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 
 .wf-canvas-toolbar__mode-trigger:hover .wf-canvas-toolbar__mode-caret,
 .wf-canvas-toolbar__mode-trigger--open .wf-canvas-toolbar__mode-caret {
   background: var(--wb-pill-hover);
   color: var(--wb-text-primary);
+}
+
+@keyframes wf-dock-menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 .wf-canvas-toolbar__mode-menu {
@@ -509,6 +536,8 @@ body[data-ds-dark-theme] .wf-canvas-root {
   flex-direction: column;
   gap: 2px;
   z-index: 30;
+  transform-origin: bottom left;
+  animation: wf-dock-menu-in var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
 }
 
 .wf-canvas-toolbar__mode-option {
@@ -528,7 +557,7 @@ body[data-ds-dark-theme] .wf-canvas-root {
   font-weight: 400;
   text-align: left;
   cursor: pointer;
-  transition: background-color 140ms ease, color 140ms ease;
+  transition: background-color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), color var(--omx-dur-fast, 140ms) var(--omx-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 
 .wf-canvas-toolbar__mode-option:hover {
@@ -600,5 +629,34 @@ body[data-ds-dark-theme] .wf-canvas-toolbar__item--primary-add:hover {
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root,
+  .wf-canvas-root {
+    --omx-dur-press: 0ms;
+    --omx-dur-fast: 0ms;
+    --omx-dur-base: 0ms;
+    --omx-dur-sheet: 0ms;
+    --omx-press-scale: 1;
+    --omx-press-scale-subtle: 1;
+  }
+
+  .wf-canvas-header__button,
+  .wf-canvas-root .react-flow__handle,
+  .wf-canvas-toolbar__item,
+  .wf-canvas-toolbar__mode-caret,
+  .wf-canvas-toolbar__mode-option {
+    transition: none;
+  }
+
+  .wf-canvas-toolbar__mode-menu {
+    animation: none;
+  }
+
+  .wf-canvas-root .react-flow__handle:hover,
+  .wf-canvas-toolbar__item--primary-add:hover {
+    transform: none;
+  }
 }
 

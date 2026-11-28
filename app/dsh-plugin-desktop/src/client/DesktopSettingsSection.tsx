@@ -345,6 +345,7 @@ function DesktopBrowserUrl({ url, api, t, onOpen }: {
     <div className="dshDesktopSettingsUrlRow">
       {link}
       <button type="button" className="dshDesktopSettingsUrlCopy" disabled={busy}
+        data-copied={copied ? 'true' : undefined}
         aria-label={`${t('copyBrowserUrl')} ${new URL(url).host}`} title={t(copied ? 'browserUrlCopied' : 'copyBrowserUrl')}
         onClick={() => { void copy() }}>
         {copied ? <Check size={16} /> : <Copy size={16} />}
