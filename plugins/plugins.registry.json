@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0.0",
-  "updatedAt": "2026-11-28T03:01:15.442Z",
+  "updatedAt": "2026-11-28T09:39:31.816Z",
   "topology": {
     "tiers": [
       {
@@ -24,8 +24,8 @@
     ],
     "summary": {
       "totalPlugins": 15,
-      "totalTools": 121,
-      "totalSeams": 10
+      "totalTools": 123,
+      "totalSeams": 11
     }
   },
   "plugins": [
@@ -102,6 +102,10 @@
           {
             "name": "omnimuxAnalytics",
             "interfaceDoc": "ctx.get('omnimuxAnalytics').dailyMetrics({ fromDate, toDate, platform, timezone, account_ids }) / .posts({ post_id, platform, sortBy, sortOrder, page, limit })"
+          },
+          {
+            "name": "inspirationCatalog",
+            "interfaceDoc": "ctx.get('inspirationCatalog').getItem(id, opts?) / .fetchMedia(keyOrPath, opts?)"
           }
         ],
         "seamsConsumed": [],
@@ -491,13 +495,28 @@
         "sidebar-tab"
       ],
       "skills": [
-        "skills/clip-craft/SKILL.md"
+        "skills/clip-craft/SKILL.md",
+        "skills/clip-recreate/SKILL.md"
       ],
       "capabilities": {
         "tools": [
           {
             "name": "clip_list",
             "summary": "列出已有剪辑项目（编号、名称、更新时间、时长）",
+            "category": "clip",
+            "isWriteOperation": false,
+            "requiresAuth": false
+          },
+          {
+            "name": "clip_templates",
+            "summary": "列出内置及资产库图形模板、一键包装模板与文字动效预设",
+            "category": "clip",
+            "isWriteOperation": false,
+            "requiresAuth": false
+          },
+          {
+            "name": "clip_analyze",
+            "summary": "分析字幕台本（分句/停顿/口癖/检索）与本地音频节拍或高光片段",
             "category": "clip",
             "isWriteOperation": false,
             "requiresAuth": false
@@ -590,6 +609,11 @@
           "origin": "first-party",
           "license": "SEE LICENSE IN LICENSE",
           "owner": "omnimux-clip"
+        },
+        "clip-recreate": {
+          "origin": "first-party",
+          "license": "SEE LICENSE IN LICENSE",
+          "owner": "omnimux-clip"
         }
       },
       "path": "plugins/omnimux-clip"
@@ -664,7 +688,8 @@
         "seamsConsumed": [
           "reader",
           "headlessSkill",
-          "hubEvents"
+          "hubEvents",
+          "inspirationCatalog"
         ],
         "slots": [
           {

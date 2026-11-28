@@ -32,6 +32,21 @@ test('cloud records are imported without automatic analysis before returning a r
   } finally { globalThis.fetch = original }
 })
 
+test('cloud records pass cloud_id during ensureLocalInspiration localization', async () => {
+  const original = globalThis.fetch, calls = []
+  globalThis.fetch = async (url, options) => { calls.push({ url, ...options }); return { ok: true, status: 200, json: async () => ({ data: { id: 'insp_saved', import_status: 'ready', content: '完整原帖' } }) } }
+  try {
+    const result = await ensureLocalInspiration({ id: 'cloud_tiktok_1', is_local: false, source_url: 'https://www.tiktok.com/@kateestills/photo/7555186216296008990' })
+    assert.equal(result.id, 'insp_saved')
+    assert.equal(result.is_local, true)
+    assert.equal(calls.length, 1)
+    const sent = JSON.parse(calls[0].body)
+    assert.equal(sent.cloud_id, 'cloud_tiktok_1')
+    assert.equal(sent.auto_analyze, false)
+    assert.equal(sent.return_existing, true)
+  } finally { globalThis.fetch = original }
+})
+
 test('ensuring a cloud post reuses its complete saved record through the import contract', async () => {
   const original = globalThis.fetch
   globalThis.fetch = async (_url, options) => {

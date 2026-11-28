@@ -311,7 +311,20 @@ export function extractTikTokAwemeId(value) {
   const raw = String(value || '').trim()
   if (!raw) return ''
   if (/^\d{5,}$/.test(raw)) return raw
-  const match = raw.match(/\/video\/(\d+)/i)
+  if (raw.includes('://') || /^(?:[a-z0-9-]+\.)*tiktok\.com(?:\/|\?|$)/i.test(raw)) {
+    try {
+      const parsed = new URL(raw.includes('://') ? raw : `https://${raw}`)
+      const pathMatch = parsed.pathname.match(/(?:^|\/)(?:video|photo|v|player\/v1)\/(\d+)(?:\.html)?(?:\/|$)/i)
+      if (pathMatch?.[1]) return pathMatch[1]
+      const shareItemId = String(parsed.searchParams.get('share_item_id') || '').trim()
+      if (/^\d{5,}$/.test(shareItemId)) return shareItemId
+      return ''
+    } catch (err) {
+      console.debug?.('[omnimux] extractTikTokAwemeId URL parse fallback:', err?.message || err)
+    }
+  }
+  const match = raw.match(/\/(?:video|photo|v|player\/v1)\/(\d+)/i)
+    || raw.match(/[?&]share_item_id=(\d{5,})/i)
   return match?.[1] || ''
 }
 

@@ -248,6 +248,42 @@ describe('parseSocialMeta — bounded unwrap and TikTok compatibility', () => {
     assert.equal(meta.stats.likes, 50000)
   })
 
+  it('parses TikTok image_post_info carousel, skips HEIC in favor of JPEG, suppresses BGM audio, and maps statistics', () => {
+    const meta = parseSocialMeta({
+      data: {
+        aweme_detail: {
+          aweme_type: 150,
+          desc: 'Relationship Mindset Shift slides',
+          author: { nickname: 'Kate', unique_id: 'kateestills' },
+          statistics: { digg_count: 12400, comment_count: 340, share_count: 890, play_count: 91000, collect_count: 520 },
+          video: {
+            play_addr: { url_list: ['https://v16-webapp.tiktokcdn.com/bgm-audio.mp3'] },
+            cover: { url_list: ['https://p16-sign.tiktokcdn.com/cover.heic', 'https://p16-sign.tiktokcdn.com/cover.jpeg'] },
+          },
+          image_post_info: {
+            images: [
+              { display_image: { url_list: ['https://p16-sign.tiktokcdn.com/slide1.heic', 'https://p16-sign.tiktokcdn.com/slide1.jpeg'] } },
+              { display_image: { url_list: ['https://p16-sign.tiktokcdn.com/slide2.jpeg'] } },
+            ],
+          },
+        },
+      },
+    })
+
+    assert.equal(meta.video_url, '')
+    assert.deepEqual(meta.images, [
+      'https://p16-sign.tiktokcdn.com/slide1.jpeg',
+      'https://p16-sign.tiktokcdn.com/slide2.jpeg',
+    ])
+    assert.deepEqual(meta.media_items, [
+      { type: 'image', url: 'https://p16-sign.tiktokcdn.com/slide1.jpeg' },
+      { type: 'image', url: 'https://p16-sign.tiktokcdn.com/slide2.jpeg' },
+    ])
+    assert.equal(meta.cover_url, 'https://p16-sign.tiktokcdn.com/cover.jpeg')
+    assert.equal(meta.stats.likes, 12400)
+    assert.equal(meta.stats.bookmarks, 520)
+  })
+
   it('reports an empty envelope as content-free', () => {
     const meta = parseSocialMeta({})
 
