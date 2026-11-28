@@ -237,6 +237,15 @@ function hasNoGitMetadata(cwd) {
   }
 }
 
+const NOT_GIT_REPO_STDERR = 'fatal: not a git repository (or any of the parent directories): .git'
+const MOUNT_BOUNDARY_NOT_GIT_REPO_RE =
+  /^fatal: not a git repository \(or any parent up to mount point [^\r\n]+\)\r?\nStopping at filesystem boundary \(GIT_DISCOVERY_ACROSS_FILESYSTEM not set\)\.$/
+
+function isNotGitRepositoryDiagnostic(stderr) {
+  const trimmed = String(stderr || '').trim()
+  return trimmed === NOT_GIT_REPO_STDERR || MOUNT_BOUNDARY_NOT_GIT_REPO_RE.test(trimmed)
+}
+
 /**
  * Classify Git state without treating a failed read as proof of tracking.
  * @param {string} fullPath Canonical target path.
@@ -248,7 +257,7 @@ function gitFileState(fullPath, cwd) {
   if (discovery.error || discovery.status !== 0) {
     const notRepo = !discovery.error && discovery.status === 128 &&
       !String(discovery.stdout || '').trim() &&
-      String(discovery.stderr || '').trim() === 'fatal: not a git repository (or any of the parent directories): .git'
+      isNotGitRepositoryDiagnostic(discovery.stderr)
     return notRepo && hasNoGitMetadata(cwd) ? 'non-git-target' : 'git-read-error'
   }
   const root = String(discovery.stdout || '').trim()
