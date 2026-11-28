@@ -70,13 +70,18 @@ async function resolveZoneId(token) {
 /** 发布产物在 CDN 上的全部键：latest 别名 + 版本目录 + v1/v2 元数据与签名。 */
 export function releaseUrls(version, baseUrl = CDN_BASE_URL) {
   const origin = baseUrl.replace(/\/$/u, '')
-  // Only the aliases the current release actually publishes:
-  //   macOS   — two single-architecture DMGs (OmniMux-<ver>-arm64.dmg / -x64.dmg)
-  //   Windows — unsigned x64 NSIS (OmniMux-<ver>-x64-Setup.exe)
+  // Purge all `releases/latest/*` aliases written and verified by `r2-dist-sync.mjs`:
+  //   macOS   — arm64, x64, and legacy mac/universal/DSH-Desktop aliases
+  //   Windows — x64 Setup and legacy Setup/DSH-Desktop aliases
   const paths = [
     'releases/latest/OmniMux-arm64.dmg',
     'releases/latest/OmniMux-x64.dmg',
+    'releases/latest/OmniMux-mac.dmg',
+    'releases/latest/OmniMux-universal.dmg',
+    'releases/latest/DSH-Desktop.dmg',
+    'releases/latest/OmniMux-Setup.exe',
     'releases/latest/OmniMux-x64-Setup.exe',
+    'releases/latest/DSH-Desktop-Setup.exe',
     'api/desktop/version-stable.json',
     'api/desktop/version-beta.json',
     'api/desktop/version-next.json',
