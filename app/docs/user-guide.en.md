@@ -14,11 +14,11 @@ On first launch, the application prepares the default profile and starts the off
 
 ## First product video in 3 minutes
 
-Follow these four steps to go from a product landing page URL to a finished vertical MP4 inside OmniMux (if you need custom API endpoints first, check the [BYOK FAQ](faq.en.md#how-do-i-configure-byok-bring-your-own-keys-providers)):
+Follow these four steps to go from a product landing page URL to a finished vertical MP4 inside OmniMux (if you need custom API endpoints first, check the [BYOK FAQ](faq.en.md)):
 
-1. **Product Library (`omnimux-products`)**: Open the **Products** tab, paste your product landing page URL to create a product record, and review the extracted selling points, target audience, and product images before generating content.
-2. **Asset Center (`omnimux-assets`)**: Open **Assets** to choose a built-in digital human, scene, or 3-second hook (or import your own local media). Reference both items directly in chat using `@Product` and `@Asset` so the Agent keeps product facts consistent across shots.
-3. **Workflow Canvas (`omnimux-workflow`)**: Open the **Workflow** canvas to run image and video generation nodes (`omnimux_image_submit` / `omnimux_video_submit`), swap a reference frame when adjusting composition, and monitor live node progress until renders complete.
+1. **Product Library (`omnimux-products`)**: Open **Assets -> Products**, paste your product landing page URL to create a product record, and review the extracted selling points, target audience, and product images before generating content.
+2. **Asset Center (`omnimux-assets`)**: Open **Assets** to choose a built-in digital human, scene, or 3-second hook (or import your own local media). Reference items directly in chat via `@` mentions (conceptually `@Product` / `@Asset`, rendered with runtime handles such as `@产品/<name>` or `@角色/<name>`) so the Agent keeps product facts consistent across shots.
+3. **Workflow Canvas (`omnimux-workflow`)**: Open **Projects** from the sidebar to enter **Creative Canvas**, run image and video generation nodes on the canvas (while Hub Agent chat turns invoke tools such as `omnimux_image_submit` / `omnimux_video_submit`), swap a reference frame when adjusting composition, and monitor live node progress until renders complete.
 
    ![OmniMux Workflow Canvas](../../docs/readme/ui/omnimux-workflow-canvas.jpg)
 
