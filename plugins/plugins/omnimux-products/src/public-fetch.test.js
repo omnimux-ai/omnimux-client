@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
 import { Readable } from 'node:stream'
 import { publicFetch, publicLookup } from './public-fetch.js'
+import { isSyntheticProxyIpv4 } from './public-host.js'
 
 const resolveWith = (rows, all = false) => new Promise((resolve, reject) => {
   publicLookup(async () => rows)('shop.example', { all }, (err, value, family) => err ? reject(err) : resolve({ value, family }))
@@ -132,4 +133,115 @@ test('a malformed encoded GET rejects its body read instead of emitting an uncau
     })
     await assert.rejects(response.text())
   }
+})
+
+test('allows 198.18.0.0/15 fake-IP proxy answers only for explicitly allowlisted non-IP hostnames', async () => {
+  const resolveFakeIp = async () => [{ address: '198.18.52.164', family: 4 }]
+  const resolveWithOpts = (hostname, opts) => new Promise((resolve, reject) => {
+    publicLookup(resolveFakeIp, opts)(hostname, {}, (err, value, family) => (err ? reject(err) : resolve({ value, family })))
+  })
+
+  await assert.rejects(resolveWithOpts('p16-oec-general.ttcdn-us.com'), /non-public/)
+  await assert.rejects(
+    resolveWithOpts('unlisted.example.com', { allowSyntheticProxyForHostname: (h) => h.endsWith('.ttcdn-us.com') }),
+    /non-public/,
+  )
+  assert.deepEqual(
+    await resolveWithOpts('p16-oec-general.ttcdn-us.com', { allowSyntheticProxyForHostname: (h) => h.endsWith('.ttcdn-us.com') }),
+    { value: '198.18.52.164', family: 4 },
+  )
+
+  // Private, loopback, reserved, IPv4-mapped IPv6, and mixed DNS answers stay rejected even when allowlisted.
+  for (const rows of [
+    [{ address: '127.0.0.1', family: 4 }],
+    [{ address: '10.0.0.1', family: 4 }],
+    [{ address: '169.254.169.254', family: 4 }],
+    [{ address: '198.51.100.3', family: 4 }],
+    [{ address: '::ffff:198.18.52.164', family: 6 }],
+    [{ address: '198.18.52.164', family: 4 }, { address: '127.0.0.1', family: 4 }],
+  ]) {
+    await assert.rejects(
+      new Promise((resolve, reject) => {
+        publicLookup(async () => rows, { allowSyntheticProxyForHostname: () => true })(
+          'p16-oec-general.ttcdn-us.com',
+          {},
+          (err, value, family) => (err ? reject(err) : resolve({ value, family })),
+        )
+      }),
+      /non-public/,
+    )
+  }
+
+  // Literal 198.18.x.x URLs remain refused before dialing even when opt-in callback returns true.
+  await assert.rejects(
+    publicFetch('https://198.18.52.164/a.webp', {}, {
+      allowSyntheticProxyForHostname: () => true,
+      request: () => assert.fail('dialed literal synthetic proxy IP'),
+    }),
+    /public HTTP\(S\) host/,
+  )
+
+  // Boundary checks on isSyntheticProxyIpv4 (strict canonical dotted-quad 198.18.0.0/15 only).
+  assert.equal(isSyntheticProxyIpv4('198.18.0.0'), true)
+  assert.equal(isSyntheticProxyIpv4('198.19.255.255'), true)
+  assert.equal(isSyntheticProxyIpv4('198.17.255.255'), false)
+  assert.equal(isSyntheticProxyIpv4('198.20.0.0'), false)
+  assert.equal(isSyntheticProxyIpv4('198.18.01.1'), false)
+  assert.equal(isSyntheticProxyIpv4('198.18.52.164.'), false)
+  assert.equal(isSyntheticProxyIpv4('[198.18.52.164]'), false)
+
+  // Exceptions thrown synchronously inside allowSyntheticProxyForHostname reject cleanly through lookup.
+  await assert.rejects(
+    resolveWithOpts('p16-oec-general.ttcdn-us.com', {
+      allowSyntheticProxyForHostname: () => { throw new Error('callback boom') },
+    }),
+    /callback boom/,
+  )
+})
+
+test('publicFetch forwards allowSyntheticProxyForHostname to socket lookup cleanly end to end', async () => {
+  const dialed = []
+  const okRes = await publicFetch('https://p16-oec-general.ttcdn-us.com/cover.webp', {}, {
+    allowSyntheticProxyForHostname: (h) => h.endsWith('.ttcdn-us.com'),
+    lookup: async () => [{ address: '198.18.52.164', family: 4 }],
+    request: (target, options, done) => {
+      const req = new EventEmitter()
+      req.destroy = () => {}
+      req.end = () => options.lookup(target.hostname, {}, (err, address, family) => {
+        if (err) { req.emit('error', err); return }
+        dialed.push({ host: target.hostname, address, family, servername: options.servername })
+        const incoming = Readable.from([Buffer.from('webp-bytes')])
+        incoming.statusCode = 200
+        incoming.headers = { 'content-type': 'image/webp' }
+        done(incoming)
+      })
+      return req
+    },
+  })
+  assert.equal(okRes.status, 200)
+  assert.equal(await okRes.text(), 'webp-bytes')
+  assert.deepEqual(dialed, [{
+    host: 'p16-oec-general.ttcdn-us.com',
+    address: '198.18.52.164',
+    family: 4,
+    servername: 'p16-oec-general.ttcdn-us.com',
+  }])
+
+  // Unlisted host resolving to 198.18.x.x is rejected inside socket lookup before connecting.
+  await assert.rejects(
+    publicFetch('https://evil.example.com/cover.webp', {}, {
+      allowSyntheticProxyForHostname: (h) => h.endsWith('.ttcdn-us.com'),
+      lookup: async () => [{ address: '198.18.52.164', family: 4 }],
+      request: (target, options) => {
+        const req = new EventEmitter()
+        req.destroy = () => {}
+        req.end = () => options.lookup(target.hostname, {}, (err) => {
+          if (err) req.emit('error', err)
+          else assert.fail('unlisted host dialed fake IP')
+        })
+        return req
+      },
+    }),
+    /non-public/,
+  )
 })

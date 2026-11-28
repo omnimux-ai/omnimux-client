@@ -6,6 +6,9 @@
  * only hub.socialData (omnimux_social_data) with OMNIMUX_API_KEY.
  */
 
+import { isIP } from 'node:net'
+import { normalizeHostname } from './public-host.js'
+
 const SHOP_HOST_RE = /(?:^|\.)shop\.tiktok\.com$/i
 const PRODUCT_PATH_RE = /\/(?:pdp|product)(?:\/[^/?#]+)?\/(\d{5,})/i
 const RECOMMENDATION_BLOCK_RE =
@@ -13,6 +16,28 @@ const RECOMMENDATION_BLOCK_RE =
 const RECOMMENDATION_TITLE_RE =
   /^(?:you may also like|explore more|top reviewed|more from this shop|related products|similar products|customers also viewed)$/i
 const TERMINAL_HUB_ERROR_CODES = new Set(['needs-omnimux', 'quota-exceeded'])
+
+export const TIKTOK_SHOP_CDN_SUFFIXES = Object.freeze([
+  'ttcdn-us.com',
+  'tiktokcdn.com',
+  'tiktokcdn-us.com',
+  'tiktokcdn-eu.com',
+  'ibyteimg.com',
+  'byteimg.com',
+  'ibytedtos.com',
+])
+
+/**
+ * Compiled-in official TikTok Shop static media CDN hosts, eligible for
+ * transparent TUN fake-IP (198.18.0.0/15) DNS exemption during image download.
+ * @param {unknown} hostname
+ * @returns {boolean}
+ */
+export function isTikTokShopCdnHost(hostname) {
+  const host = normalizeHostname(hostname)
+  if (!host || host.startsWith('.') || host.includes('..') || isIP(host)) return false
+  return TIKTOK_SHOP_CDN_SUFFIXES.some((suffix) => host === suffix || host.endsWith(`.${suffix}`))
+}
 
 /**
  * @param {string} url
