@@ -23,7 +23,7 @@ import {
   resolveProfileDir,
   writeProfileManifest,
 } from '@deepseek-ai/dsh-app-boot'
-import { PROFILE_TEMPLATES } from './upstream-family.ts'
+import { PROFILE_TEMPLATES } from '@deepseek-ai/dsh-official-bundles'
 import {
   DESKTOP_PACKAGE_NAME,
   DESKTOP_PACKAGE_NAMES,

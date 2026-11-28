@@ -358,8 +358,8 @@ OmniMux develops and ships its Electron desktop shell (`app/`) and product plugi
 ```text
 omnimux-client/
 ├── app/                     # Electron desktop shell (Yarn 4 workspace, installers & native integration)
-│   ├── dsh-desktop-next/    # OmniMux native desktop shell
-│   ├── dsh-plugin-desktop/  # Desktop capability plugin (window, tray, profiles, updates)
+│   ├── dsh-desktop-next/    # Active OmniMux Electron desktop shell (profiles, tray, recovery, updates)
+│   ├── dsh-plugin-desktop/  # Frozen legacy desktop shell (retired pending removal)
 │   ├── config/              # Plugin release tiers (plugin-tiers.json)
 │   └── docs/                # User guide, FAQ, and desktop architecture docs
 ├── plugins/                 # Product plugin workspace (root pnpm workspace)

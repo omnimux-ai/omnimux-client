@@ -67,7 +67,7 @@ OmniMux 自行编写的插件代码采用 **[AGPL-3.0](LICENSE)**，另附 [NOTI
 
 #### 重建并升级共享 macOS Dev
 
-共享 Dev 缺少托管插件源时，可用同一提交打包的开发版重建依赖并升级桌面壳。先在干净的任务检出构建插件，再在 `app/` 下设置 `OMNIMUX_PLUGINS_DIR` 为该检出的 `plugins/plugins` 绝对路径，执行 `corepack yarn package:dev --fresh-preset`。打包从独立的预设目录读取新产物。
+共享 Dev 缺少托管插件源时，可用同一提交打包的开发版重建依赖并升级桌面壳。在干净的任务检出 `app/` 下直接执行 `corepack yarn package:dev`，由 `dsh-desktop-next` 自动将当前仓内已构建插件写入新载荷并生成已签名的开发版 App。
 
 在 `app/` 下执行以下步骤，`<batch>` 使用已挂载的 SMB 或 NFS 上尚不存在的批次目录绝对路径，其父目录须已存在。
 

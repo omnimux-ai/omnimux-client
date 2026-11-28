@@ -13,7 +13,7 @@
   },
   "ownership": {
     "pinPatchBuildContract": "app/patches/dsh-better-sidebar/0.28.1/omnimux.patch",
-    "builder": "app/dsh-plugin-desktop/scripts/better-sidebar/build-patched-sidebar.ts",
+    "builder": "app/scripts/better-sidebar/build-patched-sidebar.mts",
     "note": "壳仓 patches/dsh-better-sidebar/ 目前只到 0.19.1，0.28.1 定制补丁尚未重落；presetPatchSha256 只描述核对时 profile 实装的那份构建，不是壳仓 patch 的当前哈希。"
   },
   "note": "0.28.0 起支持包直接取 npm 上游构建（与壳仓补丁同一代际兼容），不再需要 0.19.1 的 peer 豁免；0.28.1 相对 0.28.0 只多一条 \"./icon\" 导出，peer 与 mounted 读法不变。若将来回到壳仓 preset 构建，应同步更新 source/presetPatchSha256。"

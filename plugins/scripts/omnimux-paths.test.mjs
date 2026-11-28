@@ -213,6 +213,7 @@ test('plugins/package.json scripts exclude retired craft/missing filters and res
 
   assert.equal('test:craft' in scripts, false, 'retired test:craft script must not remain in plugins/package.json');
   assert.equal('verify:craft' in scripts, false, 'retired verify:craft script must not remain in plugins/package.json');
+  assert.equal('stage' in scripts, false, 'retired stage script must not remain in plugins/package.json');
   assert.equal(existsSync(join(root, 'scripts', 'verify-craft.mjs')), false, 'verify-craft.mjs must be removed');
 
   const missingFiles = [];

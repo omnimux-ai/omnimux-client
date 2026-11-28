@@ -10,7 +10,6 @@
  *   node scripts/omnimux.mjs build:all                     - 全量并发构建插件
  *   node scripts/omnimux.mjs lint:i18n                     - 文案/禁词质量门禁
  *   node scripts/omnimux.mjs registry [build|verify]       - 插件注册表与 Schema 校验
- *   node scripts/omnimux.mjs stage                         - 物化进 app preset
  *   node scripts/omnimux.mjs package:dev                   - 打包并安装 OmniMux Dev 开发版 App
  *   node scripts/omnimux.mjs path                          - 打印 product / plugins / app 路径
  */
@@ -116,7 +115,6 @@ function printHelp() {
   doctor                          多层开发环境自检
   restart dev                     【人类专用】手动重启开发版应用 (/Applications/OmniMux Dev.app)
   restart prod                    【人类专用】手动重启正式版应用 (/Applications/OmniMux.app)
-  stage                           物化全量预设插件到 app 仓库
   package:dev                     编译打包并安装 OmniMux Dev 开发版 App
   path                            打印 product / plugins / app 路径
   qa:gate                         严过关五维自动化质检门禁
@@ -159,9 +157,6 @@ switch (cmd) {
     break
   case 'doctor':
     runBash('scripts/dev-doctor.sh', rest)
-    break
-  case 'stage':
-    runForkCommand('omnimux:stage', rest)
     break
   case 'package:dev':
     runForkCommand('package:dev', [], { OMNIMUX_CHANNEL: 'dev' })
