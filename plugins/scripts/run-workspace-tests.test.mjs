@@ -345,3 +345,181 @@ test('spawned package tests can still override DSH_HOME in-process', () => {
   const probe = new URL('../plugins/omnimux/src/media/task-collect-lifecycle.test.mjs', import.meta.url)
   assert.ok(existsSync(probe), 'task-collect-lifecycle regression fixture must exist')
 })
+
+test('real Vitest --reporter=tap nested # SKIP output is classified as vitest-unclassified without skip count mismatch', () => {
+  // Verbatim capture from `omnimux-browser` `vitest run --config vitest.e2e.config.ts --reporter=tap`:
+  // skipped suites open with `# SKIP {` (no `# time=`), leaf `# SKIP` items have no reason and
+  // Vitest emits no `# skipped` summary counter.
+  const raw = [
+    'TAP version 13',
+    '1..5',
+    'ok 1 - tests/e2e/bridge-extension.e2e.spec.ts # time=2.14ms {',
+    '    1..1',
+    '    ok 1 - extension <-> migrated bridge smoke # time=0.96ms {',
+    '        1..1',
+    '        ok 1 - connects, negotiates caps, and initializes a Session through the private bridge protocol # time=0.79ms',
+    '    }',
+    '}',
+    'ok 2 - tests/e2e/media-lit-transition.e2e.spec.ts # time=5.04ms {',
+    '    1..2',
+    '    ok 1 - the shelf shows only what is not already in the composer (\\#2114) # time=4.63ms {',
+    '        1..2',
+    '        ok 1 - filters the detected media by the attached ids # time=2.32ms',
+    '        ok 2 - keeps the smaller chip and the hover-only remove control in the stylesheet # time=2.06ms',
+    '    }',
+    '    ok 2 - the chip measures 44px and reveals its remove control on hover (\\#2114) # SKIP {',
+    '        1..1',
+    '        ok 1 - matches the shipped stylesheet in a real browser # SKIP',
+    '    }',
+    '}',
+    'ok 3 - tests/e2e/pairing-approval.e2e.spec.ts # SKIP {',
+    '    1..1',
+    '    ok 1 - one-click pairing (\\#2110) # SKIP {',
+    '        1..1',
+    '        ok 1 - pairs on one click, stores the token, and closes the approval tab # SKIP',
+    '    }',
+    '}',
+    'ok 4 - tests/e2e/pairing-page.e2e.spec.ts # time=1298.18ms {',
+    '    1..1',
+    '    ok 1 - pairing page revision (\\#2116) # time=1297.64ms {',
+    '        1..2',
+    '        ok 1 - shows the request code with approve and cancel, and no input field # time=311.82ms',
+    '        ok 2 - approving hands out the token once; cancelling never does # time=8.42ms',
+    '    }',
+    '}',
+    'ok 5 - tests/e2e/pairing.e2e.spec.ts # SKIP {',
+    '    1..1',
+    '    ok 1 - pairing end to end (\\#2095) # SKIP {',
+    '        1..2',
+    '        ok 1 - pairs with the host code, persists the token, and connects # SKIP',
+    '        ok 2 - refuses a web page origin # SKIP',
+    '    }',
+    '}',
+  ].join('\n')
+
+  const tap = parseTap(raw)
+  assert.equal(tap.skipped, 0)
+  assert.deepEqual(tap.skippedCases, [])
+  assert.deepEqual(tap.skippedSuites, [])
+  assert.deepEqual(tap.vitest, {
+    found: true,
+    passed: 5,
+    failed: 0,
+    expectedFail: 0,
+    skipped: 4,
+    pending: 0,
+    total: 9,
+    malformed: [],
+  })
+
+  const result = judge({ exitCode: 0, tap })
+  assert.equal(result.passed, false)
+  assert.equal(result.skipSummary.mismatch, false)
+  assert.equal(result.skipSummary.vitestUnclassified, 4)
+  assert.equal(result.reasons.some((reason) => reason.includes('skip count mismatch')), false)
+  assert.equal(result.reasons.some((reason) => reason.includes('unclassified vitest skip(s)')), true)
+  assert.equal(formatSkipSummary(result.skipSummary), 'skip=4 (environment=0, by-design=0, vitest-unclassified=4)')
+})
+
+test('passing Vitest --reporter=tap output passes judge and ignores escaped # SKIP in test titles', () => {
+  const tap = parseTap([
+    'TAP version 13',
+    '1..1',
+    'ok 1 - tests/unit.spec.ts # time=4.20ms {',
+    '    1..2',
+    '    ok 1 - parses titles with \\# SKIP literally # time=1.10ms',
+    '    ok 2 - passes normally # time=0.50ms',
+    '}',
+  ].join('\n'))
+  assert.deepEqual(tap.vitest, {
+    found: true,
+    passed: 2,
+    failed: 0,
+    expectedFail: 0,
+    skipped: 0,
+    pending: 0,
+    total: 2,
+    malformed: [],
+  })
+  const result = judge({ exitCode: 0, tap })
+  assert.equal(result.passed, true, result.reasons.join('; '))
+  assert.deepEqual(result.reasons, [])
+})
+
+test('Vitest --reporter=tap todos, leaf failures with YAML braces, and unclosed blocks all fail closed', () => {
+  const todoTap = parseTap([
+    'TAP version 13',
+    '1..1',
+    'ok 1 - tests/todo.spec.ts # TODO {',
+    '    1..1',
+    '    ok 1 - pending feature # TODO',
+    '}',
+  ].join('\n'))
+  const todoJudge = judge({ exitCode: 0, tap: todoTap })
+  assert.equal(todoJudge.passed, false)
+  assert.equal(todoJudge.skipSummary.mismatch, false)
+  assert.equal(todoJudge.skipSummary.vitestUnclassified, 1)
+
+  const failTap = parseTap([
+    'TAP version 13',
+    '1..1',
+    'not ok 1 - tests/fail.spec.ts # time=3.00ms {',
+    '    1..1',
+    '    not ok 1 - explodes # time=1.00ms',
+    '        ---',
+    '        error:',
+    '            name: "AssertionError"',
+    '            message: "expected } to match {"',
+    '        at: "tests/fail.spec.ts:12:3"',
+    '        ...',
+    '}',
+  ].join('\n'))
+  assert.equal(failTap.vitest.failed, 1)
+  assert.deepEqual(failTap.failures, [
+    { location: 'tests/fail.spec.ts:12:3', name: 'explodes', error: 'expected } to match {' },
+  ])
+  const failJudge = judge({ exitCode: 0, tap: failTap })
+  assert.equal(failJudge.passed, false)
+  assert.equal(failJudge.reasons.some((reason) => reason.includes('vitest failure(s)')), true)
+
+  const unclosedTap = parseTap([
+    'TAP version 13',
+    '1..1',
+    'ok 1 - tests/truncated.spec.ts # time=1.00ms {',
+    '    1..1',
+    '    ok 1 - partial # time=0.20ms',
+  ].join('\n'))
+  assert.deepEqual(unclosedTap.vitest.malformed, ['unclosed vitest TAP block'])
+  const unclosedJudge = judge({ exitCode: 0, tap: unclosedTap })
+  assert.equal(unclosedJudge.passed, false)
+  assert.equal(unclosedJudge.reasons.some((reason) => reason.includes('vitest summary unreadable')), true)
+})
+
+test('combined node:test TAP and Vitest --reporter=tap keep node:test skip accounting intact', () => {
+  const tap = parseTap([
+    'TAP version 13',
+    '1..1',
+    'ok 1 - tests/e2e/sample.e2e.spec.ts # SKIP {',
+    '    1..1',
+    '    ok 1 - skipped browser test # SKIP',
+    '}',
+    'TAP version 13',
+    'ok 1 - node design skip # SKIP LibreOffice is not installed',
+    '1..1',
+    '# tests 1',
+    '# pass 0',
+    '# fail 0',
+    '# cancelled 0',
+    '# skipped 1',
+  ].join('\n'))
+  assert.deepEqual(tap.skippedCases, [{ name: 'node design skip', reason: 'LibreOffice is not installed' }])
+  assert.equal(tap.skipped, 1)
+  assert.equal(tap.vitest.skipped, 1)
+  const result = judge({ exitCode: 0, tap })
+  assert.equal(result.passed, false)
+  assert.equal(result.skipSummary.mismatch, false)
+  assert.equal(result.skipSummary.byDesign, 1)
+  assert.equal(result.skipSummary.vitestUnclassified, 1)
+  assert.equal(result.reasons.some((reason) => reason.includes('skip count mismatch')), false)
+  assert.equal(result.reasons.some((reason) => reason.includes('1 unclassified vitest skip(s)')), true)
+})
