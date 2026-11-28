@@ -287,6 +287,10 @@ html:not([data-fullscreen]) body[data-dsh-desktop-platform="darwin"][data-dsh-de
               transform var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 
+.omnimux-nav-rail-btn[hidden] {
+  display: none !important;
+}
+
 .omnimux-nav-rail-btn:hover {
   background: var(--dsw-alias-interactive-bg-hover);
   color: var(--dsw-alias-label-primary);
@@ -976,6 +980,10 @@ export function installNavRail(doc = resolveDoc()) {
       btn.setAttribute('data-omnimux-rail-item', item.id)
       btn.setAttribute('data-tooltip', item.label)
       btn.setAttribute('aria-label', item.label)
+      if (item.id === 'updates') {
+        btn.hidden = true
+        btn.setAttribute('data-has-update', 'false')
+      }
       btn.innerHTML = item.id === 'updates'
         ? `${item.iconSvg}<span class="omnimux-nav-rail-dot" aria-hidden="true"></span>`
         : item.iconSvg
@@ -1011,6 +1019,9 @@ export function installNavRail(doc = resolveDoc()) {
   let wasSettingsMenuOpenOnPointerDown = false
   let prevView = null
   let prevSplit = false
+  let activeTooltipBtn = null
+  let observedFooter = null
+  let bindFooterObserver = null
 
   const closePinContextMenu = () => {
     pinContextCleanup?.()
@@ -1207,8 +1218,10 @@ export function installNavRail(doc = resolveDoc()) {
   }
 
   const showTooltipFor = (btn) => {
-    const label = btn?.getAttribute?.('data-tooltip') || ''
+    if (!btn || btn.hidden) return
+    const label = btn.getAttribute?.('data-tooltip') || ''
     if (!label) return
+    activeTooltipBtn = btn
     const rect = btn.getBoundingClientRect?.()
     tooltip.textContent = label
     tooltip.style.top = `${Math.round((rect?.top ?? 0) + ((rect?.height ?? 36) - 26) / 2)}px`
@@ -1216,6 +1229,7 @@ export function installNavRail(doc = resolveDoc()) {
   }
 
   const hideTooltip = () => {
+    activeTooltipBtn = null
     tooltip.setAttribute('data-visible', 'false')
   }
 
@@ -1264,6 +1278,9 @@ export function installNavRail(doc = resolveDoc()) {
 
   const syncAll = () => {
     if (syncOnboardingMode()) return
+    if (!observedFooter || !observedFooter.isConnected) {
+      bindFooterObserver?.()
+    }
     const pinnedEntries = syncPinnedShortcuts()
     const state = computeCurrentNavRailState(doc, pinnedEntries.map((entry) => entry.pinId))
     if (root.getAttribute(NAV_RAIL_VIEW_ATTR) !== state.view) {
@@ -1311,8 +1328,21 @@ export function installNavRail(doc = resolveDoc()) {
 
     const updateBtn = rail.querySelector('[data-omnimux-rail-item="updates"]')
     if (updateBtn) {
-      const hasUpdate = Boolean(doc.querySelector(UPDATE_PILL_SELECTOR))
+      const pill = doc.querySelector(UPDATE_PILL_SELECTOR)
+      const hasUpdate = Boolean(pill)
+      const pillLabel = hasUpdate
+        ? String(pill.getAttribute?.('aria-label') || pill.getAttribute?.('title') || '').trim()
+        : ''
+      const nextLabel = pillLabel || '应用更新'
+      updateBtn.hidden = !hasUpdate
       updateBtn.setAttribute('data-has-update', hasUpdate ? 'true' : 'false')
+      updateBtn.setAttribute('data-tooltip', nextLabel)
+      updateBtn.setAttribute('aria-label', nextLabel)
+      if (!hasUpdate && activeTooltipBtn === updateBtn) {
+        hideTooltip()
+      } else if (hasUpdate && activeTooltipBtn === updateBtn) {
+        tooltip.textContent = nextLabel
+      }
     }
 
     const remoteBtn = rail.querySelector('[data-omnimux-rail-item="remote-control"]')
@@ -1587,22 +1617,51 @@ export function installNavRail(doc = resolveDoc()) {
 
   const Observer = win?.MutationObserver || globalThis.MutationObserver
   const observers = []
-  let observedFooter = null
   let observedPanelList = null
+  let footerObserver = null
+  let footerWaitObserver = null
 
-  const bindFooterObserver = () => {
+  const stopFooterWaitObserver = () => {
+    footerWaitObserver?.disconnect()
+    footerWaitObserver = null
+  }
+
+  bindFooterObserver = () => {
     if (typeof Observer !== 'function') return
     const footerSlot = doc.querySelector('[data-slot="sidebar.footer.action"]')
-    if (!footerSlot || footerSlot === observedFooter) return
+    if (footerSlot && footerSlot === observedFooter && observedFooter.isConnected) {
+      stopFooterWaitObserver()
+      return
+    }
+    if (footerObserver) {
+      footerObserver.disconnect()
+      footerObserver = null
+    }
+    observedFooter = null
+    if (!footerSlot) {
+      if (!footerWaitObserver) {
+        const waitRoot = doc.getElementById('root') || doc.body
+        if (waitRoot) {
+          footerWaitObserver = new Observer((mutations) => {
+            if (!mutations.some((m) => m.addedNodes && m.addedNodes.length > 0)) return
+            if (!doc.querySelector('[data-slot="sidebar.footer.action"]')) return
+            bindFooterObserver()
+            syncAll()
+          })
+          footerWaitObserver.observe(waitRoot, { childList: true, subtree: true })
+        }
+      }
+      return
+    }
+    stopFooterWaitObserver()
     observedFooter = footerSlot
-    const footerObserver = new Observer(() => syncAll())
+    footerObserver = new Observer(() => syncAll())
     footerObserver.observe(footerSlot, {
       childList: true,
       subtree: true,
       attributes: true,
-      attributeFilter: ['aria-expanded', 'data-next-update-pill'],
+      attributeFilter: ['aria-expanded', 'data-next-update-pill', 'aria-label', 'title'],
     })
-    observers.push(footerObserver)
   }
 
   const bindPanelListObserver = () => {
@@ -1685,6 +1744,10 @@ export function installNavRail(doc = resolveDoc()) {
     updatesWaitCleanup?.()
     settingsAnchorCleanup?.()
     for (const observer of observers) observer.disconnect()
+    footerObserver?.disconnect()
+    footerObserver = null
+    stopFooterWaitObserver()
+    observedFooter = null
     rail.remove()
     tooltip.remove()
     doc.getElementById(NAV_RAIL_STYLE_ID)?.remove()

@@ -232,7 +232,7 @@ html, body {
 }
 `
 
-function buildE2eHtml() {
+function buildE2eHtml({ withUpdatePill = false } = {}) {
   return `
 <script>document.documentElement.setAttribute('data-platform', 'darwin')</script>
 <div id="root" data-slot="root">
@@ -261,7 +261,7 @@ function buildE2eHtml() {
         </div>
         <div class="SidebarRoot_footArea__e2e">
           <div data-slot="sidebar.footer.action">
-            <button type="button" data-next-update-pill aria-label="有新版本可用">更新</button>
+            ${withUpdatePill ? '<button type="button" data-next-update-pill aria-label="有新版本可用">更新</button>' : ''}
           </div>
           <div data-slot="sidebar.settings">
             <button type="button" id="e2e-settings-btn"><span data-slot="settings.trigger">设置</span></button>
@@ -360,6 +360,7 @@ test('Chromium E2E：固定导航轨 52px 布局、避让红绿灯、业务全�
       const panelList = document.querySelector('nav.SidebarRoot_panelList__e2e')
       const footArea = document.querySelector('.SidebarRoot_footArea__e2e')
       const homeBtn = rail.querySelector('[data-omnimux-rail-item="home"]')
+      const updatesBtn = rail.querySelector('[data-omnimux-rail-item="updates"]')
       const settingsBtn = rail.querySelector('[data-omnimux-rail-item="settings"]')
       const hDivider = rail.querySelector('.omnimux-nav-rail-bottom .omnimux-nav-rail-divider')
       const railStyle = getComputedStyle(rail)
@@ -391,7 +392,10 @@ test('Chromium E2E：固定导航轨 52px 布局、避让红绿灯、业务全�
         footAreaHeight: rect(footArea).height,
         topbarToggleLeft: rect(topbarToggle).left,
         overflowPx: document.documentElement.scrollWidth - window.innerWidth,
-        hasUpdateDot: rail.querySelector('[data-omnimux-rail-item="updates"]').getAttribute('data-has-update'),
+        updatesHidden: updatesBtn.hidden,
+        updatesDisplay: getComputedStyle(updatesBtn).display,
+        updatesRect: rect(updatesBtn),
+        hasUpdateDot: updatesBtn.getAttribute('data-has-update'),
       }
 
       // 切换至「项目」全屏业务页
@@ -475,7 +479,11 @@ test('Chromium E2E：固定导航轨 52px 布局、避让红绿灯、业务全�
   assert.equal(metrics.homeExpanded.footAreaHeight, 0, '次级栏底部区域必须完全清空隐藏')
   assert.equal(metrics.homeExpanded.topbarToggleLeft, 84, '顶栏折叠钮必须在 macOS 红绿灯右侧 84px')
   assert.equal(metrics.homeExpanded.overflowPx, 0, '严禁产生横向溢出')
-  assert.equal(metrics.homeExpanded.hasUpdateDot, 'true')
+  assert.equal(metrics.homeExpanded.updatesHidden, true, '无更新时更新按钮必须默认隐藏')
+  assert.equal(metrics.homeExpanded.updatesDisplay, 'none', '无更新时更新按钮计算样式必须为 display: none')
+  assert.equal(metrics.homeExpanded.updatesRect.width, 0)
+  assert.equal(metrics.homeExpanded.updatesRect.height, 0)
+  assert.equal(metrics.homeExpanded.hasUpdateDot, 'false')
 
   // 2. 业务全屏页验证
   assert.equal(metrics.projectsBusiness.viewAttr, 'business')
@@ -523,7 +531,7 @@ test('Chromium E2E：「更多」菜单固定按钮对齐/分隔线保留、左�
     name: 'nav-rail-pin-e2e',
     viewportHeight: 620,
     styles: HOST_CSS,
-    html: buildE2eHtml(),
+    html: buildE2eHtml({ withUpdatePill: true }),
     measure: () => {
       const round = (n) => Math.round(n * 100) / 100
       const rect = (el) => {
@@ -601,6 +609,9 @@ test('Chromium E2E：「更多」菜单固定按钮对齐/分隔线保留、左�
         pinnedCount: pinnedList.querySelectorAll('[data-omnimux-rail-pinned]').length,
         firstPinnedRect: rect(firstPinnedBtn),
         moreRect: rect(moreBtn),
+        updatesVisible: !updatesBtn.hidden,
+        updatesDisplay: getComputedStyle(updatesBtn).display,
+        updatesHasUpdate: updatesBtn.getAttribute('data-has-update'),
         updatesRect: rect(updatesBtn),
         settingsRect: rect(settingsBtn),
         listClientHeight: pinnedList.clientHeight,
@@ -644,7 +655,98 @@ test('Chromium E2E：「更多」菜单固定按钮对齐/分隔线保留、左�
   assert.equal(metrics.railMetrics.listScrollable, true, '多固定项在窄高视口应启用固定列表内部滚动')
   assert.ok(metrics.railMetrics.firstPinnedRect.top > metrics.railMetrics.moreRect.bottom, '固定图标必须落在更多图标下方')
   assert.ok(metrics.railMetrics.settingsRect.bottom <= metrics.railMetrics.viewportHeight, '多固定项窄高视口下不得将底部设置钮挤出屏幕')
+  assert.equal(metrics.railMetrics.updatesVisible, true)
+  // .omnimux-nav-rail-bottom 为 flex 容器，inline-flex 子项计算显示值为 flex
+  assert.equal(metrics.railMetrics.updatesDisplay, 'flex')
+  assert.equal(metrics.railMetrics.updatesRect.width, 36)
+  assert.equal(metrics.railMetrics.updatesRect.height, 36)
+  assert.equal(metrics.railMetrics.updatesHasUpdate, 'true')
   assert.ok(metrics.railMetrics.updatesRect.top > metrics.railMetrics.firstPinnedRect.bottom)
   assert.doesNotMatch(metrics.ctxBg, /rgba\([^,]+,[^,]+,[^,]+,\s*0\)/, '右键取消固定菜单必须为实底')
   assert.equal(metrics.remainingAfterContextUnpin, metrics.railMetrics.pinnedCount - 1)
+})
+
+test('Chromium E2E：动态检测到更新时显现更新按钮并更新文案，更新消失后恢复隐藏', () => {
+  const metrics = runStyleDomProbe({
+    name: 'nav-rail-update-toggle-e2e',
+    viewportHeight: 820,
+    styles: HOST_CSS,
+    html: buildE2eHtml({ withUpdatePill: false }),
+    waitForCompletion: true,
+    measure: () => {
+      const round = (n) => Math.round(n * 100) / 100
+      const rect = (el) => {
+        const r = el.getBoundingClientRect()
+        return { width: round(r.width), height: round(r.height) }
+      }
+      const updateBtn = document.querySelector('[data-omnimux-rail-item="updates"]')
+      const footerSlot = document.querySelector('[data-slot="sidebar.footer.action"]')
+      const initial = {
+        hidden: updateBtn.hidden,
+        display: getComputedStyle(updateBtn).display,
+        height: rect(updateBtn).height,
+        hasUpdate: updateBtn.getAttribute('data-has-update'),
+      }
+
+      const pill = document.createElement('button')
+      pill.type = 'button'
+      pill.setAttribute('data-next-update-pill', '')
+      pill.setAttribute('aria-label', '下载更新 45% v2.0.0')
+      pill.textContent = '更新'
+      footerSlot.append(pill)
+
+      Promise.resolve().then(() => {
+        const detectedRect = rect(updateBtn)
+        const detected = {
+          hidden: updateBtn.hidden,
+          display: getComputedStyle(updateBtn).display,
+          width: detectedRect.width,
+          height: detectedRect.height,
+          hasUpdate: updateBtn.getAttribute('data-has-update'),
+          ariaLabel: updateBtn.getAttribute('aria-label'),
+        }
+        pill.setAttribute('aria-label', '重启以完成更新 v2.0.0')
+        return Promise.resolve().then(() => {
+          const updatedLabel = updateBtn.getAttribute('aria-label')
+          pill.remove()
+          return Promise.resolve().then(() => {
+            const cleared = {
+              hidden: updateBtn.hidden,
+              display: getComputedStyle(updateBtn).display,
+              height: rect(updateBtn).height,
+              hasUpdate: updateBtn.getAttribute('data-has-update'),
+              ariaLabel: updateBtn.getAttribute('aria-label'),
+            }
+            document.title = 'RESULT:' + JSON.stringify({
+              done: true,
+              initial,
+              detected,
+              updatedLabel,
+              cleared,
+            })
+          })
+        })
+      })
+
+      return { done: false }
+    },
+  })
+
+  assert.equal(metrics.done, true)
+  assert.equal(metrics.initial.hidden, true)
+  assert.equal(metrics.initial.display, 'none')
+  assert.equal(metrics.initial.height, 0)
+  assert.equal(metrics.initial.hasUpdate, 'false')
+  assert.equal(metrics.detected.hidden, false)
+  assert.equal(metrics.detected.display, 'flex')
+  assert.equal(metrics.detected.width, 36)
+  assert.equal(metrics.detected.height, 36)
+  assert.equal(metrics.detected.hasUpdate, 'true')
+  assert.equal(metrics.detected.ariaLabel, '下载更新 45% v2.0.0')
+  assert.equal(metrics.updatedLabel, '重启以完成更新 v2.0.0')
+  assert.equal(metrics.cleared.hidden, true)
+  assert.equal(metrics.cleared.display, 'none')
+  assert.equal(metrics.cleared.height, 0)
+  assert.equal(metrics.cleared.hasUpdate, 'false')
+  assert.equal(metrics.cleared.ariaLabel, '应用更新')
 })

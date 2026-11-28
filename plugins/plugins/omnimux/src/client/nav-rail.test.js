@@ -190,6 +190,12 @@ describe('nav-rail 固定左侧导航轨', () => {
         assert.ok(btn.querySelector('svg'), '图标必须使用 SVG')
       }
       assert.equal(rail.querySelector('[data-omnimux-rail-item="home"]')?.getAttribute('data-active'), 'true')
+      const updatesBtn = rail.querySelector('[data-omnimux-rail-item="updates"]')
+      assert.equal(updatesBtn?.hidden, true, '无更新 pill 时更新下载按钮应默认隐藏')
+      assert.equal(updatesBtn?.getAttribute('data-has-update'), 'false')
+      assert.equal(rail.querySelector('[data-omnimux-rail-item="remote-control"]')?.hidden, false)
+      assert.equal(rail.querySelector('[data-omnimux-rail-item="settings"]')?.hidden, false)
+      assert.ok(NAV_RAIL_CSS.includes('.omnimux-nav-rail-btn[hidden]'), 'CSS 必须显式覆写 [hidden] 确保按钮隐藏')
     } finally {
       dispose()
     }
@@ -426,7 +432,10 @@ describe('nav-rail 固定左侧导航轨', () => {
       const remoteBtn = doc.querySelector('[data-omnimux-rail-item="remote-control"]')
       const settingsBtn = doc.querySelector('[data-omnimux-rail-item="settings"]')
 
+      assert.equal(updateBtn.hidden, false, '更新 pill 存在时应显现更新按钮')
       assert.equal(updateBtn.getAttribute('data-has-update'), 'true', '更新 pill 存在时应点亮角标')
+      assert.equal(updateBtn.getAttribute('aria-label'), '有新版本可用')
+      assert.equal(updateBtn.getAttribute('data-tooltip'), '有新版本可用')
       updateBtn.click()
       assert.equal(updateClicks, 1)
 
@@ -571,8 +580,9 @@ describe('nav-rail 固定左侧导航轨', () => {
       settingsRailBtn.click()
       assert.equal(doc.getElementById('fake-account-menu'), null, '已打开状态下二次点击不得重开账号菜单')
 
-      // 无更新 pill 时点更新 → 穿透 launcher 菜单进入桌面设置页签
+      // 无更新 pill 时更新按钮默认隐藏；程序触发仍可穿透进入桌面设置页签
       const updateRailBtn = doc.querySelector('[data-omnimux-rail-item="updates"]')
+      assert.equal(updateRailBtn.hidden, true)
       updateRailBtn.click()
       assert.equal(settingsOpened, 1)
       assert.equal(desktopTabClicks, 1)
@@ -795,6 +805,87 @@ describe('nav-rail 固定左侧导航轨', () => {
       assert.match(NAV_RAIL_CSS, /\.omnimux-nav-rail-divider\s*\{[^}]*height:\s*0;[^}]*border-top:\s*0\.5px solid var\(--dsw-alias-border-l2-darkmode-thin,\s*var\(--dsw-alias-border-l1\)\);/s)
       assert.doesNotMatch(NAV_RAIL_CSS, /1px solid var\(--dsw-alias-border-l3\)/)
       assert.doesNotMatch(NAV_RAIL_CSS, /\.omnimux-nav-rail-divider\s*\{[^}]*var\(--dsw-alias-border-l3\)/s)
+    } finally {
+      disposeRail()
+    }
+  })
+
+  it('更新按钮默认隐藏，仅在检测到更新 pill 时显现并同步动态文案，移除后自动隐藏', async () => {
+    const { win, doc } = setupDom({ withUpdatePill: false })
+    const disposeRail = installNavRail(doc)
+    try {
+      const updateBtn = doc.querySelector('[data-omnimux-rail-item="updates"]')
+      const tooltip = doc.querySelector('.omnimux-nav-rail-tooltip')
+      const footerSlot = doc.querySelector('[data-slot="sidebar.footer.action"]')
+      assert.equal(updateBtn.hidden, true)
+      assert.equal(updateBtn.getAttribute('data-has-update'), 'false')
+      assert.equal(updateBtn.getAttribute('data-tooltip'), '应用更新')
+
+      // 隐藏态下悬停不得误显 Tooltip
+      updateBtn.dispatchEvent(new win.Event('pointerover', { bubbles: true }))
+      assert.equal(tooltip.getAttribute('data-visible'), 'false')
+
+      // 动态检测到更新（挂载 data-next-update-pill）
+      const pill = doc.createElement('button')
+      pill.type = 'button'
+      pill.setAttribute('data-next-update-pill', '')
+      pill.setAttribute('aria-label', '有新版本可用 v2.1.0')
+      pill.textContent = '更新'
+      footerSlot.append(pill)
+      await Promise.resolve()
+
+      assert.equal(updateBtn.hidden, false)
+      assert.equal(updateBtn.getAttribute('data-has-update'), 'true')
+      assert.equal(updateBtn.getAttribute('aria-label'), '有新版本可用 v2.1.0')
+      assert.equal(updateBtn.getAttribute('data-tooltip'), '有新版本可用 v2.1.0')
+
+      // 悬停可见态显示实时文案，且下载进度变更同步更新激活中的 Tooltip
+      updateBtn.dispatchEvent(new win.Event('pointerover', { bubbles: true }))
+      assert.equal(tooltip.getAttribute('data-visible'), 'true')
+      assert.equal(tooltip.textContent, '有新版本可用 v2.1.0')
+
+      pill.setAttribute('aria-label', '下载更新 45% v2.1.0')
+      await Promise.resolve()
+      assert.equal(updateBtn.getAttribute('aria-label'), '下载更新 45% v2.1.0')
+      assert.equal(tooltip.textContent, '下载更新 45% v2.1.0')
+
+      // 更新消失后恢复隐藏并关闭残留 Tooltip
+      pill.remove()
+      await Promise.resolve()
+      assert.equal(updateBtn.hidden, true)
+      assert.equal(updateBtn.getAttribute('data-has-update'), 'false')
+      assert.equal(updateBtn.getAttribute('aria-label'), '应用更新')
+      assert.equal(tooltip.getAttribute('data-visible'), 'false')
+    } finally {
+      disposeRail()
+    }
+  })
+
+  it('sidebar.footer.action 晚于导航轨挂载时，后续出现更新 pill 仍能显现更新按钮', async () => {
+    const { doc } = setupDom({ withUpdatePill: false })
+    doc.querySelector('[data-slot="sidebar.footer.action"]')?.remove()
+    const disposeRail = installNavRail(doc)
+    try {
+      const updateBtn = doc.querySelector('[data-omnimux-rail-item="updates"]')
+      assert.equal(updateBtn.hidden, true)
+
+      const footArea = doc.querySelector('.SidebarRoot_footArea__qa')
+      const lateSlot = doc.createElement('div')
+      lateSlot.setAttribute('data-slot', 'sidebar.footer.action')
+      footArea.prepend(lateSlot)
+      await Promise.resolve()
+      assert.equal(updateBtn.hidden, true)
+
+      const pill = doc.createElement('button')
+      pill.type = 'button'
+      pill.setAttribute('data-next-update-pill', '')
+      pill.setAttribute('aria-label', '重启以完成更新 v2.2.0')
+      lateSlot.append(pill)
+      await Promise.resolve()
+
+      assert.equal(updateBtn.hidden, false)
+      assert.equal(updateBtn.getAttribute('data-has-update'), 'true')
+      assert.equal(updateBtn.getAttribute('aria-label'), '重启以完成更新 v2.2.0')
     } finally {
       disposeRail()
     }
