@@ -888,18 +888,20 @@ body[data-ds-dark-theme] .omx-skill-card .omnimux-creatify-badge-new {
   border-radius: 999px;
   font-size: 11px;
   font-weight: 600;
-  background: var(--dsw-alias-bg-elevated, rgba(255, 255, 255, 0.12));
+  background: var(--dsw-alias-bg-layer-2, rgba(255, 255, 255, 0.04));
   border: 1px solid var(--dsw-alias-border-l2, rgba(255, 255, 255, 0.14));
   color: var(--dsw-alias-label-secondary, #a1a1aa);
   white-space: nowrap;
 }
 .omx-skill-card-install-btn {
   position: relative;
-  z-index: 2;
+  z-index: 3;
+  pointer-events: auto;
+  flex: none;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  height: 26px;
+  height: 28px;
   padding: 0 11px;
   border-radius: 7px;
   border: 1px solid var(--dsw-alias-brand-primary, #6f59ff);
@@ -909,7 +911,12 @@ body[data-ds-dark-theme] .omx-skill-card .omnimux-creatify-badge-new {
   font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
+  box-sizing: border-box;
   transition: background 0.15s ease, opacity 0.15s ease;
+}
+.omx-skill-card-install-btn:focus-visible {
+  outline: 2px solid var(--dsw-alias-border-selected, #6f59ff);
+  outline-offset: 2px;
 }
 .omx-skill-card-install-btn:hover:not(:disabled) {
   background: var(--dsw-alias-button-primary-hover, #7d68ff);

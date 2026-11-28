@@ -8,12 +8,12 @@ Tracking Issue: #418
 2. 对标研究与仓内架构审计：
    - 上游 `sealeap-amazon-skills/assets/catalog.json` 共收录 195 个技能，覆盖 Shopify（28）、Etsy（23）、eBay（23）、TikTok Shop（22）、Walmart（24）、美客多（25）、OZON（26，均标注依赖 MPstats）和 Wayfair（24）等 8 个平台，按 `mode` 划分为 `selection`（44 项）、`operations`（110 项）与 `advertising`（41 项），全部自带规范化 `SKILL.md` 及配套方法论文档，采用 `Copyright (c) 2026 SeaLeap` MIT 许可。
    - `omnimux-market` 已有 `source.type: "git"` 轻量目录指针机制（`src/expert/catalog.js`、`src/expert/install.js`、`src/install.ts`）与异步稀疏检出能力基础；采用“零仓内拷贝，仅存 Git 指针 + 按需稀疏克隆到 `DSH_HOME/skills/<slug>/`”方案，可将仓内体积增量与未安装用户的上下文注入成本控制到最低（0-Token）。
-   - `omnimux-market` 现有广场分类采用 6 个 4 字垂直场景，同时门禁与多套测试强约束广场「全部」视图与首页 `featured-skills.json` 严格保持 36 个官方自研技能。因此必须将 `selection`（44 项）映射到 `scene-research`（「市场洞察」）、`operations` + `advertising`（151 项）映射到 `scene-growth`（「营销增长」），并将所有 195 项标记 `recommended: false`，确保「全部」视图与首页 36 项零污染，仅在对应分类视图和搜索中可见，并在「市场洞察」与「营销增长」内提供二级平台筛选（全部、官方、Shopify、Etsy、eBay、TikTok Shop、Walmart、美客多、OZON、Wayfair）。
+   - `omnimux-market` 现有广场分类采用 6 个 4 字垂直场景，同时门禁与多套测试强约束广场「全部」视图与首页 `plugins/plugins/omnimux/src/client/session-guide/skills/featured-skills.json` 严格保持 36 个官方自研技能。因此必须将 `selection`（44 项）映射到 `scene-research`（「市场洞察」）、`operations` + `advertising`（151 项）映射到 `scene-growth`（「营销增长」），并将所有 195 项标记 `recommended: false`，确保「全部」视图与首页 36 项零污染，仅在对应分类视图和搜索中可见，并在「市场洞察」与「营销增长」内提供二级平台筛选（全部、官方、Shopify、Etsy、eBay、TikTok Shop、Walmart、美客多、OZON、Wayfair）。
 
 ## 假设
 
 1. **目录指针与异步并发安全稀疏安装**：在 `catalog/index.json` 新增 195 条 `kind: "skill"`、`tab: "skills"`、`recommended: false`、`origin: "third-party"`、`license: "MIT"`、`owner: "SeaLeap"`、`author: "SeaLeap"`、`installType: "marketplace"`、`source: { type: "git", repo: "xjli360/sealeap-ecommerce-skills", path: "sealeap-amazon-skills/<path>", ref: "main" }` 条目，并在 `expert/install.js` 与 `install.ts` 实现按仓库串行锁、异步 `execFile`、超时期限、符号链接拒绝（`lstat` 检查）、`--` 参数分隔及临时暂存目录原子重命名，可在不臃肿公开仓库的前提下实现并发安全的按需安装与跨重启持久化。
-2. **安装即启用、卸载即停用与 `/` 提示零污染**：在 `expert/catalog-provider.js` 跳过未安装的外部 `third-party` + `git` 技能，并确保详情页 `DetailCard` 与广场「我的 Skill」开关分别映射 `install`（启用）与持久化 `uninstall`（停用，预装技能除外），同时移除 `skills-ui.js` 对未安装 `git` 技能伪造视频脚手架占位的 fallback，即可实现“未安装 0-Token、安装后完整读取真实 `SKILL.md` 且 `/` 立即可用、卸载即停用”。
+2. **安装即启用、卸载即停用与 `/` 提示零污染**：在 `expert/catalog-provider.js` 跳过未安装的外部 `third-party` + `git` 技能，并确保详情页 `DetailCard` 与广场「我的 Skill」开关分别映射 `install`（启用）与清理 `DSH_HOME/skills` 的持久化 `uninstall`（未配置 `DSH_HOME` 时按默认路径语义；预装技能不可卸载），卸载后同步保留 `DetailCard` 外部预览元数据并清理 `providerSlugs`，同时移除 `skills-ui.js` 对未安装 `git` 技能伪造视频脚手架占位的 fallback，即可实现“未安装 0-Token、安装后完整读取真实 `SKILL.md` 且 `/` 立即可用、卸载即停用”。
 3. **分类保真、首页 36 守恒与平台二级筛选**：在 `skill-picker-logic.js`、`PlazaCardGrid.jsx`、`FeaturedCard.jsx` 与 `usePlazaFilter.js` 中，将外部技能从 `全部` 视图过滤，保留在 `scene-research` / `scene-growth` 分类视图（官方 8 项置顶分组，外部技能分组紧随其后并支持平台胶囊过滤）与搜索中，`skillScenarioCounts().total` 维持 36，可兼顾发现效率与既有一方货架体验。
 
 ## 证伪方式

@@ -460,8 +460,8 @@
       const { state, mark, loadInstalled, onCloseModal, onConfirm, tr, projectDir } = opts;
       const openItem = state.open;
       const onDrawerClose = () => state.setOpen(null);
-      const onDrawerInstalled = (it) => mark(it, true);
-      const onDrawerUninstalled = (it) => mark(it, false);
+      const onDrawerInstalled = (it) => { mark(it, true); if (typeof loadInstalled === "function") loadInstalled(); };
+      const onDrawerUninstalled = (it) => { mark(it, false); if (typeof loadInstalled === "function") loadInstalled(); };
       // 套件走独立详情模态；技能 / 专家沿用既有 Drawer。
       const drawerNode = openItem
         ? (openItem.kind === "suite"

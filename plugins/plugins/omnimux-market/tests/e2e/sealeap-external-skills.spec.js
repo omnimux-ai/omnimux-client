@@ -7,8 +7,11 @@ import React from 'react';
 import catalog from '../../catalog/index.json' with { type: 'json' };
 import * as SkillShelf from '../../src/client/skill-picker-logic.js';
 import * as plazaUtils from '../../src/client/plaza/plazaUtils.js';
+import { updateInstalledItemsList } from '../../src/client/plaza/usePlazaFilter.js';
 import * as auroraGradients from '../../src/client/plaza/auroraGradients.js';
 import * as cardCoversData from '../../src/client/plaza/cardCoversData.js';
+import { loadClientModule } from '../helpers/client-esm-loader.mjs';
+import { runStyleDomProbe } from '../../../../scripts/test-fixtures/style-dom-probe.mjs';
 
 const featuredCardSrc = readFileSync(new URL('../../src/client/plaza/FeaturedCard.jsx', import.meta.url), 'utf8');
 const compiledFeaturedCard = esbuild.transformSync(featuredCardSrc, { loader: 'jsx', format: 'cjs' }).code;
@@ -165,4 +168,208 @@ test('DetailCard 不得对未安装外部技能展示伪造视频脚手架步骤
   const skillsUiSrc = readFileSync(new URL('../../src/client/skills-ui.js', import.meta.url), 'utf8');
   assert.equal(skillsUiSrc.includes('Intake and Lock the Core Brief'), false, '必须移除伪造的视频步骤占位文案');
   assert.ok(skillsUiSrc.includes('omx-external-preview-card'), 'DetailCard 必须包含外部技能诚实预览面板');
+});
+
+test('Chromium 实测：外部卡片安装按钮 pointer-events 与层叠命中优先于平铺触发器，MIT 徽章不使用未定义 Token', () => {
+  const cssFileSrc = readFileSync(new URL('../../src/client/css.js', import.meta.url), 'utf8');
+  const marketCss = /const CSS = `([\s\S]*?)`\s*;/.exec(cssFileSrc)?.[1] || '';
+  assert.ok(marketCss.includes('.omx-skill-card-install-btn'), 'css.js 必须包含外部安装按钮规则');
+  const extBadgeMatch = /\.omx-skill-card-badge-external\s*\{([^}]*)\}/.exec(marketCss);
+  assert.ok(extBadgeMatch, 'css.js 必须包含 .omx-skill-card-badge-external 规则');
+  assert.equal(extBadgeMatch[1].includes('--dsw-alias-bg-elevated'), false, '.omx-skill-card-badge-external 不得引用宿主未定义的 --dsw-alias-bg-elevated');
+
+  const html = `
+    <style>
+      :root {
+        --dsw-alias-bg-layer-2: rgb(36, 38, 45);
+        --dsw-alias-border-l2: rgba(255, 255, 255, 0.14);
+        --dsw-alias-brand-primary: rgb(111, 89, 255);
+        --dsw-alias-label-primary-foreground: rgb(255, 255, 255);
+        --dsw-alias-label-secondary: rgb(161, 161, 170);
+      }
+    </style>
+    <div class="sh-plaza-body" style="width:960px">
+      <div class="sh-mkt">
+        <div class="featured-grid cards-grid">
+          <div class="featured-card omnimux-creatify-card omx-skill-card">
+            <div class="omnimux-creatify-card-bg-img omx-skill-card-aura"></div>
+            <div class="omnimux-creatify-dot-overlay"></div>
+            <button type="button" class="omx-skill-card-open-trigger" aria-label="Shopify 爆品发现"></button>
+            <div class="omx-skill-card-header">
+              <h3 class="omnimux-creatify-center-title omx-skill-card-title"><span>Shopify 爆品发现</span></h3>
+              <div class="omx-skill-card-badges"><span class="omx-skill-card-badge-external">MIT</span></div>
+            </div>
+            <p class="omx-skill-card-desc">多维度分析 Shopify 利基市场与爆品潜力</p>
+            <div class="omx-skill-card-footer">
+              <span class="omx-skill-card-category">Shopify</span>
+              <button type="button" class="omx-skill-card-install-btn" aria-label="安装 Shopify 爆品发现">安装</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>`;
+
+  const probe = runStyleDomProbe({
+    name: 'sealeap-external-card-hit-test',
+    styles: marketCss,
+    html,
+    measure: () => {
+      const btn = document.querySelector('.omx-skill-card-install-btn');
+      const desc = document.querySelector('.omx-skill-card-desc');
+      const badge = document.querySelector('.omx-skill-card-badge-external');
+      const bRect = btn.getBoundingClientRect();
+      const dRect = desc.getBoundingClientRect();
+      const btnHit = document.elementFromPoint(bRect.left + bRect.width / 2, bRect.top + bRect.height / 2);
+      const descHit = document.elementFromPoint(dRect.left + dRect.width / 2, dRect.top + dRect.height / 2);
+      const btnCs = getComputedStyle(btn);
+      const badgeCs = getComputedStyle(badge);
+      return {
+        pointerEvents: btnCs.pointerEvents,
+        zIndex: btnCs.zIndex,
+        btnHeight: Math.round(bRect.height),
+        btnHitsInstallBtn: Boolean(btnHit && btnHit.closest && btnHit.closest('.omx-skill-card-install-btn')),
+        descHitsOpenTrigger: Boolean(descHit && descHit.classList && descHit.classList.contains('omx-skill-card-open-trigger')),
+        badgeBg: badgeCs.backgroundColor,
+      };
+    },
+  });
+
+  assert.equal(probe.pointerEvents, 'auto');
+  assert.ok(Number(probe.zIndex) >= 3, `zIndex 应 >= 3，实际为 ${probe.zIndex}`);
+  assert.ok(probe.btnHeight >= 28, `按钮高度应 >= 28px，实际为 ${probe.btnHeight}`);
+  assert.equal(probe.btnHitsInstallBtn, true, '点击外部安装按钮中心点必须命中 .omx-skill-card-install-btn');
+  assert.equal(probe.descHitsOpenTrigger, true, '点击简介区必须命中平铺详情按钮');
+  assert.equal(probe.badgeBg, 'rgb(36, 38, 45)', 'MIT 徽章底色必须走已定义的 --dsw-alias-bg-layer-2');
+});
+
+test('updatePlazaItemInstalled 卸载时同步清理 providerSlugs，DetailCard 从我的 Skill 卸载后保留外部预览元数据', async () => {
+  let items = [{ id: 'sk-sealeap-1', slug: 'sealeap-shopify-product-selection', installed: true }];
+  let installedItems = [{ slug: 'sealeap-shopify-product-selection', installed: true }];
+  let providerSlugs = ['sealeap-shopify-product-selection', 'video-hook-analysis'];
+  let openItem = { slug: 'sealeap-shopify-product-selection', installed: true };
+  plazaUtils.updatePlazaItemInstalled(
+    { id: 'sk-sealeap-1', slug: 'sealeap-shopify-product-selection' },
+    false,
+    {
+      setItems: (fn) => { items = fn(items); },
+      setInstalledItems: (fn) => { installedItems = fn(installedItems); },
+      setProviderSlugs: (fn) => { providerSlugs = fn(providerSlugs); },
+      setOpen: (fn) => { openItem = fn(openItem); },
+    },
+    updateInstalledItemsList,
+  );
+  assert.equal(items[0].installed, false);
+  assert.equal(installedItems.length, 0);
+  assert.deepEqual(providerSlugs, ['video-hook-analysis']);
+  assert.equal(openItem.installed, false);
+
+  const vh = (type, props, ...children) => ({ type, props: { ...(props || {}), children: children.flat() } });
+  const stateSlots = new Map();
+  const effectSlots = new Map();
+  let hookIdx = 0;
+  let effectIdx = 0;
+  let pendingEffects = [];
+  let detailCalls = 0;
+  const ReactMock = {
+    useContext: () => (k) => k,
+    useState: (init) => {
+      const idx = hookIdx++;
+      if (!stateSlots.has(idx)) stateSlots.set(idx, init);
+      const setter = (next) => {
+        const cur = stateSlots.get(idx);
+        stateSlots.set(idx, typeof next === 'function' ? next(cur) : next);
+      };
+      return [stateSlots.get(idx), setter];
+    },
+    useEffect: (fn, deps) => {
+      const idx = effectIdx++;
+      const prev = effectSlots.get(idx);
+      const changed = !deps || !prev || !prev.deps || deps.length !== prev.deps.length || deps.some((d, i) => !Object.is(d, prev.deps[i]));
+      if (changed) {
+        effectSlots.set(idx, { deps: deps || null });
+        pendingEffects.push(fn);
+      }
+    },
+    useRef: () => ({ current: null }),
+    createContext: () => ({ Provider: 'Provider' }),
+  };
+  const { Drawer: renderDrawer } = loadClientModule('./skills-ui.js', {
+    globals: {
+      document: { body: { style: {} } },
+      window: { addEventListener: () => {}, removeEventListener: () => {} },
+    },
+    modules: {
+      './boot.js': {
+        h: vh,
+        React: ReactMock,
+        useState: ReactMock.useState,
+        useEffect: ReactMock.useEffect,
+        Button: (props) => vh('button', props, props.children),
+        IconButton: (props) => vh('button', props, props.children),
+      },
+      './portal.js': { createPortal: (node) => node, fallbackPortal: null },
+      './i18n.js': {
+        useTr: () => (k) => k,
+        lookup: (k) => k,
+        catLabel: () => '市场洞察',
+        skillDesc: (x) => x?.description || x?.summary || '',
+        skillTitle: (x) => x?.name || x?.title || '',
+      },
+      './api.js': {
+        api: async (method) => {
+          if (method === 'detail') {
+            detailCalls += 1;
+            return {
+              ok: true,
+              installed: true,
+              card: {
+                slug: 'sealeap-shopify-product-selection',
+                installed: true,
+                origin: 'third-party',
+                subtitle: 'Shopify',
+                license: 'MIT',
+                author: 'SeaLeap',
+                source: { type: 'git', repo: 'xjli360/sealeap-ecommerce-skills', path: 'sealeap-amazon-skills/s1', ref: 'main' },
+              },
+            };
+          }
+          if (method === 'skillContent') {
+            return { ok: true, found: false, external: true };
+          }
+          return { ok: true };
+        },
+      },
+      './session-create.js': { trySkillInSession: async () => ({ ok: true }) },
+    },
+  });
+
+  const expand = (node) => {
+    if (!node || typeof node !== 'object') return node;
+    if (Array.isArray(node)) return node.map(expand);
+    if (typeof node.type === 'function') return expand(node.type(node.props || {}));
+    const children = node.props?.children;
+    return { ...node, props: { ...(node.props || {}), children: children ? expand(children) : children } };
+  };
+  const renderWithItem = (propItem) => {
+    hookIdx = 0;
+    effectIdx = 0;
+    pendingEffects = [];
+    return expand(renderDrawer({ item: propItem, onClose: () => {} }));
+  };
+  const flushEffects = async () => {
+    for (const fn of [...pendingEffects]) await fn();
+  };
+
+  renderWithItem({ slug: 'sealeap-shopify-product-selection', installed: true });
+  await flushEffects();
+  renderWithItem({ slug: 'sealeap-shopify-product-selection', installed: true });
+  await flushEffects();
+
+  // 模拟从「我的 Skill」卸载后父级传入不含 origin/source 的精简对象（同 slug 不重调 detail）
+  renderWithItem({ slug: 'sealeap-shopify-product-selection', installed: false });
+  await flushEffects();
+  const afterTree = renderWithItem({ slug: 'sealeap-shopify-product-selection', installed: false });
+  assert.equal(detailCalls, 1, '同 slug 属性更新不应重新拉取 detail');
+  const previewNodes = collectNodes(afterTree, (n) => typeof n.props?.className === 'string' && n.props.className.includes('omx-external-preview-card'));
+  assert.equal(previewNodes.length, 1, '从我的 Skill 卸载后重渲染必须保留 origin/source 并渲染诚实外部预览面板');
 });

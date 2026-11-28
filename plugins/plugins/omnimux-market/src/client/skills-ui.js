@@ -328,7 +328,29 @@
       const [refDirOpen, setRefDirOpen] = useState(false);
       const [contentNonce, setContentNonce] = useState(0);
 
-      useEffect(() => { setView(item); }, [item]);
+      useEffect(() => {
+        setView((cur) => {
+          const curKey = cur && (cur.slug || cur.token || cur.skillKey || cur.skill || cur.id);
+          const nextKey = item && (item.slug || item.token || item.skillKey || item.skill || item.id);
+          if (cur && curKey && curKey === nextKey) {
+            return {
+              ...cur,
+              ...item,
+              origin: item.origin || cur.origin,
+              source: item.source || cur.source,
+              subtitle: item.subtitle || cur.subtitle,
+              license: item.license || cur.license,
+              author: item.author || cur.author,
+              owner: item.owner || cur.owner,
+              titleZh: item.titleZh || cur.titleZh,
+              titleEn: item.titleEn || cur.titleEn,
+              summaryZh: item.summaryZh || cur.summaryZh,
+              summaryEn: item.summaryEn || cur.summaryEn,
+            };
+          }
+          return item;
+        });
+      }, [item]);
 
       useEffect(() => {
         let live = true;

@@ -126,10 +126,11 @@ function collectWorkshopDiscovery(input, includeRemote) {
         for (const item of input.catalog.items) {
             if (catalogSkillChannel(item) !== channel)
                 continue;
-            if (!includeRemote && item.origin === 'third-party' && item.source?.type === 'git')
-                continue;
             const token = skillToken({ slug: catalogSkillSlug(item) }).toLowerCase();
             if (!token || winners.has(token))
+                continue;
+            const installed = inventory.get(token);
+            if (!includeRemote && !installed && item.origin === 'third-party' && item.source?.type === 'git')
                 continue;
             if (isOfficialShelfItem(item)) {
                 outcome.enforced = true;
@@ -139,7 +140,6 @@ function collectWorkshopDiscovery(input, includeRemote) {
                     continue;
                 }
             }
-            const installed = inventory.get(token);
             const domains = workshopDomains(item);
             // 范围外条目「尽力携带」双语：不判不拦，但字段缺失时保持空串。
             const bilingual = checkSkillBilingual(item);
