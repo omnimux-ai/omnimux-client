@@ -78,6 +78,8 @@ describe('inspiration query + rewrite', () => {
       'https://evil.example/api/inspiration/v1/media/a.jpg',
       'https://omnimux.ai/other/path/a.jpg',
       'https://user@omnimux.ai/api/inspiration/v1/media/a.jpg',
+      'https://omnimux.ai/api/inspiration/v1/media/slides/../secret.jpg',
+      'https://omnimux.ai/api/inspiration/v1/media/slides/%2e%2e/secret.jpg',
     ]) {
       assert.equal(normalizeCloudMediaKey(unsafe), '', `expected ${unsafe} to be rejected`)
     }

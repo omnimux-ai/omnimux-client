@@ -229,10 +229,13 @@ describe('resolveCreatorProfileUrl', () => {
 })
 
 describe('extractTikTokVideoId', () => {
-  it('extracts id from standard video and photo URLs with and without @, with query params', () => {
+  it('extracts id from standard video URLs with and without @, with query params', () => {
     assert.equal(extractTikTokVideoId('https://www.tiktok.com/@user/video/7555186216296008990'), '7555186216296008990')
     assert.equal(extractTikTokVideoId('https://www.tiktok.com/user/video/7555186216296008990'), '7555186216296008990')
     assert.equal(extractTikTokVideoId('https://tiktok.com/@creator/video/7555186216296008990?is_from_webapp=1&sender_device=pc'), '7555186216296008990')
+  })
+
+  it('extracts id from photo carousel URLs with and without @', () => {
     assert.equal(extractTikTokVideoId('https://www.tiktok.com/@kateestills/photo/7555186216296008990?is_from_webapp=1'), '7555186216296008990')
     assert.equal(extractTikTokVideoId('https://www.tiktok.com/photo/7555186216296008990'), '7555186216296008990')
   })
@@ -264,9 +267,12 @@ describe('resolveTikTokEmbedUrl', () => {
     assert.equal(resolveTikTokEmbedUrl(7555186216296008990n), 'https://www.tiktok.com/player/v1/7555186216296008990')
   })
 
-  it('handles standard TikTok video and photo URLs with or without @ and query params', () => {
+  it('handles standard TikTok video URLs with or without @ and query params', () => {
     assert.equal(resolveTikTokEmbedUrl('https://www.tiktok.com/@user/video/7555186216296008990'), 'https://www.tiktok.com/player/v1/7555186216296008990')
     assert.equal(resolveTikTokEmbedUrl('https://tiktok.com/@user/video/7555186216296008990?lang=en'), 'https://www.tiktok.com/player/v1/7555186216296008990')
+  })
+
+  it('handles TikTok photo carousel URLs with and without @', () => {
     assert.equal(resolveTikTokEmbedUrl('https://www.tiktok.com/@kateestills/photo/7555186216296008990'), 'https://www.tiktok.com/player/v1/7555186216296008990')
     assert.equal(resolveTikTokEmbedUrl('https://www.tiktok.com/photo/7555186216296008990?is_from_webapp=1'), 'https://www.tiktok.com/player/v1/7555186216296008990')
   })

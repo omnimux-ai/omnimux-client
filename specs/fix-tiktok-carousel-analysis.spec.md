@@ -26,7 +26,22 @@ Issue: #454
 
 ## 证伪方式
 - 若修改后 `extractTikTokAwemeId('https://www.tiktok.com/@kateestills/photo/7548000000000000001')` 仍返回空串、`parseSocialMeta` 对含 `.heic`+`.jpeg` 的 `image_post_info` 与 BGM `play_addr` 仍抽出视频或选出 `.heic` 导致导入失败、或 `import-url` 在传入 `cloud_id` 时仍绕过 `inspirationCatalog` 去调用 `socialFetcher` 报错，即证明假设或实现有误。
-- 可执行验证命令：`corepack pnpm --dir plugins --filter omnimux test`、`corepack pnpm --dir plugins --filter omnimux-inspiration test`、`node --test plugins/plugins/omnimux-inspiration/src/client/post-detail-carousel.e2e.test.js`。
+- 可执行验证命令：`corepack pnpm --dir plugins --filter omnimux test`、`corepack pnpm --dir plugins --filter omnimux-inspiration test`、`node --import ./plugins/plugins/omnimux-inspiration/scripts/deny-network.mjs --test plugins/plugins/omnimux-inspiration/src/client/tiktok-carousel-analysis.e2e.test.js`。
+
+## 旧标准变更
+
+- `plugins/plugins/omnimux/src/host/apply.test.js` :: `registers all 55 tools and every provided seam by default`
+  - 原断言：`provided` 数组包含原有 25 个接缝，未含 `inspirationCatalog`。
+  - 必须改的理由：`mountOfficial` 新增提供只读 `inspirationCatalog` seam（供领域插件本地化云端目录条目与受控媒体流），全量 seam 白名单断言需同步包含 `'inspirationCatalog'`。
+  - 新期望证据：默认挂载断言包含 `'inspirationCatalog'` 且 55 个工具断言完整保留。
+- `plugins/plugins/omnimux/src/host/apply.test.js` :: `disables all gated capabilities when gate.enabled is false`
+  - 原断言：`provided` 数组包含原有 16 个接缝。
+  - 必须改的理由：`inspirationCatalog` 与 `inspirationShare` 同属 `official.mount` 生命周期下的只读能力，随 `gate.enabled: false` 用例白名单同步纳入 `'inspirationCatalog'`。
+  - 新期望证据：能力总开关关闭时断言包含 `'inspirationCatalog'`，仅保留 5 个本地工具，测试通过。
+- `plugins/plugins/omnimux/src/host/apply.test.js` :: `fine-grained disables media, text models, and official tools via gate`
+  - 原断言：`provided` 数组包含原有 24 个接缝。
+  - 必须改的理由：细粒度禁用视频生成与 `omnimux_social_data` 时，只读目录接缝 `inspirationCatalog` 仍随官方能力挂载，白名单同步纳入 `'inspirationCatalog'`。
+  - 新期望证据：细粒度门控断言包含 `'inspirationCatalog'`，并继续断言被禁用工具缺失与模型过滤，测试通过。
 
 ## 新用户基线
 - 仅依赖官方登录认证与标准 Hub 网关/插件服务（`socialData` / `inspirationCatalog` / `headlessSkill`）；不引入任何开发机路径、本地端口、开发档位或静默假数据回退；未登录时透传 `401 needs-omnimux` 由 `authGuard` 引导登录。

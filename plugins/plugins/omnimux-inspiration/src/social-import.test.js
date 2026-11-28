@@ -1126,13 +1126,25 @@ describe('TikTok photo carousel & cloud catalog localization (#454)', () => {
         }),
       },
       {
-        suffix: '992',
+        suffix: '993',
         catalog: () => ({
           getItem: async () => ({
-            id: 'cloud_bad_path',
+            id: 'cloud_encoded_traversal',
             type: 'image',
             content_shape: 'gallery',
-            media_keys: ['/omnimux/inspiration/media/ok.jpg', '../etc/passwd'],
+            media_keys: ['/omnimux/inspiration/media/%2e%2e/secret.jpg'],
+          }),
+          fetchMedia: async () => new Response(JPEG_BYTES, { status: 200 }),
+        }),
+      },
+      {
+        suffix: '994',
+        catalog: () => ({
+          getItem: async () => ({
+            id: 'cloud_empty_prefix',
+            type: 'image',
+            content_shape: 'gallery',
+            media_keys: ['/omnimux/inspiration/media/'],
           }),
           fetchMedia: async () => new Response(JPEG_BYTES, { status: 200 }),
         }),
@@ -1214,39 +1226,33 @@ describe('TikTok photo carousel & cloud catalog localization (#454)', () => {
   })
 
   it('resolves TikWM photo carousel images cleanly in fallbackResolveSocial', async () => {
-    const prevEnv = process.env[FALLBACK_SWITCH_ENV]
-    process.env[FALLBACK_SWITCH_ENV] = '1'
-    try {
-      const resolved = await fallbackResolveSocial({
-        platform: 'tiktok',
-        url: 'https://www.tiktok.com/@kateestills/photo/7555186216296008990',
-        fetchImpl: async () => ({
-          ok: true,
-          status: 200,
-          json: async () => ({
-            data: {
-              title: 'TikWM Carousel',
-              cover: 'https://p16-sign.tiktokcdn.com/cover.jpg',
-              play: 'https://v16.tiktokcdn.com/bgm.mp3',
-              images: [
-                'https://p16-sign.tiktokcdn.com/slide1.jpg',
-                'https://p16-sign.tiktokcdn.com/slide2.jpg',
-                'https://p16-sign.tiktokcdn.com/slide3.jpg',
-              ],
-            },
-          }),
+    const resolved = await fallbackResolveSocial({
+      platform: 'tiktok',
+      url: 'https://www.tiktok.com/@kateestills/photo/7555186216296008990',
+      allowNetwork: true,
+      fetchImpl: async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          data: {
+            title: 'TikWM Carousel',
+            cover: 'https://p16-sign.tiktokcdn.com/cover.jpg',
+            play: 'https://v16.tiktokcdn.com/bgm.mp3',
+            images: [
+              'https://p16-sign.tiktokcdn.com/slide1.jpg',
+              'https://p16-sign.tiktokcdn.com/slide2.jpg',
+              'https://p16-sign.tiktokcdn.com/slide3.jpg',
+            ],
+          },
         }),
-      })
-      assert.equal(resolved.platform, 'tiktok')
-      assert.equal(resolved.data.video_url, '')
-      assert.deepEqual(resolved.data.images, [
-        'https://p16-sign.tiktokcdn.com/slide1.jpg',
-        'https://p16-sign.tiktokcdn.com/slide2.jpg',
-        'https://p16-sign.tiktokcdn.com/slide3.jpg',
-      ])
-    } finally {
-      if (prevEnv === undefined) delete process.env[FALLBACK_SWITCH_ENV]
-      else process.env[FALLBACK_SWITCH_ENV] = prevEnv
-    }
+      }),
+    })
+    assert.equal(resolved.platform, 'tiktok')
+    assert.equal(resolved.data.video_url, '')
+    assert.deepEqual(resolved.data.images, [
+      'https://p16-sign.tiktokcdn.com/slide1.jpg',
+      'https://p16-sign.tiktokcdn.com/slide2.jpg',
+      'https://p16-sign.tiktokcdn.com/slide3.jpg',
+    ])
   })
 })

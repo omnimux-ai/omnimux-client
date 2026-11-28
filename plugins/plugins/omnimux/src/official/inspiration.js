@@ -504,7 +504,14 @@ export function mediaKeyFromHostPath(pathname) {
 export function normalizeCloudMediaKey(raw) {
   if (typeof raw !== 'string') return ''
   const value = raw.trim()
-  if (!value || /[\u0000-\u001f\u007f\\?#]/.test(value)) return ''
+  if (
+    !value
+    || /[\u0000-\u001f\u007f\\?#]/.test(value)
+    || value.includes('..')
+    || /(?:^|\/)(?:\.|%2e){1,2}(?:\/|$)/i.test(value)
+  ) {
+    return ''
+  }
   let key = ''
   if (value.startsWith(HOST_MEDIA)) {
     key = value.slice(HOST_MEDIA.length)

@@ -19,16 +19,29 @@ test('scope, original translation and creation requests retain exact user select
   } finally { globalThis.fetch = original }
 })
 
-test('cloud records are imported with cloud_id and without automatic analysis before returning a real local identity', async () => {
+test('cloud records are imported without automatic analysis before returning a real local identity', async () => {
   const original = globalThis.fetch, calls = []
   globalThis.fetch = async (url, options) => { calls.push({ url, ...options }); return { ok: true, status: 200, json: async () => ({ data: { id: 'insp_saved', import_status: 'ready', content: '完整原帖' } }) } }
   try {
-    const result = await ensureLocalInspiration({ id: 'cloud', is_local: false, source_url: 'https://www.tiktok.com/@kateestills/photo/7555186216296008990' })
+    const result = await ensureLocalInspiration({ id: 'cloud', is_local: false, source_url: 'https://x.com/a/status/1' })
+    assert.equal(result.id, 'insp_saved')
+    assert.equal(result.is_local, true)
+    assert.equal(calls.length, 1)
+    assert.equal(JSON.parse(calls[0].body).auto_analyze, false)
+    assert.equal(JSON.parse(calls[0].body).return_existing, true)
+  } finally { globalThis.fetch = original }
+})
+
+test('cloud records pass cloud_id during ensureLocalInspiration localization', async () => {
+  const original = globalThis.fetch, calls = []
+  globalThis.fetch = async (url, options) => { calls.push({ url, ...options }); return { ok: true, status: 200, json: async () => ({ data: { id: 'insp_saved', import_status: 'ready', content: '完整原帖' } }) } }
+  try {
+    const result = await ensureLocalInspiration({ id: 'cloud_tiktok_1', is_local: false, source_url: 'https://www.tiktok.com/@kateestills/photo/7555186216296008990' })
     assert.equal(result.id, 'insp_saved')
     assert.equal(result.is_local, true)
     assert.equal(calls.length, 1)
     const sent = JSON.parse(calls[0].body)
-    assert.equal(sent.cloud_id, 'cloud')
+    assert.equal(sent.cloud_id, 'cloud_tiktok_1')
     assert.equal(sent.auto_analyze, false)
     assert.equal(sent.return_existing, true)
   } finally { globalThis.fetch = original }

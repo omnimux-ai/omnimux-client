@@ -1875,25 +1875,52 @@ function isCloudCatalogMediaPath(value) {
     && parsed.pathname.startsWith('/api/inspiration/v1/media/')
 }
 
+function isValidCloudRelativeKey(key) {
+  if (!key || key.startsWith('/') || /[\u0000-\u001f\u007f\\?#]/.test(key)) return false
+  const segments = key.split('/')
+  if (segments.some((segment) => !segment || segment === '.' || segment === '..')) return false
+  try {
+    const decoded = decodeURIComponent(key)
+    if (/[\u0000-\u001f\u007f\\]/.test(decoded)) return false
+    if (decoded.split('/').some((segment) => segment === '.' || segment === '..')) return false
+  } catch (err) {
+    console.debug?.('[omnimux-inspiration] invalid cloud media key encoding:', err?.message || err)
+    return false
+  }
+  return true
+}
+
 function normalizeCloudMediaAddress(raw) {
   if (typeof raw !== 'string') return ''
   const value = raw.trim()
-  if (!value || /[\u0000-\u001f\u007f\\]/.test(value) || value.includes('..')) return ''
+  if (
+    !value
+    || /[\u0000-\u001f\u007f\\]/.test(value)
+    || value.includes('..')
+    || /(?:^|\/)(?:\.|%2e){1,2}(?:\/|$)/i.test(value)
+  ) {
+    return ''
+  }
   if (/^https?:\/\//i.test(value)) {
     if (isCloudCatalogMediaPath(value)) {
       const parsed = new URL(value)
       if (parsed.username || parsed.password || parsed.search || parsed.hash) return ''
-      return value
+      const suffix = parsed.pathname.slice('/api/inspiration/v1/media/'.length)
+      return isValidCloudRelativeKey(suffix) ? value : ''
     }
     return isPublicHttpUrl(value) ? value : ''
   }
   if (/[?#]/.test(value)) return ''
-  if (value.startsWith('/omnimux/inspiration/media/')) return value
+  if (value.startsWith('/omnimux/inspiration/media/')) {
+    const key = value.slice('/omnimux/inspiration/media/'.length)
+    return isValidCloudRelativeKey(key) ? value : ''
+  }
   if (value.startsWith('/api/inspiration/v1/media/')) {
-    return `/omnimux/inspiration/media/${value.slice('/api/inspiration/v1/media/'.length)}`
+    const key = value.slice('/api/inspiration/v1/media/'.length)
+    return isValidCloudRelativeKey(key) ? `/omnimux/inspiration/media/${key}` : ''
   }
   if (value.startsWith('/') || /^[a-z][a-z\d+.-]*:/i.test(value)) return ''
-  return `/omnimux/inspiration/media/${value}`
+  return isValidCloudRelativeKey(value) ? `/omnimux/inspiration/media/${value}` : ''
 }
 
 function resolveCloudMediaAssets(item) {
@@ -1927,20 +1954,15 @@ function resolveCloudMediaAssets(item) {
   )
   const assets = []
   const seen = new Set()
-  if (!isImage) {
-    for (const candidate of [item?.video_url, item?.video_key, ...rawMediaUrls, ...rawMediaKeys]) {
-      const url = normalizeCloudMediaAddress(candidate)
-      if (!url || seen.has(url)) continue
-      seen.add(url)
-      assets.push({ type: 'video', url })
-    }
-    if (assets.length > 0) return { assets, invalidDeclared: false }
-  }
-  for (const candidate of [...rawMediaUrls, ...rawMediaKeys]) {
+  const candidates = isImage
+    ? [...rawMediaUrls, ...rawMediaKeys]
+    : [item?.video_url, item?.video_key, ...rawMediaUrls, ...rawMediaKeys]
+  const resolvedType = isImage ? 'image' : 'video'
+  for (const candidate of candidates) {
     const url = normalizeCloudMediaAddress(candidate)
     if (!url || seen.has(url)) continue
     seen.add(url)
-    assets.push({ type: item?.type === 'video' ? 'video' : 'image', url })
+    assets.push({ type: resolvedType, url })
   }
   return { assets, invalidDeclared: false }
 }
