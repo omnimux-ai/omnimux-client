@@ -1,6 +1,28 @@
 export const STYLES_ID = 'omnimux-workflow-styles'
 
 export const WORKFLOW_CSS = `
+:root {
+  --omnimux-motion-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --omnimux-motion-ease-spatial: cubic-bezier(0.32, 0.72, 0, 1);
+  --omnimux-motion-ease-exit: cubic-bezier(0.32, 0, 0.67, 0);
+  --omnimux-motion-ease-linear: linear;
+  --omnimux-motion-dur-press: 90ms;
+  --omnimux-motion-dur-fast: 140ms;
+  --omnimux-motion-dur-base: 200ms;
+  --omnimux-motion-dur-sheet: 260ms;
+  --omnimux-motion-press-scale: 0.96;
+  --omnimux-motion-press-scale-subtle: 0.985;
+}
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --omnimux-motion-dur-press: 0ms;
+    --omnimux-motion-dur-fast: 0ms;
+    --omnimux-motion-dur-base: 0ms;
+    --omnimux-motion-dur-sheet: 0ms;
+    --omnimux-motion-press-scale: 1;
+    --omnimux-motion-press-scale-subtle: 1;
+  }
+}
 .omx-stage-scroll {
   flex: 1 1 auto;
   min-height: 0;
@@ -501,7 +523,7 @@ export const WORKFLOW_CSS = `
   border-radius: 10px;
   background: var(--dsw-alias-bg-layer-1);
   overflow: hidden;
-  transition: border-color 120ms ease, box-shadow 120ms ease;
+  transition: border-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), box-shadow var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .omnimux-new-project-name:focus-within {
   border-color: var(--dsw-alias-brand-primary);
@@ -812,8 +834,7 @@ export const WORKFLOW_CSS = `
   flex: none;
   padding: 8px 12px;
   color: var(--dsw-alias-label-primary);
-  background: var(--dsw-alias-bg-base, Canvas);
-  background-color: rgb(from var(--dsw-specific-menu, var(--dsw-alias-bg-layer-1, var(--dsw-alias-bg-base, Canvas))) r g b / 1);
+  background: var(--dsw-specific-menu, var(--dsw-alias-bg-layer-1, var(--dsw-alias-bg-base, Canvas)));
   border-bottom: 1px solid var(--dsw-alias-border-l1);
   -webkit-app-region: no-drag;
 }
@@ -985,7 +1006,7 @@ export const WORKFLOW_CSS = `
   background: var(--dsw-alias-bg-layer-2);
   border: 1px solid var(--dsw-alias-border-l2);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), border-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
   user-select: none;
 }
 .omx-apptab-edit-btn:hover:not(:disabled) {
@@ -1009,7 +1030,7 @@ export const WORKFLOW_CSS = `
   background: transparent;
   border: 1px solid var(--dsw-alias-border-l1);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), border-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
   user-select: none;
 }
 .omx-apptab-restore-btn:hover:not(:disabled) {
@@ -1031,6 +1052,16 @@ export const WORKFLOW_CSS = `
   height: 13px;
   stroke: currentColor;
 }
+@keyframes omx-apptab-notice-in {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
 .omx-apptab-notice {
   position: fixed;
   top: 16px;
@@ -1046,6 +1077,7 @@ export const WORKFLOW_CSS = `
   border-radius: 8px;
   line-height: 16px;
   box-shadow: var(--dsw-shadow-lv2);
+  animation: omx-apptab-notice-in var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
 }
 .omx-apptab-notice--info {
   background: var(--dsw-alias-bg-layer-2);
@@ -1195,7 +1227,7 @@ export const WORKFLOW_CSS = `
   font-weight: 500;
   cursor: pointer;
   outline: none;
-  transition: all 0.15s ease;
+  transition: background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), border-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .omx-apptab-ratio-card:hover {
   background: var(--dsw-alias-interactive-bg-hover);
@@ -1234,7 +1266,7 @@ export const WORKFLOW_CSS = `
   justify-content: space-between;
   cursor: pointer;
   user-select: none;
-  transition: border-color 0.15s ease;
+  transition: border-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .omx-apptab-select-trigger:hover {
   border-color: var(--dsw-alias-border-l3);
@@ -1244,6 +1276,16 @@ export const WORKFLOW_CSS = `
 }
 .omx-apptab-select-trigger.is-error {
   border-color: var(--dsw-alias-state-error-primary);
+}
+@keyframes omx-apptab-dropdown-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 .omx-apptab-select-options {
   position: absolute;
@@ -1258,6 +1300,8 @@ export const WORKFLOW_CSS = `
   border: 1px solid var(--dsw-alias-border-l2);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6) !important; /* exempt-ui03 issue-2622 dropdown solid shadow */
   z-index: 100;
+  transform-origin: top center;
+  animation: omx-apptab-dropdown-in var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
 }
 .omx-apptab-select-option {
   padding: 8px 12px;
@@ -1323,7 +1367,7 @@ export const WORKFLOW_CSS = `
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.15s ease;
+  transition: background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), box-shadow var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .omx-apptab-seg-tab:hover {
   color: var(--dsw-alias-label-primary);
@@ -1359,7 +1403,7 @@ export const WORKFLOW_CSS = `
   align-items: center;
   gap: 4px;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), border-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .omx-apptab-mtag:hover:not(:disabled) {
   background: var(--dsw-alias-interactive-bg-hover);
@@ -1469,7 +1513,7 @@ export const WORKFLOW_CSS = `
   font-size: 13px;
   cursor: pointer;
   box-sizing: border-box;
-  transition: all 0.15s ease;
+  transition: border-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .omx-apptab-library-trigger:hover {
   border-color: var(--dsw-alias-brand-primary);
@@ -1543,7 +1587,7 @@ export const WORKFLOW_CSS = `
   gap: 4px;
   cursor: pointer;
   box-sizing: border-box;
-  transition: all 0.15s ease;
+  transition: border-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .omx-apptab-uploader:hover {
   border-color: var(--dsw-alias-brand-primary);
@@ -1569,6 +1613,20 @@ export const WORKFLOW_CSS = `
   text-decoration: underline;
 }
 
+@keyframes omx-apptab-mask-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes omx-apptab-modal-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
 /* 轻量模态输入弹层（消除原生 window.prompt） */
 .omx-apptab-modal-mask {
   position: fixed;
@@ -1578,7 +1636,7 @@ export const WORKFLOW_CSS = `
   align-items: center;
   justify-content: center;
   z-index: 1000;
-  backdrop-filter: blur(2px);
+  animation: omx-apptab-mask-in var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
 }
 .omx-apptab-modal {
   width: 360px;
@@ -1589,6 +1647,7 @@ export const WORKFLOW_CSS = `
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  animation: omx-apptab-modal-in var(--omnimux-motion-dur-base, 200ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
 }
 .omx-apptab-modal-header {
   height: 48px;
@@ -1654,7 +1713,7 @@ export const WORKFLOW_CSS = `
   border: 1px solid var(--dsw-alias-border-l2);
   background: var(--dsw-alias-bg-layer-2);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: border-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
   user-select: none;
 }
 .omx-apptab-product-item:hover {
@@ -1737,14 +1796,14 @@ export const WORKFLOW_CSS = `
   align-items: center;
   justify-content: center;
   gap: 8px;
-  transition: background-color 150ms cubic-bezier(0.16, 1, 0.3, 1),
-    transform 120ms cubic-bezier(0.16, 1, 0.3, 1);
+  transition: background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+    transform var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .omx-apptab-cta-btn:hover:not(:disabled) {
   background: var(--dsw-alias-button-primary-hover);
 }
 .omx-apptab-cta-btn:active:not(:disabled) {
-  transform: scale(0.96);
+  transform: scale(var(--omnimux-motion-press-scale, 0.96));
 }
 .omx-apptab-cta-btn:disabled {
   background: var(--dsw-alias-button-primary-dimmed);
@@ -1981,7 +2040,7 @@ export const WORKFLOW_CSS = `
   font-weight: 500;
   padding: 0 6px;
   height: 28px;
-  transition: color 120ms ease, background-color 120ms ease;
+  transition: color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 
 .omnimux-project-crumb-link:hover {
@@ -2027,7 +2086,7 @@ export const WORKFLOW_CSS = `
   display: inline-flex;
   align-items: center;
   user-select: none;
-  transition: opacity 120ms ease, color 120ms ease;
+  transition: opacity var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .omnimux-tab-info-icon:hover {
   opacity: 1;
@@ -2054,7 +2113,7 @@ export const WORKFLOW_CSS = `
   border-radius: 16px;
   padding: 10px 10px 14px 10px;
   cursor: pointer;
-  transition: border-color 150ms ease, transform 150ms ease, box-shadow 150ms ease;
+  transition: border-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), transform var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), box-shadow var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
@@ -2168,7 +2227,7 @@ export const WORKFLOW_CSS = `
   border-radius: 12px;
   overflow: hidden;
   cursor: pointer;
-  transition: border-color 150ms ease, transform 150ms ease, box-shadow 150ms ease;
+  transition: border-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), transform var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), box-shadow var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
   display: flex;
   flex-direction: column;
   min-height: 180px;
@@ -2265,7 +2324,7 @@ export const WORKFLOW_CSS = `
   border: 1px solid var(--dsw-alias-border-l1);
   border-radius: 10px;
   cursor: pointer;
-  transition: background-color 140ms ease, border-color 140ms ease, transform 100ms ease;
+  transition: background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), border-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), transform var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
   user-select: none;
 }
 
@@ -2439,7 +2498,7 @@ export const WORKFLOW_CSS = `
   background: transparent;
   cursor: pointer;
   user-select: none;
-  transition: all 0.15s ease;
+  transition: border-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
   outline: none;
 }
 .omx-fork-mode-card:focus-visible {
@@ -2484,6 +2543,39 @@ export const WORKFLOW_CSS = `
   color: var(--dsw-alias-label-tertiary);
   line-height: 1.4;
   margin-top: 4px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .omnimux-workflow-card-actions,
+  .omnimux-new-project-name,
+  .omnimux-project-crumb-link,
+  .omnimux-tab-info-icon,
+  .omnimux-page-card,
+  .omnimux-project-folder-card,
+  .omnimux-assets-tab .omnimux-assets-action-card,
+  .omx-apptab-edit-btn,
+  .omx-apptab-restore-btn,
+  .omx-apptab-ratio-card,
+  .omx-apptab-select-trigger,
+  .omx-apptab-seg-tab,
+  .omx-apptab-mtag,
+  .omx-apptab-library-trigger,
+  .omx-apptab-uploader,
+  .omx-apptab-product-item,
+  .omx-apptab-cta-btn,
+  .omx-fork-mode-card {
+    transition: none;
+  }
+  .omx-apptab-notice,
+  .omx-apptab-select-options,
+  .omx-apptab-modal-mask,
+  .omx-apptab-modal {
+    animation: none;
+  }
+  .omx-apptab-cta-btn:active:not(:disabled),
+  .omnimux-assets-tab .omnimux-assets-action-card:active,
+  .omnimux-project-folder-card:hover {
+    transform: none;
+  }
 }
 `
 

@@ -39,7 +39,10 @@ function errorPayload(error) {
     if (typeof error.details.code === 'string' && error.details.code !== '') body.code = error.details.code
     if (typeof error.details.upstream_code === 'string' && error.details.upstream_code !== '') body.upstream_code = error.details.upstream_code
     if (typeof error.details.upstream_log_id === 'string' && error.details.upstream_log_id !== '') body.upstream_log_id = error.details.upstream_log_id
-  } else if (typeof error.code === 'string' && error.code.startsWith('SOCIAL_TIKTOK_')) {
+    if (typeof error.details.need_credits === 'number') body.need_credits = error.details.need_credits
+    if (typeof error.details.max_validity_days === 'number') body.max_validity_days = error.details.max_validity_days
+  }
+  if (!body.code && typeof error.code === 'string' && (error.code.startsWith('SOCIAL_TIKTOK_') || error.code.startsWith('SOCIAL_SEAT_'))) {
     body.code = error.code
   }
   return body

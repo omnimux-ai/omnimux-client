@@ -14,6 +14,16 @@
 
 :host {
   all: initial;
+  --omnimux-motion-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --omnimux-motion-ease-spatial: cubic-bezier(0.32, 0.72, 0, 1);
+  --omnimux-motion-ease-exit: cubic-bezier(0.32, 0, 0.67, 0);
+  --omnimux-motion-ease-linear: linear;
+  --omnimux-motion-dur-press: 90ms;
+  --omnimux-motion-dur-fast: 140ms;
+  --omnimux-motion-dur-base: 200ms;
+  --omnimux-motion-dur-sheet: 260ms;
+  --omnimux-motion-press-scale: 0.96;
+  --omnimux-motion-press-scale-subtle: 0.985;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI Variable Text", "Segoe UI",
     "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
   font-synthesis: none;
@@ -302,13 +312,6 @@
   stroke-width: 2.2;
 }
 
-/* A reduced-motion reader gets the static ring: still "working", never spinning. */
-@media (prefers-reduced-motion: reduce) {
-  .omnimux-capsule-icon.is-busy svg {
-    animation: none;
-  }
-}
-
 .omnimux-capsule-icon.is-error {
   color: #ff9d9d;
   background: rgba(255, 157, 157, 0.16);
@@ -335,7 +338,8 @@
   -webkit-user-select: none;
   opacity: 0;
   transform: translateY(2px);
-  transition: opacity 120ms ease, transform 120ms ease;
+  transition: opacity var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+    transform var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
   z-index: 2147483645;
 }
 
@@ -369,4 +373,34 @@
 .white-tooltip[data-side="below"] .white-tooltip-arrow {
   bottom: 100%;
   border-bottom: 5px solid #fff;
+}
+
+/* A reduced-motion reader gets the static ring: still "working", never spinning. */
+@media (prefers-reduced-motion: reduce) {
+  .omnimux-capsule-icon.is-busy svg {
+    animation: none;
+  }
+
+  :host {
+    --omnimux-motion-dur-press: 0ms;
+    --omnimux-motion-dur-fast: 0ms;
+    --omnimux-motion-dur-base: 0ms;
+    --omnimux-motion-dur-sheet: 0ms;
+    --omnimux-motion-press-scale: 1;
+    --omnimux-motion-press-scale-subtle: 1;
+  }
+
+  .omnimux-capsule-bar,
+  .omnimux-capsule-brand,
+  .omnimux-capsule-actions,
+  .omnimux-capsule-icon,
+  .white-tooltip {
+    transition: none;
+  }
+
+  .omnimux-capsule-brand:active,
+  .omnimux-capsule-icon:hover,
+  .omnimux-capsule-icon:active {
+    transform: none;
+  }
 }

@@ -332,6 +332,50 @@ describe('HubPublishChannel error mapping', () => {
       (e) => e instanceof PublishError && e.code === 'hub-tool-error' && /Insufficient quota/.test(e.message),
     )
   })
+
+  it('preserves structured SOCIAL_SEAT_* tail tags and envelopes without downgrading to hub-tool-error (#412)', async () => {
+    const taggedTools = {
+      get: () => ({ name: 'omnimux_publish_create' }),
+      async execute(batch) {
+        return {
+          results: [{
+            callId: batch.calls[0].id,
+            result: {
+              content: [{ type: 'text', text: 'OmnimuxError: 社媒绑定席位已过期，请续费或解绑 [code=SOCIAL_SEAT_EXPIRED]' }],
+              isError: true,
+            },
+          }],
+          additionalContexts: [],
+          concluded: false,
+        }
+      },
+    }
+    const channel = createHubChannel({ tools: taggedTools })
+    await assert.rejects(
+      () => channel.createPost({ account_ids: ['12'], content: 'hi', media_items: [] }),
+      (e) => e instanceof PublishError
+        && e.code === 'SOCIAL_SEAT_EXPIRED'
+        && e.details?.code === 'SOCIAL_SEAT_EXPIRED'
+        && !e.message.includes('[code='),
+    )
+
+    const quotaEnvelopeTools = mockTools({
+      omnimux_publish_create: () => ({
+        success: false,
+        code: 'SOCIAL_SEAT_QUOTA',
+        message: '社媒绑定席位不足或余额不够',
+        need_credits: 20,
+      }),
+    })
+    const quotaChannel = createHubChannel({ tools: quotaEnvelopeTools })
+    await assert.rejects(
+      () => quotaChannel.createPost({ account_ids: ['12'], content: 'hi', media_items: [] }),
+      (e) => e instanceof PublishError
+        && e.code === 'quota-exceeded'
+        && e.details?.code === 'SOCIAL_SEAT_QUOTA'
+        && e.details?.need_credits === 20,
+    )
+  })
 })
 
 describe('presign / create / get payload handling', () => {

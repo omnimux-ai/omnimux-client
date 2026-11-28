@@ -1,9 +1,10 @@
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
 import { NextDesktopRuntime } from '../src/desktop-runtime.ts'
 import { DesktopLanHttpsRuntime } from '../src/lan-https-runtime.ts'
+import { removeTemporaryDirectory } from './support/temporary-directory.ts'
 
 const cleanup: (() => Promise<void>)[] = []
 afterEach(async () => { for (const close of cleanup.splice(0)) await close() })
@@ -14,7 +15,7 @@ function fixture() {
     certificate: async () => { throw new Error('No native certificate access in this test') },
     onFailure() {}, onChange() {}, onRestart() {}, onTerminal() {}, onNotification() {},
   })
-  cleanup.push(async () => { await runtime.close(); rmSync(home, { force: true, recursive: true }) })
+  cleanup.push(async () => { await runtime.close(); await removeTemporaryDirectory(home) })
   const phase = vi.spyOn(runtime.backend, 'state', 'get').mockReturnValue({ phase: 'ready' })
   runtime.auth = { url: 'http://127.0.0.1:1234/?token=browser-login', cookie: 'session=private-cookie', token: 'native-capability', injections: [] }
   runtime.preferences.browserAccess = true

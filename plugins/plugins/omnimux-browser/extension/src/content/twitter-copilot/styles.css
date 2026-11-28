@@ -18,7 +18,10 @@
   flex-shrink: 0;
   align-self: center;
   position: relative;
-  transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+    border-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+    box-shadow var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+    transform var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
   user-select: none;
   z-index: 99999;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
@@ -33,7 +36,7 @@
 }
 
 .omnimux-copilot-anchor-btn:active {
-  transform: scale(0.95);
+  transform: scale(var(--omnimux-motion-press-scale, 0.96));
   background: #121214;
 }
 
@@ -42,7 +45,7 @@
   height: 19px;
   display: block;
   fill: #ffffff;
-  transition: transform 0.2s ease;
+  transition: transform var(--omnimux-motion-dur-base, 200ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 
 .omnimux-copilot-anchor-btn--loading svg {
@@ -54,15 +57,18 @@
   to { transform: rotate(360deg); }
 }
 
+@keyframes omnimux-copilot-pulse-calm {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.42; }
+}
+
 /* Copilot Dropdown Menu */
 .omnimux-copilot-dropdown {
   position: fixed;
   z-index: 999999;
   width: 270px;
   max-width: calc(100vw - 24px);
-  background: rgba(18, 18, 20, 0.96);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  background: #121214;
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 12px;
   box-shadow: 0 16px 36px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.05);
@@ -71,7 +77,8 @@
   color: #f3f4f6;
   opacity: 0;
   transform: scale(0.96) translateY(-4px);
-  transition: opacity 0.18s ease, transform 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: opacity var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+    transform var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
   pointer-events: none;
 }
 
@@ -127,7 +134,7 @@
   border-radius: 8px;
   cursor: pointer;
   background: transparent;
-  transition: background 0.15s ease;
+  transition: background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
   border: none;
   text-align: left;
   outline: none;
@@ -172,10 +179,30 @@
   opacity: 0;
   pointer-events: none;
   z-index: 1000000;
-  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.25s ease;
+  transition: transform var(--omnimux-motion-dur-base, 200ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+    opacity var(--omnimux-motion-dur-base, 200ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 
 .omnimux-copilot-toast--visible {
   opacity: 1;
   transform: translateX(-50%) translateY(0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .omnimux-copilot-anchor-btn,
+  .omnimux-copilot-anchor-btn svg,
+  .omnimux-copilot-dropdown,
+  .omnimux-copilot-menu-item,
+  .omnimux-copilot-toast {
+    transition: none;
+  }
+
+  .omnimux-copilot-anchor-btn:hover,
+  .omnimux-copilot-anchor-btn:active {
+    transform: none;
+  }
+
+  .omnimux-copilot-anchor-btn--loading svg {
+    animation: omnimux-copilot-pulse-calm 1.6s ease-in-out infinite;
+  }
 }

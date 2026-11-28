@@ -50,6 +50,22 @@ This is an intentional installer-size tradeoff. Upstream DSH's `@deepseek-ai/dsh
 
 Packaged applications check for stable releases in the background but never install silently. A newer version requires confirmation. Before downloading, a native save dialog lets you choose the installer's directory and filename; cancelling it does not start a download. macOS downloads and opens a DMG; Windows downloads and starts an NSIS installer. After the upgrade and next launch, the app asks whether to delete or keep the installer. Network and download failures leave the current installation intact.
 
+## How do I configure BYOK (Bring Your Own Keys) providers?
+
+OmniMux Desktop supports **Bring Your Own Keys (BYOK)** so you can connect OpenAI-compatible text models and custom media providers alongside or instead of the unified route.
+
+1. **OpenAI-compatible text endpoints (Settings)**:
+   - **Base URL**: enter the API root ending with `/v1`, such as `https://api.example.com/v1` (omit trailing slashes and do not append `/chat/completions`).
+   - **Model ID**: use the exact identifier exposed by your provider (for example `gpt-4o-mini` or `deepseek-chat`).
+   - **API Key**: paste your own token (placeholder format: `sk-your-key-here` or `sk-xxx`; never commit or share real keys).
+2. **Multimodal (image, video, speech) BYOK and credential isolation**:
+   - Configure custom image, video, or audio endpoints in Desktop Settings under the corresponding provider section.
+   - Credentials remain locally under `~/.omnimux` and are never embedded into workflow canvas JSON files or Clip Studio project exports.
+3. **Common connection troubleshooting**:
+   - **`401 Unauthorized`**: check for leading/trailing whitespace in `sk-your-key-here`, verify the key matches the configured base URL, and confirm the provider account still has active balance and permissions.
+   - **Base URL `/v1` mismatch**: OpenAI-compatible relays typically expect `https://api.example.com/v1`. Avoid duplicated suffixes such as `/v1/v1`, missing `/v1`, or full completion URLs ending in `/chat/completions`.
+   - **Timeouts and retries**: confirm outbound network settings under [system proxy configuration](#does-the-app-use-my-system-proxy), verify endpoint reachability from this machine, and retry the request.
+
 ## Does the app use my system proxy?
 
 Yes. At startup the app reads the operating system's proxy configuration — Windows Internet options, macOS network settings, Linux desktop settings, including automatic configuration scripts (PAC/WPAD) — and applies it to everything it sends: model conversations, web fetches, web search, MCP servers, plugin installs, and commands the app starts in its terminal. Turning on the "system proxy" switch in a client such as Clash or v2rayN is enough; nothing needs to be entered in the app.

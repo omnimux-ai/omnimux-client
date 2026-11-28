@@ -685,11 +685,36 @@
     opacity: 1;
 }
 
+@keyframes director-opacity-pulse {
+    0%, 100% {
+        opacity: 0.42;
+    }
+    50% {
+        opacity: 1;
+    }
+}
+
 @media (prefers-reduced-motion: reduce) {
-    .director-viewport-dock-button,
-    .director-viewport-notice-action,
-    .director-pose-button {
+    .wf-director-root .director-viewport-dock-button,
+    .wf-director-root .director-viewport-notice-action,
+    .wf-director-root .director-pose-button,
+    .wf-director-root .director-mode-switch-button,
+    .wf-director-root .director-scene-composer-actions button,
+    .wf-director-root .director-sequencer-resizer::after,
+    .wf-director-root .director-sequencer-label,
+    .wf-director-root .director-sequencer-key.is-actionable,
+    .wf-director-root .director-sequencer-transport,
+    .wf-director-root .director-sequencer-icon,
+    .wf-director-root .director-sequencer-tool {
         transition: none;
+    }
+
+    .wf-director-root .director-viewport-dock-button:active {
+        transform: none;
+    }
+
+    .wf-director-root .director-composer-submit-spinner {
+        animation: director-opacity-pulse 1.6s ease-in-out infinite;
     }
 }
 

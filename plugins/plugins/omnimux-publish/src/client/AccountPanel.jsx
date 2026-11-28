@@ -181,6 +181,15 @@ function AccountRow({ t, account, checked, onManageAccounts, onToggle }) {
     : 'omnimux-publish-accounts-row is-disabled'
   const cap = accountCapabilityBadge(t, account)
   const isNoScope = !account.usable && account.unusableReason === 'noPublishScope'
+  const isSeatExpired = !account.usable && account.unusableReason === 'seatExpired'
+  const isSeatUnactivated = !account.usable && account.unusableReason === 'seatUnactivated'
+  const actionLabel = isNoScope
+    ? t('form.scopeMissing.action')
+    : isSeatExpired
+      ? t('accounts.seat.renewAction')
+      : isSeatUnactivated
+        ? t('accounts.seat.activateAction')
+        : ''
   return (
     <div className="omnimux-publish-accounts-row-wrap">
       <label className={rowClass}>
@@ -200,10 +209,10 @@ function AccountRow({ t, account, checked, onManageAccounts, onToggle }) {
           </span>
         )}
       </label>
-      {isNoScope && typeof onManageAccounts === 'function' ? (
+      {actionLabel !== '' && typeof onManageAccounts === 'function' ? (
         <div className="omnimux-publish-accounts-row-action">
           <Button type="button" size="xs" variant="outline" onClick={onManageAccounts}>
-            {t('form.scopeMissing.action')}
+            {actionLabel}
           </Button>
         </div>
       ) : null}

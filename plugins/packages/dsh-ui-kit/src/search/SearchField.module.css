@@ -13,9 +13,9 @@
   background: var(--dsw-alias-bg-layer-1);
   color: var(--dsw-alias-label-primary);
   transition:
-    border-color 120ms cubic-bezier(0.16, 1, 0.3, 1),
-    box-shadow 120ms cubic-bezier(0.16, 1, 0.3, 1),
-    background-color 120ms cubic-bezier(0.16, 1, 0.3, 1);
+    border-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+    box-shadow var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+    background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 
 .stretch {
@@ -44,6 +44,11 @@
   justify-content: center;
   flex: none;
   color: var(--dsw-alias-label-tertiary);
+  transition: color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+}
+
+.root:focus-within .icon {
+  color: var(--dsw-alias-label-primary);
 }
 
 .input {
@@ -112,11 +117,20 @@
   background: transparent;
   color: var(--dsw-alias-label-tertiary);
   cursor: pointer;
+  animation: dshUkSearchPopIn var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) both;
+  transition:
+    background-color var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+    color var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+    transform var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 
 .clear:hover:not(:disabled) {
   background: var(--dsw-alias-interactive-bg-hover);
   color: var(--dsw-alias-label-primary);
+}
+
+.clear:active:not(:disabled) {
+  transform: scale(0.92);
 }
 
 .clear:focus {
@@ -128,8 +142,26 @@
   outline-offset: 1px;
 }
 
+@keyframes dshUkSearchPopIn {
+  from {
+    opacity: 0;
+    transform: scale(0.8);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .root {
+  .root,
+  .icon,
+  .clear {
     transition: none;
+    animation: none;
+  }
+
+  .clear:active:not(:disabled) {
+    transform: none;
   }
 }

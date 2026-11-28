@@ -17,6 +17,11 @@ export const STATUS_BY_CODE = {
   'SOCIAL_TIKTOK_TOKEN_INVALID': 409,
   'SOCIAL_TIKTOK_SCOPE_MISSING': 409,
   'SOCIAL_TIKTOK_UPSTREAM_ERROR': 502,
+  'SOCIAL_SEAT_QUOTA': 402,
+  'SOCIAL_SEAT_CAP': 409,
+  'SOCIAL_SEAT_EXPIRED': 409,
+  'SOCIAL_SEAT_RENEW_LIMIT': 409,
+  'SOCIAL_SEAT_SWAP_LIMIT': 409,
 }
 
 /** Minimal prompt-privacy guard: refuse obvious API tokens without falsely matching error codes like `access_token_invalid`. */

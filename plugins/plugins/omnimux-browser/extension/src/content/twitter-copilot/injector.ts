@@ -154,8 +154,11 @@ function pulseHighlightElement(element: HTMLElement) {
     const prevTransition = element.style.transition
     const prevOutline = element.style.outline
     const prevShadow = element.style.boxShadow
+    const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches ?? false
 
-    element.style.transition = 'outline 0.2s ease, box-shadow 0.2s ease'
+    element.style.transition = reducedMotion
+      ? 'none'
+      : 'outline var(--omnimux-motion-dur-base, 200ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), box-shadow var(--omnimux-motion-dur-base, 200ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1))'
     element.style.outline = COPILOT_PULSE_OUTLINE
     element.style.boxShadow = COPILOT_PULSE_SHADOW
 

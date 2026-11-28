@@ -273,8 +273,9 @@ export function TrendingReplicateSection({ t, onApplyPrompt, sessionId = '' }) {
     // 一把拽回顶部。滚动只由用户手势驱动。
 
     // FLIP 过渡：若吸底属性发生切换且前后具备有效布局，执行丝滑位移与透明度过渡
+    const reduceMotion = typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
     let cancelAnim = null
-    if (currentlyDocked !== shouldDock && card && from && from.width > 0 && from.height > 0) {
+    if (!reduceMotion && currentlyDocked !== shouldDock && card && from && from.width > 0 && from.height > 0) {
       const to = card.getBoundingClientRect?.()
       if (to && to.width > 0 && to.height > 0) {
         const dx = Math.round(from.left - to.left)

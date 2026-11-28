@@ -49,8 +49,8 @@
 .headCellSortable {
   cursor: pointer;
   transition:
-    background-color 120ms cubic-bezier(0.16, 1, 0.3, 1),
-    color 120ms cubic-bezier(0.16, 1, 0.3, 1);
+    background-color var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+    color var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 
 .headCellSortable:hover {
@@ -65,14 +65,32 @@
 }
 
 .sortIcon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+  display: inline-grid;
+  place-items: center;
   width: 14px;
   height: 14px;
   flex-shrink: 0;
   color: var(--dsw-alias-label-tertiary);
-  transition: color 120ms ease;
+  transition: color var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+}
+
+.sortGlyph {
+  grid-area: 1 / 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition:
+    transform var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+    opacity var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+}
+
+.sortGlyphHidden {
+  opacity: 0;
+  transform: scale(0.75);
+}
+
+.sortGlyphDesc {
+  transform: rotate(180deg);
 }
 
 .sortIconActive {
@@ -85,7 +103,7 @@
 
 .row {
   border-bottom: 1px solid var(--dsw-alias-border-l1);
-  transition: background-color 120ms cubic-bezier(0.16, 1, 0.3, 1);
+  transition: background-color var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 
 .row:hover {
@@ -106,6 +124,7 @@
   line-height: 18px;
   color: var(--dsw-alias-label-primary);
   box-sizing: border-box;
+  font-variant-numeric: tabular-nums;
 }
 
 .dense .cell {
@@ -122,4 +141,13 @@
 
 .alignRight {
   text-align: right;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .headCellSortable,
+  .sortIcon,
+  .sortGlyph,
+  .row {
+    transition: none;
+  }
 }

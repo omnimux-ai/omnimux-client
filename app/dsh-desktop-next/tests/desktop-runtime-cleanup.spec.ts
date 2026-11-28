@@ -6,16 +6,17 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { NextDesktopRuntime } from '../src/desktop-runtime.ts'
 import { DEFAULT_PREFERENCES, SAFE_MODE_PREFERENCES } from '../src/desktop-contract.ts'
 import { NextProfiles } from '../src/profiles.ts'
+import { removeTemporaryDirectory } from './support/temporary-directory.ts'
 
 vi.mock('../../dsh-plugin-desktop/src/disposable-tree.ts', () => ({
   cleanupDisposableTree: vi.fn(),
 }))
 
-const cleanup: (() => void)[] = []
-afterEach(() => {
+const cleanup: (() => Promise<void> | void)[] = []
+afterEach(async () => {
   vi.restoreAllMocks()
   vi.mocked(cleanupDisposableTree).mockReset()
-  for (const dispose of cleanup.splice(0)) dispose()
+  for (const dispose of cleanup.splice(0)) await dispose()
 })
 
 async function fixture(prepare?: (home: string) => Partial<ConstructorParameters<typeof NextDesktopRuntime>[0]>) {
@@ -25,7 +26,7 @@ async function fixture(prepare?: (home: string) => Partial<ConstructorParameters
     onFailure: vi.fn(), onChange() {}, onRestart() {}, onTerminal() {}, onNotification() {},
     ...prepare?.(home),
   })
-  cleanup.push(() => { runtime.diagnostics.flush(); rmSync(home, { recursive: true, force: true }) })
+  cleanup.push(async () => { runtime.diagnostics.flush(); await removeTemporaryDirectory(home) })
   // Run real safe-home preparation without spawning a Host or opening Electron.
   vi.spyOn(runtime.backend, 'start').mockImplementation(async prepare => { await prepare() })
   runtime.safeMode = true

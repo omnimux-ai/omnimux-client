@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { cssClass } from "../internal/cssClass.ts";
 import { cx } from "../internal/cx.ts";
+import { IconSwap } from "../motion/IconSwap.tsx";
 import { MasonryGrid } from "./MasonryGrid.tsx";
 import { SocialPlatformMark } from "./PlatformMark.tsx";
 import { SocialPostCard } from "./SocialPostCard.tsx";
@@ -450,7 +451,11 @@ export function SocialSearchToolView({
                             void handleSave(item);
                           }}
                         >
-                          {saveStatus === "saved" ? <CheckGlyph /> : <BookmarkGlyph />}
+                          <IconSwap
+                            active={saveStatus === "saved"}
+                            primary={<BookmarkGlyph />}
+                            secondary={<CheckGlyph />}
+                          />
                         </button>
                       ) : null}
                     </>

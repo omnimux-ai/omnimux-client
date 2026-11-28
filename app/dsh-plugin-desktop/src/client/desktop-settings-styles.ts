@@ -54,9 +54,11 @@ const CSS = `
   cursor: default;
   text-align: left;
   font: inherit;
+  transition: background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), border-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), transform var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .dshDesktopSettingsChoice[data-actionable="true"] { cursor: pointer; }
 .dshDesktopSettingsChoice[data-actionable="true"]:hover { background: var(--dsw-alias-interactive-bg-hover); }
+.dshDesktopSettingsChoice[data-actionable="true"]:active:not([aria-disabled="true"]) { transform: scale(var(--omnimux-motion-press-scale-subtle, 0.985)); }
 .dshDesktopSettingsChoice:focus-visible {
   outline: 2px solid var(--dsw-alias-brand-primary);
   outline-offset: 2px;
@@ -138,6 +140,7 @@ const CSS = `
   color: var(--dsw-alias-label-primary);
   font: inherit;
   font-size: 13px;
+  transition: border-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), box-shadow var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .dshDesktopSettingsInput:focus-visible {
   border-color: var(--dsw-alias-brand-primary);
@@ -154,8 +157,10 @@ const CSS = `
   cursor: pointer;
   font: inherit;
   font-size: 12px;
+  transition: background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), border-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), transform var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .dshDesktopSettingsButton:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); }
+.dshDesktopSettingsButton:active:not(:disabled) { transform: scale(var(--omnimux-motion-press-scale, 0.96)); }
 .dshDesktopSettingsButtonSecondary { color: var(--dsw-alias-label-secondary); }
 .dshDesktopSettingsButtonDanger { color: var(--dsw-alias-state-error-primary); }
 .dshDesktopSettingsButton:disabled { cursor: default; opacity: .55; }
@@ -180,6 +185,7 @@ const CSS = `
   background: var(--dsw-alias-bg-layer-1);
   box-shadow: 0 12px 32px color-mix(in srgb, #000 28%, transparent);
   -webkit-app-region: no-drag;
+  animation: dshDesktopSettingsMenuIn var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
 }
 .dshDesktopNativeActions[data-placement="settings"] .dshDesktopActionMenuItem {
   display: flex;
@@ -197,8 +203,10 @@ const CSS = `
   font-size: 12px;
   text-align: start;
   white-space: nowrap;
+  transition: background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), transform var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .dshDesktopNativeActions[data-placement="settings"] .dshDesktopActionMenuItem:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); }
+.dshDesktopNativeActions[data-placement="settings"] .dshDesktopActionMenuItem:active:not(:disabled) { transform: scale(var(--omnimux-motion-press-scale-subtle, 0.985)); }
 .dshDesktopNativeActions[data-placement="settings"] .dshDesktopActionMenuItem:disabled { cursor: default; opacity: .45; }
 .dshDesktopNativeActions[data-placement="settings"] .dshDesktopActionMenuItem svg { width: 14px; height: 14px; stroke-width: 1.8; }
 .dshDesktopNativeActions[data-placement="settings"] .dshDesktopActionMenuItem span { flex: 1; }
@@ -216,9 +224,12 @@ const CSS = `
   font: inherit;
   font-size: 12px;
   line-height: 18px;
+  transition: background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), border-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), transform var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
-.dshDesktopSettingsHeaderButton svg { width: 14px; height: 14px; margin-left: 5px; }
+.dshDesktopSettingsHeaderButton svg { width: 14px; height: 14px; margin-left: 5px; transition: transform var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)); }
+.dshDesktopSettingsHeaderButton[aria-expanded="true"] svg.dshDesktopActionChevron { transform: rotate(180deg); }
 .dshDesktopSettingsHeaderButton:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); }
+.dshDesktopSettingsHeaderButton:active:not(:disabled) { transform: scale(var(--omnimux-motion-press-scale, 0.96)); }
 .dshDesktopSettingsHeaderButton:disabled { cursor: not-allowed; opacity: .4; }
 .dshDesktopNativeActionError {
   max-width: 260px;
@@ -248,6 +259,7 @@ const CSS = `
   color: var(--dsw-alias-label-primary);
   font: inherit;
   font-size: 12px;
+  transition: border-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .dshDesktopSettingsSelect:disabled { opacity: .55; }
 .dshDesktopSettingsNotice,
@@ -258,6 +270,7 @@ const CSS = `
   border-radius: 8px;
   font-size: 12px;
   line-height: 1.55;
+  animation: dshDesktopSettingsNoticeIn var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
 }
 .dshDesktopSettingsNotice { background: var(--dsw-alias-bg-layer-2); color: var(--dsw-alias-label-secondary); }
 .dshDesktopSettingsError { color: var(--dsw-alias-state-error-primary); background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 10%, transparent); }
@@ -272,7 +285,7 @@ const CSS = `
   border-radius: 999px;
   background: var(--dsw-alias-border-l2);
   cursor: pointer;
-  transition: background-color var(--ds-transition-duration-fast) var(--ds-ease-in-out);
+  transition: background-color var(--omnimux-motion-dur-base, 200ms) var(--omnimux-motion-ease-spatial, cubic-bezier(0.32, 0.72, 0, 1));
 }
 .dshDesktopSettingsToggle[aria-checked="true"] {
   background: var(--dsw-alias-brand-primary);
@@ -290,7 +303,7 @@ const CSS = `
   background: var(--dsw-alias-label-primary-foreground);
   box-shadow: 0 1px 2px rgba(0, 0, 0, .24);
   transform: translateX(0);
-  transition: transform var(--ds-transition-duration-fast) var(--ds-ease-in-out);
+  transition: transform var(--omnimux-motion-dur-base, 200ms) var(--omnimux-motion-ease-spatial, cubic-bezier(0.32, 0.72, 0, 1)), background-color var(--omnimux-motion-dur-base, 200ms) var(--omnimux-motion-ease-spatial, cubic-bezier(0.32, 0.72, 0, 1));
 }
 .dshDesktopSettingsToggle[aria-checked="true"] .dshDesktopSettingsToggleKnob {
   transform: translateX(18px);
@@ -381,8 +394,12 @@ const CSS = `
   background: transparent;
   color: inherit;
   cursor: pointer;
+  transition: background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), transform var(--omnimux-motion-dur-press, 90ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .dshDesktopSettingsUrlCopy:hover { background: var(--dsw-alias-bg-layer-2); }
+.dshDesktopSettingsUrlCopy:active:not(:disabled) { transform: scale(var(--omnimux-motion-press-scale, 0.96)); }
+.dshDesktopSettingsUrlCopy[data-copied="true"] { color: var(--dsw-alias-state-success-primary); }
+.dshDesktopSettingsUrlCopy[data-copied="true"] svg { animation: dshDesktopSettingsCopyPop var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards; }
 .dshDesktopSettingsUrlCopy:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: 2px; }
 .dshDesktopSettingsUrlCopy:disabled { opacity: 0.5; cursor: wait; }
 .dshDesktopSettingsDialogBackdrop {
@@ -393,6 +410,7 @@ const CSS = `
   place-items: center;
   padding: 24px;
   background: color-mix(in srgb, #000 55%, transparent);
+  animation: dshDesktopSettingsFadeIn var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
 }
 .dshDesktopSettingsDialog {
   width: min(440px, 100%);
@@ -402,6 +420,7 @@ const CSS = `
   border-radius: 14px;
   background: var(--dsw-alias-bg-layer-1);
   box-shadow: 0 24px 64px color-mix(in srgb, #000 38%, transparent);
+  animation: dshDesktopSettingsDialogIn var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
 }
 .dshDesktopSettingsDialog h3 { margin: 0; color: var(--dsw-alias-state-error-primary); font-size: 16px; }
 .dshDesktopSettingsDialog p { margin: 12px 0 0; color: var(--dsw-alias-label-secondary); font-size: 13px; line-height: 1.65; }
@@ -418,6 +437,35 @@ const CSS = `
    the dark palette's light text. An opaque option fill keeps that list readable;
    the closed control is unchanged, and macOS's native menu ignores it. */
 body[data-ds-dark-theme] select :is(option, optgroup) { background-color: var(--dsw-alias-bg-layer-2); }
+@keyframes dshDesktopSettingsFadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes dshDesktopSettingsMenuIn { from { opacity: 0; transform: translateY(-4px) scale(0.985); } to { opacity: 1; transform: none; } }
+@keyframes dshDesktopSettingsDialogIn { from { opacity: 0; transform: translateY(4px) scale(0.97); } to { opacity: 1; transform: none; } }
+@keyframes dshDesktopSettingsNoticeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+@keyframes dshDesktopSettingsCopyPop { from { transform: scale(0.84); opacity: 0.7; } to { transform: none; opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .dshDesktopSettingsChoice,
+  .dshDesktopSettingsInput,
+  .dshDesktopSettingsButton,
+  .dshDesktopNativeActions[data-placement="settings"] .dshDesktopActionMenuItem,
+  .dshDesktopSettingsHeaderButton,
+  .dshDesktopSettingsHeaderButton svg,
+  .dshDesktopSettingsSelect,
+  .dshDesktopSettingsToggle,
+  .dshDesktopSettingsToggleKnob,
+  .dshDesktopSettingsUrlCopy { transition: none; }
+  .dshDesktopSettingsChoice[data-actionable="true"]:active:not([aria-disabled="true"]),
+  .dshDesktopSettingsButton:active:not(:disabled),
+  .dshDesktopNativeActions[data-placement="settings"] .dshDesktopActionMenuItem:active:not(:disabled),
+  .dshDesktopSettingsHeaderButton:active:not(:disabled),
+  .dshDesktopSettingsUrlCopy:active:not(:disabled) { transform: none; }
+  .dshDesktopNativeActions[data-placement="settings"] .dshDesktopActionMenu,
+  .dshDesktopSettingsNotice,
+  .dshDesktopSettingsError,
+  .dshDesktopSettingsSuccess,
+  .dshDesktopSettingsUrlCopy[data-copied="true"] svg,
+  .dshDesktopSettingsDialogBackdrop,
+  .dshDesktopSettingsDialog { animation: none; }
+}
 `
 
 /** Install one scoped stylesheet; tolerate headless Client boot. */

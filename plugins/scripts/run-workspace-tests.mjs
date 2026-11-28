@@ -7,8 +7,9 @@
  * output contains no `not ok` line and no cancelled test, and every skip is accounted for.
  * The `not ok` scan matters because a suite that throws while collecting can print `not ok`
  * while node:test still exits 0. Environment skips are explicit-marker only; design skips
- * remain allowed but are printed in the package status line. Vitest's default reporter is
- * not TAP, so its summary is parsed separately and any vitest skip is fail-closed.
+ * remain allowed but are printed in the package status line. Vitest's default reporter and
+ * `--reporter=tap` carry no per-case skip reason, so both are parsed into `vitest` and any
+ * vitest skip/todo is fail-closed as `vitest-unclassified`.
  *
  * Packages run without proxy variables so a test that silently depends on a reachable proxy
  * fails locally the same way it fails on a clean CI runner. HOME is left alone: headless Chrome
@@ -162,23 +163,195 @@ export function parseVitestSummary(text) {
   return result
 }
 
+const VITEST_TAP_OPENER_RE = /^( *)(not ok|ok) \d+ - (.*)\{\s*$/
+const VITEST_TAP_NEXT_CHILD_RE = /^\s*(?:1\.\.\d+|(?:not )?ok \d+ - )/
+const VITEST_TAP_DIRECTIVE_BEFORE_BRACE_RE = /(?:^|\s)(?<!\\)#\s*(?:time=\S+|SKIP|TODO)\b/i
+
+function extractVitestTapBodyDirective(body) {
+  const commentIndex = body.search(/(?:^|\s)(?<!\\)#/)
+  const name = (commentIndex >= 0 ? body.slice(0, commentIndex) : body).trim()
+  const comment = commentIndex >= 0 ? body.slice(commentIndex) : ''
+  let directive = ''
+  if (/(?:^|\s)(?<!\\)#\s*SKIP(?:\s+.*)?$/i.test(comment)) directive = 'skip'
+  else if (/(?:^|\s)(?<!\\)#\s*TODO(?:\s+.*)?$/i.test(comment)) directive = 'todo'
+  return { name, directive }
+}
+
+function finalizeVitestTapFailure(pending) {
+  let location = ''
+  let error = ''
+  for (const raw of pending.yamlLines) {
+    const trimmed = raw.trim()
+    const locHit = /^(?:at|location):\s*(?:'([^']*)'|"([^"]*)"|(.+))$/.exec(trimmed)
+    if (locHit && !location) {
+      location = (locHit[1] ?? locHit[2] ?? locHit[3] ?? '').trim()
+      continue
+    }
+    const msgHit = /^(?:message|error):\s*(?:'([^']*)'|"([^"]*)")$/.exec(trimmed)
+    if (msgHit && !error) error = (msgHit[1] ?? msgHit[2] ?? '').trim()
+  }
+  return { location, name: pending.name, error }
+}
+
 /**
- * Parses node:test TAP output. Several runs may be concatenated (one per spawned test command),
- * so counters are summed. Only leaf failures are listed; parents that failed because a subtest
- * failed are counted but not repeated.
+ * Parses Vitest `--reporter=tap` brace-delimited subtest blocks (`ok|not ok N - ... { ... }`).
+ * Unlike `node:test`, Vitest TAP omits `# tests` / `# skipped` counter comments, so without this
+ * its `# SKIP` lines look like unaccounted `node:test` skips (`skip count mismatch`) and its
+ * `# TODO` lines are silently ignored. Every Vitest TAP skip/todo is counted into `vitest` so
+ * `judge()` keeps failing closed as `vitest-unclassified`.
+ * @param {string} text
+ * @returns {{ summary: VitestSummary, failures: TestFailure[], lineIndices: Set<number> }}
+ */
+export function parseVitestTap(text) {
+  const lines = stripAnsi(text).replace(/\r\n?/g, '\n').split('\n')
+  /** @type {VitestSummary} */
+  const summary = { found: false, passed: 0, failed: 0, expectedFail: 0, skipped: 0, pending: 0, total: 0, malformed: [] }
+  /** @type {TestFailure[]} */
+  const failures = []
+  /** @type {Set<number>} */
+  const lineIndices = new Set()
+  /** @type {{ indent: number, directive: string, leafCount: number }[]} */
+  const stack = []
+  let inYaml = false
+  let yamlIndent = -1
+  /** @type {{ name: string, yamlLines: string[], expectYaml: boolean } | null} */
+  let pendingFailure = null
+
+  const flushPendingFailure = () => {
+    if (!pendingFailure) return
+    failures.push(finalizeVitestTapFailure(pendingFailure))
+    pendingFailure = null
+  }
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
+    if (stack.length === 0) {
+      const open = VITEST_TAP_OPENER_RE.exec(line)
+      if (!open) continue
+      const indent = open[1].length
+      const { directive } = extractVitestTapBodyDirective(open[3])
+      let looksLikeSubtest = VITEST_TAP_DIRECTIVE_BEFORE_BRACE_RE.test(open[3])
+      if (!looksLikeSubtest) {
+        for (let k = i + 1; k < lines.length; k++) {
+          if (!lines[k].trim()) continue
+          const nextIndent = /^( *)/.exec(lines[k])[1].length
+          looksLikeSubtest = nextIndent > indent && VITEST_TAP_NEXT_CHILD_RE.test(lines[k])
+          break
+        }
+      }
+      if (!looksLikeSubtest) continue
+      summary.found = true
+      lineIndices.add(i)
+      stack.push({ indent, directive, leafCount: 0 })
+      continue
+    }
+
+    lineIndices.add(i)
+    if (inYaml) {
+      const endYaml = /^( *)\.\.\.\s*$/.exec(line)
+      if (endYaml && endYaml[1].length === yamlIndent) {
+        inYaml = false
+        yamlIndent = -1
+        flushPendingFailure()
+      } else if (pendingFailure) {
+        pendingFailure.yamlLines.push(line)
+      }
+      continue
+    }
+
+    const startYaml = /^( *)---\s*$/.exec(line)
+    if (startYaml) {
+      inYaml = true
+      yamlIndent = startYaml[1].length
+      continue
+    }
+
+    if (pendingFailure) flushPendingFailure()
+
+    const closeMatch = /^( *)\}\s*$/.exec(line)
+    if (closeMatch && closeMatch[1].length === stack[stack.length - 1].indent) {
+      const frame = stack.pop()
+      if (frame.leafCount === 0) {
+        if (frame.directive === 'skip') summary.skipped += 1
+        else if (frame.directive === 'todo') summary.pending += 1
+      }
+      if (stack.length > 0) stack[stack.length - 1].leafCount += frame.leafCount
+      continue
+    }
+
+    const nestedOpen = VITEST_TAP_OPENER_RE.exec(line)
+    if (nestedOpen) {
+      const { directive } = extractVitestTapBodyDirective(nestedOpen[3])
+      stack.push({ indent: nestedOpen[1].length, directive, leafCount: 0 })
+      continue
+    }
+
+    const leaf = /^( *)(not ok|ok) \d+ - (.*)$/.exec(line)
+    if (leaf) {
+      stack[stack.length - 1].leafCount += 1
+      const { name, directive } = extractVitestTapBodyDirective(leaf[3])
+      if (directive === 'skip') summary.skipped += 1
+      else if (directive === 'todo') summary.pending += 1
+      else if (leaf[2] === 'not ok') {
+        summary.failed += 1
+        pendingFailure = { name, yamlLines: [], expectYaml: true }
+      } else {
+        summary.passed += 1
+      }
+    }
+  }
+
+  flushPendingFailure()
+  if (stack.length > 0) summary.malformed.push('unclosed vitest TAP block')
+  summary.total = summary.passed + summary.failed + summary.expectedFail + summary.skipped + summary.pending
+  return { summary, failures, lineIndices }
+}
+
+/**
+ * Combines Vitest default-reporter summaries with Vitest `--reporter=tap` counts.
+ * @param {VitestSummary} summary
+ * @param {VitestSummary} tapSummary
+ * @returns {VitestSummary}
+ */
+function mergeVitestSummaries(summary, tapSummary) {
+  if (!tapSummary.found) return summary
+  if (!summary.found) return tapSummary
+  const passed = summary.passed + tapSummary.passed
+  const failed = summary.failed + tapSummary.failed
+  const expectedFail = summary.expectedFail + tapSummary.expectedFail
+  const skipped = summary.skipped + tapSummary.skipped
+  const pending = summary.pending + tapSummary.pending
+  return {
+    found: true,
+    passed,
+    failed,
+    expectedFail,
+    skipped,
+    pending,
+    total: passed + failed + expectedFail + skipped + pending,
+    malformed: [...summary.malformed, ...tapSummary.malformed],
+  }
+}
+
+/**
+ * Parses node:test and Vitest TAP output. Several runs may be concatenated (one per spawned test
+ * command), so counters are summed. Only leaf failures are listed; parents that failed because
+ * a subtest failed are counted but not repeated.
  * @param {string} text
  * @returns {TapSummary}
  */
 export function parseTap(text) {
   const lines = text.split('\n')
+  const vitestTap = parseVitestTap(text)
   /** @type {TestFailure[]} */
-  const failures = []
+  const failures = [...vitestTap.failures]
   /** @type {SkippedCase[]} */
   const skippedCases = []
   /** @type {SkippedCase[]} */
   const skippedSuites = []
   let notOk = 0
   for (let i = 0; i < lines.length; i++) {
+    if (vitestTap.lineIndices.has(i)) continue
     // node:test emits skipped tests as `ok N - name # SKIP reason`. Keep the
     // reason intact: it is the only thing judge() may use to distinguish an
     // explicit environment skip from a design/by-design skip.
@@ -207,6 +380,7 @@ export function parseTap(text) {
     else skippedCases.push(entry)
   }
   for (let i = 0; i < lines.length; i++) {
+    if (vitestTap.lineIndices.has(i)) continue
     const head = /^\s*not ok \d+ - (.*)$/.exec(lines[i])
     if (!head) continue
     notOk++
@@ -233,7 +407,7 @@ export function parseTap(text) {
     failures,
     skippedCases,
     skippedSuites,
-    vitest: parseVitestSummary(text),
+    vitest: mergeVitestSummaries(parseVitestSummary(text), vitestTap.summary),
   }
 }
 
@@ -257,8 +431,8 @@ export function formatPackageLine(result) {
  * `[environment-unavailable]` is by-design: free-text matching would turn
  * legitimate optional-dependency/platform skips into false red packages.
  *
- * Vitest's default reporter carries no per-case reason, so its skipped/todo
- * counts cannot be classified. They are fail-closed: an unlabelled Vitest skip
+ * Vitest's default reporter and `--reporter=tap` carry no per-case reason, so their
+ * skipped/todo counts cannot be classified. They are fail-closed: an unlabelled Vitest skip
  * can never be shown as a passing package, because that is exactly the silent
  * hole this runner exists to close.
  * @param {{ exitCode: number | null, tap: TapSummary }} run
@@ -291,9 +465,9 @@ export function judge({ exitCode, tap }) {
   if (tap.notOk > 0) reasons.push(`${tap.notOk} not ok line(s)`)
   if (tap.cancelled > 0) reasons.push(`${tap.cancelled} cancelled`)
   if (skippedEnvironment > 0) reasons.push(`${skippedEnvironment} environment-unavailable skip(s)`)
-  // Vitest default output has no explicit environment marker, so every Vitest
+  // Vitest output carries no explicit environment marker, so every Vitest
   // skip/todo is treated as unclassified and fails the package (fail-closed).
-  if (vitestUnclassified > 0) reasons.push(`${vitestUnclassified} unclassified vitest skip(s) (default reporter carries no reason)`)
+  if (vitestUnclassified > 0) reasons.push(`${vitestUnclassified} unclassified vitest skip(s) (vitest reporter carries no reason)`)
   if (vitestFailed > 0) reasons.push(`${vitestFailed} vitest failure(s) not represented in TAP counters`)
   if (vitest && Array.isArray(vitest.malformed) && vitest.malformed.length > 0) {
     reasons.push(`vitest summary unreadable: ${vitest.malformed[0]}`)

@@ -4,17 +4,24 @@ import { Menu } from '@deepseek-ai/dsh-client-ui-primitives'
 import {
   disconnectHubAccount,
   errorText,
+  getHubSeats,
   listHubAccounts,
+  renewHubAccountSeat,
 } from './api.js'
 import {
   ACCOUNT_PLATFORM,
   accountCapabilityBadge,
   accountDisplayName,
   accountHandle,
+  accountSeatDisplay,
   accountStatusTone,
+  createSeatRenewController,
   extractAccounts,
   filterAccounts,
   isNeedsLogin,
+  isSeatBillingActive,
+  isSeatCapReached,
+  seatErrorMessage,
 } from './account-sidebar-view.js'
 import { AuthorizeModal, authorizeBaseline } from './AuthorizeModal.jsx'
 import { createDisconnectController } from './disconnect-controller.js'
@@ -38,19 +45,35 @@ function statusLabel(t, row) {
 
 /**
  * 单个账号行：头像（hub 同源重写 avatar_url，缺失/加载失败退 SVG 占位）
- * + 显示名 + @username + 状态 pill（agent_usable=false 另置灰标注）。
+ * + 显示名 + @username + 状态 pill（agent_usable=false 另置灰标注），
+ * 并在 `billing_mode === 'seat'` 时渲染席位有效期/冻结续费行与菜单续费项。
  * @param {{
  *   t: (key: string, vars?: Record<string, unknown>) => string,
  *   row: Record<string, unknown>,
+ *   seatBillingOn: boolean,
+ *   maxValidityDays: number,
+ *   onRenew: (row: Record<string, unknown>) => void,
  *   onDisconnect: (row: Record<string, unknown>) => void,
  * }} props
  */
-function AccountItem({ t, row, onDisconnect }) {
+function AccountItem({ t, row, seatBillingOn, maxValidityDays, onRenew, onDisconnect }) {
   const [avatarFailed, setAvatarFailed] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const anchorRef = useRef(null)
   const avatarUrl = typeof row.avatar_url === 'string' ? row.avatar_url : ''
-  const tone = row.agent_usable === false ? 'muted' : accountStatusTone(row)
+  const seat = seatBillingOn ? accountSeatDisplay(row) : null
+  const isSeatFrozenRow = seat?.status === 'frozen'
+  const isSeatUnactivatedRow = seat?.status === 'unactivated'
+  const tone = isSeatFrozenRow
+    ? 'error'
+    : isSeatUnactivatedRow
+      ? 'warn'
+      : (row.agent_usable === false ? 'muted' : accountStatusTone(row))
+  const pillText = isSeatFrozenRow
+    ? t('acct.seat.status.frozen')
+    : isSeatUnactivatedRow
+      ? t('acct.seat.status.unactivated')
+      : (row.agent_usable === false ? t('acct.agentOff') : statusLabel(t, row))
   const name = accountDisplayName(row)
   const handle = accountHandle(row)
   const cap = accountCapabilityBadge(t, row)
@@ -71,67 +94,138 @@ function AccountItem({ t, row, onDisconnect }) {
     onDisconnect(row)
   }
 
+  const handleRenew = () => {
+    setMenuOpen(false)
+    onRenew(row)
+  }
+
+  const menuItems = []
+  if (seat !== null) {
+    if (seat.isRenewLimit) {
+      menuItems.push({
+        id: `renew-${accountId}`,
+        label: t('acct.seat.renewLimitMenu', { days: maxValidityDays }),
+        disabled: true,
+        title: t('acct.seat.renewLimitMenu', { days: maxValidityDays }),
+      })
+    } else if (seat.canRenew) {
+      menuItems.push({
+        id: `renew-${accountId}`,
+        label: t(isSeatUnactivatedRow ? 'acct.seat.activateMenu' : 'acct.seat.renewMenu', { credits: seat.priceCredits }),
+      })
+    }
+  }
+  menuItems.push({
+    id: `disconnect-${accountId}`,
+    label: t('acct.disconnect'),
+    danger: true,
+  })
+
+  const seatSubrow = seat === null
+    ? null
+    : isSeatFrozenRow
+      ? (
+        <div className="omnimux-publish-accounts-seat-subrow">
+          <span className="omnimux-publish-accounts-seat-text error">
+            {seat.graceDays !== null && seat.graceDays > 0
+              ? t('acct.seat.frozenGrace', { days: seat.graceDays })
+              : t('acct.seat.frozenGraceEnding')}
+          </span>
+          {seat.canRenew ? (
+            <Button type="button" variant="outline" size="xs" onClick={handleRenew}>
+              {t('acct.seat.renewInline', { credits: seat.priceCredits })}
+            </Button>
+          ) : null}
+        </div>
+      )
+      : isSeatUnactivatedRow
+        ? (
+          <div className="omnimux-publish-accounts-seat-subrow">
+            <span className="omnimux-publish-accounts-seat-text warn">
+              {seat.graceDays !== null && seat.graceDays > 0
+                ? t('acct.seat.unactivatedGrace', { days: seat.graceDays })
+                : t('acct.seat.unactivatedGraceEnding')}
+            </span>
+            {seat.canRenew ? (
+              <Button type="button" variant="outline" size="xs" onClick={handleRenew}>
+                {t('acct.seat.activateInline', { credits: seat.priceCredits })}
+              </Button>
+            ) : null}
+          </div>
+        )
+        : seat.expiresDate !== ''
+          ? (
+            <div className="omnimux-publish-accounts-seat-subrow">
+              <span className={`omnimux-publish-accounts-seat-text${seat.isExpiringSoon ? ' warn' : ''}`}>
+                {t(seat.isExpiringSoon ? 'acct.seat.expiringSoon' : 'acct.seat.expiresAt', { date: seat.expiresDate })}
+              </span>
+            </div>
+          )
+          : null
+
   return (
     <div className="omnimux-publish-accounts-item">
-      <span className="omnimux-publish-accounts-avatar">
-        {avatarUrl !== '' && !avatarFailed ? (
-          <img
-            className="omnimux-publish-accounts-avatar-img"
-            src={avatarUrl}
-            alt=""
-            loading="lazy"
-            onError={() => { setAvatarFailed(true) }}
-          />
-        ) : (
-          <IconUserOutline16 size={18} />
-        )}
-      </span>
-      <span className="omnimux-publish-accounts-item-main">
-        <span className="omnimux-publish-accounts-item-name">{name}</span>
-        {handle !== '' || cap !== null ? (
-          <span className="omnimux-publish-accounts-item-meta">
-            {handle !== '' ? (
-              <span className="omnimux-publish-accounts-item-handle">{handle}</span>
-            ) : null}
-            {cap !== null ? (
-              <span className={`omnimux-publish-cap-badge ${cap.tone}`}>{cap.label}</span>
-            ) : null}
-          </span>
-        ) : null}
-      </span>
-      <span className={`omnimux-publish-accounts-item-status ${tone}`}>
-        {row.agent_usable === false ? t('acct.agentOff') : statusLabel(t, row)}
-      </span>
-      <div className="omnimux-publish-accounts-item-menu" onClick={(event) => event.stopPropagation()}>
-        <IconButton
-          ref={anchorRef}
-          variant="ghost"
-          size="sm"
-          aria-label={t('acct.more', { name })}
-          aria-haspopup="menu"
-          aria-expanded={menuOpen}
-          onClick={handleMenuToggle}
-        >
-          <IconEllipsisOutline16 />
-        </IconButton>
-        {menuOpen ? (
-          <Menu
-            open={menuOpen}
-            portal
-            anchor={null}
-            anchorRef={anchorRef}
-            align="end"
-            dense
-            items={[{
-              id: `disconnect-${accountId}`,
-              label: t('acct.disconnect'),
-              danger: true,
-            }]}
-            onSelect={() => { handleDisconnect() }}
-            onClose={handleMenuClose}
-          />
-        ) : null}
+      <div className="omnimux-publish-accounts-item-top">
+        <span className="omnimux-publish-accounts-avatar">
+          {avatarUrl !== '' && !avatarFailed ? (
+            <img
+              className="omnimux-publish-accounts-avatar-img"
+              src={avatarUrl}
+              alt=""
+              loading="lazy"
+              onError={() => { setAvatarFailed(true) }}
+            />
+          ) : (
+            <IconUserOutline16 size={18} />
+          )}
+        </span>
+        <span className="omnimux-publish-accounts-item-main">
+          <span className="omnimux-publish-accounts-item-name">{name}</span>
+          {handle !== '' || cap !== null ? (
+            <span className="omnimux-publish-accounts-item-meta">
+              {handle !== '' ? (
+                <span className="omnimux-publish-accounts-item-handle">{handle}</span>
+              ) : null}
+              {cap !== null ? (
+                <span className={`omnimux-publish-cap-badge ${cap.tone}`}>{cap.label}</span>
+              ) : null}
+            </span>
+          ) : null}
+        </span>
+        <span className={`omnimux-publish-accounts-item-status ${tone}`}>
+          {pillText}
+        </span>
+        <div className="omnimux-publish-accounts-item-menu" onClick={(event) => event.stopPropagation()}>
+          <IconButton
+            ref={anchorRef}
+            variant="ghost"
+            size="sm"
+            aria-label={t('acct.more', { name })}
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
+            onClick={handleMenuToggle}
+          >
+            <IconEllipsisOutline16 />
+          </IconButton>
+          {menuOpen ? (
+            <Menu
+              open={menuOpen}
+              portal
+              anchor={null}
+              anchorRef={anchorRef}
+              align="end"
+              dense
+              items={menuItems}
+              onSelect={(itemId) => {
+                if (typeof itemId === 'string' && itemId.startsWith('renew-')) handleRenew()
+                else handleDisconnect()
+              }}
+              onClose={handleMenuClose}
+            />
+          ) : null}
+        </div>
       </div>
+      {seatSubrow}
     </div>
   )
 }
@@ -171,22 +265,43 @@ function EmptyState({ t, onAdd }) {
 export function AccountsSidebar({ t }) {
   const [phase, setPhase] = useState('loading') // loading | ready | need-login
   const [rows, setRows] = useState([])
+  const [seats, setSeats] = useState(null)
   const [error, setError] = useState('')
   const [query, setQuery] = useState('')
   const [modalOpen, setModalOpen] = useState(false)
   const [pendingDisconnect, setPendingDisconnect] = useState(null)
   const [disconnectingId, setDisconnectingId] = useState('')
   const [disconnectError, setDisconnectError] = useState('')
+  const [pendingRenew, setPendingRenew] = useState(null)
+  const [renewingId, setRenewingId] = useState('')
+  const [renewError, setRenewError] = useState('')
   const mountedRef = useRef(true)
+  const tRef = useRef(t)
+  tRef.current = t
+  const seatsRef = useRef(seats)
+  seatsRef.current = seats
   const disconnectControllerRef = useRef(null)
+  const renewControllerRef = useRef(null)
 
   const loadAccounts = useCallback(() => {
-    return listHubAccounts({ platform: ACCOUNT_PLATFORM }).then((result) => {
+    const accountsReq = listHubAccounts({ platform: ACCOUNT_PLATFORM })
+    const seatsReq = getHubSeats().catch((caught) => ({
+      ok: false,
+      status: 0,
+      body: { error: caught instanceof Error ? caught.message : String(caught) },
+    }))
+    return Promise.all([accountsReq, seatsReq]).then(([result, seatsResult]) => {
       if (!mountedRef.current) return true
       if (isNeedsLogin(result)) {
         setPhase('need-login')
         setRows([])
+        setSeats(null)
         return true
+      }
+      if (seatsResult && seatsResult.ok && seatsResult.body) {
+        setSeats(seatsResult.body)
+      } else {
+        setSeats(null)
       }
       if (!result.ok) {
         setPhase('ready')
@@ -213,6 +328,14 @@ export function AccountsSidebar({ t }) {
   }, [loadAccounts])
 
   const filtered = filterAccounts(rows, query)
+  const seatBillingOn = isSeatBillingActive(seats)
+  const seatCapReached = isSeatCapReached(seats)
+  const maxValidityDays = typeof seats?.max_validity_days === 'number' && seats.max_validity_days > 0
+    ? seats.max_validity_days
+    : 90
+  const seatPriceCredits = typeof seats?.seat_price_credits === 'number' && seats.seat_price_credits > 0
+    ? seats.seat_price_credits
+    : 20
 
   /** 授权完成（检测到新账号或用户点「我已完成」）：关弹窗并刷新列表。 */
   const handleConnected = useCallback(() => {
@@ -237,6 +360,17 @@ export function AccountsSidebar({ t }) {
     setPendingDisconnect(null)
     setDisconnectError('')
   }, [disconnectingId])
+
+  const handleRenewRequest = useCallback((row) => {
+    setRenewError('')
+    setPendingRenew(row)
+  }, [])
+
+  const handleRenewClose = useCallback(() => {
+    if (renewingId !== '') return
+    setPendingRenew(null)
+    setRenewError('')
+  }, [renewingId])
 
   /**
    * Host 以 id 精确定位账号。控制器在 React state 生效前同步加锁；失败时不改
@@ -267,9 +401,43 @@ export function AccountsSidebar({ t }) {
     void disconnectControllerRef.current.confirm(accountId)
   }, [loadAccounts, pendingDisconnect])
 
+  const handleRenewConfirm = useCallback(() => {
+    const accountId = pendingRenew?.id
+    if (renewControllerRef.current === null) {
+      renewControllerRef.current = createSeatRenewController({
+        renew: renewHubAccountSeat,
+        reload: loadAccounts,
+        isMounted: () => mountedRef.current,
+        isNeedsLogin,
+        formatError: (body, status) => seatErrorMessage(tRef.current, body, status, errorText, seatsRef.current),
+        onStart: (id) => {
+          setRenewingId(id)
+          setRenewError('')
+        },
+        onFailure: setRenewError,
+        onNeedLogin: () => {
+          setPendingRenew(null)
+          setPhase('need-login')
+        },
+        onSuccess: () => { setPendingRenew(null) },
+        onFinally: () => { setRenewingId('') },
+      })
+    }
+    void renewControllerRef.current.confirm(accountId)
+  }, [loadAccounts, pendingRenew])
+
   const pendingDisconnectName = accountDisplayName(pendingDisconnect ?? {})
   const pendingDisconnectId = String(pendingDisconnect?.id ?? '')
   const disconnecting = pendingDisconnectId !== '' && disconnectingId === pendingDisconnectId
+  const pendingDisconnectSeat = seatBillingOn ? accountSeatDisplay(pendingDisconnect) : null
+
+  const pendingRenewName = accountDisplayName(pendingRenew ?? {})
+  const pendingRenewHandle = accountHandle(pendingRenew ?? {})
+  const pendingRenewId = String(pendingRenew?.id ?? '')
+  const renewing = pendingRenewId !== '' && renewingId === pendingRenewId
+  const pendingRenewSeat = pendingRenew ? accountSeatDisplay(pendingRenew) : null
+  const pendingRenewIsActivate = pendingRenewSeat?.status === 'unactivated'
+  const pendingRenewCredits = pendingRenewSeat?.priceCredits ?? seatPriceCredits
 
   return (
     <div className="omnimux-publish-accounts-view">
@@ -285,6 +453,30 @@ export function AccountsSidebar({ t }) {
           </>
         ) : (
           <>
+            {seatBillingOn ? (
+              <div className="omnimux-publish-seat-summary" data-testid="seat-summary">
+                <span className="omnimux-publish-seat-summary-count">
+                  {t('acct.seat.summary', {
+                    purchased: seats.seats_purchased ?? 0,
+                    cap: seats.seats_cap ?? 20,
+                  })}
+                </span>
+                {(seats.seats_vacant ?? 0) > 0 ? (
+                  <span className="omnimux-publish-seat-summary-pill vacant">
+                    {t('acct.seat.vacant', { count: seats.seats_vacant })}
+                  </span>
+                ) : seatCapReached ? (
+                  <span className="omnimux-publish-seat-summary-pill cap">
+                    {t('acct.seat.capFull')}
+                  </span>
+                ) : (
+                  <span className="omnimux-publish-seat-summary-rate">
+                    {t('acct.seat.rate', { credits: seatPriceCredits })}
+                  </span>
+                )}
+              </div>
+            ) : null}
+
             <Button
               variant="primary"
               size="default"
@@ -328,6 +520,9 @@ export function AccountsSidebar({ t }) {
                       key={String(row.id)}
                       t={t}
                       row={row}
+                      seatBillingOn={seatBillingOn}
+                      maxValidityDays={maxValidityDays}
+                      onRenew={handleRenewRequest}
                       onDisconnect={handleDisconnectRequest}
                     />
                   ))}
@@ -346,6 +541,7 @@ export function AccountsSidebar({ t }) {
       {modalOpen ? (
         <AuthorizeModal
           t={t}
+          seats={seats}
           baselineIds={authorizeBaseline(rows)}
           onClose={() => { setModalOpen(false) }}
           onNeedLogin={handleNeedLogin}
@@ -364,9 +560,52 @@ export function AccountsSidebar({ t }) {
         onClose={handleDisconnectClose}
       >
         <p>{t('acct.disconnectConfirm', { name: pendingDisconnectName })}</p>
+        {pendingDisconnectSeat && pendingDisconnectSeat.status === 'active' && pendingDisconnectSeat.expiresDate !== '' ? (
+          <div className="omnimux-publish-seat-callout info">
+            {t('acct.seat.disconnectNote', {
+              date: pendingDisconnectSeat.expiresDate,
+              swaps: pendingDisconnectSeat.swapsRemaining,
+            })}
+          </div>
+        ) : null}
         {disconnectError !== '' ? (
           <p className="omnimux-publish-accounts-modal-error" role="alert">
             {t('acct.disconnectFailed', { reason: disconnectError })}
+          </p>
+        ) : null}
+      </ConfirmModal>
+      <ConfirmModal
+        open={pendingRenew !== null}
+        title={t(pendingRenewIsActivate ? 'acct.seat.activateTitle' : 'acct.seat.renewTitle')}
+        confirmLabel={renewError !== ''
+          ? t('acct.retry')
+          : t(pendingRenewIsActivate ? 'acct.seat.activateConfirm' : 'acct.seat.renewConfirm', { credits: pendingRenewCredits })}
+        cancelLabel={t('auth.cancel')}
+        closeLabel={t('close')}
+        confirmVariant="primary"
+        confirmLoading={renewing}
+        onConfirm={() => { void handleRenewConfirm() }}
+        onClose={handleRenewClose}
+      >
+        {pendingRenewSeat ? (
+          <div className="omnimux-publish-seat-renew-card">
+            <span className="omnimux-publish-seat-renew-key">{t('acct.seat.renewField.account')}</span>
+            <span className="omnimux-publish-seat-renew-val">
+              {pendingRenewHandle !== '' ? `${pendingRenewName} (${pendingRenewHandle})` : pendingRenewName}
+            </span>
+            <span className="omnimux-publish-seat-renew-key">{t('acct.seat.renewField.cost')}</span>
+            <span className="omnimux-publish-seat-renew-val">
+              {t('acct.seat.renewField.costValue', { credits: pendingRenewCredits })}
+            </span>
+            <span className="omnimux-publish-seat-renew-key">{t('acct.seat.renewField.validity')}</span>
+            <span className="omnimux-publish-seat-renew-val">
+              {`${pendingRenewSeat.preview.fromDate} → ${pendingRenewSeat.preview.toDate}`}
+            </span>
+          </div>
+        ) : null}
+        {renewError !== '' ? (
+          <p className="omnimux-publish-accounts-modal-error" role="alert">
+            {renewError}
           </p>
         ) : null}
       </ConfirmModal>

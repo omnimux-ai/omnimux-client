@@ -577,10 +577,44 @@ export function updatePlazaItemInstalled(item, installed, state, updater) {
   state.setItems((cur) => cur.map((it) => (it.slug === item.slug || it.id === item.id ? { ...it, installed } : it)));
   state.setInstalledItems((cur) => updater(cur, item, installed));
   state.setOpen((cur) => (cur && (cur.slug === item.slug || cur.id === item.id) ? { ...cur, installed } : cur));
+  if (!installed && item && typeof state.setProviderSlugs === 'function') {
+    const candidates = new Set(
+      [item.slug, item.token, item.skillKey, item.skill]
+        .filter((v) => typeof v === 'string' && v.trim())
+        .map((v) => v.trim().toLowerCase()),
+    );
+    if (candidates.size > 0) {
+      state.setProviderSlugs((cur) => (
+        Array.isArray(cur) ? cur.filter((s) => !candidates.has(String(s || '').trim().toLowerCase())) : cur
+      ));
+    }
+  }
 }
 
-export function handleSwitchToggle(item, state) {
+export {
+  EXTERNAL_PLATFORM_ORDER,
+  isExternalCatalogSkill,
+  resolveExternalPlatform,
+} from '../skill-picker-logic.js';
+
+export function handleSwitchToggle(item, state, updater, apiFn) {
   if (item.installed) {
+    if (item.preinstalled === true) return;
+    const runApi = apiFn || (typeof api === 'function' ? api : null);
+    const slug = resolveItemSlug(item);
+    if (runApi && updater && slug) {
+      if (typeof state.setInstallError === 'function') state.setInstallError('');
+      Promise.resolve(runApi('uninstall', { slug }))
+        .then(() => {
+          updatePlazaItemInstalled(item, false, state, updater);
+        })
+        .catch((err) => {
+          if (typeof state.setInstallError === 'function') {
+            state.setInstallError(err ? (err.message || String(err)) : '卸载失败');
+          }
+        });
+      return;
+    }
     const next = item.enabled === false;
     state.setItems((cur) => cur.map((it) => (it.slug === item.slug || it.id === item.id ? { ...it, enabled: next } : it)));
     state.setInstalledItems((cur) => cur.map((it) => (it.slug === item.slug || it.id === item.id ? { ...it, enabled: next } : it)));

@@ -2,6 +2,7 @@ import { quotaGuard } from 'dsh-ui-kit/quota-request'
 export { isQuotaHttpResult, notifyQuota, quotaGuard } from 'dsh-ui-kit/quota-request'
 
 import { PUBLISH_PROVIDER, isPublishingAccount } from '../account-policy.js'
+import { pickSeatsSummary } from '../shared/social-seat.js'
 /**
  * fetch 封装 over 本插件 Host 路由（/omnimux/publish/*）与 hub 只读面
  * （/omnimux/accounts，hub 权威合并实现）。同源相对路径，Electron 下走
@@ -152,7 +153,12 @@ export function retryTask(taskId) {
  */
 export async function listHubAccounts(filters = {}) {
   const query = new URLSearchParams({ provider: PUBLISH_PROVIDER, platform: 'tiktok' })
-  const result = await quotaGuard(() => publishRequest(`/omnimux/accounts?${query}`), { capability: 'publish' })()
+  // 读取账号列表跳过本地余额预检，确保 0 积分用户仍可看到冻结/待激活账号并执行续费或解绑。
+  const result = await quotaGuard(
+    () => publishRequest(`/omnimux/accounts?${query}`),
+    { capability: 'publish' },
+    { precheck: false },
+  )()
   if (result.ok && Array.isArray(result.body?.accounts)) {
     return { ...result, body: { ...result.body, accounts: result.body.accounts.filter(isPublishingAccount) } }
   }
@@ -163,18 +169,22 @@ export async function listHubAccounts(filters = {}) {
 /**
  * 发起 TikTok 授权：hub `POST /omnimux/accounts`（中枢 withPat → 网关
  * /api/social/v1/connect，pickConnectView 保证仅 https auth_url 透出）。
+ * 跳过本地余额预检，允许 0 积分复用空余席位并由网关返回真实 402/409 语义；
+ * 若网关返回 402，quotaGuard 仍会自动唤起原生充值弹窗。
  * 成功响应体 { auth_url }；401/needs-omnimux 走登录引导。
  */
 export function connectTikTokAccount() {
   return quotaGuard(
     () => publishRequest('/omnimux/accounts', { method: 'POST', body: { platform: 'tiktok', provider: PUBLISH_PROVIDER } }),
     { capability: 'publish', userInitiated: true },
+    { precheck: false },
   )()
 }
 
 /**
  * 断开一个已连接账号。该请求只移除 OmniMux 中的账号连接，不宣称撤销
  * TikTok 的全局 token；Host 仍负责同源写入保护与上游协议转换。
+ * 解绑不扣费，跳过本地余额预检以免 0 积分用户无法释放账号。
  * @param {string} accountId
  * @returns {Promise<{ ok: boolean, status: number, body: any }>}
  */
@@ -189,5 +199,44 @@ export function disconnectHubAccount(accountId) {
   return quotaGuard(
     () => publishRequest(`/omnimux/accounts/${encodeURIComponent(id)}?provider=${PUBLISH_PROVIDER}`, { method: 'DELETE' }),
     { capability: 'publish', userInitiated: true },
+    { precheck: false },
+  )()
+}
+
+/**
+ * 读取当前社媒账号席位汇总与空席列表（hub `GET /omnimux/accounts/seats`）。
+ * 读取态不触发 quotaGuard 预检，以免余额不足时无法查看席位与点击续费。
+ * @returns {Promise<{ ok: boolean, status: number, body: any }>}
+ */
+export async function getHubSeats() {
+  const result = await publishRequest('/omnimux/accounts/seats')
+  if (!result.ok) return result
+  const summary = pickSeatsSummary(result.body)
+  if (!summary) return { ok: false, status: 502, body: { error: 'invalid seats response' } }
+  return { ...result, body: summary }
+}
+
+/**
+ * 手动续费/激活指定账号的席位（+30 天）。
+ * 跳过本地 quota 缓存预检，以网关真实扣费校验为唯一真源；遇到 402 时由
+ * quotaGuard 自动唤起原生充值弹窗。
+ * @param {string} accountId
+ * @returns {Promise<{ ok: boolean, status: number, body: any }>}
+ */
+export function renewHubAccountSeat(accountId) {
+  if (typeof accountId !== 'string') {
+    return Promise.resolve({ ok: false, status: 400, body: { error: 'id is required' } })
+  }
+  const id = accountId.trim()
+  if (id === '') {
+    return Promise.resolve({ ok: false, status: 400, body: { error: 'id is required' } })
+  }
+  return quotaGuard(
+    () => publishRequest(`/omnimux/accounts/${encodeURIComponent(id)}/renew?provider=${PUBLISH_PROVIDER}`, {
+      method: 'POST',
+      body: { provider: PUBLISH_PROVIDER },
+    }),
+    { capability: 'publish', userInitiated: true },
+    { precheck: false },
   )()
 }

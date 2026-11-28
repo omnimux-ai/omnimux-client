@@ -24,12 +24,33 @@ declare const IconRefreshOutline16: IconComponent;
 declare const IconRightUpOutline14: IconComponent;
 declare const IconSearchOutline16: IconComponent;
 declare const IconTrashOutline16: IconComponent;
+/**
+ * Unified OmniMux motion language (--omnimux-motion-* CSS custom properties).
+ * Intentionally uses `--omnimux-motion-*` instead of `--dsw-*` because upstream runtime
+ * `--dsw-*` tokens are strictly allowlist-locked by verify-dsw-tokens.mjs.
+ */
+declare const MOTION_VARS: {
+  readonly easeOut: "cubic-bezier(0.16, 1, 0.3, 1)";
+  readonly easeSpatial: "cubic-bezier(0.32, 0.72, 0, 1)";
+  readonly easeExit: "cubic-bezier(0.32, 0, 0.67, 0)";
+  readonly easeLinear: "linear";
+  readonly durPress: "90ms";
+  readonly durFast: "140ms";
+  readonly durBase: "200ms";
+  readonly durSheet: "260ms";
+  readonly pressScale: "0.96";
+  readonly pressScaleSubtle: "0.985";
+};
+declare const MOTION_TOKENS_CSS: string;
+declare function ensureMotionTokens(): void;
 type ButtonVariant = "primary" | "secondary" | "ghost" | "outline" | "danger";
 type ButtonSize = "default" | "sm" | "xs";
 interface ButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, "type"> {
   variant?: ButtonVariant;
   size?: ButtonSize;
   loading?: boolean;
+  /** Disable `:active` tactile press scale on dense toolbar/inline controls. */
+  staticScale?: boolean;
   leadingIcon?: ReactNode;
   trailingIcon?: ReactNode;
   type?: "button" | "submit" | "reset";
@@ -673,5 +694,51 @@ declare function trapFocus(container: HTMLElement, event: KeyboardEvent): void;
  * Attempts to focus the first focusable descendant in a container.
  */
 declare function focusFirstDescendant(container: HTMLElement): boolean;
-export { ActionRow, type ActionRowProps, Badge, type BadgeProps, type BadgeShape, type BadgeSize, type BadgeVariant, Button, type ButtonProps, type ButtonSize, type ButtonVariant, CardGrid, type CardGridProps, type CellContext, type ColumnDef, type CompatIconProps, ConfirmModal, type ConfirmModalProps, CopyButton, type CopyButtonProps, type CopyState, DataTable, type DataTableProps, type DialogSize, Divider, type DividerProps, Drawer, type DrawerPlacement, DrawerPortal, type DrawerPortalProps, type DrawerProps, type DropdownOption, DropdownSelect, type DropdownSelectProps, EmptyState, type EmptyStateProps, FilterBar, type FilterBarProps, GenWaveCard, type GenWaveCardProps, type HeaderContext, IconButton, type IconButtonProps, IconCheckOutline16, IconChevronDownOutline14, IconChevronLeftOutline14, IconChevronUpOutline14, IconCloseFill14, IconCloseOutline16, IconCopyOutline16, IconDownloadOutline16, IconEditOutline16, IconEllipsisOutline16, IconLoadingOutline16, IconPaperclipOutline16, IconPlayOutline16, IconPlusOutline16, IconRefreshOutline14, IconRefreshOutline16, IconRightUpOutline14, IconSearchOutline16, IconTrashOutline16, InputField, type InputFieldProps, type MediaAspectRatio, MediaCard, type MediaCardProps, ModalDialog, type ModalDialogProps, PageHeader, type PageHeaderProps, type PageHeaderTabItem, type PluginAccess, type PortalContainer, SearchField, type SearchFieldHandle, type SearchFieldProps, SelectableTile, type SelectableTileProps, type SidebarCoordinatorApi, type SidebarEntryOptions, type SortDirection, type StageBox, StageContainer, type StageContainerProps, StageHeader, type StageHeaderProps, type StageHostSingleton, type StageStore, StatBar, type StatBarProps, type StatItem, Table, TableBody, type TableBodyProps, TableCell, type TableCellProps, TableHead, type TableHeadProps, TableHeader, type TableHeaderProps, type TableProps, TableRow, type TableRowProps, Tabs, type TabsProps, type TabsVariant, type TileSelectionMode, Toolbar, type ToolbarProps, type WorkbenchSidebarEntryOptions, type WorkbenchStageStoreOptions, copyToClipboard, createPortalSafe, createSidebarEntry, createStageStore, createWorkbenchSidebarEntry, createWorkbenchStageStore, focusFirstDescendant, resolvePortalContainer, trapFocus };
+interface AnimatedNumberProps {
+  value: number;
+  /** Explicit opt-in flag. Default `false` renders immediately with `tabular-nums`. */
+  animate?: boolean;
+  /** Interpolation duration in ms when `animate` is true. Defaults to 180. */
+  durationMs?: number;
+  /** Optional value formatter. Defaults to integer locale formatting. */
+  format?: (value: number) => string;
+  className?: string;
+}
+/**
+ * Tabular numeric readout with explicit opt-in live-delta interpolation.
+ * Skips initial-mount animation, throttles rapid streams, and honors reduced-motion.
+ */
+declare function AnimatedNumber({ value, animate, durationMs, format, className }: AnimatedNumberProps): import("react").JSX.Element;
+interface IconSwapProps {
+  /** Whether to show the `secondary` icon (`true`) or `primary` icon (`false`). */
+  active: boolean;
+  /** Default resting icon (`active === false`). */
+  primary: ReactNode;
+  /** Alternate active/confirmation icon (`active === true`). */
+  secondary: ReactNode;
+  className?: string;
+}
+/**
+ * Pure-compositor dual-layer icon swap (`scale(0.65 -> 1) + opacity`, zero blur).
+ * Both icons remain stacked in a single grid cell so the swap never shifts layout.
+ */
+declare function IconSwap({ active, primary, secondary, className }: IconSwapProps): import("react").JSX.Element;
+declare function getPrefersReducedMotion(): boolean;
+/**
+ * Subscribe to the OS/browser `(prefers-reduced-motion: reduce)` media query.
+ * Safe in SSR and JSDOM environments lacking `matchMedia`.
+ */
+declare function usePrefersReducedMotion(): boolean;
+type PresencePhase = "unmounted" | "entering" | "entered" | "exiting";
+interface PresenceState {
+  mounted: boolean;
+  phase: PresencePhase;
+}
+/**
+ * Interruptible enter/exit lifecycle hook for drawers and overlaid sheets.
+ * Callers MUST bind modal side effects (focus trap, scroll lock, Escape) to `open`,
+ * keeping `mounted` solely for preserving DOM nodes during exit animation.
+ */
+declare function usePresence(open: boolean, exitMs?: number): PresenceState;
+export { ActionRow, type ActionRowProps, AnimatedNumber, type AnimatedNumberProps, Badge, type BadgeProps, type BadgeShape, type BadgeSize, type BadgeVariant, Button, type ButtonProps, type ButtonSize, type ButtonVariant, CardGrid, type CardGridProps, type CellContext, type ColumnDef, type CompatIconProps, ConfirmModal, type ConfirmModalProps, CopyButton, type CopyButtonProps, type CopyState, DataTable, type DataTableProps, type DialogSize, Divider, type DividerProps, Drawer, type DrawerPlacement, DrawerPortal, type DrawerPortalProps, type DrawerProps, type DropdownOption, DropdownSelect, type DropdownSelectProps, EmptyState, type EmptyStateProps, FilterBar, type FilterBarProps, GenWaveCard, type GenWaveCardProps, type HeaderContext, IconButton, type IconButtonProps, IconCheckOutline16, IconChevronDownOutline14, IconChevronLeftOutline14, IconChevronUpOutline14, IconCloseFill14, IconCloseOutline16, IconCopyOutline16, IconDownloadOutline16, IconEditOutline16, IconEllipsisOutline16, IconLoadingOutline16, IconPaperclipOutline16, IconPlayOutline16, IconPlusOutline16, IconRefreshOutline14, IconRefreshOutline16, IconRightUpOutline14, IconSearchOutline16, IconSwap, type IconSwapProps, IconTrashOutline16, InputField, type InputFieldProps, MOTION_TOKENS_CSS, MOTION_VARS, type MediaAspectRatio, MediaCard, type MediaCardProps, ModalDialog, type ModalDialogProps, PageHeader, type PageHeaderProps, type PageHeaderTabItem, type PluginAccess, type PortalContainer, type PresencePhase, type PresenceState, SearchField, type SearchFieldHandle, type SearchFieldProps, SelectableTile, type SelectableTileProps, type SidebarCoordinatorApi, type SidebarEntryOptions, type SortDirection, type StageBox, StageContainer, type StageContainerProps, StageHeader, type StageHeaderProps, type StageHostSingleton, type StageStore, StatBar, type StatBarProps, type StatItem, Table, TableBody, type TableBodyProps, TableCell, type TableCellProps, TableHead, type TableHeadProps, TableHeader, type TableHeaderProps, type TableProps, TableRow, type TableRowProps, Tabs, type TabsProps, type TabsVariant, type TileSelectionMode, Toolbar, type ToolbarProps, type WorkbenchSidebarEntryOptions, type WorkbenchStageStoreOptions, copyToClipboard, createPortalSafe, createSidebarEntry, createStageStore, createWorkbenchSidebarEntry, createWorkbenchStageStore, ensureMotionTokens, focusFirstDescendant, getPrefersReducedMotion, resolvePortalContainer, trapFocus, usePrefersReducedMotion, usePresence };
 //# sourceMappingURL=index.d.ts.map

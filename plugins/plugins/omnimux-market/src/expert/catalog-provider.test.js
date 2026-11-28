@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, writeFileSync, readFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -253,4 +253,55 @@ test('host.ts declares skills in inject so ctx.skills is safely readable', () =>
   const injectArr = injectMatch[1]
   assert.match(injectArr, /'skills'/, 'host.ts inject must declare "skills" so ctx.skills is inject-required-safe')
   assert.match(injectArr, /'tools'/, 'host.ts inject must still declare "tools"')
+})
+
+test('third-party git catalog skills stay hidden from / until installed, then disappear after uninstall', async () => {
+  const roots = env()
+  try {
+    const provider = createCatalogSkillProvider({ catalog: loadCatalog(), ...roots })
+    const initial = await provider.list({ cwd: undefined })
+    assert.equal(
+      initial.candidates.some((c) => c.name === 'sealeap-shopify-product-selection'),
+      false,
+      'uninstalled external git skill must not pollute / candidates',
+    )
+
+    const skillPath = join(roots.home, 'skills', 'sealeap-shopify-product-selection')
+    mkdirSync(skillPath, { recursive: true })
+    writeFileSync(join(skillPath, 'SKILL.md'), '---\nname: sealeap-shopify-product-selection\ndescription: test\n---\n# Body\n', 'utf8')
+
+    const afterInstall = await provider.list({ cwd: undefined })
+    assert.equal(
+      afterInstall.candidates.some((c) => c.name === 'sealeap-shopify-product-selection'),
+      true,
+      'installed external git skill should be listed after SKILL.md exists',
+    )
+
+    rmSync(skillPath, { recursive: true, force: true })
+    const afterUninstall = await provider.list({ cwd: undefined })
+    assert.equal(
+      afterUninstall.candidates.some((c) => c.name === 'sealeap-shopify-product-selection'),
+      false,
+      'uninstalled external git skill must disappear cleanly',
+    )
+  } finally {
+    rmSync(roots.home, { recursive: true, force: true })
+  }
+})
+
+test('catalog provider exposes bundled community playbook ugc-unboxing-hook (#405)', async () => {
+  const roots = env()
+  const provider = createCatalogSkillProvider({ catalog: loadCatalog(), home: roots.home })
+  const candidate = await listedCandidate(provider, 'ugc-unboxing-hook')
+  validateCandidate(candidate, provider.name)
+  assert.equal(candidate.invocation.modelInvocable, false)
+  assert.equal(candidate.invocation.userInvocable, true)
+
+  const definition = await provider.get(candidate, { cwd: undefined })
+  assert.ok(definition, 'provider.get must resolve ugc-unboxing-hook SKILL.md')
+  validateDefinition(definition)
+  assert.equal(definition.name, 'ugc-unboxing-hook')
+  assert.match(definition.content, /products_get/)
+  assert.match(definition.content, /workflow_create/)
+  assert.match(definition.content, /clip_export/)
 })

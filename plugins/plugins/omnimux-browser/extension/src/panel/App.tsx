@@ -2100,6 +2100,10 @@ export function App(): React.JSX.Element {
     setActiveRailTurn((prev) => (prev === active ? prev : active))
   }
 
+  function preferredScrollBehavior(): ScrollBehavior {
+    return window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches ? 'auto' : 'smooth'
+  }
+
   /** 点击刻度：滚动定位到该轮首个 assistant 行并短暂高亮。 */
   function locateTurn(turn: number): void {
     const target = rows.find((row) => row.turn === turn && row.kind === 'assistant')
@@ -2107,7 +2111,7 @@ export function App(): React.JSX.Element {
     if (target === undefined) return
     const scroller = scrollRef.current
     const el = scroller?.querySelector<HTMLElement>(`[data-turn="${turn}"]`)
-    if (el !== null && el !== undefined) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    if (el !== null && el !== undefined) el.scrollIntoView({ behavior: preferredScrollBehavior(), block: 'center' })
     setLandedSeq(target.seq)
     setActiveRailTurn(turn)
     window.setTimeout(() => {
@@ -3843,7 +3847,7 @@ export function App(): React.JSX.Element {
         <div className="sticky-top-page-bar visible">
           <div
             className="sticky-bar-left"
-            onClick={() => scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })}
+            onClick={() => scrollRef.current?.scrollTo({ top: 0, behavior: preferredScrollBehavior() })}
             style={{ cursor: 'pointer' }}
             title={locale === 'en' ? 'Scroll to top' : '点击滚动回到顶部大卡片'}
           >

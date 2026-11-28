@@ -70,7 +70,10 @@ export function applyFocusCanvasNode<T extends FocusableCanvasNode>(opts: {
 }): boolean {
   const plan = planFocusCanvasNode(opts.nodes, opts.nodeId);
   if (!plan.focused) return false;
-  opts.setCenter(plan.x, plan.y, { zoom: plan.zoom, duration: plan.duration });
+  const reducedMotion = typeof window !== 'undefined'
+    && typeof window.matchMedia === 'function'
+    && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  opts.setCenter(plan.x, plan.y, { zoom: plan.zoom, duration: reducedMotion ? 0 : plan.duration });
   opts.setNodes((nds) =>
     nds.map((node) => ({
       ...node,

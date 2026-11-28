@@ -20,7 +20,7 @@ test('shipped configuration covers every recommended skill and validates clean',
   assert.deepEqual(ids(home.featured), config.homeRecommendations)
   // 货架本地卡片 = 全部 36 款 Skill（套件仅归属「套件」分类），再扣掉首页精选。
   assert.equal(config.featuredSkills.length, 36)
-  assert.equal(home.regular.length, catalog.items.filter(item => item.kind === 'skill').length - config.homeRecommendations.length)
+  assert.equal(home.regular.length, catalog.items.filter(item => item.kind === 'skill' && item.recommended === true).length - config.homeRecommendations.length)
   // 全部 home 推荐都是 featuredSkills 的子集
   for (const id of config.homeRecommendations) assert.ok(config.featuredSkills.includes(id), `${id} must be in featuredSkills`)
 })
@@ -118,7 +118,7 @@ test('real workshop renders shelf sections and every recommended skill on Featur
   // 「全部」严格守恒展示全量 36 款垂直精品 Skill（5 热门 + 5 新品 + 26 探索更多）
   assert.equal(
     nodes(ui.render(), node => String(node.props.className || '').includes('featured-card')).length,
-    catalog.items.filter(item => item.kind === 'skill').length)
+    catalog.items.filter(item => item.kind === 'skill' && item.recommended === true).length)
   // featured 页签自 013fcb898 起移除：切到该状态不再渲染精选区
   ui.state.set(1, 'featured')
   assert.equal(nodes(ui.render(), node => node.props.className === 'featured-card').length, 0)

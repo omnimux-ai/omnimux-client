@@ -6,7 +6,7 @@ import { describe, it } from 'node:test'
 import { apply } from '../index.js'
 import { OmnimuxError } from '../media/errors.js'
 import { createOfficialClient } from './client.js'
-import { connectAccount, disconnectAccount, listAccounts } from './accounts.js'
+import { connectAccount, disconnectAccount, getSeats, listAccounts, renewAccountSeat } from './accounts.js'
 import { createPost, getPost, presignMedia } from './publish.js'
 import { fetchSocialData } from './social-data.js'
 
@@ -100,5 +100,47 @@ if (previousKey === undefined) delete process.env.OMNIMUX_API_KEY
       () => fetchSocialData(client, { platform: 'tiktok', capability: 'video', id: '7123456789012345678' }),
       (error) => error instanceof OmnimuxError && error.code === 'omnimux-unconfigured',
     )
+  })
+
+  it('fetches seats and renews account seats via /api/social/v1 with explicit provider validation', async () => {
+    const seen = []
+    const client = mockClient(async (url, init) => {
+      seen.push({ url: String(url), method: init.method || 'GET', body: init.body })
+      if (String(url).endsWith('/api/social/v1/seats')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            success: true,
+            data: { billing_mode: 'seat', seats_purchased: 2, seats_occupied: 1, seats_vacant: 1, seats_cap: 20, seat_price_credits: 20, vacant_seats: [] },
+          }),
+        }
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          success: true,
+          data: { account_id: 12, seat: { id: 5, status: 'active', expires_at: '2027-01-26T11:00:00Z', can_renew: true, price_credits: 20 } },
+        }),
+      }
+    })
+    const seats = await getSeats(client)
+    assert.equal(seats.billing_mode, 'seat')
+    assert.equal(seats.seats_vacant, 1)
+
+    const renewed = await renewAccountSeat(client, { id: '12', provider: 'tiktok_direct' })
+    assert.equal(renewed.account_id, '12')
+    assert.equal(renewed.seat.status, 'active')
+
+    assert.equal(seen[0].url, 'https://omnimux.ai/api/social/v1/seats')
+    assert.equal(seen[1].url, 'https://omnimux.ai/api/social/v1/accounts/12/renew?provider=tiktok_direct')
+    assert.equal(seen[1].method, 'POST')
+    assert.deepEqual(JSON.parse(seen[1].body), { provider: 'tiktok_direct' })
+
+    const beforeInvalid = seen.length
+    await assert.rejects(() => renewAccountSeat(client, { id: '', provider: 'tiktok_direct' }), (error) => error.code === 'invalid-account-id')
+    await assert.rejects(() => renewAccountSeat(client, { id: '12', provider: 'invalid' }), (error) => error.code === 'invalid-provider')
+    assert.equal(seen.length, beforeInvalid)
   })
 })

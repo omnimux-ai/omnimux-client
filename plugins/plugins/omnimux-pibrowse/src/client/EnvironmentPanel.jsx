@@ -198,7 +198,10 @@ export function EnvironmentPanel({ overview, t, onNotify, onOverviewChanged }) {
             <div className="omnimux-pibrowse-field">
               {activeProgressLabel && <div className="omnimux-pibrowse-muted omnimux-pibrowse-mono">{activeProgressLabel}</div>}
               <div className="omnimux-pibrowse-progress-track" role="progressbar" aria-valuenow={activeProgress} aria-valuemin={0} aria-valuemax={100}>
-                <div className="omnimux-pibrowse-progress-fill" style={{ '--pb-progress': `${activeProgress}%` }} />
+                <div
+                  className="omnimux-pibrowse-progress-fill"
+                  style={{ '--pb-progress': Math.max(0, Math.min(100, Number(activeProgress) || 0)) / 100 }}
+                />
               </div>
             </div>
           )}

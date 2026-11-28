@@ -236,7 +236,8 @@ export function CloudCategoryRow(props) {
     }
     const el = scrollRef.current
     if (el) {
-      el.scrollBy({ left: delta, behavior: 'smooth' })
+      const reduceMotion = typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      el.scrollBy({ left: delta, behavior: reduceMotion ? 'auto' : 'smooth' })
     }
   }
 

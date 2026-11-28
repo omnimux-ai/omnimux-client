@@ -8,6 +8,7 @@ import {
 import { copyToClipboard } from "../internal/clipboard.ts";
 import { cssClass } from "../internal/cssClass.ts";
 import { cx } from "../internal/cx.ts";
+import { IconSwap } from "../motion/IconSwap.tsx";
 import { Button } from "./Button.tsx";
 import type { ButtonProps, ButtonSize, ButtonVariant } from "./Button.tsx";
 import css from "./CopyButton.module.css";
@@ -105,28 +106,30 @@ export const CopyButton = forwardRef<HTMLButtonElement, CopyButtonProps>(
     if (state === "copied") currentLabel = copiedLabel;
     else if (state === "error") currentLabel = errorLabel;
 
-    let iconNode = null;
-    if (showIcon) {
-      if (state === "copied") {
-        iconNode = (
-          <span className={cssClass(css.copySuccessIcon, "copySuccessIcon")}>
-            <IconCheckOutline16 size={size === "xs" ? 14 : 16} />
-          </span>
-        );
-      } else {
-        iconNode = (
-          <span
-            className={
-              state === "error"
-                ? cssClass(css.copyErrorIcon, "copyErrorIcon")
-                : undefined
-            }
-          >
-            <IconCopyOutline16 size={size === "xs" ? 14 : 16} />
-          </span>
-        );
-      }
-    }
+    const iconSize = size === "xs" ? 14 : 16;
+    const iconNode = showIcon
+      ? (
+        <IconSwap
+          active={state === "copied"}
+          primary={(
+            <span
+              className={
+                state === "error"
+                  ? cssClass(css.copyErrorIcon, "copyErrorIcon")
+                  : undefined
+              }
+            >
+              <IconCopyOutline16 size={iconSize} />
+            </span>
+          )}
+          secondary={(
+            <span className={cssClass(css.copySuccessIcon, "copySuccessIcon")}>
+              <IconCheckOutline16 size={iconSize} />
+            </span>
+          )}
+        />
+      )
+      : null;
 
     const stateClass =
       state === "copied"
@@ -147,7 +150,19 @@ export const CopyButton = forwardRef<HTMLButtonElement, CopyButtonProps>(
         onClick={handleClick}
         aria-live="polite"
       >
-        {currentLabel}
+        {currentLabel != null && currentLabel !== ""
+          ? (
+            <span
+              className={cssClass(css.labelSlot, "labelSlot")}
+              data-idle-label={label || undefined}
+              data-copied-label={copiedLabel || undefined}
+            >
+              <span className={cssClass(css.labelCurrent, "labelCurrent")}>
+                {currentLabel}
+              </span>
+            </span>
+          )
+          : null}
       </Button>
     );
   },

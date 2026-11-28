@@ -3,14 +3,18 @@ import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 import {
   SKILL_SCENARIOS,
+  isExternalCatalogSkill,
   matchesScenarioTag,
   scenarioForItem,
   skillScenarioCounts,
+  skillScenarioExternalCounts,
 } from './skill-picker-logic.js'
 import { buildWorkshopCategories } from './plaza/usePlazaFilter.js'
 
 const catalog = JSON.parse(readFileSync(new URL('../../catalog/index.json', import.meta.url), 'utf8'))
 const skills = catalog.items.filter((item) => item.kind === 'skill')
+const officialSkills = skills.filter((item) => !isExternalCatalogSkill(item))
+const externalSkills = skills.filter((item) => isExternalCatalogSkill(item))
 
 test('场景 taxonomy：6 个垂直场景，每个都有成员，36 个技能无未映射孤儿', () => {
   assert.deepEqual(SKILL_SCENARIOS.map((row) => row.id), [
@@ -21,12 +25,17 @@ test('场景 taxonomy：6 个垂直场景，每个都有成员，36 个技能无
   const orphans = skills.filter((item) => !declared.has(item.scenario)).map((item) => item.id)
   assert.deepEqual(orphans, [], '每个技能必须有已声明的 scenario')
   for (const row of SKILL_SCENARIOS) {
-    assert.ok(skills.some((item) => item.scenario === row.id), `${row.id} 必须有成员`)
+    assert.ok(officialSkills.some((item) => item.scenario === row.id), `${row.id} 必须有官方成员`)
   }
   const counts = skillScenarioCounts()
   assert.equal(counts.total, 36)
-  assert.equal(counts.total, skills.length)
-  assert.equal(Object.values(counts.byId).reduce((sum, n) => sum + n, 0), skills.length)
+  assert.equal(counts.total, officialSkills.length)
+  assert.equal(Object.values(counts.byId).reduce((sum, n) => sum + n, 0), officialSkills.length)
+
+  const extCounts = skillScenarioExternalCounts()
+  assert.equal(extCounts.total, externalSkills.length)
+  assert.equal(extCounts.byId['scene-research'], 44)
+  assert.equal(extCounts.byId['scene-growth'], 151)
 })
 
 test('场景过滤：显式 scenario 命中，旧 category 条目按兼容映射命中', () => {
@@ -50,7 +59,7 @@ test('场景分类栏：全部 + 6 个垂直场景，数量为真实目录计数
   for (const category of categories.slice(1)) {
     assert.ok(category.count > 0, `${category.id} 数量必须为正`)
   }
-  assert.equal(categories.slice(1).reduce((sum, category) => sum + category.count, 0), skills.length)
+  assert.equal(categories.slice(1).reduce((sum, category) => sum + category.count, 0), officialSkills.length)
 })
 
 test('场景命名规范：4 字纯中文上位词（禁拼接）与多源字典一致 (Issue #397)', () => {

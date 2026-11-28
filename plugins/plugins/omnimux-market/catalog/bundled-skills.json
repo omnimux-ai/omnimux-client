@@ -19,6 +19,14 @@
       "license": "MIT",
       "owner": "omnimux-market",
       "notes": "OmniMux first-party onboarding guide directing users to install official Hypit from upstream channels without redistributing Hypit code or binaries."
+    },
+    {
+      "slug": "ugc-unboxing-hook",
+      "role": "community-playbook",
+      "origin": "first-party",
+      "license": "MIT",
+      "owner": "omnimux-market",
+      "notes": "Repeatable UGC product unboxing and first-3-second hook video production playbook mapped to OmniMux product, asset, workflow, and clip tools."
     }
   ]
 }

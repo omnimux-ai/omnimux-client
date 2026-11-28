@@ -106,6 +106,9 @@ it('still fails loudly when the writer never settles, so ENOTEMPTY is never swal
 })
 
 it('removes a real user-data tree while a writer thread is still creating files in it', async () => {
+  // Concurrent smoke probe only: deterministic proof lives in cases 1-3 and the
+  // injected ENOTEMPTY falsification probes; machine scheduling decides whether a
+  // real race window opens on a given run.
   const home = temporaryHome()
   const userData = electronUserData(home)
   const writerRoot = join(userData, 'writer')
@@ -139,4 +142,24 @@ it('removes a real user-data tree while a writer thread is still creating files 
     await removeTemporaryDirectory(home)
   }
   expect(existsSync(home)).toBe(false)
+})
+
+it('proves unretried async rm fails on ENOTEMPTY from launch-analytics identity while removeTemporaryDirectory cleans it', async () => {
+  const root = temporaryHome('next-launch-analytics-')
+  const identityDir = join(root, 'install', 'identity')
+  mkdirSync(identityDir, { recursive: true })
+  writeFileSync(join(identityDir, 'installation-id'), 'fixture-device-id')
+
+  const racingAsyncRm: TemporaryDirectoryRemover = async (path, options) => {
+    if (!options.maxRetries) throw directoryNotEmpty(identityDir)
+    await rm(path, options)
+  }
+
+  await expect(racingAsyncRm(root, { recursive: true, force: true, maxRetries: 0, retryDelay: 0 })).rejects.toThrow(
+    /ENOTEMPTY: directory not empty, rmdir/u,
+  )
+  expect(existsSync(identityDir)).toBe(true)
+
+  await removeTemporaryDirectory(root, racingAsyncRm)
+  expect(existsSync(root)).toBe(false)
 })

@@ -3,6 +3,7 @@ import type { ChangeEvent, InputHTMLAttributes, KeyboardEvent } from "react";
 import { IconCloseFill14, IconSearchOutline16 } from "../icons/compat-icons.tsx";
 
 import { cx } from "../internal/cx.ts";
+import "../motion/tokens.ts";
 import css from "./SearchField.module.css";
 
 export interface SearchFieldProps extends Omit<

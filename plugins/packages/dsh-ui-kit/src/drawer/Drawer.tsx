@@ -8,6 +8,8 @@ import { cssClass } from "../internal/cssClass.ts";
 import { cx } from "../internal/cx.ts";
 import type { PortalContainer } from "../internal/portal.ts";
 import { resolvePortalContainer } from "../internal/portal.ts";
+import { usePresence } from "../motion/usePresence.ts";
+import "../motion/tokens.ts";
 import { DrawerPortal } from "./DrawerPortal.tsx";
 import css from "./Drawer.module.css";
 
@@ -73,11 +75,12 @@ export function Drawer({
 }: DrawerProps): JSX.Element | null {
   const drawerRef = useRef<HTMLDivElement>(null);
   const previousActiveElementRef = useRef<HTMLElement | null>(null);
+  const { mounted, phase } = usePresence(open, 190);
 
   const titleId = useId();
   const descriptionId = useId();
 
-  // Scroll lock on container
+  // Scroll lock on container — strictly keyed on `open` so exit releases immediately
   useEffect(() => {
     if (!open) return;
     const target = resolvePortalContainer(container);
@@ -91,7 +94,7 @@ export function Drawer({
     };
   }, [open, container]);
 
-  // Focus trap & previous focus restoration
+  // Focus trap & previous focus restoration — strictly keyed on `open`
   useEffect(() => {
     if (!open) return;
     previousActiveElementRef.current = document.activeElement as HTMLElement | null;
@@ -113,6 +116,7 @@ export function Drawer({
 
   // Keyboard navigation (Escape & Tab trap)
   const handleKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (!open) return;
     if (e.key === "Escape" && closeOnEsc) {
       e.stopPropagation();
       onClose();
@@ -125,12 +129,12 @@ export function Drawer({
   };
 
   const handleMaskClick = (e: MouseEvent<HTMLDivElement>) => {
-    if (e.target === e.currentTarget && closeOnOverlayClick) {
+    if (open && e.target === e.currentTarget && closeOnOverlayClick) {
       onClose();
     }
   };
 
-  if (!open) return null;
+  if (!mounted) return null;
 
   const isVertical = placement === "top" || placement === "bottom";
   const sizeStyle: CSSProperties = isVertical
@@ -141,10 +145,13 @@ export function Drawer({
     <DrawerPortal container={container}>
       <div
         className={cssClass(css.root, "root")}
+        data-phase={phase}
+        aria-hidden={!open || undefined}
         onKeyDown={handleKeyDown}
       >
         <div
           className={cssClass(css.mask, "mask")}
+          data-phase={phase}
           onClick={handleMaskClick}
           aria-hidden="true"
         />
@@ -156,6 +163,7 @@ export function Drawer({
           aria-labelledby={title ? titleId : undefined}
           aria-describedby={description ? descriptionId : undefined}
           tabIndex={-1}
+          data-phase={phase}
           style={sizeStyle}
           className={cx(
             cssClass(css.drawer, "drawer"),

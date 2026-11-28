@@ -1586,8 +1586,14 @@ button[data-sidebar-right-expand] {
   box-sizing: border-box !important;
   z-index: 30 !important;
   border-left: 0.5px solid var(--dsw-alias-border-l4) !important;
-  transition: left var(--ds-transition-duration-normal, 0.2s) ease,
-              width var(--ds-transition-duration-normal, 0.2s) ease !important;
+  transition: left var(--omnimux-motion-dur-base, 200ms) var(--omnimux-motion-ease-spatial, cubic-bezier(0.32, 0.72, 0, 1)),
+              width var(--omnimux-motion-dur-base, 200ms) var(--omnimux-motion-ease-spatial, cubic-bezier(0.32, 0.72, 0, 1)) !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-sidebar-right-panel="fullscreen"],
+  [class*="_panel"][data-sidebar-right-panel="fullscreen"] {
+    transition: none !important;
+  }
 }
 
 /* 5.2 真正的全屏态（左侧侧边栏折叠/隐藏时）：铺满整个 100vw 视口 */

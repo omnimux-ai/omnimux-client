@@ -78,6 +78,16 @@ export const LIBRARY_FLOW_CSS = `
 @keyframes omx-spin {
   to { transform: rotate(360deg); }
 }
+@keyframes omx-flow-opacity-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.42; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .omx-library-flow-spinner {
+    border-color: var(--dsw-alias-label-secondary);
+    animation: omx-flow-opacity-pulse 1.6s ease-in-out infinite;
+  }
+}
 `
 
 const STYLE_ID = 'omx-library-flow-styles'

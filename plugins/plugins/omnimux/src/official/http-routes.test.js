@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, it } from 'node:test'
 import { OmnimuxError } from '../media/errors.js'
-import { avatarIdFromPath, createOfficialDispatcher, registerOfficialRoutes } from './http-routes.js'
+import { avatarIdFromPath, createOfficialDispatcher, registerOfficialRoutes, renewIdFromPath } from './http-routes.js'
 import { createAccountMetaStore } from './account-meta.js'
 import { createOfficialClient } from './client.js'
 
@@ -970,5 +970,152 @@ describe('aggregated analytics dispatcher', () => {
       path: '/api/social/v1/analytics/sync-external-posts',
       opts: { method: 'POST', body: { account_id: 12, url: 'https://tiktok.com/@a/video/1' } },
     })
+  })
+})
+
+describe('official social seat billing routes (#412)', () => {
+  it('parses renewIdFromPath safely and rejects traversal/raw slashes', () => {
+    assert.equal(renewIdFromPath('/omnimux/accounts/12/renew'), '12')
+    assert.equal(renewIdFromPath('/omnimux/accounts/acc%2F1/renew'), 'acc/1')
+    assert.equal(renewIdFromPath('/omnimux/accounts/a/b/renew'), '')
+    assert.equal(renewIdFromPath('/omnimux/accounts/../renew'), '')
+    assert.equal(renewIdFromPath('/omnimux/accounts/%2e%2e/renew'), '')
+    assert.equal(renewIdFromPath('/omnimux/accounts/seats'), '')
+  })
+
+  it('serves GET /omnimux/accounts/seats, passes seat on GET /omnimux/accounts, and rejects non-GET on /seats', async () => {
+    const dispatcher = createOfficialDispatcher({
+      official: { mount: true },
+      client: clientWith(async (path) => {
+        if (path === '/api/social/v1/seats') {
+          return {
+            success: true,
+            data: {
+              billing_mode: 'seat',
+              seats_purchased: 2,
+              seats_occupied: 1,
+              seats_vacant: 1,
+              seats_cap: 20,
+              seat_price_usd: 2,
+              seat_price_credits: 20,
+              wallet_ok: true,
+              max_validity_days: 90,
+              max_swaps_per_window: 2,
+              grace_days: 7,
+              vacant_seats: [{ id: 14, expires_at: '2026-12-27T11:00:00Z', swaps_remaining: 2, same_account_only: false }],
+            },
+          }
+        }
+        return {
+          data: {
+            accounts: [
+              {
+                id: '12',
+                provider: 'tiktok_direct',
+                platform: 'tiktok',
+                display_name: 'Ada',
+                seat: { id: 9, status: 'frozen', expires_at: '2026-11-20T00:00:00Z', grace_until: '2026-11-27T00:00:00Z', can_renew: true, price_credits: 20 },
+              },
+            ],
+          },
+        }
+      }),
+    })
+
+    const seats = await dispatcher.dispatch({ method: 'GET', url: '/omnimux/accounts/seats' })
+    assert.equal(seats.status, 200)
+    assert.equal(seats.body.billing_mode, 'seat')
+    assert.equal(seats.body.seats_vacant, 1)
+    assert.equal(seats.body.vacant_seats.length, 1)
+
+    const wrongMethod = await dispatcher.dispatch({ method: 'DELETE', url: '/omnimux/accounts/seats', origin: LOCAL_ORIGIN })
+    assert.equal(wrongMethod.status, 405)
+
+    const listed = await dispatcher.dispatch({ method: 'GET', url: '/omnimux/accounts?provider=tiktok_direct' })
+    assert.equal(listed.status, 200)
+    assert.equal(listed.body.accounts[0].seat.status, 'frozen')
+    assert.equal(listed.body.accounts[0].seat.price_credits, 20)
+  })
+
+  it('handles POST /omnimux/accounts/:id/renew with CSRF protection and structured 402/409 seat error mapping', async () => {
+    const calls = []
+    let mode = 'ok'
+    const dispatcher = createOfficialDispatcher({
+      official: { mount: true },
+      client: clientWith(async (path, init) => {
+        calls.push({ path, method: init.method, body: init.body })
+        if (mode === 'quota') {
+          throw new OmnimuxError('quota-exceeded', '社媒绑定席位不足或余额不够', {
+            status: 402,
+            details: { kind: 'quota-exceeded', code: 'SOCIAL_SEAT_QUOTA', need_credits: 20 },
+          })
+        }
+        if (mode === 'renew-limit') {
+          throw new OmnimuxError('SOCIAL_SEAT_RENEW_LIMIT', '社媒绑定席位已达最长有效期上限', {
+            status: 409,
+            details: { code: 'SOCIAL_SEAT_RENEW_LIMIT', max_validity_days: 90 },
+          })
+        }
+        return {
+          success: true,
+          data: { account_id: 12, seat: { id: 9, status: 'active', expires_at: '2027-01-26T11:00:00Z', can_renew: true, price_credits: 20 } },
+        }
+      }),
+    })
+
+    const crossOrigin = await dispatcher.dispatch({
+      method: 'POST',
+      url: '/omnimux/accounts/12/renew?provider=tiktok_direct',
+      origin: 'https://evil.example',
+      body: { provider: 'tiktok_direct' },
+    })
+    assert.equal(crossOrigin.status, 403)
+    assert.equal(calls.length, 0)
+
+    assert.equal(renewIdFromPath('/omnimux/accounts/./renew'), '')
+    assert.equal(renewIdFromPath('/omnimux/accounts/%2e/renew'), '')
+    const encodedDotPath = await dispatcher.dispatch({
+      method: 'POST',
+      url: '/omnimux/accounts/%2e/renew?provider=tiktok_direct',
+      origin: LOCAL_ORIGIN,
+      body: { provider: 'tiktok_direct' },
+    })
+    assert.equal(encodedDotPath.status, 400)
+    assert.equal(calls.length, 0)
+
+    const ok = await dispatcher.dispatch({
+      method: 'POST',
+      url: '/omnimux/accounts/12/renew?provider=tiktok_direct',
+      origin: LOCAL_ORIGIN,
+      body: { provider: 'tiktok_direct' },
+    })
+    assert.equal(ok.status, 200)
+    assert.equal(ok.body.account_id, '12')
+    assert.equal(ok.body.seat.status, 'active')
+    assert.equal(calls[0].path, '/api/social/v1/accounts/12/renew?provider=tiktok_direct')
+
+    mode = 'quota'
+    const quota = await dispatcher.dispatch({
+      method: 'POST',
+      url: '/omnimux/accounts/12/renew?provider=tiktok_direct',
+      origin: LOCAL_ORIGIN,
+      body: { provider: 'tiktok_direct' },
+    })
+    assert.equal(quota.status, 402)
+    assert.equal(quota.body.error, 'quota-exceeded')
+    assert.equal(quota.body.code, 'SOCIAL_SEAT_QUOTA')
+    assert.equal(quota.body.need_credits, 20)
+
+    mode = 'renew-limit'
+    const limit = await dispatcher.dispatch({
+      method: 'POST',
+      url: '/omnimux/accounts/12/renew?provider=tiktok_direct',
+      origin: LOCAL_ORIGIN,
+      body: { provider: 'tiktok_direct' },
+    })
+    assert.equal(limit.status, 409)
+    assert.equal(limit.body.error, 'SOCIAL_SEAT_RENEW_LIMIT')
+    assert.equal(limit.body.code, 'SOCIAL_SEAT_RENEW_LIMIT')
+    assert.equal(limit.body.max_validity_days, 90)
   })
 })

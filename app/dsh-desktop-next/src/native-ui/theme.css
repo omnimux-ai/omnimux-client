@@ -4,6 +4,16 @@
 @source './onboarding.tsx';
 /* Map the official Settings tokens onto the existing native-window theme. */
 :root {
+  --omnimux-motion-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --omnimux-motion-ease-spatial: cubic-bezier(0.32, 0.72, 0, 1);
+  --omnimux-motion-ease-exit: cubic-bezier(0.32, 0, 0.67, 0);
+  --omnimux-motion-ease-linear: linear;
+  --omnimux-motion-dur-press: 90ms;
+  --omnimux-motion-dur-fast: 140ms;
+  --omnimux-motion-dur-base: 200ms;
+  --omnimux-motion-dur-sheet: 260ms;
+  --omnimux-motion-press-scale: 0.96;
+  --omnimux-motion-press-scale-subtle: 0.985;
   --ds-ease-in-out: cubic-bezier(.4, 0, .2, 1);
   --ds-transition-duration: .2s;
   --ds-transition-duration-fast: .1s;
@@ -44,3 +54,23 @@
 }
 .dshNextPermissionsDialog .dshDesktopSettingsHint { margin: 6px 0 0; color: var(--muted-foreground); font-size: 12px; line-height: 1.6; }
 .dshNextPermissionsDialog .dshDesktopSettingsError { color: var(--destructive); }
+
+@keyframes omx-pulse-calm {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.42; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --omnimux-motion-dur-press: 0ms;
+    --omnimux-motion-dur-fast: 0ms;
+    --omnimux-motion-dur-base: 0ms;
+    --omnimux-motion-dur-sheet: 0ms;
+    --omnimux-motion-press-scale: 1;
+    --omnimux-motion-press-scale-subtle: 1;
+  }
+
+  .animate-spin {
+    animation: omx-pulse-calm 1.6s ease-in-out infinite;
+  }
+}

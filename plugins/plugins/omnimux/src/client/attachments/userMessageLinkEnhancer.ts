@@ -31,13 +31,17 @@ const PILL_CSS = `
   color: var(--dsw-alias-label-primary);
   font-family: inherit;
   box-sizing: border-box;
-  transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+  transition: background-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), border-color var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)), transform var(--omnimux-motion-dur-fast, 140ms) var(--omnimux-motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 
 .${PILL_CLASS}:hover {
   background: var(--dsw-alias-bg-layer-3);
   border-color: var(--dsw-alias-border-l3);
   transform: translateY(-0.5px);
+}
+@media (prefers-reduced-motion: reduce) {
+  .${PILL_CLASS} { transition: none; }
+  .${PILL_CLASS}:hover { transform: none; }
 }
 
 .${PILL_CLASS}__icon {

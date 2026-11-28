@@ -1,5 +1,6 @@
 import { isPublishingAccount } from '../account-policy.js'
 import { accountMaxMediaItems, accountPublishMode, resolveSelectionPublishMode } from '../shared/tiktok-capabilities.js'
+import { seatUnusableReason } from '../shared/social-seat.js'
 /**
  * capabilities.js: 矩阵驱动的表单裁剪判定（纯逻辑，浏览器与测试环境共享）。
  *
@@ -113,14 +114,16 @@ export function formCapabilities(input) {
 }
 
 /**
- * 账号可用性（与 Host accounts.js 判定同义：status ∈ {active, expiring}、
+ * 账号可用性（与 Host accounts.js 判定同义：席位未冻结/待激活、status ∈ {active, expiring}、
  * agent_usable !== false 且未缺失 TikTok 发布权限）。浏览器侧的 ViewRow
  * 已由 hub /omnimux/accounts 计算好 status，这里只做展示层判定。
  * @param {Record<string, unknown>} row
- * @returns {{ ok: boolean, reason: 'expired' | 'error' | 'agentOff' | 'noPublishScope' | '' }}
+ * @returns {{ ok: boolean, reason: 'seatExpired' | 'seatUnactivated' | 'expired' | 'error' | 'agentOff' | 'noPublishScope' | '' }}
  */
 export function accountUsable(row) {
   if (!isPublishingAccount(row)) return { ok: false, reason: 'error' }
+  const seatReason = seatUnusableReason(row.seat)
+  if (seatReason !== '') return { ok: false, reason: seatReason }
   const status = String(row.status || '').toLowerCase()
   if (status === 'expired') return { ok: false, reason: 'expired' }
   if (status && status !== 'active' && status !== 'expiring') return { ok: false, reason: 'error' }

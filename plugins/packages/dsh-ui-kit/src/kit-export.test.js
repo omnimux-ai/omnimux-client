@@ -65,6 +65,14 @@ const EXPECTED_EXPORTS = [
   "focusFirstDescendant",
   "createPortalSafe",
   "resolvePortalContainer",
+  "AnimatedNumber",
+  "IconSwap",
+  "ensureMotionTokens",
+  "MOTION_TOKENS_CSS",
+  "MOTION_VARS",
+  "getPrefersReducedMotion",
+  "usePrefersReducedMotion",
+  "usePresence",
 ]
 
 function extractEsmExports(code) {
